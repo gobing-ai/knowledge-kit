@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { PluginRecord } from '@gobing-ai/kk-core';
 import { parseProfile } from '@gobing-ai/kk-store';
+import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { z } from 'zod';
 
 /** Origin of the resolved publication targets (task 0300). */
@@ -113,12 +113,10 @@ export interface ItcPublishPlan {
 const BROWSER_TARGETS = new Set(['substack-pub', 'juejin-pub', 'infoq-pub', 'xhs-pub']);
 const SLUG_REGEX = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
-function resolveDefaultPackageRoot(): string {
+async function resolveDefaultPackageRoot(fs: FileSystem): Promise<string> {
     const candidates = [resolve(process.cwd()), resolve(__dirname, '../../../'), resolve(__dirname, '../')];
     for (const c of candidates) {
-        if (existsSync(join(c, 'plugins/kk/publish-presets'))) {
-            return c;
-        }
+        if (await fs.exists(join(c, 'plugins/kk/publish-presets'))) return c;
     }
     return process.cwd();
 }
@@ -172,69 +170,69 @@ function normalizeTargetList(targets: readonly ItcPlanTargetRequest[]): ItcPlanT
  * Search `<projectRoot>/.kk/publish-presets/<slug>.json` then `<packageRoot>/plugins/kk/publish-presets/<slug>.json`.
  * Traversal rejected; malformed override throws immediately without falling through.
  */
-function resolvePresetFromRoots(
+async function resolvePresetFromRoots(
+    fs: FileSystem,
     slug: string,
     projectRoot: string,
     packageRoot: string,
-): { preset: PublishPreset; digest: string } {
+): Promise<{ preset: PublishPreset; digest: string }> {
     if (!SLUG_REGEX.test(slug)) {
         throw new Error(`invalid publish preset slug '${slug}': must be lowercase alphanumeric with hyphens`);
     }
 
     const projectDir = resolve(projectRoot, '.kk/publish-presets');
     const projectPath = resolve(projectDir, `${slug}.json`);
-    if (existsSync(projectPath)) {
-        if (!projectPath.startsWith(projectDir)) {
-            throw new Error(`path traversal rejected for preset '${slug}'`);
-        }
-        try {
-            const raw = JSON.parse(readFileSync(projectPath, 'utf-8'));
-            const parsed = PublishPresetSchema.safeParse(raw);
-            if (!parsed.success) {
-                throw new Error(`malformed publish preset at ${projectPath}: ${parsed.error.message}`);
-            }
-            const digest = createHash('sha256').update(readFileSync(projectPath)).digest('hex');
-            return { preset: parsed.data, digest };
-        } catch (err: unknown) {
-            if (err instanceof Error && err.message.startsWith('malformed publish preset')) throw err;
-            throw new Error(
-                `malformed publish preset at ${projectPath}: ${err instanceof Error ? err.message : String(err)}`,
-            );
-        }
+    if (await fs.exists(projectPath)) {
+        return readPresetFile(fs, projectPath, projectDir, slug);
     }
 
     const pkgDir = resolve(packageRoot, 'plugins/kk/publish-presets');
     const pkgPath = resolve(pkgDir, `${slug}.json`);
-    if (existsSync(pkgPath)) {
-        if (!pkgPath.startsWith(pkgDir)) {
-            throw new Error(`path traversal rejected for preset '${slug}'`);
-        }
-        try {
-            const raw = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-            const parsed = PublishPresetSchema.safeParse(raw);
-            if (!parsed.success) {
-                throw new Error(`malformed publish preset at ${pkgPath}: ${parsed.error.message}`);
-            }
-            const digest = createHash('sha256').update(readFileSync(pkgPath)).digest('hex');
-            return { preset: parsed.data, digest };
-        } catch (err: unknown) {
-            if (err instanceof Error && err.message.startsWith('malformed publish preset')) throw err;
-            throw new Error(
-                `malformed publish preset at ${pkgPath}: ${err instanceof Error ? err.message : String(err)}`,
-            );
-        }
+    if (await fs.exists(pkgPath)) {
+        return readPresetFile(fs, pkgPath, pkgDir, slug);
     }
 
     throw new Error(`publish preset '${slug}' not found in ${projectPath} or ${pkgPath}`);
+}
+
+/** Read one preset file, refusing a path outside `root` and a present-but-malformed document. */
+async function readPresetFile(
+    fs: FileSystem,
+    path: string,
+    root: string,
+    slug: string,
+): Promise<{ preset: PublishPreset; digest: string }> {
+    if (!path.startsWith(root)) {
+        throw new Error(`path traversal rejected for preset '${slug}'`);
+    }
+    let text: string;
+    try {
+        text = await fs.readFile(path);
+    } catch (err: unknown) {
+        throw new Error(`malformed publish preset at ${path}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    let parsed: ReturnType<typeof PublishPresetSchema.safeParse>;
+    try {
+        parsed = PublishPresetSchema.safeParse(JSON.parse(text));
+    } catch (err: unknown) {
+        throw new Error(`malformed publish preset at ${path}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (!parsed.success) {
+        throw new Error(`malformed publish preset at ${path}: ${parsed.error.message}`);
+    }
+    return { preset: parsed.data, digest: createHash('sha256').update(text).digest('hex') };
 }
 
 /**
  * Resolve target selection by strict frozen precedence (task 0300):
  * explicit --targets > explicit --publish-preset > resolved workflows.kk-itc.publish_preset > topicProfile.publishPreset > none.
  */
-export function resolveItcTargets(input: ItcTargetSelection): ResolvedItcTargets {
+export async function resolveItcTargets(
+    input: ItcTargetSelection,
+    fs: FileSystem = createNodeFileSystem(),
+): Promise<ResolvedItcTargets> {
     const projectRoot = input.projectRoot ? resolve(input.projectRoot) : process.cwd();
-    const packageRoot = input.packageRoot ? resolve(input.packageRoot) : resolveDefaultPackageRoot();
+    const packageRoot = input.packageRoot ? resolve(input.packageRoot) : await resolveDefaultPackageRoot(fs);
 
     // 1. Explicit --targets
     if (input.explicitTargets !== undefined) {
@@ -264,7 +262,12 @@ export function resolveItcTargets(input: ItcTargetSelection): ResolvedItcTargets
         if (input.explicitPreset.trim() === '') {
             throw new Error('explicit publish preset input is empty');
         }
-        const { preset, digest } = resolvePresetFromRoots(input.explicitPreset.trim(), projectRoot, packageRoot);
+        const { preset, digest } = await resolvePresetFromRoots(
+            fs,
+            input.explicitPreset.trim(),
+            projectRoot,
+            packageRoot,
+        );
         return {
             targets: normalizeTargetList(preset.targets),
             origin: 'explicit-preset',
@@ -278,7 +281,12 @@ export function resolveItcTargets(input: ItcTargetSelection): ResolvedItcTargets
         if (input.workflowConfigPreset.trim() === '') {
             throw new Error('workflow config publish preset input is empty');
         }
-        const { preset, digest } = resolvePresetFromRoots(input.workflowConfigPreset.trim(), projectRoot, packageRoot);
+        const { preset, digest } = await resolvePresetFromRoots(
+            fs,
+            input.workflowConfigPreset.trim(),
+            projectRoot,
+            packageRoot,
+        );
         return {
             targets: normalizeTargetList(preset.targets),
             origin: 'workflow-config',
@@ -294,13 +302,18 @@ export function resolveItcTargets(input: ItcTargetSelection): ResolvedItcTargets
             throw new Error('topicProfile input is empty');
         }
         const profilePath =
-            input.topicProfilePath && existsSync(input.topicProfilePath)
+            input.topicProfilePath !== undefined && (await fs.exists(input.topicProfilePath))
                 ? input.topicProfilePath
                 : resolve(packageRoot, 'plugins/kk/decisions/extract', `${topicSlug}.yaml`);
-        if (existsSync(profilePath)) {
-            const profile = parseProfile(readFileSync(profilePath, 'utf-8'));
+        if (await fs.exists(profilePath)) {
+            const profile = parseProfile(await fs.readFile(profilePath));
             if (profile.publishPreset) {
-                const { preset, digest } = resolvePresetFromRoots(profile.publishPreset, projectRoot, packageRoot);
+                const { preset, digest } = await resolvePresetFromRoots(
+                    fs,
+                    profile.publishPreset,
+                    projectRoot,
+                    packageRoot,
+                );
                 return {
                     targets: normalizeTargetList(preset.targets),
                     origin: 'topic-profile',
@@ -319,11 +332,11 @@ export function resolveItcTargets(input: ItcTargetSelection): ResolvedItcTargets
 }
 
 /** Check whether a cover image exists under 4-illustrations/cover.* */
-function hasCoverImage(workDir: string): boolean {
+async function hasCoverImage(fs: FileSystem, workDir: string): Promise<boolean> {
     const dir = join(workDir, '4-illustrations');
-    if (!existsSync(dir)) return false;
+    if (!(await fs.exists(dir))) return false;
     try {
-        const files = readdirSync(dir);
+        const files = await fs.readDir(dir);
         return files.some((f) => f.startsWith('cover.'));
     } catch {
         return false;
@@ -331,11 +344,11 @@ function hasCoverImage(workDir: string): boolean {
 }
 
 /** Check whether 4-publish/content.json exists and has valid ordered metadata.images */
-function hasOrderedImages(workDir: string): boolean {
+async function hasOrderedImages(fs: FileSystem, workDir: string): Promise<boolean> {
     const path = join(workDir, '4-publish', 'content.json');
-    if (!existsSync(path)) return false;
+    if (!(await fs.exists(path))) return false;
     try {
-        const data = JSON.parse(readFileSync(path, 'utf-8')) as { metadata?: Record<string, unknown> };
+        const data = JSON.parse(await fs.readFile(path)) as { metadata?: Record<string, unknown> };
         const images = data.metadata?.images;
         return (
             Array.isArray(images) &&
@@ -351,9 +364,13 @@ function hasOrderedImages(workDir: string): boolean {
  * Substantive native ITC publication planner.
  * Resolves targets against discovered plugin capabilities without central channel tables.
  */
-export function buildItcPublishPlan(request: ItcPlanRequest, plugins: readonly PluginRecord[]): ItcPublishPlan {
+export async function buildItcPublishPlan(
+    request: ItcPlanRequest,
+    plugins: readonly PluginRecord[],
+    fs: FileSystem = createNodeFileSystem(),
+): Promise<ItcPublishPlan> {
     const pluginsByName = new Map<string, PluginRecord>(plugins.map((p) => [p.name, p]));
-    const hasCover = hasCoverImage(request.workDir);
+    const hasCover = await hasCoverImage(fs, request.workDir);
 
     // Validate duplicate vs conflicting profile selectors per plugin
     const pluginProfiles = new Map<string, string>();
@@ -410,7 +427,7 @@ export function buildItcPublishPlan(request: ItcPlanRequest, plugins: readonly P
             );
         }
 
-        if (profile.requires?.orderedImages && !hasOrderedImages(request.workDir)) {
+        if (profile.requires?.orderedImages && !(await hasOrderedImages(fs, request.workDir))) {
             throw new Error(
                 `target ${targetReq.plugin} requires ordered metadata.images with real paths; a hero cover alone does not satisfy that requirement`,
             );

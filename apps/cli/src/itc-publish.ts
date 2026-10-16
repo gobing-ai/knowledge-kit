@@ -1,7 +1,13 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Content, discoverAllPlugins } from '@gobing-ai/kk-core';
+import {
+    createNodeFileSystem,
+    type FileSystem,
+    NodeProcessExecutor,
+    type ProcessExecutor,
+} from '@gobing-ai/ts-runtime';
+import { echoError } from '@gobing-ai/ts-utils';
 import { z } from 'zod';
 import { runFanout } from './fanout';
 import { buildItcPublishPlan, type ItcPlanRequest, type ItcPublishPlan, resolveItcTargets } from './itc-plan';
@@ -38,16 +44,16 @@ export const ItcReceiptSchema = z
 export type ItcReceipt = z.infer<typeof ItcReceiptSchema>;
 
 /** First `cover.*` in 4-illustrations as a workspace-relative path, or undefined. */
-function findCover(workDir: string): string | undefined {
+async function findCover(fs: FileSystem, workDir: string): Promise<string | undefined> {
     const dir = join(workDir, '4-illustrations');
-    if (!existsSync(dir)) return undefined;
-    const cover = readdirSync(dir).find((file) => file.startsWith('cover.'));
+    if (!(await fs.exists(dir))) return undefined;
+    const cover = (await fs.readDir(dir)).find((file) => file.startsWith('cover.'));
     return cover ? join('4-illustrations', cover) : undefined;
 }
 
-function readFrontmatter(path: string): Record<string, string> {
-    if (!existsSync(path)) return {};
-    const text = readFileSync(path, 'utf-8');
+async function readFrontmatter(fs: FileSystem, path: string): Promise<Record<string, string>> {
+    if (!(await fs.exists(path))) return {};
+    const text = await fs.readFile(path);
     if (!text.startsWith('---')) return {};
     const end = text.indexOf('\n---', 3);
     if (end < 0) return {};
@@ -70,39 +76,39 @@ function splitList(value: string): string[] {
 /**
  * Materializes 4-publish/content.json and resolves target publication plan.
  */
-export async function itcMaterializePlan(args: string[]): Promise<number> {
+export async function itcMaterializePlan(args: string[], fs: FileSystem = createNodeFileSystem()): Promise<number> {
     const [workDir = '', targetsArg = '', sourceLocale = '', liveArg = '', presetArg = ''] = args;
     if (!workDir) {
-        console.error('usage: itc-materialize-plan <work_dir> [targets] [source_locale] [publish_live] [preset]');
+        echoError('usage: itc-materialize-plan <work_dir> [targets] [source_locale] [publish_live] [preset]');
         return 1;
     }
     const live = liveArg === 'true';
     const draftPath = join(workDir, '3-draft-draft-article.md');
-    if (!existsSync(draftPath)) {
-        console.error(`final draft not found: ${draftPath}`);
+    if (!(await fs.exists(draftPath))) {
+        echoError(`final draft not found: ${draftPath}`);
         return 1;
     }
-    const lines = readFileSync(draftPath, 'utf-8').split('\n');
+    const lines = (await fs.readFile(draftPath)).split('\n');
     const h1 = lines.findIndex((line) => /^#\s+\S/.test(line));
     if (h1 < 0) {
-        console.error(`no H1 title in ${draftPath}`);
+        echoError(`no H1 title in ${draftPath}`);
         return 1;
     }
     const title = lines[h1]?.replace(/^#\s+/, '').trim() ?? '';
     const body = [...lines.slice(0, h1), ...lines.slice(h1 + 1)].join('\n').trim();
     if (!body) {
-        console.error(`empty body in ${draftPath}`);
+        echoError(`empty body in ${draftPath}`);
         return 1;
     }
 
     const content: Record<string, unknown> = { title, format: 'markdown', body };
     const outlinePath = join(workDir, '2-outline', 'outline-approved.md');
-    if (existsSync(outlinePath)) content.outline = readFileSync(outlinePath, 'utf-8').trim();
+    if (await fs.exists(outlinePath)) content.outline = (await fs.readFile(outlinePath)).trim();
 
     const docsPath = join(workDir, 'docs.json');
-    if (existsSync(docsPath)) {
+    if (await fs.exists(docsPath)) {
         try {
-            const docs = JSON.parse(readFileSync(docsPath, 'utf-8')) as Array<{
+            const docs = JSON.parse(await fs.readFile(docsPath)) as Array<{
                 id?: unknown;
                 title?: unknown;
                 sourceUri?: unknown;
@@ -120,23 +126,26 @@ export async function itcMaterializePlan(args: string[]): Promise<number> {
     }
 
     const metadata: Record<string, unknown> = { published: live };
-    const cover = findCover(workDir);
+    const cover = await findCover(fs, workDir);
     if (cover) metadata.coverImage = cover;
-    const brief = readFrontmatter(join(workDir, 'brief.md'));
+    const brief = await readFrontmatter(fs, join(workDir, 'brief.md'));
     if (brief.tags) metadata.tags = splitList(brief.tags);
     if (brief.keywords) metadata.keywords = splitList(brief.keywords);
     if (brief.description) metadata.description = brief.description;
     content.metadata = metadata;
 
     const publishDir = join(workDir, '4-publish');
-    mkdirSync(publishDir, { recursive: true });
-    writeFileSync(join(publishDir, 'content.json'), `${JSON.stringify(content, null, 2)}\n`);
+    await fs.ensureDir(publishDir);
+    await fs.writeFile(join(publishDir, 'content.json'), `${JSON.stringify(content, null, 2)}\n`);
 
     // Target resolution
-    const resolvedTargets = resolveItcTargets({
-        explicitTargets: targetsArg ? targetsArg : undefined,
-        explicitPreset: presetArg ? presetArg : undefined,
-    });
+    const resolvedTargets = await resolveItcTargets(
+        {
+            explicitTargets: targetsArg ? targetsArg : undefined,
+            explicitPreset: presetArg ? presetArg : undefined,
+        },
+        fs,
+    );
 
     if (resolvedTargets.targets.length === 0) {
         // No targets to plan
@@ -150,7 +159,7 @@ export async function itcMaterializePlan(args: string[]): Promise<number> {
             browser: [],
             targets: [],
         };
-        writeFileSync(join(publishDir, 'publish-plan.json'), `${JSON.stringify(emptyPlan, null, 2)}\n`);
+        await fs.writeFile(join(publishDir, 'publish-plan.json'), `${JSON.stringify(emptyPlan, null, 2)}\n`);
         return 0;
     }
 
@@ -167,15 +176,15 @@ export async function itcMaterializePlan(args: string[]): Promise<number> {
     };
 
     try {
-        const plan = buildItcPublishPlan(req, plugins);
+        const plan = await buildItcPublishPlan(req, plugins, fs);
         const planPath = join(publishDir, 'publish-plan.json');
-        writeFileSync(planPath, `${JSON.stringify(plan, null, 2)}\n`);
+        await fs.writeFile(planPath, `${JSON.stringify(plan, null, 2)}\n`);
 
         // Prepare isolated target payloads
-        await prepareTargetPayloads(workDir, plan);
+        await prepareTargetPayloads(fs, workDir, plan);
         return 0;
     } catch (err: unknown) {
-        console.error(`itc-materialize-plan: ${err instanceof Error ? err.message : String(err)}`);
+        echoError(`itc-materialize-plan: ${err instanceof Error ? err.message : String(err)}`);
         return 1;
     }
 }
@@ -183,7 +192,7 @@ export async function itcMaterializePlan(args: string[]): Promise<number> {
 /**
  * Prepares isolated payload files per target with mode-key unions cleared and specific metadata applied.
  */
-async function prepareTargetPayloads(workDir: string, plan: ItcPublishPlan): Promise<void> {
+async function prepareTargetPayloads(fs: FileSystem, workDir: string, plan: ItcPublishPlan): Promise<void> {
     const publishDir = join(workDir, '4-publish');
     if (!plan.targets || plan.targets.length === 0) return;
 
@@ -191,12 +200,12 @@ async function prepareTargetPayloads(workDir: string, plan: ItcPublishPlan): Pro
         const variantEntry = plan.variants[target.variant];
         const baseFile = variantEntry?.file ?? 'content.json';
         let basePath = join(publishDir, baseFile);
-        if (!existsSync(basePath)) {
+        if (!(await fs.exists(basePath))) {
             basePath = join(publishDir, 'content.json');
         }
-        if (!existsSync(basePath)) continue;
+        if (!(await fs.exists(basePath))) continue;
 
-        const baseContent = JSON.parse(readFileSync(basePath, 'utf-8')) as Content;
+        const baseContent = JSON.parse(await fs.readFile(basePath)) as Content;
         const cleanedMetadata: Record<string, unknown> = { ...(baseContent.metadata ?? {}) };
 
         // Clear generic and mode-key union fields
@@ -216,7 +225,7 @@ async function prepareTargetPayloads(workDir: string, plan: ItcPublishPlan): Pro
         const targetFileName = `content.${target.plugin}.json`;
         const targetFilePath = join(publishDir, targetFileName);
         const contentStr = `${JSON.stringify(isolatedContent, null, 2)}\n`;
-        writeFileSync(targetFilePath, contentStr);
+        await fs.writeFile(targetFilePath, contentStr);
 
         const payloadDigest = createHash('sha256').update(contentStr).digest('hex');
         target.payloadPath = `4-publish/${targetFileName}`;
@@ -224,22 +233,26 @@ async function prepareTargetPayloads(workDir: string, plan: ItcPublishPlan): Pro
     }
 
     // Re-save plan with updated payloadPath and digests
-    writeFileSync(join(publishDir, 'publish-plan.json'), `${JSON.stringify(plan, null, 2)}\n`);
+    await fs.writeFile(join(publishDir, 'publish-plan.json'), `${JSON.stringify(plan, null, 2)}\n`);
 }
 
 /**
  * Checks plugin readiness probes for declared targets before sending.
  */
-export async function itcCheckTargets(args: string[]): Promise<number> {
+export async function itcCheckTargets(
+    args: string[],
+    fs: FileSystem = createNodeFileSystem(),
+    executor: ProcessExecutor = new NodeProcessExecutor(),
+): Promise<number> {
     const [workDir = ''] = args;
     if (!workDir) {
-        console.error('usage: itc-check-targets <work_dir>');
+        echoError('usage: itc-check-targets <work_dir>');
         return 1;
     }
     const planPath = join(workDir, '4-publish/publish-plan.json');
-    if (!existsSync(planPath)) return 0;
+    if (!(await fs.exists(planPath))) return 0;
 
-    const plan = JSON.parse(readFileSync(planPath, 'utf-8')) as ItcPublishPlan;
+    const plan = JSON.parse(await fs.readFile(planPath)) as ItcPublishPlan;
     if (!plan.targets || plan.targets.length === 0) return 0;
 
     const { plugins } = discoverAllPlugins();
@@ -248,16 +261,17 @@ export async function itcCheckTargets(args: string[]): Promise<number> {
     for (const target of plan.targets) {
         const plugin = byName.get(target.plugin);
         if (plugin?.check) {
-            // Run probe check
-            const res = await Bun.spawn([process.execPath, plugin.check, 'check'], {
-                env: process.env,
-                stdout: 'pipe',
-                stderr: 'pipe',
-            }).exited;
+            // Run probe check through the process seam (no direct spawn).
+            const probe = await executor.run({
+                command: process.execPath,
+                args: [plugin.check, 'check'],
+                env: process.env as Record<string, string>,
+                timeout: 60_000,
+            });
 
-            if (res !== 0) {
+            if (probe.exitCode !== 0) {
                 const botName = plugin.browserSession?.profileName ?? plugin.name;
-                console.error(
+                echoError(
                     `channel probe for '${target.plugin}' refused: run \`kk bot open/login ${botName}\` to authenticate`,
                 );
                 return 1;
@@ -270,43 +284,47 @@ export async function itcCheckTargets(args: string[]): Promise<number> {
 /**
  * Dispatches target sends via executor fan-out and records receipt files under 4-publish/receipts/.
  */
-export async function itcSendTargets(args: string[]): Promise<number> {
+export async function itcSendTargets(
+    args: string[],
+    fs: FileSystem = createNodeFileSystem(),
+    dispatch: (argv: string[]) => Promise<number> = runFanout,
+): Promise<number> {
     const [workDir = ''] = args;
     const isRetry = args.includes('--retry');
     if (!workDir) {
-        console.error('usage: itc-send-targets <work_dir> [--retry]');
+        echoError('usage: itc-send-targets <work_dir> [--retry]');
         return 1;
     }
     const publishDir = join(workDir, '4-publish');
     const planPath = join(publishDir, 'publish-plan.json');
-    if (!existsSync(planPath)) return 0;
+    if (!(await fs.exists(planPath))) return 0;
 
-    const plan = JSON.parse(readFileSync(planPath, 'utf-8')) as ItcPublishPlan;
+    const plan = JSON.parse(await fs.readFile(planPath)) as ItcPublishPlan;
     if (!plan.targets || plan.targets.length === 0) return 0;
 
     const receiptsDir = join(publishDir, 'receipts');
-    mkdirSync(receiptsDir, { recursive: true });
+    await fs.ensureDir(receiptsDir);
 
-    const planRaw = readFileSync(planPath, 'utf-8');
+    const planRaw = await fs.readFile(planPath);
     const planDigest = createHash('sha256').update(planRaw).digest('hex');
 
     for (const target of plan.targets) {
         const targetReceiptPath = join(receiptsDir, `${target.plugin}.json`);
         if (isRetry) {
             // In retry mode, only retry effect: none failures
-            if (!existsSync(targetReceiptPath)) continue;
+            if (!(await fs.exists(targetReceiptPath))) continue;
             try {
-                const priorReceipt = JSON.parse(readFileSync(targetReceiptPath, 'utf-8')) as ItcReceipt;
+                const priorReceipt = JSON.parse(await fs.readFile(targetReceiptPath)) as ItcReceipt;
                 if (priorReceipt.status === 'succeeded' || priorReceipt.effect !== 'none') {
                     continue;
                 }
             } catch {
                 continue;
             }
-        } else if (existsSync(targetReceiptPath)) {
+        } else if (await fs.exists(targetReceiptPath)) {
             // If already succeeded, do not resend
             try {
-                const prior = JSON.parse(readFileSync(targetReceiptPath, 'utf-8')) as ItcReceipt;
+                const prior = JSON.parse(await fs.readFile(targetReceiptPath)) as ItcReceipt;
                 if (prior.status === 'succeeded') continue;
             } catch {
                 // re-attempt
@@ -315,7 +333,7 @@ export async function itcSendTargets(args: string[]): Promise<number> {
 
         const payloadRel = target.payloadPath ?? `4-publish/content.${target.plugin}.json`;
         const payloadPath = join(workDir, payloadRel);
-        const payloadRaw = existsSync(payloadPath) ? readFileSync(payloadPath, 'utf-8') : '{}';
+        const payloadRaw = (await fs.exists(payloadPath)) ? await fs.readFile(payloadPath) : '{}';
         const payloadDigest = createHash('sha256').update(payloadRaw).digest('hex');
 
         const outPath = join(publishDir, `fanout-result.${target.plugin}.json`);
@@ -330,9 +348,9 @@ export async function itcSendTargets(args: string[]): Promise<number> {
         ];
 
         let fanoutExit = 0;
-        if (!existsSync(outPath)) {
+        if (!(await fs.exists(outPath))) {
             try {
-                fanoutExit = await runFanout(fanoutArgs);
+                fanoutExit = await dispatch(fanoutArgs);
             } catch {
                 fanoutExit = 1;
             }
@@ -346,9 +364,9 @@ export async function itcSendTargets(args: string[]): Promise<number> {
             durationMs?: number;
             metadata?: Record<string, unknown>;
         } = {};
-        if (existsSync(outPath)) {
+        if (await fs.exists(outPath)) {
             try {
-                const agg = JSON.parse(readFileSync(outPath, 'utf-8')) as {
+                const agg = JSON.parse(await fs.readFile(outPath)) as {
                     targets?: Array<{
                         target?: string;
                         ok?: boolean;
@@ -400,7 +418,7 @@ export async function itcSendTargets(args: string[]): Promise<number> {
             aggregatePath: outPath,
         };
 
-        writeFileSync(targetReceiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
+        await fs.writeFile(targetReceiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
     }
     return 0;
 }
@@ -408,17 +426,17 @@ export async function itcSendTargets(args: string[]): Promise<number> {
 /**
  * Reconciles target receipts against the plan and settles store selection.
  */
-export async function itcReconcileReceipts(args: string[]): Promise<number> {
+export async function itcReconcileReceipts(args: string[], fs: FileSystem = createNodeFileSystem()): Promise<number> {
     const [workDir = ''] = args;
     if (!workDir) {
-        console.error('usage: itc-reconcile-receipts <work_dir>');
+        echoError('usage: itc-reconcile-receipts <work_dir>');
         return 1;
     }
     const publishDir = join(workDir, '4-publish');
     const planPath = join(publishDir, 'publish-plan.json');
-    if (!existsSync(planPath)) return 0;
+    if (!(await fs.exists(planPath))) return 0;
 
-    const plan = JSON.parse(readFileSync(planPath, 'utf-8')) as ItcPublishPlan;
+    const plan = JSON.parse(await fs.readFile(planPath)) as ItcPublishPlan;
     if (!plan.targets || plan.targets.length === 0) {
         // No targets planned -> settle as author_only
         await itcSelectionSettle({
@@ -436,15 +454,15 @@ export async function itcReconcileReceipts(args: string[]): Promise<number> {
 
     for (const target of plan.targets) {
         const rPath = join(receiptsDir, `${target.plugin}.json`);
-        if (!existsSync(rPath)) {
-            console.error(`itc-reconcile-receipts: missing receipt for target '${target.plugin}'`);
+        if (!(await fs.exists(rPath))) {
+            echoError(`itc-reconcile-receipts: missing receipt for target '${target.plugin}'`);
             return 1;
         }
         try {
-            const r = JSON.parse(readFileSync(rPath, 'utf-8')) as ItcReceipt;
+            const r = JSON.parse(await fs.readFile(rPath)) as ItcReceipt;
             receipts.push(r);
         } catch {
-            console.error(`itc-reconcile-receipts: corrupt receipt for target '${target.plugin}'`);
+            echoError(`itc-reconcile-receipts: corrupt receipt for target '${target.plugin}'`);
             return 1;
         }
     }
@@ -476,21 +494,21 @@ export async function itcReconcileReceipts(args: string[]): Promise<number> {
 /**
  * Exports SEO prepublish request and published pages handoffs.
  */
-export async function itcExportSeo(args: string[]): Promise<number> {
+export async function itcExportSeo(args: string[], fs: FileSystem = createNodeFileSystem()): Promise<number> {
     const [workDir = '', mode = 'handoff'] = args;
     if (!workDir) {
-        console.error('usage: itc-export-seo <work_dir> [mode]');
+        echoError('usage: itc-export-seo <work_dir> [mode]');
         return 1;
     }
     const seoDir = join(workDir, 'seo');
-    mkdirSync(seoDir, { recursive: true });
+    await fs.ensureDir(seoDir);
 
     if (mode === 'off') {
-        writeFileSync(
+        await fs.writeFile(
             join(seoDir, 'prepublish-request.json'),
             `${JSON.stringify({ schemaVersion: 1, mode: 'off', status: 'not-assessed' }, null, 2)}\n`,
         );
-        writeFileSync(
+        await fs.writeFile(
             join(seoDir, 'published-pages.json'),
             `${JSON.stringify({ schemaVersion: 1, mode: 'off', pages: [], status: 'not-assessed' }, null, 2)}\n`,
         );
@@ -504,15 +522,15 @@ export async function itcExportSeo(args: string[]): Promise<number> {
         status: 'ready',
         draftFile: '3-draft-draft-article.md',
     };
-    writeFileSync(join(seoDir, 'prepublish-request.json'), `${JSON.stringify(prepublish, null, 2)}\n`);
+    await fs.writeFile(join(seoDir, 'prepublish-request.json'), `${JSON.stringify(prepublish, null, 2)}\n`);
 
     const receiptsDir = join(workDir, '4-publish/receipts');
     const verifiedPages: Array<{ plugin: string; url: string }> = [];
 
-    if (existsSync(receiptsDir)) {
-        for (const file of readdirSync(receiptsDir).filter((f) => f.endsWith('.json'))) {
+    if (await fs.exists(receiptsDir)) {
+        for (const file of (await fs.readDir(receiptsDir)).filter((f) => f.endsWith('.json'))) {
             try {
-                const r = JSON.parse(readFileSync(join(receiptsDir, file), 'utf-8')) as ItcReceipt;
+                const r = JSON.parse(await fs.readFile(join(receiptsDir, file))) as ItcReceipt;
                 if (r.mode === 'live' && r.effect === 'confirmed' && r.publicUrlVerified === true && r.url) {
                     verifiedPages.push({ plugin: r.plugin, url: r.url });
                 }
@@ -530,28 +548,28 @@ export async function itcExportSeo(args: string[]): Promise<number> {
         ...(verifiedPages.length === 0 ? { reason: 'no verified public live URLs available' } : {}),
     };
 
-    writeFileSync(join(seoDir, 'published-pages.json'), `${JSON.stringify(publishedPages, null, 2)}\n`);
+    await fs.writeFile(join(seoDir, 'published-pages.json'), `${JSON.stringify(publishedPages, null, 2)}\n`);
     return 0;
 }
 
 /**
  * Emits final run summary report.json and report.md.
  */
-export async function itcReportSummary(args: string[]): Promise<number> {
+export async function itcReportSummary(args: string[], fs: FileSystem = createNodeFileSystem()): Promise<number> {
     const [workDir = '', maxRevisions = '2'] = args;
     if (!workDir) {
-        console.error('usage: itc-report-summary <work_dir> [max_revisions]');
+        echoError('usage: itc-report-summary <work_dir> [max_revisions]');
         return 1;
     }
     const reportDir = join(workDir, '5-report');
-    mkdirSync(reportDir, { recursive: true });
+    await fs.ensureDir(reportDir);
 
     let verdict = 'PASS';
     let outcome = 'done';
     const verdictPath = join(workDir, '.itc-verdict.json');
-    if (existsSync(verdictPath)) {
+    if (await fs.exists(verdictPath)) {
         try {
-            const v = JSON.parse(readFileSync(verdictPath, 'utf-8')) as { verdict?: string; confidence?: string };
+            const v = JSON.parse(await fs.readFile(verdictPath)) as { verdict?: string; confidence?: string };
             verdict = v.verdict ?? 'PASS';
             if (verdict !== 'PASS') outcome = 'failed';
         } catch {
@@ -561,9 +579,9 @@ export async function itcReportSummary(args: string[]): Promise<number> {
 
     let revisions = 0;
     const revPath = join(workDir, '.auto-revise-count');
-    if (existsSync(revPath)) {
+    if (await fs.exists(revPath)) {
         try {
-            revisions = Number(readFileSync(revPath, 'utf-8').trim()) || 0;
+            revisions = Number((await fs.readFile(revPath)).trim()) || 0;
         } catch {
             revisions = 0;
         }
@@ -571,10 +589,10 @@ export async function itcReportSummary(args: string[]): Promise<number> {
 
     const receiptsDir = join(workDir, '4-publish/receipts');
     const receipts: ItcReceipt[] = [];
-    if (existsSync(receiptsDir)) {
-        for (const file of readdirSync(receiptsDir).filter((f) => f.endsWith('.json'))) {
+    if (await fs.exists(receiptsDir)) {
+        for (const file of (await fs.readDir(receiptsDir)).filter((f) => f.endsWith('.json'))) {
             try {
-                const r = JSON.parse(readFileSync(join(receiptsDir, file), 'utf-8')) as ItcReceipt;
+                const r = JSON.parse(await fs.readFile(join(receiptsDir, file))) as ItcReceipt;
                 receipts.push(r);
             } catch {
                 // skip
@@ -594,7 +612,7 @@ export async function itcReportSummary(args: string[]): Promise<number> {
         maxRevisions: Number(maxRevisions) || 2,
     };
 
-    writeFileSync(join(reportDir, 'report.json'), `${JSON.stringify(reportJson, null, 2)}\n`);
+    await fs.writeFile(join(reportDir, 'report.json'), `${JSON.stringify(reportJson, null, 2)}\n`);
 
     const md = [
         '# ITC Publication Run Report',
@@ -608,7 +626,7 @@ export async function itcReportSummary(args: string[]): Promise<number> {
         ...receipts.map((r) => `- ${r.plugin} (${r.profile}): status=${r.status}, effect=${r.effect}`),
     ].join('\n');
 
-    writeFileSync(join(reportDir, 'report.md'), `${md}\n`);
+    await fs.writeFile(join(reportDir, 'report.md'), `${md}\n`);
     return 0;
 }
 
@@ -620,28 +638,28 @@ export async function itcReportSummary(args: string[]): Promise<number> {
  * Writes `<workDir>/.itc/disposition.txt` with exactly one of:
  * `finish` | `revise` | `autorevise` | `fail`.
  */
-export function itcAuthorVerdict(args: string[]): number {
+export async function itcAuthorVerdict(args: string[], fs: FileSystem = createNodeFileSystem()): Promise<number> {
     const [workDir = ''] = args;
     if (!workDir) {
-        console.error('usage: itc-author-verdict <work_dir>');
+        echoError('usage: itc-author-verdict <work_dir>');
         return 1;
     }
     const auto = process.env.KK_ITC_AUTO === 'true';
     const maxRevisions = Number(process.env.KK_ITC_MAX_REVISIONS ?? '2') || 2;
 
-    const readCount = (name: string): number => {
+    const readCount = async (name: string): Promise<number> => {
         const p = join(workDir, name);
-        if (!existsSync(p)) return 0;
-        const n = Number(readFileSync(p, 'utf-8').trim());
+        if (!(await fs.exists(p))) return 0;
+        const n = Number((await fs.readFile(p)).trim());
         return Number.isFinite(n) ? n : 0;
     };
 
     const verdictPath = join(workDir, '.itc-verdict.json');
     let verdict = '';
     let confidence = '';
-    if (existsSync(verdictPath)) {
+    if (await fs.exists(verdictPath)) {
         try {
-            const v = JSON.parse(readFileSync(verdictPath, 'utf-8')) as {
+            const v = JSON.parse(await fs.readFile(verdictPath)) as {
                 verdict?: unknown;
                 confidence?: unknown;
             };
@@ -660,16 +678,16 @@ export function itcAuthorVerdict(args: string[]): number {
         disposition = 'finish';
     } else if (verdict === 'NEEDS_REVISION') {
         if (auto) {
-            disposition = readCount('.auto-revise-count') < maxRevisions ? 'autorevise' : 'fail';
+            disposition = (await readCount('.auto-revise-count')) < maxRevisions ? 'autorevise' : 'fail';
         } else {
-            disposition = readCount('.revise-count') < 3 ? 'revise' : 'fail';
+            disposition = (await readCount('.revise-count')) < 3 ? 'revise' : 'fail';
         }
     } else {
         // FAIL, a PASS with an out-of-enum confidence, or an unparseable verdict.
         disposition = 'fail';
     }
 
-    mkdirSync(join(workDir, '.itc'), { recursive: true });
-    writeFileSync(join(workDir, '.itc/disposition.txt'), `${disposition}\n`);
+    await fs.ensureDir(join(workDir, '.itc'));
+    await fs.writeFile(join(workDir, '.itc/disposition.txt'), `${disposition}\n`);
     return 0;
 }

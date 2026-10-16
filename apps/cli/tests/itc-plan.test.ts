@@ -121,8 +121,8 @@ describe('buildItcPublishPlan (0298 / G21 R5)', () => {
 
     const plugins = [fakePublisher, qiitaPublisher, wechatPublisher, xPublisher];
 
-    it('resolves a manifest-only fake publisher and verifies complete mode bindings', () => {
-        withTempDir((workDir) => {
+    it('resolves a manifest-only fake publisher and verifies complete mode bindings', async () => {
+        await withTempDir(async (workDir) => {
             mkdirSync(join(workDir, '4-illustrations'), { recursive: true });
             writeFileSync(join(workDir, '4-illustrations/cover.png'), 'cover');
 
@@ -134,7 +134,7 @@ describe('buildItcPublishPlan (0298 / G21 R5)', () => {
                 targets: [{ plugin: 'fake-custom-pub' }],
             };
 
-            const plan = buildItcPublishPlan(req, plugins);
+            const plan = await buildItcPublishPlan(req, plugins);
             expect(plan.live).toBe(false);
             expect(plan.variants['en-custom-article']).toBeDefined();
             expect(plan.variants['en-custom-article']?.switches).toEqual({
@@ -152,13 +152,13 @@ describe('buildItcPublishPlan (0298 / G21 R5)', () => {
         });
     });
 
-    it('resolves complete Qiita and WeChat MP bindings', () => {
-        withTempDir((workDir) => {
+    it('resolves complete Qiita and WeChat MP bindings', async () => {
+        await withTempDir(async (workDir) => {
             mkdirSync(join(workDir, '4-illustrations'), { recursive: true });
             writeFileSync(join(workDir, '4-illustrations/cover.png'), 'cover');
 
             // Draft mode
-            const draftPlan = buildItcPublishPlan(
+            const draftPlan = await buildItcPublishPlan(
                 {
                     schemaVersion: 1,
                     workDir,
@@ -178,7 +178,7 @@ describe('buildItcPublishPlan (0298 / G21 R5)', () => {
             });
 
             // Live mode
-            const livePlan = buildItcPublishPlan(
+            const livePlan = await buildItcPublishPlan(
                 {
                     schemaVersion: 1,
                     workDir,
@@ -199,8 +199,8 @@ describe('buildItcPublishPlan (0298 / G21 R5)', () => {
         });
     });
 
-    it('rejects targets requiring a cover image when cover is absent', () => {
-        withTempDir((workDir) => {
+    it('rejects targets requiring a cover image when cover is absent', async () => {
+        await withTempDir(async (workDir) => {
             const req: ItcPlanRequest = {
                 schemaVersion: 1,
                 workDir,
@@ -208,12 +208,12 @@ describe('buildItcPublishPlan (0298 / G21 R5)', () => {
                 live: false,
                 targets: [{ plugin: 'fake-custom-pub' }],
             };
-            expect(() => buildItcPublishPlan(req, plugins)).toThrow('needs a cover image');
+            await expect(buildItcPublishPlan(req, plugins)).rejects.toThrow('needs a cover image');
         });
     });
 
-    it('rejects targets requiring orderedImages when metadata.images is missing or empty', () => {
-        withTempDir((workDir) => {
+    it('rejects targets requiring orderedImages when metadata.images is missing or empty', async () => {
+        await withTempDir(async (workDir) => {
             mkdirSync(join(workDir, '4-illustrations'), { recursive: true });
             writeFileSync(join(workDir, '4-illustrations/cover.png'), 'cover');
 
@@ -224,7 +224,9 @@ describe('buildItcPublishPlan (0298 / G21 R5)', () => {
                 live: false,
                 targets: [{ plugin: 'fake-custom-pub', profile: 'imagesOnly' }],
             };
-            expect(() => buildItcPublishPlan(req, plugins)).toThrow('requires ordered metadata.images with real paths');
+            await expect(buildItcPublishPlan(req, plugins)).rejects.toThrow(
+                'requires ordered metadata.images with real paths',
+            );
 
             // With empty images array -> still throws
             mkdirSync(join(workDir, '4-publish'), { recursive: true });
@@ -232,7 +234,9 @@ describe('buildItcPublishPlan (0298 / G21 R5)', () => {
                 join(workDir, '4-publish/content.json'),
                 JSON.stringify({ title: 'T', body: 'B', metadata: { images: [] } }),
             );
-            expect(() => buildItcPublishPlan(req, plugins)).toThrow('requires ordered metadata.images with real paths');
+            await expect(buildItcPublishPlan(req, plugins)).rejects.toThrow(
+                'requires ordered metadata.images with real paths',
+            );
 
             // With real image paths -> succeeds
             writeFileSync(
@@ -243,13 +247,13 @@ describe('buildItcPublishPlan (0298 / G21 R5)', () => {
                     metadata: { images: ['4-illustrations/card-1.png', '4-illustrations/card-2.png'] },
                 }),
             );
-            const plan = buildItcPublishPlan(req, plugins);
+            const plan = await buildItcPublishPlan(req, plugins);
             expect(plan.variants['zh-gallery']).toBeDefined();
         });
     });
 
-    it('rejects unsupported modes (e.g. draft on live-only x-pub post)', () => {
-        withTempDir((workDir) => {
+    it('rejects unsupported modes (e.g. draft on live-only x-pub post)', async () => {
+        await withTempDir(async (workDir) => {
             const req: ItcPlanRequest = {
                 schemaVersion: 1,
                 workDir,
@@ -257,7 +261,7 @@ describe('buildItcPublishPlan (0298 / G21 R5)', () => {
                 live: false,
                 targets: [{ plugin: 'x-pub', profile: 'post' }],
             };
-            expect(() => buildItcPublishPlan(req, plugins)).toThrow('has no draft mode');
+            await expect(buildItcPublishPlan(req, plugins)).rejects.toThrow('has no draft mode');
 
             const liveReq: ItcPlanRequest = {
                 schemaVersion: 1,
@@ -266,12 +270,12 @@ describe('buildItcPublishPlan (0298 / G21 R5)', () => {
                 live: true,
                 targets: [{ plugin: 'fake-custom-pub', profile: 'imagesOnly' }],
             };
-            expect(() => buildItcPublishPlan(liveReq, plugins)).toThrow('refuses a live publish');
+            await expect(buildItcPublishPlan(liveReq, plugins)).rejects.toThrow('refuses a live publish');
         });
     });
 
-    it('rejects conflicting profiles for the same plugin and collapses exact duplicates', () => {
-        withTempDir((workDir) => {
+    it('rejects conflicting profiles for the same plugin and collapses exact duplicates', async () => {
+        await withTempDir(async (workDir) => {
             mkdirSync(join(workDir, '4-illustrations'), { recursive: true });
             writeFileSync(join(workDir, '4-illustrations/cover.png'), 'cover');
 
@@ -286,7 +290,7 @@ describe('buildItcPublishPlan (0298 / G21 R5)', () => {
                     { plugin: 'fake-custom-pub', profile: 'article' },
                 ],
             };
-            const plan = buildItcPublishPlan(dupReq, plugins);
+            const plan = await buildItcPublishPlan(dupReq, plugins);
             expect(plan.fanout[0]?.targets).toEqual(['fake-custom-pub']);
 
             // Conflicting profiles throw
@@ -300,12 +304,12 @@ describe('buildItcPublishPlan (0298 / G21 R5)', () => {
                     { plugin: 'fake-custom-pub', profile: 'imagesOnly' },
                 ],
             };
-            expect(() => buildItcPublishPlan(conflictReq, plugins)).toThrow('conflicting profiles for plugin');
+            await expect(buildItcPublishPlan(conflictReq, plugins)).rejects.toThrow('conflicting profiles for plugin');
         });
     });
 
-    it('rejects an unknown publish target', () => {
-        withTempDir((workDir) => {
+    it('rejects an unknown publish target', async () => {
+        await withTempDir(async (workDir) => {
             const req: ItcPlanRequest = {
                 schemaVersion: 1,
                 workDir,
@@ -313,7 +317,7 @@ describe('buildItcPublishPlan (0298 / G21 R5)', () => {
                 live: false,
                 targets: [{ plugin: 'nonexistent-pub' }],
             };
-            expect(() => buildItcPublishPlan(req, plugins)).toThrow('unsupported publish target');
+            await expect(buildItcPublishPlan(req, plugins)).rejects.toThrow('unsupported publish target');
         });
     });
 });

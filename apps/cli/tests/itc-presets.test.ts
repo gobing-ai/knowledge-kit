@@ -15,8 +15,8 @@ async function withTempDir(fn: (dir: string) => Promise<void> | void): Promise<v
 }
 
 describe('resolveItcTargets & Presets (0300 / G21 R6)', () => {
-    it('resolves the seeded package presets (technical-article and chinese-article)', () => {
-        const tech = resolveItcTargets({ explicitPreset: 'technical-article' });
+    it('resolves the seeded package presets (technical-article and chinese-article)', async () => {
+        const tech = await resolveItcTargets({ explicitPreset: 'technical-article' });
         expect(tech.origin).toBe('explicit-preset');
         expect(tech.presetName).toBe('technical-article');
         expect(tech.presetDigest).toBeDefined();
@@ -25,7 +25,7 @@ describe('resolveItcTargets & Presets (0300 / G21 R6)', () => {
             { plugin: 'qiita-pub', profile: 'article' },
         ]);
 
-        const cn = resolveItcTargets({ explicitPreset: 'chinese-article' });
+        const cn = await resolveItcTargets({ explicitPreset: 'chinese-article' });
         expect(cn.origin).toBe('explicit-preset');
         expect(cn.presetName).toBe('chinese-article');
         expect(cn.presetDigest).toBeDefined();
@@ -59,7 +59,7 @@ describe('resolveItcTargets & Presets (0300 / G21 R6)', () => {
             );
 
             // 1. Explicit targets overrides everything
-            const res1 = resolveItcTargets({
+            const res1 = await resolveItcTargets({
                 explicitTargets: 'emdash-pub:article',
                 explicitPreset: 'technical-article',
                 workflowConfigPreset: 'chinese-article',
@@ -71,7 +71,7 @@ describe('resolveItcTargets & Presets (0300 / G21 R6)', () => {
             expect(res1.targets).toEqual([{ plugin: 'emdash-pub', profile: 'article' }]);
 
             // 2. Explicit preset overrides workflow config preset and topic profile
-            const res2 = resolveItcTargets({
+            const res2 = await resolveItcTargets({
                 explicitPreset: 'technical-article',
                 workflowConfigPreset: 'chinese-article',
                 topicProfile: 'my-topic',
@@ -86,7 +86,7 @@ describe('resolveItcTargets & Presets (0300 / G21 R6)', () => {
             ]);
 
             // 3. Workflow config preset overrides topic profile
-            const res3 = resolveItcTargets({
+            const res3 = await resolveItcTargets({
                 workflowConfigPreset: 'chinese-article',
                 topicProfile: 'my-topic',
                 topicProfilePath,
@@ -96,7 +96,7 @@ describe('resolveItcTargets & Presets (0300 / G21 R6)', () => {
             expect(res3.presetName).toBe('chinese-article');
 
             // 4. Topic profile publishPreset used when higher tiers are absent
-            const res4 = resolveItcTargets({
+            const res4 = await resolveItcTargets({
                 topicProfile: 'my-topic',
                 topicProfilePath,
                 projectRoot,
@@ -106,34 +106,36 @@ describe('resolveItcTargets & Presets (0300 / G21 R6)', () => {
             expect(res4.targets).toEqual([{ plugin: 'medium-pub', profile: 'article' }]);
 
             // 5. None when no input given
-            const res5 = resolveItcTargets({});
+            const res5 = await resolveItcTargets({});
             expect(res5.origin).toBe('none');
             expect(res5.targets).toEqual([]);
         });
     });
 
-    it('distinguishes absent from empty inputs and fails loud on higher-priority empty targets', () => {
-        expect(() => resolveItcTargets({ explicitTargets: '' })).toThrow('explicit targets input is empty');
-        expect(() => resolveItcTargets({ explicitTargets: '   ' })).toThrow('explicit targets input is empty');
-        expect(() => resolveItcTargets({ explicitTargets: [] })).toThrow('explicit targets input is empty');
+    it('distinguishes absent from empty inputs and fails loud on higher-priority empty targets', async () => {
+        await expect(resolveItcTargets({ explicitTargets: '' })).rejects.toThrow('explicit targets input is empty');
+        await expect(resolveItcTargets({ explicitTargets: '   ' })).rejects.toThrow('explicit targets input is empty');
+        await expect(resolveItcTargets({ explicitTargets: [] })).rejects.toThrow('explicit targets input is empty');
 
-        expect(() => resolveItcTargets({ explicitPreset: '' })).toThrow('explicit publish preset input is empty');
-        expect(() => resolveItcTargets({ workflowConfigPreset: '' })).toThrow(
+        await expect(resolveItcTargets({ explicitPreset: '' })).rejects.toThrow(
+            'explicit publish preset input is empty',
+        );
+        await expect(resolveItcTargets({ workflowConfigPreset: '' })).rejects.toThrow(
             'workflow config publish preset input is empty',
         );
     });
 
-    it('collapses identical duplicate selectors and rejects conflicting profiles for one plugin', () => {
-        const collapsed = resolveItcTargets({
+    it('collapses identical duplicate selectors and rejects conflicting profiles for one plugin', async () => {
+        const collapsed = await resolveItcTargets({
             explicitTargets: 'zenn-pub:article,zenn-pub:article,qiita-pub',
         });
         expect(collapsed.targets).toEqual([{ plugin: 'zenn-pub', profile: 'article' }, { plugin: 'qiita-pub' }]);
 
-        expect(() =>
+        await expect(
             resolveItcTargets({
                 explicitTargets: 'weibo-pub:article,weibo-pub:post',
             }),
-        ).toThrow('conflicting profiles for plugin weibo-pub');
+        ).rejects.toThrow('conflicting profiles for plugin weibo-pub');
     });
 
     it('fails on a malformed project override without falling through to package copy', async () => {
@@ -145,23 +147,27 @@ describe('resolveItcTargets & Presets (0300 / G21 R6)', () => {
             // Write malformed technical-article.json in project
             writeFileSync(join(projectPresetsDir, 'technical-article.json'), '{ "bad": true }');
 
-            expect(() =>
+            await expect(
                 resolveItcTargets({
                     explicitPreset: 'technical-article',
                     projectRoot,
                 }),
-            ).toThrow(/malformed publish preset/);
+            ).rejects.toThrow(/malformed publish preset/);
         });
     });
 
-    it('rejects path traversal in preset slug', () => {
-        expect(() => resolveItcTargets({ explicitPreset: '../malicious' })).toThrow(/invalid publish preset slug/);
-        expect(() => resolveItcTargets({ explicitPreset: 'nested/preset' })).toThrow(/invalid publish preset slug/);
+    it('rejects path traversal in preset slug', async () => {
+        await expect(resolveItcTargets({ explicitPreset: '../malicious' })).rejects.toThrow(
+            /invalid publish preset slug/,
+        );
+        await expect(resolveItcTargets({ explicitPreset: 'nested/preset' })).rejects.toThrow(
+            /invalid publish preset slug/,
+        );
     });
 
     it('stamps origin, presetName, and presetDigest onto the frozen publication plan', async () => {
         await withTempDir(async (dir) => {
-            const resolved = resolveItcTargets({ explicitPreset: 'technical-article' });
+            const resolved = await resolveItcTargets({ explicitPreset: 'technical-article' });
 
             const fakeQiita: PluginRecord = {
                 name: 'qiita-pub',
@@ -211,7 +217,7 @@ describe('resolveItcTargets & Presets (0300 / G21 R6)', () => {
                 presetDigest: resolved.presetDigest,
             };
 
-            const plan = buildItcPublishPlan(req, [fakeQiita, fakeZenn]);
+            const plan = await buildItcPublishPlan(req, [fakeQiita, fakeZenn]);
             expect(plan.origin).toBe('explicit-preset');
             expect(plan.presetName).toBe('technical-article');
             expect(plan.presetDigest).toBe(resolved.presetDigest);

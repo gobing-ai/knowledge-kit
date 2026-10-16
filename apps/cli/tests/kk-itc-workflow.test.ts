@@ -167,7 +167,7 @@ describe('kk-itc auto mode + revise loop + report (0149)', () => {
     it('R3 (0149 review P3) — the disposition stage fails out-of-contract verdicts instead of deadlocking', () => {
         // The disposition stage collapses verdict + budget into ONE word, so each guard stays a single predicate.
         expect(stateBlock('judge')).toContain('kk stage run itc-author-verdict');
-        expect(stagesSource).toContain('export function itcAuthorVerdict');
+        expect(stagesSource).toContain('export async function itcAuthorVerdict');
         expect(stagesSource).toContain('.itc/disposition.txt');
         expect(guardOf('judge', 'failed')).toContain('grep -qx fail');
     });
@@ -204,7 +204,9 @@ describe('kk-itc auto mode + revise loop + report (0149)', () => {
         const autorevise = guardOf('judge', 'draft-autorevise');
         expect(autorevise).toContain('grep -qx autorevise');
         // The disposition stage owns the cap: <max_revisions auto rounds means revise, otherwise fail.
-        expect(stagesSource).toContain("readCount('.auto-revise-count') < maxRevisions ? 'autorevise' : 'fail'");
+        expect(stagesSource).toContain(
+            "(await readCount('.auto-revise-count')) < maxRevisions ? 'autorevise' : 'fail'",
+        );
 
         // Task 0302: the child finishes (receipt) instead of writing a parent report;
         // the DAG's own report node owns the run summary.
@@ -215,7 +217,7 @@ describe('kk-itc auto mode + revise loop + report (0149)', () => {
     it('R4/R5 (AC4) — interactive NEEDS_REVISION routes back to draft-revise with the feedback shown, capped at 3', () => {
         expect(guardOf('judge', 'draft-revise')).toContain('grep -qx revise');
         // The disposition stage owns the interactive cap: <3 manual rounds means revise, otherwise fail.
-        expect(stagesSource).toContain("readCount('.revise-count') < 3 ? 'revise' : 'fail'");
+        expect(stagesSource).toContain("(await readCount('.revise-count')) < 3 ? 'revise' : 'fail'");
         expect(guardOf('judge', 'failed')).toContain('grep -qx fail');
 
         // The judge binds the verdict so draft-revise can show the feedback; the prompt carries it.

@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Doc } from '@gobing-ai/kk-core';
 import {
@@ -15,6 +14,8 @@ import {
     type SelectionInput,
     type StoredDoc,
 } from '@gobing-ai/kk-store';
+import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
+import { echo, echoError } from '@gobing-ai/ts-utils';
 import { z } from 'zod';
 
 const WINDOW_UNITS: Record<string, number> = {
@@ -54,8 +55,8 @@ function resolveKkConfigPath(): string {
     return process.env.KK_CONFIG || resolve(process.env.HOME || '~', '.config/kk/config.yaml');
 }
 
-function resolveTopicProfilePath(topic: string, customPath?: string): string {
-    if (customPath && existsSync(customPath)) {
+async function resolveTopicProfilePath(fs: FileSystem, topic: string, customPath?: string): Promise<string> {
+    if (customPath !== undefined && (await fs.exists(customPath))) {
         return customPath;
     }
     const candidates = [
@@ -63,7 +64,7 @@ function resolveTopicProfilePath(topic: string, customPath?: string): string {
         resolve(__dirname, '../../../plugins/kk/decisions/extract', `${topic}.yaml`),
     ];
     for (const p of candidates) {
-        if (existsSync(p)) return p;
+        if (await fs.exists(p)) return p;
     }
     throw new Error(`no profile for topic '${topic}': expected one of ${candidates.join(' or ')}`);
 }
@@ -92,9 +93,12 @@ export const ItcTopicExtractRequestSchema = z.object({
 
 export type ItcTopicExtractRequest = z.input<typeof ItcTopicExtractRequestSchema>;
 
-export async function itcTopicExtract(request: ItcTopicExtractRequest): Promise<{ count: number; poolDigest: string }> {
-    const profilePath = resolveTopicProfilePath(request.topicProfile, request.profilePath);
-    const profileText = readFileSync(profilePath, 'utf-8');
+export async function itcTopicExtract(
+    request: ItcTopicExtractRequest,
+    fs: FileSystem = createNodeFileSystem(),
+): Promise<{ count: number; poolDigest: string }> {
+    const profilePath = await resolveTopicProfilePath(fs, request.topicProfile, request.profilePath);
+    const profileText = await fs.readFile(profilePath);
     const profile: ExtractProfile = parseProfile(profileText);
 
     const query = compileProfile(profile, {
@@ -133,7 +137,7 @@ export async function itcTopicExtract(request: ItcTopicExtractRequest): Promise<
         throw new Error(`no usable topic; collection store pool is empty for profile '${request.topicProfile}'`);
     }
 
-    mkdirSync(request.intakeDir, { recursive: true });
+    await fs.ensureDir(request.intakeDir);
 
     const sortedIds = docs.map((d) => d.id).sort();
     const poolDigest = createHash('sha256').update(JSON.stringify(sortedIds)).digest('hex');
@@ -149,8 +153,8 @@ export async function itcTopicExtract(request: ItcTopicExtractRequest): Promise<
         ...(request.refreshRun?.runId ? { collectRunId: request.refreshRun.runId } : {}),
     };
 
-    writeFileSync(join(request.intakeDir, 'topic-pool.json'), `${JSON.stringify(docs, null, 2)}\n`);
-    writeFileSync(join(request.intakeDir, 'topic-pool-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+    await fs.writeFile(join(request.intakeDir, 'topic-pool.json'), `${JSON.stringify(docs, null, 2)}\n`);
+    await fs.writeFile(join(request.intakeDir, 'topic-pool-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 
     return { count: docs.length, poolDigest };
 }
@@ -186,25 +190,28 @@ export const ItcTopicValidateRequestSchema = z.object({
 
 export type ItcTopicValidateRequest = z.infer<typeof ItcTopicValidateRequestSchema>;
 
-export async function itcTopicValidate(request: ItcTopicValidateRequest): Promise<{ valid: true }> {
+export async function itcTopicValidate(
+    request: ItcTopicValidateRequest,
+    fs: FileSystem = createNodeFileSystem(),
+): Promise<{ valid: true }> {
     const manifestPath = join(request.intakeDir, 'topic-pool-manifest.json');
     const poolPath = join(request.intakeDir, 'topic-pool.json');
     const candidatesPath = join(request.intakeDir, 'topic-candidates.json');
 
-    if (!existsSync(manifestPath) || !existsSync(poolPath)) {
+    if (!(await fs.exists(manifestPath)) || !(await fs.exists(poolPath))) {
         throw new Error(`topic pool artifacts not found in ${request.intakeDir}`);
     }
-    if (!existsSync(candidatesPath)) {
+    if (!(await fs.exists(candidatesPath))) {
         throw new Error(`topic-candidates.json not found in ${request.intakeDir}`);
     }
 
-    const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as {
+    const manifest = JSON.parse(await fs.readFile(manifestPath)) as {
         parentRunId: string;
         poolDigest: string;
         topicProfile: string;
     };
-    const poolDocs = JSON.parse(readFileSync(poolPath, 'utf-8')) as Doc[];
-    const rawCandidates = JSON.parse(readFileSync(candidatesPath, 'utf-8'));
+    const poolDocs = JSON.parse(await fs.readFile(poolPath)) as Doc[];
+    const rawCandidates = JSON.parse(await fs.readFile(candidatesPath));
 
     const parsed = ItcTopicCandidatesArtifactSchema.safeParse(rawCandidates);
     if (!parsed.success) {
@@ -251,7 +258,7 @@ export async function itcTopicValidate(request: ItcTopicValidateRequest): Promis
         }
     }
 
-    writeFileSync(join(request.intakeDir, '.topic-candidates-valid'), `${new Date().toISOString()}\n`);
+    await fs.writeFile(join(request.intakeDir, '.topic-candidates-valid'), `${new Date().toISOString()}\n`);
     return { valid: true };
 }
 
@@ -283,22 +290,23 @@ export interface ChosenSourceArtifact {
 
 export async function itcTopicSelect(
     request: ItcTopicSelectRequest,
+    fs: FileSystem = createNodeFileSystem(),
 ): Promise<{ selectedCandidateId: string; itemIds: string[] }> {
     const manifestPath = join(request.intakeDir, 'topic-pool-manifest.json');
     const poolPath = join(request.intakeDir, 'topic-pool.json');
     const candidatesPath = join(request.intakeDir, 'topic-candidates.json');
 
-    if (!existsSync(manifestPath) || !existsSync(poolPath) || !existsSync(candidatesPath)) {
+    if (!(await fs.exists(manifestPath)) || !(await fs.exists(poolPath)) || !(await fs.exists(candidatesPath))) {
         throw new Error(`intake artifacts missing in ${request.intakeDir}`);
     }
 
-    const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as {
+    const manifest = JSON.parse(await fs.readFile(manifestPath)) as {
         parentRunId: string;
         poolDigest: string;
         topicProfile: string;
     };
-    const poolDocs = JSON.parse(readFileSync(poolPath, 'utf-8')) as Doc[];
-    const candidatesArtifact = JSON.parse(readFileSync(candidatesPath, 'utf-8')) as ItcTopicCandidatesArtifact;
+    const poolDocs = JSON.parse(await fs.readFile(poolPath)) as Doc[];
+    const candidatesArtifact = JSON.parse(await fs.readFile(candidatesPath)) as ItcTopicCandidatesArtifact;
 
     const candidate = candidatesArtifact.candidates.find((c) => c.id === request.selectedCandidateId);
     if (!candidate) {
@@ -311,7 +319,7 @@ export async function itcTopicSelect(
     const selectedDocs = poolDocs.filter((d) => selectedDocSet.has(d.id));
 
     const selectedDocsPath = join(request.intakeDir, 'selected-docs.json');
-    writeFileSync(selectedDocsPath, `${JSON.stringify(selectedDocs, null, 2)}\n`);
+    await fs.writeFile(selectedDocsPath, `${JSON.stringify(selectedDocs, null, 2)}\n`);
 
     const chosenSource: ChosenSourceArtifact = {
         schemaVersion: 1,
@@ -325,7 +333,7 @@ export async function itcTopicSelect(
         selectedDocsPath,
     };
 
-    writeFileSync(join(request.intakeDir, 'chosen-source.json'), `${JSON.stringify(chosenSource, null, 2)}\n`);
+    await fs.writeFile(join(request.intakeDir, 'chosen-source.json'), `${JSON.stringify(chosenSource, null, 2)}\n`);
 
     // Call store select to record topic-scoped selection in SQLite
     const storePath = await resolveStorePath(resolveKkConfigPath(), request.dbPath);
@@ -372,15 +380,16 @@ export type ItcSelectionSettleRequest = z.infer<typeof ItcSelectionSettleRequest
 
 export async function itcSelectionSettle(
     request: ItcSelectionSettleRequest,
+    fs: FileSystem = createNodeFileSystem(),
 ): Promise<{ settled: number | string; action: 'marked_published' | 'released' | 'reconcile_retained' }> {
     const storePath = await resolveStorePath(resolveKkConfigPath(), request.dbPath);
 
     if (request.outcome === 'published') {
         let itemIds: string[] | undefined;
         const chosenSourcePath = join(request.intakeDir, 'chosen-source.json');
-        if (existsSync(chosenSourcePath)) {
+        if (await fs.exists(chosenSourcePath)) {
             try {
-                const chosen = JSON.parse(readFileSync(chosenSourcePath, 'utf-8')) as ChosenSourceArtifact;
+                const chosen = JSON.parse(await fs.readFile(chosenSourcePath)) as ChosenSourceArtifact;
                 if (Array.isArray(chosen.itemIds)) {
                     itemIds = chosen.itemIds;
                 }
@@ -412,8 +421,8 @@ export async function itcSelectionSettle(
             reason: 'unresolved possible remote effects',
             guidance: 'reconcile status manually via kk store mark-published or kk store release',
         };
-        mkdirSync(request.intakeDir, { recursive: true });
-        writeFileSync(
+        await fs.ensureDir(request.intakeDir);
+        await fs.writeFile(
             join(request.intakeDir, '.selection-reconcile.json'),
             `${JSON.stringify(reconcileInfo, null, 2)}\n`,
         );
@@ -434,55 +443,57 @@ export async function itcSelectionSettle(
 // Stage dispatcher router for itc-topic-*
 // ---------------------------------------------------------------------------
 
-export async function runItcTopicStage(stageName: string, args: string[]): Promise<number | undefined> {
+export async function runItcTopicStage(
+    stageName: string,
+    args: string[],
+    fs: FileSystem = createNodeFileSystem(),
+): Promise<number | undefined> {
     const requestIdx = args.indexOf('--request');
     const requestFile = requestIdx !== -1 ? args[requestIdx + 1] : undefined;
-    if (!requestFile) {
-        console.error(`${stageName}: --request <JSON-file> is required`);
+    if (requestFile === undefined || requestFile === '') {
+        echoError(`${stageName}: --request <JSON-file> is required`);
         return 1;
     }
-    if (!existsSync(requestFile)) {
-        console.error(`${stageName}: request file not found: ${requestFile}`);
+    if (!(await fs.exists(requestFile))) {
+        echoError(`${stageName}: request file not found: ${requestFile}`);
         return 1;
     }
 
     let raw: unknown;
     try {
-        raw = JSON.parse(readFileSync(requestFile, 'utf-8'));
+        raw = JSON.parse(await fs.readFile(requestFile));
     } catch (err: unknown) {
-        console.error(
-            `${stageName}: invalid JSON in request file: ${err instanceof Error ? err.message : String(err)}`,
-        );
+        echoError(`${stageName}: invalid JSON in request file: ${err instanceof Error ? err.message : String(err)}`);
         return 1;
     }
 
     try {
         if (stageName === 'itc-topic-extract') {
             const parsed = ItcTopicExtractRequestSchema.parse(raw);
-            const res = await itcTopicExtract(parsed);
-            console.log(JSON.stringify(res));
+            const res = await itcTopicExtract(parsed, fs);
+            echo(JSON.stringify(res));
             return 0;
         }
         if (stageName === 'itc-topic-validate') {
             const parsed = ItcTopicValidateRequestSchema.parse(raw);
-            const res = await itcTopicValidate(parsed);
-            console.log(JSON.stringify(res));
+            const res = await itcTopicValidate(parsed, fs);
+            echo(JSON.stringify(res));
             return 0;
         }
         if (stageName === 'itc-topic-select') {
             const parsed = ItcTopicSelectRequestSchema.parse(raw);
-            const res = await itcTopicSelect(parsed);
-            console.log(JSON.stringify(res));
+            const res = await itcTopicSelect(parsed, fs);
+            echo(JSON.stringify(res));
             return 0;
         }
         if (stageName === 'itc-selection-settle') {
             const parsed = ItcSelectionSettleRequestSchema.parse(raw);
-            const res = await itcSelectionSettle(parsed);
-            console.log(JSON.stringify(res));
+            const res = await itcSelectionSettle(parsed, fs);
+            echo(JSON.stringify(res));
             return 0;
         }
     } catch (err: unknown) {
-        console.error(`${stageName}: ${err instanceof Error ? err.message : String(err)}`);
+        echoError(`${stageName}: ${err instanceof Error ? err.message : String(err)}`);
         return 1;
     }
 

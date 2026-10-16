@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
+import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 
 /**
  * ITC configuration, workspace composition and the frozen effective-options snapshot (0303 / G21).
@@ -211,11 +210,14 @@ export function resolveItcConfigPath(env: Record<string, string | undefined>, ho
  * A missing file is an empty block (compiled defaults). A malformed file, an unknown declared key,
  * or a wrong-typed value throws {@link ItcConfigInvalidError} naming the key — never the value.
  */
-export function readItcConfigBlock(configPath: string): ItcConfigBlock {
-    if (!existsSync(configPath)) return {};
+export async function readItcConfigBlock(
+    configPath: string,
+    fs: FileSystem = createNodeFileSystem(),
+): Promise<ItcConfigBlock> {
+    if (!(await fs.exists(configPath))) return {};
     let text: string;
     try {
-        text = readFileSync(configPath, 'utf-8');
+        text = await fs.readFile(configPath);
     } catch {
         throw new ItcConfigInvalidError(`config file is unreadable: ${configPath}`);
     }
@@ -350,15 +352,20 @@ function validateItcBlock(raw: Record<string, unknown>): ItcConfigBlock {
 }
 
 /** `works_dir` / `workspaces.dir` from the top-level config, resolved against the config's directory. */
-function readWorksRoot(configPath: string, env: Record<string, string | undefined>, homeDir: string): string {
+async function readWorksRoot(
+    configPath: string,
+    env: Record<string, string | undefined>,
+    homeDir: string,
+    fs: FileSystem,
+): Promise<string> {
     const fromEnv = env.KK_WORKS_DIR;
     if (fromEnv !== undefined && fromEnv.trim() !== '') {
         const expanded = expandHome(fromEnv.trim(), homeDir);
         return isAbsolute(expanded) ? expanded : resolve(process.cwd(), expanded);
     }
-    if (!existsSync(configPath)) return join(homeDir, '.config', 'kk', 'works');
+    if (!(await fs.exists(configPath))) return join(homeDir, '.config', 'kk', 'works');
     try {
-        const parsed = Bun.YAML.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown> | null;
+        const parsed = Bun.YAML.parse(await fs.readFile(configPath)) as Record<string, unknown> | null;
         const raw = parsed?.works_dir;
         if (typeof raw === 'string' && raw.trim() !== '') {
             const expanded = expandHome(raw.trim(), homeDir);
@@ -419,15 +426,19 @@ function pick<T>(...values: (T | undefined)[]): T | undefined {
  * `workflows.kk-itc` > global `defaults` > compiled default. `status` is `intake` when the source is
  * a collected topic profile (the selected topic is not known yet) and `prepared` otherwise.
  */
-export async function resolveItcOptions(input: ItcLaunchInput, context: ItcContext = {}): Promise<ItcEffectiveOptions> {
+export async function resolveItcOptions(
+    input: ItcLaunchInput,
+    context: ItcContext = {},
+    fs: FileSystem = createNodeFileSystem(),
+): Promise<ItcEffectiveOptions> {
     const env = context.env ?? process.env;
     const homeDir = context.homeDir ?? env.HOME ?? '~';
     const cwd = context.cwd ?? process.cwd();
     const now = context.now ?? ((): Date => new Date());
 
     const configPath = resolveItcConfigPath(env, homeDir);
-    const block = readItcConfigBlock(configPath);
-    const worksRoot = readWorksRoot(configPath, env, homeDir);
+    const block = await readItcConfigBlock(configPath, fs);
+    const worksRoot = await readWorksRoot(configPath, env, homeDir, fs);
 
     const source = resolveSource(input);
 
@@ -605,8 +616,11 @@ export function resolveItcWorkspace(
 }
 
 /** Write the frozen options snapshot; the caller owns the directory. */
-export async function writeItcOptionsSnapshot(workDir: string, options: ItcEffectiveOptions): Promise<string> {
-    const fs = createNodeFileSystem();
+export async function writeItcOptionsSnapshot(
+    workDir: string,
+    options: ItcEffectiveOptions,
+    fs: FileSystem = createNodeFileSystem(),
+): Promise<string> {
     const path = join(workDir, 'itc-options.json');
     await fs.ensureDir(workDir);
     await fs.writeFile(path, `${JSON.stringify(options, null, 2)}\n`);
@@ -620,8 +634,8 @@ export async function writeItcOptionsSnapshot(workDir: string, options: ItcEffec
 export async function verifyItcOptionsSnapshot(
     workDir: string,
     options: ItcEffectiveOptions,
+    fs: FileSystem = createNodeFileSystem(),
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const fs = createNodeFileSystem();
     const path = join(workDir, 'itc-options.json');
     if (!(await fs.exists(path))) return { ok: true };
     let saved: ItcEffectiveOptions;

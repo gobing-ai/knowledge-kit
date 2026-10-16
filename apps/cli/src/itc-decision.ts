@@ -1,6 +1,10 @@
-import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import {
+    createNodeFileSystem,
+    type FileSystem,
+    NodeProcessExecutor,
+    type ProcessExecutor,
+} from '@gobing-ai/ts-runtime';
 import { z } from 'zod';
 
 export const ItcDecisionCandidateSchema = z
@@ -54,10 +58,10 @@ interface CompactEvidence {
 /**
  * Compact evidence file content to <=1800 UTF-16 units per file with explicit length flags.
  */
-function compactEvidenceFile(filePath: string): CompactEvidence | undefined {
-    if (!existsSync(filePath)) return undefined;
+async function compactEvidenceFile(fs: FileSystem, filePath: string): Promise<CompactEvidence | undefined> {
+    if (!(await fs.exists(filePath))) return undefined;
     try {
-        const text = readFileSync(filePath, 'utf-8');
+        const text = await fs.readFile(filePath);
         const originalLength = text.length;
         const truncated = originalLength > 1800;
         const content = text.slice(0, 1800);
@@ -77,7 +81,11 @@ function compactEvidenceFile(filePath: string): CompactEvidence | undefined {
  * Native substantive handler for itc-decision.
  * Evaluates semantic decisions against candidates and writes the served outcome.
  */
-export async function itcDecision(request: ItcDecisionRequest): Promise<ItcDecisionResult> {
+export async function itcDecision(
+    request: ItcDecisionRequest,
+    fs: FileSystem = createNodeFileSystem(),
+    executor: ProcessExecutor = new NodeProcessExecutor(),
+): Promise<ItcDecisionResult> {
     const fallback = request.decisionId === 'kk-itc-preset-choice' ? 'none' : 'defer';
     const validCandidateIds = new Set(request.candidates.map((c) => c.id));
 
@@ -93,7 +101,7 @@ export async function itcDecision(request: ItcDecisionRequest): Promise<ItcDecis
         allowedValues.add('defer');
     }
 
-    mkdirSync(dirname(request.outPath), { recursive: true });
+    await fs.ensureDir(dirname(request.outPath));
 
     // Handle explicit operator choice bypass
     if (request.explicitChoice !== undefined) {
@@ -113,7 +121,7 @@ export async function itcDecision(request: ItcDecisionRequest): Promise<ItcDecis
             maker: 'operator',
             selected: selectedValue !== fallback,
         };
-        writeFileSync(request.outPath, `${JSON.stringify(result, null, 2)}\n`);
+        await fs.writeFile(request.outPath, `${JSON.stringify(result, null, 2)}\n`);
         return result;
     }
 
@@ -122,10 +130,10 @@ export async function itcDecision(request: ItcDecisionRequest): Promise<ItcDecis
     const evidenceArgs: string[] = [];
     const evidenceFiles = request.evidenceFiles ?? [];
     for (const [index, ef] of evidenceFiles.entries()) {
-        const compacted = compactEvidenceFile(ef);
+        const compacted = await compactEvidenceFile(fs, ef);
         if (compacted) {
             const tmpPath = `${request.outPath}.evidence-${index}.json`;
-            writeFileSync(tmpPath, JSON.stringify(compacted));
+            await fs.writeFile(tmpPath, JSON.stringify(compacted));
             tmpEvidenceFiles.push(tmpPath);
             evidenceArgs.push('--evidence', tmpPath);
         }
@@ -157,15 +165,18 @@ export async function itcDecision(request: ItcDecisionRequest): Promise<ItcDecis
     let resultConfidence: number | null = null;
 
     try {
-        const res = spawnSync(spurBin, argv, {
-            encoding: 'utf-8',
-            env: process.env,
-            timeout: 30000,
+        const res = await executor.run({
+            command: spurBin,
+            args: argv,
+            env: process.env as Record<string, string>,
+            timeout: 30_000,
         });
+        const stdout = typeof res.stdout === 'string' ? res.stdout : '';
+        const stderr = typeof res.stderr === 'string' ? res.stderr : '';
 
-        if (res.status === 0 && res.stdout) {
+        if (res.exitCode === 0 && stdout !== '') {
             try {
-                const parsed = JSON.parse(res.stdout) as {
+                const parsed = JSON.parse(stdout) as {
                     value?: unknown;
                     source?: unknown;
                     reason?: unknown;
@@ -189,14 +200,14 @@ export async function itcDecision(request: ItcDecisionRequest): Promise<ItcDecis
                 resultReason = `failed to parse decision json: ${jsonErr instanceof Error ? jsonErr.message : String(jsonErr)}`;
             }
         } else {
-            resultReason = `spur decision run exited with code ${res.status ?? 1}: ${res.stderr?.trim() || 'unknown error'}`;
+            resultReason = `spur decision run exited with code ${res.exitCode ?? 1}: ${stderr.trim() || 'unknown error'}`;
         }
     } catch (spawnErr: unknown) {
         resultReason = `failed to spawn spur decision run: ${spawnErr instanceof Error ? spawnErr.message : String(spawnErr)}`;
     } finally {
         for (const tf of tmpEvidenceFiles) {
             try {
-                rmSync(tf, { force: true });
+                await fs.deleteFile(tf);
             } catch {
                 // ignore cleanup errors
             }
@@ -216,6 +227,6 @@ export async function itcDecision(request: ItcDecisionRequest): Promise<ItcDecis
         ...(resultConfidence !== null ? { confidence: resultConfidence } : {}),
     };
 
-    writeFileSync(request.outPath, `${JSON.stringify(decisionResult, null, 2)}\n`);
+    await fs.writeFile(request.outPath, `${JSON.stringify(decisionResult, null, 2)}\n`);
     return decisionResult;
 }

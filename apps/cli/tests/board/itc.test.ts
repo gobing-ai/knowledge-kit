@@ -186,7 +186,7 @@ const getResults = async (reader: string): Promise<ResultsJson> =>
     (await (await fetch(resultsUrl(reader))).json()) as ResultsJson;
 
 describe('judge confidence validation', () => {
-    it('accepts only HIGH/MEDIUM/LOW and reports anything else as unknown', () => {
+    it('accepts only HIGH/MEDIUM/LOW and reports anything else as unknown', async () => {
         expect(asJudgeConfidence('HIGH')).toBe('HIGH');
         expect(asJudgeConfidence('low')).toBeNull();
         expect(asJudgeConfidence('CERTAIN')).toBeNull();
@@ -204,7 +204,7 @@ describe('judge confidence validation', () => {
 });
 
 describe('revisionUsage', () => {
-    it('counts recorded revise/auto-revise visits and never invents a zero without progress', () => {
+    it('counts recorded revise/auto-revise visits and never invents a zero without progress', async () => {
         const progress = {
             states: [
                 { state: 'draft-revise', visit: 1, status: 'passed', actions: [] },
@@ -230,7 +230,7 @@ describe('revisionUsage', () => {
 });
 
 describe('boundedPreview', () => {
-    it('collapses whitespace, bounds length and reports truncation with an ellipsis', () => {
+    it('collapses whitespace, bounds length and reports truncation with an ellipsis', async () => {
         expect(boundedPreview('a   b\n c')).toBe('a b c');
         expect(boundedPreview('')).toBeNull();
         expect(boundedPreview(null)).toBeNull();
@@ -240,7 +240,7 @@ describe('boundedPreview', () => {
 });
 
 describe('itcResultSpecs', () => {
-    it('derives fan-out and browser result specs from the run plan (never a client path)', () => {
+    it('derives fan-out and browser result specs from the run plan (never a client path)', async () => {
         const plan = JSON.stringify({
             fanout: [{ variant: 'en-article', targets: ['surfdash-pub', 'medium-pub'] }],
             browser: [{ target: 'substack-pub' }],
@@ -298,7 +298,7 @@ describe('projectItcResults (pure)', () => {
         }),
     );
 
-    it('reads both publisher shapes into per-target outcomes', () => {
+    it('reads both publisher shapes into per-target outcomes', async () => {
         const results = projectItcResults({
             record,
             detail,
@@ -329,7 +329,7 @@ describe('projectItcResults (pure)', () => {
         expect(summary.draft).toMatchObject({ availability: 'available' });
     });
 
-    it('keeps an unrecorded producer and an unknown report explicit, never zero', () => {
+    it('keeps an unrecorded producer and an unknown report explicit, never zero', async () => {
         const results = projectItcResults({
             record,
             detail,
@@ -545,7 +545,7 @@ describe('kk-itc prepare + Board capture', () => {
 describe('0303 — ITC child evidence and revision counts across the DAG refactor', () => {
     const SETTINGS = { max_revisions: '2' };
 
-    it('authorizes only a child that binds this parent run, workspace and definition digest', () => {
+    it('authorizes only a child that binds this parent run, workspace and definition digest', async () => {
         const ok = authorizeItcChild(
             { schemaVersion: 1, parentRunId: 'run-1', childRunId: 'run-1-author', definitionDigest: 'sha256:abc' },
             { parentRunId: 'run-1', workDir: '/w', definitionDigest: 'sha256:abc' },
@@ -591,7 +591,7 @@ describe('0303 — ITC child evidence and revision counts across the DAG refacto
         ).toContain('missing');
     });
 
-    it('reads child revision visits when the binding verified and nulls — never zero — when it did not', () => {
+    it('reads child revision visits when the binding verified and nulls — never zero — when it did not', async () => {
         const childProgress = {
             states: [{ state: 'draft-revise' }, { state: 'draft-autorevise' }, { state: 'draft-autorevise' }],
         };
@@ -611,7 +611,7 @@ describe('0303 — ITC child evidence and revision counts across the DAG refacto
         expect(none.budget).toBe(2);
     });
 
-    it('keeps a historical single-FSM capture readable from its own progress projection', () => {
+    it('keeps a historical single-FSM capture readable from its own progress projection', async () => {
         const historical = { states: [{ state: 'draft-revise' }] };
         const usage = revisionUsageFromChild(
             historical,

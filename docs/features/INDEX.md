@@ -74,7 +74,7 @@
         ├── [active] **G13**: Segmented episode speech for daily voice2 ([G13_segmented-episode-speech-for-daily-voice2.md](./G13_segmented-episode-speech-for-daily-voice2.md))
         └── [done] **G14**: VoxCPM voice driver for both daily AI voice workflows ([G14_voxcpm-voice-driver-for-both-daily-ai-voice-workflows.md](./G14_voxcpm-voice-driver-for-both-daily-ai-voice-workflows.md))
     ├── [done] **G2**: kk-itc ([G2_kk-itc.md](./G2_kk-itc.md))
-        └── [backlog] **G21**: kk-itc refactor: collected topics, plugin-owned publishing and reliable recovery ([G21_kk-itc-refactor-collected-topics-plugin-owned-publishing-and-reliable-recovery.md](./G21_kk-itc-refactor-collected-topics-plugin-owned-publishing-and-reliable-recovery.md))
+        └── [active] **G21**: kk-itc refactor: collected topics, plugin-owned publishing and reliable recovery ([G21_kk-itc-refactor-collected-topics-plugin-owned-publishing-and-reliable-recovery.md](./G21_kk-itc-refactor-collected-topics-plugin-owned-publishing-and-reliable-recovery.md))
     ├── [backlog] **G3**: kk-collect ([G3_kk-collect.md](./G3_kk-collect.md))
         ├── [done] **G31**: kk-collect: SQLite store, 4h collection, decision labels, topic extraction ([G31_kk-collect-kk-daily-ai-voice2-sqlite-store-decision-labels-dag-daily-workflow-run-ledger.md](./G31_kk-collect-kk-daily-ai-voice2-sqlite-store-decision-labels-dag-daily-workflow-run-ledger.md))
         └── [done] **G32**: kk-collect store v2: backtestable labels, item facts, story dedup, topic-scoped selections ([G32_kk-collect-store-v2-backtestable-labels-item-facts-story-dedup-topic-scoped-selections.md](./G32_kk-collect-store-v2-backtestable-labels-item-facts-story-dedup-topic-scoped-selections.md))

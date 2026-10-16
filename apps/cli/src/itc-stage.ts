@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { discoverAllPlugins } from '@gobing-ai/kk-core';
+import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
+import { echo, echoError } from '@gobing-ai/ts-utils';
 import {
     type ItcEffectiveOptions,
     type ItcLaunchInput,
@@ -26,52 +27,55 @@ import { runItcTopicStage } from './itc-topic';
  * Handle native ITC workflow stages asynchronously.
  * Returns the process exit code for an intercepted ITC stage, or `undefined` for a non-ITC stage.
  */
-export async function runItcStage(args: string[]): Promise<number | undefined> {
+export async function runItcStage(
+    args: string[],
+    fs: FileSystem = createNodeFileSystem(),
+): Promise<number | undefined> {
     if (args.length === 0) return undefined;
     const stageName = args[0];
 
     if (stageName === 'itc-publish-plan') {
-        return runItcPublishPlan(args.slice(1));
+        return runItcPublishPlan(args.slice(1), fs);
     }
 
     if (stageName === 'itc-materialize-plan') {
-        return itcMaterializePlan(args.slice(1));
+        return itcMaterializePlan(args.slice(1), fs);
     }
 
     if (stageName === 'itc-check-targets') {
-        return itcCheckTargets(args.slice(1));
+        return itcCheckTargets(args.slice(1), fs);
     }
 
     if (stageName === 'itc-send-targets') {
-        return itcSendTargets(args.slice(1));
+        return itcSendTargets(args.slice(1), fs);
     }
 
     if (stageName === 'itc-reconcile-receipts') {
-        return itcReconcileReceipts(args.slice(1));
+        return itcReconcileReceipts(args.slice(1), fs);
     }
 
     if (stageName === 'itc-export-seo') {
-        return itcExportSeo(args.slice(1));
+        return itcExportSeo(args.slice(1), fs);
     }
 
     if (stageName === 'itc-report-summary') {
-        return itcReportSummary(args.slice(1));
+        return itcReportSummary(args.slice(1), fs);
     }
 
     if (stageName === 'itc-prepare') {
-        return runItcPrepare(args.slice(1));
+        return runItcPrepare(args.slice(1), fs);
     }
 
     if (stageName === 'itc-author-verdict') {
-        return itcAuthorVerdict(args.slice(1));
+        return itcAuthorVerdict(args.slice(1), fs);
     }
 
     if (stageName === 'itc-decision') {
-        return runItcDecision(args.slice(1));
+        return runItcDecision(args.slice(1), fs);
     }
 
     if (stageName === 'itc-author-complete') {
-        return runItcAuthorComplete(args.slice(1));
+        return runItcAuthorComplete(args.slice(1), fs);
     }
 
     if (
@@ -80,32 +84,32 @@ export async function runItcStage(args: string[]): Promise<number | undefined> {
         stageName === 'itc-topic-select' ||
         stageName === 'itc-selection-settle'
     ) {
-        return runItcTopicStage(stageName, args.slice(1));
+        return runItcTopicStage(stageName, args.slice(1), fs);
     }
 
     return undefined;
 }
 
-function runItcPublishPlan(args: string[]): number {
+async function runItcPublishPlan(args: string[], fs: FileSystem): Promise<number> {
     let request: ItcPlanRequest;
 
     const requestIdx = args.indexOf('--request');
     if (requestIdx !== -1) {
         const filePath = args[requestIdx + 1];
-        if (!filePath || !existsSync(filePath)) {
-            console.error(`itc-publish-plan: request file not found: ${filePath ?? ''}`);
+        if (filePath === undefined || filePath === '' || !(await fs.exists(filePath))) {
+            echoError(`itc-publish-plan: request file not found: ${filePath ?? ''}`);
             return 1;
         }
         try {
-            const raw = JSON.parse(readFileSync(filePath, 'utf-8'));
+            const raw = JSON.parse(await fs.readFile(filePath));
             const parsed = ItcPlanRequestSchema.safeParse(raw);
             if (!parsed.success) {
-                console.error(`itc-publish-plan: invalid request schema: ${parsed.error.message}`);
+                echoError(`itc-publish-plan: invalid request schema: ${parsed.error.message}`);
                 return 1;
             }
             request = parsed.data;
         } catch (err: unknown) {
-            console.error(
+            echoError(
                 `itc-publish-plan: failed to read request file: ${err instanceof Error ? err.message : String(err)}`,
             );
             return 1;
@@ -113,7 +117,7 @@ function runItcPublishPlan(args: string[]): number {
     } else {
         const [workDir = '', targetsArg = '', sourceLocale = '', liveArg = ''] = args;
         if (!workDir || !targetsArg || !sourceLocale) {
-            console.error('usage: itc-publish-plan <work_dir> <targets> <source_locale> <publish_live>');
+            echoError('usage: itc-publish-plan <work_dir> <targets> <source_locale> <publish_live>');
             return 1;
         }
         const live = liveArg === 'true';
@@ -142,66 +146,66 @@ function runItcPublishPlan(args: string[]): number {
 
     try {
         const { plugins } = discoverAllPlugins();
-        const plan = buildItcPublishPlan(request, plugins);
+        const plan = await buildItcPublishPlan(request, plugins, fs);
         const outDir = join(request.workDir, '4-publish');
-        mkdirSync(outDir, { recursive: true });
-        writeFileSync(join(outDir, 'publish-plan.json'), `${JSON.stringify(plan, null, 4)}\n`);
+        await fs.ensureDir(outDir);
+        await fs.writeFile(join(outDir, 'publish-plan.json'), `${JSON.stringify(plan, null, 4)}\n`);
         return 0;
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error(msg);
+        echoError(msg);
         return 1;
     }
 }
 
-async function runItcDecision(args: string[]): Promise<number> {
+async function runItcDecision(args: string[], fs: FileSystem): Promise<number> {
     const requestIdx = args.indexOf('--request');
     const requestFile = requestIdx !== -1 ? args[requestIdx + 1] : undefined;
     if (!requestFile) {
-        console.error('itc-decision: --request <JSON-file> is required');
+        echoError('itc-decision: --request <JSON-file> is required');
         return 1;
     }
-    if (!existsSync(requestFile)) {
-        console.error(`itc-decision: request file not found: ${requestFile}`);
+    if (!(await fs.exists(requestFile))) {
+        echoError(`itc-decision: request file not found: ${requestFile}`);
         return 1;
     }
     try {
-        const raw = JSON.parse(readFileSync(requestFile, 'utf-8'));
+        const raw = JSON.parse(await fs.readFile(requestFile));
         const parsed = ItcDecisionRequestSchema.parse(raw);
-        await itcDecision(parsed);
+        await itcDecision(parsed, fs);
         return 0;
     } catch (err: unknown) {
-        console.error(`itc-decision: ${err instanceof Error ? err.message : String(err)}`);
+        echoError(`itc-decision: ${err instanceof Error ? err.message : String(err)}`);
         return 1;
     }
 }
 
-function runItcAuthorComplete(args: string[]): number {
+async function runItcAuthorComplete(args: string[], fs: FileSystem): Promise<number> {
     const [workDir = '', parentRunId = '', reviewModeArg = ''] = args;
     if (!workDir || !parentRunId) {
-        console.error('usage: itc-author-complete <work_dir> <parentRunId> [reviewMode]');
+        echoError('usage: itc-author-complete <work_dir> <parentRunId> [reviewMode]');
         return 1;
     }
     const draftPath = join(workDir, '3-draft-draft-article.md');
-    if (!existsSync(draftPath)) {
-        console.error(`itc-author-complete: draft not found: ${draftPath}`);
+    if (!(await fs.exists(draftPath))) {
+        echoError(`itc-author-complete: draft not found: ${draftPath}`);
         return 1;
     }
-    const draftText = readFileSync(draftPath, 'utf-8');
+    const draftText = await fs.readFile(draftPath);
     if (draftText.trim().length === 0) {
-        console.error(`itc-author-complete: empty draft in ${draftPath}`);
+        echoError(`itc-author-complete: empty draft in ${draftPath}`);
         return 1;
     }
     const draftDigest = createHash('sha256').update(draftText).digest('hex');
 
     const outlinePath = join(workDir, '2-outline/outline-approved.md');
-    if (!existsSync(outlinePath)) {
-        console.error(`itc-author-complete: approved outline not found: ${outlinePath}`);
+    if (!(await fs.exists(outlinePath))) {
+        echoError(`itc-author-complete: approved outline not found: ${outlinePath}`);
         return 1;
     }
-    const outlineText = readFileSync(outlinePath, 'utf-8');
+    const outlineText = await fs.readFile(outlinePath);
     if (outlineText.trim().length === 0) {
-        console.error(`itc-author-complete: empty outline in ${outlinePath}`);
+        echoError(`itc-author-complete: empty outline in ${outlinePath}`);
         return 1;
     }
     const outlineDigest = createHash('sha256').update(outlineText).digest('hex');
@@ -210,25 +214,23 @@ function runItcAuthorComplete(args: string[]): number {
     let judgeDigest: string | null = null;
     let reviewMode: 'manual' | 'judged' = reviewModeArg === 'manual' ? 'manual' : 'judged';
 
-    if (existsSync(verdictPath)) {
+    if (await fs.exists(verdictPath)) {
         try {
-            const verdictRaw = readFileSync(verdictPath, 'utf-8');
+            const verdictRaw = await fs.readFile(verdictPath);
             const verdictData = JSON.parse(verdictRaw) as { verdict?: unknown; confidence?: unknown };
             if (verdictData.verdict !== 'PASS') {
-                console.error(`itc-author-complete: judge verdict is not PASS: ${String(verdictData.verdict)}`);
+                echoError(`itc-author-complete: judge verdict is not PASS: ${String(verdictData.verdict)}`);
                 return 1;
             }
             const conf = String(verdictData.confidence ?? '');
             if (!['HIGH', 'MEDIUM', 'LOW'].includes(conf)) {
-                console.error(`itc-author-complete: judge confidence must be HIGH, MEDIUM, or LOW, got '${conf}'`);
+                echoError(`itc-author-complete: judge confidence must be HIGH, MEDIUM, or LOW, got '${conf}'`);
                 return 1;
             }
             judgeDigest = createHash('sha256').update(verdictRaw).digest('hex');
             reviewMode = 'judged';
         } catch (err: unknown) {
-            console.error(
-                `itc-author-complete: invalid verdict JSON: ${err instanceof Error ? err.message : String(err)}`,
-            );
+            echoError(`itc-author-complete: invalid verdict JSON: ${err instanceof Error ? err.message : String(err)}`);
             return 1;
         }
     } else {
@@ -237,9 +239,9 @@ function runItcAuthorComplete(args: string[]): number {
 
     const runPath = join(workDir, '.itc/author-run.json');
     let childRunId = `${parentRunId}-author`;
-    if (existsSync(runPath)) {
+    if (await fs.exists(runPath)) {
         try {
-            const runMeta = JSON.parse(readFileSync(runPath, 'utf-8')) as { childRunId?: string };
+            const runMeta = JSON.parse(await fs.readFile(runPath)) as { childRunId?: string };
             if (runMeta.childRunId) childRunId = runMeta.childRunId;
         } catch {
             // keep default
@@ -258,8 +260,8 @@ function runItcAuthorComplete(args: string[]): number {
     };
 
     const itcDir = join(workDir, '.itc');
-    mkdirSync(itcDir, { recursive: true });
-    writeFileSync(join(itcDir, 'author-complete.json'), `${JSON.stringify(completeReceipt, null, 2)}\n`);
+    await fs.ensureDir(itcDir);
+    await fs.writeFile(join(itcDir, 'author-complete.json'), `${JSON.stringify(completeReceipt, null, 2)}\n`);
     return 0;
 }
 
@@ -268,59 +270,61 @@ function runItcAuthorComplete(args: string[]): number {
  * workspace and persist `itc-options.json`. Validation happens BEFORE any mkdir, so an invalid
  * config or source stops without writing a workspace.
  */
-async function runItcPrepare(args: string[]): Promise<number> {
+async function runItcPrepare(args: string[], fs: FileSystem): Promise<number> {
     const requestIdx = args.indexOf('--request');
     const requestFile = requestIdx !== -1 ? args[requestIdx + 1] : undefined;
     if (requestFile === undefined || requestFile === '') {
-        console.error('itc-prepare: --request <launch.json> is required');
+        echoError('itc-prepare: --request <launch.json> is required');
         return 1;
     }
-    if (!existsSync(requestFile)) {
-        console.error(`itc-prepare: request file not found: ${requestFile}`);
+    if (!(await fs.exists(requestFile))) {
+        echoError(`itc-prepare: request file not found: ${requestFile}`);
         return 1;
     }
     let launch: ItcLaunchInput;
     try {
-        launch = JSON.parse(readFileSync(requestFile, 'utf-8')) as ItcLaunchInput;
+        launch = JSON.parse(await fs.readFile(requestFile)) as ItcLaunchInput;
     } catch (err: unknown) {
-        console.error(
-            `itc-prepare: invalid JSON in ${requestFile}: ${err instanceof Error ? err.message : String(err)}`,
-        );
+        echoError(`itc-prepare: invalid JSON in ${requestFile}: ${err instanceof Error ? err.message : String(err)}`);
         return 1;
     }
 
     let options: ItcEffectiveOptions;
     try {
-        options = await resolveItcOptions(launch, {
-            ...(process.env.KK_CONFIG ? { env: process.env } : {}),
-        });
+        options = await resolveItcOptions(
+            launch,
+            {
+                ...(process.env.KK_CONFIG ? { env: process.env } : {}),
+            },
+            fs,
+        );
     } catch (err: unknown) {
         // R4: the key/file error is reported and NOTHING is written.
-        console.error(`itc-prepare: ${err instanceof Error ? err.message : String(err)}`);
+        echoError(`itc-prepare: ${err instanceof Error ? err.message : String(err)}`);
         return 1;
     }
 
     const workDir = options.workDir;
     if (workDir === null) {
         // Collected-topic intake: no workspace exists yet; print the intake snapshot only.
-        console.log(JSON.stringify(options));
+        echo(JSON.stringify(options));
         return 0;
     }
 
-    const reuseCheck = await verifyItcOptionsSnapshot(workDir, options);
+    const reuseCheck = await verifyItcOptionsSnapshot(workDir, options, fs);
     if (reuseCheck.ok === false && !options.force) {
-        console.error(`itc-prepare: ${reuseCheck.reason}`);
+        echoError(`itc-prepare: ${reuseCheck.reason}`);
         return 1;
     }
 
     try {
-        await writeItcOptionsSnapshot(workDir, options);
+        await writeItcOptionsSnapshot(workDir, options, fs);
     } catch (err: unknown) {
-        console.error(
+        echoError(
             `itc-prepare: cannot write the workspace at ${workDir}: ${err instanceof Error ? err.message : String(err)}`,
         );
         return 1;
     }
-    console.log(JSON.stringify(options));
+    echo(JSON.stringify(options));
     return 0;
 }

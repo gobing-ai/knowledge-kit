@@ -61,8 +61,8 @@ describe('0303 R4 — invalid ITC configuration stops before mutation', () => {
     it('malformed YAML fails naming the file and writes no workspace', async () => {
         await withTempDir(async (home) => {
             const path = writeConfig(home, 'workflows:\n  kk-itc: {unclosed\n');
-            expect(() => readItcConfigBlock(path)).toThrow(ItcConfigInvalidError);
-            expect(() => readItcConfigBlock(path)).toThrow(/not valid YAML/);
+            await expect(readItcConfigBlock(path)).rejects.toThrow(ItcConfigInvalidError);
+            await expect(readItcConfigBlock(path)).rejects.toThrow(/not valid YAML/);
             await expect(resolveItcOptions({ topic: 'x' }, ctx(home))).rejects.toThrow(ItcConfigInvalidError);
             expect(() => readFileSync(join(home, 'works', 'kk-itc', 'x', 'itc-options.json'), 'utf-8')).toThrow();
         });
@@ -72,7 +72,7 @@ describe('0303 R4 — invalid ITC configuration stops before mutation', () => {
         await withTempDir(async (home) => {
             writeConfig(home, 'workflows:\n  kk-itc:\n    secret_preset: my-token-abcdef\n');
             try {
-                readItcConfigBlock(join(home, '.config/kk/config.yaml'));
+                await readItcConfigBlock(join(home, '.config/kk/config.yaml'));
                 throw new Error('expected a throw');
             } catch (error) {
                 expect(error).toBeInstanceOf(ItcConfigInvalidError);
@@ -87,13 +87,13 @@ describe('0303 R4 — invalid ITC configuration stops before mutation', () => {
     it('a wrong-typed declared value fails naming the key', async () => {
         await withTempDir(async (home) => {
             const path = writeConfig(home, 'workflows:\n  kk-itc:\n    max_revisions: "many"\n');
-            expect(() => readItcConfigBlock(path)).toThrow(/max_revisions/);
+            await expect(readItcConfigBlock(path)).rejects.toThrow(/max_revisions/);
             writeFileSync(path, 'workflows:\n  kk-itc:\n    research: "yes"\n');
-            expect(() => readItcConfigBlock(path)).toThrow(/'workflows\.kk-itc\.research' must be a boolean/);
+            await expect(readItcConfigBlock(path)).rejects.toThrow(/'workflows\.kk-itc\.research' must be a boolean/);
             writeFileSync(path, 'workflows:\n  kk-itc:\n    source_locale: fr\n');
-            expect(() => readItcConfigBlock(path)).toThrow(/source_locale/);
+            await expect(readItcConfigBlock(path)).rejects.toThrow(/source_locale/);
             writeFileSync(path, 'workflows:\n  kk-itc:\n    seo:\n      mode: live\n');
-            expect(() => readItcConfigBlock(path)).toThrow(/seo\.mode/);
+            await expect(readItcConfigBlock(path)).rejects.toThrow(/seo\.mode/);
         });
     });
 
@@ -103,7 +103,7 @@ describe('0303 R4 — invalid ITC configuration stops before mutation', () => {
                 home,
                 'works_dir: .works\nworkflows:\n  kk-itc:\n    judge: true\n  kk-daily-ai-voice2:\n    window: 24h\nstore:\n  db_path: /tmp/x.db\n',
             );
-            const block = readItcConfigBlock(path);
+            const block = await readItcConfigBlock(path);
             expect(block.judge).toBe(true);
         });
     });
@@ -172,7 +172,7 @@ describe('0303 R3 — ITC workspace follows the configured topic and optional da
         });
     });
 
-    it('slugifies non-English topic names, rejects separators, and keeps ASCII slugs stable', () => {
+    it('slugifies non-English topic names, rejects separators, and keeps ASCII slugs stable', async () => {
         expect(slugifyTopicName('Reliable Workflows')).toBe('reliable-workflows');
         expect(slugifyTopicName('可靠的工作流')).toBe('可靠的工作流');
         expect(slugifyTopicName('A  B---C')).toBe('a-b-c');
@@ -288,7 +288,7 @@ describe('0303 R5 — the frozen snapshot and resume', () => {
         });
     });
 
-    it('resolveItcConfigPath honours KK_CONFIG and otherwise uses ~/.config/kk/config.yaml', () => {
+    it('resolveItcConfigPath honours KK_CONFIG and otherwise uses ~/.config/kk/config.yaml', async () => {
         expect(resolveItcConfigPath({}, '/home/u')).toBe(join('/home/u', '.config', 'kk', 'config.yaml'));
         expect(resolveItcConfigPath({ KK_CONFIG: '~/alt.yaml' }, '/home/u')).toBe(join('/home/u', 'alt.yaml'));
         expect(resolveItcConfigPath({ KK_CONFIG: '/abs/alt.yaml' }, '/home/u')).toBe('/abs/alt.yaml');
