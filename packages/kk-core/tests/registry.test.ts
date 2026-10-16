@@ -215,6 +215,7 @@ describe('discoverPlugins', () => {
         expect(res.diagnostics).toHaveLength(0);
         expect(res.plugins.map((p) => p.name).sort()).toEqual([
             'aihot-ingest',
+            'bilibili-pub',
             'cnblogs-pub',
             'content-gen',
             'core-facts-gen',
@@ -591,6 +592,7 @@ describe('discoverAllPlugins / resolvePluginRoots (ADR-012, feature B7)', () => 
             expect(res.diagnostics).toHaveLength(0);
             expect(res.plugins.map((p) => p.name).sort()).toEqual([
                 'aihot-ingest',
+                'bilibili-pub',
                 'cnblogs-pub',
                 'content-gen',
                 'core-facts-gen',

@@ -31,8 +31,9 @@ const FIXTURE_SHELL_CHECK = '#!/bin/sh\necho \'{"status":"error","detail":"fixtu
 const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));
 const STAGING_SCRIPT = fileURLToPath(new URL('./bundle-plugins.ts', import.meta.url));
 
-/** Real plugins whose manifest declares a TypeScript readiness check (0249 review F2; `weibo-pub` added 0245, `jike-pub` added 0291, `csdn-pub` added 0292, `cnblogs-pub` added 0293, `sspai-pub` added 0294, `xiaoyuzhou-pub` added 0295, `shipinhao-pub` added 0296). */
+/** Real plugins whose manifest declares a TypeScript readiness check (0249 review F2; `weibo-pub` added 0245, `jike-pub` added 0291, `csdn-pub` added 0292, `cnblogs-pub` added 0293, `sspai-pub` added 0294, `xiaoyuzhou-pub` added 0295, `shipinhao-pub` added 0296, `bilibili-pub` added 0297). */
 const CHECK_DECLARING_PLUGINS = [
+    'bilibili-pub',
     'cnblogs-pub',
     'csdn-pub',
     'infoq-pub',
