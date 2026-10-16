@@ -80,7 +80,7 @@ describe('Smart SEO Assessments Execution (R1, R2 / AC1, AC2)', () => {
         // Dated FAQ rich-result retirement info
         const faqRow = assessments.find((r) => r.ruleId === 'faq_rich_result_limited');
         expect(faqRow?.status).toBe('pass');
-        expect(VENDOR_RULES.faq_rich_result_limited.description).toContain('retired by Google in Aug/Sep 2023');
+        expect(VENDOR_RULES.faq_rich_result_limited.description).toContain('fully retired on 2026-05-07');
     });
 
     it('correctly assesses defects and heuristics across pages', () => {

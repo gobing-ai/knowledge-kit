@@ -449,7 +449,7 @@ export function renderReportMarkdown(audit: AuditArtifact, narrativeText?: strin
         `- Google Search Central canonical guidelines (2026) define canonical hints without proving non-indexing.`,
     );
     lines.push(
-        `- Google retired general FAQ rich results in August/September 2023; FAQ schema presence does not guarantee search enhancement.`,
+        `- Google retired general FAQ rich results on 2026-05-07 (eligibility had been restricted to authoritative government/health sites since Aug/Sep 2023); FAQ schema presence does not guarantee search enhancement.`,
     );
     lines.push(
         `- All crawl-limited findings (e.g. depth, orphan pages) are observations among sampled pages, not whole-web guarantees.`,

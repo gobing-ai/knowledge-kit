@@ -481,9 +481,10 @@ export const VENDOR_RULES: Record<string, RuleDefinition> = {
         disposition: 'adapted',
         effort: 1,
         heuristic: false,
-        sourceUrl: 'https://developers.google.com/search/blog/2023/08/howto-faq-changes',
+        sourceUrl: 'https://developers.google.com/search/updates',
         sourceCheckedAt: '2026-10-14',
-        description: 'FAQ rich results were retired by Google in Aug/Sep 2023 for general websites.',
+        description:
+            'FAQ rich results were restricted to authoritative government/health sites in Aug/Sep 2023 and fully retired on 2026-05-07 for general websites.',
     },
     og_missing: {
         id: 'og_missing',
@@ -1540,7 +1541,7 @@ export function runSeoChecks(crawl: CrawlArtifact): AssessmentRow[] {
                 sourceCheckedAt: def.sourceCheckedAt,
                 heuristic: def.heuristic,
                 reason: hasFaq
-                    ? 'FAQ schema noted; general rich results retired by Google in Aug/Sep 2023'
+                    ? 'FAQ schema noted; general rich results fully retired 2026-05-07'
                     : 'No FAQ schema present',
             });
         }
