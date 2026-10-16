@@ -4,7 +4,7 @@ name: Keep ITC entry and Board contracts compatible across the refactor
 status: done
 template: feature-impl
 created_at: 2026-10-15T21:59:21.907Z
-updated_at: "2026-10-16T01:30:29.996Z"
+updated_at: "2026-10-16T05:45:52.083Z"
 ac_altitude: task-local
 ac_numbering: task-local
 feature_id: G21
@@ -144,12 +144,26 @@ Execution budget: existing estimate 10h; one task pipeline with bounded repairs.
 
 ### Testing
 
-- `bun test apps/cli/tests/itc-config.test.ts`: 22 pass, 0 fail.
-- `bun test apps/cli/tests/board/`: 92 pass, 0 fail (incl. the new child-evidence suite).
-- `bun test apps/cli/tests/`: 900 pass, 0 fail across 58 files.
-- `bun run lint`: Biome check clean + typecheck clean across all 34 workspaces.
-- `bun run build`: all packages and bundles built successfully.
-- NOT COVERED: no packaged-consumer (`kk-itc-installed.test.ts`) harness was added, and the Board's HTTP route still supplies no child progress to `projectItcResults` — the authorization and count logic is proven at unit level over recorded-shape fixtures, not through a live `/api/runs/<childId>/progress` read.
+**Pipeline verify results**
+
+- Verdict: PARTIAL (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | The default authoring path walks to done with no collection, image spend or publication (`apps/cli/tests/kk-itc-workflow.test.ts:253`, `apps/cli/tests/kk-itc-workflow.test.ts:305`); Board artifact paths unchanged (`apps/cli/src/board/manifest.ts:59`). |
+| R2 | PARTIAL | `itc-prepare` keeps launch values as literal data (`apps/cli/tests/itc-config.test.ts:273`) and the stage is dispatched (`apps/cli/src/itc-stage.ts:65`). Gap: the command documentation `plugins/kk/commands/workflow-run.md:186-240` still derives work_dir in prose and binds no topic_profile/publish_preset/seo vars, and the DAG `prepare` node calls the legacy `prepare-itc` (`plugins/kk/workflows/kk-itc.yaml:40`), so docs do not describe the implemented surface. |
+| R3 | PARTIAL | Workspace composition `<worksRoot>/kk-itc/<topic>`, optional YYYYMMDD, directory override, KK_WORKS_DIR precedence and slugging (`apps/cli/src/itc-config.ts:433`; tests `apps/cli/tests/itc-config.test.ts:113`, `apps/cli/tests/itc-config.test.ts:122`, `apps/cli/tests/itc-config.test.ts:132`, `apps/cli/tests/itc-config.test.ts:143`, `apps/cli/tests/itc-config.test.ts:164`). Not reached by any entry: no caller invokes `itc-prepare`. |
+| R4 | PARTIAL | Missing/malformed/unsupported/wrong-typed config fails naming the file or key, never the value, and writes no workspace (`apps/cli/src/itc-config.ts:213`; tests `apps/cli/tests/itc-config.test.ts:48`, `apps/cli/tests/itc-config.test.ts:61`, `apps/cli/tests/itc-config.test.ts:71`, `apps/cli/tests/itc-config.test.ts:87`, `apps/cli/tests/itc-config.test.ts:327`). Integration gap as R3. |
+| R5 | PARTIAL | Frozen options snapshot and resume verification against the same digest (`apps/cli/src/itc-config.ts:631`, `apps/cli/src/itc-config.ts:646`; tests `apps/cli/tests/itc-config.test.ts:237`, `apps/cli/tests/itc-config.test.ts:299`); reuse mismatch refused (`apps/cli/src/itc-stage.ts:316`). Integration gap as R3. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| R1 — Existing authoring inputs keep their observable behavior | MET | test | `bun test apps/cli/tests/kk-itc-workflow.test.ts` passes, including dry-run walks `apps/cli/tests/kk-itc-workflow.test.ts:253` and `apps/cli/tests/kk-itc-workflow.test.ts:341`. |
+| R12 — Entry surfaces and artifacts remain consistent | PARTIAL | test | `apps/cli/tests/itc-config.test.ts:273` passes; entry docs `plugins/kk/commands/workflow-run.md:186-240` diverge from `itc-prepare`. |
+| R14 — ITC workspace follows configured topic and optional date | PARTIAL | test | `apps/cli/tests/itc-config.test.ts:113`, `apps/cli/tests/itc-config.test.ts:122`, `apps/cli/tests/itc-config.test.ts:143` pass; unit-level only. |
+| R15 — Invalid ITC configuration stops before mutation | PARTIAL | test | `apps/cli/tests/itc-config.test.ts:61`, `apps/cli/tests/itc-config.test.ts:71`, `apps/cli/tests/itc-config.test.ts:327` pass; unit-level only. |
+| R18 — Resume retains the original effective configuration | PARTIAL | test | `apps/cli/tests/itc-config.test.ts:237`, `apps/cli/tests/itc-config.test.ts:299` pass; unit-level only. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 

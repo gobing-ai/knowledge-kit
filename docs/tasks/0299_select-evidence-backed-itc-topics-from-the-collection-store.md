@@ -4,7 +4,7 @@ name: Select evidence-backed ITC topics from the collection store
 status: done
 template: feature-impl
 created_at: 2026-10-15T21:59:21.902Z
-updated_at: "2026-10-16T00:23:57.349Z"
+updated_at: "2026-10-16T05:45:50.812Z"
 ac_altitude: task-local
 ac_numbering: task-local
 feature_id: G21
@@ -117,11 +117,20 @@ Execution budget: existing estimate 8h; one task pipeline with bounded repairs. 
 
 ### Testing
 
-- `bun test apps/cli/tests/itc-topic.test.ts`: 10 pass, 0 fail.
-- `bun test apps/cli/tests/itc-plan.test.ts`: 11 pass, 0 fail.
-- `bun test apps/cli/tests/itc-stages.test.ts`: 36 pass, 0 fail.
-- `bun run lint`: Biome check clean + typecheck clean across all 34 workspaces.
-- `bun run build`: all packages and bundles built successfully.
+**Pipeline verify results**
+
+- Verdict: PARTIAL (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | PARTIAL | Stages implemented in `apps/cli/src/itc-topic.ts`: extract (`apps/cli/src/itc-topic.ts:100`), candidate validation citing item IDs/URLs with poolDigest (`apps/cli/src/itc-topic.ts:199`), select writing `chosen-source.json` (`apps/cli/src/itc-topic.ts:298`), settle (`apps/cli/src/itc-topic.ts:389`). Tested at `apps/cli/tests/itc-topic.test.ts:96`, `apps/cli/tests/itc-topic.test.ts:191`, `apps/cli/tests/itc-topic.test.ts:248`, `apps/cli/tests/itc-topic.test.ts:295`, `apps/cli/tests/itc-topic.test.ts:344`. Gap: no workflow node or entry surface invokes `itc-topic-*` — `plugins/kk/workflows/kk-itc.yaml:34` starts at `prepare` with no topic_profile var or intake nodes, so the selected candidate never becomes the run brief end-to-end. |
+| R2 | MET | Empty pool stops with "no usable topic" and writes nothing (`apps/cli/tests/itc-topic.test.ts:140`); failed explicit refresh with empty store reports failure (`apps/cli/tests/itc-topic.test.ts:165`); failed/author-only outcome releases this run's selection (`apps/cli/tests/itc-topic.test.ts:421`). |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| R2 — Collected evidence can supply a selected topic | PARTIAL | test | `bun test apps/cli/tests/itc-topic.test.ts` passes (`apps/cli/tests/itc-topic.test.ts:191`, `apps/cli/tests/itc-topic.test.ts:344`, CLI request path `apps/cli/tests/itc-topic.test.ts:554`). Unit-level only; not wired into `plugins/kk/workflows/kk-itc.yaml`. |
+| R3 — Empty or unavailable collections stop topic selection safely | MET | test | `apps/cli/tests/itc-topic.test.ts:140`, `apps/cli/tests/itc-topic.test.ts:165`, `apps/cli/tests/itc-topic.test.ts:421` pass in `bun test apps/cli/tests/itc-topic.test.ts`. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 

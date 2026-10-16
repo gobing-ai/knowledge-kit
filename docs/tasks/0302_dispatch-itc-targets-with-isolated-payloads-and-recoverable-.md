@@ -4,7 +4,7 @@ name: Dispatch ITC targets with isolated payloads and recoverable receipts
 status: done
 template: feature-impl
 created_at: 2026-10-15T21:59:21.906Z
-updated_at: "2026-10-16T01:19:58.016Z"
+updated_at: "2026-10-16T05:45:51.766Z"
 ac_altitude: task-local
 ac_numbering: task-local
 feature_id: G21
@@ -159,15 +159,30 @@ Execution budget: existing estimate 12h; one task pipeline with bounded repairs.
 
 ### Testing
 
-- `bun test apps/cli/tests/itc-publish.test.ts`: 8 pass, 0 fail.
-- `bun test apps/cli/tests/kk-itc-dag.test.ts`: 3 pass, 0 fail (incl. `spur workflow validate` for the DAG and the child FSM).
-- `bun test apps/cli/tests/kk-itc-workflow.test.ts`: 23 pass, 0 fail (dry-run walk with the child FSM reaching done).
-- `bun test apps/cli/tests/kk-itc-publish-tail.test.ts`: 3 pass, 0 fail.
-- `bun test apps/cli/tests/fanout.test.ts`: 52 pass, 0 fail (incl. the failed-Result metadata round-trip).
-- `bun test apps/cli/tests/`: 875 tests across 58 files, 874 pass / 0 fail on the final run.
-- `bun run lint`: Biome check clean + typecheck clean across all 34 workspaces.
-- `bun run build`: all packages and bundles built successfully.
-- NOT COVERED: the full `kk-itc-dag.test.ts` R6 cancellation/child-recovery matrix runs against real Spur in an isolated DB; only the DAG shape, ordering and validate assertions are exercised here. Uncertain-effect reconciliation and the SEO non-blocking path are covered at unit level over fixtures, not against a live provider.
+**Pipeline verify results**
+
+- Verdict: PARTIAL (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `itcCheckTargets` (`apps/cli/src/itc-publish.ts:242-282`) runs each plugin's `check` probe through the executor seam and on failure refuses with "run `kk bot open/login <bot>`" (`apps/cli/src/itc-publish.ts:275`) without automating login. Refusal test added this pass: `apps/cli/tests/itc-publish.test.ts:103`; pass path `apps/cli/tests/itc-publish.test.ts:86`. |
+| R2 | MET | Per-target isolated payloads with mode keys cleared (`apps/cli/src/itc-publish.ts:195`, `apps/cli/src/itc-publish.ts:212`) dispatched through `runFanout`, browser targets serialized with `--serial-target` (`apps/cli/src/itc-publish.ts:349`); test `apps/cli/tests/itc-publish.test.ts:44`. |
+| R3 | MET | Author child fails closed on an absent/out-of-contract disposition (`plugins/kk/workflows/kk-itc-author.yaml:352-377`; test `plugins/kk/tests/verdict-confidence.test.ts:296`); `itcAuthorVerdict` (`apps/cli/src/itc-publish.ts:661`) and `itc-author-complete` refuse missing/empty drafts and non-PASS verdicts (`apps/cli/tests/itc-decision.test.ts:193`, `apps/cli/tests/itc-decision.test.ts:205`). Dry-run isolation retained (`apps/cli/tests/kk-itc-workflow.test.ts:253`). |
+| R4 | MET | Retry skips confirmed successes and non-`none` effects (`apps/cli/src/itc-publish.ts:318`); FIXED this pass: retry writes `fanout-result.<plugin>.retry.json` (`apps/cli/src/itc-publish.ts:341`) so it re-dispatches instead of re-reading the first aggregate (test `apps/cli/tests/itc-publish.test.ts:275`, failed on old source); uncertain outcome retained for reconciliation under the chosen run/topic (`apps/cli/src/itc-publish.ts:443`, test `apps/cli/tests/itc-publish.test.ts:353`). |
+| R5 | MET | FIXED this pass: `itcReportSummary` (`apps/cli/src/itc-publish.ts:557`) emits `targetContractFailure {expected, observed, stale}` (`apps/cli/src/itc-publish.ts:614`, `apps/cli/src/itc-publish.ts:626`) and never reports complete publication when receipts diverge from the plan; tests `apps/cli/tests/itc-publish.test.ts:445`, `apps/cli/tests/itc-publish.test.ts:474`; missing receipt fails loud `apps/cli/tests/itc-publish.test.ts:321`. |
+| R6 | PARTIAL | FIXED this pass: `report` depends on `verify-child-freeze`, `reconcile-settle` and `seo` (`plugins/kk/workflows/kk-itc.yaml:196-203`; test `apps/cli/tests/kk-itc-dag.test.ts:11`); publishing waits on `verify-child-freeze` (`plugins/kk/workflows/kk-itc.yaml:65`). Gap: "cancellation stops the owned child" relies on Spur's shell-action lifecycle; no test cancels the parent and observes the child stop. |
+| R7 | MET | `itcExportSeo` (`apps/cli/src/itc-publish.ts:496`) writes not-assessed for mode off and exports only live, confirmed, `publicUrlVerified` URLs (`apps/cli/src/itc-publish.ts:533`); tests `apps/cli/tests/itc-publish.test.ts:376`, `apps/cli/tests/itc-publish.test.ts:387`. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| R7 — Session recovery stays with bots and channel probes | MET | test | `bun test apps/cli/tests/itc-publish.test.ts` 14 pass; `apps/cli/tests/itc-publish.test.ts:103` asserts exit 1 after one `check` probe. |
+| R8 — Publication dispatch isolates targets and reuses fan-out | MET | test | `apps/cli/tests/itc-publish.test.ts:44` asserts isolated qiita/wechatmp payloads with distinct mode metadata. |
+| R9 — Runtime outcomes require valid current artifacts | MET | test | `plugins/kk/tests/verdict-confidence.test.ts:296`, `apps/cli/tests/itc-decision.test.ts:193`, `apps/cli/tests/itc-decision.test.ts:205`, `apps/cli/tests/kk-itc-workflow.test.ts:253` pass. |
+| R10 — Recovery preserves success and refuses uncertain repeats | MET | test | `apps/cli/tests/itc-publish.test.ts:191`, `apps/cli/tests/itc-publish.test.ts:275`, `apps/cli/tests/itc-publish.test.ts:353` pass. |
+| R11 — Reports reconcile every expected target | MET | test | `apps/cli/tests/itc-publish.test.ts:445` (missing/extra/stale → contract failure), `apps/cli/tests/itc-publish.test.ts:474` (matching → done). |
+| R13 — DAG branches require verified predecessor completion | PARTIAL | test | `apps/cli/tests/kk-itc-dag.test.ts:11` asserts report dependencies; child launch/continue tests `apps/cli/tests/kk-itc-dag.test.ts:146-170`. Cancellation propagation not tested. |
+| R16 — SEO handoff remains independent of an unfinished provider | MET | test | `apps/cli/tests/itc-publish.test.ts:376`, `apps/cli/tests/itc-publish.test.ts:387` pass. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 

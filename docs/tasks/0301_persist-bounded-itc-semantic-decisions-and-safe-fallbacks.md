@@ -4,7 +4,7 @@ name: Persist bounded ITC semantic decisions and safe fallbacks
 status: done
 template: feature-impl
 created_at: 2026-10-15T21:59:21.905Z
-updated_at: "2026-10-16T00:39:52.298Z"
+updated_at: "2026-10-16T05:45:51.445Z"
 ac_altitude: task-local
 ac_numbering: task-local
 feature_id: G21
@@ -110,15 +110,20 @@ Execution budget: existing estimate 8h; one task pipeline with bounded repairs. 
 
 ### Testing
 
-- `bun test plugins/kk/tests/decision-catalog.test.ts`: 8 pass, 0 fail.
-- `bun test apps/cli/tests/itc-decision.test.ts`: 8 pass, 0 fail.
-- `bun test apps/cli/tests/itc-presets.test.ts`: 7 pass, 0 fail.
-- `bun test apps/cli/tests/itc-topic.test.ts`: 10 pass, 0 fail.
-- `bun test apps/cli/tests/itc-plan.test.ts`: 11 pass, 0 fail.
-- `bun test apps/cli/tests/itc-stages.test.ts`: 36 pass, 0 fail.
-- `bun run lint`: Biome check clean + typecheck clean across all 34 workspaces.
-- `bun run build`: all packages and bundles built successfully.
-- `spur workflow validate plugins/kk/workflows/kk-itc-author.yaml`: workflow valid.
+**Pipeline verify results**
+
+- Verdict: PARTIAL (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | PARTIAL | `itcDecision` (`apps/cli/src/itc-decision.ts:84-230`) bypasses the model on an explicit operator choice, compacts evidence, validates the choice against the allowed set and falls back to the declared default (or `none` for presets) while recording source and reason (tests `apps/cli/tests/itc-decision.test.ts:18`, `apps/cli/tests/itc-decision.test.ts:47`, `apps/cli/tests/itc-decision.test.ts:72`, `apps/cli/tests/itc-decision.test.ts:97`). Gap: no workflow node invokes `itc-decision`, so semantic choices in `plugins/kk/workflows/kk-itc.yaml` are not routed through it; `candidateDigest` is passthrough with no producer. |
+| R2 | MET | The `child-author` node (`plugins/kk/workflows/kk-itc.yaml:42-64`) derives `cid="${vars.__runId}-author"` (`plugins/kk/workflows/kk-itc.yaml:53`), continues a paused child, launches only when absent, refuses to relaunch done/failed, and reports a re-pause as non-success naming the child. `verify-child-freeze` (`plugins/kk/workflows/kk-itc.yaml:65`) validates the child receipt before publication; child identity is recorded in `author-run.json` (`plugins/kk/workflows/kk-itc-author.yaml:36-46`); author receipt `apps/cli/tests/itc-decision.test.ts:119`. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| R4 — Semantic choices remain within validated candidates | PARTIAL | test | `bun test apps/cli/tests/itc-decision.test.ts` passes (`apps/cli/tests/itc-decision.test.ts:72`, `apps/cli/tests/itc-decision.test.ts:97`). Not wired into any workflow. |
+| R17 — Interactive authoring resumes the recorded child | MET | test | `bun test apps/cli/tests/kk-itc-dag.test.ts` 7 pass with a stub `spur` on PATH: fresh launch under derived id (`apps/cli/tests/kk-itc-dag.test.ts:146`), continue the same paused child (`apps/cli/tests/kk-itc-dag.test.ts:153`), repeated pause is a named non-success (`apps/cli/tests/kk-itc-dag.test.ts:159`), never relaunch done/failed (`apps/cli/tests/kk-itc-dag.test.ts:165`). Old yaml failed these 5 assertions. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
