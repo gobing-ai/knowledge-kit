@@ -442,3 +442,36 @@ the same text with one hedge adverb restored in the WeChat row → `{"ok":false,
   tier fails (and the workflow falls through to the next driver) instead of shipping a voice that
   changes mid-episode. The plugin-level test that rendered multi-segment input through the shipped
   instruct placeholder was repointed at a temp anchored registry — its premise was the banned pattern.
+
+## 2026-10-16 — dev-runall batch 0285/0286 (G9 smart-seo, `--worktree`)
+
+- **Ticking the Plan checkboxes is the implement hop's job.** The post-record residual sweep folds an
+  unchecked Plan box into a *blocking* residual, which downgrades the verdict PASS → PARTIAL and closes
+  the `record → done` guard (0285 attempt 1 died on 8 boxes + one missing docs step). Tick every step
+  whose work is verified; a step that is not done stays unticked and the run ends `failed(failed-check)`
+  with `/sp:dev-run <wbs>` as the recovery. A Plan whose last steps name pipeline hops (review/verify)
+  cannot be closed on a first attempt — budget the second pass.
+- **A slice that landed before the pipeline run makes `task diffstat` lie.** With the implementation
+  already committed, the diffstat measures only the run's own writes, so `decide task-triage` sees a
+  "small diff" and can resolve `low` → the `fast` lane, which skips `review` — but the `record`
+  registration requires the run-scoped review-completion marker (0785 R4), so `verify` writes
+  `review.status: skipped` and `verify → record` can never pass. Pin the caller-set `mode=safety`
+  (projected verbatim by the triage pre-guard) for a pre-landed slice.
+- **The base ref can be red before you start.** At `4fcd7e9a`, `bun run test-post-check` failed with 42
+  `every-export-has-tsdoc` findings in files no task in the batch touched. Run the failing rule alone
+  (`spur rule run --preset recommended-post-check --rule <id> --json`) and compare against another tree
+  before blaming the diff; repair it in its own commit so the task's diff stays attributable.
+- **Read the gate's `EXIT=` line, not the status file.** `.spur/run/<wbs>-test-gate.status` keeps the
+  previous run's value while the new gate runs. The light tier writes `tier: light` and can FAIL on
+  `coverage-gate` (partial `.coverage/lcov.info` after a targeted `bun test <file>`) and on
+  `format-lint:changed` for a markdown-only change — neither is a defect, and only the full tier writes
+  `PASS`.
+- **Retire WBS-keyed run artifacts before a second attempt** (`<wbs>-verify-answer.txt`,
+  `<wbs>-verdict.json`): an `expectFile` can otherwise accept a stale artifact.
+- **`spur workflow commit-guard stage` refuses a tracked file under `.spur/memory/`** — exit 2 with
+  "(unchanged since base)" for a path git reports as modified (reproduced 2026-10-16 against a modified,
+  tracked `learnings.md`; `.spur/memory/` is excluded via `.git/info/exclude` to stay proof-fingerprint
+  inert). The wrap's learnings target lives there, so its close-out commit needs a targeted `git add`
+  until the guard stops filtering excluded-but-tracked paths.
+- **One commit per concern keeps a batch attributable**: the pre-existing TSDoc repair rode its own
+  commit and merged as a no-op against main's equivalent later fix (`git merge-tree` probe → clean).

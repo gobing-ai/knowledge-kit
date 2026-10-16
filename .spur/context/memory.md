@@ -53,3 +53,27 @@ Tasks 0200–0204 all in `testing`. Recipe replay per task: (a) spur task show �
 - Run runall-e92-0205 closed before final re-verify (23 rows) — final PASS evidence lives in .spur/memory/evidence/0205-verdict.json + .spur/run/0205-verdict.json.
 - NEXT: FF-merge branch to main, update marker .spur/run/batch-e92-wt.json (main repo).
 - 2026-10-07T22:24:38Z dev-runall E91 --worktree: ABORTED pre-run. (1) spur feature check E91 --strict exit 1 — L3.ac-bdd-error duplicate scenario 'AC3 — one draft-only run through the real transport' (lines 148 + 165; second is a Gherkin example inside a code fence parsed as live AC) + L3.ac-bdd-invalid. (2) WT-1 dirty tree: docs/design/x-article-ui-discovery.md (+5 uncommitted). No worktree/marker/tasks touched.
+
+## 2026-10-16 — dev-runall 0285/0286 (G9) merged to main (8b576dd6)
+
+- Batch `dev-runall --tasks 0285,0286 --auto --next --agent inline --worktree --wrap`. Marker
+  `dev-runall-0285-0286-2bb0` → `status: merged`, `mergeCommit 8b576dd6`, `batchTip 5c1cdf63`; worktree
+  removed, branch `sp/runall-0285-0286-2bb0` deleted (`-d` accepted → fully merged), `spur projects
+  remove` done. Pre-merge FF was refused because main advanced mid-batch → operator-run clean `--no-ff`
+  merge (two parents verified).
+- 0285 needed two attempts: attempt 1 failed the `record → done` gate on 8 unchecked Plan boxes plus the
+  missing `docs/04_DESIGN.md` slice step (verdict folded PASS → PARTIAL); attempt 2 (`0285b-runall-2bb0`)
+  made the docs update, ticked the Plan and re-certified. 0286 passed in one attempt (skill + four
+  references + installed acceptance + docs).
+- Pre-existing red base ref: 42 `every-export-has-tsdoc` findings in `apps/cli/src/itc-*.ts` and
+  `packages/kk-core/src/manifest.ts`; repaired in `a945a37f` (own docs-only commit) after a bounded
+  15-minute wait for the concurrent session timed out. Main landed its own equivalent (`7ac3d60b`); the
+  merge probe was clean.
+- Post-merge gate `bun run spur-check`: 3765 pass / 2 skip / 0 fail. 0285 + 0286 `done`; follow-up `0304`
+  filed for the deferred review item, whose only finding is now fixed inline (FAQ rich-result retirement
+  date corrected to 2026-05-07 across `seo-rules.ts`, `seo-report.ts`, the skill reference and its test).
+- Open: G9's feature-level transition. `feature-verification.yaml` fails closed at
+  `superskill script path sp script-root.mjs` → run `superskill install sp --marketplace gobing-ai/spur`,
+  then `spur feature sync G9` (or `spur task wrapup feature-transition`).
+- NEXT: close `0304` (its item is fixed), then attempt the G9 `verifying → done` transition after the
+  plugin install.
