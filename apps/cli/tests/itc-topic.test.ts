@@ -580,3 +580,117 @@ describe('stage run itc-topic-* CLI execution (0299 / G21 R1, R2)', () => {
         });
     });
 });
+
+describe('itc-topic-* request boundary and validation guards (0299 R1)', () => {
+    async function seedIntake(dir: string, runId: string) {
+        const dbPath = join(dir, 'store.db');
+        const { store, itemIds } = await seedTestStore(dbPath);
+        await store.close();
+        const profilePath = join(dir, 'test-topic.yaml');
+        writeSampleProfile(profilePath);
+        const intakeDir = join(dir, 'intake');
+        const { poolDigest } = await itcTopicExtract({
+            schemaVersion: 1,
+            parentRunId: runId,
+            intakeDir,
+            topicProfile: 'test-topic',
+            profilePath,
+            dbPath,
+        });
+        const candidate = {
+            id: 'a',
+            title: 'Edge Story',
+            reason: 'r',
+            itemIds: [itemIds[1] ?? '', itemIds[2] ?? ''],
+            sourceUrls: ['https://example.com/item-2', 'https://example.com/item-3'],
+        };
+        const writeCandidates = (overrides: Record<string, unknown> = {}, candidates: unknown[] = [candidate]) =>
+            writeFileSync(
+                join(intakeDir, 'topic-candidates.json'),
+                JSON.stringify({ schemaVersion: 1, parentRunId: runId, poolDigest, candidates, ...overrides }),
+            );
+        return { dbPath, profilePath, intakeDir, candidate, writeCandidates };
+    }
+    const stage = (dir: string, name: string, body: unknown): Promise<number | undefined> => {
+        const file = join(dir, `${name}-req.json`);
+        writeFileSync(file, typeof body === 'string' ? body : JSON.stringify(body));
+        return runItcStage([name, '--request', file]);
+    };
+
+    it('drives validate, select and settle through request files', async () => {
+        await withTempDir(async (dir) => {
+            const { dbPath, intakeDir, writeCandidates } = await seedIntake(dir, 'run-cli');
+            writeCandidates();
+            const base = { schemaVersion: 1, intakeDir, parentRunId: 'run-cli' };
+            expect(await stage(dir, 'itc-topic-validate', base)).toBe(0);
+            expect(await stage(dir, 'itc-topic-select', { ...base, selectedCandidateId: 'a', dbPath })).toBe(0);
+            // A corrupt chosen source settles by run, not by its (unreadable) item list.
+            writeFileSync(join(intakeDir, 'chosen-source.json'), '{corrupt');
+            const settle = { ...base, topicProfile: 'test-topic', outcome: 'failed', dbPath };
+            expect(await stage(dir, 'itc-selection-settle', settle)).toBe(0);
+        });
+    });
+
+    it('refuses a missing flag, a missing file, non-JSON and off-schema requests', async () => {
+        await withTempDir(async (dir) => {
+            for (const name of [
+                'itc-topic-extract',
+                'itc-topic-validate',
+                'itc-topic-select',
+                'itc-selection-settle',
+            ]) {
+                expect(await runItcStage([name]), name).toBe(1);
+                expect(await runItcStage([name, '--request', join(dir, 'absent.json')]), name).toBe(1);
+                expect(await stage(dir, name, '{nope'), name).toBe(1);
+                expect(await stage(dir, name, { schemaVersion: 1 }), name).toBe(1);
+            }
+        });
+    });
+
+    it('rejects a malformed or zero window and a profile found nowhere', async () => {
+        await withTempDir(async (dir) => {
+            const req = {
+                schemaVersion: 1 as const,
+                parentRunId: 'r',
+                intakeDir: join(dir, 'i'),
+                topicProfile: 'test-topic',
+            };
+            const profilePath = join(dir, 'p.yaml');
+            writeSampleProfile(profilePath);
+            await expect(itcTopicExtract({ ...req, profilePath, window: 'soon' })).rejects.toThrow('--window must be');
+            await expect(itcTopicExtract({ ...req, profilePath, window: '0h' })).rejects.toThrow('greater than zero');
+            const priorCwd = process.cwd();
+            process.chdir(dir);
+            try {
+                await expect(
+                    itcTopicExtract({ ...req, topicProfile: 'nowhere', profilePath: join(dir, 'absent.yaml') }),
+                ).rejects.toThrow("no profile for topic 'nowhere'");
+            } finally {
+                process.chdir(priorCwd);
+            }
+        });
+    });
+
+    it('validate refuses missing artifacts, an off-schema artifact, a foreign run, duplicates and unmatched URLs', async () => {
+        await withTempDir(async (dir) => {
+            const { intakeDir, candidate, writeCandidates } = await seedIntake(dir, 'run-g');
+            const validate = () => itcTopicValidate({ schemaVersion: 1, intakeDir, parentRunId: 'run-g' });
+            await expect(validate()).rejects.toThrow('topic-candidates.json not found');
+            await expect(
+                itcTopicValidate({ schemaVersion: 1, intakeDir: join(dir, 'none'), parentRunId: 'run-g' }),
+            ).rejects.toThrow('topic pool artifacts not found');
+            writeCandidates({ candidates: 'nope' });
+            await expect(validate()).rejects.toThrow('invalid topic candidates artifact');
+            writeCandidates({ parentRunId: 'run-other' });
+            await expect(validate()).rejects.toThrow('parentRunId mismatch');
+            writeCandidates({}, [candidate, candidate]);
+            await expect(validate()).rejects.toThrow("duplicate candidate id 'a'");
+            writeCandidates({}, [{ ...candidate, sourceUrls: ['https://elsewhere.test/'] }]);
+            await expect(validate()).rejects.toThrow('does not match any referenced item sourceUri');
+            writeCandidates();
+            await expect(
+                itcTopicSelect({ schemaVersion: 1, intakeDir, parentRunId: 'run-g', selectedCandidateId: 'b' }),
+            ).rejects.toThrow("selected candidate 'b' not found");
+        });
+    });
+});

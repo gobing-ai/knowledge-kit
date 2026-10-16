@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createNodeFileSystem, type ProcessExecutor, type ProcessOptions } from '@gobing-ai/ts-runtime';
 import { type ItcDecisionRequest, itcDecision } from '../src/itc-decision';
 import { runItcStage } from '../src/itc-stage';
 
@@ -218,6 +219,103 @@ describe('stage run itc-author-complete (0301 / G21 R2, R17)', () => {
             // Missing confidence
             writeFileSync(join(workDir, '.itc-verdict.json'), JSON.stringify({ verdict: 'PASS' }));
             expect(await runItcStage(['itc-author-complete', workDir, 'p1'])).toBe(1);
+        });
+    });
+});
+
+describe('itcDecision catalog call (0301 / G21 R1)', () => {
+    // Fake `spur decision run`: records the argv and the compacted evidence it was handed.
+    function fakeExecutor(
+        reply: { exitCode?: number; stdout?: string; stderr?: string } | Error,
+        seen: { args: string[]; evidence: string[] },
+    ): ProcessExecutor {
+        return {
+            run: async (opts: ProcessOptions) => {
+                seen.args = opts.args ?? [];
+                seen.args.forEach((a, i) => {
+                    if (seen.args[i - 1] === '--evidence') seen.evidence.push(readFileSync(a, 'utf-8'));
+                });
+                if (reply instanceof Error) throw reply;
+                return { exitCode: reply.exitCode ?? 0, stdout: reply.stdout ?? '', stderr: reply.stderr ?? '' };
+            },
+        } as unknown as ProcessExecutor;
+    }
+
+    function request(dir: string, decisionId: ItcDecisionRequest['decisionId'] = 'kk-itc-topic-choice') {
+        return {
+            parentRunId: 'run-cat-01',
+            decisionId,
+            candidates: [
+                { id: 'a', title: 'Topic A' },
+                { id: 'b', description: 'Topic B' },
+            ],
+            outPath: join(dir, 'decision.json'),
+        } satisfies ItcDecisionRequest;
+    }
+
+    it('serves an in-set model pick with compacted evidence, then removes the evidence temp files', async () => {
+        await withTempDir(async (dir) => {
+            const ev = join(dir, 'ev.txt');
+            writeFileSync(ev, 'x'.repeat(3000));
+            const seen = { args: [] as string[], evidence: [] as string[] };
+            const out = JSON.stringify({ value: ' b ', reason: 'better fit', maker: 'm1', confidence: 0.8 });
+            const res = await itcDecision(
+                { ...request(dir), evidenceFiles: [ev, join(dir, 'missing.txt')], maker: 'm1' },
+                createNodeFileSystem(),
+                fakeExecutor({ stdout: out }, seen),
+            );
+            expect(res).toMatchObject({
+                value: 'b',
+                source: 'model',
+                reason: 'better fit',
+                maker: 'm1',
+                selected: true,
+            });
+            expect(res.confidence).toBe(0.8);
+            expect(res.candidateDigest).toMatch(/^[0-9a-f]{64}$/);
+            expect(seen.args).toContain('candidates=a: Topic A; b: Topic B');
+            expect(seen.args.slice(-3)).toEqual(['--maker', 'm1', '--json']);
+            expect(seen.evidence).toHaveLength(1);
+            expect(JSON.parse(seen.evidence[0] ?? '{}')).toMatchObject({
+                originalLength: 3000,
+                retainedLength: 1800,
+                truncated: true,
+            });
+            expect(existsSync(join(dir, 'decision.json.evidence-0.json'))).toBe(false);
+            expect(JSON.parse(readFileSync(join(dir, 'decision.json'), 'utf-8')).value).toBe('b');
+        });
+    });
+
+    it('defers an out-of-set model pick instead of guessing', async () => {
+        await withTempDir(async (dir) => {
+            const seen = { args: [] as string[], evidence: [] as string[] };
+            const res = await itcDecision(
+                request(dir, 'kk-itc-outline-choice'),
+                createNodeFileSystem(),
+                fakeExecutor({ stdout: JSON.stringify({ value: 'z' }) }, seen),
+            );
+            expect(res).toMatchObject({ value: 'defer', source: 'default', selected: false });
+            expect(res.reason).toContain('"z" is not among valid candidates');
+            expect(seen.args.some((a) => a.startsWith('options='))).toBe(true);
+        });
+    });
+
+    it('falls back to none for a preset when the catalog fails, exits nonzero, or prints bad JSON', async () => {
+        await withTempDir(async (dir) => {
+            const seen = { args: [] as string[], evidence: [] as string[] };
+            const fs = createNodeFileSystem();
+            const preset = request(dir, 'kk-itc-preset-choice');
+            const bad = await itcDecision(preset, fs, fakeExecutor({ stdout: '{nope' }, seen));
+            expect(bad).toMatchObject({ value: 'none', source: 'default', selected: false });
+            expect(bad.reason).toContain('failed to parse decision json');
+            expect(seen.args.some((a) => a.startsWith('suggestion='))).toBe(true);
+
+            const exited = await itcDecision(preset, fs, fakeExecutor({ exitCode: 2, stderr: 'boom' }, seen));
+            expect(exited.reason).toBe('spur decision run exited with code 2: boom');
+
+            const thrown = await itcDecision(preset, fs, fakeExecutor(new Error('ENOENT'), seen));
+            expect(thrown.value).toBe('none');
+            expect(thrown.reason).toBe('failed to spawn spur decision run: ENOENT');
         });
     });
 });

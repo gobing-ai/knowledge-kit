@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { NodeProcessExecutor, type ProcessOptions, type ProcessResult } from '@gobing-ai/ts-runtime';
 import {
     ItcReceiptSchema,
+    itcAuthorVerdict,
     itcCheckTargets,
     itcExportSeo,
     itcMaterializePlan,
@@ -623,5 +624,149 @@ describe('itcMaterializePlan from the frozen snapshot (0300 R1 / 0301 R1)', () =
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
+    });
+});
+
+describe('itc publish stage edge contracts (0302)', () => {
+    it('every stage refuses a missing work_dir with exit 1', async () => {
+        for (const stage of [
+            itcMaterializePlan,
+            itcCheckTargets,
+            itcSendTargets,
+            itcReconcileReceipts,
+            itcExportSeo,
+            itcReportSummary,
+            itcAuthorVerdict,
+        ]) {
+            expect(await stage([])).toBe(1);
+        }
+    });
+
+    it('materialize refuses a missing draft, a draft without H1, and an empty body', async () => {
+        await withTempDir(async (workDir) => {
+            expect(await itcMaterializePlan([workDir])).toBe(1);
+            writeFileSync(join(workDir, '3-draft-draft-article.md'), 'no heading here');
+            expect(await itcMaterializePlan([workDir])).toBe(1);
+            writeFileSync(join(workDir, '3-draft-draft-article.md'), '# Title\n\n   ');
+            expect(await itcMaterializePlan([workDir])).toBe(1);
+        });
+    });
+
+    it('legacy positional materialize carries brief frontmatter, references and the outline into content.json', async () => {
+        await withTempDir(async (workDir) => {
+            writeFileSync(join(workDir, '3-draft-draft-article.md'), '# Title\n\nBody.');
+            mkdirSync(join(workDir, '2-outline'), { recursive: true });
+            writeFileSync(join(workDir, '2-outline/outline-approved.md'), '- a\n');
+            writeFileSync(
+                join(workDir, 'brief.md'),
+                '---\ntags: [ai, \'llm\']\nkeywords: rag, agents\ndescription: "A short one"\n---\n# Brief\n',
+            );
+            writeFileSync(
+                join(workDir, 'docs.json'),
+                JSON.stringify([{ id: 'd1', title: 'Doc', sourceUri: 'https://x.test/d1' }, { id: 7 }]),
+            );
+            expect(await itcMaterializePlan([workDir, '', 'en', 'false'])).toBe(0);
+            const content = JSON.parse(readFileSync(join(workDir, '4-publish/content.json'), 'utf-8'));
+            expect(content.outline).toBe('- a');
+            expect(content.references).toEqual([{ url: 'https://x.test/d1', title: 'Doc', cite: 'd1' }, {}]);
+            expect(content.metadata).toEqual({
+                published: false,
+                tags: ['ai', 'llm'],
+                keywords: ['rag', 'agents'],
+                description: 'A short one',
+            });
+            const plan = JSON.parse(readFileSync(join(workDir, '4-publish/publish-plan.json'), 'utf-8'));
+            expect(plan.targets).toEqual([]);
+
+            // Malformed docs.json and a brief without frontmatter are ignored, not fatal.
+            writeFileSync(join(workDir, 'docs.json'), '{not json');
+            writeFileSync(join(workDir, 'brief.md'), '# Brief only\n');
+            expect(await itcMaterializePlan([workDir, '', 'en', 'false'])).toBe(0);
+            const again = JSON.parse(readFileSync(join(workDir, '4-publish/content.json'), 'utf-8'));
+            expect(again.references).toBeUndefined();
+            expect(again.metadata).toEqual({ published: false });
+        });
+    });
+
+    it('reconcile fails loud on a corrupt receipt', async () => {
+        await withTempDir(async (workDir) => {
+            const receiptsDir = join(workDir, '4-publish/receipts');
+            mkdirSync(receiptsDir, { recursive: true });
+            writeFileSync(
+                join(workDir, '4-publish/publish-plan.json'),
+                JSON.stringify({ targets: [{ plugin: 'qiita-pub', mode: 'draft' }] }),
+            );
+            writeFileSync(join(receiptsDir, 'qiita-pub.json'), '{corrupt');
+            expect(await itcReconcileReceipts([workDir])).toBe(1);
+        });
+    });
+
+    it('report marks a malformed verdict and a non-succeeded receipt as failed, counting revisions', async () => {
+        await withTempDir(async (workDir) => {
+            const receiptsDir = join(workDir, '4-publish/receipts');
+            mkdirSync(receiptsDir, { recursive: true });
+            writeFileSync(join(workDir, '.itc-verdict.json'), '{bad');
+            writeFileSync(join(workDir, '.auto-revise-count'), '2\n');
+            writeFileSync(join(receiptsDir, 'junk.json'), '{bad');
+            seedReceipt(receiptsDir, 'qiita-pub', { status: 'failed', effect: 'none' });
+            expect(await itcReportSummary([workDir, '2'])).toBe(0);
+            const report = JSON.parse(readFileSync(join(workDir, '5-report/report.json'), 'utf-8'));
+            expect(report.outcome).toBe('failed');
+            expect(report.revisions).toBe(2);
+        });
+    });
+});
+
+describe('itcAuthorVerdict dispositions (0301 R2)', () => {
+    async function disposition(workDir: string, env: Record<string, string | undefined> = {}): Promise<string> {
+        const prior = { auto: process.env.KK_ITC_AUTO, max: process.env.KK_ITC_MAX_REVISIONS };
+        process.env.KK_ITC_AUTO = env.auto;
+        process.env.KK_ITC_MAX_REVISIONS = env.max;
+        if (env.auto === undefined) delete process.env.KK_ITC_AUTO;
+        if (env.max === undefined) delete process.env.KK_ITC_MAX_REVISIONS;
+        try {
+            expect(await itcAuthorVerdict([workDir])).toBe(0);
+            return readFileSync(join(workDir, '.itc/disposition.txt'), 'utf-8').trim();
+        } finally {
+            if (prior.auto === undefined) delete process.env.KK_ITC_AUTO;
+            else process.env.KK_ITC_AUTO = prior.auto;
+            if (prior.max === undefined) delete process.env.KK_ITC_MAX_REVISIONS;
+            else process.env.KK_ITC_MAX_REVISIONS = prior.max;
+        }
+    }
+    const verdict = (workDir: string, v: unknown): void =>
+        writeFileSync(join(workDir, '.itc-verdict.json'), typeof v === 'string' ? v : JSON.stringify(v));
+
+    it('finishes without a verdict or on PASS with an in-enum confidence', async () => {
+        await withTempDir(async (workDir) => {
+            expect(await disposition(workDir)).toBe('finish');
+            verdict(workDir, { verdict: 'PASS', confidence: 'LOW' });
+            expect(await disposition(workDir)).toBe('finish');
+        });
+    });
+
+    it('fails on FAIL, an out-of-enum confidence, or an unparseable verdict', async () => {
+        await withTempDir(async (workDir) => {
+            verdict(workDir, { verdict: 'PASS', confidence: 'SURE' });
+            expect(await disposition(workDir)).toBe('fail');
+            verdict(workDir, { verdict: 'FAIL', confidence: 'HIGH' });
+            expect(await disposition(workDir)).toBe('fail');
+            verdict(workDir, '{oops');
+            expect(await disposition(workDir)).toBe('fail');
+        });
+    });
+
+    it('bounds revisions: manual up to 3, auto up to KK_ITC_MAX_REVISIONS', async () => {
+        await withTempDir(async (workDir) => {
+            verdict(workDir, { verdict: 'NEEDS_REVISION', confidence: 'HIGH' });
+            expect(await disposition(workDir)).toBe('revise');
+            writeFileSync(join(workDir, '.revise-count'), '3');
+            expect(await disposition(workDir)).toBe('fail');
+            expect(await disposition(workDir, { auto: 'true', max: '1' })).toBe('autorevise');
+            writeFileSync(join(workDir, '.auto-revise-count'), '1');
+            expect(await disposition(workDir, { auto: 'true', max: '1' })).toBe('fail');
+            writeFileSync(join(workDir, '.auto-revise-count'), 'NaN-ish');
+            expect(await disposition(workDir, { auto: 'true' })).toBe('autorevise');
+        });
     });
 });

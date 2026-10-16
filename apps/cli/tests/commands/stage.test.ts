@@ -175,6 +175,35 @@ describe('kk stage verb (0144)', () => {
             }
         });
     });
+    it('routes `itc-*` stages in process, falling back to the stages script for unknown itc names', async () => {
+        const program = new Command();
+        program.exitOverride();
+        registerStageCommand(program);
+
+        await withTempDirAsync(async (dir) => {
+            // Native itc stage: bad usage maps exit 1 to CommanderError.
+            await expect(program.parseAsync(['stage', 'run', 'itc-author-complete'], { from: 'user' })).rejects.toThrow(
+                CommanderError,
+            );
+            // Native itc stage success: a manual-review receipt over a seeded workspace.
+            mkdirSync(join(dir, '2-outline'), { recursive: true });
+            writeFileSync(join(dir, '3-draft-draft-article.md'), '# T\n\nDraft.');
+            writeFileSync(join(dir, '2-outline/outline-approved.md'), '# O\n\nOutline.');
+            await expect(
+                program.parseAsync(['stage', 'run', 'itc-author-complete', dir, 'p1', 'manual'], { from: 'user' }),
+            ).resolves.toBeDefined();
+            // Unknown itc name: not native, so the stages script owns it (and its exit code).
+            const prevArgv1 = process.argv[1] ?? '';
+            process.argv[1] = fakePkg(dir, 'process.exit(process.argv[2] === "itc-legacy" ? 0 : 4);\n');
+            try {
+                await expect(
+                    program.parseAsync(['stage', 'run', 'itc-legacy'], { from: 'user' }),
+                ).resolves.toBeDefined();
+            } finally {
+                process.argv[1] = prevArgv1;
+            }
+        });
+    });
 });
 
 describe('normalizeStageArgs — legacy `kk stage <stage>` → canonical `stage run` (0275 R2)', () => {

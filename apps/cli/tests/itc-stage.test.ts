@@ -235,3 +235,74 @@ describe('itc-decision slot forms (0301 R1)', () => {
         });
     });
 });
+
+describe('itc stage request and receipt guards (0298 / 0301 / 0303)', () => {
+    const run = (dir: string, stage: string, body: unknown): Promise<number | undefined> => {
+        const request = join(dir, `${stage}.json`);
+        writeFileSync(request, typeof body === 'string' ? body : JSON.stringify(body));
+        return withEnv({ HOME: join(dir, 'home'), KK_CONFIG: undefined, KK_WORKS_DIR: undefined }, () =>
+            runItcStage([stage, '--request', request]),
+        );
+    };
+
+    it('itc-publish-plan rejects an off-schema or non-JSON request and an unknown positional target', async () => {
+        await withTempDir(async (dir) => {
+            expect(await run(dir, 'itc-publish-plan', { workDir: 7 })).toBe(1);
+            expect(await run(dir, 'itc-publish-plan', '{nope')).toBe(1);
+            expect(await runItcStage(['itc-publish-plan', dir, 'no-such-pub:article', 'en', 'false'])).toBe(1);
+        });
+    });
+
+    it('itc-decision --request needs an existing, on-schema file and serves an explicit choice', async () => {
+        await withTempDir(async (dir) => {
+            expect(await runItcStage(['itc-decision'])).toBe(1);
+            expect(await runItcStage(['itc-decision', '--request', join(dir, 'absent.json')])).toBe(1);
+            expect(await run(dir, 'itc-decision', { decisionId: 'not-a-decision' })).toBe(1);
+            const outPath = join(dir, 'out/decision.json');
+            const body = {
+                parentRunId: 'run-d',
+                decisionId: 'kk-itc-topic-choice',
+                candidates: [{ id: 'a' }],
+                outPath,
+                explicitChoice: 'a',
+            };
+            expect(await run(dir, 'itc-decision', body)).toBe(0);
+            expect(JSON.parse(readFileSync(outPath, 'utf-8')).value).toBe('a');
+        });
+    });
+
+    it('itc-author-complete refuses a missing or empty outline and an unparseable verdict', async () => {
+        await withTempDir(async (dir) => {
+            writeFileSync(join(dir, '3-draft-draft-article.md'), '# T\n\nDraft.');
+            expect(await runItcStage(['itc-author-complete', dir, 'p1'])).toBe(1);
+            mkdirSync(join(dir, '2-outline'), { recursive: true });
+            writeFileSync(join(dir, '2-outline/outline-approved.md'), '  \n');
+            expect(await runItcStage(['itc-author-complete', dir, 'p1'])).toBe(1);
+            writeFileSync(join(dir, '2-outline/outline-approved.md'), '# O\n');
+            writeFileSync(join(dir, '.itc-verdict.json'), '{bad');
+            expect(await runItcStage(['itc-author-complete', dir, 'p1'])).toBe(1);
+        });
+    });
+
+    it('itc-prepare reports an unresolvable launch, prints a collected intake, and guards the snapshot', async () => {
+        await withTempDir(async (dir) => {
+            // No topic, input file or collected source: nothing to resolve.
+            expect(await run(dir, 'itc-prepare', { parentRunId: 'run-p' })).toBe(1);
+            // A collected launch without --chosen is an intake: no workspace yet.
+            expect(await run(dir, 'itc-prepare', { fromCollect: 'rust-weekly', parentRunId: 'run-p' })).toBe(0);
+            expect(existsSync(join(dir, 'home/.config/kk/works'))).toBe(false);
+
+            const workDir = join(dir, 'ws');
+            expect(await run(dir, 'itc-prepare', { topic: 'one', parentRunId: 'run-p', dir: workDir })).toBe(0);
+            // A second run may not silently adopt the first run's snapshot.
+            expect(await run(dir, 'itc-prepare', { topic: 'one', parentRunId: 'run-q', dir: workDir })).toBe(1);
+            expect(JSON.parse(readFileSync(join(workDir, 'itc-options.json'), 'utf-8')).parentRunId).toBe('run-p');
+
+            // An unwritable workspace (its parent is a file) fails loud.
+            writeFileSync(join(dir, 'blocker'), 'file');
+            expect(
+                await run(dir, 'itc-prepare', { topic: 'two', parentRunId: 'run-p', dir: join(dir, 'blocker/ws') }),
+            ).toBe(1);
+        });
+    });
+});

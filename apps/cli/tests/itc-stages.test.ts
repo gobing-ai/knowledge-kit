@@ -676,6 +676,26 @@ describe('itc stages in-process (coverage of the spawned module body)', () => {
         expect(usage.exit).toBe(1);
         expect(usage.stderr).toContain('usage');
     });
+    it('itc-publish-plan is a no-op inside the native stage (no re-entry) and itc-report fails loud on an unwritable report', async () => {
+        const nested = seedWorkDir();
+        const prior = process.env._KK_ITC_STAGE_NATIVE;
+        process.env._KK_ITC_STAGE_NATIVE = '1';
+        try {
+            expect(
+                (await capture((m) => m.itcPublishPlan([nested, 'medium-pub', 'en', 'false']))).exit,
+            ).toBeUndefined();
+        } finally {
+            if (prior === undefined) delete process.env._KK_ITC_STAGE_NATIVE;
+            else process.env._KK_ITC_STAGE_NATIVE = prior;
+        }
+        expect(existsSync(join(nested, '4-publish/publish-plan.json'))).toBe(false);
+
+        const blocked = seedWorkDir();
+        writeFileSync(join(blocked, '5-report'), 'a file where the report dir belongs');
+        const res = await capture((m) => m.itcReport([blocked, '2']));
+        expect(res.exit).toBe(1);
+        expect(res.stderr).toContain('cannot write report');
+    });
     it('itc-report publish section (0151): fanout aggregates, browser results, decline', async () => {
         const plan = {
             live: true,
