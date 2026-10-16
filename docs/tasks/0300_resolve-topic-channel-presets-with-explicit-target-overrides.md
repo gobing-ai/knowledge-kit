@@ -4,7 +4,7 @@ name: Resolve topic channel presets with explicit target overrides
 status: done
 template: feature-impl
 created_at: 2026-10-15T21:59:21.904Z
-updated_at: "2026-10-16T05:45:51.129Z"
+updated_at: "2026-10-16T07:02:04.093Z"
 ac_altitude: task-local
 ac_numbering: task-local
 feature_id: G21
@@ -105,15 +105,15 @@ Execution budget: existing estimate 6h; one task pipeline with bounded repairs. 
 
 **Pipeline verify results**
 
-- Verdict: PARTIAL (from verdict artifact)
+- Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | PARTIAL | `resolveItcTargets` (`apps/cli/src/itc-plan.ts:238-338`) implements precedence targets > explicit preset > workflow-config preset > topic profile, absent-vs-empty, duplicate collapse/conflict rejection, malformed-override failure, traversal rejection, and stamps origin/presetName/presetDigest (tests `apps/cli/tests/itc-presets.test.ts:18`, `apps/cli/tests/itc-presets.test.ts:38`, `apps/cli/tests/itc-presets.test.ts:115`, `apps/cli/tests/itc-presets.test.ts:128`, `apps/cli/tests/itc-presets.test.ts:141`, `apps/cli/tests/itc-presets.test.ts:159`, `apps/cli/tests/itc-presets.test.ts:168`). Gap: `itcMaterializePlan` (`apps/cli/src/itc-publish.ts:79`) supplies only explicit targets/preset; workflow-config and topic-profile presets are never passed at runtime because the DAG binds no such vars. |
+| R1 | MET | `resolveItcTargets` (`apps/cli/src/itc-plan.ts:237`) implements precedence targets > explicit preset > workflow-config preset > topic profile, absent-vs-empty, duplicate collapse/conflict rejection, malformed-override failure and traversal rejection, stamping origin/presetName/presetDigest. The runtime path now reads every source from the frozen `itc-options.json`: launch vs config preset by `publishPresetSource` and the topic profile (`apps/cli/src/itc-publish.ts:149-158`). |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R6 — Topic presets resolve an inspectable frozen plan | PARTIAL | test | `bun test apps/cli/tests/itc-presets.test.ts` passes for all precedence/failure cases above. Runtime path only exercises explicit selectors; config/topic preset sources unreachable from `plugins/kk/workflows/kk-itc.yaml`. |
+| R6 — Topic presets resolve an inspectable frozen plan | MET | test | `apps/cli/tests/itc-presets.test.ts:38`, `apps/cli/tests/itc-presets.test.ts:115`, `apps/cli/tests/itc-presets.test.ts:128`, `apps/cli/tests/itc-presets.test.ts:141`, `apps/cli/tests/itc-presets.test.ts:159`, `apps/cli/tests/itc-presets.test.ts:168`; runtime from snapshot: launch preset → explicit-preset `apps/cli/tests/itc-publish.test.ts:589`, config preset → workflow-config `apps/cli/tests/itc-publish.test.ts:596`. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

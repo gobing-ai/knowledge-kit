@@ -4,7 +4,7 @@ name: Plan ITC publication from discovered plugin capabilities
 status: done
 template: feature-impl
 created_at: 2026-10-15T21:59:21.896Z
-updated_at: "2026-10-16T05:45:12.722Z"
+updated_at: "2026-10-16T07:02:03.673Z"
 ac_altitude: task-local
 ac_numbering: task-local
 feature_id: G21
@@ -109,15 +109,15 @@ Execution budget: existing estimate 8h; one task pipeline with bounded repairs. 
 
 **Pipeline verify results**
 
-- Verdict: PARTIAL (from verdict artifact)
+- Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | PARTIAL | Profiles are manifest-declared and validated (`packages/kk-core/src/manifest.ts:125`, `packages/kk-core/src/manifest.ts:174`, `packages/kk-core/src/manifest.ts:196-200`; registry exposure `packages/kk-core/src/registry.ts:32-33`, `packages/kk-core/src/registry.ts:415`). `buildItcPublishPlan` resolves format/locale/draft modes/requirements/bindings from the manifest and rejects incompatible operations (`apps/cli/src/itc-plan.ts:384-508`; tests `apps/cli/tests/itc-plan.test.ts:124`, `apps/cli/tests/itc-plan.test.ts:202`, `apps/cli/tests/itc-plan.test.ts:257`, `apps/cli/tests/itc-plan.test.ts:313`). Gap: a channel table survives — `BROWSER_TARGETS` at `apps/cli/src/itc-plan.ts:113` decides transport, and `apps/cli/src/itc-plan.ts:472-476` hardcodes wechatmp-pub/x-pub exceptions, contradicting "without a channel table" and `docs/design/kk-itc-refactor.md:90`. No manifest declares a transport, so removal needs a schema decision (derive from `browserSession` vs. add a declared `transport`). |
+| R1 | MET | Profiles are manifest-declared and validated (`packages/kk-core/src/manifest.ts:125`, `packages/kk-core/src/manifest.ts:174`); `buildItcPublishPlan` (`apps/cli/src/itc-plan.ts:383`) resolves format/locale/draft modes/requirements/bindings from the manifest and rejects incompatible operations. The channel table is gone: transport derives from the manifest's declared `browserSession` (`apps/cli/src/itc-plan.ts:472`, `apps/cli/src/itc-plan.ts:490`), so a new publisher needs no code edit. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R5 — Publish plugins describe operation-specific capabilities | PARTIAL | test | `bun test apps/cli/tests/itc-plan.test.ts` passes: manifest-only fake publisher resolves with complete bindings (`apps/cli/tests/itc-plan.test.ts:124`), Qiita/WeChat bindings (`apps/cli/tests/itc-plan.test.ts:155`), requirement rejections (`apps/cli/tests/itc-plan.test.ts:202`, `apps/cli/tests/itc-plan.test.ts:215`), unsupported mode rejection (`apps/cli/tests/itc-plan.test.ts:257`). Not met: transport still comes from the `BROWSER_TARGETS` table at `apps/cli/src/itc-plan.ts:113`, so a new browser publisher needs a code edit. |
+| R5 — Publish plugins describe operation-specific capabilities | MET | test | `apps/cli/tests/itc-plan.test.ts:124` (manifest-only fake publisher with complete bindings), `apps/cli/tests/itc-plan.test.ts:155` (Qiita/WeChat), requirement and unsupported-mode rejections `apps/cli/tests/itc-plan.test.ts:202`, `apps/cli/tests/itc-plan.test.ts:257`; transport from `browserSession` asserted at `apps/cli/tests/itc-stages.test.ts:339`; off-schema/non-JSON/unknown-target plan requests refused at `apps/cli/tests/itc-stage.test.ts:248`. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

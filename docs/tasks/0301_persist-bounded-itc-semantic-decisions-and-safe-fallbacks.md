@@ -4,7 +4,7 @@ name: Persist bounded ITC semantic decisions and safe fallbacks
 status: done
 template: feature-impl
 created_at: 2026-10-15T21:59:21.905Z
-updated_at: "2026-10-16T05:45:51.445Z"
+updated_at: "2026-10-16T07:02:04.297Z"
 ac_altitude: task-local
 ac_numbering: task-local
 feature_id: G21
@@ -112,17 +112,17 @@ Execution budget: existing estimate 8h; one task pipeline with bounded repairs. 
 
 **Pipeline verify results**
 
-- Verdict: PARTIAL (from verdict artifact)
+- Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | PARTIAL | `itcDecision` (`apps/cli/src/itc-decision.ts:84-230`) bypasses the model on an explicit operator choice, compacts evidence, validates the choice against the allowed set and falls back to the declared default (or `none` for presets) while recording source and reason (tests `apps/cli/tests/itc-decision.test.ts:18`, `apps/cli/tests/itc-decision.test.ts:47`, `apps/cli/tests/itc-decision.test.ts:72`, `apps/cli/tests/itc-decision.test.ts:97`). Gap: no workflow node invokes `itc-decision`, so semantic choices in `plugins/kk/workflows/kk-itc.yaml` are not routed through it; `candidateDigest` is passthrough with no producer. |
-| R2 | MET | The `child-author` node (`plugins/kk/workflows/kk-itc.yaml:42-64`) derives `cid="${vars.__runId}-author"` (`plugins/kk/workflows/kk-itc.yaml:53`), continues a paused child, launches only when absent, refuses to relaunch done/failed, and reports a re-pause as non-success naming the child. `verify-child-freeze` (`plugins/kk/workflows/kk-itc.yaml:65`) validates the child receipt before publication; child identity is recorded in `author-run.json` (`plugins/kk/workflows/kk-itc-author.yaml:36-46`); author receipt `apps/cli/tests/itc-decision.test.ts:119`. |
+| R1 | MET | `itcDecision` (`apps/cli/src/itc-decision.ts:85`) bypasses the model on an explicit choice, compacts evidence, validates the pick against the allowed set, derives `candidateDigest` when absent (`apps/cli/src/itc-decision.ts:92-93`), and falls back to `defer` (or `none` for presets) recording source and reason. Wired: the author FSM's outline autopick calls `itc-decision --outline` (`plugins/kk/workflows/kk-itc-author.yaml:90`) and pauses when `.auto-pick` is empty (`plugins/kk/workflows/kk-itc-author.yaml:268`); the entry calls `itc-decision --topic` (`plugins/kk/commands/workflow-run.md:230`). Auto defer stops safely; it never guesses a first choice. |
+| R2 | MET | `child-author` derives `cid="${vars.__runId}-author"` (`plugins/kk/workflows/kk-itc.yaml:89`), continues a paused child, launches only when absent, refuses to relaunch done/failed (`plugins/kk/workflows/kk-itc.yaml:104-113`). |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R4 — Semantic choices remain within validated candidates | PARTIAL | test | `bun test apps/cli/tests/itc-decision.test.ts` passes (`apps/cli/tests/itc-decision.test.ts:72`, `apps/cli/tests/itc-decision.test.ts:97`). Not wired into any workflow. |
-| R17 — Interactive authoring resumes the recorded child | MET | test | `bun test apps/cli/tests/kk-itc-dag.test.ts` 7 pass with a stub `spur` on PATH: fresh launch under derived id (`apps/cli/tests/kk-itc-dag.test.ts:146`), continue the same paused child (`apps/cli/tests/kk-itc-dag.test.ts:153`), repeated pause is a named non-success (`apps/cli/tests/kk-itc-dag.test.ts:159`), never relaunch done/failed (`apps/cli/tests/kk-itc-dag.test.ts:165`). Old yaml failed these 5 assertions. |
+| R4 — Semantic choices remain within validated candidates | MET | test | `apps/cli/tests/itc-decision.test.ts:73`, `apps/cli/tests/itc-decision.test.ts:98`; catalog call with fake executor: in-set pick `apps/cli/tests/itc-decision.test.ts:256`, out-of-set → defer `apps/cli/tests/itc-decision.test.ts:289`, failing catalog → none `apps/cli/tests/itc-decision.test.ts:303`; slot form defers without guessing `apps/cli/tests/itc-stage.test.ts:206`. |
+| R17 — Interactive authoring resumes the recorded child | MET | test | `apps/cli/tests/kk-itc-dag.test.ts:162`, `apps/cli/tests/kk-itc-dag.test.ts:217`, `apps/cli/tests/kk-itc-dag.test.ts:223`, `apps/cli/tests/kk-itc-dag.test.ts:229`. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
