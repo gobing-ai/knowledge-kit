@@ -91,6 +91,9 @@ export interface ItcPlanTargetDetail {
     profile: string;
     variant: string;
     transport: 'fanout' | 'browser';
+    mode?: 'draft' | 'live';
+    payloadPath?: string;
+    payloadDigest?: string;
     metadata: Record<string, unknown>;
 }
 
@@ -455,6 +458,7 @@ export function buildItcPublishPlan(request: ItcPlanRequest, plugins: readonly P
             profile: profileName,
             variant,
             transport: isBrowser ? 'browser' : 'fanout',
+            mode: modeKey,
             metadata: switches,
         });
     }

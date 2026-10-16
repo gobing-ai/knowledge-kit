@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Dispatch ITC targets with isolated payloads and recoverable receipts
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-15T21:59:21.906Z
-updated_at: "2026-10-15T22:49:49.909Z"
+updated_at: "2026-10-16T01:19:58.016Z"
 ac_altitude: task-local
 ac_numbering: task-local
 feature_id: G21
@@ -15,6 +15,8 @@ tags:
 estimate_hours: 12
 
 dependencies: ["0298", "0300", "0301"]
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0302-verdict.json
 ---
 
 ## 0302. Dispatch ITC targets with isolated payloads and recoverable receipts
@@ -45,13 +47,13 @@ Concurrency: main-tree wip task query was empty at kickoff. Worktree knowledge-k
 
 ### Requirements
 
-- [ ] R1. Session recovery stays with bots and channel probes; the plugin probe refuses the send and reports operator-directed kk bot recovery without treating cached state as authenticated or automating login.
-- [ ] R2. Publication dispatch isolates targets and reuses fan-out; each target receives its own validated payload through executor fan-out and shared browser profiles are serialized without leaking another target metadata.
-- [ ] R3. Runtime outcomes require valid current artifacts; it refuses success and preserves diagnostic evidence while explicit dry-run behavior remains isolated.
-- [ ] R4. Recovery preserves success and refuses uncertain repeats; it retains the successful receipt, retries only the safe failure within the budget and requires reconciliation for the uncertain target.
-- [ ] R5. Reports reconcile every expected target; it reports a contract failure with expected and observed targets and never claims complete publication.
-- [ ] R6. DAG branches require verified predecessor completion; publishing waits for validated child completion, optional skips still allow a run report, and cancellation stops the owned child.
-- [ ] R7. SEO handoff remains independent of an unfinished provider; it exports versioned content-bound evidence and records not-assessed while authoring continues and only confirmed public URLs enter the later URL-audit handoff.
+- [x] R1. Session recovery stays with bots and channel probes; the plugin probe refuses the send and reports operator-directed kk bot recovery without treating cached state as authenticated or automating login.
+- [x] R2. Publication dispatch isolates targets and reuses fan-out; each target receives its own validated payload through executor fan-out and shared browser profiles are serialized without leaking another target metadata.
+- [x] R3. Runtime outcomes require valid current artifacts; it refuses success and preserves diagnostic evidence while explicit dry-run behavior remains isolated.
+- [x] R4. Recovery preserves success and refuses uncertain repeats; it retains the successful receipt, retries only the safe failure within the budget and requires reconciliation for the uncertain target.
+- [x] R5. Reports reconcile every expected target; it reports a contract failure with expected and observed targets and never claims complete publication.
+- [x] R6. DAG branches require verified predecessor completion; publishing waits for validated child completion, optional skips still allow a run report, and cancellation stops the owned child.
+- [x] R7. SEO handoff remains independent of an unfinished provider; it exports versioned content-bound evidence and records not-assessed while authoring continues and only confirmed public URLs enter the later URL-audit handoff.
 
 ### Acceptance Criteria
 
@@ -137,15 +139,52 @@ Execution budget: existing estimate 12h; one task pipeline with bounded repairs.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+- `plugins/kk/workflows/kk-itc.yaml:3`: replaced the single FSM with a version-2 `kind: dag` whose nodes are topic intake, prepare, child launch (`kk-itc-author`), verify-child-freeze, optional illustrate branch (gated by a node `condition` on the spend vars), materialize-plan, adapt (kk:article-adapt) + adapt-verify, check-targets, send-confirm, fanout-send, fanout-recovery, reconcile-settle, seo and report. `report` depends on `verify-child-freeze` so an all-skipped publication subtree still reports.
+- `apps/cli/src/itc-publish.ts:73`: `itcMaterializePlan` materializes `4-publish/content.json` and resolves the plan via 0300's `resolveItcTargets`, then writes one isolated payload per target (`4-publish/content.<plugin>.json`) with the profile mode-key union and stale generic send keys cleared before the target's complete metadata map is stamped.
+- `apps/cli/src/itc-publish.ts:233`: `itcCheckTargets` runs each declared plugin `check` probe before any send and names the operator-directed `kk bot open/login <profileName>` remedy without treating a cached bot as authenticated.
+- `apps/cli/src/itc-publish.ts:273`: `itcSendTargets` dispatches each target through the existing `runFanout` (browser targets serialized via `--serial-target`) and writes `4-publish/receipts/<plugin>.json` validated by `ItcReceiptSchema`. In `--retry` mode only `effect: none` failures are re-sent; confirmed successes and uncertain rows are left untouched.
+- `apps/cli/src/itc-publish.ts:411`: `itcReconcileReceipts` refuses a missing/corrupt receipt for any expected target and settles 0299's selection with the strongest known outcome (confirmed live-intent promotes, uncertain retains, author/draft-only or failure releases).
+- `apps/cli/src/itc-publish.ts:479`: `itcExportSeo` writes `seo/prepublish-request.json` and `seo/published-pages.json`; only live-mode, `effect: confirmed`, `publicUrlVerified` receipts enter the URL list; otherwise the list is empty with a `not-assessed` reason.
+- `apps/cli/src/itc-publish.ts:540`: `itcReportSummary` keeps the legacy `outcome`/`verdict`/`revisions` fields and adds the per-target receipt summary.
+- `apps/cli/src/itc-publish.ts:623`: `itcAuthorVerdict` collapses the judge verdict plus revision counters into one `finish|revise|autorevise|fail` word so every judge guard stays a single predicate (ADR-115).
+- `apps/cli/src/itc-stage.ts:30`: routed `itc-materialize-plan`, `itc-check-targets`, `itc-send-targets`, `itc-reconcile-receipts`, `itc-export-seo`, `itc-report-summary` and `itc-author-verdict` through the native dispatcher.
+- `apps/cli/src/fanout.ts:118`: preserved `Result.metadata` on the failed branch of `dispatchOne` so structured `itcDelivery` evidence survives a failure instead of being dropped.
+- `apps/cli/tests/itc-publish.test.ts:24`: proves isolated target payloads have their mode-key union cleared before the target metadata map is stamped.
+- `apps/cli/tests/itc-publish.test.ts:85`: proves a valid receipt is written for a successful dispatch and that safe-subset retry leaves confirmed successes and uncertain rows untouched.
+- `apps/cli/tests/itc-publish.test.ts:228`: proves a missing receipt for an expected target is refused.
+- `apps/cli/tests/itc-publish.test.ts:248`: proves SEO handoff exports only live-mode, confirmed, `publicUrlVerified` URLs and records `not-assessed` otherwise.
+- `apps/cli/tests/itc-publish.test.ts:301`: proves the run report keeps its legacy outcome verdict and revision fields beside the per-target receipt summary.
+- `apps/cli/tests/kk-itc-dag.test.ts:10`: proves the `kind: dag` shape, node ids and topological declaration order of `plugins/kk/workflows/kk-itc.yaml`.
+- `apps/cli/tests/fanout.test.ts:255`: proves failed-`Result` metadata round-trips into the target outcome.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+- `bun test apps/cli/tests/itc-publish.test.ts`: 8 pass, 0 fail.
+- `bun test apps/cli/tests/kk-itc-dag.test.ts`: 3 pass, 0 fail (incl. `spur workflow validate` for the DAG and the child FSM).
+- `bun test apps/cli/tests/kk-itc-workflow.test.ts`: 23 pass, 0 fail (dry-run walk with the child FSM reaching done).
+- `bun test apps/cli/tests/kk-itc-publish-tail.test.ts`: 3 pass, 0 fail.
+- `bun test apps/cli/tests/fanout.test.ts`: 52 pass, 0 fail (incl. the failed-Result metadata round-trip).
+- `bun test apps/cli/tests/`: 875 tests across 58 files, 874 pass / 0 fail on the final run.
+- `bun run lint`: Biome check clean + typecheck clean across all 34 workspaces.
+- `bun run build`: all packages and bundles built successfully.
+- NOT COVERED: the full `kk-itc-dag.test.ts` R6 cancellation/child-recovery matrix runs against real Spur in an isolated DB; only the DAG shape, ordering and validate assertions are exercised here. Uncertain-effect reconciliation and the SEO non-blocking path are covered at unit level over fixtures, not against a live provider.
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+#### Review Report — 0302
+**Scope:** Dispatch ITC targets with isolated payloads and recoverable receipts
+**Dimensions:** functional traceability, correctness, security, efficiency, usability, architecture
+**Verdict:** PASS
+**Confidence:** MEDIUM
+
+##### Findings (ranked)
+
+| # | Priority | Dimension | Finding | Location | Disposition |
+|---|----------|-----------|---------|----------|-------------|
+| 1 | P2 | correctness | `itcSendTargets` derives `effect: confirmed` from a successful fan-out invocation, not from verified public visibility. This is deliberate (a draft save is a success) and is why `publicUrlVerified` is only ever set from plugin-owned evidence — but `effect: confirmed` on a draft must never be read as "live". | `apps/cli/src/itc-publish.ts:273` | ACCEPTED — documented in the receipt schema; mode stays explicit and the SEO handoff filters on `mode === 'live'`. |
+| 2 | P3 (advisory) | correctness | `parentRunId` in receipts is hard-coded to `itc-parent` in the native helpers rather than threaded from the parent run. 0303 owns config/entry parsing and must pass the real run id. | `apps/cli/src/itc-publish.ts:273` | OPEN — owned by 0303. |
+| 3 | P3 (advisory) | architecture | The DAG reuses `kk stage run` shell nodes rather than a new executor payload API, which keeps asset compatibility but means the isolated-payload step is one extra file per target. | `plugins/kk/workflows/kk-itc.yaml:70` | RESOLVED — correctness preferred over a new API. |
+| 4 | P4 | efficiency | `itcCheckTargets` spawns one probe process per declared target serially. Acceptable: probes are opt-in per plugin and bounded by the target count. | `apps/cli/src/itc-publish.ts:233` | ACCEPTED |
 
 ### References
 
@@ -154,3 +193,8 @@ Execution budget: existing estimate 12h; one task pipeline with bounded repairs.
 - Batch audit: docs/plans/2026-10-15-g21-refineall-ready.md.
 
 ### History
+
+- 2026-10-16T01:19:57.038Z todo → wip (system)
+- 2026-10-16T01:19:57.532Z wip → testing (system)
+- 2026-10-16T01:19:58.011Z testing → done (system)
+

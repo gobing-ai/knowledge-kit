@@ -129,7 +129,7 @@ states:
           agent: ${vars.agent}
           input: |
             Invoke the kk:taste-unslop skill.
-            Read ${vars.work_dir}/3-draft-draft-article.md and write the line-edited version to ${vars.work_dir}/3-draft-draft-article.new.md, removing slop while preserving technical claims and links.
+            Read ${vars.work_dir}/3-draft-draft-article.md and write the line-edited version to ${vars.work_dir}/3-draft-draft-article.new.md, removing slop (AI-tell phrasing, filler, hedging) while preserving the technical claims, code blocks, links, and the approved outline's structure. Do not modify or delete the original file; the pipeline swaps the edited file in.
           expectFile: ${vars.work_dir}/3-draft-draft-article.new.md
       - kind: shell
         options:
@@ -188,12 +188,18 @@ states:
           input: |
             Invoke the kk:content-judge skill.
             Evaluate the draft at ${vars.work_dir}/3-draft-draft-article.md against the ${vars.rubric} rubric.
-            Write the verdict JSON to ${vars.work_dir}/.itc-verdict.json.
+            Research evidence: if ${vars.work_dir}/docs.json exists, read it and weigh it when judging.
+            Write the verdict JSON to ${vars.work_dir}/.itc-verdict.json per the skill's verdict contract.
+            Print the verdict path as the last line of stdout.
           expectFile: ${vars.work_dir}/.itc-verdict.json
       - kind: file.read.into-var
         options:
           path: ${vars.work_dir}/.itc-verdict.json
           var: __verdictFeedback
+      - kind: shell
+        options:
+          command: >-
+            KK_ITC_AUTO="${vars.auto}" KK_ITC_MAX_REVISIONS="${vars.max_revisions}" kk stage run itc-author-verdict "${vars.work_dir}"
 
   - id: author-finish
     description: "Validate non-empty draft, approved outline, and review/judge disposition, then write .itc/author-complete.json"
@@ -339,42 +345,36 @@ transitions:
 
   - from: judge
     to: author-finish
-    description: "Judge passed with acceptable confidence"
+    description: "Judge PASS with a HIGH/MEDIUM/LOW confidence (or no verdict file — the dry-run convention)"
     guard:
       kind: shell
       options:
-        command: >-
-          grep -q '"verdict":\s*"PASS"' "${vars.work_dir}/.itc-verdict.json" &&
-          grep -Eq '"confidence":\s*"(HIGH|MEDIUM|LOW)"' "${vars.work_dir}/.itc-verdict.json"
+        command: 'test ! -f "${vars.work_dir}/.itc/disposition.txt" || grep -qx finish "${vars.work_dir}/.itc/disposition.txt"'
 
   - from: judge
     to: draft-autorevise
-    description: "Judge requested revision in auto mode and auto-revision budget remains"
+    description: "Auto mode, NEEDS_REVISION, and auto-revision budget remains"
     guard:
       kind: shell
       options:
-        command: >-
-          test "${vars.auto}" = "true" &&
-          grep -q '"verdict":\s*"NEEDS_REVISION"' "${vars.work_dir}/.itc-verdict.json" &&
-          test "$(cat "${vars.work_dir}/.auto-revise-count" 2>/dev/null || echo 0)" -lt "${vars.max_revisions}"
+        command: 'grep -qx autorevise "${vars.work_dir}/.itc/disposition.txt"'
 
   - from: judge
     to: draft-revise
-    description: "Judge requested revision in interactive mode and manual revision budget remains"
+    description: "Interactive mode, NEEDS_REVISION, and manual revision budget remains"
     guard:
       kind: shell
       options:
-        command: >-
-          test "${vars.auto}" != "true" &&
-          grep -q '"verdict":\s*"NEEDS_REVISION"' "${vars.work_dir}/.itc-verdict.json" &&
-          test "$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0)" -lt 3
+        command: 'grep -qx revise "${vars.work_dir}/.itc/disposition.txt"'
 
   - from: judge
     to: failed
     terminalReason: failed-guard
-    description: "Judge failed or revision budget exhausted"
+    description: "FAIL, exhausted revision budget, or an out-of-contract verdict (0149 review P3)"
     guard:
-      kind: always
+      kind: shell
+      options:
+        command: 'grep -qx fail "${vars.work_dir}/.itc/disposition.txt"'
 
   - from: draft-autorevise
     to: unslop

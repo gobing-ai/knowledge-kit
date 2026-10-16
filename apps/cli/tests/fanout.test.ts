@@ -252,6 +252,23 @@ describe('fanout', () => {
         expect(result.targets[0]?.error).toBe('rejected by platform');
     });
 
+    it('0302 — preserves metadata on failed Result in TargetOutcome', async () => {
+        const dispatch = async (t: Target): Promise<Result> => {
+            return {
+                ok: false,
+                target: t,
+                error: 'refused',
+                metadata: { itcDelivery: { effect: 'none', publicUrlVerified: false } },
+            };
+        };
+        const result = await fanout(CONTENT, ['failed-target'], dispatch);
+        expect(result.targets[0]?.ok).toBe(false);
+        expect(result.targets[0]?.status).toBe('failed');
+        expect(result.targets[0]?.metadata).toEqual({
+            itcDelivery: { effect: 'none', publicUrlVerified: false },
+        });
+    });
+
     it('returns an empty all-ok result for no targets', async () => {
         const { dispatch, called } = makeDispatch();
 

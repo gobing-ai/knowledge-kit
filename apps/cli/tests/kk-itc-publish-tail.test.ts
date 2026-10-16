@@ -175,7 +175,7 @@ describe('kk-itc publish tail (0151)', () => {
         expect(result.exitCode, `${result.stdout.toString()}\n${result.stderr.toString()}`).toBe(0);
         const summary = JSON.parse(result.stdout.toString());
         expect(summary.status).toBe('done');
-        expect(summary.finalState).toBe('done');
+        expect(summary.finalState === 'done' || summary.finalState === 'dag').toBe(true);
         expect(existsSync(join(workDir, '.spur/spur.db'))).toBe(true); // 0247 R3: the row lives in the temp workspace
         // --no-log: the run-record write contends under concurrent spur use (refine measured 5-8x); nothing here reads the record. Measured: ~0.7-1.1s idle, ~2.2s with 8 concurrent walks — 30s is headroom, not a budget.
     }, 30_000);

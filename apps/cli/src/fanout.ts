@@ -115,6 +115,7 @@ async function dispatchOne(
                   ok: false,
                   status: 'failed',
                   error: result.error ?? result.message ?? 'publish failed',
+                  ...(result.metadata !== undefined ? { metadata: result.metadata } : {}),
                   durationMs,
               };
     } catch (err: unknown) {

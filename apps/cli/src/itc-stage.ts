@@ -4,6 +4,15 @@ import { join } from 'node:path';
 import { discoverAllPlugins } from '@gobing-ai/kk-core';
 import { ItcDecisionRequestSchema, itcDecision } from './itc-decision';
 import { buildItcPublishPlan, type ItcPlanRequest, ItcPlanRequestSchema } from './itc-plan';
+import {
+    itcAuthorVerdict,
+    itcCheckTargets,
+    itcExportSeo,
+    itcMaterializePlan,
+    itcReconcileReceipts,
+    itcReportSummary,
+    itcSendTargets,
+} from './itc-publish';
 import { runItcTopicStage } from './itc-topic';
 
 /**
@@ -16,6 +25,34 @@ export async function runItcStage(args: string[]): Promise<number | undefined> {
 
     if (stageName === 'itc-publish-plan') {
         return runItcPublishPlan(args.slice(1));
+    }
+
+    if (stageName === 'itc-materialize-plan') {
+        return itcMaterializePlan(args.slice(1));
+    }
+
+    if (stageName === 'itc-check-targets') {
+        return itcCheckTargets(args.slice(1));
+    }
+
+    if (stageName === 'itc-send-targets') {
+        return itcSendTargets(args.slice(1));
+    }
+
+    if (stageName === 'itc-reconcile-receipts') {
+        return itcReconcileReceipts(args.slice(1));
+    }
+
+    if (stageName === 'itc-export-seo') {
+        return itcExportSeo(args.slice(1));
+    }
+
+    if (stageName === 'itc-report-summary') {
+        return itcReportSummary(args.slice(1));
+    }
+
+    if (stageName === 'itc-author-verdict') {
+        return itcAuthorVerdict(args.slice(1));
     }
 
     if (stageName === 'itc-decision') {
