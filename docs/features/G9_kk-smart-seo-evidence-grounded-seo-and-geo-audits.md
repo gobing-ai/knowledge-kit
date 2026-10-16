@@ -6,14 +6,14 @@ status: active
 priority: P2
 tags: []
 created_at: "2026-10-15T04:39:32.556Z"
-updated_at: "2026-10-16T01:44:50.601Z"
+updated_at: "2026-10-16T06:41:46.142Z"
 ---
 
 # G9: kk-smart-seo: evidence-grounded SEO and GEO audits
 
 ## Goal
 
-Provide a repeatable, read-only SEO/GEO audit and prioritized action plan from a public website URL, grounded in observed evidence and typed Spur decisions, with one agent skill to operate and interpret it.
+Provide a repeatable, read-only SEO/GEO audit and prioritized action plan from a public website URL, grounded in observed evidence and typed Spur decisions, with one agent skill to operate and interpret it. The audit runs end to end as `plugins/kk/workflows/kk-smart-seo.yaml` over the native `kk stage run seo-*` stages.
 
 ## Scope
 
