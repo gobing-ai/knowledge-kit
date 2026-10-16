@@ -1772,6 +1772,33 @@ if (import.meta.main)
             }
             break;
         }
+        case 'seo-check': {
+            const { seoCheck } = await loadSeoStages();
+            try {
+                await seoCheck(rest);
+            } catch (err: unknown) {
+                fail(err instanceof Error ? err.message : String(err));
+            }
+            break;
+        }
+        case 'seo-score': {
+            const { seoScore } = await loadSeoStages();
+            try {
+                await seoScore(rest);
+            } catch (err: unknown) {
+                fail(err instanceof Error ? err.message : String(err));
+            }
+            break;
+        }
+        case 'seo-report': {
+            const { seoReport } = await loadSeoStages();
+            try {
+                await seoReport(rest);
+            } catch (err: unknown) {
+                fail(err instanceof Error ? err.message : String(err));
+            }
+            break;
+        }
         default:
             fail(
                 `unknown stage: ${stage ?? '(none)'} (expected prepare-itc|prepare-solo|prepare-storm|validate|wrap|duration|render-storm|itc-*|daily-*|seo-*)`,

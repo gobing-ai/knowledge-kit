@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
     type CrawlArtifact,
@@ -14,6 +14,8 @@ import {
     validateOptions,
 } from './seo-facts';
 import { fetchWithPinnedDns, parseRobotsTxt, parseSitemapXml, writeJsonAtomic } from './seo-fetch';
+import { type AuditArtifact, type ReportJsonArtifact, renderReportMarkdown } from './seo-report';
+import { type AssessmentRow, buildPrioritizedActions, calculateScoresAndCoverage, runSeoChecks } from './seo-rules';
 
 function fail(message: string): never {
     throw new Error(message);
@@ -573,6 +575,194 @@ export async function seoCollect(
     );
 }
 
+/**
+ * `seo-check <work_dir>`
+ */
+export async function seoCheck(args: string[]): Promise<void> {
+    const [workDirArg = ''] = args;
+    if (!workDirArg) {
+        fail('usage: kk stage run seo-check <work_dir>');
+    }
+    const workDir = resolve(workDirArg);
+    const crawlPath = join(workDir, 'crawl.json');
+    if (!existsSync(crawlPath)) {
+        fail(`seo-check: missing crawl.json in ${workDir}`);
+    }
+    const crawlRaw = readFileSync(crawlPath, 'utf-8');
+    const crawl: CrawlArtifact = JSON.parse(crawlRaw);
+    const assessments = runSeoChecks(crawl);
+
+    const checksArtifact = {
+        schemaVersion: 1,
+        methodVersion: '1.0.0',
+        runId: crawl.runId,
+        createdAt: new Date().toISOString(),
+        inputDigest: crawl.inputDigest,
+        predecessorDigests: {
+            ...crawl.predecessorDigests,
+            'crawl.json': sha256(crawlRaw),
+        },
+        assessments,
+    };
+    writeJsonAtomic(join(workDir, 'checks.json'), checksArtifact);
+    console.error(`seo-check: evaluated ${assessments.length} check rows across ${crawl.pages.length} pages`);
+}
+
+/**
+ * `seo-score <work_dir> [new_revision_dir]`
+ */
+export async function seoScore(args: string[]): Promise<void> {
+    const [workDirArg = '', newRevisionDirArg = ''] = args;
+    if (!workDirArg) {
+        fail('usage: kk stage run seo-score <work_dir> [new_revision_dir]');
+    }
+    const sourceDir = resolve(workDirArg);
+    const checksPath = join(sourceDir, 'checks.json');
+    const crawlPath = join(sourceDir, 'crawl.json');
+    const optionsPath = join(sourceDir, 'options.json');
+    const manifestPath = join(sourceDir, 'manifest.json');
+
+    if (!existsSync(checksPath) || !existsSync(crawlPath) || !existsSync(optionsPath)) {
+        fail(`seo-score: missing required input artifacts in ${sourceDir}`);
+    }
+
+    const isRescore = Boolean(newRevisionDirArg.trim());
+    let targetDir = sourceDir;
+    let revisionId: string | undefined;
+
+    if (isRescore) {
+        targetDir = resolve(newRevisionDirArg.trim());
+        if (existsSync(targetDir)) {
+            const files = readdirSync(targetDir);
+            if (files.length > 0) {
+                fail(`seo-score: new_revision_dir exists and is non-empty: ${targetDir} (refusing overwrite)`);
+            }
+        } else {
+            mkdirSync(targetDir, { recursive: true });
+        }
+        revisionId = `rev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        // Copy input artifacts
+        copyFileSync(optionsPath, join(targetDir, 'options.json'));
+        if (existsSync(manifestPath)) copyFileSync(manifestPath, join(targetDir, 'manifest.json'));
+        copyFileSync(crawlPath, join(targetDir, 'crawl.json'));
+        copyFileSync(checksPath, join(targetDir, 'checks.json'));
+    } else {
+        const auditPath = join(targetDir, 'audit.json');
+        if (existsSync(auditPath)) {
+            fail(`seo-score: audit.json already exists in ${targetDir} (refusing overwrite)`);
+        }
+    }
+
+    const checksRaw = readFileSync(checksPath, 'utf-8');
+    const crawlRaw = readFileSync(crawlPath, 'utf-8');
+    const optionsRaw = readFileSync(optionsPath, 'utf-8');
+
+    const checks = JSON.parse(checksRaw);
+    const crawl: CrawlArtifact = JSON.parse(crawlRaw);
+    const options: SeoOptions = JSON.parse(optionsRaw);
+
+    const assessments: AssessmentRow[] = checks.assessments || [];
+    const { scores, coverage } = calculateScoresAndCoverage(assessments);
+    const actions = buildPrioritizedActions(assessments);
+
+    const facts: AuditArtifact['facts'] = {
+        pages_visited: { value: crawl.limits.pagesVisited, unit: 'count', source: 'crawl.json' },
+        requests_made: { value: crawl.limits.requestsMade, unit: 'count', source: 'crawl.json' },
+        total_bytes: { value: crawl.limits.totalBytes, unit: 'bytes', source: 'crawl.json' },
+    };
+
+    const auditArtifact: AuditArtifact = {
+        schemaVersion: 1,
+        methodVersion: '1.0.0',
+        runId: crawl.runId,
+        ...(revisionId ? { revisionId } : {}),
+        createdAt: new Date().toISOString(),
+        inputDigest: crawl.inputDigest,
+        predecessorDigests: {
+            ...checks.predecessorDigests,
+            'checks.json': sha256(checksRaw),
+        },
+        status: crawl.status,
+        targetUrl: options.url,
+        scores,
+        coverage,
+        facts,
+        assessments,
+        actions,
+        judgments: { status: 'not-assessed' },
+        performance: { status: 'not-assessed' },
+        visibility: { status: 'not-assessed' },
+        limits: crawl.limits,
+    };
+
+    writeJsonAtomic(join(targetDir, 'audit.json'), auditArtifact);
+    const digestMd = `# Smart SEO Audit Digest\n\n- Technical Score: ${scores.technical !== null ? scores.technical : 'null'}\n- Actions Count: ${actions.length}\n`;
+    writeJsonAtomic(join(targetDir, 'digest.json'), { digestMd });
+    writeFileSync(join(targetDir, 'digest.md'), digestMd, 'utf-8');
+
+    console.error(`seo-score: generated audit.json in ${targetDir} with ${actions.length} prioritized actions`);
+}
+
+/**
+ * `seo-report <work_dir>`
+ */
+export async function seoReport(args: string[]): Promise<void> {
+    const [workDirArg = ''] = args;
+    if (!workDirArg) {
+        fail('usage: kk stage run seo-report <work_dir>');
+    }
+    const workDir = resolve(workDirArg);
+    const auditPath = join(workDir, 'audit.json');
+    if (!existsSync(auditPath)) {
+        fail(`seo-report: missing audit.json in ${workDir}`);
+    }
+
+    const auditRaw = readFileSync(auditPath, 'utf-8');
+    const audit: AuditArtifact = JSON.parse(auditRaw);
+
+    // Optional narrative check
+    let narrativeText: string | undefined;
+    let narrativeStatus: 'omitted' | 'included' | 'rejected' = 'omitted';
+    const narrativePath = join(workDir, 'narrative.json');
+    if (existsSync(narrativePath)) {
+        try {
+            const narrRaw = readFileSync(narrativePath, 'utf-8');
+            const narr = JSON.parse(narrRaw);
+            if (narr && typeof narr === 'object' && Array.isArray(narr.sections)) {
+                narrativeStatus = 'included';
+                narrativeText = narr.sections
+                    .map((s: { heading?: string; text?: string }) => `### ${s.heading || 'Summary'}\n\n${s.text || ''}`)
+                    .join('\n\n');
+            } else {
+                narrativeStatus = 'rejected';
+            }
+        } catch {
+            narrativeStatus = 'rejected';
+        }
+    }
+
+    const reportMd = renderReportMarkdown(audit, narrativeText);
+    writeFileSync(join(workDir, 'report.md'), reportMd, 'utf-8');
+
+    const reportJson: ReportJsonArtifact = {
+        schemaVersion: 1,
+        methodVersion: '1.0.0',
+        runId: audit.runId,
+        ...(audit.revisionId ? { revisionId: audit.revisionId } : {}),
+        createdAt: new Date().toISOString(),
+        targetUrl: audit.targetUrl,
+        status: audit.status === 'complete' ? 'done' : 'partial',
+        scores: audit.scores,
+        coverage: audit.coverage,
+        actionsCount: audit.actions.length,
+        actions: audit.actions,
+        narrativeStatus,
+    };
+
+    writeJsonAtomic(join(workDir, 'report.json'), reportJson);
+    console.error(`seo-report: wrote report.json and report.md in ${workDir}`);
+}
+
 if (import.meta.main) {
     const [stage, ...rest] = process.argv.slice(2);
     try {
@@ -583,8 +773,19 @@ if (import.meta.main) {
             case 'seo-collect':
                 await seoCollect(rest);
                 break;
+            case 'seo-check':
+                await seoCheck(rest);
+                break;
+            case 'seo-score':
+                await seoScore(rest);
+                break;
+            case 'seo-report':
+                await seoReport(rest);
+                break;
             default:
-                fail(`unknown stage: ${stage ?? '(none)'} (expected seo-preflight|seo-collect)`);
+                fail(
+                    `unknown stage: ${stage ?? '(none)'} (expected seo-preflight|seo-collect|seo-check|seo-score|seo-report)`,
+                );
         }
     } catch (err: unknown) {
         console.error(err instanceof Error ? err.message : String(err));

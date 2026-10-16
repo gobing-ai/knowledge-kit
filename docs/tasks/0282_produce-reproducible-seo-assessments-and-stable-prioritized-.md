@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Produce reproducible SEO assessments and stable prioritized reports offline
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-15T04:45:13.284Z
-updated_at: "2026-10-15T05:04:59.078Z"
+updated_at: "2026-10-16T00:24:15.982Z"
 feature_id: G9
 priority: P2
 tags:
@@ -13,6 +13,8 @@ tags:
 estimate_hours: 10
 
 dependencies: ["0281"]
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0282-verdict.json
 ---
 
 ## 0282. Produce reproducible SEO assessments and stable prioritized reports offline
@@ -38,13 +40,13 @@ Current-tree audit: no Smart SEO runtime files are present; all local requiremen
 
 ### Requirements
 
-- [ ] R1. Implement seo-check, seo-score and the deterministic seo-report path from validated saved facts; account for every vendor rule disposition and emit explicit pass/fail/unknown/not-applicable rows, stable rule/subject IDs, null empty scores and coverage denominators.
-- [ ] R2. Apply dated SEO/GEO sources, correct FAQ retirement and crawler purposes, keep heuristics out of eligibility claims, and separate observed indexing signals from verified search/citation visibility.
+- [x] R1. Implement seo-check, seo-score and the deterministic seo-report path from validated saved facts; account for every vendor rule disposition and emit explicit pass/fail/unknown/not-applicable rows, stable rule/subject IDs, null empty scores and coverage denominators.
+- [x] R2. Apply dated SEO/GEO sources, correct FAQ retirement and crawler purposes, keep heuristics out of eligibility claims, and separate observed indexing signals from verified search/citation visibility.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Technical findings and priorities remain reproducible from saved evidence (req: R1)
-- [ ] AC2 — SEO and GEO advice reflects dated primary sources and measurement limits (req: R2)
+- [x] AC1 — Technical findings and priorities remain reproducible from saved evidence (req: R1)
+- [x] AC2 — SEO and GEO advice reflects dated primary sources and measurement limits (req: R2)
 
 ```gherkin
 Feature: Produce reproducible SEO assessments and stable prioritized reports offline
@@ -95,25 +97,65 @@ Shared-file protocol: implement sequentially in frozen order 0281, 0282, 0283, 0
 
 ### Plan
 
-- [ ] Step 0: Recheck current task contract, cited source files, Bun/tool pins, worktrees/wip ownership and completed predecessor artifact interfaces before editing; preserve unrelated working-tree changes.
-- [ ] (R1) Consume 0281 minimal fixture; freeze strict rule/subject assessment, audit, action, limit and optional-stage outcome validators in seo-rules.ts/seo-report.ts and validate upstream envelopes.
-- [ ] (R1,R2) Implement every native/adapted/informational/deferred rule disposition, sampled-scope wording and dated source metadata; retain explicit unknown/not-applicable and intent-dependent signals.
-- [ ] (R1) Implement technical ratio/coverage, semantic not-assessed defaults, stable action IDs/order, deterministic JSON/escaped Markdown and immutable revision-based offline scoring.
-- [ ] (R1,R2) In plugins/kk/tests/smart-seo-analysis.test.ts, verify all dispositions, null denominators, optional absence versus corruption, source-date/FAQ/crawler limits, stable IDs and rescore source preservation with network/maker dispatch forbidden.
-- [ ] Update docs/04_DESIGN.md in the same change for this shipped slice; preserve accepted/deferred scope and source checked-at dates.
-- [ ] Run project lint, tests, build and rule gates; complete task-pipeline review and traceable requirement/AC verification before recording done. Never waive an upstream implementation dependency because refinement passed.
+- [x] Step 0: Recheck current task contract, cited source files, Bun/tool pins, worktrees/wip ownership and completed predecessor artifact interfaces before editing; preserve unrelated working-tree changes.
+- [x] (R1) Consume 0281 minimal fixture; freeze strict rule/subject assessment, audit, action, limit and optional-stage outcome validators in seo-rules.ts/seo-report.ts and validate upstream envelopes.
+- [x] (R1,R2) Implement every native/adapted/informational/deferred rule disposition, sampled-scope wording and dated source metadata; retain explicit unknown/not-applicable and intent-dependent signals.
+- [x] (R1) Implement technical ratio/coverage, semantic not-assessed defaults, stable action IDs/order, deterministic JSON/escaped Markdown and immutable revision-based offline scoring.
+- [x] (R1,R2) In plugins/kk/tests/smart-seo-analysis.test.ts, verify all dispositions, null denominators, optional absence versus corruption, source-date/FAQ/crawler limits, stable IDs and rescore source preservation with network/maker dispatch forbidden.
+- [x] Update docs/04_DESIGN.md in the same change for this shipped slice; preserve accepted/deferred scope and source checked-at dates.
+- [x] Run project lint, tests, build and rule gates; complete task-pipeline review and traceable requirement/AC verification before recording done. Never waive an upstream implementation dependency because refinement passed.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `docs/04_DESIGN.md:24` |
+| `docs/04_DESIGN.md:599` |
+| `docs/04_DESIGN.md:602` |
+| `docs/features/G9_kk-smart-seo-evidence-grounded-seo-and-geo-audits.md:150` |
+| `docs/features/G9_kk-smart-seo-evidence-grounded-seo-and-geo-audits.md:5` |
+| `docs/features/G9_kk-smart-seo-evidence-grounded-seo-and-geo-audits.md:9` |
+| `plugins/kk/references/smart-seo-attribution.md:51` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:1775` |
+| `plugins/kk/scripts/seo-stages.ts:1` |
+| `plugins/kk/scripts/seo-stages.ts:17` |
+| `plugins/kk/scripts/seo-stages.ts:578` |
+| `plugins/kk/scripts/seo-stages.ts:776` |
+| `plugins/kk/scripts/seo-stages.ts:786` |
+| `plugins/kk/tests/smart-seo-collect.test.ts:70` |
+| `plugins/kk/scripts/seo-report.ts:1` |
+| `plugins/kk/scripts/seo-rules.ts:1` |
+| `plugins/kk/tests/smart-seo-analysis.test.ts:1` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/kk/scripts/seo-rules.ts:40` implements all 52 deterministic vendor rule dispositions emitting explicit pass/fail/unknown/not-applicable rows, stable finding IDs (`SEO-<ruleId>-<hash>`), null empty scores and coverage denominators; `plugins/kk/scripts/seo-stages.ts:580` implements `seo-check`, `seo-score` and `seo-report` with immutable offline rescoring. Verified in `plugins/kk/tests/smart-seo-analysis.test.ts:25`. |
+| R2 | MET | `plugins/kk/scripts/seo-rules.ts:50` applies dated sources (2026-10-14, RFC 9309, Google canonicalization, Google FAQ rich results retirement); heuristics labeled `heuristic: true`; observed indexing signals separated from verified visibility. Verified in `plugins/kk/tests/smart-seo-analysis.test.ts:70`. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — Technical findings and priorities remain reproducible from saved evidence (req: R1) | MET | test | `plugins/kk/tests/smart-seo-analysis.test.ts:26` verifies 52 rule inventory, stable IDs under sorting and rescoring, null empty score propagation, and immutable revision-based rescoring. |
+| AC2 — SEO and GEO advice reflects dated primary sources and measurement limits (req: R2) | MET | test | `plugins/kk/tests/smart-seo-analysis.test.ts:75` verifies dated source metadata, FAQ rich-result retirement, omission of mandatory llms.txt claims, and separation of observed signals from search visibility. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -126,3 +168,8 @@ Shared-file protocol: implement sequentially in frozen order 0281, 0282, 0283, 0
 - Concurrency at kickoff: git worktree list showed only current main; spur task list --status wip --json returned [].
 
 ### History
+
+- 2026-10-16T00:10:38.473Z todo → wip (system)
+- 2026-10-16T00:24:06.933Z wip → testing (system)
+- 2026-10-16T00:24:15.976Z testing → done (system)
+

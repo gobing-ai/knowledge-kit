@@ -48,6 +48,6 @@ Key architectural and security adaptations include:
 
 All 52 deterministic rules from the vendor snapshot have explicit dispositions:
 - **Native (24 rules):** `redirect_chains`, `links_to_redirects`, `host_temporary_redirect`, `deep_pages`, `title_missing`, `title_duplicate`, `title_length`, `multiple_titles`, `meta_missing`, `meta_duplicate`, `h1_missing`, `h1_multiple`, `heading_skips`, `lang_missing`, `viewport_missing`, `thin_content`, `duplicate_content`, `images_alt`, `images_dimensions`, `jsonld_errors`, `og_missing`, `mixed_content`, `heavy_html`, `generic_anchors`.
-- **Adapted (16 rules):** `robots_blocks_site`, `sitemap_errors`, `sitemap_bad_urls`, `http_errors`, `broken_internal_links`, `noindex`, `canonical_elsewhere`, `canonical_broken`, `soft_404`, `host_variant`, `no_https`, `orphan_pages`, `faq_rich_result_limited`, `hreflang_issues`, `slow_ttfb`, `broken_external_links`.
-- **Informational (10 rules):** `robots_missing`, `sitemap_missing`, `not_in_sitemap`, `canonical_missing`, `js_dependent`, `no_structured_data`, `ai_bots_blocked`, `llms_txt_missing`, `hsts_missing`, `security_headers`, `favicon_missing`.
-- **Deferred (2 rules):** `schema_required`, `broken_external_links` (or non-internal third-party link fetching).
+- **Adapted (15 rules):** `robots_blocks_site`, `sitemap_errors`, `sitemap_bad_urls`, `http_errors`, `broken_internal_links`, `noindex`, `canonical_elsewhere`, `canonical_broken`, `soft_404`, `host_variant`, `no_https`, `orphan_pages`, `faq_rich_result_limited`, `hreflang_issues`, `slow_ttfb`.
+- **Informational (11 rules):** `robots_missing`, `sitemap_missing`, `not_in_sitemap`, `canonical_missing`, `js_dependent`, `no_structured_data`, `ai_bots_blocked`, `llms_txt_missing`, `hsts_missing`, `security_headers`, `favicon_missing`.
+- **Deferred (2 rules):** `schema_required`, `broken_external_links`.

@@ -67,8 +67,8 @@ describe('Smart SEO Attribution and Upstream Disposition (R1 / AC1)', () => {
         }
 
         expect(attributionContent).toContain('Native (24 rules)');
-        expect(attributionContent).toContain('Adapted (16 rules)');
-        expect(attributionContent).toContain('Informational (10 rules)');
+        expect(attributionContent).toContain('Adapted (15 rules)');
+        expect(attributionContent).toContain('Informational (11 rules)');
         expect(attributionContent).toContain('Deferred (2 rules)');
     });
 
