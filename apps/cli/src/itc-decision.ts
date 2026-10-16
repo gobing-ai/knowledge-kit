@@ -8,6 +8,7 @@ import {
 } from '@gobing-ai/ts-runtime';
 import { z } from 'zod';
 
+/** One selectable candidate offered to an ITC decision. */
 export const ItcDecisionCandidateSchema = z
     .object({
         id: z.string().min(1),
@@ -17,8 +18,10 @@ export const ItcDecisionCandidateSchema = z
     })
     .strict();
 
+/** Parsed ITC decision candidate. */
 export type ItcDecisionCandidate = z.infer<typeof ItcDecisionCandidateSchema>;
 
+/** Input to `itc-decision`: decision id, candidates, evidence and output path, bound to the parent run. */
 export const ItcDecisionRequestSchema = z
     .object({
         schemaVersion: z.literal(1).default(1),
@@ -33,8 +36,10 @@ export const ItcDecisionRequestSchema = z
     })
     .strict();
 
+/** Caller-facing (pre-default) ITC decision request. */
 export type ItcDecisionRequest = z.input<typeof ItcDecisionRequestSchema>;
 
+/** Recorded ITC decision: chosen value, its source and the candidate digest it binds to. */
 export interface ItcDecisionResult {
     schemaVersion: 1;
     parentRunId: string;

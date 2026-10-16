@@ -95,8 +95,10 @@ export const ItcTopicExtractRequestSchema = z.object({
         .optional(),
 });
 
+/** Caller-facing (pre-default) topic extract request. */
 export type ItcTopicExtractRequest = z.input<typeof ItcTopicExtractRequestSchema>;
 
+/** Extract the windowed topic pool for a profile into `topic-pool.json` plus its digest manifest. */
 export async function itcTopicExtract(
     request: ItcTopicExtractRequest,
     fs: FileSystem = createNodeFileSystem(),
@@ -177,8 +179,10 @@ export const ItcTopicCandidateSchema = z.object({
     sourceUrls: z.array(z.string().url()).min(1),
 });
 
+/** Parsed topic candidate. */
 export type ItcTopicCandidate = z.infer<typeof ItcTopicCandidateSchema>;
 
+/** Schema of `topic-candidates.json`: up to three candidates bound to the pool digest. */
 export const ItcTopicCandidatesArtifactSchema = z.object({
     schemaVersion: z.literal(1).default(1),
     parentRunId: z.string().min(1),
@@ -186,16 +190,20 @@ export const ItcTopicCandidatesArtifactSchema = z.object({
     candidates: z.array(ItcTopicCandidateSchema).min(1).max(3),
 });
 
+/** Parsed topic candidates artifact. */
 export type ItcTopicCandidatesArtifact = z.infer<typeof ItcTopicCandidatesArtifactSchema>;
 
+/** Input to `itc-topic-validate`. */
 export const ItcTopicValidateRequestSchema = z.object({
     schemaVersion: z.literal(1).default(1),
     intakeDir: z.string().min(1),
     parentRunId: z.string().min(1),
 });
 
+/** Parsed topic validate request. */
 export type ItcTopicValidateRequest = z.infer<typeof ItcTopicValidateRequestSchema>;
 
+/** Validate candidates against the pool manifest and items; writes the `.topic-candidates-valid` marker. */
 export async function itcTopicValidate(
     request: ItcTopicValidateRequest,
     fs: FileSystem = createNodeFileSystem(),
@@ -281,8 +289,10 @@ export const ItcTopicSelectRequestSchema = z.object({
     dbPath: z.string().optional(),
 });
 
+/** Parsed topic select request. */
 export type ItcTopicSelectRequest = z.infer<typeof ItcTopicSelectRequestSchema>;
 
+/** Schema of `chosen-source.json`: the selected candidate and its item ids for this run. */
 export interface ChosenSourceArtifact {
     schemaVersion: 1;
     parentRunId: string;
@@ -295,6 +305,7 @@ export interface ChosenSourceArtifact {
     selectedDocsPath: string;
 }
 
+/** Revalidate, then record the selected candidate as `chosen-source.json` and reserve its items in the store. */
 export async function itcTopicSelect(
     request: ItcTopicSelectRequest,
     fs: FileSystem = createNodeFileSystem(),
@@ -384,8 +395,10 @@ export const ItcSelectionSettleRequestSchema = z.object({
     dbPath: z.string().optional(),
 });
 
+/** Parsed selection settle request. */
 export type ItcSelectionSettleRequest = z.infer<typeof ItcSelectionSettleRequestSchema>;
 
+/** Settle reserved selections by publish outcome: mark published, release, or retain for reconcile. */
 export async function itcSelectionSettle(
     request: ItcSelectionSettleRequest,
     fs: FileSystem = createNodeFileSystem(),
