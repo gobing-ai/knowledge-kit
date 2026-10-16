@@ -3,9 +3,9 @@ name: Features
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state
 authority: derived
-version: 2.30.0
+version: 2.30.1
 created_at: 2026-07-22
-updated_at: 2026-10-15
+updated_at: 2026-10-16
 derived_from: [01_PRD, 02_ROADMAP]
 edit_rules: 99 §6.6
 sync: [T4]
@@ -107,7 +107,7 @@ sync: [T4]
 | G7 | kk workflow run ledger | ⏳ planned | — | cross-workflow capabilities |
 | G71 | Per-workflow run ledger from spur action_runs | ⏳ ready | — | task `0207` |
 | G8 | Workflow visibility in Spur Board: Collect, Daily AI Voice, IT Content | 🔧 active | 3 | tasks `0252`–`0254` done; `0255` adds the separately-packed-install acceptance (`apps/board/tests/installed-board.test.ts`, `scripts/tests/board-package.test.ts`), four tabs per module, operator setup in `docs/04_DESIGN.md`; [satellite](design/workflow-board-modules.md) |
-| G9 | kk-smart-seo: evidence-grounded SEO and GEO audits | ⏳ planned | P2 | Acceptance: bounded public-site audit, typed decision provenance, JSON/Markdown report and installed workflow/skill execution; [design](design/kk-smart-seo.md), ADR-039; ready tasks `0281`–`0286` |
+| G9 | kk-smart-seo: evidence-grounded SEO and GEO audits | ⏳ planned | P2 | tasks `0281`–`0286` implemented: bounded public-site audit stages, typed decision provenance (22 catalog decisions in four catalogs), JSON/Markdown report and validated narrative, one `kk:smart-seo` skill with its references, and the separately-packed installed acceptance (`apps/cli/tests/smart-seo-installed.test.ts`: real fixture workflow offline, `decision status/show` under an offline maker, documented `decisions.paths` append that preserves existing paths and makers); surface and evidence limits in `docs/04_DESIGN.md`; status unchanged pending feature-level verification, and an operator-run live-site audit remains; [design](design/kk-smart-seo.md), ADR-039 |
 | **H** | Real STORM + wt generator harvest | ❌ cancelled | — | split into **D4** plus former D5, now **F2** |
 | **I** | LLM wiki | 🌫️ fog | 3 | undecided; go/no-go spike first |
 | **J** | Reposition knowledge-kit as an ingest-create-publish platform (wayfinder map) | ✅ done | 2 | ADR-007, PRD v3, contract designs (0032–0034), tree realignment (0035), doc sync (0036) — feature verified done |
