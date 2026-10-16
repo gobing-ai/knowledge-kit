@@ -234,3 +234,94 @@ describe('kk-itc child launch (0301 R2 / 0302 R6)', () => {
         expect(failed.stderr).toContain('refusing to relaunch');
     });
 });
+
+describe('kk-itc prepare node (0303 R2-R5)', () => {
+    const node = (
+        Bun.YAML.parse(readFileSync(ITC_DAG, 'utf-8')) as {
+            nodes: Array<{ id: string; action: { options: { command: string } } }>;
+        }
+    ).nodes.find((n) => n.id === 'prepare');
+    const vars = (workDir: string, extra: Record<string, string>): Record<string, string> => ({
+        work_dir: workDir,
+        __runId: 'run-p',
+        force: 'false',
+        ...extra,
+    });
+    const commandFor = (v: Record<string, string>): string =>
+        (node?.action.options.command ?? '').replace(/\$\{vars\.(\w+)\}/g, (_, name: string) => v[name] ?? '');
+
+    // A stub `kk` that logs argv; `itc-prepare` freezes its request as the snapshot, like the real stage.
+    function run(v: Record<string, string>, snapshot?: Record<string, unknown>) {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-itc-prep-'));
+        try {
+            const wd = v.work_dir === '' ? '' : join(dir, 'ws');
+            if (wd !== '') Bun.spawnSync(['mkdir', '-p', wd]);
+            if (snapshot) writeFileSync(join(wd, 'itc-options.json'), JSON.stringify(snapshot));
+            const calls = join(dir, 'calls');
+            writeFileSync(
+                join(dir, 'kk'),
+                [
+                    '#!/bin/sh',
+                    `echo "$*" >> "${calls}"`,
+                    `if [ "$3" = itc-prepare ]; then jq '. + {sourceKind:"topic", sourceValue:.topic}' "$5" > "${wd}/itc-options.json"; cp "$5" "${dir}/request.json"; fi`,
+                ].join('\n'),
+            );
+            chmodSync(join(dir, 'kk'), 0o755);
+            const result = Bun.spawnSync(['sh', '-c', commandFor({ ...v, work_dir: wd })], {
+                env: { ...process.env, PATH: `${dir}:${process.env.PATH ?? ''}` },
+                stderr: 'pipe',
+            });
+            const read = (f: string): string => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf-8') : '');
+            return {
+                exitCode: result.exitCode,
+                stderr: result.stderr.toString(),
+                calls: read('calls').trim().split('\n').filter(Boolean),
+                request: read('request.json'),
+            };
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    }
+
+    it('a direct launch freezes the options via itc-prepare, dropping unset vars, then prepares the brief', () => {
+        const r = run(vars('x', { topic: 'reliable-workflows', auto: 'true', max_revisions: '2' }));
+        expect(r.exitCode).toBe(0);
+        expect(r.calls[0]).toStartWith('stage run itc-prepare --request');
+        expect(JSON.parse(r.request)).toEqual({
+            topic: 'reliable-workflows',
+            workDir: expect.any(String),
+            parentRunId: 'run-p',
+            auto: true,
+            force: false,
+            maxRevisions: 2,
+        });
+        expect(r.calls[1]).toMatch(/^stage run prepare-itc \S+ reliable-workflows {2}false$/);
+    });
+
+    it("refuses another run's snapshot unless force adopts it", () => {
+        const foreign = { parentRunId: 'run-old', sourceKind: 'topic', sourceValue: 't' };
+        const refused = run(vars('x', {}), foreign);
+        expect(refused.exitCode).toBe(1);
+        expect(refused.stderr).toContain("belongs to run 'run-old'");
+        expect(refused.calls).toEqual([]);
+        expect(run(vars('x', { force: 'true' }), foreign).exitCode).toBe(0);
+    });
+
+    it('a collected topic prepares under its display title, an input file under its path', () => {
+        const collected = run(vars('x', {}), {
+            parentRunId: 'run-p',
+            sourceKind: 'from_collect',
+            sourceValue: 'rust-weekly',
+            displayTitle: 'Async Rust',
+        });
+        expect(collected.calls).toEqual([expect.stringMatching(/prepare-itc \S+ Async Rust {2}false$/)]);
+        const file = run(vars('x', {}), { parentRunId: 'run-p', sourceKind: 'input_file', sourceValue: '/in.md' });
+        expect(file.calls).toEqual([expect.stringMatching(/prepare-itc \S+ {2}\/in\.md false$/)]);
+    });
+
+    it('requires work_dir', () => {
+        const r = run(vars('', {}));
+        expect(r.exitCode).toBe(1);
+        expect(r.stderr).toContain('work_dir is required');
+    });
+});

@@ -257,7 +257,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'test -n "${vars.outline}"'
+        command: 'test -s "${vars.work_dir}/2-outline/.auto-pick"'
 
   - from: outline-autopick
     to: outline-select
@@ -265,7 +265,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'test -z "${vars.outline}"'
+        command: 'test ! -s "${vars.work_dir}/2-outline/.auto-pick"'
 
   - from: outline-commit
     to: draft-write

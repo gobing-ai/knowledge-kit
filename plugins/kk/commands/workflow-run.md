@@ -33,12 +33,14 @@ Parse per the frozen rule:
 - `--in <file>` → file mode. `--force` → overwrite an existing dest YAML / existing `brief.md`.
 - Profile `kk-storm-research`: `--dir <path>` (default `$works_dir/kk-storm-research/<topic-id>`),
   `--fixture` → force `fixture: "true"`.
-- Profile `kk-itc`: `--dir <path>` (default `$works_dir/kk-itc/<kebab>`), `--playbook generic|english|wechat` (default `generic`),
-  `--research` (`true`|`false`, default `false`), `--judge` (`true`|`false`, default `false`),
-  `--outline <a|b|c>` (default empty), `--writer itc-generating|topic` (default `itc-generating`),
-  `--auto`, `--unslop true|false` (default `false`), `--max-revisions <N>` (default `2`),
-  `--cover`, `--inline-images`, `--targets <a,b>` (default empty), `--live`,
-  `--source-locale en|zh|ja` (default `en`; `--playbook wechat` without it implies `zh`).
+- Profile `kk-itc`: `--dir <path>` (default `$works_dir/kk-itc/<kebab>[/<run-date>]`),
+  `--from-collect <topic-profile>` (a third source, XOR with `<topic>` / `--in`),
+  `--topic-profile <slug>`, `--run-date <YYYYMMDD>`, `--playbook generic|english|wechat`,
+  `--research`, `--judge`, `--outline <a|b|c>`, `--writer itc-generating|topic`, `--auto`,
+  `--unslop true|false`, `--max-revisions <N>`, `--cover`, `--inline-images`, `--targets <a,b>`,
+  `--publish-preset <name>`, `--seo off|handoff`, `--live`, `--source-locale en|zh|ja`. Unpassed
+  flags take `workflows.kk-itc` config, then compiled defaults (`generic`, `itc-generating`, `en`,
+  `seo: off`, max revisions `2`, booleans `false`) — resolved once by `itc-prepare` (§4).
   `--fixture` passed with `kk-itc` or `kk-solo-podcast` → exit 1 (`fixture is storm-only`).
 - Profile `kk-solo-podcast`: `--dir <path>` (default `$works_dir/kk-solo-podcast/<date>`), `--outline <a|b|c>`
   (default empty), `--duration <min>` (default `8`), `--language <code>` (default `en`),
@@ -185,18 +187,51 @@ mkdir -p "$work_dir"
 
 ### Profile `kk-itc` (authoring workspace)
 
-`raw` = `TOPIC` or file-mode first ATX H1 else basename without extension.
-`kebab` = lower-case, `[^a-z0-9]+` → `-`, trimmed dashes (no length cap, no sha256 hash).
-`work_dir="${DIR:-$works_dir/kk-itc/$kebab}"`. Empty derived `kebab` → exit 1. An explicit
-`--dir` still wins, and the default never writes into the caller's cwd.
+The workspace and every config-backed option are resolved and **frozen** by
+`kk stage run itc-prepare` (0303) — never re-derived here. Pre-generate the run id first, so the
+frozen `itc-options.json` binds to the run that will consume it:
 
-Binding (0153): `--auto` binds `auto=true` and defaults `research`, `judge` and `unslop` to
+```bash
+RUN_ID="kk-itc-$(date +%Y%m%dT%H%M%S)-$$"
+launch="$(mktemp)"
+# Unpassed flags stay "" and are dropped: they fall to workflows.kk-itc config, then compiled defaults.
+jq -n --arg topic "$TOPIC" --arg inputFile "$INPUT_FILE" --arg fromCollect "$FROM_COLLECT" --arg dir "$DIR" \
+  --arg parentRunId "$RUN_ID" --arg topicProfile "$TOPIC_PROFILE" --arg runDate "$RUN_DATE" \
+  --arg writer "$WRITER" --arg playbook "$PLAYBOOK" --arg sourceLocale "$SOURCE_LOCALE" \
+  --arg publishTargets "$TARGETS" --arg publishPreset "$PRESET" --arg seo "$SEO" --arg maxRevisions "$MAX_REVISIONS" \
+  --arg research "$RESEARCH" --arg judge "$JUDGE" --arg auto "$AUTO" --arg unslop "$UNSLOP" --arg force "$FORCE" \
+  --arg publishLive "$LIVE" --arg coverEnabled "$COVER" --arg inlineImages "$INLINE_IMAGES" \
+  '$ARGS.named | with_entries(select(.value != ""))
+    | with_entries(if (.key | IN("research","judge","auto","unslop","force","publishLive","coverEnabled","inlineImages"))
+        then .value = (.value == "true") else . end)
+    | if has("maxRevisions") then .maxRevisions |= tonumber else . end' > "$launch"
+work_dir=$(kk stage run itc-prepare --request "$launch" | jq -r '.workDir')
+```
+
+Exactly one of `topic` | `inputFile` | `fromCollect`. An invalid key, config file or source fails
+before any workspace is written.
+
+Binding (0153), applied once by `itc-prepare`: `--auto` binds `auto=true` and defaults `research`, `judge` and `unslop` to
 `true` unless the operator passed them explicitly. `--live` is never implied — `publish_live`
 stays `false` unless `--live` is passed explicitly (ADR-022). `--playbook wechat` without
 `--source-locale` binds `source_locale=zh`; an explicit `--source-locale` always wins.
 `--targets <a,b>` binds `publish_targets`; `--cover` / `--inline-images` bind
 `cover_enabled` / `inline_images` (`false` unless passed); `--max-revisions` binds
-`max_revisions` (default `2`).
+`max_revisions` (default `2`). Each lands in `itc-options.json` under its camelCase key.
+
+**Collected topic (`--from-collect <profile>`, 0299).** `itc-prepare` without `--chosen` returns
+an *intake* snapshot (`status: intake`, `workDir: null`). Choose the topic in a run-scoped intake
+dir, then finalize:
+
+1. `kk stage run itc-topic-extract --request` `{parentRunId, intakeDir, topicProfile}` → the pool.
+2. The agent writes `$intakeDir/topic-candidates.json` (≤3 candidates `a|b|c` with
+   `title`/`reason`/`itemIds` from the pool); `kk stage run itc-topic-validate --request`
+   `{parentRunId, intakeDir}` must pass.
+3. `kk stage run itc-decision --topic "$intakeDir" "$RUN_ID"` prints the chosen id or `defer`.
+   **`defer` stops** — ask the operator to pick (never fall back to the first candidate).
+4. `kk stage run itc-topic-select --request` `{parentRunId, intakeDir, selectedCandidateId}`.
+5. `work_dir=$(kk stage run itc-prepare --request "$launch" --chosen "$intakeDir" | jq -r .workDir)`
+   finalizes the snapshot under the chosen title and copies the selection evidence into the workspace.
 
 ### Profile `kk-solo-podcast`
 
@@ -231,14 +266,17 @@ spur workflow run "$dest" --vars \
 
 ### Profile `kk-itc`
 
-Bind vars: `topic`, `input_file`, `work_dir`, `writer`, `playbook`, `research`, `judge`, `auto`,
-`unslop`, `max_revisions`, `outline`, `force`, `rubric` (`tech-accuracy`), `agent`,
-`cover_enabled`, `inline_images`, `publish_targets`, `publish_live`, `source_locale`. The judge
-verdict lands at `$work_dir/.itc-verdict.json` (fixed path inside the workflow).
+Launch under the **same** `RUN_ID` the snapshot was frozen for; the `prepare` node refuses a
+snapshot owned by another run unless `force=true`. Downstream nodes read options from
+`$work_dir/itc-options.json`, so the vars only locate the workspace and carry run-local inputs:
+`work_dir`, `topic_profile`, `publish_preset`, `seo_mode`, `from_collect`, `run_date`, `outline`,
+`force`, `rubric` (`tech-accuracy`), `agent`. The judge verdict lands at
+`$work_dir/.itc-verdict.json`. A live plan with targets pauses at `send-confirm`: resuming
+(`spur workflow continue $RUN_ID`) approves the send, cancelling rejects it.
 
 ```bash
-spur workflow run "$dest" --vars \
-  "{\"topic\":\"$TOPIC\",\"input_file\":\"$INPUT_FILE\",\"work_dir\":\"$work_dir\",\"writer\":\"$WRITER\",\"playbook\":\"$PLAYBOOK\",\"research\":\"$RESEARCH\",\"judge\":\"$JUDGE\",\"auto\":\"$AUTO\",\"unslop\":\"$UNSLOP\",\"max_revisions\":\"$MAX_REVISIONS\",\"outline\":\"$OUTLINE\",\"force\":\"$FORCE\",\"rubric\":\"tech-accuracy\",\"agent\":\"$AGENT\",\"cover_enabled\":\"$COVER\",\"inline_images\":\"$INLINE_IMAGES\",\"publish_targets\":\"$TARGETS\",\"publish_live\":\"$LIVE\",\"source_locale\":\"$SOURCE_LOCALE\"}"
+spur workflow run "$dest" --run-id "$RUN_ID" --vars \
+  "{\"work_dir\":\"$work_dir\",\"topic_profile\":\"$TOPIC_PROFILE\",\"publish_preset\":\"$PRESET\",\"seo_mode\":\"$SEO\",\"from_collect\":\"$FROM_COLLECT\",\"run_date\":\"$RUN_DATE\",\"outline\":\"$OUTLINE\",\"force\":\"$FORCE\",\"rubric\":\"tech-accuracy\",\"agent\":\"$AGENT\"}"
 ```
 
 ### Profile `kk-solo-podcast`

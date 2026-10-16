@@ -158,7 +158,11 @@ describe('kk-itc auto mode + revise loop + report (0149)', () => {
         expect(block).toContain('kk stage run itc-outline-pick');
         expect(block).toContain('kind: file.read.into-var');
         expect(block).toContain('var: outline');
-        expect(guardOf('outline-autopick', 'outline-commit')).toContain('always');
+        // 0301 R1: the pick is bound through the bounded outline decision; a defer leaves .auto-pick
+        // empty and pauses for the operator instead of guessing a first choice.
+        expect(block).toContain('kk stage run itc-decision --outline');
+        expect(guardOf('outline-autopick', 'outline-commit')).toContain('test -s');
+        expect(guardOf('outline-autopick', 'outline-select')).toContain('test ! -s');
         // the writer prompt carries the recommendation contract
         expect(stateBlock('outline-write')).toContain('outline-recommendation.json');
         expect(stateBlock('outline-write')).toContain('"pick": "a|b|c"');
@@ -256,6 +260,9 @@ describe('kk-itc auto mode + revise loop + report (0149)', () => {
         // stage actions, so seed the disposition the itc-author-verdict stage would have written.
         mkdirSync(join(workDir, '.itc'), { recursive: true });
         writeFileSync(join(workDir, '.itc/disposition.txt'), 'finish\n');
+        // Likewise the outline decision's bound pick (auto mode routes on it, not on a guess).
+        mkdirSync(join(workDir, '2-outline'), { recursive: true });
+        writeFileSync(join(workDir, '2-outline/.auto-pick'), 'a');
         const result = Bun.spawnSync(
             [
                 'spur',
@@ -302,15 +309,16 @@ describe('kk-itc illustrate + adapt (0152)', () => {
     const stateBlock = (id: string): string =>
         yaml.match(new RegExp(`- id: ${id}\\n[\\s\\S]*?(?=\\n {2}- id: )`))?.[0] ?? '';
 
-    it('R1 (R7/AC1) — the spend vars default false and the illustrate branch runs only when one is on', () => {
-        expect(yaml).toContain('cover_enabled: "false"');
-        expect(yaml).toContain('inline_images: "false"');
+    it('R1 (R7/AC1) — the spend vars default off and the illustrate branch runs only when one is on', () => {
+        // 0303: "" defers to config, whose compiled default is false; the frozen snapshot decides.
+        expect(yaml).toContain('cover_enabled: ""');
+        expect(yaml).toContain('inline_images: ""');
         expect([...yaml.matchAll(/^\s+- id: ([\w-]+)/gm)].map((m) => m[1])).toContain('illustrate');
-        // With both vars false the branch is skipped by the node condition (R7: billed work is opt-in).
+        // With both options false the branch is skipped by the node condition (R7: billed work is opt-in).
         const block = stateBlock('illustrate');
         expect(block).toContain('condition:');
-        expect(block).toContain(`test "${varRef('cover_enabled')}" = "true"`);
-        expect(block).toContain(`test "${varRef('inline_images')}" = "true"`);
+        expect(block).toContain('.coverEnabled or .inlineImages');
+        expect(block).toContain(`${varRef('work_dir')}/itc-options.json`);
     });
 
     it('R7 — illustrate runs kk:image-authoring non-interactively with auto-confirm and verifies the cover', () => {

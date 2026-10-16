@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { NodeProcessExecutor, type ProcessOptions, type ProcessResult } from '@gobing-ai/ts-runtime';
@@ -38,6 +38,11 @@ function seedReceipt(receiptsDir: string, plugin: string, fields: Record<string,
             ...fields,
         }),
     );
+}
+
+// The frozen options snapshot is the only source of the run id a receipt binds to.
+function seedRun(workDir: string, parentRunId: string): void {
+    writeFileSync(join(workDir, 'itc-options.json'), JSON.stringify({ parentRunId }));
 }
 
 describe('itcMaterializePlan & Target Payloads (0302 / G21 R2)', () => {
@@ -78,6 +83,10 @@ describe('itcMaterializePlan & Target Payloads (0302 / G21 R2)', () => {
             const wechatPayload = JSON.parse(readFileSync(wechatPayloadPath, 'utf-8'));
             expect(wechatPayload.metadata.operation).toBe('文章');
             expect(wechatPayload.metadata.publishStatus).toBe('draft');
+            // Isolation: no payload inherits a mode switch another planned profile declares.
+            expect(qiitaPayload.metadata).not.toHaveProperty('operation');
+            expect(qiitaPayload.metadata).not.toHaveProperty('publishStatus');
+            expect(wechatPayload.metadata).not.toHaveProperty('private');
         });
     });
 });
@@ -174,6 +183,7 @@ describe('itcSendTargets, Receipts & Recovery (0302 / G21 R3, R4)', () => {
                 }),
             );
 
+            seedRun(workDir, 'run-pub-01');
             await itcSendTargets([workDir]);
 
             const receiptPath = join(publishDir, 'receipts/fake-pub.json');
@@ -182,6 +192,8 @@ describe('itcSendTargets, Receipts & Recovery (0302 / G21 R3, R4)', () => {
             const receipt = JSON.parse(readFileSync(receiptPath, 'utf-8'));
             expect(ItcReceiptSchema.safeParse(receipt).success).toBe(true);
             expect(receipt.status).toBe('succeeded');
+            // The receipt binds to the real run, not a placeholder id.
+            expect(receipt.parentRunId).toBe('run-pub-01');
             expect(receipt.effect).toBe('confirmed');
             // Draft mode URLs must not be marked verified public
             expect(receipt.publicUrlVerified).toBe(false);
@@ -257,6 +269,7 @@ describe('itcSendTargets, Receipts & Recovery (0302 / G21 R3, R4)', () => {
                 }),
             );
 
+            seedRun(workDir, 'run-rec');
             // Execute retry
             await itcSendTargets([workDir, '--retry']);
 
@@ -307,12 +320,32 @@ describe('itcSendTargets, Receipts & Recovery (0302 / G21 R3, R4)', () => {
                 );
                 return 0;
             };
+            seedRun(workDir, 'run-rec');
             expect(await itcSendTargets([workDir, '--retry'], undefined, dispatch)).toBe(0);
 
             expect(dispatched).toEqual(['pub-safe']);
             const safe = JSON.parse(readFileSync(join(receiptsDir, 'pub-safe.json'), 'utf-8'));
             expect(safe.attemptId).toBe('retry-1');
             expect(safe.status).toBe('succeeded');
+        });
+    });
+
+    it('refuses to send without a frozen snapshot naming the run', async () => {
+        await withTempDir(async (workDir) => {
+            const publishDir = join(workDir, '4-publish');
+            mkdirSync(publishDir, { recursive: true });
+            writeFileSync(
+                join(publishDir, 'publish-plan.json'),
+                JSON.stringify({ targets: [{ plugin: 'pub-a', profile: 'article', mode: 'draft' }] }),
+            );
+            const dispatched: string[][] = [];
+            const dispatch = async (argv: string[]): Promise<number> => {
+                dispatched.push(argv);
+                return 0;
+            };
+            expect(await itcSendTargets([workDir], undefined, dispatch)).toBe(1);
+            expect(dispatched).toEqual([]);
+            expect(existsSync(join(publishDir, 'receipts/pub-a.json'))).toBe(false);
         });
     });
 });
@@ -486,5 +519,109 @@ describe('itcReportSummary (0302 / G21 R5)', () => {
             expect(rep.outcome).toBe('done');
             expect(rep.targetContractFailure).toBeUndefined();
         });
+    });
+});
+
+describe('itcMaterializePlan from the frozen snapshot (0300 R1 / 0301 R1)', () => {
+    // A package root the preset resolver discovers from cwd: one preset plus a topic profile
+    // that suggests it, so the snapshot's preset sources resolve without the shipped catalog.
+    function seedPackageRoot(root: string): void {
+        mkdirSync(join(root, 'plugins/kk/publish-presets'), { recursive: true });
+        mkdirSync(join(root, 'plugins/kk/decisions/extract'), { recursive: true });
+        writeFileSync(
+            join(root, 'plugins/kk/publish-presets/demo-preset.json'),
+            JSON.stringify({
+                schemaVersion: 1,
+                name: 'demo-preset',
+                targets: [{ plugin: 'qiita-pub', profile: 'article' }],
+            }),
+        );
+        writeFileSync(
+            join(root, 'plugins/kk/decisions/extract/demo-topic.yaml'),
+            'topic: demo-topic\nwhere:\n  kk-item-category: { in: [ai-news] }\npublishPreset: demo-preset\n',
+        );
+    }
+    async function materialize(
+        snapshot: Record<string, unknown>,
+        spurValue?: string,
+    ): Promise<{ code: number; plan: { origin: string; targets: Array<{ plugin: string }> }; workDir: string }> {
+        const root = mkdtempSync(join(tmpdir(), 'kk-itc-mat-'));
+        const priorCwd = process.cwd();
+        const priorSpur = process.env.SPUR_BIN;
+        try {
+            seedPackageRoot(root);
+            const workDir = join(root, 'ws');
+            mkdirSync(workDir, { recursive: true });
+            writeFileSync(join(workDir, '3-draft-draft-article.md'), '# Title\n\nBody text.');
+            writeFileSync(
+                join(workDir, 'itc-options.json'),
+                JSON.stringify({
+                    parentRunId: 'run-m',
+                    publishTargets: '',
+                    sourceLocale: 'en',
+                    publishLive: false,
+                    publishPreset: null,
+                    publishPresetSource: null,
+                    topicProfile: null,
+                    launchProjectRoot: root,
+                    ...snapshot,
+                }),
+            );
+            if (spurValue !== undefined) {
+                const bin = join(root, 'spur-stub');
+                writeFileSync(bin, `#!/bin/sh\nprintf '{"value":"${spurValue}","reason":"stub"}'\n`);
+                chmodSync(bin, 0o755);
+                process.env.SPUR_BIN = bin;
+            }
+            process.chdir(root);
+            const code = await itcMaterializePlan([workDir]);
+            const plan = JSON.parse(readFileSync(join(workDir, '4-publish/publish-plan.json'), 'utf-8'));
+            return { code, plan, workDir };
+        } finally {
+            process.chdir(priorCwd);
+            if (priorSpur === undefined) delete process.env.SPUR_BIN;
+            else process.env.SPUR_BIN = priorSpur;
+            rmSync(root, { recursive: true, force: true });
+        }
+    }
+
+    it('a launch preset plans as explicit-preset, ignoring stale positional args', async () => {
+        const { code, plan } = await materialize({ publishPreset: 'demo-preset', publishPresetSource: 'launch' });
+        expect(code).toBe(0);
+        expect(plan.origin).toBe('explicit-preset');
+        expect(plan.targets.map((t) => t.plugin)).toEqual(['qiita-pub']);
+    });
+
+    it('a config preset plans as workflow-config', async () => {
+        const { plan } = await materialize({ publishPreset: 'demo-preset', publishPresetSource: 'config' });
+        expect(plan.origin).toBe('workflow-config');
+        expect(plan.targets.map((t) => t.plugin)).toEqual(['qiita-pub']);
+    });
+
+    it('an accepted topic-profile suggestion plans its preset', async () => {
+        const { plan } = await materialize({ topicProfile: 'demo-topic' }, 'suggested');
+        expect(plan.origin).toBe('topic-profile');
+        expect(plan.targets.map((t) => t.plugin)).toEqual(['qiita-pub']);
+    });
+
+    it('a declined or failed topic-profile decision plans nothing rather than guessing', async () => {
+        const { code, plan } = await materialize({ topicProfile: 'demo-topic' }, 'banana');
+        expect(code).toBe(0);
+        expect(plan.origin).toBe('none');
+        expect(plan.targets).toEqual([]);
+    });
+
+    it('an unknown preset fails loud', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'kk-itc-mat-bad-'));
+        try {
+            writeFileSync(join(root, '3-draft-draft-article.md'), '# T\n\nBody.');
+            writeFileSync(
+                join(root, 'itc-options.json'),
+                JSON.stringify({ parentRunId: 'r', publishPreset: 'no-such', publishPresetSource: 'launch' }),
+            );
+            expect(await itcMaterializePlan([root])).toBe(1);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 });

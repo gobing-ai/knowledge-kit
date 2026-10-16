@@ -116,7 +116,10 @@ describe('workflow-run command (0060)', () => {
         expect(cmd).toContain('--outline');
         expect(cmd).toContain('--writer');
         expect(cmd).toContain('fixture is storm-only');
-        for (const v of ['writer', 'playbook', 'research', 'judge', 'outline', 'force', 'rubric']) {
+        // 0303: config-backed options freeze into itc-options.json via the launch JSON; the run vars
+        // carry only run-local inputs.
+        for (const key of ['writer', 'playbook', 'research', 'judge']) expect(cmd).toContain(`--arg ${key} "$`);
+        for (const v of ['outline', 'force', 'rubric']) {
             expect(cmd).toContain(`\\"${v}\\"`);
         }
     });
@@ -182,7 +185,10 @@ describe('workflow-run command (0060)', () => {
     });
 
     it('R4 — every profile defaults its work_dir under works_dir/<workflow-name>/', () => {
-        for (const profile of ['kk-storm-research', 'kk-itc', 'kk-solo-podcast', 'kk-daily-ai-voice']) {
+        // kk-itc's workspace is composed by itc-prepare (explicit dir wins there, 0303).
+        expect(cmd).toContain(`work_dir=$(kk stage run itc-prepare --request "$launch" | jq -r '.workDir')`);
+        expect(cmd).toContain('`$works_dir/kk-itc/<kebab>[/<run-date>]`');
+        for (const profile of ['kk-storm-research', 'kk-solo-podcast', 'kk-daily-ai-voice']) {
             // The ${DIR:-<default>} form is what makes an explicit --dir win over the default.
             expect(cmd).toMatch(new RegExp(`work_dir="\\$\\{DIR:-\\$works_dir/${profile}/`));
         }
@@ -234,24 +240,22 @@ describe('workflow-run kk-itc end-to-end profile flags (0153)', () => {
         );
     });
 
-    it('R2 — the kk-itc run JSON binds all end-to-end vars (spend approvals stay false unless passed)', () => {
-        const jsonBlock = cmd
-            .split('\n')
-            .filter((l) => l.includes(String.raw`\"publish_targets\"`))
-            .find((l) => l.includes(String.raw`\"topic\"`));
-        expect(jsonBlock).toBeDefined();
+    it('R2 — the kk-itc launch JSON binds all end-to-end options (spend approvals stay false unless passed)', () => {
         for (const pair of [
             ['auto', 'AUTO'],
             ['unslop', 'UNSLOP'],
-            ['max_revisions', 'MAX_REVISIONS'],
-            ['cover_enabled', 'COVER'],
-            ['inline_images', 'INLINE_IMAGES'],
-            ['publish_targets', 'TARGETS'],
-            ['publish_live', 'LIVE'],
-            ['source_locale', 'SOURCE_LOCALE'],
+            ['maxRevisions', 'MAX_REVISIONS'],
+            ['coverEnabled', 'COVER'],
+            ['inlineImages', 'INLINE_IMAGES'],
+            ['publishTargets', 'TARGETS'],
+            ['publishLive', 'LIVE'],
+            ['sourceLocale', 'SOURCE_LOCALE'],
         ]) {
-            expect(jsonBlock).toContain(String.raw`\"${pair[0]}\":\"$${pair[1]}\"`);
+            expect(cmd).toContain(`--arg ${pair[0]} "$${pair[1]}"`);
         }
+        // Booleans are true only when the flag said "true"; unset ones are dropped for config/defaults.
+        expect(cmd).toContain('.value = (.value == "true")');
+        expect(cmd).toContain('with_entries(select(.value != ""))');
     });
 
     it('R2 — cover/inline-images and targets/max-revisions bind their same-named vars, defaulting off', () => {

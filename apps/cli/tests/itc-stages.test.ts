@@ -336,8 +336,12 @@ describe('itc-publish-plan (0150)', () => {
                 switches: { operation: '文章', publishStatus: 'draft' },
             },
         });
-        expect(plan.fanout).toEqual([{ variant: 'zh-wechat-article', targets: ['wechatmp-pub'] }]);
-        expect(plan.browser).toEqual([{ target: 'juejin-pub', variant: 'zh-article' }]);
+        // 0298: transport derives from the manifest's browserSession, never a channel-name table.
+        expect(plan.fanout).toEqual([]);
+        expect(plan.browser).toEqual([
+            { target: 'juejin-pub', variant: 'zh-article' },
+            { target: 'wechatmp-pub', variant: 'zh-wechat-article' },
+        ]);
     });
 
     it('reuses content.json when a fixed locale equals the source locale', () => {
@@ -360,10 +364,8 @@ describe('itc-publish-plan (0150)', () => {
         expect(plan.live).toBe(true);
         expect(plan.variants['en-article']?.switches).toEqual({ publishStatus: 'public' });
         expect(plan.variants['en-short-post']?.switches).toEqual({ operation: 'post' });
-        expect(plan.fanout).toEqual([
-            { variant: 'en-article', targets: ['medium-pub'] },
-            { variant: 'en-short-post', targets: ['x-pub'] },
-        ]);
+        expect(plan.fanout).toEqual([{ variant: 'en-article', targets: ['medium-pub'] }]);
+        expect(plan.browser).toEqual([{ target: 'x-pub', variant: 'en-short-post' }]);
 
         const draft = seedWorkDir();
         const resDraft = run(['itc-publish-plan', draft, 'x-pub', 'en', 'false']);
@@ -667,10 +669,8 @@ describe('itc stages in-process (coverage of the spawned module body)', () => {
         expect(liveRun.exit).toBeUndefined(); // duplicate targets dedupe; x-pub planned live; cover.jpg found
         const livePlan = JSON.parse(readFileSync(join(live, '4-publish/publish-plan.json'), 'utf-8'));
         expect(livePlan.live).toBe(true);
-        expect(livePlan.fanout).toEqual([
-            { variant: 'en-article', targets: ['medium-pub'] },
-            { variant: 'en-short-post', targets: ['x-pub'] },
-        ]);
+        expect(livePlan.fanout).toEqual([{ variant: 'en-article', targets: ['medium-pub'] }]);
+        expect(livePlan.browser).toEqual([{ target: 'x-pub', variant: 'en-short-post' }]);
 
         const usage = await capture((m) => m.itcPublishPlan([seedWorkDir()]));
         expect(usage.exit).toBe(1);

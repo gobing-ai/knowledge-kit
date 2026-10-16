@@ -375,6 +375,12 @@ export async function itcSendTargets(
 
     const plan = JSON.parse(await fs.readFile(planPath)) as ItcPublishPlan;
     if (!plan.targets || plan.targets.length === 0) return 0;
+    // A receipt is evidence for one run; without the frozen snapshot there is no run to bind it to.
+    const parentRunId = (await readOptionsSnapshot(fs, workDir))?.parentRunId;
+    if (!parentRunId) {
+        echoError(`itc-send-targets: ${join(workDir, 'itc-options.json')} has no parentRunId`);
+        return 1;
+    }
 
     const receiptsDir = join(publishDir, 'receipts');
     await fs.ensureDir(receiptsDir);
@@ -479,7 +485,7 @@ export async function itcSendTargets(
 
         const receipt: ItcReceipt = {
             schemaVersion: 1,
-            parentRunId: 'itc-parent',
+            parentRunId,
             planDigest,
             payloadDigest,
             plugin: target.plugin,
