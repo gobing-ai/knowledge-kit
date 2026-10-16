@@ -1,6 +1,6 @@
 {
     "robin-news": {
-        "instruct": "clear, natural, calm Chinese news broadcast, moderate pace"
+        "instruct": "male, middle-aged, moderate pitch"
     },
     "sample-clone": {
         "ref_audio": "voices/sample-ref.wav",

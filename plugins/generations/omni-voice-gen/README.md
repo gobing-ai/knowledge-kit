@@ -54,7 +54,15 @@ Profiles map a name to one of three voice-specification kinds. The registry live
 |------|-----------|-------------|
 | **Clone** | `{ "ref_audio": "<path>", "ref_text": "<transcript>" }` | 3–10 s reference clip + its transcript |
 | **Saved prompt** | `{ "prompt": "<path>.pt" }` | Pre-computed clone prompt via `create_voice_clone_prompt` |
-| **Instruct** | `{ "instruct": "<description>" }` | Text description of the desired voice style |
+| **Instruct** | `{ "instruct": "<tokens>" }` | Voice style from OmniVoice's allowlisted tokens |
+
+**Instruct vocabulary** (OmniVoice rejects anything else with *Unsupported instruct items*, so
+only these are usable): gender `male`/`female`; age `child`, `teenager`, `young adult`,
+`middle-aged`, `elderly`; pitch `very low pitch` … `very high pitch`; style `whisper`; accent
+`american accent`, `british accent`, … — English tokens comma+space separated; the Chinese
+equivalents use a full-width comma. Free-form prose like *"clear, natural, calm news
+broadcast"* fails validation, and an instruct pins no speaker identity anyway: every request
+draws a new voice, so use a clone profile for multi-segment work.
 
 ### Creating a profile (clone example)
 
