@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
     buildCompactEvidencePacket,
@@ -183,7 +184,9 @@ describe('Outcome Validation and Qualification (R2 / AC2)', () => {
 });
 
 describe('Stage Execution: seo-judge (R1, R2 / AC1, AC2)', () => {
-    const testDir = resolve('.spur', 'test-seo-judge');
+    // OS tmpdir, like every other suite here: scratch inside the repo tree would sit in the
+    // pipeline's proof-input digest and drift it on each gate run.
+    const testDir = mkdtempSync(join(tmpdir(), 'kk-seo-judge-'));
     const workDir = join(testDir, 'workdir');
     const fixtureCrawl = resolve('plugins/kk/tests/fixtures/smart-seo-minimal-crawl.json');
 

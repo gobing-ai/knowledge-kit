@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import * as http from 'node:http';
 import * as https from 'node:https';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
     type CrawlArtifact,
@@ -462,7 +463,9 @@ describe('HTML Facts Extraction via HTMLRewriter (R3 / AC3)', () => {
 });
 
 describe('Stage Execution: seo-preflight and seo-collect (R1–R3)', () => {
-    const testDir = resolve('.spur', 'test-smart-seo');
+    // OS tmpdir, like every other suite here: scratch inside the repo tree would sit in the
+    // pipeline's proof-input digest and drift it on each gate run.
+    const testDir = mkdtempSync(join(tmpdir(), 'kk-seo-collect-'));
     const optionsFile = join(testDir, 'test-options.json');
     const workDir = join(testDir, 'workdir-test');
 
