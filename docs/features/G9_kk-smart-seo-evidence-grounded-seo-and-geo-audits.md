@@ -6,7 +6,7 @@ status: active
 priority: P2
 tags: []
 created_at: "2026-10-15T04:39:32.556Z"
-updated_at: "2026-10-16T00:26:20.437Z"
+updated_at: "2026-10-16T01:44:50.601Z"
 ---
 
 # G9: kk-smart-seo: evidence-grounded SEO and GEO audits

@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { type DecisionStubHandler, executeSeoJudgeStage } from './seo-decisions';
+import { type EnrichDeps, runSeoEnrich } from './seo-enrich';
 import {
     type CrawlArtifact,
     extractHtmlFacts,
@@ -765,6 +766,22 @@ export async function seoReport(args: string[]): Promise<void> {
 }
 
 /**
+ * `seo-enrich <work_dir>`
+ */
+export async function seoEnrich(args: string[], deps: EnrichDeps = {}): Promise<void> {
+    const [workDirArg = ''] = args;
+    if (!workDirArg) {
+        fail('usage: kk stage run seo-enrich <work_dir>');
+    }
+    const workDir = resolve(workDirArg);
+    if (!existsSync(join(workDir, 'crawl.json'))) {
+        fail(`seo-enrich: missing crawl.json in ${workDir}`);
+    }
+    await runSeoEnrich(workDir, deps);
+    console.error(`seo-enrich: wrote performance.json and visibility.json in ${workDir}`);
+}
+
+/**
  * `seo-judge <work_dir>`
  */
 export async function seoJudge(
@@ -799,6 +816,9 @@ if (import.meta.main) {
             case 'seo-check':
                 await seoCheck(rest);
                 break;
+            case 'seo-enrich':
+                await seoEnrich(rest);
+                break;
             case 'seo-judge':
                 await seoJudge(rest);
                 break;
@@ -810,7 +830,7 @@ if (import.meta.main) {
                 break;
             default:
                 fail(
-                    `unknown stage: ${stage ?? '(none)'} (expected seo-preflight|seo-collect|seo-check|seo-judge|seo-score|seo-report)`,
+                    `unknown stage: ${stage ?? '(none)'} (expected seo-preflight|seo-collect|seo-check|seo-enrich|seo-judge|seo-score|seo-report)`,
                 );
         }
     } catch (err: unknown) {

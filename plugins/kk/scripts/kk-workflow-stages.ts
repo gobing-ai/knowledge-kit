@@ -1781,6 +1781,15 @@ if (import.meta.main)
             }
             break;
         }
+        case 'seo-enrich': {
+            const { seoEnrich } = await loadSeoStages();
+            try {
+                await seoEnrich(rest);
+            } catch (err: unknown) {
+                fail(err instanceof Error ? err.message : String(err));
+            }
+            break;
+        }
         case 'seo-judge': {
             const { seoJudge } = await loadSeoStages();
             try {

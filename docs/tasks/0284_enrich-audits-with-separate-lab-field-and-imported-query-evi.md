@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Enrich audits with separate lab field and imported query evidence
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-15T04:45:13.287Z
-updated_at: "2026-10-15T05:05:01.125Z"
+updated_at: "2026-10-16T03:43:57.203Z"
 feature_id: G9
 priority: P2
 tags:
@@ -13,6 +13,8 @@ tags:
 estimate_hours: 6
 
 dependencies: ["0281", "0282"]
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0284-verdict.json
 ---
 
 ## 0284. Enrich audits with separate lab field and imported query evidence
@@ -38,11 +40,11 @@ Current-tree audit: no Smart SEO runtime files are present; all local requiremen
 
 ### Requirements
 
-- [ ] R1. Implement optional PSI lab and independent CrUX field contracts plus strict normalized visibility import; preserve URL/origin/window/form-factor, source/locale/time/hash and measured-versus-estimated provenance; keep unavailable metrics null and record all affected pages.
+- [x] R1. Implement optional PSI lab and independent CrUX field contracts plus strict normalized visibility import; preserve URL/origin/window/form-factor, source/locale/time/hash and measured-versus-estimated provenance; keep unavailable metrics null and record all affected pages.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Performance and imported visibility preserve source and uncertainty (req: R1)
+- [x] AC1 — Performance and imported visibility preserve source and uncertainty (req: R1)
 
 ```gherkin
 Feature: Enrich audits with separate lab field and imported query evidence
@@ -86,25 +88,57 @@ Shared-file protocol: implement sequentially in frozen order 0281, 0282, 0283, 0
 
 ### Plan
 
-- [ ] Step 0: Recheck current task contract, cited source files, Bun/tool pins, worktrees/wip ownership and completed predecessor artifact interfaces before editing; preserve unrelated working-tree changes.
-- [ ] (R1) Add strict performance/visibility payload validators using existing envelopes and frozen import shape; enforce scope, locale, UTC instant, size/count/number rules and future/stale dispositions.
-- [ ] (R1) Implement fixed-origin PSI/CrUX requests with separate keys and lab/field outputs; select at most three pages, count each attempt toward 12, honor 300 seconds and record URL-to-origin PHONE fallback without substituting passing data.
-- [ ] (R1) Integrate disabled/unavailable/available entries with existing audit/report payloads; preserve null metrics, p75 units/window/scope and all affected-page findings without modifying 0282 scoring.
-- [ ] (R1) In plugins/kk/tests/smart-seo-enrich.test.ts, exercise HTTP client request construction and response fixtures for redirect/refused origin/key leakage/oversize/429/deadline/cap, missing INP, null-versus-zero, all failing URLs and malformed/future/stale/wrong-market imports.
-- [ ] Update docs/04_DESIGN.md in the same change for this shipped slice; preserve accepted/deferred scope and source checked-at dates.
-- [ ] Run project lint, tests, build and rule gates; complete task-pipeline review and traceable requirement/AC verification before recording done. Never waive an upstream implementation dependency because refinement passed.
+- [x] Step 0: Recheck current task contract, cited source files, Bun/tool pins, worktrees/wip ownership and completed predecessor artifact interfaces before editing; preserve unrelated working-tree changes.
+- [x] (R1) Add strict performance/visibility payload validators using existing envelopes and frozen import shape; enforce scope, locale, UTC instant, size/count/number rules and future/stale dispositions.
+- [x] (R1) Implement fixed-origin PSI/CrUX requests with separate keys and lab/field outputs; select at most three pages, count each attempt toward 12, honor 300 seconds and record URL-to-origin PHONE fallback without substituting passing data.
+- [x] (R1) Integrate disabled/unavailable/available entries with existing audit/report payloads; preserve null metrics, p75 units/window/scope and all affected-page findings without modifying 0282 scoring.
+- [x] (R1) In plugins/kk/tests/smart-seo-enrich.test.ts, exercise HTTP client request construction and response fixtures for redirect/refused origin/key leakage/oversize/429/deadline/cap, missing INP, null-versus-zero, all failing URLs and malformed/future/stale/wrong-market imports.
+- [x] Update docs/04_DESIGN.md in the same change for this shipped slice; preserve accepted/deferred scope and source checked-at dates.
+- [x] Run project lint, tests, build and rule gates; complete task-pipeline review and traceable requirement/AC verification before recording done. Never waive an upstream implementation dependency because refinement passed.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `docs/04_DESIGN.md:24` |
+| `docs/04_DESIGN.md:599` |
+| `docs/04_DESIGN.md:604` |
+| `docs/features/G9_kk-smart-seo-evidence-grounded-seo-and-geo-audits.md:9` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:1784` |
+| `plugins/kk/scripts/seo-stages.ts:4` |
+| `plugins/kk/scripts/seo-stages.ts:768` |
+| `plugins/kk/scripts/seo-stages.ts:819` |
+| `plugins/kk/scripts/seo-stages.ts:833` |
+| `plugins/kk/scripts/seo-enrich.ts:1` |
+| `plugins/kk/tests/smart-seo-enrich.test.ts:1` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/kk/scripts/seo-enrich.ts:60` implements the optional enrichment slice: PSI lab parsing, independent CrUX field parsing with PHONE plus URL/origin scope, fixed-endpoint pinned transport that refuses redirects with a 2 MiB response ceiling, and strict normalized visibility import preserving source/locale/instant/provenance with unavailable metrics kept null. Verified in `plugins/kk/tests/smart-seo-enrich.test.ts:70`. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — Performance and imported visibility preserve source and uncertainty (req: R1) | MET | test | `plugins/kk/tests/smart-seo-enrich.test.ts:70` verifies lab/field separation (lab TBT never satisfies field INP), null-versus-zero for missing metrics, three-metric p75 gating, URL/origin scope, pinned-provider refusal paths and the 12-attempt cap; `plugins/kk/tests/smart-seo-enrich.test.ts:430` verifies source/date/locale/scope validation, future rejection, stale exclusion, citation denominators and measured-versus-estimated provenance. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -117,3 +151,8 @@ Shared-file protocol: implement sequentially in frozen order 0281, 0282, 0283, 0
 - Concurrency at kickoff: git worktree list showed only current main; spur task list --status wip --json returned [].
 
 ### History
+
+- 2026-10-16T01:44:38.029Z todo → wip (system)
+- 2026-10-16T03:43:56.455Z wip → testing (system)
+- 2026-10-16T03:43:57.197Z testing → done (system)
+
