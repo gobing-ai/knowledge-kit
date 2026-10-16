@@ -3590,3 +3590,52 @@ describe('daily-intro (0176)', () => {
         });
     });
 });
+
+describe('daily-voice-audit — advisory speaker-consistency check (20261016)', () => {
+    const stamp = '20261016';
+
+    /**
+     * A fake voxcpm plugin tree whose `python` stands in for the audit. The stage must pass the audit's
+     * own exit code through as a WARNING and still exit 0: a regression, a missing venv, or a broken
+     * script must never stop the episode from publishing.
+     */
+    function fakePlugin(dir: string, exitCode: number): string {
+        const plugin = join(dir, 'plugins', 'generations', 'voxcpm-tts');
+        mkdirSync(join(plugin, '.venv', 'bin'), { recursive: true });
+        mkdirSync(join(plugin, 'scripts'), { recursive: true });
+        writeFileSync(join(plugin, 'scripts', 'audit-speaker-consistency.py'), '# stub\n');
+        const python = join(plugin, '.venv', 'bin', 'python');
+        writeFileSync(python, `#!/bin/sh\necho "FAIL — 08-item: F0 spread 103 Hz"\nexit ${exitCode}\n`);
+        chmodSync(python, 0o755);
+        mkdirSync(join(dir, '30-audio'), { recursive: true });
+        writeFileSync(join(dir, '30-audio', `${stamp}_11_generate_content.json`), JSON.stringify({ metadata: {} }));
+        return join(dir, 'plugins');
+    }
+
+    it('reports a failing audit as a warning and still exits 0', () => {
+        withTempDir((dir) => {
+            const plugins = fakePlugin(dir, 1);
+            const result = run(['daily-voice-audit', dir, stamp, plugins]);
+            expect(result.status).toBe(0);
+            expect(result.stdout).toContain('F0 spread 103 Hz');
+            expect(result.stdout).toContain('WARNING');
+        });
+    });
+
+    it('stays silent-quiet and exits 0 when the audit passes', () => {
+        withTempDir((dir) => {
+            const plugins = fakePlugin(dir, 0);
+            const result = run(['daily-voice-audit', dir, stamp, plugins]);
+            expect(result.status).toBe(0);
+            expect(result.stdout).not.toContain('WARNING');
+        });
+    });
+
+    it('skips without failing when the episode content or the plugin tree is absent', () => {
+        withTempDir((dir) => {
+            const result = run(['daily-voice-audit', dir, stamp, join(dir, 'plugins')]);
+            expect(result.status).toBe(0);
+            expect(result.stdout).toContain('no episode content');
+        });
+    });
+});

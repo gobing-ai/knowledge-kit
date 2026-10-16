@@ -1654,6 +1654,11 @@ if (import.meta.main)
             dailyIntro(rest);
             break;
         }
+        case 'daily-voice-audit': {
+            const { dailyVoiceAudit } = await loadDailyStages();
+            dailyVoiceAudit(rest);
+            break;
+        }
         case 'daily-episode-duration': {
             const { dailyEpisodeDuration } = await loadDailyStages();
             dailyEpisodeDuration(rest);

@@ -606,6 +606,27 @@ nodes:
         command: >-
           kk stage daily-intro "${vars.work_dir}" "${vars.run_date}" "${vars.intro_music}"
 
+  # ---- advisory voice audit (2026-10-16): never fails the run ----
+  # The 20261015 episode shipped 59 different speakers because an instruct-mode profile pins none,
+  # and nothing but a human listening caught it. This grades the final render by per-segment median
+  # F0 (a speaker change swings it tens of Hz) and prints the table plus a PASS/FAIL line. It is
+  # deliberately advisory: `|| true` keeps its non-zero exit out of the run, and onError covers a
+  # missing venv (the check needs librosa from the voxcpm plugin's environment).
+  - id: voice-audit
+    description: "Advisory speaker-consistency audit of the joined episode (warn-only, never fails the run)"
+    dependsOn: [intro]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          test -f "${vars.work_dir}/30-audio/${vars.run_date}_11_generate_content.json"
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-voice-audit "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
+        onError: continue
+
   - id: duration
     description: "Measured duration gate: under episode_min_minutes the run refuses and closes as no-content (refusal artifact + emptied candidates, exit 0 — 0266); above episode_max_minutes it still fails loud. Duration is authoritative."
     dependsOn: [intro]

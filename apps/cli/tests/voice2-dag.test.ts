@@ -1026,6 +1026,18 @@ describe('kk-daily-ai-voice2 — agent.run recovery siblings (0238 AC1–AC4)', 
             expect(intro?.dependsOn, `intro must wait for ${id}`).toContain(id);
         }
     });
+
+    it('audits the finished episode for speaker consistency, advisory-only', () => {
+        // 2026-10-15: an instruct-mode profile shipped 59 different speakers and only a human
+        // listening caught it. The node reports; it must never be able to fail the run.
+        const node = loadDag().nodes.find((candidate) => candidate.id === 'voice-audit');
+        expect(node, 'voice-audit node is missing').toBeDefined();
+        if (!node) throw new Error('voice-audit node is missing');
+        expect(node.dependsOn).toContain('intro');
+        expect(node.condition?.options?.command).toContain('_11_generate_content.json');
+        expect(node.action?.options?.command).toContain('kk stage daily-voice-audit');
+        expect(node.action?.options?.onError).toBe('continue');
+    });
 });
 
 describe('kk-daily-ai-voice2 — empty pool ends the run as no-content (AC3)', () => {

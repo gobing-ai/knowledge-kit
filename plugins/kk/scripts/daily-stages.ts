@@ -467,6 +467,38 @@ export function dailyCoverNormalize(args: string[]): void {
  * no-content with the measured vs estimated minutes recorded. Over-max still fails loud — trimming
  * is a different problem.
  */
+/**
+ * Advisory speaker-consistency audit of a finished episode.
+ *
+ * Exists because an unanchored voice profile (voxcpm's `instruct` mode pins no speaker) shipped 59
+ * different speakers in the 20261015 episode and nothing but a human listening caught it. This runs
+ * the plugin's F0 audit and reports; it NEVER fails the run — a regression, a missing venv or a
+ * broken script must not stop publishing. A non-zero audit exit prints one WARNING line instead.
+ */
+export function dailyVoiceAudit(args: string[]): void {
+    const [workDir = '', runDate = '', pluginsPath = ''] = args;
+    if (!workDir) fail('missing work_dir');
+    if (!runDate) fail('missing run_date');
+    const contentPath = join(workDir, '30-audio', `${runDate}_11_generate_content.json`);
+    if (!isFile(contentPath)) {
+        console.log(`voice-audit: no episode content at ${contentPath}; skipping`);
+        return;
+    }
+    const plugin = join(pluginsPath || 'plugins', 'generations', 'voxcpm-tts');
+    const python = join(plugin, '.venv', 'bin', 'python');
+    const script = join(plugin, 'scripts', 'audit-speaker-consistency.py');
+    if (!isFile(python) || !isFile(script)) {
+        console.log(`voice-audit: skipping (needs ${python} and ${script})`);
+        return;
+    }
+    const audit = spawnSync(python, [script, contentPath], { encoding: 'utf-8' });
+    const out = `${audit.stdout ?? ''}${audit.stderr ?? ''}`.trim();
+    if (out) console.log(out);
+    if (audit.status !== 0) {
+        console.log('voice-audit: WARNING — the speaker-consistency audit flagged this episode (advisory)');
+    }
+}
+
 export function dailyEpisodeDuration(args: string[]): void {
     const [workDir = '', runDate = '', minArg = '', maxArg = '', vdriver = ''] = args;
     if (!workDir) fail('missing work_dir');
