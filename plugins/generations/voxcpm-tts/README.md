@@ -62,10 +62,13 @@ that evidence belongs to task 0258.
 - Relative assets resolve against the registry directory; serialized OmniVoice prompts, duplicate
   ids/names, mixed mode fields and vendor paths are refused.
 
-> **Voice identity — `instruct` pins no speaker.** VoxCPM conditions on a reference clip when one is
+> **Voice identity — `instruct` pins no speaker, and multi-segment work is refused on it.** VoxCPM conditions on a reference clip when one is
 > given; with `instruct` alone there is no prompt cache, so the model samples `torch.randn` per
 > request and **every segment can change voice**. The shipped registry is an instruct placeholder
-> (`mode: instruct`) and the client warns once per invocation when one is used. For a stable voice
+> (`mode: instruct`): a single segment still renders, but a second one fails the invocation, so a
+> multi-segment episode can never ship a voice that changes mid-item. `kk-daily-ai-voice2` defaults
+> to this driver with the operator's anchored `robin-news` clone (adopted 2026-10-15 after an A/B
+> listen); the shipped placeholder exists only so the mode machinery is exercised. For a stable voice
 > point `VOXCPM_PROFILES_PATH` at an operator-private registry holding a `reference` (or
 > `continuation`) profile — e.g. `~/.config/kk/voxcpm-profiles/profiles.json` with
 > `reference_wav_path` aimed at a clip in `~/.config/kk/voices/`, wired through

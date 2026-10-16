@@ -151,6 +151,15 @@ describe('createVoxCpmClient guards', () => {
         await expect(handle.client.generate(body('ref', { instruct: 'nope' }))).resolves.toBeDefined();
         await handle.close();
     });
+
+    it('refuses a second segment on an instruct profile instead of changing voice', async () => {
+        const handle = client('ok');
+        await handle.client.health();
+        const first = await handle.client.generate(body());
+        await handle.client.waitUntilDone(first.id, 5000);
+        await expect(handle.client.generate(body())).rejects.toThrow(/pins no speaker/);
+        await handle.close();
+    });
 });
 
 describe('createVoxCpmClient protocol + lifecycle', () => {

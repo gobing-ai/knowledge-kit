@@ -275,6 +275,7 @@ export function createVoxCpmClient(options: VoxCpmClientOptions = {}): VoxCpmCli
     let warnedLanguage = false;
     let warnedInstruct = false;
     let warnedInstructIgnored = false;
+    let instructSegments = 0;
     const pending = new Map<number, PendingRequest>();
     const renderResults = new Map<number, Promise<Record<string, unknown>>>();
     const signalHandlers = new Map<NodeJS.Signals, () => void>();
@@ -513,7 +514,14 @@ export function createVoxCpmClient(options: VoxCpmClientOptions = {}): VoxCpmCli
         if (profile.mode === 'instruct') {
             // Instruct profiles carry no reference audio, so the model samples a speaker per request:
             // a multi-segment episode then changes voice from segment to segment (20261015: within-item
-            // F0 swing up to 103 Hz). Warn once; the fix is a reference/continuation profile.
+            // F0 swing up to 103 Hz, 59 speakers). One segment is still legitimate; a second one is the
+            // defect, so refuse it instead of shipping a voice change.
+            instructSegments += 1;
+            if (instructSegments > 1) {
+                throw new Error(
+                    `voxcpm-tts: profile "${profile.id}" is instruct-mode and pins no speaker — segment ${instructSegments} would sound like a different person; use a reference/continuation profile (VOXCPM_PROFILES_PATH)`,
+                );
+            }
             if (!warnedInstruct) {
                 warnedInstruct = true;
                 echoError(

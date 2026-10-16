@@ -1376,7 +1376,9 @@ texts: instruct spanned 141 Hz of median F0 (sd 58), a reference-anchored profil
 Requirements from here on:
 
 1. A voxcpm profile used for multi-segment synthesis is `reference` or `continuation`, never
-   `instruct`; the client warns once per invocation when an instruct profile is used.
+   `instruct`. The adapter enforces this: it warns once per invocation on an instruct profile and
+   **fails the render on the second segment of one**, so a misconfigured registry drops the tier to
+   the next driver instead of shipping a voice that changes mid-episode.
 2. Operator voice assets live outside the repo (task 0159's existing invariant), registered through
    the operator config: `VOXCPM_PROFILES_PATH` and `OMNIVOICE_PROFILE_REGISTRY` under
    `plugins.generations.<plugin>.env` in `~/.config/kk/config.yaml`, with the clip in
@@ -1388,7 +1390,11 @@ Requirements from here on:
    anchoring a speaker.
 
 Speaker identity across drivers stays the operator's cloned `robin-news`: gemini-tts by stored voice
-id, voxcpm and omni by the same private reference clip.
+id, voxcpm and omni by the same private reference clip. The operator listened to the A/B of item 5
+and item 8 (2026-10-15, `.works/voice-ab-20261015/`) and adopted the anchored clone as the standing
+default: the anchored halves held one voice (per-item F0 spread 7–33 Hz, 0.91–0.94 LTAS correlation
+with the clip) where the instruct halves changed speaker mid-item (34–65 Hz on those excerpts,
+77 Hz median across the episode).
 
 
 ## ADR-037: Every canonical kk operation has one noun and one verb

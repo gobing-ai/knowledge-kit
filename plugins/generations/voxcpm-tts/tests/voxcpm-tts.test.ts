@@ -104,13 +104,28 @@ async function expectDead(pid: number, timeoutMs = 2000): Promise<void> {
     expect(isAlive(pid)).toBe(false);
 }
 
-const clientOptions = (mode: string) => ({
+const clientOptions = (mode: string, profiles: string = SHIPPED_PROFILES) => ({
     workerCommand: ['bun', FAKE, mode],
-    env: { ...process.env, VOXCPM_DEVICE: 'cpu', VOXCPM_PROFILES_PATH: SHIPPED_PROFILES } as Record<
-        string,
-        string | undefined
-    >,
+    env: { ...process.env, VOXCPM_DEVICE: 'cpu', VOXCPM_PROFILES_PATH: profiles } as Record<string, string | undefined>,
 });
+
+/**
+ * Registry that pins a speaker, which the shipped instruct placeholder deliberately does not: the
+ * adapter refuses a second segment on an instruct profile, so multi-segment work needs this.
+ */
+function anchoredRegistry(): string {
+    writeFileSync(join(dir, 'ref.wav'), 'x');
+    const path = join(dir, 'anchored.json');
+    writeFileSync(
+        path,
+        JSON.stringify({
+            profiles: [
+                { id: 'robin-news', name: 'robin-news', mode: 'reference', reference_wav_path: join(dir, 'ref.wav') },
+            ],
+        }),
+    );
+    return path;
+}
 
 describe('voxcpm-tts entry (AC1)', () => {
     it('renders plain text into audio Content with kk:voxcpm-tts provenance and a native-rate WAV', async () => {
@@ -134,7 +149,10 @@ describe('voxcpm-tts entry (AC1)', () => {
 
     it('renders a multi-segment VoiceScript with gaps and speed', async () => {
         const out = join(dir, 'content.json');
-        const code = await main(['--in', writeDocs([scriptDoc()]), '--out', out], clientOptions('ok'));
+        const code = await main(
+            ['--in', writeDocs([scriptDoc()]), '--out', out],
+            clientOptions('ok', anchoredRegistry()),
+        );
         expect(code).toBe(0);
         const content = readContent(out);
         const segments = content.metadata?.segments as { duration: number; speed?: number }[];

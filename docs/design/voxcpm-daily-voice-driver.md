@@ -76,7 +76,9 @@ request, changing voice between segments (2026-10-15: 59 speakers, median within
 `continuation` profile, normally resolved from an operator-private registry via
 `VOXCPM_PROFILES_PATH` in `plugins.generations.voxcpm-tts.env` (`~/.config/kk/voxcpm-profiles/
 profiles.json` + a clip under `~/.config/kk/voices/`); the client warns once per invocation when an
-instruct profile is used. Reference mode uses `reference_wav_path`; continuation requires paired
+instruct profile is used and the render fails on that profile's second segment. Since 2026-10-15 this
+is the adopted default for `kk-daily-ai-voice2` (vdriver voxcpm + the operator's anchored clone,
+chosen after listening to `.works/voice-ab-20261015/`). Reference mode uses `reference_wav_path`; continuation requires paired
 `prompt_wav_path`/`prompt_text`. Relative assets resolve against the registry directory. Reject
 mixed/unsupported modes, missing assets and OmniVoice serialized prompts. The shared pipeline
 resolves profile precedence; the adapter resolves the resulting name/id. Grade a render with

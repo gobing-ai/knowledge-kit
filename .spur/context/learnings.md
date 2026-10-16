@@ -437,3 +437,8 @@ the same text with one hedge adverb restored in the WeChat row → `{"ok":false,
   tier. Verify new profile modes against the *real* voicescript, not hand-written test segments — the
   synthetic inputs (text + seed only) hid this and the first production render would have fallen
   through to gemini.
+- **Make the failure mode impossible, not just warned about.** A warning on an unanchored voice profile
+  was not enough: the adapter now refuses the *second* segment rendered by an instruct profile, so the
+  tier fails (and the workflow falls through to the next driver) instead of shipping a voice that
+  changes mid-episode. The plugin-level test that rendered multi-segment input through the shipped
+  instruct placeholder was repointed at a temp anchored registry — its premise was the banned pattern.
