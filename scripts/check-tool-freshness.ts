@@ -8,6 +8,8 @@
  * Usage: bun scripts/check-tool-freshness.ts [--strict]
  */
 
+import { realpathSync } from 'node:fs';
+
 const TOOLS = [
     { bin: 'spur', pkg: '@gobing-ai/spur' },
     { bin: 'superskill', pkg: '@gobing-ai/superskill' },
@@ -59,7 +61,9 @@ for (const { bin, pkg } of TOOLS) {
             run('which', ['-a', bin])
                 ?.split('\n')
                 .map((l) => l.trim())
-                .filter(Boolean) ?? [],
+                .filter(Boolean)
+                // `bun run` prepends ancestor node_modules/.bin dirs, so one install can appear via several symlinks.
+                .map((l) => realpathSync(l)) ?? [],
         ),
     ];
     const binaries = paths.map((path) => ({ path, version: versionOf(path) ?? 'unknown' }));
