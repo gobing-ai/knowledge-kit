@@ -4,7 +4,7 @@ name: Core content limits and deterministic thread segmentation in kk-core
 status: testing
 template: feature-impl
 created_at: 2026-10-15T05:43:08.391Z
-updated_at: "2026-10-15T05:59:00.878Z"
+updated_at: "2026-10-16T05:24:30.649Z"
 feature_id: E95
 
 ac_altitude: task-local
@@ -25,8 +25,8 @@ Captured from the creation title: "Core content limits and deterministic thread 
 
 ### Acceptance Criteria
 
-- [ ] AC1 — R3 - Content limits engine enforces character and URL weighting (req: R1)
-- [ ] AC2 — R4 - Thread segmentation preserves invariants without data loss (req: R2)
+- [x] AC1 — R3 - Content limits engine enforces character and URL weighting (req: R1)
+- [x] AC2 — R4 - Thread segmentation preserves invariants without data loss (req: R2)
 
 ```gherkin
 Feature: Core content limits and deterministic thread segmentation in kk-core
@@ -72,10 +72,21 @@ Add `packages/kk-core/src/content-limits.ts` and `packages/kk-core/src/thread-se
 
 ### Testing
 
-Ran `bun test packages/kk-core/tests` and `bun run autofix`:
-- `content-limits.ts`: 100% Funcs, 100% Lines
-- `thread-segmentation.ts`: 100% Funcs, 100% Lines
-- Full suite: 96 passed, 0 failed, 294 assertions, exit code 0.
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | Typed limits schema `packages/kk-core/src/content-limits.ts:93` (`PlatformLimitsConfig`, `ContentCountUnit`) with frozen shipped table `packages/kk-core/src/content-limits.ts:105` (`schemaVersion: 5`; X = 280 `weighted` and Threads = 500 `unicode_code_points` at `packages/kk-core/src/content-limits.ts:161-162`, Xiaohongshu title = 20 `xiaohongshu_title_weighted` at `packages/kk-core/src/content-limits.ts:140`). Unified counter `countContentUnits` at `packages/kk-core/src/content-limits.ts:69` dispatches all four units, and the fixed 23-character URL weight is applied in `countXWeightedCharacters` at `packages/kk-core/src/content-limits.ts:41`. All are re-exported from the package entry `packages/kk-core/src/index.ts:5-16`. Exercised by `packages/kk-core/tests/content-limits.test.ts:6` (utf16), `:14` (code points), `:22` (weighted/URL), `:35` (XHS title). |
+| R2 | MET | Deterministic splitter `splitThreadContent` at `packages/kk-core/src/thread-segmentation.ts:64`; the invariant is enforced by construction and asserted at `packages/kk-core/src/thread-segmentation.ts:154` (`segments.join('') === rawText`) and returned as `reconstructed` at `packages/kk-core/src/thread-segmentation.ts:159`. URLs are protected via `collectUrlRanges` at `packages/kk-core/src/thread-segmentation.ts:46` and the `isInsideRange` break-offset filter at `packages/kk-core/src/thread-segmentation.ts:112` and `:138`. Exercised by `packages/kk-core/tests/content-limits.test.ts:150` (full URL survives inside one segment) and `packages/kk-core/tests/thread-segmentation.test.ts:72` (no mid-URL cut when forced to hard splitting). |
+| R3 | MET | Unit tests delivered at `packages/kk-core/tests/content-limits.test.ts:1` and `packages/kk-core/tests/thread-segmentation.test.ts:1` covering unit counting, limit violations, empty/null input, paragraph/sentence/newline/space break priority, URL protection, astral (surrogate-pair) boundaries and over-limit hard splits. `bun test packages/kk-core/tests` → 115 pass / 0 fail / 352 expect() calls, exit 0. Per-file coverage clears the 90% floor: `content-limits.ts` 100.00% funcs / 100.00% lines, `thread-segmentation.ts` 100.00% funcs / 100.00% lines (lowest file in the run: `manifest.ts` 98.56% lines). |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| R3 - Content limits engine enforces character and URL weighting | MET | test | `packages/kk-core/tests/content-limits.test.ts:6` utf16 code units, `:14` Unicode code points, `:22` Twitter/X weighted counting with the 23-char URL rule, `:35` Xiaohongshu weighted title, `:64` Threads 500-code-point body violation, `:78` Xiaohongshu 20-unit title violation, `:110` frozen limits dictionary. `bun test packages/kk-core/tests` exit 0. |
+| R4 - Thread segmentation preserves invariants without data loss | MET | test | `packages/kk-core/tests/thread-segmentation.test.ts:29` paragraph breaks + exact reconstruction, `:63` URL kept intact, `:72` no mid-URL break under forced binary-search splitting, `:85` astral characters split on code-point boundaries, `:95` unbreakable text split at hard limits with no over-limit segment; `packages/kk-core/tests/content-limits.test.ts:150` full URL present in one segment and `:163` invariant on punctuation-free text. Exit 0. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
