@@ -14,6 +14,7 @@ export const ItcTargetsOriginSchema = z.enum([
     'none',
 ]);
 
+/** Where the resolved publication targets came from. */
 export type ItcTargetsOrigin = z.infer<typeof ItcTargetsOriginSchema>;
 
 /** Schema for a target selector inside an ITC plan request. */
@@ -24,6 +25,7 @@ export const ItcPlanTargetRequestSchema = z
     })
     .strict();
 
+/** Parsed target selector (plugin plus optional profile). */
 export type ItcPlanTargetRequest = z.infer<typeof ItcPlanTargetRequestSchema>;
 
 /** Target entry inside a publish preset. */
@@ -43,8 +45,10 @@ export const PublishPresetSchema = z
     })
     .strict();
 
+/** Parsed publish preset v1. */
 export type PublishPreset = z.infer<typeof PublishPresetSchema>;
 
+/** Target sources in precedence order: explicit targets, explicit preset, workflow config, topic profile. */
 export interface ItcTargetSelection {
     explicitTargets?: string | readonly ItcPlanTargetRequest[];
     explicitPreset?: string;
@@ -55,6 +59,7 @@ export interface ItcTargetSelection {
     packageRoot?: string;
 }
 
+/** Resolved targets with their origin and, for presets, the preset name and digest. */
 export interface ResolvedItcTargets {
     targets: ItcPlanTargetRequest[];
     origin: ItcTargetsOrigin;
@@ -76,8 +81,10 @@ export const ItcPlanRequestSchema = z.object({
     configDigest: z.string().optional(),
 });
 
+/** Parsed ITC publish plan request. */
 export type ItcPlanRequest = z.infer<typeof ItcPlanRequestSchema>;
 
+/** One content variant the plan renders: file, adaptation flag, limits and switches. */
 export interface ItcPlanVariantEntry {
     file: string;
     adapt: boolean;
@@ -85,6 +92,7 @@ export interface ItcPlanVariantEntry {
     switches: Record<string, unknown>;
 }
 
+/** Per-target plan row: plugin, profile, variant, transport, mode and payload binding. */
 export interface ItcPlanTargetDetail {
     target: string;
     plugin: string;
@@ -97,6 +105,7 @@ export interface ItcPlanTargetDetail {
     metadata: Record<string, unknown>;
 }
 
+/** Full ITC publish plan: variants, fanout and browser routes, and per-target details. */
 export interface ItcPublishPlan {
     schemaVersion?: 1;
     origin?: ItcTargetsOrigin;

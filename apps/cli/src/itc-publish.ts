@@ -15,6 +15,7 @@ import { itcDecision } from './itc-decision';
 import { buildItcPublishPlan, type ItcPlanRequest, type ItcPublishPlan, resolveItcTargets } from './itc-plan';
 import { type ChosenSourceArtifact, type ItcSelectionSettleRequest, itcSelectionSettle } from './itc-topic';
 
+/** Delivery effect a publish plugin reports alongside its result. */
 export const ItcDeliveryMetadataSchema = z
     .object({
         schemaVersion: z.literal(1).default(1),
@@ -23,6 +24,7 @@ export const ItcDeliveryMetadataSchema = z
     })
     .strict();
 
+/** Per-target publish receipt bound to the parent run, plan digest and payload digest. */
 export const ItcReceiptSchema = z
     .object({
         schemaVersion: z.literal(1).default(1),
@@ -43,6 +45,7 @@ export const ItcReceiptSchema = z
     })
     .strict();
 
+/** Parsed ITC publish receipt. */
 export type ItcReceipt = z.infer<typeof ItcReceiptSchema>;
 
 /** First `cover.*` in 4-illustrations as a workspace-relative path, or undefined. */
