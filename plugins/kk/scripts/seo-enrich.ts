@@ -112,7 +112,8 @@ export interface VisibilityArtifact {
     siteOrigin: string;
     locale: string;
     collectedAt: string;
-    measurementKind: 'measured' | 'estimated';
+    /** null when no snapshot was supplied: nothing was measured or estimated. */
+    measurementKind: 'measured' | 'estimated' | null;
     /** Retained as evidence but never used to drive recommendations. */
     stale: boolean;
     rows: VisibilityRow[];
@@ -691,7 +692,7 @@ export async function runSeoEnrich(workDir: string, deps: EnrichDeps = {}): Prom
             siteOrigin: new URL(options.url).origin,
             locale: options.locale,
             collectedAt: '',
-            measurementKind: 'measured',
+            measurementKind: null,
             stale: false,
             rows: [],
             excluded: [],

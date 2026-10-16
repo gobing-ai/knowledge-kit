@@ -4,7 +4,7 @@ name: Enrich audits with separate lab field and imported query evidence
 status: done
 template: feature-impl
 created_at: 2026-10-15T04:45:13.287Z
-updated_at: "2026-10-16T18:43:12.146Z"
+updated_at: "2026-10-16T19:34:31.183Z"
 feature_id: G9
 priority: P2
 tags:
@@ -123,11 +123,11 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | PSI lab parsing at `plugins/kk/scripts/seo-enrich.ts:308`; independent CrUX field parsing with p75 LCP/INP/CLS at `plugins/kk/scripts/seo-enrich.ts:334` and `plugins/kk/scripts/seo-enrich.ts:346`; deterministic page selection at `plugins/kk/scripts/seo-enrich.ts:158`; pinned fixed-endpoint provider transport with 2 MiB cap at `plugins/kk/scripts/seo-enrich.ts:25` and `plugins/kk/scripts/seo-enrich.ts:173`; strict visibility import at `plugins/kk/scripts/seo-enrich.ts:381` preserving measured-versus-estimated at `plugins/kk/scripts/seo-enrich.ts:115`; artifacts at `plugins/kk/scripts/seo-enrich.ts:507` and `plugins/kk/scripts/seo-enrich.ts:553` |
+| R1 | MET | PSI lab parsing at `plugins/kk/scripts/seo-enrich.ts:309`; independent CrUX field parsing with p75 LCP/INP/CLS at `plugins/kk/scripts/seo-enrich.ts:335` and `plugins/kk/scripts/seo-enrich.ts:347`; deterministic page selection at `plugins/kk/scripts/seo-enrich.ts:159`; pinned fixed-endpoint provider transport with 2 MiB cap at `plugins/kk/scripts/seo-enrich.ts:25` and `plugins/kk/scripts/seo-enrich.ts:174`; strict visibility import at `plugins/kk/scripts/seo-enrich.ts:382` preserving measured-versus-estimated at `plugins/kk/scripts/seo-enrich.ts:116`; artifacts at `plugins/kk/scripts/seo-enrich.ts:508` and `plugins/kk/scripts/seo-enrich.ts:554` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Performance and imported visibility preserve source and uncertainty (req: R1) | MET | test | Lab/field separation at `plugins/kk/tests/smart-seo-enrich.test.ts:78`; missing metrics null at `plugins/kk/tests/smart-seo-enrich.test.ts:88`; all three p75 metrics required at `plugins/kk/tests/smart-seo-enrich.test.ts:95`; attempt cap at `plugins/kk/tests/smart-seo-enrich.test.ts:193`; origin fallback at `plugins/kk/tests/smart-seo-enrich.test.ts:224`; affected pages recorded at `plugins/kk/tests/smart-seo-enrich.test.ts:250`; stalled-body timeout at `plugins/kk/tests/smart-seo-enrich.test.ts:399`; snapshot provenance at `plugins/kk/tests/smart-seo-enrich.test.ts:454` and `plugins/kk/tests/smart-seo-enrich.test.ts:543`; 131 pass / 0 fail this run |
+| AC1 — Performance and imported visibility preserve source and uncertainty (req: R1) | MET | test | Lab/field separation at `plugins/kk/tests/smart-seo-enrich.test.ts:78`; missing metrics null at `plugins/kk/tests/smart-seo-enrich.test.ts:88`; no-snapshot visibility not-assessed with null measurement kind at `plugins/kk/tests/smart-seo-enrich.test.ts:157`; all three p75 metrics required at `plugins/kk/tests/smart-seo-enrich.test.ts:95`; attempt cap at `plugins/kk/tests/smart-seo-enrich.test.ts:195`; origin fallback at `plugins/kk/tests/smart-seo-enrich.test.ts:226`; affected pages recorded at `plugins/kk/tests/smart-seo-enrich.test.ts:252`; stalled-body timeout at `plugins/kk/tests/smart-seo-enrich.test.ts:401`; snapshot provenance at `plugins/kk/tests/smart-seo-enrich.test.ts:456` and `plugins/kk/tests/smart-seo-enrich.test.ts:545`; 132 pass / 0 fail this run |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

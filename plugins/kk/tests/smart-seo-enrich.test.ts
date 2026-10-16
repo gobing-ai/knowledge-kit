@@ -175,6 +175,8 @@ describe('Enrichment stage: provider attempts, caps and fallback (R1 / AC1)', ()
         expect(perf.labIsFieldAuthority).toBe(false);
         const vis = JSON.parse(readFileSync(join(dir, 'visibility.json'), 'utf-8'));
         expect(vis.status).toBe('not-assessed');
+        // No snapshot was supplied, so no measurement kind can be claimed.
+        expect(vis.measurementKind).toBeNull();
     });
 
     it('records unavailable entries and still exits zero when the keys are missing', async () => {
