@@ -1781,6 +1781,15 @@ if (import.meta.main)
             }
             break;
         }
+        case 'seo-judge': {
+            const { seoJudge } = await loadSeoStages();
+            try {
+                await seoJudge(rest);
+            } catch (err: unknown) {
+                fail(err instanceof Error ? err.message : String(err));
+            }
+            break;
+        }
         case 'seo-score': {
             const { seoScore } = await loadSeoStages();
             try {

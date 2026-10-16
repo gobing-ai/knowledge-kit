@@ -1,5 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { type DecisionStubHandler, executeSeoJudgeStage } from './seo-decisions';
 import {
     type CrawlArtifact,
     extractHtmlFacts,
@@ -763,6 +764,28 @@ export async function seoReport(args: string[]): Promise<void> {
     console.error(`seo-report: wrote report.json and report.md in ${workDir}`);
 }
 
+/**
+ * `seo-judge <work_dir>`
+ */
+export async function seoJudge(
+    args: string[],
+    options: { spurBin?: string; stub?: DecisionStubHandler } = {},
+): Promise<void> {
+    const [workDirArg = ''] = args;
+    if (!workDirArg) {
+        fail('usage: kk stage run seo-judge <work_dir>');
+    }
+    const workDir = resolve(workDirArg);
+    const crawlPath = join(workDir, 'crawl.json');
+    if (!existsSync(crawlPath)) {
+        fail(`seo-judge: missing crawl.json in ${workDir}`);
+    }
+    const result = await executeSeoJudgeStage(workDir, options);
+    console.error(
+        `seo-judge: completed ${result.summary.totalCalls} decision calls (${result.summary.qualifiedCalls} qualified)`,
+    );
+}
+
 if (import.meta.main) {
     const [stage, ...rest] = process.argv.slice(2);
     try {
@@ -776,6 +799,9 @@ if (import.meta.main) {
             case 'seo-check':
                 await seoCheck(rest);
                 break;
+            case 'seo-judge':
+                await seoJudge(rest);
+                break;
             case 'seo-score':
                 await seoScore(rest);
                 break;
@@ -784,7 +810,7 @@ if (import.meta.main) {
                 break;
             default:
                 fail(
-                    `unknown stage: ${stage ?? '(none)'} (expected seo-preflight|seo-collect|seo-check|seo-score|seo-report)`,
+                    `unknown stage: ${stage ?? '(none)'} (expected seo-preflight|seo-collect|seo-check|seo-judge|seo-score|seo-report)`,
                 );
         }
     } catch (err: unknown) {
