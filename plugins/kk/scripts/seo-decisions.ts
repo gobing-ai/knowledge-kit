@@ -146,7 +146,10 @@ export function executeDecisionRun(
         // process group is observed through the child's own termination signal instead: the child
         // was killed by the same cancellation, which means this stage must stop rather than record
         // the kill as a fallback result and dispatch another decision.
-        if (res.signal !== null && (SEO_CANCEL_SIGNALS as readonly string[]).includes(res.signal)) {
+        // spawnSync kills a timed-out child with SIGTERM too; that is this decision's timeout, not a
+        // cancellation, so it records a fallback before the signal check can misread it.
+        const timedOut = (res.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT';
+        if (!timedOut && res.signal !== null && (SEO_CANCEL_SIGNALS as readonly string[]).includes(res.signal)) {
             throw new SeoStageCancelledError(res.signal as NodeJS.Signals, decisionId);
         }
         // A cancellation that arrived while the child ran already terminated it with the process
@@ -163,7 +166,11 @@ export function executeDecisionRun(
                 confidence: null,
                 maker: 'unknown',
                 source: 'fallback',
-                reason: res.stderr ? res.stderr.slice(0, 200) : `exit status ${res.status}`,
+                reason: timedOut
+                    ? `decision run timed out after ${timeoutMs}ms`
+                    : res.stderr
+                      ? res.stderr.slice(0, 200)
+                      : `exit status ${res.status}`,
                 qualified: false,
             };
         }
@@ -444,7 +451,8 @@ export async function executeSeoJudgeStage(
     const summary = {
         totalCalls: callCount,
         successfulCalls: entries.length,
-        qualifiedCalls: entries.filter((e) => e.qualified).length,
+        // The deterministic homepage entry is not a decision call, so it stays out of the call tallies.
+        qualifiedCalls: entries.filter((e) => e.qualified && e.source !== 'deterministic').length,
         fallbackCalls: entries.filter((e) => e.source === 'fallback' || e.source === 'default').length,
     };
 

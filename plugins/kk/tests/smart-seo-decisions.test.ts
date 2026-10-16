@@ -265,7 +265,11 @@ describe('Stage Execution: seo-judge (R1, R2 / AC1, AC2)', () => {
     });
 
     it('executes real child process spur decision run when no stub is provided and handles failure', () => {
-        const real = executeDecisionRun('kk-seo-business-model', { subject_id: 'example.com', locale: 'en-US' }, []);
+        // A live maker may answer slowly; bound the child well inside the test budget so either the
+        // answer or the timeout fallback lands deterministically.
+        const real = executeDecisionRun('kk-seo-business-model', { subject_id: 'example.com', locale: 'en-US' }, [], {
+            timeoutMs: 2000,
+        });
         expect(real.id).toBe('kk-seo-business-model');
         expect(real.source).toBeDefined();
 
@@ -280,6 +284,24 @@ describe('Stage Execution: seo-judge (R1, R2 / AC1, AC2)', () => {
         );
         expect(failRun.source).toBe('fallback');
         expect(failRun.qualified).toBe(false);
+    });
+
+    it('records a timed-out decision child as a fallback instead of a stage cancellation', () => {
+        // spawnSync kills a timed-out child with SIGTERM — the same signal an operator cancel uses.
+        const binDir = mkdtempSync(join(tmpdir(), 'kk-seo-slow-spur-'));
+        const slowSpur = join(binDir, 'slow-spur');
+        writeFileSync(slowSpur, '#!/bin/sh\nsleep 5\n', { mode: 0o755 });
+        try {
+            const res = executeDecisionRun('kk-seo-business-model', { subject_id: 'example.com' }, [], {
+                spurBin: slowSpur,
+                timeoutMs: 200,
+            });
+            expect(res.source).toBe('fallback');
+            expect(res.qualified).toBe(false);
+            expect(res.reason).toMatch(/timed out/);
+        } finally {
+            rmSync(binDir, { recursive: true, force: true });
+        }
     });
 
     it('respects max_decision_calls cap and marks stage partial on exhaustion', async () => {
@@ -309,6 +331,8 @@ describe('Stage Execution: seo-judge (R1, R2 / AC1, AC2)', () => {
         const res = await executeSeoJudgeStage(capDir, { stub: mockStub });
         expect(res.status).toBe('partial');
         expect(res.summary.totalCalls).toBe(2);
+        // The deterministic homepage entry is not a call, so it never inflates the qualified tally.
+        expect(res.summary.qualifiedCalls).toBe(2);
     });
 
     it('validates CLI arguments for seo-judge and supports visibility snapshots', async () => {
