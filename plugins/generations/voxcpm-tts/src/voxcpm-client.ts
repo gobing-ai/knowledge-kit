@@ -274,6 +274,7 @@ export function createVoxCpmClient(options: VoxCpmClientOptions = {}): VoxCpmCli
     let warnedChunk = false;
     let warnedLanguage = false;
     let warnedInstruct = false;
+    let warnedInstructIgnored = false;
     const pending = new Map<number, PendingRequest>();
     const renderResults = new Map<number, Promise<Record<string, unknown>>>();
     const signalHandlers = new Map<NodeJS.Signals, () => void>();
@@ -526,7 +527,15 @@ export function createVoxCpmClient(options: VoxCpmClientOptions = {}): VoxCpmCli
             return { normalize: body.normalize ?? true };
         }
         if (requestedInstruct) {
-            throw new Error(`voxcpm-tts: per-request instruct is not supported for "${profile.mode}" mode`);
+            // The shared pipeline turns a segment's `emotion` into a per-request instruct, so this is
+            // the normal case for every daily episode. A reference/continuation profile already fixes
+            // the voice: ignoring the instruction beats failing the tier (or re-labelling the clip).
+            if (!warnedInstructIgnored) {
+                warnedInstructIgnored = true;
+                echoError(
+                    `voxcpm-tts: ignoring the per-request instruct on "${profile.mode}" profile "${profile.id}" — the reference clip defines the voice`,
+                );
+            }
         }
         return { normalize: body.normalize ?? true };
     }

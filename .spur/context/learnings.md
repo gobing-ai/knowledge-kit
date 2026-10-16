@@ -430,3 +430,10 @@ the same text with one hedge adverb restored in the WeChat row → `{"ok":false,
   robin-news clone needed 88.5 s where the instruct draws needed 97.0 s (5.55 vs 5.06 字/秒, 5 segments,
   491 chars, 20261015) — the synthesised voice mirrors its reference clip's pace. Re-check the fit rate
   whenever a profile's mode changes; here the clone is the *faster* one, so 5.2 字/秒 stays conservative.
+- **The shared pipeline turns a segment's `emotion` into a per-request `instruct`**
+  (`voice-gen/src/index.ts:147` → `resolveInstruct(rawInstruct, rawEmotion)`), and every daily segment
+  carries an emotion. Any voxcpm profile whose mode is not `instruct` therefore receives a per-request
+  instruct on every request; the adapter now ignores it with a one-time advisory instead of failing the
+  tier. Verify new profile modes against the *real* voicescript, not hand-written test segments — the
+  synthetic inputs (text + seed only) hid this and the first production render would have fallen
+  through to gemini.
