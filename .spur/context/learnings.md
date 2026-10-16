@@ -411,3 +411,18 @@ the same text with one hedge adverb restored in the WeChat row → `{"ok":false,
   with `qc.passed`), so a successful primary makes its siblings skip and a failed driver's artifact is
   never relabeled or mixed into the episode. `intro` depends on every tier so the join waits for whoever
   wins.
+- **An `instruct`-mode voice profile pins no speaker.** VoxCPM conditions identity on a reference
+  clip; with `instruct` alone there is no prompt cache, so it samples `torch.randn` per request and
+  every VoiceScript segment can change voice — the 20261015 episode shipped 59 different speakers
+  (median within-item median-F0 swing 77 Hz, worst 103 Hz). A fixed `seed` is not a fix: the same
+  seed across different texts still spanned 214–269 Hz. Only a `reference`/`continuation` profile
+  anchors identity (measured 22–26 Hz swing, 0.95+ LTAS correlation with the clip). Detect it by
+  measuring per-segment median F0 — `plugins/generations/voxcpm-tts/scripts/audit-speaker-consistency.py`
+  fails anything with a per-item spread over 45 Hz. Rate/code review cannot catch this class of bug:
+  it only shows up in audio.
+- **Operator voice assets live in `~/.config/kk/`, never the repo.** Task 0159 already froze that
+  invariant, but the clone clip had drifted into `plugins/generations/omni-voice-gen/voices/`. Wire
+  operator registries through `plugins.generations.<plugin>.env` in `~/.config/kk/config.yaml` — the
+  pattern gemini-tts already used for `GEMINI_TTS_PROFILES` — with `VOXCPM_PROFILES_PATH` and
+  `OMNIVOICE_PROFILE_REGISTRY` pointing at private registries whose `ref_audio`/`reference_wav_path`
+  are absolute paths under `~/.config/kk/voices/` (relative paths resolve against the process cwd).

@@ -62,6 +62,20 @@ that evidence belongs to task 0258.
 - Relative assets resolve against the registry directory; serialized OmniVoice prompts, duplicate
   ids/names, mixed mode fields and vendor paths are refused.
 
+> **Voice identity — `instruct` pins no speaker.** VoxCPM conditions on a reference clip when one is
+> given; with `instruct` alone there is no prompt cache, so the model samples `torch.randn` per
+> request and **every segment can change voice**. The shipped registry is an instruct placeholder
+> (`mode: instruct`) and the client warns once per invocation when one is used. For a stable voice
+> point `VOXCPM_PROFILES_PATH` at an operator-private registry holding a `reference` (or
+> `continuation`) profile — e.g. `~/.config/kk/voxcpm-profiles/profiles.json` with
+> `reference_wav_path` aimed at a clip in `~/.config/kk/voices/`, wired through
+> `plugins.generations.voxcpm-tts.env` in `~/.config/kk/config.yaml`.
+>
+> Measured 2026-10-15 on the same three texts: `instruct` swung 141 Hz of median pitch (sd 58 Hz);
+> a reference-anchored profile swung 22–26 Hz (sd 9–12 Hz) and correlated 0.95+ with its clip.
+> Grade any render with `scripts/audit-speaker-consistency.py` (needs this plugin's venv):
+> a per-item F0 spread over 45 Hz means the profile is not anchoring a speaker.
+
 ## Control policy
 
 `normalize` maps directly; an explicit `seed` calls `torch.manual_seed` before synthesis (the

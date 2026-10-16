@@ -1349,6 +1349,34 @@ voicebox's 5.6, which budgeted 24.6 min — 18 s inside the gate), and `kk daily
 manifest now accepts `voxcpm` in the `vdriver` choice list (0257 wired the stage but not the gate).
 `kk-daily-ai-voice` keeps its gemini default and single-generator shape.
 
+### Amendment — 2026-10-15 (the voxcpm profile must anchor a speaker; operator voice assets are private)
+
+The production test above exposed a defect in how the driver was configured, not in the driver: the
+`robin-news` registry entry was `mode: "instruct"`, which carries no reference audio. With no
+reference there is no prompt cache, so VoxCPM samples `torch.randn` per request and every VoiceScript
+segment draws a **new speaker** — the 2026-10-15 episode contained 59 of them, with a median
+within-item pitch swing of 77 Hz (worst 103 Hz). A fixed `seed` is not a cure (the same seed across
+different texts still spanned 214–269 Hz); only a reference clip pins identity. Measured on identical
+texts: instruct spanned 141 Hz of median F0 (sd 58), a reference-anchored profile spanned 22–26 Hz
+(sd 9–12) and correlated 0.95+ with its clip.
+
+Requirements from here on:
+
+1. A voxcpm profile used for multi-segment synthesis is `reference` or `continuation`, never
+   `instruct`; the client warns once per invocation when an instruct profile is used.
+2. Operator voice assets live outside the repo (task 0159's existing invariant), registered through
+   the operator config: `VOXCPM_PROFILES_PATH` and `OMNIVOICE_PROFILE_REGISTRY` under
+   `plugins.generations.<plugin>.env` in `~/.config/kk/config.yaml`, with the clip in
+   `~/.config/kk/voices/`. The committed registries keep non-personal placeholder entries.
+   The oracle clip `plugins/generations/omni-voice-gen/voices/robin-news.wav` is therefore removed
+   from the repo (it remains in git history and in the operator's private copy).
+3. Episodes are graded with `plugins/generations/voxcpm-tts/scripts/audit-speaker-consistency.py`:
+   a per-item F0 spread above 45 Hz, or a per-item median above 30 Hz, means the profile is not
+   anchoring a speaker.
+
+Speaker identity across drivers stays the operator's cloned `robin-news`: gemini-tts by stored voice
+id, voxcpm and omni by the same private reference clip.
+
 
 ## ADR-037: Every canonical kk operation has one noun and one verb
 
