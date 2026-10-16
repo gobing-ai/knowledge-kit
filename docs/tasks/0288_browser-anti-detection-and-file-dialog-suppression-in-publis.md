@@ -4,7 +4,7 @@ name: Browser anti-detection and file dialog suppression in publish-harness
 status: done
 template: feature-impl
 created_at: 2026-10-15T05:43:12.589Z
-updated_at: "2026-10-15T08:20:04.356Z"
+updated_at: "2026-10-16T07:28:28.517Z"
 feature_id: E95
 
 ac_altitude: task-local
@@ -125,16 +125,16 @@ Budget: 10h, P2; preserve partial evidence at the boundary. requireDiff: shared 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `packages/publish-harness/src/browser-anti-detection.ts:184` helper; `:24` inert defaults; `:96` idempotent signature; `packages/publish-harness/src/browser.ts:44` re-export |
-| R2 | MET | `packages/publish-harness/src/browser-anti-detection.ts:87` exact origin+path; `:93` receipt; `:99`/`:107`/`:116` fetch/sendBeacon/XHR; `:76` native-like toString |
-| R3 | MET | `packages/publish-harness/src/browser-anti-detection.ts:263` host validation; `:142` multiple-constraint + one-shot; bubbling input→change; chooserEvents=0 in tests |
-| R4 | MET | `packages/publish-harness/tests/browser-anti-detection.test.ts:318` 21 pass incl. real-Chromium; `packages/publish-harness/tests/fixtures/browser-anti-detection-runner.ts:1` runner |
+| R1 | MET | `packages/publish-harness/src/browser-anti-detection.ts:184` exports `injectBrowserAntiDetection`; `packages/publish-harness/src/browser-anti-detection.ts:4` `AntiDetectionOptions`; inert defaults at `packages/publish-harness/src/browser-anti-detection.ts:29` (both flags off → no install); idempotent same-signature install at `packages/publish-harness/src/browser-anti-detection.ts:76-78`; sub-path re-export at `packages/publish-harness/src/browser.ts:44-49`. Re-verified 2026-10-16: `bun run test` 3750 pass / 0 fail. |
+| R2 | MET | Exact allowed-origin + `/shield/webprofile` predicate `isShield` at `packages/publish-harness/src/browser-anti-detection.ts:94`; synthetic receipt at `packages/publish-harness/src/browser-anti-detection.ts:95`; wrappers for fetch `packages/publish-harness/src/browser-anti-detection.ts:99`, sendBeacon `packages/publish-harness/src/browser-anti-detection.ts:107`, XHR open `packages/publish-harness/src/browser-anti-detection.ts:116`; native-like `toString` at `packages/publish-harness/src/browser-anti-detection.ts:82-83`. |
+| R3 | MET | `queueBrowserFiles` at `packages/publish-harness/src/browser-anti-detection.ts:263` with bounded validation (`MAX_QUEUED_FILES`/`MAX_QUEUED_BYTES` at `packages/publish-harness/src/browser-anti-detection.ts:202-203`); click hook falls back to native unless a queued batch exists at `packages/publish-harness/src/browser-anti-detection.ts:158`, multiple-constraint at `packages/publish-harness/src/browser-anti-detection.ts:163`, one-shot consumption + input/change dispatch at `packages/publish-harness/src/browser-anti-detection.ts:167-170`. |
+| R4 | MET | Real-Chromium fixture suite `packages/publish-harness/tests/browser-anti-detection.test.ts:318` with runner `packages/publish-harness/tests/fixtures/browser-anti-detection-runner.ts:1`; coverage `packages/publish-harness/src/browser-anti-detection.ts` 100.00% funcs / 98.75% lines in the 2026-10-16 full run (exit 0). |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R1 - MAIN-world anti-detection intercepts risk-control endpoints | MET | test | `packages/publish-harness/tests/browser-anti-detection.test.ts:347` server counters + receipt/lifecycle/toString (task AC1 aliases feature scenario 1) |
-| R2 - File dialog suppression populates files without native modal | MET | test | `packages/publish-harness/tests/browser-anti-detection.test.ts:528` FileList bytes, events once, chooserEvents=0 (task AC2 aliases feature scenario 2) |
-| AC3 — Production browser hooks preserve unrelated behavior and stay opt-in (req: R1, R2, R3, R4) | MET | test | `packages/publish-harness/tests/browser-anti-detection.test.ts:364` opt-in/passthrough/no-stacking + 72 regression pass |
+| R1 - MAIN-world anti-detection intercepts risk-control endpoints | MET | test | `packages/publish-harness/tests/browser-anti-detection.test.ts:347` server-side interception with the exact synthetic receipt; `bun run test` exit 0. |
+| R2 - File dialog suppression populates files without native modal | MET | test | `packages/publish-harness/tests/browser-anti-detection.test.ts:528` exact FileList bytes, input+change once, no native dialog, consumed once; `bun run test` exit 0. |
+| AC3 — Production browser hooks preserve unrelated behavior and stay opt-in (req: R1, R2, R3, R4) | MET | test | `packages/publish-harness/tests/browser-anti-detection.test.ts:364` fetch pass-through and other-origin passthrough; `bun run test` exit 0. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

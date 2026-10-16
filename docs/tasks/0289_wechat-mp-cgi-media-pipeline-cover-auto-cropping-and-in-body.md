@@ -4,7 +4,7 @@ name: "WeChat MP CGI media pipeline: cover auto-cropping and in-body image CDN m
 status: done
 template: feature-impl
 created_at: 2026-10-15T05:55:12.423Z
-updated_at: "2026-10-15T10:08:41.773Z"
+updated_at: "2026-10-16T07:29:12.146Z"
 feature_id: E96
 
 ac_altitude: task-local
@@ -125,17 +125,17 @@ Dependencies/handoff: No prerequisites. 0290 consumes these helpers and owns ses
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | plugins/publishings/wechatmp-pub/src/cgi.ts:375 (frozen filetransfer scene=8 query) · plugins/publishings/wechatmp-pub/src/cgi.ts:406 (multipart) · plugins/publishings/wechatmp-pub/src/cgi.ts:393 (origin gate) · plugins/publishings/wechatmp-pub/src/cgi.ts:283 (receipt validation) — command: timeout 300 bun test plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts → 26 pass / 0 fail |
-| R2 | MET | plugins/publishings/wechatmp-pub/src/cgi.ts:100 (centerCropRect from actual dims) · plugins/publishings/wechatmp-pub/src/cgi.ts:468 (uploadAndCropCover 2.35:1+1:1) · plugins/publishings/wechatmp-pub/src/cgi.ts:319 (two order-matched receipts) — test: crop filter 8 pass / 0 fail |
-| R3 | MET | plugins/publishings/wechatmp-pub/src/cgi-media.ts:331 (classification) · plugins/publishings/wechatmp-pub/src/cgi-media.ts:355 (exact-host CDN passthrough) · plugins/publishings/wechatmp-pub/src/cgi-media.ts:255 (uploadimg2cdn receipt) — static-ref: throw-before-mutation verified at tests :664 |
-| R4 | MET | plugins/publishings/wechatmp-pub/src/cgi-media.ts:144 (DOMParser in page, no regex HTML) · plugins/publishings/wechatmp-pub/src/cgi-media.ts:151 (dangerous attrs dropped) · plugins/publishings/wechatmp-pub/src/cgi-media.ts:157 (children preserved) |
-| R5 | MET | plugins/publishings/wechatmp-pub/tests/fixtures/wechatmp-cgi-runner.ts:89 (launch throws on missing browser) · plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts (26/0, real-Chromium route-mocked) · docs/04_DESIGN.md:1250 (surface rows name real exports) |
+| R1 | MET | Frozen filetransfer scene=8 query `plugins/publishings/wechatmp-pub/src/cgi.ts:379-384`; same-origin gate `plugins/publishings/wechatmp-pub/src/cgi.ts:406`; `uploadCoverImage` `plugins/publishings/wechatmp-pub/src/cgi.ts:411`; receipt validation `plugins/publishings/wechatmp-pub/src/cgi.ts:303-319`. Tested by `plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts:172` and `plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts:187`; `bun run test` 3750 pass / 0 fail (2026-10-16). |
+| R2 | MET | `centerCropRect` from actual dimensions `plugins/publishings/wechatmp-pub/src/cgi.ts:105`; `uploadAndCropCover` computes wide 2.35:1 + square 1:1 from the upload receipt dims `plugins/publishings/wechatmp-pub/src/cgi.ts:473-481`; crop_multi receipt requires exactly two ordered entries `plugins/publishings/wechatmp-pub/src/cgi.ts:333`. Tested `plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts:105`, `plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts:259`, `plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts:280`. |
+| R3 | MET | `prepareArticleMedia` `plugins/publishings/wechatmp-pub/src/cgi-media.ts:331` bounds sources `plugins/publishings/wechatmp-pub/src/cgi-media.ts:342`, passes exact-host CDN through `plugins/publishings/wechatmp-pub/src/cgi-media.ts:355`, uploads mapped local files `plugins/publishings/wechatmp-pub/src/cgi-media.ts:356-367`; uploadimg2cdn receipt `plugins/publishings/wechatmp-pub/src/cgi-media.ts:255`. Failed required image blocks with no mutated HTML: `plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts:664`; migration paths `plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts:394`. |
+| R4 | MET | In-page DOMParser `plugins/publishings/wechatmp-pub/src/cgi-media.ts:146`; dangerous schemes refused `plugins/publishings/wechatmp-pub/src/cgi-media.ts:147-149` and `on*` attrs dropped `plugins/publishings/wechatmp-pub/src/cgi-media.ts:154`; anchors → spans preserving children `plugins/publishings/wechatmp-pub/src/cgi-media.ts:157-160`. Real-Chromium DOM normalization `plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts:524`. |
+| R5 | MET | Typed handoff `WechatArticleMedia` `plugins/publishings/wechatmp-pub/src/cgi-media.ts:48`; real-Chromium fixture suite `plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts:508` with runner `plugins/publishings/wechatmp-pub/tests/fixtures/wechatmp-cgi-runner.ts:94` and missing-browser failure `plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts:752`; surface rows `docs/04_DESIGN.md:1260-1261`. Coverage: `plugins/publishings/wechatmp-pub/src/cgi.ts` 100.00% / 100.00%, `plugins/publishings/wechatmp-pub/src/cgi-media.ts` 94.44% funcs / 99.51% lines. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R2 - Dual-aspect cover upload and auto-crop | MET | test | bun test wechatmp-cgi-media.test.ts -t crop → 8 pass / 0 fail; centerCropRect math + order-validated crop_multi receipts |
-| R3 - Body image migration and link sanitization | MET | test | full file 26 pass / 0 fail / 132 expects (real Chromium, route-mocked endpoints) |
-| AC3 — Payload, readiness, failure and installed behavior remain observable (req: R1, R2, R3, R4, R5) | MET | command | bun run gate → exit 0 (rules passed; receipt .spur/run/0289-test-gate.status=PASS); bun test plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts → 26 pass / 0 fail; git diff --stat 0f234f2d371eeb421705737c21a8b5471e67a7ca -- plugins/publishings/wechatmp-pub/src/page.ts plugins/publishings/wechatmp-pub/src/flow.ts plugins/publishings/wechatmp-pub/src/modes.ts plugins/publishings/wechatmp-pub/src/index.ts → empty |
+| R2 - Dual-aspect cover upload and auto-crop | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts:259` both crop rects in the frozen crop_multi shape; `plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts:105` actual-dims crop math; `bun run test` exit 0. |
+| R3 - Body image migration and link sanitization | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts:524` real-Chromium endpoints, DOM normalization, dedup, replacements; `plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts:664` failure blocks; `bun run test` exit 0. |
+| AC3 — Payload, readiness, failure and installed behavior remain observable (req: R1, R2, R3, R4, R5) | MET | command | `bun run test` 3750 pass / 0 fail exit 0 and `bun run lint` exit 0 on 2026-10-16; refusal paths `plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts:745` (non-mp origin) and `plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts:709` (response bound). |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
