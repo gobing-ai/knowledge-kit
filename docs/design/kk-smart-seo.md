@@ -1,15 +1,15 @@
 ---
 kind: design
 feature: G9
-status: accepted-design
+status: shipped
 created_at: 2026-10-14
-updated_at: 2026-10-14
+updated_at: 2026-10-16
 adr: ADR-039
 ---
 
 # Smart SEO workflow
 
-Accepted design, not implemented. The operator invoked `sp-dev-idea --auto --agent inline`; this document freezes the recommended scope for task execution. [Vendor review](../plans/2026-10-14-smart-seo-vendor-review.md) and [approach comparison](../plans/2026-10-14-smart-seo-brainstorm.md) supply the evidence. ADR-007/011/016/018/036/037 constrain the ownership and runtime choices.
+Shipped as tasks `0281`–`0286`; this document remains the scope/contract of record. The operator invoked `sp-dev-idea --auto --agent inline`, and this document froze the recommended scope for task execution. Implementation status and the limits of its evidence (offline fixture run; no live site, maker answer or PSI/CrUX provider) are recorded in `docs/04_DESIGN.md` § Smart SEO and `docs/05_FEATURES.md` row G9. [Vendor review](../plans/2026-10-14-smart-seo-vendor-review.md) and [approach comparison](../plans/2026-10-14-smart-seo-brainstorm.md) supply the evidence. ADR-007/011/016/018/036/037 constrain the ownership and runtime choices.
 
 ## 1. Outcome and boundaries
 
