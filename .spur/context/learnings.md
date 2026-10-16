@@ -426,3 +426,7 @@ the same text with one hedge adverb restored in the WeChat row → `{"ok":false,
   pattern gemini-tts already used for `GEMINI_TTS_PROFILES` — with `VOXCPM_PROFILES_PATH` and
   `OMNIVOICE_PROFILE_REGISTRY` pointing at private registries whose `ref_audio`/`reference_wav_path`
   are absolute paths under `~/.config/kk/voices/` (relative paths resolve against the process cwd).
+- **Anchoring a voice profile changes its speaking rate too.** On identical text the reference-anchored
+  robin-news clone needed 88.5 s where the instruct draws needed 97.0 s (5.55 vs 5.06 字/秒, 5 segments,
+  491 chars, 20261015) — the synthesised voice mirrors its reference clip's pace. Re-check the fit rate
+  whenever a profile's mode changes; here the clone is the *faster* one, so 5.2 字/秒 stays conservative.

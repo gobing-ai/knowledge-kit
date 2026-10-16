@@ -82,6 +82,12 @@ mixed/unsupported modes, missing assets and OmniVoice serialized prompts. The sh
 resolves profile precedence; the adapter resolves the resulting name/id. Grade a render with
 `scripts/audit-speaker-consistency.py` (per-item F0 spread > 45 Hz = no speaker anchor).
 
+The anchoring also changes the speaking rate, so re-check the fit after adopting a profile: on
+identical text (5 segments, 491 chars, 2026-10-15) the reference-anchored clone needed 88.5 s
+against the instruct draws' 97.0 s — 5.55 vs 5.06 字/秒, i.e. the clone mirrors its 28 s reference
+clip's brisker pace. The 5.2 字/秒 fit rate therefore stays conservative for this profile, and a
+full-budget script (7,134 chars) lands near 21.6 min against the 25-min gate.
+
 For instruct profiles, map per-request instruction or the profile instruction to VoxCPM2's
 parenthesized text prefix, preserving the spoken transcript used for QC. The published 2.0.3
 API has neither a native `instruct` nor `seed` keyword: explicit seed calls
