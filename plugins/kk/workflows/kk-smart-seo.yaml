@@ -130,6 +130,7 @@ states:
           session: fresh
           timeoutMs: 120000
           answerFile: "${vars.work_dir}/narrative.json"
+          expectFile: "${vars.work_dir}/narrative.json"
           input: >-
             Author the optional Smart SEO narrative offline; change no file but this artifact.
             Source: ${vars.work_dir}/audit.json. Its SHA-256 covers the exact file bytes (shasum -a 256).
