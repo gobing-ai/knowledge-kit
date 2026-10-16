@@ -261,7 +261,7 @@ superskill <agent|skill|command|hook|magent> --help
 
 ## Indexed context
 
-Project context under `.spur/context/` (gitignored), via **`sp:indexed-context`**:
+Project context under `.spur/context/`, tracked in git except `token-ledger.jsonl` (gitignored), via **`sp:indexed-context`**:
 
 1. `anatomy.md` — file one-liners + token estimates
 2. `learnings.md` — conventions / decisions
