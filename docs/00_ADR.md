@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.38.0
+version: 1.40.0
 created_at: 2026-05-28
-updated_at: 2026-10-14
+updated_at: 2026-10-15
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -1346,6 +1346,50 @@ output: build first, then flip `enabled`. Shapes and operator setup: `04` `kk bo
 
 **Detail:** [VoxCPM daily voice driver](design/voxcpm-daily-voice-driver.md); feature G14. This decision does not assert improved audio quality or validated hardware performance.
 
+### Amendment — 2026-10-15 (voxcpm becomes the standing default on `kk-daily-ai-voice2`)
+
+The 2026-10-15 production run rendered the episode end to end through voxcpm-tts on the operator's
+decision, and the operator's audio verdict keeps it: `kk-daily-ai-voice2` defaults to
+`vdriver: "voxcpm"` and gains a three-tier voice chain — `generate` (the var), `generate-fallback`
+(gemini), `generate-fallback2` (omni) — each fallback gated on the pool count **and** on no valid
+upstream render already existing (`metadata.generator` matches a plugin that could have produced it,
+with `qc.passed`), `onError: continue` on the two non-final tiers, and `intro` depending on all three.
+A successful primary therefore makes its siblings skip, and a failed attempt can neither be relabeled
+nor mixed into the episode. Evidence: 12/12 local sections in 47 min, joined 21.76 min inside the
+15–25 gate, all five publishes `success: true`, no fallback fired. Two follow-on fixes are part of
+this amendment: the fit rate for voxcpm is 5.2 字/秒 (measured 5.19; the beta build borrowed
+voicebox's 5.6, which budgeted 24.6 min — 18 s inside the gate), and `kk daily prepare`'s board
+manifest now accepts `voxcpm` in the `vdriver` choice list (0257 wired the stage but not the gate).
+`kk-daily-ai-voice` keeps its gemini default and single-generator shape.
+
+### Amendment — 2026-10-15 (the voxcpm profile must anchor a speaker; operator voice assets are private)
+
+The production test above exposed a defect in how the driver was configured, not in the driver: the
+`robin-news` registry entry was `mode: "instruct"`, which carries no reference audio. With no
+reference there is no prompt cache, so VoxCPM samples `torch.randn` per request and every VoiceScript
+segment draws a **new speaker** — the 2026-10-15 episode contained 59 of them, with a median
+within-item pitch swing of 77 Hz (worst 103 Hz). A fixed `seed` is not a cure (the same seed across
+different texts still spanned 214–269 Hz); only a reference clip pins identity. Measured on identical
+texts: instruct spanned 141 Hz of median F0 (sd 58), a reference-anchored profile spanned 22–26 Hz
+(sd 9–12) and correlated 0.95+ with its clip.
+
+Requirements from here on:
+
+1. A voxcpm profile used for multi-segment synthesis is `reference` or `continuation`, never
+   `instruct`; the client warns once per invocation when an instruct profile is used.
+2. Operator voice assets live outside the repo (task 0159's existing invariant), registered through
+   the operator config: `VOXCPM_PROFILES_PATH` and `OMNIVOICE_PROFILE_REGISTRY` under
+   `plugins.generations.<plugin>.env` in `~/.config/kk/config.yaml`, with the clip in
+   `~/.config/kk/voices/`. The committed registries keep non-personal placeholder entries.
+   The oracle clip `plugins/generations/omni-voice-gen/voices/robin-news.wav` is therefore removed
+   from the repo (it remains in git history and in the operator's private copy).
+3. Episodes are graded with `plugins/generations/voxcpm-tts/scripts/audit-speaker-consistency.py`:
+   a per-item F0 spread above 45 Hz, or a per-item median above 30 Hz, means the profile is not
+   anchoring a speaker.
+
+Speaker identity across drivers stays the operator's cloned `robin-news`: gemini-tts by stored voice
+id, voxcpm and omni by the same private reference clip.
+
 
 ## ADR-037: Every canonical kk operation has one noun and one verb
 
@@ -1383,3 +1427,25 @@ The optional browserSession descriptor carries profileName and an optional homeU
 **Why.** The reviewed vendor's evidence/judgment separation fits KK, while wrapping its Python pipeline would retain network/evidence defects and conflict with vendor isolation.
 
 **Detail:** [Smart SEO design](design/kk-smart-seo.md), feature G9; [vendor review](plans/2026-10-14-smart-seo-vendor-review.md).
+
+
+---
+
+## ADR-040: ITC plans use plugin publication capabilities and explicit topic channel presets
+
+**Status:** Accepted (design — G21; not implemented) · **Date:** 2026-10-15 · **Complements:** ADR-007/018/021/029/032/038.
+
+**Decision.** Retain the kk-itc state machine and existing executor fan-in/fan-out. Publish plugins own optional operation-specific planning capabilities and mode bindings; topic presets own editorial target selection. Optional topic discovery consumes kk-collect/store evidence, and Spur catalog decisions recommend only validated choices. Freeze send intent and reconcile per-target receipts before recovery; uncertain remote effects require reconciliation. Bot lifecycle stays in the harness and channel readiness/auth state stays in plugins.
+
+**Why.** A workflow-owned channel table duplicates plugin policy and makes new channels require orchestration edits; separating editorial intent from channel behavior removes that duplication while preserving explicit live/spending boundaries.
+
+**Detail:** [kk-itc-refactor.md](design/kk-itc-refactor.md); feature G21.
+
+
+### Amendment — 2026-10-15 (G21 operator feedback: DAG, configuration, SEO cooperation)
+
+**Decision.** Replace ADR-040's pure-FSM topology choice with a top-level `kk-itc` DAG containing a bounded authoring FSM; retain kk-owned fan-in/fan-out and plugin-owned channel behavior. The parent requires verified child completion before downstream work. Resolve declared ITC defaults from the canonical KK config and compose workspaces as `{works_dir}/kk-itc/{topic-name}/[YYYYMMDD]/`, preserving explicit workspace overrides. Reserve versioned SEO evidence handoffs without depending on the unfinished URL-audit workflow or inventing draft-audit support.
+
+**Why.** Independent production branches and explicit dependencies fit the expanded workflow, while revision loops, shared configuration and typed handoffs preserve reliable continuation and ownership.
+
+**Detail:** [kk-itc-refactor.md](design/kk-itc-refactor.md), revised graph, configuration and SEO sections. This amendment changes the prior topology recommendation; it does not claim the refactor is shipped.

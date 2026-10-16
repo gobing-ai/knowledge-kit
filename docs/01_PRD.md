@@ -3,9 +3,9 @@ name: Product Requirements
 doc: 01_PRD
 owns: WHAT — product vision, users, scope (in / out / deferred)
 authority: authoritative-on-scope
-version: 3.16.0
+version: 3.18.0
 created_at: 2026-07-22
-updated_at: 2026-10-14
+updated_at: 2026-10-15
 derived_from: [00_ADR]
 edit_rules: 99 §6.2
 sync: [T6]
@@ -105,3 +105,8 @@ the unimplemented `Brief` / `GeneratorInput` contract.
 ## Planned: consistent CLI operations and named browser sessions (A22)
 
 ADR-037/038 define exactly `kk <noun> <verb>` for canonical operations, with compatible hidden routes for shipped spellings. A22 adds bot list/login/logout/open for named local browser sessions on the existing harness, preserving plugin readiness and channel-specific state. These commands are designed, not shipped; see `docs/design/kk-noun-verb-bots.md`.
+
+
+## ITC workflow extensibility (G21)
+
+In scope: a top-level ITC DAG with bounded child authoring FSM, canonical config/workspace defaults, optional collected-topic ideation, structured semantic recommendations, explicit topic channel presets, plugin-owned publication capabilities, evidence-bound recovery, and versioned SEO handoffs. Unfinished SEO draft optimization and automatic public-URL audits remain outside this feature. Direct topic/file authoring and draft-first operation remain supported. New channels, automatic authentication, implicit live publication and paid generation are outside this feature. Design: [kk-itc-refactor.md](design/kk-itc-refactor.md).

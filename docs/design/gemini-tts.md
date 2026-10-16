@@ -76,8 +76,9 @@ are far above a VoiceScript segment.
 Needed once before the first `vdriver: gemini` run, and again when the stored voice expires
 (1-year TTL) or is deleted. Max 200 stored voices per project.
 
-1. **Source clip** (10–30 s, clean speech): `plugins/generations/omni-voice-gen/voices/robin-news.wav`
-   (already 24 kHz mono s16, 28.4 s — usable as-is).
+1. **Source clip** (10–30 s, clean speech): `~/.config/kk/voices/robin-news.wav`
+   (operator-private — voice assets are never committed, task 0159; already 24 kHz mono s16,
+   28.4 s — usable as-is).
 2. **Consent clip**: the same speaker reads the consent statement verbatim — zh-CN
    「我是此声音的拥有者并授权谷歌使用此声音创建语音合成模型」 or en-US "I am the owner of this
    voice and I consent to Google using it to create a synthetic voice model."

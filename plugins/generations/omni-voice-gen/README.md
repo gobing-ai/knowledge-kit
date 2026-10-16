@@ -10,9 +10,12 @@ spur workflow run plugins/kk/workflows/kk-daily-ai-voice.yaml \
   --vars '{"voice_generator":"voice-gen"}'   # other vars per your kk config
 ```
 
-> **Voice identity:** the shipped `robin-news` profile is an instruct placeholder. For a real
-> operator voice, record a 3–10 s clip into a private registry (`OMNIVOICE_PROFILE_REGISTRY`)
-> and it supersedes the committed entry.
+> **Voice identity:** the shipped `robin-news` profile is an instruct placeholder — it pins no
+> speaker, so a multi-segment render can change voice between segments. For a real operator voice,
+> keep a 3–10 s clip outside the repo (e.g. `~/.config/kk/voices/robin-news.wav`), record it in a
+> private registry (`OMNIVOICE_PROFILE_REGISTRY`, e.g. `~/.config/kk/omni-voice-profiles.json`,
+> wired through `plugins.generations.omni-voice-gen.env`), and it supersedes the committed entry.
+> Voice assets are never committed (task 0159).
 
 ## Setup
 

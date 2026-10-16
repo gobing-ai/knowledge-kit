@@ -7,10 +7,18 @@ sections freeze the detailed contracts; the refinement report is
 
 ## Outcome and boundaries
 
-Both daily workflows accept `vdriver=voxcpm` through `dailyGenerate`. Keep Gemini defaults,
-existing fallback policy, stage arguments and downstream intro/publish-preparation contracts.
-Audio quality remains an empirical question. No automatic publication, training, daemon, HTTP
-service, new benchmark framework or default change belongs to this feature.
+Both daily workflows accept `vdriver=voxcpm` through `dailyGenerate`. `kk-daily-ai-voice` keeps
+its Gemini default and fallback policy; stage arguments and downstream intro/publish-preparation
+contracts are unchanged by the driver choice.
+
+> **2026-10-15 amendment (operator decision, `kk-daily-ai-voice2` only):** voxcpm is the standing
+> default there, with a three-tier voice chain `voxcpm → gemini → omni` (nodes `generate`,
+> `generate-fallback`, `generate-fallback2`; `onError: continue` on the first two, each gated on the
+> pool count *and* on no valid upstream render already existing, `intro` depends on all three). The
+> first production run rendered 12/12 sections locally in 47 min (2.2x realtime), joined to
+> 21.76 min, and published to every channel with no fallback fired. VoxCPM's spoken rate measured
+> 5.19 字/秒 (6,772 chars / 1,297.7 s) and the fit now uses 5.2 instead of the borrowed voicebox 5.6.
+> `kk-daily-ai-voice` is untouched.
 
 `vendors/VoxCPM` is reference-only. No product import, subprocess, dependency, PYTHONPATH,
 model/cache/profile/reference path, symlink, fallback, copied upstream module, build input or
@@ -61,10 +69,24 @@ canonical import, uv, Hub/cache and profile paths before spawning/loading, inclu
 
 Frozen environment: `VOXCPM_MODEL=openbmb/VoxCPM2`, `VOXCPM_DEVICE=auto` (auto/cpu/cuda/mps),
 `VOXCPM_PROFILES_PATH=<plugin-root>/profiles.json`. The registry is a `profiles` array with unique
-ids/names. Ship `robin-news` as an instruct profile. Reference mode uses `reference_wav_path`;
-continuation requires paired `prompt_wav_path`/`prompt_text`. Relative assets resolve against the
-registry directory. Reject mixed/unsupported modes, missing assets and OmniVoice serialized prompts.
-The shared pipeline resolves profile precedence; the adapter resolves the resulting name/id.
+ids/names. Ship `robin-news` as an instruct placeholder — **and treat instruct as a placeholder only**:
+it carries no reference audio, so there is no prompt cache and the model samples a speaker per
+request, changing voice between segments (2026-10-15: 59 speakers, median within-item pitch swing
+77 Hz; a fixed seed does not fix it). Multi-segment synthesis therefore needs a `reference` or
+`continuation` profile, normally resolved from an operator-private registry via
+`VOXCPM_PROFILES_PATH` in `plugins.generations.voxcpm-tts.env` (`~/.config/kk/voxcpm-profiles/
+profiles.json` + a clip under `~/.config/kk/voices/`); the client warns once per invocation when an
+instruct profile is used. Reference mode uses `reference_wav_path`; continuation requires paired
+`prompt_wav_path`/`prompt_text`. Relative assets resolve against the registry directory. Reject
+mixed/unsupported modes, missing assets and OmniVoice serialized prompts. The shared pipeline
+resolves profile precedence; the adapter resolves the resulting name/id. Grade a render with
+`scripts/audit-speaker-consistency.py` (per-item F0 spread > 45 Hz = no speaker anchor).
+
+The anchoring also changes the speaking rate, so re-check the fit after adopting a profile: on
+identical text (5 segments, 491 chars, 2026-10-15) the reference-anchored clone needed 88.5 s
+against the instruct draws' 97.0 s — 5.55 vs 5.06 字/秒, i.e. the clone mirrors its 28 s reference
+clip's brisker pace. The 5.2 字/秒 fit rate therefore stays conservative for this profile, and a
+full-budget script (7,134 chars) lands near 21.6 min against the 25-min gate.
 
 For instruct profiles, map per-request instruction or the profile instruction to VoxCPM2's
 parenthesized text prefix, preserving the spoken transcript used for QC. The published 2.0.3
@@ -114,7 +136,8 @@ regeneration of the requested MP3; otherwise omit old mp3Path.
 Reset old introMerged on a fresh join so intro processing updates the correct MP3 exactly once.
 Failed join/transcode cannot leave a final Content claiming success. Preserve downstream publish
 preparation's MP3 contract. Model/profile/settings comparisons use separate work directories;
-no general cache redesign. VoxCPM's 5.6 characters/second estimate remains provisional; final
+no general cache redesign. VoxCPM's spoken rate measured 5.19 字/秒 on the 2026-10-15 production
+episode, and the fit uses 5.2; final
 measured duration is authoritative and refusals/overruns remain visible.
 
 ## Verification and evidence — tasks 0256–0258

@@ -106,6 +106,7 @@ export function DailyVoiceModule() {
     const [readerRefresh, setReaderRefresh] = useState<RefreshState>(() => initialRefresh(ACTIVE_POLL_MS));
     const [results, setResults] = useState<RunResults | null>(null);
     const [config, setConfig] = useState<RunConfig | null>(null);
+    const [filterQuery, setFilterQuery] = useState('');
 
     // One busy ref per source: a manual Refresh/"Load more" click can never overlap an in-flight poll.
     const historyBusy = useRef(false);
@@ -177,28 +178,79 @@ export function DailyVoiceModule() {
     const facts = results === null ? [] : dailySummaryFacts(results, now);
     const artifacts = results === null ? [] : artifactViews(results, readerOrigin);
     const selectedRow = rows.find((row) => row.id === selection.runId);
+    const filteredRows = useMemo(() => {
+        const q = filterQuery.trim().toLowerCase();
+        if (q === '') return rows;
+        return rows.filter((r) => r.id.toLowerCase().includes(q) || r.status.toLowerCase().includes(q));
+    }, [rows, filterQuery]);
 
     return (
         <div className="kk-board kk-board-daily-voice">
             <header className="kk-board-header">
-                <h1>Daily AI Voice</h1>
-                <p>
-                    Run <code>{selection.runId ?? 'none selected'}</code> · {selectedRow?.status ?? 'status unknown'} ·{' '}
-                    {freshnessLabel(readerRefresh)}
-                </p>
-                {summary === null ? null : (
+                <div className="kk-board-header-left">
+                    <div className="kk-board-header-title-row">
+                        <h1>Daily AI Voice</h1>
+                        {selectedRow ? (
+                            <span
+                                className={`kk-badge ${selectedRow.status === 'done' ? 'kk-badge-success' : selectedRow.status === 'failed' ? 'kk-badge-failed' : 'kk-badge-running'}`}
+                            >
+                                {selectedRow.status}
+                            </span>
+                        ) : null}
+                    </div>
                     <p>
-                        Outcome {summary.outcome ?? 'unknown'} · {results?.availability ?? 'unverified'}
+                        Run <code>{selection.runId ?? 'none selected'}</code> · {freshnessLabel(readerRefresh)}
+                        {summary === null
+                            ? ''
+                            : ` · Outcome ${summary.outcome ?? 'unknown'} · ${results?.availability ?? 'unverified'}`}
                     </p>
-                )}
-                <button type="button" onClick={() => void loadReader()}>
-                    Refresh
-                </button>
-                {selection.runId === null ? null : (
-                    <a href={selectionPath(selection, window.location.search, MODULE_PATH)}>
-                        Permanent link to this view
-                    </a>
-                )}
+                </div>
+                <div className="kk-board-header-right">
+                    <div className="kk-board-run-filter-group">
+                        <input
+                            type="text"
+                            className="kk-board-run-filter-input"
+                            placeholder="Filter runs..."
+                            value={filterQuery}
+                            onChange={(e) => setFilterQuery(e.target.value)}
+                            aria-label="Filter runs"
+                        />
+                        <label className="kk-board-run-selector">
+                            Run
+                            <select
+                                value={selection.runId ?? ''}
+                                onChange={(event) =>
+                                    setSelection((state) => ({ ...state, runId: event.target.value || null }))
+                                }
+                            >
+                                <option value="">
+                                    {rows.length === 0
+                                        ? 'No runs recorded'
+                                        : filteredRows.length === 0
+                                          ? 'No matching runs'
+                                          : 'Select a run'}
+                                </option>
+                                {filteredRows.map((row) => (
+                                    <option key={row.id} value={row.id}>
+                                        {row.id} — {row.status}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                    </div>
+                    <button type="button" onClick={() => void loadReader()} title="Refresh run data">
+                        ↻ Refresh
+                    </button>
+                    {selection.runId === null ? null : (
+                        <a
+                            href={selectionPath(selection, window.location.search, MODULE_PATH)}
+                            className="kk-btn-action"
+                            title="Permanent link"
+                        >
+                            🔗 Link
+                        </a>
+                    )}
+                </div>
             </header>
             <nav className="kk-board-tabs" aria-label="Daily AI Voice tabs">
                 {BOARD_TABS.map((candidate) => (
@@ -212,20 +264,6 @@ export function DailyVoiceModule() {
                     </button>
                 ))}
             </nav>
-            <label className="kk-board-run-selector">
-                Run
-                <select
-                    value={selection.runId ?? ''}
-                    onChange={(event) => setSelection((state) => ({ ...state, runId: event.target.value || null }))}
-                >
-                    <option value="">{rows.length === 0 ? 'No runs recorded' : 'Select a run'}</option>
-                    {rows.map((row) => (
-                        <option key={row.id} value={row.id}>
-                            {row.id} — {row.status}
-                        </option>
-                    ))}
-                </select>
-            </label>
             {rows.length === 0 ? (
                 <p className="kk-board-empty">
                     No runs recorded for kk-daily-ai-voice2. Configure the workflow in{' '}
@@ -256,17 +294,49 @@ export function DailyVoiceModule() {
 /** Summary: execution status, result outcome and channel counts with every unknown explicit. */
 function SummaryPanel({ facts, results }: { facts: ReturnType<typeof dailySummaryFacts>; results: RunResults | null }) {
     if (results === null) return <p>No captured results for the selected run.</p>;
+    const summary = dailySummary(results);
+    const liveChannels = summary.channels.filter((c) => c.state === 'live').length;
     return (
-        <dl className="kk-board-facts">
-            {facts.map((fact) => (
-                <div key={fact.label}>
-                    <dt>{fact.label}</dt>
-                    <dd>
-                        {fact.value} <span className="kk-board-state">{fact.availability}</span>
-                    </dd>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+            <div className="kk-stat-grid">
+                <div className="kk-stat-card">
+                    <span className="kk-stat-label">Episode Outcome</span>
+                    <span className="kk-stat-value">{summary.outcome ?? '—'}</span>
+                    <span className="kk-stat-sub">
+                        {summary.articleTitle ? summary.articleTitle.slice(0, 32) : 'Daily podcast'}
+                    </span>
                 </div>
-            ))}
-        </dl>
+                <div className="kk-stat-card">
+                    <span className="kk-stat-label">Distribution</span>
+                    <span className="kk-stat-value">
+                        {liveChannels} / {summary.channels.length}
+                    </span>
+                    <span className="kk-stat-sub">Channels published live</span>
+                </div>
+                <div className="kk-stat-card">
+                    <span className="kk-stat-label">Quality Score</span>
+                    <span className="kk-stat-value">{summary.quality?.overallScore ?? '—'}</span>
+                    <span className="kk-stat-sub">
+                        {summary.quality?.passed ? 'Passed QC standard' : 'Under evaluation'}
+                    </span>
+                </div>
+                <div className="kk-stat-card">
+                    <span className="kk-stat-label">Safety Verdict</span>
+                    <span className="kk-stat-value">{summary.safety?.verdict ?? '—'}</span>
+                    <span className="kk-stat-sub">Confidence: {summary.safety?.confidence ?? '—'}</span>
+                </div>
+            </div>
+            <dl className="kk-board-facts">
+                {facts.map((fact) => (
+                    <div key={fact.label}>
+                        <dt>{fact.label}</dt>
+                        <dd>
+                            {fact.value} <span className="kk-board-state">{fact.availability}</span>
+                        </dd>
+                    </div>
+                ))}
+            </dl>
+        </div>
     );
 }
 

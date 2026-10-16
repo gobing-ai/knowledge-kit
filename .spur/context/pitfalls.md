@@ -163,3 +163,32 @@
   markdown — passing a task file dies with `Source contains multiple documents`.
 - **`.gitignore` anchors ignore rules at the repo root**, so `-g` exclusions in `rg` are more reliable than
   assuming a gitignored path (e.g. `apps/cli/plugins/`) is skipped.
+- **Headless agy can NEVER write the workspace via shell — only via file tools.** With
+  `enableTerminalSandbox: true` (set by agy's own v2 migration), `permissions.allow` `command(x)`
+  rules are promptless-but-SANDBOXED; legacy `unsandboxed(x)` rules are dead syntax (unmatched →
+  soft-deny "headless mode cannot prompt"). A producer that assembles output via
+  `python3`/`cp` passes all its checks then dies at the workspace write (EPERM /
+  SANDBOX_COMMAND_BLOCKED) and exits 0 with zero output — the 20261015 04:30 kk-daily-ai-voice
+  failure. /tmp writes are allowed; workspace writes are not. Settings-side fixes are exhausted;
+  prompt-side ("Deliver with your file-write tool") plus an engine-side JSON-validity condition
+  gate (array + length == candidates docs + all objects) is the durable shape — see
+  kk-daily-ai-voice2.yaml plan-translate (0238 R2 extended from existence to validity).
+- **`allowAppend: false` does not stop an executor's staged-write hack.** A pi token-cap
+  "single write exceeded the output cap" produced `[...4 items, "@@SPLIT-1@@"]` in the plan file —
+  executor-side write policies don't enforce JSON shape, so only a condition-level validity gate
+  catches contract-violating producer output (20261015 recovery run c71f8c8b, killed mid-flight).
+- **`dailyScript` caches on file existence** (`if (isFile(yamlOut))` → skip), and the budget fitter only
+  trims (it returns early when the script is under budget, never expands). Changing `vdriver` therefore
+  does not rewrite an existing `24-script/<date>_08_script_voicescript.yaml`, and a resume after a driver
+  or rate change silently reuses the old text — wipe the artifact when a genuine rebuild is required.
+- **Failed engine runs keep holding their store selections.** The next `kk daily prepare` then fails with
+  `kk.daily.prepare.unreleased-run` for every dead run (the engine only surfaces "exited with 1"), so the
+  workflow cannot start again until each one is freed with `kk store release --run <id>`.
+- **Stage scripts execute from the installed package, not the checkout.** `kk stage` loads
+  `plugins/kk/scripts/daily-stages.ts` relative to the running `kk` (the bun-global package under
+  `~/node_modules/@gobing-ai/knowledge-kit/`); editing only the repo copy leaves the live run on the old
+  code. Copy the file after every change.
+- **A per-request random speaker reads as "unstable quality", not as a config bug.** Removing a
+  voice identity never fails loudly: the render succeeds, QC passes (loudness only), the duration
+  gate passes, and every publish reports success — the defect is only audible. Any change to a voice
+  profile's `mode` or registry must be followed by the F0-spread audit before the episode ships.

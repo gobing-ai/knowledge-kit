@@ -124,7 +124,7 @@ describe('createVoxCpmClient guards', () => {
         await handle.close();
     });
 
-    it('rejects unsupported controls and per-request instruct on a reference profile', async () => {
+    it('rejects unsupported controls and ignores a per-request instruct on a reference profile', async () => {
         const dir = makeDir();
         const registry = join(dir, 'profiles.json');
         writeFileSync(
@@ -144,8 +144,11 @@ describe('createVoxCpmClient guards', () => {
         await expect(handle.client.generate(body('instruct', { effects_chain: [{ type: 'reverb' }] }))).rejects.toThrow(
             /effects_chain/,
         );
-        await expect(handle.client.generate(body('ref', { instruct: 'nope' }))).rejects.toThrow(/reference/);
         await expect(handle.client.generate(body('missing'))).rejects.toThrow(/unknown voice profile/);
+        // The daily pipeline sends a per-request instruct for every segment (its `emotion`); a
+        // reference profile ignores it instead of failing the tier. Last: a resolve leaves the
+        // request in flight, and the client allows only one at a time.
+        await expect(handle.client.generate(body('ref', { instruct: 'nope' }))).resolves.toBeDefined();
         await handle.close();
     });
 });

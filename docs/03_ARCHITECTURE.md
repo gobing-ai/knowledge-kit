@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.37.0
+version: 2.39.0
 created_at: 2026-07-22
-updated_at: 2026-10-14
+updated_at: 2026-10-15
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -556,3 +556,8 @@ legacy callers (ADR-009 amendment 2026-10-11).
 ## Planned named browser-session boundary (A22)
 
 ADR-037/038 are accepted design only. CLI owns command parsing; publish-harness owns local profile lifecycle and shared launcher ownership; plugins keep site readiness and special state capture/restoration. An optional browserSession {profileName, homeUrl?} descriptor extends the existing manifest check-script seam, with publication-scoped URL resolution and scoped parent/child profile-lease ownership without importing publisher code into the CLI. The design and full canonical/alias map are in [kk-noun-verb-bots.md](design/kk-noun-verb-bots.md). Existing plugin status/check/login contracts remain unchanged.
+
+
+### ITC extensibility (accepted design — not implemented, G21)
+
+ADR-040 as amended selects a top-level DAG with a child authoring FSM and the existing executor, while moving channel planning contracts into discovered publish plugins. Config-driven workspace allocation and versioned SEO evidence handoffs share the run envelope; G9 remains independently deployable. Collected-topic mode reads the existing store; decisions recommend within validated choices; topic presets express editorial targets. Plans and per-target receipts bind recovery to input identity. Mechanism and migration: [kk-itc-refactor.md](design/kk-itc-refactor.md).

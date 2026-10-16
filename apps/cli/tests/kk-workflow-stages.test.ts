@@ -3146,8 +3146,34 @@ describe('task 0250 — daily-script episode-budget fitting (voice2 dogfood R3/A
         };
     }
 
-    const runScript = (dir: string, env: Record<string, string>) =>
-        run(['daily-script', dir, stamp, '', 'zh', 'T', 'Robin', maxMinutes, 'voicebox'], env);
+    const runScript = (dir: string, env: Record<string, string>, vdriver = 'voicebox') =>
+        run(['daily-script', dir, stamp, '', 'zh', 'T', 'Robin', maxMinutes, vdriver], env);
+
+    it('fits a voxcpm script to its measured rate, not the borrowed voicebox 5.6 (2026-10-15)', () => {
+        withTempDir((dir) => {
+            // voxcpm measured 6,772 spoken chars / 1,297.7 s (5.19 字/秒) on the 20261015 episode. At
+            // the borrowed 5.6 the budget was 7,683 chars ≈ 24.6 min of audio — inside the 25-min gate
+            // by 18 s. The 5.2 rate budgets 7,134 chars ≈ 22.9 min.
+            const voxcpmBudget = Math.floor((25 * 60 - 8 - 120) * 5.2); // 7134
+            const sentence = '这是一句关于本地模型推理优化的技术播报。';
+            const body = [
+                'title: "T"',
+                'language: zh',
+                'segments:',
+                '  - text: "开场白。"',
+                `  - text: ${JSON.stringify(sentence.repeat(420))}`,
+                '  - text: "结束语。"',
+                '',
+            ].join('\n');
+            const { yamlOut, env } = setup(dir, body);
+            const result = runScript(dir, env, 'voxcpm');
+            expect(result.status).toBe(0);
+            expect(result.stdout).toContain('script: fitted voicescript');
+            const chars = spokenChars(readFileSync(yamlOut, 'utf-8'));
+            expect(chars).toBeLessThanOrEqual(voxcpmBudget);
+            expect(chars).toBeGreaterThan(voxcpmBudget - 40);
+        });
+    });
 
     it('an over-budget script is rewritten as block YAML at or under the budget and passes the checker', () => {
         withTempDir((dir) => {

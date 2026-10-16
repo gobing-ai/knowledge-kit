@@ -396,3 +396,44 @@ the same text with one hedge adverb restored in the WeChat row → `{"ok":false,
   verification, ~5.5 min).
 - **`apps/cli/plugins/` is a gitignored build-staging copy of `plugins/`** (created by the CLI build). Any
   `rg` inventory over `apps/cli` double-counts plugins unless `-g '!apps/cli/plugins/**'` is added.
+- **A voice-driver switch touches three gates, not one.** Adding/activating an `vdriver` value requires
+  (a) the board manifest allowlist in `apps/cli/src/board/manifest.ts` — `kk daily prepare` refuses any
+  `--setting vdriver=X` outside it and the engine only reports "prepare exited with 1" (0257 wired the
+  stage and the `VOICE_DRIVERS` map but not this list, so the 2026-10-15 voxcpm-first run died at the
+  first node), (b) `VOICE_DRIVERS` + `spokenCharRate` in `daily-stages.ts`, and (c) the workflow's
+  generate tier. Rebuild the CLI bundle and copy the script to the global package afterwards.
+- **Calibrate a new driver's spoken rate from a real render before trusting the fit.** Rate = spoken
+  chars / (joined duration − 8 s sting). voxcpm measured 5.19 字/秒 on 2026-10-15; borrowing voicebox's
+  5.6 budgeted 7,683 chars ≈ 24.6 min — 18 s inside the 25-min gate. Set the fit rate to the measurement
+  (5.2), which lands a full-budget script at ~22.9 min.
+- **Fallback tiers need an upstream-validity gate, not just a pool-count gate.** Each sibling checks the
+  content JSON for an existing render (`metadata.generator` ∈ the plugins that could have produced it,
+  with `qc.passed`), so a successful primary makes its siblings skip and a failed driver's artifact is
+  never relabeled or mixed into the episode. `intro` depends on every tier so the join waits for whoever
+  wins.
+- **An `instruct`-mode voice profile pins no speaker.** VoxCPM conditions identity on a reference
+  clip; with `instruct` alone there is no prompt cache, so it samples `torch.randn` per request and
+  every VoiceScript segment can change voice — the 20261015 episode shipped 59 different speakers
+  (median within-item median-F0 swing 77 Hz, worst 103 Hz). A fixed `seed` is not a fix: the same
+  seed across different texts still spanned 214–269 Hz. Only a `reference`/`continuation` profile
+  anchors identity (measured 22–26 Hz swing, 0.95+ LTAS correlation with the clip). Detect it by
+  measuring per-segment median F0 — `plugins/generations/voxcpm-tts/scripts/audit-speaker-consistency.py`
+  fails anything with a per-item spread over 45 Hz. Rate/code review cannot catch this class of bug:
+  it only shows up in audio.
+- **Operator voice assets live in `~/.config/kk/`, never the repo.** Task 0159 already froze that
+  invariant, but the clone clip had drifted into `plugins/generations/omni-voice-gen/voices/`. Wire
+  operator registries through `plugins.generations.<plugin>.env` in `~/.config/kk/config.yaml` — the
+  pattern gemini-tts already used for `GEMINI_TTS_PROFILES` — with `VOXCPM_PROFILES_PATH` and
+  `OMNIVOICE_PROFILE_REGISTRY` pointing at private registries whose `ref_audio`/`reference_wav_path`
+  are absolute paths under `~/.config/kk/voices/` (relative paths resolve against the process cwd).
+- **Anchoring a voice profile changes its speaking rate too.** On identical text the reference-anchored
+  robin-news clone needed 88.5 s where the instruct draws needed 97.0 s (5.55 vs 5.06 字/秒, 5 segments,
+  491 chars, 20261015) — the synthesised voice mirrors its reference clip's pace. Re-check the fit rate
+  whenever a profile's mode changes; here the clone is the *faster* one, so 5.2 字/秒 stays conservative.
+- **The shared pipeline turns a segment's `emotion` into a per-request `instruct`**
+  (`voice-gen/src/index.ts:147` → `resolveInstruct(rawInstruct, rawEmotion)`), and every daily segment
+  carries an emotion. Any voxcpm profile whose mode is not `instruct` therefore receives a per-request
+  instruct on every request; the adapter now ignores it with a one-time advisory instead of failing the
+  tier. Verify new profile modes against the *real* voicescript, not hand-written test segments — the
+  synthetic inputs (text + seed only) hid this and the first production render would have fallen
+  through to gemini.

@@ -3,9 +3,9 @@ name: Features
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state
 authority: derived
-version: 2.28.0
+version: 2.30.0
 created_at: 2026-07-22
-updated_at: 2026-10-14
+updated_at: 2026-10-15
 derived_from: [01_PRD, 02_ROADMAP]
 edit_rules: 99 §6.6
 sync: [T4]
@@ -97,6 +97,7 @@ sync: [T4]
 | G14 | VoxCPM voice driver for both daily AI voice workflows | ⏳ planned | P2 | opt-in adapter, driver-aware cache and render-only quality comparison; ADR-036; `docs/design/voxcpm-daily-voice-driver.md`; no product access to `vendors/` |
 | G11 | kk-daily-ai-voice2 — DAG daily workflow from the store, cut-over | ⏳ active | — | `0269` (stage-owned bounded XHS card retry) and `0270` (failed safety agents reach the fail-closed gate) done 2026-10-13; `0272` (WeChat console measurement/drift repair, upstream of E92 task `0260`) done 2026-10-13; `0273` cancelled with its valid retry-coverage concern merged into `0269`; `0265`–`0267` and earlier `0211`/`0212` done; ADR-031 shipped; satellite `docs/design/kk-collect-and-daily-voice2.md` |
 | G2 | kk-itc | ⏳ planned | — | home node; historical: F4, F41 |
+| G21 | kk-itc refactor: collected topics, plugin-owned publishing and reliable recovery | ⏳ planned | — | tasks `0298`–`0303`; 18 scenarios; DAG/child FSM, canonical config/workspaces, SEO handoff; accepted design ADR-040 amended and `docs/design/kk-itc-refactor.md`; no product implementation yet |
 | G3 | kk-collect | ⏳ planned | — | home node |
 | G31 | kk-collect: SQLite store, 4h collection, decision labels, topic extraction | ✅ done | — | tasks `0206` (store + `migrate`), `0208` (`lock`/`ingest`, `kk-collect`, `schedule render`), `0209` (decision catalog + `label`), `0210` (`extract`/`mark-used`, topic profiles) and `0213` (HIGH\|MEDIUM\|LOW confidence on the kk-collect label verdict, R14) done. ADR-030 **shipped**; satellite `docs/design/kk-collect-and-daily-voice2.md` |
 | G32 | kk-collect store v2: backtestable labels, item facts, story dedup, topic-scoped selections | ✅ done | P2 | tasks `0225`–`0230` and residuals `0239`–`0242` done: store v2 (`0003_store_v2`) widens the `labels` observation identity and keeps raw evidence, promotes the typed `items` facts + `story_id` clustering, replaces `episode_usage` with the topic-scoped `selections` (`select`/`mark-published`/`release`), and adds the three judgment decisions with the china-politics prefilter + profile gate; `0230` ran the live cut-over dogfood + doc sync, `0241`/`0242` restored and re-settled the live v2 store; satellite `docs/design/kk-collect-and-daily-voice2.md` |

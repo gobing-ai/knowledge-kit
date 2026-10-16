@@ -1,7 +1,7 @@
 import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RunConfig, RunResults } from '../contracts';
 import { type BoardClient, createBoardClient, readerOriginFrom } from '../shared/api';
-import { artifactViews, collectSummaryFacts, type ProgressRow, progressRows } from '../shared/collect';
+import { artifactViews, collectSummary, collectSummaryFacts, type ProgressRow, progressRows } from '../shared/collect';
 import { dedupeDiagnostics, diagnosticLine, formatTimestamp } from '../shared/format';
 import {
     ACTIVE_POLL_MS,
@@ -105,6 +105,7 @@ export function CollectModule() {
     const [results, setResults] = useState<RunResults | null>(null);
     const [config, setConfig] = useState<RunConfig | null>(null);
     const [progress, setProgress] = useState<unknown>(null);
+    const [filterQuery, setFilterQuery] = useState('');
 
     // `tick`'s pending bit + one busy ref per source: a manual Refresh/"Load more" click can
     // never overlap an in-flight poll and let the slower response win (§6).
@@ -189,22 +190,77 @@ export function CollectModule() {
     const artifacts = results === null ? [] : artifactViews(results, readerOrigin);
     const steps: ProgressRow[] = progressRows(progress);
     const selectedRow = rows.find((row) => row.id === selection.runId);
+    const filteredRows = useMemo(() => {
+        const q = filterQuery.trim().toLowerCase();
+        if (q === '') return rows;
+        return rows.filter((r) => r.id.toLowerCase().includes(q) || r.status.toLowerCase().includes(q));
+    }, [rows, filterQuery]);
 
     return (
         <div className="kk-board kk-board-collect">
             <header className="kk-board-header">
-                <h1>Collect</h1>
-                <p>
-                    Run <code>{selection.runId ?? 'none selected'}</code> · {selectedRow?.status ?? 'status unknown'} ·{' '}
-                    {freshnessLabel(readerRefresh)}
-                </p>
-                {results === null ? null : <p>Results {results.availability}</p>}
-                <button type="button" onClick={() => void loadReader()}>
-                    Refresh
-                </button>
-                {selection.runId === null ? null : (
-                    <a href={selectionPath(selection, window.location.search)}>Permanent link to this view</a>
-                )}
+                <div className="kk-board-header-left">
+                    <div className="kk-board-header-title-row">
+                        <h1>Collect</h1>
+                        {selectedRow ? (
+                            <span
+                                className={`kk-badge ${selectedRow.status === 'done' ? 'kk-badge-success' : selectedRow.status === 'failed' ? 'kk-badge-failed' : 'kk-badge-running'}`}
+                            >
+                                {selectedRow.status}
+                            </span>
+                        ) : null}
+                    </div>
+                    <p>
+                        Run <code>{selection.runId ?? 'none selected'}</code> · {freshnessLabel(readerRefresh)}
+                        {results === null ? '' : ` · Results ${results.availability}`}
+                    </p>
+                </div>
+                <div className="kk-board-header-right">
+                    <div className="kk-board-run-filter-group">
+                        <input
+                            type="text"
+                            className="kk-board-run-filter-input"
+                            placeholder="Filter runs..."
+                            value={filterQuery}
+                            onChange={(e) => setFilterQuery(e.target.value)}
+                            aria-label="Filter runs"
+                        />
+                        <label className="kk-board-run-selector">
+                            Run
+                            <select
+                                value={selection.runId ?? ''}
+                                onChange={(event) =>
+                                    setSelection((state) => ({ ...state, runId: event.target.value || null }))
+                                }
+                            >
+                                <option value="">
+                                    {rows.length === 0
+                                        ? 'No runs recorded'
+                                        : filteredRows.length === 0
+                                          ? 'No matching runs'
+                                          : 'Select a run'}
+                                </option>
+                                {filteredRows.map((row) => (
+                                    <option key={row.id} value={row.id}>
+                                        {row.id} — {row.status}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                    </div>
+                    <button type="button" onClick={() => void loadReader()} title="Refresh run data">
+                        ↻ Refresh
+                    </button>
+                    {selection.runId === null ? null : (
+                        <a
+                            href={selectionPath(selection, window.location.search)}
+                            className="kk-btn-action"
+                            title="Permanent link"
+                        >
+                            🔗 Link
+                        </a>
+                    )}
+                </div>
             </header>
             <nav className="kk-board-tabs" aria-label="Collect tabs">
                 {BOARD_TABS.map((candidate) => (
@@ -218,20 +274,6 @@ export function CollectModule() {
                     </button>
                 ))}
             </nav>
-            <label className="kk-board-run-selector">
-                Run
-                <select
-                    value={selection.runId ?? ''}
-                    onChange={(event) => setSelection((state) => ({ ...state, runId: event.target.value || null }))}
-                >
-                    <option value="">{rows.length === 0 ? 'No runs recorded' : 'Select a run'}</option>
-                    {rows.map((row) => (
-                        <option key={row.id} value={row.id}>
-                            {row.id} — {row.status}
-                        </option>
-                    ))}
-                </select>
-            </label>
             {rows.length === 0 ? (
                 <p className="kk-board-empty">
                     No runs recorded for kk-collect. Configure the workflow in{' '}
@@ -268,17 +310,49 @@ function SummaryPanel({
     results: RunResults | null;
 }) {
     if (results === null) return <p>No captured results for the selected run.</p>;
+    const summary = collectSummary(results);
+    const totalItems = (summary.inserted ?? 0) + (summary.updated ?? 0) + (summary.unchanged ?? 0);
     return (
-        <dl className="kk-board-facts">
-            {facts.map((fact) => (
-                <div key={fact.label}>
-                    <dt>{fact.label}</dt>
-                    <dd>
-                        {fact.value} <span className="kk-board-state">{fact.availability}</span>
-                    </dd>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+            {summary.labeled !== null || summary.inserted !== null ? (
+                <div className="kk-stat-grid">
+                    <div className="kk-stat-card">
+                        <span className="kk-stat-label">Ingested Items</span>
+                        <span className="kk-stat-value">{totalItems}</span>
+                        <span className="kk-stat-sub">
+                            {summary.inserted ?? 0} new · {summary.updated ?? 0} updated
+                        </span>
+                    </div>
+                    <div className="kk-stat-card">
+                        <span className="kk-stat-label">Labeled Pool</span>
+                        <span className="kk-stat-value">{summary.labeled ?? '—'}</span>
+                        <span className="kk-stat-sub">
+                            {summary.model ?? 0} model · {summary.fallback ?? 0} fallback
+                        </span>
+                    </div>
+                    <div className="kk-stat-card">
+                        <span className="kk-stat-label">Verdict</span>
+                        <span className="kk-stat-value">{summary.verdict ?? '—'}</span>
+                        <span className="kk-stat-sub">Confidence: {summary.confidence ?? '—'}</span>
+                    </div>
+                    <div className="kk-stat-card">
+                        <span className="kk-stat-label">Sources Active</span>
+                        <span className="kk-stat-value">{Object.keys(summary.sourceCounts ?? {}).length}</span>
+                        <span className="kk-stat-sub">Ingest channels</span>
+                    </div>
                 </div>
-            ))}
-        </dl>
+            ) : null}
+            <dl className="kk-board-facts">
+                {facts.map((fact) => (
+                    <div key={fact.label}>
+                        <dt>{fact.label}</dt>
+                        <dd>
+                            {fact.value} <span className="kk-board-state">{fact.availability}</span>
+                        </dd>
+                    </div>
+                ))}
+            </dl>
+        </div>
     );
 }
 

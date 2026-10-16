@@ -22,10 +22,13 @@ vars:
   window: "24h"
   language: "zh"
   voice_profile: "robin-news"
-  # Voice driver switch — voicebox (voice-gen) | ominivoice (omni-voice-gen) | gemini (gemini-tts)
-  # | voxcpm (voxcpm-tts, opt-in; ADR-036; provisional 5.6 字/秒 estimate). Same default as
-  # kk-daily-ai-voice: gemini-tts (20260929 operator override, verified live).
-  vdriver: "gemini"
+  # Voice driver switch — voxcpm (voxcpm-tts) | gemini (gemini-tts) | voicebox (voice-gen)
+  # | ominivoice (omni-voice-gen). The generate tier below mirrors the fallback order, and the
+  # fit/duration gates take their spoken-char rate from this var — switching drivers here is enough.
+  # 2026-10-15 production test (operator decision): voxcpm first, then gemini, then omni. voxcpm
+  # rendered that episode in 21.8 min at a measured 5.19 字/秒 (fitted at 5.2); if the audio verdict
+  # is good this is the standing order, otherwise revert this default to "gemini".
+  vdriver: "voxcpm"
   intro_music: ".works/kk-daily-ai-voice/AI每日资讯_8秒播客片头.mp3"
   surfdash_root: "/Users/robin/xprojects/surfdash"
   title: ""
@@ -258,7 +261,7 @@ nodes:
         command: >-
           kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
           && test "${vars.plan_translate_enabled}" = "true"
-          && ! test -s "${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json"
+          && ! jq -e --argjson n "$(jq '.metadata.docs|length' "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json")" 'type=="array" and length==$n and all(.[];type=="object")' "${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json"
     action:
       kind: agent.run
       # 0238 R2: a stochastic executor no-op must not end the run here — the retry sibling decides.
@@ -268,21 +271,28 @@ nodes:
         agent: ${vars.agent}
         # ADR-115 error tier: keep this prompt <= 1000 chars (0133 R3; 0138 R4a copy discipline).
         # The anchor is shared with plan-translate-retry so the two attempts cannot drift apart.
+        # 20261015 forensics: headless agy's terminal sandbox denies workspace writes for EVERY
+        # shell command (command() rules are promptless-but-sandboxed; unsandboxed() is dead), so
+        # the producer must deliver via the file-write tool; and the condition gate checks JSON
+        # validity (array, length == candidates docs, all objects) because a pi token-cap staged
+        # write once flowed 4/12 items downstream. Keep both when editing prompt or condition.
         input: &plan-translate-input |
-          Read ${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json — metadata.docs (Doc[]) is the plan; don't edit it.
-          For needsTranslation items, adapt "title", "body" and "metadata.brief" into spoken simplified Chinese — full coverage, not a summary: keep every fact, number, name, quote and hedge (口播全长改编，不摘要不省略), body ≈0.6–0.7× the source.
-          Titles read as a news event; keep product/model names verbatim, preserve body URLs, use 「」 not ASCII double quotes.
-          Copy discipline: reader-facing news copy — no scaffold labels (「可做角度」「为什么现在值得注意」「社区讨论」「背景」「潜在影响」「影响」), no duplicated labels or hedging (「读者宜另行核实」「仍待验证」) — merge their substance into prose or drop.
-          Keep other fields (id, sourceUri, mediaType, metadata) as-is; no comments or trailing commas.
-          Output strictly valid JSON — a same-length, same-order array — to ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json.
+          Read ${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json; metadata.docs (Doc[]) is the plan.
+          For needsTranslation items adapt "title", "body" and "metadata.brief" into spoken simplified Chinese — keep every fact, number, name, quote, hedge (口播全长改编，不摘要不省略), body ≈0.6–0.7× source.
+          Titles read as news; keep product/model names and body URLs verbatim, use 「」 not ASCII quotes.
+          Copy discipline: reader-facing news copy — no scaffold labels (「可做角度」「为什么现在值得注意」「社区讨论」「背景」「潜在影响」「影响」), no hedging labels (「读者宜另行核实」「仍待验证」) — merge or drop.
+          Keep id/sourceUri/mediaType/metadata as-is; no comments/trailing commas.
+          Deliver with your file-write tool (headless agy sandbox blocks shell writes); the file must end as ONE valid JSON array — no split markers/placeholders.
+          Output the JSON array — same length and order — to ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json.
         expectFile: ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json
         allowAppend: false
 
   - id: plan-translate-retry
     description: >-
-      Bounded recovery for plan-translate (0238 R2): runs only when the primary settled without its
-      expectFile, retries the same input on a different tier, and carries NO onError — a second miss
-      fails the run loudly instead of letting an untranslated plan flow downstream.
+      Bounded recovery for plan-translate (0238 R2): runs only when the primary settled without a
+      VALID expectFile (missing or contract-violating JSON), retries the same input on a different
+      tier, and carries NO onError — a second miss fails the run loudly instead of letting an
+      untranslated or truncated plan flow downstream.
     dependsOn: [plan-translate]
     condition:
       kind: shell
@@ -290,7 +300,7 @@ nodes:
         command: >-
           kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
           && test "${vars.plan_translate_enabled}" = "true"
-          && ! test -s "${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json"
+          && ! jq -e --argjson n "$(jq '.metadata.docs|length' "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json")" 'type=="array" and length==$n and all(.[];type=="object")' "${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json"
     action:
       kind: agent.run
       options:
@@ -535,7 +545,7 @@ nodes:
           kk stage daily-wrap-docs "${vars.work_dir}" "${vars.run_date}" "${vars.voice_profile}"
 
   - id: generate
-    description: "Invoke the voice driver plugin (vdriver: gemini -> gemini-tts, voxcpm -> voxcpm-tts) to generate the audio"
+    description: "Voice tier, primary driver (vars.vdriver — voxcpm while the 2026-10-15 production test runs). onError: continue — the fallback siblings below are the loud chain (same pattern as 0238 R2)."
     # wrap-docs is a data dependency, not a sibling: daily-generate reads its _10_wrap-docs_docs.json
     # as the TTS input. Without this edge the two nodes race in the same wave (0212 dogfood finding).
     dependsOn: [script, safety, review, wrap-docs]
@@ -547,12 +557,49 @@ nodes:
     action:
       kind: shell
       options:
+        onError: continue
         command: >-
           OMNIVOICE_SPEED=1.06 kk stage daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "${vars.vdriver}" "1" "${vars.episode_max_minutes}"
 
+  # Driver fallback chain (2026-10-15, operator decision): voxcpm -> gemini -> omni. Each sibling
+  # runs the same stage with a pinned driver; its condition re-checks the pool AND that NO upstream
+  # driver left a valid, passing whole-document Content (the stage stamps metadata.generator with
+  # its plugin id and the cache ignores foreign-driver sections, so a failed attempt can neither be
+  # relabeled nor mix voices). Non-final siblings continue on error; the last one is loud.
+  - id: generate-fallback
+    description: "Voice tier fallback 1: gemini (gemini-tts) when the primary driver left no valid Content"
+    dependsOn: [generate]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
+          && ! jq -e '(.metadata.generator == "kk:voxcpm-tts" or .metadata.generator == "kk:gemini-tts") and .metadata.qc.passed == true' "${vars.work_dir}/30-audio/${vars.run_date}_11_generate_content.json"
+    action:
+      kind: shell
+      options:
+        onError: continue
+        command: >-
+          kk stage daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "gemini" "1" "${vars.episode_max_minutes}"
+
+  - id: generate-fallback2
+    description: "Voice tier fallback 2 (last, loud): omni-voice-gen when neither voxcpm nor gemini delivered"
+    dependsOn: [generate-fallback]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
+          && ! jq -e '(.metadata.generator == "kk:voxcpm-tts" or .metadata.generator == "kk:gemini-tts" or .metadata.generator == "kk:omni-voice-gen") and .metadata.qc.passed == true' "${vars.work_dir}/30-audio/${vars.run_date}_11_generate_content.json"
+    action:
+      kind: shell
+      options:
+        command: >-
+          OMNIVOICE_SPEED=1.06 kk stage daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "ominivoice" "1" "${vars.episode_max_minutes}"
+
   - id: intro
     description: "Prepend the 8s intro sting (intro_music var; empty = skip), update duration/audioPath"
-    dependsOn: [generate]
+    dependsOn: [generate, generate-fallback, generate-fallback2]
     action:
       kind: shell
       options:
