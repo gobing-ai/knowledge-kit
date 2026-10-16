@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import type { CrawlArtifact } from '../scripts/seo-facts';
 import { type AuditArtifact, type ReportJsonArtifact, renderReportMarkdown } from '../scripts/seo-report';
 import {
+    type AssessmentRow,
     buildPrioritizedActions,
     calculateScoresAndCoverage,
     makeStableId,
@@ -257,6 +258,32 @@ describe('Smart SEO Assessments Execution (R1, R2 / AC1, AC2)', () => {
         const { scores, coverage } = calculateScoresAndCoverage(rows);
         expect(scores.content).toBeNull(); // No content checks evaluated
         expect(coverage.totalRules).toBe(52);
+    });
+
+    it('never lets an informational rule deduct from or inflate a category score', () => {
+        const row = (ruleId: string, status: 'pass' | 'fail'): AssessmentRow => ({
+            ruleId,
+            subjectId: `s-${ruleId}`,
+            subjectUrl: 'https://example.com/',
+            status,
+            category: VENDOR_RULES[ruleId]?.category ?? 'technical',
+            severity: VENDOR_RULES[ruleId]?.severity ?? 'info',
+            evidenceRefs: [],
+            sourceUrl: '',
+            sourceCheckedAt: '',
+            heuristic: false,
+            reason: '',
+        });
+        const { scores } = calculateScoresAndCoverage([
+            row('robots_missing', 'fail'), // informational, crawl
+            row('canonical_missing', 'fail'), // informational, technical
+            row('hsts_missing', 'pass'), // informational, security
+            row('title_missing', 'pass'), // native, content
+        ]);
+        expect(scores.crawl).toBeNull();
+        expect(scores.technical).toBeNull();
+        expect(scores.security).toBeNull();
+        expect(scores.content).toBe(100);
     });
 
     it('covers sitemap request evaluations and full action sorting branches', () => {

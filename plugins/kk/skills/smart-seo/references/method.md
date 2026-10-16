@@ -71,6 +71,8 @@ Interpretation rules:
 - There is **no blended overall SEO/GEO grade** in this method version. Report the four category
   ratios with their coverage side by side; a ratio published without its coverage is misleading.
 - `geo` rules are assessed and prioritized like any other row but produce no category score.
+- `informational` rules (vendor-review disposition) are reported but never enter a category score:
+  they neither deduct on `fail` nor pad the ratio on `pass`.
 - Unknown and review values never count as successes, and a disabled or unavailable optional area
   is reported as such rather than folded into a pass.
 - Never compare scores across two runs with different coverage, different `methodVersion`, or

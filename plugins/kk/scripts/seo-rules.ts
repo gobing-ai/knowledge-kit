@@ -1779,7 +1779,13 @@ export function calculateScoresAndCoverage(assessments: AssessmentRow[]): {
         };
 
     for (const cat of categories) {
-        const catRows = assessments.filter((r) => r.category === cat && (r.status === 'pass' || r.status === 'fail'));
+        // Vendor review: informational rules never deduct (or pad) a score; they stay as report rows only.
+        const catRows = assessments.filter(
+            (r) =>
+                r.category === cat &&
+                (r.status === 'pass' || r.status === 'fail') &&
+                VENDOR_RULES[r.ruleId]?.disposition !== 'informational',
+        );
         const passCount = catRows.filter((r) => r.status === 'pass').length;
         const total = catRows.length;
         scores[cat] = total === 0 ? null : Math.round((100 * passCount) / total);
