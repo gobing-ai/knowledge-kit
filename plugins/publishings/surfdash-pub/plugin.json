@@ -3,5 +3,26 @@
     "kind": "publish",
     "entry": "./src/index.ts",
     "version": "1.0.0",
-    "description": "Publish plugin for Surfdash (Surfing SSG) invoking postsurfing CLI via FileCli transport"
+    "description": "Publish plugin for Surfdash (Surfing SSG) invoking postsurfing CLI via FileCli transport",
+    "publishing": {
+        "defaultProfile": "article",
+        "profiles": {
+            "article": {
+                "format": "article",
+                "locale": "source",
+                "modes": {
+                    "draft": {
+                        "metadata": {
+                            "published": false
+                        }
+                    },
+                    "live": {
+                        "metadata": {
+                            "published": true
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

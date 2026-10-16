@@ -65,6 +65,40 @@ describe('discoverPlugins', () => {
         });
     });
 
+    it('0298 / ADR-040 — carries publishing capabilities on PluginRecord', () => {
+        withTempDir((root) => {
+            const dir = join(root, collectionForKind('publish'), 'my-pub');
+            mkdirSync(dir, { recursive: true });
+            writeFileSync(
+                join(dir, 'plugin.json'),
+                JSON.stringify({
+                    name: 'my-pub',
+                    kind: 'publish',
+                    entry: './src/index.ts',
+                    publishing: {
+                        defaultProfile: 'article',
+                        profiles: {
+                            article: {
+                                format: 'article',
+                                locale: 'source',
+                                modes: { draft: { metadata: { published: false } } },
+                            },
+                        },
+                    },
+                }),
+            );
+
+            const res = discoverPlugins(root);
+            expect(res.diagnostics).toHaveLength(0);
+            expect(res.plugins).toHaveLength(1);
+            const pub = res.plugins[0];
+            expect(pub?.name).toBe('my-pub');
+            expect(pub?.publishing?.defaultProfile).toBe('article');
+            expect(pub?.publishing?.profiles.article?.format).toBe('article');
+            expect(pub?.publishing?.profiles.article?.locale).toBe('source');
+        });
+    });
+
     it('scans a kind-collection directory as the plugins root', () => {
         withTempDir((root) => {
             writePlugin(root, 'publish', 'only-pub');

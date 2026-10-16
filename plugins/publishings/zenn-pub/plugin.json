@@ -3,5 +3,26 @@
     "kind": "publish",
     "entry": "./src/index.ts",
     "version": "1.0.0",
-    "description": "Publish plugin for Zenn (zenn.dev) invoking Zenn CLI via FileCli transport"
+    "description": "Publish plugin for Zenn (zenn.dev) invoking Zenn CLI via FileCli transport",
+    "publishing": {
+        "defaultProfile": "article",
+        "profiles": {
+            "article": {
+                "format": "article",
+                "locale": "ja",
+                "modes": {
+                    "draft": {
+                        "metadata": {
+                            "published": false
+                        }
+                    },
+                    "live": {
+                        "metadata": {
+                            "published": true
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

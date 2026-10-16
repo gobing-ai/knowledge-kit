@@ -3,5 +3,28 @@
     "kind": "publish",
     "entry": "./src/index.ts",
     "version": "1.0.0",
-    "description": "Publish plugin for Qiita (qiita.com) posting articles via the Qiita API v2 token transport"
+    "description": "Publish plugin for Qiita (qiita.com) posting articles via the Qiita API v2 token transport",
+    "publishing": {
+        "defaultProfile": "article",
+        "profiles": {
+            "article": {
+                "format": "article",
+                "locale": "ja",
+                "modes": {
+                    "draft": {
+                        "metadata": {
+                            "private": true,
+                            "published": false
+                        }
+                    },
+                    "live": {
+                        "metadata": {
+                            "private": false,
+                            "published": true
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

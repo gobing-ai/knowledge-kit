@@ -49,6 +49,106 @@ export const BrowserSessionDescriptorSchema = z
 export type BrowserSessionDescriptor = z.infer<typeof BrowserSessionDescriptorSchema>;
 
 /**
+ * Content count unit schema matching {@link ContentCountUnit}.
+ */
+export const ContentCountUnitSchema = z.enum([
+    'utf16_code_units',
+    'unicode_code_points',
+    'weighted',
+    'xiaohongshu_title_weighted',
+]);
+
+const LimitEntrySchema = z
+    .object({
+        max: z.number().int().positive(),
+        unit: ContentCountUnitSchema,
+    })
+    .strict();
+
+export const PublishingProfileLimitsSchema = z
+    .object({
+        title: LimitEntrySchema.optional(),
+        body: LimitEntrySchema.optional(),
+    })
+    .strict();
+
+export type PublishingProfileLimits = z.infer<typeof PublishingProfileLimitsSchema>;
+
+export const PublishingProfileRequiresSchema = z
+    .object({
+        cover: z.boolean().optional(),
+        orderedImages: z.boolean().optional(),
+    })
+    .strict();
+
+export type PublishingProfileRequires = z.infer<typeof PublishingProfileRequiresSchema>;
+
+export const PublishingProfileModeBindingSchema = z
+    .object({
+        metadata: z.record(z.string(), z.unknown()),
+    })
+    .strict();
+
+export type PublishingProfileModeBinding = z.infer<typeof PublishingProfileModeBindingSchema>;
+
+export const PublishingProfileModesSchema = z
+    .object({
+        draft: PublishingProfileModeBindingSchema.optional(),
+        live: PublishingProfileModeBindingSchema.optional(),
+    })
+    .strict()
+    .superRefine((modes, ctx) => {
+        if (modes.draft === undefined && modes.live === undefined) {
+            ctx.addIssue({
+                code: 'custom',
+                message: 'modes must define at least one of "draft" or "live"',
+            });
+        }
+    });
+
+export type PublishingProfileModes = z.infer<typeof PublishingProfileModesSchema>;
+
+export const PublishingProfileSchema = z
+    .object({
+        format: z.string().min(1),
+        locale: z.string().regex(/^(source|[a-z]{2,3}(-[A-Za-z0-9]+)*)$/, {
+            message: 'locale must be "source" or a valid language tag',
+        }),
+        limits: PublishingProfileLimitsSchema.optional(),
+        requires: PublishingProfileRequiresSchema.optional(),
+        modes: PublishingProfileModesSchema,
+    })
+    .strict();
+
+export type PublishingProfile = z.infer<typeof PublishingProfileSchema>;
+
+export const PublishingCapabilitiesSchema = z
+    .object({
+        defaultProfile: z.string().min(1),
+        profiles: z.record(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/), PublishingProfileSchema),
+    })
+    .strict()
+    .superRefine((data, ctx) => {
+        const keys = Object.keys(data.profiles);
+        if (keys.length === 0) {
+            ctx.addIssue({
+                code: 'custom',
+                path: ['profiles'],
+                message: 'profiles record must be nonempty',
+            });
+        }
+        if (!(data.defaultProfile in data.profiles)) {
+            ctx.addIssue({
+                code: 'custom',
+                path: ['defaultProfile'],
+                message: `defaultProfile "${data.defaultProfile}" must reference a declared profile`,
+            });
+        }
+    });
+
+export type PublishingCapabilities = z.infer<typeof PublishingCapabilitiesSchema>;
+
+/**
  * Zod schema for plugin.json manifest validation. Loose object (0155 R8): unknown keys are
  * preserved, not rejected — the Zod 4 idiom, consistent with `schemas.ts`.
  */
@@ -69,24 +169,35 @@ const PluginManifestSchemaBase = z.looseObject({
     // Declared browser session (0277 R1): publish plugins with a probe entry only, enforced
     // by `superRefine` below (a session without a probe script could never be driven).
     browserSession: BrowserSessionDescriptorSchema.optional(),
+    // Declared publishing capabilities (0298 / ADR-040): publish plugins describe operation-specific
+    // profiles, limits, format, and mode bindings.
+    publishing: PublishingCapabilitiesSchema.optional(),
 });
 
 // A browser session is drivable only by a publish plugin that also declares the probe
 // entry which owns the site-specific login/check/open routines (0277 R1).
 export const PluginManifestSchema = PluginManifestSchemaBase.superRefine((manifest, ctx) => {
-    if (manifest.browserSession === undefined) return;
-    if (manifest.kind !== 'publish') {
-        ctx.addIssue({
-            code: 'custom',
-            path: ['browserSession'],
-            message: `browserSession requires kind "publish", not "${manifest.kind}"`,
-        });
+    if (manifest.browserSession !== undefined) {
+        if (manifest.kind !== 'publish') {
+            ctx.addIssue({
+                code: 'custom',
+                path: ['browserSession'],
+                message: `browserSession requires kind "publish", not "${manifest.kind}"`,
+            });
+        }
+        if (manifest.check === undefined) {
+            ctx.addIssue({
+                code: 'custom',
+                path: ['browserSession'],
+                message: 'browserSession requires a check probe entry that owns the session routines',
+            });
+        }
     }
-    if (manifest.check === undefined) {
+    if (manifest.publishing !== undefined && manifest.kind !== 'publish') {
         ctx.addIssue({
             code: 'custom',
-            path: ['browserSession'],
-            message: 'browserSession requires a check probe entry that owns the session routines',
+            path: ['publishing'],
+            message: `publishing requires kind "publish", not "${manifest.kind}"`,
         });
     }
 });

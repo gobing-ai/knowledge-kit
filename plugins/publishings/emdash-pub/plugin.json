@@ -3,5 +3,26 @@
     "kind": "publish",
     "entry": "./src/index.ts",
     "version": "1.0.0",
-    "description": "Publish plugin for EmDash CMS creating posts via the REST token transport"
+    "description": "Publish plugin for EmDash CMS creating posts via the REST token transport",
+    "publishing": {
+        "defaultProfile": "article",
+        "profiles": {
+            "article": {
+                "format": "article",
+                "locale": "source",
+                "modes": {
+                    "draft": {
+                        "metadata": {
+                            "published": false
+                        }
+                    },
+                    "live": {
+                        "metadata": {
+                            "published": true
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

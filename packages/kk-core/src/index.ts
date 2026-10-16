@@ -30,11 +30,24 @@ export {
     PluginKindSchema,
 } from './kinds';
 export {
+    ContentCountUnitSchema,
     type OperationIO,
     OperationIOSchema,
     type PluginManifest,
     PluginManifestSchema,
     type PluginOperation,
+    type PublishingCapabilities,
+    PublishingCapabilitiesSchema,
+    type PublishingProfile,
+    type PublishingProfileLimits,
+    PublishingProfileLimitsSchema,
+    type PublishingProfileModeBinding,
+    PublishingProfileModeBindingSchema,
+    type PublishingProfileModes,
+    PublishingProfileModesSchema,
+    type PublishingProfileRequires,
+    PublishingProfileRequiresSchema,
+    PublishingProfileSchema,
     parsePluginManifest,
 } from './manifest';
 export {

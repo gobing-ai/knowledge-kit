@@ -8,5 +8,26 @@
     "browserSession": {
         "profileName": "infoq",
         "homeUrl": "https://xie.infoq.cn/"
+    },
+    "publishing": {
+        "defaultProfile": "article",
+        "profiles": {
+            "article": {
+                "format": "article",
+                "locale": "zh",
+                "modes": {
+                    "draft": {
+                        "metadata": {
+                            "publishStatus": "draft"
+                        }
+                    },
+                    "live": {
+                        "metadata": {
+                            "publishStatus": "public"
+                        }
+                    }
+                }
+            }
+        }
     }
 }

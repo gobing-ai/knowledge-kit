@@ -8,5 +8,40 @@
     "browserSession": {
         "profileName": "weibo",
         "homeUrl": "https://weibo.com"
+    },
+    "publishing": {
+        "defaultProfile": "article",
+        "profiles": {
+            "article": {
+                "format": "article",
+                "locale": "zh",
+                "modes": {
+                    "draft": {
+                        "metadata": {
+                            "operation": "article",
+                            "publishStatus": "draft"
+                        }
+                    },
+                    "live": {
+                        "metadata": {
+                            "operation": "article",
+                            "publishStatus": "public"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "format": "short-post",
+                "locale": "zh",
+                "modes": {
+                    "live": {
+                        "metadata": {
+                            "operation": "post",
+                            "publishStatus": "public"
+                        }
+                    }
+                }
+            }
+        }
     }
 }

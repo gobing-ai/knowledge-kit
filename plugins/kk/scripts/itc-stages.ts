@@ -232,68 +232,8 @@ export function itcReport(args: string[]): void {
 }
 
 // ---------------------------------------------------------------------------
-// 0150: publish-tail seams — TARGET_PROFILES, itc-materialize, itc-publish-plan
+// 0150 / 0298: publish-tail seams — itc-materialize, itc-publish-plan
 // ---------------------------------------------------------------------------
-
-/** One row of the docs/design/kk-itc-end-to-end.md §5 target profile table. */
-export interface TargetProfile {
-    transport: 'fanout' | 'browser';
-    /** `source` = the draft's own source_locale; anything else is fixed. */
-    locale: 'en' | 'zh' | 'ja' | 'source';
-    format: string;
-    cover: boolean;
-    /**
-     * V3 draft/live switch itc-publish-fanout writes into the variant Content metadata at send
-     * time. Returning null means the target has no switch for this run's mode and is rejected by
-     * name: x-pub's `operation: post` has no draft mode; wechatmp-pub refuses every live operation.
-     */
-    switch: (live: boolean) => Record<string, unknown> | null;
-}
-
-// Draft/live key per row, verified against each plugin's src/ (0150 R3):
-//   medium-pub    metadata.publishStatus 'draft'|'public' (plugins/publishings/medium-pub/src/index.ts:49)
-//   emdash-pub    metadata.published (plugins/publishings/emdash-pub/src/index.ts:254)
-//   surfdash-pub  metadata.published (plugins/publishings/surfdash-pub/src/index.ts:93)
-//   zenn-pub      metadata.published — defaults to LIVE when absent, so never omit (plugins/publishings/zenn-pub/src/index.ts:92)
-//   qiita-pub     metadata.published, private is its inverse (plugins/publishings/qiita-pub/src/index.ts:70)
-//   wechatmp-pub  metadata.operation, draft default; live refused (plugins/publishings/wechatmp-pub/src/index.ts:162,171)
-//   x-pub         metadata.operation 'post' — no draft mode exists (plugins/publishings/x-pub/src/index.ts:64)
-//   substack/juejin/infoq/xhs always return a draft Result (plugins/publishings/substack-pub/src/index.ts:26);
-//   their live path is 0151's `kk:publish --live` agent flag, so the switch is documentation-only.
-const publishedSwitch = (live: boolean) => ({ published: live });
-const browserSwitch = (live: boolean): Record<string, unknown> => (live ? {} : { publishStatus: 'draft' });
-
-export const TARGET_PROFILES: Record<string, TargetProfile> = {
-    'medium-pub': {
-        transport: 'fanout',
-        locale: 'en',
-        format: 'article',
-        cover: false,
-        switch: (live) => ({ publishStatus: live ? 'public' : 'draft' }),
-    },
-    'substack-pub': { transport: 'browser', locale: 'en', format: 'article', cover: false, switch: browserSwitch },
-    'emdash-pub': { transport: 'fanout', locale: 'source', format: 'article', cover: false, switch: publishedSwitch },
-    'surfdash-pub': { transport: 'fanout', locale: 'source', format: 'article', cover: false, switch: publishedSwitch },
-    'zenn-pub': { transport: 'fanout', locale: 'ja', format: 'article', cover: false, switch: publishedSwitch },
-    'qiita-pub': { transport: 'fanout', locale: 'ja', format: 'article', cover: false, switch: publishedSwitch },
-    'wechatmp-pub': {
-        transport: 'fanout',
-        locale: 'zh',
-        format: 'wechat-article',
-        cover: true,
-        switch: (live) => (live ? null : { operation: 'draft' }),
-    },
-    'juejin-pub': { transport: 'browser', locale: 'zh', format: 'article', cover: false, switch: browserSwitch },
-    'infoq-pub': { transport: 'browser', locale: 'zh', format: 'article', cover: false, switch: browserSwitch },
-    'xhs-pub': { transport: 'browser', locale: 'zh', format: 'short-note', cover: true, switch: browserSwitch },
-    'x-pub': {
-        transport: 'fanout',
-        locale: 'en',
-        format: 'short-post',
-        cover: false,
-        switch: (live) => (live ? { operation: 'post' } : null),
-    },
-};
 
 const DRAFT_FILE = '3-draft-draft-article.md';
 
@@ -383,65 +323,32 @@ export interface PublishPlan {
 }
 
 export function itcPublishPlan(args: string[]): void {
-    const [workDir = '', targetsArg = '', sourceLocale = '', liveArg = ''] = args;
-    if (!workDir || !targetsArg || !sourceLocale) {
-        fail('usage: itc-publish-plan <work_dir> <targets> <source_locale> <publish_live>');
+    if (process.env._KK_ITC_STAGE_NATIVE === '1') {
+        return;
     }
-    const live = liveArg === 'true';
-    const targets = [
-        ...new Set(
-            targetsArg
-                .split(',')
-                .map((t) => t.trim())
-                .filter(Boolean),
-        ),
-    ];
-    const hasCover = findCover(workDir) !== undefined;
-    const variants: PublishPlan['variants'] = {};
-    const fanout = new Map<string, string[]>();
-    const browser: PublishPlan['browser'] = [];
-    for (const target of targets) {
-        const profile = TARGET_PROFILES[target];
-        if (!profile) fail(`unsupported publish target: ${target} (unknown or not an article target)`);
-        const switchValue = profile.switch(live);
-        if (!switchValue) {
-            fail(
-                live
-                    ? `target ${target} refuses a live publish`
-                    : `target ${target} has no draft mode; it needs publish_live=true`,
-            );
-        }
-        if (profile.cover && !hasCover) {
-            fail(`target ${target} needs a cover image at 4-illustrations/cover.* in ${workDir}`);
-        }
-        const variant = `${profile.locale === 'source' ? sourceLocale : profile.locale}-${profile.format}`;
-        const sharesSourceArticle = variant === `${sourceLocale}-article`;
-        const entry = variants[variant] ?? {
-            file: sharesSourceArticle ? 'content.json' : `content.${variant}.json`,
-            adapt: !sharesSourceArticle,
-            limits: sharesSourceArticle ? undefined : {},
-            switches: {} as Record<string, unknown>,
-        };
-        Object.assign(entry.switches, switchValue);
-        variants[variant] = entry;
-        if (profile.transport === 'browser') browser.push({ target, variant });
-        else {
-            const group = fanout.get(variant);
-            if (group) group.push(target);
-            else fanout.set(variant, [target]);
-        }
+    const cliEntry = join(__dirname, '../../../apps/cli/src/index.ts');
+    let res: ReturnType<typeof spawnSync>;
+    if (existsSync(cliEntry)) {
+        res = spawnSync(process.execPath, [cliEntry, 'stage', 'run', 'itc-publish-plan', ...args], {
+            stdio: ['inherit', 'pipe', 'pipe'],
+            env: { ...process.env, _KK_ITC_STAGE_NATIVE: '1' },
+        });
+    } else {
+        res = spawnSync('kk', ['stage', 'run', 'itc-publish-plan', ...args], {
+            stdio: ['inherit', 'pipe', 'pipe'],
+            env: { ...process.env, _KK_ITC_STAGE_NATIVE: '1' },
+        });
     }
-    const plan: PublishPlan = {
-        live,
-        sourceLocale,
-        variants,
-        // canonical group order: the plan file must not depend on target argument order
-        fanout: [...fanout]
-            .sort(([a], [b]) => (a < b ? -1 : 1))
-            .map(([variant, groupTargets]) => ({ variant, targets: groupTargets })),
-        browser,
-    };
-    writeJson(join(workDir, '4-publish', 'publish-plan.json'), plan);
+    if (res.stdout && res.stdout.length > 0) {
+        process.stdout.write(res.stdout);
+    }
+    if (res.stderr && res.stderr.length > 0) {
+        const errText = res.stderr.toString('utf-8');
+        console.error(errText.endsWith('\n') ? errText.slice(0, -1) : errText);
+    }
+    if (res.error || (res.status !== null && res.status !== 0)) {
+        process.exit(res.status ?? 1);
+    }
 }
 
 /** R3 — the adapt state's follow-up check: every adapt:true variant file exists with title/body. */

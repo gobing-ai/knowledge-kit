@@ -7,5 +7,26 @@
     "description": "Publish plugin for Substack (substack.com): post drafts through the ProseMirror editor via script browser transport (ts-browser-automation)",
     "browserSession": {
         "profileName": "substack"
+    },
+    "publishing": {
+        "defaultProfile": "article",
+        "profiles": {
+            "article": {
+                "format": "article",
+                "locale": "en",
+                "modes": {
+                    "draft": {
+                        "metadata": {
+                            "publishStatus": "draft"
+                        }
+                    },
+                    "live": {
+                        "metadata": {
+                            "publishStatus": "public"
+                        }
+                    }
+                }
+            }
+        }
     }
 }

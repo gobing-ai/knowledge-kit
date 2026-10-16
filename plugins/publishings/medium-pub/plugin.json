@@ -3,5 +3,26 @@
     "kind": "publish",
     "entry": "./src/index.ts",
     "version": "1.0.0",
-    "description": "Publish plugin for Medium (medium.com) via the integration-token REST API"
+    "description": "Publish plugin for Medium (medium.com) via the integration-token REST API",
+    "publishing": {
+        "defaultProfile": "article",
+        "profiles": {
+            "article": {
+                "format": "article",
+                "locale": "en",
+                "modes": {
+                    "draft": {
+                        "metadata": {
+                            "publishStatus": "draft"
+                        }
+                    },
+                    "live": {
+                        "metadata": {
+                            "publishStatus": "public"
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

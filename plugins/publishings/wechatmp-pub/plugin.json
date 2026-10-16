@@ -8,5 +8,37 @@
     "browserSession": {
         "profileName": "wechatmp",
         "homeUrl": "https://mp.weixin.qq.com/"
+    },
+    "publishing": {
+        "defaultProfile": "article",
+        "profiles": {
+            "article": {
+                "format": "wechat-article",
+                "locale": "zh",
+                "requires": {
+                    "cover": true
+                },
+                "limits": {
+                    "title": {
+                        "max": 64,
+                        "unit": "unicode_code_points"
+                    }
+                },
+                "modes": {
+                    "draft": {
+                        "metadata": {
+                            "operation": "文章",
+                            "publishStatus": "draft"
+                        }
+                    },
+                    "live": {
+                        "metadata": {
+                            "operation": "文章",
+                            "publishStatus": "public"
+                        }
+                    }
+                }
+            }
+        }
     }
 }

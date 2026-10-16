@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ContentSchema } from '@gobing-ai/kk-core';
+import { ContentSchema, discoverAllPlugins } from '@gobing-ai/kk-core';
 
 /**
  * Task 0149 (F41) — unit coverage for the deterministic kk-itc stage helpers in
@@ -327,8 +327,13 @@ describe('itc-publish-plan (0150)', () => {
             'zh-wechat-article': {
                 file: 'content.zh-wechat-article.json',
                 adapt: true,
-                limits: {},
-                switches: { operation: 'draft' },
+                limits: {
+                    title: {
+                        max: 64,
+                        unit: 'unicode_code_points',
+                    },
+                },
+                switches: { operation: '文章', publishStatus: 'draft' },
             },
         });
         expect(plan.fanout).toEqual([{ variant: 'zh-wechat-article', targets: ['wechatmp-pub'] }]);
@@ -367,14 +372,18 @@ describe('itc-publish-plan (0150)', () => {
         expect(resDraft.stderr).toContain('no draft mode');
     });
 
-    it('rejects wechatmp-pub live and cover-less targets by name', () => {
-        const liveRefusal = seedWorkDir();
-        mkdirSync(join(liveRefusal, '4-illustrations'), { recursive: true });
-        writeFileSync(join(liveRefusal, '4-illustrations/cover.png'), 'png');
-        const res = run(['itc-publish-plan', liveRefusal, 'wechatmp-pub', 'zh', 'true']);
-        expect(res.status).toBe(1);
-        expect(res.stderr).toContain('wechatmp-pub');
-        expect(res.stderr).toContain('refuses a live publish');
+    it('plans wechatmp-pub live with complete bindings and rejects cover-less targets by name', () => {
+        const liveWorkDir = seedWorkDir();
+        mkdirSync(join(liveWorkDir, '4-illustrations'), { recursive: true });
+        writeFileSync(join(liveWorkDir, '4-illustrations/cover.png'), 'png');
+        seedVariant(liveWorkDir, 'zh-wechat-article');
+        const res = run(['itc-publish-plan', liveWorkDir, 'wechatmp-pub', 'zh', 'true']);
+        expect(res.status, res.stderr).toBe(0);
+        const plan = planOf(liveWorkDir);
+        expect(plan.variants['zh-wechat-article']?.switches).toEqual({
+            operation: '文章',
+            publishStatus: 'public',
+        });
 
         const noCover = seedWorkDir();
         const resCover = run(['itc-publish-plan', noCover, 'xhs-pub', 'zh', 'false']);
@@ -385,6 +394,16 @@ describe('itc-publish-plan (0150)', () => {
         const withCover = seedWorkDir();
         mkdirSync(join(withCover, '4-illustrations'), { recursive: true });
         writeFileSync(join(withCover, '4-illustrations/cover.jpg'), 'jpg');
+        writeFileSync(join(withCover, '4-illustrations/card-1.png'), 'png');
+        mkdirSync(join(withCover, '4-publish'), { recursive: true });
+        writeFileSync(
+            join(withCover, '4-publish/content.json'),
+            JSON.stringify({
+                title: 'T',
+                body: 'b',
+                metadata: { images: [join(withCover, '4-illustrations/card-1.png')] },
+            }),
+        );
         seedVariant(withCover, 'zh-short-note');
         expect(run(['itc-publish-plan', withCover, 'xhs-pub', 'zh', 'false']).status, 'cover.jpg counts').toBe(0);
     });
@@ -405,64 +424,46 @@ describe('itc-publish-plan (0150)', () => {
     });
 });
 
-describe('TARGET_PROFILES (0150)', () => {
-    // Dynamic import: the script sits outside the app's tsconfig root, so typecheck never sees it.
-    type ProfileRow = {
-        transport: string;
-        locale: string;
-        format: string;
-        cover: boolean;
-        switch: (live: boolean) => Record<string, unknown> | null;
-    };
-    const loadProfiles = async () => (await import(STAGES)).TARGET_PROFILES as Record<string, ProfileRow>;
-
-    it('mirrors the design §5 table row for row', async () => {
-        const rows = Object.entries(await loadProfiles()).map(([target, p]) => [
-            target,
-            p.transport,
-            p.locale,
-            p.format,
-            p.cover,
-        ]);
-        expect(rows).toEqual([
-            ['medium-pub', 'fanout', 'en', 'article', false],
-            ['substack-pub', 'browser', 'en', 'article', false],
-            ['emdash-pub', 'fanout', 'source', 'article', false],
-            ['surfdash-pub', 'fanout', 'source', 'article', false],
-            ['zenn-pub', 'fanout', 'ja', 'article', false],
-            ['qiita-pub', 'fanout', 'ja', 'article', false],
-            ['wechatmp-pub', 'fanout', 'zh', 'wechat-article', true],
-            ['juejin-pub', 'browser', 'zh', 'article', false],
-            ['infoq-pub', 'browser', 'zh', 'article', false],
-            ['xhs-pub', 'browser', 'zh', 'short-note', true],
-            ['x-pub', 'fanout', 'en', 'short-post', false],
-        ]);
+describe('Discovered publishing capabilities (0150 / 0298)', () => {
+    it('discovers capabilities for each standard publish target', () => {
+        const { plugins } = discoverAllPlugins();
+        const byName = new Map(plugins.map((p) => [p.name, p]));
+        const targets = [
+            'medium-pub',
+            'substack-pub',
+            'emdash-pub',
+            'surfdash-pub',
+            'zenn-pub',
+            'qiita-pub',
+            'wechatmp-pub',
+            'juejin-pub',
+            'infoq-pub',
+            'xhs-pub',
+            'x-pub',
+        ];
+        for (const target of targets) {
+            const plugin = byName.get(target);
+            expect(plugin?.publishing, target).toBeDefined();
+            expect(plugin?.publishing?.defaultProfile, target).toBeDefined();
+            const profile = plugin?.publishing?.profiles[plugin.publishing.defaultProfile];
+            expect(profile, target).toBeDefined();
+        }
     });
 
-    it('carries an explicit switch for every plannable mode; only x-pub (draft) and wechatmp-pub (live) are null (V3)', async () => {
-        const TARGET_PROFILES = await loadProfiles();
-        for (const [target, profile] of Object.entries(TARGET_PROFILES)) {
-            const draft = profile.switch(false);
-            const live = profile.switch(true);
-            if (profile.transport === 'browser') {
-                // Browser plugins always draft; live rides 0151's `kk:publish --live` agent flag.
-                expect(draft, target).toEqual({ publishStatus: 'draft' });
-                expect(live, target).toEqual({});
-            } else if (target === 'x-pub') {
-                expect(draft, target).toBeNull(); // live-only
-                expect(live, target).toEqual({ operation: 'post' });
-            } else if (target === 'wechatmp-pub') {
-                expect(draft, target).toEqual({ operation: 'draft' });
-                expect(live, target).toBeNull(); // refuses live
-            } else {
-                expect(Object.keys(draft ?? {}).length, target).toBeGreaterThan(0);
-                expect(Object.keys(live ?? {}).length, target).toBeGreaterThan(0);
-            }
-        }
-        // V3: zenn-pub defaults to live when the key is absent — the switch is never omitted.
-        const zenn = TARGET_PROFILES['zenn-pub'];
-        expect(zenn?.switch(false), 'zenn-pub').toEqual({ published: false });
-        expect(zenn?.switch(true), 'zenn-pub').toEqual({ published: true });
+    it('carries explicit mode bindings for plannable modes and rejects draft for x-pub post', () => {
+        const { plugins } = discoverAllPlugins();
+        const byName = new Map(plugins.map((p) => [p.name, p]));
+        const xPub = byName.get('x-pub')?.publishing?.profiles.post;
+        expect(xPub?.modes.draft).toBeUndefined();
+        expect(xPub?.modes.live?.metadata).toEqual({ operation: 'post' });
+
+        const qiita = byName.get('qiita-pub')?.publishing?.profiles.article;
+        expect(qiita?.modes.draft?.metadata).toEqual({ private: true, published: false });
+        expect(qiita?.modes.live?.metadata).toEqual({ private: false, published: true });
+
+        const wechat = byName.get('wechatmp-pub')?.publishing?.profiles.article;
+        expect(wechat?.modes.draft?.metadata).toEqual({ operation: '文章', publishStatus: 'draft' });
+        expect(wechat?.modes.live?.metadata).toEqual({ operation: '文章', publishStatus: 'public' });
     });
 });
 
@@ -645,7 +646,6 @@ describe('itc stages in-process (coverage of the spawned module body)', () => {
         for (const [targets, live, message] of [
             ['podcast-pub', 'false', 'unsupported publish target'],
             ['x-pub', 'false', 'no draft mode'],
-            ['wechatmp-pub', 'true', 'refuses a live publish'],
             ['xhs-pub', 'false', 'needs a cover image'],
         ] as const) {
             const workDir = seedWorkDir();

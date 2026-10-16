@@ -8,5 +8,42 @@
     "browserSession": {
         "profileName": "xhs",
         "homeUrl": "https://creator.xiaohongshu.com/publish/publish"
+    },
+    "publishing": {
+        "defaultProfile": "note",
+        "profiles": {
+            "note": {
+                "format": "short-note",
+                "locale": "zh",
+                "requires": {
+                    "cover": true,
+                    "orderedImages": true
+                },
+                "limits": {
+                    "title": {
+                        "max": 20,
+                        "unit": "xiaohongshu_title_weighted"
+                    },
+                    "body": {
+                        "max": 1000,
+                        "unit": "unicode_code_points"
+                    }
+                },
+                "modes": {
+                    "draft": {
+                        "metadata": {
+                            "operation": "上传图文",
+                            "publishStatus": "draft"
+                        }
+                    },
+                    "live": {
+                        "metadata": {
+                            "operation": "上传图文",
+                            "publishStatus": "public"
+                        }
+                    }
+                }
+            }
+        }
     }
 }

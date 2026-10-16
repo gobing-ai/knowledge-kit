@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Plan ITC publication from discovered plugin capabilities
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-15T21:59:21.896Z
-updated_at: "2026-10-15T22:49:20.334Z"
+updated_at: "2026-10-16T00:07:54.722Z"
 ac_altitude: task-local
 ac_numbering: task-local
 feature_id: G21
@@ -14,6 +14,8 @@ tags:
   - G21
 estimate_hours: 8
 
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0298-verdict.json
 ---
 
 ## 0298. Plan ITC publication from discovered plugin capabilities
@@ -41,7 +43,7 @@ Concurrency: main-tree wip task query was empty at kickoff. Worktree knowledge-k
 
 ### Requirements
 
-- [ ] R1. Publish plugins describe operation-specific capabilities; it uses those declarations without a channel table or channel-specific workflow edits and rejects an incompatible requested operation.
+- [x] R1. Publish plugins describe operation-specific capabilities; it uses those declarations without a channel table or channel-specific workflow edits and rejects an incompatible requested operation.
 
 ### Acceptance Criteria
 
@@ -92,15 +94,41 @@ Execution budget: existing estimate 8h; one task pipeline with bounded repairs. 
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+- `packages/kk-core/src/manifest.ts:68`: defined strict `PublishingProfileLimitsSchema`, `PublishingProfileRequiresSchema`, `PublishingProfileModeBindingSchema`, `PublishingProfileModesSchema`, `PublishingProfileSchema`, `PublishingCapabilitiesSchema`, and extended `PluginManifestSchemaBase` and `PluginManifestSchema` superRefine to ensure publishing capabilities are validated strictly on `kind === 'publish'` plugins.
+- `packages/kk-core/src/registry.ts:33`: added `publishing?: PublishingCapabilities` to `PluginRecord` and populated it in `consumeManifest`.
+- `packages/kk-core/src/index.ts:1`: exported publishing capability schemas and types.
+- `apps/cli/src/itc-plan.ts:88`: implemented substantive native planner `buildItcPublishPlan` with `ItcPlanRequestSchema` and `ItcPublishPlan` types, resolving capabilities from discovered plugins, checking cover/ordered images requirements, and producing variant/fanout/browser groupings and per-target detail bindings.
+- `apps/cli/src/itc-stage.ts:10`: exported `runItcStage` to asynchronously handle `itc-publish-plan` via `--request <file>` or positional arguments, writing `4-publish/publish-plan.json` and returning exit codes.
+- `apps/cli/src/commands/stage.ts:50`: dispatched ITC stages to `runItcStage` while keeping non-ITC stages on the synchronous `runStage` path.
+- `plugins/kk/scripts/itc-stages.ts:325`: removed central profile table and forwarded `itcPublishPlan` to CLI invocation with recursion guard.
+- `plugins/publishings/*/plugin.json`: declared publishing capabilities for 12 ITC-compatible channels (medium-pub, substack-pub, emdash-pub, surfdash-pub, zenn-pub, qiita-pub, wechatmp-pub, juejin-pub, infoq-pub, xhs-pub, x-pub, weibo-pub) matching their runtime implementations.
+- `apps/cli/tests/itc-plan.test.ts:155`: added comprehensive test suite verifying fake publisher planning, Qiita and WeChat bindings, cover/ordered images requirement checks, and stage invocation.
+- `apps/cli/tests/itc-stages.test.ts:427`: tested Discovered publishing capabilities to verify each standard publish target and mode bindings.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+- `bun test packages/kk-core/tests/manifest.test.ts`: 15 pass, 0 fail.
+- `bun test packages/kk-core/tests/registry.test.ts`: 32 pass, 0 fail.
+- `bun test apps/cli/tests/itc-plan.test.ts`: 11 pass, 0 fail.
+- `bun test apps/cli/tests/itc-stages.test.ts`: 36 pass, 0 fail.
+- `bun test apps/cli/tests/kk-itc-publish-tail.test.ts`: 3 pass, 0 fail.
+- `bun test apps/cli/tests/commands/stage.test.ts apps/cli/tests/stage.test.ts`: 26 pass, 0 fail.
+- `bun run lint`: Biome check clean + typecheck clean across all 34 workspaces.
+- `bun run build`: all packages and bundles built successfully.
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+#### Review Report — 0298
+**Scope:** Plan ITC publication from discovered plugin capabilities
+**Dimensions:** functional traceability, correctness, security, efficiency, usability, architecture
+**Verdict:** PASS
+**Confidence:** HIGH
+
+##### Findings (ranked)
+
+| # | Priority | Dimension | Finding | Location | Disposition |
+|---|----------|-----------|---------|----------|-------------|
+| 1 | P3 (advisory) | architecture | Discovered plugin capabilities replace central TARGET_PROFILES table. Mode bindings verified across Qiita and WeChat MP. | `apps/cli/src/itc-plan.ts:88` | RESOLVED |
 
 ### References
 
@@ -109,3 +137,8 @@ Execution budget: existing estimate 8h; one task pipeline with bounded repairs. 
 - Batch audit: docs/plans/2026-10-15-g21-refineall-ready.md.
 
 ### History
+
+- 2026-10-15T23:37:10.406Z todo → wip (system)
+- 2026-10-16T00:07:54.172Z wip → testing (system)
+- 2026-10-16T00:07:54.711Z testing → done (system)
+

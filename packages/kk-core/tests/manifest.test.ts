@@ -137,3 +137,161 @@ describe('BrowserSessionDescriptorSchema (0277 R1)', () => {
         expect(canonical.success).toBe(true);
     });
 });
+
+describe('PublishingCapabilitiesSchema (0298 / ADR-040)', () => {
+    const validPublishing = {
+        defaultProfile: 'article',
+        profiles: {
+            article: {
+                format: 'article',
+                locale: 'source',
+                limits: {
+                    title: { max: 100, unit: 'unicode_code_points' },
+                    body: { max: 5000, unit: 'unicode_code_points' },
+                },
+                requires: { cover: true, orderedImages: false },
+                modes: {
+                    draft: { metadata: { published: false } },
+                    live: { metadata: { published: true } },
+                },
+            },
+        },
+    };
+
+    it('parses valid publishing capabilities on a publish plugin', () => {
+        const parsed = PluginManifestSchema.safeParse({
+            name: 'test-pub',
+            kind: 'publish',
+            entry: './src/index.ts',
+            publishing: validPublishing,
+        });
+        expect(parsed.success).toBe(true);
+        if (parsed.success) {
+            expect(parsed.data.publishing?.defaultProfile).toBe('article');
+            expect(parsed.data.publishing?.profiles.article?.format).toBe('article');
+            expect(parsed.data.publishing?.profiles.article?.locale).toBe('source');
+            expect(parsed.data.publishing?.profiles.article?.requires?.cover).toBe(true);
+            expect(parsed.data.publishing?.profiles.article?.modes.draft?.metadata).toEqual({ published: false });
+        }
+    });
+
+    it('rejects publishing capabilities on a non-publish plugin', () => {
+        const parsed = PluginManifestSchema.safeParse({
+            name: 'test-gen',
+            kind: 'generator',
+            entry: './src/index.ts',
+            publishing: validPublishing,
+        });
+        expect(parsed.success).toBe(false);
+        if (!parsed.success) {
+            expect(parsed.error.issues.map((i) => i.path.join('.'))).toContain('publishing');
+        }
+    });
+
+    it('rejects empty profiles record or defaultProfile not referencing a declared profile', () => {
+        const emptyProfiles = PluginManifestSchema.safeParse({
+            name: 'test-pub',
+            kind: 'publish',
+            entry: './src/index.ts',
+            publishing: { defaultProfile: 'article', profiles: {} },
+        });
+        expect(emptyProfiles.success).toBe(false);
+
+        const missingDefault = PluginManifestSchema.safeParse({
+            name: 'test-pub',
+            kind: 'publish',
+            entry: './src/index.ts',
+            publishing: {
+                defaultProfile: 'missing',
+                profiles: validPublishing.profiles,
+            },
+        });
+        expect(missingDefault.success).toBe(false);
+    });
+
+    it('rejects unknown keys in publishing or profile objects (strict)', () => {
+        const unknownPublishingKey = PluginManifestSchema.safeParse({
+            name: 'test-pub',
+            kind: 'publish',
+            entry: './src/index.ts',
+            publishing: {
+                ...validPublishing,
+                unknownField: 'bad',
+            },
+        });
+        expect(unknownPublishingKey.success).toBe(false);
+
+        const unknownProfileKey = PluginManifestSchema.safeParse({
+            name: 'test-pub',
+            kind: 'publish',
+            entry: './src/index.ts',
+            publishing: {
+                defaultProfile: 'article',
+                profiles: {
+                    article: {
+                        ...validPublishing.profiles.article,
+                        execution: 'executor',
+                    },
+                },
+            },
+        });
+        expect(unknownProfileKey.success).toBe(false);
+    });
+
+    it('requires modes to have at least draft or live', () => {
+        const noModes = PluginManifestSchema.safeParse({
+            name: 'test-pub',
+            kind: 'publish',
+            entry: './src/index.ts',
+            publishing: {
+                defaultProfile: 'article',
+                profiles: {
+                    article: {
+                        format: 'article',
+                        locale: 'zh',
+                        modes: {},
+                    },
+                },
+            },
+        });
+        expect(noModes.success).toBe(false);
+    });
+
+    it('validates locale format (source or BCP 47 language tag)', () => {
+        for (const loc of ['source', 'zh', 'en', 'ja', 'en-US', 'zh-Hans']) {
+            const ok = PluginManifestSchema.safeParse({
+                name: 'test-pub',
+                kind: 'publish',
+                entry: './src/index.ts',
+                publishing: {
+                    defaultProfile: 'article',
+                    profiles: {
+                        article: {
+                            format: 'article',
+                            locale: loc,
+                            modes: { draft: { metadata: {} } },
+                        },
+                    },
+                },
+            });
+            expect(ok.success, loc).toBe(true);
+        }
+
+        const bad = PluginManifestSchema.safeParse({
+            name: 'test-pub',
+            kind: 'publish',
+            entry: './src/index.ts',
+            publishing: {
+                defaultProfile: 'article',
+                profiles: {
+                    article: {
+                        format: 'article',
+                        locale: 'invalid locale!',
+                        modes: { draft: { metadata: {} } },
+                    },
+                },
+            },
+        });
+        expect(bad.success).toBe(false);
+    });
+});
