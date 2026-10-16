@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -13,6 +13,14 @@ import {
     VENDOR_RULES,
 } from '../scripts/seo-rules';
 import { seoCheck, seoReport, seoScore } from '../scripts/seo-stages';
+
+// seo-stages.ts ships as a node-builtin-only script, so console.error IS its progress channel.
+// Mute it per test so in-process stage runs don't pollute the test reporter.
+let stageProgress: { mockRestore(): void };
+beforeEach(() => {
+    stageProgress = spyOn(console, 'error').mockImplementation(() => {});
+});
+afterEach(() => stageProgress.mockRestore());
 
 describe('Smart SEO Rule Inventory & Dispositions (R1 / AC1)', () => {
     it('verifies all 52 deterministic vendor rules are accounted for in VENDOR_RULES', () => {
@@ -81,6 +89,35 @@ describe('Smart SEO Assessments Execution (R1, R2 / AC1, AC2)', () => {
         const faqRow = assessments.find((r) => r.ruleId === 'faq_rich_result_limited');
         expect(faqRow?.status).toBe('pass');
         expect(VENDOR_RULES.faq_rich_result_limited.description).toContain('fully retired on 2026-05-07');
+    });
+
+    it('names one FAQ rich-result retirement date across every shipped surface', () => {
+        // 0304 residual: the rule description, the check reason, the report limits block and the
+        // skill reference restate the same fact, so a second retirement date must fail here. The
+        // reason is read from a real run of the FAQ-present branch, not from the rule's prose.
+        const faqCrawl: CrawlArtifact = {
+            ...minimalCrawl,
+            pages: minimalCrawl.pages.map((page) => ({
+                ...page,
+                facts: { ...page.facts, jsonLd: [{ raw: '{}', parsed: null, types: ['FAQPage'], error: null }] },
+            })),
+        };
+        const reason = runSeoChecks(faqCrawl).find((row) => row.ruleId === 'faq_rich_result_limited')?.reason ?? '';
+        expect(reason).toContain('2026-05-07'); // the FAQ-present branch actually ran
+
+        // Every `retir…` claim in the three shipped files must name that one date (Google Search
+        // updates: retired 2026-05-07; Aug/Sep 2023 only restricted eligibility).
+        const retiredDates = (text: string): string[] =>
+            [...text.matchAll(/retir\w*[^.;]{0,60}?(\d{4}-\d{2}-\d{2}|202\d)/gi)].map((match) => match[1] ?? '');
+        for (const surface of [
+            'plugins/kk/scripts/seo-report.ts',
+            'plugins/kk/scripts/seo-rules.ts',
+            'plugins/kk/skills/smart-seo/references/seo-geo-sources.md',
+        ]) {
+            const claims = retiredDates(readFileSync(resolve(surface), 'utf-8'));
+            expect(claims.length, surface).toBeGreaterThan(0);
+            expect(claims, surface).toEqual(claims.map(() => '2026-05-07'));
+        }
     });
 
     it('correctly assesses defects and heuristics across pages', () => {
@@ -581,7 +618,8 @@ describe('Stage Execution: seo-check, seo-score, and seo-report (R1 / AC1)', () 
         expect(reportMd).toContain('Observed fact');
         expect(reportMd).toContain('### Limits');
         expect(reportMd).toContain('RFC 9309');
-        expect(reportMd).toContain('Google retired general FAQ rich results');
+        expect(reportMd).toContain('Google retired FAQ rich results');
+        expect(reportMd).toContain('2026-05-07');
     });
 
     it('rejects free-prose or unapproved-pointer narratives and falls back to a labeled deterministic report', async () => {
