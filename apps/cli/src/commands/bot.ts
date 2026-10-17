@@ -1,6 +1,7 @@
 import { discoverAllPlugins } from '@gobing-ai/kk-core';
 import { type Command, CommanderError } from 'commander';
 import { bindAdapterSession, selectBotAdapter } from '../bot-adapter';
+import { readFileBytes, writeBytes, writeFileBytes } from '../byte-output';
 import { consoleOutput } from '../output';
 
 /**
@@ -142,6 +143,105 @@ async function botOpenAction(
     });
 }
 
+/** Commander reducer for the repeatable `-H, --header` option. */
+function collectHeader(value: string, previous: string[] | undefined): string[] {
+    return [...(previous ?? []), value];
+}
+
+/** `kk bot exec` options as Commander hands them over (repeatable `-H`, raw `-d`). */
+interface BotExecCliOptions {
+    request?: string;
+    header?: string[];
+    data?: string;
+    output?: string;
+    include?: boolean;
+    location?: boolean;
+    fail?: boolean;
+    maxTime?: string;
+}
+
+/**
+ * `kk bot exec <name> <url>` — one authenticated request with the bot's cached cookie session
+ * (0306, design §kk bot exec). Option parsing, printing and the exit mapping live here; the
+ * request itself and the lease/browser lifetime live in the harness. Any unsupported option is a
+ * Commander usage error, and every rejected value is a `usage` BotError (exit 2).
+ */
+async function botExecAction(
+    load: () => Promise<BotHarness>,
+    name: string,
+    url: string,
+    options: BotExecCliOptions,
+): Promise<void> {
+    await runBotAction(load, async (harness) => {
+        const request = buildExecRequest(harness, url, options);
+        const response = await harness.execBot(name, request);
+        // `-i` prints `HTTP <status> <statusText>`: Playwright exposes no protocol version.
+        if (options.include === true) {
+            await writeBytes(execHeaderBlock(response.status, response.statusText, response.headers));
+        }
+        if (options.fail === true && response.status >= 400) {
+            throw new harness.BotError('browser', `HTTP ${response.status}`);
+        }
+        // Bytes never go through the line-oriented output seam: it would append a newline and
+        // mangle a binary body (`-o` writes the same bytes to the file instead).
+        if (options.output !== undefined) writeFileBytes(options.output, response.body);
+        else await writeBytes(response.body);
+    });
+}
+
+/** Turn the parsed options into the frozen harness request, rejecting every malformed value. */
+function buildExecRequest(harness: BotHarness, url: string, options: BotExecCliOptions) {
+    const headers: Record<string, string> = {};
+    for (const line of options.header ?? []) {
+        const colon = line.indexOf(':');
+        // The value is never echoed: a malformed `Authorization` header is still a credential.
+        if (colon <= 0 || line.slice(0, colon).trim() === '') {
+            throw new harness.BotError('usage', 'header must be "Name: value"');
+        }
+        headers[line.slice(0, colon).trim()] = line.slice(colon + 1).trim();
+    }
+    const data = options.data === undefined ? undefined : readExecData(harness, options.data);
+    const timeoutMs = options.maxTime === undefined ? undefined : parseExecMaxTime(harness, options.maxTime);
+    return {
+        url,
+        method: options.request ?? (data === undefined ? 'GET' : 'POST'),
+        headers,
+        ...(data === undefined ? {} : { data }),
+        followRedirects: options.location === true,
+        ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    };
+}
+
+/** `-d` literal, or `@file` read raw (no newline stripping). An unreadable file is exit 1. */
+function readExecData(harness: BotHarness, value: string): Buffer {
+    if (!value.startsWith('@')) return Buffer.from(value);
+    const path = value.slice(1);
+    try {
+        return readFileBytes(path);
+    } catch {
+        throw new harness.BotError('persistence', `could not read the --data file '${path}'`);
+    }
+}
+
+/** `-m` seconds → milliseconds; zero, negative and non-numeric values are usage errors. */
+function parseExecMaxTime(harness: BotHarness, value: string): number {
+    const seconds = Number(value);
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+        throw new harness.BotError('usage', '--max-time must be a positive number of seconds');
+    }
+    return Math.round(seconds * 1000);
+}
+
+/** `-i` header block: status line, one `Name: value` per header, then the blank separator. */
+function execHeaderBlock(status: number, statusText: string, headers: Array<{ name: string; value: string }>): string {
+    const lines = [`HTTP ${status}${statusText === '' ? '' : ` ${statusText}`}`];
+    for (const header of headers) {
+        // A `Set-Cookie` value is a live credential; `-i` prints the header, never its value.
+        lines.push(`${header.name}: ${header.name.toLowerCase() === 'set-cookie' ? '<redacted>' : header.value}`);
+    }
+    return `${lines.join('\n')}\n\n`;
+}
+
 /**
  * Register the `bot` group under the current CLI factory. The group carries no action of its own:
  * `kk bot` alone prints Commander usage, exactly like every other noun. No flag beyond the
@@ -149,7 +249,7 @@ async function botOpenAction(
  */
 export function registerBotCommand(program: Command, deps: BotCommandDeps = {}): void {
     const load = deps.load ?? loadBotHarness;
-    const bot = program.command('bot').description('Named local browser sessions (list, login, logout, open)');
+    const bot = program.command('bot').description('Named local browser sessions (list, login, logout, open, exec)');
 
     bot.command('list')
         .description('List cached local bot profiles: name, cached, default URL, identity, last login, expires')
@@ -171,4 +271,30 @@ export function registerBotCommand(program: Command, deps: BotCommandDeps = {}):
         .argument('<name>', 'Bot name')
         .option('--login', 'Reauthenticate first, then reopen the saved page for interaction')
         .action((name: string, options: { login?: boolean }) => botOpenAction(load, name, options));
+
+    const exec = bot
+        .command('exec')
+        .description("Send one request with a named bot's cached cookie session (curl option subset)")
+        .argument('<name>', 'Bot name')
+        .argument('<url>', 'Request URL (http/https, no credentials; sent as given, query kept)')
+        .option('-X, --request <method>', 'HTTP method (default GET, or POST when -d is given)')
+        .option('-H, --header <header>', 'Request header "Name: value" (repeatable)', collectHeader)
+        .option('-d, --data <data>', 'Request body: a literal, or @file read raw')
+        .option('-o, --output <file>', 'Write the response body to a file instead of stdout')
+        .option('-i, --include', 'Print the status line and response headers before the body')
+        .option('-L, --location', 'Follow redirects (default: return the 3xx response as-is)')
+        .option('-f, --fail', 'Exit 1 without the body when the status is 400 or above')
+        .option('-m, --max-time <seconds>', 'Whole-request timeout in seconds (default: Playwright 30s)')
+        .action((name: string, url: string, options: BotExecCliOptions) => botExecAction(load, name, url, options));
+    // Commander reports every parse error (unknown option, missing/excess argument) as exit 1.
+    // This leaf's contract makes them usage errors (exit 2), so the callback is installed from a
+    // pre-subcommand hook: `main()` re-inherits the exit callback over its children after
+    // registration, which would drop one set here. Help/version (exit 0) pass straight through.
+    bot.hook('preSubcommand', (_parent, subcommand) => {
+        if (subcommand === exec) {
+            subcommand.exitOverride((error) => {
+                throw error.exitCode === 1 ? new CommanderError(2, error.code, error.message) : error;
+            });
+        }
+    });
 }

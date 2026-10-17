@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Command, CommanderError } from 'commander';
@@ -28,11 +28,22 @@ class FakeBotError extends Error {
     }
 }
 
+/** The frozen harness request shape `kk bot exec` builds (0306). */
+interface ExecRequest {
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+    data?: Buffer;
+    followRedirects: boolean;
+    timeoutMs?: number;
+}
+
 interface Fakes {
     list?: () => Promise<unknown[]>;
     login?: (name: string, url: string) => Promise<unknown>;
     logout?: (name: string) => Promise<unknown>;
     open?: (name: string, options: { login?: boolean }) => Promise<unknown>;
+    exec?: (name: string, request: ExecRequest) => Promise<unknown>;
     calls: string[];
 }
 
@@ -54,6 +65,17 @@ function fakeHarness(fakes: Fakes): BotHarness {
             record(
                 `open:${name}:${options.login === true}`,
                 fakes.open?.(name, options) ?? Promise.resolve({ name, defaultUrl: 'https://x/', message: '' }),
+            ),
+        execBot: (name: string, request: ExecRequest) =>
+            record(
+                `exec:${name}`,
+                fakes.exec?.(name, request) ??
+                    Promise.resolve({
+                        status: 200,
+                        statusText: 'OK',
+                        headers: [],
+                        body: Buffer.from('ok'),
+                    }),
             ),
     } as unknown as BotHarness;
 }
@@ -126,11 +148,11 @@ afterAll(() => {
 });
 
 describe('kk bot registration and argv shape (A22 R1)', () => {
-    it('registers one visible bot noun with exactly list/login/logout/open and no extra flags', () => {
+    it('registers one visible bot noun with exactly list/login/logout/open/exec and no extra flags', () => {
         const program = createProgram();
         const bot = program.commands.find((command) => command.name() === 'bot');
         expect(bot).toBeDefined();
-        expect(bot?.commands.map((command) => command.name())).toEqual(['list', 'login', 'logout', 'open']);
+        expect(bot?.commands.map((command) => command.name())).toEqual(['list', 'login', 'logout', 'open', 'exec']);
         expect(bot?.commands.every((command) => command.commands.length === 0)).toBe(true);
 
         const flags = Object.fromEntries(
@@ -144,17 +166,21 @@ describe('kk bot registration and argv shape (A22 R1)', () => {
             login: ['--save'],
             logout: [],
             open: ['--login'],
+            // 0306: the curl subset only — anything else stays a Commander usage error.
+            exec: ['--data', '--fail', '--header', '--include', '--location', '--max-time', '--output', '--request'],
         });
         const login = bot?.commands.find((command) => command.name() === 'login');
         expect(login?.registeredArguments.map((argument) => argument.name())).toEqual(['url']);
         const open = bot?.commands.find((command) => command.name() === 'open');
         expect(open?.registeredArguments.map((argument) => argument.name())).toEqual(['name']);
+        const exec = bot?.commands.find((command) => command.name() === 'exec');
+        expect(exec?.registeredArguments.map((argument) => argument.name())).toEqual(['name', 'url']);
     });
 
     it('documents each verb and keeps `kk bot` itself a group with no action', async () => {
         const help = await run(['bot', '--help']);
         expect(help.code).toBe(0);
-        for (const verb of ['list', 'login', 'logout', 'open']) {
+        for (const verb of ['list', 'login', 'logout', 'open', 'exec']) {
             expect(help.out).toContain(verb);
         }
         const verbHelp = await run(['bot', 'login', '--help']);
@@ -292,6 +318,211 @@ describe('kk bot exit-code mapping and output contract (A22 R1/R3-R5)', () => {
         const plain: string[] = [];
         await runInjected(['bot', 'open', 'alice'], fakeHarness({ calls: plain }));
         expect(plain).toEqual(['open:alice:false']);
+    });
+});
+
+/** Capture the raw byte writes the exec body goes through (not the ts-utils line seam). */
+async function withStdoutBytes<T>(body: () => Promise<T>): Promise<{ result: T; stdout: Buffer }> {
+    const chunks: Buffer[] = [];
+    const original = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string | Uint8Array, callback?: (error?: Error | null) => void) => {
+        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : Buffer.from(chunk));
+        callback?.(null);
+        return true;
+    }) as typeof process.stdout.write;
+    try {
+        return { result: await body(), stdout: Buffer.concat(chunks) };
+    } finally {
+        process.stdout.write = original;
+    }
+}
+
+describe('kk bot exec (0306 R1/R3/R4)', () => {
+    const ok = (overrides: Record<string, unknown> = {}) => ({
+        status: 200,
+        statusText: 'OK',
+        headers: [{ name: 'content-type', value: 'text/plain' }],
+        body: Buffer.from('pong'),
+        ...overrides,
+    });
+
+    it('defaults to GET, emits POST for -d, splits headers and reads @file raw', async () => {
+        const seen: ExecRequest[] = [];
+        const harness = fakeHarness({
+            calls: [],
+            exec: (_name, request) => {
+                seen.push(request);
+                return Promise.resolve(ok());
+            },
+        });
+
+        await withStdoutBytes(() => runInjected(['bot', 'exec', 'alice', 'https://site.example.com/a?x=1'], harness));
+        expect(seen[0]).toEqual({
+            url: 'https://site.example.com/a?x=1',
+            method: 'GET',
+            headers: {},
+            followRedirects: false,
+        });
+
+        const dataFile = join(tempHome(), 'body.txt');
+        writeFileSync(dataFile, 'line1\n');
+        await withStdoutBytes(() =>
+            runInjected(
+                [
+                    'bot',
+                    'exec',
+                    'alice',
+                    'https://site.example.com/a',
+                    '-H',
+                    'X-Trace: abc',
+                    '-H',
+                    'Accept:application/json',
+                    '-d',
+                    `@${dataFile}`,
+                    '-L',
+                    '-m',
+                    '2.5',
+                ],
+                harness,
+            ),
+        );
+        // A `@file` body is read raw (the trailing newline survives) and implies POST.
+        expect(seen[1]).toEqual({
+            url: 'https://site.example.com/a',
+            method: 'POST',
+            headers: { 'X-Trace': 'abc', Accept: 'application/json' },
+            data: Buffer.from('line1\n'),
+            followRedirects: true,
+            timeoutMs: 2500,
+        });
+
+        await withStdoutBytes(() =>
+            runInjected(['bot', 'exec', 'alice', 'https://site.example.com/a', '-X', 'PUT', '-d', 'x'], harness),
+        );
+        expect(seen[2]?.method).toBe('PUT');
+        expect(seen[2]?.data).toEqual(Buffer.from('x'));
+    });
+
+    it('writes the body bytes to stdout with no added newline, or to the -o file', async () => {
+        const harness = fakeHarness({ calls: [], exec: () => Promise.resolve(ok({ body: Buffer.from('a\u0000b') })) });
+        const stdoutRun = await withStdoutBytes(() =>
+            runInjected(['bot', 'exec', 'alice', 'https://site.example.com/a'], harness),
+        );
+        expect(stdoutRun.result.code).toBe(0);
+        expect(stdoutRun.stdout).toEqual(Buffer.from('a\u0000b'));
+        expect(stdoutRun.result.err).toBe('');
+
+        const outFile = join(tempHome(), 'response.bin');
+        const fileRun = await withStdoutBytes(() =>
+            runInjected(['bot', 'exec', 'alice', 'https://site.example.com/a', '-o', outFile], harness),
+        );
+        expect(fileRun.result.code).toBe(0);
+        expect(fileRun.stdout.length).toBe(0);
+        expect(readFileSync(outFile)).toEqual(Buffer.from('a\u0000b'));
+    });
+
+    it('prefixes the -i status line and headers, redacting Set-Cookie values', async () => {
+        const harness = fakeHarness({
+            calls: [],
+            exec: () =>
+                Promise.resolve(
+                    ok({
+                        status: 404,
+                        statusText: 'Not Found',
+                        headers: [
+                            { name: 'content-type', value: 'text/plain' },
+                            { name: 'Set-Cookie', value: 'sid=SEKRET; Path=/' },
+                        ],
+                        body: Buffer.from('missing'),
+                    }),
+                ),
+        });
+        const run = await withStdoutBytes(() =>
+            runInjected(['bot', 'exec', 'alice', 'https://site.example.com/a', '-i'], harness),
+        );
+        // Playwright exposes no protocol version: the status line is `HTTP <status> <statusText>`.
+        expect(run.stdout.toString()).toBe(
+            'HTTP 404 Not Found\ncontent-type: text/plain\nSet-Cookie: <redacted>\n\nmissing',
+        );
+        expect(run.result.code).toBe(0);
+        expect(run.stdout.toString()).not.toContain('SEKRET');
+    });
+
+    it('maps -f on a 4xx/5xx to exit 1 with the body suppressed', async () => {
+        const harness = fakeHarness({
+            calls: [],
+            exec: () => Promise.resolve(ok({ status: 503, statusText: 'Service Unavailable', body: Buffer.from('x') })),
+        });
+        const run = await withStdoutBytes(() =>
+            runInjected(['bot', 'exec', 'alice', 'https://site.example.com/a', '-f'], harness),
+        );
+        expect(run.result.code).toBe(1);
+        expect(run.stdout.length).toBe(0);
+        expect(run.result.err).toContain('kk.bot.failed: HTTP 503');
+
+        const withoutFail = await withStdoutBytes(() =>
+            runInjected(['bot', 'exec', 'alice', 'https://site.example.com/a'], harness),
+        );
+        expect(withoutFail.result.code).toBe(0);
+        expect(withoutFail.stdout).toEqual(Buffer.from('x'));
+    });
+
+    it('keeps the -i header block but suppresses the body when -f rejects the status', async () => {
+        const harness = fakeHarness({
+            calls: [],
+            exec: () =>
+                Promise.resolve({
+                    status: 404,
+                    statusText: 'Not Found',
+                    headers: [{ name: 'content-type', value: 'text/plain' }],
+                    body: Buffer.from('secret body'),
+                }),
+        });
+        const run = await withStdoutBytes(() =>
+            runInjected(['bot', 'exec', 'alice', 'https://site.example.com/a', '-i', '-f'], harness),
+        );
+        expect(run.result.code).toBe(1);
+        expect(run.result.err).toContain('kk.bot.failed: HTTP 404');
+        expect(run.stdout.toString()).toBe('HTTP 404 Not Found\ncontent-type: text/plain\n\n');
+    });
+
+    it('rejects a malformed option as a usage error before the request', async () => {
+        const calls: string[] = [];
+        const harness = fakeHarness({ calls });
+
+        // Malformed values are rejected inside the action: `kk.bot.failed` on stderr, exit 2.
+        for (const args of [
+            ['bot', 'exec', 'alice', 'https://site.example.com/a', '-H', 'not-a-header'],
+            ['bot', 'exec', 'alice', 'https://site.example.com/a', '-H', ': empty-name'],
+            ['bot', 'exec', 'alice', 'https://site.example.com/a', '-m', '0'],
+            ['bot', 'exec', 'alice', 'https://site.example.com/a', '-m', 'soon'],
+        ]) {
+            const run = await runInjected(args, harness);
+            expect(run.code).toBe(2);
+            expect(run.err).toContain('kk.bot.failed');
+            // A rejected header value is never echoed (it can be a credential).
+            expect(run.err).not.toContain('not-a-header');
+        }
+
+        // Unsupported option and a missing argument are Commander usage errors, also exit 2.
+        const unsupported = await run(['bot', 'exec', 'alice', 'https://site.example.com/a', '--compressed']);
+        expect(unsupported.code).toBe(2);
+        expect(unsupported.err).toContain("unknown option '--compressed'");
+        const missingUrl = await runInjected(['bot', 'exec', 'alice'], harness);
+        expect(missingUrl.code).toBe(2);
+
+        expect(calls).toEqual([]);
+    });
+
+    it('treats an unreadable @file body as an operational failure (exit 1)', async () => {
+        const calls: string[] = [];
+        const run = await runInjected(
+            ['bot', 'exec', 'alice', 'https://site.example.com/a', '-d', '@/nonexistent/body.txt'],
+            fakeHarness({ calls }),
+        );
+        expect(run.code).toBe(1);
+        expect(run.err).toContain('kk.bot.failed');
+        expect(calls).toEqual([]);
     });
 });
 

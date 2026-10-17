@@ -198,6 +198,7 @@ describe('kk command tree shape (0275 AC1 — A22 R1)', () => {
         expect(visibleLeaves).toEqual([
             'board capture',
             'board serve',
+            'bot exec',
             'bot list',
             'bot login',
             'bot logout',

@@ -1284,6 +1284,132 @@ export async function openBot(name: string, options: OpenBotOptions = {}): Promi
     }
 }
 
+/** One request {@link execBot} performs (0306, design §kk bot exec — frozen shape). */
+export interface BotExecRequest {
+    /** Absolute http(s) URL sent as given: the query is kept, a fragment never leaves the client. */
+    url: string;
+    /** HTTP method; the CLI defaults it to `GET`, or `POST` when `-d` is given. */
+    method: string;
+    /** Request headers, split on the first colon by the CLI. */
+    headers: Record<string, string>;
+    /** Raw request body when `-d` was given (an `@file` is read verbatim). */
+    data?: Buffer;
+    /** `-L`: follow redirects; otherwise `maxRedirects: 0` returns the 3xx response as-is. */
+    followRedirects: boolean;
+    /** `-m` in milliseconds; omitted leaves Playwright's 30 s request timeout in place. */
+    timeoutMs?: number;
+}
+
+/** Buffered response {@link execBot} returns; printing and the exit mapping belong to the CLI. */
+export interface BotExecResponse {
+    status: number;
+    statusText: string;
+    headers: Array<{ name: string; value: string }>;
+    body: Buffer;
+}
+
+/**
+ * One authenticated request with bot `name`'s cached cookie session (0306, design §kk bot exec).
+ * A headless persistent launch under the shared lease lets `BrowserContext.request` attach exactly
+ * the cookies the browser itself would for that URL — nothing is exported from the profile, and
+ * adapter special state is deliberately not emulated. The profile directory must already exist
+ * (exec never creates one); `bot.json` is not required, so legacy profiles can exec too. Failures
+ * are rethrown URL-free: Playwright's fetch messages embed the request URL and its query.
+ * The whole body is buffered (`shortcut:` a large download is held in memory — stream to `-o` when
+ * that becomes a real use case).
+ */
+export async function execBot(
+    name: string,
+    request: BotExecRequest,
+    options: BotSessionOptions = {},
+): Promise<BotExecResponse> {
+    assertSafeBotName(name);
+    const url = validateExecUrl(request.url);
+    const fileSystem = options.fileSystem ?? createNodeFileSystem();
+    const profileDir = resolveBotProfileDir(name, { root: options.root });
+    if (lstat(profileDir) === null) throw missingBotProfile(name, false);
+    const lease = await acquireProfileLease(profileDir, { leaseRoot: options.leaseRoot, fileSystem });
+    let context: BrowserContext | undefined;
+    try {
+        const launcher =
+            options.launcher ??
+            createKkBrowserLauncher(
+                undefined,
+                { lease, physicalProfileDir: profileDir },
+                { leaseRoot: options.leaseRoot, fileSystem },
+            );
+        context = await launcher.launch({ profileDir, headless: true });
+        let response: Awaited<ReturnType<BrowserContext['request']['fetch']>>;
+        try {
+            response = await context.request.fetch(url, {
+                method: request.method,
+                headers: request.headers,
+                ...(request.data === undefined ? {} : { data: request.data }),
+                failOnStatusCode: false,
+                ...(request.followRedirects ? {} : { maxRedirects: 0 }),
+                ...(request.timeoutMs === undefined ? {} : { timeout: request.timeoutMs }),
+            });
+        } catch (error) {
+            throw new BotError('browser', `request failed for bot '${name}' (${execFailureDetail(error, url)})`);
+        }
+        let body: Buffer;
+        try {
+            body = await response.body();
+        } catch (error) {
+            throw new BotError('browser', `response unreadable for bot '${name}' (${execFailureDetail(error, url)})`);
+        }
+        return { status: response.status(), statusText: response.statusText(), headers: response.headersArray(), body };
+    } finally {
+        await closeBotContext(context);
+        await lease.release();
+    }
+}
+
+/**
+ * Validate an exec URL and return it as given: http(s) only, no embedded credentials — the same
+ * rules as `normalizeBotDefaultUrl`, but the query is KEPT because it is the request, not a saved
+ * default. Failures never echo the input (a query can carry a token).
+ */
+function validateExecUrl(input: string): string {
+    const url = input.trim();
+    let parsed: URL;
+    try {
+        parsed = new URL(url);
+    } catch {
+        throw new BotError('usage', 'invalid URL: expected an absolute http(s) URL');
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new BotError('usage', `unsupported URL scheme '${parsed.protocol}' — http(s) only`);
+    }
+    if (parsed.username !== '' || parsed.password !== '') {
+        throw new BotError('usage', 'URL must not embed credentials');
+    }
+    return url;
+}
+
+/**
+ * URL-free failure detail: Playwright embeds the request URL (query included) in its message and
+ * call log, and a query can carry a token. Keep the error class plus the first message line with
+ * every spelling of the URL replaced.
+ */
+function execFailureDetail(error: unknown, url: string): string {
+    const label = error instanceof Error && error.name !== '' ? error.name : 'Error';
+    let detail = (error instanceof Error ? error.message : String(error)).split('\n')[0] ?? '';
+    const parsed = new URL(url);
+    for (const leak of [
+        url,
+        `${parsed.origin}${parsed.pathname}`,
+        parsed.origin,
+        parsed.pathname,
+        parsed.search,
+        parsed.hash,
+    ]) {
+        if (leak.length > 1) detail = detail.split(leak).join('<url>');
+    }
+    detail = detail.replace(/\s+/g, ' ').trim().slice(0, 200);
+    return detail === '' ? label : `${label}: ${detail}`;
+}
+
 /**
  * Saved metadata for one bot, or `null` when the profile is absent or legacy (no `bot.json`).
  * CLI-side adapter resolution needs the persisted `pluginName` and the legacy signal without

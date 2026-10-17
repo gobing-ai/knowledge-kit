@@ -36,6 +36,10 @@ exclude:
   - "plugins/*/scripts/**"
   # Repo-internal tooling, no logger bootstrap (see header §2).
   - "scripts/**"
+  # `kk bot exec` emits an HTTP response body byte-for-byte (`-o` writes the same bytes to a
+  # file); the line-oriented seam appends a newline and cannot carry binary. The raw write is
+  # confined to this one narrow seam so no command module holds it (task 0306).
+  - "apps/cli/src/byte-output.ts"
 
 rules:
   - id: no-console-output

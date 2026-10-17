@@ -109,7 +109,7 @@ kk board serve --board-origin <origin> [--port <n>]
 | `store migrate` | Apply pending `@gobing-ai/kk-store` migrations; prints `{db, applied}` (§1.9) | shipped (task 0206) |
 | `stage run <stage> [args…]` | Run one stage of the shared workflow stage runner with positional pass-through; the legacy `kk stage <stage>` spelling is normalized into this verb in `main()` before Commander parses (A22 R1/R2) | shipped (task 0275) |
 | `lock acquire\|release` | Single-flight lock over the store for the scheduled collector; prints `{acquired}` / `{skipped, holder}` / `{released}` (§1.9). Canonical spelling; `kk store lock …` remains a hidden compatibility route on the same engines | shipped (task 0208; lifted from `store lock` by 0275) |
-| `bot list\|login\|logout\|open` | Named local browser sessions over the fixed default profile root: tab-separated inventory (with login/expiry/identity facts recorded at login), operator-confirmed login/save through a staged transaction, idempotent containment-checked logout behind the shared lease, headed reopen with optional re-login (§1.12) | shipped (task 0276; login-time session facts 0305) |
+| `bot list\|login\|logout\|open\|exec` | Named local browser sessions over the fixed default profile root: tab-separated inventory (with login/expiry/identity facts recorded at login), operator-confirmed login/save through a staged transaction, idempotent containment-checked logout behind the shared lease, headed reopen with optional re-login, and one authenticated request through the cached cookie session with a curl option subset (§1.12) | shipped (task 0276; login-time session facts 0305; `exec` 0306) |
 | `store ingest` | Upsert one run's collected `Doc[]` into `items` + `collect_runs` (with per-plugin `source_counts` from `metadata.sources[].file`), write `--new-ids`; prints `{inserted, updated, unchanged}` (§1.9) | shipped (task 0208) |
 | `store backfill-facts` | Recompute the typed item facts and the causal `story_id` clustering for every item (idempotent); prints `{updated}` (§1.9) | shipped (task 0227) |
 | `store label` | Label the ids `ingest` filed — one raw observation per (decision, maker) through the kk decision catalog (the `LABEL_DECISIONS` table: the heuristic's five + the three judgment decisions the heuristic cannot signal), heuristic-first for those five; a china-politics keyword hit writes a maker `keyword` floor and the model is still consulted; `--replay` re-labels a historical pool under a `replay-<epoch>` run id. Prints `{verdict, confidence, labeled, model, fallback, consults, consultMs, refused}`, or `{replayed, consults, consultMs, run}` (§1.9) | shipped (task 0209; raw observations + replay 0226; judgment decisions + china-politics gate 0229; score positions + refusals 0240) |
@@ -974,7 +974,7 @@ package's copy, so a checkout without the templates still renders. An unknown sc
 exits 1 with `kk.schedule.render.failed: <cause>` and prints nothing — a typo must never emit a
 partial schedule.
 
-### 1.12 `bot` — shipped (A22; tasks 0276, 0277, 0305)
+### 1.12 `bot` — shipped (A22; tasks 0276, 0277, 0305, 0306)
 
 Named local browser sessions over the fixed default profile root
 `~/.config/kk/browser-profiles` (derived from the OS home directory; no ambient env override
@@ -991,6 +991,7 @@ kk bot login <url> --save <bot>    # headed login; a matched channel adapter sav
                                    # evidence without a prompt, otherwise operator confirmation (0277)
 kk bot logout <bot>                # deletes that bot's contained profile; prints `<name>\tremoved|absent`
 kk bot open <bot> [--login]        # reopens the saved page headed; prints `<name>\tclosed` on close
+kk bot exec <bot> <url> [curl opts] # one request with the cached cookies; body bytes to stdout/`-o`
 ```
 
 - `list` enumerates direct, non-symlink profile directories, including legacy directories listed
@@ -1026,6 +1027,30 @@ kk bot open <bot> [--login]        # reopens the saved page headed; prints `<nam
   plugin's own `login` in bot mode (the parent supplies `--url`, so the adapter may write only
   within the leased staging profile) and persists only the verdict's canonical, plugin-owned
   `defaultUrl` — never the operator's URL, its query included.
+- `exec` sends exactly one request through the bot's cached cookie session (0306): a **headless**
+  persistent launch under the shared lease, so `BrowserContext.request` attaches only the cookies the
+  browser itself would for that URL — nothing is exported from the profile and adapter special state
+  (storage-state reinjection, storage tokens) is not emulated. The name is validated and the URL must
+  be http(s) with no embedded credentials; unlike `login`, the URL is **sent as given** (query kept,
+  a fragment never reaches the wire) and `normalizeBotDefaultUrl` is not used. The profile directory
+  must already exist — `exec` never creates one, `bot.json` is not required, and a missing profile
+  fails with `kk bot login <url> --save <name>` guidance (exit 1). The curl option subset is
+  `-X/--request` (default `GET`, or `POST` when `-d` is given), repeatable `-H/--header`
+  (`Name: value`, split on the first colon, trimmed), `-d/--data` (a literal, or `@file` read raw with
+  no newline stripping), `-o/--output`, `-i/--include`, `-L/--location` (otherwise
+  `maxRedirects: 0`, so a 3xx comes back as-is), `-f/--fail` and `-m/--max-time <seconds>`
+  (milliseconds for Playwright; without it the 30 s request default applies — a bounded lease hold).
+  Anything else, a header without a colon or an empty name, and a zero/negative/non-numeric
+  `--max-time` are usage errors (exit 2); an unreadable `@file` is operational (exit 1). The whole
+  body is buffered in memory and written as bytes: stdout via `process.stdout.write`, or the `-o`
+  file — never the line-oriented `consoleOutput` seam, which would append a newline and mangle binary
+  content. `-i` prefixes `HTTP <status> <statusText>` (Playwright exposes no protocol version) and one
+  `Name: value` line per response header, then a blank line; `Set-Cookie` values print as
+  `<redacted>`. Any HTTP response exits 0; `-f` with status ≥ 400 exits 1 with the body suppressed.
+  Playwright fetch/body errors are wrapped so the operational line carries the error class and a
+  URL-stripped detail — the request URL (its query can carry a token), cookie values and bodies never
+  print. Out of scope: `-F`, `-b/-c`, `-u`, `-x`, `--retry`, `-d @-`, `-k`, `--compressed`, streaming,
+  adapter special state.
 - Exit contract: validation/usage failures print `kk.bot.failed: <detail>` to stderr and exit 2;
   operational failures exit 1 with the same contract line (`BotError.code === 'usage'` maps to 2).
   Profiles use owner-only 0700 directories and 0600 metadata (`bot.json`: schemaVersion,

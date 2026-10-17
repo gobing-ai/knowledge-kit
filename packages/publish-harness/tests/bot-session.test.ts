@@ -15,17 +15,33 @@ import { PassThrough } from 'node:stream';
 import type { BrowserLauncher, ProfileLaunchRequest } from '@gobing-ai/ts-browser-automation';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import type { BrowserContext, Cookie } from 'playwright';
-import { BotError, DEFAULT_BOT_LOGIN_TIMEOUT_MS, loginBot, openBot } from '../src/browser';
+import { BotError, DEFAULT_BOT_LOGIN_TIMEOUT_MS, execBot, loginBot, openBot } from '../src/browser';
 import { acquireProfileLease } from '../src/profile-lease';
 
 /**
  * Generic `kk bot` session lifecycle (task 0276, design §Bot command contract), driven through an
  * injected fake launcher: no browser binary, no real profile root. These tests prove the login
  * transaction, the confirmation contract, the reopen-until-close behaviour and the navigation
- * redaction; real cookie portability is the browser smoke (a separate deliverable).
+ * redaction. The one exception is the AC1 cookie test at the end of the exec block, which needs a
+ * real persistent context and skips (announcing it) when Chromium is not installed.
  */
 
 const DEFAULT_URL = 'https://alice.example.com/home';
+
+/**
+ * True when a real Chromium is not usable here (`bunx playwright install chromium`). Decided
+ * before any launch so a missing browser skips the one real-browser test instead of failing it —
+ * same probe as the image-gen compose E2E, which has to pick it at collection time.
+ */
+function chromiumMissing(): boolean {
+    try {
+        const { chromium } = require('playwright') as typeof import('playwright');
+        const executable = chromium.executablePath();
+        return executable === '' || !existsSync(executable);
+    } catch {
+        return true;
+    }
+}
 
 interface FakeHandle {
     close(): Promise<void>;
@@ -751,4 +767,265 @@ describe('known-plugin adapter sessions (0277 R2/R3)', () => {
         expect(caught).toBeInstanceOf(BotError);
         expect((caught as BotError).code).toBe('persistence');
     });
+});
+
+describe('bot exec (0306: one authenticated request)', () => {
+    let root: string;
+    let profileRoot: string;
+    let profileDir: string;
+    let leaseRoot: string;
+    const fileSystem = createNodeFileSystem();
+
+    beforeEach(() => {
+        root = mkdtempSync(join(tmpdir(), 'kk-bot-exec-'));
+        profileRoot = join(root, 'profiles');
+        profileDir = join(profileRoot, 'alice');
+        leaseRoot = join(root, 'leases');
+        mkdirSync(profileDir, { recursive: true });
+    });
+    afterEach(() => {
+        rmSync(root, { recursive: true, force: true });
+    });
+
+    const deps = () => ({ root: profileRoot, leaseRoot, fileSystem });
+    const listIfPresent = (dir: string): string[] => (existsSync(dir) ? readdirSync(dir) : []);
+
+    /** One fake `context.request.fetch` invocation. */
+    interface FetchCall {
+        url: string;
+        options: Record<string, unknown>;
+    }
+
+    interface ExecOutcome {
+        /** Thrown by `fetch` (a transport failure). */
+        fetchError?: Error;
+        /** Thrown by `response.body()`. */
+        bodyError?: Error;
+        status?: number;
+        statusText?: string;
+        headers?: Array<{ name: string; value: string }>;
+        body?: string;
+    }
+
+    /** Fake persistent context whose APIRequestContext records the request and replays a response. */
+    function makeExecSession(outcome: ExecOutcome = {}) {
+        const calls: FetchCall[] = [];
+        const requests: ProfileLaunchRequest[] = [];
+        let closes = 0;
+        const launcher: BrowserLauncher = {
+            async launch(request) {
+                requests.push(request);
+                const context = {
+                    request: {
+                        async fetch(url: string, options: Record<string, unknown>) {
+                            calls.push({ url, options });
+                            if (outcome.fetchError !== undefined) throw outcome.fetchError;
+                            return {
+                                status: () => outcome.status ?? 200,
+                                statusText: () => outcome.statusText ?? 'OK',
+                                headersArray: () => outcome.headers ?? [{ name: 'content-type', value: 'text/plain' }],
+                                body: async () => {
+                                    if (outcome.bodyError !== undefined) throw outcome.bodyError;
+                                    return Buffer.from(outcome.body ?? 'hello');
+                                },
+                            };
+                        },
+                    },
+                    close: async () => {
+                        closes += 1;
+                    },
+                };
+                return context as unknown as BrowserContext;
+            },
+        };
+        return { launcher, calls, requests, closeCount: () => closes };
+    }
+
+    const request = (overrides: Partial<Parameters<typeof execBot>[1]> = {}) => ({
+        url: 'https://site.example.com/path?token=SEKRET',
+        method: 'GET',
+        headers: {},
+        followRedirects: false,
+        ...overrides,
+    });
+
+    test('sends one request through the headless persistent context under the lease', async () => {
+        const session = makeExecSession({ body: 'pong' });
+
+        const response = await execBot(
+            'alice',
+            request({
+                method: 'POST',
+                headers: { 'content-type': 'text/plain' },
+                data: Buffer.from('ping'),
+                timeoutMs: 1500,
+            }),
+            { ...deps(), launcher: session.launcher },
+        );
+
+        expect(response).toEqual({
+            status: 200,
+            statusText: 'OK',
+            headers: [{ name: 'content-type', value: 'text/plain' }],
+            body: Buffer.from('pong'),
+        });
+        // The URL is sent as given (query kept); the fragment never reaches the wire.
+        expect(session.calls).toEqual([
+            {
+                url: 'https://site.example.com/path?token=SEKRET',
+                options: {
+                    method: 'POST',
+                    headers: { 'content-type': 'text/plain' },
+                    data: Buffer.from('ping'),
+                    failOnStatusCode: false,
+                    maxRedirects: 0,
+                    timeout: 1500,
+                },
+            },
+        ]);
+        expect(session.requests).toEqual([{ profileDir, headless: true }]);
+        expect(session.closeCount()).toBe(1);
+        expect(listIfPresent(leaseRoot)).toEqual([]);
+    });
+
+    test('follows redirects only with -L and leaves the 30 s default timeout in place without -m', async () => {
+        const session = makeExecSession();
+        await execBot('alice', request({ followRedirects: true }), { ...deps(), launcher: session.launcher });
+
+        expect(session.calls[0]?.options).toEqual({ method: 'GET', headers: {}, failOnStatusCode: false });
+    });
+
+    test('never creates a profile and points at login guidance when the directory is missing', async () => {
+        const session = makeExecSession();
+        let caught: unknown;
+        try {
+            await execBot('ghost', request(), { ...deps(), launcher: session.launcher });
+        } catch (error) {
+            caught = error;
+        }
+        expect(caught).toBeInstanceOf(BotError);
+        expect((caught as BotError).code).toBe('not-found');
+        expect((caught as BotError).message).toContain('kk bot login <url> --save ghost');
+        expect(session.requests).toEqual([]);
+        expect(existsSync(join(profileRoot, 'ghost'))).toBe(false);
+        expect(listIfPresent(leaseRoot)).toEqual([]);
+    });
+
+    test('refuses a held lease instead of waiting for it', async () => {
+        const lease = await acquireProfileLease(profileDir, { leaseRoot, fileSystem });
+        const session = makeExecSession();
+        let caught: unknown;
+        try {
+            await execBot('alice', request(), { ...deps(), launcher: session.launcher });
+        } catch (error) {
+            caught = error;
+        }
+        expect(caught).toBeInstanceOf(BotError);
+        expect((caught as BotError).code).toBe('busy');
+        expect(session.calls).toEqual([]);
+        await lease.release();
+    });
+
+    test('reports a transport failure URL-free and still closes the context and releases the lease', async () => {
+        const session = makeExecSession({
+            fetchError: new Error(
+                'apiRequestContext.fetch: connect ECONNREFUSED https://site.example.com/path?token=SEKRET\nCall log:\n  - → GET https://site.example.com/path?token=SEKRET',
+            ),
+        });
+        let caught: unknown;
+        try {
+            await execBot('alice', request(), { ...deps(), launcher: session.launcher });
+        } catch (error) {
+            caught = error;
+        }
+        expect(caught).toBeInstanceOf(BotError);
+        expect((caught as BotError).code).toBe('browser');
+        expect((caught as BotError).message).not.toContain('https://site.example.com');
+        expect((caught as BotError).message).not.toContain('SEKRET');
+        expect((caught as BotError).message).toContain('ECONNREFUSED');
+        expect(session.closeCount()).toBe(1);
+        expect(listIfPresent(leaseRoot)).toEqual([]);
+
+        const unreadable = makeExecSession({ bodyError: new Error('Response body is unavailable for https://x/') });
+        caught = undefined;
+        try {
+            await execBot('alice', request(), { ...deps(), launcher: unreadable.launcher });
+        } catch (error) {
+            caught = error;
+        }
+        expect((caught as BotError).code).toBe('browser');
+        expect((caught as BotError).message).toContain('response unreadable');
+        expect(unreadable.closeCount()).toBe(1);
+    });
+
+    test('rejects an unsafe name, a non-http scheme and an embedded credential before any effect', async () => {
+        const session = makeExecSession();
+        const cases: Array<{ name: string; url: string; code: string; leak?: string }> = [
+            { name: 'bad name', url: 'https://site.example.com/', code: 'usage' },
+            { name: 'alice', url: 'ftp://site.example.com/x', code: 'usage', leak: 'ftp://' },
+            { name: 'alice', url: 'https://user:secret@site.example.com/', code: 'usage', leak: 'secret' },
+            { name: 'alice', url: 'not-a-url', code: 'usage' },
+        ];
+        for (const testCase of cases) {
+            let caught: unknown;
+            try {
+                await execBot(testCase.name, request({ url: testCase.url }), {
+                    ...deps(),
+                    launcher: session.launcher,
+                });
+            } catch (error) {
+                caught = error;
+            }
+            expect(caught).toBeInstanceOf(BotError);
+            expect((caught as BotError).code).toBe(testCase.code as BotError['code']);
+            if (testCase.leak !== undefined) {
+                expect((caught as BotError).message).not.toContain(testCase.leak);
+            }
+        }
+        expect(session.calls).toEqual([]);
+        expect(session.requests).toEqual([]);
+        expect(listIfPresent(leaseRoot)).toEqual([]);
+    });
+
+    // AC1: the request must carry the saved profile's cookie session. Real Chromium on 127.0.0.1
+    // only — a fake launcher cannot show that the profile's cookies reach `context.request`, and
+    // the cookie must be PERSISTENT (Max-Age): a session cookie dies with the first launch, so it
+    // would prove nothing about a second one. Skips where no browser binary is installed.
+    const realExec = test.skipIf(chromiumMissing());
+    realExec(
+        'attaches the saved profile cookie to the exec request on the same launch path (AC1)',
+        async () => {
+            const seen: Array<string | null> = [];
+            const server = Bun.serve({
+                hostname: '127.0.0.1',
+                port: 0,
+                fetch: (incoming) => {
+                    seen.push(incoming.headers.get('cookie'));
+                    if (new URL(incoming.url).pathname === '/set') {
+                        return new Response('ok', {
+                            headers: { 'set-cookie': 'sid=SEKRET123; Path=/; Max-Age=3600' },
+                        });
+                    }
+                    return Response.json({ cookie: incoming.headers.get('cookie') });
+                },
+            });
+            try {
+                const base = `http://127.0.0.1:${server.port}`;
+                // First launch stores the cookie in the profile through the same path exec uses.
+                const stored = await execBot('alice', request({ url: `${base}/set` }), deps());
+                expect(stored.status).toBe(200);
+                expect(listIfPresent(leaseRoot)).toEqual([]);
+
+                // Second launch: the persisted cookie is attached by the browser context itself.
+                const echoed = await execBot('alice', request({ url: `${base}/echo` }), deps());
+                expect(seen[0]).toBeNull();
+                expect(seen[1]).toContain('sid=SEKRET123');
+                expect(JSON.parse(echoed.body.toString())).toEqual({ cookie: 'sid=SEKRET123' });
+                expect(listIfPresent(leaseRoot)).toEqual([]);
+            } finally {
+                server.stop(true);
+            }
+        },
+        60_000,
+    );
 });

@@ -169,3 +169,8 @@ rules:
             # Chromium Singleton* artifacts). This ONE file holds them; ordinary text IO, path,
             # copy and rename in bot.ts/profile-lease.ts still go through the seam.
             - "packages/publish-harness/src/bot-fs.ts"
+            # apps/cli byte-IO seam (0306): the FileSystem seam is text-only (`readFile`/
+            # `writeFile` take a string), so a binary `-d @file` payload and an `-o` response
+            # body cannot route through it — same binary-bytes class as image-gen/bytes.ts and
+            # voice-gen. Confined to this one file; every other CLI read/write uses the seam.
+            - "apps/cli/src/byte-output.ts"
