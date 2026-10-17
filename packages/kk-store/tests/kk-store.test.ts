@@ -49,6 +49,7 @@ import { Database } from 'bun:sqlite';
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { journalModePragma } from '../src/db';
 import { canonicalUrl, itemId, openStore, type Store } from '../src/index';
 import {
     ARTIFACT_DIR,
@@ -194,6 +195,46 @@ describe('openStore', () => {
         expect(journal.n).toBe(3);
         await a.close();
         await b.close();
+    });
+});
+
+/**
+ * A read-only caller (`migrate: false`) must not write to the store: the board reader opens live
+ * stores this way, and a WAL-mode or journal pragma on that path rewrites a file it promised to
+ * leave alone (G81 / task 0313).
+ */
+describe('openStore({ migrate: false })', () => {
+    it('chooses no journal-mode pragma, so a non-WAL store is never converted', () => {
+        expect(journalModePragma(undefined)).toBe('PRAGMA journal_mode = WAL');
+        expect(journalModePragma(true)).toBe('PRAGMA journal_mode = WAL');
+        expect(journalModePragma(false)).toBeNull();
+    });
+
+    it('reads rows without changing the store mode, schema or counts', async () => {
+        const dir = makeTempDir();
+        const dbPath = join(dir, 'read-only-open.db');
+        const writer = await openStore({ path: dbPath });
+        await writer.collectRuns.start({ runId: 'durable-run' });
+        await writer.close();
+
+        const snapshot = async () => {
+            const handle = new Database(dbPath, { readonly: true });
+            const mode = (handle.query('PRAGMA journal_mode').get() as { journal_mode: string }).journal_mode;
+            const schema = handle.query('SELECT type, name FROM sqlite_master ORDER BY name').all();
+            const counts = handle.query('SELECT count(*) AS n FROM collect_runs').get() as { n: number };
+            handle.close();
+            return { mode, schema: JSON.stringify(schema), runs: counts.n };
+        };
+        const before = await snapshot();
+
+        const reader = await openStore({ path: dbPath, migrate: false });
+        const runs = await reader.collectRuns.list();
+        await reader.close();
+
+        const after = await snapshot();
+        expect(runs.length).toBeGreaterThanOrEqual(1);
+        // No pragma, no DDL, no journal write on the read path (G81 / task 0313).
+        expect(after).toEqual(before);
     });
 });
 

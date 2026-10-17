@@ -58,11 +58,28 @@ export const SQLITE_BUSY_TIMEOUT_MS = 30_000;
  * A failed migration closes the adapter before rethrowing, so a rejected open
  * never leaves the store file's handle behind.
  */
+/**
+ * The journal-mode pragma a caller may issue, or `null` for a read-only caller.
+ *
+ * `PRAGMA journal_mode = WAL` is a PERSISTENT change to the store file's header, so
+ * `migrate: false` (the board reader, digests, any observer) must never issue it: it would
+ * convert a delete-mode store and change the bytes of a file the caller promised to leave
+ * alone (G81 / task 0313). `busy_timeout` is connection-local and stays on both paths.
+ */
+export function journalModePragma(migrate: boolean | undefined): string | null {
+    return migrate === false ? null : 'PRAGMA journal_mode = WAL';
+}
+
 export async function openStore(options: OpenStoreOptions): Promise<Store> {
     const { createDbAdapter } = await import('@gobing-ai/ts-db');
     const adapter = await createDbAdapter({ driver: 'bun-sqlite', url: options.path });
     try {
-        await adapter.exec('PRAGMA journal_mode = WAL');
+        // `journal_mode = WAL` is a PERSISTENT change to the store file's header, so a read-only
+        // caller (`migrate: false`) must not issue it: opening a delete-mode store for reading
+        // would otherwise rewrite its header and change the bytes of a file it promised to leave
+        // alone. Writers only. (`busy_timeout` is connection-local and stays on both paths.)
+        const journalPragma = journalModePragma(options.migrate);
+        if (journalPragma !== null) await adapter.exec(journalPragma);
         await adapter.exec(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
         // A read-only caller opts out entirely: no DDL, no journal write, no schema-newer guard
         // (a read cannot corrupt a newer store, and the guard exists to stop a WRITE).
