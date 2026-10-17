@@ -16,10 +16,15 @@ import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import {
     assertSafeBotName,
     BotError,
+    type BotMetadata,
     isSafeBotName,
+    isSessionFactDate,
+    isSessionFactIdentity,
     listBots,
     logoutBot,
     normalizeBotDefaultUrl,
+    normalizeSessionExpiry,
+    normalizeSessionIdentity,
     parseBotMetadata,
     readBotMetadata,
     resolveBotProfileDir,
@@ -105,6 +110,102 @@ describe('bot metadata validation (0276)', () => {
                 expect((error as BotError).code).toBe('persistence');
             }
         }
+    });
+});
+
+describe('bot session facts in metadata (0305 R1)', () => {
+    const base = {
+        schemaVersion: 1,
+        defaultUrl: 'https://example.com/home',
+        authenticationEvidence: 'operator-confirmed',
+    } satisfies BotMetadata;
+
+    test('accepts a record carrying all three facts and keeps them verbatim', () => {
+        const parsed = parseBotMetadata({
+            ...base,
+            lastLoginAt: '2026-10-17T02:00:00.000Z',
+            expiresAt: '2026-11-16T02:00:00.000Z',
+            identity: 'alice@example.com',
+        });
+        expect(parsed).toEqual({
+            ...base,
+            lastLoginAt: '2026-10-17T02:00:00.000Z',
+            expiresAt: '2026-11-16T02:00:00.000Z',
+            identity: 'alice@example.com',
+        });
+    });
+
+    test('accepts their absence (legacy metadata, schemaVersion stays 1)', () => {
+        const parsed = parseBotMetadata(base);
+        expect(parsed).toEqual(base);
+        expect(parsed).not.toHaveProperty('lastLoginAt');
+        expect(parsed.schemaVersion).toBe(1);
+    });
+
+    test('accepts a partial record: expiry without identity', () => {
+        const parsed = parseBotMetadata({ ...base, expiresAt: '2026-11-16T02:00:00Z' });
+        expect(parsed.expiresAt).toBe('2026-11-16T02:00:00Z');
+        expect(parsed).not.toHaveProperty('identity');
+        expect(parsed).not.toHaveProperty('lastLoginAt');
+    });
+
+    test('rejects an unparseable or non-ISO stored date as a persistence error', () => {
+        for (const [field, value] of [
+            ['lastLoginAt', 'yesterday'],
+            ['lastLoginAt', '2026-10-17'],
+            ['lastLoginAt', 1_760_000_000],
+            ['expiresAt', '2026-13-45T99:99:99Z'],
+            ['expiresAt', null],
+        ] as const) {
+            let caught: unknown;
+            try {
+                parseBotMetadata({ ...base, [field]: value });
+            } catch (error) {
+                caught = error;
+            }
+            expect(caught).toBeInstanceOf(BotError);
+            expect((caught as BotError).code).toBe('persistence');
+            expect((caught as BotError).message).toContain(field);
+        }
+    });
+
+    test('rejects an empty, overlong or control-character identity', () => {
+        for (const identity of ['', 'a'.repeat(129), 'ali\u0000ce', 'ali\u001bce']) {
+            let caught: unknown;
+            try {
+                parseBotMetadata({ ...base, identity });
+            } catch (error) {
+                caught = error;
+            }
+            expect(caught).toBeInstanceOf(BotError);
+            expect((caught as BotError).code).toBe('persistence');
+            expect((caught as BotError).message).toContain('identity');
+        }
+        // 128 characters is the inclusive ceiling.
+        expect(parseBotMetadata({ ...base, identity: 'a'.repeat(128) }).identity).toHaveLength(128);
+    });
+
+    test('the stored-shape guards match what the parser accepts', () => {
+        expect(isSessionFactDate('2026-10-17T02:00:00.000Z')).toBe(true);
+        expect(isSessionFactDate('2026-10-17T10:00:00+08:00')).toBe(true);
+        expect(isSessionFactDate('2026-10-17')).toBe(false);
+        expect(isSessionFactDate('soon')).toBe(false);
+        expect(isSessionFactIdentity('alice')).toBe(true);
+        expect(isSessionFactIdentity(' ')).toBe(true);
+        expect(isSessionFactIdentity('a'.repeat(129))).toBe(false);
+    });
+
+    test('adapter verdict facts are sanitized, not fatal: invalid values are dropped', () => {
+        expect(normalizeSessionIdentity('  alice@example.com  ')).toBe('alice@example.com');
+        expect(normalizeSessionIdentity(`alice\u001b[31m`.replace('\\u001b', '\u001b'))).toBe('alice[31m');
+        expect(normalizeSessionIdentity('a'.repeat(200))).toHaveLength(128);
+        expect(normalizeSessionIdentity('')).toBeUndefined();
+        expect(normalizeSessionIdentity('   ')).toBeUndefined();
+        expect(normalizeSessionIdentity(42)).toBeUndefined();
+        expect(normalizeSessionIdentity(null)).toBeUndefined();
+        expect(normalizeSessionExpiry('2026-11-16T02:00:00.000Z')).toBe('2026-11-16T02:00:00.000Z');
+        expect(normalizeSessionExpiry('tomorrow')).toBeUndefined();
+        expect(normalizeSessionExpiry(1_760_000_000)).toBeUndefined();
     });
 });
 
@@ -247,6 +348,44 @@ describe('bot list (0276)', () => {
         const bad = entries.find((entry) => entry.name === 'badbot');
         expect(bad?.defaultUrl).toBeNull();
         expect(typeof bad?.metadataError).toBe('string');
+    });
+
+    test('reports identity, expiry and last login; 0305-era metadata falls back to the file mtime', async () => {
+        mkdirSync(join(root, 'full'), { recursive: true });
+        writeFileSync(
+            join(root, 'full', 'bot.json'),
+            JSON.stringify({
+                schemaVersion: 1,
+                defaultUrl: 'https://full.example.com/home',
+                authenticationEvidence: 'site-verified',
+                pluginName: 'xhs-pub',
+                lastLoginAt: '2026-10-17T02:00:00.000Z',
+                expiresAt: '2026-11-16T02:00:00.000Z',
+                identity: 'alice',
+            }),
+        );
+        writeMeta(join(root, 'partial'), 'https://partial.example.com/');
+        const partialMtime = statSync(join(root, 'partial', 'bot.json')).mtimeMs;
+        mkdirSync(join(root, 'legacy'));
+        mkdirSync(join(root, 'badbot'));
+        writeFileSync(join(root, 'badbot', 'bot.json'), '{ not json');
+
+        const entries = await listBots({ root, fileSystem });
+        const byName = (name: string) => entries.find((entry) => entry.name === name);
+
+        expect(byName('full')).toMatchObject({
+            identity: 'alice',
+            lastLoginAt: '2026-10-17T02:00:00.000Z',
+            expiresAt: '2026-11-16T02:00:00.000Z',
+        });
+        // No stored save time: the metadata file mtime stands in — metadata is only rewritten by a
+        // successful login.
+        expect(byName('partial')?.lastLoginAt).toBe(new Date(partialMtime).toISOString());
+        expect(byName('partial')?.identity).toBeNull();
+        expect(byName('partial')?.expiresAt).toBeNull();
+        // Legacy and corrupt profiles have no facts at all — never an invented date.
+        expect(byName('legacy')).toMatchObject({ lastLoginAt: null, expiresAt: null, identity: null });
+        expect(byName('badbot')).toMatchObject({ lastLoginAt: null, expiresAt: null, identity: null });
     });
 
     test('refuses a symlinked profile root', async () => {

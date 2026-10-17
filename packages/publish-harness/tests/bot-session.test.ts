@@ -14,18 +14,34 @@ import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import type { BrowserLauncher, ProfileLaunchRequest } from '@gobing-ai/ts-browser-automation';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
-import type { BrowserContext } from 'playwright';
-import { BotError, DEFAULT_BOT_LOGIN_TIMEOUT_MS, loginBot, openBot } from '../src/browser';
+import type { BrowserContext, Cookie } from 'playwright';
+import { BotError, DEFAULT_BOT_LOGIN_TIMEOUT_MS, execBot, loginBot, openBot } from '../src/browser';
 import { acquireProfileLease } from '../src/profile-lease';
 
 /**
  * Generic `kk bot` session lifecycle (task 0276, design §Bot command contract), driven through an
  * injected fake launcher: no browser binary, no real profile root. These tests prove the login
  * transaction, the confirmation contract, the reopen-until-close behaviour and the navigation
- * redaction; real cookie portability is the browser smoke (a separate deliverable).
+ * redaction. The one exception is the AC1 cookie test at the end of the exec block, which needs a
+ * real persistent context and skips (announcing it) when Chromium is not installed.
  */
 
 const DEFAULT_URL = 'https://alice.example.com/home';
+
+/**
+ * True when a real Chromium is not usable here (`bunx playwright install chromium`). Decided
+ * before any launch so a missing browser skips the one real-browser test instead of failing it —
+ * same probe as the image-gen compose E2E, which has to pick it at collection time.
+ */
+function chromiumMissing(): boolean {
+    try {
+        const { chromium } = require('playwright') as typeof import('playwright');
+        const executable = chromium.executablePath();
+        return executable === '' || !existsSync(executable);
+    } catch {
+        return true;
+    }
+}
 
 interface FakeHandle {
     close(): Promise<void>;
@@ -39,13 +55,18 @@ interface FakeSession {
     requests: ProfileLaunchRequest[];
     navigations: string[];
     handles: FakeHandle[];
+    /** URLs the session-fact capture asked the cookie jar about (0305). */
+    cookieQueries: string[];
 }
 
 /** Fake persistent context recording the profile requests and page navigations. */
-function makeSession(options: { gotoError?: boolean; rejectConfirm?: boolean } = {}): FakeSession {
+function makeSession(
+    options: { gotoError?: boolean; rejectConfirm?: boolean; cookies?: Partial<Cookie>[] } = {},
+): FakeSession {
     const requests: ProfileLaunchRequest[] = [];
     const navigations: string[] = [];
     const handles: FakeHandle[] = [];
+    const cookieQueries: string[] = [];
     const launcher: BrowserLauncher = {
         async launch(request) {
             requests.push(request);
@@ -60,11 +81,26 @@ function makeSession(options: { gotoError?: boolean; rejectConfirm?: boolean } =
                     navigations.push(url);
                 },
             };
+            const cookies = async (url: string) => {
+                cookieQueries.push(url);
+                return (options.cookies ?? []).map((cookie) => ({
+                    name: 'auth',
+                    value: 'SEKRET-COOKIE',
+                    domain: 'site.example.com',
+                    path: '/',
+                    expires: -1,
+                    httpOnly: true,
+                    secure: true,
+                    sameSite: 'Lax',
+                    ...cookie,
+                }));
+            };
             const close = async (): Promise<void> => {
                 closes += 1;
                 for (const listener of listeners.splice(0)) listener();
             };
             const context = {
+                cookies,
                 pages: () => (pagesEmpty ? [] : [page]),
                 newPage: async () => page,
                 once: (_event: string, listener: () => void) => {
@@ -83,7 +119,7 @@ function makeSession(options: { gotoError?: boolean; rejectConfirm?: boolean } =
             return context as unknown as BrowserContext;
         },
     };
-    return { launcher, requests, navigations, handles };
+    return { launcher, requests, navigations, handles, cookieQueries };
 }
 
 /** A stdin-shaped stream that reports itself as an interactive terminal. */
@@ -176,11 +212,18 @@ describe('bot session lifecycle (0276)', () => {
         expect(session.requests[0]?.profileDir.startsWith(transactionRoot)).toBe(true);
 
         const metadataPath = join(profileDir, 'bot.json');
-        expect(JSON.parse(readFileSync(metadataPath, 'utf8'))).toEqual({
+        const stored = JSON.parse(readFileSync(metadataPath, 'utf8')) as Record<string, unknown>;
+        expect(stored).toMatchObject({
             schemaVersion: 1,
             defaultUrl: 'https://site.example.com/login',
             authenticationEvidence: 'operator-confirmed',
         });
+        // AC1: the save time is recorded, traceable to this invocation.
+        expect(Date.now() - Date.parse(String(stored.lastLoginAt))).toBeLessThan(60_000);
+        expect(new Date(String(stored.lastLoginAt)).toISOString()).toBe(String(stored.lastLoginAt));
+        // AC2: a jar with only session cookies yields no expiry estimate.
+        expect(stored).not.toHaveProperty('expiresAt');
+        expect(session.cookieQueries).toEqual(['https://site.example.com/login']);
         expect(statSync(metadataPath).mode & 0o777).toBe(0o600);
         expect(statSync(profileDir).mode & 0o777).toBe(0o700);
         // No credential value from the supplied URL reached the metadata.
@@ -204,6 +247,52 @@ describe('bot session lifecycle (0276)', () => {
             authenticationEvidence: 'operator-confirmed',
             pluginName: 'xhs-pub',
         });
+    });
+
+    test('login records the earliest persistent httpOnly cookie expiry (0305 R2/R3)', async () => {
+        const later = Math.floor(Date.parse('2026-12-01T00:00:00Z') / 1000);
+        const earlier = Math.floor(Date.parse('2026-11-01T00:00:00Z') / 1000);
+        const session = makeSession({
+            cookies: [
+                // Session cookie: no expiry to record.
+                { expires: -1 },
+                // Non-httpOnly analytics cookie: never the auth signal.
+                { httpOnly: false, expires: Math.floor(Date.parse('2026-10-20T00:00:00Z') / 1000) },
+                { expires: later },
+                { expires: earlier },
+            ],
+        });
+
+        await loginBot('alice', 'https://site.example.com/login', {
+            ...deps(),
+            launcher: session.launcher,
+            confirm: async () => true,
+        });
+
+        const raw = readFileSync(join(profileDir, 'bot.json'), 'utf8');
+        expect(JSON.parse(raw)).toMatchObject({ expiresAt: '2026-11-01T00:00:00.000Z' });
+        // Cookie names and values never reach disk.
+        expect(raw).not.toContain('SEKRET-COOKIE');
+        expect(raw).not.toContain('"auth"');
+    });
+
+    test('a refused login records no facts at all (0305: no write on refusal)', async () => {
+        seedSavedBot();
+        const session = makeSession({
+            cookies: [{ expires: Math.floor(Date.parse('2026-11-01T00:00:00Z') / 1000) }],
+        });
+        await expect(
+            loginBot('alice', 'https://site.example.com/login', {
+                ...deps(),
+                launcher: session.launcher,
+                confirm: async () => false,
+            }),
+        ).rejects.toBeInstanceOf(BotError);
+
+        const stored = JSON.parse(readFileSync(join(profileDir, 'bot.json'), 'utf8')) as Record<string, unknown>;
+        expect(stored).not.toHaveProperty('lastLoginAt');
+        expect(stored).not.toHaveProperty('expiresAt');
+        expect(session.cookieQueries).toEqual([]);
     });
 
     test('a cancelled login saves nothing and preserves the previous profile', async () => {
@@ -530,6 +619,70 @@ describe('known-plugin adapter sessions (0277 R2/R3)', () => {
         expect(listIfPresent(leaseRoot)).toEqual([]);
     });
 
+    test('adapter login stores the reported identity and expiry plus the save time (0305 R3)', async () => {
+        const { adapter } = makeAdapter({
+            exitCode: 0,
+            stdout:
+                'juejin profile login verified\n' +
+                JSON.stringify({
+                    status: 'verified',
+                    profileDir: '/stage',
+                    defaultUrl: 'https://juejin.example.com/editor/drafts/new?v=2',
+                    expiresAt: '2026-11-16T02:00:00.000Z',
+                    identity: '  alice@example.com \u001b[0m',
+                }),
+        });
+        await loginBot('juejin', 'https://juejin.example.com/editor/drafts/new', { ...deps(), adapter });
+
+        const stored = JSON.parse(readFileSync(join(profileDir, 'bot.json'), 'utf8')) as Record<string, unknown>;
+        expect(stored).toMatchObject({
+            expiresAt: '2026-11-16T02:00:00.000Z',
+            // Trimmed, control characters stripped, capped — never stored raw.
+            identity: 'alice@example.com [0m',
+        });
+        expect(Date.now() - Date.parse(String(stored.lastLoginAt))).toBeLessThan(60_000);
+    });
+
+    test('invalid adapter facts are dropped, not fatal: the login still verifies (0305 R3)', async () => {
+        const { adapter } = makeAdapter({
+            exitCode: 0,
+            stdout: JSON.stringify({
+                status: 'verified',
+                profileDir: '/stage',
+                defaultUrl: 'https://juejin.example.com/editor/drafts/new',
+                expiresAt: 'tomorrow',
+                identity: 'a'.repeat(500),
+            }),
+        });
+        const result = await loginBot('juejin', 'https://juejin.example.com/editor/drafts/new', {
+            ...deps(),
+            adapter,
+        });
+        expect(result.message).toContain('site-verified');
+
+        const stored = JSON.parse(readFileSync(join(profileDir, 'bot.json'), 'utf8')) as Record<string, unknown>;
+        expect(stored).not.toHaveProperty('expiresAt');
+        // An overlong label is capped rather than refused.
+        expect(stored.identity).toHaveLength(128);
+        expect(stored.lastLoginAt).toBeString();
+    });
+
+    test('an adapter verdict without facts still parses (existing 0277 verdicts keep working)', async () => {
+        const { adapter } = makeAdapter({
+            exitCode: 0,
+            stdout: JSON.stringify({
+                status: 'verified',
+                profileDir: '/stage',
+                defaultUrl: 'https://juejin.example.com/editor/drafts/new',
+            }),
+        });
+        await loginBot('juejin', 'https://juejin.example.com/editor/drafts/new', { ...deps(), adapter });
+        const stored = JSON.parse(readFileSync(join(profileDir, 'bot.json'), 'utf8')) as Record<string, unknown>;
+        expect(stored).not.toHaveProperty('identity');
+        expect(stored).not.toHaveProperty('expiresAt');
+        expect(stored.lastLoginAt).toBeString();
+    });
+
     test('adapter child failures save nothing: exit 2 is usage, others are operational', async () => {
         const usage = makeAdapter({ exitCode: 2, stdout: 'usage: ...' });
         let caught: unknown;
@@ -614,4 +767,265 @@ describe('known-plugin adapter sessions (0277 R2/R3)', () => {
         expect(caught).toBeInstanceOf(BotError);
         expect((caught as BotError).code).toBe('persistence');
     });
+});
+
+describe('bot exec (0306: one authenticated request)', () => {
+    let root: string;
+    let profileRoot: string;
+    let profileDir: string;
+    let leaseRoot: string;
+    const fileSystem = createNodeFileSystem();
+
+    beforeEach(() => {
+        root = mkdtempSync(join(tmpdir(), 'kk-bot-exec-'));
+        profileRoot = join(root, 'profiles');
+        profileDir = join(profileRoot, 'alice');
+        leaseRoot = join(root, 'leases');
+        mkdirSync(profileDir, { recursive: true });
+    });
+    afterEach(() => {
+        rmSync(root, { recursive: true, force: true });
+    });
+
+    const deps = () => ({ root: profileRoot, leaseRoot, fileSystem });
+    const listIfPresent = (dir: string): string[] => (existsSync(dir) ? readdirSync(dir) : []);
+
+    /** One fake `context.request.fetch` invocation. */
+    interface FetchCall {
+        url: string;
+        options: Record<string, unknown>;
+    }
+
+    interface ExecOutcome {
+        /** Thrown by `fetch` (a transport failure). */
+        fetchError?: Error;
+        /** Thrown by `response.body()`. */
+        bodyError?: Error;
+        status?: number;
+        statusText?: string;
+        headers?: Array<{ name: string; value: string }>;
+        body?: string;
+    }
+
+    /** Fake persistent context whose APIRequestContext records the request and replays a response. */
+    function makeExecSession(outcome: ExecOutcome = {}) {
+        const calls: FetchCall[] = [];
+        const requests: ProfileLaunchRequest[] = [];
+        let closes = 0;
+        const launcher: BrowserLauncher = {
+            async launch(request) {
+                requests.push(request);
+                const context = {
+                    request: {
+                        async fetch(url: string, options: Record<string, unknown>) {
+                            calls.push({ url, options });
+                            if (outcome.fetchError !== undefined) throw outcome.fetchError;
+                            return {
+                                status: () => outcome.status ?? 200,
+                                statusText: () => outcome.statusText ?? 'OK',
+                                headersArray: () => outcome.headers ?? [{ name: 'content-type', value: 'text/plain' }],
+                                body: async () => {
+                                    if (outcome.bodyError !== undefined) throw outcome.bodyError;
+                                    return Buffer.from(outcome.body ?? 'hello');
+                                },
+                            };
+                        },
+                    },
+                    close: async () => {
+                        closes += 1;
+                    },
+                };
+                return context as unknown as BrowserContext;
+            },
+        };
+        return { launcher, calls, requests, closeCount: () => closes };
+    }
+
+    const request = (overrides: Partial<Parameters<typeof execBot>[1]> = {}) => ({
+        url: 'https://site.example.com/path?token=SEKRET',
+        method: 'GET',
+        headers: {},
+        followRedirects: false,
+        ...overrides,
+    });
+
+    test('sends one request through the headless persistent context under the lease', async () => {
+        const session = makeExecSession({ body: 'pong' });
+
+        const response = await execBot(
+            'alice',
+            request({
+                method: 'POST',
+                headers: { 'content-type': 'text/plain' },
+                data: Buffer.from('ping'),
+                timeoutMs: 1500,
+            }),
+            { ...deps(), launcher: session.launcher },
+        );
+
+        expect(response).toEqual({
+            status: 200,
+            statusText: 'OK',
+            headers: [{ name: 'content-type', value: 'text/plain' }],
+            body: Buffer.from('pong'),
+        });
+        // The URL is sent as given (query kept); the fragment never reaches the wire.
+        expect(session.calls).toEqual([
+            {
+                url: 'https://site.example.com/path?token=SEKRET',
+                options: {
+                    method: 'POST',
+                    headers: { 'content-type': 'text/plain' },
+                    data: Buffer.from('ping'),
+                    failOnStatusCode: false,
+                    maxRedirects: 0,
+                    timeout: 1500,
+                },
+            },
+        ]);
+        expect(session.requests).toEqual([{ profileDir, headless: true }]);
+        expect(session.closeCount()).toBe(1);
+        expect(listIfPresent(leaseRoot)).toEqual([]);
+    });
+
+    test('follows redirects only with -L and leaves the 30 s default timeout in place without -m', async () => {
+        const session = makeExecSession();
+        await execBot('alice', request({ followRedirects: true }), { ...deps(), launcher: session.launcher });
+
+        expect(session.calls[0]?.options).toEqual({ method: 'GET', headers: {}, failOnStatusCode: false });
+    });
+
+    test('never creates a profile and points at login guidance when the directory is missing', async () => {
+        const session = makeExecSession();
+        let caught: unknown;
+        try {
+            await execBot('ghost', request(), { ...deps(), launcher: session.launcher });
+        } catch (error) {
+            caught = error;
+        }
+        expect(caught).toBeInstanceOf(BotError);
+        expect((caught as BotError).code).toBe('not-found');
+        expect((caught as BotError).message).toContain('kk bot login <url> --save ghost');
+        expect(session.requests).toEqual([]);
+        expect(existsSync(join(profileRoot, 'ghost'))).toBe(false);
+        expect(listIfPresent(leaseRoot)).toEqual([]);
+    });
+
+    test('refuses a held lease instead of waiting for it', async () => {
+        const lease = await acquireProfileLease(profileDir, { leaseRoot, fileSystem });
+        const session = makeExecSession();
+        let caught: unknown;
+        try {
+            await execBot('alice', request(), { ...deps(), launcher: session.launcher });
+        } catch (error) {
+            caught = error;
+        }
+        expect(caught).toBeInstanceOf(BotError);
+        expect((caught as BotError).code).toBe('busy');
+        expect(session.calls).toEqual([]);
+        await lease.release();
+    });
+
+    test('reports a transport failure URL-free and still closes the context and releases the lease', async () => {
+        const session = makeExecSession({
+            fetchError: new Error(
+                'apiRequestContext.fetch: connect ECONNREFUSED https://site.example.com/path?token=SEKRET\nCall log:\n  - → GET https://site.example.com/path?token=SEKRET',
+            ),
+        });
+        let caught: unknown;
+        try {
+            await execBot('alice', request(), { ...deps(), launcher: session.launcher });
+        } catch (error) {
+            caught = error;
+        }
+        expect(caught).toBeInstanceOf(BotError);
+        expect((caught as BotError).code).toBe('browser');
+        expect((caught as BotError).message).not.toContain('https://site.example.com');
+        expect((caught as BotError).message).not.toContain('SEKRET');
+        expect((caught as BotError).message).toContain('ECONNREFUSED');
+        expect(session.closeCount()).toBe(1);
+        expect(listIfPresent(leaseRoot)).toEqual([]);
+
+        const unreadable = makeExecSession({ bodyError: new Error('Response body is unavailable for https://x/') });
+        caught = undefined;
+        try {
+            await execBot('alice', request(), { ...deps(), launcher: unreadable.launcher });
+        } catch (error) {
+            caught = error;
+        }
+        expect((caught as BotError).code).toBe('browser');
+        expect((caught as BotError).message).toContain('response unreadable');
+        expect(unreadable.closeCount()).toBe(1);
+    });
+
+    test('rejects an unsafe name, a non-http scheme and an embedded credential before any effect', async () => {
+        const session = makeExecSession();
+        const cases: Array<{ name: string; url: string; code: string; leak?: string }> = [
+            { name: 'bad name', url: 'https://site.example.com/', code: 'usage' },
+            { name: 'alice', url: 'ftp://site.example.com/x', code: 'usage', leak: 'ftp://' },
+            { name: 'alice', url: 'https://user:secret@site.example.com/', code: 'usage', leak: 'secret' },
+            { name: 'alice', url: 'not-a-url', code: 'usage' },
+        ];
+        for (const testCase of cases) {
+            let caught: unknown;
+            try {
+                await execBot(testCase.name, request({ url: testCase.url }), {
+                    ...deps(),
+                    launcher: session.launcher,
+                });
+            } catch (error) {
+                caught = error;
+            }
+            expect(caught).toBeInstanceOf(BotError);
+            expect((caught as BotError).code).toBe(testCase.code as BotError['code']);
+            if (testCase.leak !== undefined) {
+                expect((caught as BotError).message).not.toContain(testCase.leak);
+            }
+        }
+        expect(session.calls).toEqual([]);
+        expect(session.requests).toEqual([]);
+        expect(listIfPresent(leaseRoot)).toEqual([]);
+    });
+
+    // AC1: the request must carry the saved profile's cookie session. Real Chromium on 127.0.0.1
+    // only — a fake launcher cannot show that the profile's cookies reach `context.request`, and
+    // the cookie must be PERSISTENT (Max-Age): a session cookie dies with the first launch, so it
+    // would prove nothing about a second one. Skips where no browser binary is installed.
+    const realExec = test.skipIf(chromiumMissing());
+    realExec(
+        'attaches the saved profile cookie to the exec request on the same launch path (AC1)',
+        async () => {
+            const seen: Array<string | null> = [];
+            const server = Bun.serve({
+                hostname: '127.0.0.1',
+                port: 0,
+                fetch: (incoming) => {
+                    seen.push(incoming.headers.get('cookie'));
+                    if (new URL(incoming.url).pathname === '/set') {
+                        return new Response('ok', {
+                            headers: { 'set-cookie': 'sid=SEKRET123; Path=/; Max-Age=3600' },
+                        });
+                    }
+                    return Response.json({ cookie: incoming.headers.get('cookie') });
+                },
+            });
+            try {
+                const base = `http://127.0.0.1:${server.port}`;
+                // First launch stores the cookie in the profile through the same path exec uses.
+                const stored = await execBot('alice', request({ url: `${base}/set` }), deps());
+                expect(stored.status).toBe(200);
+                expect(listIfPresent(leaseRoot)).toEqual([]);
+
+                // Second launch: the persisted cookie is attached by the browser context itself.
+                const echoed = await execBot('alice', request({ url: `${base}/echo` }), deps());
+                expect(seen[0]).toBeNull();
+                expect(seen[1]).toContain('sid=SEKRET123');
+                expect(JSON.parse(echoed.body.toString())).toEqual({ cookie: 'sid=SEKRET123' });
+                expect(listIfPresent(leaseRoot)).toEqual([]);
+            } finally {
+                server.stop(true);
+            }
+        },
+        60_000,
+    );
 });

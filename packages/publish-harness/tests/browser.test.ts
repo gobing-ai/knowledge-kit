@@ -18,6 +18,7 @@ import {
     acquireProfileLease,
     BotError,
     type ChannelBrowserConfig,
+    captureSessionFacts,
     checkChannelSession,
     createKkBrowserLauncher,
     createShadowFinder,
@@ -87,18 +88,41 @@ interface LauncherHandle {
     requests: ProfileLaunchRequest[];
     page: FakePageHandle;
     closeCount: () => number;
+    /** URLs the bot-mode session-fact capture asked the cookie jar about (0305). */
+    cookieQueries: string[];
 }
 
-/** Launcher fake returning a recording context; `onLaunch` may throw to simulate a refusal. */
-function makeLauncher(onLaunch?: (request: ProfileLaunchRequest) => void): LauncherHandle {
+/**
+ * Launcher fake returning a recording context; `onLaunch` may throw to simulate a refusal and
+ * `cookies` scripts the jar `captureSessionFacts` reads.
+ */
+function makeLauncher(
+    onLaunch?: (request: ProfileLaunchRequest) => void,
+    cookies: { httpOnly?: boolean; expires?: number }[] = [],
+): LauncherHandle {
     const requests: ProfileLaunchRequest[] = [];
     const page = makeFakePage();
+    const cookieQueries: string[] = [];
     let closes = 0;
     const launcher: BrowserLauncher = {
         async launch(request) {
             requests.push(request);
             onLaunch?.(request);
             const context = {
+                cookies: async (url: string) => {
+                    cookieQueries.push(url);
+                    return cookies.map((cookie) => ({
+                        name: 'auth',
+                        value: 'SEKRET-COOKIE',
+                        domain: 'site.example.com',
+                        path: '/',
+                        expires: -1,
+                        httpOnly: true,
+                        secure: true,
+                        sameSite: 'Lax',
+                        ...cookie,
+                    }));
+                },
                 pages: () => [page.page],
                 newPage: async () => page.page,
                 close: async () => {
@@ -108,7 +132,7 @@ function makeLauncher(onLaunch?: (request: ProfileLaunchRequest) => void): Launc
             return context as unknown as BrowserContext;
         },
     };
-    return { launcher, requests, page, closeCount: () => closes };
+    return { launcher, requests, page, closeCount: () => closes, cookieQueries };
 }
 
 const CONFIG: ChannelBrowserConfig = {
@@ -228,6 +252,60 @@ describe('checkChannelSession', () => {
     });
 });
 
+describe('captureSessionFacts (0305 R2)', () => {
+    /** Context fake exposing only the cookie jar the helper may read. */
+    function jar(cookies: unknown[] | (() => Promise<never>)): BrowserContext {
+        return {
+            cookies: async (url: string) => {
+                expect(url).toBe('https://site.example.com/home');
+                if (typeof cookies === 'function') return cookies();
+                return cookies;
+            },
+        } as unknown as BrowserContext;
+    }
+
+    const cookie = (expires: number, httpOnly = true) => ({
+        name: 'auth',
+        value: 'SEKRET',
+        domain: 'site.example.com',
+        path: '/',
+        expires,
+        httpOnly,
+        secure: true,
+        sameSite: 'Lax',
+    });
+
+    test('returns the earliest persistent httpOnly expiry as RFC 3339 UTC', async () => {
+        const later = Math.floor(Date.parse('2026-12-01T00:00:00Z') / 1000);
+        const earlier = Math.floor(Date.parse('2026-11-01T00:00:00Z') / 1000);
+        const facts = await captureSessionFacts(
+            jar([cookie(later), cookie(earlier), cookie(earlier - 60)]),
+            'https://site.example.com/home',
+        );
+        expect(facts).toEqual({ expiresAt: '2026-10-31T23:59:00.000Z' });
+    });
+
+    test('ignores session cookies (-1), zero expiry and non-httpOnly cookies', async () => {
+        const expires = Math.floor(Date.parse('2026-11-01T00:00:00Z') / 1000);
+        const sessionOnly = await captureSessionFacts(
+            jar([cookie(-1), cookie(0), cookie(expires, false)]),
+            'https://site.example.com/home',
+        );
+        expect(sessionOnly).toEqual({});
+        expect(sessionOnly).not.toHaveProperty('expiresAt');
+    });
+
+    test('an unreadable or missing cookie jar yields no fact instead of failing', async () => {
+        expect(
+            await captureSessionFacts(
+                jar(async () => Promise.reject(new Error('context closed'))),
+                'https://site.example.com/home',
+            ),
+        ).toEqual({});
+        expect(await captureSessionFacts({} as unknown as BrowserContext, 'https://site.example.com/home')).toEqual({});
+    });
+});
+
 describe('runProfileCli', () => {
     function collect(lines: string[]): (line: string) => void {
         return (line) => {
@@ -311,6 +389,80 @@ describe('runProfileCli', () => {
         expect(requests[0]?.headless).toBe(false);
         expect(requests[0]?.profileDir).toBe(join(homedir(), 'from-flag'));
         expect(lines.join('\n')).toContain('login verified');
+    });
+
+    test('bot-mode login (--url) emits expiry and identity facts in the verdict (0305 R4)', async () => {
+        const lines: string[] = [];
+        const { launcher, requests, cookieQueries } = makeLauncher(undefined, [
+            { expires: Math.floor(Date.parse('2026-11-01T00:00:00Z') / 1000) },
+            { expires: Math.floor(Date.parse('2026-12-01T00:00:00Z') / 1000) },
+            { httpOnly: false, expires: Math.floor(Date.parse('2026-10-20T00:00:00Z') / 1000) },
+        ]);
+        const code = await runProfileCli(
+            {
+                ...CONFIG,
+                readIdentity: async (page) => {
+                    expect(page).toBeDefined();
+                    return '  alice@xie.infoq.cn  ';
+                },
+            },
+            ['login', '--url', 'https://xie.infoq.cn/login?token=SEKRET'],
+            { launcher, stdout: collect(lines) },
+        );
+
+        expect(code).toBe(0);
+        // Same single headed launch; the scoped helper navigated the supplied URL.
+        expect(requests).toHaveLength(1);
+        expect(requests[0]?.headless).toBe(false);
+        expect(cookieQueries).toEqual([CONFIG.homeUrl]);
+        const verdict = JSON.parse(lines.at(-1) ?? '') as Record<string, unknown>;
+        expect(verdict).toEqual({
+            status: 'verified',
+            profileDir: DEFAULT_DIR,
+            defaultUrl: CONFIG.homeUrl,
+            expiresAt: '2026-11-01T00:00:00.000Z',
+            identity: 'alice@xie.infoq.cn',
+        });
+        expect(lines.join('\n')).not.toContain('SEKRET');
+        expect(lines.join('\n')).not.toContain('SEKRET-COOKIE');
+    });
+
+    test('bot-mode login omits identity when readIdentity returns null or throws, and never fails', async () => {
+        for (const readIdentity of [async () => null, async () => Promise.reject(new Error('no account name'))]) {
+            const lines: string[] = [];
+            const { launcher } = makeLauncher();
+            const code = await runProfileCli(
+                { ...CONFIG, readIdentity },
+                ['login', '--url', 'https://xie.infoq.cn/login'],
+                { launcher, stdout: collect(lines) },
+            );
+
+            expect(code).toBe(0);
+            const verdict = JSON.parse(lines.at(-1) ?? '') as Record<string, unknown>;
+            expect(verdict).toEqual({
+                status: 'verified',
+                profileDir: DEFAULT_DIR,
+                defaultUrl: CONFIG.homeUrl,
+            });
+            expect(verdict).not.toHaveProperty('identity');
+            // No persistent httpOnly cookie → no expiry claim either.
+            expect(verdict).not.toHaveProperty('expiresAt');
+            expect(lines.join('\n')).toContain('login verified');
+        }
+    });
+
+    test('non-bot login (no --url) keeps the void loginWithProfile path and no verdict line', async () => {
+        const lines: string[] = [];
+        const { launcher, requests, cookieQueries } = makeLauncher(undefined, [{ expires: 1_800_000_000 }]);
+        const code = await runProfileCli(CONFIG, ['login', '--profile', '~/from-flag'], {
+            launcher,
+            stdout: collect(lines),
+        });
+
+        expect(code).toBe(0);
+        expect(requests).toHaveLength(1);
+        expect(cookieQueries).toEqual([]);
+        expect(lines).toEqual([`infoq profile login verified: ${join(homedir(), 'from-flag')}`]);
     });
 
     test('login exits 1 when the headed login never confirms', async () => {
