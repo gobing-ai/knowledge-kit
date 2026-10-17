@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Residuals from 0309
-status: backlog
+status: cancelled
 template: standard
 created_at: 2026-10-17T22:06:34.568Z
-updated_at: "2026-10-17T22:06:34.830Z"
+updated_at: "2026-10-17T23:54:02.377Z"
 
 ---
 
@@ -54,3 +54,7 @@ Source task: 0309 (feature G81) — deferred residuals filed by residual-scan se
 <!-- Links to features, docs, ADRs, related tasks, or external references. -->
 
 ### History
+
+Fixed directly in the G81 landing rather than deferred: `openStore({ migrate: false })` no longer issues `PRAGMA journal_mode = WAL` (a persistent header write), and the live check classifies a WAL checkpoint as a checkpoint rather than reporting it as "a collect tick may have landed".
+- 2026-10-17T23:54:02.377Z backlog → cancelled (system)
+

@@ -44,6 +44,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, type Page } from 'playwright';
+import { classifyStoreChange, type StoreFilePrint, storeFiles } from './store-digest';
 
 const REPO = resolve(import.meta.dir, '../../..');
 const CLI_DIR = join(REPO, 'apps/cli');
@@ -134,62 +135,15 @@ function childEnv(): NodeJS.ProcessEnv {
 /** Hex sha256 of a file, streamed (the Spur plane is multiple GB). */
 async function sha256File(path: string): Promise<string> {
     const hasher = new Bun.CryptoHasher('sha256');
-    for await (const chunk of Bun.file(path).stream()) hasher.update(chunk);
-    return hasher.digest('hex');
-}
-
-/** One store file's sha256 and byte size (size is what distinguishes a checkpoint from a write). */
-interface StoreFilePrint {
-    sha256: string;
-    bytes: number;
-}
-
-/** The store file (and its WAL when present) as sha256 + size — a content fingerprint, not just counts. */
-export interface StoreFilePrints {
-    db: StoreFilePrint;
-    wal: StoreFilePrint | null;
-}
-
-function printOf(path: string): StoreFilePrint {
-    const bytes = readFileSync(path);
-    return { sha256: Bun.CryptoHasher.hash('sha256', bytes, 'hex'), bytes: bytes.byteLength };
-}
-
-export function storeFiles(path: string): StoreFilePrints {
-    const walPath = `${path}-wal`;
-    return { db: printOf(path), wal: existsSync(walPath) ? printOf(walPath) : null };
-}
-
-/**
- * What a before/after file pair means.
- *
- * SQLite folds the WAL back into the main file when the last connection closes, so a read-only
- * reader can still move bytes: the db grows and the WAL shrinks or vanishes. That is a
- * **checkpoint**, not a collect tick — classifying it as drift reported a misleading FAIL
- * (G81 / task 0313). Anything else that changes content without a matching schema/count change is
- * real, unexplained drift and stays a failure.
- */
-export function classifyStoreChange(
-    before: StoreFilePrints,
-    after: StoreFilePrints,
-    digestIdentical: boolean,
-): { identical: boolean; checkpointed: boolean; reason: string | null } {
-    const identical = before.db.sha256 === after.db.sha256 && before.wal?.sha256 === after.wal?.sha256;
-    if (identical) return { identical: true, checkpointed: false, reason: null };
-    const walFolded = after.wal === null || after.wal.bytes === 0;
-    const dbGrew = after.db.bytes > before.db.bytes;
-    if (walFolded && dbGrew && digestIdentical) {
-        return {
-            identical: false,
-            checkpointed: true,
-            reason: `WAL checkpointed into the store (db ${before.db.bytes} → ${after.db.bytes} bytes, WAL emptied); rows, schema and journal unchanged`,
-        };
+    // Read by chunk through the reader interface: the Spur plane is multiple GB, so the whole file
+    // must never be buffered (`ReadableStream` async iteration is not in the board's TS lib).
+    const reader = Bun.file(path).stream().getReader();
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value !== undefined) hasher.update(value);
     }
-    return {
-        identical: false,
-        checkpointed: false,
-        reason: 'store content changed without a matching schema/count change',
-    };
+    return hasher.digest('hex');
 }
 
 /** The store's schema fingerprint plus its four store-view row counts, read-only. */

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Residuals from 0308
-status: backlog
+status: cancelled
 template: standard
 created_at: 2026-10-17T22:06:34.112Z
-updated_at: "2026-10-17T22:06:34.372Z"
+updated_at: "2026-10-17T23:54:01.944Z"
 
 ---
 
@@ -54,3 +54,7 @@ Source task: 0308 (feature G81) — deferred residuals filed by residual-scan se
 <!-- Links to features, docs, ADRs, related tasks, or external references. -->
 
 ### History
+
+Fixed directly in the G81 landing rather than deferred: the run selector now resets the page to 1 when the selected run changes, so an out-of-range page can no longer render a false "No items match these filters."
+- 2026-10-17T23:54:01.944Z backlog → cancelled (system)
+

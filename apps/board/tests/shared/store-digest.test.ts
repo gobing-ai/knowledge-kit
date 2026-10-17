@@ -7,7 +7,10 @@
  * or a content change with a changed schema/count, still fails.
  */
 import { describe, expect, it } from 'bun:test';
-import { classifyStoreChange, type StoreFilePrints } from '../scripts/verify-collect-live';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { classifyStoreChange, type StoreFilePrints, storeFiles } from '../../scripts/store-digest';
 
 const prints = (db: string, dbBytes: number, wal: string | null, walBytes = 0): StoreFilePrints => ({
     db: { sha256: db, bytes: dbBytes },
@@ -51,5 +54,29 @@ describe('classifyStoreChange', () => {
     it('does not excuse a WAL change that leaves the db the same size', () => {
         const verdict = classifyStoreChange(prints('db-a', 100, 'wal-a', 50), prints('db-a', 100, null), true);
         expect(verdict.checkpointed).toBe(false);
+    });
+});
+
+describe('storeFiles', () => {
+    it('fingerprints the store and its WAL by content and size, and reports an absent WAL', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-store-digest-'));
+        try {
+            const db = join(dir, 'kk.db');
+            writeFileSync(db, 'store-bytes');
+            expect(storeFiles(db)).toEqual({
+                db: { sha256: Bun.CryptoHasher.hash('sha256', Buffer.from('store-bytes'), 'hex'), bytes: 11 },
+                wal: null,
+            });
+
+            const withWal = join(dir, 'kk-wal.db');
+            writeFileSync(withWal, 'db');
+            writeFileSync(`${withWal}-wal`, 'wal');
+            const prints = storeFiles(withWal);
+            expect(prints.db.bytes).toBe(2);
+            expect(prints.wal?.bytes).toBe(3);
+            expect(prints.wal?.sha256).toBe(Bun.CryptoHasher.hash('sha256', Buffer.from('wal'), 'hex'));
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
     });
 });
