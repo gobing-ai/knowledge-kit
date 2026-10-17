@@ -1422,6 +1422,10 @@ with the clip) where the instruct halves changed speaker mid-item (34–65 Hz on
 
 The optional browserSession descriptor carries profileName and an optional homeUrl: publication-scoped Substack cannot declare one fixed editor URL. Saved plugin identity, declared profile name, then literal-origin matching select an adapter. Generic bots remain operator-confirmed; known adapters preserve plugin-owned canonical navigation (including fixed non-secret editor-version queries). Shared leases use scoped parent/child ownership across the existing check-script process boundary. No Xiaoyuzhou publisher connector exists in the current tree; generic URL login does not add one. Detail: the A22 satellite and task Design sections.
 
+### Amendment — 2026-10-16 (A23 session facts and `bot exec`)
+
+Login records optional `bot.json` facts — `lastLoginAt`, an estimated `expiresAt` (earliest persistent httpOnly cookie applicable to the default URL) and an adapter-reported `identity` — so `bot list` can show them while staying browser- and cookie-DB-free; `schemaVersion` stays 1. A new leaf `kk bot exec <bot> <url>` sends one request with a curl option subset through the profile's headless persistent context under the shared lease, attaching only cookies the profile holds. Plugin special state, storage tokens and the rest of curl are deliberately out of scope. This adds one visible leaf to the ADR-037 tree. Detail: [A23 satellite](design/kk-bot-session-facts-exec.md).
+
 ---
 
 ## ADR-039: Smart SEO uses native KK audit stages and Spur semantic decisions
