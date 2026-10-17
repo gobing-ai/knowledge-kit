@@ -10,6 +10,19 @@ import { waitUntil } from '@gobing-ai/publish-harness/browser';
  * Playwright page is part of this seam, never reached around it.
  */
 
+/**
+ * Connect faults this origin produces intermittently (2026-10-16: `net::ERR_TIMED_OUT` at the
+ * publish page; 2026-10-13: the preflight's `Timeout 30000ms exceeded — waiting until "load"`).
+ * One retry absorbs the flake; a second failure is reported as it is, so a real outage still fails.
+ */
+const TRANSIENT_NAVIGATION =
+    /net::ERR_(?:TIMED_OUT|CONNECTION_(?:RESET|CLOSED|TIMED_OUT|ABORTED|REFUSED|FAILED)|NETWORK_(?:CHANGED|IO_SUSPENDED)|EMPTY_RESPONSE|ADDRESS_UNREACHABLE|NAME_NOT_RESOLVED)/;
+
+/** Whether a navigation failed for a reason a single retry can plausibly clear. */
+function isTransientNavigationError(error: unknown): boolean {
+    return TRANSIENT_NAVIGATION.test(error instanceof Error ? error.message : String(error));
+}
+
 export const POLL_MS = 500;
 
 // The shared poll (0184 R2); re-exported so flow/index keep importing it from here.
@@ -169,7 +182,18 @@ export function wrapPlaywrightPage(raw: unknown, shadow?: ShadowProbe): XhsPage 
     };
 
     return {
-        goto: (url, options) => pw.goto(url, options) as Promise<void>,
+        // `domcontentloaded`, never Playwright's `load` default: the console keeps long-lived
+        // subresources open, so a `load` wait turns a healthy visit into a timeout (2026-10-13
+        // preflight). Pinned here once, the way wechatmp-pub/src/page.ts already pins it.
+        goto: async (url, options) => {
+            const navigate = (): Promise<unknown> => pw.goto(url, { waitUntil: 'domcontentloaded', ...options });
+            try {
+                await navigate();
+            } catch (error) {
+                if (!isTransientNavigationError(error)) throw error;
+                await navigate();
+            }
+        },
         locator: (selector) => ({
             count: () => pw.locator(selector).count(),
             first: () => {

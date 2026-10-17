@@ -752,6 +752,46 @@ describe('xhs-pub playwright adapter', () => {
             'mouse:606,855',
         ]);
     });
+
+    // 20261016: the 2026-10-16 daily run lost its XHS draft to a single `net::ERR_TIMED_OUT` on
+    // the creator page, and the 10-13 preflight lost its probe to a `waiting until "load"` timeout.
+    test('goto retries a transient connect fault once, and never waits on `load`', async () => {
+        const calls: Array<{ url: string; options: Record<string, unknown> }> = [];
+        const stub = {
+            goto: async (url: string, options: Record<string, unknown>) => {
+                calls.push({ url, options });
+                if (calls.length === 1) {
+                    throw new Error(
+                        `page.goto: net::ERR_TIMED_OUT at ${url}\nCall log:\n  - navigating to "${url}", waiting until "load"`,
+                    );
+                }
+            },
+            url: () => 'https://creator.xiaohongshu.com/publish/publish',
+        };
+        await wrapPlaywrightPage(stub).goto('https://creator.xiaohongshu.com/publish/publish', {
+            timeout: 120_000,
+        });
+        expect(calls).toHaveLength(2);
+        expect(calls.map((call) => call.options)).toEqual([
+            { waitUntil: 'domcontentloaded', timeout: 120_000 },
+            { waitUntil: 'domcontentloaded', timeout: 120_000 },
+        ]);
+    });
+
+    test('goto reports a non-transient navigation failure without retrying', async () => {
+        let attempts = 0;
+        const stub = {
+            goto: async () => {
+                attempts += 1;
+                throw new Error('page.goto: net::ERR_CERT_DATE_INVALID at https://creator.xiaohongshu.com/');
+            },
+            url: () => 'about:blank',
+        };
+        await expect(wrapPlaywrightPage(stub).goto('https://creator.xiaohongshu.com/')).rejects.toThrow(
+            'ERR_CERT_DATE_INVALID',
+        );
+        expect(attempts).toBe(1);
+    });
 });
 
 /** Canned CDP session for the closed-shadow probe (no browser needed). */
