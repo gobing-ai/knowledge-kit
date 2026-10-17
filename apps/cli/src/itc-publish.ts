@@ -48,12 +48,12 @@ export const ItcReceiptSchema = z
 /** Parsed ITC publish receipt. */
 export type ItcReceipt = z.infer<typeof ItcReceiptSchema>;
 
-/** First `cover.*` in 4-illustrations as a workspace-relative path, or undefined. */
+/** First `cover.*` in 4-illustrations as an ABSOLUTE path (plugins run with cwd != workDir and reject relative paths), or undefined. */
 async function findCover(fs: FileSystem, workDir: string): Promise<string | undefined> {
     const dir = join(workDir, '4-illustrations');
     if (!(await fs.exists(dir))) return undefined;
     const cover = (await fs.readDir(dir)).find((file) => file.startsWith('cover.'));
-    return cover ? join('4-illustrations', cover) : undefined;
+    return cover ? join(dir, cover) : undefined;
 }
 
 async function readFrontmatter(fs: FileSystem, path: string): Promise<Record<string, string>> {
