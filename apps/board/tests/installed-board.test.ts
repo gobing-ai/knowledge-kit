@@ -23,6 +23,7 @@ import {
     openSync,
     readFileSync,
     realpathSync,
+    renameSync,
     rmSync,
     statSync,
     symlinkSync,
@@ -31,7 +32,8 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { type Browser, chromium, type Page } from 'playwright';
+import { openStore } from '@gobing-ai/kk-store';
+import { type Browser, type ConsoleMessage, chromium, type Locator, type Page } from 'playwright';
 
 const REPO = resolve(import.meta.dir, '../../..');
 const CLI_DIR = join(REPO, 'apps/cli');
@@ -365,6 +367,139 @@ function writeDailyAudio(workDirRel: string, stamp: string): void {
     writeFileSync(join(dir, `${stamp}_11_generate_content.mp3`), bytes);
 }
 
+/** The throwaway project's kk store — the file the seeded DAOs write and the reader reads. */
+function storeDbPath(): string {
+    return join(project, '.works/kk.db');
+}
+
+/**
+ * G81/0309 R1 — seed the throwaway project's store through the REAL kk-store DAOs.
+ *
+ * Fixture run `r-a` gets a `collect_runs` row (with the real `inserted`/`updated` counts from the
+ * upsert), 27 items across two sources, three label observations (one per maker) and three
+ * selections (`selected`, `published`, `dropped`); fixture run `r-b` gets NOTHING, so the Board
+ * must render it as `no store row`. No raw SQL: every write goes through `CollectRunsDao`,
+ * `ItemsDao`, `LabelsDao` and `SelectionsDao`, the same seams `kk store ingest/label` uses.
+ */
+async function seedCollectStore(): Promise<void> {
+    const store = await openStore({ path: storeDbPath() });
+    try {
+        const sourceCounts = { 'aihot-ingest': 20, 'horizon-ingest': 7 };
+        await store.collectRuns.start({ runId: 'r-a', startedAt: Date.now() - 3_600_000, sourceCounts });
+        const docs = Array.from({ length: 27 }, (_, index) => ({
+            id: `g81-seed-${index}`,
+            title: `Seeded collect item ${index + 1}`,
+            body: `Seeded body ${index + 1}`,
+            // One item carries a canonical URL so the Items tab renders a link; the rest are text.
+            ...(index === 0 ? { sourceUri: 'https://example.com/collect/first' } : {}),
+            metadata: { source: index < 20 ? 'aihot-ingest' : 'horizon-ingest' },
+        }));
+        const stored = await store.items.upsertDocs('r-a', docs);
+        const [first = '', second = '', third = '', fourth = ''] = stored.newIds;
+        // `labels_current` joins on `items.content_hash`, so an observation must carry the hash it
+        // was made against — the same value the real label pass stamps (design §3).
+        const hashOf = async (itemId: string): Promise<string | null> =>
+            (await store.items.findById(itemId))?.contentHash ?? null;
+        const decisionId = 'kk-item-category';
+        await store.labels.recordObservation({
+            itemId: first,
+            decisionId,
+            value: 'ai-news',
+            maker: 'heuristic',
+            source: 'heuristic',
+            runId: 'r-a',
+            contentHash: await hashOf(first),
+        });
+        await store.labels.recordObservation({
+            itemId: second,
+            decisionId,
+            value: 'ai-news',
+            maker: 'model:interview',
+            source: 'model',
+            confidence: 'HIGH',
+            rawConfidence: 0.9,
+            runId: 'r-a',
+            contentHash: await hashOf(second),
+        });
+        // A second model answer below `min_confidence`: the same value at MEDIUM, so the run's own
+        // histogram carries all three confidence levels the UI must show (HIGH/MEDIUM/LOW).
+        await store.labels.recordObservation({
+            itemId: fourth,
+            decisionId,
+            value: 'ai-news',
+            maker: 'model:interview',
+            source: 'model',
+            confidence: 'MEDIUM',
+            rawConfidence: 0.6,
+            runId: 'r-a',
+            contentHash: await hashOf(fourth),
+        });
+        await store.labels.recordObservation({
+            itemId: third,
+            decisionId,
+            value: 'other',
+            maker: 'default',
+            source: 'default',
+            confidence: 'LOW',
+            runId: 'r-a',
+            contentHash: await hashOf(third),
+        });
+        await store.selections.insertMany([
+            { topic: 'ai-news', itemId: first, runId: 'r-a', storyId: first, status: 'selected' },
+            {
+                topic: 'ai-news',
+                itemId: second,
+                runId: 'r-a',
+                storyId: second,
+                status: 'published',
+                publishedAt: Date.now(),
+            },
+            { topic: 'ai-news', itemId: third, runId: 'r-a', storyId: third, status: 'dropped' },
+        ]);
+        await store.collectRuns.finish('r-a', {
+            status: 'done',
+            inserted: stored.inserted,
+            updated: stored.updated,
+            sourceCounts,
+            finishedAt: Date.now(),
+        });
+    } finally {
+        await store.close();
+    }
+}
+
+/**
+ * Run `fn` while collecting the page's console errors and uncaught page errors (R1: the store
+ * views must render without one). React logs warnings, not errors, so a clean run is `[]`.
+ */
+async function consoleErrorsDuring(fn: () => Promise<void>): Promise<string[]> {
+    if (page === null) throw new Error('browser page not ready');
+    const errors: string[] = [];
+    const onConsole = (message: ConsoleMessage): void => {
+        if (message.type() === 'error') errors.push(message.text());
+    };
+    const onPageError = (error: Error): void => {
+        errors.push(error.message);
+    };
+    page.on('console', onConsole);
+    page.on('pageerror', onPageError);
+    try {
+        await fn();
+    } finally {
+        page.off('console', onConsole);
+        page.off('pageerror', onPageError);
+    }
+    return errors;
+}
+
+/** The Overview table row for one run id (the run link text is the exact id). */
+function overviewRow(runId: string): Locator {
+    if (page === null) throw new Error('browser page not ready');
+    return page
+        .locator('.kk-collect-table tbody tr')
+        .filter({ has: page.locator('.kk-collect-run-link', { hasText: new RegExp(`^${runId}$`) }) });
+}
+
 /** Build the whole fixture: install, runs, captures, artifacts, servers, browser. */
 async function setup(): Promise<void> {
     spur = resolveSpur();
@@ -420,6 +555,8 @@ async function setup(): Promise<void> {
     writeDailyConfidence('.works/kk-daily-ai-voice2/D1', 'D1', 'HIGH');
     capture('kk-daily-ai-voice2', 'd-conf', '.works/kk-daily-ai-voice2/D2', 'D2');
     writeDailyConfidence('.works/kk-daily-ai-voice2/D2', 'D2', 'HIGH');
+    // 4b. G81/0309: the store plane, seeded through the real DAOs (r-a has a row, r-b none).
+    await seedCollectStore();
 
     // 5. The installed Board, then the reader bound to that exact origin.
     const boardPort = freePort();
@@ -806,6 +943,173 @@ describe('judge confidence vocabulary (AC3/AC7)', () => {
         await openModule('kk-daily-ai-voice2', query({ run: 'd-conf', tab: 'summary' }));
         await page.waitForSelector('.kk-board-facts');
         expect(await factValue('Safety confidence')).toBe('not recorded');
+    }, 30_000);
+});
+
+describe('Collect store views over a seeded store (G81/0309 R1)', () => {
+    it('joins the store onto the run page: banner, r-a counts, r-b has no store row', async () => {
+        if (!ready || page === null) throw new Error('setup did not complete');
+        const view: Page = page;
+        // The collector stays attached for the WHOLE scenario: a console error raised by any
+        // assertion step (not only the first load) fails the check.
+        const errors = await consoleErrorsDuring(async () => {
+            await openModule('kk-collect', query());
+            await waitForRunOption('r-a');
+            await view.locator('.kk-collect-table tbody tr').first().waitFor();
+            // The banner measures the seeded `finished_at` against the 6 h schedule.
+            const banner = view.locator('.kk-collect-banner');
+            expect((await banner.locator('.kk-collect-banner-value').first().innerText()).trim()).toBe('on schedule');
+            expect(await banner.innerText()).toContain('since the last stored collection (schedule 6 h)');
+            // Spur's own statuses still count what needs attention: the four fixture runs without a row.
+            expect(await banner.innerText()).toContain('0 failed · 4 done without a store row · 0 in progress');
+            // r-a: the stored columns, each naming its own unit in the header row.
+            const cells = overviewRow('r-a').locator('td');
+            expect((await cells.nth(3).innerText()).trim()).toBe('done');
+            expect((await cells.nth(4).innerText()).trim()).toBe('aihot-ingest 20 · horizon-ingest 7');
+            expect((await cells.nth(5).innerText()).trim()).toBe('27');
+            expect((await cells.nth(6).innerText()).trim()).toBe('0');
+            expect((await cells.nth(7).innerText()).trim()).toBe('4');
+            expect((await cells.nth(8).innerText()).trim()).toBe('25%');
+            expect((await cells.nth(9).innerText()).trim()).toBe('1 selected · 1 published · 1 dropped');
+            // r-b: a done tick with no store row states it — never a fabricated zero.
+            expect(await overviewRow('r-b').innerText()).toContain('no store row');
+        });
+        expect(errors).toEqual([]);
+    }, 30_000);
+
+    it('renders the Run detail funnel and label quality for r-a, including the ?tab=results alias', async () => {
+        if (!ready || page === null) throw new Error('setup did not complete');
+        const view: Page = page;
+        const errors = await consoleErrorsDuring(async () => {
+            // A shipped `?tab=results` link resolves to Run detail (design §2).
+            await openModule('kk-collect', query({ run: 'r-a', tab: 'results' }));
+            await waitForRunOption('r-a');
+            await view.waitForSelector('.kk-collect-funnel .kk-stat-card');
+            expect((await view.locator('.kk-board-tabs button[aria-current="page"]').textContent())?.trim()).toBe(
+                'Run detail',
+            );
+            const cards = view.locator('.kk-collect-funnel .kk-stat-card');
+            expect(await cards.count()).toBe(4);
+            // The stage label is uppercased by CSS, so the assertions read the flattened card text.
+            const card = async (index: number): Promise<string> =>
+                (await cards.nth(index).innerText()).trim().toLowerCase();
+            // Every card names its own unit: items collected, stored, labeled, and yielded downstream.
+            expect(await card(0)).toContain('collected');
+            expect(await card(0)).toContain('27');
+            expect(await card(0)).toContain('aihot-ingest 20 · horizon-ingest 7');
+            expect(await card(1)).toContain('stored');
+            expect(await card(1)).toContain('27 inserted · 0 updated · 0 unchanged');
+            expect(await card(2)).toContain('labeled');
+            expect(await card(2)).toContain('4 label rows: 1 heuristic · 2 model · 1 default');
+            expect(await card(3)).toContain('downstream');
+            expect(await card(3)).toContain('1 selected · 1 published · 1 dropped');
+            // Label quality: this run's own rows, per decision, with the confidence histogram.
+            const quality = view.locator('.kk-collect-quality');
+            // The decision heading is uppercased by CSS like the funnel labels.
+            expect((await quality.locator('h3').first().innerText()).trim().toLowerCase()).toBe('kk-item-category');
+            // The histogram names the three levels the module reports (HIGH/MEDIUM/LOW) plus `none`.
+            const headers = await quality.locator('thead th').allInnerTexts();
+            expect(headers.map((text) => text.trim())).toEqual(['Value', 'HIGH', 'MEDIUM', 'LOW', 'none']);
+            const histogram = async (value: string): Promise<string[]> => {
+                const row = quality.locator('tbody tr').filter({ hasText: value });
+                return (await row.locator('td').allInnerTexts()).map((text) => text.trim());
+            };
+            // ai-news: one HIGH model answer, one MEDIUM model answer, and a heuristic row with no level.
+            expect(await histogram('ai-news')).toEqual(['ai-news', '1', '1', '0', '1']);
+            expect(await histogram('other')).toEqual(['other', '0', '0', '1', '0']);
+            // The toggle swaps to the effective (`labels_current`) distribution over the same items.
+            await quality.getByRole('button', { name: 'Show effective labels' }).click();
+            await view.waitForFunction(
+                () =>
+                    document.querySelector('.kk-collect-quality table thead th:nth-child(2)')?.textContent === 'Items',
+                undefined,
+                { timeout: 15_000 },
+            );
+            expect(await quality.innerText()).toContain('ai-news');
+        });
+        expect(errors).toEqual([]);
+    }, 30_000);
+
+    it('pages the Items tab and filters it through the reader route', async () => {
+        if (!ready || page === null) throw new Error('setup did not complete');
+        const view: Page = page;
+        const errors = await consoleErrorsDuring(async () => {
+            await openModule('kk-collect', query({ run: 'r-a', tab: 'items' }));
+            await waitForRunOption('r-a');
+            await view.waitForSelector('.kk-collect-items-table');
+            const rows = view.locator('.kk-collect-items-table tbody tr');
+            const pager = view.locator('.kk-collect-pager');
+            expect(await rows.count()).toBe(25);
+            expect(await pager.innerText()).toContain('Page 1 of 2 · 27 items');
+            // The one URL-carrying item is a safe link; the rest render as text.
+            const link = view.locator('.kk-collect-items-table a[href="https://example.com/collect/first"]');
+            expect(await link.count()).toBe(1);
+            expect(await link.getAttribute('rel')).toBe('noreferrer');
+            // Every row states something in the Labels column: a chip, or the explicit no-label dash.
+            expect((await rows.first().locator('td').nth(4).innerText()).trim()).not.toBe('');
+            // Page 2 carries the remaining two items.
+            await pager.getByRole('button', { name: 'Next' }).click();
+            await view.waitForFunction(
+                () => document.querySelectorAll('.kk-collect-items-table tbody tr').length === 2,
+                undefined,
+                { timeout: 15_000 },
+            );
+            expect(await pager.innerText()).toContain('Page 2 of 2 · 27 items');
+            // One filter, sent to the 0307 route: a new filter restarts at page 1.
+            await view.locator('.kk-collect-filter select[name="source"]').selectOption('horizon-ingest');
+            await view.waitForFunction(
+                () => document.querySelectorAll('.kk-collect-items-table tbody tr').length === 7,
+                undefined,
+                { timeout: 15_000 },
+            );
+            expect(await pager.innerText()).toContain('Page 1 of 1 · 7 items');
+            const sources = await view.locator('.kk-collect-items-table tbody tr td:nth-child(2)').allInnerTexts();
+            expect(sources.map((text) => text.trim())).toEqual(Array.from({ length: 7 }, () => 'horizon-ingest'));
+        });
+        expect(errors).toEqual([]);
+    }, 30_000);
+});
+
+describe('Collect store views with the store file removed (G81/0309 R2)', () => {
+    it('states board.store.missing, keeps Execution progress, and never creates the store', async () => {
+        if (!ready || page === null) throw new Error('setup did not complete');
+        const view: Page = page;
+        const storePath = storeDbPath();
+        // Read the Board's own progress projection first: Execution progress comes from Spur, so a
+        // missing store must not change what the tab renders.
+        const progress = (await (await fetch(`${boardOrigin}/api/runs/r-a/progress`)).json()) as {
+            states?: unknown[];
+        };
+        const recorded = Array.isArray(progress.states) ? progress.states.length : 0;
+        const away = `${storePath}.away`;
+        renameSync(storePath, away);
+        try {
+            await openModule('kk-collect', query({ run: 'r-a' }));
+            await waitForRunOption('r-a');
+            // Each store panel states the diagnostic instead of a zero.
+            const diagnostic = view.locator('.kk-collect-overview .kk-board-diagnostic').first();
+            await diagnostic.waitFor();
+            expect(await diagnostic.innerText()).toContain('no kk store at .works/kk.db');
+            expect(await view.locator('.kk-collect-banner-value').first().innerText()).toContain('unknown');
+            await view.locator('.kk-board-tabs').getByRole('button', { name: 'Run detail', exact: true }).click();
+            await view.waitForSelector('.kk-collect-detail .kk-board-diagnostic');
+            expect(await view.locator('.kk-collect-detail').innerText()).toContain('no kk store at .works/kk.db');
+            // Execution progress still renders its recorded states (or its explicit absence line).
+            await view
+                .locator('.kk-board-tabs')
+                .getByRole('button', { name: 'Execution progress', exact: true })
+                .click();
+            await view.waitForTimeout(400);
+            const panel = view.locator('.kk-board-collect');
+            if (recorded > 0) {
+                expect(await panel.locator('.kk-board-progress li').count()).toBeGreaterThanOrEqual(recorded);
+            }
+            expect(await panel.innerText()).not.toContain('no kk store at .works/kk.db');
+            // The read must not create the file an open would otherwise materialize.
+            expect(existsSync(storePath)).toBe(false);
+        } finally {
+            renameSync(away, storePath);
+        }
     }, 30_000);
 });
 

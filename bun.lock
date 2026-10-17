@@ -14,6 +14,7 @@
       "name": "@gobing-ai/kk-board",
       "version": "0.0.0",
       "devDependencies": {
+        "@gobing-ai/kk-store": "workspace:*",
         "@types/react": "^19.2.0",
         "@types/react-dom": "^19.2.0",
         "playwright": "catalog:",
@@ -23,7 +24,7 @@
     },
     "apps/cli": {
       "name": "@gobing-ai/knowledge-kit",
-      "version": "0.0.37",
+      "version": "0.1.2",
       "bin": {
         "kk": "./dist/index.js",
         "knowledge-kit": "./dist/index.js",
