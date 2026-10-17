@@ -37,17 +37,14 @@ states:
     onEnter:
       - kind: shell
         options:
+          # jq one-liner, not a heredoc: this is a folded scalar (>-), so newlines become spaces
+          # and a heredoc body would land on cat's argv (dogfood 2026-10-16: "cat: {: No such file").
           command: >-
             mkdir -p "${vars.work_dir}/.itc" &&
-            cat <<EOF > "${vars.work_dir}/.itc/author-run.json"
-            {
-              "schemaVersion": 1,
-              "parentRunId": "${vars.parent_run_id}",
-              "childRunId": "${vars.child_run_id}",
-              "definitionDigest": "${vars.definition_digest}",
-              "optionsDigest": "${vars.options_digest}"
-            }
-            EOF
+            jq -n --arg p "${vars.parent_run_id}" --arg c "${vars.child_run_id}"
+            --arg d "${vars.definition_digest}" --arg o "${vars.options_digest}"
+            '{schemaVersion:1, parentRunId:$p, childRunId:$c, definitionDigest:$d, optionsDigest:$o}'
+            > "${vars.work_dir}/.itc/author-run.json"
 
   - id: outline-write
     description: "Generate outline options a, b (and optional c) via writer skill"
