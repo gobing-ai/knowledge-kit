@@ -27,6 +27,9 @@ import { echoError } from '@gobing-ai/ts-utils';
  * - `NEWS_REPORT_SCRIPT_FILE` — the script stage's Content path
  *   (`24-script/<date>_08_script_content.json`, F613 R5); absent or metadata-less -> the
  *   脚本来源 line is omitted, never throw.
+ * - `NEWS_REPORT_COMPLETENESS_FILE` — the publish tail's channel ledger
+ *   (`31-publish/<date>_17_publish_completeness.json`, written by
+ *   `kk stage daily-publish-completeness`); absent -> the 发布完整性 section is omitted, never throw.
  * - `NEWS_REPORT_TIMING_FILE` — `<work_dir>/step-timing.json` JSONL of
  *   {step, startedAt, endedAt} appended by the workflow shell steps; missing
  *   or unreadable -> the timing section is omitted, never throw.
@@ -150,6 +153,49 @@ export function minimumsFromEnv(): Record<QCDimension, number | null> {
 interface RejectedAudit {
     doc: Doc;
     reasons: string[];
+}
+
+/** One independent publish channel's terminal state, as the publish tail recorded it. */
+export interface PublishCompletenessRow {
+    channel: string;
+    state: string;
+    detail: string;
+}
+
+export interface PublishCompleteness {
+    rows: PublishCompletenessRow[];
+    /** Channels that did not reach `done` — the ones the operator has to act on. */
+    missing: string[];
+}
+
+/**
+ * Read the publish tail's completeness ledger (`kk stage daily-publish-completeness`).
+ *
+ * Best-effort by contract like every other report input: absent, unreadable, malformed, or
+ * row-less -> `null` and the section is omitted. The ledger is the only place the independent
+ * channels (xhs, wechat, locales, cms-resync) surface — they never enter `publish_status` — so
+ * 20261016 a run that drafted nothing to WeChat/XHS reported only its scoring and QC.
+ */
+export async function readPublishCompleteness(path: string | undefined): Promise<PublishCompleteness | null> {
+    if (!path || path.trim() === '') return null;
+    try {
+        const parsed: unknown = JSON.parse(await Bun.file(path).text());
+        const rows = (parsed as { rows?: unknown } | null)?.rows;
+        if (!Array.isArray(rows) || rows.length === 0) return null;
+        const missing = (parsed as { missing?: unknown }).missing;
+        return {
+            rows: rows
+                .filter((row): row is Record<string, unknown> => row !== null && typeof row === 'object')
+                .map((row) => ({
+                    channel: typeof row.channel === 'string' ? row.channel : '?',
+                    state: typeof row.state === 'string' ? row.state : '?',
+                    detail: typeof row.detail === 'string' ? row.detail : '',
+                })),
+            missing: Array.isArray(missing) ? missing.filter((name): name is string => typeof name === 'string') : [],
+        };
+    } catch {
+        return null;
+    }
 }
 
 /** Generate-stage audio QC summary rendered into the run report (task 0139 R5b). */
@@ -278,6 +324,7 @@ export function renderReportMarkdown(
         scriptSource?: ScriptSource | null;
         planAudit?: PlanAuditRow[] | null;
         blended?: BlendedDoc[] | null;
+        completeness?: PublishCompleteness | null;
     } = {},
 ): string {
     const lines: string[] = [`# 每日 AI 语音运行报告 — ${date}`, ''];
@@ -374,6 +421,26 @@ export function renderReportMarkdown(
         lines.push(`| 通过 | ${qc.passed ? '是' : '否'} |`);
         for (const issue of qc.issues) lines.push(`| ${issue.type} | ${issue.count} |`);
         lines.push('');
+    }
+
+    const completeness = options.completeness ?? null;
+    if (completeness !== null) {
+        // 20261016: the independent channels (xhs, wechat, locales, cms-resync) are non-blocking and
+        // never enter `publish_status`, so a run that drafted nothing to WeChat/XHS still reported
+        // `full`. Surface each channel's state here instead of leaving it to a separate JSON.
+        lines.push('## 发布完整性', '');
+        lines.push('| 通道 | 状态 | 说明 |', '| --- | --- | --- |');
+        for (const row of completeness.rows) {
+            const detail = row.detail.replace(/\|/g, '\\|').replace(/\s+/g, ' ').slice(0, 200);
+            lines.push(`| ${row.channel} | ${row.state} | ${detail || '—'} |`);
+        }
+        lines.push('');
+        if (completeness.missing.length > 0) {
+            lines.push(
+                `**未完成通道**: ${completeness.missing.join(', ')} — 详细原因见上表，重跑对应 stage 可补发（'kk stage daily-publish-<channel> …'）。`,
+                '',
+            );
+        }
     }
 
     const timing = options.timing ?? [];
@@ -498,6 +565,7 @@ export function docsToContent(
         scriptSource?: ScriptSource | null;
         planAudit?: PlanAuditRow[] | null;
         blended?: BlendedDoc[] | null;
+        completeness?: PublishCompleteness | null;
     },
 ): Content {
     return ContentSchema.parse({
@@ -522,7 +590,16 @@ export async function processGeneratorIO(inputPath: string, outputPath: string):
     const scriptSource = await readScriptSource(process.env.NEWS_REPORT_SCRIPT_FILE);
     const planAudit = await readPlanAudit(process.env.NEWS_REPORT_PLAN_AUDIT_FILE);
     const blended = await readBlendedCorpus(process.env.NEWS_REPORT_BLENDED_FILE);
-    const content = docsToContent(docs, dateFromEnv(), { rejected, timing, qc, scriptSource, planAudit, blended });
+    const completeness = await readPublishCompleteness(process.env.NEWS_REPORT_COMPLETENESS_FILE);
+    const content = docsToContent(docs, dateFromEnv(), {
+        rejected,
+        timing,
+        qc,
+        scriptSource,
+        planAudit,
+        blended,
+        completeness,
+    });
     const fs = createNodeFileSystem();
     const outDir = dirname(outputPath);
     if (outDir && outDir !== '.') await fs.ensureDir(outDir);

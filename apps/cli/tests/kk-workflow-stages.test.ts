@@ -3321,6 +3321,11 @@ describe('F613 (0162) — script-write stage wiring', () => {
             expect(lastEnv(envLog).NEWS_REPORT_SCRIPT_FILE).toBe(
                 resolve(dir, '24-script', `${stamp}_08_script_content.json`),
             );
+            // 20261016: the independent channels only surface in the completeness ledger, so the
+            // report must be handed it or an empty WeChat/XHS draft box stays invisible.
+            expect(lastEnv(envLog).NEWS_REPORT_COMPLETENESS_FILE).toBe(
+                resolve(dir, '31-publish', `${stamp}_17_publish_completeness.json`),
+            );
         });
     });
 });

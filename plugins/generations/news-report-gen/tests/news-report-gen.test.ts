@@ -8,6 +8,7 @@ import {
     main,
     processGeneratorIO,
     readBlendedCorpus,
+    readPublishCompleteness,
     readQcSummary,
     readRejectedAudit,
     readScriptSource,
@@ -449,6 +450,78 @@ describe('news-report-gen script source (F613 R5)', () => {
             expect(content.body).toContain('**脚本来源**: template（episode:missing-plan）');
         } finally {
             delete process.env.NEWS_REPORT_SCRIPT_FILE;
+            await rm(dir, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('发布完整性 (20261016)', () => {
+    test('readPublishCompleteness is best-effort: absent, malformed and row-less all → null', async () => {
+        expect(await readPublishCompleteness(undefined)).toBeNull();
+        expect(await readPublishCompleteness('')).toBeNull();
+        const dir = await mkdtemp(join(tmpdir(), 'nr-completeness-'));
+        try {
+            const broken = join(dir, 'broken.json');
+            await writeFile(broken, '{not json');
+            expect(await readPublishCompleteness(broken)).toBeNull();
+            const empty = join(dir, 'empty.json');
+            await writeFile(empty, JSON.stringify({ runDate: '20261016', rows: [], missing: [] }));
+            expect(await readPublishCompleteness(empty)).toBeNull();
+            const missingFile = join(dir, 'nope.json');
+            expect(await readPublishCompleteness(missingFile)).toBeNull();
+        } finally {
+            await rm(dir, { recursive: true, force: true });
+        }
+    });
+
+    test('renders each channel state and names the incomplete ones', () => {
+        const body = renderReportMarkdown([candidate({})], '2026-10-16', {
+            completeness: {
+                rows: [
+                    { channel: 'locales', state: 'done', detail: 'en/ja drafts scaffolded and translated' },
+                    { channel: 'xhs', state: 'failed', detail: 'creator page goto: net::ERR_TIMED_OUT' },
+                    { channel: 'wechat', state: 'failed', detail: 'session preflight failed' },
+                ],
+                missing: ['xhs', 'wechat'],
+            },
+        });
+        expect(body).toContain('## 发布完整性');
+        expect(body).toContain('| locales | done | en/ja drafts scaffolded and translated |');
+        expect(body).toContain('| xhs | failed | creator page goto: net::ERR_TIMED_OUT |');
+        expect(body).toContain('**未完成通道**: xhs, wechat');
+        // A non-publishing run has no ledger: the section must not appear at all.
+        expect(renderReportMarkdown([candidate({})], '2026-10-16', {})).not.toContain('发布完整性');
+    });
+
+    test('a completed publish renders the section without the 未完成 line', () => {
+        const body = renderReportMarkdown([candidate({})], '2026-10-16', {
+            completeness: { rows: [{ channel: 'xhs', state: 'done', detail: '' }], missing: [] },
+        });
+        expect(body).toContain('| xhs | done | — |');
+        expect(body).not.toContain('未完成通道');
+    });
+
+    test('processGeneratorIO reads it through NEWS_REPORT_COMPLETENESS_FILE', async () => {
+        const dir = await mkdtemp(join(tmpdir(), 'nr-completeness-io-'));
+        const inPath = join(dir, 'episode-plan.json');
+        const outPath = join(dir, 'run-report-content.json');
+        const ledger = join(dir, 'completeness.json');
+        await writeFile(inPath, JSON.stringify([candidate({})]));
+        await writeFile(
+            ledger,
+            JSON.stringify({
+                runDate: '20261016',
+                rows: [{ channel: 'wechat', state: 'failed', detail: 'session preflight failed' }],
+                missing: ['wechat'],
+            }),
+        );
+        process.env.NEWS_REPORT_COMPLETENESS_FILE = ledger;
+        try {
+            const content = (await processGeneratorIO(inPath, outPath)) as Content;
+            expect(content.body).toContain('| wechat | failed | session preflight failed |');
+            expect(content.body).toContain('**未完成通道**: wechat');
+        } finally {
+            delete process.env.NEWS_REPORT_COMPLETENESS_FILE;
             await rm(dir, { recursive: true, force: true });
         }
     });

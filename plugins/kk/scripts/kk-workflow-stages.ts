@@ -1509,6 +1509,14 @@ function dailyRunReport(args: string[]): void {
                 NEWS_REPORT_BLENDED_FILE: join(absWorkDir, '10-ingest', `${runDate}_02_collect_blended.json`),
                 // F613 R5: the script stage's Content, read best-effort (absent -> 脚本来源 omitted).
                 NEWS_REPORT_SCRIPT_FILE: join(absWorkDir, '24-script', `${runDate}_08_script_content.json`),
+                // 20261016: the independent publish channels (xhs/wechat/locales/cms-resync) never
+                // enter publish_status, so the report is where an empty draft box becomes visible.
+                // Written by the `daily-publish-completeness` stage that precedes this one.
+                NEWS_REPORT_COMPLETENESS_FILE: join(
+                    absWorkDir,
+                    '31-publish',
+                    `${runDate}_17_publish_completeness.json`,
+                ),
                 NEWS_REPORT_DATE: runDate,
             },
         });

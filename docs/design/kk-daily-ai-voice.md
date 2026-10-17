@@ -96,7 +96,7 @@ Convention-named artifacts:
 - `${run_date}_17_publish_result.json` / `${run_date}_17_publish_publish-status.txt`: merged publish result and the `full|partial|none` routing flag (read by the publish/locales transition guards).
 - `25-xhs/cards.json` / `25-xhs/content.json` / `25-xhs/cards/card-NN.{in.json,json,prompt.txt}`: the XHS card series (E8) — the ordered card manifest (role, source point, layout, prompt + image path per card), the packaged `Content` whose `metadata.images` are the card artifacts **in card order** and whose `metadata.publishStatus` is `draft`, and per card the pinned image-gen envelope, the rendered `Content`, and the exact composed prompt (the retry path). The stage fixes the `card-NN` stem, so each artifact lands as `25-xhs/cards/card-NN-xhs-card-01.<ext>` — the provider picks the extension, so the stage reads the recorded path back rather than guessing it.
 - `${run_date}_19_publish-xhs_content.json` / `${run_date}_19_publish-xhs_result.json`: the publish payload (`metadata.publishStatus` resolved from the `xhs_live` var) and the `xhs-pub` Result. Deliberately **not** read by `daily-publish-classify` — XHS is an independent, non-blocking target and contributes no `publish_status` target (see §7).
-- `${run_date}_19_run-report_report.json` / `${run_date}_19_run-report_report.md` (work-dir root) plus inputs `${run_date}_19_run-report_episode-plan.json` and the shared rejected audit in `21-plan/`.
+- `${run_date}_19_run-report_report.json` / `${run_date}_19_run-report_report.md` (work-dir root) plus inputs `${run_date}_19_run-report_episode-plan.json` and the shared rejected audit in `21-plan/`. The report also carries the `## 发布完整性` table read from `${run_date}_17_publish_completeness.json` (`NEWS_REPORT_COMPLETENESS_FILE`, 20261016) — the independent channels' state belongs in the artifact the operator reads, not only in the completeness sidecar.
 - `${run_date}_20_translate-en_*` / `${run_date}_22_translate-ja_*` / `${run_date}_24_translate-sync_*`: locale scaffolds, post-path markers, and sync results in `31-publish/`.
 
 The workflow passes only the generic executor flags (`--in`, `--out`, optional `--plugins-path`).
@@ -109,6 +109,8 @@ and no WeChat draft, with a `full` status file and no warning anywhere. The term
 and patch-surfdash have finished) therefore writes `${run_date}_17_publish_completeness.json` (one row per channel:
 `done | failed | skipped | not-run` plus the recorded reason) and prints a
 `WARNING: publish completeness — …` line naming the gap (the `none` path has no snapshot by design, 0220);
+`news-report-gen` renders the same rows as the report's `## 发布完整性` table (20261016), so the missing
+draft is visible without reading the sidecar;
 `daily-patch-surfdash` leaves a `${run_date}_23_patch-surfdash_emdash-resync.txt` marker when it skipped
 the CMS re-sync because no `plugins_path` was passed. These rows exist to catch a hand-driven tail: the
 workflow engine cannot start mid-graph, so the publish half of a run whose launch had `publish_enabled=false`
