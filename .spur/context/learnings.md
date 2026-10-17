@@ -475,3 +475,23 @@ the same text with one hedge adverb restored in the WeChat row → `{"ok":false,
   until the guard stops filtering excluded-but-tracked paths.
 - **One commit per concern keeps a batch attributable**: the pre-existing TSDoc repair rode its own
   commit and merged as a no-op against main's equivalent later fix (`git merge-tree` probe → clean).
+
+- **A worktree batch stages the invoking tree's evidence plane twice-over**: only `*-verdict.json` is
+  documented for WT-2 staging, but the `no-dead-run-scoped-citation` pre-check also reads cited
+  `*-check-receipt*.json` — stage both (`cp -n`) or the light/full gate fails on unrelated tasks'
+  citations (G81 batch, 44 receipts). Those staged files then inflate `spur workflow inline
+  persist-check` with "unforwarded durable verdict/receipt" hits; verify each flagged path is
+  byte-identical in the invoking tree (`cmp -s`) before honouring a removal halt.
+- **`spur task gate` needs the pipeline's vars in the env**: `taskSpecPath`, `featureSpecPath`,
+  `taskPriority`, `proofDigest`, `runId` — a detached host call that exports only `qualityGateCmd`
+  fails closed with `check.reuse-refused — recompute failed: missing task path` and writes FAIL to
+  `.spur/run/<wbs>-test-gate.status`.
+- **Verify answers are linted twice and each lint has its own trap**: `task verdict` wants bare `R<n>`
+  ids in cell 1 (a descriptor in that cell reads as "missing requirement row"), behavior-bearing ACs
+  need an executable evidence type (`test`/`command`, not `static-ref`), and anchor ranges must lie
+  inside the file (a `:547-600` cite in a 591-line file blocks the `done` transition with
+  `L4.anchor-unresolved`). Put all three rules in the verify dispatch, not in the fix loop.
+- **A batch branch can collide on WBS with the base ref**: `residual settle` files follow-ups from the
+  worktree's own allocator, so 0310/0311 were claimed twice while the batch ran. Landing halts on a
+  duplicate; drop the branch's copies before the merge and re-file through `spur task create` after
+  it (the allocator then picks 0312/0313) — never renumber by hand.

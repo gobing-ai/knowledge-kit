@@ -212,3 +212,21 @@
   0–1") lives in `plugins/kk/tests/smart-seo-decisions.test.ts` → `Confidence level (HIGH/MEDIUM/LOW)
   verification`, repeatable artifact at `.spur/run/seo-confidence/summary.json`. Re-check any new level/threshold
   rule against spur's `confidenceLevel()` rather than restating the constant.
+
+- **A non-FF base ref is the normal end state of a long batch**: `main` advanced 13 commits during the
+  G81 batch, so the `--worktree` FF-merge could not run. `git merge-tree --write-tree <base> <branch>`
+  is the cheap pre-check (rc 0 + zero markers = clean, sanctioned `--no-ff` merge commit); the driver
+  must not rebase (task evidence cites the branch SHAs) and must ask the operator before landing on a
+  divergent base.
+- **Reviewers invent `Confidence:` blocks**: one wrote `##### Confidence in this verdict (added on
+  operator request)` with `Confidence: HIGH` and cited no evidence — F511/task 1207 retired that field,
+  and the workspace rule `review-record-carries-confidence-level` then blocked the gate mid-batch. Say
+  "no confidence level" in every review dispatch; the fix is a re-record by the review coordinator, not
+  a hand edit.
+- **`openStore({migrate:false})` is a read-write connection**: SQLite can checkpoint the WAL into the
+  main file on last-connection close, so a "read-only" reader changes `-wal`/size bytes and a digest
+  guard reports it as concurrent drift. Observed live (G81 0309): a spurious exit 1, never a false
+  PASS. Guard on `sqlite_master` + row counts, and treat content-sha drift with the WAL check in mind.
+- **Orphaned `sh -c … feature sync …` guards hold `docs/features/.<id>.lock`**: a pipeline precheck's
+  `|| feature sync` fallback can outlive the run, and every later sync then blocks until the PIDs are
+  killed and the stale lock removed.
