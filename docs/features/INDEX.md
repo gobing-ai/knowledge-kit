@@ -85,7 +85,7 @@
     ├── [active] **G7**: kk workflow run ledger ([G7_kk-workflow-run-ledger.md](./G7_kk-workflow-run-ledger.md))
         └── [done] **G71**: Per-workflow run ledger from spur action_runs ([G71_per-workflow-run-ledger-from-spur-action-runs.md](./G71_per-workflow-run-ledger-from-spur-action-runs.md))
     ├── [done] **G8**: Workflow visibility in Spur Board: Collect, Daily AI Voice, IT Content ([G8_workflow-visibility-in-spur-board-collect-daily-ai-voice-it-content.md](./G8_workflow-visibility-in-spur-board-collect-daily-ai-voice-it-content.md))
-        └── [backlog] **G81**: Collect module redesign: store-backed run results, progress and yield ([G81_collect-module-redesign-store-backed-run-results-progress-and-yield.md](./G81_collect-module-redesign-store-backed-run-results-progress-and-yield.md))
+        └── [active] **G81**: Collect module redesign: store-backed run results, progress and yield ([G81_collect-module-redesign-store-backed-run-results-progress-and-yield.md](./G81_collect-module-redesign-store-backed-run-results-progress-and-yield.md))
     └── [active] **G9**: kk-smart-seo: evidence-grounded SEO and GEO audits ([G9_kk-smart-seo-evidence-grounded-seo-and-geo-audits.md](./G9_kk-smart-seo-evidence-grounded-seo-and-geo-audits.md))
 [cancelled] **H**: Real STORM generator and wt generator harvest ([H_real-storm-generator-and-wt-generator-harvest.md](./H_real-storm-generator-and-wt-generator-harvest.md))
 [backlog] **I**: LLM wiki ([I_llm-wiki.md](./I_llm-wiki.md))

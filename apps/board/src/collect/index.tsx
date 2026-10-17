@@ -1,8 +1,24 @@
-import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { RunConfig, RunResults } from '../contracts';
-import { type BoardClient, createBoardClient, readerOriginFrom } from '../shared/api';
-import { artifactViews, collectSummary, collectSummaryFacts, type ProgressRow, progressRows } from '../shared/collect';
-import { dedupeDiagnostics, diagnosticLine, formatTimestamp } from '../shared/format';
+import {
+    type ChangeEvent,
+    type ComponentType,
+    type MouseEvent,
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from 'react';
+import type { CollectRunStore, CollectStoreItems, CollectStoreOverview, RunConfig, RunResults } from '../contracts';
+import {
+    type BoardClient,
+    createBoardClient,
+    MAX_OVERVIEW_RUNS,
+    readerOriginFrom,
+    type StoreItemFilterName,
+    type StoreItemsQuery,
+} from '../shared/api';
+import { artifactViews, collectSummaryFacts, type ProgressRow, progressRows } from '../shared/collect';
+import { dedupeDiagnostics, diagnosticLine } from '../shared/format';
 import {
     ACTIVE_POLL_MS,
     delayMs,
@@ -11,12 +27,14 @@ import {
     HISTORY_POLL_MS,
     initialRefresh,
     type RefreshState,
+    requestSequence,
     succeeded,
     tick,
 } from '../shared/refresh';
 import {
-    BOARD_TABS,
-    type BoardTab,
+    COLLECT_TAB_ALIASES,
+    COLLECT_TABS,
+    type CollectTab,
     mergeRunPages,
     parseDeepLink,
     type RunListRow,
@@ -25,18 +43,21 @@ import {
     selectionPath,
     syncSelectionUrl,
 } from '../shared/run-selection';
+import { ConfigPanel, ItemsPanel, OverviewPanel, ProgressPanel, RunDetailPanel } from './panels';
 
 /**
  * The Collect Board module (`kk-collect`), rendered inside the host's React tree.
  *
  * Thin by construction: selection, polling/backoff, availability and projection logic live in
- * `src/shared/` so they are unit-tested without a DOM. This file owns only React state, the two
- * polling loops and the four tab panels.
+ * `src/shared/` so they are unit-tested without a DOM. This file owns only React state, the three
+ * loaders and the five tab panels. Store strings render as React text nodes, never HTML.
  */
 
-const TAB_LABELS: Record<BoardTab, string> = {
-    summary: 'Summary',
-    results: 'Results',
+/** The Collect module's tab labels (ids are frozen in `shared/run-selection.ts`). */
+const TAB_LABELS: Record<CollectTab, string> = {
+    overview: 'Overview',
+    summary: 'Run detail',
+    items: 'Items',
     progress: 'Execution progress',
     config: 'Workflow Config Summary',
 };
@@ -82,9 +103,9 @@ function usePolling(loader: () => Promise<void>, intervalMs: number, refresh: Re
     }, [intervalMs]);
 }
 
-/** The four tabs of the Collect module. */
+/** The five tabs of the Collect module. */
 export function CollectModule() {
-    const [link] = useState(() => parseDeepLink(window.location.search));
+    const [link] = useState(() => parseDeepLink(window.location.search, COLLECT_TABS, COLLECT_TAB_ALIASES));
     // A mistyped or hostile `kkApi` value falls back to the default reader with a diagnostic —
     // it never reaches `createBoardClient` and aborts the module during render (§4).
     const [reader] = useState(() => readerOriginFrom(window.location.search));
@@ -95,7 +116,10 @@ export function CollectModule() {
     );
     const [rows, setRows] = useState<RunListRow[]>([]);
     const [cursor, setCursor] = useState<string | null>(null);
-    const [selection, setSelection] = useState<RunSelection>({ runId: link.runId ?? null, tab: link.tab ?? 'summary' });
+    const [selection, setSelection] = useState<RunSelection<CollectTab>>({
+        runId: link.runId ?? null,
+        tab: link.tab ?? 'overview',
+    });
     const [diagnostics, setDiagnostics] = useState(() => [
         ...link.diagnostics,
         ...(reader.diagnostic === null ? [] : [reader.diagnostic]),
@@ -105,6 +129,11 @@ export function CollectModule() {
     const [results, setResults] = useState<RunResults | null>(null);
     const [config, setConfig] = useState<RunConfig | null>(null);
     const [progress, setProgress] = useState<unknown>(null);
+    const [overview, setOverview] = useState<CollectStoreOverview | null>(null);
+    const [storeRun, setStoreRun] = useState<CollectRunStore | null>(null);
+    const [items, setItems] = useState<CollectStoreItems | null>(null);
+    const [itemFilters, setItemFilters] = useState<StoreItemsQuery>({ page: 1 });
+    const [showEffective, setShowEffective] = useState(false);
     const [filterQuery, setFilterQuery] = useState('');
 
     // `tick`'s pending bit + one busy ref per source: a manual Refresh/"Load more" click can
@@ -112,13 +141,36 @@ export function CollectModule() {
     const historyBusy = useRef(false);
     const readerBusy = useRef(false);
 
+    const rowsRef = useRef(rows);
+    rowsRef.current = rows;
+    const selectionRef = useRef(selection);
+    selectionRef.current = selection;
+
+    /** The store overview for the loaded page: ids only select rows, the reader calls no workflow. */
+    const loadOverview = useCallback(
+        async (runIds: readonly string[]) => {
+            if (runIds.length === 0) return;
+            try {
+                setOverview(await client.storeOverview(runIds));
+            } catch (error) {
+                setDiagnostics((existing) => [
+                    ...existing,
+                    { code: 'board.store.unavailable', message: messageOf(error) },
+                ]);
+            }
+        },
+        [client],
+    );
+
     const loadHistory = useCallback(async () => {
         if (historyBusy.current) return;
         historyBusy.current = true;
         setHistoryRefresh((state) => tick(state));
+        let loaded: RunListRow[] = rowsRef.current;
         try {
             const page = await client.runs('kk-collect');
-            setRows((existing) => mergeRunPages(existing, page).runs);
+            loaded = mergeRunPages(rowsRef.current, page).runs;
+            setRows(loaded);
             setCursor(page.nextCursor);
             setHistoryRefresh(() => succeeded(Date.now(), HISTORY_POLL_MS));
         } catch (error) {
@@ -130,7 +182,8 @@ export function CollectModule() {
         } finally {
             historyBusy.current = false;
         }
-    }, [client]);
+        await loadOverview(loaded.slice(0, MAX_OVERVIEW_RUNS).map((row) => row.id));
+    }, [client, loadOverview]);
 
     const loadReader = useCallback(async () => {
         if (readerBusy.current) return;
@@ -155,6 +208,16 @@ export function CollectModule() {
         } finally {
             readerBusy.current = false;
         }
+        // The store projection is a separate reader route: its failure states itself inside the
+        // store panels (R7) instead of blanking the artifact-backed tabs.
+        try {
+            setStoreRun(await client.storeRun(runId));
+        } catch (error) {
+            setDiagnostics((existing) => [
+                ...existing,
+                { code: 'board.store.run-unavailable', message: messageOf(error) },
+            ]);
+        }
         // §6: a reader outage affects the result/config panels, never Spur's own run history — the
         // progress projection comes from the Board API, so it is fetched independently of the reader
         // and a reader failure leaves the last good progress in place instead of blanking the tab.
@@ -165,16 +228,44 @@ export function CollectModule() {
         }
     }, [client]);
 
-    const selectionRef = useRef(selection);
-    selectionRef.current = selection;
+    // The items fetch is a racing one: a filter/page/run change starts a new request while an older
+    // one may still be in flight. Only the newest token may write, so a slow earlier page can never
+    // overwrite the newer one (same discipline as `historyBusy`/`readerBusy` above).
+    const itemsRequests = useRef(requestSequence());
+
+    const loadItems = useCallback(
+        async (runId: string) => {
+            const token = itemsRequests.current.begin();
+            try {
+                const page = await client.storeItems(runId, itemFilters);
+                if (!itemsRequests.current.isCurrent(token)) return;
+                setItems(page);
+            } catch (error) {
+                if (!itemsRequests.current.isCurrent(token)) return;
+                setItems(null);
+                setDiagnostics((existing) => [
+                    ...existing,
+                    { code: 'board.store.items-unavailable', message: messageOf(error) },
+                ]);
+            }
+        },
+        [client, itemFilters],
+    );
 
     usePolling(loadHistory, HISTORY_POLL_MS, historyRefresh);
     usePolling(loadReader, ACTIVE_POLL_MS, readerRefresh);
 
+    // The items page is fetched only for the Items tab, and re-fetched when the run or the
+    // component-state filters change (the filters go to the 0307 route, not to a client filter).
+    useEffect(() => {
+        if (selection.tab !== 'items' || selection.runId === null) return;
+        void loadItems(selection.runId);
+    }, [selection.tab, selection.runId, loadItems]);
+
     // First visit picks the newest recorded run; a run disappearing never steals the selection.
     useEffect(() => {
         if (selection.runId === null && rows.length > 0) {
-            setSelection((state) => (state.runId === null ? resolveSelection(rows, link) : state));
+            setSelection((state) => (state.runId === null ? resolveSelection(rows, link, 'overview') : state));
         }
     }, [rows, selection.runId, link]);
 
@@ -195,6 +286,31 @@ export function CollectModule() {
         if (q === '') return rows;
         return rows.filter((r) => r.id.toLowerCase().includes(q) || r.status.toLowerCase().includes(q));
     }, [rows, filterQuery]);
+
+    /** The Run detail deep link for one Overview row (AC6: the same `?run=&tab=` shape). */
+    const runHref = useCallback(
+        (runId: string) => selectionPath({ runId, tab: 'summary' }, window.location.search),
+        [],
+    );
+    const toggleQuality = useCallback(() => setShowEffective((state) => !state), []);
+    /**
+     * One change handler for all five item filters (`select name=`), so the panel stays handler-free.
+     * A filter change starts at page 1, and a new decision clears the value it no longer names.
+     */
+    const filterChanged = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
+        const name = event.currentTarget.name as StoreItemFilterName;
+        const value = event.currentTarget.value === '' ? undefined : event.currentTarget.value;
+        setItemFilters((state) => ({
+            ...state,
+            [name]: value,
+            page: 1,
+            ...(name === 'decision' ? { value: undefined } : {}),
+        }));
+    }, []);
+    const pageChanged = useCallback((event: MouseEvent<HTMLButtonElement>) => {
+        const delta = event.currentTarget.name === 'previous' ? -1 : 1;
+        setItemFilters((state) => ({ ...state, page: Math.max(1, (state.page ?? 1) + delta) }));
+    }, []);
 
     return (
         <div className="kk-board kk-board-collect">
@@ -263,7 +379,7 @@ export function CollectModule() {
                 </div>
             </header>
             <nav className="kk-board-tabs" aria-label="Collect tabs">
-                {BOARD_TABS.map((candidate) => (
+                {COLLECT_TABS.map((candidate) => (
                     <button
                         key={candidate}
                         type="button"
@@ -280,8 +396,27 @@ export function CollectModule() {
                     <a href="/board/settings/workflows">Settings → Workflows</a>.
                 </p>
             ) : null}
-            {tab === 'summary' ? <SummaryPanel facts={facts} results={results} /> : null}
-            {tab === 'results' ? <ResultsPanel artifacts={artifacts} /> : null}
+            {tab === 'overview' ? <OverviewPanel runs={rows} overview={overview} now={now} runHref={runHref} /> : null}
+            {tab === 'summary' ? (
+                <RunDetailPanel
+                    storeRun={storeRun}
+                    results={results}
+                    facts={facts}
+                    artifacts={artifacts}
+                    showEffective={showEffective}
+                    onToggleQuality={toggleQuality}
+                />
+            ) : null}
+            {tab === 'items' ? (
+                <ItemsPanel
+                    runId={selection.runId}
+                    items={items}
+                    filters={itemFilters}
+                    quality={storeRun?.labelQuality ?? []}
+                    onFilterChange={filterChanged}
+                    onPageChange={pageChanged}
+                />
+            ) : null}
             {tab === 'progress' ? <ProgressPanel steps={steps} /> : null}
             {tab === 'config' ? <ConfigPanel config={config} /> : null}
             {dedupeDiagnostics([...diagnostics, ...(results?.diagnostics ?? [])]).map((diagnostic) => (
@@ -296,129 +431,6 @@ export function CollectModule() {
             )}
             <p className="kk-board-footnote">
                 Run history every {HISTORY_POLL_MS / 1000}s; selected run every {ACTIVE_POLL_MS / 1000}s.
-            </p>
-        </div>
-    );
-}
-
-/** Summary: execution status kept apart from result outcome, with every unknown explicit. */
-function SummaryPanel({
-    facts,
-    results,
-}: {
-    facts: ReturnType<typeof collectSummaryFacts>;
-    results: RunResults | null;
-}) {
-    if (results === null) return <p>No captured results for the selected run.</p>;
-    const summary = collectSummary(results);
-    const totalItems = (summary.inserted ?? 0) + (summary.updated ?? 0) + (summary.unchanged ?? 0);
-    return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-            {summary.labeled !== null || summary.inserted !== null ? (
-                <div className="kk-stat-grid">
-                    <div className="kk-stat-card">
-                        <span className="kk-stat-label">Ingested Items</span>
-                        <span className="kk-stat-value">{totalItems}</span>
-                        <span className="kk-stat-sub">
-                            {summary.inserted ?? 0} new · {summary.updated ?? 0} updated
-                        </span>
-                    </div>
-                    <div className="kk-stat-card">
-                        <span className="kk-stat-label">Labeled Pool</span>
-                        <span className="kk-stat-value">{summary.labeled ?? '—'}</span>
-                        <span className="kk-stat-sub">
-                            {summary.model ?? 0} model · {summary.fallback ?? 0} fallback
-                        </span>
-                    </div>
-                    <div className="kk-stat-card">
-                        <span className="kk-stat-label">Verdict</span>
-                        <span className="kk-stat-value">{summary.verdict ?? '—'}</span>
-                        <span className="kk-stat-sub">Confidence: {summary.confidence ?? '—'}</span>
-                    </div>
-                    <div className="kk-stat-card">
-                        <span className="kk-stat-label">Sources Active</span>
-                        <span className="kk-stat-value">{Object.keys(summary.sourceCounts ?? {}).length}</span>
-                        <span className="kk-stat-sub">Ingest channels</span>
-                    </div>
-                </div>
-            ) : null}
-            <dl className="kk-board-facts">
-                {facts.map((fact) => (
-                    <div key={fact.label}>
-                        <dt>{fact.label}</dt>
-                        <dd>
-                            {fact.value} <span className="kk-board-state">{fact.availability}</span>
-                        </dd>
-                    </div>
-                ))}
-            </dl>
-        </div>
-    );
-}
-
-/** Results: ingestion/labeling evidence plus allowlisted downloads. */
-function ResultsPanel({ artifacts }: { artifacts: ReturnType<typeof artifactViews> }) {
-    if (artifacts.length === 0) return <p>No artifact evidence for the selected run.</p>;
-    return (
-        <ul className="kk-board-artifacts">
-            {artifacts.map((artifact) => (
-                <li key={artifact.id}>
-                    {artifact.href === null ? (
-                        <span>
-                            {artifact.label} — {artifact.state}
-                        </span>
-                    ) : (
-                        <a href={artifact.href}>
-                            {artifact.label} — {artifact.state}
-                        </a>
-                    )}
-                </li>
-            ))}
-        </ul>
-    );
-}
-
-/** Execution progress: recorded state visits and attempts; never an execution action. */
-function ProgressPanel({ steps }: { steps: ProgressRow[] }) {
-    if (steps.length === 0) return <p>Recorded progress is unavailable for the selected run.</p>;
-    return (
-        <ul className="kk-board-progress">
-            {steps.map((step) => (
-                <li key={`${step.state}-${step.visit}`}>
-                    <strong>{step.state}</strong> visit {step.visit} — {step.status} · {step.timing}
-                    {step.operatorWait ? <span className="kk-board-state"> operator wait</span> : null}
-                    {step.actions.length === 0 ? null : (
-                        <ul>
-                            {step.actions.map((action) => (
-                                <li key={action}>{action}</li>
-                            ))}
-                        </ul>
-                    )}
-                </li>
-            ))}
-        </ul>
-    );
-}
-
-/** Workflow Config Summary: captured run values only; current definitions stay in Settings. */
-function ConfigPanel({ config }: { config: RunConfig | null }) {
-    if (config === null) return <p>No captured configuration for the selected run.</p>;
-    const entries = Object.entries(config.settings);
-    return (
-        <div className="kk-board-config">
-            <p>Captured {formatTimestamp(config.capturedAt)}</p>
-            {entries.length === 0 ? <p>Recorded configuration unavailable for this run.</p> : null}
-            <dl>
-                {entries.map(([key, value]) => (
-                    <div key={key}>
-                        <dt>{key}</dt>
-                        <dd>{value}</dd>
-                    </div>
-                ))}
-            </dl>
-            {config.unavailableKeys.length === 0 ? null : <p>Uncaptured keys: {config.unavailableKeys.join(', ')}</p>}
-            <p>
-                Current definitions and defaults live in <a href="/board/settings/workflows">Settings → Workflows</a>.
             </p>
         </div>
     );

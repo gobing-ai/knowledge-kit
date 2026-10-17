@@ -29,6 +29,23 @@ export interface RefreshState {
     failingSince: number | null;
 }
 
+/**
+ * A one-shot request-ordering token: only the newest {@link RequestSequence.begin} is current, so a
+ * slower earlier response can never overwrite a newer one (the items page/filter race).
+ */
+export interface RequestSequence {
+    /** Start one request and return its token. */
+    begin(): number;
+    /** True while `token` is still the newest request started. */
+    isCurrent(token: number): boolean;
+}
+
+/** A fresh monotonically increasing sequence. */
+export function requestSequence(): RequestSequence {
+    let newest = 0;
+    return { begin: () => ++newest, isCurrent: (token) => token === newest };
+}
+
 /** The initial state for a source polled at `intervalMs`. */
 export function initialRefresh(intervalMs: number): RefreshState {
     return { pending: false, failures: 0, backoffMs: intervalMs, lastSuccessAt: null, failingSince: null };

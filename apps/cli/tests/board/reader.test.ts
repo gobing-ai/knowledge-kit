@@ -18,6 +18,7 @@ import { afterAll, describe, expect, it } from 'bun:test';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { openStore } from '@gobing-ai/kk-store';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { captureRun, markerPath } from '../../src/board/capture';
 import type { ArtifactObservation } from '../../src/board/collect';
@@ -25,10 +26,14 @@ import {
     artifactContent,
     artifactResponse,
     createBoardReader,
+    MAX_OVERVIEW_RUNS,
     MAX_PREVIEW_BYTES,
     mimeFor,
+    parseItemsQuery,
+    parseRunsQuery,
     producerStateFrom,
 } from '../../src/board/reader';
+import { collectStoreTestSeeded } from './collect-store-fixture';
 
 const STAMP = '20261011T1200Z';
 const tempDirs: string[] = [];
@@ -584,5 +589,146 @@ describe('text byte ranges (P4-6)', () => {
         // Bytes 0-2 are 'h' + the first of the two 0xC3 0xA9 bytes that make 'é' — 3 bytes, not 3 chars.
         const ranged = await artifactContent('text', observed, { start: 0, end: 2 }, 6);
         expect(new TextEncoder().encode(String(ranged)).byteLength).toBeLessThanOrEqual(3);
+    });
+});
+
+describe('collect store routes (0307 R4/R6/R7/R8)', () => {
+    const originalConfig = process.env.KK_CONFIG;
+
+    afterAll(() => {
+        if (originalConfig === undefined) delete process.env.KK_CONFIG;
+        else process.env.KK_CONFIG = originalConfig;
+    });
+
+    /** The captured project plus a REAL seeded store, and a kk config the projection reads. */
+    async function storeProject(): Promise<{ root: string; publishedItemId: string }> {
+        const { root } = await seededProject();
+        const store = await openStore({ path: join(root, '.works', 'kk.db') });
+        const seeded = await collectStoreTestSeeded(store);
+        await store.close();
+        const config = join(root, 'kk-config.yaml');
+        writeFileSync(config, 'store:\n  labels:\n    priority: ["*", heuristic]\n');
+        process.env.KK_CONFIG = config;
+        return { root, publishedItemId: seeded.publishedItemId };
+    }
+
+    it('serves the overview without any Board call, and never invents a row', async () => {
+        const { root } = await storeProject();
+        const board = startFakeBoard(root);
+        const reader = startReader(board.origin, root);
+        // A foreign Board would refuse every capture-gated route; the overview needs none of it.
+        board.state.projectPath = tempDir('kk-foreign-project-');
+        const overview = await getJson<{
+            availability: string;
+            rows: Record<string, { inserted: number } | null>;
+            lastStoredAt: string | null;
+        }>(`${reader}/api/workflows/kk-collect/store/overview?runs=run-2,run-gone`);
+        expect(overview.availability).toBe('available');
+        expect(overview.rows['run-2']?.inserted).toBe(3);
+        expect(overview.rows['run-gone']).toBeNull();
+        expect(overview.lastStoredAt).not.toBeNull();
+    });
+
+    it('refuses a malformed overview query', async () => {
+        const { root } = await storeProject();
+        const board = startFakeBoard(root);
+        const reader = startReader(board.origin, root);
+        const overview = `${reader}/api/workflows/kk-collect/store/overview`;
+        for (const query of [
+            '',
+            '?runs=',
+            '?runs=../etc',
+            '?runs=run-1&limit=2',
+            `?runs=${Array.from({ length: MAX_OVERVIEW_RUNS + 1 }, () => 'r').join(',')}`,
+        ]) {
+            const response = await fetch(`${overview}${query}`);
+            expect(response.status).toBe(400);
+            expect(await errorCode(response)).toBe('board.query.invalid');
+        }
+        // Duplicates collapse; one safe id list is accepted.
+        expect((await fetch(`${overview}?runs=run-2,run-2`)).status).toBe(200);
+    });
+
+    it('serves a run detail with no capture record (store rows predate capture)', async () => {
+        const { root } = await storeProject();
+        const board = startFakeBoard(root);
+        board.state.run = { id: 'run-2', workflowName: 'kk-collect', status: 'done' };
+        const reader = startReader(board.origin, root);
+        const detail = await getJson<{
+            availability: string;
+            row: { inserted: number } | null;
+            labelQuality: { decisionId: string; run: unknown[]; effective: unknown[] }[];
+        }>(`${reader}/api/workflows/kk-collect/runs/run-2/store`);
+        expect(detail.availability).toBe('available');
+        expect(detail.row?.inserted).toBe(3);
+        const category = detail.labelQuality.find((entry) => entry.decisionId === 'kk-item-category');
+        expect(category?.effective.length).toBe(1);
+        // §3 declares "Query: none" for this route: an undeclared parameter is refused (0307 P3).
+        const refused = await fetch(`${reader}/api/workflows/kk-collect/runs/run-2/store?page=2`);
+        expect(refused.status).toBe(400);
+        expect(await errorCode(refused)).toBe('board.query.invalid');
+    });
+
+    it('keeps the shipped security envelope on the store routes', async () => {
+        const { root } = await storeProject();
+        const board = startFakeBoard(root);
+        const reader = startReader(board.origin, root);
+        const itemsUrl = `${reader}/api/workflows/kk-collect/runs/run-2/store/items`;
+        // Wrong origin, and the workflow that is not kk-collect.
+        expect((await fetch(itemsUrl, { headers: { origin: 'http://evil.example' } })).status).toBe(403);
+        expect((await fetch(`${reader}/api/workflows/kk-itc/store/overview?runs=run-2`)).status).toBe(404);
+        expect((await fetch(`${reader}/api/workflows/kk-itc/runs/run-2/store`)).status).toBe(404);
+        // The Board does not own this project, or does not know the run.
+        board.state.projectPath = tempDir('kk-store-other-');
+        expect((await fetch(itemsUrl)).status).toBe(403);
+        board.state.projectPath = root;
+        board.state.run = { id: 'run-1', workflowName: 'kk-collect', status: 'done' };
+        const unknownRun = await fetch(itemsUrl);
+        expect(unknownRun.status).toBe(404);
+        expect(await errorCode(unknownRun)).toBe('board.run.unknown');
+        // A Board that cannot be reached at all is 503, not an empty payload.
+        const offline = startReader('http://127.0.0.1:1', root);
+        expect((await fetch(`${offline}/api/workflows/kk-collect/runs/run-2/store`)).status).toBe(503);
+    });
+
+    it('serves items with the declared query only, and refuses everything else', async () => {
+        const { root, publishedItemId } = await storeProject();
+        const board = startFakeBoard(root);
+        board.state.run = { id: 'run-2', workflowName: 'kk-collect', status: 'done' };
+        const reader = startReader(board.origin, root);
+        const items = `${reader}/api/workflows/kk-collect/runs/run-2/store/items`;
+
+        const page = await getJson<{ items: { id: string }[]; total: number; sources: string[] }>(
+            `${items}?page=1&selection=published`,
+        );
+        expect(page.items.map((item) => item.id)).toEqual([publishedItemId]);
+        expect(page.sources).toEqual(['hackernews', 'rss']);
+
+        for (const query of [
+            '?tab=items',
+            '?page=0',
+            '?page=abc',
+            '?seen=stale',
+            '?decision=kk-item-category',
+            '?value=ai-news',
+            '?value=bad%20value&decision=kk-item-category',
+            '?decision=nope&value=ai-news',
+            '?selection=maybe',
+            '?source=nowhere',
+        ]) {
+            const response = await fetch(`${items}${query}`);
+            expect([400, response.status]).toContain(400);
+            expect(await errorCode(response)).toBe('board.query.invalid');
+        }
+        // The shipped routes still take no query at all.
+        expect((await fetch(`${reader}/api/workflows/kk-collect/runs/run-2/results?page=1`)).status).toBe(400);
+    });
+
+    it('parses the store queries by contract, not by prefix', () => {
+        expect('response' in parseRunsQuery(new URLSearchParams(''))).toBe(true);
+        expect(parseRunsQuery(new URLSearchParams('runs=a,b'))).toEqual({ runIds: ['a', 'b'] });
+        expect('query' in parseItemsQuery(new URLSearchParams('page=2&seen=new&selection=none'))).toBe(true);
+        const parsed = parseItemsQuery(new URLSearchParams('page=2'));
+        expect('query' in parsed && parsed.query.page).toBe(2);
     });
 });

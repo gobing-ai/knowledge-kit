@@ -17,6 +17,7 @@
         "typecheck": "tsc --noEmit"
     },
     "devDependencies": {
+        "@gobing-ai/kk-store": "workspace:*",
         "@types/react": "^19.2.0",
         "@types/react-dom": "^19.2.0",
         "playwright": "catalog:",

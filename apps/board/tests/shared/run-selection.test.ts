@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import {
     BOARD_TABS,
+    COLLECT_TAB_ALIASES,
+    COLLECT_TABS,
     isBoardTab,
     mergeRunPages,
     parseDeepLink,
@@ -130,5 +132,40 @@ describe('tabs', () => {
         expect([...BOARD_TABS]).toEqual(['summary', 'results', 'progress', 'config']);
         expect(isBoardTab('config')).toBe(true);
         expect(isBoardTab('history')).toBe(false);
+    });
+});
+
+describe('parseDeepLink with a module tab set', () => {
+    it('accepts the Collect tabs and resolves the shipped `results` alias', () => {
+        expect(parseDeepLink('?run=r-1&tab=items', COLLECT_TABS, COLLECT_TAB_ALIASES)).toEqual({
+            runId: 'r-1',
+            tab: 'items',
+            diagnostics: [],
+        });
+        expect(parseDeepLink('?tab=results', COLLECT_TABS, COLLECT_TAB_ALIASES).tab).toBe('summary');
+        expect(parseDeepLink('?tab=overview', COLLECT_TABS, COLLECT_TAB_ALIASES).tab).toBe('overview');
+    });
+
+    it('keeps the shipped defaults: `results` is a tab of its own and Collect ids are unknown', () => {
+        expect(parseDeepLink('?tab=results').tab).toBe('results');
+        expect(parseDeepLink('?tab=items').tab).toBeUndefined();
+        expect(parseDeepLink('?tab=items').diagnostics[0]?.code).toBe('board.deeplink.unknown-tab');
+        // No aliases by default: the shipped modules never silently rewrite a tab.
+        expect(parseDeepLink('?tab=summary', BOARD_TABS, COLLECT_TAB_ALIASES).tab).toBe('summary');
+    });
+
+    it('drops an alias whose target is not in the module tab set', () => {
+        const link = parseDeepLink('?tab=history', BOARD_TABS, { history: 'overview' });
+        expect(link.tab).toBeUndefined();
+        expect(link.diagnostics[0]?.code).toBe('board.deeplink.unknown-tab');
+    });
+
+    it('resolves the first visit onto the module default tab', () => {
+        expect(resolveSelection(rows, parseDeepLink('', COLLECT_TABS), 'overview')).toEqual({
+            runId: 'r-newer',
+            tab: 'overview',
+            diagnostics: [],
+        });
+        expect(resolveSelection(rows, parseDeepLink('')).tab).toBe('summary');
     });
 });
