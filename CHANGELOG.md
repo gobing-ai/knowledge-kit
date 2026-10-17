@@ -1,3 +1,14 @@
+## [0.1.2] - 2026-10-16
+
+### Fixed
+
+- fix(xhs-pub): retry a transient creator-console navigation once (1d3e3dc1)
+<!-- src: plugins/publishings/xhs-pub/src/page.ts:191 -->
+- fix(wechatmp-pub): end the probe inside its --timeout budget (d6ef3476)
+<!-- src: plugins/publishings/wechatmp-pub/src/profile-check.ts:122 -->
+- fix(kk): report the independent publish channels in the run report (70b70ae8)
+<!-- src: plugins/generations/news-report-gen/src/index.ts:431 -->
+
 ## [0.1.1] - 2026-10-16
 
 ### Fixed
