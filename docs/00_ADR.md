@@ -1328,6 +1328,21 @@ Chromium and `GET /api/board/modules`). The checkout declares the three modules 
 because the host validates each `directory` at server start and the assets are gitignored build
 output: build first, then flip `enabled`. Shapes and operator setup: `04` `kk board`.
 
+### Amendment — 2026-10-16 (G81: Collect reads the kk store read-only)
+
+Reverses the "artifacts only; no store/DAO reader" rule of `workflow-board-modules.md` §9 **for the
+Collect module only**. The run's artifacts answer "what files did this run write"; operators need
+"what did this run add to the store, how well was it labelled, what became of it, and is collection
+keeping its 6 h cadence" — facts that live only in `.works/kk.db` (`collect_runs`, `items`, `labels`,
+`selections`). The KK reader may open that store with `openStore({path, migrate:false})` (precedent:
+`apps/cli/src/commands/daily.ts:150`) and serve three GET-only Collect store routes. Constraints: no
+write, DDL or migration; Spur stays the authority for run status and timing (the `collect_runs` row
+is stamped at `kk store ingest`, so its `started_at`/`finished_at` are not a duration, and failed or
+skipped ticks have no row); an unreadable, missing, locked or schema-newer store is an
+`unavailable` diagnostic, never zeros; item bodies are never served; query parameters are accepted
+only on routes that declare them. Daily AI Voice and IT Content stay artifacts-only. Detail:
+[Collect store views](design/collect-store-views.md).
+
 #### API/library claim sources and confidence
 
 | Claim | Source | Local verification | Confidence |

@@ -356,7 +356,9 @@ Detail shape is `{run,phases,transitions,actions}`; action identity is `id`, nod
 recorded evidence includes `status`, `ok`, `startedAt`, `completedAt`, `durationMs`, `resultSummary`.
 Retain separate action IDs as attempts; do not promise an attempt counter absent from this API.
 
-Use artifacts only; no optional store/DAO reader in this delivery. Collect `store-result.json`
+Use artifacts only; no optional store/DAO reader in this delivery. (Amended 2026-10-16, ADR-035/G81: the
+Collect module adds read-only store views — see [Collect store views](collect-store-views.md); Daily AI Voice
+and IT Content stay artifacts-only.) Collect `store-result.json`
 provides inserted/updated/unchanged; `label-result.txt` provides aggregate labeled/model/fallback
 and verdict/confidence, not a per-label histogram. Source counts may be derived from the captured
 blended Doc[] using the existing source-count rule. Missing per-label/source failure detail is
