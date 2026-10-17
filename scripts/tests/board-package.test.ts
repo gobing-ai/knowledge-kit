@@ -27,6 +27,25 @@ import { BOARD_ENTRIES, BOARD_EXTERNAL, BOARD_OUTPUT_DIRS, buildBoard } from '..
 const REPO_ROOT = resolve(import.meta.dir, '../..');
 
 /**
+ * Every module specifier the bundle's `import` statements name.
+ *
+ * One pass over the WHOLE source, not per line: Bun wraps a multi-hook named import as
+ * `import {\n  useCallback,\n  …\n} from "react";`, so a `line.startsWith('import ')` extractor
+ * loses that specifier and yields `''` — the facade assertion then fails for the wrong reason.
+ * Handles multi-line named imports and bare (`import "x"`) imports; a `;` never crosses a clause, so
+ * the match cannot run into the next statement. Both the workspace and the packed-tarball
+ * assertions use this, so the two cannot drift.
+ */
+function externalSpecifiers(bundle: string): string[] {
+    const specifiers: string[] = [];
+    for (const match of bundle.matchAll(/^import\s+(?:[^;]*?\sfrom\s+)?["']([^"']+)["']/gm)) {
+        const specifier = match[1];
+        if (typeof specifier === 'string') specifiers.push(specifier);
+    }
+    return specifiers;
+}
+
+/**
  * Serialize the shared workspace build/pack across test files with a cross-process lock. The
  * `buildBoard` / `bun pm pack` calls below write the SHARED `apps/cli/dist` + `apps/board/dist`
  * trees; under `bun test` another file (e.g. `apps/board/tests/installed-board.test.ts`) packs at
@@ -74,10 +93,7 @@ describe('buildBoard', () => {
 
     it('externalizes only the manifest-advertised React facades and never calls createRoot', () => {
         const bundle = readFileSync(join(REPO_ROOT, 'apps/board/dist/collect/index.js'), 'utf-8');
-        const imports = bundle
-            .split('\n')
-            .filter((line) => line.startsWith('import '))
-            .map((line) => /from "([^"]+)"/.exec(line)?.[1] ?? '');
+        const imports = externalSpecifiers(bundle);
         // Exactly the two advertised facades — no bundled second React runtime and no dev runtime.
         expect(new Set(imports)).toEqual(new Set(['react', 'react/jsx-runtime']));
         expect(BOARD_EXTERNAL).toEqual(['react', 'react/jsx-runtime', 'react/jsx-dev-runtime']);
@@ -178,10 +194,7 @@ describe('packed CLI distribution (G8/0255 AC1/AC7)', () => {
     it.serial('externalizes only the host React facades and bundles no second runtime', () => {
         for (const entry of ENTRIES) {
             const bundle = packed.read(`dist/board/${entry}/index.js`);
-            const imports = bundle
-                .split('\n')
-                .filter((line) => line.startsWith('import '))
-                .map((line) => /from "([^"]+)"/.exec(line)?.[1] ?? '');
+            const imports = externalSpecifiers(bundle);
             expect(new Set(imports), entry).toEqual(new Set(['react', 'react/jsx-runtime']));
             expect(bundle, entry).toContain('webModule');
             expect(bundle, entry).not.toContain('createRoot');

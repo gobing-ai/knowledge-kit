@@ -678,3 +678,181 @@
     font-size: 0.75rem;
     color: var(--color-spur-text-faint);
 }
+
+/* ── Collect store views (G81/0308) ────────────────────────────────────── */
+
+.kk-collect-overview {
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+}
+
+.kk-collect-banner {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.75rem;
+}
+
+.kk-collect-banner-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.75rem 0.875rem;
+    background: var(--color-spur-surface-2);
+    border: 1px solid var(--color-spur-border);
+    border-radius: 0.5rem;
+}
+
+.kk-collect-banner-value {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.kk-collect-run-link {
+    padding: 0;
+    font: inherit;
+    text-align: left;
+    color: var(--color-spur-accent);
+    background: none;
+    border: 0;
+    cursor: pointer;
+}
+
+.kk-collect-run-link:hover {
+    text-decoration: underline;
+}
+
+.kk-collect-nostore {
+    color: var(--color-spur-text-muted);
+    font-style: italic;
+}
+
+.kk-collect-bar {
+    display: flex;
+    width: 9rem;
+    height: 0.5rem;
+    overflow: hidden;
+    background: var(--color-spur-surface-2);
+    border: 1px solid var(--color-spur-border);
+    border-radius: 999px;
+}
+
+.kk-collect-bar-seg {
+    height: 100%;
+    background: var(--color-spur-accent);
+}
+
+.kk-collect-bar-seg-1 {
+    opacity: 0.65;
+}
+
+.kk-collect-bar-seg-2 {
+    opacity: 0.4;
+}
+
+.kk-collect-bar-total {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--color-spur-text-muted);
+}
+
+.kk-collect-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+}
+
+.kk-collect-detail > p {
+    margin: 0;
+}
+
+.kk-collect-quality-block + .kk-collect-quality-block {
+    margin-top: 0.875rem;
+}
+
+.kk-collect-quality-block h3 {
+    margin: 0 0 0.375rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-spur-text-muted);
+}
+
+.kk-collect-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.75rem;
+}
+
+.kk-collect-items {
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+}
+
+/* The items filters carry their own class: `.kk-board-run-selector` stays one unique control. */
+.kk-collect-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--color-spur-text-muted);
+}
+
+.kk-collect-filter select {
+    max-width: 200px;
+    padding: 0.3125rem 0.625rem;
+    font-size: 0.8125rem;
+    font-family: inherit;
+    color: var(--color-spur-text);
+    background: var(--color-spur-surface);
+    border: 1px solid var(--color-spur-border);
+    border-radius: 0.375rem;
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.15s ease;
+}
+
+.kk-collect-filter select:focus {
+    border-color: var(--color-spur-accent);
+}
+
+.kk-collect-pager {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    font-size: 0.8125rem;
+    color: var(--color-spur-text-muted);
+}
+
+.kk-collect-pager button {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.8125rem;
+    color: var(--color-spur-text);
+    background: var(--color-spur-surface-2);
+    border: 1px solid var(--color-spur-border);
+    border-radius: 0.45rem;
+    cursor: pointer;
+}
+
+.kk-collect-pager button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.kk-chip {
+    display: inline-block;
+    margin: 0 0.25rem 0.25rem 0;
+    padding: 0.125rem 0.5rem;
+    font-size: 0.6875rem;
+    color: var(--color-spur-text);
+    background: var(--color-spur-surface-2);
+    border: 1px solid var(--color-spur-border);
+    border-radius: 999px;
+}

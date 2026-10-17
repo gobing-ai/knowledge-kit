@@ -5,6 +5,7 @@ import {
     type FetchLike,
     isLoopbackHttpOrigin,
     readerOriginFrom,
+    storeItemsQueryString,
 } from '../../src/shared/api';
 
 describe('isLoopbackHttpOrigin', () => {
@@ -96,5 +97,48 @@ describe('createBoardClient run projections', () => {
             'http://127.0.0.1:4310/api/runs/run%201',
             'http://127.0.0.1:4310/api/runs/run%201/progress',
         ]);
+    });
+});
+
+describe('store routes', () => {
+    const client = (seen: string[]) =>
+        createBoardClient({
+            readerOrigin: 'http://127.0.0.1:4340',
+            boardOrigin: 'http://127.0.0.1:4310',
+            fetchImpl: async (input) => {
+                seen.push(String(input));
+                return new Response(JSON.stringify({ ok: true }), { status: 200 });
+            },
+        });
+
+    it('sends the page ids to the overview route and caps them at the route limit', async () => {
+        const seen: string[] = [];
+        const ids = Array.from({ length: 30 }, (_, index) => `r-${index}`);
+        await client(seen).storeOverview(ids);
+        expect(seen[0]).toBe(
+            `http://127.0.0.1:4340/api/workflows/kk-collect/store/overview?runs=${encodeURIComponent(ids.slice(0, 25).join(','))}`,
+        );
+    });
+
+    it('addresses the per-run store and items routes', async () => {
+        const seen: string[] = [];
+        const board = client(seen);
+        await board.storeRun('run 1');
+        await board.storeItems('run 1', { page: 2, source: 'hn-ingest', seen: 'new' });
+        expect(seen).toEqual([
+            'http://127.0.0.1:4340/api/workflows/kk-collect/runs/run%201/store',
+            'http://127.0.0.1:4340/api/workflows/kk-collect/runs/run%201/store/items?page=2&source=hn-ingest&seen=new',
+        ]);
+    });
+});
+
+describe('storeItemsQueryString', () => {
+    it('writes only declared filters, and a decision only with its value', () => {
+        expect(storeItemsQueryString({})).toBe('');
+        expect(storeItemsQueryString({ decision: 'kk-item-quality' })).toBe('');
+        expect(storeItemsQueryString({ value: 'HIGH' })).toBe('');
+        expect(storeItemsQueryString({ decision: 'kk-item-quality', value: 'HIGH', selection: 'published' })).toBe(
+            'decision=kk-item-quality&value=HIGH&selection=published',
+        );
     });
 });

@@ -1,4 +1,12 @@
-import type { BoardDiagnostic, BoardHealth, RunConfig, RunResults } from '../contracts';
+import type {
+    BoardDiagnostic,
+    BoardHealth,
+    CollectRunStore,
+    CollectStoreItems,
+    CollectStoreOverview,
+    RunConfig,
+    RunResults,
+} from '../contracts';
 import type { RunListPage } from './run-selection';
 
 /**
@@ -12,6 +20,39 @@ import type { RunListPage } from './run-selection';
 
 /** Minimal fetch signature the client depends on (satisfied by the platform `fetch`). */
 export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
+
+/** The most run ids the overview route accepts in one request (`runs=` 1–25, design §3). */
+export const MAX_OVERVIEW_RUNS = 25;
+
+/** The filter names the Items panel renders, one per items-route parameter. */
+export type StoreItemFilterName = 'source' | 'seen' | 'decision' | 'value' | 'selection';
+
+/** The filters the Items tab sends to the run's items route (design §3). */
+export interface StoreItemsQuery {
+    page?: number;
+    source?: string;
+    seen?: 'new' | 'reseen';
+    decision?: string;
+    value?: string;
+    selection?: 'selected' | 'published' | 'dropped' | 'none';
+}
+
+/**
+ * The items route's query string: every declared filter and nothing else, so a half-set
+ * decision/value pair (which the reader refuses) is never sent by accident.
+ */
+export function storeItemsQueryString(query: StoreItemsQuery): string {
+    const params = new URLSearchParams();
+    if (query.page !== undefined) params.set('page', String(query.page));
+    if (query.source !== undefined) params.set('source', query.source);
+    if (query.seen !== undefined) params.set('seen', query.seen);
+    if (query.decision !== undefined && query.value !== undefined) {
+        params.set('decision', query.decision);
+        params.set('value', query.value);
+    }
+    if (query.selection !== undefined) params.set('selection', query.selection);
+    return params.toString();
+}
 
 /** The documented default reader origin (design §4). */
 export const DEFAULT_READER_ORIGIN = 'http://127.0.0.1:4340';
@@ -42,6 +83,12 @@ export interface BoardClient {
     runDetail(runId: string): Promise<unknown>;
     /** One run's progress projection. */
     progress(runId: string): Promise<unknown>;
+    /** The Collect store overview for up to {@link MAX_OVERVIEW_RUNS} Spur run ids. */
+    storeOverview(runIds: readonly string[]): Promise<CollectStoreOverview>;
+    /** One run's stored facts and label quality. */
+    storeRun(runId: string): Promise<CollectRunStore>;
+    /** One page of one run's items, filtered. */
+    storeItems(runId: string, query?: StoreItemsQuery): Promise<CollectStoreItems>;
 }
 
 /**
@@ -123,6 +170,18 @@ export function createBoardClient(options: BoardClientOptions): BoardClient {
             if (cursor !== undefined) params.set('cursor', cursor);
             return getJson<RunListPage>(`${board}/api/runs?${params.toString()}`);
         },
+        storeOverview: (runIds) => {
+            const params = new URLSearchParams({ runs: runIds.slice(0, MAX_OVERVIEW_RUNS).join(',') });
+            return getJson<CollectStoreOverview>(
+                `${reader}/api/workflows/kk-collect/store/overview?${params.toString()}`,
+            );
+        },
+        storeRun: (runId) =>
+            getJson<CollectRunStore>(`${reader}/api/workflows/kk-collect/runs/${encodeURIComponent(runId)}/store`),
+        storeItems: (runId, query = {}) =>
+            getJson<CollectStoreItems>(
+                `${reader}/api/workflows/kk-collect/runs/${encodeURIComponent(runId)}/store/items?${storeItemsQueryString(query)}`,
+            ),
         runDetail: (runId) => getJson<unknown>(`${board}/api/runs/${encodeURIComponent(runId)}`),
         progress: (runId) => getJson<unknown>(`${board}/api/runs/${encodeURIComponent(runId)}/progress`),
     };

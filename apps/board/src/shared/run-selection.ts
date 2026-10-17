@@ -13,12 +13,27 @@ export type BoardTab = 'summary' | 'results' | 'progress' | 'config';
 /** The four shipped tabs, in display order. */
 export const BOARD_TABS: readonly BoardTab[] = ['summary', 'results', 'progress', 'config'];
 
+/**
+ * The Collect module's five tabs (design §2): Overview is the default and the shipped Results tab
+ * folds into Run detail. Wide as `BoardTab` rather than in place of it: the other two modules keep
+ * their four tabs and their deep links unchanged.
+ */
+export type CollectTab = 'overview' | 'summary' | 'items' | 'progress' | 'config';
+
+/** The Collect tabs, in display order. */
+export const COLLECT_TABS: readonly CollectTab[] = ['overview', 'summary', 'items', 'progress', 'config'];
+
+/** Shipped `?tab=results` links resolve to Run detail: no dead links, no lost favourites. */
+export const COLLECT_TAB_ALIASES: Readonly<Record<string, CollectTab>> = { results: 'summary' };
+
 /** One row of the frozen Spur run-list envelope (`/api/runs`). */
 export interface RunListRow {
     id: string;
     workflowName: string;
     status: string;
     startedAt?: string | null;
+    /** Spur's own completion stamp; absent/null while the run is still running. */
+    completedAt?: string | null;
 }
 
 /** The paged envelope `/api/runs` answers with (§9 frozen list shape). */
@@ -29,16 +44,19 @@ export interface RunListPage {
     hasMore: boolean;
 }
 
-/** The resolved selection: which run, which tab. `runId: null` is the explicit no-run state. */
-export interface RunSelection {
+/**
+ * The resolved selection: which run, which tab. `runId: null` is the explicit no-run state.
+ * Generic over the tab-id set so Collect's five tabs type-check without widening `BoardTab`.
+ */
+export interface RunSelection<T extends string = BoardTab> {
     runId: string | null;
-    tab: BoardTab;
+    tab: T;
 }
 
 /** The parsed `?run=&tab=` query, with a diagnostic for every rejected part. */
-export interface DeepLink {
+export interface DeepLink<T extends string = BoardTab> {
     runId?: string;
-    tab?: BoardTab;
+    tab?: T;
     diagnostics: BoardDiagnostic[];
 }
 
@@ -50,20 +68,33 @@ export function isBoardTab(value: string | null | undefined): value is BoardTab 
 /**
  * Parse the `?run=&tab=` query. An unknown tab or a blank run id is dropped with a
  * diagnostic — never silently rewritten into a different selection.
+ *
+ * `tabs` is the module's own tab set and `aliases` maps superseded ids onto current ones; both
+ * default to the shipped behaviour, so Daily Voice and ITC call this unchanged.
  */
-export function parseDeepLink(search: string): DeepLink {
+export function parseDeepLink<T extends string = BoardTab>(
+    search: string,
+    tabs: readonly T[] = BOARD_TABS as unknown as readonly T[],
+    aliases: Readonly<Record<string, T>> = {},
+): DeepLink<T> {
     const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
     const diagnostics: BoardDiagnostic[] = [];
     const rawTab = params.get('tab');
     const rawRun = params.get('run');
-    let tab: BoardTab | undefined;
+    const known: readonly string[] = tabs;
+    let tab: T | undefined;
     if (rawTab !== null) {
-        if (isBoardTab(rawTab)) {
-            tab = rawTab;
+        // An alias only resolves to a tab this module actually has: an alias for a tab set
+        // without it is a diagnostic, not a selection.
+        const aliased = Object.hasOwn(aliases, rawTab) ? aliases[rawTab] : undefined;
+        if (known.includes(rawTab)) {
+            tab = rawTab as T;
+        } else if (aliased !== undefined && known.includes(aliased)) {
+            tab = aliased;
         } else {
             diagnostics.push({
                 code: 'board.deeplink.unknown-tab',
-                message: `Unknown tab '${rawTab}'; showing Summary.`,
+                message: `Unknown tab '${rawTab}'; showing the default tab.`,
             });
         }
     }
@@ -85,11 +116,13 @@ export function parseDeepLink(search: string): DeepLink {
  * that is not in the loaded pages yields a diagnostic and the explicit no-run state —
  * never a silent fallback onto a different run.
  */
-export function resolveSelection(
+export function resolveSelection<T extends string = BoardTab>(
     rows: readonly RunListRow[],
-    link: DeepLink,
-): RunSelection & { diagnostics: BoardDiagnostic[] } {
-    const tab = link.tab ?? 'summary';
+    link: DeepLink<T>,
+    // `summary` names a tab in every tab set this module family has (shipped four, Collect's five).
+    defaultTab: T = 'summary' as T,
+): RunSelection<T> & { diagnostics: BoardDiagnostic[] } {
+    const tab = link.tab ?? defaultTab;
     const diagnostics = [...link.diagnostics];
     if (link.runId !== undefined) {
         if (rows.some((row) => row.id === link.runId)) {
@@ -110,7 +143,7 @@ export function resolveSelection(
  * into the existing query rather than replacing it — a reload after a run/tab change must still find
  * the reader the operator configured.
  */
-export function selectionQuery(selection: RunSelection, search = ''): string {
+export function selectionQuery(selection: RunSelection<string>, search = ''): string {
     const params = new URLSearchParams();
     if (selection.runId !== null) params.set('run', selection.runId);
     params.set('tab', selection.tab);
@@ -131,7 +164,7 @@ export const COLLECT_MODULE_PATH = '/board/modules/kk-collect';
  * The address-bar target the selection deep-links to: a module route plus its query. `modulePath`
  * defaults to the Collect route; the daily-voice/itc entries pass their own host route.
  */
-export function selectionPath(selection: RunSelection, search = '', modulePath = COLLECT_MODULE_PATH): string {
+export function selectionPath(selection: RunSelection<string>, search = '', modulePath = COLLECT_MODULE_PATH): string {
     return `${modulePath}${selectionQuery(selection, search)}`;
 }
 
@@ -147,7 +180,7 @@ export interface SelectionUrlTarget {
  * the call is a no-op when the address already matches, so it can never fight the router.
  */
 export function syncSelectionUrl(
-    selection: RunSelection,
+    selection: RunSelection<string>,
     target: SelectionUrlTarget,
     modulePath = COLLECT_MODULE_PATH,
 ): void {

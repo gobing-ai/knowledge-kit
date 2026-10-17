@@ -7,6 +7,7 @@ import {
     initialRefresh,
     isStale,
     MAX_BACKOFF_MS,
+    requestSequence,
     succeeded,
     tick,
 } from '../../src/shared/refresh';
@@ -37,5 +38,48 @@ describe('refresh state machine', () => {
 
     it('says "not yet loaded" rather than pretending stale data is fresh', () => {
         expect(freshnessLabel(initialRefresh(ACTIVE_POLL_MS))).toBe('Not yet loaded');
+    });
+});
+
+describe('request sequence', () => {
+    /** A promise plus its resolver, so a test can order two responses arbitrarily. */
+    function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+        let resolve!: (value: T) => void;
+        const promise = new Promise<T>((settle) => {
+            resolve = settle;
+        });
+        return { promise, resolve };
+    }
+
+    it('applies only the newest request, even when an older one resolves after it', async () => {
+        const sequence = requestSequence();
+        const applied: string[] = [];
+        const older = deferred<string>();
+        const newer = deferred<string>();
+
+        /** One loader's shape: begin a token, await its payload, apply only while still current. */
+        const load = async (payload: Promise<string>): Promise<void> => {
+            const token = sequence.begin();
+            const value = await payload;
+            if (sequence.isCurrent(token)) applied.push(value);
+        };
+
+        const first = load(older.promise);
+        const second = load(newer.promise);
+        newer.resolve('newer page');
+        await second;
+        older.resolve('older page');
+        await first;
+
+        expect(applied).toEqual(['newer page']);
+    });
+
+    it('keeps the newest token current across many starts', () => {
+        const sequence = requestSequence();
+        const first = sequence.begin();
+        const second = sequence.begin();
+        expect(sequence.isCurrent(first)).toBe(false);
+        expect(sequence.isCurrent(second)).toBe(true);
+        expect(sequence.isCurrent(second + 1)).toBe(false);
     });
 });

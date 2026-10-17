@@ -519,7 +519,11 @@ describe('installed Board native modules (AC1/AC7)', () => {
             expect(await page.locator(`.kk-board-${module.entry}`).count(), module.id).toBe(1);
             const heading = await page.locator('h1').first().textContent();
             expect(heading?.trim(), module.id).toBe(module.name);
-            expect(await page.locator('.kk-board-tabs button').count(), module.id).toBe(4);
+            // G81/0308: Collect ships five tabs (Overview, Run detail, Items, the two shipped ones);
+            // Daily Voice and ITC keep their four.
+            expect(await page.locator('.kk-board-tabs button').count(), module.id).toBe(
+                module.id === 'kk-collect' ? 5 : 4,
+            );
         }
     }, 30_000);
 
@@ -544,15 +548,16 @@ describe('installed Board native modules (AC1/AC7)', () => {
 describe('run selection and deep links (AC2)', () => {
     it('restores a saved ?run=&tab= deep link and keeps both in the URL', async () => {
         if (!ready || page === null) throw new Error('setup did not complete');
+        // G81/0308 keeps shipped `?tab=results` links alive: the alias resolves to Run detail.
         await openModule('kk-collect', query({ run: 'r-b', tab: 'results' }));
         await waitForRunOption('r-b');
         expect(await page.locator('.kk-board-run-selector select').inputValue()).toBe('r-b');
         expect((await page.locator('.kk-board-tabs button[aria-current="page"]').textContent())?.trim()).toBe(
-            'Results',
+            'Run detail',
         );
         const url = new URL(page.url());
         expect(url.searchParams.get('run')).toBe('r-b');
-        expect(url.searchParams.get('tab')).toBe('results');
+        expect(url.searchParams.get('tab')).toBe('summary');
         // §4: the validated reader origin is retained in the saved URL.
         expect(url.searchParams.get('kkApi')).toBe(readerOrigin);
     }, 30_000);
@@ -561,11 +566,12 @@ describe('run selection and deep links (AC2)', () => {
         if (!ready || page === null) throw new Error('setup did not complete');
         await openModule('kk-collect', query({ run: 'r-b', tab: 'results' }));
         await waitForRunOption('r-b');
-        // AC2 "across all four tabs": visit every tab, ending on progress for the reload below.
+        // AC2 "across all tabs": visit every Collect tab, ending on progress for the reload below.
         for (const [tab, label] of [
-            ['summary', 'Summary'],
+            ['overview', 'Overview'],
+            ['summary', 'Run detail'],
+            ['items', 'Items'],
             ['config', 'Workflow Config Summary'],
-            ['results', 'Results'],
             ['progress', 'Execution progress'],
         ] as const) {
             await page.locator('.kk-board-tabs').getByRole('button', { name: label, exact: true }).click();
@@ -684,8 +690,8 @@ describe('truthful refresh, usability and media (AC6/AC7)', () => {
             await openModule('kk-collect', query({ run: 'r-a' }));
             expect(await page.locator('.kk-board-tabs').getAttribute('aria-label')).toBe('Collect tabs');
             const buttons = page.locator('.kk-board-tabs button');
-            expect(await buttons.count()).toBe(4);
-            await buttons.nth(2).focus();
+            expect(await buttons.count()).toBe(5);
+            await buttons.nth(3).focus();
             await page.keyboard.press('Enter');
             await page.waitForTimeout(200);
             expect((await page.locator('.kk-board-tabs button[aria-current="page"]').textContent())?.trim()).toBe(

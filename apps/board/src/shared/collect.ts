@@ -1,4 +1,4 @@
-import type { Availability, RunResults } from '../contracts';
+import type { Availability, CollectRunStore, CollectRunStoreRow, RunResults } from '../contracts';
 import { availabilityLabel, formatElapsed, formatTimestamp } from './format';
 
 /**
@@ -276,4 +276,201 @@ export function artifactViews(results: RunResults, readerOrigin: string): Artifa
                 ? `${readerOrigin}/api/workflows/${results.workflow}/runs/${results.runId}/artifacts/${artifact.id}`
                 : null,
     }));
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Store views (G81/0308 — docs/design/collect-store-views.md §2)
+ *
+ * The reader serves the store projections; these helpers turn them into render rows without
+ * inventing a number. Absent evidence is `—` or `unavailable`, never `0`.
+ * ---------------------------------------------------------------------------------------------- */
+
+/** The cadence states the Overview banner shows (frozen names, design §2). */
+export type CadenceState = 'on schedule' | 'late' | 'stalled' | 'unknown';
+
+/** `kk-collect` runs every 6 h; the cadence states are measured against that schedule. */
+export const CADENCE_SCHEDULE_HOURS = 6;
+
+/** One cadence verdict: the state, the age of the last stored collection, its operator sentence. */
+export interface Cadence {
+    state: CadenceState;
+    /** Hours since `lastStoredAt`, or null when the store recorded no collection. */
+    sinceHours: number | null;
+    detail: string;
+}
+
+/**
+ * Time since the last stored collection against the 6 h schedule: `on schedule` ≤ 6 h, `late`
+ * ≤ 12 h, `stalled` beyond, `unknown` without a stored collection (or an unreadable store).
+ */
+export function cadenceState(lastStoredAt: string | null, now: number): Cadence {
+    const since = lastStoredAt === null ? Number.NaN : Date.parse(lastStoredAt);
+    if (Number.isNaN(since)) {
+        return { state: 'unknown', sinceHours: null, detail: 'No stored collection recorded.' };
+    }
+    const sinceHours = Math.max(0, (now - since) / 3_600_000);
+    const state: CadenceState =
+        sinceHours <= CADENCE_SCHEDULE_HOURS
+            ? 'on schedule'
+            : sinceHours <= 2 * CADENCE_SCHEDULE_HOURS
+              ? 'late'
+              : 'stalled';
+    return {
+        state,
+        sinceHours,
+        detail: `${sinceHours.toFixed(1)} h since the last stored collection (schedule ${CADENCE_SCHEDULE_HOURS} h).`,
+    };
+}
+
+/** `default` label rows ÷ label rows, or `—` when the run recorded no label rows. */
+export function fallbackShare(row: Pick<CollectRunStoreRow, 'labelRows' | 'labelRowsBySource'>): string {
+    if (row.labelRows <= 0) return '—';
+    const fallback = row.labelRowsBySource.default ?? 0;
+    return `${Math.round((fallback / row.labelRows) * 100)}%`;
+}
+
+/** One source's slice of a stacked "collected per source" bar. */
+export interface SourceSegment {
+    source: string;
+    count: number;
+    /** The slice's fraction of the run's collected total, 0–1. */
+    share: number;
+}
+
+/** The per-source stacked bar: sources with a positive count, alphabetical, shares summing to 1. */
+export function sourceSegments(sourceCounts: Record<string, number>): SourceSegment[] {
+    const entries = Object.entries(sourceCounts)
+        .filter(([, count]) => Number.isFinite(count) && count > 0)
+        .sort(([a], [b]) => a.localeCompare(b));
+    const total = entries.reduce((sum, [, count]) => sum + count, 0);
+    return entries.map(([source, count]) => ({ source, count, share: total === 0 ? 0 : count / total }));
+}
+
+/** The Overview banner's attention counters for the current run-list page. */
+export interface BannerCounts {
+    /** Spur runs that failed. */
+    failed: number;
+    /** `done` runs with no `collect_runs` row: the tick finished without storing anything. */
+    doneWithoutRow: number;
+    /** Running runs with no row yet — in progress, never a missing store. */
+    inProgress: number;
+}
+
+/**
+ * Count what needs attention on this page. Spur records no distinct "skipped" state, so a tick that
+ * stored nothing shows up as a failed run or as `done` without a row — nothing is counted twice.
+ */
+export function bannerCounts(
+    runs: readonly { id: string; status: string }[],
+    rows: Record<string, CollectRunStoreRow | null>,
+): BannerCounts {
+    const counts: BannerCounts = { failed: 0, doneWithoutRow: 0, inProgress: 0 };
+    for (const run of runs) {
+        if (rows[run.id] !== undefined && rows[run.id] !== null) continue;
+        if (run.status === 'failed') counts.failed += 1;
+        else if (run.status === 'done') counts.doneWithoutRow += 1;
+        else if (run.status === 'running') counts.inProgress += 1;
+    }
+    return counts;
+}
+
+/** One funnel stage: its number, the unit that number counts, and what it is made of. */
+export interface FunnelCard {
+    title: string;
+    /** The headline number, or `unavailable` — never a zero standing in for absent evidence. */
+    value: string;
+    /** The unit `value` counts (`items`, …) — every stage names its own. */
+    unit: string;
+    detail: string;
+    availability: 'available' | 'unavailable';
+}
+
+const NAMED_MAKERS = ['heuristic', 'model', 'default'] as const;
+
+/**
+ * Label observations by maker: the three named makers, plus `other` only when the run recorded
+ * rows under another maker (`labels.maker` is not a closed set).
+ */
+export function makerBreakdown(labelRowsBySource: Record<string, number>): string {
+    const named = NAMED_MAKERS.map((maker) => `${labelRowsBySource[maker] ?? 0} ${maker}`);
+    const other = Object.entries(labelRowsBySource)
+        .filter(([maker]) => !(NAMED_MAKERS as readonly string[]).includes(maker))
+        .reduce((sum, [, count]) => sum + count, 0);
+    return (other > 0 ? [...named, `${other} other`] : named).join(' · ');
+}
+
+/**
+ * The Run detail funnel: Collected → Stored → Labeled → Downstream, each naming its own unit.
+ * `unchanged` is not in `collect_runs` — it comes from the shipped results projection, and stays
+ * `unavailable` when that projection does not carry it.
+ */
+export function funnelCards(row: CollectRunStoreRow | null, results: RunResults | null): FunnelCard[] {
+    if (row === null) {
+        const unavailable: FunnelCard = {
+            title: 'Collected',
+            value: 'unavailable',
+            unit: 'items',
+            detail: 'This run wrote no store row.',
+            availability: 'unavailable',
+        };
+        return [unavailable];
+    }
+    const segments = sourceSegments(row.sourceCounts);
+    const collected = segments.reduce((sum, segment) => sum + segment.count, 0);
+    const unchanged = results === null ? null : collectSummary(results).unchanged;
+    const stored = row.inserted + row.updated;
+    const yieldTotal = row.yield.selected + row.yield.published + row.yield.dropped;
+    return [
+        {
+            title: 'Collected',
+            value: String(collected),
+            unit: 'items',
+            detail:
+                segments.length === 0
+                    ? 'No source counts recorded.'
+                    : segments.map((s) => `${s.source} ${s.count}`).join(' · '),
+            availability: 'available',
+        },
+        {
+            title: 'Stored',
+            value: String(stored),
+            unit: 'items',
+            detail: `${row.inserted} inserted · ${row.updated} updated · ${unchanged === null ? 'unavailable' : `${unchanged} unchanged`}`,
+            availability: 'available',
+        },
+        {
+            title: 'Labeled',
+            value: String(row.labeledItems),
+            unit: 'items',
+            detail: `${row.labelRows} label rows: ${makerBreakdown(row.labelRowsBySource)}`,
+            availability: 'available',
+        },
+        {
+            title: 'Downstream',
+            value: String(yieldTotal),
+            unit: 'items',
+            detail: `${row.yield.selected} selected · ${row.yield.published} published · ${row.yield.dropped} dropped`,
+            availability: 'available',
+        },
+    ];
+}
+
+/** The `value` filter's domain for one decision: the values this run's own label rows recorded. */
+export function decisionValues(quality: CollectRunStore['labelQuality'], decisionId: string): string[] {
+    const entry = quality.find((candidate) => candidate.decisionId === decisionId);
+    return entry === undefined ? [] : entry.run.map((row) => row.value);
+}
+
+/** Spur run duration (`completedAt − startedAt`), `—` while the run is still running. */
+export function runDuration(startedAt: string | null | undefined, completedAt: string | null | undefined): string {
+    if (startedAt === null || startedAt === undefined) return '—';
+    if (completedAt === null || completedAt === undefined) return '—';
+    const end = Date.parse(completedAt);
+    if (Number.isNaN(Date.parse(startedAt)) || Number.isNaN(end)) return '—';
+    return formatElapsed(startedAt, end);
+}
+
+/** `page`/`pages` for the Items pager: `pageSize` is frozen at 25 by the 0307 route. */
+export function pager(page: number, total: number, pageSize = 25): { page: number; pages: number; total: number } {
+    return { page, total, pages: Math.max(1, Math.ceil(total / pageSize)) };
 }
