@@ -27,6 +27,15 @@ export {
     type CollectRunStart,
     CollectRunsDao,
 } from './dao/collect-runs';
+export {
+    COLLECT_VIEW_PAGE_SIZE,
+    CollectViewDao,
+    type CollectViewItem,
+    type CollectViewItemsFilter,
+    type CollectViewItemsPage,
+    type CollectViewLabelQuality,
+    type CollectViewRunRow,
+} from './dao/collect-view';
 export { type ItemRecord, ItemsDao, type StoredDoc, type UpsertDocsResult } from './dao/items';
 export {
     type CurrentLabelRecord,
@@ -55,6 +64,7 @@ export {
 } from './dao/selections';
 export { type OpenStoreOptions, openStore, SQLITE_BUSY_TIMEOUT_MS, type Store } from './db';
 export { type ItemFacts, itemFacts, type SourceTier } from './facts';
+export { unknownKkMigrationIds } from './migrations';
 export {
     type CompileProfileOptions,
     compileProfile,

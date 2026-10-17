@@ -1,4 +1,5 @@
 import { CollectRunsDao } from './dao/collect-runs';
+import { CollectViewDao } from './dao/collect-view';
 import { ItemsDao } from './dao/items';
 import { LabelsDao } from './dao/labels';
 import { LocksDao } from './dao/locks';
@@ -29,6 +30,8 @@ export interface Store {
     labels: LabelsDao;
     selections: SelectionsDao;
     locks: LocksDao;
+    /** Read-only aggregates for the Board reader's Collect store views (G81). */
+    collectView: CollectViewDao;
     /** Migrations applied by this open (`0` when the journal was already complete). */
     appliedMigrations: number;
     close(): Promise<void>;
@@ -70,6 +73,7 @@ export async function openStore(options: OpenStoreOptions): Promise<Store> {
             labels: new LabelsDao(adapter),
             selections: new SelectionsDao(adapter),
             locks: new LocksDao(adapter),
+            collectView: new CollectViewDao(adapter),
             appliedMigrations,
             close: async () => {
                 adapter.close();

@@ -250,6 +250,22 @@ async function allMigrationsJournaled(adapter: DbAdapter, migrations: readonly K
 }
 
 /**
+ * Journal ids in this database that the build does not know — a store written by a NEWER kk.
+ *
+ * Shared by {@link applyKkMigrations} (which refuses to write) and read-only consumers (a reader
+ * that must not serve columns its build cannot interpret). An absent journal is an empty list.
+ */
+export async function unknownKkMigrationIds(
+    adapter: DbAdapter,
+    migrations: readonly KkMigration[] = KK_MIGRATIONS,
+): Promise<string[]> {
+    if (!(await schemaObjectExists(adapter, KK_MIGRATION_JOURNAL))) return [];
+    const rows = await adapter.queryAll<{ id: string }>(`SELECT id FROM "${KK_MIGRATION_JOURNAL}"`);
+    const knownIds = new Set(migrations.map((migration) => migration.id));
+    return rows.map((row) => row.id).filter((id) => !knownIds.has(id));
+}
+
+/**
  * Apply one atomic migration as a single transaction: a plain journal `INSERT` (no `ON CONFLICT`,
  * so a loser fails rather than re-running the body) followed by every statement in order.
  * `adapter.batch` is one transaction, so a failure anywhere rolls the whole migration back, journal
@@ -299,19 +315,15 @@ export async function applyKkMigrations(
     migrations: readonly KkMigration[] = KK_MIGRATIONS,
     onSkippedStatement?: (statement: string) => void,
 ): Promise<number> {
-    if (await schemaObjectExists(adapter, KK_MIGRATION_JOURNAL)) {
-        const rows = await adapter.queryAll<{ id: string }>(`SELECT id FROM "${KK_MIGRATION_JOURNAL}"`);
-        const knownIds = new Set(migrations.map((m) => m.id));
-        const unknownIds = rows.map((r) => r.id).filter((id) => !knownIds.has(id));
-        if (unknownIds.length > 0) {
-            const dbRow = await adapter.queryFirst<{ file: string }>(
-                "SELECT file FROM pragma_database_list WHERE name = 'main'",
-            );
-            const db = dbRow?.file && dbRow.file !== '' ? dbRow.file : 'store';
-            throw new Error(
-                `kk.store.schema-newer: ${db} has migrations [${unknownIds.join(', ')}] this kk does not know — upgrade kk`,
-            );
-        }
+    const unknownIds = await unknownKkMigrationIds(adapter, migrations);
+    if (unknownIds.length > 0) {
+        const dbRow = await adapter.queryFirst<{ file: string }>(
+            "SELECT file FROM pragma_database_list WHERE name = 'main'",
+        );
+        const db = dbRow?.file && dbRow.file !== '' ? dbRow.file : 'store';
+        throw new Error(
+            `kk.store.schema-newer: ${db} has migrations [${unknownIds.join(', ')}] this kk does not know — upgrade kk`,
+        );
     }
 
     if (await allMigrationsJournaled(adapter, migrations)) return 0;

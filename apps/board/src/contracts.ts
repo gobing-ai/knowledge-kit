@@ -108,3 +108,84 @@ export interface RunResults {
     artifacts: ArtifactDescriptor[];
     diagnostics: BoardDiagnostic[];
 }
+
+/* ------------------------------------------------------------------------------------------------
+ * Collect store views (G81, task 0307 — docs/design/collect-store-views.md §3)
+ *
+ * Read-only projections of `<project>/.works/kk.db` (ADR-035 amendment 2026-10-16, Collect only).
+ * `availability: 'unavailable'` means the store could not be read at all: the payload then carries
+ * its empty shape plus a diagnostic, never zeros that read as real facts.
+ * ---------------------------------------------------------------------------------------------- */
+
+/** Whether the store answered at all, plus the bounded reasons it did not. */
+export interface CollectStoreAvailability {
+    availability: 'available' | 'unavailable';
+    diagnostics: BoardDiagnostic[];
+}
+
+/** One run's stored facts; every count names its unit (rows, items, observations). */
+export interface CollectRunStoreRow {
+    runId: string;
+    /** Parsed `collect_runs.source_counts_json`; `{}` (plus a diagnostic) when it does not parse. */
+    sourceCounts: Record<string, number>;
+    /** Items written by this run. */
+    inserted: number;
+    updated: number;
+    /** Label observations (one per item × decision × maker). */
+    labelRows: number;
+    /** Distinct items with at least one label row in this run. */
+    labeledItems: number;
+    labelRowsBySource: Record<string, number>;
+    /** Items FIRST seen in this run, by their strongest selection status. */
+    yield: { selected: number; published: number; dropped: number };
+}
+
+/** `GET /api/workflows/kk-collect/store/overview` — the last stored collection and per-run rows. */
+export interface CollectStoreOverview extends CollectStoreAvailability {
+    schemaVersion: 1;
+    /** `max(collect_runs.finished_at)` as an RFC 3339 stamp, `null` when nothing was stored. */
+    lastStoredAt: string | null;
+    /** `null` = that Spur run never reached `store` (a failed tick writes no row). */
+    rows: Record<string, CollectRunStoreRow | null>;
+}
+
+/** `GET /api/workflows/kk-collect/runs/<id>/store` — one run's stored facts and label quality. */
+export interface CollectRunStore extends CollectStoreAvailability {
+    schemaVersion: 1;
+    runId: string;
+    row: CollectRunStoreRow | null;
+    labelQuality: {
+        decisionId: string;
+        /** This run's own rows: value × confidence level (`none` = no level recorded). */
+        run: { value: string; HIGH: number; MEDIUM: number; LOW: number; none: number }[];
+        /** The effective (`labels_current`) distribution over the same items. */
+        effective: { value: string; count: number }[];
+    }[];
+}
+
+/** One item as the store views render it; all text renders as text nodes, never HTML. */
+export interface CollectStoreItem {
+    id: string;
+    /** Capped at 300 characters. */
+    title: string;
+    /** `canonical_url` only when it is `http(s)`, else `null`. */
+    url: string | null;
+    source: string;
+    storyId: string | null;
+    seen: 'new' | 'reseen';
+    /** Effective labels, `decision_id → value`. */
+    labels: Record<string, string>;
+    selection: 'selected' | 'published' | 'dropped' | 'none';
+}
+
+/** `GET /api/workflows/kk-collect/runs/<id>/store/items` — one page of the run's items. */
+export interface CollectStoreItems extends CollectStoreAvailability {
+    schemaVersion: 1;
+    runId: string;
+    page: number;
+    pageSize: 25;
+    total: number;
+    items: CollectStoreItem[];
+    /** The `source` filter's domain, read from the store. */
+    sources: string[];
+}

@@ -379,6 +379,40 @@ media is served as byte ranges. Status vocabulary: `400` bad identity or query, 
 origin or project, `404` unknown capture/artifact or a changed owner, `405` mutating method, `416`
 unsatisfiable range, `422` malformed stored evidence, `503` Board authority unavailable.
 
+**Collect store views (G81, task 0307 — `docs/design/collect-store-views.md` §3).** ADR-035's
+2026-10-16 amendment lifts artifacts-only for `kk-collect` alone: three read-only routes project
+`<project>/.works/kk.db` (never Spur, never a copy of the store into artifacts).
+
+| Route | Query | Identity |
+| ------- | ------- | ---------- |
+| `/api/workflows/kk-collect/store/overview` | `runs=<id>,…` (1–25 ids matching the reader's run-id rule) | ids only select rows; no Board call |
+| `/api/workflows/kk-collect/runs/<id>/store` | none | project + Spur run detail (no capture record) |
+| `/api/workflows/kk-collect/runs/<id>/store/items` | `page` (≥1), `source` (∈ the store's own values), `seen` (`new`/`reseen`), `decision`+`value` (`[A-Za-z0-9._-]{1,64}`, together or not at all), `selection` (`selected`/`published`/`dropped`/`none`) | project + Spur run detail (no capture record) |
+
+Only these three routes accept query parameters; every other route still refuses all of them
+(`400 board.query.invalid`), and another workflow on a store route is `404 board.route.unknown`.
+The per-run routes authorize with the project + run-detail half of the shipped `authorize()`
+(`authorizeRun`, which `authorize()` now delegates to), so a run that predates capture still has its
+store views while every capture-gated route keeps its refusals.
+
+Shapes (type-only in `apps/board/src/contracts.ts`): `CollectStoreOverview`
+(`{availability, schemaVersion: 1, lastStoredAt, rows: Record<runId, CollectRunStoreRow | null>}`),
+`CollectRunStore` (`{…, runId, row, labelQuality[]}`), `CollectStoreItems`
+(`{…, runId, page, pageSize: 25, total, items[], sources[]}`). A row carries `sourceCounts`,
+`inserted`, `updated`, `labelRows` (observations), `labeledItems` (distinct items),
+`labelRowsBySource` and `yield` — items FIRST seen in the run by their strongest status
+(`published` > `selected` > `dropped`). Titles cap at 300 characters and `url` is served only when
+`canonical_url` is `http(s)`; `collect_runs.started_at`/`finished_at` are never shown as a duration.
+
+Read-only contract: the file is `stat`-ed first (a missing path is never opened — `openStore` would
+create it), opened with `migrate: false`, closed per request, and no request changes `sqlite_master`
+or any row count. Availability codes, all HTTP 200 with empty shapes instead of zeros:
+`board.store.missing` (no store file), `board.store.unreadable` (open/busy/query failure),
+`board.store.newer` (an unknown `__kk_store_migrations` id — `unknownKkMigrationIds`, shared with
+the migration guard), `board.store.row-invalid` (unparseable `source_counts_json` → `{}`), and
+`board.store.policy` (the kk config's label policy is unreadable: only the `effective` label lists
+empty; run rows are still served). Messages are bounded and never carry raw SQLite text or a path.
+
 **Operator setup (checkout).**
 
 1. Build the browser contributions: `bun scripts/build-board.ts` (invoked by the root `build` and by

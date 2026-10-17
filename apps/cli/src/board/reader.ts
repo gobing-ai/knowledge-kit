@@ -1,7 +1,9 @@
 import type { BoardDiagnostic, RunCapture, RunConfig, RunResults, WorkflowName } from '@gobing-ai/kk-board/contracts';
+import { ITEM_DECISION_IDS } from '@gobing-ai/kk-store';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { captureRecordPath, markerPath, readCaptureRecord, readOwnerMarker } from './capture';
 import { type ArtifactObservation, isTerminalStatus, projectCollectResults, type RunDetailSummary } from './collect';
+import { type CollectStoreItemsQuery, storeItems, storeOverview, storeRun } from './collect-store';
 import { dagProducerState, projectDailyResults } from './daily-voice';
 import { itcResultSpecs, projectItcResults } from './itc';
 import {
@@ -110,6 +112,11 @@ interface BoardResponse {
 /** A run's identity is proven only by the Board's own `/api/project` and `/api/runs/<id>` answers. */
 type Authorization =
     | { ok: true; record: RunCapture; detail: RunDetailSummary; diagnostics: BoardDiagnostic[] }
+    | { ok: false; response: BoardResponse };
+
+/** The capture-free half of {@link Authorization}: project ownership plus the run's own Board detail. */
+type RunAuthorization =
+    | { ok: true; detail: RunDetailSummary; diagnostics: BoardDiagnostic[] }
     | { ok: false; response: BoardResponse };
 
 function stringField(value: unknown, key: string): string | null {
@@ -235,6 +242,16 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
                 },
             };
         }
+        const authorized = await authorizeRun(workflow, runId);
+        if (!authorized.ok) return authorized;
+        return { ok: true, record, detail: authorized.detail, diagnostics: authorized.diagnostics };
+    }
+
+    /**
+     * The project + Spur run-detail half of {@link authorize}, WITHOUT a capture record: the Collect
+     * store views serve runs that predate capture (design §3). Every refusal code is the shipped one.
+     */
+    async function authorizeRun(workflow: WorkflowName, runId: string): Promise<RunAuthorization> {
         const project = await boardGet('/api/project');
         if (project === null) {
             return {
@@ -247,7 +264,7 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         }
         const boardPath = stringField(project.body, 'path');
         const canonicalBoardPath = boardPath === null ? null : safeRealPath(fs, boardPath);
-        if (canonicalBoardPath === null || canonicalBoardPath !== record.projectPath) {
+        if (canonicalBoardPath === null || canonicalBoardPath !== projectPath) {
             return {
                 ok: false,
                 response: {
@@ -278,10 +295,8 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
                 response: { status: 404, body: { code: 'board.run.unknown', message: `Board has no run '${runId}'.` } },
             };
         }
-        const diagnostics: BoardDiagnostic[] = [];
         return {
             ok: true,
-            record,
             detail: {
                 id: runId,
                 workflowName: workflow,
@@ -289,7 +304,7 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
                 startedAt: stringField(run, 'startedAt'),
                 completedAt: stringField(run, 'completedAt'),
             },
-            diagnostics,
+            diagnostics: [],
         };
     }
 
@@ -537,6 +552,30 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         };
     }
 
+    /**
+     * The three Collect store views (G81): read-only projections of `.works/kk.db`. They are the
+     * ONLY routes that take query parameters, and only the ones their design declares.
+     */
+    async function storeOverviewFor(runIds: readonly string[]): Promise<BoardResponse> {
+        return { status: 200, body: await storeOverview({ projectPath, fs }, runIds) };
+    }
+
+    async function storeRunFor(runId: string): Promise<BoardResponse> {
+        return { status: 200, body: await storeRun({ projectPath, fs }, runId) };
+    }
+
+    async function storeItemsFor(runId: string, query: CollectStoreItemsQuery): Promise<BoardResponse> {
+        const items = await storeItems({ projectPath, fs }, runId, query);
+        // A source outside the store's own values is a bad request, never an empty page (§3).
+        if (items === null) {
+            return {
+                status: 400,
+                body: { code: 'board.query.invalid', message: "`source` is not one of this store's item sources." },
+            };
+        }
+        return { status: 200, body: items };
+    }
+
     const server = Bun.serve({
         hostname: '127.0.0.1',
         port,
@@ -567,8 +606,47 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
             if (path === '/api/health') {
                 return jsonResponse({ schemaVersion: 1, projectPath }, 200, cors);
             }
+            const overviewMatch = /^\/api\/workflows\/([^/]+)\/store\/overview$/.exec(path);
+            const runStoreMatch = /^\/api\/workflows\/([^/]+)\/runs\/([^/]+)\/store$/.exec(path);
+            const runStoreItemsMatch = /^\/api\/workflows\/([^/]+)\/runs\/([^/]+)\/store\/items$/.exec(path);
+            const storeMatch = overviewMatch ?? runStoreMatch ?? runStoreItemsMatch;
+            if (storeMatch !== null) {
+                const storeRaw = storeMatch[1] ?? '';
+                // Store views exist for kk-collect only: another workflow is an unknown route, not
+                // a bad identity (§3).
+                if (decodeURIComponent(storeRaw) !== STORE_WORKFLOW) {
+                    return jsonResponse({ code: 'board.route.unknown', message: 'Unknown reader route.' }, 404, cors);
+                }
+                if (overviewMatch !== null) {
+                    const runs = parseRunsQuery(url.searchParams);
+                    if ('response' in runs) return jsonResponse(runs.response.body, runs.response.status, cors);
+                    const response = await storeOverviewFor(runs.runIds);
+                    return jsonResponse(response.body, response.status, cors);
+                }
+                if (runStoreMatch !== null) {
+                    // §3 declares "Query: none" here: this route refuses every parameter, exactly
+                    // like the shipped ones (review 0307 P3).
+                    const refused = parseQuery(url.searchParams);
+                    if (refused !== null) return jsonResponse(refused.body, refused.status, cors);
+                }
+                const identified = identify(storeRaw, storeMatch[2] ?? '');
+                if ('response' in identified)
+                    return jsonResponse(identified.response.body, identified.response.status, cors);
+                const query = runStoreItemsMatch === null ? null : parseItemsQuery(url.searchParams);
+                if (query !== null && 'response' in query)
+                    return jsonResponse(query.response.body, query.response.status, cors);
+                const authorized = await authorizeRun(identified.workflow, identified.runId);
+                if (!authorized.ok) return jsonResponse(authorized.response.body, authorized.response.status, cors);
+                const response =
+                    query === null
+                        ? await storeRunFor(identified.runId)
+                        : await storeItemsFor(identified.runId, query.query);
+                return jsonResponse(response.body, response.status, cors);
+            }
             const match = /^\/api\/workflows\/([^/]+)\/runs\/([^/]+)\/(results|config)$/.exec(path);
             const artifactMatch = /^\/api\/workflows\/([^/]+)\/runs\/([^/]+)\/artifacts\/([^/]+)$/.exec(path);
+            // Query parsing moved AFTER matching: only the store routes declare parameters, every
+            // shipped route keeps refusing them (§3 / R8).
             const query = parseQuery(url.searchParams);
             if (query !== null) return jsonResponse(query.body, query.status, cors);
             if (match !== null) {
@@ -602,6 +680,101 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
     const boundPort = server.port ?? port;
     const readerUrl = `http://127.0.0.1:${boundPort}`;
     return { url: readerUrl, port: boundPort, stop: () => void server.stop(true) };
+}
+
+/** The one workflow whose store views this reader serves (design §3). */
+const STORE_WORKFLOW: WorkflowName = 'kk-collect';
+
+/** The reader's run-id rule: one safe segment (never a path). */
+const RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
+/** `?runs=` accepts at most this many ids per request (design §3). */
+export const MAX_OVERVIEW_RUNS = 25;
+
+/** The label-value domain the `decision`+`value` filter accepts. */
+const LABEL_VALUE_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+
+/** The `selection` filter's domain (`none` = the item has no selection row). */
+const SELECTION_FILTERS = ['selected', 'published', 'dropped', 'none'] as const;
+
+/** The `page`/`source`/… keys `…/store/items` declares; anything else is a bad request. */
+const ITEMS_QUERY_KEYS = new Set(['page', 'source', 'seen', 'decision', 'value', 'selection']);
+
+/** A bounded 400 for a malformed store query: the offending value is never echoed. */
+function invalidQuery(message: string): BoardResponse {
+    return { status: 400, body: { code: 'board.query.invalid', message } };
+}
+
+/**
+ * `?runs=<id>,…` for the overview route: 1–25 safe run ids, deduplicated. The ids only select
+ * rows — they are never proof of anything (no Spur call, no Board call).
+ */
+export function parseRunsQuery(params: URLSearchParams): { runIds: string[] } | { response: BoardResponse } {
+    for (const key of params.keys()) {
+        if (key !== 'runs') return { response: invalidQuery('This route accepts only a `runs` parameter.') };
+    }
+    const raw = params.get('runs');
+    if (raw === null || raw === '') return { response: invalidQuery('`runs` is required.') };
+    const ids = raw.split(',');
+    if (ids.length > MAX_OVERVIEW_RUNS) {
+        return { response: invalidQuery(`At most ${MAX_OVERVIEW_RUNS} run ids are accepted.`) };
+    }
+    for (const id of ids) {
+        if (!RUN_ID_PATTERN.test(id))
+            return { response: invalidQuery('`runs` must be a comma-separated run id list.') };
+    }
+    return { runIds: [...new Set(ids)] };
+}
+
+/**
+ * The `…/store/items` query: syntactically validated here, with `source` checked against the
+ * store's own values downstream (that domain is data, not syntax).
+ */
+export function parseItemsQuery(
+    params: URLSearchParams,
+): { query: CollectStoreItemsQuery } | { response: BoardResponse } {
+    for (const key of params.keys()) {
+        if (!ITEMS_QUERY_KEYS.has(key)) return { response: invalidQuery('Unknown query parameter.') };
+    }
+    const rawPage = params.get('page');
+    const page = rawPage === null ? 1 : Number(rawPage);
+    if (rawPage !== null && (!/^\d+$/.test(rawPage) || !Number.isSafeInteger(page) || page < 1)) {
+        return { response: invalidQuery('`page` must be an integer of at least 1.') };
+    }
+    const source = params.get('source');
+    if (source !== null && (source === '' || source.length > 128)) {
+        return { response: invalidQuery('`source` must be a short non-empty value.') };
+    }
+    const seen = params.get('seen');
+    if (seen !== null && seen !== 'new' && seen !== 'reseen') {
+        return { response: invalidQuery('`seen` must be `new` or `reseen`.') };
+    }
+    const decision = params.get('decision');
+    if (decision !== null && !(ITEM_DECISION_IDS as readonly string[]).includes(decision)) {
+        return { response: invalidQuery('`decision` is not a known decision id.') };
+    }
+    const value = params.get('value');
+    // A decision without its value (or the reverse) would filter on a half-known label: refuse.
+    if ((decision === null) !== (value === null)) {
+        return { response: invalidQuery('`decision` and `value` are accepted together or not at all.') };
+    }
+    if (value !== null && !LABEL_VALUE_PATTERN.test(value)) {
+        return { response: invalidQuery('`value` must match [A-Za-z0-9._-]{1,64}.') };
+    }
+    const selection = params.get('selection');
+    if (selection !== null && !(SELECTION_FILTERS as readonly string[]).includes(selection)) {
+        return { response: invalidQuery('`selection` must be selected, published, dropped or none.') };
+    }
+    return {
+        query: {
+            page,
+            ...(source === null ? {} : { source }),
+            ...(seen === null ? {} : { seen }),
+            ...(decision === null ? {} : { decision }),
+            ...(value === null ? {} : { value }),
+            ...(selection === null ? {} : { selection: selection as (typeof SELECTION_FILTERS)[number] }),
+        },
+    };
 }
 
 /** Reject unknown query parameters: a reader route takes none (§9). */
