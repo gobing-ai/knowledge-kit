@@ -46,6 +46,24 @@
                         }
                     }
                 }
+            },
+            "article-zh": {
+                "format": "article",
+                "locale": "zh",
+                "modes": {
+                    "draft": {
+                        "metadata": {
+                            "operation": "article",
+                            "publishStatus": "draft"
+                        }
+                    },
+                    "live": {
+                        "metadata": {
+                            "operation": "article",
+                            "publishStatus": "public"
+                        }
+                    }
+                }
             }
         }
     }
