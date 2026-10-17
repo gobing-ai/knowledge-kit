@@ -347,9 +347,21 @@ export async function itcCheckTargets(
             });
 
             if (probe.exitCode !== 0) {
+                // The probe's last stdout line carries {status, detail} — surface it so e.g. a
+                // stale profile SingletonLock isn't misreported as an auth expiry (dogfood 2026-10-17).
+                let detail = '';
+                try {
+                    const last = probe.stdout.trim().split('\n').filter(Boolean).at(-1) ?? '';
+                    const parsed = JSON.parse(last) as { status?: string; detail?: string };
+                    if (parsed.detail) detail = `${parsed.status ?? 'refused'}: ${parsed.detail}`;
+                } catch {
+                    // keep the generic hint
+                }
                 const botName = plugin.browserSession?.profileName ?? plugin.name;
                 echoError(
-                    `channel probe for '${target.plugin}' refused: run \`kk bot open/login ${botName}\` to authenticate`,
+                    detail
+                        ? `channel probe for '${target.plugin}' refused: ${detail}`
+                        : `channel probe for '${target.plugin}' refused: run \`kk bot open/login ${botName}\` to authenticate`,
                 );
                 return 1;
             }
@@ -393,6 +405,7 @@ export async function itcSendTargets(
 
     for (const target of plan.targets) {
         const targetReceiptPath = join(receiptsDir, `${target.plugin}.json`);
+        let reattempt = false;
         if (isRetry) {
             // In retry mode, only retry effect: none failures
             if (!(await fs.exists(targetReceiptPath))) continue;
@@ -404,6 +417,7 @@ export async function itcSendTargets(
             } catch {
                 continue;
             }
+            reattempt = true;
         } else if (await fs.exists(targetReceiptPath)) {
             // If already succeeded, do not resend
             try {
@@ -412,6 +426,7 @@ export async function itcSendTargets(
             } catch {
                 // re-attempt
             }
+            reattempt = true;
         }
 
         const payloadRel = target.payloadPath ?? `4-publish/content.${target.plugin}.json`;
@@ -419,9 +434,11 @@ export async function itcSendTargets(
         const payloadRaw = (await fs.exists(payloadPath)) ? await fs.readFile(payloadPath) : '{}';
         const payloadDigest = createHash('sha256').update(payloadRaw).digest('hex');
 
-        // A retry writes its own aggregate: reusing the first attempt's result would re-read the
-        // failure instead of re-sending, while the existence check stays the idempotency guard.
         const outPath = join(publishDir, `fanout-result.${target.plugin}${isRetry ? '.retry' : ''}.json`);
+        // A re-attempt must re-dispatch: the exists guard is only crash recovery for a dispatch
+        // that never got its receipt written. Reusing the aggregate would re-read the old failure
+        // (dogfood 2026-10-17: fixed-target resend silently kept the stale error).
+        if (reattempt && (await fs.exists(outPath))) await fs.deleteFile(outPath);
         const fanoutArgs = [
             '--content',
             payloadPath,

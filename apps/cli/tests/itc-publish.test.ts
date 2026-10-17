@@ -336,6 +336,46 @@ describe('itcSendTargets, Receipts & Recovery (0302 / G21 R3, R4)', () => {
         });
     });
 
+    it('re-dispatches a failed attempt instead of reusing the stale aggregate', async () => {
+        await withTempDir(async (workDir) => {
+            const publishDir = join(workDir, '4-publish');
+            const receiptsDir = join(publishDir, 'receipts');
+            mkdirSync(receiptsDir, { recursive: true });
+            writeFileSync(
+                join(publishDir, 'publish-plan.json'),
+                JSON.stringify({
+                    schemaVersion: 1,
+                    targets: [{ plugin: 'pub-fix', profile: 'article', mode: 'draft' }],
+                }),
+            );
+            // Prior attempt failed and left both its receipt and its failure aggregate on disk.
+            seedReceipt(receiptsDir, 'pub-fix', { status: 'uncertain', effect: 'unknown' });
+            writeFileSync(
+                join(publishDir, 'fanout-result.pub-fix.json'),
+                JSON.stringify({ targets: [{ target: 'pub-fix', ok: false, status: 'failed', error: 'stale' }] }),
+            );
+            seedRun(workDir, 'run-rec');
+
+            const dispatched: string[] = [];
+            const dispatch = async (argv: string[]): Promise<number> => {
+                const target = argv[argv.indexOf('--target') + 1] ?? '';
+                dispatched.push(target);
+                writeFileSync(
+                    argv[argv.indexOf('--out') + 1] ?? '',
+                    JSON.stringify({ targets: [{ target, ok: true, status: 'published' }] }),
+                );
+                return 0;
+            };
+            expect(await itcSendTargets([workDir], undefined, dispatch)).toBe(0);
+
+            // Without deleting the stale aggregate, dispatch would never run and the old failure
+            // would be re-read (dogfood 2026-10-17).
+            expect(dispatched).toEqual(['pub-fix']);
+            const receipt = JSON.parse(readFileSync(join(receiptsDir, 'pub-fix.json'), 'utf-8'));
+            expect(receipt.status).toBe('succeeded');
+        });
+    });
+
     it('refuses to send without a frozen snapshot naming the run', async () => {
         await withTempDir(async (workDir) => {
             const publishDir = join(workDir, '4-publish');
