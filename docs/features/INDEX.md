@@ -6,7 +6,7 @@
     ├── [done] **A2**: kk product CLI surface ([A2_kk-product-cli-surface.md](./A2_kk-product-cli-surface.md))
         ├── [done] **A21**: Two-layer CLI nouns (executor + plugin) ([A21_two-layer-cli-nouns-executor-plugin.md](./A21_two-layer-cli-nouns-executor-plugin.md))
         ├── [done] **A22**: Strict kk noun-verb CLI and named browser bots ([A22_strict-kk-noun-verb-cli-and-named-browser-bots.md](./A22_strict-kk-noun-verb-cli-and-named-browser-bots.md))
-        └── [backlog] **A23**: kk bot session facts and authenticated exec ([A23_kk-bot-session-facts-and-authenticated-exec.md](./A23_kk-bot-session-facts-and-authenticated-exec.md))
+        └── [active] **A23**: kk bot session facts and authenticated exec ([A23_kk-bot-session-facts-and-authenticated-exec.md](./A23_kk-bot-session-facts-and-authenticated-exec.md))
     └── [done] **A3**: ts-libs logging foundation ([A3_ts-libs-logging-foundation.md](./A3_ts-libs-logging-foundation.md))
 [done] **B**: Plugin platform ([B_kk-plugin-platform.md](./B_kk-plugin-platform.md))
     ├── [done] **B1**: Plugin manifest and registry discovery ([B1_plugin-manifest-and-registry-discovery.md](./B1_plugin-manifest-and-registry-discovery.md))

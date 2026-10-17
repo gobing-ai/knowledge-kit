@@ -21,6 +21,8 @@ import {
     BotError,
     type BotMetadata,
     normalizeBotDefaultUrl,
+    normalizeSessionExpiry,
+    normalizeSessionIdentity,
     readBotMetadata,
     resolveBotProfileDir,
 } from './bot';
@@ -59,7 +61,9 @@ export type { BrowserLauncher, IsAuthenticatedPredicate };
  * receive selectors, they never embed URLs.
  *
  * No `console.*` here — callers get thrown errors, and the CLI takes an injected `stdout`.
- * The module never touches cookies or `storageState`; the profile directory is the login artifact.
+ * The module never reads cookie names/values or `storageState`; the profile directory is the login
+ * artifact. The one exception is {@link captureSessionFacts}, which reads cookie *expiry* at login
+ * to record an estimated session lifetime — names and values never leave it.
  */
 
 /** Site-owned config for one channel's browser session. */
@@ -74,6 +78,12 @@ export interface ChannelBrowserConfig {
     loginTimeoutMs?: number;
     /** Check headed only — for channels whose WAF 451s every headless load (measured infoq 0201/0191). {@link runProfileCli} plumbs it to {@link checkChannelSession}. */
     checkHeadedOnly?: boolean;
+    /**
+     * Optional account label for `kk bot list`'s identity column (0305). Only bot-mode login calls
+     * it, on the page the readiness predicate just accepted; `null` or a throw simply omits the
+     * fact. No channel implements it yet.
+     */
+    readIdentity?: (page: Page) => Promise<string | null>;
 }
 
 /** Outcome of a channel session check: what was observed, or the refusal reason. */
@@ -433,8 +443,11 @@ export async function openChannelSession(
  * profile headed, navigates `--url`, and stays until the operator closes the window — it never
  * asserts authentication and it never creates a fresh profile. `--url` on `login` (0277) replaces
  * the configured home page as the navigation target while the config predicate stays the evidence;
- * a login invoked WITH `--url` (bot mode) appends a `{status, profileDir, defaultUrl}` JSON verdict
- * as the LAST stdout line so the bot parent can persist the plugin-owned canonical URL. Exit codes:
+ * a login invoked WITH `--url` (bot mode) runs through `withProfilePage` and appends a
+ * `{status, profileDir, defaultUrl, expiresAt?, identity?}` JSON verdict as the LAST stdout line so
+ * the bot parent can persist the plugin-owned canonical URL and the session facts (0305): the
+ * estimated cookie expiry and, when the channel implements `readIdentity`, the account label. A
+ * `readIdentity` throw or `null` simply omits `identity`. Exit codes:
  * 0 verified/closed, 1 refused, 2 usage error. Output goes through the injected `stdout` (one line
  * per message), so the CLI is testable and this module holds no `console.*`; the default writer is
  * the ts-utils `echo` seam.
@@ -496,20 +509,53 @@ export async function runProfileCli(
     }
 
     if (command === 'login') {
+        const loginTimeoutMs = timeoutMs ?? config.loginTimeoutMs ?? DEFAULT_LOGIN_TIMEOUT_MS;
+        const launcher = deps.launcher ?? kkBrowserLauncher;
         try {
-            await loginWithProfile({
-                profileDir,
-                url: url ?? config.homeUrl,
-                isAuthenticated: config.isAuthenticated,
-                timeoutMs: timeoutMs ?? config.loginTimeoutMs ?? DEFAULT_LOGIN_TIMEOUT_MS,
-                launcher: deps.launcher ?? kkBrowserLauncher,
-            });
-            stdout(`${config.channel} profile login verified: ${profileDir}`);
-            // Bot mode (--url given by the `kk bot` parent): the canonical, plugin-owned default URL
-            // is the configured home page — never the supplied URL, whose query must not persist.
-            if (url !== undefined) {
-                stdout(JSON.stringify({ status: 'verified', profileDir, defaultUrl: config.homeUrl }));
+            // Bot mode (--url given by the `kk bot` parent) needs the context after the readiness
+            // predicate passes: `withProfilePage` is the same package's scoped opener, one headed
+            // launch, callback before the guaranteed close — `loginWithProfile` returns void and
+            // closes internally, so the parent would never see the cookie jar.
+            if (url === undefined) {
+                await loginWithProfile({
+                    profileDir,
+                    url: config.homeUrl,
+                    isAuthenticated: config.isAuthenticated,
+                    timeoutMs: loginTimeoutMs,
+                    launcher,
+                });
+                stdout(`${config.channel} profile login verified: ${profileDir}`);
+                return 0;
             }
+            const facts = await withProfilePage(
+                {
+                    profileDir,
+                    headless: false,
+                    url,
+                    isAuthenticated: config.isAuthenticated,
+                    timeoutMs: loginTimeoutMs,
+                    launcher,
+                },
+                async ({ context, page }) => ({
+                    ...(await captureSessionFacts(context, config.homeUrl)),
+                    ...(config.readIdentity === undefined
+                        ? {}
+                        : { identity: await readIdentityOrUndefined(config.readIdentity, page) }),
+                }),
+            );
+            stdout(`${config.channel} profile login verified: ${profileDir}`);
+            // The canonical, plugin-owned default URL is the configured home page — never the
+            // supplied URL, whose query must not persist. The optional facts are the parent's only
+            // source for a bot's expiry and identity; invalid values are dropped by its parser.
+            stdout(
+                JSON.stringify({
+                    status: 'verified',
+                    profileDir,
+                    defaultUrl: config.homeUrl,
+                    ...(facts.expiresAt === undefined ? {} : { expiresAt: facts.expiresAt }),
+                    ...(facts.identity === undefined ? {} : { identity: facts.identity }),
+                }),
+            );
             return 0;
         } catch (error) {
             stdout(`${config.channel} profile login failed: ${errorMessage(error)}`);
@@ -844,6 +890,40 @@ export async function resolveSelector(
  * browser module at all, so `kk bot list`/`--help` work without installed browser binaries.
  */
 
+/**
+ * Estimated session lifetime from the just-authenticated context (0305 R2): the earliest positive
+ * `expires` among httpOnly cookies `context.cookies(url)` returns, as an RFC 3339 UTC string.
+ * Session cookies (`expires === -1`) and non-httpOnly cookies are ignored — httpOnly is the
+ * cheapest discriminator between auth and analytics cookies. Cookie names and values never leave
+ * this helper, and an unreadable cookie jar yields no fact rather than failing a finished login.
+ */
+export async function captureSessionFacts(context: BrowserContext, url: string): Promise<{ expiresAt?: string }> {
+    let cookies: Awaited<ReturnType<BrowserContext['cookies']>>;
+    try {
+        cookies = await context.cookies(url);
+    } catch {
+        return {};
+    }
+    let earliest: number | undefined;
+    for (const cookie of cookies) {
+        if (!cookie.httpOnly || cookie.expires <= 0) continue;
+        if (earliest === undefined || cookie.expires < earliest) earliest = cookie.expires;
+    }
+    return earliest === undefined ? {} : { expiresAt: new Date(earliest * 1000).toISOString() };
+}
+
+/** Adapter identity at login: `null`, a throw or a scrubbed-empty label omits the fact, never fails. */
+async function readIdentityOrUndefined(
+    readIdentity: NonNullable<ChannelBrowserConfig['readIdentity']>,
+    page: Page,
+): Promise<string | undefined> {
+    try {
+        return normalizeSessionIdentity(await readIdentity(page));
+    } catch {
+        return undefined;
+    }
+}
+
 /** Confirmation deadline for a generic login (design §Bot command contract: 180000 ms). */
 export const DEFAULT_BOT_LOGIN_TIMEOUT_MS = 180_000;
 
@@ -971,11 +1051,15 @@ export async function loginBot(name: string, url: string, options: BotSessionOpt
                 `login for bot '${name}' was not confirmed — nothing was saved and the previous profile is unchanged`,
             );
         }
+        // Facts come from the confirmed context, never from a refused/cancelled login.
+        const { expiresAt } = await captureSessionFacts(context, defaultUrl);
         await writeBotMetadata(fileSystem, join(transaction.stageDir, BOT_METADATA_FILE), {
             schemaVersion: BOT_SCHEMA_VERSION,
             defaultUrl,
             authenticationEvidence: 'operator-confirmed',
             ...(options.pluginName === undefined ? {} : { pluginName: options.pluginName }),
+            lastLoginAt: new Date().toISOString(),
+            ...(expiresAt === undefined ? {} : { expiresAt }),
         });
         // Ordering (design §Transactions): close/flush the staged profile, then promote atomically.
         promoting = true;
@@ -1037,18 +1121,23 @@ async function runAdapterLogin(
             `session adapter '${adapter.pluginName}' login failed: child exit ${child.exitCode} — nothing was saved`,
         );
     }
-    const defaultUrl = parseAdapterVerdict(child.stdout);
-    if (defaultUrl === null) {
+    const verdict = parseAdapterVerdict(child.stdout);
+    if (verdict === null) {
         throw new BotError(
             'browser',
             `session adapter '${adapter.pluginName}' exited 0 but returned no usable defaultUrl verdict — nothing was saved`,
         );
     }
+    const defaultUrl = verdict.defaultUrl;
     await writeBotMetadata(fileSystem, join(transaction.stageDir, BOT_METADATA_FILE), {
         schemaVersion: BOT_SCHEMA_VERSION,
         defaultUrl,
         authenticationEvidence: 'site-verified',
         pluginName: adapter.pluginName,
+        lastLoginAt: new Date().toISOString(),
+        // An invalid verdict value is dropped at parse time, never stored and never fatal.
+        ...(verdict.expiresAt === undefined ? {} : { expiresAt: verdict.expiresAt }),
+        ...(verdict.identity === undefined ? {} : { identity: verdict.identity }),
     });
     // The child closed its staged context before exiting 0 (protocol contract); nothing to flush.
     await transaction.commit(async () => {});
@@ -1059,12 +1148,21 @@ async function runAdapterLogin(
     };
 }
 
+/** Parsed bot-mode login verdict (design §Login-time session facts, frozen names). */
+interface AdapterVerdict {
+    defaultUrl: string;
+    expiresAt?: string;
+    identity?: string;
+}
+
 /**
  * Parse the bot-mode login verdict: the LAST non-empty stdout line must be JSON naming the
- * plugin-owned canonical default URL. http(s) and credential-free are enforced here; the query
- * is kept because it is plugin-fixed code, not operator input (fragments are dropped).
+ * plugin-owned canonical default URL, plus optionally the session facts (0305). http(s) and
+ * credential-free are enforced here; the query is kept because it is plugin-fixed code, not
+ * operator input (fragments are dropped). `expiresAt`/`identity` are sanitized and dropped when
+ * unusable — a bad fact never fails a verified login. Existing verdicts without them still parse.
  */
-function parseAdapterVerdict(stdout: string): string | null {
+function parseAdapterVerdict(stdout: string): AdapterVerdict | null {
     const last = stdout
         .split('\n')
         .map((line) => line.trim())
@@ -1088,7 +1186,13 @@ function parseAdapterVerdict(stdout: string): string | null {
     if ((url.protocol !== 'http:' && url.protocol !== 'https:') || url.username !== '' || url.password !== '') {
         return null;
     }
-    return `${url.origin}${url.pathname}${url.search}`;
+    const expiresAt = normalizeSessionExpiry(record.expiresAt);
+    const identity = normalizeSessionIdentity(record.identity);
+    return {
+        defaultUrl: `${url.origin}${url.pathname}${url.search}`,
+        ...(expiresAt === undefined ? {} : { expiresAt }),
+        ...(identity === undefined ? {} : { identity }),
+    };
 }
 
 /**

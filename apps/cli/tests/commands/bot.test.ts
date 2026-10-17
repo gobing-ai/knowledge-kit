@@ -231,13 +231,24 @@ describe('kk bot exit-code mapping and output contract (A22 R1/R3-R5)', () => {
                 calls: [],
                 list: () =>
                     Promise.resolve([
-                        { name: 'alice', state: 'cached', defaultUrl: 'https://alice.example.com/home' },
+                        {
+                            name: 'alice',
+                            state: 'cached',
+                            defaultUrl: 'https://alice.example.com/home',
+                            identity: 'alice',
+                            lastLoginAt: '2026-10-17T02:00:00.000Z',
+                            expiresAt: '2026-11-16T02:00:00.000Z',
+                        },
                         { name: 'legacy', state: 'cached', defaultUrl: null },
                     ]),
             }),
         );
         expect(populated.code).toBe(0);
-        expect(populated.out).toBe('alice\tcached\thttps://alice.example.com/home\nlegacy\tcached\tunknown\n');
+        // The three fact columns are appended after the A22 three; a missing fact prints `unknown`.
+        expect(populated.out).toBe(
+            'alice\tcached\thttps://alice.example.com/home\talice\t2026-10-17T02:00:00.000Z\t2026-11-16T02:00:00.000Z\n' +
+                'legacy\tcached\tunknown\tunknown\tunknown\tunknown\n',
+        );
     });
 
     it('prints only the bot name and outcome for a successful mutation', async () => {
@@ -348,7 +359,69 @@ describe('kk bot against a throwaway profile root (end-to-end)', () => {
 
         const result = await runCliProcess(['bot', 'list'], home);
         expect(result.code).toBe(0);
-        expect(result.out).toBe('alice\tcached\thttps://alice.example.com/home\nlegacy\tcached\tunknown\n');
+        const rows = result.out
+            .trimEnd()
+            .split('\n')
+            .map((row) => row.split('\t'));
+        expect(rows).toHaveLength(2);
+        // A record without a stored save time shows the metadata mtime (metadata is only ever
+        // rewritten by a successful login), never an invented date.
+        expect(rows[0]?.slice(0, 4)).toEqual(['alice', 'cached', 'https://alice.example.com/home', 'unknown']);
+        expect(Date.parse(rows[0]?.[4] ?? '')).toBeGreaterThan(Date.now() - 300_000);
+        expect(rows[0]?.[5]).toBe('unknown');
+        expect(rows[1]).toEqual(['legacy', 'cached', 'unknown', 'unknown', 'unknown', 'unknown']);
+    });
+
+    it('shows identity, last login and expiry for full/partial/legacy/corrupt rows (0305 R5)', async () => {
+        const profiles = join(home, '.config', 'kk', 'browser-profiles');
+        const write = (name: string, metadata: unknown): void => {
+            mkdirSync(join(profiles, name), { recursive: true });
+            writeFileSync(
+                join(profiles, name, 'bot.json'),
+                typeof metadata === 'string' ? metadata : JSON.stringify(metadata),
+            );
+        };
+        write('full', {
+            schemaVersion: 1,
+            defaultUrl: 'https://full.example.com/home',
+            authenticationEvidence: 'site-verified',
+            pluginName: 'xhs-pub',
+            lastLoginAt: '2026-10-17T02:00:00.000Z',
+            expiresAt: '2026-11-16T02:00:00.000Z',
+            identity: 'alice',
+        });
+        write('partial', {
+            schemaVersion: 1,
+            defaultUrl: 'https://partial.example.com/',
+            authenticationEvidence: 'operator-confirmed',
+            expiresAt: '2026-11-16T02:00:00.000Z',
+        });
+        mkdirSync(join(profiles, 'legacy'), { recursive: true });
+        write('corrupt', '{ not json');
+
+        const result = await runCliProcess(['bot', 'list'], home);
+        expect(result.code).toBe(0);
+        const rows = Object.fromEntries(
+            result.out
+                .trimEnd()
+                .split('\n')
+                .map((row) => row.split('\t'))
+                .map((cells) => [cells[0], cells]),
+        );
+
+        expect(rows.full).toEqual([
+            'full',
+            'cached',
+            'https://full.example.com/home',
+            'alice',
+            '2026-10-17T02:00:00.000Z',
+            '2026-11-16T02:00:00.000Z',
+        ]);
+        // No stored login time and no identity: mtime fallback + `unknown`.
+        expect(rows.partial?.slice(0, 4)).toEqual(['partial', 'cached', 'https://partial.example.com/', 'unknown']);
+        expect(rows.partial?.[5]).toBe('2026-11-16T02:00:00.000Z');
+        expect(rows.legacy).toEqual(['legacy', 'cached', 'unknown', 'unknown', 'unknown', 'unknown']);
+        expect(rows.corrupt).toEqual(['corrupt', 'cached', 'unknown', 'unknown', 'unknown', 'unknown']);
     });
 
     it('refuses traversal/unsafe names, and logout is idempotent for an absent bot', async () => {

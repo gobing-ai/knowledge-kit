@@ -33,6 +33,56 @@ export interface BotMetadata {
     /** Adapter that saved this bot; absent for generic operator-confirmed sessions. */
     pluginName?: string;
     authenticationEvidence: AuthenticationEvidence;
+    /** RFC 3339 UTC time this session was saved; absent on metadata written before 0305. */
+    lastLoginAt?: string;
+    /**
+     * Earliest persistent httpOnly cookie expiry read at login — an estimate, never a readiness
+     * claim (sliding/server-side expiry can disagree).
+     */
+    expiresAt?: string;
+    /** Account label the adapter reported at login; absent when the channel cannot see one. */
+    identity?: string;
+}
+
+/** ISO 8601 date-time as stored by this implementation (offset or `Z` required). */
+const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
+/** Stored identity ceiling; the adapter may report a longer label, the field does not grow. */
+const MAX_IDENTITY_LENGTH = 128;
+/** C0/C1 control characters — an identity is a printed account label, never terminal escapes. */
+const CONTROL_CHARACTERS = /\p{Cc}/u;
+
+/** `true` for a stored date-time: ISO 8601 shape AND `Date.parse` accepts it. */
+export function isSessionFactDate(value: unknown): value is string {
+    return typeof value === 'string' && ISO_DATE_TIME.test(value) && Number.isFinite(Date.parse(value));
+}
+
+/** `true` for a stored identity: non-empty, ≤128 chars, no control characters. */
+export function isSessionFactIdentity(value: unknown): value is string {
+    return (
+        typeof value === 'string' &&
+        value.length > 0 &&
+        value.length <= MAX_IDENTITY_LENGTH &&
+        !CONTROL_CHARACTERS.test(value)
+    );
+}
+
+/**
+ * Normalize an adapter-reported fact onto the stored shape: trim, strip control characters, cap
+ * the identity length. `undefined` when nothing usable remains — an invalid verdict value is
+ * dropped, never a login failure.
+ */
+export function normalizeSessionIdentity(value: unknown): string | undefined {
+    if (typeof value !== 'string') return undefined;
+    const cleaned = value
+        .replace(/\p{Cc}/gu, '')
+        .trim()
+        .slice(0, MAX_IDENTITY_LENGTH);
+    return cleaned.length === 0 ? undefined : cleaned;
+}
+
+/** Keep an adapter-reported expiry only when it is a usable ISO 8601 date-time. */
+export function normalizeSessionExpiry(value: unknown): string | undefined {
+    return isSessionFactDate(value) ? value : undefined;
 }
 
 /** Failure classification the CLI maps to exit codes (usage→2, the rest→1). */
@@ -146,6 +196,28 @@ export function parseBotMetadata(raw: unknown, source = 'bot metadata'): BotMeta
     if (pluginName !== undefined) {
         metadata.pluginName = pluginName;
     }
+    // Session facts (0305) are optional and additive: absent is valid, present must be usable.
+    if (record.lastLoginAt !== undefined) {
+        if (!isSessionFactDate(record.lastLoginAt)) {
+            throw new BotError('persistence', `${source}: lastLoginAt must be an ISO 8601 date-time`);
+        }
+        metadata.lastLoginAt = record.lastLoginAt;
+    }
+    if (record.expiresAt !== undefined) {
+        if (!isSessionFactDate(record.expiresAt)) {
+            throw new BotError('persistence', `${source}: expiresAt must be an ISO 8601 date-time`);
+        }
+        metadata.expiresAt = record.expiresAt;
+    }
+    if (record.identity !== undefined) {
+        if (!isSessionFactIdentity(record.identity)) {
+            throw new BotError(
+                'persistence',
+                `${source}: identity must be a non-empty string of at most 128 characters without control characters`,
+            );
+        }
+        metadata.identity = record.identity;
+    }
     return metadata;
 }
 
@@ -229,6 +301,12 @@ export interface BotInventoryEntry {
     metadata: BotMetadata | null;
     /** Set when `bot.json` existed but was invalid; the profile is still listed, never mutated. */
     metadataError?: string;
+    /** RFC 3339 UTC save time; falls back to the `bot.json` mtime for 0305-era metadata. */
+    lastLoginAt: string | null;
+    /** Estimated session expiry recorded at login, or `null` when none qualified. */
+    expiresAt: string | null;
+    /** Account label reported by the adapter at login, or `null` (no channel reports one yet). */
+    identity: string | null;
 }
 
 /** Options for {@link listBots}. */
@@ -272,8 +350,9 @@ export async function listBots(options: ListBotsOptions = {}): Promise<BotInvent
         if (entry === null || entry.isSymbolicLink() || !entry.isDirectory()) continue;
         let metadata: BotMetadata | null = null;
         let metadataError: string | undefined;
+        const metadataPath = join(profileDir, BOT_METADATA_FILE);
         try {
-            metadata = await readBotMetadata(fileSystem, join(profileDir, BOT_METADATA_FILE));
+            metadata = await readBotMetadata(fileSystem, metadataPath);
         } catch (error) {
             metadataError = describeError(error);
         }
@@ -283,6 +362,11 @@ export async function listBots(options: ListBotsOptions = {}): Promise<BotInvent
             defaultUrl: metadata?.defaultUrl ?? null,
             metadata,
             ...(metadataError === undefined ? {} : { metadataError }),
+            // Metadata is only ever rewritten by a successful login, so the file mtime is the save
+            // time for metadata written before 0305 recorded it.
+            lastLoginAt: metadata === null ? null : (metadata.lastLoginAt ?? metadataMtime(metadataPath)),
+            expiresAt: metadata?.expiresAt ?? null,
+            identity: metadata?.identity ?? null,
         });
     }
     return entries;
@@ -353,6 +437,13 @@ export async function logoutBot(name: string, options: LogoutBotOptions = {}): P
         removed: true,
         message: `removed local credentials for bot '${name}' — no server-side session was revoked`,
     };
+}
+
+/** `bot.json` mtime as RFC 3339 UTC; `null` when the file vanished or has no usable mtime. */
+function metadataMtime(metadataPath: string): string | null {
+    const stat = lstat(metadataPath);
+    if (stat === null || !stat.isFile() || !Number.isFinite(stat.mtimeMs)) return null;
+    return new Date(stat.mtimeMs).toISOString();
 }
 
 function describeError(error: unknown): string {

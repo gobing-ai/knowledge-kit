@@ -19,7 +19,7 @@ import { join } from 'node:path';
  */
 
 /** No-follow stat subset: only the containment facts callers may read. */
-export type PathStat = Pick<Stats, 'isFile' | 'isDirectory' | 'isSymbolicLink' | 'mode'>;
+export type PathStat = Pick<Stats, 'isFile' | 'isDirectory' | 'isSymbolicLink' | 'mode' | 'mtimeMs'>;
 
 /** `lstat` without following symlinks; `null` when the path does not exist. */
 export function lstat(path: string): PathStat | null {

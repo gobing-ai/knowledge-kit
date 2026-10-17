@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import type { BrowserLauncher, ProfileLaunchRequest } from '@gobing-ai/ts-browser-automation';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
-import type { BrowserContext } from 'playwright';
+import type { BrowserContext, Cookie } from 'playwright';
 import { BotError, DEFAULT_BOT_LOGIN_TIMEOUT_MS, loginBot, openBot } from '../src/browser';
 import { acquireProfileLease } from '../src/profile-lease';
 
@@ -39,13 +39,18 @@ interface FakeSession {
     requests: ProfileLaunchRequest[];
     navigations: string[];
     handles: FakeHandle[];
+    /** URLs the session-fact capture asked the cookie jar about (0305). */
+    cookieQueries: string[];
 }
 
 /** Fake persistent context recording the profile requests and page navigations. */
-function makeSession(options: { gotoError?: boolean; rejectConfirm?: boolean } = {}): FakeSession {
+function makeSession(
+    options: { gotoError?: boolean; rejectConfirm?: boolean; cookies?: Partial<Cookie>[] } = {},
+): FakeSession {
     const requests: ProfileLaunchRequest[] = [];
     const navigations: string[] = [];
     const handles: FakeHandle[] = [];
+    const cookieQueries: string[] = [];
     const launcher: BrowserLauncher = {
         async launch(request) {
             requests.push(request);
@@ -60,11 +65,26 @@ function makeSession(options: { gotoError?: boolean; rejectConfirm?: boolean } =
                     navigations.push(url);
                 },
             };
+            const cookies = async (url: string) => {
+                cookieQueries.push(url);
+                return (options.cookies ?? []).map((cookie) => ({
+                    name: 'auth',
+                    value: 'SEKRET-COOKIE',
+                    domain: 'site.example.com',
+                    path: '/',
+                    expires: -1,
+                    httpOnly: true,
+                    secure: true,
+                    sameSite: 'Lax',
+                    ...cookie,
+                }));
+            };
             const close = async (): Promise<void> => {
                 closes += 1;
                 for (const listener of listeners.splice(0)) listener();
             };
             const context = {
+                cookies,
                 pages: () => (pagesEmpty ? [] : [page]),
                 newPage: async () => page,
                 once: (_event: string, listener: () => void) => {
@@ -83,7 +103,7 @@ function makeSession(options: { gotoError?: boolean; rejectConfirm?: boolean } =
             return context as unknown as BrowserContext;
         },
     };
-    return { launcher, requests, navigations, handles };
+    return { launcher, requests, navigations, handles, cookieQueries };
 }
 
 /** A stdin-shaped stream that reports itself as an interactive terminal. */
@@ -176,11 +196,18 @@ describe('bot session lifecycle (0276)', () => {
         expect(session.requests[0]?.profileDir.startsWith(transactionRoot)).toBe(true);
 
         const metadataPath = join(profileDir, 'bot.json');
-        expect(JSON.parse(readFileSync(metadataPath, 'utf8'))).toEqual({
+        const stored = JSON.parse(readFileSync(metadataPath, 'utf8')) as Record<string, unknown>;
+        expect(stored).toMatchObject({
             schemaVersion: 1,
             defaultUrl: 'https://site.example.com/login',
             authenticationEvidence: 'operator-confirmed',
         });
+        // AC1: the save time is recorded, traceable to this invocation.
+        expect(Date.now() - Date.parse(String(stored.lastLoginAt))).toBeLessThan(60_000);
+        expect(new Date(String(stored.lastLoginAt)).toISOString()).toBe(String(stored.lastLoginAt));
+        // AC2: a jar with only session cookies yields no expiry estimate.
+        expect(stored).not.toHaveProperty('expiresAt');
+        expect(session.cookieQueries).toEqual(['https://site.example.com/login']);
         expect(statSync(metadataPath).mode & 0o777).toBe(0o600);
         expect(statSync(profileDir).mode & 0o777).toBe(0o700);
         // No credential value from the supplied URL reached the metadata.
@@ -204,6 +231,52 @@ describe('bot session lifecycle (0276)', () => {
             authenticationEvidence: 'operator-confirmed',
             pluginName: 'xhs-pub',
         });
+    });
+
+    test('login records the earliest persistent httpOnly cookie expiry (0305 R2/R3)', async () => {
+        const later = Math.floor(Date.parse('2026-12-01T00:00:00Z') / 1000);
+        const earlier = Math.floor(Date.parse('2026-11-01T00:00:00Z') / 1000);
+        const session = makeSession({
+            cookies: [
+                // Session cookie: no expiry to record.
+                { expires: -1 },
+                // Non-httpOnly analytics cookie: never the auth signal.
+                { httpOnly: false, expires: Math.floor(Date.parse('2026-10-20T00:00:00Z') / 1000) },
+                { expires: later },
+                { expires: earlier },
+            ],
+        });
+
+        await loginBot('alice', 'https://site.example.com/login', {
+            ...deps(),
+            launcher: session.launcher,
+            confirm: async () => true,
+        });
+
+        const raw = readFileSync(join(profileDir, 'bot.json'), 'utf8');
+        expect(JSON.parse(raw)).toMatchObject({ expiresAt: '2026-11-01T00:00:00.000Z' });
+        // Cookie names and values never reach disk.
+        expect(raw).not.toContain('SEKRET-COOKIE');
+        expect(raw).not.toContain('"auth"');
+    });
+
+    test('a refused login records no facts at all (0305: no write on refusal)', async () => {
+        seedSavedBot();
+        const session = makeSession({
+            cookies: [{ expires: Math.floor(Date.parse('2026-11-01T00:00:00Z') / 1000) }],
+        });
+        await expect(
+            loginBot('alice', 'https://site.example.com/login', {
+                ...deps(),
+                launcher: session.launcher,
+                confirm: async () => false,
+            }),
+        ).rejects.toBeInstanceOf(BotError);
+
+        const stored = JSON.parse(readFileSync(join(profileDir, 'bot.json'), 'utf8')) as Record<string, unknown>;
+        expect(stored).not.toHaveProperty('lastLoginAt');
+        expect(stored).not.toHaveProperty('expiresAt');
+        expect(session.cookieQueries).toEqual([]);
     });
 
     test('a cancelled login saves nothing and preserves the previous profile', async () => {
@@ -528,6 +601,70 @@ describe('known-plugin adapter sessions (0277 R2/R3)', () => {
         // Success consumed the transaction and released the lease.
         expect(listIfPresent(transactionRoot)).toEqual([]);
         expect(listIfPresent(leaseRoot)).toEqual([]);
+    });
+
+    test('adapter login stores the reported identity and expiry plus the save time (0305 R3)', async () => {
+        const { adapter } = makeAdapter({
+            exitCode: 0,
+            stdout:
+                'juejin profile login verified\n' +
+                JSON.stringify({
+                    status: 'verified',
+                    profileDir: '/stage',
+                    defaultUrl: 'https://juejin.example.com/editor/drafts/new?v=2',
+                    expiresAt: '2026-11-16T02:00:00.000Z',
+                    identity: '  alice@example.com \u001b[0m',
+                }),
+        });
+        await loginBot('juejin', 'https://juejin.example.com/editor/drafts/new', { ...deps(), adapter });
+
+        const stored = JSON.parse(readFileSync(join(profileDir, 'bot.json'), 'utf8')) as Record<string, unknown>;
+        expect(stored).toMatchObject({
+            expiresAt: '2026-11-16T02:00:00.000Z',
+            // Trimmed, control characters stripped, capped — never stored raw.
+            identity: 'alice@example.com [0m',
+        });
+        expect(Date.now() - Date.parse(String(stored.lastLoginAt))).toBeLessThan(60_000);
+    });
+
+    test('invalid adapter facts are dropped, not fatal: the login still verifies (0305 R3)', async () => {
+        const { adapter } = makeAdapter({
+            exitCode: 0,
+            stdout: JSON.stringify({
+                status: 'verified',
+                profileDir: '/stage',
+                defaultUrl: 'https://juejin.example.com/editor/drafts/new',
+                expiresAt: 'tomorrow',
+                identity: 'a'.repeat(500),
+            }),
+        });
+        const result = await loginBot('juejin', 'https://juejin.example.com/editor/drafts/new', {
+            ...deps(),
+            adapter,
+        });
+        expect(result.message).toContain('site-verified');
+
+        const stored = JSON.parse(readFileSync(join(profileDir, 'bot.json'), 'utf8')) as Record<string, unknown>;
+        expect(stored).not.toHaveProperty('expiresAt');
+        // An overlong label is capped rather than refused.
+        expect(stored.identity).toHaveLength(128);
+        expect(stored.lastLoginAt).toBeString();
+    });
+
+    test('an adapter verdict without facts still parses (existing 0277 verdicts keep working)', async () => {
+        const { adapter } = makeAdapter({
+            exitCode: 0,
+            stdout: JSON.stringify({
+                status: 'verified',
+                profileDir: '/stage',
+                defaultUrl: 'https://juejin.example.com/editor/drafts/new',
+            }),
+        });
+        await loginBot('juejin', 'https://juejin.example.com/editor/drafts/new', { ...deps(), adapter });
+        const stored = JSON.parse(readFileSync(join(profileDir, 'bot.json'), 'utf8')) as Record<string, unknown>;
+        expect(stored).not.toHaveProperty('identity');
+        expect(stored).not.toHaveProperty('expiresAt');
+        expect(stored.lastLoginAt).toBeString();
     });
 
     test('adapter child failures save nothing: exit 2 is usage, others are operational', async () => {

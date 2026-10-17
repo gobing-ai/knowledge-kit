@@ -60,14 +60,26 @@ function failBot(harness: BotHarness, error: unknown): never {
 }
 
 /**
- * `kk bot list` — one tab-separated `name / cached / saved-default-url-or-unknown` row per cached
- * local profile. An absent root is an empty successful inventory: no row and exit 0. Nothing here
- * launches a browser or claims that a cached profile proves a current login.
+ * `kk bot list` — one tab-separated
+ * `name / cached / saved-default-url / identity / last-login / expires` row per cached local
+ * profile (the three fact columns appended in 0305, so positional parsers of the first three keep
+ * working). Facts were captured at the last saved login; a missing value prints `unknown`. An
+ * absent root is an empty successful inventory: no row and exit 0. Nothing here launches a browser,
+ * inspects a cookie database or claims that a cached profile proves a current login.
  */
 async function botListAction(load: () => Promise<BotHarness>): Promise<void> {
     await runBotAction(load, async ({ listBots }) => {
         for (const entry of await listBots()) {
-            consoleOutput.write([entry.name, entry.state, entry.defaultUrl ?? 'unknown'].join('\t'));
+            consoleOutput.write(
+                [
+                    entry.name,
+                    entry.state,
+                    entry.defaultUrl ?? 'unknown',
+                    entry.identity ?? 'unknown',
+                    entry.lastLoginAt ?? 'unknown',
+                    entry.expiresAt ?? 'unknown',
+                ].join('\t'),
+            );
         }
     });
 }
@@ -140,7 +152,7 @@ export function registerBotCommand(program: Command, deps: BotCommandDeps = {}):
     const bot = program.command('bot').description('Named local browser sessions (list, login, logout, open)');
 
     bot.command('list')
-        .description('List cached local bot profiles: name, cached, saved default URL or unknown')
+        .description('List cached local bot profiles: name, cached, default URL, identity, last login, expires')
         .action(() => botListAction(load));
 
     bot.command('login')

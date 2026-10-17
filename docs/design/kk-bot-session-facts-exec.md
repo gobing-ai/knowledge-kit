@@ -31,7 +31,8 @@ cookies, and sites with sliding or server-side expiry can disagree. It is histor
 never a readiness claim — the same stance as `authenticationEvidence`.
 
 **One computation seam.** A harness helper `captureSessionFacts(context, url)` returns
-`{expiresAt?, identity?}` (cookie names/values never leave it). The generic `loginBot` path calls it
+`{expiresAt?}` (cookie names/values never leave it); identity comes from `readIdentity`, not from
+the helper. The generic `loginBot` path calls it
 on its own context before closing. Upstream `loginWithProfile` closes its context internally and returns
 `void`, so `runProfileCli` bot-mode login (`--url` given) uses the same package's `withProfilePage`
 (headed, readiness predicate, callback before the guaranteed close) and calls the helper in that
