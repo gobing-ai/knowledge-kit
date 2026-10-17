@@ -111,6 +111,36 @@ describe('wechatmp-pub profile-check CLI (0216, ADR-032 probe contract)', () => 
         }
     });
 
+    // 20261016: a dead MP session used to spend the entire forwarded budget in the readiness poll, so
+    // `kk plugin check --timeout` SIGKILLed the probe at that instant and reported `probe exit 1
+    // (malformed probe output)` instead of the `refused` verdict the operator needs.
+    test('--timeout bounds the whole probe: a dead session still reports `refused` inside it', async () => {
+        const deadProfile = join(tmpRoot, 'profile-dead-session');
+        await mkdir(deadProfile, { recursive: true });
+        await writeFile(
+            join(deadProfile, 'storage-state.json'),
+            JSON.stringify({
+                cookies: [{ name: 'slave_sid', value: 'SECRET-VALUE', domain: 'mp.weixin.qq.com', path: '/' }],
+                origins: [],
+            }),
+        );
+        const spy = spyOn(tsBrowserAutomation, 'openPersistentBrowser').mockImplementation(
+            async () => fakeContext(loginPage()) as never,
+        );
+        try {
+            const budgetMs = 3_000;
+            const startedAt = Date.now();
+            const { code, out } = await run(['check', '--profile', deadProfile, '--timeout', String(budgetMs)]);
+            const elapsedMs = Date.now() - startedAt;
+            expect(code).toBe(1);
+            const verdict = JSON.parse(out.trim().split('\n').at(-1) ?? '') as { status: string; detail: string };
+            expect(verdict.status).toBe('refused');
+            expect(elapsedMs).toBeLessThan(budgetMs);
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
     test('check with a saved session state verifies: exit 0, cookie values never printed', async () => {
         await mkdir(profileDir, { recursive: true });
         await writeFile(

@@ -205,7 +205,7 @@ with the artifact preserved.
 | `--kind <kind>` | string | no | — | Filter by plugin kind (`ingestion`, `generator`, `publish`); invalid value exits `1` |
 | `--json` | boolean | no | `false` | Emit the machine-readable verdict report |
 | `--headed` | boolean | no | `false` | Forward `--headed` to each probe (opt-in visible browser; headless is the default) |
-| `--timeout <ms>` | number | no | 30000 | Forward `--timeout` to each probe; a probe exceeding it is killed and reported `error`, never `refused` (ADR-032 R3) |
+| `--timeout <ms>` | number | no | 30000 | Forward `--timeout` to each probe; a probe exceeding it is killed and reported `error`, never `refused` (ADR-032 R3). A probe must therefore finish *inside* the value it is given — a browser probe reserves its launch/teardown overhead from that budget rather than spending all of it waiting |
 | `--plugins-root <dir>` / `--plugins-path <dir>` | as `plugin status` | no | — | Same exclusive-root semantics; combining them exits `2` (ADR-012 R6) |
 
 **Behavior (ADR-032):** for every selected `PluginRecord` with a manifest `check` field, spawns

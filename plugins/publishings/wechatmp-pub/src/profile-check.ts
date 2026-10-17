@@ -19,6 +19,16 @@ import { CHANNEL, CONSOLE_URL, checkWechatSession, openWechatLogin, openWechatSe
 const USAGE =
     'usage: wechatmp profile-check [login|check|open] [--profile <dir>] [--url <url>] [--timeout <ms>] [--headed]';
 const LOGIN_TIMEOUT_MS = 180_000;
+/**
+ * The one browser open, console navigation and context close a `check` performs around its readiness
+ * poll (headless ~3-4s, headed ~5-8s). `--timeout` is the WHOLE probe budget — kk SIGKILLs the process
+ * at that instant — so the poll must not spend all of it: a dead session then dies mid-report and
+ * surfaces as `probe exit 1 (malformed probe output)` instead of `refused` (observed 2026-10-16, where
+ * the 30s poll plus overhead overran `kk plugin check`'s 30s default).
+ */
+const PROFILE_OVERHEAD_MS = 8_000;
+/** Floor for the readiness poll, so a tiny `--timeout` still probes the console instead of refusing blind. */
+const MIN_READINESS_MS = 1_000;
 
 interface WechatVerdict {
     status: 'verified' | 'refused';
@@ -106,7 +116,11 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 
     let verdict: WechatVerdict;
     try {
-        await checkWechatSession(profileDir, { headless: !headed, timeoutMs });
+        await checkWechatSession(profileDir, {
+            headless: !headed,
+            timeoutMs:
+                timeoutMs === undefined ? undefined : Math.max(MIN_READINESS_MS, timeoutMs - PROFILE_OVERHEAD_MS),
+        });
         verdict = {
             status: 'verified',
             profileDir,
