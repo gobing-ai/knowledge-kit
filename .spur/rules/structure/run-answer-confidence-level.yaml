@@ -1,0 +1,46 @@
+$schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
+# A run-plane review/verify answer that claims a confidence level must claim an allowed, EARNED one.
+#
+# WHY. `.spur/run/<runId>-review-answer.txt` and `.spur/run/<wbs>-verify-answer.txt` are the artifacts
+# the inline pipeline reads before it certifies a task, and an agent closing one with
+# `Confidence: HIGH` was observed uncorrected: measured 2026-10-17 on the A23 batch, the 0306 verify
+# answer carried `Confidence: HIGH` and nothing judged it — the answer lint tolerates the line and
+# ignores its value (F511 retired the asserted-confidence machinery), the verdict artifact has no
+# level field, and `spur task record` derives `## Testing` from the verdict rather than from the
+# claim. So an unearned HIGH could ride from the answer into a recorded verdict unread.
+#
+# The two sibling rules cover the durable copies — `verification-block-carries-confidence-level`
+# (a task's `## Testing`) and `review-record-confidence-level` (a task's `## Review`) — but neither
+# sees the run-plane answer those copies are derived from. This rule closes that seam without
+# reopening the F511 decision: it judges what an answer CLAIMS, never whether it claims. Presence
+# stays optional, so no historical answer and no level-less run fails.
+#
+# A claim is a line that OPENS with `Confidence:` (optionally bold-wrapped, indented). A mention —
+# `Do not write a \`Confidence:\` line` — is documentation and is never judged: judging mentions is
+# exactly the false-positive class that made `review-record-confidence-level` fire on a sentence
+# quoting its own enum during the A23 batch.
+#
+# SCOPE NOTE: `include` does not scope an `exit-code` rule — the evaluator runs whether or not the
+# globs match — so the checker's own discovery owns the scope and these globs are documentation.
+# `.spur/run/` is a disposable plane (ADR-131) that keeps every finished run's answer, so discovery is
+# bounded to answers modified within `RUN_ANSWER_WINDOW_MINUTES` (default 240): a run's own answer is
+# judged while it is live, and a leftover ages out instead of being judged — or mass-edited — as a dead
+# artifact. With no recent answers the checker finds nothing and exits 0, which is the normal state of
+# a fresh clone or an idle tree.
+#
+# Falsification cases (14) live in `run-answer-confidence-level.test.sh`, including the seams this rule
+# must NOT fire on: a level-less answer, a prose/inline-code mention of the token, and an empty file.
+rules:
+  - id: run-answer-carries-earned-confidence-level
+    description: "Every `Confidence:` line in a recent run-plane review/verify answer is inside HIGH|MEDIUM|LOW and is EARNED: HIGH cites an http(s) URL, a `path:line` or a repo path with a code/doc extension; MEDIUM/LOW cite the same or name what is unverified. Presence is not required, a mention of the token (prose or inline code) is not a claim, and discovery is windowed (`RUN_ANSWER_WINDOW_MINUTES`, default 240) so dead answers from finished runs age out."
+    severity: error
+    evaluator:
+      type: exit-code
+      config:
+        command: sh
+        args:
+          - ".spur/rules/structure/run-answer-confidence-level.sh"
+        message: "exit {code}: a run-plane review/verify answer claims a confidence level outside HIGH|MEDIUM|LOW, or claims a level it does not earn (a HIGH with no citation, or a MEDIUM/LOW that cites nothing and names no gap) — run `sh .spur/rules/structure/run-answer-confidence-level.sh` for the file and line, and `sh .spur/rules/structure/run-answer-confidence-level.test.sh` for the cases"
+    include:
+      - ".spur/run/*-review-answer.txt"
+      - ".spur/run/*-verify-answer.txt"
