@@ -345,9 +345,13 @@ export function CollectModule() {
                             Run
                             <select
                                 value={selection.runId ?? ''}
-                                onChange={(event) =>
-                                    setSelection((state) => ({ ...state, runId: event.target.value || null }))
-                                }
+                                onChange={(event) => {
+                                    // A new run starts at page 1: the page belongs to the previous run's
+                                    // result set, and carrying it over can ask for a page that run does
+                                    // not have (a false "No items match these filters." — G81 / 0312).
+                                    setItemFilters((state) => ({ ...state, page: 1 }));
+                                    setSelection((state) => ({ ...state, runId: event.target.value || null }));
+                                }}
                             >
                                 <option value="">
                                     {rows.length === 0
