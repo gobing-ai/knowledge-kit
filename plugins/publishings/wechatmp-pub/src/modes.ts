@@ -228,6 +228,16 @@ async function resolveBodyImages(content: Content): Promise<{ paths?: string[]; 
     const candidates: Array<{ path: string; what: string }> = [];
     if (typeof cover === 'string' && cover.length > 0)
         candidates.push({ path: cover, what: 'metadata.wechatmp.coverPath' });
+    // Repo-wide single-cover convention (itc pipeline writes this; surfdash/xhs read it too).
+    const genericCover = content.metadata?.coverImage;
+    const genericCoverPath =
+        typeof genericCover === 'string'
+            ? genericCover
+            : typeof (genericCover as { path?: unknown } | undefined)?.path === 'string'
+              ? (genericCover as { path: string }).path
+              : undefined;
+    if (genericCoverPath !== undefined && genericCoverPath.length > 0)
+        candidates.push({ path: genericCoverPath, what: 'metadata.coverImage' });
     for (const [index, image] of descriptors.entries()) {
         const path = typeof image === 'string' ? image : (image as { path?: unknown })?.path;
         if (typeof path !== 'string' || path.length === 0) {
@@ -351,7 +361,7 @@ export async function validateModeInput(operation: WechatmpOperation, content: C
             if (images.error) return { error: images.error };
             if ((images.paths ?? []).length === 0) {
                 return {
-                    error: 'cover validation: 文章 takes its cover from a body image (默认首图为封面) but none was supplied — set metadata.wechatmp.coverPath or metadata.images[]',
+                    error: 'cover validation: 文章 takes its cover from a body image (默认首图为封面) but none was supplied — set metadata.wechatmp.coverPath, metadata.coverImage or metadata.images[]',
                 };
             }
             return {
