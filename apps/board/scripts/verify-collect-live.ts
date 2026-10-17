@@ -138,11 +138,57 @@ async function sha256File(path: string): Promise<string> {
     return hasher.digest('hex');
 }
 
-/** The store file (and its WAL when present) as sha256 — a content fingerprint, not just counts. */
-function storeFiles(path: string): { db: string; wal: string | null } {
+/** One store file's sha256 and byte size (size is what distinguishes a checkpoint from a write). */
+interface StoreFilePrint {
+    sha256: string;
+    bytes: number;
+}
+
+/** The store file (and its WAL when present) as sha256 + size — a content fingerprint, not just counts. */
+export interface StoreFilePrints {
+    db: StoreFilePrint;
+    wal: StoreFilePrint | null;
+}
+
+function printOf(path: string): StoreFilePrint {
+    const bytes = readFileSync(path);
+    return { sha256: Bun.CryptoHasher.hash('sha256', bytes, 'hex'), bytes: bytes.byteLength };
+}
+
+export function storeFiles(path: string): StoreFilePrints {
+    const walPath = `${path}-wal`;
+    return { db: printOf(path), wal: existsSync(walPath) ? printOf(walPath) : null };
+}
+
+/**
+ * What a before/after file pair means.
+ *
+ * SQLite folds the WAL back into the main file when the last connection closes, so a read-only
+ * reader can still move bytes: the db grows and the WAL shrinks or vanishes. That is a
+ * **checkpoint**, not a collect tick — classifying it as drift reported a misleading FAIL
+ * (G81 / task 0313). Anything else that changes content without a matching schema/count change is
+ * real, unexplained drift and stays a failure.
+ */
+export function classifyStoreChange(
+    before: StoreFilePrints,
+    after: StoreFilePrints,
+    digestIdentical: boolean,
+): { identical: boolean; checkpointed: boolean; reason: string | null } {
+    const identical = before.db.sha256 === after.db.sha256 && before.wal?.sha256 === after.wal?.sha256;
+    if (identical) return { identical: true, checkpointed: false, reason: null };
+    const walFolded = after.wal === null || after.wal.bytes === 0;
+    const dbGrew = after.db.bytes > before.db.bytes;
+    if (walFolded && dbGrew && digestIdentical) {
+        return {
+            identical: false,
+            checkpointed: true,
+            reason: `WAL checkpointed into the store (db ${before.db.bytes} → ${after.db.bytes} bytes, WAL emptied); rows, schema and journal unchanged`,
+        };
+    }
     return {
-        db: Bun.CryptoHasher.hash('sha256', readFileSync(path), 'hex'),
-        wal: existsSync(`${path}-wal`) ? Bun.CryptoHasher.hash('sha256', readFileSync(`${path}-wal`), 'hex') : null,
+        identical: false,
+        checkpointed: false,
+        reason: 'store content changed without a matching schema/count change',
     };
 }
 
@@ -599,12 +645,14 @@ async function main(): Promise<number> {
         const { tabs, consoleErrors, failedRequests } = await checkTabs(origin, readerOrigin, ids, paths.out);
         const filesAfter = storeFiles(paths.store);
         const storeDigestAfter = digest(paths.store);
-        const contentIdentical = filesBefore.db === filesAfter.db && filesBefore.wal === filesAfter.wal;
         const digestIdentical = sameDigest(storeDigestBefore, storeDigestAfter);
+        const change = classifyStoreChange(filesBefore, filesAfter, digestIdentical);
+        const contentIdentical = change.identical;
         const tabsPassed = tabs.every((tab) => tab.pass);
         const expected = consoleErrors.filter(expectedReaderMiss);
         const unexpected = consoleErrors.filter((error) => !expectedReaderMiss(error));
-        const ok = contentIdentical && digestIdentical && tabsPassed && unexpected.length === 0;
+        const ok =
+            (contentIdentical || change.checkpointed) && digestIdentical && tabsPassed && unexpected.length === 0;
         report = {
             generatedAt: new Date().toISOString(),
             ok,
@@ -625,7 +673,9 @@ async function main(): Promise<number> {
                 storePath: paths.store,
                 fileSha256: { before: filesBefore, after: filesAfter, identical: contentIdentical },
                 schemaAndCounts: { before: storeDigestBefore, after: storeDigestAfter, identical: digestIdentical },
-                identical: contentIdentical && digestIdentical,
+                identical: digestIdentical && (contentIdentical || change.checkpointed),
+                checkpointed: change.checkpointed,
+                changeReason: change.reason,
             },
             tabs,
             consoleErrors,
@@ -636,9 +686,11 @@ async function main(): Promise<number> {
         for (const tab of tabs) {
             console.error(`${tab.pass ? 'PASS' : 'FAIL'} ${tab.runId ?? '(page)'} ${tab.tab}: ${tab.detail}`);
         }
-        if (!contentIdentical) {
+        if (change.checkpointed) {
+            console.error(`NOTE ${change.reason} — read-only, not a store write; rerun to see a byte-identical pair`);
+        } else if (!contentIdentical) {
             console.error(
-                'FAIL the store CONTENT changed while the check ran — a collect tick may have landed; rerun when idle',
+                `FAIL the store CONTENT changed while the check ran (${change.reason}) — a collect tick may have landed; rerun when idle`,
             );
         }
         if (!digestIdentical) {
@@ -657,10 +709,12 @@ async function main(): Promise<number> {
         }
         console.error(`artifacts: ${paths.out}`);
         console.error(`operator command: ${operatorCommand()}`);
-        console.error(`store db sha256 before: ${filesBefore.db}`);
-        console.error(`store db sha256 after:  ${filesAfter.db} (identical: ${contentIdentical})`);
-        console.error(`store wal sha256 before: ${filesBefore.wal ?? '(absent)'}`);
-        console.error(`store wal sha256 after:  ${filesAfter.wal ?? '(absent)'} (identical: ${contentIdentical})`);
+        const print = (file: StoreFilePrint | null) =>
+            file === null ? '(absent)' : `${file.sha256} (${file.bytes} B)`;
+        console.error(`store db sha256 before: ${print(filesBefore.db)}`);
+        console.error(`store db sha256 after:  ${print(filesAfter.db)} (identical: ${contentIdentical})`);
+        console.error(`store wal sha256 before: ${print(filesBefore.wal)}`);
+        console.error(`store wal sha256 after:  ${print(filesAfter.wal)} (identical: ${contentIdentical})`);
         console.error(
             `store sqlite_master sha256: ${storeDigestBefore.sqliteMasterSha256} (identical: ${digestIdentical})`,
         );
@@ -687,9 +741,13 @@ function spurCommand(): string[] {
     }
 }
 
-process.exit(
-    await main().catch((error: unknown) => {
-        console.error(`verify-collect-live: ${error instanceof Error ? error.message : String(error)}`);
-        return 1;
-    }),
-);
+// Only when executed as a script: importing this module (the digest classifier's unit test) must
+// not spawn servers or exit the process.
+if (import.meta.main) {
+    process.exit(
+        await main().catch((error: unknown) => {
+            console.error(`verify-collect-live: ${error instanceof Error ? error.message : String(error)}`);
+            return 1;
+        }),
+    );
+}
