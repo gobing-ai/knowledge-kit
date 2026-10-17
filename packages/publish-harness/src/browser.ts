@@ -1406,6 +1406,8 @@ function execFailureDetail(error: unknown, url: string): string {
     ]) {
         if (leak.length > 1) detail = detail.split(leak).join('<url>');
     }
+    // Under `-L` the failing hop can be a redirect target the caller never supplied.
+    detail = detail.replace(/\bhttps?:\/\/\S+/gi, '<url>');
     detail = detail.replace(/\s+/g, ' ').trim().slice(0, 200);
     return detail === '' ? label : `${label}: ${detail}`;
 }

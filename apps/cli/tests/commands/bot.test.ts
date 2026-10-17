@@ -524,6 +524,70 @@ describe('kk bot exec (0306 R1/R3/R4)', () => {
         expect(run.err).toContain('kk.bot.failed');
         expect(calls).toEqual([]);
     });
+
+    it('rejects the out-of-scope stdin body -d @- as a usage error (exit 2)', async () => {
+        const calls: string[] = [];
+        const run = await runInjected(
+            ['bot', 'exec', 'alice', 'https://site.example.com/a', '-d', '@-'],
+            fakeHarness({ calls }),
+        );
+        expect(run.code).toBe(2);
+        expect(run.err).toContain('kk.bot.failed');
+        expect(calls).toEqual([]);
+    });
+
+    it('combines repeated -H names case-insensitively instead of dropping a value', async () => {
+        const seen: ExecRequest[] = [];
+        const harness = fakeHarness({
+            calls: [],
+            exec: (_name, request) => {
+                seen.push(request);
+                return Promise.resolve(ok());
+            },
+        });
+        await withStdoutBytes(() =>
+            runInjected(
+                [
+                    'bot',
+                    'exec',
+                    'alice',
+                    'https://site.example.com/a',
+                    '-H',
+                    'Accept: text/html',
+                    '-H',
+                    'accept: application/json',
+                    '-H',
+                    'Cookie: a=1',
+                    '-H',
+                    'cookie: b=2',
+                ],
+                harness,
+            ),
+        );
+        // RFC 9110 §5.3 joins field lines with ", "; the Cookie header joins with "; " (RFC 6265 §5.4).
+        expect(seen[0]?.headers).toEqual({ Accept: 'text/html, application/json', Cookie: 'a=1; b=2' });
+    });
+
+    it('writes the -i header block into the -o file with the body, as curl does', async () => {
+        const harness = fakeHarness({ calls: [], exec: () => Promise.resolve(ok({ body: Buffer.from('pong') })) });
+        const outFile = join(tempHome(), 'with-headers.txt');
+        const run = await withStdoutBytes(() =>
+            runInjected(['bot', 'exec', 'alice', 'https://site.example.com/a', '-i', '-o', outFile], harness),
+        );
+        expect(run.result.code).toBe(0);
+        expect(run.stdout.length).toBe(0);
+        expect(readFileSync(outFile, 'utf8')).toBe('HTTP 200 OK\ncontent-type: text/plain\n\npong');
+
+        const failFile = join(tempHome(), 'failed.txt');
+        const failed = await withStdoutBytes(() =>
+            runInjected(
+                ['bot', 'exec', 'alice', 'https://site.example.com/a', '-f', '-o', failFile],
+                fakeHarness({ calls: [], exec: () => Promise.resolve(ok({ status: 500, statusText: 'Boom' })) }),
+            ),
+        );
+        expect(failed.result.code).toBe(1);
+        expect(existsSync(failFile)).toBe(false);
+    });
 });
 
 describe('kk bot browser-free behaviour (A22 R6/R7)', () => {

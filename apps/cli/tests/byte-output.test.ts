@@ -34,6 +34,16 @@ describe('writeBytes', () => {
         expect(capture.chunks).toEqual(['{"ok":true}']);
     });
 
+    it('rejects when the stdout write fails (e.g. EPIPE) instead of resolving', async () => {
+        const original = process.stdout.write.bind(process.stdout);
+        restore = () => (process.stdout.write = original);
+        process.stdout.write = ((_chunk: string | Uint8Array, callback?: (error?: Error | null) => void) => {
+            callback?.(new Error('EPIPE'));
+            return false;
+        }) as typeof process.stdout.write;
+        await expect(writeBytes('x')).rejects.toThrow('EPIPE');
+    });
+
     it('passes a binary body through unchanged', async () => {
         const capture = captureStdout();
         restore = capture.restore;

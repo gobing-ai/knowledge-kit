@@ -175,17 +175,20 @@ async function botExecAction(
     await runBotAction(load, async (harness) => {
         const request = buildExecRequest(harness, url, options);
         const response = await harness.execBot(name, request);
-        // `-i` prints `HTTP <status> <statusText>`: Playwright exposes no protocol version.
-        if (options.include === true) {
-            await writeBytes(execHeaderBlock(response.status, response.statusText, response.headers));
-        }
-        if (options.fail === true && response.status >= 400) {
-            throw new harness.BotError('browser', `HTTP ${response.status}`);
-        }
+        // `-i` prints `HTTP <status> <statusText>`: Playwright exposes no protocol version. Like
+        // curl, the block goes wherever the body goes — stdout, or the `-o` file.
+        const head = Buffer.from(
+            options.include === true ? execHeaderBlock(response.status, response.statusText, response.headers) : '',
+        );
+        const failed = options.fail === true && response.status >= 400;
+        const bytes = failed ? head : Buffer.concat([head, response.body]);
         // Bytes never go through the line-oriented output seam: it would append a newline and
-        // mangle a binary body (`-o` writes the same bytes to the file instead).
-        if (options.output !== undefined) writeFileBytes(options.output, response.body);
-        else await writeBytes(response.body);
+        // mangle a binary body. A `-f` rejection without `-i` writes nothing (no empty `-o` file).
+        if (!failed || head.length > 0) {
+            if (options.output !== undefined) writeFileBytes(options.output, bytes);
+            else await writeBytes(bytes);
+        }
+        if (failed) throw new harness.BotError('browser', `HTTP ${response.status}`);
     });
 }
 
@@ -198,7 +201,13 @@ function buildExecRequest(harness: BotHarness, url: string, options: BotExecCliO
         if (colon <= 0 || line.slice(0, colon).trim() === '') {
             throw new harness.BotError('usage', 'header must be "Name: value"');
         }
-        headers[line.slice(0, colon).trim()] = line.slice(colon + 1).trim();
+        const header = line.slice(0, colon).trim();
+        const value = line.slice(colon + 1).trim();
+        // The request shape holds one value per name, so a repeated name is joined rather than
+        // dropped: ", " per RFC 9110 §5.3, "; " for Cookie per RFC 6265 §5.4.
+        const existing = Object.keys(headers).find((key) => key.toLowerCase() === header.toLowerCase());
+        if (existing === undefined) headers[header] = value;
+        else headers[existing] = `${headers[existing]}${existing.toLowerCase() === 'cookie' ? '; ' : ', '}${value}`;
     }
     const data = options.data === undefined ? undefined : readExecData(harness, options.data);
     const timeoutMs = options.maxTime === undefined ? undefined : parseExecMaxTime(harness, options.maxTime);
@@ -215,6 +224,7 @@ function buildExecRequest(harness: BotHarness, url: string, options: BotExecCliO
 /** `-d` literal, or `@file` read raw (no newline stripping). An unreadable file is exit 1. */
 function readExecData(harness: BotHarness, value: string): Buffer {
     if (!value.startsWith('@')) return Buffer.from(value);
+    if (value === '@-') throw new harness.BotError('usage', 'reading the body from stdin (-d @-) is not supported');
     const path = value.slice(1);
     try {
         return readFileBytes(path);
@@ -281,7 +291,7 @@ export function registerBotCommand(program: Command, deps: BotCommandDeps = {}):
         .option('-H, --header <header>', 'Request header "Name: value" (repeatable)', collectHeader)
         .option('-d, --data <data>', 'Request body: a literal, or @file read raw')
         .option('-o, --output <file>', 'Write the response body to a file instead of stdout')
-        .option('-i, --include', 'Print the status line and response headers before the body')
+        .option('-i, --include', 'Include the status line and response headers before the body (stdout or the -o file)')
         .option('-L, --location', 'Follow redirects (default: return the 3xx response as-is)')
         .option('-f, --fail', 'Exit 1 without the body when the status is 400 or above')
         .option('-m, --max-time <seconds>', 'Whole-request timeout in seconds (default: Playwright 30s)')

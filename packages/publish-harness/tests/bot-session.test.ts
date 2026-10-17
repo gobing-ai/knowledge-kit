@@ -946,6 +946,22 @@ describe('bot exec (0306: one authenticated request)', () => {
         expect(session.closeCount()).toBe(1);
         expect(listIfPresent(leaseRoot)).toEqual([]);
 
+        // Under -L the failing hop can be the redirect target, a URL the caller never supplied.
+        const redirected = makeExecSession({
+            fetchError: new Error(
+                'apiRequestContext.fetch: read ECONNRESET at http://other.example.net/next?code=REDIR',
+            ),
+        });
+        caught = undefined;
+        try {
+            await execBot('alice', request(), { ...deps(), launcher: redirected.launcher });
+        } catch (error) {
+            caught = error;
+        }
+        expect((caught as BotError).message).not.toContain('other.example.net');
+        expect((caught as BotError).message).not.toContain('REDIR');
+        expect((caught as BotError).message).toContain('ECONNRESET');
+
         const unreadable = makeExecSession({ bodyError: new Error('Response body is unavailable for https://x/') });
         caught = undefined;
         try {

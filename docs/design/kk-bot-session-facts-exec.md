@@ -64,16 +64,16 @@ One HTTP request with the bot's cached cookie session attached.
 | Option | curl meaning kept |
 | --- | --- |
 | `-X, --request <method>` | method; default `GET`, or `POST` when `-d` is given |
-| `-H, --header <'K: V'>` | repeatable request header |
+| `-H, --header <'K: V'>` | repeatable request header; a repeated name is joined (`, `, or `; ` for `Cookie`) |
 | `-d, --data <data>` | literal body, or `@file` read raw (no newline stripping) |
 | `-o, --output <file>` | write body to file instead of stdout |
-| `-i, --include` | prefix `HTTP <status> <statusText>` and response headers (Playwright exposes no protocol version) |
+| `-i, --include` | prefix `HTTP <status> <statusText>` and response headers (Playwright exposes no protocol version), into the `-o` file when given |
 | `-L, --location` | follow redirects (otherwise `maxRedirects: 0`, a 3xx is returned as-is) |
 | `-f, --fail` | status ≥ 400 → exit 1, body suppressed |
 | `-m, --max-time <s>` | whole-request timeout; without it Playwright's 30 s default applies |
 
-Anything else is a Commander usage error (exit 2). No `-F`, `-b/-c`, `-u`, `-x`, `--retry`,
-`-d @-`, `-k`, `--compressed`.
+Anything else, including `-d @-`, is a usage error (exit 2). No `-F`, `-b/-c`, `-u`, `-x`, `--retry`,
+`-k`, `--compressed`.
 
 **Behaviour.** Validate name and URL (http/https, no userinfo; the query is kept, unlike `defaultUrl`)
 first. The profile directory must exist (exec never creates one; `bot.json` is not required); a

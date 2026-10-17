@@ -1072,20 +1072,22 @@ kk bot exec <bot> <url> [curl opts] # one request with the cached cookies; body 
   must already exist — `exec` never creates one, `bot.json` is not required, and a missing profile
   fails with `kk bot login <url> --save <name>` guidance (exit 1). The curl option subset is
   `-X/--request` (default `GET`, or `POST` when `-d` is given), repeatable `-H/--header`
-  (`Name: value`, split on the first colon, trimmed), `-d/--data` (a literal, or `@file` read raw with
+  (`Name: value`, split on the first colon, trimmed; a repeated name is joined case-insensitively with
+  `, `, or `; ` for `Cookie`), `-d/--data` (a literal, or `@file` read raw with
   no newline stripping), `-o/--output`, `-i/--include`, `-L/--location` (otherwise
   `maxRedirects: 0`, so a 3xx comes back as-is), `-f/--fail` and `-m/--max-time <seconds>`
   (milliseconds for Playwright; without it the 30 s request default applies — a bounded lease hold).
   Anything else, a header without a colon or an empty name, and a zero/negative/non-numeric
-  `--max-time` are usage errors (exit 2); an unreadable `@file` is operational (exit 1). The whole
+  `--max-time` and the stdin form `-d @-` are usage errors (exit 2); an unreadable `@file` is operational (exit 1). The whole
   body is buffered in memory and written as bytes: stdout via `process.stdout.write`, or the `-o`
   file — never the line-oriented `consoleOutput` seam, which would append a newline and mangle binary
   content. `-i` prefixes `HTTP <status> <statusText>` (Playwright exposes no protocol version) and one
-  `Name: value` line per response header, then a blank line; `Set-Cookie` values print as
-  `<redacted>`. Any HTTP response exits 0; `-f` with status ≥ 400 exits 1 with the body suppressed.
+  `Name: value` line per response header, then a blank line, written wherever the body goes (stdout, or the `-o` file, as curl does); `Set-Cookie`
+  values print as `<redacted>`. Any HTTP response exits 0; `-f` with status ≥ 400 exits 1 with the body
+  suppressed (no `-o` file is created unless `-i` has a header block to write).
   Playwright fetch/body errors are wrapped so the operational line carries the error class and a
-  URL-stripped detail — the request URL (its query can carry a token), cookie values and bodies never
-  print. Out of scope: `-F`, `-b/-c`, `-u`, `-x`, `--retry`, `-d @-`, `-k`, `--compressed`, streaming,
+  URL-stripped detail (any http(s) URL, including a `-L` redirect target, prints as `<url>`) — the request URL (its query can carry a token), cookie values and bodies never
+  print. Out of scope: `-F`, `-b/-c`, `-u`, `-x`, `--retry`, `-k`, `--compressed`, streaming,
   adapter special state.
 - Exit contract: validation/usage failures print `kk.bot.failed: <detail>` to stderr and exit 2;
   operational failures exit 1 with the same contract line (`BotError.code === 'usage'` maps to 2).
