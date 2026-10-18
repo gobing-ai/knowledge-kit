@@ -10,7 +10,7 @@ import {
 import { echoError } from '@gobing-ai/ts-utils';
 import { z } from 'zod';
 import { runFanout } from './fanout';
-import { pluginProcessEnv } from './invoke';
+import { pluginEnvFromConfig, pluginProcessEnv } from './invoke';
 import type { ItcEffectiveOptions } from './itc-config';
 import { itcDecision } from './itc-decision';
 import { buildItcPublishPlan, type ItcPlanRequest, type ItcPublishPlan, resolveItcTargets } from './itc-plan';
@@ -356,7 +356,14 @@ export async function itcCheckTargets(
                 try {
                     const last = probe.stdout.trim().split('\n').filter(Boolean).at(-1) ?? '';
                     const parsed = JSON.parse(last) as { status?: string; detail?: string };
-                    if (parsed.detail) detail = `${parsed.status ?? 'refused'}: ${parsed.detail}`;
+                    if (parsed.detail) {
+                        detail = `${parsed.status ?? 'refused'}: ${parsed.detail}`;
+                        // A probe may echo a config-injected value in its detail (0317): scrub every
+                        // value the config overlay injected before the message reaches the operator.
+                        for (const value of Object.values(pluginEnvFromConfig(plugin.kind, plugin.name))) {
+                            if (value) detail = detail.split(value).join('<redacted>');
+                        }
+                    }
                 } catch {
                     // keep the generic hint
                 }

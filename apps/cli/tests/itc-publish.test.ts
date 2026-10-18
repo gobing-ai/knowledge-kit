@@ -259,6 +259,30 @@ describe('itcCheckTargets & Probes (0302 / G21 R1)', () => {
         });
     });
 
+    it('redacts a config-injected value the probe echoes in its refusal detail (0317)', async () => {
+        await withTempDir(async (workDir) => {
+            const secret = 'http://plain.test';
+            planTarget(workDir, 'substack-pub');
+            await withPublishConfig({ SUBSTACK_PUBLICATION_URL: secret }, async () => {
+                const probe = new RecordingProbe({
+                    exitCode: 1,
+                    stdout: JSON.stringify({
+                        status: 'refused',
+                        detail: `substack publication URL must be https:, got '${secret}'`,
+                    }),
+                });
+                const captured = captureOutput();
+                try {
+                    expect(await itcCheckTargets([workDir], undefined, probe)).toBe(1);
+                } finally {
+                    captured.restore();
+                }
+                expect(captured.readErr()).not.toContain(secret);
+                expect(captured.readErr()).toContain("got '<redacted>'");
+            });
+        });
+    });
+
     it('never leaks the injected value into streams, plan, receipts or report (0311 R3)', async () => {
         await withTempDir(async (workDir) => {
             const secret = 'https://secret.test/publication';
