@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Residuals from 0310
-status: backlog
+status: cancelled
 template: standard
 created_at: 2026-10-18T00:48:53.259Z
-updated_at: "2026-10-18T00:48:53.314Z"
+updated_at: "2026-10-18T01:14:14.704Z"
 
 ---
 
@@ -56,3 +56,7 @@ Source task: 0310 (feature G21) — deferred residuals filed by residual-scan se
 <!-- Links to features, docs, ADRs, related tasks, or external references. -->
 
 ### History
+
+Fixed directly in the G21 landing rather than deferred: `itc-send-targets` no longer re-dispatches a LIVE target whose prior receipt is `uncertain`/`effect: unknown` (drafts still re-attempt, which the stale-aggregate fix needs), with a live/draft regression pair in `apps/cli/tests/itc-publish.test.ts`.
+- 2026-10-18T01:14:14.704Z backlog → cancelled (system)
+

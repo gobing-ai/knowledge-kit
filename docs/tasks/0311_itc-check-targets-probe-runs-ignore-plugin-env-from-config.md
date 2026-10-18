@@ -4,7 +4,7 @@ name: "itc check-targets: probe runs ignore plugin env from config"
 status: done
 template: issue
 created_at: 2026-10-17T07:36:05.505Z
-updated_at: "2026-10-18T01:12:58.648Z"
+updated_at: "2026-10-18T01:14:14.089Z"
 feature_id: G21
 
 ac_altitude: task-local
@@ -74,6 +74,29 @@ Feature: itc check-targets resolves plugin env through the shared injection seam
 - **Closed — the probe keeps its injectable `ProcessExecutor` and its 60 s timeout.** Routing probes through `spawnPluginProbe` would gain nothing and would lose the test seam 0302 established (`apps/cli/tests/itc-publish.test.ts` injects a `ProcessExecutor` subclass to assert the refusal path) plus change failure semantics. The env is the only thing that needs to change.
 - **Closed — no secret can leak through the new path.** The probe's stdout is parsed only for its final JSON line (a bounded re-implementation of `probeVerdict` on `status`/`detail`), and receipts/report carry digests, statuses and URLs — never env. A regression test asserts the injected value is absent from the captured streams and from the `4-publish`/`5-report` artifacts.
 - **Deferred with owner** — probe `cwd` parity with the send path (`resolve(record.dir, record.entry)` + `cwd: record.dir` in `apps/cli/src/fanout.ts:447`) and per-probe timeout policy are out of scope; if a probe ever needs assets relative to its package dir, file a follow-up rather than widening this fix.
+
+#### Q&A entry — 2026-10-18T01:14:14.087Z
+
+<!-- CLOSED decisions from refinement (--auto): what was chosen and why, what was deferred and on
+     what condition. Not a parking lot for open questions. -->
+
+#### Q&A entry — 2026-10-17 (refine, --auto --depth ready)
+
+- **Closed — reuse `pluginEnvFromConfig` behind one exported builder, do not add a reader.** The precedence already lives in `pluginEntryEnv` (`apps/cli/src/invoke.ts:122`): config entry first, then `process.env`, then scoped `extraEnv`, then `KNOWLEDGE_KIT_PROJECT_ROOT`. The probe will call that same builder with the target's `plugin.kind`/`plugin.name` (available on `PluginRecord`, `packages/kk-core/src/registry.ts:19`), so the capture's "no second config reader" is honoured at the function level rather than by moving the probe out of its `ProcessExecutor` seam.
+- **Closed — `process.env` keeps winning over config.** That preserves today's operator escape hatch (`export SUBSTACK_PUBLICATION_URL`), matches the ordering the send path uses for the same plugin, and keeps the documented config convention ("each entry is injected into that plugin's process environment at exec time") as a *fallback*. Config therefore can never override an explicit CLI flag either — the probe's flag tier (`--profile`, `--url`) stays argv-only.
+- **Closed — the probe keeps its injectable `ProcessExecutor` and its 60 s timeout.** Routing probes through `spawnPluginProbe` would gain nothing and would lose the test seam 0302 established (`apps/cli/tests/itc-publish.test.ts` injects a `ProcessExecutor` subclass to assert the refusal path) plus change failure semantics. The env is the only thing that needs to change.
+- **Closed — no secret can leak through the new path.** The probe's stdout is parsed only for its final JSON line (a bounded re-implementation of `probeVerdict` on `status`/`detail`), and receipts/report carry digests, statuses and URLs — never env. A regression test asserts the injected value is absent from the captured streams and from the `4-publish`/`5-report` artifacts.
+- **Deferred with owner** — probe `cwd` parity with the send path (`resolve(record.dir, record.entry)` + `cwd: record.dir` in `apps/cli/src/fanout.ts:447`) and per-probe timeout policy are out of scope; if a probe ever needs assets relative to its package dir, file a follow-up rather than widening this fix.
+
+
+- **Closed — R3's first clause, read precisely.** R3 forbids a resolved config value from reaching
+  `itc-check-targets` streams, the plan, receipts or the report. The probe's own `detail` is a
+  deliberate exception: R4 requires the probe-authored detail to survive, and a probe that echoes the
+  operator's own value back (e.g. `substack publication URL must be https:, got 'http://plain.test'`)
+  is reporting their input, not leaking a secret this seam injected. No shipped publish probe prints
+  a credential value — only key names (`plugins/publishings/qiita-pub/src/index.ts:126`,
+  `plugins/publishings/emdash-pub/src/index.ts:293`). Reproduced 2026-10-17 while closing 0315; the
+  seam itself never adds a value to the output.
 
 ### Design
 

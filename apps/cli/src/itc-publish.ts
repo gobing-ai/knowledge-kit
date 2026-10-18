@@ -422,12 +422,28 @@ export async function itcSendTargets(
             }
             reattempt = true;
         } else if (await fs.exists(targetReceiptPath)) {
-            // If already succeeded, do not resend
+            // Never resend a target the store already accepted, and never resend one whose previous
+            // attempt is `uncertain` (effect unknown — it may already be live): a lost response must
+            // not publish twice on re-entry. An uncertain target is surfaced, not retried; resolving
+            // it is an operator decision (0314 / review finding f6815433).
             try {
                 const prior = JSON.parse(await fs.readFile(targetReceiptPath)) as ItcReceipt;
                 if (prior.status === 'succeeded') continue;
+                // A LIVE target whose previous attempt left its effect unknown may already be
+                // published: resending it could post twice. Skip it and say so — resolving it is an
+                // operator decision. A draft (or any non-live mode) is safe to re-attempt, which is
+                // what the stale-aggregate fix needs (0314 / review finding f6815433).
+                const mayAlreadyBeLive =
+                    (prior.status === 'uncertain' || prior.effect === 'unknown') &&
+                    (target.mode === 'live' || prior.mode === 'live');
+                if (mayAlreadyBeLive) {
+                    echoError(
+                        `itc-send-targets: ${target.plugin} has an unknown-effect live receipt (may already be published) — resolve it before resending; skipped`,
+                    );
+                    continue;
+                }
             } catch {
-                // re-attempt
+                // unreadable receipt: re-attempt, as before
             }
             reattempt = true;
         }

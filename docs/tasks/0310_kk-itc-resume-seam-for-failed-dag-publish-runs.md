@@ -4,7 +4,7 @@ name: "kk-itc: resume seam for failed DAG publish runs"
 status: done
 template: issue
 created_at: 2026-10-17T07:36:05.256Z
-updated_at: "2026-10-18T00:48:53.775Z"
+updated_at: "2026-10-18T01:14:13.777Z"
 feature_id: G21
 
 ac_altitude: task-local
@@ -159,7 +159,7 @@ A `failed` DAG run has no re-entry point in the installed harness. `plugins/kk/w
 
 **Deliberately not changed:** `itc-report-summary` (the tail's last node) copies the frozen verdict without re-checking the enum, so a `PASS` with `confidence: "SURE"` would still read `verdict: PASS` there. It is a reporter, not a gate: `itcAuthorVerdict` refuses an out-of-enum / missing-confidence `PASS` in the author FSM's `judge` state, which resolves to `failed` before any publish can start — and the tail contains no authoring node at all, so re-entry cannot reach that state machine. Enforcing the enum in the reporter would be a production change to `apps/cli/src/itc-publish.ts`, which this task's contract keeps untouched — recorded as residual risk instead.
 
-**Residual (harness, not this repo).** Engine-side DAG fresh starts (`startable` on `DagNodeDefSchema` + `--from` accepted for `kind: dag`) would let this tail be retired in favour of `spur workflow run kk-itc.yaml --from check-targets --from-run <failed>`. Not filed as a corpus task here (lifecycle action, left to close/review); the three verbatim evidence lines are recorded above for it.
+**Residual (harness, not this repo).** Engine-side DAG fresh starts (`startable` on `DagNodeDefSchema` + `--from` accepted for `kind: dag`) would let this tail be retired in favour of `spur workflow run kk-itc.yaml --from check-targets --from-run <failed>`. Recorded here in-task by operator directive: no residual corpus task is filed — this paragraph plus the three verbatim evidence lines above are the record, and a reader can re-run them to confirm the gap.
 
 ### Testing
 

@@ -363,6 +363,57 @@ describe('itcSendTargets, Receipts & Recovery (0302 / G21 R3, R4)', () => {
         });
     });
 
+    it('never re-dispatches an uncertain receipt on the non-retry path (0314 double-publish bound)', async () => {
+        await withTempDir(async (workDir) => {
+            const publishDir = join(workDir, '4-publish');
+            const receiptsDir = join(publishDir, 'receipts');
+            mkdirSync(receiptsDir, { recursive: true });
+            writeFileSync(
+                join(workDir, 'itc-options.json'),
+                JSON.stringify({ schemaVersion: 1, parentRunId: 'run-uncertain', targets: [] }),
+            );
+            // A live target whose previous attempt lost its response: effect unknown, may be live.
+            writeFileSync(
+                join(receiptsDir, 'pub-uncertain.json'),
+                JSON.stringify({
+                    schemaVersion: 1,
+                    parentRunId: 'run-uncertain',
+                    planDigest: 'd1',
+                    payloadDigest: 'd2',
+                    plugin: 'pub-uncertain',
+                    profile: 'article',
+                    mode: 'live',
+                    attemptId: 'attempt-1',
+                    status: 'uncertain',
+                    effect: 'unknown',
+                    publicUrlVerified: false,
+                }),
+            );
+            const planPath = join(publishDir, 'publish-plan.json');
+            writeFileSync(
+                planPath,
+                JSON.stringify({
+                    schemaVersion: 1,
+                    targets: [{ plugin: 'pub-uncertain', profile: 'article', mode: 'live' }],
+                }),
+            );
+
+            let dispatches = 0;
+            const code = await itcSendTargets([workDir], undefined, async () => {
+                dispatches += 1;
+                return 0;
+            });
+
+            expect(dispatches).toBe(0);
+            expect(code).toBe(0);
+            // The receipt is left untouched: resolution is the operator's call, never a silent resend.
+            const receipt = JSON.parse(readFileSync(join(receiptsDir, 'pub-uncertain.json'), 'utf8')) as {
+                status: string;
+            };
+            expect(receipt.status).toBe('uncertain');
+        });
+    });
+
     it('retries only effect: none failures and skips confirmed successes or uncertain failures in retry mode', async () => {
         await withTempDir(async (workDir) => {
             const publishDir = join(workDir, '4-publish');
