@@ -798,6 +798,40 @@ describe('itcReportSummary (0302 / G21 R5)', () => {
             expect(rep.targetContractFailure).toBeUndefined();
         });
     });
+
+    // The disposition gate refuses a PASS outside the enum; the report must not record one as done.
+    it.each([
+        ['missing', {}],
+        ['out-of-enum', { confidence: 'HIGHISH' }],
+        ['non-string', { confidence: 1 }],
+    ])('reports a PASS with a %s confidence as failed and records no level', async (_label, extra) => {
+        await withTempDir(async (workDir) => {
+            writeFileSync(join(workDir, '.itc-verdict.json'), JSON.stringify({ verdict: 'PASS', ...extra }));
+
+            expect(await itcReportSummary([workDir, '2'])).toBe(0);
+            const rep = JSON.parse(readFileSync(join(workDir, '5-report/report.json'), 'utf-8'));
+            expect(rep.outcome).toBe('failed');
+            expect(rep.confidence).toBeNull();
+            expect(readFileSync(join(workDir, '5-report/report.md'), 'utf-8')).toContain(
+                'Confidence: unknown (recorded value is outside HIGH/MEDIUM/LOW)',
+            );
+        });
+    });
+
+    it('records the accepted confidence level beside a PASS verdict', async () => {
+        await withTempDir(async (workDir) => {
+            writeFileSync(
+                join(workDir, '.itc-verdict.json'),
+                JSON.stringify({ verdict: 'PASS', confidence: 'MEDIUM' }),
+            );
+
+            expect(await itcReportSummary([workDir, '2'])).toBe(0);
+            const rep = JSON.parse(readFileSync(join(workDir, '5-report/report.json'), 'utf-8'));
+            expect(rep.outcome).toBe('done');
+            expect(rep.confidence).toBe('MEDIUM');
+            expect(readFileSync(join(workDir, '5-report/report.md'), 'utf-8')).toContain('Confidence: MEDIUM');
+        });
+    });
 });
 
 /**

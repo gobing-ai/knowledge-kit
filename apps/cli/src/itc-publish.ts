@@ -690,13 +690,20 @@ export async function itcReportSummary(args: string[], fs: FileSystem = createNo
     await fs.ensureDir(reportDir);
 
     let verdict = 'PASS';
+    // Null while no verdict file exists (the manual/dry-run pass convention) or when the recorded
+    // level is outside the judge's own enum.
+    let confidence: string | null = null;
     let outcome = 'done';
     const verdictPath = join(workDir, '.itc-verdict.json');
-    if (await fs.exists(verdictPath)) {
+    const hasVerdict = await fs.exists(verdictPath);
+    if (hasVerdict) {
         try {
-            const v = JSON.parse(await fs.readFile(verdictPath)) as { verdict?: string; confidence?: string };
-            verdict = v.verdict ?? 'PASS';
-            if (verdict !== 'PASS') outcome = 'failed';
+            const v = JSON.parse(await fs.readFile(verdictPath)) as { verdict?: unknown; confidence?: unknown };
+            verdict = typeof v.verdict === 'string' ? v.verdict : 'PASS';
+            // Same enum `itc-author-verdict` enforced when it wrote the disposition: a PASS is only
+            // usable with the judge's HIGH|MEDIUM|LOW level, so the report never records one alone.
+            confidence = ['HIGH', 'MEDIUM', 'LOW'].includes(String(v.confidence)) ? String(v.confidence) : null;
+            if (verdict !== 'PASS' || confidence === null) outcome = 'failed';
         } catch {
             outcome = 'failed';
         }
@@ -747,6 +754,7 @@ export async function itcReportSummary(args: string[], fs: FileSystem = createNo
     const reportJson = {
         outcome,
         verdict,
+        confidence,
         revisions,
         receipts,
         ...(targetContract ? { targetContractFailure: targetContract } : {}),
@@ -760,6 +768,8 @@ export async function itcReportSummary(args: string[], fs: FileSystem = createNo
         '',
         `- Outcome: ${outcome}`,
         `- Verdict: ${verdict}`,
+        // A verdict file whose level is outside the enum is stated, never silently dropped.
+        `- Confidence: ${confidence ?? (hasVerdict ? 'unknown (recorded value is outside HIGH/MEDIUM/LOW)' : 'not recorded')}`,
         `- Revisions: ${revisions}`,
         `- Target Receipts: ${receipts.length}`,
         ...(targetContract
