@@ -947,6 +947,28 @@ describe('judge confidence vocabulary (AC3/AC7)', () => {
 });
 
 describe('Collect store views over a seeded store (G81/0309 R1)', () => {
+    it('never shows the previous run funnel while the selected run is loading', async () => {
+        if (!ready || page === null) throw new Error('setup did not complete');
+        const view: Page = page;
+        await openModule('kk-collect', query({ run: 'r-a', tab: 'summary' }));
+        await waitForRunOption('r-a');
+        await view.waitForSelector('.kk-collect-funnel');
+        await view.route('**/runs/r-b/store', (route) => route.abort());
+        try {
+            await view.locator('.kk-board-run-selector select').selectOption('r-b');
+            expect(await view.locator('.kk-collect-funnel').count()).toBe(0);
+            expect(await view.locator('.kk-board-facts').count()).toBe(0);
+            expect(await view.locator('.kk-collect-detail').innerText()).toContain(
+                'The store has not answered for the selected run yet.',
+            );
+            const artifacts = join(REPO, '.works/test-artifacts/g81');
+            mkdirSync(artifacts, { recursive: true });
+            await view.screenshot({ path: join(artifacts, 'collect-run-switch.png') });
+        } finally {
+            await view.unroute('**/runs/r-b/store');
+        }
+    }, 30_000);
+
     it('joins the store onto the run page: banner, r-a counts, r-b has no store row', async () => {
         if (!ready || page === null) throw new Error('setup did not complete');
         const view: Page = page;

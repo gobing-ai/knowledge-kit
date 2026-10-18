@@ -196,10 +196,12 @@ export function CollectModule() {
                 client.results('kk-collect', runId),
                 client.config('kk-collect', runId),
             ]);
+            if (selectionRef.current.runId !== runId) return;
             setResults(nextResults);
             setConfig(nextConfig);
             setReaderRefresh(() => succeeded(Date.now(), ACTIVE_POLL_MS));
         } catch (error) {
+            if (selectionRef.current.runId !== runId) return;
             setDiagnostics((existing) => [
                 ...existing,
                 { code: 'board.reader.unavailable', message: messageOf(error) },
@@ -211,8 +213,11 @@ export function CollectModule() {
         // The store projection is a separate reader route: its failure states itself inside the
         // store panels (R7) instead of blanking the artifact-backed tabs.
         try {
-            setStoreRun(await client.storeRun(runId));
+            const nextStoreRun = await client.storeRun(runId);
+            if (selectionRef.current.runId !== runId) return;
+            setStoreRun(nextStoreRun);
         } catch (error) {
+            if (selectionRef.current.runId !== runId) return;
             setDiagnostics((existing) => [
                 ...existing,
                 { code: 'board.store.run-unavailable', message: messageOf(error) },
@@ -222,7 +227,9 @@ export function CollectModule() {
         // progress projection comes from the Board API, so it is fetched independently of the reader
         // and a reader failure leaves the last good progress in place instead of blanking the tab.
         try {
-            setProgress(await client.progress(runId));
+            const nextProgress = await client.progress(runId);
+            if (selectionRef.current.runId !== runId) return;
+            setProgress(nextProgress);
         } catch {
             // The tab states unavailability; the reader failure above already carries the diagnosis.
         }
@@ -277,6 +284,7 @@ export function CollectModule() {
 
     const tab = selection.tab;
     const now = Date.now();
+    const currentStoreRun = storeRun?.runId === selection.runId ? storeRun : null;
     const facts = results === null ? [] : collectSummaryFacts(results, now);
     const artifacts = results === null ? [] : artifactViews(results, readerOrigin);
     const steps: ProgressRow[] = progressRows(progress);
@@ -350,6 +358,10 @@ export function CollectModule() {
                                     // result set, and carrying it over can ask for a page that run does
                                     // not have (a false "No items match these filters." — G81 / 0312).
                                     setItemFilters((state) => ({ ...state, page: 1 }));
+                                    setResults(null);
+                                    setConfig(null);
+                                    setProgress(null);
+                                    setStoreRun(null);
                                     setSelection((state) => ({ ...state, runId: event.target.value || null }));
                                 }}
                             >
@@ -403,7 +415,7 @@ export function CollectModule() {
             {tab === 'overview' ? <OverviewPanel runs={rows} overview={overview} now={now} runHref={runHref} /> : null}
             {tab === 'summary' ? (
                 <RunDetailPanel
-                    storeRun={storeRun}
+                    storeRun={currentStoreRun}
                     results={results}
                     facts={facts}
                     artifacts={artifacts}
@@ -416,7 +428,7 @@ export function CollectModule() {
                     runId={selection.runId}
                     items={items}
                     filters={itemFilters}
-                    quality={storeRun?.labelQuality ?? []}
+                    quality={currentStoreRun?.labelQuality ?? []}
                     onFilterChange={filterChanged}
                     onPageChange={pageChanged}
                 />
