@@ -14,11 +14,52 @@ import {
     itcReportSummary,
     itcSendTargets,
 } from '../src/itc-publish';
-import { silenceOutputPerTest } from './capture';
+import { captureOutput, silenceOutputPerTest } from './capture';
 
 // Stage stdout is the workflow protocol and stderr is operator diagnostics; neither is this
 // suite's subject, so the seam's default targets are silenced for every test here.
 silenceOutputPerTest();
+
+/** Probe executor that records the env each probe spawn was handed (0311). */
+class RecordingProbe extends NodeProcessExecutor {
+    readonly envs: Array<Record<string, string | undefined>> = [];
+    constructor(private readonly outcome: { exitCode: number; stdout?: string } = { exitCode: 0 }) {
+        super();
+    }
+    override async run(options: ProcessOptions): Promise<ProcessResult> {
+        this.envs.push((options.env ?? {}) as Record<string, string | undefined>);
+        return {
+            command: options.command,
+            args: options.args ?? [],
+            exitCode: this.outcome.exitCode,
+            stdout: this.outcome.stdout ?? '',
+            stderr: '',
+            durationMs: 0,
+        } as ProcessResult;
+    }
+}
+
+/** Point `$KK_CONFIG` at a config declaring one publish plugin's env; restores on return. */
+function withPublishConfig(env: Record<string, string>, fn: () => Promise<void>): Promise<void> {
+    const prev = process.env.KK_CONFIG;
+    const path = join(tmpdir(), `kk-config-0311-${process.pid}-${Math.random().toString(36).slice(2)}.yaml`);
+    writeFileSync(path, JSON.stringify({ plugins: { publishings: { 'substack-pub': { env } } } }));
+    process.env.KK_CONFIG = path;
+    return fn().finally(() => {
+        if (prev === undefined) delete process.env.KK_CONFIG;
+        else process.env.KK_CONFIG = prev;
+        rmSync(path, { force: true });
+    });
+}
+
+function planTarget(workDir: string, plugin: string): void {
+    const publishDir = join(workDir, '4-publish');
+    mkdirSync(publishDir, { recursive: true });
+    writeFileSync(
+        join(publishDir, 'publish-plan.json'),
+        JSON.stringify({ schemaVersion: 1, targets: [{ plugin, profile: 'article', mode: 'draft' }] }),
+    );
+}
 
 async function withTempDir(fn: (dir: string) => Promise<void> | void): Promise<void> {
     const tempDir = mkdtempSync(join(tmpdir(), 'kk-itc-pub-test-'));
@@ -110,8 +151,11 @@ describe('itcCheckTargets & Probes (0302 / G21 R1)', () => {
                 }),
             );
 
-            const code = await itcCheckTargets([workDir]);
+            // medium-pub declares no `check`, so there is nothing to probe (0311 R4).
+            const probe = new RecordingProbe();
+            const code = await itcCheckTargets([workDir], undefined, probe);
             expect(code).toBe(0);
+            expect(probe.envs).toHaveLength(0);
         });
     });
 
@@ -142,6 +186,119 @@ describe('itcCheckTargets & Probes (0302 / G21 R1)', () => {
             expect(code).toBe(1);
             expect(probed).toHaveLength(1);
             expect(probed[0]?.[1]).toBe('check');
+        });
+    });
+
+    it('hands the probe the config plugin env through the shared seam, exec-path precedence (0311 R1, R2)', async () => {
+        await withTempDir(async (workDir) => {
+            planTarget(workDir, 'substack-pub');
+            await withPublishConfig(
+                {
+                    SUBSTACK_PUBLICATION_URL: 'https://config.test/pub',
+                    KK_CONFIG_ONLY: 'from-config',
+                    KK_CLASH: 'from-config',
+                    KK_EMPTY_PLACEHOLDER: '',
+                },
+                async () => {
+                    const prevClash = process.env.KK_CLASH;
+                    process.env.KK_CLASH = 'from-shell';
+                    try {
+                        const probe = new RecordingProbe();
+                        expect(await itcCheckTargets([workDir], undefined, probe)).toBe(0);
+                        expect(probe.envs).toHaveLength(1);
+                        const env = probe.envs[0] ?? {};
+                        expect(env.SUBSTACK_PUBLICATION_URL).toBe('https://config.test/pub');
+                        expect(env.KK_CONFIG_ONLY).toBe('from-config');
+                        // shell beats config, config placeholder is skipped, root anchored as for exec
+                        expect(env.KK_CLASH).toBe('from-shell');
+                        expect(env.KK_EMPTY_PLACEHOLDER).toBeUndefined();
+                        expect(env.KNOWLEDGE_KIT_PROJECT_ROOT).toBe(
+                            process.env.KNOWLEDGE_KIT_PROJECT_ROOT ?? process.cwd(),
+                        );
+                    } finally {
+                        if (prevClash === undefined) delete process.env.KK_CLASH;
+                        else process.env.KK_CLASH = prevClash;
+                    }
+                },
+            );
+        });
+    });
+
+    it('still probes on a missing config, keeping the refusal detail and the kk bot hint (0311 R4)', async () => {
+        await withTempDir(async (workDir) => {
+            planTarget(workDir, 'juejin-pub');
+            const prev = process.env.KK_CONFIG;
+            process.env.KK_CONFIG = join(workDir, 'no-such-config.yaml');
+            try {
+                const detailed = new RecordingProbe({
+                    exitCode: 1,
+                    stdout: '{"status":"refused","detail":"profile is locked"}',
+                });
+                const withDetail = captureOutput();
+                try {
+                    expect(await itcCheckTargets([workDir], undefined, detailed)).toBe(1);
+                } finally {
+                    withDetail.restore();
+                }
+                expect(detailed.envs).toHaveLength(1);
+                expect(withDetail.readErr()).toContain('refused: profile is locked');
+
+                const generic = new RecordingProbe({ exitCode: 1 });
+                const noDetail = captureOutput();
+                try {
+                    expect(await itcCheckTargets([workDir], undefined, generic)).toBe(1);
+                } finally {
+                    noDetail.restore();
+                }
+                expect(generic.envs).toHaveLength(1);
+                expect(noDetail.readErr()).toContain('kk bot open/login juejin');
+            } finally {
+                if (prev === undefined) delete process.env.KK_CONFIG;
+                else process.env.KK_CONFIG = prev;
+            }
+        });
+    });
+
+    it('never leaks the injected value into streams, plan, receipts or report (0311 R3)', async () => {
+        await withTempDir(async (workDir) => {
+            const secret = 'https://secret.test/publication';
+            const publishDir = join(workDir, '4-publish');
+            planTarget(workDir, 'substack-pub');
+            writeFileSync(join(workDir, 'itc-options.json'), JSON.stringify({ parentRunId: 'run-leak' }));
+            writeFileSync(join(publishDir, 'content.substack-pub.json'), '{}');
+
+            await withPublishConfig({ SUBSTACK_PUBLICATION_URL: secret }, async () => {
+                const probe = new RecordingProbe({
+                    exitCode: 1,
+                    stdout: '{"status":"refused","detail":"no publication URL"}',
+                });
+                const captured = captureOutput();
+                let code = 0;
+                try {
+                    code = await itcCheckTargets([workDir], undefined, probe);
+                } finally {
+                    captured.restore();
+                }
+                expect(code).toBe(1);
+                // The probe did receive it …
+                expect(probe.envs[0]?.SUBSTACK_PUBLICATION_URL).toBe(secret);
+                // … but only the probe's verdict survives into the operator message.
+                expect(captured.read() + captured.readErr()).not.toContain(secret);
+                expect(captured.readErr()).toContain('no publication URL');
+
+                expect(await itcSendTargets([workDir], undefined, async () => 1)).toBe(0);
+                expect(await itcReportSummary([workDir])).toBe(0);
+
+                for (const artifact of [
+                    join(publishDir, 'publish-plan.json'),
+                    join(publishDir, 'receipts', 'substack-pub.json'),
+                    join(workDir, '5-report', 'report.json'),
+                    join(workDir, '5-report', 'report.md'),
+                ]) {
+                    expect(existsSync(artifact)).toBe(true);
+                    expect(readFileSync(artifact, 'utf-8')).not.toContain(secret);
+                }
+            });
         });
     });
 });
@@ -863,14 +1020,22 @@ describe('itcAuthorVerdict dispositions (0301 R2)', () => {
     it('finishes without a verdict or on PASS with an in-enum confidence', async () => {
         await withTempDir(async (workDir) => {
             expect(await disposition(workDir)).toBe('finish');
-            verdict(workDir, { verdict: 'PASS', confidence: 'LOW' });
-            expect(await disposition(workDir)).toBe('finish');
+            // Every accepted level finishes; the enum is exactly HIGH/MEDIUM/LOW.
+            for (const confidence of ['HIGH', 'MEDIUM', 'LOW']) {
+                verdict(workDir, { verdict: 'PASS', confidence });
+                expect(await disposition(workDir)).toBe('finish');
+            }
         });
     });
 
     it('fails on FAIL, an out-of-enum confidence, or an unparseable verdict', async () => {
         await withTempDir(async (workDir) => {
             verdict(workDir, { verdict: 'PASS', confidence: 'SURE' });
+            expect(await disposition(workDir)).toBe('fail');
+            // Case-sensitive and mandatory: 'high' and a missing level are out-of-enum.
+            verdict(workDir, { verdict: 'PASS', confidence: 'high' });
+            expect(await disposition(workDir)).toBe('fail');
+            verdict(workDir, { verdict: 'PASS' });
             expect(await disposition(workDir)).toBe('fail');
             verdict(workDir, { verdict: 'FAIL', confidence: 'HIGH' });
             expect(await disposition(workDir)).toBe('fail');

@@ -10,6 +10,7 @@ import {
 import { echoError } from '@gobing-ai/ts-utils';
 import { z } from 'zod';
 import { runFanout } from './fanout';
+import { pluginProcessEnv } from './invoke';
 import type { ItcEffectiveOptions } from './itc-config';
 import { itcDecision } from './itc-decision';
 import { buildItcPublishPlan, type ItcPlanRequest, type ItcPublishPlan, resolveItcTargets } from './itc-plan';
@@ -338,11 +339,13 @@ export async function itcCheckTargets(
     for (const target of plan.targets) {
         const plugin = byName.get(target.plugin);
         if (plugin?.check) {
-            // Run probe check through the process seam (no direct spawn).
+            // Run probe check through the process seam (no direct spawn). Env comes from the
+            // shared injection seam (0311): config plugin env under process.env, project root
+            // anchored — the same env the send path hands this plugin.
             const probe = await executor.run({
                 command: process.execPath,
                 args: [plugin.check, 'check'],
-                env: process.env as Record<string, string>,
+                env: pluginProcessEnv(plugin.kind, plugin.name) as Record<string, string>,
                 timeout: 60_000,
             });
 

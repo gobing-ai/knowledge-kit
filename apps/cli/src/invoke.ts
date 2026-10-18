@@ -118,16 +118,17 @@ function pluginEntryCmd(opts: PluginEntrySpawnOptions): string[] {
         : [opts.entryPath, '--in', opts.inPath, '--out', opts.outPath];
 }
 
-/** Build the spawn env: operator-config env under `process.env`, anchored at the kk invocation root. */
-function pluginEntryEnv(
-    opts: Pick<PluginEntrySpawnOptions, 'pluginKind' | 'pluginName'> & {
-        extraEnv?: Record<string, string>;
-    },
+/**
+ * Build a plugin's process env — the one precedence owner (0311): operator-config env under
+ * `process.env`, scoped `extraEnv` over that, and `KNOWLEDGE_KIT_PROJECT_ROOT` anchored at the
+ * kk invocation root. Every plugin spawn and the itc readiness probe resolve env here.
+ */
+export function pluginProcessEnv(
+    kind?: PluginKind,
+    name?: string,
+    extraEnv?: Record<string, string>,
 ): Record<string, string | undefined> {
-    const fromConfig =
-        opts.pluginKind !== undefined && opts.pluginName !== undefined
-            ? pluginEnvFromConfig(opts.pluginKind, opts.pluginName)
-            : {};
+    const fromConfig = kind !== undefined && name !== undefined ? pluginEnvFromConfig(kind, name) : {};
     // Plugins run with cwd = their package dir; hand them the kk invocation root so
     // anything they spawn (e.g. content-gen's `spur agent run` stages) anchors there
     // instead of self-initializing a stray .spur/ inside the plugin dir.
@@ -136,9 +137,18 @@ function pluginEntryEnv(
         ...process.env,
         // Scoped lease delegation (0276/0277) wins over process.env: the parent holds the
         // live lease object, so its env view is authoritative for the child.
-        ...(opts.extraEnv ?? {}),
+        ...(extraEnv ?? {}),
         KNOWLEDGE_KIT_PROJECT_ROOT: process.env.KNOWLEDGE_KIT_PROJECT_ROOT ?? process.cwd(),
     };
+}
+
+/** Build the spawn env for one spawn call — delegates so the precedence exists once. */
+function pluginEntryEnv(
+    opts: Pick<PluginEntrySpawnOptions, 'pluginKind' | 'pluginName'> & {
+        extraEnv?: Record<string, string>;
+    },
+): Record<string, string | undefined> {
+    return pluginProcessEnv(opts.pluginKind, opts.pluginName, opts.extraEnv);
 }
 
 /** Options for the ADR-032 readiness-probe / login spawn (`plugin check` + `plugin login`). */
