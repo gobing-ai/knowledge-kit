@@ -250,6 +250,19 @@ superskill <agent|skill|command|hook|magent> --help
 
 ## Conventions & boundaries
 
+### Config vs works split (ADR-042)
+
+- `~/.config/kk/` is **mission-critical only**: `config.yaml`, presets/registries (`image-presets/`,
+  `voices/` incl. all voice profile registries), `browser-profiles/`, `backups/`, and
+  `<channel>-automation.json` guard state. Nothing disposable or per-run lives here.
+- The works root holds only `kk.db*` and `<workflow-name>/<run>` dirs (`<YYYYMMDD>` digits for
+  daily-cadence, `<topic-slug>` for topic-cadence, `<run-id>` otherwise, optional `_archive/`).
+  Everything is disposable **except `kk.db`**. Spur artifacts (`.board/`, task archives, incident
+  evidence) never go here.
+- Compiled `works_dir` default is `<cwd>/.works` — headless/cron callers must pin `works_dir` or
+  run from a stable cwd. A `workflows_dir` override silently beats shipped workflow copies — prefer
+  the fallback chain and re-diff any override after upgrades.
+
 - Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`, …); breaking changes in a
   `BREAKING CHANGE:` footer.
 - Cross-workspace imports use `@gobing-ai/<pkg>` only.
