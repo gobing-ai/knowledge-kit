@@ -451,7 +451,7 @@ describe('infoq-pub profile resolution (R5)', () => {
 describe('infoq-pub plugin surface', () => {
     test('FakeBrowserTransport offline processPublishIO', async () => {
         const fake = new FakeBrowserTransport('script');
-        const tmpDir = join(process.cwd(), '.tmp-test-infoq');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-infoq');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'in.json');
         const outPath = join(tmpDir, 'out.json');
@@ -488,7 +488,7 @@ describe('infoq-pub plugin surface', () => {
             process.argv = origArgv;
         }
 
-        const tmpDir = join(process.cwd(), '.tmp-test-infoq-main');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-infoq-main');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'in.json');
         const outPath = join(tmpDir, 'out.json');
@@ -505,7 +505,7 @@ describe('infoq-pub plugin surface', () => {
     });
 
     test('invocable via runInvoke', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-infoq-invoke');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-infoq-invoke');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'in.json');
         const outPath = join(tmpDir, 'out.json');

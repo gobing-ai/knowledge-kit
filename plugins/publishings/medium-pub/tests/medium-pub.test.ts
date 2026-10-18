@@ -118,7 +118,7 @@ describe('medium-pub plugin', () => {
 
     test('processPublishIO executes offline via FakeFileCliTransport', async () => {
         const fake = new FakeFileCliTransport();
-        const tmpDir = join(process.cwd(), '.tmp-test-medium');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-medium');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'in.json');
         const outPath = join(tmpDir, 'out.json');
@@ -135,7 +135,7 @@ describe('medium-pub plugin', () => {
 
     test('main returns 1 when the token is missing and names the variable', async () => {
         const origArgv = process.argv;
-        const tmpDir = join(process.cwd(), '.tmp-test-medium-main');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-medium-main');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'in.json');
         const outPath = join(tmpDir, 'out.json');
@@ -159,7 +159,7 @@ describe('medium-pub plugin', () => {
     });
 
     test('invocable via runInvoke with medium-pub plugin discovery', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-medium-invoke');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-medium-invoke');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'in.json');
         const outPath = join(tmpDir, 'out.json');

@@ -50,7 +50,7 @@ import {
     runComposerScenario,
 } from './fixtures/csdn-composer-runner';
 
-const TMP_DIR = join(process.cwd(), '.tmp-test-csdn-pub');
+const TMP_DIR = join(process.cwd(), '.works/tmp/test-csdn-pub');
 const DEFAULT_DIR = join(homedir(), '.config', 'kk', 'browser-profiles', 'csdn');
 const LOGIN_URL = 'https://passport.csdn.net/login?service=editor';
 const RECEIPT_URL = 'https://mp.csdn.net/mp_blog/creation/editor/20261015100';

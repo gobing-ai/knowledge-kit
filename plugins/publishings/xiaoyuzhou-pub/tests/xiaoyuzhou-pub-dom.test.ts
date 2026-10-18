@@ -34,7 +34,7 @@ import { join } from 'node:path';
 import type { XiaoyuzhouDomFacts } from './fixtures/xiaoyuzhou-pub-dom-runner';
 import { REAL_DRAFT_URL, RECOVERY_HINT, STALE_EPISODE_URL } from './fixtures/xiaoyuzhou-pub-dom-runner';
 
-const TMP_DIR = join(process.cwd(), '.tmp-test-xiaoyuzhou-pub');
+const TMP_DIR = join(process.cwd(), '.works/tmp/test-xiaoyuzhou-pub');
 const RUNNER_PATH = join(import.meta.dir, 'fixtures', 'xiaoyuzhou-pub-dom-runner.ts');
 
 /** Spawns the runner subprocess; its last stdout line is the JSON facts contract. */

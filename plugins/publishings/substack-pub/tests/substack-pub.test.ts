@@ -598,7 +598,7 @@ describe('substack-pub profile-check CLI (R5 / AC3)', () => {
 describe('substack-pub plugin surface (R6)', () => {
     test('FakeBrowserTransport offline processPublishIO', async () => {
         const fake = new FakeBrowserTransport('script');
-        const tmpDir = join(process.cwd(), '.tmp-test-substack');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-substack');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'in.json');
         const outPath = join(tmpDir, 'out.json');
@@ -641,7 +641,7 @@ describe('substack-pub plugin surface (R6)', () => {
             process.argv = origArgv;
         }
 
-        const tmpDir = join(process.cwd(), '.tmp-test-substack-main');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-substack-main');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'in.json');
         const outPath = join(tmpDir, 'out.json');
@@ -658,7 +658,7 @@ describe('substack-pub plugin surface (R6)', () => {
     });
 
     test('invocable via runInvoke', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-substack-invoke');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-substack-invoke');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'in.json');
         const outPath = join(tmpDir, 'out.json');

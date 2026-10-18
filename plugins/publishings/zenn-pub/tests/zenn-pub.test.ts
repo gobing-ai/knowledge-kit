@@ -139,7 +139,7 @@ describe('zenn-pub plugin', () => {
     });
 
     test('ZennCliFileCliTransport publishes a draft article through a mocked npx CLI without external effects', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-zenn-cli-pass');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-zenn-cli-pass');
         await mkdir(tmpDir, { recursive: true });
         const binDir = join(tmpDir, 'bin');
         const repoDir = join(tmpDir, 'repo');
@@ -183,7 +183,7 @@ describe('zenn-pub plugin', () => {
     });
 
     test('ZennCliFileCliTransport fails loud when the Zenn CLI exits non-zero', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-zenn-cli-fail');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-zenn-cli-fail');
         await mkdir(tmpDir, { recursive: true });
         const binDir = join(tmpDir, 'bin');
         const repoDir = join(tmpDir, 'repo');
@@ -212,7 +212,7 @@ describe('zenn-pub plugin', () => {
     });
 
     test('ZennCliFileCliTransport resolves article fields once so the slug is stable across CLI, file write, and Result', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-zenn-slug-once');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-zenn-slug-once');
         await mkdir(tmpDir, { recursive: true });
         const binDir = join(tmpDir, 'bin');
         const repoDir = join(tmpDir, 'repo');
@@ -273,7 +273,7 @@ describe('zenn-pub plugin', () => {
 
     test('processPublishIO executes offline via FakeFileCliTransport without external effects', async () => {
         const fakeTransport = new FakeFileCliTransport();
-        const tmpDir = join(process.cwd(), '.tmp-test-zenn');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-zenn');
         await mkdir(tmpDir, { recursive: true });
 
         const inPath = join(tmpDir, 'input-content.json');
@@ -310,7 +310,7 @@ describe('zenn-pub plugin', () => {
             error: 'Simulated Zenn CLI failure',
         });
 
-        const tmpDir = join(process.cwd(), '.tmp-test-zenn-fail');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-zenn-fail');
         await mkdir(tmpDir, { recursive: true });
 
         const inPath = join(tmpDir, 'input-content.json');
@@ -337,7 +337,7 @@ describe('zenn-pub plugin', () => {
     });
 
     test('processPublishIO writes error Result on validation failure', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-zenn-validate');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-zenn-validate');
         await mkdir(tmpDir, { recursive: true });
 
         const inPath = join(tmpDir, 'input-content.json');
@@ -364,7 +364,7 @@ describe('zenn-pub plugin', () => {
 
     test('spy transport records invocations and propagates transport errors', async () => {
         const spyTransport = new SpyTransport();
-        const tmpDir = join(process.cwd(), '.tmp-test-zenn-spy');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-zenn-spy');
         await mkdir(tmpDir, { recursive: true });
 
         const inPath = join(tmpDir, 'input-content.json');
@@ -409,7 +409,7 @@ describe('zenn-pub plugin', () => {
             restore();
         }
 
-        const tmpDir = join(process.cwd(), '.tmp-test-zenn-main');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-zenn-main');
         await mkdir(tmpDir, { recursive: true });
 
         const inPath = join(tmpDir, 'in-content.json');
@@ -437,7 +437,7 @@ describe('zenn-pub plugin', () => {
     });
 
     test('invocable via runInvoke with zenn-pub plugin discovery', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-zenn-invoke');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-zenn-invoke');
         await mkdir(tmpDir, { recursive: true });
 
         const inPath = join(tmpDir, 'in-content.json');
@@ -551,7 +551,7 @@ describe('Zenn CLI packaging, git scoping, and URL (R10)', () => {
     }
 
     test('(a)(b)(d) pins the CLI package, scopes git to the article, pushes to main, and reports the URL', async () => {
-        await withDir('.tmp-test-zenn-r10-main', async (dir) => {
+        await withDir('.works/tmp/test-zenn-r10-main', async (dir) => {
             await withHarness(dir, 'main', 'alice', async (h) => {
                 const result = await new ZennCliFileCliTransport().publish({ content: publishedContent() });
                 expect(result.ok).toBe(true);
@@ -576,7 +576,7 @@ describe('Zenn CLI packaging, git scoping, and URL (R10)', () => {
     });
 
     test('(c) a non-main branch fails loud before any commit or push', async () => {
-        await withDir('.tmp-test-zenn-r10-branch', async (dir) => {
+        await withDir('.works/tmp/test-zenn-r10-branch', async (dir) => {
             await withHarness(dir, 'feature', 'alice', async (h) => {
                 const result = await new ZennCliFileCliTransport().publish({ content: publishedContent() });
                 expect(result.ok).toBe(false);
@@ -590,7 +590,7 @@ describe('Zenn CLI packaging, git scoping, and URL (R10)', () => {
     });
 
     test('(e) without ZENN_USERNAME the URL is omitted and the message names the env var', async () => {
-        await withDir('.tmp-test-zenn-r10-nouser', async (dir) => {
+        await withDir('.works/tmp/test-zenn-r10-nouser', async (dir) => {
             await withHarness(dir, 'main', undefined, async () => {
                 const result = await new ZennCliFileCliTransport().publish({ content: publishedContent() });
                 expect(result.ok).toBe(true);

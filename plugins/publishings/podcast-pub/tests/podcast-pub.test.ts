@@ -356,7 +356,7 @@ describe('podcast-pub mapping', () => {
 describe('podcast-pub publish (R1/R3)', () => {
     test('two-phase publish: draft → presign(item_id) → PUT bytes → attach + publish', async () => {
         await withEnv({ ...VALID_ENV }, async () => {
-            const audioPath = await makeAudioFile(join(process.cwd(), '.tmp-test-podcast'));
+            const audioPath = await makeAudioFile(join(process.cwd(), '.works/tmp/test-podcast'));
             const api = installFakeApi(twoPhaseRoutes('ITEM01'));
             try {
                 const result = await new PodcastPubTransport().publish({
@@ -412,7 +412,7 @@ describe('podcast-pub publish (R1/R3)', () => {
                 });
             } finally {
                 api.restore();
-                await rm(join(process.cwd(), '.tmp-test-podcast'), { recursive: true, force: true });
+                await rm(join(process.cwd(), '.works/tmp/test-podcast'), { recursive: true, force: true });
             }
         });
     });
@@ -422,7 +422,9 @@ describe('podcast-pub publish (R1/R3)', () => {
             const api = installFakeApi([]);
             try {
                 const result = await new PodcastPubTransport().publish({
-                    content: episodeContent({ audioFile: join(process.cwd(), '.tmp-test-podcast-wav/episode.wav') }),
+                    content: episodeContent({
+                        audioFile: join(process.cwd(), '.works/tmp/test-podcast-wav/episode.wav'),
+                    }),
                 });
 
                 expect(result.ok).toBe(false);
@@ -438,7 +440,7 @@ describe('podcast-pub publish (R1/R3)', () => {
 
     test('local cover uploads via presigned image flow and lands in the final item image field', async () => {
         await withEnv({ ...VALID_ENV }, async () => {
-            const dir = join(process.cwd(), '.tmp-test-podcast-cover');
+            const dir = join(process.cwd(), '.works/tmp/test-podcast-cover');
             const audioPath = await makeAudioFile(dir);
             const coverPath = await makeAudioFile(dir, 'cover.png');
             const api = installFakeApi(twoPhaseRoutesWithCover('ITEM02'));
@@ -849,7 +851,7 @@ describe('podcast-pub failure paths (R4/R5)', () => {
 
 describe('podcast-pub process IO + CLI (R3/R4/R5)', () => {
     test('an unknown options.operation fails loud at the processPublishIO surface (error Result + reject)', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-podcast-badop');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-podcast-badop');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'in.json');
         const outPath = join(tmpDir, 'out.json');
@@ -879,7 +881,7 @@ describe('podcast-pub process IO + CLI (R3/R4/R5)', () => {
     });
     test('processPublishIO runs offline via FakeFileCliTransport and passes input options through', async () => {
         const transport = new FakeFileCliTransport();
-        const tmpDir = join(process.cwd(), '.tmp-test-podcast-io');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-podcast-io');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'in.json');
         const outPath = join(tmpDir, 'out.json');
@@ -904,7 +906,7 @@ describe('podcast-pub process IO + CLI (R3/R4/R5)', () => {
             const api = installFakeApi([
                 { match: () => true, respond: () => new Response(JSON.stringify({ error: 'nope' }), { status: 500 }) },
             ]);
-            const tmpDir = join(process.cwd(), '.tmp-test-podcast-fail');
+            const tmpDir = join(process.cwd(), '.works/tmp/test-podcast-fail');
             await mkdir(tmpDir, { recursive: true });
             const inPath = join(tmpDir, 'in.json');
             const outPath = join(tmpDir, 'out.json');
@@ -927,7 +929,7 @@ describe('podcast-pub process IO + CLI (R3/R4/R5)', () => {
     });
 
     test('processPublishIO writes an error Result on invalid input JSON (R5)', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-podcast-validate');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-podcast-validate');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'in.json');
         const outPath = join(tmpDir, 'out.json');
@@ -958,7 +960,7 @@ describe('podcast-pub process IO + CLI (R3/R4/R5)', () => {
             process.argv = origArgv;
         }
 
-        const tmpDir = join(process.cwd(), '.tmp-test-podcast-main');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-podcast-main');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'in.json');
         const outPath = join(tmpDir, 'out.json');
@@ -974,7 +976,7 @@ describe('podcast-pub process IO + CLI (R3/R4/R5)', () => {
             await rm(tmpDir, { recursive: true, force: true });
         }
 
-        const failDir = join(process.cwd(), '.tmp-test-podcast-main-fail');
+        const failDir = join(process.cwd(), '.works/tmp/test-podcast-main-fail');
         await mkdir(failDir, { recursive: true });
         const failIn = join(failDir, 'in.json');
         const failOut = join(failDir, 'out.json');
@@ -994,7 +996,7 @@ describe('podcast-pub process IO + CLI (R3/R4/R5)', () => {
     });
 
     test('discoverable and invocable via runInvoke with podcast-pub plugin discovery', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-podcast-invoke');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-podcast-invoke');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'in.json');
         const outPath = join(tmpDir, 'out.json');
@@ -1308,7 +1310,7 @@ describe('podcast-pub show-notes operation (L1 R6)', () => {
     });
 
     test('processPublishIO renders a bare Doc[] --in to the markdown --out via env options, offline', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-podcast-shownotes-io');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-podcast-shownotes-io');
         await mkdir(tmpDir, { recursive: true });
         const planBytes = await readFile(join(FIXTURES_DIR, 'show-notes-plan.json'), 'utf-8');
         const inPath = join(tmpDir, 'plan.json');
@@ -1381,7 +1383,7 @@ describe('podcast-pub publish assembly options (L1 R6)', () => {
     });
     test('publish with assembly options assembles the episode itself: enclosure + image + duration', async () => {
         await withEnv({ ...VALID_ENV }, async () => {
-            const dir = join(process.cwd(), '.tmp-test-podcast-assembly');
+            const dir = join(process.cwd(), '.works/tmp/test-podcast-assembly');
             const audioPath = await makeAudioFile(dir);
             const coverPath = await makeAudioFile(dir, 'cover.png');
             const api = installFakeApi(twoPhaseRoutesWithCover('ASM01'));
@@ -1419,7 +1421,7 @@ describe('podcast-pub publish assembly options (L1 R6)', () => {
 
     test('assembly options override the matching metadata; absent keys keep the Content mapping', async () => {
         await withEnv({ ...VALID_ENV }, async () => {
-            const dir = join(process.cwd(), '.tmp-test-podcast-assembly-precedence');
+            const dir = join(process.cwd(), '.works/tmp/test-podcast-assembly-precedence');
             const audioPath = await makeAudioFile(dir);
             const coverPath = await makeAudioFile(dir, 'cover.png');
             const api = installFakeApi(twoPhaseRoutesWithCover('ASM02'));
@@ -1533,7 +1535,7 @@ describe('show-notes HTML safety (R2)', () => {
 describe('cover-image validation (R4)', () => {
     test('(f) coverImage: /etc/passwd is rejected before any read or upload', async () => {
         await withEnv(VALID_ENV, async () => {
-            const dir = join(process.cwd(), '.tmp-test-podcast-r4-passwd');
+            const dir = join(process.cwd(), '.works/tmp/test-podcast-r4-passwd');
             const audioPath = await makeAudioFile(dir, 'episode.mp3');
             const api = installFakeApi(twoPhaseRoutesWithCover('ITEM04'));
             try {
@@ -1554,7 +1556,7 @@ describe('cover-image validation (R4)', () => {
 
     test('(g) a .jpg cover sends the basename and image/jpeg', async () => {
         await withEnv(VALID_ENV, async () => {
-            const dir = join(process.cwd(), '.tmp-test-podcast-r4-jpg');
+            const dir = join(process.cwd(), '.works/tmp/test-podcast-r4-jpg');
             const audioPath = await makeAudioFile(dir, 'episode.mp3');
             const coverPath = await makeAudioFile(dir, 'cover.jpg');
             const api = installFakeApi(twoPhaseRoutesWithCover('ITEM05'));

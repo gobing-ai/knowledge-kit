@@ -26,7 +26,7 @@ import {
 import { CREATE_TYPES, readCreateType } from '../src/modes';
 import { wrapPlaywrightContext } from '../src/page';
 
-const tmpRoot = join(process.cwd(), '.tmp-test-wechat');
+const tmpRoot = join(process.cwd(), '.works/tmp/test-wechat');
 // The scratch tree must not survive the run: an untracked directory created DURING a
 // feature-verification pass changes the tree mid-pass and fails its evidence binding.
 afterAll(async () => {
@@ -1808,7 +1808,7 @@ describe('browser seam (stubbed openPersistentBrowser)', () => {
     });
 
     test('checkWechatSession injects saved cookies and confirms the console session', async () => {
-        const profileDir = join(process.cwd(), '.tmp-test-wechat-profile');
+        const profileDir = join(process.cwd(), '.works/tmp/test-wechat-profile');
         await writeSessionState(profileDir);
         // First poll misses the console fragment (exercises the retry sleep), second confirms login.
         const page = stubFlowPage(['https://mp.weixin.qq.com/', CONSOLE_HOME]);
@@ -1830,7 +1830,7 @@ describe('browser seam (stubbed openPersistentBrowser)', () => {
     test('WECHATMP_PROFILE_DIR is what the transport resolves and reports', async () => {
         await seedMedia();
         const console = makeConsole(happyState());
-        const profileDir = join(process.cwd(), '.tmp-test-wechat-profile-flow');
+        const profileDir = join(process.cwd(), '.works/tmp/test-wechat-profile-flow');
         const prevProfileDir = process.env.WECHATMP_PROFILE_DIR;
         process.env.WECHATMP_PROFILE_DIR = profileDir;
         try {

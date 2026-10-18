@@ -39,7 +39,7 @@ import {
 } from '../src/index';
 import { launchChromium, REAL_POST_URL, RECOVERY_HINT, runComposerScenario } from './fixtures/jike-composer-runner';
 
-const TMP_DIR = join(process.cwd(), '.tmp-test-jike-pub');
+const TMP_DIR = join(process.cwd(), '.works/tmp/test-jike-pub');
 const DEFAULT_DIR = join(homedir(), '.config', 'kk', 'browser-profiles', 'jike');
 const LOGIN_URL = 'https://passport.okjike.com/login?fallback=web';
 const POST_URL = 'https://web.okjike.com/originalPost/KkFake123';

@@ -491,7 +491,7 @@ describe('juejin-pub profile resolution (R5)', () => {
 describe('juejin-pub plugin surface', () => {
     test('FakeBrowserTransport offline processPublishIO', async () => {
         const fake = new FakeBrowserTransport('script');
-        const tmpDir = join(process.cwd(), '.tmp-test-juejin');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-juejin');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'in.json');
         const outPath = join(tmpDir, 'out.json');
@@ -528,7 +528,7 @@ describe('juejin-pub plugin surface', () => {
             process.argv = origArgv;
         }
 
-        const tmpDir = join(process.cwd(), '.tmp-test-juejin-main');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-juejin-main');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'in.json');
         const outPath = join(tmpDir, 'out.json');
@@ -545,7 +545,7 @@ describe('juejin-pub plugin surface', () => {
     });
 
     test('invocable via runInvoke', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-juejin-invoke');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-juejin-invoke');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'in.json');
         const outPath = join(tmpDir, 'out.json');

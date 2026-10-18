@@ -301,7 +301,7 @@ describe('qiita-pub plugin', () => {
 
     test('processPublishIO executes offline via FakeFileCliTransport without external effects', async () => {
         const fakeTransport = new FakeFileCliTransport();
-        const tmpDir = join(process.cwd(), '.tmp-test-qiita');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-qiita');
         await mkdir(tmpDir, { recursive: true });
 
         const inPath = join(tmpDir, 'input-content.json');
@@ -338,7 +338,7 @@ describe('qiita-pub plugin', () => {
             error: 'Simulated Qiita API failure',
         });
 
-        const tmpDir = join(process.cwd(), '.tmp-test-qiita-fail');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-qiita-fail');
         await mkdir(tmpDir, { recursive: true });
 
         const inPath = join(tmpDir, 'input-content.json');
@@ -365,7 +365,7 @@ describe('qiita-pub plugin', () => {
     });
 
     test('processPublishIO writes error Result on validation failure', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-qiita-validate');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-qiita-validate');
         await mkdir(tmpDir, { recursive: true });
 
         const inPath = join(tmpDir, 'input-content.json');
@@ -392,7 +392,7 @@ describe('qiita-pub plugin', () => {
 
     test('spy transport records invocations and propagates transport errors', async () => {
         const spyTransport = new SpyTransport();
-        const tmpDir = join(process.cwd(), '.tmp-test-qiita-spy');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-qiita-spy');
         await mkdir(tmpDir, { recursive: true });
 
         const inPath = join(tmpDir, 'input-content.json');
@@ -437,7 +437,7 @@ describe('qiita-pub plugin', () => {
             restore();
         }
 
-        const tmpDir = join(process.cwd(), '.tmp-test-qiita-main');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-qiita-main');
         await mkdir(tmpDir, { recursive: true });
 
         const inPath = join(tmpDir, 'in-content.json');
@@ -486,7 +486,7 @@ describe('qiita-pub plugin', () => {
         const errTarget = createBufferTarget();
         const restore = setDefaultOutputTargets({ stderr: errTarget });
 
-        const tmpDir = join(process.cwd(), '.tmp-test-qiita-main-fail');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-qiita-main-fail');
         await mkdir(tmpDir, { recursive: true });
 
         const inPath = join(tmpDir, 'in-content.json');
@@ -515,7 +515,7 @@ describe('qiita-pub plugin', () => {
     });
 
     test('invocable via runInvoke with qiita-pub plugin discovery', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-qiita-invoke');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-qiita-invoke');
         await mkdir(tmpDir, { recursive: true });
 
         const inPath = join(tmpDir, 'in-content.json');

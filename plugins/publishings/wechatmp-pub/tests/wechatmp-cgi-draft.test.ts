@@ -41,7 +41,7 @@ import {
     SESSION,
 } from './fixtures/wechatmp-cgi-runner';
 
-const tmpRoot = join(process.cwd(), '.tmp-test-wechat-cgi-draft');
+const tmpRoot = join(process.cwd(), '.works/tmp/test-wechat-cgi-draft');
 /** The cover artifact the integration tests read off disk (validated like a real run). */
 const tmpCover = join(tmpRoot, 'cover.png');
 

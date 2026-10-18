@@ -256,7 +256,8 @@ superskill <agent|skill|command|hook|magent> --help
   `voices/` incl. all voice profile registries), `browser-profiles/`, `backups/`, and
   `<channel>-automation.json` guard state. Nothing disposable or per-run lives here.
 - The works root holds only `kk.db*` and `<workflow-name>/<run>` dirs (`<YYYYMMDD>` digits for
-  daily-cadence, `<topic-slug>` for topic-cadence, `<run-id>` otherwise, optional `_archive/`).
+  daily-cadence, `<topic-slug>` for topic-cadence, `<run-id>` otherwise, optional `_archive/`,
+  `tmp/test-<name>` for test scratch).
   Everything is disposable **except `kk.db`**. Spur artifacts (`.board/`, task archives, incident
   evidence) never go here.
 - Compiled `works_dir` default is `<cwd>/.works` — headless/cron callers must pin `works_dir` or

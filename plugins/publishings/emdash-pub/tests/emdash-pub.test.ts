@@ -632,7 +632,7 @@ describe('emdash-pub plugin', () => {
 
     test('processPublishIO executes offline via FakeFileCliTransport without external effects', async () => {
         const fakeTransport = new FakeFileCliTransport();
-        const tmpDir = join(process.cwd(), '.tmp-test-emdash');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-emdash');
         await mkdir(tmpDir, { recursive: true });
 
         const inPath = join(tmpDir, 'input-content.json');
@@ -669,7 +669,7 @@ describe('emdash-pub plugin', () => {
             error: 'Simulated EmDash API failure',
         });
 
-        const tmpDir = join(process.cwd(), '.tmp-test-emdash-fail');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-emdash-fail');
         await mkdir(tmpDir, { recursive: true });
 
         const inPath = join(tmpDir, 'input-content.json');
@@ -696,7 +696,7 @@ describe('emdash-pub plugin', () => {
     });
 
     test('processPublishIO writes error Result on validation failure', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-emdash-validate');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-emdash-validate');
         await mkdir(tmpDir, { recursive: true });
 
         const inPath = join(tmpDir, 'input-content.json');
@@ -729,7 +729,7 @@ describe('emdash-pub plugin', () => {
             restore();
         }
 
-        const tmpDir = join(process.cwd(), '.tmp-test-emdash-main');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-emdash-main');
         await mkdir(tmpDir, { recursive: true });
 
         const inPath = join(tmpDir, 'in-content.json');
@@ -764,7 +764,7 @@ describe('emdash-pub plugin', () => {
         const errTarget = createBufferTarget();
         const restore = setDefaultOutputTargets({ stderr: errTarget });
 
-        const tmpDir = join(process.cwd(), '.tmp-test-emdash-main-fail');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-emdash-main-fail');
         await mkdir(tmpDir, { recursive: true });
 
         const inPath = join(tmpDir, 'in-content.json');
@@ -807,7 +807,7 @@ describe('emdash-pub plugin', () => {
     });
 
     test('invocable via runInvoke with emdash-pub plugin discovery', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-emdash-invoke');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-emdash-invoke');
         await mkdir(tmpDir, { recursive: true });
 
         const inPath = join(tmpDir, 'in-content.json');

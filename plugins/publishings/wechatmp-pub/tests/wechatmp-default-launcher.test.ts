@@ -17,7 +17,7 @@ import { CONSOLE_URL, WechatmpBrowserTransport } from '../src/index';
  * failure-tolerance are behavior this file must pin.
  */
 
-const tmpRoot = join(process.cwd(), '.tmp-test-wechat-launcher');
+const tmpRoot = join(process.cwd(), '.works/tmp/test-wechat-launcher');
 const bodyImage = join(tmpRoot, 'body.png');
 const profileDir = join(tmpRoot, 'profile');
 

@@ -184,7 +184,7 @@ describe('surfdash-pub plugin', () => {
 
     test('processPublishIO executes offline via FakeFileCliTransport without external effects', async () => {
         const fakeTransport = new FakeFileCliTransport();
-        const tmpDir = join(process.cwd(), '.tmp-test-surfdash');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-surfdash');
         await mkdir(tmpDir, { recursive: true });
 
         const inPath = join(tmpDir, 'input-content.json');
@@ -221,7 +221,7 @@ describe('surfdash-pub plugin', () => {
             error: 'Simulated postsurfing CLI failure',
         });
 
-        const tmpDir = join(process.cwd(), '.tmp-test-surfdash-fail');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-surfdash-fail');
         await mkdir(tmpDir, { recursive: true });
 
         const inPath = join(tmpDir, 'input-content.json');
@@ -259,7 +259,7 @@ describe('surfdash-pub plugin', () => {
             restore();
         }
 
-        const tmpDir = join(process.cwd(), '.tmp-test-main');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-main');
         await mkdir(tmpDir, { recursive: true });
 
         const inPath = join(tmpDir, 'in-content.json');
@@ -287,7 +287,7 @@ describe('surfdash-pub plugin', () => {
     });
 
     test('invocable via runInvoke with surfdash-pub plugin discovery', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-invoke');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-invoke');
         await mkdir(tmpDir, { recursive: true });
 
         const inPath = join(tmpDir, 'in-content.json');
@@ -851,7 +851,7 @@ describe('processPublishIO invalid input (R7)', () => {
 
     for (const { name, payload } of cases) {
         test(`${name} writes an ok:false Result and rejects`, async () => {
-            const tmpDir = join(process.cwd(), '.tmp-test-surfdash-r7');
+            const tmpDir = join(process.cwd(), '.works/tmp/test-surfdash-r7');
             await mkdir(tmpDir, { recursive: true });
             const inPath = join(tmpDir, 'input.json');
             // A nested output dir also proves ensureDir runs on the failure path (AC7c).
@@ -921,7 +921,7 @@ describe('path-derived metadata validation (R4)', () => {
     };
 
     test('(a) a non-YYYYMMDD runDate is rejected and writes nothing under the articles tree', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-surfdash-r4-rundate');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-surfdash-r4-rundate');
         await mkdir(tmpDir, { recursive: true });
         const orig = { bin: process.env.POSTSURFING_BIN, root: process.env.SURFDASH_ROOT };
         try {
@@ -940,7 +940,7 @@ describe('path-derived metadata validation (R4)', () => {
     });
 
     test('(b) a traversing SURFDASH_LOCALE is rejected', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-surfdash-r4-locale');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-surfdash-r4-locale');
         await mkdir(tmpDir, { recursive: true });
         const orig = {
             bin: process.env.POSTSURFING_BIN,
@@ -965,7 +965,7 @@ describe('path-derived metadata validation (R4)', () => {
     });
 
     test('(b2) en publishes at the site root — no /en prefix (surfdash localePathPrefix)', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-surfdash-en-url');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-surfdash-en-url');
         await mkdir(tmpDir, { recursive: true });
         const orig = {
             bin: process.env.POSTSURFING_BIN,
@@ -996,7 +996,7 @@ describe('path-derived metadata validation (R4)', () => {
         ['(c) a non-image coverImage extension', 'secret.txt'],
         ['(d) a coverImage with no extension', 'cover'],
     ])('%s is rejected before any asset is written', async (_label, name) => {
-        const tmpDir = join(process.cwd(), '.tmp-test-surfdash-r4-cover');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-surfdash-r4-cover');
         await mkdir(tmpDir, { recursive: true });
         const orig = { bin: process.env.POSTSURFING_BIN, root: process.env.SURFDASH_ROOT };
         try {

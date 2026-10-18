@@ -40,7 +40,7 @@ import { join } from 'node:path';
 import type { ShipinhaoDomFacts } from './fixtures/shipinhao-pub-dom-runner';
 import { REAL_DRAFT_URL, REAL_PUBLISH_URL, RECOVERY_HINT, STALE_RECORD_URL } from './fixtures/shipinhao-pub-dom-runner';
 
-const TMP_DIR = join(process.cwd(), '.tmp-test-shipinhao-pub');
+const TMP_DIR = join(process.cwd(), '.works/tmp/test-shipinhao-pub');
 const RUNNER_PATH = join(import.meta.dir, 'fixtures', 'shipinhao-pub-dom-runner.ts');
 
 /** Spawns the runner subprocess; its last stdout line is the JSON facts contract. */

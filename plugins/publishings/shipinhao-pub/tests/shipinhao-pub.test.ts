@@ -55,7 +55,7 @@ import {
     SHP_VIDEO_SELECTORS,
 } from '../src/selectors';
 
-const TMP_DIR = join(process.cwd(), '.tmp-test-shipinhao-pub-main');
+const TMP_DIR = join(process.cwd(), '.works/tmp/test-shipinhao-pub-main');
 const VIDEO_PATH = join(TMP_DIR, 'video.mp4');
 const COVER_PATH = join(TMP_DIR, 'cover.png');
 const BIG_PATH = join(TMP_DIR, 'big.mp4');

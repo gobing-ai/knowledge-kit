@@ -231,7 +231,7 @@ describe('episode-plan-gen', () => {
     });
 
     test('processGeneratorIO reads Doc[] and writes plan Content with env max items', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-episode-plan');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-episode-plan');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'blended.json');
         const outPath = join(tmpDir, 'content.json');
@@ -860,7 +860,7 @@ describe('filter mode (--mode filter, 0094)', () => {
     });
 
     test('processFilterIO — kept Content at --out; { rejected, config, total } audit at candidates.rejected.json', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-episode-plan-filter');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-episode-plan-filter');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'annotated.json');
         const outPath = join(tmpDir, 'candidates.json');
@@ -898,7 +898,7 @@ describe('filter mode (--mode filter, 0094)', () => {
     });
 
     test('main --mode filter: zero survivors is exit 0 with metadata.docs: [] (never a failure)', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-episode-plan-filter-empty');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-episode-plan-filter-empty');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'annotated.json');
         const outPath = join(tmpDir, 'candidates.json');
@@ -925,7 +925,7 @@ describe('filter mode (--mode filter, 0094)', () => {
     });
 
     test('main --mode filter: missing annotation exits 1 and writes no artifacts', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-episode-plan-filter-annot');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-episode-plan-filter-annot');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'annotated.json');
         const outPath = join(tmpDir, 'candidates.json');
@@ -944,7 +944,7 @@ describe('filter mode (--mode filter, 0094)', () => {
     });
 
     test('main --mode filter: invalid QC env exits 1 (fail loud, no clamping, no artifacts)', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-episode-plan-filter-env');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-episode-plan-filter-env');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'annotated.json');
         const outPath = join(tmpDir, 'candidates.json');
@@ -964,7 +964,7 @@ describe('filter mode (--mode filter, 0094)', () => {
     });
 
     test('mode precedence (0097 kk-seam): --mode flag > EPISODE_PLAN_MODE env > plan default; unknown env fails loud', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-episode-plan-mode-env');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-episode-plan-mode-env');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'annotated.json');
         const outEnv = join(tmpDir, 'candidates-env.json');
@@ -999,7 +999,7 @@ describe('filter mode (--mode filter, 0094)', () => {
     });
 
     test('plan-mode regression — explicit --mode plan is byte-identical to the default run and writes no rejected artifact', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-episode-plan-regression');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-episode-plan-regression');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'blended.json');
         const outDefault = join(tmpDir, 'default.json');

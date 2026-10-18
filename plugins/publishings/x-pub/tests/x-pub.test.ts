@@ -399,7 +399,7 @@ describe('x-pub plugin', () => {
     });
 
     describe('article cover (R2)', () => {
-        const coverDir = join(process.cwd(), '.tmp-test-x-cover');
+        const coverDir = join(process.cwd(), '.works/tmp/test-x-cover');
         const coverPath = join(coverDir, 'cover.png');
 
         beforeEach(async () => {
@@ -643,7 +643,7 @@ describe('x-pub plugin', () => {
 
     test('processPublishIO article operation stays offline on FakeBrowserTransport', async () => {
         const fake = new FakeBrowserTransport('script');
-        const tmpDir = join(process.cwd(), '.tmp-test-x-article');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-x-article');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'in.json');
         const outPath = join(tmpDir, 'out.json');
@@ -679,7 +679,7 @@ describe('x-pub plugin', () => {
             restore();
             process.argv = origArgv;
         }
-        const tmpDir = join(process.cwd(), '.tmp-test-x-main');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-x-main');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'in.json');
         const outPath = join(tmpDir, 'out.json');
@@ -696,7 +696,7 @@ describe('x-pub plugin', () => {
     });
 
     test('invocable via runInvoke', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-x-invoke');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-x-invoke');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'in.json');
         const outPath = join(tmpDir, 'out.json');

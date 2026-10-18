@@ -26,7 +26,7 @@ import {
     WeiboBrowserTransport,
 } from '../src/index';
 
-const TMP_DIR = join(process.cwd(), '.tmp-test-weibo-pub');
+const TMP_DIR = join(process.cwd(), '.works/tmp/test-weibo-pub');
 const DEFAULT_DIR = join(homedir(), '.config', 'kk', 'browser-profiles', 'weibo');
 const LOGIN_URL = 'https://passport.weibo.com/sso/login?entry=weibo';
 const DRAFT_URL = 'https://card.weibo.com/article/v3/editor?draft_id=4901234567890';

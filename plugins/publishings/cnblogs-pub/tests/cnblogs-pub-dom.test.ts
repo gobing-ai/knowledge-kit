@@ -25,7 +25,7 @@ import { join } from 'node:path';
 import type { CnblogsDomFacts } from './fixtures/cnblogs-pub-dom-runner';
 import { REAL_DRAFT_URL, REAL_POST_URL, RECOVERY_HINT } from './fixtures/cnblogs-pub-dom-runner';
 
-const TMP_DIR = join(process.cwd(), '.tmp-test-cnblogs-pub');
+const TMP_DIR = join(process.cwd(), '.works/tmp/test-cnblogs-pub');
 const RUNNER_PATH = join(import.meta.dir, 'fixtures', 'cnblogs-pub-dom-runner.ts');
 
 /** Spawns the runner subprocess; its last stdout line is the JSON facts contract. */

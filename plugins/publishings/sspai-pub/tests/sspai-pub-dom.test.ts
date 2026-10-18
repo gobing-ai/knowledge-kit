@@ -26,7 +26,7 @@ import { join } from 'node:path';
 import type { SspaiDomFacts } from './fixtures/sspai-pub-dom-runner';
 import { REAL_DRAFT_URL, RECOVERY_HINT } from './fixtures/sspai-pub-dom-runner';
 
-const TMP_DIR = join(process.cwd(), '.tmp-test-sspai-pub');
+const TMP_DIR = join(process.cwd(), '.works/tmp/test-sspai-pub');
 const RUNNER_PATH = join(import.meta.dir, 'fixtures', 'sspai-pub-dom-runner.ts');
 
 /** Spawns the runner subprocess; its last stdout line is the JSON facts contract. */

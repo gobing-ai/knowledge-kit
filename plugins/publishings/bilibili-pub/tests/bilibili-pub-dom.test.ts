@@ -32,7 +32,7 @@ import {
     RECOVERY_HINT,
 } from './fixtures/bilibili-pub-dom-runner';
 
-const TMP_DIR = join(process.cwd(), '.tmp-test-bilibili-pub');
+const TMP_DIR = join(process.cwd(), '.works/tmp/test-bilibili-pub');
 const RUNNER_PATH = join(import.meta.dir, 'fixtures', 'bilibili-pub-dom-runner.ts');
 
 /** Spawns the runner subprocess; its last stdout line is the JSON facts contract. */

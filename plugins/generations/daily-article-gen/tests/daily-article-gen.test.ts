@@ -165,7 +165,7 @@ describe('daily-article-gen', () => {
         expect([...excludedIdsFromNote('> 注：1 条条目因选题边界未写入：last30days:8eafcda5f3574372（版权）')]).toEqual(
             ['last30days:8eafcda5f3574372', '8eafcda5f3574372'],
         );
-        const tmpDir = join(process.cwd(), '.tmp-test-daily-article-excluded');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-daily-article-excluded');
         await mkdir(tmpDir, { recursive: true });
         const bodyPath = join(tmpDir, 'body.md');
         const inPath = join(tmpDir, 'docs.json');
@@ -197,7 +197,7 @@ describe('daily-article-gen', () => {
     });
 
     test('processGeneratorIO reads Doc[] and writes article Content (ARTICLE_DATE=YYYYMMDD)', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-daily-article');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-daily-article');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'docs.json');
         const outPath = join(tmpDir, 'content.json');
@@ -219,7 +219,7 @@ describe('daily-article-gen', () => {
     });
 
     test('main writes content and returns 0 on happy path', async () => {
-        const tmpDir = join(process.cwd(), '.tmp-test-daily-article-main');
+        const tmpDir = join(process.cwd(), '.works/tmp/test-daily-article-main');
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'docs.json');
         const outPath = join(tmpDir, 'out', 'content.json');

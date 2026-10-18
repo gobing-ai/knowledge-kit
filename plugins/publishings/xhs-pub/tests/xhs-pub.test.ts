@@ -69,7 +69,7 @@ function makeTransport(
     return new XhsBrowserTransport(driver, { automation: ALLOW_ALL, preflight: VERIFIED_PREFLIGHT, ...opts });
 }
 
-const tmpRoot = join(process.cwd(), '.tmp-test-xhs');
+const tmpRoot = join(process.cwd(), '.works/tmp/test-xhs');
 // The scratch tree must not survive the run: an untracked directory created DURING a
 // feature-verification pass changes the tree mid-pass and fails its evidence binding.
 afterAll(async () => {

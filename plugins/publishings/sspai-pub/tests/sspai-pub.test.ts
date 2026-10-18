@@ -50,7 +50,7 @@ import {
     SSPAI_RECEIPT_URL_RES,
 } from '../src/selectors';
 
-const TMP_DIR = join(process.cwd(), '.tmp-test-sspai-pub-main');
+const TMP_DIR = join(process.cwd(), '.works/tmp/test-sspai-pub-main');
 const DEFAULT_DIR = join(homedir(), '.config', 'kk', 'browser-profiles', 'sspai');
 const SIGNIN_URL = 'https://account.sspai.com/signin?return_to=%2Fpost%2Fwrite';
 /** Draft receipt: the public-post id shape the receipt regexes pin (the fresh URL gain). */

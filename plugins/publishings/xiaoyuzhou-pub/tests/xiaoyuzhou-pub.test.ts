@@ -54,7 +54,7 @@ import {
     XYZF_UPLOAD_TIMEOUT_MS,
 } from '../src/selectors';
 
-const TMP_DIR = join(process.cwd(), '.tmp-test-xiaoyuzhou-pub-main');
+const TMP_DIR = join(process.cwd(), '.works/tmp/test-xiaoyuzhou-pub-main');
 const DEFAULT_DIR = join(homedir(), '.config', 'kk', 'browser-profiles', 'xiaoyuzhou');
 const PODCAST_ID = 'xyzpod2026';
 const AUDIO_PATH = join(TMP_DIR, 'episode.mp3');

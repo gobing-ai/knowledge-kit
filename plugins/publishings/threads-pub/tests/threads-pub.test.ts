@@ -17,7 +17,7 @@ import {
 
 const TOKEN = 'THREADS-TOKEN-value-9';
 const USER = '17841400000000000';
-const TMP_DIR = join(process.cwd(), '.tmp-test-threads-pub');
+const TMP_DIR = join(process.cwd(), '.works/tmp/test-threads-pub');
 
 function withEnv(env: Record<string, string | undefined>, fn: () => Promise<void>): Promise<void> {
     const originals = new Map<string, string | undefined>();

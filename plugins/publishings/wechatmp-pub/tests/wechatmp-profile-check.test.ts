@@ -12,7 +12,7 @@ import { main as profileCheckMain } from '../src/profile-check';
  * with `spyOn` like `wechatmp-default-launcher.test.ts` — no real Chromium is ever launched here.
  */
 
-const tmpRoot = join(process.cwd(), '.tmp-test-wechat-profile-check');
+const tmpRoot = join(process.cwd(), '.works/tmp/test-wechat-profile-check');
 const profileDir = join(tmpRoot, 'profile');
 
 afterAll(async () => {

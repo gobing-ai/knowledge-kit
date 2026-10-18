@@ -48,7 +48,7 @@ import {
     isCnblogsAuthenticated,
 } from '../src/selectors';
 
-const TMP_DIR = join(process.cwd(), '.tmp-test-cnblogs-pub-main');
+const TMP_DIR = join(process.cwd(), '.works/tmp/test-cnblogs-pub-main');
 const DEFAULT_DIR = join(homedir(), '.config', 'kk', 'browser-profiles', 'cnblogs');
 const SIGNIN_URL = 'https://account.cnblogs.com/signin?ReturnUrl=%2fposts%2fedit';
 /** Draft receipt: the edit URL gaining a postId param (the frozen draft save's id gain). */

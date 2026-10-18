@@ -66,7 +66,7 @@ import {
     isBilibiliAuthenticated,
 } from '../src/selectors';
 
-const TMP_DIR = join(process.cwd(), '.tmp-test-bilibili-pub-unit');
+const TMP_DIR = join(process.cwd(), '.works/tmp/test-bilibili-pub-unit');
 const VIDEO_PATH = join(TMP_DIR, 'test-video.mp4');
 const COVER_PATH = join(TMP_DIR, 'test-cover.png');
 const IMAGE_PATH = join(TMP_DIR, 'test-image.png');
