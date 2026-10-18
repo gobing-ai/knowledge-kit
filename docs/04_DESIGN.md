@@ -479,7 +479,7 @@ engine `vars.__runId`), `--definition-digest <sha256:…>` (`vars.__definitionDi
 `--setting <key=value>` for the §9 daily allowlist. Without `--run` — voice1 and direct callers —
 prepare is unchanged. The capture runs after the workspace is composed and before any result
 producer, so a refused revocation stops the run before it writes results. The daily workspace lives
-under the configured works root (``KK_WORKS_DIR`` > config `works_dir` > `~/.config/kk/works`), which
+under the configured works root (``KK_WORKS_DIR`` > config `works_dir` > `<cwd>/.works`, ADR-042), which
 is usually OUTSIDE the project: `captureRun` accepts a path outside a `.works`/`works` tree only when
 the caller passes that exact configured root as a trusted binding, and then only its canonical CHILD
 — never the root, the home/config tree or the project.
@@ -1108,8 +1108,8 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 
 | Key | Type | Default | Description |
 | ----- | ------ | --------- | ------------- |
-| `works_dir` | string | `$HOME/.config/kk/works` | C4 topic workspace root (`KK_WORKS_DIR` wins) |
-| `workflows_dir` | string | `$HOME/.config/kk/workflows` | User-override root for workflow YAMLs (`KK_WORKFLOWS_DIR` wins); resolution falls back: this → `KK_WORKFLOWS_SOURCE` → bun global → npm global → kk package root → repo checkout |
+| `works_dir` | string | `<cwd>/.works` | Works root for run workspaces (`KK_WORKS_DIR` wins). ADR-042: cwd-relative — headless/cron callers must run from a stable cwd or pin this key; the config root never holds disposable run data |
+| `workflows_dir` | string | `$HOME/.config/kk/workflows` | User-override root for workflow YAMLs (`KK_WORKFLOWS_DIR` wins); resolution falls back: this → `KK_WORKFLOWS_SOURCE` → bun global → npm global → kk package root → repo checkout. ADR-042: an override silently wins over newer shipped copies — keep it deliberate and re-diff after upgrades, or omit the key |
 | `defaults.maxResults` | int | `8` | STORM ingest cap |
 | `defaults.fixture` | bool | `false` | STORM live vs fixture |
 | `plugins.<collection>.<name>.env` | map of scalars | — | Injected into that plugin's process env at `spawnPluginEntry`. Real env vars win (`flag > env > config > compiled default`). Collection names: `ingestions` / `generations` / `publishings`. Missing file or missing key → no extra env. Empty-string values are skipped. |
@@ -1726,7 +1726,7 @@ any cwd — no copy on the happy path. The `kk` package root is resolved from th
 
 | Priority | Path | Notes |
 | -------- | ---- | ----- |
-| 1 | `$workflows_dir/$NAME.yaml` (default `~/.config/kk/workflows/`) | User override — wins when present; nothing is copied |
+| 1 | `$workflows_dir/$NAME.yaml` (default `~/.config/kk/workflows/`) | User override — wins when present; nothing is copied. ADR-042: a stale override shadows shipped fixes invisibly — re-diff after upgrades |
 | 2 | `$KK_WORKFLOWS_SOURCE/$NAME.yaml` | Environment override root |
 | 3 | `$(dirname $(bun pm bin -g))/install/global/node_modules/@gobing-ai/knowledge-kit/plugins/kk/workflows/$NAME.yaml` | bun global install (guarded probe) |
 | 4 | `$(dirname $(npm root -g))/node_modules/@gobing-ai/knowledge-kit/plugins/kk/workflows/$NAME.yaml` | npm global install (guarded probe) |

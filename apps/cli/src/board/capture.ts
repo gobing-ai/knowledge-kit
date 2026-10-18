@@ -31,9 +31,9 @@ export const BOARD_RUNS_REL = '.works/.board/runs';
 export const WORKS_REL = '.works';
 
 /**
- * Directory names that mark a works root. `.works` is the project-local layout collect uses;
- * `works` is the configured external layout the daily pipeline uses
- * (`~/.config/kk/works`, `apps/cli/src/commands/daily.ts`). A run workspace is always a CHILD of one
+ * Directory names that mark a works root. `.works` is the project-local layout collect uses and
+ * the compiled default; `works` is the configured external layout the daily pipeline uses
+ * (`apps/cli/src/commands/daily.ts`). A run workspace is always a CHILD of one
  * of these, never the works root itself.
  */
 const WORKS_ROOT_NAMES = new Set([WORKS_REL, 'works']);

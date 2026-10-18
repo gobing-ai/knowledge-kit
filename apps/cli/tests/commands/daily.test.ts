@@ -29,7 +29,6 @@ import {
     readFileSync,
     realpathSync,
     rmSync,
-    statSync,
     writeFileSync,
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
@@ -56,33 +55,28 @@ afterAll(() => {
 
 /**
  * 0267 R3 regression guard: this file owns the suite's only unpinned reaches of the daily-prepare
- * composition, whose fallback root is the operator's real `~/.config/kk/works`. Every test must
- * pin its works root (`KK_WORKS_DIR` / temp `KK_CONFIG` / `--work-dir`); one that forgets composes
- * a `kk-daily-ai-voice2` child here and fails this assertion — a bare workflow directory survives
- * even a test that cleans up its date child. A concurrent REAL `kk` run by the operator can also
- * trip it; that collision is the price of watching the live path.
+ * composition, whose compiled fallback root is now `<cwd>/.works` (ADR: the config root holds no
+ * disposable data) — under `bun run test` that IS the repo's live works root, so the guard diffs
+ * top-level NAMES only: a new workflow directory means a test forgot to pin its works root
+ * (`KK_WORKS_DIR` / temp `KK_CONFIG` / `--work-dir`). Existing dirs churn constantly under live
+ * operator/cron runs, so mtime or child-level diffs would be flaky by design.
  */
-const WORKS_ROOT = join(homedir(), '.config/kk/works');
-type WorksEntry = { name: string; mtimeMs: number };
+const WORKS_ROOT = join(process.cwd(), '.works');
+type WorksEntry = { name: string };
 function worksSnapshot(): WorksEntry[] {
     if (!existsSync(WORKS_ROOT)) return [];
     return readdirSync(WORKS_ROOT)
         .sort()
-        .map((name) => ({ name, mtimeMs: statSync(join(WORKS_ROOT, name)).mtimeMs }));
+        .map((name) => ({ name }));
 }
 let worksBefore: WorksEntry[] = [];
 beforeAll(() => {
     worksBefore = worksSnapshot();
 });
 afterAll(() => {
-    const polluted = worksSnapshot().filter((after) => {
-        const before = worksBefore.find((entry) => entry.name === after.name);
-        return before === undefined || before.mtimeMs !== after.mtimeMs;
-    });
+    const beforeNames = new Set(worksBefore.map((entry) => entry.name));
+    const polluted = worksSnapshot().filter((after) => !beforeNames.has(after.name));
     expect(polluted).toEqual([]);
-    // The delta above is blind to a stray left by an earlier run (one reappeared on 2026-10-13).
-    // Operator runs resolve to the configured works_dir, never here, so its mere presence is pollution.
-    expect(existsSync(join(WORKS_ROOT, 'kk-daily-ai-voice2'))).toBe(false);
 });
 
 /**
@@ -561,10 +555,10 @@ describe('kk daily works-dir resolution and report edges', () => {
         // operator's store entirely.
         process.chdir(dir);
         try {
-            // 0267 R1: the compiled default composes under the operator's real home, so the
-            // fallback is asserted against the read-only resolver; the run is pinned with
-            // `--work-dir` and writes nothing outside `dir`.
-            expect(resolveWorksDir()).toBe(join(homedir(), '.config/kk/works'));
+            // The compiled default is cwd-relative (`.works`), so after the chdir above the
+            // fallback is asserted against the read-only resolver inside the temp dir; the run is
+            // pinned with `--work-dir` and writes nothing outside `dir`.
+            expect(resolveWorksDir()).toBe(join(dir, '.works'));
             const result = await run([
                 'daily',
                 'prepare',

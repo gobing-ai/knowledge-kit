@@ -67,30 +67,35 @@ describe('runItcStage dispatch boundary', () => {
         });
     });
 
-    it('a valid launch resolves and writes ONLY under the pinned HOME', async () => {
+    it('a valid launch resolves and writes ONLY under the pinned cwd/.works', async () => {
         await withTempDir(async (dir) => {
             const home = join(dir, 'home');
             const request = join(dir, 'launch.json');
             writeFileSync(request, JSON.stringify({ topic: 'reliable-workflows', parentRunId: 'run-x' }));
 
             // The stage reads the ambient env, so pin HOME for the duration — never the operator's.
+            // The compiled works default is cwd-relative (`.works`), so pin the cwd into the temp
+            // dir too, or the workspace lands in the repo's live .works.
             const priorHome = process.env.HOME;
             const priorConfig = process.env.KK_CONFIG;
             const priorWorks = process.env.KK_WORKS_DIR;
+            const priorCwd = process.cwd();
             process.env.HOME = home;
             delete process.env.KK_CONFIG;
             delete process.env.KK_WORKS_DIR;
+            process.chdir(dir);
             let result: number | undefined;
             try {
                 result = await runItcStage(['itc-prepare', '--request', request]);
             } finally {
+                process.chdir(priorCwd);
                 if (priorHome === undefined) delete process.env.HOME;
                 else process.env.HOME = priorHome;
                 if (priorConfig !== undefined) process.env.KK_CONFIG = priorConfig;
                 if (priorWorks !== undefined) process.env.KK_WORKS_DIR = priorWorks;
             }
             expect(result).toBe(0);
-            expect(existsSync(join(home, '.config/kk/works/kk-itc/reliable-workflows/itc-options.json'))).toBe(true);
+            expect(existsSync(join(dir, '.works/kk-itc/reliable-workflows/itc-options.json'))).toBe(true);
         });
     });
 });

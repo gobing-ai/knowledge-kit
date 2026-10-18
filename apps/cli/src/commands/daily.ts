@@ -103,9 +103,11 @@ function expandHome(path: string): string {
 
 /**
  * works_dir for composed workspaces — `KK_WORKS_DIR` env > config `works_dir` > the compiled
- * default `~/.config/kk/works`. An unreadable config falls through to the default; composition
+ * default `<cwd>/.works` (ADR: config root holds no disposable data; matches collect-prepare's
+ * cwd-relative `.works`). An unreadable config falls through to the default; composition
  * never fails a run. Shared with the ITC Board capture, whose external workspace must be a
- * canonical child of this configured root (§9).
+ * canonical child of this configured root (§9). Headless/cron callers must run from a stable
+ * cwd or pin `works_dir`, since the default follows the caller's cwd.
  */
 export function resolveWorksDir(): string {
     const fromEnv = process.env.KK_WORKS_DIR;
@@ -120,7 +122,7 @@ export function resolveWorksDir(): string {
             // fall through to the compiled default
         }
     }
-    return join(homedir(), '.config/kk/works');
+    return resolve(process.cwd(), '.works');
 }
 
 /** `date +%Y%m%d` — the digits-only run-date stamp the artifact names carry. */

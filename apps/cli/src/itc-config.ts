@@ -369,7 +369,7 @@ async function readWorksRoot(
         const expanded = expandHome(fromEnv.trim(), homeDir);
         return isAbsolute(expanded) ? expanded : resolve(process.cwd(), expanded);
     }
-    if (!(await fs.exists(configPath))) return join(homeDir, '.config', 'kk', 'works');
+    if (!(await fs.exists(configPath))) return resolve(process.cwd(), '.works');
     try {
         const parsed = Bun.YAML.parse(await fs.readFile(configPath)) as Record<string, unknown> | null;
         const raw = parsed?.works_dir;
@@ -381,7 +381,8 @@ async function readWorksRoot(
     } catch {
         // A malformed config already fails in readItcConfigBlock; an unreadable works_dir falls back.
     }
-    return join(homeDir, '.config', 'kk', 'works');
+    // Compiled default: <cwd>/.works — the config root holds no disposable data (ADR).
+    return resolve(process.cwd(), '.works');
 }
 
 /** A real calendar date `YYYYMMDD`, or null when the token is not one. */

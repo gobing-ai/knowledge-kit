@@ -674,7 +674,7 @@ function dailyPrepare(args: string[]): void {
         runDateArg = '',
     ] = args;
     // Empty work_dir composes the real workspace from the operator's works_dir
-    // (workflow-run.md §2 precedence: KK_WORKS_DIR > config works_dir > ~/.config/kk/works):
+    // (workflow-run.md §2 precedence: KK_WORKS_DIR > config works_dir > <cwd>/.works):
     //   $works_dir/kk-daily-ai-voice/<stamp>
     // The stamp is digits-only (dashes stripped from the caller's run_date, else today) so a
     // resumed/retried run whose persisted run_date var already carries the digits-only
@@ -745,7 +745,8 @@ function expandHome(p: string): string {
 
 /**
  * works_dir for composed daily workspaces — workflow-run.md §2 precedence:
- * KK_WORKS_DIR env > config works_dir > compiled default ~/.config/kk/works.
+ * KK_WORKS_DIR env > config works_dir > compiled default <cwd>/.works (ADR: the config root
+ * holds no disposable data; matches collect-prepare's cwd-relative `.works`).
  * Unreadable/unparseable config falls through to the default (pluginEnvFromConfig
  * tolerates the same), never fails the run.
  */
@@ -762,7 +763,7 @@ function resolveWorksDir(): string {
             // fall through to the compiled default
         }
     }
-    return join(homedir(), '.config/kk/works');
+    return resolve(process.cwd(), '.works');
 }
 
 /**
