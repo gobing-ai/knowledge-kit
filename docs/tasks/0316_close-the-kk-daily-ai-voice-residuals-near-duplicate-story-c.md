@@ -4,7 +4,7 @@ name: "Close the kk-daily-ai-voice residuals: near-duplicate story clustering an
 status: done
 template: standard
 created_at: 2026-10-18T19:19:21.893Z
-updated_at: "2026-10-18T22:45:59.441Z"
+updated_at: "2026-10-18T23:19:44.731Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -216,15 +216,15 @@ control so the window itself is proven wide enough).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | packages/kk-store/src/dao/items.ts:363 |
-| R2 | MET | packages/kk-store/tests/dao/items-v2.test.ts:296 |
-| R3 | MET | .spur/config.yaml:168 |
+| R1 | MET | `packages/kk-store/src/dao/items.ts:363-367` — backfillFacts URL-identity pre-pass before the title fallback; re-read this run, comment names "0316 R1" |
+| R2 | MET | `packages/kk-store/tests/dao/items-v2.test.ts:296` — AC2 test, re-run green this run |
+| R3 | MET | `.spur/config.yaml:168-171` — sole spur scheduler job kk-collect (cron 5 4,10,16,22); host plist ABSENT (test -f, this run) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — body-link URL match merges a link post with its primary source (req: R1) | MET | test | packages/kk-store/tests/dao/items-v2.test.ts:258 |
-| AC2 — published twin stays out of the pool under a widened window (req: R2) | MET | test | packages/kk-store/tests/dao/items-v2.test.ts:296 |
-| AC3 — single scheduler owns kk-collect (req: R3) | MET | command | launchctl print gui/$(id -u) finds nothing; ai.gobing.kk-collect.plist absent |
+| AC1 — body-link URL match merges a link post with its primary source (req: R1) | MET | test | `packages/kk-store/tests/dao/items-v2.test.ts:258` — "merges a link post with the primary source its body points at (0316 R1/AC1)"; bun test 52 pass / 0 fail this run |
+| AC2 — published twin stays out of the pool under a widened window (req: R2) | MET | test | `packages/kk-store/tests/dao/items-v2.test.ts:296` — "keeps a published story and its twin out of the pool under a widened window (0316 R2/AC2)", 48h window with unexcluded-pool control; same green run |
+| AC3 — single scheduler owns kk-collect (req: R3) | MET | command | `test -f ~/Library/LaunchAgents/ai.gobing.kk-collect.plist` → ABSENT (only .bak-0316/.bak-20261012 remain); `launchctl print gui/$(id -u) \| grep kk-collect` → exit 1, no match; both re-run this verify |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
