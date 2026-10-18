@@ -40,7 +40,7 @@ describe('parseProfile', () => {
         expect(profile.where).toEqual([
             { decisionId: 'kk-item-category', op: 'in', values: ['ai-news', 'ai-industry'] },
             { decisionId: 'kk-item-quality', op: 'gte', value: 2 },
-            { decisionId: 'kk-item-importance', op: 'gte', value: 3 },
+            { decisionId: 'kk-item-importance', op: 'gte', value: 2 },
             // Task 0229 R5: the conservative moderation gate. An inner join on `labels_current`,
             // so an item with no current china-politics answer is excluded (fail-closed).
             { decisionId: 'kk-item-china-politics', op: 'lte', value: 1 },
