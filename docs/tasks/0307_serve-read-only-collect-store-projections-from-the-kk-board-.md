@@ -4,7 +4,7 @@ name: Serve read-only Collect store projections from the KK board reader
 status: done
 template: feature-impl
 created_at: 2026-10-17T05:04:06.955Z
-updated_at: "2026-10-18T00:37:02.774Z"
+updated_at: "2026-10-18T21:02:23.528Z"
 feature_id: G81
 priority: P2
 tags:
@@ -124,22 +124,22 @@ Fixed the adapter constructor WAL default at `packages/kk-store/src/db.ts:79`. T
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Missing files are not opened; schema/counts unchanged across all projections at `apps/cli/tests/board/collect-store.test.ts:130`. Fixed adapter WAL default at `packages/kk-store/src/db.ts:79`; real DELETE-mode store regression at `packages/kk-store/tests/kk-store.test.ts:213` checks mode, schema, counts and bytes. Red reproduces delete-to-wal conversion; green passes. Existing stat-versus-lstat design deviation retained. Fresh focused suite: 151 pass, 0 fail across eight files (.spur/run/g81-reverify/focused.log); subset coverage exits 1, not a test failure. |
-| R2 | MET | Missing, corrupt, newer and policy-unavailable cases at `apps/cli/tests/board/collect-store.test.ts:83`, `apps/cli/tests/board/collect-store.test.ts:103`, `apps/cli/tests/board/collect-store.test.ts:113`, `apps/cli/tests/board/collect-store.test.ts:245` exercise bounded diagnostics and unavailable shapes. Fresh focused suite: 151 pass, 0 fail across eight files (.spur/run/g81-reverify/focused.log); subset coverage exits 1, not a test failure. |
-| R3 | MET | Public DAO export at `packages/kk-store/src/index.ts:30`; migration guard at `packages/kk-store/src/migrations.ts:258`; run aggregate, last stored time, histogram and item page exercised by `packages/kk-store/tests/dao/collect-view.test.ts:92`. Fresh focused suite: 151 pass, 0 fail across eight files (.spur/run/g81-reverify/focused.log); subset coverage exits 1, not a test failure. |
-| R4 | MET | Overview route test at `apps/cli/tests/board/reader.test.ts:615` proves no Board call and null absent rows; malformed runs query checked at `apps/cli/tests/board/reader.test.ts:633`. Fresh focused suite: 151 pass, 0 fail across eight files (.spur/run/g81-reverify/focused.log); subset coverage exits 1, not a test failure. |
-| R5 | MET | Distinct labeled items at `packages/kk-store/tests/dao/collect-view.test.ts:120`; strongest downstream status at `packages/kk-store/tests/dao/collect-view.test.ts:136`; source row aggregation at `packages/kk-store/tests/dao/collect-view.test.ts:92`. Fresh focused suite: 151 pass, 0 fail across eight files (.spur/run/g81-reverify/focused.log); subset coverage exits 1, not a test failure. |
-| R6 | MET | Capture-free authorized store detail exercised at `apps/cli/tests/board/reader.test.ts:652`; per-decision confidence groups at `packages/kk-store/tests/dao/collect-view.test.ts:178`. Fresh focused suite: 151 pass, 0 fail across eight files (.spur/run/g81-reverify/focused.log); subset coverage exits 1, not a test failure. |
-| R7 | MET | Bounded pages and current-label filters at `packages/kk-store/tests/dao/collect-view.test.ts:259` and `packages/kk-store/tests/dao/collect-view.test.ts:279`; title and URL boundary at `apps/cli/tests/board/collect-store.test.ts:280`. Fresh focused suite: 151 pass, 0 fail across eight files (.spur/run/g81-reverify/focused.log); subset coverage exits 1, not a test failure. |
-| R8 | MET | Security envelope refusals exercised at `apps/cli/tests/board/reader.test.ts:672`; per-route query parsing at `apps/cli/src/board/reader.ts:626` and `apps/cli/src/board/reader.ts:733`. Fresh focused suite: 151 pass, 0 fail across eight files (.spur/run/g81-reverify/focused.log); subset coverage exits 1, not a test failure. |
-| R9 | MET | Typed row shape at `apps/board/src/contracts.ts:127`, documented routes/queries at `docs/04_DESIGN.md:383`, dated Collect-only permission at `docs/00_ADR.md:1331`. Git commit 3de9ac27 contains original source and docs together. Fresh focused suite: 151 pass, 0 fail across eight files (.spur/run/g81-reverify/focused.log); subset coverage exits 1, not a test failure. |
+| R1 | MET | `apps/cli/src/board/collect-store.ts` lstat-first + `openStore({migrate:false})` + finally-close; read-only adapter pragma at `packages/kk-store/src/db.ts:79`; real DELETE-mode store regression `packages/kk-store/tests/kk-store.test.ts:213`. |
+| R2 | MET | `board.store.unreadable` / `board.store.newer` / `board.store.policy` unavailable shapes — `apps/cli/tests/board/collect-store.test.ts` (52 pass / 0 fail across 3 files this run). |
+| R3 | MET | Read-only `CollectViewDao` at `packages/kk-store/src/dao/collect-view.ts`; `unknownKkMigrationIds` exported at `packages/kk-store/src/migrations.ts:258` and used by `applyKkMigrations` at `packages/kk-store/src/migrations.ts:318`. |
+| R4 | MET | Overview route with 1–25 id validation — collect-store route tests green this run. |
+| R5 | MET | `CollectRunStoreRow` sourceCounts/inserted/updated/labelRows/labeledItems/yield — same suite. |
+| R6 | MET | Per-run store route with labelQuality and effective policy labels — same suite. |
+| R7 | MET | Items route: 25/page, filter validation, 400 `board.query.invalid` — same suite. |
+| R8 | MET | Security envelope refusals unchanged — `apps/cli/tests/board/reader.test.ts:672` (green this run). |
+| R9 | MET | Response types in `apps/board/src/contracts.ts:127`; routes documented in `docs/04_DESIGN.md:383`; dated ADR note `docs/00_ADR.md:1331`. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Scenario: R1 — The reader opens the kk store read-only | MET | command | Missing files are not opened; schema/counts unchanged across all projections at `apps/cli/tests/board/collect-store.test.ts:130`. Fixed adapter WAL default at `packages/kk-store/src/db.ts:79`; real DELETE-mode store regression at `packages/kk-store/tests/kk-store.test.ts:213` checks mode, schema, counts and bytes. Red reproduces delete-to-wal conversion; green passes. Existing stat-versus-lstat design deviation retained. Fresh focused suite: 151 pass, 0 fail across eight files (.spur/run/g81-reverify/focused.log); subset coverage exits 1, not a test failure. |
-| Scenario: R2 — An unavailable store degrades only the store panels | MET | command | Missing, corrupt, newer and policy-unavailable cases at `apps/cli/tests/board/collect-store.test.ts:83`, `apps/cli/tests/board/collect-store.test.ts:103`, `apps/cli/tests/board/collect-store.test.ts:113`, `apps/cli/tests/board/collect-store.test.ts:245` exercise bounded diagnostics and unavailable shapes. Fresh focused suite: 151 pass, 0 fail across eight files (.spur/run/g81-reverify/focused.log); subset coverage exits 1, not a test failure. |
-| Scenario: R8 — Store routes keep the reader's security envelope | MET | command | Security envelope refusals exercised at `apps/cli/tests/board/reader.test.ts:672`; per-route query parsing at `apps/cli/src/board/reader.ts:626` and `apps/cli/src/board/reader.ts:733`. Fresh focused suite: 151 pass, 0 fail across eight files (.spur/run/g81-reverify/focused.log); subset coverage exits 1, not a test failure. |
-| Scenario: R10 — Decision and surface docs are updated with the change | MET | command | Typed row shape at `apps/board/src/contracts.ts:127`, documented routes/queries at `docs/04_DESIGN.md:383`, dated Collect-only permission at `docs/00_ADR.md:1331`. Git commit 3de9ac27 contains original source and docs together. Fresh focused suite: 151 pass, 0 fail across eight files (.spur/run/g81-reverify/focused.log); subset coverage exits 1, not a test failure. |
+| Scenario: R1 — The reader opens the kk store read-only | MET | test | `apps/cli/tests/board/collect-store.test.ts` + `apps/cli/tests/board/reader.test.ts` + `packages/kk-store/tests/kk-store.test.ts`: 52 pass / 0 fail (bun test, this run); mode/schema/counts regression `packages/kk-store/tests/kk-store.test.ts:213`. |
+| Scenario: R2 — An unavailable store degrades only the store panels | MET | test | Missing/corrupt/newer/policy cases in `apps/cli/tests/board/collect-store.test.ts` (52 pass / 0 fail this run). |
+| Scenario: R8 — Store routes keep the reader's security envelope | MET | test | Envelope refusals `apps/cli/tests/board/reader.test.ts:672`; query parsing `apps/cli/src/board/reader.ts:626`, `apps/cli/src/board/reader.ts:733`. |
+| Scenario: R10 — Decision and surface docs are updated with the change | MET | command | grep/read this run: typed contracts `apps/board/src/contracts.ts:127`; documented routes `docs/04_DESIGN.md:383`; dated permission `docs/00_ADR.md:1331`. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
