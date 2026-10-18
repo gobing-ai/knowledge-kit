@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import type { Doc } from '@gobing-ai/kk-core';
-import { canonicalUrl, itemId } from '../src/index';
+import { canonicalUrl, itemId, outboundUrls } from '../src/index';
 import { sha256Hex } from './helpers';
 
 describe('canonicalUrl', () => {
@@ -63,5 +63,29 @@ describe('itemId', () => {
 
     it('gives different text different ids', () => {
         expect(itemId({ id: 'x', body: 'a', title: 't' })).not.toBe(itemId({ id: 'x', body: 'b', title: 't' }));
+    });
+});
+
+describe('outboundUrls', () => {
+    it('extracts and canonicalizes the links a body points at, in appearance order', () => {
+        expect(outboundUrls('See https://Example.com/a/?utm_source=x and http://b.test/p.')).toEqual([
+            'https://example.com/a',
+            'http://b.test/p',
+        ]);
+    });
+
+    it('finds a URL inside markdown link syntax without swallowing the closing paren', () => {
+        expect(
+            outboundUrls('as covered in [the post](https://claude.dev/blog/solving-code-review-at-anthropic)'),
+        ).toEqual(['https://claude.dev/blog/solving-code-review-at-anthropic']);
+    });
+
+    it('dedupes one page reached through two spellings', () => {
+        expect(outboundUrls('https://x.test/p?utm_source=a https://X.test/p')).toEqual(['https://x.test/p']);
+    });
+
+    it('returns nothing when the text carries no http(s) URL', () => {
+        expect(outboundUrls('no links here, see ftp://x.test or www.example.com')).toEqual([]);
+        expect(outboundUrls('')).toEqual([]);
     });
 });

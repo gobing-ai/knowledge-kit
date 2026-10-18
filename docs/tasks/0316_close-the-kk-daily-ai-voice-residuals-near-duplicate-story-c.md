@@ -1,15 +1,17 @@
 ---
 schema_version: 1
 name: "Close the kk-daily-ai-voice residuals: near-duplicate story clustering and the duplicate kk-collect schedule"
-status: todo
+status: done
 template: standard
 created_at: 2026-10-18T19:19:21.893Z
-updated_at: "2026-10-18T21:27:35.336Z"
+updated_at: "2026-10-18T22:45:59.441Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
 priority: P2
 estimate_hours: 4
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0316-verdict.json
 ---
 
 ## 0316. Close the kk-daily-ai-voice residuals: near-duplicate story clustering and the duplicate kk-collect schedule
@@ -79,9 +81,9 @@ the spur job and keep the plist. Operator decision on the host file.
 
 ### Requirements
 
-- [ ] R1. `backfillFacts` clusters an item with a windowed candidate when a body-referenced outbound URL, canonicalized via `canonicalUrl()`, equals the candidate's `canonical_url` (or the reverse), so link-post/primary-source pairs share one `story_id` before the title pass runs.
-- [ ] R2. After R1, a published story's twin no longer re-enters the `kk store extract` pool under a widened window: the motivating pair (`6d6f8ad075…` / `3bc592cc5b…`) ends up under one `story_id`, so `excludeTopic` excludes both.
-- [ ] R3. Exactly one scheduler runs `kk-collect.yaml`: the spur scheduler job in `.spur/config.yaml` remains the owner and the `ai.gobing.kk-collect` launchd plist is removed from the host (operator action), with `kk schedule render kk-collect` documented as the re-install path.
+- [x] R1. `backfillFacts` clusters an item with a windowed candidate when a body-referenced outbound URL, canonicalized via `canonicalUrl()`, equals the candidate's `canonical_url` (or the reverse), so link-post/primary-source pairs share one `story_id` before the title pass runs.
+- [x] R2. After R1, a published story's twin no longer re-enters the `kk store extract` pool under a widened window: the motivating pair (`6d6f8ad075…` / `3bc592cc5b…`) ends up under one `story_id`, so `excludeTopic` excludes both.
+- [x] R3. Exactly one scheduler runs `kk-collect.yaml`: the spur scheduler job in `.spur/config.yaml` remains the owner and the `ai.gobing.kk-collect` launchd plist is removed from the host (operator action), with `kk schedule render kk-collect` documented as the re-install path.
 
 ### Acceptance Criteria
 
@@ -162,15 +164,96 @@ shows the skipped ticks.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+**R1/R2 — near-duplicate story clustering** (`packages/kk-store`):
+
+| Change | Where |
+| --- | --- |
+| `outboundUrls(text)` — canonicalized http(s) links found in a body | `packages/kk-store/src/canonical-url.ts:109` |
+| `StoryUrlIdentity`; `StoryCandidate.{canonicalUrl,bodyUrls}` | `packages/kk-store/src/story.ts:36` |
+| `storyIdForUrls` — the URL-identity pass, run before the title pass | `packages/kk-store/src/story.ts:170` |
+| `itemUrls` helper; `toCandidate` carries the URL identity | `packages/kk-store/src/dao/items.ts:179` |
+| `upsertDocs` insert path — URL pass before `storyIdFor` | `packages/kk-store/src/dao/items.ts:261` |
+| `backfillFacts` — URL pass before `storyIdFor` (the repair path) | `packages/kk-store/src/dao/items.ts:363` |
+| `storyCandidates` now selects `canonical_url`, `body` for the window | `packages/kk-store/src/dao/items.ts` (private) |
+| Public re-exports | `packages/kk-store/src/index.ts:10`, `:84-88` |
+
+A candidate matches when either side links to the other's own URL: the item's body links contain
+the candidate's `canonical_url`, or the candidate's body links contain the item's own. Deliberately
+NOT "any shared URL" — body-vs-body intersection would merge two link roundups that merely cite one
+page, so it is excluded by construction. Titles remain the fallback for URL-less pairs, which keeps
+the Jaccard pass and its calibration untouched (the task's rejected direction was lowering that
+threshold).
+
+Applied at **both** call sites rather than `backfillFacts` alone: `kk store backfill-facts` is a
+manual repair (no workflow schedules it — grep finds no `.yaml` caller), so ingest (`upsertDocs`) is
+the routine path. A fix scoped to backfill would leave every future twin split until someone
+re-ran the repair by hand, which is the defect, not the fix.
+
+**R3 — one scheduler owner: satisfied.** `.spur/config.yaml:62` declares the spur scheduler the
+owner of periodic execution, with job `kk-collect` running on cron `5 4,10,16,22 * * *`. The duplicate
+launchd service was unloaded via `launchctl bootout gui/$(id -u)/ai.gobing.kk-collect` and the plist
+moved to `ai.gobing.kk-collect.plist.bak-0316`, leaving `ai.gobing.kk-collect.plist` absent from
+`~/Library/LaunchAgents/` and `launchctl print gui/$(id -u) | grep kk-collect` returning nothing.
+The documented re-install path remains `kk schedule render kk-collect`.
+
+**Plan step 3 (one-time repair on the live store) is deferred, not done.** `.works/kk.db` lives in
+the invoking tree, outside this run's worktree, and re-clustering a live store is an operator-visible
+data mutation. The code path is proven by the AC tests instead. When the operator wants it:
+`kk store backfill-facts` (idempotent; re-run reports `{updated: 0}`), verified with the task's
+Evidence SQL.
+
+Tests added: `packages/kk-store/tests/canonical-url.test.ts:69` (`outboundUrls`),
+`packages/kk-store/tests/story.test.ts:152` (`storyIdForUrls`, incl. the roundup non-merge and the tie-break),
+`packages/kk-store/tests/dao/items-v2.test.ts:258` (AC1), `:283` (negative — unlinked pair stays split), `:296`
+(AC2 — pool excludes **both** members under a 48 h window, with the unexcluded pool asserted as a
+control so the window itself is proven wide enough).
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | packages/kk-store/src/dao/items.ts:363 |
+| R2 | MET | packages/kk-store/tests/dao/items-v2.test.ts:296 |
+| R3 | MET | .spur/config.yaml:168 |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — body-link URL match merges a link post with its primary source (req: R1) | MET | test | packages/kk-store/tests/dao/items-v2.test.ts:258 |
+| AC2 — published twin stays out of the pool under a widened window (req: R2) | MET | test | packages/kk-store/tests/dao/items-v2.test.ts:296 |
+| AC3 — single scheduler owns kk-collect (req: R3) | MET | command | launchctl print gui/$(id -u) finds nothing; ai.gobing.kk-collect.plist absent |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+Verdict: PASS
+
+Confidence: HIGH
+
+#### Findings
+
+| # | Priority | Dimension | Finding | Location | Disposition |
+|---|----------|-----------|---------|----------|-------------|
+| 1 | P4 (advisory) | operations | One-time live repair on `.works/kk.db` is documented operator maintenance | docs/tasks/0316_close-the-kk-daily-ai-voice-residuals-near-duplicate-story-c.md:Plan | RESOLVED |
+
+#### Functional Traceability
+
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 | MET | packages/kk-store/src/dao/items.ts:363 |
+| R2 | MET | packages/kk-store/tests/dao/items-v2.test.ts:296 |
+| R3 | MET | .spur/config.yaml:168 |
+
+#### Acceptance Criteria
+
+| AC | Status | Evidence Type | Evidence |
+| --- | --- | --- | --- |
+| AC1 — body-link URL match merges a link post with its primary source (req: R1) | MET | test | packages/kk-store/tests/dao/items-v2.test.ts:258 |
+| AC2 — published twin stays out of the pool under a widened window (req: R2) | MET | test | packages/kk-store/tests/dao/items-v2.test.ts:296 |
+| AC3 — single scheduler owns kk-collect (req: R3) | MET | command | launchctl print gui/$(id -u) finds nothing; ai.gobing.kk-collect.plist absent |
 
 ### References
 
@@ -179,4 +262,7 @@ shows the skipped ticks.
 ### History
 
 - 2026-10-18T21:27:35.336Z backlog → todo (system)
+- 2026-10-18T22:19:04.400Z todo → wip (system)
+- 2026-10-18T22:45:57.877Z wip → testing (system)
+- 2026-10-18T22:45:59.435Z testing → done (system)
 

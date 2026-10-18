@@ -7,7 +7,7 @@
  * inside the package (`src/db.ts`, `src/migrations.ts`).
  */
 
-export { canonicalUrl, itemId } from './canonical-url';
+export { canonicalUrl, itemId, outboundUrls } from './canonical-url';
 export {
     CHINA_POLITICS_DECISION_ID,
     DEFAULT_CHINA_POLITICS_DECISION_PRIORITY,
@@ -83,6 +83,8 @@ export {
     DEFAULT_STORY_WINDOW_HOURS,
     type StoryCandidate,
     type StoryPolicy,
+    type StoryUrlIdentity,
     storyIdFor,
+    storyIdForUrls,
     storyTokens,
 } from './story';

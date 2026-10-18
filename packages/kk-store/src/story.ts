@@ -29,6 +29,17 @@ export const DEFAULT_STORY_POLICY: StoryPolicy = {
     windowHours: DEFAULT_STORY_WINDOW_HOURS,
 };
 
+/**
+ * The URL identity of one item: its own canonical URL plus the links its body points at.
+ * `storyIdForUrls` matches on this BEFORE the title pass runs (0316 R1).
+ */
+export interface StoryUrlIdentity {
+    /** The item's own `canonical_url`, when it has one. */
+    canonicalUrl?: string;
+    /** Canonicalized outbound links found in the item's body. */
+    bodyUrls: readonly string[];
+}
+
 /** One item `storyIdFor` may cluster a new title against. */
 export interface StoryCandidate {
     /** The item's id — the final tiebreak. */
@@ -38,6 +49,10 @@ export interface StoryCandidate {
     title: string;
     /** `items.first_seen_at` — the primary tiebreak (earliest wins). */
     firstSeenAt: number;
+    /** The candidate's own canonical URL — matched against a new item's outbound links. */
+    canonicalUrl?: string;
+    /** Links the candidate's body points at — matched against a new item's own URL. */
+    bodyUrls?: readonly string[];
 }
 
 /** A trailing outlet suffix (`Headline - Outlet`) never exceeds this many characters. */
@@ -135,6 +150,35 @@ export function storyIdFor(title: string, candidates: readonly StoryCandidate[],
             best = candidate;
             bestScore = score;
         }
+    }
+    return best?.storyId ?? null;
+}
+
+/**
+ * The story root for an item with URL identity `urls`, matched against `candidates` on URL
+ * identity alone — the pass that runs BEFORE {@link storyIdFor}.
+ *
+ * A candidate matches when either side links to the other's own URL: the item's outbound links
+ * contain the candidate's `canonical_url`, or the candidate's body links contain the item's own.
+ * That is the link-post/primary-source pair (0316: a `simonwillison.net` post about a `claude.dev`
+ * article), whose titles share no token and so never reach the Jaccard threshold.
+ *
+ * Deliberately NOT "any shared URL": two link roundups that happen to cite one page are not the
+ * same event, so body-vs-body intersection never merges. Ties resolve like `storyIdFor` —
+ * earliest `first_seen_at`, then smallest `id`.
+ */
+export function storyIdForUrls(urls: StoryUrlIdentity, candidates: readonly StoryCandidate[]): string | null {
+    const ownUrl = urls.canonicalUrl;
+    const links = new Set(urls.bodyUrls);
+    if (ownUrl === undefined && links.size === 0) return null;
+    let best: StoryCandidate | null = null;
+    for (const candidate of candidates) {
+        const candidateOwnUrl = candidate.canonicalUrl;
+        const linksToCandidate = candidateOwnUrl !== undefined && candidateOwnUrl !== '' && links.has(candidateOwnUrl);
+        const candidateLinksToItem =
+            ownUrl !== undefined && ownUrl !== '' && (candidate.bodyUrls ?? []).includes(ownUrl);
+        if (!linksToCandidate && !candidateLinksToItem) continue;
+        if (best === null || precedes(candidate, best)) best = candidate;
     }
     return best?.storyId ?? null;
 }

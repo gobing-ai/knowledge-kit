@@ -1,11 +1,18 @@
 import type { Doc } from '@gobing-ai/kk-core';
 import type { DbAdapter, DbBatchOp } from '@gobing-ai/ts-db';
 import { EntityDao } from '@gobing-ai/ts-db';
-import { canonicalUrlForDoc, itemId } from '../canonical-url';
+import { canonicalUrlForDoc, itemId, outboundUrls } from '../canonical-url';
 import { type ItemFacts, itemFacts } from '../facts';
 import type { ProfileQuery } from '../profile';
 import { items } from '../schema/items';
-import { DEFAULT_STORY_POLICY, type StoryCandidate, type StoryPolicy, storyIdFor } from '../story';
+import {
+    DEFAULT_STORY_POLICY,
+    type StoryCandidate,
+    type StoryPolicy,
+    type StoryUrlIdentity,
+    storyIdFor,
+    storyIdForUrls,
+} from '../story';
 import { LABELS_CURRENT, type LabelPolicy, labelsCurrentSql } from './labels';
 
 /** One `items` row as stored. */
@@ -168,9 +175,30 @@ function prepareItem(doc: Doc): PreparedItem {
     };
 }
 
+/** An item's URL identity: `outboundUrls` canonicalizes, so a tracking-decorated link still matches. */
+function itemUrls(ownUrl: string | null, body: string): StoryUrlIdentity {
+    return {
+        canonicalUrl: ownUrl === null || ownUrl === '' ? undefined : ownUrl,
+        bodyUrls: outboundUrls(body),
+    };
+}
+
 /** A stored row as a clustering candidate; a `null` `story_id` reads as the item's own id. */
-function toCandidate(id: string, storyId: string | null, title: string, firstSeenAt: number): StoryCandidate {
-    return { id, storyId: storyId ?? id, title, firstSeenAt };
+function toCandidate(
+    id: string,
+    storyId: string | null,
+    title: string,
+    firstSeenAt: number,
+    urls: StoryUrlIdentity = { bodyUrls: [] },
+): StoryCandidate {
+    return {
+        id,
+        storyId: storyId ?? id,
+        title,
+        firstSeenAt,
+        ...(urls.canonicalUrl === undefined ? {} : { canonicalUrl: urls.canonicalUrl }),
+        ...(urls.bodyUrls.length === 0 ? {} : { bodyUrls: urls.bodyUrls }),
+    };
 }
 
 /**
@@ -229,8 +257,12 @@ export class ItemsDao extends EntityDao<typeof items, typeof items.id> {
             if (previous === undefined) {
                 inserted += 1;
                 newIds.push(item.id);
-                const storyId = storyIdFor(item.title, [...recent, ...batchCandidates], story.threshold) ?? item.id;
-                batchCandidates.push(toCandidate(item.id, storyId, item.title, now));
+                const pool = [...recent, ...batchCandidates];
+                const urls = itemUrls(item.canonicalUrl, item.body);
+                // URL identity first (0316 R1): a link post and its primary source share one story
+                // even though their titles share no token, which the Jaccard pass cannot see.
+                const storyId = storyIdForUrls(urls, pool) ?? storyIdFor(item.title, pool, story.threshold) ?? item.id;
+                batchCandidates.push(toCandidate(item.id, storyId, item.title, now, urls));
                 operations.push({
                     sql: INSERT_ITEM_SQL,
                     params: [
@@ -328,8 +360,12 @@ export class ItemsDao extends EntityDao<typeof items, typeof items.id> {
             ) {
                 candidates.shift();
             }
-            const storyId = storyIdFor(row.title, candidates, policy.threshold) ?? row.id;
-            candidates.push(toCandidate(row.id, storyId, row.title, row.first_seen_at));
+            const urls = itemUrls(row.canonical_url, row.body);
+            // URL identity first (0316 R1), then the fuzzy title fallback that still owns the
+            // URL-less pair the token pass was built for.
+            const storyId =
+                storyIdForUrls(urls, candidates) ?? storyIdFor(row.title, candidates, policy.threshold) ?? row.id;
+            candidates.push(toCandidate(row.id, storyId, row.title, row.first_seen_at, urls));
 
             if (
                 row.engagement !== facts.engagement ||
@@ -366,11 +402,16 @@ export class ItemsDao extends EntityDao<typeof items, typeof items.id> {
             story_id: string | null;
             title: string;
             first_seen_at: number;
+            canonical_url: string | null;
+            body: string;
         }>(
-            'SELECT id, story_id, title, first_seen_at FROM items WHERE first_seen_at >= ? ORDER BY first_seen_at, id',
+            `SELECT id, story_id, title, first_seen_at, canonical_url, body
+             FROM items WHERE first_seen_at >= ? ORDER BY first_seen_at, id`,
             sinceMs,
         );
-        return rows.map((row) => toCandidate(row.id, row.story_id, row.title, row.first_seen_at));
+        return rows.map((row) =>
+            toCandidate(row.id, row.story_id, row.title, row.first_seen_at, itemUrls(row.canonical_url, row.body)),
+        );
     }
 
     /**

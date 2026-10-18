@@ -21,12 +21,27 @@
 import { Database } from 'bun:sqlite';
 import { afterAll, describe, expect, it } from 'bun:test';
 import type { Doc } from '@gobing-ai/kk-core';
-import { DEFAULT_STORY_POLICY, itemId, type StoryPolicy } from '../../src/index';
+import {
+    DEFAULT_LABEL_PRIORITY,
+    DEFAULT_MIN_CONFIDENCE,
+    DEFAULT_STORY_POLICY,
+    itemId,
+    type LabelPolicy,
+    type StoryPolicy,
+} from '../../src/index';
+import type { ProfileQuery } from '../../src/profile';
 import { cleanupTempState, makeTempDir, openTempStore } from '../helpers';
 
 afterAll(cleanupTempState);
 
 const HOUR_MS = 3_600_000;
+
+/** The project's own label defaults; no query below carries a `where` label predicate, so it is inert. */
+const LABELS: LabelPolicy = {
+    priority: DEFAULT_LABEL_PRIORITY,
+    decisionPriority: {},
+    minConfidence: DEFAULT_MIN_CONFIDENCE,
+};
 
 /** Reset the v2 columns to their pre-0227 state: NULL facts, `story_id = id` (0225's interim). */
 function stagePreV2(dbPath: string): void {
@@ -238,5 +253,90 @@ describe('ItemsDao.backfillFacts (0227 R4)', () => {
     it('is a no-op on an empty store', async () => {
         const { store } = await openTempStore(makeTempDir(), 'backfill-empty.db');
         expect(await store.items.backfillFacts(DEFAULT_STORY_POLICY)).toBe(0);
+    });
+
+    it('merges a link post with the primary source its body points at (0316 R1/AC1)', async () => {
+        const { store, dbPath } = await openTempStore(makeTempDir(), 'backfill-url-identity.db');
+        const primary = doc({
+            id: 'primary',
+            title: 'Anthropic shares its code review practice',
+            sourceUri: 'https://claude.dev/blog/solving-code-review-at-anthropic',
+        });
+        // Same event, a different title, and its OWN canonical URL: only the body link ties them.
+        const linkPost = doc({
+            id: 'link-post',
+            title: 'Anthropic Claude Code 团队公开反思代码评审实践',
+            sourceUri: 'https://simonwillison.net/2026/Oct/16/code-review',
+            body: 'A link post about https://claude.dev/blog/solving-code-review-at-anthropic?utm_source=hn',
+        });
+        await store.items.upsertDocs('run-1', [primary], 1_000);
+        await store.items.upsertDocs('run-2', [linkPost], 1_100);
+        stagePreV2(dbPath);
+
+        await store.items.backfillFacts(DEFAULT_STORY_POLICY);
+
+        const root = itemId(primary);
+        expect((await store.items.findById(itemId(linkPost)))?.storyId).toBe(root);
+        expect((await store.items.findById(root))?.storyId).toBe(root);
+    });
+
+    it('leaves an unlinked, differently-titled pair under separate story ids (0316 R1 negative)', async () => {
+        const { store, dbPath } = await openTempStore(makeTempDir(), 'backfill-url-negative.db');
+        const a = doc({ id: 'a', title: 'OpenAI ships GPT-5' });
+        const b = doc({ id: 'b', title: 'Rust 2.0 release notes' });
+        await store.items.upsertDocs('run-1', [a, b], 1_000);
+        stagePreV2(dbPath);
+
+        await store.items.backfillFacts(DEFAULT_STORY_POLICY);
+
+        expect((await store.items.findById(itemId(a)))?.storyId).toBe(itemId(a));
+        expect((await store.items.findById(itemId(b)))?.storyId).toBe(itemId(b));
+    });
+
+    it('keeps a published story and its twin out of the pool under a widened window (0316 R2/AC2)', async () => {
+        const { store, dbPath } = await openTempStore(makeTempDir(), 'extract-url-identity.db');
+        const now = 1_000_000;
+        const primary = doc({
+            id: 'primary',
+            title: 'Anthropic shares its code review practice',
+            sourceUri: 'https://claude.dev/blog/solving-code-review-at-anthropic',
+        });
+        const linkPost = doc({
+            id: 'link-post',
+            title: 'Anthropic Claude Code 团队公开反思代码评审实践',
+            sourceUri: 'https://simonwillison.net/2026/Oct/16/code-review',
+            body: 'A link post about https://claude.dev/blog/solving-code-review-at-anthropic',
+        });
+        await store.items.upsertDocs('run-1', [primary], now - 60_000);
+        await store.items.upsertDocs('run-2', [linkPost], now - 30_000);
+        stagePreV2(dbPath);
+        await store.items.backfillFacts(DEFAULT_STORY_POLICY);
+
+        // One side is published for the topic. Both carry one root, so the NOT EXISTS join sees both.
+        await store.selections.insertMany([
+            {
+                topic: 'ai-news',
+                itemId: itemId(primary),
+                runId: 'run-9',
+                storyId: itemId(primary),
+                status: 'published',
+            },
+        ]);
+
+        const query: ProfileQuery = {
+            where: [],
+            order: [{ column: 'first_seen_at', direction: 'desc' }],
+            windowMs: 48 * HOUR_MS,
+            now,
+            limit: 20,
+            excludeTopic: 'ai-news',
+        };
+        const ids = (await store.items.selectByProfile(query, LABELS)).map((item) => item.id);
+        expect(ids).not.toContain(itemId(primary));
+        expect(ids).not.toContain(itemId(linkPost));
+
+        // The 48 h window is genuinely wide enough to admit both, so the exclusion is what drops them.
+        const unexcluded = await store.items.selectByProfile({ ...query, excludeTopic: undefined }, LABELS);
+        expect(unexcluded.map((item) => item.id).sort()).toEqual([itemId(linkPost), itemId(primary)].sort());
     });
 });

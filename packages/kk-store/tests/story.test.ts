@@ -21,7 +21,7 @@
  */
 
 import { describe, expect, it } from 'bun:test';
-import { type StoryCandidate, storyIdFor, storyTokens } from '../src/story';
+import { type StoryCandidate, type StoryUrlIdentity, storyIdFor, storyIdForUrls, storyTokens } from '../src/story';
 
 /** The token set as a sorted array, so assertions read as the exact expected tokenization. */
 function tokens(title: string): string[] {
@@ -146,5 +146,48 @@ describe('storyIdFor', () => {
 
         const c3 = candidate({ id: 'c3', storyId: 'story-c3', title: 'Meta裁员1000人' });
         expect(storyIdFor('Meta 裁员 1000 人', [c3], 0.6)).toBe('story-c3');
+    });
+});
+
+describe('storyIdForUrls (0316 R1)', () => {
+    /** The item's own URL identity; `bodyUrls` defaults to empty. */
+    const identity = (overrides: Partial<StoryUrlIdentity> = {}): StoryUrlIdentity => ({ bodyUrls: [], ...overrides });
+
+    it('merges a link post with the primary source its body points at', () => {
+        const primary = candidate({
+            id: 'primary',
+            canonicalUrl: 'https://claude.dev/blog/solving-code-review-at-anthropic',
+        });
+        const linkPost = identity({
+            canonicalUrl: 'https://simonwillison.net/2026/Oct/16/code-review',
+            bodyUrls: ['https://claude.dev/blog/solving-code-review-at-anthropic'],
+        });
+        expect(storyIdForUrls(linkPost, [primary])).toBe('story-primary');
+    });
+
+    it('merges in the reverse direction: the candidate links to the new item', () => {
+        const linkPost = candidate({
+            id: 'link-post',
+            bodyUrls: ['https://claude.dev/blog/solving-code-review-at-anthropic'],
+        });
+        const primary = identity({ canonicalUrl: 'https://claude.dev/blog/solving-code-review-at-anthropic' });
+        expect(storyIdForUrls(primary, [linkPost])).toBe('story-link-post');
+    });
+
+    it('never merges two link roundups that merely cite one page', () => {
+        const roundup = candidate({ id: 'roundup', bodyUrls: ['https://x.test/shared'] });
+        expect(storyIdForUrls(identity({ bodyUrls: ['https://x.test/shared'] }), [roundup])).toBeNull();
+    });
+
+    it('matches nothing when either side carries no URL', () => {
+        const plain = candidate({ id: 'plain' });
+        expect(storyIdForUrls(identity({ canonicalUrl: 'https://x.test/a' }), [plain])).toBeNull();
+        expect(storyIdForUrls(identity(), [plain])).toBeNull();
+    });
+
+    it('breaks a tie on earliest first_seen_at, then smallest id', () => {
+        const later = candidate({ id: 'z-later', firstSeenAt: 200, canonicalUrl: 'https://x.test/p' });
+        const earlier = candidate({ id: 'a-earlier', firstSeenAt: 100, canonicalUrl: 'https://x.test/p' });
+        expect(storyIdForUrls(identity({ bodyUrls: ['https://x.test/p'] }), [later, earlier])).toBe('story-a-earlier');
     });
 });

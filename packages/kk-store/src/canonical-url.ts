@@ -93,3 +93,24 @@ export function canonicalUrlForDoc(doc: Doc): string | undefined {
     if (url === undefined || url.trim() === '') return undefined;
     return canonicalUrl(url);
 }
+
+/** An http(s) URL in free text; the class stops at the characters that delimit one in prose. */
+const URL_IN_TEXT = /https?:\/\/[^\s<>"'`)\]}]+/gi;
+/** Sentence punctuation that trails a URL in prose or a markdown link. */
+const TRAILING_PUNCTUATION = /[.,;:!?]+$/;
+
+/**
+ * Every canonicalized http(s) URL referenced in `text`, deduped.
+ *
+ * This is the item's outbound identity: a link post carries the URL of the source it is about, so
+ * `storyIdForUrls` can cluster the two even though their titles share no token (0316 R1).
+ * Canonicalizing here is what makes a tracking-decorated link match the plain one.
+ */
+export function outboundUrls(text: string): string[] {
+    const found = new Set<string>();
+    for (const match of text.matchAll(URL_IN_TEXT)) {
+        const trimmed = match[0].replace(TRAILING_PUNCTUATION, '');
+        if (trimmed !== '') found.add(canonicalUrl(trimmed));
+    }
+    return [...found];
+}
