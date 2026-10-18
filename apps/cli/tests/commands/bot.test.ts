@@ -6,6 +6,7 @@ import { Command, CommanderError } from 'commander';
 import { createProgram } from '../../src/cli';
 import { type BotCommandDeps, registerBotCommand } from '../../src/commands/bot';
 import { main } from '../../src/main';
+import { consoleOutput } from '../../src/output';
 import { captureOutput } from '../capture';
 
 /**
@@ -90,6 +91,13 @@ interface RunResult {
 async function runInjected(args: string[], harness: BotHarness): Promise<RunResult> {
     const program = new Command().name('kk');
     program.exitOverride();
+    // Configure before registering: subcommands inherit both settings at creation. Without this
+    // Commander's writers are process.stderr, so a usage error (`kk bot exec <name>` with no url)
+    // escaped the ts-utils seam and printed into the test reporter.
+    program.configureOutput({
+        writeOut: (text: string) => consoleOutput.write(text),
+        writeErr: (text: string) => consoleOutput.error(text),
+    });
     registerBotCommand(program, { load: async () => harness });
     const capture = captureOutput();
     try {
@@ -510,6 +518,7 @@ describe('kk bot exec (0306 R1/R3/R4)', () => {
         expect(unsupported.err).toContain("unknown option '--compressed'");
         const missingUrl = await runInjected(['bot', 'exec', 'alice'], harness);
         expect(missingUrl.code).toBe(2);
+        expect(missingUrl.err).toContain("missing required argument 'url'");
 
         expect(calls).toEqual([]);
     });
