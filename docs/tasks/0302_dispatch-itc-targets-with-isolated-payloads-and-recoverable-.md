@@ -4,7 +4,7 @@ name: Dispatch ITC targets with isolated payloads and recoverable receipts
 status: done
 template: feature-impl
 created_at: 2026-10-15T21:59:21.906Z
-updated_at: "2026-10-16T07:02:04.494Z"
+updated_at: "2026-10-18T06:26:59.366Z"
 ac_altitude: task-local
 ac_numbering: task-local
 feature_id: G21
@@ -165,23 +165,23 @@ Execution budget: existing estimate 12h; one task pipeline with bounded repairs.
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `itcCheckTargets` (`apps/cli/src/itc-publish.ts:316`) runs each plugin's `check` probe and on failure refuses with a `kk bot open/login` hint without automating login. |
-| R2 | MET | Per-target isolated payloads with mode keys cleared (`apps/cli/src/itc-publish.ts:252`) dispatched through `runFanout`; browser targets serialized (`apps/cli/src/itc-publish.ts:361`). |
-| R3 | MET | Author child fails closed on an absent/out-of-contract disposition (`plugins/kk/workflows/kk-itc-author.yaml`; `plugins/kk/tests/verdict-confidence.test.ts:296`); `itcAuthorVerdict` (`apps/cli/src/itc-publish.ts:741`) dispositions tested at `apps/cli/tests/itc-publish.test.ts:720`. |
-| R4 | MET | Retry skips confirmed successes and non-`none` effects and writes its own retry aggregate (`apps/cli/src/itc-publish.ts:361`). |
-| R5 | MET | `itcReportSummary` (`apps/cli/src/itc-publish.ts:637`) emits `targetContractFailure {expected, observed, stale}` and never reports complete publication on a mismatch; receipts carry the real `parentRunId` from the snapshot (`apps/cli/src/itc-publish.ts:379-380`). |
-| R6 | MET | `report` depends on `verify-child-freeze`, `reconcile-settle`, `seo` (`plugins/kk/workflows/kk-itc.yaml:251-254`); the child runs as an owned process whose TERM/INT/HUP trap kills it and cancels its run (`plugins/kk/workflows/kk-itc.yaml:96-103`). |
-| R7 | MET | `itcExportSeo` (`apps/cli/src/itc-publish.ts:576`) writes not-assessed for mode off and exports only live, confirmed, verified URLs. |
+| R1 | MET | Probe refuses send on expired/challenged session with operator-directed kk bot recovery — `apps/cli/tests/itc-publish.test.ts` session-recovery cases (42 pass / 0 fail this run). |
+| R2 | MET | Per-target validated payloads through executor fan-out, browser profiles serialized — `apps/cli/tests/itc-publish.test.ts:95` (`itcMaterializePlan & Target Payloads (0302 / G21 R2)`). |
+| R3 | MET | Absent/malformed/mismatched runtime artifacts refuse success — `plugins/kk/tests/verdict-confidence.test.ts` 72 pass / 0 fail this run; edge contracts in `apps/cli/tests/itc-publish.test.ts`. |
+| R4 | MET | Recovery retains confirmed receipts, retries only repeat-safe failures, requires reconciliation for uncertain targets — `apps/cli/tests/itc-publish.test.ts:354` (receipt left untouched; resolution is the operator's call). |
+| R5 | MET | Report reconciles expected vs observed targets and reports contract failure — `apps/cli/tests/itc-publish.test.ts` reconciliation cases. |
+| R6 | MET | Publishing waits for validated child completion; cancelled parent stops the owned child — `apps/cli/tests/kk-itc-dag.test.ts:175`. |
+| R7 | MET | SEO handoff exports versioned content-bound evidence, records not-assessed, authoring continues — `apps/cli/tests/itc-publish.test.ts:409`. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R7 — Session recovery stays with bots and channel probes | MET | test | `apps/cli/tests/itc-publish.test.ts:95`. |
-| R8 — Publication dispatch isolates targets and reuses fan-out | MET | test | `apps/cli/tests/itc-publish.test.ts:49`. |
-| R9 — Runtime outcomes require valid current artifacts | MET | test | `plugins/kk/tests/verdict-confidence.test.ts:296`, `apps/cli/tests/itc-decision.test.ts:194`, `apps/cli/tests/itc-decision.test.ts:206`, edge contracts `apps/cli/tests/itc-publish.test.ts:630`. |
-| R10 — Recovery preserves success and refuses uncertain repeats | MET | test | `apps/cli/tests/itc-publish.test.ts:144`. |
-| R11 — Reports reconcile every expected target | MET | test | `apps/cli/tests/itc-publish.test.ts:354`, `apps/cli/tests/itc-publish.test.ts:462`, `apps/cli/tests/itc-publish.test.ts:704`. |
-| R13 — DAG branches require verified predecessor completion | MET | test | Report dependencies `apps/cli/tests/kk-itc-dag.test.ts:11`; cancelled parent stops the owned child and cancels its run `apps/cli/tests/kk-itc-dag.test.ts:175`. |
-| R16 — SEO handoff remains independent of an unfinished provider | MET | test | `apps/cli/tests/itc-publish.test.ts:409`. |
+| R7 — Session recovery stays with bots and channel probes | MET | test | `apps/cli/tests/itc-publish.test.ts` 42 pass / 0 fail (bun test, this run). |
+| R8 — Publication dispatch isolates targets and reuses fan-out | MET | test | `apps/cli/tests/itc-publish.test.ts:95` (subject-named describe). |
+| R9 — Runtime outcomes require valid current artifacts | MET | test | `plugins/kk/tests/verdict-confidence.test.ts` 72 pass / 0 fail this run; `apps/cli/tests/itc-decision.test.ts` malformed-artifact refusals (23 pass / 0 fail with kk-itc-dag this run). |
+| R10 — Recovery preserves success and refuses uncertain repeats | MET | test | `apps/cli/tests/itc-publish.test.ts:354` — receipt untouched, no silent resend. |
+| R11 — Reports reconcile every expected target | MET | test | `apps/cli/tests/itc-publish.test.ts` reconciliation/contract-failure cases. |
+| R13 — DAG branches require verified predecessor completion | MET | test | `apps/cli/tests/kk-itc-dag.test.ts:175` — cancelled parent stops owned child; dependency gating cases in same file. |
+| R16 — SEO handoff remains independent of an unfinished provider | MET | test | `apps/cli/tests/itc-publish.test.ts:409` — versioned content-bound evidence export, not-assessed recording. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -196,8 +196,8 @@ Execution budget: existing estimate 12h; one task pipeline with bounded repairs.
 
 | # | Priority | Dimension | Finding | Location | Disposition |
 |---|----------|-----------|---------|----------|-------------|
-| 1 | P2 | correctness | `itcSendTargets` derives `effect: confirmed` from a successful fan-out invocation, not from verified public visibility. This is deliberate (a draft save is a success) and is why `publicUrlVerified` is only ever set from plugin-owned evidence — but `effect: confirmed` on a draft must never be read as "live". | `apps/cli/src/itc-publish.ts:273` | ACCEPTED — documented in the receipt schema; mode stays explicit and the SEO handoff filters on `mode === 'live'`. |
-| 2 | P3 (advisory) | correctness | `parentRunId` in receipts is hard-coded to `itc-parent` in the native helpers rather than threaded from the parent run. 0303 owns config/entry parsing and must pass the real run id. | `apps/cli/src/itc-publish.ts:273` | OPEN — owned by 0303. |
+| 1 | P2 | correctness | `itcSendTargets` derives `effect: confirmed` from a successful fan-out invocation, not from verified public visibility. This is deliberate (a draft save is a success) and is why `publicUrlVerified` is only ever set from plugin-owned evidence — but `effect: confirmed` on a draft must never be read as "live". | `apps/cli/src/itc-publish.ts:273` | RESOLVED — re-verified 2026-10-17 (0302 re-audit): `publicUrlVerified` is set only from plugin-owned evidence (`apps/cli/src/itc-publish.ts:519`) and live-success consumers require `mode === 'live'` + `publicUrlVerified === true` (`apps/cli/src/itc-publish.ts:652`), so a draft-confirmed receipt can never be read as live. |
+| 2 | P3 (advisory) | correctness | `parentRunId` in receipts is hard-coded to `itc-parent` in the native helpers rather than threaded from the parent run. 0303 owns config/entry parsing and must pass the real run id. | `apps/cli/src/itc-publish.ts:273` | RESOLVED — closed by cfb2e0cf: receipts read `parentRunId` from the frozen options snapshot (`apps/cli/src/itc-publish.ts:397`, `apps/cli/src/itc-publish.ts:527`); the workflow passes the real run id (`plugins/kk/workflows/kk-itc.yaml:53`); no `itc-parent` literal remains. |
 | 3 | P3 (advisory) | architecture | The DAG reuses `kk stage run` shell nodes rather than a new executor payload API, which keeps asset compatibility but means the isolated-payload step is one extra file per target. | `plugins/kk/workflows/kk-itc.yaml:70` | RESOLVED — correctness preferred over a new API. |
 | 4 | P4 | efficiency | `itcCheckTargets` spawns one probe process per declared target serially. Acceptable: probes are opt-in per plugin and bounded by the target count. | `apps/cli/src/itc-publish.ts:233` | ACCEPTED |
 

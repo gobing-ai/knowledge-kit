@@ -4,7 +4,7 @@ name: Persist bounded ITC semantic decisions and safe fallbacks
 status: done
 template: feature-impl
 created_at: 2026-10-15T21:59:21.905Z
-updated_at: "2026-10-16T07:02:04.297Z"
+updated_at: "2026-10-18T06:22:17.571Z"
 ac_altitude: task-local
 ac_numbering: task-local
 feature_id: G21
@@ -116,13 +116,13 @@ Execution budget: existing estimate 8h; one task pipeline with bounded repairs. 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `itcDecision` (`apps/cli/src/itc-decision.ts:85`) bypasses the model on an explicit choice, compacts evidence, validates the pick against the allowed set, derives `candidateDigest` when absent (`apps/cli/src/itc-decision.ts:92-93`), and falls back to `defer` (or `none` for presets) recording source and reason. Wired: the author FSM's outline autopick calls `itc-decision --outline` (`plugins/kk/workflows/kk-itc-author.yaml:90`) and pauses when `.auto-pick` is empty (`plugins/kk/workflows/kk-itc-author.yaml:268`); the entry calls `itc-decision --topic` (`plugins/kk/commands/workflow-run.md:230`). Auto defer stops safely; it never guesses a first choice. |
-| R2 | MET | `child-author` derives `cid="${vars.__runId}-author"` (`plugins/kk/workflows/kk-itc.yaml:89`), continues a paused child, launches only when absent, refuses to relaunch done/failed (`plugins/kk/workflows/kk-itc.yaml:104-113`). |
+| R1 | MET | `itcDecision` validates picks against the candidate digest set and falls back to `defer`/`none` recording source+reason at `apps/cli/src/itc-decision.ts:90`; fixed catalog decisions with safe fallbacks at `plugins/kk/decisions/kk-itc.yaml:8`. |
+| R2 | MET | `child-author` derives `cid="${vars.__runId}-author"`, continues a paused child, launches only when absent, refuses relaunch of done/failed at `plugins/kk/workflows/kk-itc.yaml:89`; completion receipt validation in `runItcAuthorComplete` at `apps/cli/src/itc-stage.ts:249`. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R4 — Semantic choices remain within validated candidates | MET | test | `apps/cli/tests/itc-decision.test.ts:73`, `apps/cli/tests/itc-decision.test.ts:98`; catalog call with fake executor: in-set pick `apps/cli/tests/itc-decision.test.ts:256`, out-of-set → defer `apps/cli/tests/itc-decision.test.ts:289`, failing catalog → none `apps/cli/tests/itc-decision.test.ts:303`; slot form defers without guessing `apps/cli/tests/itc-stage.test.ts:206`. |
-| R17 — Interactive authoring resumes the recorded child | MET | test | `apps/cli/tests/kk-itc-dag.test.ts:162`, `apps/cli/tests/kk-itc-dag.test.ts:217`, `apps/cli/tests/kk-itc-dag.test.ts:223`, `apps/cli/tests/kk-itc-dag.test.ts:229`. |
+| R4 — Semantic choices remain within validated candidates | MET | test | `apps/cli/tests/itc-decision.test.ts` (bun test, this run: 23 pass / 0 fail across itc-decision + kk-itc-dag) — explicit choice bypass, in-set pick, out-of-set → defer, failing catalog → none. |
+| R17 — Interactive authoring resumes the recorded child | MET | test | `apps/cli/tests/kk-itc-dag.test.ts` — same child ID continued through pauses, parent resumed only after validated child draft receipt, no rerun of confirmed sends. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

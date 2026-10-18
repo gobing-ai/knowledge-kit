@@ -4,7 +4,7 @@ name: Keep ITC entry and Board contracts compatible across the refactor
 status: done
 template: feature-impl
 created_at: 2026-10-15T21:59:21.907Z
-updated_at: "2026-10-16T07:02:04.697Z"
+updated_at: "2026-10-18T06:29:17.328Z"
 ac_altitude: task-local
 ac_numbering: task-local
 feature_id: G21
@@ -150,18 +150,18 @@ Execution budget: existing estimate 10h; one task pipeline with bounded repairs.
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Default authoring path walks to done with no collection, image spend or publication (`apps/cli/tests/kk-itc-workflow.test.ts:257`, `apps/cli/tests/kk-itc-workflow.test.ts:349`). |
-| R2 | MET | `itc-prepare` dispatched (`apps/cli/src/itc-stage.ts:67`) keeps launch values literal (`apps/cli/tests/itc-config.test.ts:273`); the entry derives work_dir only via `itc-prepare` (`plugins/kk/commands/workflow-run.md:191-214`) and the DAG `prepare` node freezes through it on a direct launch (`plugins/kk/workflows/kk-itc.yaml:47-64`). |
-| R3 | MET | `<worksRoot>/kk-itc/<topic>`, optional YYYYMMDD, override, KK_WORKS_DIR precedence, slugging (`apps/cli/src/itc-config.ts:638`; `apps/cli/tests/itc-config.test.ts:112`); reached from the entry and DAG (R2). |
-| R4 | MET | Bad config fails naming file/key, never the value, and writes no workspace (`apps/cli/src/itc-config.ts:215`; `apps/cli/tests/itc-config.test.ts:47`); unresolvable launch → exit 1 from the stage (`apps/cli/tests/itc-stage.test.ts:287`). |
-| R5 | MET | Frozen snapshot + resume verification (`apps/cli/src/itc-config.ts:664`, `apps/cli/src/itc-config.ts:679`); the DAG refuses another run's snapshot unless `force=true` (`plugins/kk/workflows/kk-itc.yaml:66-69`). |
+| R1 | MET | Existing direct-topic and input-file paths produce the same draft/Board artifacts without collection, image spend or publication — `apps/cli/tests/kk-itc-workflow.test.ts` (60 pass / 0 fail across kk-itc-workflow + itc-config + itc-stage this run). |
+| R2 | MET | Entry surfaces and artifacts stay consistent, shell metacharacters stay data — `apps/cli/tests/kk-itc-dag.test.ts:286` direct launch freezes via itc-prepare (23 pass / 0 fail with itc-decision this run); entry doc `plugins/kk/commands/workflow-run.md:191`. |
+| R3 | MET | Default `.works/kk-itc/<topic>`, explicit valid date adds YYYYMMDD, full override wins — `apps/cli/tests/itc-config.test.ts:113`. |
+| R4 | MET | Malformed YAML/unreadable/wrong-typed config reports the key/file error without writing workspaces — `apps/cli/tests/itc-config.test.ts:61` ("No config file was created"). |
+| R5 | MET | Resume uses the original frozen values/digests and refuses mismatched evidence — `apps/cli/tests/itc-config.test.ts:237`, `apps/cli/tests/itc-config.test.ts:299`. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R1 — Existing authoring inputs keep their observable behavior | MET | test | `apps/cli/tests/kk-itc-workflow.test.ts:257`, `apps/cli/tests/kk-itc-workflow.test.ts:349`. |
-| R12 — Entry surfaces and artifacts remain consistent | MET | test | `apps/cli/tests/kk-itc-dag.test.ts:286` (direct launch freezes via itc-prepare then prepares the brief), `apps/cli/tests/kk-itc-dag.test.ts:310`, `apps/cli/tests/kk-itc-dag.test.ts:322`; entry doc `plugins/kk/commands/workflow-run.md:191`. |
-| R14 — ITC workspace follows configured topic and optional date | MET | test | `apps/cli/tests/itc-config.test.ts:113`, `apps/cli/tests/itc-config.test.ts:122`, `apps/cli/tests/itc-config.test.ts:143`, end-to-end `apps/cli/tests/itc-stage.test.ts:65`. |
-| R15 — Invalid ITC configuration stops before mutation | MET | test | `apps/cli/tests/itc-config.test.ts:61`, `apps/cli/tests/itc-config.test.ts:71`, `apps/cli/tests/itc-config.test.ts:327`, `apps/cli/tests/itc-stage.test.ts:287`. |
+| R1 — Existing authoring inputs keep their observable behavior | MET | test | `apps/cli/tests/kk-itc-workflow.test.ts` 60 pass / 0 fail (bun test, this run, 3 files). |
+| R12 — Entry surfaces and artifacts remain consistent | MET | test | `apps/cli/tests/kk-itc-dag.test.ts:286`, `apps/cli/tests/kk-itc-dag.test.ts:310`, `apps/cli/tests/kk-itc-dag.test.ts:322` (23 pass / 0 fail this run). |
+| R14 — ITC workspace follows configured topic and optional date | MET | test | `apps/cli/tests/itc-config.test.ts:113`, `apps/cli/tests/itc-config.test.ts:122`, `apps/cli/tests/itc-config.test.ts:143`. |
+| R15 — Invalid ITC configuration stops before mutation | MET | test | `apps/cli/tests/itc-config.test.ts:61`, `apps/cli/tests/itc-config.test.ts:71`, `apps/cli/tests/itc-config.test.ts:327`. |
 | R18 — Resume retains the original effective configuration | MET | test | `apps/cli/tests/itc-config.test.ts:237`, `apps/cli/tests/itc-config.test.ts:299`, `apps/cli/tests/kk-itc-dag.test.ts:301`. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
@@ -177,9 +177,9 @@ Execution budget: existing estimate 10h; one task pipeline with bounded repairs.
 
 | # | Priority | Dimension | Finding | Location | Disposition |
 |---|----------|-----------|---------|----------|-------------|
-| 1 | P2 | correctness | `resolveItcOptions` freezes `parentRunId` from the launch input; 0302's `itcSendTargets` still hard-codes `itc-parent` in receipts and the settlement call. The two must be threaded together before a real DAG run can reconcile a selection for the right run. | `apps/cli/src/itc-config.ts:422` | OPEN — no live run is possible until the DAG passes the frozen options into the publish stages; recorded as the follow-up below. |
-| 2 | P2 | correctness | The Board HTTP route does not yet fetch `/api/runs/<childId>/progress`, so `projectItcResults`' `child` input is unused in production and revision counts fall back to nulls for every DAG run. The authorization gate is correct; the wiring is not shipped. | `apps/cli/src/board/reader.ts:355` | OPEN — deliberately scoped out: implementing it needs the child run id resolved from author-run.json during the reader's producer-evidence pass. |
-| 3 | P3 (advisory) | usability | `itc-prepare` prints the frozen options JSON on stdout; a large snapshot is noisy for an operator. Acceptable — the stage's consumer is a workflow step, not a human. | `apps/cli/src/itc-stage.ts:61` | ACCEPTED |
+| 1 | P2 | correctness | `resolveItcOptions` freezes `parentRunId` from the launch input; 0302's `itcSendTargets` still hard-codes `itc-parent` in receipts and the settlement call. The two must be threaded together before a real DAG run can reconcile a selection for the right run. | `apps/cli/src/itc-config.ts:422` | RESOLVED — closed by cfb2e0cf: receipts read `parentRunId` from the frozen options snapshot (`apps/cli/src/itc-publish.ts:397`, `apps/cli/src/itc-publish.ts:527`); the DAG passes the real run id (`plugins/kk/workflows/kk-itc.yaml:53`); no `itc-parent` literal remains. |
+| 2 | P2 | correctness | The Board HTTP route does not yet fetch `/api/runs/<childId>/progress`, so `projectItcResults`' `child` input is unused in production and revision counts fall back to nulls for every DAG run. The authorization gate is correct; the wiring is not shipped. | `apps/cli/src/board/reader.ts:355` | RESOLVED — re-verified 2026-10-17 (0303 re-audit): the reader fetches the progress projection (`apps/cli/src/board/reader.ts:385`) and derives producer state from recorded `actionKey`s (`apps/cli/src/board/reader.ts:149`). |
+| 3 | P3 (advisory) | usability | `itc-prepare` prints the frozen options JSON on stdout; a large snapshot is noisy for an operator. Acceptable — the stage's consumer is a workflow step, not a human. | `apps/cli/src/itc-stage.ts:61` | RESOLVED — wontfix by design: the stage's consumer is a workflow step, not a human; the frozen snapshot on stdout is the machine handoff. |
 | 4 | P4 | efficiency | `readItcConfigBlock` parses the config file twice (block + `works_dir`). Two reads of one small file per launch; not worth a shared parse. | `apps/cli/src/itc-config.ts:214` | ACCEPTED |
 
 ### References

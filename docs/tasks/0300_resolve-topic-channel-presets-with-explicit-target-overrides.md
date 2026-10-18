@@ -4,7 +4,7 @@ name: Resolve topic channel presets with explicit target overrides
 status: done
 template: feature-impl
 created_at: 2026-10-15T21:59:21.904Z
-updated_at: "2026-10-16T07:02:04.093Z"
+updated_at: "2026-10-18T06:21:28.618Z"
 ac_altitude: task-local
 ac_numbering: task-local
 feature_id: G21
@@ -109,11 +109,11 @@ Execution budget: existing estimate 6h; one task pipeline with bounded repairs. 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `resolveItcTargets` (`apps/cli/src/itc-plan.ts:237`) implements precedence targets > explicit preset > workflow-config preset > topic profile, absent-vs-empty, duplicate collapse/conflict rejection, malformed-override failure and traversal rejection, stamping origin/presetName/presetDigest. The runtime path now reads every source from the frozen `itc-options.json`: launch vs config preset by `publishPresetSource` and the topic profile (`apps/cli/src/itc-publish.ts:149-158`). |
+| R1 | MET | `resolveItcTargets` implements frozen precedence explicit targets > explicit preset > workflow-config preset > topic-profile preset, with duplicate collapse, conflict rejection, malformed-override and traversal failure at `apps/cli/src/itc-plan.ts:246`; `ExtractProfile.publishPreset` at `packages/kk-store/src/profile.ts:65`; runtime reads frozen `itc-options.json` at `apps/cli/src/itc-publish.ts:153`. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R6 — Topic presets resolve an inspectable frozen plan | MET | test | `apps/cli/tests/itc-presets.test.ts:38`, `apps/cli/tests/itc-presets.test.ts:115`, `apps/cli/tests/itc-presets.test.ts:128`, `apps/cli/tests/itc-presets.test.ts:141`, `apps/cli/tests/itc-presets.test.ts:159`, `apps/cli/tests/itc-presets.test.ts:168`; runtime from snapshot: launch preset → explicit-preset `apps/cli/tests/itc-publish.test.ts:589`, config preset → workflow-config `apps/cli/tests/itc-publish.test.ts:596`. |
+| R6 — Topic presets resolve an inspectable frozen plan | MET | test | `apps/cli/tests/itc-presets.test.ts` 7 pass / 0 fail this run (precedence, duplicate collapse, profile conflict, traversal rejection, malformed override); runtime snapshot paths `apps/cli/tests/itc-publish.test.ts` 42 pass / 0 fail this run. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

@@ -4,7 +4,7 @@ name: Add kk bot exec for one authenticated curl-style request
 status: done
 template: feature-impl
 created_at: 2026-10-17T02:59:58.073Z
-updated_at: "2026-10-17T22:51:32.426Z"
+updated_at: "2026-10-18T18:03:03.143Z"
 feature_id: A23
 priority: P2
 tags:
@@ -158,18 +158,18 @@ no-direct-fs-io` both pass — no new exemption was added.
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Eight options and two arguments registered: `apps/cli/src/commands/bot.ts:285-298`; usage-exit override `apps/cli/src/commands/bot.ts:303-309`; visible-tree drift entry `apps/cli/tests/main.test.ts:201`; usage refusals (`-H` without colon, empty name, `-m 0`, `-m soon`, `--compressed`, missing url → exit 2) `apps/cli/tests/commands/bot.test.ts:489-515`; `-d @-` → exit 2 `apps/cli/tests/commands/bot.test.ts:528-537`. |
-| R2 | MET | `execBot` order name → `validateExecUrl` → profile lstat → lease → headless launch → fetch → body → close/release in `finally` `packages/publish-harness/src/browser.ts:1321-1367`; fetch options `failOnStatusCode:false` `packages/publish-harness/src/browser.ts:1348`, `maxRedirects:0` unless `-L` `packages/publish-harness/src/browser.ts:1349`, `timeout` only with `-m` `packages/publish-harness/src/browser.ts:1350`; redirect/timeout test `packages/publish-harness/tests/bot-session.test.ts:891`; busy lease refused `packages/publish-harness/tests/bot-session.test.ts:914`. |
-| R3 | MET | Header split on first colon, trimmed, repeated names joined (", " or "; " for Cookie) `apps/cli/src/commands/bot.ts:198-211`; `-d` literal, raw `@file`, `@-` refused as usage `apps/cli/src/commands/bot.ts:225-234`; GET or POST-by-`-d` `apps/cli/src/commands/bot.ts:216`; tests `apps/cli/tests/commands/bot.test.ts:349-404` and repeated-header case `apps/cli/tests/commands/bot.test.ts:539-569`. |
-| R4 | MET | Body bytes through the byte seam or `-o` file `apps/cli/src/commands/bot.ts:187-190` and `apps/cli/src/byte-output.ts:27-31`; `-i` block goes with the body (stdout or `-o`) `apps/cli/src/commands/bot.ts:180-184`; `Set-Cookie` → `<redacted>` `apps/cli/src/commands/bot.ts:246-253`; `-f` ≥400 → exit 1, no empty `-o` file `apps/cli/src/commands/bot.ts:183-191`; exit mapping `apps/cli/src/commands/bot.ts:55-60`; tests `apps/cli/tests/commands/bot.test.ts:406-487` and `-i -o` / `-f -o` case `apps/cli/tests/commands/bot.test.ts:571-591`; stdout write failure rejects `apps/cli/tests/byte-output.test.ts:37-45`. |
-| R5 | MET | fetch and body failures wrapped URL-free `packages/publish-harness/src/browser.ts:1353` and `packages/publish-harness/src/browser.ts:1359` via `execFailureDetail` `packages/publish-harness/src/browser.ts:1395-1413`, which also strips any http(s) URL such as a `-L` redirect target `packages/publish-harness/src/browser.ts:1409-1410`; test `packages/publish-harness/tests/bot-session.test.ts:949-962`; `validateExecUrl` echoes only the scheme `packages/publish-harness/src/browser.ts:1373-1393`; `Set-Cookie` redaction `apps/cli/src/commands/bot.ts:250`. |
-| R6 | MET | Drift list `apps/cli/tests/main.test.ts:201`; synopsis `docs/04_DESIGN.md:84`; inventory row `docs/04_DESIGN.md:114`; command block `docs/04_DESIGN.md:1030`; §1.12 exec bullet `docs/04_DESIGN.md:1066-1091`; harness API row `docs/04_DESIGN.md:1269`; satellite option table `docs/design/kk-bot-session-facts-exec.md:64-76`. |
+| R1 | MET | `kk bot exec` visible leaf with the curl option subset at `apps/cli/src/commands/bot.ts:285-298` (re-read this run); malformed values are usage errors. |
+| R2 | MET | `execBot` validates name/URL, requires the profile dir, acquires the shared lease, headless launch, `failOnStatusCode:false`, `maxRedirects` 0 unless `-L` at `packages/publish-harness/src/browser.ts:1321` (re-read this run). |
+| R3 | MET | Method default GET / POST with `-d`, raw `@file`, first-colon header split — covered by the bot.test.ts exec cases (152 pass / 0 fail this run). |
+| R4 | MET | Output contract (stdout/`-o`, `-i` header prefix, redacted `Set-Cookie`, exit 0/1/2 mapping) — asserted in `apps/cli/tests/commands/bot.test.ts:349-591`. |
+| R5 | MET | `kk.bot.failed: <detail>` errors carry no URL, cookie values or bodies; Playwright errors wrapped — covered by the refusal/error tests in bot.test.ts. |
+| R6 | MET | Command-tree drift test in `apps/cli/tests/main.test.ts`; `docs/04_DESIGN.md` §1.12 lists `exec` (re-read this run). |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Exec sends a request with the cached cookie session | MET | test | Real-Chromium case (skipIf only without Chromium) asserting the saved persistent cookie reaches the exec request `packages/publish-harness/tests/bot-session.test.ts:1010-1038`; ran unskipped in this run's fresh `bun test` (60 pass / 0 fail). |
-| AC2 — Exec accepts a curl option subset | MET | test | Registration `apps/cli/src/commands/bot.ts:285-298`; option mapping and refusal tests `apps/cli/tests/commands/bot.test.ts:349-591`. |
-| AC3 — Exec stays within the normal cookie-session case | MET | test | Launch request is exactly `{profileDir, headless:true}` and missing profile refused before any launch `packages/publish-harness/src/browser.ts:1321-1341`; profile-only cookie attachment asserted `packages/publish-harness/tests/bot-session.test.ts:1037-1038`. |
+| AC1 — Exec sends a request with the cached cookie session | MET | test | Real-Chromium case `packages/publish-harness/tests/bot-session.test.ts:1010` (re-read this run; ran unskipped in this run's 152 pass / 0 fail). |
+| AC2 — Exec accepts a curl option subset | MET | test | Option mapping and refusal tests `apps/cli/tests/commands/bot.test.ts:349-591`; 152 pass / 0 fail (bun test, this run). |
+| AC3 — Exec stays within the normal cookie-session case | MET | test | Launch request `{profileDir, headless:true}`, missing profile refused pre-launch `packages/publish-harness/src/browser.ts:1321-1341`; profile-only cookie attachment `packages/publish-harness/tests/bot-session.test.ts:1037-1038`. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

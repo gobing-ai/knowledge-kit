@@ -4,7 +4,7 @@ name: Select evidence-backed ITC topics from the collection store
 status: done
 template: feature-impl
 created_at: 2026-10-15T21:59:21.902Z
-updated_at: "2026-10-16T07:02:03.887Z"
+updated_at: "2026-10-18T06:20:40.362Z"
 ac_altitude: task-local
 ac_numbering: task-local
 feature_id: G21
@@ -123,13 +123,13 @@ Execution budget: existing estimate 8h; one task pipeline with bounded repairs. 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Stages: extract (`apps/cli/src/itc-topic.ts:100`), validate citing item IDs/URLs with poolDigest (`apps/cli/src/itc-topic.ts:199`), select writing `chosen-source.json` (`apps/cli/src/itc-topic.ts:298`), settle (`apps/cli/src/itc-topic.ts:389`), dispatched from `apps/cli/src/itc-stage.ts:84`. Wired into the entry: `plugins/kk/commands/workflow-run.md:222-233` drives extract → validate → `itc-decision --topic` → select → `itc-prepare --chosen`; `itc-prepare --chosen` finalizes the workspace (`apps/cli/src/itc-config.ts:599`). |
-| R2 | MET | Empty pool stops with "no usable topic" and writes nothing (`apps/cli/tests/itc-topic.test.ts:140`); failed explicit refresh with empty store reports failure (`apps/cli/tests/itc-topic.test.ts:165`); settlement scoped to the run (`apps/cli/tests/itc-topic.test.ts:343`). |
+| R1 | MET | `itcTopicExtract` builds pool + SHA-256 poolDigest at `apps/cli/src/itc-topic.ts:102`; `itcTopicValidate` checks candidate membership and source URLs at `apps/cli/src/itc-topic.ts:207`; `itcTopicSelect` writes `selected-docs.json`/`chosen-source.json` and records topic-scoped selections at `apps/cli/src/itc-topic.ts:309`; dispatched at `apps/cli/src/itc-stage.ts:84`. |
+| R2 | MET | `itcSelectionSettle` releases failed/draft-only selections and retains uncertain outcomes at `apps/cli/src/itc-topic.ts:402`; empty-pool and failed-refresh stops covered by `apps/cli/tests/itc-topic.test.ts` (14 pass / 0 fail this run). |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R2 — Collected evidence can supply a selected topic | MET | test | `apps/cli/tests/itc-topic.test.ts:190`, `apps/cli/tests/itc-topic.test.ts:343`, CLI request path `apps/cli/tests/itc-topic.test.ts:554`, request-file validate→select→settle `apps/cli/tests/itc-topic.test.ts:620`; `itc-prepare --chosen` finalization `apps/cli/tests/itc-stage.test.ts:110`. |
-| R3 — Empty or unavailable collections stop topic selection safely | MET | test | `apps/cli/tests/itc-topic.test.ts:140`, `apps/cli/tests/itc-topic.test.ts:165`; request guards (missing flag/file, non-JSON, off-schema, bad window, missing profile) `apps/cli/tests/itc-topic.test.ts:634`. |
+| R2 — Collected evidence can supply a selected topic | MET | test | `apps/cli/tests/itc-topic.test.ts` 14 pass / 0 fail (bun test, this run) — extract/validate/select/settle against seeded store, CLI request path. |
+| R3 — Empty or unavailable collections stop topic selection safely | MET | test | `apps/cli/tests/itc-topic.test.ts` — empty pool reports no usable topic and writes nothing; failed explicit refresh reports failure; request guards reject missing flag/file, non-JSON, off-schema inputs. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

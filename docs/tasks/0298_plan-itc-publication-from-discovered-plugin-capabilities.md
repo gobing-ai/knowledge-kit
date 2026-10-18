@@ -4,7 +4,7 @@ name: Plan ITC publication from discovered plugin capabilities
 status: done
 template: feature-impl
 created_at: 2026-10-15T21:59:21.896Z
-updated_at: "2026-10-16T07:02:03.673Z"
+updated_at: "2026-10-18T06:19:45.846Z"
 ac_altitude: task-local
 ac_numbering: task-local
 feature_id: G21
@@ -113,11 +113,11 @@ Execution budget: existing estimate 8h; one task pipeline with bounded repairs. 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Profiles are manifest-declared and validated (`packages/kk-core/src/manifest.ts:125`, `packages/kk-core/src/manifest.ts:174`); `buildItcPublishPlan` (`apps/cli/src/itc-plan.ts:383`) resolves format/locale/draft modes/requirements/bindings from the manifest and rejects incompatible operations. The channel table is gone: transport derives from the manifest's declared `browserSession` (`apps/cli/src/itc-plan.ts:472`, `apps/cli/src/itc-plan.ts:490`), so a new publisher needs no code edit. |
+| R1 | MET | Strict `PublishingProfileSchema` with format/locale/limits/requires/modes on publish-kind manifests at `packages/kk-core/src/manifest.ts:120`; `buildItcPublishPlan` resolves capabilities from discovered `PluginRecord`s at `apps/cli/src/itc-plan.ts:392`; transport derives from manifest `browserSession`, no channel table, at `apps/cli/src/itc-plan.ts:481`. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R5 — Publish plugins describe operation-specific capabilities | MET | test | `apps/cli/tests/itc-plan.test.ts:124` (manifest-only fake publisher with complete bindings), `apps/cli/tests/itc-plan.test.ts:155` (Qiita/WeChat), requirement and unsupported-mode rejections `apps/cli/tests/itc-plan.test.ts:202`, `apps/cli/tests/itc-plan.test.ts:257`; transport from `browserSession` asserted at `apps/cli/tests/itc-stages.test.ts:339`; off-schema/non-JSON/unknown-target plan requests refused at `apps/cli/tests/itc-stage.test.ts:248`. |
+| R5 — Publish plugins describe operation-specific capabilities | MET | test | `apps/cli/tests/itc-plan.test.ts` 11 pass / 0 fail (bun test, this run: manifest-only fake publisher, complete Qiita/WeChat bindings, missing-images and unsupported-mode rejection); capability validation/discovery round-trip `packages/kk-core/tests/manifest.test.ts` + `packages/kk-core/tests/registry.test.ts` 47 pass / 0 fail this run. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
