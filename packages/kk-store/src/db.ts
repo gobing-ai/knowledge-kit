@@ -72,7 +72,12 @@ export function journalModePragma(migrate: boolean | undefined): string | null {
 
 export async function openStore(options: OpenStoreOptions): Promise<Store> {
     const { createDbAdapter } = await import('@gobing-ai/ts-db');
-    const adapter = await createDbAdapter({ driver: 'bun-sqlite', url: options.path });
+    const adapter = await createDbAdapter({
+        driver: 'bun-sqlite',
+        url: options.path,
+        // Override the adapter's WAL default before it opens an observer's store.
+        ...(options.migrate === false ? { pragmas: { journalMode: 'PRAGMA journal_mode' } } : {}),
+    });
     try {
         // `journal_mode = WAL` is a PERSISTENT change to the store file's header, so a read-only
         // caller (`migrate: false`) must not issue it: opening a delete-mode store for reading

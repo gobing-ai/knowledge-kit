@@ -213,9 +213,16 @@ describe('openStore({ migrate: false })', () => {
     it('reads rows without changing the store mode, schema or counts', async () => {
         const dir = makeTempDir();
         const dbPath = join(dir, 'read-only-open.db');
-        const writer = await openStore({ path: dbPath });
+        const seedPath = join(dir, 'seed.db');
+        const writer = await openStore({ path: seedPath });
         await writer.collectRuns.start({ runId: 'durable-run' });
         await writer.close();
+
+        // Start outside WAL: adapter defaults must not silently convert an observer's store.
+        const setup = new Database(seedPath);
+        setup.query('VACUUM INTO ?').run(dbPath);
+        setup.close();
+        const bytesBefore = await Bun.file(dbPath).arrayBuffer();
 
         const snapshot = async () => {
             const handle = new Database(dbPath, { readonly: true });
@@ -235,6 +242,7 @@ describe('openStore({ migrate: false })', () => {
         expect(runs.length).toBeGreaterThanOrEqual(1);
         // No pragma, no DDL, no journal write on the read path (G81 / task 0313).
         expect(after).toEqual(before);
+        expect(await Bun.file(dbPath).arrayBuffer()).toEqual(bytesBefore);
     });
 });
 
