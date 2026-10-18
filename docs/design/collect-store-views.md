@@ -185,6 +185,11 @@ No new dependency, no store schema change, no change to `kk-collect.yaml`.
 - Operator-run live check (`apps/board/scripts/verify-collect-live.ts`) over this checkout's real store:
   screenshots, checked run ids and before/after `sqlite_master` + row-count digests under
   `.works/.board/verify/<stamp>/`. A copy of the live store cannot be used: its run ids never match fixtures.
+- Read-only caveat (0309 review finding 6, closed 2026-10-18): the reader opens the store with no WAL
+  conversion (`journalModePragma(false)` → null, `packages/kk-store/src/db.ts`), but SQLite folds the
+  WAL into the main file when the last connection closes — a read-only check can therefore move bytes
+  without writing rows. The live check classifies exactly that shape (WAL emptied + db grew + rows and
+  schema unchanged) as a checkpoint NOTE, not a store-write FAIL (2269ed30).
 
 ## Sources
 
