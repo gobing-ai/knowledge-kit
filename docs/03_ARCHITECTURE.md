@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.39.0
+version: 2.40.0
 created_at: 2026-07-22
-updated_at: 2026-10-15
+updated_at: 2026-10-18
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -147,7 +147,9 @@ sole CLI surface and the package is the only ts-db importer (boundary rules). St
 `raw_confidence`, `reason`, `duration_ms`, `catalog_version`, `content_hash`), promotes the
 deterministic facts (`engagement`, `body_chars`, `source_tier`, `lang`, `domain`, `story_id`) to
 typed `items` columns, and replaces `episode_usage` with the topic-scoped `selections`;
-`items.story_id` is the title-clustering dedup key the pool exclusion rides on. `kk-collect` writes
+`items.story_id` is the dedup key the pool exclusion rides on: URL identity first (an item's own
+`canonical_url` against another item's body outbound links, either direction — 0316), then title
+Jaccard as the fallback for URL-less pairs. `kk-collect` writes
 it every 6 h (04/10/16/22 local); DAG workflows read it. `extract` compiles a topic profile
 (`plugins/kk/decisions/extract/<topic>.yaml`) into one `ItemsDao.selectByProfile` query — a
 `labels` self-join per `where` decision, `first_seen_at >= now - window`, and a topic-scoped

@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.50.0
+version: 2.51.0
 created_at: 2026-07-22
-updated_at: 2026-10-15
+updated_at: 2026-10-18
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -718,13 +718,20 @@ ingest fills the columns for every inserted or updated item (an unchanged item i
 `content_hash` does not cover metadata), and `ItemsDao.backfillFacts` recomputes them for every row.
 
 The same batch assigns each **inserted** item a `story_id`: the same event under two URLs shares one
-story, so tomorrow's selection dedup can drop it. `storyIdFor(title, candidates, threshold)` in
-`packages/kk-store/src/story.ts` tokenizes the title — NFKC + lowercase, a trailing outlet suffix
+story, so tomorrow's selection dedup can drop it. `storyIdForUrls(urls, candidates)` in
+`packages/kk-store/src/story.ts` runs **first** on URL identity (0316 R1), where `urls` is the item's
+own `canonical_url` plus `outboundUrls(body)`: a candidate matches when the item's body links contain
+the candidate's `canonical_url`, or the candidate's body links contain the item's own URL — never on
+body-vs-body intersection, so two link roundups citing one page stay separate. That merges the
+link-post/primary-source pair whose titles share no token. `storyIdFor(title, candidates, threshold)`
+is the fallback for URL-less pairs and tokenizes the title — NFKC + lowercase, a trailing outlet suffix
 after ` - ` / ` | ` / `｜` / ` — ` dropped when it is ≤ 30 characters, punctuation/symbols removed,
 CJK runs as character bigrams and Latin/digit runs as words — and takes the candidate with the best
 token Jaccard at `>= threshold` (ties → earliest `first_seen_at`, then smallest `id`). Candidates are
-the items inside `story.windowHours` of `now` plus the docs preceding it in the same batch; a story's
-id is its earliest member's id, a `null` match makes the item its own story, and an existing item
+the items inside `story.windowHours` of `now` plus the docs preceding it in the same batch; both
+`ItemsDao.upsertDocs` (ingest) and `ItemsDao.backfillFacts` (repair) run the URL pass before the title
+pass, so a twin never waits for a manual repair. A story's id is its earliest member's id, a `null`
+match makes the item its own story, and an existing item
 keeps the `story_id` it has (a later item never re-roots a story). This is deliberately NOT the
 plugin's whole-string character-bigram `titleSimilarity`, which over-merges unrelated English titles.
 
@@ -1228,10 +1235,10 @@ type crosses `src/index.ts`.
 | -------- | ------ | ------- |
 | `openStore(opts)`, `Store`, `SQLITE_BUSY_TIMEOUT_MS` | function / interface / const | Lazily imports `createDbAdapter`, opens `{ driver: 'bun-sqlite', url: path }`, sets WAL + `busy_timeout`, applies `KK_MIGRATIONS`, returns the DAO bundle plus `appliedMigrations`; closes the adapter when a migration fails |
 | `resolveStorePath(configFile?, explicitPath?)`, `DEFAULT_STORE_DB_PATH` | function / const | `--db` → `store.db_path` → `.works/kk.db`; expands `~`, resolves a relative path against cwd, creates parent dirs. Async: file IO goes through ts-runtime's `FileSystem` seam (the repo's `no-direct-fs-io` rule), and config path is passed in because `apps/cli` depends on this package, never the reverse |
-| `canonicalUrl(url)`, `itemId(doc)` | functions | Pure identity helpers: lowercase scheme/host, drop the fragment and `utm_*`/`ref`/`ref_src`/`fbclid`/`gclid`, sort the remaining query params, strip the trailing slash (root excepted). `itemId` = `sha256(canonicalUrl)`, or `sha256(title + body)` for a URL-less Doc |
+| `canonicalUrl(url)`, `itemId(doc)`, `outboundUrls(text)` | functions | Pure identity helpers: lowercase scheme/host, drop the fragment and `utm_*`/`ref`/`ref_src`/`fbclid`/`gclid`, sort the remaining query params, strip the trailing slash (root excepted). `itemId` = `sha256(canonicalUrl)`, or `sha256(title + body)` for a URL-less Doc. `outboundUrls` returns the deduped canonicalized http(s) links in a body (trailing prose punctuation stripped) — the item's outbound identity for story clustering (0316 R1) |
 | `ItemsDao`, `CollectRunsDao`, `LabelsDao`, `SelectionsDao`, `LocksDao` | classes | ts-db `EntityDao` subclasses over `items`, `collect_runs`, `labels`, `selections`, `locks`. `ItemsDao.upsertDocs(runId, docs)` upserts in one transaction and deletes that item's `labels` rows when `content_hash` changes; `LabelsDao.upsertLabel(input)` writes `value`/`score`/`confidence`/`run_id` per (item, decision), its `confidence` being the `HIGH \| MEDIUM \| LOW` verdict level (`labelConfidence(source, confidence)` maps the model's 0–1 payload into the enum, `verdictConfidence(levels)` is a pass's weakest level); `LocksDao.acquire(name, runId, ttlMs)` is the single-flight primitive (a stale holder is stolen past `acquired_at + ttl_ms`) |
 | `itemFacts(doc)`, `ItemFacts`, `SourceTier` | function / types | The deterministic fact columns (0227 R1): `engagement`, `bodyChars`, `sourceTier`, `lang`, `domain` |
-| `storyTokens(title)`, `storyIdFor(title, candidates, threshold)`, `StoryPolicy`, `StoryCandidate`, `DEFAULT_STORY_POLICY`, `DEFAULT_STORY_THRESHOLD`, `DEFAULT_STORY_WINDOW_HOURS` | functions / types / consts | Deterministic title-clustering key (0227 R2): CJK bigrams + Latin words, Jaccard at `>= threshold`, ties by earliest `first_seen_at` then smallest `id` |
+| `storyTokens(title)`, `storyIdFor(title, candidates, threshold)`, `storyIdForUrls(urls, candidates)`, `StoryPolicy`, `StoryCandidate`, `StoryUrlIdentity`, `DEFAULT_STORY_POLICY`, `DEFAULT_STORY_THRESHOLD`, `DEFAULT_STORY_WINDOW_HOURS` | functions / types / consts | Deterministic story key (0227 R2; URL identity 0316 R1): `storyIdForUrls` matches URL identity first — the item's own `canonical_url` or its `bodyUrls` against a candidate's `canonicalUrl`/`bodyUrls`, either direction — then `storyIdFor` clusters titles: CJK bigrams + Latin words, Jaccard at `>= threshold`; ties by earliest `first_seen_at` then smallest `id` |
 | `ItemRecord`, `UpsertDocsResult`, `CollectRunRecord`, `LabelRecord`, `LabelSource`, `LabelConfidence`, `LockRecord`, … | types | Row and input types for the DAOs above; `LabelRecord.confidence` is the `HIGH \| MEDIUM \| LOW` level, `null` only on a row no `kk store label` pass wrote |
 
 Migrations are embedded `KkMigration[]` (`{id, sql}`, append-only; `0001_kk_store_init` + `0002_labels_confidence_run_id` today) whose
