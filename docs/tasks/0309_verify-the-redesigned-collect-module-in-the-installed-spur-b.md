@@ -4,7 +4,7 @@ name: Verify the redesigned Collect module in the installed Spur Board against t
 status: done
 template: feature-impl
 created_at: 2026-10-17T05:04:06.960Z
-updated_at: "2026-10-18T00:40:52.460Z"
+updated_at: "2026-10-18T21:05:34.284Z"
 feature_id: G81
 priority: P2
 tags:
@@ -165,13 +165,13 @@ Operator command for their own checkout: `bun <repo>/apps/board/scripts/verify-c
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Real DAO-seeded installed Board: overview at `apps/board/tests/installed-board.test.ts:972`, funnel and quality at `apps/board/tests/installed-board.test.ts:1002`, items paging/filter at `apps/board/tests/installed-board.test.ts:1055`; complete interaction windows assert zero console errors. Fresh focused suite: 151 pass, 0 fail across eight files (.spur/run/g81-reverify/focused.log); subset coverage exits 1, not a test failure. Fresh installed Chromium suite: 19 pass, 0 fail (.spur/run/g81-reverify/switch-green.log); subset coverage exits 1. |
-| R2 | MET | Missing-file scenario at `apps/board/tests/installed-board.test.ts:1107` verifies store diagnostic, retained progress and no file creation. Fresh focused suite: 151 pass, 0 fail across eight files (.spur/run/g81-reverify/focused.log); subset coverage exits 1, not a test failure. Fresh installed Chromium suite: 19 pass, 0 fail (.spur/run/g81-reverify/switch-green.log); subset coverage exits 1. |
-| R3 | MET | Fresh live script passed all five tab/run checks; real store and WAL bytes, schema and 55/353/5741/145 row counts unchanged. Artifact: .works/.board/verify/2026-10-18T00-39-00-759Z/report.json plus screenshots. Eight expected capture-missing 404 messages, zero unexpected errors. Script check/report at `apps/board/scripts/verify-collect-live.ts:599`. Store read in place through symlink; Spur plane copied into a temporary Board project. Fresh focused suite: 151 pass, 0 fail across eight files (.spur/run/g81-reverify/focused.log); subset coverage exits 1, not a test failure. Fresh installed Chromium suite: 19 pass, 0 fail (.spur/run/g81-reverify/switch-green.log); subset coverage exits 1. |
+| R1 | MET | Seeded-store Collect scenario on the installed Board — `apps/board/tests/installed-board.test.ts` 19 pass / 0 fail (bun test, this run; real Chromium). |
+| R2 | MET | Store-removed scenario shows `board.store.missing` in the store panels while Execution progress renders; the request does not create the file — same installed suite. |
+| R3 | MET | Live script re-run this session: all five tab/run checks PASS (overview banner on-schedule, funnel + 16 label-quality histogram rows, items paging "Page 1 of 3 · 51 items", no-store-row run states); store db/wal sha256 and `sqlite_master` byte-identical before/after; row counts {collect_runs:60, items:368, labels:6052, selections:151}; artifact `.works/.board/verify/2026-10-18T21-04-55-862Z/report.json` + screenshots. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Scenario: R11 — Installed Board verification against the real store | MET | command | Fresh live script passed all five tab/run checks; real store and WAL bytes, schema and 55/353/5741/145 row counts unchanged. Artifact: .works/.board/verify/2026-10-18T00-39-00-759Z/report.json plus screenshots. Eight expected capture-missing 404 messages, zero unexpected errors. Script check/report at `apps/board/scripts/verify-collect-live.ts:599`. Store read in place through symlink; Spur plane copied into a temporary Board project. Fresh focused suite: 151 pass, 0 fail across eight files (.spur/run/g81-reverify/focused.log); subset coverage exits 1, not a test failure. Fresh installed Chromium suite: 19 pass, 0 fail (.spur/run/g81-reverify/switch-green.log); subset coverage exits 1. |
+| Scenario: R11 — Installed Board verification against the real store | MET | command | `bun apps/board/scripts/verify-collect-live.ts --project <checkout>` exit 0 this run — all five checks PASS, before/after digests identical (`apps/board/scripts/verify-collect-live.ts:599`); installed suite `apps/board/tests/installed-board.test.ts` 19 pass / 0 fail this run. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
