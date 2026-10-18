@@ -13,7 +13,7 @@ updated_at: "2026-10-08T03:14:38.696Z"
 
 ## Goal
 
-Home for the IT-content workflow `plugins/kk/workflows/kk-itc.yaml` (rough idea → multi-platform publish).
+Home for the IT-content workflow `plugins/kk/workflows/kk-itc.yaml` (rough idea → multi-platform publish) and its publish-tail re-entry `plugins/kk/workflows/kk-itc-publish-tail.yaml` (task 0310).
 
 ## Scope
 

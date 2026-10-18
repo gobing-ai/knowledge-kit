@@ -568,6 +568,84 @@ describe('itcReportSummary (0302 / G21 R5)', () => {
     });
 });
 
+/**
+ * Task 0310 (G21 R5) — re-entering a failed publish tail stays bound to the run that froze the
+ * snapshot. The tail run has its own fresh id, but `itc-options.json` still names the failed run,
+ * so every receipt it writes carries that id and a target the failed run already published is not
+ * dispatched a second time.
+ */
+describe('publish tail re-entry binding (0310 R5)', () => {
+    it('binds new receipts to the frozen run, skips an already-succeeded target and reports PASS', async () => {
+        await withTempDir(async (workDir) => {
+            const publishDir = join(workDir, '4-publish');
+            const receiptsDir = join(publishDir, 'receipts');
+            mkdirSync(receiptsDir, { recursive: true });
+            const failedRun = 'kk-itc-failed-0310';
+            const planRaw = JSON.stringify({
+                schemaVersion: 1,
+                parentRunId: failedRun,
+                live: false,
+                targets: ['pub-sent', 'pub-pending'].map((plugin) => ({ plugin, profile: 'article', mode: 'draft' })),
+            });
+            writeFileSync(join(publishDir, 'publish-plan.json'), planRaw);
+            // The failed run got this far: its receipt is current for the frozen plan.
+            seedReceipt(receiptsDir, 'pub-sent', {
+                parentRunId: failedRun,
+                planDigest: createHash('sha256').update(planRaw).digest('hex'),
+                status: 'succeeded',
+                effect: 'confirmed',
+            });
+            seedRun(workDir, failedRun);
+
+            const dispatched: string[] = [];
+            const dispatch = async (argv: string[]): Promise<number> => {
+                const target = argv[argv.indexOf('--target') + 1] ?? '';
+                dispatched.push(target);
+                writeFileSync(
+                    argv[argv.indexOf('--out') + 1] ?? '',
+                    JSON.stringify({ targets: [{ target, ok: true, status: 'published' }] }),
+                );
+                return 0;
+            };
+            expect(await itcSendTargets([workDir], undefined, dispatch)).toBe(0);
+
+            // Nothing is published twice, and the new receipt belongs to the failed run.
+            expect(dispatched).toEqual(['pub-pending']);
+            const pending = JSON.parse(readFileSync(join(receiptsDir, 'pub-pending.json'), 'utf-8'));
+            expect(pending.parentRunId).toBe(failedRun);
+            expect(pending.status).toBe('succeeded');
+
+            expect(await itcReportSummary([workDir, '2'])).toBe(0);
+            const rep = JSON.parse(readFileSync(join(workDir, '5-report/report.json'), 'utf-8'));
+            expect(rep.outcome).toBe('done');
+            expect(rep.verdict).toBe('PASS');
+            expect(rep.targetContractFailure).toBeUndefined();
+        });
+    });
+
+    // The HIGH/MEDIUM/LOW enum is enforced where the verdict is written (`itc-author-verdict`);
+    // re-entry only reports the frozen verdict, so every accepted level must still report a pass.
+    it.each(['HIGH', 'MEDIUM', 'LOW'])('reports a frozen PASS + %s verdict as PASS after re-entry', async (level) => {
+        await withTempDir(async (workDir) => {
+            writeFileSync(join(workDir, '.itc-verdict.json'), JSON.stringify({ verdict: 'PASS', confidence: level }));
+            expect(await itcReportSummary([workDir, '2'])).toBe(0);
+            const rep = JSON.parse(readFileSync(join(workDir, '5-report/report.json'), 'utf-8'));
+            expect(rep.verdict).toBe('PASS');
+            expect(rep.outcome).toBe('done');
+        });
+    });
+
+    it('reports a frozen non-PASS verdict as failed, not as a pass', async () => {
+        await withTempDir(async (workDir) => {
+            writeFileSync(join(workDir, '.itc-verdict.json'), JSON.stringify({ verdict: 'FAIL', confidence: 'HIGH' }));
+            expect(await itcReportSummary([workDir, '2'])).toBe(0);
+            const rep = JSON.parse(readFileSync(join(workDir, '5-report/report.json'), 'utf-8'));
+            expect(rep.verdict).toBe('FAIL');
+            expect(rep.outcome).toBe('failed');
+        });
+    });
+});
+
 describe('itcMaterializePlan from the frozen snapshot (0300 R1 / 0301 R1)', () => {
     // A package root the preset resolver discovers from cwd: one preset plus a topic profile
     // that suggests it, so the snapshot's preset sources resolve without the shipped catalog.

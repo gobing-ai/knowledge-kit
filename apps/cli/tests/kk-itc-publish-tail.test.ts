@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ContentSchema } from '@gobing-ai/kk-core';
@@ -17,6 +17,7 @@ const REPO = join(import.meta.dir, '../../..');
 const STAGES = join(REPO, 'plugins/kk/scripts/kk-workflow-stages.ts');
 const CLI = join(REPO, 'apps/cli/src/index.ts');
 const WORKFLOW = join(REPO, 'plugins/kk/workflows/kk-itc.yaml');
+const TAIL = join(REPO, 'plugins/kk/workflows/kk-itc-publish-tail.yaml');
 
 interface RunResult {
     status: number;
@@ -178,5 +179,181 @@ describe('kk-itc publish tail (0151)', () => {
         expect(summary.finalState === 'done' || summary.finalState === 'dag').toBe(true);
         expect(existsSync(join(workDir, '.spur/spur.db'))).toBe(true); // 0247 R3: the row lives in the temp workspace
         // --no-log: the run-record write contends under concurrent spur use (refine measured 5-8x); nothing here reads the record. Measured: ~0.7-1.1s idle, ~2.2s with 8 concurrent walks — 30s is headroom, not a budget.
+    }, 30_000);
+});
+
+/**
+ * Task 0310 (G21 R1-R6) — the re-entry seam for a failed publish. `plugins/kk/workflows/
+ * kk-itc-publish-tail.yaml` is the whole public surface: a second DAG holding only the seven
+ * post-authoring nodes, so a failed tail can be re-entered without re-running authoring and
+ * without any way to skip `send-confirm`. The definition tests below are the drift net for the
+ * duplicated node bodies; the walk is the one-command re-entry.
+ */
+interface DagNode {
+    id: string;
+    description?: string;
+    dependsOn?: string[];
+    pause?: boolean;
+    action?: unknown;
+    condition?: unknown;
+}
+
+const nodesOf = (file: string): DagNode[] =>
+    (Bun.YAML.parse(readFileSync(file, 'utf-8')) as { nodes: DagNode[] }).nodes;
+
+const TAIL_NODES = [
+    'check-targets',
+    'send-confirm',
+    'fanout-send',
+    'fanout-recovery',
+    'reconcile-settle',
+    'seo',
+    'report',
+];
+/** Authoring and plan-materializing nodes: absent so no invocation of the tail can reach them. */
+const AUTHORING_NODES = [
+    'prepare',
+    'child-author',
+    'verify-child-freeze',
+    'illustrate',
+    'materialize-plan',
+    'adapt',
+    'adapt-verify',
+];
+
+describe('kk-itc publish tail definition (0310 R1-R3)', () => {
+    it('R1 — declares exactly the seven post-authoring nodes and no authoring node', () => {
+        const parsed = Bun.YAML.parse(readFileSync(TAIL, 'utf-8')) as {
+            name: string;
+            kind: string;
+            version: string;
+            nodes: DagNode[];
+        };
+        expect(parsed.name).toBe('kk-itc-publish-tail');
+        expect(parsed.kind).toBe('dag');
+        expect(parsed.version).toBe('2');
+
+        const ids = parsed.nodes.map((n) => n.id);
+        expect(ids.sort()).toEqual([...TAIL_NODES].sort());
+        for (const id of AUTHORING_NODES) expect(ids).not.toContain(id);
+        // Run identity is frozen in itc-options.json; a fresh tail run id must never leak into a node.
+        // Runtime-assembled so lint's noTemplateCurlyInString stays quiet (same dodge as varRef).
+        expect(readFileSync(TAIL, 'utf-8')).not.toContain(['$' + '{vars.', 'runId}'].join('__'));
+    });
+
+    it('R1/R4 — passes spur workflow validate', () => {
+        const res = Bun.spawnSync(['spur', 'workflow', 'validate', TAIL], { stdout: 'pipe', stderr: 'pipe' });
+        expect(res.exitCode, res.stderr.toString()).toBe(0);
+    });
+
+    it('R3 — every shared node is byte-identical to kk-itc.yaml, naming the drifted node', () => {
+        const main = new Map(nodesOf(WORKFLOW).map((n) => [n.id, n]));
+        for (const node of nodesOf(TAIL)) {
+            const source = main.get(node.id);
+            expect(source, `${node.id}: no such node in kk-itc.yaml`).toBeDefined();
+            expect({ node: node.id, action: node.action, condition: node.condition, pause: node.pause }).toEqual({
+                node: node.id,
+                action: source?.action,
+                condition: source?.condition,
+                pause: source?.pause,
+            });
+        }
+    });
+
+    it('R2 — keeps the judge confidence gate upstream: the tail invokes no verdict producer', () => {
+        const raw = readFileSync(TAIL, 'utf-8');
+        // The HIGH/MEDIUM/LOW enum is enforced where the verdict is written (`itc-author-verdict` /
+        // `itc-author-complete`, covered by itc-stages and verdict-confidence tests). A re-entered
+        // publish must not re-derive or launder a verdict, so neither stage is reachable from the tail
+        // and no node guard reads a verdict (the shared consumer scan now covers DAG conditions too).
+        expect(raw).not.toContain('itc-author-verdict');
+        expect(raw).not.toContain('itc-author-complete');
+        for (const node of nodesOf(TAIL)) expect(JSON.stringify(node.condition ?? '')).not.toMatch(/verdict/i);
+    });
+
+    it('R2 — the live-send approval still sits between the probes and the fan-out', () => {
+        const nodes = nodesOf(TAIL);
+        const byId = new Map(nodes.map((n) => [n.id, n]));
+        expect(byId.get('send-confirm')?.pause).toBe(true);
+        // Still the live-plan guard (the same bytes kk-itc.yaml carries, per the drift test above).
+        const guard = (byId.get('send-confirm')?.condition as { options?: { command?: string } } | undefined)?.options
+            ?.command;
+        expect(guard).toContain('.live == true');
+        expect(guard).toContain('publish-plan.json');
+        // The only way into fanout-send: a re-entered tail cannot reach a send without the pause.
+        const senders = nodes.filter((n) => (n.dependsOn ?? []).includes('fanout-send')).map((n) => n.id);
+        expect(senders).toEqual(['fanout-recovery']);
+        expect(byId.get('fanout-send')?.dependsOn).toEqual(['send-confirm']);
+        expect(byId.get('report')?.dependsOn).toEqual(['reconcile-settle', 'seo']);
+    });
+});
+
+describe('kk-itc publish tail re-entry (0310 R4, R5)', () => {
+    const FAILED_RUN = 'kk-itc-failed-0310';
+
+    /** The work dir a failed publish left behind: frozen snapshot, plan and draft, one target. */
+    function seedFailedWorkDir(): string {
+        const workDir = mkdtempSync(join(tmpdir(), 'kk-itc-tail-reentry-'));
+        mkdirSync(join(workDir, '4-publish'), { recursive: true });
+        writeFileSync(join(workDir, '3-draft-draft-article.md'), '# Re-entry\n\nBody of the re-entered draft.\n');
+        writeFileSync(
+            join(workDir, 'itc-options.json'),
+            JSON.stringify({ parentRunId: FAILED_RUN, seo: 'prepublish', maxRevisions: 2 }),
+        );
+        writeFileSync(
+            join(workDir, '4-publish/publish-plan.json'),
+            JSON.stringify({
+                schemaVersion: 1,
+                parentRunId: FAILED_RUN,
+                live: false,
+                targets: [
+                    {
+                        plugin: 'zenn-pub',
+                        profile: 'article',
+                        mode: 'draft',
+                        variant: 'en-article',
+                        payloadPath: '4-publish/content.json',
+                    },
+                ],
+            }),
+        );
+        return workDir;
+    }
+
+    it('R4 — one command re-enters at check-targets in a fresh run and invokes no authoring', () => {
+        const workDir = seedFailedWorkDir();
+        const env = { ...process.env, SPUR_WORKFLOW_RUN_ACTIVE: undefined, SPUR_EXPECTED_DEFINITION_DIGEST: undefined };
+        const result = Bun.spawnSync(
+            [
+                'spur',
+                'workflow',
+                'run',
+                TAIL,
+                '--dry-run',
+                '--no-log',
+                '--json',
+                '--vars',
+                JSON.stringify({ work_dir: workDir }),
+            ],
+            // A temp cwd keeps the run row out of the repo's .spur/spur.db (0247 R3).
+            { cwd: workDir, env, stdout: 'pipe', stderr: 'pipe' },
+        );
+        expect(result.exitCode, `${result.stdout.toString()}\n${result.stderr.toString()}`).toBe(0);
+        const summary = JSON.parse(result.stdout.toString());
+        expect(summary.status).toBe('done');
+        // A fresh run of the tail itself: not the failed run, not the author DAG.
+        expect(summary.workflowName).toBe('kk-itc-publish-tail');
+
+        const trace = Bun.spawnSync(['spur', 'workflow', 'trace', '--json'], {
+            cwd: workDir,
+            env,
+            stdout: 'pipe',
+            stderr: 'pipe',
+        });
+        const entries = (JSON.parse(trace.stdout.toString()) as { entries: { workflowName: string }[] }).entries;
+        expect(entries.map((e) => e.workflowName)).toEqual(['kk-itc-publish-tail']);
+
+        // The freeze belongs to the failed run and stays untouched by the re-entry.
+        expect(JSON.parse(readFileSync(join(workDir, 'itc-options.json'), 'utf-8')).parentRunId).toBe(FAILED_RUN);
     }, 30_000);
 });

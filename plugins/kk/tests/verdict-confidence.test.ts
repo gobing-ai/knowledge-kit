@@ -83,24 +83,36 @@ const varRef = (name: string): string => ['$' + '{vars.', name, '}'].join('');
 
 const VARS_REF = /\$\{vars\.([\w.]+)\}/g;
 
-/** Parse a workflow and unwrap each transition's guard command (`null` = a non-shell guard). */
+/** Parse a workflow and unwrap each guard command (`null` = a non-shell guard). */
 function load(rel: string): Workflow {
     const parsed = Bun.YAML.parse(readFileSync(join(REPO, rel), 'utf-8')) as {
         vars?: Record<string, string>;
         transitions?: RawTransition[];
+        nodes?: { id?: string; condition?: RawTransition['guard'] }[];
     };
+    const command = (guard: RawTransition['guard']): string | null =>
+        guard?.kind === 'shell' ? String(guard.options?.command ?? '') : null;
     return {
         rel,
         vars: { ...(parsed.vars ?? {}) },
-        // A `kind: dag` workflow has no top-level transitions (task 0211) — and today carries no
-        // `jq -r .*verdict` guards either, so an empty list scans it correctly. If the DAG ever
-        // grows verdict guards inside node conditions, teach load() to unwrap nodes instead.
-        transitions: (parsed.transitions ?? []).map((t) => ({
-            from: t.from,
-            to: t.to,
-            description: t.description ?? '',
-            command: t.guard?.kind === 'shell' ? String(t.guard?.options?.command ?? '') : null,
-        })),
+        transitions: [
+            ...(parsed.transitions ?? []).map((t) => ({
+                from: t.from,
+                to: t.to,
+                description: t.description ?? '',
+                command: command(t.guard),
+            })),
+            // A `kind: dag` workflow (task 0211) has no top-level transitions: its guards are the
+            // node `condition`s, unwrapped here as `<node>->condition` so a DAG verdict read cannot
+            // sit outside the confidence contract (task 0310 — the publish-tail re-entry seam is a
+            // DAG whose only guard is a node condition).
+            ...(parsed.nodes ?? []).map((n) => ({
+                from: n.id ?? '?',
+                to: 'condition',
+                description: `condition of ${n.id ?? '?'}`,
+                command: command(n.condition),
+            })),
+        ],
     };
 }
 
@@ -568,6 +580,23 @@ describe('every judge-verdict consumer verifies confidence', () => {
             expect(offenders).toEqual([]);
         },
     );
+
+    it('scans dag node conditions, so the publish-tail re-entry seam has no blind spot', () => {
+        const conditions = workflows.flatMap((w) =>
+            w.transitions
+                .filter((t) => t.to === 'condition' && t.command !== null)
+                .map((t) => ({ rel: w.rel, id: t.from })),
+        );
+        const ids = conditions.map((c) => `${c.rel}:${c.id}`).sort();
+        // The live-send approval is the re-entry seam's only guard (task 0310).
+        expect(ids).toContain('plugins/kk/workflows/kk-itc-publish-tail.yaml:send-confirm');
+        // Non-vacuous: the scan's own predicates flag a DAG condition that accepts a bare PASS.
+        const unguarded = 'jq -r .verdict "$v" | grep -q \'= PASS\'';
+        const offender = acceptsPass(unguarded) && !/confidence/.test(unguarded);
+        expect(record('parser:dag-conditions', conditions.length > 0 && offender, ids.join(','))).toBe(true);
+        expect(conditions.length).toBeGreaterThan(0);
+        expect(offender).toBe(true);
+    });
 
     it('every confidence-aware guard resolves the verdict through the same jq filter', () => {
         // Five copies of the filter exist (three itc accept guards + its catch-all + the example's).

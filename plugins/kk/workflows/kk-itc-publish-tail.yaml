@@ -1,0 +1,90 @@
+---
+name: kk-itc-publish-tail
+kind: dag
+version: "2"
+description: >-
+  Re-entry seam for a failed kk-itc publish run: the seven post-authoring nodes only, so no
+  invocation can re-run authoring, and send-confirm keeps the live-send approval. Re-enter with
+  `spur workflow run plugins/kk/workflows/kk-itc-publish-tail.yaml --vars '{"work_dir":"<failed work_dir>"}'`.
+  Run identity comes from the frozen `$work_dir/itc-options.json` parentRunId, never from this run.
+
+vars:
+  work_dir: ""
+  # Declared for the engine's own injection; no tail node templates it (run identity is frozen).
+  __runId: ""
+  __definitionDigest: ""
+
+nodes:
+  - id: check-targets
+    description: "Check readiness probes for plannable publish targets"
+    action:
+      kind: shell
+      options:
+        command: >-
+          test -f "${vars.work_dir}/4-publish/publish-plan.json" || exit 0;
+          kk stage run itc-check-targets "${vars.work_dir}"
+
+  - id: send-confirm
+    description: >-
+      Operator approval of a LIVE send: `pause: true` stops the run and RESUME is the approval
+      (no action); cancelling is the rejection. Skipped for draft-only or empty plans.
+    dependsOn:
+      - check-targets
+    pause: true
+    condition:
+      kind: shell
+      options:
+        command: 'jq -e ".live == true and (.targets // [] | length) > 0" "${vars.work_dir}/4-publish/publish-plan.json" >/dev/null 2>&1'
+
+  - id: fanout-send
+    description: "Dispatch target payloads via executor fan-out and record receipts"
+    dependsOn:
+      - send-confirm
+    action:
+      kind: shell
+      options:
+        command: >-
+          test -f "${vars.work_dir}/4-publish/publish-plan.json" || exit 0;
+          kk stage run itc-send-targets "${vars.work_dir}"
+
+  - id: fanout-recovery
+    description: "Retry safe effect-none target failures once within budget"
+    dependsOn:
+      - fanout-send
+    action:
+      kind: shell
+      options:
+        command: >-
+          test -f "${vars.work_dir}/4-publish/publish-plan.json" || exit 0;
+          kk stage run itc-send-targets "${vars.work_dir}" --retry
+
+  - id: reconcile-settle
+    description: "Reconcile target receipts and settle store selection"
+    dependsOn:
+      - fanout-recovery
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage run itc-reconcile-receipts "${vars.work_dir}"
+
+  - id: seo
+    description: "Export SEO prepublish request and published pages handoffs"
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage run itc-export-seo "${vars.work_dir}" "$(jq -r '.seo' "${vars.work_dir}/itc-options.json")"
+
+  - id: report
+    description: "Produce final run report summary"
+    # Every tail branch: a skipped optional branch still satisfies the edge, so an all-skipped
+    # publication reports, but a report never races an unfinished send.
+    dependsOn:
+      - reconcile-settle
+      - seo
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage run itc-report-summary "${vars.work_dir}" "$(jq -r '.maxRevisions' "${vars.work_dir}/itc-options.json")"
