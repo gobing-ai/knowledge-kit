@@ -221,3 +221,14 @@ Receipt/SEO observations must distinguish requested mode from executor success. 
 Config resolution is two-phase for collected topics: validate/freeze intake defaults with workDir:null before ideation, then finalize the selected topic's prepared workspace/snapshot. Reject malformed config/source before mkdir or counter writes. Missing ITC config uses read-only defaults; other workflows retain their existing behavior. Force is a fresh identity and never silently deletes send receipts. A resume keeps its original path/options but cannot expand current Board trusted-root authority.
 
 The Board's existing ITC revision projection reads FSM state visits; after migration the parent DAG uses action rows and the author child supplies authorized progress. Bind child ID/definition/options/draft evidence before fetching child progress through existing run endpoints; missing authority stays unavailable/null, not synthetic zero. Retain historical FSM captures. Final implementation must exercise actual validators, store/executor boundaries and isolated real Spur continuation; the earlier marker-only probe does not certify production cancellation or crash recovery.
+
+## Known harness limitation — DAG mid-run fresh start (recorded 2026-10-18)
+
+Spur 0.4.x offers no engine-side way to start a DAG run at a chosen node: `startable` is not a
+DAG node key (`spur workflow validate` refuses `nodes.N: Unrecognized key: "startable"`) and
+`--from <node>` is refused for `kind: dag` (`not supported for kind: "dag" workflows — DAG runs
+resume at node level instead`). The verified re-entry seam is therefore the separate
+`plugins/kk/workflows/kk-itc-publish-tail.yaml` definition (task 0310), not a marker on the main
+DAG. If the engine later ships fresh-start support, the tail definition can be retired in favor of
+it; until then this note is the standing record (operator directive 2026-10-18: no deferred corpus
+task for this item).
