@@ -17,7 +17,13 @@ where:
   # heuristic labeler tops out at 1-2 and a gte-3 gate empties every real pool (task 0212 dogfood
   # finding). Raise this back when a full-text ingest source lands.
   kk-item-quality: { gte: 2 }
-  kk-item-importance: { gte: 3 }
+  # importance 2, not 3 (2026-10-18): this profile selects the *pool*; the 3-cutoff belongs to
+  # `daily-qc-content`, which backfills importance-only rejects (`backfillToFloor`, 20261002) so a
+  # thin news day deepens instead of shipping a stub. A gte-3 gate here front-ran that backfill and
+  # made it dead code on the store path: on 2026-10-18 the run closed `done-no-content` with a
+  # 2-item / 9.1-min pool while six quality-2, importance-2 AI items sat in the same 24h window.
+  # The key still has to be present — an unjudged item stays excluded (fail-closed INNER join).
+  kk-item-importance: { gte: 2 }
   # Conservative moderation gate (task 0229 R5): 0-1 is "no reference to the political system" or
   # "a factual policy/government mention as news context". A `where` key is an INNER join on
   # `labels_current`, so an item with NO current china-politics answer is excluded (fail-closed) —

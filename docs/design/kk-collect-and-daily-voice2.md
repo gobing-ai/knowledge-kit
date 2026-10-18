@@ -151,7 +151,11 @@ where:
   # quality gate is gte 2 (task 0212): the heuristic labeler tops out at 1-2 and a gte-3 gate
   # emptied every real pool
   kk-item-quality: { gte: 2 }
-  kk-item-importance: { gte: 3 }
+  # importance gate is gte 2 (2026-10-18): this profile selects the pool; the 3-cutoff belongs to
+  # `daily-qc-content`, whose `backfillToFloor` admits importance-only rejects on a thin day. A
+  # gte-3 gate here front-ran that backfill and made it dead code on the store path — 2026-10-18
+  # closed `done-no-content` on a 2-item pool while six quality-2/importance-2 AI items sat unused.
+  kk-item-importance: { gte: 2 }
   # 0229 R5 (conservative moderation gate): a `where` key is an INNER join on labels_current, so an
   # item with no current china-politics answer is EXCLUDED (fail-closed). 0-1 clears the gate.
   kk-item-china-politics: { lte: 1 }

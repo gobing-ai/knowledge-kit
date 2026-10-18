@@ -159,10 +159,15 @@ bootstrap:
           spur --no-logo workflow run plugins/kk/workflows/kk-daily-ai-voice2.yaml --quiet
           --vars "{\"publish_enabled\":\"true\",\"skip_review\":\"true\"}"
 
-      # 04:00, 10:00, 16:00, 22:00 daily: kk-collect standalone 6-hourly collection
+      # 04:05, 10:05, 16:05, 22:05 daily: kk-collect standalone 6-hourly collection
       # into the kk store (aihot + last30days + horizon -> store ingest -> label).
+      # :05 and not :35 (2026-10-18): the 04:30 kk-daily-ai-voice run reads the pool this job
+      # writes, so a :35 tick lands five minutes AFTER that run and leaves it a 6.5h-stale store
+      # (a separately installed launchd plist, 04:00, is the other feeder and was skipped as
+      # "service inactive" today). Measured collect 4.8-15.3 min, so :05 lands by ~04:20 either way;
+      # the launchd :00 tick and this one serialize on `kk store lock`, so the second of the pair skips.
       - name: kk-collect
-        cron: "35 4,10,16,22 * * *"
+        cron: "5 4,10,16,22 * * *"
         timeoutMs: 14400000
         command: spur --no-logo workflow run plugins/kk/workflows/kk-collect.yaml --quiet
 
