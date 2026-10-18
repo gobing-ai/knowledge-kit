@@ -67,14 +67,18 @@ Resolve these before step 2: `NAME`, `TOPIC`, `INPUT_FILE` (empty in sentence mo
 
 ```bash
 install -d "$(dirname "$config_path")"
-cat > "$config_path" <<'EOF'
-works_dir: "$HOME/.config/kk/works"
-workflows_dir: "$HOME/.config/kk/workflows"
+cat > "$config_path" <<EOF
+works_dir: "$PWD/.works"
 defaults:
   maxResults: 8
   fixture: false
 EOF
 ```
+
+`workflows_dir` is deliberately omitted (ADR-042): the shipped fallback chain is the primary
+source, and a stale user override silently wins over newer package copies. `works_dir` is pinned
+to the CURRENT directory's `.works` at creation time — the compiled default is cwd-relative, and
+a headless/cron caller needs a fixed root.
 
 - **Unreadable / unparseable / invalid types** (e.g. `maxResults: "eight"`) → exit 1, stderr
   names the key and expected vs actual type; touch nothing.
@@ -82,7 +86,7 @@ EOF
 
 | Value | Env override | Compiled default |
 | --- | --- | --- |
-| `works_dir` | `KK_WORKS_DIR` | `$HOME/.config/kk/works` |
+| `works_dir` | `KK_WORKS_DIR` | `<cwd>/.works` (ADR-042) |
 | `workflows_dir` | `KK_WORKFLOWS_DIR` | `$HOME/.config/kk/workflows` |
 | `defaults.maxResults` | — | `8` |
 | `defaults.fixture` | — | `false` |

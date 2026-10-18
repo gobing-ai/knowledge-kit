@@ -83,7 +83,10 @@ describe('workflow-run command (0060)', () => {
     it('R2 — missing config creates on first run with compiled defaults and never overwrites', () => {
         expect(cmd).toContain('create-on-first-run');
         expect(cmd).toMatch(/works_dir:/);
-        expect(cmd).toMatch(/workflows_dir:/);
+        // ADR-042: the template pins works_dir to the creating cwd and omits workflows_dir — a
+        // stale user override silently wins over newer shipped workflow copies.
+        expect(cmd).toMatch(/works_dir: "\$PWD\/\.works"/);
+        expect(cmd).not.toMatch(/workflows_dir:/);
         expect(cmd).toContain('maxResults: 8');
         expect(cmd).toContain('fixture: false');
         expect(cmd).toContain('never overwrite an existing');
