@@ -98,6 +98,9 @@ states:
             - b
             - c
           var: __hitlAnswer
+          # No auto path skips this state, so the gate always asks the operator.
+          decision:
+            mode: never
 
   - id: outline-commit
     description: "Copy selected outline to outline-approved.md"
@@ -156,6 +159,9 @@ states:
         options:
           prompt: "Review VoiceScript at ${vars.work_dir}/3-script-voicescript.yaml. Approve for voice generation?"
           var: __hitlAnswer
+          # No auto path skips this state, so the gate always asks the operator.
+          decision:
+            mode: never
 
   - id: script-revise
     description: "Collect revision feedback from operator (bounded by 3 rounds)"

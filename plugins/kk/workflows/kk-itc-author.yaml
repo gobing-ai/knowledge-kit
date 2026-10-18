@@ -76,6 +76,9 @@ states:
             - b
             - c
           var: __hitlAnswer
+          # The auto paths bypass this state by edge guard, so this gate always asks the operator.
+          decision:
+            mode: never
 
   - id: outline-autopick
     description: "Auto mode — validate the writer's recommendation, then bind the bounded catalog decision (empty on defer)"
@@ -141,6 +144,9 @@ states:
         options:
           prompt: "Review draft at ${vars.work_dir}/3-draft-draft-article.md. Approve?"
           var: __hitlAnswer
+          # The auto paths bypass this state by edge guard, so this gate always asks the operator.
+          decision:
+            mode: never
 
   - id: draft-revise
     description: "Collect revision feedback from operator (bounded by 3 rounds)"
