@@ -36,8 +36,8 @@
 #                         "not re-fetched", "inferred", "unable to …").
 #
 # Why the earnedness arm exists. A row claiming HIGH with an empty Source cell is the claim-table
-# equivalent of a PASS without evidence — the same argument the sibling
-# `verification-confidence-level` rule makes for `Verification (` blocks. Scope is the ROW, not the
+# equivalent of a PASS without evidence — the same argument the retired
+# `verification-confidence-level` rule made for `Verification (` blocks. Scope is the ROW, not the
 # block: one weak row must not be laundered by a cited neighbour three lines up (which is why the
 # REPO's row format is per-claim, not per-document).
 #
@@ -46,7 +46,7 @@
 # that command resolved to (task 0157's row did exactly that). The trade is deliberate: the rule
 # prefers one honest `path:line` over accepting "I ran something".
 #
-# PRESENCE is deliberately not enforced, mirroring the sibling rule. Three documents in this repo
+# PRESENCE is deliberately not enforced, exactly as the retired sibling rule did not. Three documents in this repo
 # carry the convention and hundreds assert API/library facts without it, so a presence requirement
 # would fail the gate on history rather than on a defect: this rule judges what a block claims,
 # never whether a document claims. Requiring the block is a task-AC decision — an API/library-bearing

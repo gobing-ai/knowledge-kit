@@ -5,9 +5,9 @@ $schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
 # confidence` block holding a 4-column table `| Claim | Source | Local verification | Confidence |`
 # (docs/tasks/0155, 0156, 0157 — 38 rows before this rule landed). Nothing checked it, so the block
 # was prose: a row could claim HIGH with an empty Source cell, or invent a level outside the enum,
-# and no gate noticed. That is the same failure the sibling `verification-confidence-level` rule
-# closes for `Verification (` blocks — and this rule is that rule's second half, not a duplicate:
-# the sibling owns the close-out surface, this one owns the claim table.
+# and no gate noticed. The retired `verification-confidence-level` rule closed the same failure for
+# `Verification (` blocks until ADR-041 dropped the confidence families that graded an agent's own
+# answer; this rule survives because its level is bound to a citation it also enforces.
 #
 # Why source citations at all: a claim about an API, library, framework or version is externally
 # changeable, so the reader needs the artifact that was inspected (`path:line`, a URL) or an explicit
