@@ -32,9 +32,7 @@ nonexistent path still executed (`✗ 1 warning`, reported against `<workspace>`
 rules therefore lives in the checker's own discovery (`--run-dir` / `--workflows` / explicit path
 arguments), and the `include` block is a reader's summary of that scope. **Do not narrow an
 `exit-code` rule's globs expecting the rule to stop firing** — change the checker. Rules with this
-shape here: `structure/verification-confidence-level`, `structure/verdict-confidence-proof`,
-`structure/verification-answer-confidence-level`, `structure/verdict-artifact-confidence-level`,
-`structure/api-library-claim-citation`, `structure/scratch-citation-existence`,
+shape here: `structure/api-library-claim-citation`, `structure/scratch-citation-existence`,
 `strict/rule-files-structural`, `migration/rg-dialect`. (Content-scanning evaluators — `regex`, `rg`,
 `forbidden-import`, `secrets-scanner` — are the opposite trap: their globs match in *loose*
 substring/suffix mode, so a deep glob like `apps/**/*.ts` collapses to a fragment; see

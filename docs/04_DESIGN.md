@@ -835,8 +835,8 @@ row at the same content hash remains current), and no replay can
 displace production selection. There is no SQL VIEW (`bun:sqlite` ships window functions).
 
 **The confidence level (G31 R14, task 0213).** Every verdict this surface emits carries exactly one
-level from the closed `HIGH | MEDIUM | LOW` enum — the same vocabulary the judge-verdict gates and the
-`verification-confidence-level` rule use, in one contract rather than a fourth mechanism. The model's
+level from the closed `HIGH | MEDIUM | LOW` enum — the same vocabulary the judge-verdict gates use,
+in one contract rather than a fourth mechanism. The model's
 numeric 0–1 confidence is **mapped into the enum at this boundary** (`labels.confidence`) while the
 payload itself is kept beside it in `raw_confidence` (task 0226, so a backtest can re-rank without a
 new model call): `HIGH` at `>= 0.8`, `MEDIUM` at `>= 0.5`, `LOW` below it, and `LOW` for a

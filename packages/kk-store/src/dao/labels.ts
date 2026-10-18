@@ -4,8 +4,7 @@ import { labels } from '../schema/labels';
 
 /**
  * The closed confidence enum a label verdict carries (G31 R14) — the only values
- * `labels.confidence` may hold, and the same vocabulary the judge-verdict guards and the
- * `verification-confidence-level` rule already use.
+ * `labels.confidence` may hold, and the same vocabulary the judge-verdict guards use.
  */
 export const LABEL_CONFIDENCE_LEVELS = ['HIGH', 'MEDIUM', 'LOW'] as const;
 

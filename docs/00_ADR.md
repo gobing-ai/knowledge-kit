@@ -1474,3 +1474,15 @@ Login records optional `bot.json` facts — `lastLoginAt`, an estimated `expires
 **Why.** Independent production branches and explicit dependencies fit the expanded workflow, while revision loops, shared configuration and typed handoffs preserve reliable continuation and ownership.
 
 **Detail:** [kk-itc-refactor.md](design/kk-itc-refactor.md), revised graph, configuration and SEO sections. This amendment changes the prior topology recommendation; it does not claim the refactor is shipped.
+
+---
+
+## ADR-041: Repo gates do not grade agent answers with HIGH/MEDIUM/LOW labels
+
+**Status:** Accepted · **Date:** 2026-10-17 · **Parity:** spur-new ADR-138 ("retire every HIGH/MEDIUM/LOW confidence label", task 1221).
+
+**Decision.** Retire the three project rules that judged a confidence label an agent asserted about its own work: `run-answer-confidence-level` (run-plane review/verify answers), `review-record-confidence-level` (a task's `## Review`), and `verification-confidence-level` (a task's/Doc's `## Testing` and `Verification (` blocks) — files, checkers and falsification suites deleted, so the `structure` category and therefore `recommended-pre-check` no longer carry them. The product contract is untouched: `labels.confidence` keeps its closed `HIGH|MEDIUM|LOW` enum with the 0–1 mapping in `@gobing-ai/kk-store`, the judge-verdict guards keep their confidence-aware read, and `itc-author-verdict` / `itc-author-complete` / `itc-report-summary` still refuse a `PASS` without a level. Citation gates stay: `api-library-claim-citation` and `scratch-citation-existence` judge sources, not self-grades.
+
+**Why.** A self-graded level asserted nothing a deterministic check does not already carry, so the rules bought no re-checkable evidence while costing live friction: the run-plane rule fired on an answer whose `Confidence:` line was honest but uncited, and every repair made the label longer rather than the work better. Gates must rest on reproducible evidence (test output, `path:line`, exit status); a graded label is introspection, and enforcing it teaches agents to write the token instead of the evidence. The `api-library-claim-citation` claim table keeps its level cell only because it is bound to a per-row citation it also enforces.
+
+**Invariant.** No repo gate asserts, scores or derives a confidence level for agent-authored text. If a new check needs to express uncertainty, it must cite the artifact or name the gap — never a `HIGH|MEDIUM|LOW` label.
