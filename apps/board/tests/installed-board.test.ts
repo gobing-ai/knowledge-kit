@@ -1077,14 +1077,20 @@ describe('Collect store views over a seeded store (G81/0309 R1)', () => {
                 { timeout: 15_000 },
             );
             expect(await pager.innerText()).toContain('Page 2 of 2 · 27 items');
-            // Switching runs on page 2 must not carry the page over: `r-b` has no stored row, so a
-            // surviving page 2 would claim "No items match these filters." on an unreadable run
-            // (G81 / task 0312). Coming back to `r-a` restarts at page 1.
+            // Switching runs on page 2 must not carry the page over (G81 / task 0312): stored, `r-b`
+            // has no row, so the reader answers an available, empty page 1 — a fact 0308 §Items lets
+            // the panel state, pager included. A surviving page 2 would show up in that pager; the
+            // loading state in between has none, so waiting on the pager is what makes this
+            // deterministic (asserting "no empty claim" instead raced the response: CI caught the
+            // loaded page, local caught the loading one). Coming back to `r-a` restarts at page 1.
             await view.locator('.kk-board-run-selector select').selectOption('r-b');
-            await view.waitForFunction(() => !document.querySelector('.kk-collect-pager'), undefined, {
-                timeout: 15_000,
-            });
-            expect(await view.locator('.kk-collect-items').innerText()).not.toContain('No items match these filters.');
+            await view.waitForFunction(
+                () => document.querySelector('.kk-collect-pager')?.textContent?.includes('0 items') ?? false,
+                undefined,
+                { timeout: 15_000 },
+            );
+            expect(await pager.innerText()).toContain('Page 1 of 1 · 0 items');
+            expect(await rows.count()).toBe(0);
             await view.locator('.kk-board-run-selector select').selectOption('r-a');
             await view.waitForSelector('.kk-collect-items-table');
             expect(await pager.innerText()).toContain('Page 1 of 2 · 27 items');
