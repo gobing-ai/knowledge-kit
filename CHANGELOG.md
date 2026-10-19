@@ -1,3 +1,171 @@
+## [0.1.3] - 2026-10-18
+
+### Added
+
+- feat(store): cluster near-duplicate stories by URL identity (0316) (465d6cf9)
+<!-- src: packages/kk-store/src/story.ts:161 -->
+- feat(itc): record the judge's confidence level in the run report (d79c27b7)
+<!-- src: apps/cli/src/itc-publish.ts:705 -->
+- feat(kk-itc): publish-tail DAG as the failed-run re-entry seam (60cadb03)
+<!-- src: plugins/kk/workflows/kk-itc-publish-tail.yaml -->
+- feat(board): collect store views for the Collect module (G81 0307-0309) (3de9ac27)
+<!-- src: packages/kk-store/src/dao/collect-view.ts -->
+- feat(board): redesign the Collect module with Overview, Run detail and Items tabs (741a7c3b)
+<!-- src: apps/board/src/collect/panels.tsx:63 -->
+- feat(x-pub): add the article-zh profile (b447f390)
+<!-- src: plugins/publishings/x-pub/plugin.json:50 -->
+- feat(wechatmp-pub): fall back to metadata.coverImage for the article cover (c4a814d2)
+<!-- src: plugins/publishings/wechatmp-pub/src/modes.ts:231 -->
+- feat(board): serve read-only Collect store projections from the kk board reader (7179f9da)
+<!-- src: apps/cli/src/board/collect-store.ts:158 -->
+- feat(rules): gate confidence levels in run-plane review/verify answers (07ba7ec5)
+<!-- src: docs/00_ADR.md:1480 · the rule family was retired by ADR-041 -->
+- feat(kk): land A23 bot session facts and bot exec (76caf1e2)
+<!-- src: packages/publish-harness/src/bot.ts -->
+- feat(kk): add kk bot exec with a curl option subset (5f2e575f)
+<!-- src: apps/cli/src/byte-output.ts:27 -->
+- feat(kk): record bot session facts at login and show them in kk bot list (fd6ff8d6)
+<!-- src: packages/publish-harness/src/bot.ts:36 -->
+
+### Fixed
+
+- fix(store): merge summary-class twins via a lone reference URL (0316) (193ff9a6)
+<!-- src: packages/kk-store/src/dao/items.ts:184 -->
+- fix(workflow-run): drop workflows_dir from the first-run config template (7a38e0f0)
+<!-- src: plugins/kk/commands/workflow-run.md:70 -->
+- fix(cli): default the works root to <cwd>/.works, never the config root (d283ce71)
+<!-- src: apps/cli/src/itc-config.ts:372 -->
+- fix(kk): bind the HITL review gates to a decision point (1236 R3) (77c30e9f)
+<!-- src: plugins/kk/workflows/kk-itc-author.yaml:79 -->
+- fix(itc): redact config-injected values a probe echoes in its refusal detail (c06461bc)
+<!-- src: apps/cli/src/itc-publish.ts:361 -->
+- fix(kk): stop the ai-news pool profile front-running the thin-day QC backfill (08881724)
+<!-- src: plugins/kk/decisions/extract/ai-news.yaml:20 -->
+- fix(board): drop a previous run's response when the selection changes (76c7cf72)
+<!-- src: apps/board/src/collect/index.tsx:199 -->
+- fix(kk-store): stop a read-only open from converting the journal mode (770e3c44)
+<!-- src: packages/kk-store/src/db.ts:79 -->
+- fix(itc): never resend an unknown-effect live target; close the 0314/0315 residuals (430b9a8c)
+<!-- src: apps/cli/src/itc-publish.ts:432 -->
+- fix(itc): hand the readiness probe the same plugin env as the exec path (1d929de6)
+<!-- src: apps/cli/src/itc-publish.ts:342 -->
+- fix(board): reset the item page when the selected run changes (8b2b5df9)
+<!-- src: apps/board/src/collect/index.tsx:356 -->
+- fix(board): read a WAL checkpoint as a read-only side effect (2269ed30)
+<!-- src: apps/board/scripts/store-digest.ts:27 -->
+- fix(kk-store): never set journal_mode on a read-only open (63ec8b10)
+<!-- src: packages/kk-store/src/db.ts:69 -->
+- fix(kk): close the bot exec curl-parity gaps and redact redirect URLs (cfa8dd41)
+<!-- src: apps/cli/src/commands/bot.ts:250 -->
+- fix(itc-publish): re-dispatch re-attempts and surface probe refusal detail (0b9207c5)
+<!-- src: apps/cli/src/itc-publish.ts:353 -->
+- fix(itc-publish): hand plugins an absolute cover path (edfc87c1)
+<!-- src: apps/cli/src/itc-publish.ts:52 -->
+- fix(kk): write the itc author run ledger with jq, not a heredoc (bd1dc162)
+<!-- src: plugins/kk/workflows/kk-itc-author.yaml:40 -->
+- fix(spur): align feature-verification with the current CLI surface (c0875e47)
+<!-- src: plugins/kk/workflows/feature-verification.yaml -->
+
+### Changed
+
+- docs: correct stale 0317 citations to 0311 R3 (fb2b3865)
+<!-- src: apps/cli/src/itc-publish.ts:361 -->
+- docs(tasks): add 0317 follow-up for horizon-ingest outbound-link stripping (29a7d32a)
+- docs(tasks): updat tasks after verification (7fda350c)
+- docs: sync 03/04 architecture and design with story clustering by URL identity (0316) (43ce5d74)
+<!-- src: docs/03_ARCHITECTURE.md:150 -->
+- test: move test scratch dirs from repo root to .works/tmp/ (bcd2a9dc)
+<!-- src: AGENTS.md:260 -->
+- docs: add ADR-042 splitting the config root from the works root (8da0c6ad)
+<!-- src: docs/00_ADR.md:1492 -->
+- docs(tasks): updat tasks after refinment (382514bf)
+- chore(project): upgrade project dependencies (58489267)
+<!-- src: package.json:15 -->
+- docs(board): record the read-only store residual as resolved (0309 #6) (e24142e7)
+- docs(tasks): re-anchor the Collect-board redesign evidence tables (0308, 0309) (7151b54b)
+- chore(rules): drop dangling references to the retired confidence rule (0ece1f9f)
+<!-- src: .spur/rules/structure/api-library-claim-citation.yaml:8 -->
+- docs(tasks): re-anchor the Collect-board evidence table (0307) (7dfedbc4)
+- docs(design): record the DAG mid-run fresh-start harness limitation (0f4c0691)
+<!-- src: docs/design/kk-itc-refactor.md:225 -->
+- docs(report): add the 2026-10-18 history-anatomy report (b5366333)
+<!-- src: docs/report/2026-10-18-history-anatomy.md -->
+- docs(tasks): re-anchor the ITC and bot evidence tables to this run (6b454671)
+- test(kk): capture bot usage errors through the output seam (c6642038)
+<!-- src: apps/cli/tests/commands/bot.test.ts:95 -->
+- chore(rules): retire the confidence-level rule family (ADR-041) (a38288a4)
+<!-- src: docs/00_ADR.md:1480 -->
+- docs(tasks): file the daily-voice residuals as 0316 (bbe91b42)
+- test(kk-store): pin the ai-news importance gate at 2 (aeae8e16)
+<!-- src: packages/kk-store/tests/profile.test.ts:43 -->
+- docs(features): register the G211 and G212 profile-aware publish features (45fc3240)
+<!-- src: docs/features/INDEX.md:79 -->
+- test(board): extract the store-digest classifier and close the 0312/0313 residuals (3861c3d1)
+<!-- src: apps/board/scripts/store-digest.ts:38 -->
+- test(board): cover the live-store checkpoint classification (58bcbe26)
+<!-- src: apps/board/tests/scripts-live-digest.test.ts -->
+- docs(kk): record the A23 bot.json facts in the A22 satellite (04ca5db0)
+<!-- src: docs/design/kk-noun-verb-bots.md:67 -->
+- docs(context): record the G81 batch lessons and pitfalls (50801997)
+- chore(corpus): re-file the G81 batch residual follow-ups as 0312 and 0313 (4b5a9ef0)
+- chore(corpus): drop colliding residual follow-ups before landing (938944eb)
+- test(board): verify the Collect module on the installed Board and the live store (56c38412)
+<!-- src: apps/board/scripts/verify-collect-live.ts -->
+- docs(report): add the 2026-10-17 history-anatomy report (834ce08a)
+<!-- src: docs/report/2026-10-17-history-anatomy.md -->
+- docs(corpus): re-anchor the A23 verification records (794ee2aa)
+- docs(kk): document the A23 harness API rows in the surface table (24ef8aa9)
+<!-- src: docs/04_DESIGN.md:84 -->
+- docs(corpus): file kk-itc dogfood follow-ups (21227670)
+- chore(kk): add the itc-main publish preset (f667d41e)
+<!-- src: .kk/publish-presets/itc-main.json -->
+- docs(features): record A23 done (078177d2)
+<!-- src: docs/features/A23_kk-bot-session-facts-and-authenticated-exec.md -->
+- docs(kk): plan G81 collect module redesign as three tasks (78b4a0c6)
+<!-- src: docs/features/G81_collect-module-redesign-store-backed-run-results-progress-and-yield.md -->
+- docs(kk): accept read-only Collect store views over the kk store (ea549852)
+<!-- src: docs/design/collect-store-views.md -->
+- docs(kk): plan A23 bot session facts and bot exec (0e75b9d5)
+<!-- src: docs/features/A23_kk-bot-session-facts-and-authenticated-exec.md -->
+
+<!--
+Verification (2026-10-18, sp-dev-changelog): HIGH
+- Coverage: 66 bullets = 66 commits in the exact range @gobing-ai/knowledge-kit-v0.1.2..fb2b3865
+  (`git rev-list --count @gobing-ai/knowledge-kit-v0.1.2..fb2b3865` -> 66), each short hash exactly once
+  (the section's hashes against `git log --format=%h <range> | sort` -> empty diff in both directions,
+  0 duplicates). The tip is pinned to fb2b3865, the HEAD at generation time, so the count stays
+  checkable after this entry lands (HEAD is deliberately not the range end). `g8-0255-parked` is not an
+  ancestor of HEAD, so `git describe --tags --abbrev=0` resolved the range start to
+  @gobing-ai/knowledge-kit-v0.1.2.
+- Mapping: feat->Added 12, fix->Fixed 18, docs 24 + test 6 + chore 6 -> Changed 36 (12+18+36 = 66). The
+  header carries the operator-supplied `--version 0.1.3`; no tag exists for it (`git tag -l "*0.1.3*"` ->
+  empty) and apps/cli/package.json:3 still reads 0.1.2, so this section names a planned version, not a
+  published artifact.
+- Claim annotations: 53 of the 66 bullets assert what code, a workflow, a config, a rule or a checked-in
+  artifact does and carry exactly one `src:` comment holding one anchor — 40 `path:line`, 13 whole-file
+  path. The other 13 are bookkeeping — task status records, evidence-table re-anchors, corpus filings,
+  context entries — and carry none, the same line the 0.1.0 and 0.0.35 entries drew.
+- The two merge commits carry a path anchor rather than a line, because the bullet claims what the merge
+  landed: 3de9ac27 cites packages/kk-store/src/dao/collect-view.ts, 76caf1e2 cites
+  packages/publish-harness/src/bot.ts.
+- Anchor derivation: each anchor comes from that commit's own `-U0` added lines
+  (`git show -U0 --format= <hash> -- <path>`) matched back into the working tree, then the cited line was
+  read in the tree to confirm it carries the claimed behaviour — not copied from a hunk header, which
+  drifts. An artifact deleted later in the same range cites its owner instead: 07ba7ec5 (the
+  confidence-level run-plane gate) cites docs/00_ADR.md:1480, because ADR-041 deleted its rule files.
+- Confidence: HIGH — coverage and mapping reconcile against `git log` for the range, `git show --stat`
+  confirms every cited file exists at the cited path, all 40 `path:line` anchors were re-read in the tree
+  (e.g. packages/kk-store/src/dao/items.ts:184, apps/cli/src/itc-publish.ts:705,
+  plugins/kk/decisions/extract/ai-news.yaml:20), and the level is earned by those citations.
+  Deliberately NOT claimed: this entry verifies provenance — range, mapping, anchors, the level — not the
+  truth of each commit message beyond the cited line, and no bullet's runtime behaviour was exercised;
+  the 13 unannotated bullets rest on the bookkeeping classification above, so a mis-classified one would
+  be unannotated rather than wrong. The rule that owns this check was retired by ADR-041, so it was run
+  by hand from the pre-retirement revision — `git show a38288a4^:.spur/rules/structure/
+  verification-confidence-level.sh` -> /tmp/vcl.sh, then `sh /tmp/vcl.sh CHANGELOG.md` -> exit 0 (this
+  block carries exactly one `Confidence:` line and it cites); no gate enforces it now.
+-->
+
 ## [0.1.2] - 2026-10-16
 
 ### Fixed
