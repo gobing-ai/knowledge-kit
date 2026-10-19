@@ -427,7 +427,11 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
         const readers = dag.nodes.filter((node) => node.action?.kind === 'file.read.into-var').map((node) => node.id);
         expect(readers).toEqual(['read-work-dir', 'read-run-date'] as string[]);
         const extract = dag.nodes.find((node) => node.id === 'extract');
-        expect(String(extract?.action?.options?.command)).toContain('kk store extract --topic ai-news');
+        // 2026-10-19: the pool comes through the `daily-extract` stage, which owns the conditional
+        // window ladder; the topic and the floor/vdriver inputs that gate that ladder stay pinned.
+        expect(String(extract?.action?.options?.command)).toContain('kk stage daily-extract');
+        expect(String(extract?.action?.options?.command)).toContain('ai-news');
+        expect(String(extract?.action?.options?.command)).toContain('"${vars.episode_min_minutes}"');
         // 0228 R6c: exclusion is topic-scoped and always on; the workflow-scoped flag is gone.
         expect(String(extract?.action?.options?.command)).not.toContain('--exclude-used');
         // …and the old workflow-keyed ledger verb is gone from the DAG entirely (R5).
@@ -1108,7 +1112,7 @@ describe('kk-daily-ai-voice2 — independent branches run concurrently and fan i
         // Ordering: extract → plan → qc-content → … → run-report → ledger.
         const order = outcome.log.map((line) => line.split(' ').slice(0, 3).join(' '));
         const index = (needle: string): number => order.findIndex((line) => line.includes(needle));
-        expect(index('store extract')).toBeLessThan(index('stage daily-plan'));
+        expect(index('stage daily-extract')).toBeLessThan(index('stage daily-plan'));
         expect(index('stage daily-plan')).toBeLessThan(index('stage daily-qc-content'));
         expect(index('daily run-report')).toBeLessThan(index('ledger sync'));
         saveArtifact(`${outcome.runId}-calls.log`, outcome.log.join('\n'));

@@ -284,6 +284,79 @@ function applyFloorGate(
     );
 }
 
+/** Widest window the extract ladder may reach; a "daily" show must not import a week-old story. */
+const LADDER_MAX_MS = 72 * 3_600_000;
+
+const WINDOW_UNIT_MS: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
+
+/** `'24h'` → milliseconds, mirroring `kk store extract --window`'s grammar. null when unparsable. */
+function parseWindowMs(window: string): number | null {
+    const match = /^(\d+)([smhd])$/.exec(window.trim());
+    if (match === null) return null;
+    const unit = WINDOW_UNIT_MS[match[2] as string];
+    const ms = Number(match[1]) * (unit ?? 0);
+    return ms > 0 ? ms : null;
+}
+
+/** Milliseconds → the hour form the store CLI takes. Whole hours only: every ladder step is ×2/×3. */
+function formatWindowMs(ms: number): string {
+    return `${Math.max(1, Math.round(ms / 3_600_000))}h`;
+}
+
+/**
+ * Pool extraction with a conditional window ladder (2026-10-19 operator decision, superseding the
+ * 0266 D1 blanket rejection). `kk store extract` reads one first_seen window and `applyFloorGate`
+ * then refuses a pool that cannot reach `episode_min_minutes`. Together they ate whole days: an
+ * episode consumes 6-12 stories while a day of collection adds ~3-13 qualifying ones, so the 04:30
+ * runs of 2026-10-18 and 2026-10-19 saw 2- and 3-item pools and closed as no-content while older
+ * unselected items sat in the store. The ladder keeps the configured window as the first choice and
+ * widens (×2, ×3, capped at 72h) ONLY when that pool's estimate misses the floor — a rich day is
+ * extracted exactly once, and a thin one is filled from the backlog instead of dropped.
+ *
+ * The store's `selections` ledger still excludes every story a previous run took, so a widened
+ * window can only add items no episode has used. The estimate here runs on the raw pool (before QC
+ * and dedup), so it is an upper bound: the ladder can stop one step early, never one late.
+ */
+export function dailyExtract(args: string[]): void {
+    const [workDir = '', topic = '', window = '', minMinutes = '', vdriver = ''] = args;
+    if (!workDir) fail('missing work_dir');
+    if (!topic) fail('missing topic');
+    const poolPath = join(workDir, '10-collect', 'pool.json');
+    const base = parseWindowMs(window === '' ? '24h' : window);
+    if (base === null) fail(`extract: invalid window: ${window || '(empty)'}`);
+    const floor = Number(minMinutes);
+    const gated = minMinutes !== '' && Number.isFinite(floor) && floor > 0;
+    const windows: number[] = [base];
+    for (const factor of gated ? [2, 3] : []) {
+        const ms = base * factor;
+        if (ms > LADDER_MAX_MS) break;
+        windows.push(ms);
+    }
+    timed(workDir, 'extract', () => {
+        mkdirSync(join(workDir, '10-collect'), { recursive: true });
+        let chosen: { window: string; docs: unknown[] } | null = null;
+        for (const ms of windows) {
+            const label = formatWindowMs(ms);
+            const attempt = join(workDir, '10-collect', `.pool-${label}.json`);
+            kk(['store', 'extract', '--topic', topic, '--window', label, '--out', attempt]);
+            const parsed = readJson(attempt);
+            const docs = Array.isArray(parsed) ? (parsed as unknown[]) : [];
+            const estimate = estimateSpokenMinutes(docs, vdriver);
+            chosen = { window: label, docs };
+            const verdict = gated
+                ? `estimated ${estimate.minutes} min — ${estimate.seconds >= floor * 60 ? 'clears' : 'below'} the ${floor} min floor`
+                : 'floor gate off';
+            console.error(`extract: ${label} pool ${docs.length} item(s), ${verdict}`);
+            if (!gated || estimate.seconds >= floor * 60) break;
+            rmSync(attempt, { force: true });
+        }
+        const picked = chosen ?? { window: formatWindowMs(base), docs: [] as unknown[] };
+        sted('write', poolPath, () => writeJsonText(poolPath, picked.docs));
+        for (const ms of windows)
+            rmSync(join(workDir, '10-collect', `.pool-${formatWindowMs(ms)}.json`), { force: true });
+    });
+}
+
 export function dailyArticle(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = ''] = args;
     const articleMd = join(workDir, '22-article', `${runDate}_06_article_article.md`);

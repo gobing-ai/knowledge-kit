@@ -869,6 +869,44 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
+    it('daily-extract widens the store window only while the pool misses the floor (2026-10-19)', () => {
+        withTempDir((dir) => {
+            const calls = join(dir, 'calls.log');
+            // 24h answers three 600-char items (~8 min of speech); every wider window answers eight
+            // 1.2k-char items (~43 min). The stage must stop at the first window that clears 15 min.
+            const env = fakeKk(
+                dir,
+                [
+                    "const fs = require('node:fs');",
+                    'const args = process.argv.slice(2);',
+                    "const win = args[args.indexOf('--window') + 1];",
+                    "const out = args[args.indexOf('--out') + 1];",
+                    'fs.appendFileSync(process.env.CALLS, win + "\\n");',
+                    'const thin = win === "24h";',
+                    'const docs = Array.from({ length: thin ? 3 : 8 }, (_, i) => ({ id: win + i, title: "T" + i, body: (thin ? "x" : "y").repeat(thin ? 600 : 1200) }));',
+                    'fs.writeFileSync(out, JSON.stringify(docs));',
+                ].join('\n'),
+            );
+            const poolPath = join(dir, '10-collect/pool.json');
+            const res = run(['daily-extract', dir, 'ai-news', '24h', '15', 'voxcpm'], { ...env, CALLS: calls });
+            expect(res.status, res.stderr).toBe(0);
+            expect(readFileSync(calls, 'utf-8').trim().split('\n')).toEqual(['24h', '48h']);
+            expect((JSON.parse(readFileSync(poolPath, 'utf-8')) as unknown[]).length).toBe(8);
+            expect(res.stderr).toContain('below the 15 min floor');
+            expect(res.stderr).toContain('clears the 15 min floor');
+            // The intermediate attempt files are gone: only pool.json is left for the plan stage.
+            expect(existsSync(join(dir, '10-collect/.pool-24h.json'))).toBe(false);
+            expect(existsSync(join(dir, '10-collect/.pool-48h.json'))).toBe(false);
+
+            // Without a floor (voice1's legacy 4-arg call) the configured window is the only query.
+            writeFileSync(calls, '');
+            const ungated = run(['daily-extract', dir, 'ai-news', '24h'], { ...env, CALLS: calls });
+            expect(ungated.status, ungated.stderr).toBe(0);
+            expect(readFileSync(calls, 'utf-8').trim().split('\n')).toEqual(['24h']);
+            expect((JSON.parse(readFileSync(poolPath, 'utf-8')) as unknown[]).length).toBe(3);
+        });
+    });
+
     it('daily-article unwraps a plan.json that carries the Content envelope instead of the Doc[]', () => {
         // `plan-translate`'s executor has been observed writing the generator's Content envelope
         // back to the plan path — valid JSON of the wrong shape. The article generator refuses it

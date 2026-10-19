@@ -255,3 +255,24 @@
   `spur serve` for every checkout. Fixed by making the assets an install-time product (root `prepare`
   runs `bun scripts/build-board.ts`), not by documenting a manual flip. Note `--ignore-scripts`
   installs (CI) skip `prepare` and must build explicitly.
+
+## 2026-10-19 — daily voice2: pool supply + XHS card compose
+- **A "no-content" day is usually supply, not code**: the 04:30 job closes `done` in ~16 s when
+  `kk store extract` hands the floor gate fewer than ~6 qualifying items (see
+  `.works/kk-daily-ai-voice2/<date>/21-plan/*_floor-refusal.json`). Qualifying supply is ~3–13
+  items/day (profile `ai-news` + quality≥2 + importance≥2 + china≤1) against an episode demand of
+  6–12, so a published episode starves the next morning. Check the published-pool drawdown
+  (12→8→8→6→3 on 10-15…10-19) before looking for a bug.
+- **`kk-item-quality` is a body-length rubric** (`plugins/kk/decisions/kk-items.yaml`): 500–690 char
+  youtube/rss `summary` stubs score 1 and never enter an `ai-news` pool. Fixing supply means fixing
+  the ingest body, not the profile.
+- **`kk stage <name>` resolves the runner from the *installed* package, not the checkout** (only an
+  entry whose package root is `apps/cli` uses `plugins/kk/scripts`). Editing a stage in this repo
+  does nothing for `kk stage` until the installed copy's `plugins/kk/scripts/*` is refreshed. Product
+  *plugins* (`kk executor run <plugin>`) are the opposite: the project root shadows the install.
+- **The XHS card composer's headline fit measured a wrapping element**, so `scrollWidth` never
+  exceeded the safe width and the font never stepped down: a 10-char cover headline wrapped to two
+  lines, pushed `points[1..n]` past the safe bottom, and every retry failed (only points are
+  rewritable) — a cosmetic card killed the whole episode via DAG fail-fast. The fit loop now
+  measures with `white-space: nowrap` and restores wrapping after. Reproduce any card refusal
+  without spending provider credit by composing with `illustration: undefined` (blank band).

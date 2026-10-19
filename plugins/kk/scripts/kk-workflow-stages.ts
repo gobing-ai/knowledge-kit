@@ -1593,6 +1593,11 @@ if (import.meta.main)
         case 'collect-prepare':
             collectPrepare(rest);
             break;
+        case 'daily-extract': {
+            const { dailyExtract } = await loadDailyStages();
+            dailyExtract(rest);
+            break;
+        }
         case 'daily-plan': {
             const { dailyPlan } = await loadDailyStages();
             dailyPlan(rest);

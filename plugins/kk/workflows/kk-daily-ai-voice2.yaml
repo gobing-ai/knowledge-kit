@@ -181,14 +181,17 @@ nodes:
       kk-collect wrote, minus every story already selected or published for the ai-news topic (the
       store's `selections` ledger, written by the `select` node below). Writes
       <work_dir>/10-collect/pool.json (the fan-in blended.json shape) and prints {count}. An empty
-      pool writes [] and exits 0 — the run's no-content path, not a failure.
+      pool writes [] and exits 0 — the run's no-content path, not a failure. The `daily-extract`
+      stage widens the window (×2, ×3, capped at 72h) only when the configured window's pool cannot
+      reach `episode_min_minutes` (2026-10-19): a published episode consumes more stories than a day
+      of collection supplies, so the tight window alone closed 2026-10-18/19 as no-content while
+      older unselected items sat in the store.
     dependsOn: [read-run-date]
     action:
       kind: shell
       options:
         command: >-
-          kk store extract --topic ai-news --window "${vars.window}"
-          --out "${vars.work_dir}/10-collect/pool.json"
+          kk stage daily-extract "${vars.work_dir}" ai-news "${vars.window}" "${vars.episode_min_minutes}" "${vars.vdriver}"
 
   - id: plan
     description: >-
