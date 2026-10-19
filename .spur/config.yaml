@@ -239,25 +239,22 @@ workflows:
 # (design kk-collect-and-daily-voice2.md §4). Project-relative, so the paths resolve
 # from the repo root on any checkout.
 #
-# The installed package's own catalogs are listed too, for the same reason and with the same
-# TODO as `workflows.paths` above: this list IS the whole search path, so omitting them left the
-# shared task-pipeline's `decide task-triage`, `decide failure-class` and
-# `decide review-failure-class` UNRESOLVABLE — every pipeline run then fell to each decide's
-# hard-coded default with no catalog row to read (observed 2026-10-12/13: the inline driver's
-# `--decide` reported `Unknown decision "task-triage"`, loaded decisions were the eight kk-item-*).
-# With `workflows.decideDecisionMaker` unset (its strict-opt-in default is `false`) the OUTCOME is
-# unchanged — the declared default still wins — but the decide row and its reason become honest
-# instead of a resolution failure, and enabling the decision maker later will actually consult the
-# catalog rather than silently defaulting. TODO: switch to `- bundled:decisions` once the installed
-# spur carries BUNDLED_PATH_PREFIX expansion (mirrors the workflows block; 0.4.2 predates it).
+# The installed package's own catalogs (task-pipeline's task-triage / failure-class /
+# review-failure-class, gates, idea-pipeline, ...) load automatically as the SHARED layer
+# (`spur decision status` → layers.shared). Do not list that folder here: an entry in this list
+# is a REGISTERED layer, which outranks shared, so an absolute path into the installed package
+# re-registers the same files and lets a stale copy shadow newer bundled catalogs. (Removed
+# 2026-10-19; it was a workaround from spur 0.4.2, before the shared layer existed.)
 decisions:
   paths:
     - plugins/kk/decisions
-    - /Users/robin/node_modules/@gobing-ai/spur/config/decisions/
   maker: fm-local
   makers:
     kk-item-category: fm-local
-    kk-item-quality: laya-local
+    # laya-local is unusable under the bundled spur CLI (2026-10-19): its worker script resolves
+    # relative to the bundle and is not shipped, so every ask failed in ~100ms (0/161 accepted,
+    # value always the fallback 2). Back to laya-local once spur ships the worker (spur task).
+    kk-item-quality: fm-local
     kk-item-china-politics: typesafe
     kk-item-sensitivity: typesafe
     kk-item-audience: typesafe
