@@ -4,7 +4,7 @@ name: "itc check-targets: probe runs ignore plugin env from config"
 status: done
 template: issue
 created_at: 2026-10-17T07:36:05.505Z
-updated_at: "2026-10-18T19:30:52.948Z"
+updated_at: "2026-10-19T00:00:24.820Z"
 feature_id: G21
 
 ac_altitude: task-local
@@ -198,7 +198,7 @@ value can be persisted into the plan, receipts or report.
 
 | # | Priority | Dimension | Finding | Location | Disposition |
 |---|----------|-----------|---------|----------|-------------|
-| 1 | P3 (minor) | security / contract | R3's literal first clause ("no resolved config value appears in `itc-check-targets` stdout/stderr") is not met when the *probe* echoes the value in its `detail`: with the config value `http://plain.test`, the CLI printed `refused: error: substack publication URL must be https:, got 'http://plain.test'` — reproduced fresh this review. That passthrough is mandated by R4 ("the probe-authored `detail`") and carved out by R3's own parenthetical, and no shipped publish probe echoes a credential value (only key names: `plugins/publishings/qiita-pub/src/index.ts:126`, `plugins/publishings/emdash-pub/src/index.ts:293`), so nothing secret leaves the process; the over-broad clause is the defect, not the code. | `apps/cli/src/itc-publish.ts:352-370` | RESOLVED — 2026-10-18: `itcCheckTargets` now scrubs every config-injected value from the probe-authored `detail` before printing (`apps/cli/src/itc-publish.ts:360-365`), pinned by `apps/cli/tests/itc-publish.test.ts:262` ("redacts a config-injected value the probe echoes in its refusal detail (0317)"). |
+| 1 | P3 (minor) | security / contract | R3's literal first clause ("no resolved config value appears in `itc-check-targets` stdout/stderr") is not met when the *probe* echoes the value in its `detail`: with the config value `http://plain.test`, the CLI printed `refused: error: substack publication URL must be https:, got 'http://plain.test'` — reproduced fresh this review. That passthrough is mandated by R4 ("the probe-authored `detail`") and carved out by R3's own parenthetical, and no shipped publish probe echoes a credential value (only key names: `plugins/publishings/qiita-pub/src/index.ts:126`, `plugins/publishings/emdash-pub/src/index.ts:293`), so nothing secret leaves the process; the over-broad clause is the defect, not the code. | `apps/cli/src/itc-publish.ts:352-370` | RESOLVED — 2026-10-18: `itcCheckTargets` now scrubs every config-injected value from the probe-authored `detail` before printing (`apps/cli/src/itc-publish.ts:360-365`), pinned by `apps/cli/tests/itc-publish.test.ts:262` ("redacts a config-injected value the probe echoes in its refusal detail (0311 R3)"). |
 | 2 | P4 (advisory) | correctness | The R3 test's `publish-plan.json` assertion is satisfied by the `planTarget` fixture that wrote the file, not by a plan writer under test — vacuous rather than wrong, since the plan schema carries no env field. The `receipts` / `report` / stream assertions do exercise the real writers. | `apps/cli/tests/itc-publish.test.ts:266,292-300` | ACCEPTED |
 | 3 | P4 (advisory) | scope | The same test file also hardens `itcAuthorVerdict` confidence cases (HIGH/MEDIUM/LOW loop, lowercase `high`, missing level) — outside R1–R4 of 0311; `apps/cli/src/itc-publish.ts:800` already enforced the mandatory enum before this diff, so it is test-only hardening with no behavioural change. | `apps/cli/tests/itc-publish.test.ts:1024-1039` | ACCEPTED |
 

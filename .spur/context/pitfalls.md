@@ -230,3 +230,15 @@
 - **Orphaned `sh -c … feature sync …` guards hold `docs/features/.<id>.lock`**: a pipeline precheck's
   `|| feature sync` fallback can outlive the run, and every later sync then blocks until the PIDs are
   killed and the stale lock removed.
+- **Two sessions, one tree → feature-verification digest races (observed 2026-10-18)**: the
+  feature-verification pass digests the working tree before/after its ~10-min suite; a concurrent
+  session's edits or commits inside that window fail the pass with zero test failures. Five passes
+  were lost this way in one day. When co-existing is mandated, retry on digest-only FAILs (check the
+  log for `0 fail` first) and batch all feature passes into one quiet window.
+- **A cancelled task's WBS is reused**: `spur task update <wbs> cancelled` frees the number; a later
+  `task create` reuses it with a new slug and the cancelled file disappears uncommitted. Never cite a
+  cancelled WBS from code comments or test names — cite the owning task/requirement instead
+  (fixed: `(0317)` → `(0311 R3)` in `apps/cli/src/itc-publish.ts` + its test).
+- **Quote task sections containing `&`**: `spur task update <wbs> --section Q&A …` unquoted splits at
+  the ampersand (`A: command not found`) and the update silently does not run. Always
+  `--section 'Q&A'`.

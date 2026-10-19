@@ -358,7 +358,7 @@ export async function itcCheckTargets(
                     const parsed = JSON.parse(last) as { status?: string; detail?: string };
                     if (parsed.detail) {
                         detail = `${parsed.status ?? 'refused'}: ${parsed.detail}`;
-                        // A probe may echo a config-injected value in its detail (0317): scrub every
+                        // A probe may echo a config-injected value in its detail (0311 R3): scrub every
                         // value the config overlay injected before the message reaches the operator.
                         for (const value of Object.values(pluginEnvFromConfig(plugin.kind, plugin.name))) {
                             if (value) detail = detail.split(value).join('<redacted>');

@@ -259,7 +259,7 @@ describe('itcCheckTargets & Probes (0302 / G21 R1)', () => {
         });
     });
 
-    it('redacts a config-injected value the probe echoes in its refusal detail (0317)', async () => {
+    it('redacts a config-injected value the probe echoes in its refusal detail (0311 R3)', async () => {
         await withTempDir(async (workDir) => {
             const secret = 'http://plain.test';
             planTarget(workDir, 'substack-pub');
