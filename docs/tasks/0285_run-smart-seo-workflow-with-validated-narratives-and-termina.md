@@ -4,7 +4,7 @@ name: Run Smart SEO workflow with validated narratives and terminal outcomes
 status: done
 template: feature-impl
 created_at: 2026-10-15T04:45:13.288Z
-updated_at: "2026-10-16T19:34:31.825Z"
+updated_at: "2026-10-19T15:43:33.074Z"
 feature_id: G9
 priority: P2
 tags:
@@ -220,6 +220,8 @@ Landed as commit `4e651020` ("feat(kk): run the Smart SEO workflow with validate
 - Predecessors: 0282, 0283, 0284; dependent responsibilities are named in Design.
 - Batch audit/checklist: docs/plans/2026-10-14-g9-ready-refinement.md; machine evidence: .spur/memory/evidence/g9-refine-ready-20261014-01/report.json.
 - Concurrency at kickoff: git worktree list showed only current main; spur task list --status wip --json returned [].
+
+- `.spur/run/0285-check-receipt.json` — LOST. It lived in the disposable `.spur/run` plane (ADR-131) and is not in this tree; the `## Testing` and `## Review` citations are historical, not resolvable evidence.
 
 ### History
 

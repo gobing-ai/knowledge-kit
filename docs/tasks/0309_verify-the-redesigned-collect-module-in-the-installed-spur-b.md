@@ -4,7 +4,7 @@ name: Verify the redesigned Collect module in the installed Spur Board against t
 status: done
 template: feature-impl
 created_at: 2026-10-17T05:04:06.960Z
-updated_at: "2026-10-18T21:07:09.853Z"
+updated_at: "2026-10-19T15:43:33.331Z"
 feature_id: G81
 priority: P2
 tags:
@@ -239,6 +239,8 @@ Verdict: PASS
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
+
+- `.spur/run/0309-check-receipt.json` — LOST. It lived in the disposable `.spur/run` plane (ADR-131) and is not in this tree; the `## Review` citations are historical, not resolvable evidence.
 
 ### History
 

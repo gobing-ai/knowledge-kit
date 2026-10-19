@@ -4,7 +4,7 @@ name: Add kk bot exec for one authenticated curl-style request
 status: done
 template: feature-impl
 created_at: 2026-10-17T02:59:58.073Z
-updated_at: "2026-10-18T18:03:03.143Z"
+updated_at: "2026-10-19T15:43:32.552Z"
 feature_id: A23
 priority: P2
 tags:
@@ -252,6 +252,8 @@ The seam is the right shape and stayed the smallest one: three functions, no pol
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
+
+- `.spur/run/0306-check-receipt.json`, `.spur/run/0306-test-gate.log` — LOST. Both lived in the disposable `.spur/run` plane (ADR-131) and are not in this tree; the `## Review` citations are historical, not resolvable evidence.
 
 ### History
 

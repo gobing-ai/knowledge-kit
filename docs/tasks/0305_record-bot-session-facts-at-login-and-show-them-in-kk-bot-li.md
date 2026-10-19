@@ -4,7 +4,7 @@ name: Record bot session facts at login and show them in kk bot list
 status: done
 template: feature-impl
 created_at: 2026-10-17T02:59:58.070Z
-updated_at: "2026-10-18T18:02:16.551Z"
+updated_at: "2026-10-19T15:43:32.814Z"
 feature_id: A23
 priority: P2
 tags:
@@ -206,6 +206,8 @@ The level is a consequence of the verification column, not a separate claim: eac
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
+
+- `.spur/run/0305-check-receipt.json` — LOST. It lived in the disposable `.spur/run` plane (ADR-131) and is not in this tree; the `## Review` citation is historical, not resolvable evidence.
 
 ### History
 
