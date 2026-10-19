@@ -9,6 +9,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import {
+    chmodSync,
     closeSync,
     existsSync,
     lstatSync,
@@ -19,9 +20,10 @@ import {
     realpathSync,
     rmSync,
     statSync,
+    writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { BOARD_ENTRIES, BOARD_EXTERNAL, BOARD_OUTPUT_DIRS, buildBoard } from '../build-board';
 
 const REPO_ROOT = resolve(import.meta.dir, '../..');
@@ -219,5 +221,53 @@ describe('packed CLI distribution (G8/0255 AC1/AC7)', () => {
         for (const entry of ENTRIES) {
             expect(packed.read(`dist/board/${entry}/index.js`), entry).not.toContain(REPO_ROOT);
         }
+    });
+});
+
+/**
+ * The other half of the root `prepare` script: hook installation must never fail a `bun install`.
+ * It did (exit 127 with no `lefthook` on PATH), which callers that shell an install report as a
+ * broken lockfile — `spur builder bump-ver` said "bun.lock is inconsistent" while the lockfile was
+ * fine.
+ */
+describe('install-hooks (root `prepare` half)', () => {
+    const script = join(REPO_ROOT, 'scripts/install-hooks.ts');
+
+    /** Run the script against an empty PATH holding only the fake `lefthook` given here. */
+    const run = (hook?: string, env: Record<string, string> = {}) => {
+        const bin = mkdtempSync(join(tmpdir(), 'kk-hooks-bin-'));
+        try {
+            if (hook !== undefined) {
+                writeFileSync(join(bin, 'lefthook'), `#!/bin/sh\n${hook}\n`);
+                chmodSync(join(bin, 'lefthook'), 0o755);
+            }
+            return spawnSync(process.execPath, [script], {
+                encoding: 'utf-8',
+                env: { ...process.env, PATH: bin, ...env },
+            });
+        } finally {
+            rmSync(bin, { recursive: true, force: true });
+        }
+    };
+
+    it('skips instead of failing when lefthook is not on PATH', () => {
+        const result = run();
+        expect(result.status).toBe(0);
+        expect(result.stderr).toContain('lefthook not on PATH');
+    });
+
+    it('runs a lefthook that is on PATH', () => {
+        const marker = join(mkdtempSync(join(tmpdir(), 'kk-hooks-marker-')), 'ran');
+        try {
+            const result = run('echo install >> "$MARKER"', { MARKER: marker });
+            expect(result.status).toBe(0);
+            expect(existsSync(marker)).toBe(true);
+        } finally {
+            rmSync(dirname(marker), { recursive: true, force: true });
+        }
+    });
+
+    it('propagates a lefthook failure, so a broken lefthook.yml stays loud', () => {
+        expect(run('exit 3').status).toBe(3);
     });
 });

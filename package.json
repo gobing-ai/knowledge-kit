@@ -21,7 +21,7 @@
         }
     },
     "scripts": {
-        "prepare": "bun scripts/build-board.ts && lefthook install",
+        "prepare": "bun scripts/build-board.ts && bun scripts/install-hooks.ts",
         "dev": "bun run --filter './apps/*' --filter './packages/*' dev",
         "build": "bun scripts/bundle-plugins.ts && bun scripts/build-board.ts && bun run --filter './apps/*' --filter './packages/*' build",
         "test": "NODE_ENV=test bun test --dots --coverage --coverage-dir=.coverage --coverage-reporter=lcov --coverage-reporter=text --timeout 20000 --path-ignore-patterns 'vendors/**' apps packages plugins scripts",
