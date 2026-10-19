@@ -200,6 +200,20 @@ CLI binary: `@gobing-ai/knowledge-kit` exposes `bin: { kk: "./dist/index.js", "k
 If a check fails, fix the root cause. **Never** bypass with `--no-verify`, `--force`, or new
 `biome-ignore` suppressions added solely to silence the gate.
 
+### Editing `plugins/kk/scripts/` (stage bodies)
+
+`kk stage <name>` resolves its runner from the **installed** package (`$HOME/node_modules/@gobing-ai/`
+`knowledge-kit/plugins/kk/scripts/`), not from this checkout — product *plugins* resolve the opposite
+way (the project root shadows the install). A stage edit is therefore live for `kk executor run` but
+invisible to `kk stage`, and every scheduled workflow (the 04:30 daily voice run included) keeps
+executing the old body. Refresh the copy after editing:
+
+```bash
+rsync -a plugins/kk/scripts/ "$HOME/node_modules/@gobing-ai/knowledge-kit/plugins/kk/scripts/"
+```
+
+Until this repo is released and reinstalled, that copy is the one the cron actually runs.
+
 ### Testing
 
 - Tests live in `tests/` next to the code (`<workspace>/tests/*.test.ts`), using `bun:test`.
