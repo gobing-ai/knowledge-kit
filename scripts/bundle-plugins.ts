@@ -51,6 +51,31 @@ const KIND_COLLECTIONS = ['ingestions', 'generations', 'publishings'] as const;
 export const BUNDLEABLE = /\.(mts|cts|tsx|ts|mjs|cjs|jsx|js)$/i;
 
 /**
+ * Render a Bun.build failure into an actionable one-line reason.
+ *
+ * Bun >=1.3 throws an `AggregateError` on build failure (verified empirically in 0111) whose own
+ * `message` is only the bare "Bundle failed"; the cause — an unresolvable `@gobing-ai/*` (a checkout
+ * that was never `bun install`ed), a syntax error, a missing file — lives in `errors[]`. Reporting
+ * only `message` is what made a stale `node_modules` look like a broken plugin.
+ */
+export function describeBuildFailure(error: unknown): string {
+    const parts: string[] =
+        error instanceof AggregateError
+            ? error.errors.map((inner) => {
+                  const text = inner instanceof Error ? inner.message : String(inner);
+                  const position = (inner as { position?: { file?: string; line?: number } }).position;
+                  if (position?.file === undefined) return text;
+                  return `${text} (${position.file}${position.line === undefined ? '' : `:${position.line}`})`;
+              })
+            : [];
+    if (parts.length === 0) {
+        return error instanceof Error ? error.message : String(error);
+    }
+    // Deduplicate: one unresolvable package reports the same reason per importing module.
+    return [...new Set(parts)].join('; ');
+}
+
+/**
  * Bundle one declared manifest path — entry or check — from the source plugin into
  * `<plugin>/dist`, and return the path the staged manifest must declare. Raw
  * shipped sources import `@gobing-ai/*` workspace packages that the published
@@ -106,9 +131,7 @@ async function bundleDeclared(
             ...(output.naming === undefined ? {} : { naming: output.naming }),
         });
     } catch (error) {
-        throw new Error(
-            `bundling ${pluginName} failed: ${kind} ${declared}: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        throw new Error(`bundling ${pluginName} failed: ${kind} ${declared}: ${describeBuildFailure(error)}`);
     }
     return output.staged;
 }

@@ -242,3 +242,16 @@
 - **Quote task sections containing `&`**: `spur task update <wbs> --section Q&A …` unquoted splits at
   the ampersand (`A: command not found`) and the update silently does not run. Always
   `--section 'Q&A'`.
+
+## 2026-10-19 — board modules + plugin bundling pitfalls
+- **Bare `Bundle failed` from `bun run build` is a missing-install symptom, not a broken plugin**: Bun's
+  `Bun.build` rejects with an `AggregateError` whose own `message` is only `Bundle failed`; the reason
+  (`Could not resolve "@gobing-ai/kk-core"`) lives in `errors[]`. `scripts/bundle-plugins.ts`
+  `describeBuildFailure` now prints every sub-error with `file:line`, so a wiped `node_modules` names
+  itself instead of blaming `aihot-ingest`.
+- **A `bootstrap.modules` entry declared `enabled: true` against a gitignored directory is a
+  server-start landmine**: the host resolves `directory` against the project root, requires it inside
+  that root, and exits 1 before listening when it is absent — a bare `git clean -xdf` then breaks
+  `spur serve` for every checkout. Fixed by making the assets an install-time product (root `prepare`
+  runs `bun scripts/build-board.ts`), not by documenting a manual flip. Note `--ignore-scripts`
+  installs (CI) skip `prepare` and must build explicitly.

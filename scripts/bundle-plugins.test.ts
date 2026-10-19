@@ -273,7 +273,11 @@ describe('bundle-plugins staging flow (in-process fixtures)', () => {
                 "import 'no-such-pkg-0111';\nexport const staged = 'broken';\n",
             );
             writeFileSync(join(broken, 'plugin.json'), JSON.stringify({ name: 'broken-gen', entry: './src/index.ts' }));
-            expect(bundleStagedEntries(pluginTarget, sourcePlugins)).rejects.toThrow('bundling broken-gen failed');
+            const message = await captureRejection(bundleStagedEntries(pluginTarget, sourcePlugins));
+            expect(message).toContain('bundling broken-gen failed');
+            // The bare Bun message is "Bundle failed"; the reason must survive into the report —
+            // a stale node_modules otherwise reads as a broken plugin.
+            expect(message).toContain('no-such-pkg-0111');
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
