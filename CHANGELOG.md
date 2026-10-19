@@ -1,3 +1,22 @@
+## [0.1.4] - 2026-10-19
+
+### Added
+
+- feat(board): enable the workflow modules from a plain install (51afdef)
+<!-- src: package.json:24 -->
+
+### Fixed
+
+- fix: surface the cause of a plugin bundle failure (450af77)
+<!-- src: scripts/bundle-plugins.ts:61 -->
+
+### Changed
+
+- docs(tasks): mark the lost check receipts as historical evidence (4548a0b)
+- chore(rules): drop the orphaned verdict-artifact fixtures (e9cc3ca)
+<!-- src: .spur/rules/fixtures -->
+- docs(memory): update memory (05a243f)
+
 ## [0.1.3] - 2026-10-18
 
 ### Added
