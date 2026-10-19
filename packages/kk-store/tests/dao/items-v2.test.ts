@@ -293,6 +293,80 @@ describe('ItemsDao.backfillFacts (0227 R4)', () => {
         expect((await store.items.findById(itemId(b)))?.storyId).toBe(itemId(b));
     });
 
+    it('merges via metadata.references when the body carries no outbound links (summary-class twin)', async () => {
+        const { store, dbPath } = await openTempStore(makeTempDir(), 'backfill-references.db');
+        const primary = doc({
+            id: 'primary',
+            title: 'Anthropic shares its code review practice',
+            sourceUri: 'https://claude.dev/blog/solving-code-review-at-anthropic',
+        });
+        // The summary rendering drops the original outbound link from the body; it survives only
+        // in metadata.references (the live 2026-10-17 simonwillison/claude.dev pair).
+        const linkPost = doc({
+            id: 'link-post',
+            title: 'Anthropic Claude Code 团队公开反思代码评审实践',
+            sourceUri: 'https://simonwillison.net/2026/Oct/16/code-review',
+            body: 'A summary that mentions the primary source in prose only, with no hyperlink.',
+            metadata: { references: ['https://claude.dev/blog/solving-code-review-at-anthropic?utm_source=hn'] },
+        });
+        await store.items.upsertDocs('run-1', [primary], 1_000);
+        await store.items.upsertDocs('run-2', [linkPost], 1_100);
+        stagePreV2(dbPath);
+
+        await store.items.backfillFacts(DEFAULT_STORY_POLICY);
+
+        const root = itemId(primary);
+        expect((await store.items.findById(itemId(linkPost)))?.storyId).toBe(root);
+    });
+
+    it('ignores a multi-entry references list: citations are related reading, not identity', async () => {
+        const { store } = await openTempStore(makeTempDir(), 'references-citation-list.db');
+        const primary = doc({
+            id: 'primary',
+            title: 'Meta opens Muse Spark weights',
+            sourceUri: 'https://research.meta.ai/blog/muse-spark-open',
+        });
+        // The Apple MLX item's real reference list (2026-10-18): cites the Meta article as related
+        // reading among three others — must NOT merge the two companies' stories.
+        const roundup = doc({
+            id: 'roundup',
+            title: 'Apple ships distributed MLX inference',
+            sourceUri: 'https://machinelearning.apple.com/research/mlx-distributed',
+            body: 'A research summary with no outbound hyperlinks in the body.',
+            metadata: {
+                references: [
+                    'https://www.youtube.com/watch?v=CzgK02zsRg4',
+                    'https://dev.meta.ai/resources/blog/build-with-muse-spark-open',
+                    'https://research.meta.ai/blog/muse-spark-open',
+                ],
+            },
+        });
+        await store.items.upsertDocs('run-1', [primary], 1_000);
+        await store.items.upsertDocs('run-2', [roundup], 1_100);
+
+        expect((await store.items.findById(itemId(roundup)))?.storyId).toBe(itemId(roundup));
+    });
+
+    it('clusters on insert via metadata.references (the routine ingest path)', async () => {
+        const { store } = await openTempStore(makeTempDir(), 'insert-references.db');
+        const primary = doc({
+            id: 'primary',
+            title: 'Anthropic shares its code review practice',
+            sourceUri: 'https://claude.dev/blog/solving-code-review-at-anthropic',
+        });
+        const linkPost = doc({
+            id: 'link-post',
+            title: 'Anthropic Claude Code 团队公开反思代码评审实践',
+            sourceUri: 'https://simonwillison.net/2026/Oct/16/code-review',
+            body: 'A summary that mentions the primary source in prose only, with no hyperlink.',
+            metadata: { references: ['https://claude.dev/blog/solving-code-review-at-anthropic'] },
+        });
+        await store.items.upsertDocs('run-1', [primary], 1_000);
+        await store.items.upsertDocs('run-2', [linkPost], 1_100);
+
+        expect((await store.items.findById(itemId(linkPost)))?.storyId).toBe(itemId(primary));
+    });
+
     it('keeps a published story and its twin out of the pool under a widened window (0316 R2/AC2)', async () => {
         const { store, dbPath } = await openTempStore(makeTempDir(), 'extract-url-identity.db');
         const now = 1_000_000;

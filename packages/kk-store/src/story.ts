@@ -36,7 +36,7 @@ export const DEFAULT_STORY_POLICY: StoryPolicy = {
 export interface StoryUrlIdentity {
     /** The item's own `canonical_url`, when it has one. */
     canonicalUrl?: string;
-    /** Canonicalized outbound links found in the item's body. */
+    /** Canonicalized outbound links found in the item's body, plus a lone `metadata.references` URL. */
     bodyUrls: readonly string[];
 }
 

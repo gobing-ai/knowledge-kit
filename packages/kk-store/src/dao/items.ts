@@ -1,7 +1,7 @@
 import type { Doc } from '@gobing-ai/kk-core';
 import type { DbAdapter, DbBatchOp } from '@gobing-ai/ts-db';
 import { EntityDao } from '@gobing-ai/ts-db';
-import { canonicalUrlForDoc, itemId, outboundUrls } from '../canonical-url';
+import { canonicalUrl, canonicalUrlForDoc, itemId, outboundUrls } from '../canonical-url';
 import { type ItemFacts, itemFacts } from '../facts';
 import type { ProfileQuery } from '../profile';
 import { items } from '../schema/items';
@@ -175,11 +175,28 @@ function prepareItem(doc: Doc): PreparedItem {
     };
 }
 
+/**
+ * The canonicalized `metadata.references` when there is exactly ONE — a link post points at its
+ * primary source. Two or more are a citation list (related reading, not identity: 2026-10-18 the
+ * Apple MLX item's 4-reference roundup cited research.meta.ai and false-merged two companies'
+ * stories), so they contribute nothing to the URL identity.
+ */
+function referenceUrls(metadataJson: string): string[] {
+    const refs: unknown = parseMetadataJson(metadataJson).references;
+    if (!Array.isArray(refs)) return [];
+    const urls = [
+        ...new Set(refs.filter((ref): ref is string => typeof ref === 'string' && ref !== '').map(canonicalUrl)),
+    ];
+    return urls.length === 1 ? urls : [];
+}
+
 /** An item's URL identity: `outboundUrls` canonicalizes, so a tracking-decorated link still matches. */
-function itemUrls(ownUrl: string | null, body: string): StoryUrlIdentity {
+function itemUrls(ownUrl: string | null, body: string, references: readonly string[] = []): StoryUrlIdentity {
     return {
         canonicalUrl: ownUrl === null || ownUrl === '' ? undefined : ownUrl,
-        bodyUrls: outboundUrls(body),
+        // Body links first, then the ingest-captured single reference: a summary-rendered body drops the
+        // original outbound link, and `metadata.references` is where it survives.
+        bodyUrls: [...new Set([...outboundUrls(body), ...references])],
     };
 }
 
@@ -258,7 +275,7 @@ export class ItemsDao extends EntityDao<typeof items, typeof items.id> {
                 inserted += 1;
                 newIds.push(item.id);
                 const pool = [...recent, ...batchCandidates];
-                const urls = itemUrls(item.canonicalUrl, item.body);
+                const urls = itemUrls(item.canonicalUrl, item.body, referenceUrls(item.metadataJson));
                 // URL identity first (0316 R1): a link post and its primary source share one story
                 // even though their titles share no token, which the Jaccard pass cannot see.
                 const storyId = storyIdForUrls(urls, pool) ?? storyIdFor(item.title, pool, story.threshold) ?? item.id;
@@ -360,7 +377,7 @@ export class ItemsDao extends EntityDao<typeof items, typeof items.id> {
             ) {
                 candidates.shift();
             }
-            const urls = itemUrls(row.canonical_url, row.body);
+            const urls = itemUrls(row.canonical_url, row.body, referenceUrls(row.metadata_json));
             // URL identity first (0316 R1), then the fuzzy title fallback that still owns the
             // URL-less pair the token pass was built for.
             const storyId =
@@ -404,13 +421,20 @@ export class ItemsDao extends EntityDao<typeof items, typeof items.id> {
             first_seen_at: number;
             canonical_url: string | null;
             body: string;
+            metadata_json: string;
         }>(
-            `SELECT id, story_id, title, first_seen_at, canonical_url, body
+            `SELECT id, story_id, title, first_seen_at, canonical_url, body, metadata_json
              FROM items WHERE first_seen_at >= ? ORDER BY first_seen_at, id`,
             sinceMs,
         );
         return rows.map((row) =>
-            toCandidate(row.id, row.story_id, row.title, row.first_seen_at, itemUrls(row.canonical_url, row.body)),
+            toCandidate(
+                row.id,
+                row.story_id,
+                row.title,
+                row.first_seen_at,
+                itemUrls(row.canonical_url, row.body, referenceUrls(row.metadata_json)),
+            ),
         );
     }
 
