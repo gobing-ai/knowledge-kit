@@ -13,6 +13,8 @@
  * 5. `observations` ignores a filter or over-applies it (decisionId / maker / runId / since).
  * 6. A `null` `run_id` is accepted, so a later `labels_current` read cannot identify the run.
  * 7. The enum `confidence` derivation changes (G31 R14 must be untouched).
+ * 8. An out-of-range or non-finite model payload (a percent-style `50`, `1.5`, `Infinity`) mints
+ *    `HIGH`/`MEDIUM` where the 0–1 domain says the payload is unreadable evidence (G31 R14).
  */
 
 import { afterAll, describe, expect, it } from 'bun:test';
@@ -178,6 +180,13 @@ describe('LabelsDao', () => {
         expect(labelConfidence('model', null)).toBe('LOW');
         expect(labelConfidence('heuristic', null)).toBe('LOW');
         expect(labelConfidence('default', null)).toBe('LOW');
+        // The payload is the JSON of `spur decision run` cast to `number | null`, so its domain is
+        // not enforced upstream: anything outside the documented 0–1 range — or non-finite — is
+        // unreadable evidence and fails closed, exactly like a payload that carried no number.
+        // Spur's own `confidenceLevel` banding reads the same inputs as LOW.
+        for (const unreadable of [50, 1.5, 1.0000001, Infinity, -Infinity, -1, NaN]) {
+            expect(labelConfidence('model', unreadable), `payload=${String(unreadable)}`).toBe('LOW');
+        }
 
         expect(verdictConfidence(['HIGH', 'HIGH'])).toBe('HIGH');
         expect(verdictConfidence(['HIGH', 'MEDIUM'])).toBe('MEDIUM');

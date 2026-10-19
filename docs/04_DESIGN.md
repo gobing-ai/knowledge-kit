@@ -848,7 +848,8 @@ numeric 0–1 confidence is **mapped into the enum at this boundary** (`labels.c
 payload itself is kept beside it in `raw_confidence` (task 0226, so a backtest can re-rank without a
 new model call): `HIGH` at `>= 0.8`, `MEDIUM` at `>= 0.5`, `LOW` below it, and `LOW` for a
 keyword-heuristic row, a degraded `source: default` row or a model answer whose payload carried no
-number — only a model answer with evidence can earn more than `LOW`, and a missing level is never
+number or a value outside the documented `0`–`1` range (non-finite included — the payload is untrusted
+JSON, so an unreadable one fails closed rather than minting a confident level) — only a model answer with evidence can earn more than `LOW`, and a missing level is never
 stored as `null` or silently defaulted. `min_confidence` is NOT part of this mapping: it gates
 `labels_current` eligibility only. `labelConfidence(source, confidence)` is that mapping and `verdictConfidence(levels)` is
 the pass's own level (the weakest among its rows, `LOW` for an empty pass), both exported by

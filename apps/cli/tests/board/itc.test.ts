@@ -191,6 +191,16 @@ describe('judge confidence validation', () => {
         expect(asJudgeConfidence('low')).toBeNull();
         expect(asJudgeConfidence('CERTAIN')).toBeNull();
         expect(asJudgeConfidence(undefined)).toBeNull();
+        // The verdict JSON is untrusted: a non-string payload is absent evidence, never a level, and
+        // it is still reported as present-but-out-of-vocabulary so the guard can refuse the pass.
+        expect(asJudgeConfidence(1)).toBeNull();
+        expect(asJudgeConfidence({ level: 'HIGH' })).toBeNull();
+        expect(asJudgeConfidence(['HIGH'])).toBeNull();
+        expect(isOutOfVocabularyConfidence(1)).toBe(true);
+        expect(isOutOfVocabularyConfidence({ level: 'HIGH' })).toBe(true);
+        expect(isOutOfVocabularyConfidence(['HIGH'])).toBe(true);
+        expect(isOutOfVocabularyConfidence(undefined)).toBe(false);
+        expect(isOutOfVocabularyConfidence(null)).toBe(false);
         expect(isOutOfVocabularyConfidence('CERTAIN')).toBe(true);
         expect(isOutOfVocabularyConfidence('LOW')).toBe(false);
         expect(isOutOfVocabularyConfidence('')).toBe(false);

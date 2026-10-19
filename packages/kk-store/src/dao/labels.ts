@@ -36,7 +36,12 @@ export type LabelSource = 'model' | 'heuristic' | 'default';
  * heuristic row or a degraded `source: default` row has no model evidence to cite.
  */
 export function labelConfidence(source: LabelSource, confidence: number | null): LabelConfidence {
-    if (source !== 'model' || confidence === null) return 'LOW';
+    // The payload is untrusted JSON cast to a number at `kk store label`, so the documented 0–1
+    // domain is enforced at this boundary: an out-of-range or non-finite value is unreadable
+    // evidence and fails closed like a missing payload, never a level nothing evidences.
+    if (source !== 'model' || confidence === null || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+        return 'LOW';
+    }
     if (confidence >= HIGH_CONFIDENCE_MIN) return 'HIGH';
     if (confidence >= MEDIUM_CONFIDENCE_MIN) return 'MEDIUM';
     return 'LOW';
