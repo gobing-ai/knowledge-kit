@@ -416,16 +416,18 @@ empty; run rows are still served). Messages are bounded and never carry raw SQLi
 
 **Operator setup (checkout).**
 
-1. Build the browser contributions: `bun scripts/build-board.ts` (invoked by the root `build` and by
-   the CLI `build:bundle`/`prepack`, so a packed install ships them).
+1. Install dependencies once: `bun install`. Its root `prepare` script runs
+   `bun scripts/build-board.ts`, so the browser contributions are emitted into the gitignored
+   `apps/cli/dist/board/<entry>` trees without a separate step (the root `build` and the CLI
+   `build:bundle`/`prepack` invoke the same script, so a packed install ships them too). CI's
+   `bun install --ignore-scripts` skips `prepare` and is covered by its explicit `bun run build`.
 2. Declare each module in `.spur/config.yaml` under `bootstrap.modules`: `type: react`,
    `directory: apps/cli/dist/board/<entry>`, `entry: index.js`, `styles: [index.css]`, and one of
-   `id: kk-collect | kk-daily-ai-voice2 | kk-itc`. This checkout ships the declaration **disabled**
-   (`enabled: false`): the host validates every `directory` at *server start*, so an enabled
-   declaration makes `spur serve` fail with `bootstrap.modules[<i>] ("kk-…"): module directory "…"
-   was not found` on any checkout that has not built the assets — and `apps/cli/dist/board` is a
-   gitignored build tree. **Build first, then enable:** after step 1 flip `enabled` to `true` (or
-   delete the flag; the host default is `true`) to show the modules. An installed user points
+   `id: kk-collect | kk-daily-ai-voice2 | kk-itc`. This checkout ships the declarations **enabled**
+   — G8/0255, made safe by step 1. The host validates every `directory` at *server start*, so a
+   checkout that skipped lifecycle scripts (or ran `git clean -xdf`) still needs one
+   `bun scripts/build-board.ts` before serving; otherwise `spur serve` fails with
+   `bootstrap.modules[<i>] ("kk-…"): module directory "…" was not found`. An installed user points
    `directory` at their installed package's own `dist/board/<entry>` tree and needs neither this
    checkout nor a `node_modules` edit.
 3. Start the Board: `spur serve --host 127.0.0.1 [--port <n>]`; the UI is `/board`.

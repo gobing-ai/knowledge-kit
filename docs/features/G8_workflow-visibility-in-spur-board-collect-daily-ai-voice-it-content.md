@@ -6,7 +6,7 @@ status: done
 priority: P2
 tags: []
 created_at: "2026-10-11T23:18:58.413Z"
-updated_at: "2026-10-14T04:20:14.817Z"
+updated_at: "2026-10-19T05:52:09.792Z"
 ---
 
 # G8: Workflow visibility in Spur Board: Collect, Daily AI Voice, IT Content
@@ -165,9 +165,12 @@ Feature: Workflow visibility in Spur Board
   installed `dist/board/<entry>` trees, and drives the three module routes + Settings → Workflows
   with real Chromium; `scripts/tests/board-package.test.ts` asserts the tarball ships all three entry
   trees (assets + CSS) and externalizes only the host React facades.
-- `.spur/config.yaml` declares the three `bootstrap.modules` with `enabled: false`, so a checkout that
-  has not built `apps/cli/dist/board` still starts (an enabled declaration is a hard `spur serve`
-  failure); the operator flips the flag after `bun run build`.
+- 2026-10-19: `.spur/config.yaml` declares the three `bootstrap.modules` `enabled: true`, because the
+  gitignored `apps/cli/dist/board` assets the host validates at server start are now an install-time
+  product — the root `prepare` script runs `bun scripts/build-board.ts` on every `bun install`
+  (pinned by `scripts/tests/board-package.test.ts`). No operator flip. A checkout that skipped
+  lifecycle scripts or ran `git clean -xdf` needs one `bun scripts/build-board.ts` before
+  `spur serve`; an enabled declaration with a missing directory is still a hard start failure.
 - Two demonstrated defects fixed: the module pollers now load on first mount instead of after one
   interval, and the module route constants use the host's real `/board/modules/<id>` page route so the
   address bar keeps run/tab selection and the module links resolve (the bundles are served from the

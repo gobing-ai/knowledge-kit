@@ -100,10 +100,11 @@ The module PAGE is mounted by the SPA at `/board/modules/<id>`, while the bare `
 prefix serves only the bundles and the descriptor's advertised `route`/`entryUrl` — opening the
 bare page renders the SPA 404 (0255, verified live with Chromium and `GET /api/board/modules`).
 
-Shipped checkout declarations (`.spur/config.yaml`): each module is declared `enabled: false`
-because the host validates every `directory` at server start and `apps/cli/dist/board` is a
-gitignored build tree — build first (`bun scripts/build-board.ts`), then flip `enabled` to `true`
-(the host default) to show the modules:
+Shipped checkout declarations (`.spur/config.yaml`): each module is declared `enabled: true`. The host
+validates every `directory` at server start and `apps/cli/dist/board` is a gitignored build tree, so
+the root `prepare` script builds the assets on every `bun install` — a checkout that only installed
+dependencies can serve the modules, and one that skipped lifecycle scripts (or ran `git clean -xdf`)
+needs a single `bun scripts/build-board.ts` first:
 
 ```yaml
 bootstrap:
@@ -111,7 +112,7 @@ bootstrap:
     - id: kk-collect
       name: Collect
       icon: "📥"
-      enabled: false
+      enabled: true
       type: react
       directory: apps/cli/dist/board/collect
       entry: index.js
@@ -119,7 +120,7 @@ bootstrap:
     - id: kk-daily-ai-voice2
       name: Daily AI Voice
       icon: "🎙️"
-      enabled: false
+      enabled: true
       type: react
       directory: apps/cli/dist/board/daily-voice
       entry: index.js
@@ -127,7 +128,7 @@ bootstrap:
     - id: kk-itc
       name: IT Content
       icon: "✍️"
-      enabled: false
+      enabled: true
       type: react
       directory: apps/cli/dist/board/itc
       entry: index.js
@@ -290,9 +291,11 @@ the existing entry sources as standalone browser ESM directories (`collect` in 0
 `daily-voice`/`itc` in 0253/0254), each with `index.js`
 and `index.css`, under both `apps/board/dist` and `apps/cli/dist/board`. Bundle no React runtime;
 externalize the three React facade imports listed in section 3. Pin React development dependencies
-to the inspected 19.2.1 host and compatible React 19 types when implementing. The root build and
-CLI `build:bundle`/prepack each invoke this script after the CLI/workspace builds, before packaging;
-plugin staging alone does not build browser contributions. Do not register a future module until
+to the inspected 19.2.1 host and compatible React 19 types when implementing. The root `prepare`
+script (every `bun install`), the root build and CLI `build:bundle`/prepack each invoke this script
+after the CLI/workspace builds, before packaging; plugin staging alone does not build browser
+contributions, and no lifecycle script runs under `bun install --ignore-scripts` (CI covers that with
+an explicit `bun run build`). Do not register a future module until
 its entry exists. Installed assets resolve from KK's own package directory, never sibling sources.
 
 Commands:

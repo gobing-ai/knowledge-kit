@@ -115,14 +115,23 @@ describe('buildBoard', () => {
         expect(existsSync(join(legacy, 'feature-verification.yaml'))).toBe(true);
     });
 
-    it('is wired into the root build and the CLI bundle/prepack path', () => {
-        const root = readFileSync(join(REPO_ROOT, 'package.json'), 'utf-8');
-        expect(root).toContain('bun scripts/build-board.ts');
-        const cli = readFileSync(join(REPO_ROOT, 'apps/cli/package.json'), 'utf-8');
-        expect(cli).toContain('../../scripts/build-board.ts');
-        expect(cli).toContain('"prepack": "bun run build:bundle"');
+    it('is wired into install, the root build, and the CLI bundle/prepack path', () => {
+        const root = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf-8')) as {
+            scripts: Record<string, string>;
+        };
+        // `prepare` is what makes the committed `enabled: true` module declarations safe: the host
+        // validates every declared directory at server start, and `apps/cli/dist/board` is
+        // gitignored, so a checkout that only ran `bun install` must already have the assets.
+        expect(root.scripts.prepare).toContain('bun scripts/build-board.ts');
+        expect(root.scripts.build).toContain('bun scripts/build-board.ts');
+        const cli = JSON.parse(readFileSync(join(REPO_ROOT, 'apps/cli/package.json'), 'utf-8')) as {
+            scripts: Record<string, string>;
+            files: string[];
+        };
+        expect(cli.scripts['build:bundle']).toContain('../../scripts/build-board.ts');
+        expect(cli.scripts.prepack).toBe('bun run build:bundle');
         // The CLI tarball ships dist/, which now contains the board assets.
-        expect(cli).toContain('"dist/"');
+        expect(cli.files).toContain('dist/');
     });
 });
 

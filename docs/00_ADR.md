@@ -1324,9 +1324,15 @@ captured only when the current catalog digest matches the engine-injected execut
 Shipped by 0252–0255. One design-time assumption corrected on evidence: the module PAGE is
 mounted by the SPA at `/board/modules/<id>`, while the bare `/modules/<id>` prefix serves only
 assets and the descriptor's `route`/`entryUrl` — the bare page is the SPA 404 (verified live with
-Chromium and `GET /api/board/modules`). The checkout declares the three modules `enabled: false`
-because the host validates each `directory` at server start and the assets are gitignored build
-output: build first, then flip `enabled`. Shapes and operator setup: `04` `kk board`.
+Chromium and `GET /api/board/modules`). The checkout declares the three modules `enabled: true`:
+the root `prepare` script builds the gitignored browser contributions on every `bun install`, so
+the host's server-start validation finds `apps/cli/dist/board/*` and no operator flip is needed
+(see the 2026-10-19 note below). Shapes and operator setup: `04` `kk board`.
+
+> **2026-10-19 (operator-setup contract):** the declarations flipped from `enabled: false` to
+> `enabled: true` and the assets became an install-time product — root `prepare` runs
+> `bun scripts/build-board.ts`, pinned by `scripts/tests/board-package.test.ts`. The build-first-flip
+> workflow above is superseded; `04` `kk board` → Operator setup owns the current steps.
 
 ### Amendment — 2026-10-16 (G81: Collect reads the kk store read-only)
 

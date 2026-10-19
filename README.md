@@ -125,6 +125,73 @@ subcommands — `kk` owns steps; `spur workflow` owns orchestration, never the r
 
 ---
 
+## External Dependencies
+
+Everything needed to build, test or release this repo, and where each pin lives. Treat `.prototools`,
+`package.json` and `bun.lock` as the source of truth for versions; this table records the pin's home
+and how to install/verify the dependency.
+
+### Toolchain (pinned)
+
+| Dependency | Pin | Needed by | Install / verify |
+| --- | --- | --- | --- |
+| [proto](https://moonrepo.dev/proto) | — | installs the pinned CLI toolchain | `brew install proto && proto setup` |
+| Bun | `.prototools` (`bun = "1.4.3"`) | runtime, package manager, test runner, `bun build` | `proto use` → `bun --version` |
+| Biome | `.prototools` + root devDependency (`2.5.15`) | `bun run lint`, `bun run format` | `node_modules/.bin/biome --version` |
+| TypeScript | root devDependency (`7.0.2`) | `bun run typecheck` — `tsc --noEmit` in every workspace | `node_modules/.bin/tsc --version` |
+| Lefthook | `.prototools` (`lefthook = "2.2.2"`) | git hooks, installed by the root `prepare` script | `proto use` → `lefthook version` |
+| Cocogitto (`cog`) | `.prototools` (`cog = "7.0.0"`) | Conventional Commit checks (commit-msg + pre-push hooks) | `proto use` → `cog --version` |
+| Node.js + npm | Node ≥ 22, npm ≥ 11.5.1 | `npm publish` only (Trusted Publishing via OIDC) | `node -v && npm -v` |
+
+### Global CLIs (deliberately unpinned — always `@latest`)
+
+| Dependency | Needed by | Install / verify |
+| --- | --- | --- |
+| Spur | `bun run spur-check` / `spur rule run`, tasks, features, workflows, the `.spur/` corpus | `bun add -g @gobing-ai/spur@latest` → `spur --version` |
+| Superskill | installing the `kk` plugin collection across coding agents (`superskill install kk`) | `bun add -g @gobing-ai/superskill@latest` → `superskill --version` |
+
+Keep exactly one `spur` on `PATH` (the bun-global one): a second npm-global copy shadows it and
+silently downgrades the engine. `bun run tools:fresh` warns when either CLI is behind npm `latest`
+or shadowed.
+
+### Native and per-feature binaries
+
+| Dependency | Version | Needed by | Install / verify |
+| --- | --- | --- | --- |
+| Chromium for Playwright | build 1187 (playwright `1.55.0`) | real-browser tests, publish-channel fixtures, Board modules | `(cd apps/board && bunx playwright install chromium)` |
+| ffmpeg / ffprobe | any recent build | audio segment join, `atempo` speed, WAV→MP3 (`plugins/generations/voice-gen/src/{concat,mp3}.ts`, `plugins/kk/scripts/daily-stages.ts`) | `brew install ffmpeg` → `ffmpeg -version` |
+| Python 3 | 3.x | only `plugins/ingestions/last30days-ingest`; override the interpreter with `LAST30DAYS_PYTHON` | `python3 --version` |
+| [uv](https://docs.astral.sh/uv/) | latest | only `plugins/generations/voxcpm-tts` (`uv run --project … --locked --no-dev python …/worker.py`) | `uv --version` |
+| Git + GitHub CLI | — | version control; `gh auth token` supplies `GH_TOKEN` for the private marketplace install | `git --version && gh auth status` |
+
+### npm libraries (non-workspace)
+
+| Package | Version | Used by | Pinned in |
+| --- | --- | --- | --- |
+| `commander` | `15.0.0` | `apps/cli` (command registration) | `apps/cli/package.json` |
+| `zod` | `4.4.3` | `apps/cli`, `packages/kk-core`, `packages/kk-store`, 11 generator/ingestion plugins | each manifest |
+| `drizzle-orm` / `drizzle-zod` | `0.45.3` / `0.8.3` | `packages/kk-store` (SQLite store) | `packages/kk-store/package.json` |
+| `playwright` | `1.55.0` | `apps/cli`, `apps/board`, `packages/publish-harness`, 14 publish plugins + `image-gen` | root `workspaces.catalog` |
+| `react` / `react-dom` | `19.2.1` | `apps/board` (host supplies the runtime facades; never bundled) | `apps/board/package.json` |
+| `@gobing-ai/ts-utils`, `ts-runtime`, `ts-infra`, `ts-db`, `ts-browser-automation` | `^0.5.30` | shared runtime, DB and browser plumbing across apps, packages and plugins | root `workspaces.catalog` |
+| `@biomejs/biome` / `@types/bun` / `typescript` | dev-only | lint + format, Bun types, typecheck | root `devDependencies` |
+
+`@gobing-ai/kk-core`, `@gobing-ai/kk-store`, `@gobing-ai/publish-harness` and `@gobing-ai/kk-board`
+are internal workspace packages: they are bundled into `dist/`, never installed from a registry.
+
+### One-shot setup
+
+```bash
+proto use                                             # bun 1.4.3, biome, lefthook, cog
+bun install                                           # workspaces + devDependencies (also builds Board assets)
+bun add -g @gobing-ai/spur@latest @gobing-ai/superskill@latest
+(cd apps/board && bunx playwright install chromium)   # browser tests only
+bun run tools:fresh                                   # warn if the global CLIs are stale or shadowed
+bun run gate                                          # format + build + lint + rules + tests
+```
+
+---
+
 ## Development
 
 ### Stack
@@ -132,13 +199,13 @@ subcommands — `kk` owns steps; `spur workflow` owns orchestration, never the r
 | Tool | Version | Role |
 | --- | --- | --- |
 | Bun | 1.4.3 | Runtime, package manager, test runner |
-| TypeScript | ESNext, strict | Language |
-| Biome | 2.5.15 | Lint + format (pinned in `package.json` + `.prototools`) |
-| Lefthook | 2.2.2 | Git hooks |
-| Cocogitto | 7.0.0 | Conventional commits |
-| proto | — | Tool version pins (`.prototools`) |
-| Spur | — | Project quality harness (rules, tasks, workflows) |
+| TypeScript | `7.0.2`, `ESNext`, strict | Language |
+| Biome | 2.5.15 | Lint + format |
 | Commander | 15.0.0 | CLI framework |
+| react / react-dom | 19.2.1 | Board module UI (host facades at runtime) |
+
+Install, pin and verify commands for every other dependency (proto, Lefthook, Cocogitto, Spur,
+Superskill, Chromium, ffmpeg, Python/uv, Node/npm): see **External Dependencies** above.
 
 ### Verification gate (all must pass before "done")
 

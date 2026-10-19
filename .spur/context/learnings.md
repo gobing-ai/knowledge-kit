@@ -2,6 +2,18 @@
 
 Conventions / decisions discovered the hard way. Newest first.
 
+## Learning: board module assets are an install-time product
+
+- **Convention/quirk:** `bootstrap.modules` in `.spur/config.yaml` is committed `enabled: true`, and
+the gitignored assets behind it (`apps/cli/dist/board/<entry>`) are built by the root `prepare`
+script, which `bun install` runs. Root `build` and CLI `build:bundle`/`prepack` run the same
+`scripts/build-board.ts`, and `scripts/tests/board-package.test.ts` pins both wirings. `spur` resolves
+`directory` against the project root, requires it inside that root, and exits 1 before listening when
+it is missing.
+- **Why it matters:** `--ignore-scripts` installs (CI) skip `prepare` and must build explicitly; a
+checkout that skipped lifecycle scripts or ran `git clean -xdf` needs one `bun scripts/build-board.ts`
+first. Never re-introduce a manual "build, then flip `enabled`" step: the flip is what fails serve.
+
 ## Learning: workflow YAML names kinds; rule YAML loads modules
 
 - **Convention/quirk:** A workflow `guard`/`action` is only `{ kind, options }` looked up on `WorkflowEngineHost` (`evaluateGuard` / `runAction`). Implementations are registered in-process (`createDefaultWorkflowEngineHost` + `registerSpurBuiltins`). `loadWorkflowExtensionsIntoHost` is library-only — `spur workflow run` never calls it. `type: gate` is unread. The YAML that *does* list module paths is the **rule** engine: `extensions.evaluators: [./file.ts]` relative to the YAML (`collectExtensions` + `loadExtensionsIntoHost`).
