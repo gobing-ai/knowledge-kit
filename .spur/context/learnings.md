@@ -2,6 +2,18 @@
 
 Conventions / decisions discovered the hard way. Newest first.
 
+## Learning: operator-requested confidence grades are report-level only
+
+- **Convention/quirk:** the operator asks (repeatedly, verbatim) to "add verification for: confidence
+level (HIGH/MEDIUM/LOW)". Serve it as a graded line in the **reply** — grade each verified claim and
+name which claims are MEDIUM because a gate was not run. It is not a rule, not a gate, and never a
+`Confidence:` field inside a task's `## Review`/`## Testing` block.
+- **Why it matters:** ADR-041 deleted the rules that graded agent-authored text
+(`verification-confidence-level`, `review-record-confidence-level`, `run-answer-confidence-level`) and
+its invariant forbids re-adding one; a grader that fires on an honest-but-uncited label was the exact
+friction that retired them. Grading a report costs nothing and breaks nothing; encoding it as a check
+would reverse an accepted decision.
+
 ## Learning: board module assets are an install-time product
 
 - **Convention/quirk:** `bootstrap.modules` in `.spur/config.yaml` is committed `enabled: true`, and
