@@ -275,7 +275,7 @@ html, body {
   <div class="illustration-band">
     ${illustrationSrc ? `<img src="${illustrationSrc}" alt="">` : `<div style="width:100%;height:100%;background:${palette.background};"></div>`}
   </div>
-  <div class="text-panel">
+  <div class="text-panel" id="text-panel">
     <div class="headline" data-field="headline" id="headline">${escHtml(input.headline)}</div>
     <div class="points-container">
       ${pointsHtml}
@@ -287,17 +287,33 @@ html, body {
 (function () {
   // Step headline font down from start until it fits, never below floor.
   var headline = document.getElementById('headline');
+  var panel = document.getElementById('text-panel');
   var headlineMinPx = ${headlineMinPx};
   var headlineStartPx = ${headlineStartPx};
   var safeWidth = ${safeWidth};
-  var panelHeight = ${textPanelHeight - safeArea * 2};
   var size = headlineStartPx;
+  // Measure UNWRAPPED: the headline is white-space:normal + word-break:break-all, so a headline
+  // wider than the safe area wraps instead of overflowing — scrollWidth then equals the container
+  // width and the width check below never fired, leaving the fit loop at its start size. A 10-char
+  // cover headline (96px x 10 = 960px > 936px safe width) wrapped to two lines, pushed the points
+  // block past the safe bottom, and the composer refused every retry because the remediation only
+  // shortens points (2026-10-19 run: points[1], points[2] overflowed, xhs-render failed, the whole
+  // episode stayed unpublished). nowrap makes scrollWidth the real single-line width, so the loop
+  // shrinks the font until the headline fits on one line.
+  headline.style.whiteSpace = 'nowrap';
+  // The vertical budget is SHARED with the points block: measuring only the headline let a 4-bullet
+  // card overflow by ~30px, and the only remediation rewritable in stderr is a points rewrite — so
+  // the trailing bullet was dropped on every 4-point card (2026-10-19: cards 02/03 shipped 3 of 4
+  // planned points). The panel's own scrollHeight covers headline + margins + gaps + every point.
   while (size > headlineMinPx) {
     headline.style.fontSize = size + 'px';
-    if (headline.scrollWidth <= safeWidth && headline.scrollHeight <= panelHeight) break;
+    if (headline.scrollWidth <= safeWidth && panel.scrollHeight <= panel.clientHeight) break;
     size -= 4;
   }
   headline.style.fontSize = Math.max(size, headlineMinPx) + 'px';
+  // Restore wrapping: at the floor size a genuinely too-long headline still wraps (and the composer
+  // then refuses loudly) instead of overflowing the card horizontally.
+  headline.style.whiteSpace = 'normal';
 })();
 </script>
 </body>

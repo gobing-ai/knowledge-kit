@@ -70,6 +70,21 @@ describe('cardHtml', () => {
         expect(html).toContain('var headlineMinPx = 64');
     });
 
+    // 2026-10-19: the fit loop used to measure a WRAPPING headline, so scrollWidth never exceeded
+    // the safe width and the font never stepped down. A 10-char cover headline wrapped to two lines,
+    // pushed the points past the safe bottom, and the composer refused every retry (only points are
+    // rewritable) — 4 cards unrendered and the whole episode unpublished. The measurement must be
+    // unwrapped; wrapping is restored afterwards for a headline that cannot fit even at the floor.
+    test('headline fit measures the unwrapped width, then restores wrapping', () => {
+        const html = cardHtml(input(), urls());
+        const measure = html.indexOf("headline.style.whiteSpace = 'nowrap'");
+        const loop = html.indexOf('headline.scrollWidth <= safeWidth');
+        const restore = html.indexOf("headline.style.whiteSpace = 'normal'");
+        expect(measure).toBeGreaterThan(-1);
+        expect(loop).toBeGreaterThan(measure);
+        expect(restore).toBeGreaterThan(loop);
+    });
+
     test('embeds the illustration as a data URL when bytes are present', () => {
         const bytes = new Uint8Array([137, 80, 78, 71, 1, 2, 3]);
         const html = cardHtml(input({ illustration: { bytes, mime: 'image/png' } }), urls());

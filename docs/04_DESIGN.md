@@ -1836,7 +1836,12 @@ formats:
 Behavior: `compose(headline, points, role, compose, fontBytes, illustrationBytes?) -> PNG` is a
 pure function (byte-identical for identical inputs, SHA-256 verified); text is typeset with the
 pinned Noto Sans SC SubsetOTF fonts from `assets/fonts/` through headless Chromium (Playwright,
-local, no network); overflow beyond `safeArea` fails loud naming the field. Non-compose formats
+local, no network); overflow beyond `safeArea` fails loud naming the field. The headline fit is
+measured **unwrapped** (`white-space: nowrap` during the loop) against a **shared** vertical budget
+(`.text-panel` scrollHeight vs clientHeight, so headline + points must fit together) — measured
+wrapped, the width check never fired and a 10-char cover headline took two lines and pushed the
+bullets past the safe bottom; measured headline-only, every 4-bullet card overflowed and lost its
+trailing point to the stderr remediation (2026-10-19). Non-compose formats
 (`free`, `cover`, `daily-news-cover`, `illustration`) are unchanged.
 
 Artifact: for compose formats the job returns `ImageArtifact` with `.path` = composed card PNG
