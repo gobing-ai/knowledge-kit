@@ -209,6 +209,9 @@ export async function createItemDecisionAsker(
             await import('@gobing-ai/ts-ai-decision')
         ).createDecisionHub({
             catalogs: [catalogPath],
+            // The TypeSafe SDK drains the response body for its telemetry buffer before parsing the
+            // same response again; see `bufferedDecisionFetch` for why that is fatal under Bun.
+            builtins: { makerOptions: { fetch: bufferedDecisionFetch } },
         })) as unknown as DecisionHubLike);
 
     const backendFailures = new Map<string, number>();
@@ -258,6 +261,48 @@ export async function createItemDecisionAsker(
         },
     };
 }
+
+/**
+ * Fetch adapter for the TypeSafe-backed decisions (`kk-item-china-politics`, `-sensitivity`,
+ * `-audience`): hand the SDK an already-buffered, body-less response.
+ *
+ * `@typesafe-ai/sdk@0.7.0`'s `attempt()` drains `response.clone().body` AND `response.body` for its
+ * telemetry buffer (`bufferResponse`) and then parses the original with `response.text()`. Under Bun
+ * the drain consumes the original body, so every request dies with `TypeError: Body already used`
+ * and the maker answers through its declared fallback — which is fail-closed on purpose:
+ * `kk-item-china-politics` falls back to 3, and the ai-news extract profile's `lte: 1` gate then
+ * drops every item, so the daily episode cannot be built at all (2026-10-20, every label pass from
+ * 10-19T03:53Z on). SDK 0.6.0 had no such drain; 0.7.0 ships it unconditionally.
+ *
+ * Reading the body once here and returning a Response-shaped object with `body: null` makes that
+ * drain an immediate no-op (`if (!reader) return`), so the SDK parses the text this adapter already
+ * holds. `clone()` returns the same object: nothing downstream mutates it, and it keeps the no-op
+ * body contract. Remove this adapter once the SDK stops draining the response it is about to parse.
+ *
+ * The underlying fetch is a PARAMETER, not the global: this module is the decision transport seam
+ * (`no-direct-fetch`), so it never reaches the network itself — the hub's default is the ambient
+ * fetch, and a test injects its own instead of mutating `globalThis` (`no-globalthis-fetch-mutation`).
+ */
+export function createBufferedDecisionFetch(inner: typeof fetch = fetch): typeof fetch {
+    return (async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+        const response = await inner(input, init);
+        const text = await response.text();
+        const buffered = {
+            ok: response.ok,
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+            body: null,
+            text: async () => text,
+            json: async () => JSON.parse(text),
+            clone: () => buffered,
+        };
+        return buffered as unknown as Response;
+    }) as unknown as typeof fetch;
+}
+
+/** The adapter the in-process hub installs on the TypeSafe maker (ambient fetch). */
+export const bufferedDecisionFetch = createBufferedDecisionFetch();
 
 /**
  * The one-off transport: `spur decision run <id> --param title=… --param source=… --evidence <body>

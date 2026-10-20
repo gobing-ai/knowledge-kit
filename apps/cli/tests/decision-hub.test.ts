@@ -20,6 +20,7 @@ import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+    createBufferedDecisionFetch,
     createItemDecisionAsker,
     type DecisionHubLike,
     EVIDENCE_MAX_CHARS,
@@ -256,5 +257,31 @@ describe('decision hub — maker routing and request parity (0317 R8)', () => {
     it('the catalog resolves from this module’s own install when the cwd has none', async () => {
         const resolved = await resolveCatalogPath(tempDir());
         expect(resolved.endsWith('plugins/kk/decisions/kk-items.yaml')).toBe(true);
+    });
+
+    /**
+     * 2026-10-20: `@typesafe-ai/sdk@0.7.0` drains `response.body` AND `response.clone().body` for its
+     * telemetry buffer, then parses the same response with `text()` — `Body already used` under Bun,
+     * so every TypeSafe decision fell back (china-politics → 3, which empties the ai-news pool).
+     * `createBufferedDecisionFetch` must therefore survive exactly that SDK sequence.
+     */
+    it('hands the SDK a response it can drain twice and still read', async () => {
+        const payload = JSON.stringify({ answers: { q: { type: 'score', score: 0.0, confidence: 1 } } });
+        // Injected fetch, never a `globalThis.fetch` mutation (strict rule `no-globalthis-fetch-mutation`).
+        const stubFetch = (async () =>
+            new Response(payload, {
+                status: 200,
+                headers: { 'content-type': 'application/json' },
+            })) as unknown as typeof fetch;
+        const buffered = await createBufferedDecisionFetch(stubFetch)('https://example.test', {});
+        // The SDK's `bufferResponse`: clone + read both bodies. A body-less response makes the
+        // drain a no-op instead of consuming what `text()` needs.
+        expect(buffered.clone().body).toBeNull();
+        expect(buffered.body).toBeNull();
+        expect(buffered.status).toBe(200);
+        expect(buffered.headers.get('content-type')).toBe('application/json');
+        // The SDK's `parseBody` reads the text AFTER the drain.
+        expect(await buffered.text()).toBe(payload);
+        expect(await buffered.json()).toEqual(JSON.parse(payload));
     });
 });
