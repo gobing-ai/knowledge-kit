@@ -159,6 +159,20 @@ async function loadDailyStages(): Promise<typeof import('./daily-stages.ts')> {
         );
     }
 }
+/**
+ * Load the audio-quality diagnostic lazily: it shells out to ffprobe/ffmpeg and is only needed when an
+ * operator asks for it, so the runner must not pay for it on every stage (and an install without
+ * ffmpeg on PATH still runs every other stage).
+ */
+async function loadAudioQuality(): Promise<typeof import('./audio-quality.ts')> {
+    try {
+        return await import('./audio-quality.ts');
+    } catch {
+        return fail(
+            'audio-quality.ts not found next to kk-workflow-stages.ts — install or refresh the kk package (bun link in a checkout)',
+        );
+    }
+}
 export const ERRNO_REASONS: Record<string, string> = {
     EACCES: 'Permission denied',
     EROFS: 'Read-only file system',
@@ -1636,6 +1650,11 @@ if (import.meta.main)
         case 'daily-script': {
             const { dailyScript } = await loadDailyStages();
             dailyScript(rest);
+            break;
+        }
+        case 'audio-quality': {
+            const { runAudioQuality } = await loadAudioQuality();
+            await runAudioQuality(rest);
             break;
         }
         case 'daily-preflight': {

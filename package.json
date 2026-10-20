@@ -43,7 +43,8 @@
         "check": "bun run lint && bun run test",
         "check:full": "bun run lint && bun run test:full",
         "load-history": "DATABASE_URL='.spur/spur.db' spur history import && DATABASE_URL='.spur/spur.db' spur history analyze",
-        "tools:fresh": "bun scripts/check-tool-freshness.ts"
+        "tools:fresh": "bun scripts/check-tool-freshness.ts",
+        "audio:quality": "bun plugins/kk/scripts/audio-quality.ts"
     },
     "devDependencies": {
         "@biomejs/biome": "2.5.15",
