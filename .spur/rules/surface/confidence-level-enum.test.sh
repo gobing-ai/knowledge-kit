@@ -90,6 +90,24 @@ case_check vacuous 1 ts <<'EOF'
 export const SOMETHING_ELSE = 1;
 EOF
 
+# 11. The SPLIT chain (one level per line, the `itc-report` shape): the run is one site.
+case_check chain-split-all-three 0 ts <<'EOF'
+    const unusablePass =
+        verdict === 'PASS' &&
+        verdictJson.confidence !== 'HIGH' &&
+        verdictJson.confidence !== 'MEDIUM' &&
+        verdictJson.confidence !== 'LOW';
+EOF
+
+# 12. A split chain that dropped a level is the drift this rule exists for; it was invisible while
+#     discovery read one line at a time (measured 2026-10-20).
+case_check chain-split-two-only 1 ts <<'EOF'
+    const unusablePass =
+        verdict === 'PASS' &&
+        verdictJson.confidence !== 'HIGH' &&
+        verdictJson.confidence !== 'MEDIUM';
+EOF
+
 # 10. POSITIVE CONTROL on the real corpus: the tree this rule ships in must pass.
 if sh "$checker" >"$tmp/repo.out" 2>&1; then
     pass=$((pass + 1))

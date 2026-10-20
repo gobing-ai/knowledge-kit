@@ -21,12 +21,15 @@ $schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
 # SCOPE — deliberately narrow, and it does not judge quality:
 #   - a `*CONFIDENCE_LEVELS = [` declaration;
 #   - a single-line jq `test("^(…)$")` that reads a `confidence` field;
-#   - a single-line comparison chain naming at least TWO levels, with `onfidence` on the same or the
-#     preceding line (the `isConfidenceLevel(value) { return value === 'HIGH' || … }` shape).
-# A one-level predicate (`x.confidence !== 'LOW'`) is a legitimate partial check and is NOT a
-# vocabulary site. A chain reformatted across more than one line falls outside discovery; its own
-# unit test owns that case. The checker's vacuity arm makes the limit loud: when the idioms go stale
-# it fails instead of passing over nothing.
+#   - a comparison chain naming at least TWO levels, with `onfidence` on the chain or the line above it
+#     (the `isConfidenceLevel(value) { return value === 'HIGH' || … }` shape).  A run of CONSECUTIVE
+#     comparison lines is one site, so the formatter splitting `itc-report` into one level per line
+#     cannot hide a dropped level (it did until 2026-10-20).
+# A standalone one-level predicate (`x.confidence !== 'LOW'`) is a legitimate partial check and is NOT
+# a vocabulary site; a chain that deliberately tests a subset is reported, and the honest repair is to
+# go through the shared constant (`CONFIDENCE_LEVELS.includes(...)`) so the vocabulary keeps one source.
+# The checker's vacuity arm keeps the other limit loud: when the idioms go stale it fails instead of
+# passing over nothing.
 #
 # The checker lives in confidence-level-enum.sh so its file/line detail is reachable by hand — the
 # `exit-code` evaluator reports only the exit status. Its 10 falsification cases live in

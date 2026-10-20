@@ -18,6 +18,7 @@
 #                                CONFIDENCE_LEVELS = ['HIGH', 'MEDIUM', 'LOW'] as const
 #   2. a jq guard                test("^(HIGH|MEDIUM|LOW)$")
 #   3. a comparison chain        x === 'HIGH' || x === 'MEDIUM' || x === 'LOW'
+#      (single-line OR split one level per line — a run of consecutive comparison lines is one site)
 #
 # Measured 2026-10-20: 10 sites across those shapes. Any ONE of them drifting breaks a gate
 # silently and in opposite directions — a guard that drops `LOW` refuses every honest LOW answer
@@ -28,13 +29,14 @@
 # SCOPE, deliberately narrow so it cannot fire on prose:
 #  - shape 1 counts only a `*CONFIDENCE_LEVELS = [` declaration (identifier, uppercase, brackets);
 #  - shape 2 counts only a single-line jq `test("^(…)$")` that reads a `confidence` field;
-#  - shape 3 counts only a SINGLE-LINE chain that (a) mentions `onfidence` and (b) names at least
-#    TWO levels — a one-level predicate (`x.confidence !== 'LOW'`) is a legitimate partial check and
-#    is not a vocabulary declaration.
-# A chain reformatted across lines therefore falls outside discovery; its own unit test is the
-# check there. That is the honest limit of a text gate, and the vacuity arm below makes the limit
-# loud rather than silent: if the idioms themselves change, the checker fails instead of passing
-# over nothing.
+#  - shape 3 counts a run of consecutive comparison lines that (a) mentions `onfidence` on the run or
+#    the line above it and (b) names at least TWO levels in total.  A standalone one-level predicate
+#    (`x.confidence !== 'LOW'`) is a legitimate partial check and is not a vocabulary site; a chain that
+#    deliberately tests a SUBSET ("at least MEDIUM") is therefore reported, and the honest repair is to
+#    express it through the shared constant (`CONFIDENCE_LEVELS.includes(...)`) so the vocabulary keeps
+#    one source.
+# The vacuity arm below keeps the other limit loud: if the idioms themselves change, the checker fails
+# instead of passing over nothing.
 #
 # Exit status: 0 = every site names exactly HIGH|MEDIUM|LOW; 1 = a site disagrees, or no site was
 # found at all; 2 = usage.
@@ -63,13 +65,27 @@ fi
 while IFS= read -r file; do
     grep -nE "CONFIDENCE_LEVELS *= *\[" "$file" 2>/dev/null | sed "s|^|$file:array:|" >>"$hits"
     grep -nF 'test("^(' "$file" 2>/dev/null | grep -F 'confidence' | sed "s|^|$file:guard:|" >>"$hits"
-    # Shape 3 with one line of context: the real site is `isConfidenceLevel(value) { return value
-    # === 'HIGH' || … }`, so the identifier naming the vocabulary sits on the line ABOVE the chain.
+    # Shape 3 — a comparison chain, accumulated across CONSECUTIVE comparison lines: the guard may be
+    # written on one line (`isConfidenceLevel(value) { return value === 'HIGH' || … }`) or split by the
+    # formatter into one level per line (`itc-report`'s `!== 'HIGH' &&` / `!== 'MEDIUM' &&` /
+    # `!== 'LOW';`).  A per-line scan saw only one level at a time, so dropping a level from a split
+    # chain passed silently (measured 2026-10-20).  A run is a site when the run or the line above it
+    # names the vocabulary (`onfidence`), and the run's UNION of levels is what gets compared.
     awk -v tag="$file:chain:" '
-        /=== '\''(HIGH|MEDIUM|LOW)'\''|== '\''(HIGH|MEDIUM|LOW)'\''/ {
-            if (($0 " " prev) ~ /onfidence/) print tag FNR ":" $0
+        function flush() {
+            if (run != "") {
+                if ((run " " before) ~ /onfidence/) print tag start ":" run
+                run = ""
+                before = ""
+            }
         }
-        { prev = $0 }
+        /=== '\''(HIGH|MEDIUM|LOW)'\''|== '\''(HIGH|MEDIUM|LOW)'\''/ {
+            if (run == "") { start = FNR; before = prev }
+            run = run " " $0
+            next
+        }
+        { flush(); prev = $0 }
+        END { flush() }
     ' "$file" >>"$hits"
 done <"$files"
 
