@@ -34,6 +34,13 @@ name which claims are MEDIUM because a gate was not run. It is not a rule, not a
 its invariant forbids re-adding one; a grader that fires on an honest-but-uncited label was the exact
 friction that retired them. Grading a report costs nothing and breaks nothing; encoding it as a check
 would reverse an accepted decision.
+- **CORRECTED 2026-10-19 (task 0317 run):** the *report* half still stands — grade the reply, never
+add a rule. The "never a `Confidence:` field inside `## Review`" half is now stale for the PIPELINE
+surface: `spur task residual <wbs> review-gate` (ADR-141) requires a `Confidence:` line in the task's
+`## Review` and recomputes it from the finding dispositions, and `spur task verdict --from-answer`
+requires one in the review answer, derived from the AC rows. Both are machine-read answer contracts
+the pipeline demands, not a re-added style rule — so write the line when a pipeline run asks for it,
+and keep the reply-level grades separate from it.
 
 ## Learning: board module assets are an install-time product
 
