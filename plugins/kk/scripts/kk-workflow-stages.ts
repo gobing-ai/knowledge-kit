@@ -1638,6 +1638,11 @@ if (import.meta.main)
             dailyScript(rest);
             break;
         }
+        case 'daily-preflight': {
+            const { dailyPreflight } = await loadDailyStages();
+            dailyPreflight(rest);
+            break;
+        }
         case 'daily-safety-prep': {
             const { dailySafetyPrep } = await loadDailyStages();
             dailySafetyPrep(rest);

@@ -113,11 +113,18 @@ nodes:
       the artifact directories and the safety revise budget. `kk ledger sync` records runs that
       already finished without a ledger row (failed ones included) — a fail-fast DAG never reaches
       its own `ledger` node, so the next run's prepare is the backfill (design §7).
+      The `daily-preflight` stage runs FIRST: the scheduler executes this checkout's YAML while
+      `kk stage` resolves its stage runner from the installed package, so a run whose YAML names a
+      stage the installed runner lacks must fail here, naming the stage, instead of 29 minutes later
+      inside the nested safety machine (2026-10-20: `unknown stage: daily-safety-verdict`, nothing
+      published).
     action:
       kind: shell
       options:
         command: >-
-          kk daily prepare --workflow kk-daily-ai-voice2 --run-date "${vars.run_date}" --ledger-sync
+          kk stage daily-preflight plugins/kk/workflows/kk-daily-ai-voice2.yaml
+          plugins/kk/workflows/kk-daily-safety.yaml
+          && kk daily prepare --workflow kk-daily-ai-voice2 --run-date "${vars.run_date}" --ledger-sync
           --run "${vars.__runId}" --definition-digest "${vars.__definitionDigest}"
           --setting window="${vars.window}" --setting language="${vars.language}" --setting vdriver="${vars.vdriver}"
           --setting skip_review="${vars.skip_review}" --setting transcode_mp3="${vars.transcode_mp3}"

@@ -3445,6 +3445,48 @@ describe('kk workflow stage runner — daily-prepare work_dir composition (0139)
     });
 });
 
+describe('daily-preflight stage/runner skew guard (20261020)', () => {
+    const workflows = join(import.meta.dir, '../../../plugins/kk/workflows');
+
+    it('passes when the installed runner advertises every stage the daily workflows invoke', () => {
+        const result = run([
+            'daily-preflight',
+            join(workflows, 'kk-daily-ai-voice2.yaml'),
+            join(workflows, 'kk-daily-safety.yaml'),
+        ]);
+        expect(result.stderr).toBe('');
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain(
+            'advertises every stage kk-daily-ai-voice2.yaml + kk-daily-safety.yaml invokes',
+        );
+    });
+
+    it('refuses at minute 0, naming the stage the stale runner lacks (the 2026-10-20 failure)', () => {
+        withTempDir((dir) => {
+            const workflow = join(dir, 'probe.yaml');
+            writeFileSync(
+                workflow,
+                'name: probe\nnodes:\n  - id: x\n    action:\n      kind: shell\n      options:\n        command: >-\n          kk stage daily-safety-verdict "a" "b" && kk stage daily-not-a-real-stage\n',
+            );
+            const result = run(['daily-preflight', workflow]);
+            expect(result.status).toBe(1);
+            expect(result.stderr).toContain('daily-preflight.runner-stale');
+            expect(result.stderr).toContain('daily-not-a-real-stage (needed by probe.yaml)');
+            // A stage the runner does know must not be reported.
+            expect(result.stderr).not.toContain('daily-safety-verdict');
+        });
+    });
+
+    it('fails loud on a missing workflow file and on no arguments', () => {
+        const missing = run(['daily-preflight', join(tmpdir(), 'no-such-workflow.yaml')]);
+        expect(missing.status).toBe(1);
+        expect(missing.stderr).toContain('daily-preflight.workflow-missing');
+        const bare = run(['daily-preflight']);
+        expect(bare.status).toBe(2);
+        expect(bare.stderr).toContain('pass at least one workflow YAML path');
+    });
+});
+
 describe('daily-patch-surfdash git scoping and frontmatter (R6/R11)', () => {
     const RUN_DATE = '20260904';
     const POST_REL = `content/posts/articles/zh/${RUN_DATE}-post/index.md`;

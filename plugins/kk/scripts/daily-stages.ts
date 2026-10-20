@@ -1982,6 +1982,52 @@ export function dailySafetyGate(args: string[]): void {
 }
 
 /**
+ * `daily-preflight <workflow.yaml>…` — assert the stage runner that `kk stage` just loaded
+ * advertises every `kk stage <name>` these workflow definitions invoke.
+ *
+ * WHY (2026-10-20): the scheduler runs the CHECKOUT's workflow YAML while `kk stage` resolves the
+ * runner from the INSTALLED package (`apps/cli/src/stage.ts`). A commit that adds a stage therefore
+ * outruns the global install silently, and the mismatch only surfaces where the new stage is first
+ * reached. That day's 04:30 run died 29 minutes in at `safety` with `unknown stage:
+ * daily-safety-verdict` (present in the checkout, absent from the installed 0.1.4) and published
+ * nothing. This runs as the first command of the run's `prepare` node, so the same skew costs one
+ * cheap step and names both the missing stages and the refresh command.
+ *
+ * The known-name set is the dispatch switch of the sibling `kk-workflow-stages.ts` — the file beside
+ * this one, i.e. the copy actually in force, never a checkout-vs-install guess.
+ */
+export function dailyPreflight(args: string[]): void {
+    const files = args.filter((arg) => arg !== '');
+    timed('', 'preflight', () => {
+        if (files.length === 0) failWith(2, 'daily-preflight: pass at least one workflow YAML path');
+        const runner = join(import.meta.dir, 'kk-workflow-stages.ts');
+        if (!isFile(runner)) failWith(1, `daily-preflight.runner-missing: ${runner} is not beside this stage body`);
+        const known = new Set(
+            [...readFileSync(runner, 'utf-8').matchAll(/^\s*case '([a-z][a-z0-9-]*)':/gm)].map((match) =>
+                String(match[1]),
+            ),
+        );
+        const missing: string[] = [];
+        for (const file of files) {
+            if (!isFile(file)) failWith(1, `daily-preflight.workflow-missing: ${file}`);
+            for (const match of readFileSync(file, 'utf-8').matchAll(/\bkk stage ([a-z][a-z0-9-]*)/g)) {
+                const name = String(match[1]);
+                if (!known.has(name)) missing.push(`${name} (needed by ${basename(file)})`);
+            }
+        }
+        if (missing.length > 0) {
+            failWith(
+                1,
+                `daily-preflight.runner-stale: the installed stage runner ${runner} does not know ${missing.join(', ')} — refresh it (install the released kk package, or rsync plugins/kk/scripts/ per AGENTS.md) before the scheduled run`,
+            );
+        }
+        console.log(
+            `preflight: stage runner advertises every stage ${files.map((file) => basename(file)).join(' + ')} invokes`,
+        );
+    });
+}
+
+/**
  * Task 0317 R6 — fold the gate's own classification, its stamp and the `kk-safety-verdict` catalog
  * decision into ONE accept/refuse token the `judge -> clean` guard reads as a single predicate
  * (ADR-115 caps that guard at 5 logical commands, so the logic lives here).
