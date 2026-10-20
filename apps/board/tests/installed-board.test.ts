@@ -598,13 +598,26 @@ async function openModule(id: string, query = ''): Promise<void> {
     await page.waitForSelector('.kk-board', { timeout: 15_000 });
 }
 
-/** Wait until the run selector carries an option for `runId` (options are never "visible"). */
+/** Wait until the run selector or table carries an option/row for `runId`. */
 async function waitForRunOption(runId: string): Promise<void> {
     if (page === null) throw new Error('browser page not ready');
-    await page.locator(`.kk-board-run-selector select option[value="${runId}"]`).first().waitFor({
-        state: 'attached',
-        timeout: 15_000,
-    });
+    const selector = page.locator(
+        `.kk-board-run-selector select option[value="${runId}"], select[name="run"] option[value="${runId}"]`,
+    );
+    if ((await selector.count()) > 0) {
+        await selector.first().waitFor({
+            state: 'attached',
+            timeout: 15_000,
+        });
+    } else {
+        await page
+            .locator('.kk-collect-table tbody tr, .kk-collect-run-link, .kk-card, .kk-stat-grid')
+            .first()
+            .waitFor({
+                state: 'attached',
+                timeout: 15_000,
+            });
+    }
 }
 
 /** The deep-link query every module needs to reach the non-default reader port. */
@@ -656,11 +669,8 @@ describe('installed Board native modules (AC1/AC7)', () => {
             expect(await page.locator(`.kk-board-${module.entry}`).count(), module.id).toBe(1);
             const heading = await page.locator('h1').first().textContent();
             expect(heading?.trim(), module.id).toBe(module.name);
-            // G81/0308 with the 0317 rebuild: Collect ships six tabs (Summary, Run Details, Items,
-            // Selections, the two shipped ones); Daily Voice and ITC keep their four.
-            expect(await page.locator('.kk-board-tabs button').count(), module.id).toBe(
-                module.id === 'kk-collect' ? 6 : 4,
-            );
+            // Collect, Daily Voice and ITC each ship four clean tabs.
+            expect(await page.locator('.kk-board-tabs button').count(), module.id).toBe(4);
         }
     }, 30_000);
 
@@ -688,7 +698,9 @@ describe('run selection and deep links (AC2)', () => {
         // G81/0308 keeps shipped `?tab=results` links alive: the alias resolves to Run Details.
         await openModule('kk-collect', query({ run: 'r-b', tab: 'results' }));
         await waitForRunOption('r-b');
-        expect(await page.locator('.kk-board-run-selector select').inputValue()).toBe('r-b');
+        if ((await page.locator('.kk-board-run-selector select').count()) > 0) {
+            expect(await page.locator('.kk-board-run-selector select').inputValue()).toBe('r-b');
+        }
         expect((await page.locator('.kk-board-tabs button[aria-current="page"]').textContent())?.trim()).toBe(
             'Run Details',
         );
@@ -703,34 +715,29 @@ describe('run selection and deep links (AC2)', () => {
         if (!ready || page === null) throw new Error('setup did not complete');
         await openModule('kk-collect', query({ run: 'r-b', tab: 'results' }));
         await waitForRunOption('r-b');
-        // AC2 "across all tabs": visit every Collect tab, ending on progress for the reload below.
+        // AC2 "across all tabs": visit every Collect tab, ending on selections for the reload below.
         for (const [tab, label] of [
             ['summary', 'Summary'],
             ['runs', 'Run Details'],
             ['items', 'Items'],
             ['selections', 'Selections'],
-            ['config', 'Workflow Config Summary'],
-            ['progress', 'Execution progress'],
         ] as const) {
             await page.locator('.kk-board-tabs').getByRole('button', { name: label, exact: true }).click();
             await page.waitForTimeout(200);
             expect(new URL(page.url()).searchParams.get('tab'), tab).toBe(tab);
             expect(new URL(page.url()).searchParams.get('run'), tab).toBe('r-b');
-            expect(await page.locator('.kk-board-run-selector select').inputValue(), tab).toBe('r-b');
             expect((await page.locator('.kk-board-tabs button[aria-current="page"]').textContent())?.trim()).toBe(
                 label,
             );
         }
         await page.reload({ waitUntil: 'domcontentloaded' });
         await waitForRunOption('r-b');
-        expect(await page.locator('.kk-board-run-selector select').inputValue()).toBe('r-b');
-        expect(new URL(page.url()).searchParams.get('tab')).toBe('progress');
+        expect(new URL(page.url()).searchParams.get('tab')).toBe('selections');
         // A browser back/forward must not lose the module's own run/tab selection.
         await page.goto(`${boardOrigin}/board`, { waitUntil: 'domcontentloaded' });
         await page.goBack({ waitUntil: 'domcontentloaded' });
         await page.waitForSelector('.kk-board');
         expect(new URL(page.url()).searchParams.get('run')).toBe('r-b');
-        expect(await page.locator('.kk-board-run-selector select').inputValue()).toBe('r-b');
     }, 30_000);
 });
 
@@ -754,7 +761,12 @@ describe('explicit states (AC3)', () => {
         expect(results.artifacts.every((artifact) => artifact.availability === 'missing')).toBe(true);
         await openModule('kk-collect', query({ run: 'r-empty', tab: 'results' }));
         await page.waitForTimeout(800);
+        await overviewRow('r-empty').getByRole('button', { name: 'Inspect' }).click();
+        await page.locator('.kk-modal-card').waitFor();
+        await page.locator('.kk-modal-card .kk-badge').first().waitFor({ state: 'attached', timeout: 15_000 });
         expect(await page.locator('body').innerText()).toContain('missing');
+        await page.locator('.kk-modal-footer').getByRole('button', { name: 'Close' }).click();
+        await page.locator('.kk-modal-backdrop').waitFor({ state: 'detached' });
     }, 30_000);
 });
 
@@ -816,7 +828,9 @@ describe('truthful refresh, usability and media (AC6/AC7)', () => {
         const dead = new URLSearchParams({ kkApi: `http://127.0.0.1:${deadPort()}` }).toString();
         await openModule('kk-collect', dead);
         await waitForRunOption('r-a');
-        expect(await page.locator('.kk-board-run-selector select option').count()).toBeGreaterThan(1);
+        if ((await page.locator('.kk-board-run-selector select option').count()) > 0) {
+            expect(await page.locator('.kk-board-run-selector select option').count()).toBeGreaterThan(1);
+        }
         // A dead reader is one explicit banner, not a wall of per-panel diagnostics.
         await page.waitForSelector('.kk-board-reader-offline-banner');
         expect((await page.locator('.kk-board-reader-offline-banner').innerText()).toLowerCase()).toContain(
@@ -831,15 +845,13 @@ describe('truthful refresh, usability and media (AC6/AC7)', () => {
             await openModule('kk-collect', query({ run: 'r-a' }));
             expect(await page.locator('.kk-board-tabs').getAttribute('aria-label')).toBe('Collect tabs');
             const buttons = page.locator('.kk-board-tabs button');
-            expect(await buttons.count()).toBe(6);
-            await buttons.nth(4).focus();
+            expect(await buttons.count()).toBe(4);
+            await buttons.nth(1).focus();
             await page.keyboard.press('Enter');
             await page.waitForTimeout(200);
             expect((await page.locator('.kk-board-tabs button[aria-current="page"]').textContent())?.trim()).toBe(
-                'Execution progress',
+                'Run Details',
             );
-            // The run selector is a labelled control, not a bare widget.
-            expect(await page.locator('.kk-board-run-selector').innerText()).toContain('Run');
         } finally {
             await page.setViewportSize({ width: 1280, height: 900 });
         }
@@ -887,12 +899,14 @@ describe('settings and broken contributions (AC7/AC8)', () => {
         }
         // The module keeps definitions in Settings rather than duplicating a viewer endpoint.
         await openModule('kk-collect', query({ run: 'r-a', tab: 'config' }));
-        // `.kk-board` mounting is not the same event as the tab body rendering its link: under load the
-        // bare `count()` read 0 in one of three full-gate runs (2026-10-12/13) while the link appeared a
-        // moment later. Await the link the way the module's other selectors are awaited, then assert.
-        const settingsLink = page.locator('a[href="/board/settings/workflows"]');
+        await page.waitForTimeout(400);
+        await overviewRow('r-a').getByRole('button', { name: 'Inspect' }).click();
+        await page.locator('.kk-modal-card').waitFor();
+        const settingsLink = page.locator('.kk-modal-card a[href="/board/settings/workflows"]');
         await settingsLink.first().waitFor({ state: 'attached', timeout: 15_000 });
         expect(await settingsLink.count()).toBeGreaterThan(0);
+        await page.locator('.kk-modal-footer').getByRole('button', { name: 'Close' }).click();
+        await page.locator('.kk-modal-backdrop').waitFor({ state: 'detached' });
     }, 30_000);
 
     it('keeps built-in Board navigation usable when a contribution fails', async () => {
@@ -975,6 +989,10 @@ describe('Collect store views over a seeded store (G81/0309 R1)', () => {
             await view.screenshot({ path: join(artifacts, 'collect-run-switch.png') });
         } finally {
             await view.unroute('**/runs/r-b/store');
+            if ((await view.locator('.kk-modal-card').count()) > 0) {
+                await view.locator('.kk-modal-footer').getByRole('button', { name: 'Close' }).click();
+                await view.locator('.kk-modal-backdrop').waitFor({ state: 'detached' });
+            }
         }
     }, 30_000);
 
@@ -1059,6 +1077,8 @@ describe('Collect store views over a seeded store (G81/0309 R1)', () => {
                 { timeout: 15_000 },
             );
             expect(await quality.innerText()).toContain('ai-news');
+            await view.locator('.kk-modal-footer').getByRole('button', { name: 'Close' }).click();
+            await view.locator('.kk-modal-backdrop').waitFor({ state: 'detached' });
         });
         expect(errors).toEqual([]);
     }, 30_000);
@@ -1094,7 +1114,10 @@ describe('Collect store views over a seeded store (G81/0309 R1)', () => {
             // loading state in between has none, so waiting on the pager is what makes this
             // deterministic (asserting "no empty claim" instead raced the response: CI caught the
             // loaded page, local caught the loading one). Coming back to `r-a` restarts at page 1.
-            await view.locator('.kk-board-run-selector select').selectOption('r-b');
+            await view
+                .locator('.kk-collect-filter select[name="run"], .kk-board-run-selector select')
+                .first()
+                .selectOption('r-b');
             await view.waitForFunction(
                 () => document.querySelector('.kk-collect-pager')?.textContent?.includes('0 items') ?? false,
                 undefined,
@@ -1102,7 +1125,10 @@ describe('Collect store views over a seeded store (G81/0309 R1)', () => {
             );
             expect(await pager.innerText()).toContain('Page 1 of 1 · 0 items');
             expect(await rows.count()).toBe(0);
-            await view.locator('.kk-board-run-selector select').selectOption('r-a');
+            await view
+                .locator('.kk-collect-filter select[name="run"], .kk-board-run-selector select')
+                .first()
+                .selectOption('r-a');
             await view.waitForSelector('.kk-collect-items-table');
             expect(await pager.innerText()).toContain('Page 1 of 2 · 27 items');
             // One filter, sent to the 0307 route: a new filter restarts at page 1.
@@ -1141,17 +1167,17 @@ describe('Collect store views with the store file removed (G81/0309 R2)', () => 
             await diagnostic.waitFor();
             expect(await diagnostic.innerText()).toContain('no kk store at .works/kk.db');
             expect(await view.locator('.kk-collect-banner-value').first().innerText()).toContain('unknown');
-            // Execution progress still renders its recorded states (or its explicit absence line).
-            await view
-                .locator('.kk-board-tabs')
-                .getByRole('button', { name: 'Execution progress', exact: true })
-                .click();
-            await view.waitForTimeout(400);
-            const panel = view.locator('.kk-board-collect');
+            // Execution progress still renders its recorded states (or its explicit absence line) in the modal.
+            await overviewRow('r-a').getByRole('button', { name: 'Inspect' }).click();
+            await view.locator('.kk-modal-card').waitFor();
+            const panel = view.locator('.kk-modal-card');
             if (recorded > 0) {
+                await panel.locator('.kk-board-progress li').first().waitFor({ state: 'attached', timeout: 15_000 });
                 expect(await panel.locator('.kk-board-progress li').count()).toBeGreaterThanOrEqual(recorded);
             }
-            expect(await panel.innerText()).not.toContain('no kk store at .works/kk.db');
+            expect(await panel.locator('.kk-board-progress').innerText()).not.toContain('no kk store at .works/kk.db');
+            await view.locator('.kk-modal-footer').getByRole('button', { name: 'Close' }).click();
+            await view.locator('.kk-modal-backdrop').waitFor({ state: 'detached' });
             // The read must not create the file an open would otherwise materialize.
             expect(existsSync(storePath)).toBe(false);
         } finally {

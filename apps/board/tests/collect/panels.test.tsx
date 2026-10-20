@@ -1120,4 +1120,74 @@ describe('SelectionsPanel', () => {
         expect(unavailHtml).toContain('The selections could not be read; no rows are shown.');
         expect(unavailHtml).toContain('Reader timeout');
     });
+
+    it('renders selections status filter and invokes onStatusChange', () => {
+        const statuses: (string | undefined)[] = [];
+        const tree = SelectionsPanel({
+            selections: sampleSelections,
+            filters: { page: 1 },
+            onStatusChange: (status) => statuses.push(status),
+            onSearchChange: noop,
+            onPageChange: noop,
+        });
+        const statusSelect = mustFind(
+            tree,
+            (element) =>
+                element.type === 'select' && findElement(element, (child) => textOf(child) === 'All Statuses') !== null,
+        );
+        const onChange = (statusSelect.props as { onChange: (event: { target: { value: string } }) => void }).onChange;
+        onChange({ target: { value: 'published' } });
+        onChange({ target: { value: '' } });
+        expect(statuses).toEqual(['published', undefined]);
+    });
+
+    it('renders SummaryPanel with no runs showing empty chart states', () => {
+        const html = renderToStaticMarkup(
+            <SummaryPanel
+                runs={[]}
+                overview={null}
+                now={NOW}
+                timeRange="24h"
+                onTimeRangeChange={() => {}}
+                onInspectRun={() => {}}
+            />,
+        );
+        expect(html).toContain('No runs recorded in this time range');
+    });
+
+    it('filters RunDetailsPanel by search and status, showing empty message when none match', () => {
+        const html = renderToStaticMarkup(
+            <RunDetailsPanel
+                runs={runs}
+                overview={null}
+                now={NOW}
+                runHref={(id) => `#${id}`}
+                statusFilter="failed"
+                searchQuery="nonexistent-run-id"
+            />,
+        );
+        expect(html).toContain('No runs match your filter.');
+    });
+
+    it('renders ItemsPanel with run dropdown and invokes onRunChange', () => {
+        const selectedRuns: (string | undefined)[] = [];
+        const tree = ItemsPanel({
+            runId: 'r-stored',
+            items: null,
+            filters: { page: 1 },
+            quality: [],
+            runs,
+            onRunChange: (r) => selectedRuns.push(r),
+            onFilterChange: noop,
+            onPageChange: noop,
+        });
+        const runSelect = mustFind(
+            tree,
+            (element) => element.type === 'select' && (element.props as { name?: string }).name === 'run',
+        );
+        const onChange = (runSelect.props as { onChange: (event: { target: { value: string } }) => void }).onChange;
+        onChange({ target: { value: 'r-failed' } });
+        onChange({ target: { value: '' } });
+        expect(selectedRuns).toEqual(['r-failed', undefined]);
+    });
 });

@@ -356,6 +356,17 @@ export function SummaryPanel({
                                     </g>
                                 );
                             })}
+                            {chartRuns.length === 0 ? (
+                                <text
+                                    x="230"
+                                    y="85"
+                                    textAnchor="middle"
+                                    fill="var(--color-spur-text-muted)"
+                                    fontSize="13"
+                                >
+                                    No runs recorded in this time range
+                                </text>
+                            ) : null}
                         </svg>
                     </div>
                     <div className="kk-chart-legend">
@@ -434,6 +445,17 @@ export function SummaryPanel({
                                     </rect>
                                 );
                             })}
+                            {chartRuns.length === 0 ? (
+                                <text
+                                    x="230"
+                                    y="85"
+                                    textAnchor="middle"
+                                    fill="var(--color-spur-text-muted)"
+                                    fontSize="13"
+                                >
+                                    No runs recorded in this time range
+                                </text>
+                            ) : null}
                             {/* Yield overlay line */}
                             {chartRuns.length > 1 ? (
                                 <polyline
@@ -501,13 +523,21 @@ export function SummaryPanel({
                                                 </td>
                                                 <td>{count}</td>
                                                 <td>
-                                                    <span className="kk-collect-bar" style={{ width: '5rem' }}>
-                                                        <span
-                                                            className="kk-collect-bar-seg"
-                                                            style={{ width: `${Math.max(10, share)}%` }}
-                                                        />
+                                                    <span
+                                                        style={{
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: '0.5rem',
+                                                        }}
+                                                    >
+                                                        <span className="kk-collect-bar" style={{ width: '5rem' }}>
+                                                            <span
+                                                                className="kk-collect-bar-seg"
+                                                                style={{ width: `${Math.max(10, share)}%` }}
+                                                            />
+                                                        </span>
+                                                        <span className="kk-stat-sub">{share}%</span>
                                                     </span>
-                                                    <span className="kk-stat-sub">{share}%</span>
                                                 </td>
                                                 <td>
                                                     <span className="kk-badge kk-badge-success">Active</span>
@@ -594,18 +624,36 @@ export function RunDetailsPanel({
     overview,
     now,
     runHref,
+    searchQuery = '',
+    statusFilter = 'all',
+    onSearchChange,
+    onStatusFilterChange,
     onInspectRun,
 }: {
     runs: readonly RunListRow[];
     overview: CollectStoreOverview | null;
     now: number;
     runHref: (runId: string) => string;
+    searchQuery?: string;
+    statusFilter?: 'all' | 'done' | 'failed' | 'running';
+    onSearchChange?: (query: string) => void;
+    onStatusFilterChange?: (status: 'all' | 'done' | 'failed' | 'running') => void;
     onInspectRun?: (runId: string) => void;
 }) {
     const page = runs.slice(0, MAX_OVERVIEW_RUNS);
     const storeState = overview === null ? 'loading' : overview.availability;
     const counts = overview !== null && storeState === 'available' ? bannerCounts(page, overview.rows) : null;
     const cadence = overview === null ? null : cadenceState(overview.lastStoredAt, now);
+
+    let filtered = runs;
+    if (statusFilter !== 'all') {
+        filtered = filtered.filter((r) => r.status.toLowerCase() === statusFilter);
+    }
+    const q = searchQuery.trim().toLowerCase();
+    if (q !== '') {
+        filtered = filtered.filter((r) => r.id.toLowerCase().includes(q) || r.status.toLowerCase().includes(q));
+    }
+    const filteredRuns = filtered.slice(0, MAX_OVERVIEW_RUNS);
 
     return (
         <section className="kk-card kk-collect-overview">
@@ -635,6 +683,28 @@ export function RunDetailsPanel({
                 </>
             ) : null}
             {overview === null ? <p>The store overview has not loaded yet.</p> : null}
+            <div className="kk-table-toolbar">
+                <input
+                    type="text"
+                    className="kk-board-run-filter-input"
+                    placeholder="Search runs by ID or status..."
+                    value={searchQuery}
+                    onChange={(e) => onSearchChange?.(e.target.value)}
+                    aria-label="Search runs"
+                />
+                <div className="kk-time-pills" role="radiogroup" aria-label="Filter runs by status">
+                    {(['all', 'done', 'failed', 'running'] as const).map((s) => (
+                        <button
+                            key={s}
+                            type="button"
+                            className={`kk-time-pill ${statusFilter === s ? 'active' : ''}`}
+                            onClick={() => onStatusFilterChange?.(s)}
+                        >
+                            {s.charAt(0).toUpperCase() + s.slice(1)}
+                        </button>
+                    ))}
+                </div>
+            </div>
             <div className="kk-table-container">
                 <table className="kk-table kk-collect-table">
                     <thead>
@@ -653,56 +723,66 @@ export function RunDetailsPanel({
                         </tr>
                     </thead>
                     <tbody>
-                        {page.map((run) => {
-                            const row = overview?.rows[run.id] ?? null;
-                            return (
-                                <tr key={run.id}>
-                                    <td>
-                                        <a
-                                            href={runHref ? runHref(run.id) : `#run-${run.id}`}
-                                            className="kk-collect-run-link"
-                                            onClick={(e) => {
-                                                if (onInspectRun) {
-                                                    e.preventDefault();
-                                                    onInspectRun(run.id);
-                                                }
-                                            }}
-                                        >
-                                            {run.id}
-                                        </a>
-                                    </td>
-                                    <td>{formatTimestamp(run.startedAt)}</td>
-                                    <td>{runDuration(run.startedAt, run.completedAt)}</td>
-                                    <td>
-                                        <span
-                                            className={`kk-badge ${run.status === 'done' ? 'kk-badge-success' : run.status === 'failed' ? 'kk-badge-failed' : 'kk-badge-running'}`}
-                                        >
-                                            {run.status}
-                                        </span>
-                                    </td>
-                                    {storeState !== 'available' ? (
-                                        <td colSpan={6} className="kk-collect-nostore">
-                                            {storeState === 'loading' ? 'store not loaded yet' : 'store unavailable'}
+                        {filteredRuns.length === 0 ? (
+                            <tr>
+                                <td colSpan={11} className="kk-board-empty">
+                                    No runs match your filter.
+                                </td>
+                            </tr>
+                        ) : (
+                            filteredRuns.map((run) => {
+                                const row = overview?.rows[run.id] ?? null;
+                                return (
+                                    <tr key={run.id}>
+                                        <td>
+                                            <a
+                                                href={runHref ? runHref(run.id) : `#run-${run.id}`}
+                                                className="kk-collect-run-link"
+                                                onClick={(e) => {
+                                                    if (onInspectRun) {
+                                                        e.preventDefault();
+                                                        onInspectRun(run.id);
+                                                    }
+                                                }}
+                                            >
+                                                {run.id}
+                                            </a>
                                         </td>
-                                    ) : row === null ? (
-                                        <td colSpan={6} className="kk-collect-nostore">
-                                            {storeCellText(run.status)}
+                                        <td>{formatTimestamp(run.startedAt)}</td>
+                                        <td>{runDuration(run.startedAt, run.completedAt)}</td>
+                                        <td>
+                                            <span
+                                                className={`kk-badge ${run.status === 'done' ? 'kk-badge-success' : run.status === 'failed' ? 'kk-badge-failed' : 'kk-badge-running'}`}
+                                            >
+                                                {run.status}
+                                            </span>
                                         </td>
-                                    ) : (
-                                        <StoredCells row={row} />
-                                    )}
-                                    <td>
-                                        <button
-                                            type="button"
-                                            className="kk-table-btn"
-                                            onClick={() => onInspectRun?.(run.id)}
-                                        >
-                                            Inspect
-                                        </button>
-                                    </td>
-                                </tr>
-                            );
-                        })}
+                                        {storeState !== 'available' ? (
+                                            <td colSpan={6} className="kk-collect-nostore">
+                                                {storeState === 'loading'
+                                                    ? 'store not loaded yet'
+                                                    : 'store unavailable'}
+                                            </td>
+                                        ) : row === null ? (
+                                            <td colSpan={6} className="kk-collect-nostore">
+                                                {storeCellText(run.status)}
+                                            </td>
+                                        ) : (
+                                            <StoredCells row={row} />
+                                        )}
+                                        <td>
+                                            <button
+                                                type="button"
+                                                className="kk-table-btn"
+                                                onClick={() => onInspectRun?.(run.id)}
+                                            >
+                                                Inspect
+                                            </button>
+                                        </td>
+                                    </tr>
+                                );
+                            })
+                        )}
                     </tbody>
                 </table>
             </div>
@@ -759,6 +839,7 @@ export function RunDetailModal({
     facts,
     artifacts,
     steps,
+    config,
     showEffective,
     onToggleQuality,
     onClose,
@@ -769,6 +850,7 @@ export function RunDetailModal({
     facts: ResultFact[];
     artifacts: ArtifactView[];
     steps?: ProgressRow[];
+    config?: RunConfig | null;
     showEffective: boolean;
     onToggleQuality: () => void;
     onClose: () => void;
@@ -866,15 +948,21 @@ export function RunDetailModal({
                         <ArtifactRows artifacts={artifacts} />
                     </div>
 
+                    {/* Workflow Configuration */}
+                    <div>
+                        <h3 className="kk-chart-title" style={{ marginBottom: '0.5rem' }}>
+                            Workflow Configuration
+                        </h3>
+                        <ConfigPanel config={config ?? null} />
+                    </div>
+
                     {/* Execution Progress Steps */}
-                    {steps && steps.length > 0 ? (
-                        <div>
-                            <h3 className="kk-chart-title" style={{ marginBottom: '0.5rem' }}>
-                                Progress & Attempts
-                            </h3>
-                            <ProgressPanel steps={steps} />
-                        </div>
-                    ) : null}
+                    <div>
+                        <h3 className="kk-chart-title" style={{ marginBottom: '0.5rem' }}>
+                            Progress & Attempts
+                        </h3>
+                        <ProgressPanel steps={steps ?? []} />
+                    </div>
                 </div>
 
                 <div className="kk-modal-footer">
@@ -1104,8 +1192,10 @@ export function ItemsPanel({
     items,
     filters,
     quality,
+    runs,
     onFilterChange,
     onSearchChange,
+    onRunChange,
     onPageChange,
     onInspectItem,
 }: {
@@ -1113,8 +1203,10 @@ export function ItemsPanel({
     items: CollectStoreItems | null;
     filters: StoreItemsQuery;
     quality: CollectRunStore['labelQuality'];
+    runs?: readonly RunListRow[];
     onFilterChange: (event: ChangeEvent<HTMLSelectElement>) => void;
     onSearchChange?: (event: ChangeEvent<HTMLInputElement>) => void;
+    onRunChange?: (runId: string | undefined) => void;
     onPageChange: (event: MouseEvent<HTMLButtonElement>) => void;
     onInspectItem?: (item: CollectStoreItem) => void;
 }) {
@@ -1139,6 +1231,23 @@ export function ItemsPanel({
                             onChange={onSearchChange}
                             aria-label="Search items"
                         />
+                    </label>
+                ) : null}
+                {runs && runs.length > 0 ? (
+                    <label className="kk-collect-filter">
+                        Run
+                        <select
+                            name="run"
+                            value={runId ?? ''}
+                            onChange={(e) => onRunChange?.(e.target.value === '' ? undefined : e.target.value)}
+                        >
+                            <option value="">All Runs</option>
+                            {runs.map((r) => (
+                                <option key={r.id} value={r.id}>
+                                    {r.id.length > 18 ? `${r.id.slice(0, 8)}...${r.id.slice(-6)}` : r.id} ({r.status})
+                                </option>
+                            ))}
+                        </select>
                     </label>
                 ) : null}
                 <FilterSelect
@@ -1430,9 +1539,14 @@ export function ItemDetailModal({ item, onClose }: { item: CollectStoreItem; onC
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 8. SELECTIONS PANEL (Requirement 4: Table `selections` joined with `items`)
-// ─────────────────────────────────────────────────────────────────────────────
+function formatEpoch(ms: number | null | undefined): string {
+    if (ms === null || ms === undefined || Number.isNaN(ms) || ms <= 0) return '—';
+    try {
+        return formatTimestamp(new Date(ms).toISOString());
+    } catch {
+        return '—';
+    }
+}
 
 export function SelectionsPanel({
     selections,
@@ -1568,7 +1682,7 @@ export function SelectionsPanel({
                                                 : '—'}
                                         </span>
                                     </td>
-                                    <td>{formatTimestamp(new Date(item.selectedAt).toISOString())}</td>
+                                    <td>{formatEpoch(item.selectedAt)}</td>
                                     <td>
                                         <button
                                             type="button"

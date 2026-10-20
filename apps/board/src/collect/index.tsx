@@ -32,7 +32,6 @@ import {
     ACTIVE_POLL_MS,
     delayMs,
     failed,
-    freshnessLabel,
     HISTORY_POLL_MS,
     initialRefresh,
     type RefreshState,
@@ -52,16 +51,7 @@ import {
     selectionPath,
     syncSelectionUrl,
 } from '../shared/run-selection';
-import {
-    ConfigPanel,
-    ItemDetailModal,
-    ItemsPanel,
-    ProgressPanel,
-    RunDetailModal,
-    RunDetailsPanel,
-    SelectionsPanel,
-    SummaryPanel,
-} from './panels';
+import { ItemDetailModal, ItemsPanel, RunDetailModal, RunDetailsPanel, SelectionsPanel, SummaryPanel } from './panels';
 
 /**
  * The Collect Board module (`kk-collect`), rendered inside the host's React tree.
@@ -71,8 +61,6 @@ import {
  * 2. Run Details: Detailed run list with drilldown modal
  * 3. Items: Joined items + labels table with search, filters & item inspection modal
  * 4. Selections: Selections table joined with items
- * 5. Progress: Pipeline execution states
- * 6. Config: Captured workflow settings
  */
 
 /** The Collect module's tab labels in display order. */
@@ -81,8 +69,6 @@ const TAB_LABELS: Record<CollectTab, string> = {
     runs: 'Run Details',
     items: 'Items',
     selections: 'Selections',
-    progress: 'Execution progress',
-    config: 'Workflow Config Summary',
 };
 
 /** The installed host's contribution ABI (`@gobing-ai/spur/board/index.d.ts`, apiVersion 1). */
@@ -129,7 +115,7 @@ function isOfflineError(msg: string): boolean {
 /** The six tabs of the Collect module. */
 export function CollectModule() {
     const [link] = useState(() => parseDeepLink(window.location.search, COLLECT_TABS, COLLECT_TAB_ALIASES));
-    const [reader] = useState(() => readerOriginFrom(window.location.search));
+    const [reader] = useState(() => readerOriginFrom(window.location.search, window.location.origin));
     const readerOrigin = reader.origin;
     const client = useMemo<BoardClient>(
         () => createBoardClient({ readerOrigin, boardOrigin: window.location.origin }),
@@ -137,7 +123,7 @@ export function CollectModule() {
     );
 
     const [rows, setRows] = useState<RunListRow[]>([]);
-    const [cursor, setCursor] = useState<string | null>(null);
+    const [_cursor, setCursor] = useState<string | null>(null);
     const [selection, setSelection] = useState<RunSelection<CollectTab>>({
         runId: link.runId ?? null,
         tab: link.tab ?? 'summary',
@@ -170,9 +156,11 @@ export function CollectModule() {
     const [modalStoreRun, setModalStoreRun] = useState<CollectRunStore | null>(null);
     const [modalResults, setModalResults] = useState<RunResults | null>(null);
     const [modalProgress, setModalProgress] = useState<unknown>(null);
+    const [modalConfig, setModalConfig] = useState<RunConfig | null>(null);
     const [timeRange, setTimeRange] = useState('24h');
     const [showEffective, setShowEffective] = useState(false);
-    const [filterQuery, setFilterQuery] = useState('');
+    const [runSearchQuery, setRunSearchQuery] = useState('');
+    const [runStatusFilter, setRunStatusFilter] = useState<'all' | 'done' | 'failed' | 'running'>('all');
 
     const historyBusy = useRef(false);
     const readerBusy = useRef(false);
@@ -338,6 +326,7 @@ export function CollectModule() {
             setModalStoreRun(null);
             setModalResults(null);
             setModalProgress(null);
+            setModalConfig(null);
             return;
         }
 
@@ -348,28 +337,34 @@ export function CollectModule() {
             setModalStoreRun(null);
             setModalResults(null);
             setModalProgress(null);
+            setModalConfig(null);
         }
 
-        // If the modal targets the currently selected run, reuse cached values
+        // If the modal targets the currently selected run, reuse cached values where available
         if (selectedModalRunId === selection.runId) {
             setModalStoreRun(storeRun);
             setModalResults(results);
             setModalProgress(progress);
-            return;
+            setModalConfig(config);
+            if (storeRun !== null && results !== null && progress !== null && config !== null) {
+                return;
+            }
         }
 
         let cancelled = false;
         async function fetchModalData(runId: string) {
             try {
-                const [rResults, rStore, rProg] = await Promise.allSettled([
+                const [rResults, rStore, rProg, rConfig] = await Promise.allSettled([
                     client.results('kk-collect', runId),
                     client.storeRun(runId),
                     client.progress(runId),
+                    client.config('kk-collect', runId),
                 ]);
                 if (cancelled) return;
                 if (rResults.status === 'fulfilled') setModalResults(rResults.value);
                 if (rStore.status === 'fulfilled') setModalStoreRun(rStore.value);
                 if (rProg.status === 'fulfilled') setModalProgress(rProg.value);
+                if (rConfig.status === 'fulfilled') setModalConfig(rConfig.value);
             } catch {
                 // Non-fatal for modal
             }
@@ -379,7 +374,7 @@ export function CollectModule() {
         return () => {
             cancelled = true;
         };
-    }, [selectedModalRunId, selection.runId, storeRun, results, progress, client]);
+    }, [selectedModalRunId, selection.runId, storeRun, results, progress, config, client]);
 
     usePolling(loadHistory, HISTORY_POLL_MS, historyRefresh);
     usePolling(loadReader, ACTIVE_POLL_MS, readerRefresh);
@@ -411,14 +406,6 @@ export function CollectModule() {
     const tab = selection.tab;
     const now = Date.now();
     const currentStoreRun = storeRun?.runId === selection.runId ? storeRun : null;
-    const steps: ProgressRow[] = progressRows(progress);
-    const selectedRow = rows.find((row) => row.id === selection.runId);
-
-    const filteredRows = useMemo(() => {
-        const q = filterQuery.trim().toLowerCase();
-        if (q === '') return rows;
-        return rows.filter((r) => r.id.toLowerCase().includes(q) || r.status.toLowerCase().includes(q));
-    }, [rows, filterQuery]);
 
     const runHref = useCallback((runId: string) => selectionPath({ runId, tab: 'runs' }, window.location.search), []);
     const toggleQuality = useCallback(() => setShowEffective((state) => !state), []);
@@ -437,6 +424,16 @@ export function CollectModule() {
     const pageChanged = useCallback((event: MouseEvent<HTMLButtonElement>) => {
         const delta = event.currentTarget.name === 'previous' ? -1 : 1;
         setItemFilters((state) => ({ ...state, page: Math.max(1, (state.page ?? 1) + delta) }));
+    }, []);
+
+    const handleInspectRun = useCallback((runId: string) => {
+        setSelectedModalRunId(runId);
+        setSelection((s) => ({ ...s, runId }));
+    }, []);
+
+    const handleCloseModal = useCallback(() => {
+        setSelectedModalRunId(null);
+        setSelection((s) => ({ ...s, runId: null }));
     }, []);
 
     const modalFacts = modalResults ? collectSummaryFacts(modalResults, now) : [];
@@ -461,57 +458,9 @@ export function CollectModule() {
                 <div className="kk-board-header-left">
                     <div className="kk-board-header-title-row">
                         <h1>Collect</h1>
-                        {selectedRow ? (
-                            <span
-                                className={`kk-badge ${selectedRow.status === 'done' ? 'kk-badge-success' : selectedRow.status === 'failed' ? 'kk-badge-failed' : 'kk-badge-running'}`}
-                            >
-                                {selectedRow.status}
-                            </span>
-                        ) : null}
                     </div>
-                    <p>
-                        Selected run <code>{selection.runId ?? 'none selected'}</code> · {freshnessLabel(readerRefresh)}
-                        {results === null ? '' : ` · Results ${results.availability}`}
-                    </p>
                 </div>
                 <div className="kk-board-header-right">
-                    <div className="kk-board-run-filter-group">
-                        <input
-                            type="text"
-                            className="kk-board-run-filter-input"
-                            placeholder="Filter runs..."
-                            value={filterQuery}
-                            onChange={(e) => setFilterQuery(e.target.value)}
-                            aria-label="Filter runs"
-                        />
-                        <label className="kk-board-run-selector">
-                            Run
-                            <select
-                                value={selection.runId ?? ''}
-                                onChange={(event) => {
-                                    setItemFilters((state) => ({ ...state, page: 1 }));
-                                    setResults(null);
-                                    setConfig(null);
-                                    setProgress(null);
-                                    setStoreRun(null);
-                                    setSelection((state) => ({ ...state, runId: event.target.value || null }));
-                                }}
-                            >
-                                <option value="">
-                                    {rows.length === 0
-                                        ? 'No runs recorded'
-                                        : filteredRows.length === 0
-                                          ? 'No matching runs'
-                                          : 'Select a run'}
-                                </option>
-                                {filteredRows.map((row) => (
-                                    <option key={row.id} value={row.id}>
-                                        {row.id} — {row.status}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
-                    </div>
                     <button
                         type="button"
                         onClick={() => {
@@ -524,29 +473,26 @@ export function CollectModule() {
                     >
                         ↻ Refresh
                     </button>
-                    {selection.runId === null ? null : (
-                        <a
-                            href={selectionPath(selection, window.location.search)}
-                            className="kk-btn-action"
-                            title="Permanent link"
-                        >
-                            🔗 Link
-                        </a>
-                    )}
+                    <a
+                        href={selectionPath(selection, window.location.search)}
+                        className="kk-btn-action"
+                        title="Permanent link"
+                    >
+                        🔗 Link
+                    </a>
                 </div>
             </header>
 
-            {/* Clear companion reader offline status banner */}
-            {isReaderOffline ? (
+            {/* Companion reader offline status banner (only if custom loopback reader is dead) */}
+            {isReaderOffline && readerOrigin !== window.location.origin ? (
                 <div className="kk-board-reader-offline-banner" role="alert">
                     <div className="kk-board-reader-offline-icon">⚠️</div>
                     <div className="kk-board-reader-offline-content">
                         <strong>Loopback Board Reader Offline ({readerOrigin})</strong>
                         <p>
                             Store facts, item inspection, and artifact evidence require the local reader process. Spur
-                            run execution history remains available. To start the reader, run:
+                            run execution history remains available.
                         </p>
-                        <code>bun run apps/cli/src/index.ts board serve --board-origin {window.location.origin}</code>
                     </div>
                     <button
                         type="button"
@@ -593,18 +539,22 @@ export function CollectModule() {
                     now={now}
                     timeRange={timeRange}
                     onTimeRangeChange={setTimeRange}
-                    onInspectRun={(runId) => setSelectedModalRunId(runId)}
+                    onInspectRun={handleInspectRun}
                 />
             ) : null}
 
             {/* Panel 2: Run Details (Run List Table Drilldown) */}
             {tab === 'runs' ? (
                 <RunDetailsPanel
-                    runs={filteredRows}
+                    runs={rows}
                     overview={overview}
                     now={now}
                     runHref={runHref}
-                    onInspectRun={(runId) => setSelectedModalRunId(runId)}
+                    searchQuery={runSearchQuery}
+                    statusFilter={runStatusFilter}
+                    onSearchChange={setRunSearchQuery}
+                    onStatusFilterChange={setRunStatusFilter}
+                    onInspectRun={handleInspectRun}
                 />
             ) : null}
 
@@ -615,6 +565,11 @@ export function CollectModule() {
                     items={items}
                     filters={itemFilters}
                     quality={currentStoreRun?.labelQuality ?? []}
+                    runs={rows}
+                    onRunChange={(rId) => {
+                        setItemFilters((s) => ({ ...s, page: 1 }));
+                        setSelection((s) => ({ ...s, runId: rId ?? null }));
+                    }}
                     onFilterChange={filterChanged}
                     onSearchChange={(e) => setItemFilters((s) => ({ ...s, search: e.target.value, page: 1 }))}
                     onPageChange={pageChanged}
@@ -634,15 +589,9 @@ export function CollectModule() {
                     onPageChange={(delta) =>
                         setSelectionsFilters((s) => ({ ...s, page: Math.max(1, (s.page ?? 1) + delta) }))
                     }
-                    onInspectRun={(runId) => setSelectedModalRunId(runId)}
+                    onInspectRun={handleInspectRun}
                 />
             ) : null}
-
-            {/* Panel 5: Progress */}
-            {tab === 'progress' ? <ProgressPanel steps={steps} /> : null}
-
-            {/* Panel 6: Config */}
-            {tab === 'config' ? <ConfigPanel config={config} /> : null}
 
             {/* Diagnostics (sanitized and deduplicated) */}
             {displayDiagnostics.map((diagnostic) => (
@@ -650,16 +599,6 @@ export function CollectModule() {
                     {diagnosticLine(diagnostic)}
                 </p>
             ))}
-
-            {cursor === null ? null : (
-                <button type="button" onClick={() => void loadHistory()}>
-                    Load more runs
-                </button>
-            )}
-
-            <p className="kk-board-footnote">
-                Run history every {HISTORY_POLL_MS / 1000}s; selected run every {ACTIVE_POLL_MS / 1000}s.
-            </p>
 
             {/* Run Detail Modal Window */}
             {selectedModalRunId ? (
@@ -670,9 +609,10 @@ export function CollectModule() {
                     facts={modalFacts}
                     artifacts={modalArtifacts}
                     steps={modalSteps}
+                    config={modalConfig}
                     showEffective={showEffective}
                     onToggleQuality={toggleQuality}
-                    onClose={() => setSelectedModalRunId(null)}
+                    onClose={handleCloseModal}
                 />
             ) : null}
 

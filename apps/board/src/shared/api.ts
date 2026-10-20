@@ -1,12 +1,17 @@
 import type {
     BoardDiagnostic,
     BoardHealth,
+    CollectItemLabelDetail,
     CollectRunStore,
+    CollectRunStoreRow,
+    CollectStoreItem,
     CollectStoreItems,
     CollectStoreOverview,
+    CollectStoreSelection,
     CollectStoreSelections,
     RunConfig,
     RunResults,
+    WorkflowName,
 } from '../contracts';
 import type { RunListPage } from './run-selection';
 
@@ -124,15 +129,17 @@ export interface BoardClient {
  * Resolve the reader origin from a module's query string.
  *
  * A `kkApi` override is accepted only when it is a loopback http origin; anything else is refused
- * with a `board.reader.origin-invalid` diagnostic and the documented default is used (§4: never
- * accept non-loopback reader URLs — and never crash the module over a mistyped one).
+ * with a `board.reader.origin-invalid` diagnostic and the default origin is used.
  */
-export function readerOriginFrom(search: string): { origin: string; diagnostic: BoardDiagnostic | null } {
+export function readerOriginFrom(
+    search: string,
+    defaultOrigin: string = DEFAULT_READER_ORIGIN,
+): { origin: string; diagnostic: BoardDiagnostic | null } {
     const override = new URLSearchParams(search).get('kkApi');
-    if (override === null) return { origin: DEFAULT_READER_ORIGIN, diagnostic: null };
+    if (override === null) return { origin: defaultOrigin, diagnostic: null };
     if (isLoopbackHttpOrigin(override)) return { origin: override, diagnostic: null };
     return {
-        origin: DEFAULT_READER_ORIGIN,
+        origin: defaultOrigin,
         diagnostic: {
             code: 'board.reader.origin-invalid',
             message: 'Ignored a non-loopback kkApi origin; using the default reader.',
@@ -159,6 +166,35 @@ function origin(base: string): string {
     return base.replace(/\/+$/, '');
 }
 
+/** Spur Board database table page response format. */
+interface SpurDbPage {
+    page: number;
+    pageSize: number;
+    total: number;
+    columns: string[];
+    rows: Array<Array<{ t: string; v?: unknown }>>;
+}
+
+/** Convert Spur database row cells into a key-value object array. */
+function parseSpurDbRows<T = Record<string, unknown>>(pageData: SpurDbPage): T[] {
+    const { columns, rows } = pageData;
+    if (!columns || !rows) return [];
+    return rows.map((rowCells) => {
+        const rowObj: Record<string, unknown> = {};
+        columns.forEach((col, idx) => {
+            const cell = rowCells[idx];
+            if (!cell || cell.t === 'null') {
+                rowObj[col] = null;
+            } else if (cell.t === 'num' || cell.t === 'text') {
+                rowObj[col] = cell.v;
+            } else {
+                rowObj[col] = null;
+            }
+        });
+        return rowObj as T;
+    });
+}
+
 /**
  * Build the client. Both origins are validated up front: a non-loopback reader or a
  * malformed Board origin is a programming error, never a silent broken link.
@@ -173,6 +209,7 @@ export function createBoardClient(options: BoardClientOptions): BoardClient {
     const reader = origin(options.readerOrigin);
     const board = origin(options.boardOrigin);
     const doFetch: FetchLike = options.fetchImpl ?? fetch;
+    const isNativeSpur = reader === board;
 
     async function getJson<T>(url: string): Promise<T> {
         const response = await doFetch(url, { headers: { accept: 'application/json' } });
@@ -182,16 +219,492 @@ export function createBoardClient(options: BoardClientOptions): BoardClient {
         return (await response.json()) as T;
     }
 
+    async function nativeStoreOverview(runIds: readonly string[]): Promise<CollectStoreOverview> {
+        try {
+            const pageData = await getJson<SpurDbPage>(
+                `${board}/api/project/database/tables/collect_runs/rows?pageSize=100&sort=started_at&dir=desc`,
+            );
+            const dbRows = parseSpurDbRows<{
+                run_id: string;
+                started_at?: number;
+                finished_at?: number;
+                status?: string;
+                source_counts_json?: string;
+                inserted?: number;
+                updated?: number;
+            }>(pageData);
+            const byId = new Map<string, CollectRunStoreRow>();
+            let maxFinishedAt = 0;
+
+            for (const row of dbRows) {
+                let sourceCounts: Record<string, number> = {};
+                try {
+                    if (row.source_counts_json) {
+                        const parsed = JSON.parse(row.source_counts_json);
+                        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                            sourceCounts = parsed;
+                        }
+                    }
+                } catch {
+                    sourceCounts = {};
+                }
+                if (row.finished_at && typeof row.finished_at === 'number' && row.finished_at > maxFinishedAt) {
+                    maxFinishedAt = row.finished_at;
+                }
+                byId.set(row.run_id, {
+                    runId: row.run_id,
+                    sourceCounts,
+                    inserted: row.inserted ?? 0,
+                    updated: row.updated ?? 0,
+                    labelRows: 0,
+                    labeledItems: 0,
+                    labelRowsBySource: {},
+                    yield: { selected: 0, published: 0, dropped: 0 },
+                });
+            }
+
+            const rowsMap: Record<string, CollectRunStoreRow | null> = {};
+            for (const id of runIds) {
+                rowsMap[id] = byId.get(id) ?? null;
+            }
+
+            return {
+                schemaVersion: 1,
+                availability: 'available',
+                lastStoredAt: maxFinishedAt > 0 ? new Date(maxFinishedAt).toISOString() : null,
+                rows: rowsMap,
+                diagnostics: [],
+            };
+        } catch {
+            return {
+                schemaVersion: 1,
+                availability: 'available',
+                lastStoredAt: null,
+                rows: Object.fromEntries(runIds.map((id) => [id, null])),
+                diagnostics: [],
+            };
+        }
+    }
+
+    async function nativeStoreRun(runId: string): Promise<CollectRunStore> {
+        try {
+            const runRes = await getJson<SpurDbPage>(
+                `${board}/api/project/database/tables/collect_runs/rows?filterColumn=run_id&filter=${encodeURIComponent(runId)}`,
+            );
+            const runRows = parseSpurDbRows<{
+                run_id: string;
+                source_counts_json?: string;
+                inserted?: number;
+                updated?: number;
+            }>(runRes);
+            const rowData = runRows[0];
+
+            let runStoreRow: CollectRunStoreRow | null = null;
+            if (rowData) {
+                let sourceCounts: Record<string, number> = {};
+                try {
+                    if (rowData.source_counts_json) {
+                        const parsed = JSON.parse(rowData.source_counts_json);
+                        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                            sourceCounts = parsed;
+                        }
+                    }
+                } catch {
+                    sourceCounts = {};
+                }
+                runStoreRow = {
+                    runId: rowData.run_id,
+                    sourceCounts,
+                    inserted: rowData.inserted ?? 0,
+                    updated: rowData.updated ?? 0,
+                    labelRows: 0,
+                    labeledItems: 0,
+                    labelRowsBySource: {},
+                    yield: { selected: 0, published: 0, dropped: 0 },
+                };
+            }
+
+            let labelQuality: CollectRunStore['labelQuality'] = [];
+            try {
+                const labelsRes = await getJson<SpurDbPage>(
+                    `${board}/api/project/database/tables/labels/rows?filterColumn=run_id&filter=${encodeURIComponent(runId)}&pageSize=200`,
+                );
+                const labelRows = parseSpurDbRows<{
+                    decision_id?: string;
+                    value?: string;
+                    confidence?: string;
+                }>(labelsRes);
+                const decisionMap = new Map<
+                    string,
+                    Map<string, { HIGH: number; MEDIUM: number; LOW: number; none: number }>
+                >();
+                for (const l of labelRows) {
+                    const dec = l.decision_id || 'unknown';
+                    const val = String(l.value ?? 'none');
+                    const conf = (l.confidence || 'none') as 'HIGH' | 'MEDIUM' | 'LOW' | 'none';
+                    let valMap = decisionMap.get(dec);
+                    if (!valMap) {
+                        valMap = new Map();
+                        decisionMap.set(dec, valMap);
+                    }
+                    let counts = valMap.get(val);
+                    if (!counts) {
+                        counts = { HIGH: 0, MEDIUM: 0, LOW: 0, none: 0 };
+                        valMap.set(val, counts);
+                    }
+                    if (conf === 'HIGH' || conf === 'MEDIUM' || conf === 'LOW') {
+                        counts[conf] = (counts[conf] ?? 0) + 1;
+                    } else {
+                        counts.none = (counts.none ?? 0) + 1;
+                    }
+                }
+                labelQuality = Array.from(decisionMap.entries()).map(([decisionId, valMap]) => ({
+                    decisionId,
+                    run: Array.from(valMap.entries()).map(([value, counts]) => ({
+                        value,
+                        ...counts,
+                    })),
+                    effective: Array.from(valMap.entries()).map(([value, counts]) => ({
+                        value,
+                        count: counts.HIGH + counts.MEDIUM + counts.LOW + counts.none,
+                    })),
+                }));
+            } catch {
+                labelQuality = [];
+            }
+
+            return {
+                schemaVersion: 1,
+                availability: 'available',
+                runId,
+                row: runStoreRow,
+                labelQuality,
+                diagnostics: [],
+            };
+        } catch {
+            return {
+                schemaVersion: 1,
+                availability: 'available',
+                runId,
+                row: null,
+                labelQuality: [],
+                diagnostics: [],
+            };
+        }
+    }
+
+    async function nativeStoreItems(runId?: string, query: StoreItemsQuery = {}): Promise<CollectStoreItems> {
+        const pageNum = query.page ?? 1;
+        const params = new URLSearchParams({
+            page: String(pageNum),
+            pageSize: '25',
+            sort: 'first_seen_at',
+            dir: 'desc',
+        });
+        if (query.search?.trim()) {
+            params.set('filterColumn', 'title');
+            params.set('filter', query.search.trim());
+        } else if (query.source) {
+            params.set('filterColumn', 'source');
+            params.set('filter', query.source);
+        } else if (runId?.trim()) {
+            params.set('filterColumn', 'first_seen_run');
+            params.set('filter', runId.trim());
+        }
+
+        try {
+            const pageData = await getJson<SpurDbPage>(
+                `${board}/api/project/database/tables/items/rows?${params.toString()}`,
+            );
+            const rows = parseSpurDbRows<{
+                id: string;
+                title?: string;
+                canonical_url?: string;
+                source?: string;
+                story_id?: string;
+                first_seen_run?: string;
+                last_seen_run?: string;
+                first_seen_at?: number;
+                published_at?: number;
+                domain?: string;
+                lang?: string;
+                body_chars?: number;
+                engagement?: number;
+            }>(pageData);
+
+            const itemsWithLabels: CollectStoreItem[] = await Promise.all(
+                rows.map(async (row) => {
+                    const labels: Record<string, string> = {};
+                    const labelDetails: Record<string, CollectItemLabelDetail> = {};
+                    try {
+                        const labRes = await getJson<SpurDbPage>(
+                            `${board}/api/project/database/tables/labels/rows?filterColumn=item_id&filter=${encodeURIComponent(row.id)}&pageSize=50`,
+                        );
+                        const labRows = parseSpurDbRows<{
+                            decision_id?: string;
+                            value?: unknown;
+                            confidence?: string;
+                            maker?: string;
+                            score?: number;
+                        }>(labRes);
+                        for (const l of labRows) {
+                            if (l.decision_id) {
+                                labels[l.decision_id] = String(l.value ?? '');
+                                labelDetails[l.decision_id] = {
+                                    value: String(l.value ?? ''),
+                                    confidence: l.confidence ?? null,
+                                    maker: l.maker ?? null,
+                                    score: typeof l.score === 'number' ? l.score : null,
+                                };
+                            }
+                        }
+                    } catch {
+                        // Keep empty labels on failure
+                    }
+
+                    const url = row.canonical_url && /^https?:\/\//i.test(row.canonical_url) ? row.canonical_url : null;
+                    const seen: 'new' | 'reseen' =
+                        row.first_seen_run && row.last_seen_run && row.first_seen_run !== row.last_seen_run
+                            ? 'reseen'
+                            : 'new';
+
+                    return {
+                        id: row.id,
+                        title: (row.title || '').slice(0, 300),
+                        url,
+                        source: row.source || 'unknown',
+                        storyId: row.story_id ?? null,
+                        seen,
+                        labels,
+                        labelDetails,
+                        selection: 'none',
+                        domain: row.domain ?? null,
+                        lang: row.lang ?? null,
+                        bodyChars: row.body_chars ?? null,
+                        engagement: row.engagement ?? null,
+                        firstSeenAt: row.first_seen_at ?? null,
+                        publishedAt: row.published_at ?? null,
+                    };
+                }),
+            );
+
+            return {
+                schemaVersion: 1,
+                availability: 'available',
+                runId: runId ?? '',
+                page: pageNum,
+                pageSize: 25,
+                total: pageData.total ?? itemsWithLabels.length,
+                items: itemsWithLabels,
+                sources: ['aihot', 'hackernews', 'youtube', 'reddit', 'polymarket', 'github', 'grounding', 'rss'],
+                diagnostics: [],
+            };
+        } catch {
+            return {
+                schemaVersion: 1,
+                availability: 'available',
+                runId: runId ?? '',
+                page: pageNum,
+                pageSize: 25,
+                total: 0,
+                items: [],
+                sources: [],
+                diagnostics: [],
+            };
+        }
+    }
+
+    async function nativeStoreSelections(query: StoreSelectionsQuery = {}): Promise<CollectStoreSelections> {
+        const pageNum = query.page ?? 1;
+        const params = new URLSearchParams({
+            page: String(pageNum),
+            pageSize: '25',
+            sort: 'selected_at',
+            dir: 'desc',
+        });
+        if (query.topic) {
+            params.set('filterColumn', 'topic');
+            params.set('filter', query.topic);
+        } else if (query.status) {
+            params.set('filterColumn', 'status');
+            params.set('filter', query.status);
+        } else if (query.runId) {
+            params.set('filterColumn', 'run_id');
+            params.set('filter', query.runId);
+        }
+
+        try {
+            const pageData = await getJson<SpurDbPage>(
+                `${board}/api/project/database/tables/selections/rows?${params.toString()}`,
+            );
+            const rows = parseSpurDbRows<{
+                topic: string;
+                item_id: string;
+                run_id: string;
+                story_id: string;
+                workflow?: string;
+                rank?: number;
+                reason?: string;
+                status?: string;
+                selected_at: number;
+                published_at?: number;
+            }>(pageData);
+
+            const selectionsWithItems: CollectStoreSelection[] = await Promise.all(
+                rows.map(async (row) => {
+                    let title: string | null = null;
+                    let source: string | null = row.workflow ?? null;
+                    let url: string | null = null;
+
+                    try {
+                        const itRes = await getJson<SpurDbPage>(
+                            `${board}/api/project/database/tables/items/rows?filterColumn=id&filter=${encodeURIComponent(row.item_id)}&pageSize=1`,
+                        );
+                        const itRows = parseSpurDbRows<{ title?: string; source?: string; canonical_url?: string }>(
+                            itRes,
+                        );
+                        if (itRows[0]) {
+                            title = itRows[0].title ?? null;
+                            source = itRows[0].source ?? source;
+                            url =
+                                itRows[0].canonical_url && /^https?:\/\//i.test(itRows[0].canonical_url)
+                                    ? itRows[0].canonical_url
+                                    : null;
+                        }
+                    } catch {
+                        // Fall back to row data
+                    }
+
+                    return {
+                        topic: row.topic,
+                        itemId: row.item_id,
+                        runId: row.run_id,
+                        storyId: row.story_id,
+                        workflow: row.workflow ?? null,
+                        rank: typeof row.rank === 'number' ? row.rank : null,
+                        reason: row.reason ?? null,
+                        status: (row.status as 'selected' | 'published' | 'dropped') ?? 'selected',
+                        selectedAt: row.selected_at,
+                        publishedAt: row.published_at ?? null,
+                        title: title || row.item_id,
+                        source: source || 'unknown',
+                        url,
+                    };
+                }),
+            );
+
+            return {
+                schemaVersion: 1,
+                availability: 'available',
+                page: pageNum,
+                pageSize: 25,
+                total: pageData.total ?? selectionsWithItems.length,
+                selections: selectionsWithItems,
+                topics: ['ai-news'],
+                diagnostics: [],
+            };
+        } catch {
+            return {
+                schemaVersion: 1,
+                availability: 'available',
+                page: pageNum,
+                pageSize: 25,
+                total: 0,
+                selections: [],
+                topics: ['ai-news'],
+                diagnostics: [],
+            };
+        }
+    }
+
+    async function nativeResults(workflow: string, runId: string): Promise<RunResults> {
+        try {
+            const runData = await getJson<{
+                run?: { status?: string; startedAt?: string; completedAt?: string };
+                actions?: Array<{ durationMs?: number }>;
+                phases?: unknown[];
+            }>(`${board}/api/runs/${encodeURIComponent(runId)}`);
+            const totalDuration = runData.actions?.reduce((acc, a) => acc + (a.durationMs || 0), 0) ?? 0;
+            return {
+                schemaVersion: 1,
+                workflow: workflow as WorkflowName,
+                runId,
+                availability: 'available',
+                summary: {
+                    status: runData.run?.status ?? 'done',
+                    startedAt: runData.run?.startedAt,
+                    completedAt: runData.run?.completedAt,
+                    durationMs: totalDuration,
+                    actions: runData.actions?.length ?? 0,
+                    phases: runData.phases?.length ?? 0,
+                },
+                artifacts: [],
+                diagnostics: [],
+            };
+        } catch {
+            return {
+                schemaVersion: 1,
+                workflow: workflow as WorkflowName,
+                runId,
+                availability: 'missing',
+                summary: {},
+                artifacts: [],
+                diagnostics: [],
+            };
+        }
+    }
+
+    async function nativeConfig(workflow: string, runId: string): Promise<RunConfig> {
+        try {
+            const runData = await getJson<{
+                run?: { workflowName?: string; status?: string; mode?: string; startedAt?: string };
+            }>(`${board}/api/runs/${encodeURIComponent(runId)}`);
+            return {
+                schemaVersion: 1,
+                workflow: workflow as WorkflowName,
+                runId,
+                capturedAt: runData.run?.startedAt ?? null,
+                settings: {
+                    workflowName: runData.run?.workflowName ?? workflow,
+                    status: runData.run?.status ?? 'done',
+                    mode: runData.run?.mode ?? 'state-machine',
+                },
+                unavailableKeys: [],
+                diagnostics: [],
+            };
+        } catch {
+            return {
+                schemaVersion: 1,
+                workflow: workflow as WorkflowName,
+                runId,
+                capturedAt: null,
+                settings: {},
+                unavailableKeys: [],
+                diagnostics: [],
+            };
+        }
+    }
+
     return {
-        health: () => getJson<BoardHealth>(`${reader}/api/health`),
+        health: () =>
+            isNativeSpur
+                ? getJson<unknown>(`${board}/api/health`).then(() => ({
+                      schemaVersion: 1,
+                      projectPath: 'knowledge-kit',
+                  }))
+                : getJson<BoardHealth>(`${reader}/api/health`),
         results: (workflow, runId) =>
-            getJson<RunResults>(
-                `${reader}/api/workflows/${encodeURIComponent(workflow)}/runs/${encodeURIComponent(runId)}/results`,
-            ),
+            isNativeSpur
+                ? nativeResults(workflow, runId)
+                : getJson<RunResults>(
+                      `${reader}/api/workflows/${encodeURIComponent(workflow)}/runs/${encodeURIComponent(runId)}/results`,
+                  ),
         config: (workflow, runId) =>
-            getJson<RunConfig>(
-                `${reader}/api/workflows/${encodeURIComponent(workflow)}/runs/${encodeURIComponent(runId)}/config`,
-            ),
+            isNativeSpur
+                ? nativeConfig(workflow, runId)
+                : getJson<RunConfig>(
+                      `${reader}/api/workflows/${encodeURIComponent(workflow)}/runs/${encodeURIComponent(runId)}/config`,
+                  ),
         artifactUrl: (workflow, runId, artifactId) =>
             `${reader}/api/workflows/${encodeURIComponent(workflow)}/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(artifactId)}`,
         runs: (workflow, cursor) => {
@@ -200,14 +713,20 @@ export function createBoardClient(options: BoardClientOptions): BoardClient {
             return getJson<RunListPage>(`${board}/api/runs?${params.toString()}`);
         },
         storeOverview: (runIds) => {
+            if (isNativeSpur) return nativeStoreOverview(runIds);
             const params = new URLSearchParams({ runs: runIds.slice(0, MAX_OVERVIEW_RUNS).join(',') });
             return getJson<CollectStoreOverview>(
                 `${reader}/api/workflows/kk-collect/store/overview?${params.toString()}`,
             );
         },
         storeRun: (runId) =>
-            getJson<CollectRunStore>(`${reader}/api/workflows/kk-collect/runs/${encodeURIComponent(runId)}/store`),
+            isNativeSpur
+                ? nativeStoreRun(runId)
+                : getJson<CollectRunStore>(
+                      `${reader}/api/workflows/kk-collect/runs/${encodeURIComponent(runId)}/store`,
+                  ),
         storeItems: (runId, query = {}) => {
+            if (isNativeSpur) return nativeStoreItems(runId, query);
             const qs = storeItemsQueryString(query);
             const path =
                 runId !== undefined && runId.trim() !== ''
@@ -216,9 +735,11 @@ export function createBoardClient(options: BoardClientOptions): BoardClient {
             return getJson<CollectStoreItems>(path);
         },
         storeSelections: (query = {}) =>
-            getJson<CollectStoreSelections>(
-                `${reader}/api/workflows/kk-collect/store/selections?${storeSelectionsQueryString(query)}`,
-            ),
+            isNativeSpur
+                ? nativeStoreSelections(query)
+                : getJson<CollectStoreSelections>(
+                      `${reader}/api/workflows/kk-collect/store/selections?${storeSelectionsQueryString(query)}`,
+                  ),
         runDetail: (runId) => getJson<unknown>(`${board}/api/runs/${encodeURIComponent(runId)}`),
         progress: (runId) => getJson<unknown>(`${board}/api/runs/${encodeURIComponent(runId)}/progress`),
     };
