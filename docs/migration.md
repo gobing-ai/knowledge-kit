@@ -325,7 +325,7 @@ Each row is a command whose failure blocks the cutover. The Evidence column is t
 | V6 | Agent executors | `spur agent run "…write a file…" --agent scribe` and `--agent reviewer` | exit 0, file written | PASS — pi/minimax 12.8 s, pi/kimi-k3 15.6 s |
 | V7 | voxcpm render | `kk executor run voxcpm-tts --in smoke.json --out out.json` | WAV present, QC passed, non-silent | PASS — 7.02 s WAV, QC 100/100, mean −20.0 dB, peak −6.7 dB |
 | V8 | Publish transport | `git push --dry-run origin main` in the surfdash checkout | no auth error | PASS — `Everything up-to-date` as `robinmin` |
-| V9 | Scheduler live | `launchctl print gui/$(id -u)/ai.gobing.spur-serve` + `.spur/logs/spur.log` | agent `running`, 5 jobs | PASS — pid running, `Scheduler entries registered {jobs:5}` |
+| V9 | Scheduler live | `launchctl print gui/$(id -u)/ai.gobing.spur-serve` + `.spur/logs/spur.log` | agent `running`, 5 jobs | PASS — pid running, `Scheduler entries registered {jobs:5}`, and a real tick (`history-refresh`) fired at 13:00 local and finished `completed` |
 | V10 | One real episode | leave the 04:30 tick to run, then read `.works/kk-daily-ai-voice2/<date>/` | episode audio + publish result + ledger row | pending — first unattended tick |
 
 Rows V1–V9 ran before the cutover; **V10 is the cutover** — the first unattended tick on the target
