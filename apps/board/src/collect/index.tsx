@@ -176,6 +176,8 @@ export function CollectModule() {
 
     const historyBusy = useRef(false);
     const readerBusy = useRef(false);
+    /** The run the modal's cached store data belongs to; a new target must not reuse it. */
+    const modalTarget = useRef<string | null>(null);
 
     const rowsRef = useRef(rows);
     rowsRef.current = rows;
@@ -332,10 +334,20 @@ export function CollectModule() {
     // Dedicated modal run data loader
     useEffect(() => {
         if (!selectedModalRunId) {
+            modalTarget.current = null;
             setModalStoreRun(null);
             setModalResults(null);
             setModalProgress(null);
             return;
+        }
+
+        // A new target must never show the previous run's row while its own store request is in
+        // flight (G81/0309 R1) — clear on a target change, not on every poll re-run of this effect.
+        if (modalTarget.current !== selectedModalRunId) {
+            modalTarget.current = selectedModalRunId;
+            setModalStoreRun(null);
+            setModalResults(null);
+            setModalProgress(null);
         }
 
         // If the modal targets the currently selected run, reuse cached values
