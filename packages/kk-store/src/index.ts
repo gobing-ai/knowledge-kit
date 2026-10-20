@@ -29,12 +29,16 @@ export {
 } from './dao/collect-runs';
 export {
     COLLECT_VIEW_PAGE_SIZE,
+    type CollectItemLabelDetail,
     CollectViewDao,
     type CollectViewItem,
     type CollectViewItemsFilter,
     type CollectViewItemsPage,
     type CollectViewLabelQuality,
     type CollectViewRunRow,
+    type CollectViewSelection,
+    type CollectViewSelectionsFilter,
+    type CollectViewSelectionsPage,
 } from './dao/collect-view';
 export { type ItemRecord, ItemsDao, type StoredDoc, type UpsertDocsResult } from './dao/items';
 export {

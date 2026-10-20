@@ -39,6 +39,13 @@ export interface CollectViewLabelQuality {
     run: { value: string; HIGH: number; MEDIUM: number; LOW: number; none: number }[];
 }
 
+export interface CollectItemLabelDetail {
+    value: string;
+    confidence: string | null;
+    maker: string | null;
+    score: number | null;
+}
+
 /** Filters accepted by {@link CollectViewDao.itemsPage}; already validated by the caller. */
 export interface CollectViewItemsFilter {
     source?: string;
@@ -46,6 +53,7 @@ export interface CollectViewItemsFilter {
     decision?: string;
     value?: string;
     selection?: SelectionStatus | 'none';
+    search?: string;
 }
 
 /** One item as the store views render it. */
@@ -58,14 +66,51 @@ export interface CollectViewItem {
     seen: 'new' | 'reseen';
     /** Effective labels, `decision_id → value` (`labels_current` under the caller's policy). */
     labels: Record<string, string>;
+    /** Detailed labels including confidence, maker, and score. */
+    labelDetails?: Record<string, CollectItemLabelDetail>;
     /** The item's strongest selection status across topics, `none` when it has no row. */
     selection: SelectionStatus | 'none';
+    domain?: string | null;
+    lang?: string | null;
+    bodyChars?: number | null;
+    engagement?: number | null;
+    firstSeenAt?: number | null;
+    publishedAt?: number | null;
 }
 
 /** One page of {@link CollectViewItem}. */
 export interface CollectViewItemsPage {
     total: number;
     items: CollectViewItem[];
+}
+
+export interface CollectViewSelection {
+    topic: string;
+    itemId: string;
+    runId: string;
+    storyId: string;
+    workflow: string | null;
+    rank: number | null;
+    reason: string | null;
+    status: SelectionStatus;
+    selectedAt: number;
+    publishedAt: number | null;
+    title: string | null;
+    source: string | null;
+    canonicalUrl: string | null;
+}
+
+export interface CollectViewSelectionsFilter {
+    runId?: string;
+    topic?: string;
+    status?: SelectionStatus;
+    search?: string;
+}
+
+export interface CollectViewSelectionsPage {
+    total: number;
+    selections: CollectViewSelection[];
+    topics: string[];
 }
 
 /**
@@ -112,6 +157,12 @@ interface ItemRow {
     storyId: string | null;
     firstSeenRun: string;
     lastSeenRun: string;
+    domain?: string | null;
+    lang?: string | null;
+    bodyChars?: number | null;
+    engagement?: number | null;
+    firstSeenAt?: number | null;
+    publishedAt?: number | null;
     selectionRank: number | null;
 }
 
@@ -119,6 +170,9 @@ interface CurrentLabelRow {
     itemId: string;
     decisionId: string;
     value: string;
+    confidence: string | null;
+    maker: string | null;
+    score: number | null;
 }
 
 /** `?` placeholders for an `IN (…)` list. */
@@ -271,30 +325,46 @@ export class CollectViewDao extends BaseDao {
         return rows.map((row) => row.source);
     }
 
+    /** The store's distinct selection topics. */
+    async selectionTopics(): Promise<string[]> {
+        const rows = await this.adapter.queryAll<{ topic: string }>(
+            "SELECT DISTINCT topic AS topic FROM selections WHERE topic <> '' ORDER BY topic",
+        );
+        return rows.map((row) => row.topic);
+    }
+
     /**
      * One page of the run's items: `first_seen_run = runId OR last_seen_run = runId`, filtered in
      * SQL with bound parameters. The decision/value filter matches the item's CURRENT label under
      * `policy` (the same `labels_current` CTE the shipped reads use), never a stale observation.
      */
     async itemsPage(
-        runId: string,
+        runId: string | null | undefined,
         filter: CollectViewItemsFilter,
         page: number,
         policy: LabelPolicy,
     ): Promise<CollectViewItemsPage> {
         const params: unknown[] = [];
-        const conditions: string[] = ['(it.first_seen_run = ? OR it.last_seen_run = ?)'];
-        params.push(runId, runId);
-        if (filter.seen === 'new') {
-            conditions.push('it.first_seen_run = ?');
-            params.push(runId);
-        } else if (filter.seen === 'reseen') {
-            conditions.push('it.last_seen_run = ? AND it.first_seen_run <> ?');
+        const conditions: string[] = [];
+        if (runId !== undefined && runId !== null && runId !== '' && runId !== 'all') {
+            conditions.push('(it.first_seen_run = ? OR it.last_seen_run = ?)');
             params.push(runId, runId);
+            if (filter.seen === 'new') {
+                conditions.push('it.first_seen_run = ?');
+                params.push(runId);
+            } else if (filter.seen === 'reseen') {
+                conditions.push('it.last_seen_run = ? AND it.first_seen_run <> ?');
+                params.push(runId, runId);
+            }
         }
         if (filter.source !== undefined) {
             conditions.push('it.source = ?');
             params.push(filter.source);
+        }
+        if (filter.search !== undefined && filter.search.trim() !== '') {
+            const pattern = `%${filter.search.trim()}%`;
+            conditions.push('(it.title LIKE ? OR it.id LIKE ? OR it.canonical_url LIKE ?)');
+            params.push(pattern, pattern, pattern);
         }
         const rank =
             filter.selection === undefined || filter.selection === 'none'
@@ -319,9 +389,9 @@ export class CollectViewDao extends BaseDao {
         const withClause = usesCurrent ? `WITH ${current.sql}\n` : '';
         const currentParams = usesCurrent ? current.params : [];
         const from = `items it LEFT JOIN (${SELECTION_RANK_SQL}) sel ON sel.item_id = it.id`;
-        const where = conditions.join('\n  AND ');
+        const where = conditions.length === 0 ? '' : `WHERE ${conditions.join('\n  AND ')}`;
         const totalRow = await this.adapter.queryFirst<{ n: number }>(
-            `${withClause}SELECT COUNT(*) AS n FROM ${from} WHERE ${where}`,
+            `${withClause}SELECT COUNT(*) AS n FROM ${from} ${where}`,
             ...currentParams,
             ...params,
         );
@@ -330,8 +400,11 @@ export class CollectViewDao extends BaseDao {
             `${withClause}SELECT it.id AS id, it.title AS title, it.canonical_url AS canonicalUrl,
                     it.source AS source, it.story_id AS storyId,
                     it.first_seen_run AS firstSeenRun, it.last_seen_run AS lastSeenRun,
+                    it.domain AS domain, it.lang AS lang, it.body_chars AS bodyChars,
+                    it.engagement AS engagement, it.first_seen_at AS firstSeenAt,
+                    it.published_at AS publishedAt,
                     sel.rank AS selectionRank
-             FROM ${from} WHERE ${where}
+             FROM ${from} ${where}
              ORDER BY it.last_seen_run DESC, it.id ASC
              LIMIT ? OFFSET ?`,
             ...currentParams,
@@ -339,7 +412,7 @@ export class CollectViewDao extends BaseDao {
             COLLECT_VIEW_PAGE_SIZE,
             offset,
         );
-        const labelsOf = await this.currentLabels(
+        const labelsData = await this.currentLabels(
             rows.map((row) => row.id),
             policy,
         );
@@ -352,33 +425,119 @@ export class CollectViewDao extends BaseDao {
                 source: row.source,
                 storyId: row.storyId,
                 seen: row.firstSeenRun === runId ? 'new' : 'reseen',
-                labels: labelsOf.get(row.id) ?? {},
+                labels: labelsData.labels.get(row.id) ?? {},
+                labelDetails: labelsData.labelDetails.get(row.id) ?? {},
                 selection: statusOf(row.selectionRank),
+                domain: row.domain,
+                lang: row.lang,
+                bodyChars: row.bodyChars,
+                engagement: row.engagement,
+                firstSeenAt: row.firstSeenAt,
+                publishedAt: row.publishedAt,
             })),
         };
     }
 
-    /** `item_id → { decision_id: value }` for the page's items under `policy`. */
+    /** One page of selections joined with items. */
+    async selectionsPage(filter: CollectViewSelectionsFilter = {}, page = 1): Promise<CollectViewSelectionsPage> {
+        const params: unknown[] = [];
+        const conditions: string[] = [];
+        if (filter.runId !== undefined && filter.runId !== '' && filter.runId !== 'all') {
+            conditions.push('s.run_id = ?');
+            params.push(filter.runId);
+        }
+        if (filter.topic !== undefined && filter.topic !== '' && filter.topic !== 'all') {
+            conditions.push('s.topic = ?');
+            params.push(filter.topic);
+        }
+        if (filter.status !== undefined && (filter.status as string) !== '' && (filter.status as string) !== 'all') {
+            conditions.push('s.status = ?');
+            params.push(filter.status);
+        }
+        if (filter.search !== undefined && filter.search.trim() !== '') {
+            const pattern = `%${filter.search.trim()}%`;
+            conditions.push('(it.title LIKE ? OR s.item_id LIKE ? OR s.reason LIKE ?)');
+            params.push(pattern, pattern, pattern);
+        }
+        const where = conditions.length === 0 ? '' : `WHERE ${conditions.join('\n  AND ')}`;
+        const from = 'selections s LEFT JOIN items it ON it.id = s.item_id';
+        const totalRow = await this.adapter.queryFirst<{ n: number }>(
+            `SELECT COUNT(*) AS n FROM ${from} ${where}`,
+            ...params,
+        );
+        const offset = (Math.max(1, page) - 1) * COLLECT_VIEW_PAGE_SIZE;
+        const rows = await this.adapter.queryAll<{
+            topic: string;
+            itemId: string;
+            runId: string;
+            storyId: string;
+            workflow: string | null;
+            rank: number | null;
+            reason: string | null;
+            status: string;
+            selectedAt: number;
+            publishedAt: number | null;
+            title: string | null;
+            source: string | null;
+            canonicalUrl: string | null;
+        }>(
+            `SELECT s.topic AS topic, s.item_id AS itemId, s.run_id AS runId, s.story_id AS storyId,
+                    s.workflow AS workflow, s.rank AS rank, s.reason AS reason, s.status AS status,
+                    s.selected_at AS selectedAt, s.published_at AS publishedAt,
+                    it.title AS title, it.source AS source, it.canonical_url AS canonicalUrl
+             FROM ${from} ${where}
+             ORDER BY s.selected_at DESC, s.rank ASC
+             LIMIT ? OFFSET ?`,
+            ...params,
+            COLLECT_VIEW_PAGE_SIZE,
+            offset,
+        );
+        const topics = await this.selectionTopics();
+        return {
+            total: totalRow?.n ?? 0,
+            topics,
+            selections: rows.map((r) => ({
+                ...r,
+                status: r.status as SelectionStatus,
+            })),
+        };
+    }
+
+    /** `item_id → { decision_id: value }` and detail objects for the page's items under `policy`. */
     private async currentLabels(
         itemIds: readonly string[],
         policy: LabelPolicy,
-    ): Promise<Map<string, Record<string, string>>> {
-        const result = new Map<string, Record<string, string>>();
-        if (itemIds.length === 0) return result;
+    ): Promise<{
+        labels: Map<string, Record<string, string>>;
+        labelDetails: Map<string, Record<string, CollectItemLabelDetail>>;
+    }> {
+        const labels = new Map<string, Record<string, string>>();
+        const labelDetails = new Map<string, Record<string, CollectItemLabelDetail>>();
+        if (itemIds.length === 0) return { labels, labelDetails };
         const current = labelsCurrentSql(policy);
         const rows = await this.adapter.queryAll<CurrentLabelRow>(
             `WITH ${current.sql}
-             SELECT item_id AS itemId, decision_id AS decisionId, value AS value
+             SELECT item_id AS itemId, decision_id AS decisionId, value AS value,
+                    confidence AS confidence, maker AS maker, score AS score
              FROM labels_current WHERE item_id IN (${placeholders(itemIds.length)})
              ORDER BY item_id, decision_id`,
             ...current.params,
             ...itemIds,
         );
         for (const row of rows) {
-            const labels = result.get(row.itemId) ?? {};
-            labels[row.decisionId] = row.value;
-            result.set(row.itemId, labels);
+            const itemLabels = labels.get(row.itemId) ?? {};
+            itemLabels[row.decisionId] = row.value;
+            labels.set(row.itemId, itemLabels);
+
+            const itemDetails = labelDetails.get(row.itemId) ?? {};
+            itemDetails[row.decisionId] = {
+                value: row.value,
+                confidence: row.confidence,
+                maker: row.maker,
+                score: row.score,
+            };
+            labelDetails.set(row.itemId, itemDetails);
         }
-        return result;
+        return { labels, labelDetails };
     }
 }

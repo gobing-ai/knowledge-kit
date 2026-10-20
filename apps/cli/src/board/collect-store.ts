@@ -6,6 +6,7 @@ import type {
     CollectStoreItem,
     CollectStoreItems,
     CollectStoreOverview,
+    CollectStoreSelections,
 } from '@gobing-ai/kk-board/contracts';
 import {
     type CollectViewItem,
@@ -48,6 +49,16 @@ export interface CollectStoreItemsQuery {
     decision?: string;
     value?: string;
     selection?: 'selected' | 'published' | 'dropped' | 'none';
+    search?: string;
+}
+
+/** The `…/store/selections` query. */
+export interface CollectStoreSelectionsQuery {
+    page: number;
+    runId?: string;
+    topic?: string;
+    status?: 'selected' | 'published' | 'dropped';
+    search?: string;
 }
 
 /** A title longer than this is truncated: the store's titles are untrusted text (design §3). */
@@ -273,7 +284,14 @@ function itemOf(item: CollectViewItem): CollectStoreItem {
         storyId: item.storyId,
         seen: item.seen,
         labels: item.labels,
+        labelDetails: item.labelDetails,
         selection: item.selection,
+        domain: item.domain,
+        lang: item.lang,
+        bodyChars: item.bodyChars,
+        engagement: item.engagement,
+        firstSeenAt: item.firstSeenAt,
+        publishedAt: item.publishedAt,
     };
 }
 
@@ -284,15 +302,16 @@ function itemOf(item: CollectViewItem): CollectStoreItem {
  */
 export async function storeItems(
     deps: CollectStoreDeps,
-    runId: string,
+    runId: string | null | undefined,
     query: CollectStoreItemsQuery,
 ): Promise<CollectStoreItems | null> {
     const session = await sessionFor(deps);
+    const resolvedRunId = runId ?? '';
     if (!session.ok) {
         return {
             schemaVersion: 1,
             availability: 'unavailable',
-            runId,
+            runId: resolvedRunId,
             page: query.page,
             pageSize: 25,
             total: 0,
@@ -312,6 +331,7 @@ export async function storeItems(
             ...(query.decision === undefined ? {} : { decision: query.decision }),
             ...(query.value === undefined ? {} : { value: query.value }),
             ...(query.selection === undefined ? {} : { selection: query.selection }),
+            ...(query.search === undefined ? {} : { search: query.search }),
         };
         // No policy (unreadable) fails closed: `labels_current` is empty, so a decision/value
         // filter matches nothing and every `effective` list stays empty. Never a guessed policy.
@@ -320,7 +340,7 @@ export async function storeItems(
         return {
             schemaVersion: 1,
             availability: 'available',
-            runId,
+            runId: resolvedRunId,
             page: query.page,
             pageSize: 25,
             total: page.total,
@@ -330,8 +350,79 @@ export async function storeItems(
         };
     } catch {
         return {
-            ...emptyItems(runId, query, []),
+            ...emptyItems(resolvedRunId, query, []),
             availability: 'unavailable',
+            diagnostics: [...diagnostics, UNREADABLE],
+        };
+    } finally {
+        await store.close();
+    }
+}
+
+/**
+ * `GET /api/workflows/kk-collect/store/selections` — one page of selections.
+ */
+export async function storeSelections(
+    deps: CollectStoreDeps,
+    query: CollectStoreSelectionsQuery,
+): Promise<CollectStoreSelections> {
+    const session = await sessionFor(deps);
+    if (!session.ok) {
+        return {
+            schemaVersion: 1,
+            availability: 'unavailable',
+            page: query.page,
+            pageSize: 25,
+            total: 0,
+            selections: [],
+            topics: [],
+            diagnostics: session.diagnostics,
+        };
+    }
+    const { store, diagnostics } = session.session;
+    try {
+        const page = await store.collectView.selectionsPage(
+            {
+                runId: query.runId,
+                topic: query.topic,
+                status: query.status,
+                search: query.search,
+            },
+            query.page,
+        );
+        return {
+            schemaVersion: 1,
+            availability: 'available',
+            page: query.page,
+            pageSize: 25,
+            total: page.total,
+            topics: page.topics,
+            selections: page.selections.map((s) => ({
+                topic: s.topic,
+                itemId: s.itemId,
+                runId: s.runId,
+                storyId: s.storyId,
+                workflow: s.workflow,
+                rank: s.rank,
+                reason: s.reason,
+                status: s.status,
+                selectedAt: s.selectedAt,
+                publishedAt: s.publishedAt,
+                title: s.title ? s.title.slice(0, ITEM_TITLE_MAX) : null,
+                source: s.source,
+                url: linkOf(s.canonicalUrl),
+            })),
+            diagnostics,
+        };
+    } catch {
+        return {
+            schemaVersion: 1,
+            availability: 'unavailable',
+            page: query.page,
+            pageSize: 25,
+            total: 0,
+            selections: [],
+            topics: [],
             diagnostics: [...diagnostics, UNREADABLE],
         };
     } finally {

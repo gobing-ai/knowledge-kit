@@ -3,7 +3,14 @@ import { ITEM_DECISION_IDS } from '@gobing-ai/kk-store';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { captureRecordPath, markerPath, readCaptureRecord, readOwnerMarker } from './capture';
 import { type ArtifactObservation, isTerminalStatus, projectCollectResults, type RunDetailSummary } from './collect';
-import { type CollectStoreItemsQuery, storeItems, storeOverview, storeRun } from './collect-store';
+import {
+    type CollectStoreItemsQuery,
+    type CollectStoreSelectionsQuery,
+    storeItems,
+    storeOverview,
+    storeRun,
+    storeSelections,
+} from './collect-store';
 import { dagProducerState, projectDailyResults } from './daily-voice';
 import { itcResultSpecs, projectItcResults } from './itc';
 import {
@@ -576,6 +583,10 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         return { status: 200, body: items };
     }
 
+    async function storeSelectionsFor(query: CollectStoreSelectionsQuery): Promise<BoardResponse> {
+        return { status: 200, body: await storeSelections({ projectPath, fs }, query) };
+    }
+
     const server = Bun.serve({
         hostname: '127.0.0.1',
         port,
@@ -607,9 +618,18 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
                 return jsonResponse({ schemaVersion: 1, projectPath }, 200, cors);
             }
             const overviewMatch = /^\/api\/workflows\/([^/]+)\/store\/overview$/.exec(path);
+            const selectionsMatch = /^\/api\/workflows\/([^/]+)\/store\/selections$/.exec(path);
+            const storeItemsMatch = /^\/api\/workflows\/([^/]+)\/store\/items$/.exec(path);
+            const runStoreSelectionsMatch = /^\/api\/workflows\/([^/]+)\/runs\/([^/]+)\/store\/selections$/.exec(path);
             const runStoreMatch = /^\/api\/workflows\/([^/]+)\/runs\/([^/]+)\/store$/.exec(path);
             const runStoreItemsMatch = /^\/api\/workflows\/([^/]+)\/runs\/([^/]+)\/store\/items$/.exec(path);
-            const storeMatch = overviewMatch ?? runStoreMatch ?? runStoreItemsMatch;
+            const storeMatch =
+                overviewMatch ??
+                selectionsMatch ??
+                storeItemsMatch ??
+                runStoreSelectionsMatch ??
+                runStoreMatch ??
+                runStoreItemsMatch;
             if (storeMatch !== null) {
                 const storeRaw = storeMatch[1] ?? '';
                 // Store views exist for kk-collect only: another workflow is an unknown route, not
@@ -621,6 +641,29 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
                     const runs = parseRunsQuery(url.searchParams);
                     if ('response' in runs) return jsonResponse(runs.response.body, runs.response.status, cors);
                     const response = await storeOverviewFor(runs.runIds);
+                    return jsonResponse(response.body, response.status, cors);
+                }
+                if (selectionsMatch !== null) {
+                    const query = parseSelectionsQuery(url.searchParams);
+                    if ('response' in query) return jsonResponse(query.response.body, query.response.status, cors);
+                    const response = await storeSelectionsFor(query.query);
+                    return jsonResponse(response.body, response.status, cors);
+                }
+                if (storeItemsMatch !== null) {
+                    const query = parseItemsQuery(url.searchParams);
+                    if ('response' in query) return jsonResponse(query.response.body, query.response.status, cors);
+                    const response = await storeItemsFor('', query.query);
+                    return jsonResponse(response.body, response.status, cors);
+                }
+                if (runStoreSelectionsMatch !== null) {
+                    const identified = identify(storeRaw, runStoreSelectionsMatch[2] ?? '');
+                    if ('response' in identified)
+                        return jsonResponse(identified.response.body, identified.response.status, cors);
+                    const query = parseSelectionsQuery(url.searchParams);
+                    if ('response' in query) return jsonResponse(query.response.body, query.response.status, cors);
+                    const authorized = await authorizeRun(identified.workflow, identified.runId);
+                    if (!authorized.ok) return jsonResponse(authorized.response.body, authorized.response.status, cors);
+                    const response = await storeSelectionsFor({ ...query.query, runId: identified.runId });
                     return jsonResponse(response.body, response.status, cors);
                 }
                 if (runStoreMatch !== null) {
@@ -698,7 +741,10 @@ const LABEL_VALUE_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
 const SELECTION_FILTERS = ['selected', 'published', 'dropped', 'none'] as const;
 
 /** The `page`/`source`/… keys `…/store/items` declares; anything else is a bad request. */
-const ITEMS_QUERY_KEYS = new Set(['page', 'source', 'seen', 'decision', 'value', 'selection']);
+const ITEMS_QUERY_KEYS = new Set(['page', 'source', 'seen', 'decision', 'value', 'selection', 'search']);
+
+/** The query keys `…/store/selections` declares. */
+const SELECTIONS_QUERY_KEYS = new Set(['page', 'runId', 'topic', 'status', 'search']);
 
 /** A bounded 400 for a malformed store query: the offending value is never echoed. */
 function invalidQuery(message: string): BoardResponse {
@@ -765,6 +811,7 @@ export function parseItemsQuery(
     if (selection !== null && !(SELECTION_FILTERS as readonly string[]).includes(selection)) {
         return { response: invalidQuery('`selection` must be selected, published, dropped or none.') };
     }
+    const search = params.get('search');
     return {
         query: {
             page,
@@ -773,6 +820,45 @@ export function parseItemsQuery(
             ...(decision === null ? {} : { decision }),
             ...(value === null ? {} : { value }),
             ...(selection === null ? {} : { selection: selection as (typeof SELECTION_FILTERS)[number] }),
+            ...(search === null ? {} : { search }),
+        },
+    };
+}
+
+/**
+ * The `…/store/selections` query: syntactically validated.
+ */
+export function parseSelectionsQuery(
+    params: URLSearchParams,
+): { query: CollectStoreSelectionsQuery } | { response: BoardResponse } {
+    for (const key of params.keys()) {
+        if (!SELECTIONS_QUERY_KEYS.has(key)) return { response: invalidQuery('Unknown query parameter.') };
+    }
+    const rawPage = params.get('page');
+    const page = rawPage === null ? 1 : Number(rawPage);
+    if (rawPage !== null && (!/^\d+$/.test(rawPage) || !Number.isSafeInteger(page) || page < 1)) {
+        return { response: invalidQuery('`page` must be an integer of at least 1.') };
+    }
+    const runId = params.get('runId');
+    if (runId !== null && runId !== '' && !RUN_ID_PATTERN.test(runId)) {
+        return { response: invalidQuery('`runId` must be a single safe segment.') };
+    }
+    const topic = params.get('topic');
+    if (topic !== null && (topic === '' || topic.length > 128)) {
+        return { response: invalidQuery('`topic` must be a short non-empty value.') };
+    }
+    const status = params.get('status');
+    if (status !== null && status !== 'selected' && status !== 'published' && status !== 'dropped') {
+        return { response: invalidQuery('`status` must be selected, published or dropped.') };
+    }
+    const search = params.get('search');
+    return {
+        query: {
+            page,
+            ...(runId ? { runId } : {}),
+            ...(topic ? { topic } : {}),
+            ...(status ? { status: status as 'selected' | 'published' | 'dropped' } : {}),
+            ...(search ? { search } : {}),
         },
     };
 }

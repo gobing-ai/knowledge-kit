@@ -363,6 +363,62 @@ describe('CollectViewDao.unknownMigrationIds', () => {
     });
 });
 
+describe('CollectViewDao.selectionsPage and selectionTopics', () => {
+    it('returns empty topics and selections when no selections exist', async () => {
+        const { store } = await openTempStore(makeTempDir(), 'cv-selections-empty.db');
+        expect(await store.collectView.selectionTopics()).toEqual([]);
+        const page = await store.collectView.selectionsPage();
+        expect(page.total).toBe(0);
+        expect(page.selections).toEqual([]);
+        expect(page.topics).toEqual([]);
+    });
+
+    it('pages and filters selections joined with items', async () => {
+        const { store } = await openTempStore(makeTempDir(), 'cv-selections.db');
+        const item1 = await seedItem(store, 'run-1', doc('1', 'tech'));
+        const item2 = await seedItem(store, 'run-1', doc('2', 'ai'));
+        await store.selections.insertMany([
+            {
+                topic: 'tech',
+                itemId: item1.id,
+                runId: 'run-1',
+                storyId: item1.id,
+                status: 'published',
+                rank: 1,
+                reason: 'Top story',
+                selectedAt: 1000,
+            },
+            {
+                topic: 'ai',
+                itemId: item2.id,
+                runId: 'run-1',
+                storyId: item2.id,
+                status: 'selected',
+                rank: 2,
+                reason: 'Interesting',
+                selectedAt: 2000,
+            },
+        ]);
+
+        const topics = await store.collectView.selectionTopics();
+        expect(topics).toEqual(['ai', 'tech']);
+
+        const all = await store.collectView.selectionsPage();
+        expect(all.total).toBe(2);
+        expect(all.selections[0]?.title).toBe('Title 2');
+        expect(all.selections[0]?.topic).toBe('ai');
+
+        const filtered = await store.collectView.selectionsPage({ topic: 'tech' });
+        expect(filtered.total).toBe(1);
+        expect(filtered.selections[0]?.title).toBe('Title 1');
+        expect(filtered.selections[0]?.status).toBe('published');
+
+        const searched = await store.collectView.selectionsPage({ search: 'Title 2' });
+        expect(searched.total).toBe(1);
+        expect(searched.selections[0]?.itemId).toBe(item2.id);
+    });
+});
+
 /** Compile-time proof the DAO type is exported under the frozen name. */
 const _daoType: CollectViewDao | null = null;
 void _daoType;
