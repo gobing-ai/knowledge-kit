@@ -656,10 +656,10 @@ describe('installed Board native modules (AC1/AC7)', () => {
             expect(await page.locator(`.kk-board-${module.entry}`).count(), module.id).toBe(1);
             const heading = await page.locator('h1').first().textContent();
             expect(heading?.trim(), module.id).toBe(module.name);
-            // G81/0308: Collect ships five tabs (Overview, Run detail, Items, the two shipped ones);
-            // Daily Voice and ITC keep their four.
+            // G81/0308 with the 0317 rebuild: Collect ships six tabs (Summary, Run Details, Items,
+            // Selections, the two shipped ones); Daily Voice and ITC keep their four.
             expect(await page.locator('.kk-board-tabs button').count(), module.id).toBe(
-                module.id === 'kk-collect' ? 5 : 4,
+                module.id === 'kk-collect' ? 6 : 4,
             );
         }
     }, 30_000);
@@ -685,16 +685,16 @@ describe('installed Board native modules (AC1/AC7)', () => {
 describe('run selection and deep links (AC2)', () => {
     it('restores a saved ?run=&tab= deep link and keeps both in the URL', async () => {
         if (!ready || page === null) throw new Error('setup did not complete');
-        // G81/0308 keeps shipped `?tab=results` links alive: the alias resolves to Run detail.
+        // G81/0308 keeps shipped `?tab=results` links alive: the alias resolves to Run Details.
         await openModule('kk-collect', query({ run: 'r-b', tab: 'results' }));
         await waitForRunOption('r-b');
         expect(await page.locator('.kk-board-run-selector select').inputValue()).toBe('r-b');
         expect((await page.locator('.kk-board-tabs button[aria-current="page"]').textContent())?.trim()).toBe(
-            'Run detail',
+            'Run Details',
         );
         const url = new URL(page.url());
         expect(url.searchParams.get('run')).toBe('r-b');
-        expect(url.searchParams.get('tab')).toBe('summary');
+        expect(url.searchParams.get('tab')).toBe('runs');
         // §4: the validated reader origin is retained in the saved URL.
         expect(url.searchParams.get('kkApi')).toBe(readerOrigin);
     }, 30_000);
@@ -705,9 +705,10 @@ describe('run selection and deep links (AC2)', () => {
         await waitForRunOption('r-b');
         // AC2 "across all tabs": visit every Collect tab, ending on progress for the reload below.
         for (const [tab, label] of [
-            ['overview', 'Overview'],
-            ['summary', 'Run detail'],
+            ['summary', 'Summary'],
+            ['runs', 'Run Details'],
             ['items', 'Items'],
+            ['selections', 'Selections'],
             ['config', 'Workflow Config Summary'],
             ['progress', 'Execution progress'],
         ] as const) {
@@ -816,8 +817,11 @@ describe('truthful refresh, usability and media (AC6/AC7)', () => {
         await openModule('kk-collect', dead);
         await waitForRunOption('r-a');
         expect(await page.locator('.kk-board-run-selector select option').count()).toBeGreaterThan(1);
-        await page.waitForSelector('.kk-board-diagnostic');
-        expect((await page.locator('body').innerText()).toLowerCase()).toContain('unavailable');
+        // A dead reader is one explicit banner, not a wall of per-panel diagnostics.
+        await page.waitForSelector('.kk-board-reader-offline-banner');
+        expect((await page.locator('.kk-board-reader-offline-banner').innerText()).toLowerCase()).toContain(
+            'reader offline',
+        );
     }, 30_000);
 
     it('is keyboard-usable at a narrow viewport', async () => {
@@ -827,8 +831,8 @@ describe('truthful refresh, usability and media (AC6/AC7)', () => {
             await openModule('kk-collect', query({ run: 'r-a' }));
             expect(await page.locator('.kk-board-tabs').getAttribute('aria-label')).toBe('Collect tabs');
             const buttons = page.locator('.kk-board-tabs button');
-            expect(await buttons.count()).toBe(5);
-            await buttons.nth(3).focus();
+            expect(await buttons.count()).toBe(6);
+            await buttons.nth(4).focus();
             await page.keyboard.press('Enter');
             await page.waitForTimeout(200);
             expect((await page.locator('.kk-board-tabs button[aria-current="page"]').textContent())?.trim()).toBe(
@@ -950,17 +954,22 @@ describe('Collect store views over a seeded store (G81/0309 R1)', () => {
     it('never shows the previous run funnel while the selected run is loading', async () => {
         if (!ready || page === null) throw new Error('setup did not complete');
         const view: Page = page;
-        await openModule('kk-collect', query({ run: 'r-a', tab: 'summary' }));
+        // The funnel lives in the Inspect modal, so the stale row it must never show is the previous
+        // target's while the new target's store request is still in flight.
+        await openModule('kk-collect', query({ run: 'r-a', tab: 'runs' }));
         await waitForRunOption('r-a');
-        await view.waitForSelector('.kk-collect-funnel');
+        await view.locator('.kk-collect-table tbody tr').first().waitFor();
+        await overviewRow('r-a').getByRole('button', { name: 'Inspect' }).click();
+        await view.waitForSelector('.kk-modal-card .kk-collect-funnel .kk-stat-card');
+        expect(await view.locator('.kk-modal-card .kk-collect-funnel').innerText()).toContain('aihot-ingest 20');
+        await view.locator('.kk-modal-footer').getByRole('button', { name: 'Close' }).click();
         await view.route('**/runs/r-b/store', (route) => route.abort());
         try {
-            await view.locator('.kk-board-run-selector select').selectOption('r-b');
-            expect(await view.locator('.kk-collect-funnel').count()).toBe(0);
-            expect(await view.locator('.kk-board-facts').count()).toBe(0);
-            expect(await view.locator('.kk-collect-detail').innerText()).toContain(
-                'The store has not answered for the selected run yet.',
-            );
+            await overviewRow('r-b').getByRole('button', { name: 'Inspect' }).click();
+            await view.waitForSelector('.kk-modal-card');
+            const modal = view.locator('.kk-modal-card');
+            expect(await modal.innerText()).toContain('The store has not answered for this run yet.');
+            expect(await modal.innerText()).not.toContain('aihot-ingest 20');
             const artifacts = join(REPO, '.works/test-artifacts/g81');
             mkdirSync(artifacts, { recursive: true });
             await view.screenshot({ path: join(artifacts, 'collect-run-switch.png') });
@@ -975,7 +984,7 @@ describe('Collect store views over a seeded store (G81/0309 R1)', () => {
         // The collector stays attached for the WHOLE scenario: a console error raised by any
         // assertion step (not only the first load) fails the check.
         const errors = await consoleErrorsDuring(async () => {
-            await openModule('kk-collect', query());
+            await openModule('kk-collect', query({ tab: 'runs' }));
             await waitForRunOption('r-a');
             await view.locator('.kk-collect-table tbody tr').first().waitFor();
             // The banner measures the seeded `finished_at` against the 6 h schedule.
@@ -999,18 +1008,20 @@ describe('Collect store views over a seeded store (G81/0309 R1)', () => {
         expect(errors).toEqual([]);
     }, 30_000);
 
-    it('renders the Run detail funnel and label quality for r-a, including the ?tab=results alias', async () => {
+    it('renders the Run Details funnel and label quality in the Inspect modal, including ?tab=results', async () => {
         if (!ready || page === null) throw new Error('setup did not complete');
         const view: Page = page;
         const errors = await consoleErrorsDuring(async () => {
-            // A shipped `?tab=results` link resolves to Run detail (design §2).
+            // A shipped `?tab=results` link resolves to Run Details (design §2).
             await openModule('kk-collect', query({ run: 'r-a', tab: 'results' }));
             await waitForRunOption('r-a');
-            await view.waitForSelector('.kk-collect-funnel .kk-stat-card');
             expect((await view.locator('.kk-board-tabs button[aria-current="page"]').textContent())?.trim()).toBe(
-                'Run detail',
+                'Run Details',
             );
-            const cards = view.locator('.kk-collect-funnel .kk-stat-card');
+            // The funnel and label quality are the run's drilldown, not a tab body.
+            await overviewRow('r-a').getByRole('button', { name: 'Inspect' }).click();
+            await view.waitForSelector('.kk-modal-card .kk-collect-funnel .kk-stat-card');
+            const cards = view.locator('.kk-modal-card .kk-collect-funnel .kk-stat-card');
             expect(await cards.count()).toBe(4);
             // The stage label is uppercased by CSS, so the assertions read the flattened card text.
             const card = async (index: number): Promise<string> =>
@@ -1026,7 +1037,7 @@ describe('Collect store views over a seeded store (G81/0309 R1)', () => {
             expect(await card(3)).toContain('downstream');
             expect(await card(3)).toContain('1 selected · 1 published · 1 dropped');
             // Label quality: this run's own rows, per decision, with the confidence histogram.
-            const quality = view.locator('.kk-collect-quality');
+            const quality = view.locator('.kk-modal-card .kk-collect-quality');
             // The decision heading is uppercased by CSS like the funnel labels.
             expect((await quality.locator('h3').first().innerText()).trim().toLowerCase()).toBe('kk-item-category');
             // The histogram names the three levels the module reports (HIGH/MEDIUM/LOW) plus `none`.
@@ -1123,16 +1134,13 @@ describe('Collect store views with the store file removed (G81/0309 R2)', () => 
         const away = `${storePath}.away`;
         renameSync(storePath, away);
         try {
-            await openModule('kk-collect', query({ run: 'r-a' }));
+            // Run Details is the store-backed tab: it states the diagnostic instead of a zero.
+            await openModule('kk-collect', query({ run: 'r-a', tab: 'runs' }));
             await waitForRunOption('r-a');
-            // Each store panel states the diagnostic instead of a zero.
             const diagnostic = view.locator('.kk-collect-overview .kk-board-diagnostic').first();
             await diagnostic.waitFor();
             expect(await diagnostic.innerText()).toContain('no kk store at .works/kk.db');
             expect(await view.locator('.kk-collect-banner-value').first().innerText()).toContain('unknown');
-            await view.locator('.kk-board-tabs').getByRole('button', { name: 'Run detail', exact: true }).click();
-            await view.waitForSelector('.kk-collect-detail .kk-board-diagnostic');
-            expect(await view.locator('.kk-collect-detail').innerText()).toContain('no kk store at .works/kk.db');
             // Execution progress still renders its recorded states (or its explicit absence line).
             await view
                 .locator('.kk-board-tabs')

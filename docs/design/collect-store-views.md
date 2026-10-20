@@ -49,23 +49,33 @@ Tabs (deep-linkable `?run=&tab=`, shipped run selector and 25-row paging unchang
 
 | Tab id | Label | Content |
 | --- | --- | --- |
-| `overview` (default) | Overview | cadence banner + per-run table for the current run-list page |
-| `summary` | Run detail | funnel, per-source counts, label quality, artifact downloads (shipped Results folds in here) |
+| `summary` (default) | Summary | cadence badge, time-range pills, four KPI cards (collected, ingestion success, label decisions, selection yield) and two inline SVG volume charts over the current run-list page |
+| `runs` | Run Details | cadence banner + needs-attention counts + the per-run store table for the current run-list page; the row link and `Inspect` open the run modal (funnel, label quality, core facts, artifact evidence) |
 | `items` | Items | paged items browser for the selected run |
+| `selections` | Selections | topic selections joined onto their items, with topic/status/search filters and paging |
 | `progress` | Execution progress | shipped |
 | `config` | Workflow Config Summary | shipped |
 
-Shipped `?tab=results` links resolve to `summary` (no dead links): `parseDeepLink` takes optional
-`tabs` and `aliases` (defaults = shipped `BOARD_TABS`, no aliases), so Daily Voice and ITC are unchanged.
+Shipped `?tab=results` links resolve to `runs` and legacy `?tab=overview` links to `summary` (no dead
+links): `parseDeepLink` takes optional `tabs` and `aliases` (defaults = shipped `BOARD_TABS`, no
+aliases), so Daily Voice and ITC are unchanged.
 
-**Overview.** Banner: time since the last stored collection vs the 6 h schedule — `on schedule`
+**Summary.** Aggregates the current run-list page: total collected (`inserted + updated`), ingestion
+success rate (done ÷ page), label decisions (distinct labeled items and label rows) and selection yield
+(selected ÷ collected, with published alongside), each with a sparkline; then ingestion volume over
+time stacked per run and decision volume with the selection overlay. The cadence badge and its detail
+line state how long the store has been quiet.
+
+**Run details.** Banner: time since the last stored collection vs the 6 h schedule — `on schedule`
 (≤ 6 h), `late` (≤ 12 h), `stalled` (> 12 h), `unknown` without `lastStoredAt`; plus counts of `failed`
 runs and `done` runs with no store row on the page. Spur records no distinct "skipped" state, so none
 is counted; a running run without a row shows `in progress`. Table, one row per Spur run on the current page: started (Spur), duration (Spur), Spur status,
 collected per source (stacked inline bar, plain CSS), inserted, updated, label rows, fallback share
-(`default` rows / label rows), yield `selected · published · dropped`. Rows link to Run detail.
+(`default` rows / label rows), yield `selected · published · dropped`. Rows link to Run Details and
+open the run's modal.
 
-**Run detail.** Funnel cards left-to-right: Collected (sum + per source) → Stored (inserted / updated /
+**Run modal.** A modal never shows a previous target's row while the new target's
+store request is in flight. Funnel cards left-to-right: Collected (sum + per source) → Stored (inserted / updated /
 unchanged, `unchanged` from the shipped artifact projection or `unavailable`) → Labeled (distinct
 items; label rows by source heuristic / model / default) → Downstream (items first seen in this run
 that were selected / published / dropped). Below: label quality — per decision, a value histogram of
@@ -168,7 +178,7 @@ the diagnostic, not zeros. A label-policy read failure only empties `effective`
 | `apps/cli/src/board/reader.ts` | three routes, `authorizeRun`, per-route query parsing |
 | `apps/board/src/shared/run-selection.ts` | `parseDeepLink` tabs/aliases parameters |
 | `apps/board/src/shared/api.ts`, `shared/collect.ts` | client calls and view-model helpers |
-| `apps/board/src/collect/index.tsx`, `board.css` | Overview / Run detail / Items tabs |
+| `apps/board/src/collect/index.tsx`, `board.css` | Summary / Run Details / Items / Selections tabs |
 | `docs/04_DESIGN.md` `kk board` | routes and shapes, same commit (T3) |
 | `workflow-board-modules.md` §2, §9 | point Collect to this document; artifacts-only kept for the others |
 
