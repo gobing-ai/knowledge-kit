@@ -22,7 +22,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { CollectStoreItems } from '@gobing-ai/kk-board/contracts';
 import { itemId, openStore, type Store } from '@gobing-ai/kk-store';
-import { ITEM_TITLE_MAX, storeItems, storeOverview, storeRun } from '../../src/board/collect-store';
+import { ITEM_TITLE_MAX, storeItems, storeOverview, storeRun, storeSelections } from '../../src/board/collect-store';
 import { collectStoreTestSeeded, type SeededFixture } from './collect-store-fixture';
 
 const tempDirs: string[] = [];
@@ -179,12 +179,16 @@ describe('storeOverview (R4/R5)', () => {
         const overview = await storeOverview(deps, ['run-1']);
         const run = await storeRun(deps, 'run-1');
         const items = await storeItems(deps, 'run-1', { page: 1 });
+        const selections = await storeSelections(deps, { page: 1 });
         expect(overview.availability).toBe('unavailable');
         expect(overview.diagnostics.map((d) => d.code)).toEqual(['board.store.unreadable']);
         expect(run.availability).toBe('unavailable');
         expect(run.row).toBeNull();
         expect(items?.availability).toBe('unavailable');
         expect(items?.total).toBe(0);
+        expect(selections.availability).toBe('unavailable');
+        expect(selections.diagnostics.map((d) => d.code)).toEqual(['board.store.unreadable']);
+        expect(selections.total).toBe(0);
     });
 
     it('reports unparseable source counts as {} plus a diagnostic, still serving the run', async () => {
@@ -335,5 +339,55 @@ describe('storeItems (R7)', () => {
         expect(items?.availability).toBe('available');
         expect(items?.diagnostics.map((d) => d.code)).toEqual(['board.store.policy']);
         expect(items?.total).toBe(0);
+    });
+});
+
+describe('storeSelections (R8)', () => {
+    it('serves the page joined onto its items, with the topic domain and no fabricated row', async () => {
+        const { projectPath, seeded } = await project('kk-cs-selections-', (store) => collectStoreTestSeeded(store));
+        const fixture = seeded as SeededFixture;
+        const page = await storeSelections({ projectPath, configPath: configFile(projectPath) }, { page: 1 });
+
+        expect(page.schemaVersion).toBe(1);
+        expect(page.availability).toBe('available');
+        expect(page.diagnostics).toEqual([]);
+        expect(page.page).toBe(1);
+        expect(page.pageSize).toBe(25);
+        expect(page.total).toBe(2);
+        expect(page.topics).toEqual(['ai-news']);
+        const published = page.selections.find((row) => row.itemId === fixture.publishedItemId);
+        expect(published?.topic).toBe('ai-news');
+        expect(published?.status).toBe('published');
+        expect(published?.runId).toBe(fixture.runId);
+        expect(published?.storyId).toBe('story-1');
+        expect(published?.title).toBe('Fixture published');
+        expect(published?.source).toBe('rss');
+        expect(published?.url).toBe(fixture.publishedUrl);
+        expect(page.selections.find((row) => row.itemId === fixture.selectedItemId)?.status).toBe('selected');
+    });
+
+    it('applies the declared status, topic and search filters', async () => {
+        const { projectPath, seeded } = await project('kk-cs-sel-filters-', (store) => collectStoreTestSeeded(store));
+        const fixture = seeded as SeededFixture;
+        const deps = { projectPath, configPath: configFile(projectPath) };
+
+        const published = await storeSelections(deps, { page: 1, status: 'published' });
+        expect(published.selections.map((row) => row.itemId)).toEqual([fixture.publishedItemId]);
+
+        expect((await storeSelections(deps, { page: 1, status: 'dropped' })).total).toBe(0);
+        expect((await storeSelections(deps, { page: 1, topic: 'tech-radar' })).total).toBe(0);
+        expect((await storeSelections(deps, { page: 1, runId: 'run-1' })).total).toBe(0);
+        expect((await storeSelections(deps, { page: 1, search: 'fixture published' })).total).toBe(1);
+    });
+
+    it('never creates the store file for a missing store', async () => {
+        const dir = tempDir('kk-cs-sel-missing-');
+        mkdirSync(join(dir, '.works'), { recursive: true });
+        const page = await storeSelections({ projectPath: dir, configPath: configFile(dir) }, { page: 1 });
+        expect(page.availability).toBe('unavailable');
+        expect(page.diagnostics.map((d) => d.code)).toEqual(['board.store.missing']);
+        expect(page.selections).toEqual([]);
+        expect(page.topics).toEqual([]);
+        expect(await Bun.file(join(dir, '.works/kk.db')).exists()).toBe(false);
     });
 });

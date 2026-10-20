@@ -39,6 +39,7 @@ export interface CollectViewLabelQuality {
     run: { value: string; HIGH: number; MEDIUM: number; LOW: number; none: number }[];
 }
 
+/** One effective label's value plus the detail the store recorded for it. */
 export interface CollectItemLabelDetail {
     value: string;
     confidence: string | null;
@@ -84,6 +85,7 @@ export interface CollectViewItemsPage {
     items: CollectViewItem[];
 }
 
+/** One selection row joined onto its item, as one page of the Selections view renders it. */
 export interface CollectViewSelection {
     topic: string;
     itemId: string;
@@ -100,6 +102,7 @@ export interface CollectViewSelection {
     canonicalUrl: string | null;
 }
 
+/** Filters accepted by {@link CollectViewDao.selectionsPage}; already validated by the caller. */
 export interface CollectViewSelectionsFilter {
     runId?: string;
     topic?: string;
@@ -107,6 +110,7 @@ export interface CollectViewSelectionsFilter {
     search?: string;
 }
 
+/** One page of {@link CollectViewSelection}, plus the topic domain its filter offers. */
 export interface CollectViewSelectionsPage {
     total: number;
     selections: CollectViewSelection[];

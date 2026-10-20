@@ -6,6 +6,7 @@ import {
     isLoopbackHttpOrigin,
     readerOriginFrom,
     storeItemsQueryString,
+    storeSelectionsQueryString,
 } from '../../src/shared/api';
 
 describe('isLoopbackHttpOrigin', () => {
@@ -120,14 +121,16 @@ describe('store routes', () => {
         );
     });
 
-    it('addresses the per-run store and items routes', async () => {
+    it('addresses the per-run store, items and selections routes', async () => {
         const seen: string[] = [];
         const board = client(seen);
         await board.storeRun('run 1');
         await board.storeItems('run 1', { page: 2, source: 'hn-ingest', seen: 'new' });
+        await board.storeSelections({ page: 1, topic: 'ai-news', status: 'published', search: 'quantum' });
         expect(seen).toEqual([
             'http://127.0.0.1:4340/api/workflows/kk-collect/runs/run%201/store',
             'http://127.0.0.1:4340/api/workflows/kk-collect/runs/run%201/store/items?page=2&source=hn-ingest&seen=new',
+            'http://127.0.0.1:4340/api/workflows/kk-collect/store/selections?page=1&topic=ai-news&status=published&search=quantum',
         ]);
     });
 });
@@ -140,5 +143,22 @@ describe('storeItemsQueryString', () => {
         expect(storeItemsQueryString({ decision: 'kk-item-quality', value: 'HIGH', selection: 'published' })).toBe(
             'decision=kk-item-quality&value=HIGH&selection=published',
         );
+    });
+
+    it('drops a blank search and trims a real one', () => {
+        expect(storeItemsQueryString({ search: '   ' })).toBe('');
+        expect(storeItemsQueryString({ search: ' quantum ' })).toBe('search=quantum');
+    });
+});
+
+describe('storeSelectionsQueryString', () => {
+    it('writes each declared filter and omits the empty ones', () => {
+        expect(storeSelectionsQueryString({})).toBe('');
+        expect(storeSelectionsQueryString({ topic: '', runId: '', search: ' ' })).toBe('');
+        expect(storeSelectionsQueryString({ page: 2, topic: 'ai-news', status: 'dropped' })).toBe(
+            'page=2&topic=ai-news&status=dropped',
+        );
+        expect(storeSelectionsQueryString({ runId: 'run 1' })).toBe('runId=run+1');
+        expect(storeSelectionsQueryString({ search: ' error correction ' })).toBe('search=error+correction');
     });
 });

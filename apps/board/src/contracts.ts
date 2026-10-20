@@ -163,6 +163,7 @@ export interface CollectRunStore extends CollectStoreAvailability {
     }[];
 }
 
+/** One effective label's value plus the detail the store recorded for it. */
 export interface CollectItemLabelDetail {
     value: string;
     confidence: string | null;

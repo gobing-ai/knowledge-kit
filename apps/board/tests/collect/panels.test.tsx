@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, it } from 'bun:test';
+import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
     ArtifactRows,
@@ -154,6 +155,39 @@ function items(overrides: Partial<CollectStoreItems> = {}): CollectStoreItems {
 }
 
 const noop = (): void => undefined;
+
+/**
+ * Depth-first search over the element tree a panel returns. No DOM library is installed, so a
+ * handler is exercised by finding its element and invoking the prop React would have called.
+ */
+type AnyElement = ReactElement<Record<string, unknown>>;
+
+function findElement(node: ReactNode, predicate: (element: AnyElement) => boolean): AnyElement | null {
+    if (!isValidElement(node)) return null;
+    const element = node as AnyElement;
+    if (predicate(element)) return element;
+    const children = (element.props as { children?: ReactNode }).children;
+    for (const child of Array.isArray(children) ? children : [children]) {
+        const found = findElement(child as ReactNode, predicate);
+        if (found !== null) return found;
+    }
+    return null;
+}
+
+/** The element a predicate must find, or a loud failure instead of a null dereference. */
+function mustFind(node: ReactNode, predicate: (element: AnyElement) => boolean): AnyElement {
+    const found = findElement(node, predicate);
+    if (found === null) throw new Error('element not found');
+    return found;
+}
+
+/** An element's text children, which is how a filter's label reads here. */
+function textOf(node: ReactNode): string {
+    if (typeof node === 'string') return node;
+    if (!isValidElement(node)) return '';
+    const children = (node.props as { children?: ReactNode }).children;
+    return Array.isArray(children) ? children.map(textOf).join('') : textOf(children as ReactNode);
+}
 
 describe('OverviewPanel (AC1)', () => {
     it('states cadence, attention counts and one row per Spur run', () => {
@@ -739,6 +773,221 @@ describe('RunDetailsPanel and RunDetailModal', () => {
         expect(html).toContain('Label quality');
         expect(html).toContain('kk-modal-card');
         expect(html).toContain('Close');
+    });
+});
+
+describe('0317 drilldown surfaces', () => {
+    /** The modal props every case shares; only the store/results envelope varies. */
+    const modal = (overrides: Partial<Parameters<typeof RunDetailModal>[0]> = {}): string =>
+        renderToStaticMarkup(
+            <RunDetailModal
+                runId="r-stored"
+                storeRun={runStore()}
+                results={null}
+                facts={[]}
+                artifacts={[]}
+                showEffective={false}
+                onToggleQuality={noop}
+                onClose={noop}
+                {...overrides}
+            />,
+        );
+
+    it('badges the captured results availability in the run modal header', () => {
+        expect(modal({ results: results() })).toContain('kk-badge-success');
+        const missing = modal({ results: { ...results(), availability: 'missing' } });
+        expect(missing).toContain('kk-badge-neutral');
+        expect(missing).toContain('missing');
+    });
+
+    it('states an unreadable store instead of a funnel, and renders the core facts it has', () => {
+        const unreadable = modal({
+            storeRun: runStore({
+                availability: 'unavailable',
+                row: null,
+                diagnostics: [{ code: 'board.store.unreadable', message: 'Database busy' }],
+            }),
+        });
+        expect(unreadable).toContain('The store could not be read for this run; no counts are shown.');
+        expect(unreadable).toContain('board.store.unreadable: Database busy');
+        expect(unreadable).not.toContain('kk-collect-funnel');
+
+        const withFacts = modal({
+            facts: [{ label: 'Safety confidence', value: 'HIGH', availability: 'available' }],
+        });
+        expect(withFacts).toContain('Core Facts');
+        expect(withFacts).toContain('Safety confidence');
+        expect(withFacts).toContain('HIGH');
+        expect(withFacts).toContain('available');
+    });
+
+    it("offers the items search box and each label's own confidence pill", () => {
+        const html = renderToStaticMarkup(
+            <ItemsPanel
+                runId="r-stored"
+                items={items({
+                    items: [
+                        {
+                            id: 'i-3',
+                            title: 'Quantum error correction',
+                            url: 'https://example.com/q',
+                            source: 'aihot-ingest',
+                            storyId: 's-3',
+                            seen: 'new',
+                            labels: { 'kk-item-quality': 'HIGH', 'kk-item-category': 'ai-news' },
+                            labelDetails: {
+                                'kk-item-quality': { value: 'HIGH', confidence: 'HIGH', maker: 'model', score: 0.9 },
+                                'kk-item-category': { value: 'ai-news', confidence: 'MEDIUM', maker: 'fm', score: 0.6 },
+                            },
+                            selection: 'selected',
+                        },
+                    ],
+                    total: 1,
+                })}
+                filters={{ page: 1, search: 'quantum' }}
+                quality={runStore().labelQuality}
+                onFilterChange={noop}
+                onSearchChange={noop}
+                onPageChange={noop}
+            />,
+        );
+        expect(html).toContain('aria-label="Search items"');
+        expect(html).toContain('value="quantum"');
+        expect(html).toContain('kk-confidence-pill');
+        expect(html).toContain('kk-confidence-high');
+        expect(html).toContain('kk-confidence-medium');
+    });
+
+    it('drills into the run from its row link instead of navigating away', () => {
+        const inspected: string[] = [];
+        const tree = RunDetailsPanel({
+            runs,
+            overview: overview(),
+            now: NOW,
+            runHref: (id) => `/board?runId=${id}`,
+            onInspectRun: (id) => inspected.push(id),
+        });
+        const link = mustFind(
+            tree,
+            (element) => element.type === 'a' && element.props.className === 'kk-collect-run-link',
+        );
+        let prevented = false;
+        (link.props as { onClick: (event: { preventDefault: () => void }) => void }).onClick({
+            preventDefault: () => {
+                prevented = true;
+            },
+        });
+        expect(prevented).toBe(true);
+        expect(inspected).toEqual(['r-stored']);
+    });
+
+    it('sends the chosen selection status, and an empty one as no filter', () => {
+        const statuses: (string | undefined)[] = [];
+        const tree = SelectionsPanel({
+            selections: null,
+            filters: { page: 1 },
+            onStatusChange: (status) => statuses.push(status),
+            onSearchChange: noop,
+            onPageChange: noop,
+        });
+        const statusSelect = mustFind(
+            tree,
+            (element) =>
+                element.type === 'select' && findElement(element, (child) => textOf(child) === 'All Statuses') !== null,
+        );
+        const onChange = (statusSelect.props as { onChange: (event: { target: { value: string } }) => void }).onChange;
+        onChange({ target: { value: 'published' } });
+        onChange({ target: { value: '' } });
+        expect(statuses).toEqual(['published', undefined]);
+    });
+
+    it('routes a Summary time-range pill to its handler', () => {
+        const ranges: string[] = [];
+        const tree = SummaryPanel({
+            runs,
+            overview: overview(),
+            now: NOW,
+            onTimeRangeChange: (range) => ranges.push(range),
+        });
+        const pill = mustFind(
+            tree,
+            (element) =>
+                element.type === 'button' &&
+                String(element.props.className).includes('kk-time-pill') &&
+                textOf(element) === '7d',
+        );
+        (pill.props as { onClick: () => void }).onClick();
+        expect(ranges).toEqual(['7d']);
+    });
+
+    it('opens the item inspector from the items table row', () => {
+        const inspected: string[] = [];
+        const tree = ItemsPanel({
+            runId: 'r-stored',
+            items: items(),
+            filters: { page: 1 },
+            quality: runStore().labelQuality,
+            onFilterChange: noop,
+            onPageChange: noop,
+            onInspectItem: (item) => inspected.push(item.id),
+        });
+        // The table renders one `<ItemRow>` per item; render that row to reach its Inspect button.
+        const row = mustFind(
+            tree,
+            (element) => typeof element.type === 'function' && element.props.onInspect !== undefined,
+        );
+        const rowTree = (row.type as (props: unknown) => ReactNode)(row.props);
+        const button = mustFind(
+            rowTree,
+            (element) => element.type === 'button' && element.props.className === 'kk-table-btn',
+        );
+        (button.props as { onClick: () => void }).onClick();
+        expect(inspected).toEqual(['i-1']);
+    });
+
+    it('sends the chosen selections topic, and an empty one as no filter', () => {
+        const topics: (string | undefined)[] = [];
+        const tree = SelectionsPanel({
+            selections: null,
+            filters: { page: 1 },
+            onTopicChange: (topic) => topics.push(topic),
+            onSearchChange: noop,
+            onPageChange: noop,
+        });
+        const topicSelect = mustFind(
+            tree,
+            (element) =>
+                element.type === 'select' && findElement(element, (child) => textOf(child) === 'All Topics') !== null,
+        );
+        const onChange = (topicSelect.props as { onChange: (event: { target: { value: string } }) => void }).onChange;
+        onChange({ target: { value: 'ai-news' } });
+        onChange({ target: { value: '' } });
+        expect(topics).toEqual(['ai-news', undefined]);
+    });
+
+    it('pages the selections table one page at a time', () => {
+        const deltas: number[] = [];
+        const tree = SelectionsPanel({
+            selections: {
+                schemaVersion: 1,
+                availability: 'available',
+                diagnostics: [],
+                page: 2,
+                pageSize: 25,
+                total: 60,
+                topics: [],
+                selections: [],
+            },
+            filters: { page: 2 },
+            onSearchChange: noop,
+            onPageChange: (delta) => deltas.push(delta),
+        });
+        const pager = mustFind(tree, (element) => element.props.className === 'kk-collect-pager');
+        const buttons = ['Previous', 'Next'].map((label) =>
+            mustFind(pager, (element) => element.type === 'button' && textOf(element) === label),
+        );
+        for (const button of buttons) (button.props as { onClick: () => void }).onClick();
+        expect(deltas).toEqual([-1, 1]);
     });
 });
 
