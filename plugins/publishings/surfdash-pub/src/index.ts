@@ -6,7 +6,7 @@ import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-
 import type { PublishTransport, PublishTransportPayload } from '@gobing-ai/publish-harness';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
-import { type PatchPostOutcome, patchPostFiles } from './patch';
+import { localeIndexPath, PATCH_LOCALES, type PatchPostOutcome, patchPostFiles } from './patch';
 
 /** Result target name for this plugin. */
 const TARGET = 'surfdash';
@@ -63,6 +63,19 @@ export function slugify(str: string): string {
 }
 
 /**
+ * Normalizes a raw tag string for frontmatter: preserves `sub-category:<slug>` prefixes
+ * while slugifying the value portion (or ordinary tags).
+ */
+export function normalizeTag(raw: string): string {
+    const match = raw.match(/^\s*sub-category\s*:(.*)$/i);
+    if (match) {
+        const subSlug = slugify(match[1] ?? '');
+        return subSlug ? `sub-category:${subSlug}` : '';
+    }
+    return slugify(raw);
+}
+
+/**
  * Maps Content object into Surfing frontmatter and body per the publish spec.
  */
 export function mapContentToSurfingMarkdown(content: Content, options: MapContentOptions = {}): string {
@@ -86,18 +99,23 @@ export function mapContentToSurfingMarkdown(content: Content, options: MapConten
     }
 
     const rawTags: unknown[] = Array.isArray(content.metadata?.tags)
-        ? content.metadata.tags
+        ? [...content.metadata.tags]
         : Array.isArray(content.metadata?.keywords)
-          ? content.metadata.keywords
+          ? [...content.metadata.keywords]
           : [];
+    if (typeof content.metadata?.subCategory === 'string' && content.metadata.subCategory.trim().length > 0) {
+        const subRaw = content.metadata.subCategory.trim();
+        rawTags.push(/^sub-category\s*:/i.test(subRaw) ? subRaw : `sub-category:${subRaw}`);
+    }
     // `slugify` drops non-ASCII, so a Chinese tag (`硬件发布`) collapsed to '' and shipped as an empty
     // YAML tag — the site renders it as a blank chip (seen on 20261011-ai-2026-10-11). Case variants
-    // also collapsed to the same slug twice (`AI` + `ai`), so the set dedupes.
+    // also collapsed to the same slug twice (`AI` + `ai`), so the set dedupes. `normalizeTag` preserves
+    // `sub-category:<slug>` colon prefixes so sub-category series tags survive into frontmatter.
     const tags = [
         ...new Set(
             rawTags
                 .filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
-                .map((t: string) => slugify(t)),
+                .map((t: string) => normalizeTag(t)),
         ),
     ].filter((tag) => tag.length > 0);
 
@@ -519,9 +537,18 @@ async function patchPost(options: SurfdashPubOptions): Promise<Result> {
     }
     if (outcome.changed === 0) echoError(`patch: no post bytes changed for ${outcome.slug}`);
     const synced = await syncPost({ postPath: postPath.postPath });
+    const commitPaths = new Set(outcome.written.map((path) => relative(surfdashRoot, path)));
+    for (const locale of PATCH_LOCALES) {
+        const indexMd = localeIndexPath(postPath.postPath, locale);
+        if (!indexMd) continue;
+        const assetsDir = join(dirname(indexMd), 'assets');
+        if (existsSync(assetsDir)) {
+            commitPaths.add(relative(surfdashRoot, assetsDir));
+        }
+    }
     const commit = await commitPostPaths(
         surfdashRoot,
-        outcome.written.map((path) => relative(surfdashRoot, path)),
+        [...commitPaths],
         `feat: cover + podcast cross-link for ${outcome.slug} (kk daily patch)`,
         process.env.SURFDASH_AUTO_PUSH !== '0',
     );

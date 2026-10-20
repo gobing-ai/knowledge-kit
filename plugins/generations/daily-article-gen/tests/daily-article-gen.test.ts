@@ -110,21 +110,24 @@ describe('daily-article-gen', () => {
             generator: 'kk:daily-article',
             date: '2026-09-04',
             doc_count: 1,
-            tags: ['ai-news'],
+            tags: ['ai-news', 'sub-category:ai-daily'],
         });
     });
 
-    test('metadata.tags leads with ai-news even when no item carries tags', () => {
+    test('metadata.tags leads with ai-news and sub-category:ai-daily even when no item carries tags', () => {
         const content: Content = docsToContent([doc()], '2026-09-04');
-        expect(content.metadata?.tags).toEqual(['ai-news']);
+        expect(content.metadata?.tags).toEqual(['ai-news', 'sub-category:ai-daily']);
     });
 
-    test('metadata.tags merges existing item tags after ai-news without duplicates', () => {
+    test('metadata.tags merges existing item tags after ai-news and sub-category:ai-daily without duplicates', () => {
         const content: Content = docsToContent(
-            [doc({ metadata: { tags: ['openai', 'ai-news'] } }), doc({ metadata: { tags: ['video'] } })],
+            [
+                doc({ metadata: { tags: ['openai', 'ai-news', 'sub-category:ai-daily'] } }),
+                doc({ metadata: { tags: ['video'] } }),
+            ],
             '2026-09-04',
         );
-        expect(content.metadata?.tags).toEqual(['ai-news', 'openai', 'video']);
+        expect(content.metadata?.tags).toEqual(['ai-news', 'sub-category:ai-daily', 'openai', 'video']);
     });
 
     test('metadata.tags ignores non-string tag entries instead of clobbering them in', () => {
@@ -132,7 +135,7 @@ describe('daily-article-gen', () => {
             [doc({ metadata: { tags: ['keep', 'me', 42, null, 'x'] } })],
             '2026-09-04',
         );
-        expect(content.metadata?.tags).toEqual(['ai-news', 'keep', 'me', 'x']);
+        expect(content.metadata?.tags).toEqual(['ai-news', 'sub-category:ai-daily', 'keep', 'me', 'x']);
     });
 
     test('docsToContent strips an agent-written leading H1 from the body override (0189 R4)', () => {

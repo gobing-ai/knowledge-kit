@@ -13,6 +13,7 @@ import {
     main,
     mapContentToSurfingMarkdown,
     normalizeLocaleFrontmatter,
+    normalizeTag,
     PostsurfingFileCliTransport,
     processPublishIO,
     pushPostGit,
@@ -1031,6 +1032,26 @@ describe('surfdash-pub frontmatter tags (2026-10-12)', () => {
         // `硬件发布` slugifies to '' (non-ASCII), `AI`/`ai` collapse to one slug.
         expect(parsed.tags).toEqual(['ai-news', 'ai', 'ipo']);
     });
+
+    test('normalizeTag and mapContentToSurfingMarkdown preserve sub-category:<slug> prefix and support metadata.subCategory', () => {
+        expect(normalizeTag('sub-category:ai-daily')).toBe('sub-category:ai-daily');
+        expect(normalizeTag('  Sub-Category :  AI Daily  ')).toBe('sub-category:ai-daily');
+        expect(normalizeTag('sub-category:')).toBe('');
+        expect(normalizeTag('sub-category: 硬件')).toBe('');
+
+        const markdown = mapContentToSurfingMarkdown({
+            title: 'daily post',
+            body: 'Body.',
+            format: 'markdown',
+            metadata: {
+                tags: ['ai-news', 'sub-category:ai-daily'],
+                subCategory: 'ai-daily',
+            },
+        });
+        const frontmatter = markdown.split('---')[1] ?? '';
+        const parsed = Bun.YAML.parse(frontmatter) as { tags: string[] };
+        expect(parsed.tags).toEqual(['ai-news', 'sub-category:ai-daily']);
+    });
 });
 
 describe('surfdash-pub post-patch (2026-10-12 boundary move from the kk stage)', () => {
@@ -1158,6 +1179,15 @@ describe('surfdash-pub patch operation (2026-10-12 boundary move)', () => {
         git(root, 'add', '-A');
         git(root, 'commit', '-q', '-m', 'init');
 
+        // Create an en sibling with an untracked assets/cover.png (as scaffold-locale produces)
+        const enDir = join(root, 'content', 'posts', 'articles', 'en', `${RUN_DATE}-post`);
+        await mkdir(join(enDir, 'assets'), { recursive: true });
+        await writeFile(
+            join(enDir, 'index.md'),
+            `---\ntitle: EN\npublishDate: '2026-10-11'\nimage: ./assets/cover.png\n---\n\nEN Body\n`,
+        );
+        await writeFile(join(enDir, 'assets', 'cover.png'), 'en-cover-bytes');
+
         const inPath = join(root, 'patch-in.json');
         const outPath = join(root, 'patch-out.json');
         await writeFile(
@@ -1184,16 +1214,19 @@ describe('surfdash-pub patch operation (2026-10-12 boundary move)', () => {
             await processPublishIO(fx.inPath, fx.outPath);
             const result = ResultSchema.parse(JSON.parse(await readFile(fx.outPath, 'utf-8')));
             expect(result.ok, result.error).toBe(true);
-            expect(result.message).toContain('patched 1 post(s)');
+            expect(result.message).toContain('patched 2 post(s)');
             expect(result.metadata?.cmsResync).toBe('ok');
-            expect(result.metadata?.locales).toEqual(['zh']);
-            expect(result.metadata?.absentLocales).toEqual(['en', 'ja']);
+            expect(result.metadata?.locales).toEqual(['zh', 'en']);
+            expect(result.metadata?.absentLocales).toEqual(['ja']);
             expect(typeof result.metadata?.gitCommit).toBe('string');
             const md = await readFile(fx.postPath, 'utf-8');
             expect(md).toContain("image: 'https://cdn.example/cover.png'");
             expect(md).toContain('点击收听');
-            // Committed on main, and the branch guard let it through.
+            // Committed on main, including the scaffolded en/assets/cover.png so no untracked assets remain.
             expect(git(fx.root, 'log', '-1', '--format=%s').stdout).toContain('cover + podcast cross-link');
+            const trackedFiles = git(fx.root, 'ls-tree', '-r', '--name-only', 'HEAD').stdout;
+            expect(trackedFiles).toContain(`content/posts/articles/en/${RUN_DATE}-post/assets/cover.png`);
+            expect(git(fx.root, 'status', '--porcelain', '--', 'content/posts/articles').stdout.trim()).toBe('');
         } finally {
             delete process.env.SURFDASH_ROOT;
             await rm(fx.root, { recursive: true, force: true });

@@ -122,16 +122,18 @@ export function renderDailyArticle(docs: Doc[], date: string): string {
     return `# ${episodeTitle(date)}\n\n${intro}\n\n${items}\n`;
 }
 
-/** Single-source daily tag: stamped on every Content this generator emits (task 0119). */
+/** Single-source daily tags: stamped on every Content this generator emits (task 0119 + sub-category series tag). */
 const AI_NEWS_TAG = 'ai-news';
+const AI_DAILY_SUB_CATEGORY_TAG = 'sub-category:ai-daily';
 
-/** Merge existing item tags (deduped) with the mandatory `ai-news` tag, first position. */
+/** Merge existing item tags (deduped) with the mandatory `ai-news` and `sub-category:ai-daily` tags, leading positions. */
 function tagsFor(docs: Doc[]): string[] {
     const existing = docs.flatMap((d) => {
         const meta = d.metadata as Record<string, unknown> | undefined;
         return Array.isArray(meta?.tags) ? meta.tags.filter((t): t is string => typeof t === 'string') : [];
     });
-    return [AI_NEWS_TAG, ...existing.filter((t) => t !== AI_NEWS_TAG)];
+    const mandatory = [AI_NEWS_TAG, AI_DAILY_SUB_CATEGORY_TAG];
+    return [...new Set([...mandatory, ...existing.filter((t) => !mandatory.includes(t))])];
 }
 
 /** A leading H1 line — agent bodies used to carry their own title; the canonical title is computed (task 0189 R4). */

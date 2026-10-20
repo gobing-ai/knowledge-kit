@@ -328,11 +328,11 @@ describe('offline generation → publish-payload E2E (task 0189 F4b)', () => {
                 metadata: { generator: string; doc_count: number; tags: string[]; date: string };
                 references: { url: string; title: string; cite: string }[];
             }>(join(dir, '22-article', `${STAMP}_06_article_content.json`));
-            // The publish payload: 每日AI乱炖 episode title, one kept item, mandatory ai-news tag.
+            // The publish payload: 每日AI乱炖 episode title, one kept item, mandatory ai-news + sub-category:ai-daily tags.
             expect(content.title).toBe('每日AI乱炖 · 2026-09-16');
             expect(content.metadata.generator).toBe('kk:daily-article');
             expect(content.metadata.doc_count).toBe(1);
-            expect(content.metadata.tags).toEqual(['ai-news']);
+            expect(content.metadata.tags).toEqual(['ai-news', 'sub-category:ai-daily']);
             expect(content.metadata.date).toBe('2026-09-16');
             expect(content.references).toEqual([
                 { url: 'https://example.com/ok-1', title: '浏览器端零依赖语音实现', cite: 'ok-1' },

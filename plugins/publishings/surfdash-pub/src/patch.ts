@@ -137,6 +137,10 @@ export async function patchPostFiles(request: PatchPostRequest): Promise<PatchPo
         if (md !== before) {
             await fs.writeFile(indexMd, md);
             written.push(indexMd);
+            const assetsDir = join(dir, 'assets');
+            if ((await fs.exists(assetsDir)) && !written.includes(join(assetsDir, 'cover.png'))) {
+                written.push(assetsDir);
+            }
             changed += 1;
         }
     }
