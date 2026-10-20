@@ -263,12 +263,6 @@ export async function createItemDecisionAsker(
  * The one-off transport: `spur decision run <id> --param title=… --param source=… --evidence <body>
  * [--maker <maker>] --json`. `undefined` means "no usable answer" (spawn failure, non-zero exit,
  * unparseable stdout), which the label pass treats exactly like a bare fallback. `KK_SPUR_BIN`
- * overrides the binary, the same seam `kk ledger` uses.
- */
-/**
- * The one-off transport: `spur decision run <id> --param title=… --param source=… --evidence <body>
- * [--maker <maker>] --json`. `undefined` means "no usable answer" (spawn failure, non-zero exit,
- * unparseable stdout), which the label pass treats exactly like a bare fallback. `KK_SPUR_BIN`
  * overrides the binary, the same seam `kk ledger` uses; the evidence file goes through the
  * `FileSystem` seam (`no-direct-fs-io`) and is removed on every exit path.
  */

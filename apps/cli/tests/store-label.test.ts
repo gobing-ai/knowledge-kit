@@ -911,7 +911,8 @@ describe('kk store label --replay (0226 R6/AC3)', () => {
             { KK_DECISION_HUB_ANSWERS: stub },
         );
         expect(result.code, result.err).toBe(0);
-        expect(JSON.parse(result.out)).toMatchObject({ replayed: 2, consults: 4 });
+        // 0317: `labeled` and `refused` make the difference between attempts and written rows visible.
+        expect(JSON.parse(result.out)).toMatchObject({ replayed: 2, labeled: 4, consults: 4, refused: {} });
         const replayed = labelRows(db, "WHERE run_id LIKE 'replay-%'");
         expect(replayed).toHaveLength(4);
         expect(new Set(replayed.map((row) => row.decision_id))).toEqual(
@@ -923,6 +924,37 @@ describe('kk store label --replay (0226 R6/AC3)', () => {
             'kk-item-quality',
             'kk-item-quality',
         ]);
+    });
+
+    it('0317 — a refused replay answer is reported, not silently missing', async () => {
+        const { dir, db } = await seedProduction();
+        // 9 is outside the 0-5 vocabulary of every graded dimension: the answer is refused, so no
+        // row is written and `labeled` stays 0 while the refusal is counted by decision@maker.
+        const stub = stubHub(dir, { '*': { value: 9, confidence: 0.9, source: 'model', reason: 'accepted' } });
+
+        const result = await run(
+            [
+                'store',
+                'label',
+                '--replay',
+                'run:run-1',
+                '--maker',
+                'backtest-r',
+                '--decisions',
+                'kk-item-quality',
+                '--db',
+                db,
+            ],
+            { KK_DECISION_HUB_ANSWERS: stub },
+        );
+        expect(result.code, result.err).toBe(0);
+        expect(JSON.parse(result.out)).toMatchObject({
+            replayed: 2,
+            labeled: 0,
+            consults: 2,
+            refused: { 'kk-item-quality@backtest-r': 2 },
+        });
+        expect(labelRows(db, "WHERE run_id LIKE 'replay-%'")).toHaveLength(0);
     });
 
     it('R6 — since: selects by first_seen_at and a 0-item selector reports replayed: 0', async () => {

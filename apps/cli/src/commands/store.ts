@@ -973,8 +973,8 @@ async function replayItemIds(
 
 /**
  * The `--replay` pass (R6): route the selector's pool to `--maker` under a fresh
- * `replay-<epoch-ms>` run id and print `{replayed, consults, consultMs, run}`. A selector that
- * matches nothing prints `replayed: 0` and exits 0 — an empty pool is an answer, not an error.
+ * `replay-<epoch-ms>` run id and print `{replayed, labeled, consults, consultMs, refused, run}`. A
+ * selector that matches nothing prints `replayed: 0` and exits 0 — an empty pool is an answer, not an error.
  */
 async function replaySelected(
     fs: FileSystem,
@@ -994,14 +994,22 @@ async function replaySelected(
     const rows: LabelRow[] = [];
     let consults = 0;
     let consultMs = 0;
+    // A refused answer writes no row, so `replayed` counts items ATTEMPTED: without this map a
+    // backtest silently loses rows (0317: 27 attempted, 21 refused, 6 written).
+    const refused: Record<string, number> = {};
     for (const item of items) {
         const outcome = await replayItem(item, decisionIds, maker, runId, catalogVersion, asker);
         rows.push(...outcome.rows);
         consults += outcome.consults;
         consultMs += outcome.consultMs;
+        for (const [key, count] of Object.entries(outcome.refused)) {
+            refused[key] = (refused[key] ?? 0) + count;
+        }
     }
     await writeRows(store, rows);
-    consoleOutput.write(JSON.stringify({ replayed: items.length, consults, consultMs, run: runId }));
+    consoleOutput.write(
+        JSON.stringify({ replayed: items.length, labeled: rows.length, consults, consultMs, refused, run: runId }),
+    );
 }
 
 /**
@@ -1015,8 +1023,10 @@ async function replaySelected(
  * selection (R6): the selector is exactly one of `topic:<profile>` (the profile's pool, no
  * exclusion), `run:<collect-run-id>` (`first_seen_run`/`last_seen_run`) or `since:<n><s|m|h|d>`
  * (`first_seen_at`); every selected item is routed in decision mode, only maker rows are written
- * under `replay-<epoch-ms>`, and stdout is `{replayed, consults, consultMs, run}`. `--replay` is
- * mutually exclusive with `--new-ids` and requires `--maker`; either violation exits 1.
+ * under `replay-<epoch-ms>`, and stdout is `{replayed, labeled, consults, consultMs, refused, run}` —
+ * `replayed` counts items attempted and `labeled` the rows actually written, so a refused answer is
+ * visible instead of silently missing. `--replay` is mutually exclusive with `--new-ids` and requires
+ * `--maker`; either violation exits 1.
  *
  * Heuristic-first (R5): every listed item is annotated by the plugin's own keyword heuristic through
  * `kk executor run episode-plan-gen` in `EPISODE_PLAN_MODE=label`, so apps/cli imports no plugin
