@@ -86,6 +86,28 @@ export function isLoopbackHost(host: string): boolean {
 }
 
 /**
+ * True when `requestOrigin` matches `configuredBoardOrigin`, treating `127.0.0.1` and `localhost`
+ * on the same port as equivalent loopback origins.
+ */
+export function isMatchingBoardOrigin(requestOrigin: string, configuredBoardOrigin: string): boolean {
+    if (requestOrigin === configuredBoardOrigin) return true;
+    try {
+        const req = new URL(requestOrigin);
+        const conf = new URL(configuredBoardOrigin);
+        if (req.protocol !== conf.protocol) return false;
+        const reqPort = req.port || (req.protocol === 'https:' ? '443' : '80');
+        const confPort = conf.port || (conf.protocol === 'https:' ? '443' : '80');
+        if (reqPort !== confPort) return false;
+        const isReqLoopback = req.hostname === '127.0.0.1' || req.hostname === 'localhost' || req.hostname === '[::1]';
+        const isConfLoopback =
+            conf.hostname === '127.0.0.1' || conf.hostname === 'localhost' || conf.hostname === '[::1]';
+        return isReqLoopback && isConfLoopback;
+    } catch {
+        return false;
+    }
+}
+
+/**
  * Parse one `Range: bytes=…` header against a known size.
  *
  * @returns `null` when there is no range, `'unsatisfiable'` for 416, else the inclusive slice.
@@ -591,14 +613,16 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         hostname: '127.0.0.1',
         port,
         fetch: async (request) => {
+            const origin = request.headers.get('origin');
+            const originMatches = origin === null || isMatchingBoardOrigin(origin, boardOrigin);
+            const allowedOrigin = origin !== null && originMatches ? origin : boardOrigin;
             const cors: Record<string, string> = {
-                'access-control-allow-origin': boardOrigin,
+                'access-control-allow-origin': allowedOrigin,
                 'access-control-allow-methods': 'GET, HEAD, OPTIONS',
                 'access-control-allow-headers': 'range, content-type',
                 vary: 'origin',
             };
-            const origin = request.headers.get('origin');
-            if (origin !== null && origin !== boardOrigin) {
+            if (!originMatches) {
                 return jsonResponse(
                     { code: 'board.origin.refused', message: 'Origin is not the configured Board.' },
                     403,

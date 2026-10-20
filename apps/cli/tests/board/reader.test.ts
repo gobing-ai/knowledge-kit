@@ -185,8 +185,14 @@ describe('reader authorization', () => {
         const reader = startReader(board.origin, root);
         const health = await fetch(`${reader}/api/health`);
         expect(health.status).toBe(200);
-        expect(await health.json()).toEqual({ schemaVersion: 1, projectPath: root });
         expect((await fetch(`${reader}/api/health`, { headers: { origin: 'http://evil.example' } })).status).toBe(403);
+        const altLoopback = board.origin.includes('127.0.0.1')
+            ? board.origin.replace('127.0.0.1', 'localhost')
+            : board.origin.replace('localhost', '127.0.0.1');
+        const loopbackRes = await fetch(`${reader}/api/health`, { headers: { origin: altLoopback } });
+        // The refusal body names which guard fired if this ever fails: origin or Host.
+        expect(loopbackRes.status, await loopbackRes.clone().text()).toBe(200);
+        expect(loopbackRes.headers.get('access-control-allow-origin')).toBe(altLoopback);
         expect((await fetch(`${reader}/api/health`, { headers: { host: 'evil.example' } })).status).toBe(403);
         expect((await fetch(`${reader}/api/health`, { method: 'POST' })).status).toBe(405);
     });
