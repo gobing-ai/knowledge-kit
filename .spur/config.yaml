@@ -201,6 +201,11 @@ redaction:
 # Values match the built-in defaults; adjust here instead of patching release code when
 # conventions change.
 builder:
+  # The bun preset resolves `check-feature` to `bun run spur-check-feature`, a script this repo
+  # never had; feature completion evaluates this action, so pin it to the repo-wide gate the
+  # local feature-verification.yaml override already runs.
+  actions:
+    check-feature: bun run spur-check
   bump-ver:
     # Needs spur >= 0.3.83 (released 2026-09-16); older spur silently ignores the key.
     aggregatePackage: knowledge-kit
