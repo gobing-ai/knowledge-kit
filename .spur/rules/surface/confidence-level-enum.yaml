@@ -1,0 +1,57 @@
+$schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
+# The confidence level is ONE closed vocabulary — HIGH|MEDIUM|LOW — and ADR-041 keeps that product
+# contract explicitly while retiring the rules that graded an agent's own answer:
+# "`labels.confidence` keeps its closed `HIGH|MEDIUM|LOW` enum with the 0–1 mapping in
+# `@gobing-ai/kk-store`, the judge-verdict guards keep their confidence-aware read, and
+# `itc-author-verdict` / `itc-author-complete` / `itc-report-summary` still refuse a `PASS` without a
+# level."
+#
+# Nothing verified the agreement of those sites, and they are written by hand in three shapes
+# (declared array, jq guard regex, comparison chain). Measured 2026-10-20: 10 sites across
+# apps/cli/src, packages/kk-store/src, plugins/kk/scripts and the workflow YAML. Every one is
+# self-consistent on its own, so `tsc`, biome and the workflow tests all pass while the gates
+# disagree — and the two failure directions are both silent:
+#   - a guard that drops a level refuses every honest answer at that level (a `^(HIGH|MEDIUM)$`
+#     accept-edge makes a LOW `PASS` read as `PASS!`, which no guard matches);
+#   - a producer that adds a level emits a verdict no guard accepts, so the pipeline fail-closes
+#     forever.
+# The 2026-10-20 daily-voice incident is the same class one step removed: a degraded decision row
+# carried a level the pool's read did not count as a label, and the day produced no episode.
+#
+# SCOPE — deliberately narrow, and it does not judge quality:
+#   - a `*CONFIDENCE_LEVELS = [` declaration;
+#   - a single-line jq `test("^(…)$")` that reads a `confidence` field;
+#   - a single-line comparison chain naming at least TWO levels, with `onfidence` on the same or the
+#     preceding line (the `isConfidenceLevel(value) { return value === 'HIGH' || … }` shape).
+# A one-level predicate (`x.confidence !== 'LOW'`) is a legitimate partial check and is NOT a
+# vocabulary site. A chain reformatted across more than one line falls outside discovery; its own
+# unit test owns that case. The checker's vacuity arm makes the limit loud: when the idioms go stale
+# it fails instead of passing over nothing.
+#
+# The checker lives in confidence-level-enum.sh so its file/line detail is reachable by hand — the
+# `exit-code` evaluator reports only the exit status. Its 10 falsification cases live in
+# confidence-level-enum.test.sh, including the negative control (a one-level predicate must pass) and
+# the real-corpus positive control.
+#
+# SCOPE NOTE: `include` does not scope an `exit-code` rule — the evaluator runs whether or not the
+# globs match. The checker's own discovery owns the scope; these globs are documentation.
+rules:
+  - id: confidence-level-vocabulary-consistent
+    description: "Every hand-written copy of the closed content-judge / label confidence vocabulary names exactly HIGH|MEDIUM|LOW: a `*CONFIDENCE_LEVELS` declaration, a jq `test(\"^(…)$\")` guard reading a `confidence` field, and a ≥2-level comparison chain. A copy that drops or invents a level fails, and a tree where no site is recognisable fails too — the checker refuses to vouch for nothing."
+    severity: error
+    evaluator:
+      type: exit-code
+      config:
+        command: sh
+        args:
+          - ".spur/rules/surface/confidence-level-enum.sh"
+        message: "exit {code}: a confidence-vocabulary site does not name exactly HIGH|MEDIUM|LOW, or no site was recognisable at all — run `sh .spur/rules/surface/confidence-level-enum.sh` for the file and line, and `sh .spur/rules/surface/confidence-level-enum.test.sh` for the falsification cases"
+    include:
+      - "apps/cli/src/**/*.ts"
+      - "packages/kk-store/src/**/*.ts"
+      - "plugins/kk/scripts/**/*.ts"
+      - "plugins/kk/workflows/*.yaml"
+    exclude:
+      - "**/node_modules/**"
+      - "**/*.test.ts"
+      - "**/tests/**"

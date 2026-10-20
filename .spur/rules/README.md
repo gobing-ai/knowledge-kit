@@ -14,7 +14,7 @@ install or to ts-libs.
 | `boundary` | `boundary/` | DB/DAO boundary enforcement |
 | `structure` | `structure/` | File layout, protected files, plugin kind-collections (ADR-009), no focused/skipped tests |
 | `quality` | `quality/` | Post-test gates (coverage) |
-| `surface` | `surface/` | CLI surface consistency (registerXxxCommand wiring, --json serialization) |
+| `surface` | `surface/` | CLI surface consistency (registerXxxCommand wiring, --json serialization) and the closed `HIGH|MEDIUM|LOW` confidence vocabulary those surfaces emit and guard |
 
 ## Presets
 
