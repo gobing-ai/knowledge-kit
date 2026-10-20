@@ -104,8 +104,11 @@ Directory used on both sides: `/tmp/kk-migration/`.
 mkdir -p /tmp/kk-migration
 cd /Users/robin/xprojects/knowledge-kit
 
-# A. Uncommitted working-tree changes, as a patch on top of origin/main
+# A. Uncommitted working-tree changes, as a patch on top of the carried commits
 git diff > /tmp/kk-migration/laptop-tree.patch
+
+# A2. Local commits that are NOT on origin — bundle them (never push another session's WIP)
+git bundle create /tmp/kk-migration/laptop-main.bundle origin/main..main
 
 # B. ~/.config/kk, full copy (credentials, voices, presets, browser profiles)
 tar -C /Users/robin/.config -czf /tmp/kk-migration/kk-config.tgz kk
@@ -118,14 +121,13 @@ tar -C /Users/robin/xprojects/knowledge-kit -czf /tmp/kk-migration/kk-works-stat
 shasum -a 256 /tmp/kk-migration/* > /tmp/kk-migration/SHA256SUMS
 ```
 
-Model cache is rsynced directly (4.6 G; a tarball would only be re-expanded):
+Model cache is rsynced directly (4.6 G; a tarball would only be re-expanded). Use `rsync -a` only —
+the source macOS ships openrsync 2.6.9 and rejects `--info=progress2`. The 647 MiB laya weights are
+*not* copied: the first `typesafe`/`laya-local` decision pulls them through `laya-mlx` on demand
+(§6.7), which is also the proof that the tool is wired correctly.
 
 ```bash
-rsync -a --info=progress2 \
-  ~/.cache/huggingface/hub/models--openbmb--VoxCPM2 \
-  ~/.cache/huggingface/hub/models--convaiinnovations--laya* \
-  ~/.cache/huggingface/hub/models--aac6fef--laya-multilingual-mlx \
-  homelab:~/.cache/huggingface/hub/
+rsync -a ~/.cache/huggingface/hub/models--openbmb--VoxCPM2 homelab:~/.cache/huggingface/hub/
 ```
 
 Copy artifacts and the second checkout:
@@ -176,16 +178,34 @@ The `ts-*` / laya extras are what the `kk-item-category` (`fm-local`) and `kk-it
 
 ### 6.3 Checkout at the laptop's exact tree
 
+Two layers: the commits that exist only locally (a bundle), then the uncommitted working tree (a
+patch). Cut both at the same moment — this tree is shared with other agent sessions and moved three
+times during the first execution.
+
 ```bash
+scp /tmp/kk-migration/laptop-main.bundle /tmp/kk-migration/laptop-tree.patch homelab:/tmp/kk-migration/
+ssh homelab
 cd ~/xprojects/knowledge-kit
-git fetch origin && git checkout main && git pull --ff-only        # 13581560
-git apply --3way /tmp/kk-migration/laptop-tree.patch               # the 11 dirty files
-git status --short                                                 # same 11 files, modified
+git fetch origin && git pull --ff-only                       # 13581560
+
+git fetch /tmp/kk-migration/laptop-main.bundle main:refs/heads/bundled
+git merge --ff-only --no-edit bundled                        # local-only commits, in order
+git apply --3way /tmp/kk-migration/laptop-tree.patch         # the uncommitted remainder
+git reset                                                    # unstage; keep the worktree
+git status --short                                           # same files as the source `git diff --name-only`
 bun install
 ```
 
+Verify parity on the files that drive the run, not just the file count — identical hashes on both
+hosts:
+
+```bash
+shasum -a 256 plugins/kk/scripts/daily-stages.ts plugins/kk/scripts/kk-workflow-stages.ts \
+              plugins/kk/workflows/kk-daily-ai-voice2.yaml
+```
+
 If the patch does not apply, stop: the target would run different workflow logic than the source.
-Resolve by porting the 11 files explicitly (`git diff --stat` on the source is the checklist).
+Re-cut both artifacts from the source and retry rather than hand-merging.
 
 ### 6.4 Stage runners — the failure the last run died of
 
@@ -221,13 +241,20 @@ sqlite3 .works/kk.db "select count(*) from items;"      # sanity: rows present
 ls ~/.cache/huggingface/hub | grep -E 'VoxCPM2|laya'
 ```
 
-### 6.7 voxcpm venv
+### 6.7 voxcpm venv + the laya decision runtime
+
+Two Python runtimes, for two different jobs — both are uv-managed and neither lives in the repo.
 
 ```bash
 cd ~/xprojects/knowledge-kit
-uv sync --project plugins/generations/voxcpm-tts --locked --no-dev     # ~1.5 G
+uv sync --project plugins/generations/voxcpm-tts --locked --no-dev     # ~1.4 G, ~60 s
 uv run --project plugins/generations/voxcpm-tts --locked --no-dev \
    python plugins/generations/voxcpm-tts/python/worker.py            # prints health, then EOF
+
+# the laya-labelled decisions (kk-item-quality, kk-item-category) run through this tool
+uv tool install laya-mlx==0.4.0
+spur decision run kk-item-quality --param title=probe --param source=aihot --json
+# must print "maker": "laya-local", "source": "model" — NOT an error + fallback value
 ```
 
 First real render also pulls `openbmb/VoxCPM2` if §5 was skipped; on M4 it runs on `mps`
