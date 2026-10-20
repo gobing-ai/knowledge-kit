@@ -4,6 +4,7 @@ import type {
     CollectRunStore,
     CollectStoreItems,
     CollectStoreOverview,
+    CollectStoreSelections,
     RunConfig,
     RunResults,
 } from '../contracts';
@@ -25,7 +26,7 @@ export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Res
 export const MAX_OVERVIEW_RUNS = 25;
 
 /** The filter names the Items panel renders, one per items-route parameter. */
-export type StoreItemFilterName = 'source' | 'seen' | 'decision' | 'value' | 'selection';
+export type StoreItemFilterName = 'source' | 'seen' | 'decision' | 'value' | 'selection' | 'search';
 
 /** The filters the Items tab sends to the run's items route (design §3). */
 export interface StoreItemsQuery {
@@ -35,6 +36,7 @@ export interface StoreItemsQuery {
     decision?: string;
     value?: string;
     selection?: 'selected' | 'published' | 'dropped' | 'none';
+    search?: string;
 }
 
 /**
@@ -51,6 +53,31 @@ export function storeItemsQueryString(query: StoreItemsQuery): string {
         params.set('value', query.value);
     }
     if (query.selection !== undefined) params.set('selection', query.selection);
+    if (query.search !== undefined && query.search.trim() !== '') {
+        params.set('search', query.search.trim());
+    }
+    return params.toString();
+}
+
+/** The filters for the selections route. */
+export interface StoreSelectionsQuery {
+    page?: number;
+    topic?: string;
+    status?: 'selected' | 'published' | 'dropped';
+    runId?: string;
+    search?: string;
+}
+
+/** The selections route's query string. */
+export function storeSelectionsQueryString(query: StoreSelectionsQuery): string {
+    const params = new URLSearchParams();
+    if (query.page !== undefined) params.set('page', String(query.page));
+    if (query.topic !== undefined && query.topic !== '') params.set('topic', query.topic);
+    if (query.status !== undefined) params.set('status', query.status);
+    if (query.runId !== undefined && query.runId !== '') params.set('runId', query.runId);
+    if (query.search !== undefined && query.search.trim() !== '') {
+        params.set('search', query.search.trim());
+    }
     return params.toString();
 }
 
@@ -87,8 +114,10 @@ export interface BoardClient {
     storeOverview(runIds: readonly string[]): Promise<CollectStoreOverview>;
     /** One run's stored facts and label quality. */
     storeRun(runId: string): Promise<CollectRunStore>;
-    /** One page of one run's items, filtered. */
-    storeItems(runId: string, query?: StoreItemsQuery): Promise<CollectStoreItems>;
+    /** One page of items, filtered (optionally scoped to a runId). */
+    storeItems(runId?: string, query?: StoreItemsQuery): Promise<CollectStoreItems>;
+    /** One page of selections, filtered. */
+    storeSelections(query?: StoreSelectionsQuery): Promise<CollectStoreSelections>;
 }
 
 /**
@@ -178,9 +207,17 @@ export function createBoardClient(options: BoardClientOptions): BoardClient {
         },
         storeRun: (runId) =>
             getJson<CollectRunStore>(`${reader}/api/workflows/kk-collect/runs/${encodeURIComponent(runId)}/store`),
-        storeItems: (runId, query = {}) =>
-            getJson<CollectStoreItems>(
-                `${reader}/api/workflows/kk-collect/runs/${encodeURIComponent(runId)}/store/items?${storeItemsQueryString(query)}`,
+        storeItems: (runId, query = {}) => {
+            const qs = storeItemsQueryString(query);
+            const path =
+                runId !== undefined && runId.trim() !== ''
+                    ? `${reader}/api/workflows/kk-collect/runs/${encodeURIComponent(runId)}/store/items?${qs}`
+                    : `${reader}/api/workflows/kk-collect/store/items?${qs}`;
+            return getJson<CollectStoreItems>(path);
+        },
+        storeSelections: (query = {}) =>
+            getJson<CollectStoreSelections>(
+                `${reader}/api/workflows/kk-collect/store/selections?${storeSelectionsQueryString(query)}`,
             ),
         runDetail: (runId) => getJson<unknown>(`${board}/api/runs/${encodeURIComponent(runId)}`),
         progress: (runId) => getJson<unknown>(`${board}/api/runs/${encodeURIComponent(runId)}/progress`),

@@ -8,7 +8,15 @@ import {
     useRef,
     useState,
 } from 'react';
-import type { CollectRunStore, CollectStoreItems, CollectStoreOverview, RunConfig, RunResults } from '../contracts';
+import type {
+    CollectRunStore,
+    CollectStoreItem,
+    CollectStoreItems,
+    CollectStoreOverview,
+    CollectStoreSelections,
+    RunConfig,
+    RunResults,
+} from '../contracts';
 import {
     type BoardClient,
     createBoardClient,
@@ -16,6 +24,7 @@ import {
     readerOriginFrom,
     type StoreItemFilterName,
     type StoreItemsQuery,
+    type StoreSelectionsQuery,
 } from '../shared/api';
 import { artifactViews, collectSummaryFacts, type ProgressRow, progressRows } from '../shared/collect';
 import { dedupeDiagnostics, diagnosticLine } from '../shared/format';
@@ -43,21 +52,35 @@ import {
     selectionPath,
     syncSelectionUrl,
 } from '../shared/run-selection';
-import { ConfigPanel, ItemsPanel, OverviewPanel, ProgressPanel, RunDetailPanel } from './panels';
+import {
+    ConfigPanel,
+    ItemDetailModal,
+    ItemsPanel,
+    ProgressPanel,
+    RunDetailModal,
+    RunDetailsPanel,
+    SelectionsPanel,
+    SummaryPanel,
+} from './panels';
 
 /**
  * The Collect Board module (`kk-collect`), rendered inside the host's React tree.
  *
- * Thin by construction: selection, polling/backoff, availability and projection logic live in
- * `src/shared/` so they are unit-tested without a DOM. This file owns only React state, the three
- * loaders and the five tab panels. Store strings render as React text nodes, never HTML.
+ * Provides:
+ * 1. Summary: High-level operational telemetry aligned with Observabilities & Histories
+ * 2. Run Details: Detailed run list with drilldown modal
+ * 3. Items: Joined items + labels table with search, filters & item inspection modal
+ * 4. Selections: Selections table joined with items
+ * 5. Progress: Pipeline execution states
+ * 6. Config: Captured workflow settings
  */
 
-/** The Collect module's tab labels (ids are frozen in `shared/run-selection.ts`). */
+/** The Collect module's tab labels in display order. */
 const TAB_LABELS: Record<CollectTab, string> = {
-    overview: 'Overview',
-    summary: 'Run detail',
+    summary: 'Summary',
+    runs: 'Run Details',
     items: 'Items',
+    selections: 'Selections',
     progress: 'Execution progress',
     config: 'Workflow Config Summary',
 };
@@ -75,8 +98,7 @@ function messageOf(error: unknown): string {
 
 /**
  * Poll one async loader on a steady interval with a capped backoff after failures, stopping
- * while the document is hidden. The loader owns its own `gave up/last success` bookkeeping
- * through `src/shared/refresh.ts`, which stays the single owner of the polling rules.
+ * while the document is hidden.
  */
 function usePolling(loader: () => Promise<void>, intervalMs: number, refresh: RefreshState): void {
     const loaderRef = useRef(loader);
@@ -92,9 +114,6 @@ function usePolling(loader: () => Promise<void>, intervalMs: number, refresh: Re
             }
             if (!cancelled) timer = setTimeout(() => void loop(), delayMs(refreshRef.current, intervalMs));
         };
-        // Poll immediately on mount, then on the steady interval: a first visit must show the
-        // recorded history/results without waiting a whole interval (a blank module for 30s was the
-        // observed defect this replaces). `loop` awaits a loader that owns its own error handling.
         void loop();
         return () => {
             cancelled = true;
@@ -103,27 +122,32 @@ function usePolling(loader: () => Promise<void>, intervalMs: number, refresh: Re
     }, [intervalMs]);
 }
 
-/** The five tabs of the Collect module. */
+function isOfflineError(msg: string): boolean {
+    return msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('ECONNREFUSED');
+}
+
+/** The six tabs of the Collect module. */
 export function CollectModule() {
     const [link] = useState(() => parseDeepLink(window.location.search, COLLECT_TABS, COLLECT_TAB_ALIASES));
-    // A mistyped or hostile `kkApi` value falls back to the default reader with a diagnostic —
-    // it never reaches `createBoardClient` and aborts the module during render (§4).
     const [reader] = useState(() => readerOriginFrom(window.location.search));
     const readerOrigin = reader.origin;
     const client = useMemo<BoardClient>(
         () => createBoardClient({ readerOrigin, boardOrigin: window.location.origin }),
         [readerOrigin],
     );
+
     const [rows, setRows] = useState<RunListRow[]>([]);
     const [cursor, setCursor] = useState<string | null>(null);
     const [selection, setSelection] = useState<RunSelection<CollectTab>>({
         runId: link.runId ?? null,
-        tab: link.tab ?? 'overview',
+        tab: link.tab ?? 'summary',
     });
     const [diagnostics, setDiagnostics] = useState(() => [
         ...link.diagnostics,
         ...(reader.diagnostic === null ? [] : [reader.diagnostic]),
     ]);
+    const [isReaderOffline, setIsReaderOffline] = useState(false);
+
     const [historyRefresh, setHistoryRefresh] = useState<RefreshState>(() => initialRefresh(HISTORY_POLL_MS));
     const [readerRefresh, setReaderRefresh] = useState<RefreshState>(() => initialRefresh(ACTIVE_POLL_MS));
     const [results, setResults] = useState<RunResults | null>(null);
@@ -131,13 +155,25 @@ export function CollectModule() {
     const [progress, setProgress] = useState<unknown>(null);
     const [overview, setOverview] = useState<CollectStoreOverview | null>(null);
     const [storeRun, setStoreRun] = useState<CollectRunStore | null>(null);
+
+    // Items tab state
     const [items, setItems] = useState<CollectStoreItems | null>(null);
     const [itemFilters, setItemFilters] = useState<StoreItemsQuery>({ page: 1 });
+    const [selectedInspectItem, setSelectedInspectItem] = useState<CollectStoreItem | null>(null);
+
+    // Selections tab state
+    const [selections, setSelections] = useState<CollectStoreSelections | null>(null);
+    const [selectionsFilters, setSelectionsFilters] = useState<StoreSelectionsQuery>({ page: 1 });
+
+    // Modals and view controls
+    const [selectedModalRunId, setSelectedModalRunId] = useState<string | null>(null);
+    const [modalStoreRun, setModalStoreRun] = useState<CollectRunStore | null>(null);
+    const [modalResults, setModalResults] = useState<RunResults | null>(null);
+    const [modalProgress, setModalProgress] = useState<unknown>(null);
+    const [timeRange, setTimeRange] = useState('24h');
     const [showEffective, setShowEffective] = useState(false);
     const [filterQuery, setFilterQuery] = useState('');
 
-    // `tick`'s pending bit + one busy ref per source: a manual Refresh/"Load more" click can
-    // never overlap an in-flight poll and let the slower response win (§6).
     const historyBusy = useRef(false);
     const readerBusy = useRef(false);
 
@@ -146,17 +182,21 @@ export function CollectModule() {
     const selectionRef = useRef(selection);
     selectionRef.current = selection;
 
-    /** The store overview for the loaded page: ids only select rows, the reader calls no workflow. */
+    /** The store overview for the loaded page */
     const loadOverview = useCallback(
         async (runIds: readonly string[]) => {
             if (runIds.length === 0) return;
             try {
-                setOverview(await client.storeOverview(runIds));
+                const res = await client.storeOverview(runIds);
+                setOverview(res);
+                setIsReaderOffline(false);
             } catch (error) {
-                setDiagnostics((existing) => [
-                    ...existing,
-                    { code: 'board.store.unavailable', message: messageOf(error) },
-                ]);
+                const msg = messageOf(error);
+                if (isOfflineError(msg)) {
+                    setIsReaderOffline(true);
+                } else {
+                    setDiagnostics((existing) => [...existing, { code: 'board.store.unavailable', message: msg }]);
+                }
             }
         },
         [client],
@@ -200,46 +240,46 @@ export function CollectModule() {
             setResults(nextResults);
             setConfig(nextConfig);
             setReaderRefresh(() => succeeded(Date.now(), ACTIVE_POLL_MS));
+            setIsReaderOffline(false);
         } catch (error) {
             if (selectionRef.current.runId !== runId) return;
-            setDiagnostics((existing) => [
-                ...existing,
-                { code: 'board.reader.unavailable', message: messageOf(error) },
-            ]);
+            const msg = messageOf(error);
+            if (isOfflineError(msg)) {
+                setIsReaderOffline(true);
+            } else {
+                setDiagnostics((existing) => [...existing, { code: 'board.reader.unavailable', message: msg }]);
+            }
             setReaderRefresh((state) => failed(state, Date.now()));
         } finally {
             readerBusy.current = false;
         }
-        // The store projection is a separate reader route: its failure states itself inside the
-        // store panels (R7) instead of blanking the artifact-backed tabs.
+
         try {
             const nextStoreRun = await client.storeRun(runId);
             if (selectionRef.current.runId !== runId) return;
             setStoreRun(nextStoreRun);
+            setIsReaderOffline(false);
         } catch (error) {
             if (selectionRef.current.runId !== runId) return;
-            setDiagnostics((existing) => [
-                ...existing,
-                { code: 'board.store.run-unavailable', message: messageOf(error) },
-            ]);
+            const msg = messageOf(error);
+            if (isOfflineError(msg)) {
+                setIsReaderOffline(true);
+            } else {
+                setDiagnostics((existing) => [...existing, { code: 'board.store.run-unavailable', message: msg }]);
+            }
         }
-        // §6: a reader outage affects the result/config panels, never Spur's own run history — the
-        // progress projection comes from the Board API, so it is fetched independently of the reader
-        // and a reader failure leaves the last good progress in place instead of blanking the tab.
+
         try {
             const nextProgress = await client.progress(runId);
             if (selectionRef.current.runId !== runId) return;
             setProgress(nextProgress);
         } catch {
-            // The tab states unavailability; the reader failure above already carries the diagnosis.
+            // Leave last progress in place
         }
     }, [client]);
 
-    // The items fetch is a racing one: a filter/page/run change starts a new request while an older
-    // one may still be in flight. Only the newest token may write, so a slow earlier page can never
-    // overwrite the newer one (same discipline as `historyBusy`/`readerBusy` above).
+    // Items loader with sequence token
     const itemsRequests = useRef(requestSequence());
-
     const loadItems = useCallback(
         async (runId: string) => {
             const token = itemsRequests.current.begin();
@@ -247,37 +287,111 @@ export function CollectModule() {
                 const page = await client.storeItems(runId, itemFilters);
                 if (!itemsRequests.current.isCurrent(token)) return;
                 setItems(page);
+                setIsReaderOffline(false);
             } catch (error) {
                 if (!itemsRequests.current.isCurrent(token)) return;
                 setItems(null);
-                setDiagnostics((existing) => [
-                    ...existing,
-                    { code: 'board.store.items-unavailable', message: messageOf(error) },
-                ]);
+                const msg = messageOf(error);
+                if (isOfflineError(msg)) {
+                    setIsReaderOffline(true);
+                } else {
+                    setDiagnostics((existing) => [
+                        ...existing,
+                        { code: 'board.store.items-unavailable', message: msg },
+                    ]);
+                }
             }
         },
         [client, itemFilters],
     );
 
+    // Selections loader with sequence token
+    const selectionsRequests = useRef(requestSequence());
+    const loadSelections = useCallback(async () => {
+        const token = selectionsRequests.current.begin();
+        try {
+            const page = await client.storeSelections(selectionsFilters);
+            if (!selectionsRequests.current.isCurrent(token)) return;
+            setSelections(page);
+            setIsReaderOffline(false);
+        } catch (error) {
+            if (!selectionsRequests.current.isCurrent(token)) return;
+            setSelections(null);
+            const msg = messageOf(error);
+            if (isOfflineError(msg)) {
+                setIsReaderOffline(true);
+            } else {
+                setDiagnostics((existing) => [
+                    ...existing,
+                    { code: 'board.store.selections-unavailable', message: msg },
+                ]);
+            }
+        }
+    }, [client, selectionsFilters]);
+
+    // Dedicated modal run data loader
+    useEffect(() => {
+        if (!selectedModalRunId) {
+            setModalStoreRun(null);
+            setModalResults(null);
+            setModalProgress(null);
+            return;
+        }
+
+        // If the modal targets the currently selected run, reuse cached values
+        if (selectedModalRunId === selection.runId) {
+            setModalStoreRun(storeRun);
+            setModalResults(results);
+            setModalProgress(progress);
+            return;
+        }
+
+        let cancelled = false;
+        async function fetchModalData(runId: string) {
+            try {
+                const [rResults, rStore, rProg] = await Promise.allSettled([
+                    client.results('kk-collect', runId),
+                    client.storeRun(runId),
+                    client.progress(runId),
+                ]);
+                if (cancelled) return;
+                if (rResults.status === 'fulfilled') setModalResults(rResults.value);
+                if (rStore.status === 'fulfilled') setModalStoreRun(rStore.value);
+                if (rProg.status === 'fulfilled') setModalProgress(rProg.value);
+            } catch {
+                // Non-fatal for modal
+            }
+        }
+        void fetchModalData(selectedModalRunId);
+
+        return () => {
+            cancelled = true;
+        };
+    }, [selectedModalRunId, selection.runId, storeRun, results, progress, client]);
+
     usePolling(loadHistory, HISTORY_POLL_MS, historyRefresh);
     usePolling(loadReader, ACTIVE_POLL_MS, readerRefresh);
 
-    // The items page is fetched only for the Items tab, and re-fetched when the run or the
-    // component-state filters change (the filters go to the 0307 route, not to a client filter).
+    // Fetch items when tab is items
     useEffect(() => {
-        if (selection.tab !== 'items' || selection.runId === null) return;
-        void loadItems(selection.runId);
+        if (selection.tab !== 'items') return;
+        void loadItems(selection.runId ?? '');
     }, [selection.tab, selection.runId, loadItems]);
 
-    // First visit picks the newest recorded run; a run disappearing never steals the selection.
+    // Fetch selections when tab is selections
+    useEffect(() => {
+        if (selection.tab !== 'selections') return;
+        void loadSelections();
+    }, [selection.tab, loadSelections]);
+
+    // First visit picks newest run
     useEffect(() => {
         if (selection.runId === null && rows.length > 0) {
-            setSelection((state) => (state.runId === null ? resolveSelection(rows, link, 'overview') : state));
+            setSelection((state) => (state.runId === null ? resolveSelection(rows, link, 'summary') : state));
         }
     }, [rows, selection.runId, link]);
 
-    // AC1: keep the address bar in step with the run/tab selection so a reload or a shared URL
-    // restores it. The host router's history state is preserved by `syncSelectionUrl`.
+    // Sync address bar
     useEffect(() => {
         syncSelectionUrl(selection, { location: window.location, history: window.history });
     }, [selection]);
@@ -285,26 +399,18 @@ export function CollectModule() {
     const tab = selection.tab;
     const now = Date.now();
     const currentStoreRun = storeRun?.runId === selection.runId ? storeRun : null;
-    const facts = results === null ? [] : collectSummaryFacts(results, now);
-    const artifacts = results === null ? [] : artifactViews(results, readerOrigin);
     const steps: ProgressRow[] = progressRows(progress);
     const selectedRow = rows.find((row) => row.id === selection.runId);
+
     const filteredRows = useMemo(() => {
         const q = filterQuery.trim().toLowerCase();
         if (q === '') return rows;
         return rows.filter((r) => r.id.toLowerCase().includes(q) || r.status.toLowerCase().includes(q));
     }, [rows, filterQuery]);
 
-    /** The Run detail deep link for one Overview row (AC6: the same `?run=&tab=` shape). */
-    const runHref = useCallback(
-        (runId: string) => selectionPath({ runId, tab: 'summary' }, window.location.search),
-        [],
-    );
+    const runHref = useCallback((runId: string) => selectionPath({ runId, tab: 'runs' }, window.location.search), []);
     const toggleQuality = useCallback(() => setShowEffective((state) => !state), []);
-    /**
-     * One change handler for all five item filters (`select name=`), so the panel stays handler-free.
-     * A filter change starts at page 1, and a new decision clears the value it no longer names.
-     */
+
     const filterChanged = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
         const name = event.currentTarget.name as StoreItemFilterName;
         const value = event.currentTarget.value === '' ? undefined : event.currentTarget.value;
@@ -315,10 +421,27 @@ export function CollectModule() {
             ...(name === 'decision' ? { value: undefined } : {}),
         }));
     }, []);
+
     const pageChanged = useCallback((event: MouseEvent<HTMLButtonElement>) => {
         const delta = event.currentTarget.name === 'previous' ? -1 : 1;
         setItemFilters((state) => ({ ...state, page: Math.max(1, (state.page ?? 1) + delta) }));
     }, []);
+
+    const modalFacts = modalResults ? collectSummaryFacts(modalResults, now) : [];
+    const modalArtifacts = modalResults ? artifactViews(modalResults, readerOrigin) : [];
+    const modalSteps: ProgressRow[] = progressRows(modalProgress);
+
+    // Filter out reader/store connection diagnostics if reader is marked offline (preventing 4-error noise)
+    const displayDiagnostics = dedupeDiagnostics([...diagnostics, ...(results?.diagnostics ?? [])]).filter((d) => {
+        if (!isReaderOffline) return true;
+        return (
+            d.code !== 'board.reader.unavailable' &&
+            d.code !== 'board.store.run-unavailable' &&
+            d.code !== 'board.store.unavailable' &&
+            d.code !== 'board.store.items-unavailable' &&
+            d.code !== 'board.store.selections-unavailable'
+        );
+    });
 
     return (
         <div className="kk-board kk-board-collect">
@@ -335,7 +458,7 @@ export function CollectModule() {
                         ) : null}
                     </div>
                     <p>
-                        Run <code>{selection.runId ?? 'none selected'}</code> · {freshnessLabel(readerRefresh)}
+                        Selected run <code>{selection.runId ?? 'none selected'}</code> · {freshnessLabel(readerRefresh)}
                         {results === null ? '' : ` · Results ${results.availability}`}
                     </p>
                 </div>
@@ -354,9 +477,6 @@ export function CollectModule() {
                             <select
                                 value={selection.runId ?? ''}
                                 onChange={(event) => {
-                                    // A new run starts at page 1: the page belongs to the previous run's
-                                    // result set, and carrying it over can ask for a page that run does
-                                    // not have (a false "No items match these filters." — G81 / 0312).
                                     setItemFilters((state) => ({ ...state, page: 1 }));
                                     setResults(null);
                                     setConfig(null);
@@ -380,7 +500,16 @@ export function CollectModule() {
                             </select>
                         </label>
                     </div>
-                    <button type="button" onClick={() => void loadReader()} title="Refresh run data">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            void loadReader();
+                            void loadHistory();
+                            if (selection.tab === 'items') void loadItems(selection.runId ?? '');
+                            if (selection.tab === 'selections') void loadSelections();
+                        }}
+                        title="Refresh data"
+                    >
                         ↻ Refresh
                     </button>
                     {selection.runId === null ? null : (
@@ -394,6 +523,36 @@ export function CollectModule() {
                     )}
                 </div>
             </header>
+
+            {/* Clear companion reader offline status banner */}
+            {isReaderOffline ? (
+                <div className="kk-board-reader-offline-banner" role="alert">
+                    <div className="kk-board-reader-offline-icon">⚠️</div>
+                    <div className="kk-board-reader-offline-content">
+                        <strong>Loopback Board Reader Offline ({readerOrigin})</strong>
+                        <p>
+                            Store facts, item inspection, and artifact evidence require the local reader process. Spur
+                            run execution history remains available. To start the reader, run:
+                        </p>
+                        <code>bun run apps/cli/src/index.ts board serve --board-origin {window.location.origin}</code>
+                    </div>
+                    <button
+                        type="button"
+                        className="kk-btn-action"
+                        onClick={() => {
+                            setIsReaderOffline(false);
+                            void loadReader();
+                            void loadHistory();
+                            if (selection.tab === 'items') void loadItems(selection.runId ?? '');
+                            if (selection.tab === 'selections') void loadSelections();
+                        }}
+                    >
+                        ↻ Retry Connection
+                    </button>
+                </div>
+            ) : null}
+
+            {/* Segmented Control Navigation Tabs */}
             <nav className="kk-board-tabs" aria-label="Collect tabs">
                 {COLLECT_TABS.map((candidate) => (
                     <button
@@ -406,23 +565,38 @@ export function CollectModule() {
                     </button>
                 ))}
             </nav>
+
             {rows.length === 0 ? (
                 <p className="kk-board-empty">
                     No runs recorded for kk-collect. Configure the workflow in{' '}
                     <a href="/board/settings/workflows">Settings → Workflows</a>.
                 </p>
             ) : null}
-            {tab === 'overview' ? <OverviewPanel runs={rows} overview={overview} now={now} runHref={runHref} /> : null}
+
+            {/* Panel 1: Summary (Executive Operational Telemetry) */}
             {tab === 'summary' ? (
-                <RunDetailPanel
-                    storeRun={currentStoreRun}
-                    results={results}
-                    facts={facts}
-                    artifacts={artifacts}
-                    showEffective={showEffective}
-                    onToggleQuality={toggleQuality}
+                <SummaryPanel
+                    runs={rows}
+                    overview={overview}
+                    now={now}
+                    timeRange={timeRange}
+                    onTimeRangeChange={setTimeRange}
+                    onInspectRun={(runId) => setSelectedModalRunId(runId)}
                 />
             ) : null}
+
+            {/* Panel 2: Run Details (Run List Table Drilldown) */}
+            {tab === 'runs' ? (
+                <RunDetailsPanel
+                    runs={filteredRows}
+                    overview={overview}
+                    now={now}
+                    runHref={runHref}
+                    onInspectRun={(runId) => setSelectedModalRunId(runId)}
+                />
+            ) : null}
+
+            {/* Panel 3: Items (Items + Labels joined) */}
             {tab === 'items' ? (
                 <ItemsPanel
                     runId={selection.runId}
@@ -430,24 +604,70 @@ export function CollectModule() {
                     filters={itemFilters}
                     quality={currentStoreRun?.labelQuality ?? []}
                     onFilterChange={filterChanged}
+                    onSearchChange={(e) => setItemFilters((s) => ({ ...s, search: e.target.value, page: 1 }))}
                     onPageChange={pageChanged}
+                    onInspectItem={(item) => setSelectedInspectItem(item)}
                 />
             ) : null}
+
+            {/* Panel 4: Selections (Table selections joined with items) */}
+            {tab === 'selections' ? (
+                <SelectionsPanel
+                    selections={selections}
+                    topics={selections?.topics ?? []}
+                    filters={selectionsFilters}
+                    onTopicChange={(topic) => setSelectionsFilters((s) => ({ ...s, topic, page: 1 }))}
+                    onStatusChange={(status) => setSelectionsFilters((s) => ({ ...s, status, page: 1 }))}
+                    onSearchChange={(search) => setSelectionsFilters((s) => ({ ...s, search, page: 1 }))}
+                    onPageChange={(delta) =>
+                        setSelectionsFilters((s) => ({ ...s, page: Math.max(1, (s.page ?? 1) + delta) }))
+                    }
+                    onInspectRun={(runId) => setSelectedModalRunId(runId)}
+                />
+            ) : null}
+
+            {/* Panel 5: Progress */}
             {tab === 'progress' ? <ProgressPanel steps={steps} /> : null}
+
+            {/* Panel 6: Config */}
             {tab === 'config' ? <ConfigPanel config={config} /> : null}
-            {dedupeDiagnostics([...diagnostics, ...(results?.diagnostics ?? [])]).map((diagnostic) => (
+
+            {/* Diagnostics (sanitized and deduplicated) */}
+            {displayDiagnostics.map((diagnostic) => (
                 <p key={diagnostic.code} role="status" className="kk-board-diagnostic">
                     {diagnosticLine(diagnostic)}
                 </p>
             ))}
+
             {cursor === null ? null : (
                 <button type="button" onClick={() => void loadHistory()}>
                     Load more runs
                 </button>
             )}
+
             <p className="kk-board-footnote">
                 Run history every {HISTORY_POLL_MS / 1000}s; selected run every {ACTIVE_POLL_MS / 1000}s.
             </p>
+
+            {/* Run Detail Modal Window */}
+            {selectedModalRunId ? (
+                <RunDetailModal
+                    runId={selectedModalRunId}
+                    storeRun={modalStoreRun}
+                    results={modalResults}
+                    facts={modalFacts}
+                    artifacts={modalArtifacts}
+                    steps={modalSteps}
+                    showEffective={showEffective}
+                    onToggleQuality={toggleQuality}
+                    onClose={() => setSelectedModalRunId(null)}
+                />
+            ) : null}
+
+            {/* Item Detail Modal Window */}
+            {selectedInspectItem ? (
+                <ItemDetailModal item={selectedInspectItem} onClose={() => setSelectedInspectItem(null)} />
+            ) : null}
         </div>
     );
 }

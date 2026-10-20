@@ -12,17 +12,24 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import {
     ArtifactRows,
     ConfigPanel,
+    ItemDetailModal,
     ItemsPanel,
     LabelQuality,
     OverviewPanel,
     ProgressPanel,
     QualityTable,
+    RunDetailModal,
     RunDetailPanel,
+    RunDetailsPanel,
+    SelectionsPanel,
+    SummaryPanel,
 } from '../../src/collect/panels';
 import type {
     CollectRunStore,
+    CollectStoreItem,
     CollectStoreItems,
     CollectStoreOverview,
+    CollectStoreSelections,
     RunConfig,
     RunResults,
 } from '../../src/contracts';
@@ -636,5 +643,232 @@ describe('shipped panels (AC6)', () => {
         expect(renderToStaticMarkup(<ConfigPanel config={null} />)).toContain(
             'No captured configuration for the selected run.',
         );
+    });
+});
+
+describe('SummaryPanel (Redesigned Executive Dashboard)', () => {
+    it('renders KPI stat cards, time pills, charts, and breakdown tables', () => {
+        const html = renderToStaticMarkup(
+            <SummaryPanel
+                runs={runs}
+                overview={overview()}
+                now={NOW}
+                timeRange="24h"
+                onTimeRangeChange={() => {}}
+                onInspectRun={() => {}}
+            />,
+        );
+        // Time pills
+        expect(html).toContain('24h');
+        expect(html).toContain('kk-time-pill active');
+
+        // KPI stat cards
+        expect(html).toContain('Total Ingested Items');
+        expect(html).toContain('Ingestion Success Rate');
+        expect(html).toContain('Label Decisions');
+        expect(html).toContain('Selection Yield');
+
+        // Timeline charts
+        expect(html).toContain('Ingestion Volume Over Time');
+        expect(html).toContain('Decision Volume &amp; Selection Activity');
+        expect(html).toContain('kk-chart-svg');
+
+        // Breakdowns
+        expect(html).toContain('Top Ingestion Sources');
+        expect(html).toContain('Recent Collection Runs');
+        expect(html).toContain('aihot-ingest');
+        expect(html).toContain('hn-ingest');
+        expect(html).toContain('r-stored');
+    });
+
+    it('renders fallback states when overview is loading or unavailable', () => {
+        const loadingHtml = renderToStaticMarkup(<SummaryPanel runs={runs} overview={null} now={NOW} timeRange="4h" />);
+        expect(loadingHtml).toContain('Total Ingested Items');
+        expect(loadingHtml).toContain('The store overview has not loaded yet.');
+
+        const unavailHtml = renderToStaticMarkup(
+            <SummaryPanel
+                runs={runs}
+                overview={overview({
+                    availability: 'unavailable',
+                    diagnostics: [{ code: 'board.store.unavailable', message: 'Database busy' }],
+                })}
+                now={NOW}
+                timeRange="4h"
+            />,
+        );
+        expect(unavailHtml).toContain('The store could not be read for this page');
+        expect(unavailHtml).toContain('Database busy');
+    });
+});
+
+describe('RunDetailsPanel and RunDetailModal', () => {
+    it('renders the run list table with inspect buttons and links', () => {
+        const html = renderToStaticMarkup(
+            <RunDetailsPanel
+                runs={runs}
+                overview={overview()}
+                now={NOW}
+                runHref={(id) => `/board?runId=${id}`}
+                onInspectRun={() => {}}
+            />,
+        );
+        expect(html).toContain('Collection cadence');
+        expect(html).toContain('href="/board?runId=r-stored"');
+        expect(html).toContain('Inspect');
+    });
+
+    it('renders RunDetailModal with funnel cards and quality breakdown', () => {
+        const html = renderToStaticMarkup(
+            <RunDetailModal
+                runId="r-stored"
+                storeRun={runStore()}
+                results={null}
+                facts={[]}
+                artifacts={[]}
+                steps={[{ state: 'store', visit: 1, status: 'done', timing: '2s', operatorWait: false, actions: [] }]}
+                showEffective={false}
+                onToggleQuality={() => {}}
+                onClose={() => {}}
+            />,
+        );
+        expect(html).toContain('Run Details:');
+        expect(html).toContain('r-stored');
+        expect(html).toContain('Collected');
+        expect(html).toContain('Stored');
+        expect(html).toContain('Label quality');
+        expect(html).toContain('kk-modal-card');
+        expect(html).toContain('Close');
+    });
+});
+
+describe('ItemDetailModal', () => {
+    const sampleItem: CollectStoreItem = {
+        id: 'item-99',
+        source: 'aihot-ingest',
+        title: 'Quantum Computing Advance',
+        url: 'https://example.com/qc',
+        storyId: 'story-101',
+        seen: 'new',
+        labels: { 'kk-item-quality': 'HIGH' },
+        labelDetails: {
+            'kk-item-quality': {
+                value: 'HIGH',
+                confidence: 'HIGH',
+                score: 0.98,
+                maker: 'model',
+            },
+        },
+        selection: 'selected',
+        domain: 'example.com',
+        lang: 'en',
+        bodyChars: 1500,
+    };
+
+    it('renders item details, confidence badges, and metadata table', () => {
+        const html = renderToStaticMarkup(<ItemDetailModal item={sampleItem} onClose={() => {}} />);
+        expect(html).toContain('Item Details');
+        expect(html).toContain('Quantum Computing Advance');
+        expect(html).toContain('aihot-ingest');
+        expect(html).toContain('https://example.com/qc');
+        expect(html).toContain('kk-badge-success');
+        expect(html).toContain('model');
+        expect(html).toContain('0.98');
+    });
+});
+
+describe('SelectionsPanel', () => {
+    const sampleSelections: CollectStoreSelections = {
+        schemaVersion: 1,
+        availability: 'available',
+        diagnostics: [],
+        page: 1,
+        pageSize: 25,
+        total: 1,
+        topics: ['ai-news', 'tech-radar'],
+        selections: [
+            {
+                topic: 'ai-news',
+                itemId: 'item-99',
+                runId: 'r-stored',
+                storyId: 'story-101',
+                workflow: 'kk-collect',
+                rank: 1,
+                reason: 'Groundbreaking research',
+                status: 'selected',
+                selectedAt: 1776330300000,
+                publishedAt: null,
+                title: 'Quantum Computing Advance',
+                source: 'aihot-ingest',
+                url: 'https://example.com/qc',
+            },
+        ],
+    };
+
+    it('renders the selections table with rank, topic, and status', () => {
+        const html = renderToStaticMarkup(
+            <SelectionsPanel
+                selections={sampleSelections}
+                filters={{ page: 1 }}
+                onTopicChange={() => {}}
+                onStatusChange={() => {}}
+                onSearchChange={() => {}}
+                onPageChange={() => {}}
+            />,
+        );
+        expect(html).toContain('Quantum Computing Advance');
+        expect(html).toContain('ai-news');
+        expect(html).toContain('selected');
+        expect(html).toContain('Groundbreaking research');
+        expect(html).toContain('story-101');
+        expect(html).toContain('r-stored');
+    });
+
+    it('renders empty, loading, and unavailable states properly', () => {
+        const emptyHtml = renderToStaticMarkup(
+            <SelectionsPanel
+                selections={{ ...sampleSelections, selections: [], total: 0 }}
+                filters={{ page: 1 }}
+                onTopicChange={() => {}}
+                onStatusChange={() => {}}
+                onSearchChange={() => {}}
+                onPageChange={() => {}}
+            />,
+        );
+        expect(emptyHtml).toContain('No selections match these filters.');
+
+        const loadingHtml = renderToStaticMarkup(
+            <SelectionsPanel
+                selections={null}
+                filters={{ page: 1 }}
+                onTopicChange={() => {}}
+                onStatusChange={() => {}}
+                onSearchChange={() => {}}
+                onPageChange={() => {}}
+            />,
+        );
+        expect(loadingHtml).toContain('The selections page has not loaded yet.');
+
+        const unavailHtml = renderToStaticMarkup(
+            <SelectionsPanel
+                selections={{
+                    schemaVersion: 1,
+                    availability: 'unavailable',
+                    diagnostics: [{ code: 'board.store.selections-unavailable', message: 'Reader timeout' }],
+                    page: 1,
+                    pageSize: 25,
+                    total: 0,
+                    topics: [],
+                    selections: [],
+                }}
+                filters={{ page: 1 }}
+                onTopicChange={() => {}}
+                onStatusChange={() => {}}
+                onSearchChange={() => {}}
+                onPageChange={() => {}}
+            />,
+        );
+        expect(unavailHtml).toContain('The selections could not be read; no rows are shown.');
+        expect(unavailHtml).toContain('Reader timeout');
     });
 });

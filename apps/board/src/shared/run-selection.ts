@@ -14,17 +14,24 @@ export type BoardTab = 'summary' | 'results' | 'progress' | 'config';
 export const BOARD_TABS: readonly BoardTab[] = ['summary', 'results', 'progress', 'config'];
 
 /**
- * The Collect module's five tabs (design §2): Overview is the default and the shipped Results tab
- * folds into Run detail. Wide as `BoardTab` rather than in place of it: the other two modules keep
- * their four tabs and their deep links unchanged.
+ * The Collect module's six tabs:
+ * 1. summary: Observabilities/Histories-style executive operational analytics
+ * 2. runs: Run Details list with modal drilldown
+ * 3. items: Items + labels joined table
+ * 4. selections: Selections joined with items
+ * 5. progress: Execution progress
+ * 6. config: Workflow Config Summary
  */
-export type CollectTab = 'overview' | 'summary' | 'items' | 'progress' | 'config';
+export type CollectTab = 'summary' | 'runs' | 'items' | 'selections' | 'progress' | 'config';
 
 /** The Collect tabs, in display order. */
-export const COLLECT_TABS: readonly CollectTab[] = ['overview', 'summary', 'items', 'progress', 'config'];
+export const COLLECT_TABS: readonly CollectTab[] = ['summary', 'runs', 'items', 'selections', 'progress', 'config'];
 
-/** Shipped `?tab=results` links resolve to Run detail: no dead links, no lost favourites. */
-export const COLLECT_TAB_ALIASES: Readonly<Record<string, CollectTab>> = { results: 'summary' };
+/** Shipped and legacy tab aliases: `overview` maps to `summary`, `results` maps to `runs`. */
+export const COLLECT_TAB_ALIASES: Readonly<Record<string, CollectTab>> = {
+    overview: 'summary',
+    results: 'runs',
+};
 
 /** One row of the frozen Spur run-list envelope (`/api/runs`). */
 export interface RunListRow {

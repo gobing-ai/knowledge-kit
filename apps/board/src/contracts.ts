@@ -163,6 +163,13 @@ export interface CollectRunStore extends CollectStoreAvailability {
     }[];
 }
 
+export interface CollectItemLabelDetail {
+    value: string;
+    confidence: string | null;
+    maker: string | null;
+    score: number | null;
+}
+
 /** One item as the store views render it; all text renders as text nodes, never HTML. */
 export interface CollectStoreItem {
     id: string;
@@ -175,7 +182,15 @@ export interface CollectStoreItem {
     seen: 'new' | 'reseen';
     /** Effective labels, `decision_id → value`. */
     labels: Record<string, string>;
+    /** Detailed labels including confidence, maker, and score. */
+    labelDetails?: Record<string, CollectItemLabelDetail>;
     selection: 'selected' | 'published' | 'dropped' | 'none';
+    domain?: string | null;
+    lang?: string | null;
+    bodyChars?: number | null;
+    engagement?: number | null;
+    firstSeenAt?: number | null;
+    publishedAt?: number | null;
 }
 
 /** `GET /api/workflows/kk-collect/runs/<id>/store/items` — one page of the run's items. */
@@ -188,4 +203,31 @@ export interface CollectStoreItems extends CollectStoreAvailability {
     items: CollectStoreItem[];
     /** The `source` filter's domain, read from the store. */
     sources: string[];
+}
+
+/** One selection as the store views render it. */
+export interface CollectStoreSelection {
+    topic: string;
+    itemId: string;
+    runId: string;
+    storyId: string;
+    workflow: string | null;
+    rank: number | null;
+    reason: string | null;
+    status: 'selected' | 'published' | 'dropped';
+    selectedAt: number;
+    publishedAt: number | null;
+    title: string | null;
+    source: string | null;
+    url: string | null;
+}
+
+/** `GET /api/workflows/kk-collect/store/selections` — one page of selections. */
+export interface CollectStoreSelections extends CollectStoreAvailability {
+    schemaVersion: 1;
+    page: number;
+    pageSize: 25;
+    total: number;
+    selections: CollectStoreSelection[];
+    topics: string[];
 }

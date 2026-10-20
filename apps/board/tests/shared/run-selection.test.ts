@@ -142,8 +142,8 @@ describe('parseDeepLink with a module tab set', () => {
             tab: 'items',
             diagnostics: [],
         });
-        expect(parseDeepLink('?tab=results', COLLECT_TABS, COLLECT_TAB_ALIASES).tab).toBe('summary');
-        expect(parseDeepLink('?tab=overview', COLLECT_TABS, COLLECT_TAB_ALIASES).tab).toBe('overview');
+        expect(parseDeepLink('?tab=results', COLLECT_TABS, COLLECT_TAB_ALIASES).tab).toBe('runs');
+        expect(parseDeepLink('?tab=overview', COLLECT_TABS, COLLECT_TAB_ALIASES).tab).toBe('summary');
     });
 
     it('keeps the shipped defaults: `results` is a tab of its own and Collect ids are unknown', () => {
@@ -161,9 +161,9 @@ describe('parseDeepLink with a module tab set', () => {
     });
 
     it('resolves the first visit onto the module default tab', () => {
-        expect(resolveSelection(rows, parseDeepLink('', COLLECT_TABS), 'overview')).toEqual({
+        expect(resolveSelection(rows, parseDeepLink('', COLLECT_TABS), 'summary')).toEqual({
             runId: 'r-newer',
-            tab: 'overview',
+            tab: 'summary',
             diagnostics: [],
         });
         expect(resolveSelection(rows, parseDeepLink('')).tab).toBe('summary');
