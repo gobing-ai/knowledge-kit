@@ -1,3 +1,52 @@
+## [0.1.5] - 2026-10-19
+
+### Added
+
+- feat(store): label items through an in-process decision hub, resolving the catalog from the checkout then the install (c68c2008)
+<!-- src: apps/cli/src/decision-hub.ts:182 -->
+- feat(board): rebuild the Collect module as six tabs — Summary, Run Details, Items, Selections, Progress, Config — keeping `?tab=` aliases resolving (9f38a42d)
+<!-- src: apps/board/src/collect/index.tsx:79 -->
+- feat(store): page collect selections at 25 rows and enrich item label detail (5f5fd977)
+<!-- src: packages/kk-store/src/dao/collect-view.ts:17 -->
+- feat(store): `kk store label --replay` reports `{replayed, labeled, consults, consultMs, refused, run}` so a refused answer is no longer invisible (1a3ace1c)
+<!-- src: apps/cli/src/commands/store.ts:1011 -->
+- feat: widen the daily extract window ×2/×3 when the pool misses `episode_min_minutes`, capped at 72h (ca13561b)
+<!-- src: plugins/kk/scripts/daily-stages.ts:289 -->
+
+### Fixed
+
+- fix(cli): accept `127.0.0.1` and `localhost` on one port as the same loopback reader origin and echo the request origin (b3d405cb)
+<!-- src: apps/cli/src/board/reader.ts:92 -->
+- fix(board): clear the run modal's cached store row when the target run changes (c386399f)
+<!-- src: apps/board/src/collect/index.tsx:346 -->
+- fix: measure card headlines unwrapped against the shared text-panel height so a long headline steps down instead of pushing points past the safe bottom (ec9ad0a2)
+<!-- src: plugins/generations/image-gen/src/compose/card.ts:303 -->
+
+### Changed
+
+- chore(project): bump the `@gobing-ai/ts-*` catalog to ^0.5.32 (ac76c50f)
+<!-- src: package.json:18 -->
+- chore: stop listing the installed package's catalogs under `decisions.paths` — a registered layer outranks shared and shadowed newer bundled copies (584eb6d5)
+<!-- src: .spur/config.yaml:254 -->
+- chore(config): restore the `laya-local` maker for `kk-item-quality` (467f66ee)
+<!-- src: .spur/config.yaml:262 -->
+- chore(config): pin feature completion's `check-feature` action to `bun run spur-check` (aeee4f02)
+<!-- src: .spur/config.yaml:208 -->
+- test: close the 0317 Collect console coverage and TSDoc gaps (cc545772)
+<!-- src: apps/board/tests/collect/panels.test.tsx -->
+- test(board): accept the six-tab Collect console in the installed suite (cf812efc)
+<!-- src: apps/board/tests/installed-board.test.ts:659 -->
+- test(cli): gate the stage cancellation cases on the child's ready file (7e65b704)
+<!-- src: apps/cli/tests/stage.test.ts:264 -->
+- test(cli): split the workflow var reference in the voice2 dag assertion (f436b996)
+- test: cover the extract ladder's 72h cap and record that `kk stage` runs the installed scripts copy (3a928421)
+<!-- src: AGENTS.md:203 -->
+- docs(tasks): re-anchor the 0317 evidence and register G33 (74c029f8)
+- docs(context): record the 0317 decision-maker learnings and pitfalls (cf530537)
+- docs(context): scope the confidence-field learning to the reply surface (52671204)
+- docs(config): record the 2026-10-19 laya re-check in decisions.makers (d4cf0848)
+- docs(tasks): add new tasks (e803c6d3)
+
 ## [0.1.4] - 2026-10-19
 
 ### Added
