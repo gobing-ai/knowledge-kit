@@ -138,7 +138,6 @@ export function CollectModule() {
     const [readerRefresh, setReaderRefresh] = useState<RefreshState>(() => initialRefresh(ACTIVE_POLL_MS));
     const [results, setResults] = useState<RunResults | null>(null);
     const [config, setConfig] = useState<RunConfig | null>(null);
-    const [progress, setProgress] = useState<unknown>(null);
     const [overview, setOverview] = useState<CollectStoreOverview | null>(null);
     const [storeRun, setStoreRun] = useState<CollectRunStore | null>(null);
 
@@ -258,14 +257,6 @@ export function CollectModule() {
                 setDiagnostics((existing) => [...existing, { code: 'board.store.run-unavailable', message: msg }]);
             }
         }
-
-        try {
-            const nextProgress = await client.progress(runId);
-            if (selectionRef.current.runId !== runId) return;
-            setProgress(nextProgress);
-        } catch {
-            // Leave last progress in place
-        }
     }, [client]);
 
     // Items loader with sequence token
@@ -340,13 +331,19 @@ export function CollectModule() {
             setModalConfig(null);
         }
 
-        // If the modal targets the currently selected run, reuse cached values where available
+        // Reuse the page's data only when it provably belongs to this target: the page keeps the
+        // previous run's row until its own request settles. `progress` carries no run id, so it is
+        // reused only once the modal has fetched it for this target itself.
         if (selectedModalRunId === selection.runId) {
-            setModalStoreRun(storeRun);
-            setModalResults(results);
-            setModalProgress(progress);
-            setModalConfig(config);
-            if (storeRun !== null && results !== null && progress !== null && config !== null) {
+            if (storeRun?.runId === selectedModalRunId) setModalStoreRun(storeRun);
+            if (results?.runId === selectedModalRunId) setModalResults(results);
+            if (config?.runId === selectedModalRunId) setModalConfig(config);
+            if (
+                modalProgress !== null &&
+                storeRun?.runId === selectedModalRunId &&
+                results?.runId === selectedModalRunId &&
+                config?.runId === selectedModalRunId
+            ) {
                 return;
             }
         }
@@ -374,7 +371,7 @@ export function CollectModule() {
         return () => {
             cancelled = true;
         };
-    }, [selectedModalRunId, selection.runId, storeRun, results, progress, config, client]);
+    }, [selectedModalRunId, selection.runId, storeRun, results, config, modalProgress, client]);
 
     usePolling(loadHistory, HISTORY_POLL_MS, historyRefresh);
     usePolling(loadReader, ACTIVE_POLL_MS, readerRefresh);
