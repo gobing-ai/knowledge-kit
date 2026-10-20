@@ -251,9 +251,12 @@ decisions:
   maker: fm-local
   makers:
     kk-item-category: fm-local
-    # laya-local is unusable under the bundled spur CLI (2026-10-19): its worker script resolves
-    # relative to the bundle and is not shipped, so every ask failed in ~100ms (0/161 accepted,
-    # value always the fallback 2). Back to laya-local once spur ships the worker (spur task).
+    # laya-local is unusable under the bundled spur CLI: its worker script resolves relative to the
+    # bundle and is not shipped, so every ask returns the fallback in ~20ms (0/161 accepted, value
+    # always the fallback 2). Re-checked 2026-10-19 on spur 0.4.15 (task 0317 R5): `spur decision run
+    # kk-item-quality --maker laya-local` still answers `reason: error` in 23ms, and the package has
+    # no `worker/` directory — so this restore stays blocked on spur-new task 1262. When that ships,
+    # flip this line to laya-local and verify AC4 (maker laya-local, reason accepted|low-confidence).
     kk-item-quality: fm-local
     kk-item-china-politics: typesafe
     kk-item-sensitivity: typesafe
