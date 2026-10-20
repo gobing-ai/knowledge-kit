@@ -341,7 +341,7 @@ with the laptop's scheduler already stopped.
 | Voice weights | `openbmb/VoxCPM2` 4.6 GiB rsynced; voxcpm venv 1.4 GiB via `uv sync --locked` in 59 s |
 | Voice identity | `voices/robin-news.wav` sha256 `472cbee3…` identical on both hosts; both renders used the `reference` profile |
 | Laya maker | `laya-mlx==0.4.0` uv tool + 647 MiB `convaiinnovations/laya-multilingual` weights auto-pulled |
-| Render speed | 3 m 22 s cold (model load) vs ~36 s warm on the M5 laptop; episode-scale timing not yet measured |
+| Render speed | 202 s cold **and 178.8 s warm** for the same 7 s clip — model load is not the difference; ~36 s on the M5 laptop |
 | Disk after restore | 19 GiB free (from 21 GiB) |
 | Headless survival | console session `robin`, `autoLoginUser=robin`, FileVault off, AC `sleep 0` |
 
@@ -408,11 +408,15 @@ ledger row and skips — verify with `kk ledger show --date <date>` before re-en
 
 ## 10. Risks and known gaps
 
-1. **Browser-profile logins may not survive the move.** Chromium cookie values in
-   `~/.config/kk/browser-profiles/*` are encrypted with a key from the login Keychain
-   (`<Browser> Safe Storage`). The tarball carries the profile *directories*, not that Keychain item,
-   so XHS/WeChat/Medium sessions can come up logged-out on the target. Not blocking for the daily
-   run — surfdash and podcast publish use API tokens — but any browser-backed soft channel needs one
+1. **Browser-profile logins do not survive the move.** Chromium cookie values in
+   `~/.config/kk/browser-profiles/*` are `v10`-encrypted (verified: every `Cookies` row carries a
+   `0x763130…` blob and zero plaintext `value`s) and decrypt with a key from the login Keychain.
+   `ts-browser-automation` launches `playwright.chromium.launchPersistentContext(profileDir)` with no
+   `channel` (`ts-browser-automation/dist/launcher.js:76`), i.e. **Playwright's bundled Chromium**,
+   whose key is the `Chromium Safe Storage` item — present on the source, **absent on the target**
+   (`security find-generic-password -s "Chromium Safe Storage"`). Even with the item present the key
+   is random per machine, so the copied profiles cannot authenticate. Not blocking for the daily
+   run — surfdash and podcast publish use API tokens — but every browser-backed channel needs one
    interactive re-login on the target (`kk bot login <channel>`, headed).
 2. **`kk stage` vs the checkout** (§6.4) is the highest-frequency failure mode: a reinstalled
    `knowledge-kit` silently reverts the stage runner, and the failure surfaces 30 minutes into the
@@ -421,16 +425,17 @@ ledger row and skips — verify with `kk ledger show --date <date>` before re-en
    `daily-preflight` guard, surfdash-pub patching, daily-article-gen). Until they are committed and
    pushed, the target's checkout is a hand-carried snapshot with no provenance — land them on a
    branch soon after the trip.
-4. **Memory, disk and throttling.** 16 GB unified memory on M4: voxcpm on `mps` fits, but a
-   concurrent `spur serve` history-analyze tick plus a render can pressure swap. 19 GiB free after
-   the copy; a 2 h episode render writes < 1 GiB. Low Power Mode is currently **on** (`lowpowermode
-   1`) and throttles MPS renders — `sudo pmset -a lowpowermode 0` if episodes run long. Monitor
-   `df -h` weekly.
-5. **Render throughput is unproven at episode scale.** One segment cost 3 m 22 s cold on the M4
-   versus a ~36 s warm render on the M5 laptop; the 2026-10-15 production episode took 21.8 min on
-   the laptop. The job's `timeoutMs` is 4 h, so a 3–5× slowdown still fits, but the first
-   unattended episode is the real measurement (V10). If it overruns, set `vdriver: gemini` in the
-   workflow vars (hosted, quota-bound) rather than editing the scheduler.
+4. **Low Power Mode is on, but it is not the explanation.** `pmset -g custom` reports
+   `lowpowermode 1` on AC. A warm re-render still took 178.8 s against 202 s cold, so the 5× gap to
+   the M5 laptop is the SoC/memory, not a cold model load and not proven to be throttling.
+   `sudo pmset -a lowpowermode 0` is worth trying, but do not expect it to explain the gap.
+5. **Per-invocation cost, not per-episode.** `daily-generate` synthesises **one section per
+   `kk executor run`, sequentially** (`plugins/kk/scripts/daily-stages.ts:1139-1178`), and the voxcpm
+   worker loads the model once per invocation. At ~170 s of load plus render time per section, an
+   episode of 10–14 sections projects to roughly **50–90 min** on the M4 versus ~22 min on the M5.
+   The job's `timeoutMs` is 4 h, so it fits — but the first unattended episode (V10) is the real
+   measurement. If it overruns, set `vdriver: gemini` in the workflow vars rather than editing the
+   scheduler.
 6. **A reboot needs the GUI session back.** The agent is a `gui/$UID` LaunchAgent: it starts at
    login, not at boot. `autoLoginUser=robin` and FileVault off mean a power-loss restart recovers
    unattended (both verified 2026-10-20); a macOS update that lands on the login window without
@@ -454,3 +459,39 @@ ledger row and skips — verify with `kk ledger show --date <date>` before re-en
     and fails closed to `3`. Observed 2026-10-20: a 24 h window holding only two fresh items produced
     a 0-item pool while 176 items over 7 days pass every gate. A thin news day therefore closes
     `done-no-content` by design, but a broken maker narrows it further.
+
+---
+
+## 11. Claim verification
+
+Every non-obvious claim this runbook relies on, with the evidence that supports it. `path:line`
+means the owning source in this checkout; a shell command means it was executed on 2026-10-20 and
+the output is quoted. **H** = observed or read directly, **M** = consistent with docs/source but not
+independently exercised, **L** = inference or third-party claim not verified here.
+
+| # | Claim | Evidence | Conf. |
+| --- | --- | --- | --- |
+| 1 | `kk stage` resolves its runner from the **installed** package while the scheduler executes the **checkout's** YAML | `git show 1358156:plugins/kk/scripts/daily-stages.ts \| grep -c daily-preflight` → `0` (the released 0.1.5 lacks the stage the current YAML calls), and `kk stage daily-preflight …` only passes after the §6.4 rsync; `AGENTS.md` §"Editing `plugins/kk/scripts/`" documents the split | H |
+| 2 | `daily-generate` synthesises one section per `kk executor run`, sequentially | `plugins/kk/scripts/daily-stages.ts:1139-1178` (`for (const plan of plans)` → `kk(voiceExecutorArgs(...), {soft:true})`) | H |
+| 3 | The voxcpm worker loads the model once per invocation, so per-section cost is load-bound | `plugins/generations/voxcpm-tts/README.md` ("one model load per invocation") + measured 202 s cold / 178.8 s warm for one 7 s clip | H |
+| 4 | spur resolves the laya interpreter from `~/.local/share/uv/tools/laya-mlx/bin/python` before `python3` | `~/node_modules/@gobing-ai/spur/spur.js:70060-70077` (`resolvePythonPath` candidate list); installing the uv tool flipped `kk-item-quality` from `DecisionConfigError` to `maker: laya-local, source: model` | H |
+| 5 | The laya default model is `convaiinnovations/laya-multilingual` | `spur.js:70202` (`DEFAULT_LAYA_MODEL_ID`) | H |
+| 6 | v10 cookies cannot be reused on another machine | `sqlite3 <profile>/Default/Cookies` → every `encrypted_value` starts `763130` (`v10`), `select count(*) where value != ''` → `0`; `ts-browser-automation/dist/launcher.js:76` launches bundled Chromium; `security find-generic-password -s "Chromium Safe Storage"` → found on the source, **not found** on the target | H |
+| 7 | `surfdash-pub` commits and pushes the checkout itself | `plugins/publishings/surfdash-pub/src/index.ts:319,336,346` (`git add` / `git commit` / `git push … origin main`) | H |
+| 8 | The macOS `rsync` rejects `--info=progress2` | `rsync --version` → `openrsync: protocol version 29 / rsync version 2.6.9 compatible`; the flag aborted with a usage dump | H |
+| 9 | The `typesafe` maker is broken identically on both hosts | `spur decision run kk-item-china-politics …` → `TypeError: Body already used`, `value 3`, on the source **and** the target | H |
+| 10 | The extract profile still yields a pool on a normal day | `sqlite3 .works/kk.db` join over `items`+`labels` (category/quality/importance/china-politics) → **176** items in a 7-day window; a 24 h window held 2 fresh items, both china-politics `3` | H |
+| 11 | Low Power Mode explains the slow render | **Disproven as the sole cause**: warm 178.8 s vs cold 202 s — the load is not re-paid, yet the gap to the M5 (36 s) persists. Its own contribution is unmeasured | L |
+| 12 | Gemini TTS is ~100 requests/day on Tier 1 | Only the comment in `~/.config/kk/config.yaml` (the project's own earlier finding); no provider page was read | L |
+| 13 | A `gui/$UID` LaunchAgent needs the user's GUI session after a reboot | Not tested by an actual reboot. Observed: `launchctl managername` → `Background`, `autoLoginUser=robin`, `fdesetup status` → FileVault Off | M |
+| 14 | whisper weights are not needed by the voxcpm path | `grep -rn whisper` over `plugins/generations/{voice-gen,voxcpm-tts}/{src,python}` → no hits; the ASR model belongs to `omni-voice-gen`. Does not cover transitive imports from `uv.lock` | M |
+| 15 | Playwright's Chromium is already installed on the target | `~/Library/Caches/ms-playwright/chromium-1194` present (1.1 GiB cache) and `playwright` resolved under `node_modules/.bun` — so no `npx playwright install` step was needed | H |
+
+### 11.1 Uncertainty phrases from the 2026-10-20 report, resolved
+
+| Phrase as written | Resolution |
+| --- | --- |
+| "Browser-profile cookies **likely** won't decrypt on the mini" | Confirmed — claim 6. Wording upgraded to a statement, with the missing keychain item named. |
+| "the **likely cause** of the 3m22s render" (Low Power Mode) | Withdrawn — claim 11. The warm measurement rules it out as the sole cause; the real driver is per-invocation model load on a slower SoC. |
+| "**may** need one interactive login" per browser channel | Still conditional, and correctly so: it needs a login on *every* channel whose profile was copied (claim 6), not just "some". |
+| "**~22 min** episode on the M5" | Sourced from the workflow's own 2026-10-15 production measurement (`.spur/config.yaml` comment), not re-measured here — treat as M. |
