@@ -114,7 +114,7 @@ kk board serve --board-origin <origin> [--port <n>]
 | `bot list\|login\|logout\|open\|exec` | Named local browser sessions over the fixed default profile root: tab-separated inventory (with login/expiry/identity facts recorded at login), operator-confirmed login/save through a staged transaction, idempotent containment-checked logout behind the shared lease, headed reopen with optional re-login, and one authenticated request through the cached cookie session with a curl option subset (§1.12) | shipped (task 0276; login-time session facts 0305; `exec` 0306) |
 | `store ingest` | Upsert one run's collected `Doc[]` into `items` + `collect_runs` (with per-plugin `source_counts` from `metadata.sources[].file`), write `--new-ids`; prints `{inserted, updated, unchanged}` (§1.9) | shipped (task 0208) |
 | `store backfill-facts` | Recompute the typed item facts and the causal `story_id` clustering for every item (idempotent); prints `{updated}` (§1.9) | shipped (task 0227) |
-| `store label` | Label the ids `ingest` filed — one raw observation per (decision, maker) through the kk decision catalog (the `LABEL_DECISIONS` table: the heuristic's five + the three judgment decisions the heuristic cannot signal), heuristic-first for those five; a china-politics keyword hit writes a maker `keyword` floor and the model is still consulted; `--replay` re-labels a historical pool under a `replay-<epoch>` run id. Prints `{verdict, confidence, labeled, model, fallback, consults, consultMs, refused}`, or `{replayed, consults, consultMs, run}` (§1.9) | shipped (task 0209; raw observations + replay 0226; judgment decisions + china-politics gate 0229; score positions + refusals 0240) |
+| `store label` | Label the ids `ingest` filed — one raw observation per (decision, maker) through the kk decision catalog (the `LABEL_DECISIONS` table: the heuristic's five + the three judgment decisions the heuristic cannot signal), heuristic-first for those five and in-process through `@gobing-ai/ts-ai-decision`; the four graded dimensions are consulted only in `--mode decision`; a china-politics keyword hit writes a maker `keyword` floor and the model is still consulted; `--replay` re-labels a historical pool under a `replay-<epoch>` run id. Prints `{verdict, confidence, labeled, model, fallback, consults, consultMs, refused}`, or `{replayed, consults, consultMs, run}` (§1.9) | shipped (task 0209; raw observations + replay 0226; judgment decisions + china-politics gate 0229; score positions + refusals 0240; in-process hub + graded-dimension pruning 0317) |
 | `store extract` | Compile a topic profile into one store query and write the pool as `Doc[]` (labels inlined), excluding the topic's already-selected stories and gating on the profile's `where` keys (the shipped ai-news profile's `kk-item-china-politics: { lte: 1 }` excludes an unjudged item, fail-closed); prints `{count}` (§1.9) | shipped (task 0210; topic-scoped exclusion 0228; china-politics gate 0229) |
 | `store select` | Record a run's planned set as `selected` stories for one topic (idempotent); prints `{selected}` (§1.9) | shipped (task 0228) |
 | `store mark-published` | Promote a run's `selected` rows to `published`; prints `{published}` (§1.9) | shipped (task 0228) |
@@ -655,6 +655,8 @@ resolution, and the delegated stage names, are in §7.
 
 The skill covers URL intake, preflight/catalog registration, a bounded run, progress from workflow traces, high-severity evidence review, source/unknowns interpretation, the validated narrative, technical/on-page/content/local/ecommerce/international SEO plus GEO explanation, and offline rescoring. It labels observed **measurements** versus **heuristics**, keeps search-indexing, model-training and user-triggered crawler policies separate, states that `vendors/` is reference-only, marks specialist advice as consultation, and promises no ranking or citation outcome. Detail is deliberately in `references/` (the body stays inside repo rule **R44**'s 20,000-byte `SKILL.md` budget — measured 12,201 characters at 0286 implementation); no new slash command, subagent or product plugin kind was added.
 
+**Workflow-level catalogs (task 0317).** Two decisions serve workflows rather than the label pass, in the same `plugins/kk/decisions/` directory: `kk-safety-verdict` (`kk-safety.yaml`; choice `pass|escalate|exclude`, fallback `escalate`) is the daily content-safety machine's publish verdict, consumed by `kk stage daily-safety-verdict` and the `judge -> clean` accept guard (§6, `docs/design/kk-collect-and-daily-voice2.md`); `kk-podcast-outline` (`kk-podcast.yaml`; choice `a|b|c`) is the solo-podcast outline binding the `outline-autopick` state asks under an auto profile (D12 in `docs/design/kk-solo-podcast.md`). Both degrade to a declared fallback with no maker configured, and neither is a substitute for the gate that consumes it: the daily gate stays authoritative on `block`/`revise`, and a solo-podcast fallback row is never treated as a pick.
+
 **Documented consumer setup (no new registration mechanism).** An installed consumer must make the shipped SEO catalogs servable, because `decisions.paths` is the whole search path: resolve the installed KK package root from the running executable (a checkout path is never correct) and **append** `<package-root>/plugins/kk/decisions` to the project's `.spur/config.yaml` `decisions.paths`, preserving every existing entry and maker setting. The catalogs declare `$schema: "@gobing-ai/spur/schemas/decision-catalog.schema.json"`, which Spur resolves through the module tree above the catalog's own directory — satisfied by construction for a global install, and requiring `spur` to stay resolvable from a project-local install; otherwise `decision status --json` reports `loadErrors` and preflight fails. Preflight with `require_decisions=true` fails until the path is registered, naming the missing catalog files/ids and this fix. Superskill exposes no `decisions.paths` merge operation, and the audit never writes user-global configuration (design §10).
 
 **Installed acceptance evidence (0286).** `apps/cli/tests/smart-seo-installed.test.ts` packs `apps/cli` (honoring the `prepack` build), extracts the tarball into a throwaway consumer project in an unrelated temp directory, copies the fixture INPUT out of `plugins/kk/tests/fixtures/` into that project (the tarball deliberately prunes `tests/`), and then drives the real shipped `kk-smart-seo.yaml` with the real shipped stages resolved from the installation alone: preflight fails with the registration pointer, the documented append preserves the pre-existing path and maker mapping, `decision status|show|list` serve the consumer catalog plus all 22 SEO decisions with `catalog` resolving inside the installed package, and the real fixture workflow executes offline (empty `HOME` — no agent executor; provider keys stripped — no maker network call) to its terminal state with `report.json` `status: done`, `coverage.totalRules: 52` and the optional narrative settled as absent/rejected beside the deterministic summary. Isolation is asserted, not assumed: the project's `node_modules` holds only `@gobing-ai/{knowledge-kit,spur}`, the packed helpers import node/builtin or sibling modules only (no ancestor-resolved `linkedom`/`fast-xml-parser`), and no produced artifact contains a checkout path or a `vendors/` reference. Limits of this evidence: it is an offline fixture run over a synthetic one-page fixture, it exercises no live site, no real maker/model answer and no PSI/CrUX provider, and it validates workflow resolution plus catalog registration rather than the SEO accuracy of any finding.
@@ -771,7 +773,12 @@ prints `replayed: 0` and exits 0. `--replay` is mutually exclusive with `--new-i
 `--maker`; either violation exits 1.
 
 Labelling is **heuristic-first**. The **eight** decisions come from `plugins/kk/decisions/kk-items.yaml`,
-registered through `decisions.paths` in `.spur/config.yaml` and served by `spur decision run`:
+registered through `decisions.paths` in `.spur/config.yaml` and served **in-process** by
+`@gobing-ai/ts-ai-decision` (`apps/cli/src/decision-hub.ts`, task 0317 R8) — the package spur's own
+`spur decision run` wraps. One warm maker serves the whole batch and `dispose()` releases it; the
+catalog, the maker routing (`decisions.makers[<id>]` → `decisions.maker` → the catalog's own) and the
+2000-character evidence bound match the subprocess path, which stays for one-off callers
+(`apps/cli/src/itc-decision.ts`):
 `kk-item-category` (MECE choice, fallback `non-ai`), `kk-item-quality|importance|urgency|impact`
 (0–5 score rubrics, fallback `2`), and the three judgment decisions added by task 0229 —
 `kk-item-china-politics` (0–3, fallback `3`), `kk-item-sensitivity` (0–3, fallback `1`) and
@@ -784,18 +791,24 @@ exact answer; out-of-range positions and non-numbers are refused and counted und
 `kk executor run episode-plan-gen` with `EPISODE_PLAN_MODE=label`, which annotates **every** input Doc
 (`metadata.category`, `metadata.scores`, `metadata.needs_model`) with no cap, dedup or filter, so
 `apps/cli` imports no plugin source. In `heuristic` mode (the default) only items the heuristic files
-`non-ai` while seeing an AI signal are routed to `spur decision run <id> --param title=… --param
-source=… --evidence <body file> [--maker <maker>] --json` (inheriting `.spur/config.yaml` `decisions.maker` unless `--maker` is explicitly passed); `--mode decision` routes every item. The heuristic's
-five keep that routing; the three judgment decisions have no heuristic signal, so they are consulted
-for **every** labelled item in both modes and their consults count in `consults`/`consultMs`. Before
+`non-ai` while seeing an AI signal are routed to the hub, inheriting `.spur/config.yaml`
+`decisions.makers`/`decisions.maker` unless `--maker` is explicitly passed; `--mode decision` routes
+every item. The heuristic's five keep that routing, with one exception (task 0317 R2): the four
+**graded** dimensions (`quality`, `importance`, `urgency`, `impact`) are consulted only in
+`--mode decision`, because no kk consumer ranks on them — `planEpisode`'s `planScore` reads source,
+relevance and engagement, and the outcome join in `scripts/decision-signal-report.ts` shows no
+published-vs-dropped separation — so a collect run no longer pays ~4 model calls per item for scores
+nothing reads. `--mode decision` remains the A/B surface that fills all eight. The three judgment
+decisions have no heuristic signal, so they are consulted for **every** labelled item in both modes
+and their consults count in `consults`/`consultMs`. Before
 consulting, the **china-politics keyword prefilter** (0229 R4) scans the title plus the first 200
 characters of the body, case-insensitively, for `store.labels.china_politics_terms`: on a hit it
 writes a `kk-item-china-politics` observation with maker `keyword` (never `heuristic`), source
 `heuristic`, value `3` and reason `keyword:<term>`, and the model is STILL consulted so a backtest
 keeps both rows. A result
-with `source: default` (`no-backend`, `timeout`, `error`, `low-confidence`), an unparseable payload, an
-out-of-vocabulary value or a spawn failure stores the **heuristic value** with `source: default`: the
-pass exits 0 and a collect run never fails on labels. stdout is `{verdict, confidence, labeled,
+with `source: default` (`no-backend`, `timeout`, `error`, `low-confidence`), an out-of-vocabulary value
+or a hub rejection (unknown decision id, input outside the declared contract) stores the **heuristic
+value** with `source: default`: the pass exits 0 and a collect run never fails on labels. stdout is `{verdict, confidence, labeled,
 model, fallback, consults, consultMs}` — `model` counts the `source: model` rows and `fallback` the
 `source: default` ones, while `labeled` is every row written (the heuristic baseline included).
 `consults` counts the `spur decision run` invocations the pass attempted and `consultMs` sums their

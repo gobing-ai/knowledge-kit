@@ -1,0 +1,46 @@
+# Publish-verdict decision for the daily content-safety gate (task 0317 R6).
+#
+# `kk-daily-safety` used to read the judge's self-reported `confidence` field in a shell `jq`
+# filter on the accept edge. The verdict is now a catalog decision over the SAME artifacts as
+# evidence, so the outcome is calibrated, ledgered (`decision_logs`) and carries a declared
+# fallback. The fallback is `escalate`, never `pass`: a missing, unreadable or garbled report has
+# to land on a recorded human decision, not on a silent publish.
+#
+# Resolution: registered through `decisions.paths` in `.spur/config.yaml`
+# (project-relative `plugins/kk/decisions`). No maker is named here on purpose — the project
+# (`decisions.makers` / `decisions.maker`) decides which backend answers, and spur degrades to this
+# catalog's fallback when no maker is configured or available.
+$schema: "@gobing-ai/spur/schemas/decision-catalog.schema.json"
+version: 1
+
+defaults:
+    # The gate's own review already screened the drafts; this decision only files the publish
+    # verdict, so a low-confidence model answer keeps its own value (an explicit pass/escalate/
+    # exclude) instead of being folded into the fallback.
+    minConfidence: 0
+
+decisions:
+    kk-safety-verdict:
+        type: choice
+        description: >-
+            Final publish verdict for the reviewed article + VoiceScript pair, from the
+            content-safety report and the content-judge verdict as evidence.
+        parameters:
+            report:
+                type: string
+                description: >-
+                    Summary of the safety report and the judge verdict the gate consumed (per-platform
+                    decisions, judge findings, and the gate's own pass/escalate/exclude/revise/block
+                    classification).
+        criteria:
+            pass: >-
+                Every platform decision is OK and the judge verdict is PASS on unchanged drafts — the
+                pair is publishable as it stands.
+            escalate: >-
+                Admitted only through a recorded human decision, or the evidence is missing, garbled or
+                contradicts itself. The safe landing for anything the evidence cannot settle.
+            exclude: >-
+                Publishable but not on every target — admission-only findings (per-platform rules,
+                formal fits) mean named platforms are dropped while the remaining targets publish at
+                recorded risk.
+        fallback: escalate

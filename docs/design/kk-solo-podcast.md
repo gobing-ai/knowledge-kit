@@ -32,6 +32,7 @@ those conventions; two-way door (delete the YAML).
 | D9 | Require outline-option-a.md and -b.md; c optional | Always three; only one outline | Matches kk-itc. |
 | D10 | Duration miss → retry script-write (shared `.revise-count`, cap 3) → `failed` | Fail-loud immediately; warn-only | Coarse band absorbs WPM vs Voicebox rate; one bounded regeneration is cheaper than operator re-runs. Auto-regenerate beyond budget is out (GPU cost). |
 | D11 | No ADR | ADR for “podcast as a workflow” | Extends F4 + D5. Reversible. |
+| D12 | `outline-autopick` + catalog decision `kk-podcast-outline`, deferring to `outline-select` | Always pause at `outline-select` | Task 0317 R7: same pattern as kk-itc's `outline-autopick` — an unattended run can bind the outline from the written options, and the operator gate still owns every deferral (a `degraded`/fallback row is never a pick). |
 
 ---
 
@@ -66,6 +67,7 @@ Frozen state ids:
 prepare
   → understand            # agent.run → 1-briefing-briefing.md
   → outline-write         # agent.run → 2-outline/outline-option-{a,b}.md (+ optional c)
+  → outline-autopick      # auto profile only: decide kk-podcast-outline over the options
   → outline-select        # pause, hitl.select a|b|c   (skip when vars.outline set)
   → outline-commit        # cp selected → outline-approved.md
   → script-write          # agent.run → 3-script-voicescript.yaml (contract: the skill's template)
@@ -82,8 +84,11 @@ Transitions of note (same grain as kk-itc):
 
 | from | to | guard |
 | ---- | -- | ----- |
-| outline-write | outline-select | `test -z "${vars.outline}"` |
+| outline-write | outline-autopick | `test -z "${vars.outline}" && test "${vars.auto}" = "true"` |
+| outline-write | outline-select | `test -z "${vars.outline}" && test "${vars.auto}" != "true"` |
 | outline-write | outline-commit | `test -n "${vars.outline}"` |
+| outline-autopick | outline-commit | `test -n "${vars.outline}"` (a confident pick) |
+| outline-autopick | outline-select | `test -z "${vars.outline}"` (deferred → operator gate) |
 | script-validate | wrap-docs | `test "${vars.script_approved}" = "true"` |
 | script-validate | script-review | always (fallback) |
 | script-review | wrap-docs | hitl yes or empty |
@@ -109,7 +114,8 @@ All strings (workflow engine contract).
 | `input_file` | `""` | Markdown path (XOR with `topic`) |
 | `work_dir` | required | Resolved works directory (invoker computes) |
 | `force` | `"false"` | Overwrite existing `brief.md` |
-| `outline` | `""` | Pre-select `a`/`b`/`c`; empty → HITL |
+| `outline` | `""` | Pre-select `a`/`b`/`c`; empty → HITL (or the auto-profile decision) |
+| `auto` | `"false"` | `"true"` binds the outline from evidence before the operator gate (task 0317 R7) |
 | `script_approved` | `""` | `"true"` skips `script-review` (CI / `--dry-run` walk to `done`) |
 | `target_duration_min` | `"8"` | Target episode length in minutes |
 | `words_per_min` | `"150"` | Space-delimited spoken budget |

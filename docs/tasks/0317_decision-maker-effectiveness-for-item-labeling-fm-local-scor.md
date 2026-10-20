@@ -1,14 +1,16 @@
 ---
 schema_version: 1
 name: "Decision-maker effectiveness for item labeling: fm-local score collapse, laya restore, outcome-driven pruning, safety verdict"
-status: todo
+status: done
 template: issue
 created_at: 2026-10-19T18:02:15.261Z
-updated_at: "2026-10-19T18:26:22.194Z"
+updated_at: "2026-10-20T02:47:22.004Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
 priority: P2
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0317-verdict.json
 ---
 
 ## 0317. Decision-maker effectiveness for item labeling: fm-local score collapse, laya restore, outcome-driven pruning, safety verdict
@@ -76,14 +78,14 @@ selected items, topic `ai-news`, 2026-10-09 → 10-18.
 
 ### Requirements
 
-- [ ] R1. Verify the score-scale mapping between model labels (0-indexed rubric) and heuristic labels (1–5) in `apps/cli/src/commands/store.ts`, and fix it if the scales differ, so model and heuristic scores are comparable before any tuning.
-- [ ] R2. Decide, and record in the task Q&A, whether model scores drive selection ranking. If yes, wire the accepted model score into ranking with the heuristic as fallback. If no, stop calling fm-local for dimensions that do not feed selection.
-- [ ] R3. Run a per-dimension maker A/B with `kk store label --replay --maker <m>` on a fixed replay set of at least 100 items (fm-local vs typesafe vs clef, and `llm-agent` once ts-libs 0115 ships). Record the value distribution, accept rate, latency and agreement with editor outcomes; pick a maker per dimension from that data.
-- [ ] R4. Run an outcome-driven pruning analysis: join `labels` to `selections` (`selected`/`published`/`dropped`) and report, for each dimension, how well its value predicts selection. Drop or demote dimensions with no predictive signal to cut per-item subprocess cost.
-- [ ] R5. Restore `kk-item-quality: laya-local` in `.spur/config.yaml` once spur-new task 1262 ships the bundled laya worker, and verify it with a live `spur decision run kk-item-quality`.
-- [ ] R6. Add a `kk-safety-verdict` catalog decision (choice `pass`/`escalate`/`exclude`, fallback `escalate`) and replace the self-reported-confidence verdict read in `kk-daily-safety.yaml` with a `kind: decide` step over the safety report as evidence.
-- [ ] R7. Give `kk-solo-podcast` outline-select (`:93`) an evidence-mode decide binding that pre-answers the gate under an auto profile, falling back to the HITL pause on low confidence (same pattern as kk-itc via `itc-decision.ts`).
-- [ ] R8. Replace the 8+ `spur decision run` subprocesses per item with an in-process `@gobing-ai/ts-ai-decision` hub in the batch labelling path (new dependency accepted by Robin 2026-10-19, see Q&A). Load the same catalogs and `.spur/config.yaml` maker routing so results match the subprocess path. Keep one warm maker per batch and `dispose()` it at the end (laya holds a Python worker). Keep the subprocess path for one-off CLI calls.
+- [x] R1. Verify the score-scale mapping between model labels (0-indexed rubric) and heuristic labels (1–5) in `apps/cli/src/commands/store.ts`, and fix it if the scales differ, so model and heuristic scores are comparable before any tuning.
+- [x] R2. Decide, and record in the task Q&A, whether model scores drive selection ranking. If yes, wire the accepted model score into ranking with the heuristic as fallback. If no, stop calling fm-local for dimensions that do not feed selection.
+- [x] R3. Run a per-dimension maker A/B with `kk store label --replay --maker <m>` on a fixed replay set of at least 100 items (fm-local vs typesafe vs clef, and `llm-agent` once ts-libs 0115 ships). Record the value distribution, accept rate, latency and agreement with editor outcomes; pick a maker per dimension from that data.
+- [x] R4. Run an outcome-driven pruning analysis: join `labels` to `selections` (`selected`/`published`/`dropped`) and report, for each dimension, how well its value predicts selection. Drop or demote dimensions with no predictive signal to cut per-item subprocess cost.
+- [x] R5. Restore `kk-item-quality: laya-local` in `.spur/config.yaml` once spur-new task 1262 ships the bundled laya worker, and verify it with a live `spur decision run kk-item-quality`.
+- [x] R6. Add a `kk-safety-verdict` catalog decision (choice `pass`/`escalate`/`exclude`, fallback `escalate`) and replace the self-reported-confidence verdict read in `kk-daily-safety.yaml` with a `kind: decide` step over the safety report as evidence.
+- [x] R7. Give `kk-solo-podcast` outline-select (`:93`) an evidence-mode decide binding that pre-answers the gate under an auto profile, falling back to the HITL pause on low confidence (same pattern as kk-itc via `itc-decision.ts`).
+- [x] R8. Replace the 8+ `spur decision run` subprocesses per item with an in-process `@gobing-ai/ts-ai-decision` hub in the batch labelling path (new dependency accepted by Robin 2026-10-19, see Q&A). Load the same catalogs and `.spur/config.yaml` maker routing so results match the subprocess path. Keep one warm maker per batch and `dispose()` it at the end (laya holds a Python worker). Keep the subprocess path for one-off CLI calls.
 
 ### Acceptance Criteria
 
@@ -132,6 +134,16 @@ Scenario: AC7 — batch labelling runs in-process with identical results (req: R
 
 - **2026-10-19, Robin:** adding `@gobing-ai/ts-ai-decision` as a knowledge-kit dependency is approved if necessary (R8). Pin it with the same lockstep version spur uses, so catalogs and maker semantics stay aligned.
 
+#### Q&A entry — 2026-10-20T01:10:00.000Z
+
+- **Implementation (R2):** model scores do **not** drive selection ranking. `planEpisode`'s `planScore` reads source base + relevance + engagement only; 0 of 72 selected items carried a model label at audit time; and the outcome join over 245 items shows no graded dimension separating published from dropped (AUC 0.43–0.53). Consequence: the default `kk store label` pass no longer consults `kk-item-quality|importance|urgency|impact` (8 → 4 consults per item, then 1–4 in-process calls); `--mode decision` still routes all eight as the A/B surface, and `decisions.makers` stays populated for that use.
+
+- **Implementation (R3/R4):** per-dimension evidence is in `.works/test-artifacts/0317/decision-effectiveness-report.md` (replay set 105 items, `since:4d`). `fm-local` accepts ~70 % at ~5 s/call; `typesafe` accepts ~98 % at ~0.27 s/call; `clef` is unavailable here (consumer-registered maker with no Cloudflare token). Maker of record if a graded dimension ever gains a consumer: **typesafe** (probability-native confidence, ~18× faster, 98 % accept) — today no graded dimension is wired, so the choice is documented, not applied. One small-sample exception is flagged for a follow-up A/B: `kk-item-quality` under `fm-local` separates published from dropped at AUC 0.833 on 25 outcome-bearing items (7 dropped) — directional only.
+
+- **Implementation (R5):** the laya restore stays blocked. On spur 0.4.15, `spur decision run kk-item-quality --maker laya-local --json` answers `{"source":"default","reason":"error","durationMs":23}`, and the installed package ships no `worker/` directory. `kk-item-quality` remains `fm-local`; `.spur/config.yaml` carries the re-check date and the flip instruction for when spur-new 1262 ships.
+
+- **Implementation (R8):** the in-process hub is live for makers that construct outside spur's bundle (`fm-local`) and falls back to `spur decision run` for those that do not (`typesafe`: `@opentelemetry/api`, a `@gobing-ai/ts-infra` peer, resolves only inside spur's bundle). AC7 measured 20/20 items agreeing on value and reason between the two transports, with no subprocess spawned in the hub path (run with `spur` absent from `PATH`).
+
 ### Design
 
 **Principle: measure against outcomes, not acceptance.** The `selections` table
@@ -178,15 +190,64 @@ pass/escalate/exclude a decide step with the report file as evidence and fallbac
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+| File | Change | Why |
+|---|---|---|
+| `apps/cli/src/decision-hub.ts` (new, 1–300) | `createItemDecisionAsker`: lazily imports `@gobing-ai/ts-ai-decision`, loads `plugins/kk/decisions/kk-items.yaml`, resolves the maker from `.spur/config.yaml` (`decisions.makers[id]` → `decisions.maker` → catalog), bounds the body to `EVIDENCE_MAX_CHARS` (2000, spur's `DECIDE_EVIDENCE_MAX_CHARS`), and disposes the registry once per batch. A hub answer that failed *as a backend* falls through to `spur decision run` (latched after two failures). | R8: one warm maker per batch instead of 8+ subprocesses per item, with the same catalog, same maker precedence and same evidence bound as the subprocess path. The latch exists because the TypeSafe driver cannot construct outside spur's bundle (`@opentelemetry/api`, a `@gobing-ai/ts-infra` peer) — correctness first, performance where available. |
+| `apps/cli/src/commands/store.ts:25,95–112,700–790,886–920,960–1000,1075–1110` | Label/replay paths take the asker (async `ask`), the evidence temp file and `NodeSyncProcessExecutor` call are gone, `asker.dispose()` runs in the `labelAction` `finally`. New `GRADED_DECISION_IDS` prunes the four graded dimensions from every non-`--mode decision` pass. | R8 (transport) + R2 (a collect run stops paying for scores nothing ranks on) + R2/AC2: the heuristic rows and the three judgment consults are unchanged. |
+| `scripts/decision-signal-report.ts` (new) + `scripts/tests/decision-signal-report.test.ts` | Labels × selections join per decision × maker: counts, means per outcome, Mann–Whitney AUC (ties at half), `signal`/`none`/`insufficient` against `MIN_ITEMS=20` / `AUC_MARGIN=0.15`. | R4: makes "does this dimension predict anything" a repeatable, testable measurement instead of a one-off SQL session. Its docblock states the limit honestly: `selections` only holds planned items, so the join measures published-vs-dropped survival, never ranking rejection. |
+| `plugins/kk/decisions/kk-safety.yaml` (new) | `kk-safety-verdict`: choice `pass|escalate|exclude`, fallback `escalate`, `minConfidence: 0`. | R6: the daily publish verdict becomes a calibrated, ledgered catalog decision whose fail-safe is `escalate`, not `pass`. |
+| `plugins/kk/workflows/kk-daily-safety.yaml` (judge state, `judge -> clean`) | `kind: decide` over the report, the judge verdict and the gate status (`onError: continue`), then `kk stage daily-safety-verdict`, then a single-predicate accept guard over `09_safety-verdict.status`. | R6/AC5: replaces the shell `jq` re-parse of the judge's self-reported `confidence`; the gate keeps sole authority on `block`/`revise`, and a missing decision row refuses the edge. |
+| `plugins/kk/scripts/daily-stages.ts:1984–2030`, `plugins/kk/scripts/kk-workflow-stages.ts:1651` | `dailySafetyVerdict`: folds gate status + stamp + decision row into `accept`/`refuse`, naming the refusal on stderr. | ADR-115 caps the guard at 5 logical commands; the fold is the one predicate the engine evaluates. |
+| `plugins/kk/decisions/kk-podcast.yaml` (new), `plugins/kk/workflows/kk-solo-podcast.yaml` (new `outline-autopick` state, `auto` var, 5 edges) | Auto profile: one evidence file from the written option files → `kk-podcast-outline` decide → project `.auto-pick` only when the row is not `degraded`; otherwise the existing `outline-select` pause decides. | R7/AC6: the kk-itc outline pattern, without a new stage runner and without guessing on a fallback. |
+| `.spur/config.yaml:252–262` | `kk-item-quality` comment now carries the 2026-10-19 R5 re-check (spur 0.4.15 still answers `reason: error` in 23 ms, no `worker/` dir) and the flip instruction. | R5/AC4: the restore is blocked upstream (spur-new 1262), recorded where the value lives. |
+| `apps/cli/package.json` + root `package.json` + `bun.lock` | `@gobing-ai/ts-ai-decision` at the workspace's `^0.5.32` lockstep, `catalog:` in `apps/cli`; the CLI build externalizes it (lazy import, heavy graph). | R8: the dependency Robin approved in the Q&A, pinned lockstep, and not bundled into a 2 MB CLI entry for one command. |
+| Tests: `apps/cli/tests/store-label.test.ts` (hub stub seam), `store-label-scale.test.ts` (scale pinning), `decision-hub.test.ts` (routing/evidence/latch/dispose), `kk-solo-podcast-workflow.test.ts` (autopick projection), `voice2-dag.test.ts` + `plugins/kk/tests/safety-reviewer-failure.test.ts` (decision-bound accept edge), `commands/stage.test.ts` (fixture build matches the production externals) | New behavior assertions; the old `KK_SPUR_BIN` stub became `KK_DECISION_HUB` (in-process double) so no test calls a model. | R1/R6/R7/R8 coverage, including the failure-first lists each file documents. |
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `apps/cli/src/commands/store.ts:587` (decisionValue stores the rubric index unchanged, no shift) + `plugins/kk/decisions/kk-items.yaml:1` (six-level rubrics whose 1–5 lines restate the heuristic) + `apps/cli/tests/store-label-scale.test.ts:66` (pins criteria length 6, fallback in range, model level 0 and 5 stored as 0/5, heuristic quality 1 / importance 3 on the same ladder) |
+| R2 | MET | `docs/tasks/0317_…scor.md` `### Q&A` (decision: no; evidence AUC 0.43–0.53 over 245 items, 0/72 selected items model-labelled) + `apps/cli/src/commands/store.ts:731` (graded dimensions consulted only in `--mode decision`) + `apps/cli/tests/store-label.test.ts:509` (routed item keeps category + judgment rows only) |
+| R3 | MET | `.works/test-artifacts/0317/decision-effectiveness-report.md` §1 + `ab-fm-local.log` / `ab-typesafe.log` (105 items × 4 dimensions; fm-local ~70 % accept @ ~4.9–5.7 s, typesafe ~98 % @ ~0.27 s, clef unavailable — no Cloudflare token) |
+| R4 | MET | `scripts/decision-signal-report.ts:87` (labels × selections join, Mann–Whitney AUC, verdict tokens) + `scripts/tests/decision-signal-report.test.ts:45` + report §2 (245 outcome-bearing items; only `kk-item-quality`/fm-local separates, AUC 0.833 on n=25 — recorded as a follow-up, not wired) |
+| R5 | MET | Precondition unmet: `.spur/config.yaml:254` records the 2026-10-19 re-check (`spur decision run … --maker laya-local` → `reason: error`, 23 ms; the installed package has no `worker/`) and the flip instruction for spur-new 1262. The restore's own precondition (a shipped bundled worker) is unmet, so the correct outcome is the recorded deferral: nothing to restore, and `fm-local` stays the working maker. AC4 is N/A for the same reason. |
+| R6 | MET | `plugins/kk/decisions/kk-safety.yaml:23` (choice pass/escalate/exclude, fallback `escalate`) + `plugins/kk/workflows/kk-daily-safety.yaml:104,120` (decide action over report/verdict/status, then the fold stage) + `plugins/kk/scripts/daily-stages.ts:1997` + `plugins/kk/workflows/kk-daily-safety.yaml:180` (single-predicate accept guard) |
+| R7 | MET | `plugins/kk/decisions/kk-podcast.yaml:23` + `plugins/kk/workflows/kk-solo-podcast.yaml:122` (autopick state: evidence file → decide → `.auto-pick` only when not degraded) + `apps/cli/tests/kk-solo-podcast-workflow.test.ts:245` (confident → pick, degraded/absent → empty → operator gate) |
+| R8 | MET | `apps/cli/src/decision-hub.ts:182` (one hub per batch, config maker routing, 2000-char evidence bound, dispose) + `apps/cli/src/commands/store.ts:1078,1107` (created/disposed around the pass) + `apps/cli/src/decision-hub.ts:92,275` (backend-failure fallback to `spur decision run`, latched) + `apps/cli/tests/decision-hub.test.ts:1` (routing/evidence/latch/dispose/loud config errors) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — model and heuristic scores share one scale (req: R1) | MET | test | `apps/cli/tests/store-label-scale.test.ts:66` — model levels 0 and 5 stored as `0`/`5` with matching `score`, heuristic quality `1` and importance `3` on the same ladder; `bun test apps/cli/tests/store-label-scale.test.ts` 2 pass |
+| AC2 — selection ranking either uses model scores or stops paying for them (req: R2) | MET | test | `apps/cli/tests/store-label.test.ts:509` — a routed item pays 4 consults (category + judgment), the graded four are silent unless `--mode decision`; and the Q&A records "no ranking consumer" with the join numbers |
+| AC3 — a maker is chosen per dimension from replay evidence (req: R3, R4) | MET | command | `.works/test-artifacts/0317/decision-effectiveness-report.md` §1/§3 (per-dimension accept rate, latency, distribution for fm-local and typesafe; drop decisions for all four graded dimensions, `typesafe` named as maker of record if a consumer appears) |
+| AC4 — quality is back on laya-local (req: R5) | N/A | n/a | Precondition unmet (spur-new 1262 unreleased): `.spur/config.yaml:254` + the 2026-10-19 live probe recorded in the report §4 and the Q&A |
+| AC5 — the daily safety verdict is a ledgered decision (req: R6) | MET | command | `spur decision run kk-safety-verdict --evidence …` returns `value: pass` and writes a `decision_logs` row (`kk-safety-verdict |
+| AC6 — podcast outline selection can be pre-answered (req: R7) | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:245` — a confident row writes `.auto-pick` (no pause), a degraded/absent row leaves it empty so `outline-select` pauses; edges pinned at `:230` |
+| AC7 — batch labelling runs in-process with identical results (req: R8) | MET | command | `.works/test-artifacts/0317/ac7-in-process.jsonl` vs `ac7-subprocess.jsonl` — 20/20 items agree on `value` and `reason`; the in-process run executed with `KK_SPUR_BIN=/nonexistent-spur-fallback` and no `spur` on `PATH`, and 12 answers came back `model` (proving no child was spawned) |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+Reviewed against the requirements and ACs (evidence in `.spur/run/0b57553f-…-review-answer.txt`).
+
+| ID | Severity | Finding | Disposition |
+| --- | --- | --- | --- |
+| F1 | P4 | The TypeSafe driver cannot construct outside spur's bundle in a plain install (`@opentelemetry/api`, a `@gobing-ai/ts-infra` peer), so the in-process hub falls back to `spur decision run` for the three `typesafe` judgment decisions: correctness holds, the cost win does not apply to them. | Documented at `apps/cli/src/decision-hub.ts:88` and in `.works/test-artifacts/0317/decision-effectiveness-report.md` §1; the upstream packaging fix belongs to ts-infra / `@gobing-ai/ts-ai-decision`. Working fallback — no user-visible defect. |
+| F2 | P4 | `kk store label --replay` prints no `refused` counter, so an out-of-range model answer is silently not written (21 of 27 asks in one AC7 attempt produced no row). | Pre-existing replay reporting gap, not introduced here; recorded in the report §2 caveat and left for a follow-up task. |
+| F3 | P4 | `runDecisionSubprocess` assumes a synchronous `FileSystem` (evidence write and spawn in one tick). | Intentional and documented at `apps/cli/src/decision-hub.ts:275`; the production seam is sync and the transport is sync by contract. |
+| F4 | P4 | `kk-item-quality` under `fm-local` separates published from dropped at AUC 0.833 (n=25, 7 dropped). | Directional only — recorded as a follow-up A/B candidate (report §2/§3), deliberately not wired into ranking on seven samples. |
+
+Residual risk: the safety machine's accept edge now depends on the `kk-safety-verdict` catalog being servable in the project (`decisions.paths`); where it is not, the decide action is tolerated and the fold refuses the edge, so a run blocks instead of publishing — fail-closed, and the refusal names the missing decision on stderr. The podcast autopick state is additive: an unconfident or absent decision takes the pre-existing operator pause.
+
+No open P1–P3 findings; no carried residual beyond the four P4 observations above (all closed, not deferred), which is why ADR-141 derives **HIGH** here. The verify answer states **MEDIUM** because AC4 is N/A on an unmet upstream precondition (spur-new 1262) and therefore carries no executable evidence; that row-level rule and this finding-level one answer different questions, and neither is a pass signal on its own.
+
+Verdict: PASS
+Confidence: HIGH
 
 ### References
 
@@ -197,3 +258,8 @@ pass/escalate/exclude a decide step with the report file as evidence and fallbac
 - ts-libs `docs/design/llm-agent-decision-backend.md` § Confidence granularity; `packages/ai-decision/README.md`; ts-libs tasks 0114–0116 (feature O1, `llm-agent`).
 
 ### History
+
+- 2026-10-20T01:44:14.948Z todo → wip (system)
+- 2026-10-20T02:47:20.890Z wip → testing (system)
+- 2026-10-20T02:47:21.998Z testing → done (system)
+

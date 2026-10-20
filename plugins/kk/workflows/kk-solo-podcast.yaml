@@ -18,6 +18,9 @@ vars:
   work_dir: ""
   force: "false"
   outline: ""
+  # Auto profile (0317 R7): bind the outline from the option evidence instead of pausing, and fall
+  # back to the operator gate whenever the decision is not confident.
+  auto: "false"
   script_approved: ""
   target_duration_min: "8"
   words_per_min: "150"
@@ -101,6 +104,43 @@ states:
           # No auto path skips this state, so the gate always asks the operator.
           decision:
             mode: never
+
+  - id: outline-autopick
+    description: "Auto profile — bind the outline from the written options; defer to the operator gate on low confidence (0317 R7)"
+    onEnter:
+      # ONE evidence file: option c is optional, and a missing `--evidence` path fails the decide action.
+      - kind: shell
+        options:
+          command: >-
+            mkdir -p "${vars.work_dir}/2-outline"; ev="${vars.work_dir}/2-outline/.outline-evidence.md"; : > "$ev";
+            for s in a b c; do f="${vars.work_dir}/2-outline/outline-option-$s.md"; if [ -f "$f" ]; then printf '## option %s\n%s\n' "$s" "$(cat "$f")" >> "$ev"; fi; done;
+            exit 0
+      - kind: decide
+        onError: continue
+        options:
+          id: podcast-outline
+          decision: kk-podcast-outline
+          params:
+            briefing: >-
+              Episode briefing at ${vars.work_dir}/1-briefing-briefing.md; target spoken duration
+              ${vars.target_duration_min} minutes; language ${vars.language}.
+          evidence:
+            - ${vars.work_dir}/2-outline/.outline-evidence.md
+          resultFile: ${vars.work_dir}/2-outline/.outline-decision.json
+      # Project the row into the ONE token `outline-commit` reads. A degraded (fallback) row is not a
+      # pick — the same rule the kk-itc outline slot uses — so the operator gate still decides.
+      - kind: shell
+        options:
+          command: >-
+            pick="${vars.work_dir}/2-outline/.auto-pick"; : > "$pick";
+            if ! jq -e '.degraded == false' "${vars.work_dir}/2-outline/.outline-decision.json" >/dev/null 2>&1; then exit 0; fi;
+            v="$(jq -r '.value // ""' "${vars.work_dir}/2-outline/.outline-decision.json")";
+            if [ -f "${vars.work_dir}/2-outline/outline-option-$v.md" ]; then printf '%s\n' "$v" > "$pick"; fi;
+            exit 0
+      - kind: file.read.into-var
+        options:
+          path: ${vars.work_dir}/2-outline/.auto-pick
+          var: outline
 
   - id: outline-commit
     description: "Copy selected outline to outline-approved.md"
@@ -239,8 +279,32 @@ transitions:
       kind: always
 
   - from: outline-write
+    to: outline-autopick
+    description: "Auto profile, no pre-selected outline -> bind the outline from the option evidence"
+    guard:
+      kind: shell
+      options:
+        command: 'test -z "${vars.outline}" && test "${vars.auto}" = "true"'
+
+  - from: outline-write
     to: outline-select
-    description: "Outline not pre-selected -> pause for operator selection"
+    description: "Interactive profile, no pre-selected outline -> pause for operator selection"
+    guard:
+      kind: shell
+      options:
+        command: 'test -z "${vars.outline}" && test "${vars.auto}" != "true"'
+
+  - from: outline-autopick
+    to: outline-commit
+    description: "Decision bound a confident option -> commit it"
+    guard:
+      kind: shell
+      options:
+        command: 'test -n "${vars.outline}"'
+
+  - from: outline-autopick
+    to: outline-select
+    description: "Decision deferred (fallback or unconfident) -> pause for operator selection"
     guard:
       kind: shell
       options:

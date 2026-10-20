@@ -20,13 +20,9 @@ import {
     type StoredDoc,
     verdictConfidence,
 } from '@gobing-ai/kk-store';
-import {
-    createNodeFileSystem,
-    type FileSystem,
-    NodeSyncProcessExecutor,
-    type ProcessResult,
-} from '@gobing-ai/ts-runtime';
+import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { type Command, CommanderError } from 'commander';
+import { createItemDecisionAsker, type DecisionAnswer, type DecisionAsker } from '../decision-hub';
 import { resolveKkConfigPath, runInvoke } from '../invoke';
 import { consoleOutput } from '../output';
 import { readPluginJson } from '../plugin-output';
@@ -108,6 +104,12 @@ const HEURISTIC_DECISION_IDS: readonly string[] = [
     CATEGORY_DECISION_ID,
     ...SCORE_DIMENSIONS.map((dimension) => `kk-item-${dimension}`),
 ];
+
+/**
+ * The four graded QC dimensions — the decisions 0317 R2 removed from the default consult set: they
+ * feed no selection ranking, so only `--mode decision` (the explicit A/B surface) pays for them.
+ */
+const GRADED_DECISION_IDS: readonly string[] = SCORE_DIMENSIONS.map((dimension) => `kk-item-${dimension}`);
 
 /** `labels.maker` for the china-politics prefilter's observation (R4): never the `heuristic` maker. */
 const KEYWORD_MAKER = 'keyword';
@@ -313,17 +315,6 @@ interface Annotation {
     needsModel: boolean;
 }
 
-/** One decision's payload as `spur decision run --json` prints it. */
-interface DecisionResult {
-    value: string | number;
-    confidence: number | null;
-    source: string;
-    reason: string;
-    maker: string;
-    /** Backend wall-clock cost of the consult; absent on a spawn/parse failure. */
-    durationMs?: number;
-}
-
 /**
  * One `labels` row to write — an observation (task 0226): the mapped verdict a consumer reads, plus
  * the raw evidence the mapping used to drop.
@@ -361,7 +352,7 @@ interface LabelRow {
  * dot-parse call in `commands/*.ts` (it cannot tell a JSON parse from commander's program
  * parse — the same false positive that keeps `src/ledger.ts`'s parsing helpers out of its
  * command module). The label pass parses three payloads with no kk-core schema: `--new-ids`,
- * `items.metadata_json` and the `spur decision run` payload.
+ * `items.metadata_json` and the decision hub's answer.
  */
 const parseJson: (raw: string) => unknown = JSON.parse;
 
@@ -527,48 +518,6 @@ async function removeScratch(fs: FileSystem, scratch: string): Promise<void> {
     }
 }
 
-/**
- * Serve one decision for one item through the sanctioned external-command seam (`KK_SPUR_BIN`
- * override mirrors `kk ledger`): `spur decision run <id> --param title=… --param source=…
- * --evidence <body file> [--maker <maker>] --json`.
- *
- * `undefined` means "no usable answer" — a spawn failure, a non-zero exit (unknown id, catalog
- * load error) or unparseable stdout — which R6 treats exactly like `source: default`.
- */
-function runDecision(
-    decisionId: string,
-    item: LabelItem,
-    evidencePath: string,
-    maker?: string,
-): DecisionResult | undefined {
-    const command = process.env.KK_SPUR_BIN ?? 'spur';
-    const args = [
-        'decision',
-        'run',
-        decisionId,
-        '--param',
-        `title=${item.title}`,
-        '--param',
-        `source=${item.source}`,
-        '--evidence',
-        evidencePath,
-    ];
-    if (maker) {
-        args.push('--maker', maker);
-    }
-    args.push('--json');
-    const result: ProcessResult = new NodeSyncProcessExecutor().runSync({
-        command,
-        args,
-    });
-    if (result.exitCode !== 0) return undefined;
-    try {
-        return parseJson(result.stdout) as DecisionResult;
-    } catch {
-        return undefined;
-    }
-}
-
 /** The {@link LABEL_DECISIONS} entry for `decisionId`, or `undefined` for an unknown decision. */
 function labelDecision(decisionId: string): LabelDecision | undefined {
     return LABEL_DECISIONS.find((decision) => decision.id === decisionId);
@@ -640,7 +589,7 @@ function makerRow(
     decisionId: string,
     item: LabelItem,
     heuristic: string | null,
-    result: DecisionResult | undefined,
+    result: DecisionAnswer | undefined,
     maker: string | undefined,
     runId: string,
     catalogVersion: string,
@@ -730,7 +679,7 @@ function keywordRow(item: LabelItem, term: string, runId: string, catalogVersion
 /** One item's labelling: the observations to write plus the model-consult cost the pass paid. */
 interface LabelItemOutcome {
     rows: LabelRow[];
-    /** `spur decision run` invocations attempted — an unrouted item still consults the three new ones. */
+    /** Decision-hub consults attempted — the three judgment decisions cost one each for every item. */
     consults: number;
     /** Summed backend `durationMs` across those consults; absent usage counts as 0. */
     consultMs: number;
@@ -746,8 +695,6 @@ interface LabelItemOutcome {
  * floor on a prefilter hit while STILL consulting the model, so a backtest keeps both rows.
  */
 async function labelItem(
-    fs: FileSystem,
-    scratch: string,
     item: LabelItem,
     annotation: Annotation | undefined,
     mode: LabelMode,
@@ -755,19 +702,18 @@ async function labelItem(
     runId: string,
     catalogVersion: string,
     chinaPoliticsTerms: readonly string[],
+    asker: DecisionAsker,
 ): Promise<LabelItemOutcome> {
     const routed = mode === 'decision' || annotation?.needsModel === true;
-    const evidencePath = join(scratch, `evidence-${item.id}.md`);
-    await fs.writeFile(evidencePath, item.body);
     let consults = 0;
     let consultMs = 0;
     const refused: Record<string, number> = {};
     const onRefusal = (key: string): void => {
         refused[key] = (refused[key] ?? 0) + 1;
     };
-    const decide = (decisionId: string): DecisionResult | undefined => {
+    const decide = async (decisionId: string): Promise<DecisionAnswer | undefined> => {
         consults += 1;
-        const result = runDecision(decisionId, item, evidencePath, maker);
+        const result = await asker.ask(decisionId, { title: item.title, source: item.source, body: item.body }, maker);
         consultMs += result?.durationMs ?? 0;
         return result;
     };
@@ -778,6 +724,11 @@ async function labelItem(
         if (heuristic !== null) rows.push(heuristicRow(decision.id, item, heuristic, runId, catalogVersion));
         // The heuristic-annotated decisions keep the R5 cost contract: consulted only when routed.
         if (heuristicAnnotated && !routed) continue;
+        // 0317 R2: the four graded dimensions feed no selection ranking (the run's own evidence —
+        // 0/72 selected items carried a model label and the outcome join shows no separation), so
+        // the default pass stops paying for them. `--mode decision` is the explicit A/B surface and
+        // still routes all eight.
+        if (GRADED_DECISION_IDS.includes(decision.id) && mode !== 'decision') continue;
         if (decision.id === CHINA_POLITICS_DECISION_ID) {
             const term = matchedChinaPoliticsTerm(item, chinaPoliticsTerms);
             if (term !== null) rows.push(keywordRow(item, term, runId, catalogVersion));
@@ -786,7 +737,7 @@ async function labelItem(
             decision.id,
             item,
             heuristic,
-            decide(decision.id),
+            await decide(decision.id),
             maker,
             runId,
             catalogVersion,
@@ -805,16 +756,13 @@ async function labelItem(
  * china-politics prefilter is NOT run here: a `keyword` row would be a second maker's observation.
  */
 async function replayItem(
-    fs: FileSystem,
-    scratch: string,
     item: LabelItem,
     decisionIds: readonly string[],
     maker: string,
     runId: string,
     catalogVersion: string,
+    asker: DecisionAsker,
 ): Promise<LabelItemOutcome> {
-    const evidencePath = join(scratch, `evidence-${item.id}.md`);
-    await fs.writeFile(evidencePath, item.body);
     const rows: LabelRow[] = [];
     let consults = 0;
     let consultMs = 0;
@@ -824,7 +772,7 @@ async function replayItem(
     };
     for (const decisionId of decisionIds) {
         consults += 1;
-        const result = runDecision(decisionId, item, evidencePath, maker);
+        const result = await asker.ask(decisionId, { title: item.title, source: item.source, body: item.body }, maker);
         consultMs += result?.durationMs ?? 0;
         const row = makerRow(decisionId, item, null, result, maker, runId, catalogVersion, onRefusal);
         if (row !== null) rows.push(row);
@@ -946,6 +894,7 @@ async function labelNewIds(
     catalogVersion: string,
     scratch: string,
     chinaPoliticsTerms: readonly string[],
+    asker: DecisionAsker,
 ): Promise<void> {
     const ids = await readNewIds(fs, newIds);
     const items = await readLabelItems(store.items, ids);
@@ -956,8 +905,6 @@ async function labelNewIds(
     const totalRefused: Record<string, number> = {};
     for (const item of items) {
         const outcome = await labelItem(
-            fs,
-            scratch,
             item,
             annotations.get(item.id),
             mode,
@@ -965,6 +912,7 @@ async function labelNewIds(
             runId,
             catalogVersion,
             chinaPoliticsTerms,
+            asker,
         );
         rows.push(...outcome.rows);
         consults += outcome.consults;
@@ -1036,8 +984,8 @@ async function replaySelected(
     window: string,
     maker: string,
     catalogVersion: string,
-    scratch: string,
     policy: LabelPolicy,
+    asker: DecisionAsker,
 ): Promise<void> {
     const decisionIds = parseDecisions(decisions);
     const ids = await replayItemIds(fs, store, selector, window, policy);
@@ -1047,7 +995,7 @@ async function replaySelected(
     let consults = 0;
     let consultMs = 0;
     for (const item of items) {
-        const outcome = await replayItem(fs, scratch, item, decisionIds, maker, runId, catalogVersion);
+        const outcome = await replayItem(item, decisionIds, maker, runId, catalogVersion, asker);
         rows.push(...outcome.rows);
         consults += outcome.consults;
         consultMs += outcome.consultMs;
@@ -1073,7 +1021,8 @@ async function replaySelected(
  * Heuristic-first (R5): every listed item is annotated by the plugin's own keyword heuristic through
  * `kk executor run episode-plan-gen` in `EPISODE_PLAN_MODE=label`, so apps/cli imports no plugin
  * source. Only items the heuristic files `non-ai` while seeing an AI signal (`metadata.needs_model`)
- * go to `spur decision run`; `--mode decision` sends every item. Every observation keeps the answer
+ * go to the decision hub; `--mode decision` sends every item (and is the only mode that consults the
+ * four graded QC dimensions, task 0317 R2). Every observation keeps the answer
  * raw (`raw_value`, `raw_confidence`, `reason`, `duration_ms`), the item's `content_hash`, the
  * catalog `version` and its run id (R2). A degraded backend keeps the heuristic value with
  * `source: default` and the command still exits 0 — a collect run must never fail on labels.
@@ -1124,6 +1073,9 @@ async function labelAction(options: LabelOptions): Promise<void> {
         // ONE config read (R4): the maker policy ranks the observations, and the china-politics
         // prefilter's terms come from the same `store.labels` block.
         const labels = (await readStoreConfig(configPath)).labels;
+        // 0317 R8: ONE warm decision hub for the whole batch, disposed below (a laya maker holds a
+        // Python worker whose open pipes would otherwise keep the process alive).
+        const asker = await createItemDecisionAsker();
         try {
             if (plan.kind === 'replay') {
                 await replaySelected(
@@ -1134,8 +1086,8 @@ async function labelAction(options: LabelOptions): Promise<void> {
                     options.window,
                     plan.maker,
                     catalogVersion,
-                    scratch,
                     labels,
+                    asker,
                 );
             } else {
                 await labelNewIds(
@@ -1148,9 +1100,11 @@ async function labelAction(options: LabelOptions): Promise<void> {
                     catalogVersion,
                     scratch,
                     labels.chinaPoliticsTerms,
+                    asker,
                 );
             }
         } finally {
+            await asker.dispose();
             await store.close();
             await removeScratch(fs, scratch);
         }

@@ -310,7 +310,9 @@ describe('kk stage resolver — installed vs checkout identity (0178)', () => {
                 // graph and playwright-core's own requires (chromium-bidi, electron) cannot be
                 // bundled; the production build passes `--external playwright` for the same
                 // reason, so the fixture build must match it or it exercises nothing real.
-                "    external: ['playwright'],",
+                // 0317 R8 adds the same treatment for the lazily imported decision hub: its own
+                // graph reaches `@johnhenry/laya`, whose optional GPU peer is not installable here.
+                "    external: ['playwright', '@gobing-ai/ts-ai-decision'],",
                 `    outdir: ${JSON.stringify(join(root, 'apps/cli/dist'))},`,
                 '  });',
                 '  if (!r.success) process.exit(1);',

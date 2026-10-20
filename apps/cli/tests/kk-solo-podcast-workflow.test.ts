@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 /**
@@ -226,6 +227,56 @@ describe('kk-solo-podcast workflow (0071)', () => {
     });
 
     // --- 0128: single-file stage flattening -------------------------------------
+
+    // --- 0317 R7: the auto-profile outline binding --------------------------------
+
+    it('R7 (0317) — the auto profile binds the outline before the operator gate, and defers on fallback', () => {
+        expect(stateIds).toContain('outline-autopick');
+        // The autopick state is the only one that asks a catalog decision for the outline.
+        expect(yaml).toContain('decision: kk-podcast-outline');
+        // Edges: auto goes through the decision, interactive keeps the pause, and a deferred
+        // decision lands on the SAME operator gate the interactive profile uses.
+        expect(yaml).toContain(['test -z "', '{vars.outline}" && test "', '{vars.auto}" = "true"'].join('$'));
+        expect(yaml).toContain(['test -z "', '{vars.outline}" && test "', '{vars.auto}" != "true"'].join('$'));
+        expect(yaml).toContain('to: outline-autopick');
+        expect(yaml).toContain('to: outline-select');
+    });
+
+    it('R7 (0317) — a confident decision writes .auto-pick; a degraded or absent row leaves it empty', () => {
+        const dir = realpathSync(mkdtempSync(join(tmpdir(), 'kk-podcast-pick-')));
+        mkdirSync(join(dir, '2-outline'), { recursive: true });
+        writeFileSync(join(dir, '2-outline', 'outline-option-a.md'), '# a\n');
+        writeFileSync(join(dir, '2-outline', 'outline-option-b.md'), '# b\n');
+        const projection = yaml
+            .split('- id: outline-autopick')[1]
+            ?.split('- id: outline-commit')[0]
+            ?.match(/command: >-\n((?:\s{10,}.*\n)+)/g)
+            ?.at(-1);
+        expect(projection).toBeDefined();
+        const original = (projection ?? '').replace(/^\s*command: >-\n/, '');
+        const source = original.replace(/\n\s{10}/g, ' ').trim();
+        const command = source.replace(/\$\{vars\.work_dir\}/g, dir);
+
+        const runProjection = (row: Record<string, unknown> | null): string => {
+            rmSync(join(dir, '2-outline', '.auto-pick'), { force: true });
+            const decisionPath = join(dir, '2-outline', '.outline-decision.json');
+            if (row === null) rmSync(decisionPath, { force: true });
+            else writeFileSync(decisionPath, JSON.stringify(row));
+            const result = Bun.spawnSync(['bash', '-c', command], { cwd: dir });
+            expect(result.exitCode).toBe(0);
+            const pick = join(dir, '2-outline', '.auto-pick');
+            return existsSync(pick) ? readFileSync(pick, 'utf-8').trim() : '';
+        };
+
+        expect(runProjection({ value: 'b', degraded: false })).toBe('b');
+        // A fallback (degraded) row is not a pick: the operator gate still decides.
+        expect(runProjection({ value: 'a', degraded: true })).toBe('');
+        // A tolerated decide failure leaves no row at all — still a deferral, never a guess.
+        expect(runProjection(null)).toBe('');
+        // A value naming an option that was never written is refused.
+        expect(runProjection({ value: 'c', degraded: false })).toBe('');
+        rmSync(dir, { recursive: true, force: true });
+    });
 
     it('R2 (0128) — single-file briefing/script stages flatten; multi-file stages keep their dirs', () => {
         expect(yaml).toContain(['expectFile: ', '{vars.work_dir}/1-briefing-briefing.md'].join('$'));

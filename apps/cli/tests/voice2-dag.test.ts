@@ -52,6 +52,12 @@ const SAFETY = join(REPO, 'plugins/kk/workflows/kk-daily-safety.yaml');
 const VOICE1 = join(REPO, 'plugins/kk/workflows/kk-daily-ai-voice.yaml');
 const ARTIFACT_DIR = join(REPO, '.works/test-artifacts/0211');
 
+/**
+ * `${vars.name}` assembled at runtime so the `noTemplateCurlyInString` lint stays quiet (the same
+ * dodge `plugins/kk/tests/safety-reviewer-failure.test.ts` uses).
+ */
+const varRef = (name: string): string => ['$' + '{vars.', name, '}'].join('');
+
 const tempDirs: string[] = [];
 
 function tempDir(prefix: string): string {
@@ -431,7 +437,7 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
         // window ladder; the topic and the floor/vdriver inputs that gate that ladder stay pinned.
         expect(String(extract?.action?.options?.command)).toContain('kk stage daily-extract');
         expect(String(extract?.action?.options?.command)).toContain('ai-news');
-        expect(String(extract?.action?.options?.command)).toContain('"' + '$' + '{vars.episode_min_minutes}"');
+        expect(String(extract?.action?.options?.command)).toContain(`"${varRef('episode_min_minutes')}"`);
         // 0228 R6c: exclusion is topic-scoped and always on; the workflow-scoped flag is gone.
         expect(String(extract?.action?.options?.command)).not.toContain('--exclude-used');
         // …and the old workflow-keyed ledger verb is gone from the DAG entirely (R5).
@@ -675,37 +681,53 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
     });
 });
 
-describe('kk-daily-safety — judge verdict confidence routing (AC6)', () => {
+describe('kk-daily-safety — decision-bound publish verdict (AC6, 0317 R6)', () => {
     const transitions = loadTransitions('plugins/kk/workflows/kk-daily-safety.yaml');
     const safety = Bun.YAML.parse(readFileSync(SAFETY, 'utf-8')) as {
         kind: string;
         vars: Record<string, string>;
         initialStates?: string[];
         initialState: string;
-        states: { id: string }[];
+        states: { id: string; onEnter?: { kind: string; onError?: string; options?: Record<string, unknown> }[] }[];
     };
+    const STAGE_RUNNER = join(REPO, 'plugins/kk/scripts/kk-workflow-stages.ts');
 
-    /** Write the verdict + admission stamp a gate run leaves behind, and run the accept guard. */
-    function routeJudge(options: { verdict: Record<string, unknown> | null; status: string; stamp?: boolean }): {
+    /**
+     * Write the gate's classification + stamp and the `kk-safety-verdict` decision row a judge run
+     * leaves behind, fold them through `kk stage daily-safety-verdict`, and run the accept guard.
+     * `decision: null` means the decide action was tolerated away (`onError: continue`), so no row
+     * exists — the fail-closed case.
+     */
+    function routeJudge(options: { status: string; stamp?: boolean; decision?: string | null }): {
         matched: boolean;
         stderr: string;
         dir: string;
     } {
         const dir = tempDir('voice2-safety-');
         mkdirSync(join(dir, '24-script'), { recursive: true });
-        const verdictPath = join(dir, '24-script', '20261007_09_safety-judge_verdict.json');
-        if (options.verdict !== null) writeFileSync(verdictPath, JSON.stringify(options.verdict));
-        if (options.stamp === true) {
+        writeFileSync(join(dir, '24-script', '20261007_09_safety-judge_status.txt'), options.status);
+        if (options.stamp !== false) {
             writeFileSync(
                 join(dir, '24-script', '20261007_09_safety-judge_stamp.json'),
                 JSON.stringify({ status: options.status }),
             );
         }
+        if (options.decision !== null) {
+            writeFileSync(
+                join(dir, '24-script', '20261007_09_safety-verdict.decision'),
+                JSON.stringify({ value: options.decision ?? options.status, degraded: false, source: 'model' }),
+            );
+        }
+        const stage = Bun.spawnSync([process.execPath, STAGE_RUNNER, 'daily-safety-verdict', dir, '20261007'], {
+            stdout: 'pipe',
+            stderr: 'pipe',
+        });
+        expect(stage.exitCode).toBe(0);
         const guard = transitions.find((t) => t.from === 'judge' && t.to === 'clean');
         expect(guard?.command).not.toBeNull();
         const vars = { ...safety.vars, work_dir: dir, run_date: '20261007', safety_status: options.status };
         const result = runGuard(String(guard?.command), vars, dir);
-        return { ...result, dir };
+        return { ...result, stderr: `${stage.stderr.toString()}${result.stderr}`, dir };
     }
 
     it('names the judge verdict path with its step prefix and stays inside the ADR-115 prompt cap', () => {
@@ -761,35 +783,47 @@ describe('kk-daily-safety — judge verdict confidence routing (AC6)', () => {
     });
 
     it.each([
-        ['PASS + HIGH on admitted drafts', { verdict: 'PASS', confidence: 'HIGH' }, 'pass', true, true],
-        ['PASS + MEDIUM on an escalated run', { verdict: 'PASS', confidence: 'MEDIUM' }, 'escalate', true, true],
-        ['PASS + LOW after an admission-only exclusion', { verdict: 'PASS', confidence: 'LOW' }, 'exclude', true, true],
-        [
-            'NEEDS_REVISION after the budget, admitted at recorded risk',
-            { verdict: 'NEEDS_REVISION', confidence: 'MEDIUM' },
-            'exclude',
-            true,
-            true,
-        ],
-        ['PASS without a confidence field', { verdict: 'PASS' }, 'pass', true, false],
-        ['PASS + out-of-enum confidence', { verdict: 'PASS', confidence: 'SURE' }, 'pass', true, false],
-        ['PASS + lowercase confidence', { verdict: 'PASS', confidence: 'high' }, 'pass', true, false],
-        ['a verdict that is not a PASS at all', { verdict: 'FAIL', confidence: 'HIGH' }, 'block', true, false],
-        ['no verdict file (unreadable contract)', null, 'block', false, false],
-    ])('%s is accepted or refused by the real accept guard', (_name, verdict, status, stamp, expected) => {
-        const result = routeJudge({ verdict, status, stamp });
+        ['a gate pass the decision confirms', 'pass', 'pass', true],
+        ['a human escalation the decision confirms', 'escalate', 'escalate', true],
+        ['an admission-only exclusion the decision confirms', 'exclude', 'exclude', true],
+        ['a decide action that was tolerated away (no row)', 'pass', null, false],
+        ['a decision outside the admitted vocabulary', 'pass', 'block', false],
+        ['a gate block the decision cannot overrule', 'block', 'pass', false],
+        ['a gate revise the decision cannot overrule', 'revise', 'pass', false],
+        ['a missing admission stamp', 'pass', 'pass', false],
+    ])('%s is accepted or refused by the real accept guard', (_name, status, decision, expected) => {
+        const result = routeJudge({ status, decision, stamp: !(_name === 'a missing admission stamp') });
         expect(result.matched).toBe(expected);
         if (!expected) {
-            expect(result.stderr).toContain('kk-daily-safety.judge.confidence-refused');
+            expect(result.stderr).toMatch(/kk-daily-safety\.judge\.(verdict|decision)-refused/);
         }
     });
 
+    it('declares kk-safety-verdict with escalate as its fallback, over the report as evidence', () => {
+        const catalog = Bun.YAML.parse(readFileSync(join(REPO, 'plugins/kk/decisions/kk-safety.yaml'), 'utf-8')) as {
+            decisions: Record<string, { type: string; fallback: string; criteria: Record<string, string> }>;
+        };
+        const decision = catalog.decisions['kk-safety-verdict'];
+        expect(decision?.type).toBe('choice');
+        expect(decision?.fallback).toBe('escalate');
+        expect(Object.keys(decision?.criteria ?? {}).sort()).toEqual(['escalate', 'exclude', 'pass']);
+        const judge = safety.states.find((state) => state.id === 'judge');
+        const decide = judge?.onEnter?.find((action) => action.kind === 'decide');
+        expect(decide?.options?.decision).toBe('kk-safety-verdict');
+        expect(decide?.options?.evidence).toEqual(
+            expect.arrayContaining([
+                `${varRef('work_dir')}/24-script/${varRef('run_date')}_09_safety-review_report.json`,
+            ]),
+        );
+        // A tolerated decide failure must never fail the run; the guard reads a missing row as a refusal.
+        expect(decide?.onError).toBe('continue');
+    });
+
     it('names the refusal and never deadlocks the loop', () => {
-        const refused = routeJudge({ verdict: { verdict: 'PASS', confidence: 'SURE' }, status: 'pass', stamp: true });
+        const refused = routeJudge({ status: 'pass', decision: null });
         expect(refused.matched).toBe(false);
-        expect(refused.stderr).toContain('kk-daily-safety.judge.confidence-refused');
-        expect(refused.stderr).toContain('PASS!');
-        expect(refused.stderr).toContain('HIGH|MEDIUM|LOW');
+        expect(refused.stderr).toContain('kk-daily-safety.judge.decision-refused');
+        expect(refused.stderr).toContain('pass|escalate|exclude');
         // Fail-closed without deadlock: the unconditional `judge -> block` always matches.
         const block = transitions.filter((t) => t.from === 'judge' && t.to === 'block');
         expect(block.length).toBe(1);
@@ -827,11 +861,16 @@ describe('kk-daily-safety — judge verdict confidence routing (AC6)', () => {
         expect(readFileSync(join(dir, '24-script', '20261007_09_safety-judge_status.txt'), 'utf-8')).toBe('block');
     });
 
-    it('resolves the verdict through the same confidence-aware filter as the other judges', () => {
+    it('reads one token: the accept guard is a single predicate over the folded status file', () => {
         const guard = transitions.find((t) => t.from === 'judge' && t.to === 'clean');
-        const filter = String(guard?.command).match(/jq -r '([^']*)'/)?.[1] ?? '';
-        expect(filter).toBe(
-            'if (.verdict // "") == "PASS" then (.verdict + (if ((.confidence // "") | test("^(HIGH|MEDIUM|LOW)$")) then "" else "!" end)) else (.verdict // "") end',
+        expect(String(guard?.command).trim()).toBe(
+            [
+                'test "$(cat "',
+                varRef('work_dir'),
+                '/24-script/',
+                varRef('run_date'),
+                '_09_safety-verdict.status" 2>/dev/null)" = accept',
+            ].join(''),
         );
         // Every `${…}` the guard carries is a declared var (a builtin reference fails the run).
         for (const name of varsRefs(String(guard?.command))) expect(safety.vars[name]).toBeDefined();

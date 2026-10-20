@@ -60,6 +60,7 @@ import {
     readFileSync,
     renameSync,
     rmSync,
+    statSync,
     unlinkSync,
     writeFileSync,
 } from 'node:fs';
@@ -1977,6 +1978,49 @@ export function dailySafetyGate(args: string[]): void {
         }
         sted('write', statusFile, () => writeRaw(statusFile, status));
         console.log(`safety: status=${status} (${reason}); routing is transition-owned`);
+    });
+}
+
+/**
+ * Task 0317 R6 — fold the gate's own classification, its stamp and the `kk-safety-verdict` catalog
+ * decision into ONE accept/refuse token the `judge -> clean` guard reads as a single predicate
+ * (ADR-115 caps that guard at 5 logical commands, so the logic lives here).
+ *
+ * The gate stays authoritative on `block`/`revise`; the decision can only refuse an outcome the gate
+ * already admitted. The decision replaced the judge's self-reported `confidence` field, which the
+ * accept guard used to re-parse in shell: its fallback is `escalate`, so missing or garbled evidence
+ * lands on a recorded human decision instead of a silent publish.
+ *
+ * Writes `24-script/<date>_09_safety-verdict.status` = `accept`, or `refuse` after naming the
+ * offending value on stderr. Never exits non-zero: routing belongs to the transitions.
+ */
+export function dailySafetyVerdict(args: string[]): void {
+    const [workDir = '', runDate = ''] = args;
+    const statusFile = safetyPath(workDir, runDate, 'safety-judge_status.txt');
+    const stampFile = safetyPath(workDir, runDate, 'safety-judge_stamp.json');
+    const decisionFile = safetyPath(workDir, runDate, 'safety-verdict.decision');
+    const token = safetyPath(workDir, runDate, 'safety-verdict.status');
+    const ADMITTED = new Set(['pass', 'escalate', 'exclude']);
+    timed(workDir, 'safety-verdict-check', () => {
+        const status = isFile(statusFile) ? readFileSync(statusFile, 'utf-8').trim() : '';
+        const stamp = isFile(stampFile) ? statSync(stampFile).size : 0;
+        // A missing/unreadable decision row is a refusal, never an approval: `onError: continue` on
+        // the decide action is what can leave it absent.
+        let verdict = '';
+        if (isFile(decisionFile)) {
+            const row = JSON.parse(readFileSync(decisionFile, 'utf-8')) as { value?: unknown };
+            verdict = String(row.value ?? '');
+        }
+        let refusal = '';
+        if (!ADMITTED.has(status)) {
+            refusal = `kk-daily-safety.judge.verdict-refused: gate status [${status}] is not an admitted outcome, so these drafts must not publish`;
+        } else if (stamp === 0) {
+            refusal = `kk-daily-safety.judge.verdict-refused: gate stamp missing for status ${status}, so these drafts must not publish`;
+        } else if (!ADMITTED.has(verdict)) {
+            refusal = `kk-daily-safety.judge.decision-refused: kk-safety-verdict [${verdict}] must admit pass|escalate|exclude, so these drafts must not publish`;
+        }
+        if (refusal !== '') console.error(refusal);
+        sted('write', token, () => writeRaw(token, refusal === '' ? 'accept' : 'refuse'));
     });
 }
 

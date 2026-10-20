@@ -22,22 +22,14 @@
  *     without `--replay` is accepted (R6).
  * 11. `--decisions <ids>` routes decisions outside the requested set.
  *
- * Everything runs against a temp dir + temp DB and a stubbed `spur` (`KK_SPUR_BIN`), so no network,
- * model or operator store is touched. The labels dump is copied to `.works/test-artifacts/0226/`.
+ * Everything runs against a temp dir + temp DB and a stubbed decision hub (`KK_DECISION_HUB`, the
+ * in-process replacement for the old `KK_SPUR_BIN` stub — task 0317 R8), so no network, model or
+ * operator store is touched. The labels dump is copied to `.works/test-artifacts/0226/`.
  */
 
 import { Database } from 'bun:sqlite';
 import { afterAll, describe, expect, it } from 'bun:test';
-import {
-    chmodSync,
-    existsSync,
-    mkdirSync,
-    mkdtempSync,
-    readFileSync,
-    realpathSync,
-    rmSync,
-    writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { Doc } from '@gobing-ai/kk-core';
@@ -72,19 +64,39 @@ afterAll(() => {
     for (const dir of tempDirs) {
         rmSync(dir, { recursive: true, force: true });
     }
-    delete process.env.KK_SPUR_BIN;
+    delete process.env.KK_DECISION_HUB;
+    delete process.env.KK_DECISION_HUB_ANSWERS;
+    delete process.env.KK_DECISION_HUB_SPAWNS;
+    delete process.env.KK_DECISION_HUB_DISPOSED;
     delete process.env.KK_CONFIG;
 });
 
-/** Run `kk …` in-process, returning the exit code plus the captured echo/echoError output. */
+/** The stub hub module the asker loads through `KK_DECISION_HUB` (in-process test double). */
+const STUB_HUB = join(import.meta.dir, 'fixtures/decision-hub-stub.ts');
+
+/**
+ * Run `kk …` in-process, returning the exit code plus the captured echo/echoError output.
+ * `KK_DECISION_HUB_ANSWERS` names the answer table the stub hub serves; its sibling files carry the
+ * consult log and the dispose marker, so one call proves transport, consult set and lifecycle.
+ */
 async function run(
     args: string[],
-    env: { KK_SPUR_BIN?: string; cwd?: string } = {},
+    env: { KK_DECISION_HUB_ANSWERS?: string; cwd?: string } = {},
 ): Promise<{ code: number; out: string; err: string }> {
     const capture = captureOutput();
-    const previousBin = process.env.KK_SPUR_BIN;
+    const previous = {
+        hub: process.env.KK_DECISION_HUB,
+        answers: process.env.KK_DECISION_HUB_ANSWERS,
+        spawns: process.env.KK_DECISION_HUB_SPAWNS,
+        disposed: process.env.KK_DECISION_HUB_DISPOSED,
+    };
     const previousCwd = process.cwd();
-    if (env.KK_SPUR_BIN !== undefined) process.env.KK_SPUR_BIN = env.KK_SPUR_BIN;
+    process.env.KK_DECISION_HUB = STUB_HUB;
+    if (env.KK_DECISION_HUB_ANSWERS !== undefined) {
+        process.env.KK_DECISION_HUB_ANSWERS = env.KK_DECISION_HUB_ANSWERS;
+        process.env.KK_DECISION_HUB_SPAWNS = spawnLogPath(env.KK_DECISION_HUB_ANSWERS);
+        process.env.KK_DECISION_HUB_DISPOSED = disposePath(env.KK_DECISION_HUB_ANSWERS);
+    }
     if (env.cwd !== undefined) process.chdir(env.cwd);
     try {
         const code = await main(['node', 'kk', ...args]);
@@ -92,9 +104,26 @@ async function run(
     } finally {
         capture.restore();
         process.chdir(previousCwd);
-        if (previousBin === undefined) delete process.env.KK_SPUR_BIN;
-        else process.env.KK_SPUR_BIN = previousBin;
+        for (const [key, value] of [
+            ['KK_DECISION_HUB', previous.hub],
+            ['KK_DECISION_HUB_ANSWERS', previous.answers],
+            ['KK_DECISION_HUB_SPAWNS', previous.spawns],
+            ['KK_DECISION_HUB_DISPOSED', previous.disposed],
+        ] as const) {
+            if (value === undefined) delete process.env[key];
+            else process.env[key] = value;
+        }
     }
+}
+
+/** The consult log beside an answers file: `<answers>` → `<answers>.spawns.log`. */
+function spawnLogPath(answersPath: string): string {
+    return `${answersPath}.spawns.log`;
+}
+
+/** The dispose marker beside an answers file. */
+function disposePath(answersPath: string): string {
+    return `${answersPath}.disposed`;
 }
 
 /**
@@ -117,6 +146,13 @@ const HEURISTIC_IDS = DECISION_IDS.slice(0, 5);
 
 /** The three judgment decisions 0229 added (consulted for every labelled item). */
 const JUDGMENT_IDS = DECISION_IDS.slice(5);
+
+/**
+ * The decisions a ROUTED item consults outside `--mode decision` (0317 R2): category plus the three
+ * judgment decisions — the four graded dimensions are `--mode decision` only, because nothing ranks
+ * on them.
+ */
+const ROUTED_IDS = ['kk-item-category', ...JUDGMENT_IDS];
 
 /**
  * An accepted model answer per decision — the choice as a label, the scores as levels. The three
@@ -184,30 +220,14 @@ function degradedAnswers(): Record<string, unknown> {
 }
 
 /**
- * Write an executable `spur` stub that appends the decision id it was asked for to
- * `<dir>/spawns.log` and answers from `answers` (a decision id, or `*` for every id).
- * No answer for an id → exit 1, which is the "answered nothing" degradation path.
+ * Write the stub hub's answer table and return its path (`KK_DECISION_HUB_ANSWERS`). The stub logs
+ * every decision id it is asked for beside it and throws for an id with no answer — the "answered
+ * nothing" path a failed `spur decision run` used to be.
  */
-function stubSpur(dir: string, answers: Record<string, unknown>, name = 'spur-stub.sh'): string {
-    const lines = [
-        '#!/bin/sh',
-        '# $1=decision $2=run $3=<decision id>',
-        `printf "%s\\n" "$3" >> "${join(dir, name.replace(/\.sh$/, '.spawns.log'))}"`,
-    ];
-    for (const id of DECISION_IDS) {
-        const payload = answers[id] ?? answers['*'];
-        if (payload !== undefined) {
-            lines.push(`if [ "$3" = "${id}" ]; then`);
-            lines.push(`  printf '%s\\n' '${JSON.stringify(payload)}'`);
-            lines.push('  exit 0');
-            lines.push('fi');
-        }
-    }
-    lines.push('echo "no stub answer for $3" >&2', 'exit 1');
-    const stub = join(dir, name);
-    writeFileSync(stub, `${lines.join('\n')}\n`);
-    chmodSync(stub, 0o755);
-    return stub;
+function stubHub(dir: string, answers: Record<string, unknown>, name = 'hub.answers.json'): string {
+    const path = join(dir, name);
+    writeFileSync(path, `${JSON.stringify(answers, null, 2)}\n`);
+    return path;
 }
 
 /** One Doc for the store: identity is content-addressed (`itemId` of the canonical URL). */
@@ -292,9 +312,9 @@ function itemHash(db: string, id: string): string {
     }
 }
 
-/** The decision ids a stub was asked for, in spawn order. */
-function spawns(dir: string, name = 'spur-stub.sh'): string[] {
-    const log = join(dir, name.replace(/\.sh$/, '.spawns.log'));
+/** The decision ids a stub was asked for, in consult order. */
+function spawns(dir: string, name = 'hub.answers.json'): string[] {
+    const log = join(dir, `${name}.spawns.log`);
     if (!existsSync(log)) return [];
     return readFileSync(log, 'utf-8')
         .trim()
@@ -348,7 +368,7 @@ describe('kk store label — raw observations (0226 R1/R2)', () => {
         const id = idAt(seeded.ids, 0);
         // The category answer is BELOW the config's 0.8 threshold; the quality answer is outside the
         // 0–5 vocabulary. Both are still evidence, and neither poisons the mapped value.
-        const stub = stubSpur(dir, {
+        const stub = stubHub(dir, {
             'kk-item-category': {
                 value: 'ai-industry',
                 confidence: 0.3,
@@ -418,7 +438,7 @@ describe('kk store label — raw observations (0226 R1/R2)', () => {
 
         const result = await run(
             ['store', 'label', '--run', 'run-1', '--new-ids', seeded.newIds, '--mode', 'decision', '--db', seeded.db],
-            { KK_SPUR_BIN: stub },
+            { KK_DECISION_HUB_ANSWERS: stub },
         );
         expect(result.code, result.err).toBe(0);
         // 5 heuristic rows + 8 maker rows; 4 existing + 3 judgment accepted model answers.
@@ -478,10 +498,10 @@ describe('kk store label — raw observations (0226 R1/R2)', () => {
     it('R2/R3 — an unrouted item keeps its heuristic rows and consults only the three judgment decisions', async () => {
         const dir = tempDir();
         const seeded = await seed(dir, [CONFIDENT()]);
-        const stub = stubSpur(dir, acceptedAnswers('ai-news', [5, 4, 3, 2]));
+        const stub = stubHub(dir, acceptedAnswers('ai-news', [5, 4, 3, 2]));
 
         const result = await run(['store', 'label', '--run', 'run-1', '--new-ids', seeded.newIds, '--db', seeded.db], {
-            KK_SPUR_BIN: stub,
+            KK_DECISION_HUB_ANSWERS: stub,
         });
         expect(result.code, result.err).toBe(0);
         // 5 heuristic rows + the three judgment maker rows (R3: no heuristic signal → always consulted).
@@ -506,28 +526,43 @@ describe('kk store label — raw observations (0226 R1/R2)', () => {
         expect(judgment.get('kk-item-audience')?.value).toBe('general');
     });
 
-    it('R2 — a routed item keeps BOTH observations: the heuristic baseline and the maker', async () => {
+    it('R2 (0317) — a routed item keeps BOTH observations, and only the graded dimensions stay unrouted', async () => {
         const dir = tempDir();
         const seeded = await seed(dir, [AMBIGUOUS()]);
         const id = idAt(seeded.ids, 0);
-        const stub = stubSpur(dir, acceptedAnswers('ai-industry', [5, 4, 3, 2]));
+        const stub = stubHub(dir, acceptedAnswers('ai-industry', [5, 4, 3, 2]));
 
         const result = await run(['store', 'label', '--run', 'run-1', '--new-ids', seeded.newIds, '--db', seeded.db], {
-            KK_SPUR_BIN: stub,
+            KK_DECISION_HUB_ANSWERS: stub,
         });
         expect(result.code, result.err).toBe(0);
+        // 5 heuristic rows + category + the three judgment decisions (0317 R2 pruned the graded four
+        // from every non-decision-mode pass: nothing ranks on them).
         expect(JSON.parse(result.out)).toEqual(
-            labelLine({ labeled: 13, model: 8, fallback: 0, consults: 8, consultMs: 800, confidence: 'LOW' }),
+            labelLine({ labeled: 9, model: 4, fallback: 0, consults: 4, consultMs: 400, confidence: 'LOW' }),
         );
-        expect(spawns(dir).sort()).toEqual([...DECISION_IDS].sort());
+        expect(spawns(dir).sort()).toEqual([...ROUTED_IDS].sort());
 
         expect([...rowsFor(seeded.db, id, 'heuristic').keys()].sort()).toEqual([...HEURISTIC_IDS].sort());
         const model = rowsFor(seeded.db, id, 'fm-local');
-        expect([...model.keys()].sort()).toEqual([...DECISION_IDS].sort());
+        expect([...model.keys()].sort()).toEqual([...ROUTED_IDS].sort());
         expect(model.get('kk-item-category')?.value).toBe('ai-industry');
-        expect(model.get('kk-item-importance')?.value).toBe('4');
-        expect(model.get('kk-item-importance')?.score).toBe(4);
-        expect(labelRows(seeded.db)).toHaveLength(13);
+        expect(model.get('kk-item-importance')).toBeUndefined();
+        expect(labelRows(seeded.db)).toHaveLength(9);
+    });
+
+    it('R8 (0317) — the batch runs in-process and disposes the hub when it ends', async () => {
+        const dir = tempDir();
+        const seeded = await seed(dir, [CONFIDENT()]);
+        const stub = stubHub(dir, acceptedAnswers('ai-news', [5, 4, 3, 2]));
+
+        const result = await run(['store', 'label', '--run', 'run-1', '--new-ids', seeded.newIds, '--db', seeded.db], {
+            KK_DECISION_HUB_ANSWERS: stub,
+        });
+        expect(result.code, result.err).toBe(0);
+        // The consult log is written by the IN-PROCESS hub: no `spur` binary is involved at all.
+        expect(spawns(dir).sort()).toEqual([...JUDGMENT_IDS].sort());
+        expect(existsSync(disposePath(stub))).toBe(true);
     });
 
     it('R2 — a spawn failure writes no maker row, keeping the heuristic observation', async () => {
@@ -535,13 +570,13 @@ describe('kk store label — raw observations (0226 R1/R2)', () => {
         const seeded = await seed(dir, [AMBIGUOUS()]);
 
         const result = await run(['store', 'label', '--run', 'run-1', '--new-ids', seeded.newIds, '--db', seeded.db], {
-            KK_SPUR_BIN: join(dir, 'no-such-spur'),
+            KK_DECISION_HUB_ANSWERS: join(dir, 'no-such-answers.json'),
         });
         expect(result.code, result.err).toBe(0);
-        // The consults were attempted (8: five routed heuristic + three judgment) but answered
-        // nothing, so only the heuristic rows exist — and no judgment row, which the gate excludes.
+        // The consults were attempted (4: category + three judgment) but answered nothing, so only
+        // the heuristic rows exist — and no judgment row, which the gate excludes.
         expect(JSON.parse(result.out)).toEqual(
-            labelLine({ labeled: 5, model: 0, fallback: 0, consults: 8, consultMs: 0, confidence: 'LOW' }),
+            labelLine({ labeled: 5, model: 0, fallback: 0, consults: 4, consultMs: 0, confidence: 'LOW' }),
         );
         const rows = labelRows(seeded.db);
         expect(rows).toHaveLength(5);
@@ -555,26 +590,27 @@ describe('kk store label — raw observations (0226 R1/R2)', () => {
         const dir = tempDir();
         const seeded = await seed(dir, [AMBIGUOUS()]);
         const id = idAt(seeded.ids, 0);
-        const stub = stubSpur(dir, {
+        const stub = stubHub(dir, {
             '*': { value: 'ai-industry', confidence: null, source: 'default', reason: 'no-backend', maker: 'fm-local' },
         });
 
         const result = await run(['store', 'label', '--run', 'run-1', '--new-ids', seeded.newIds, '--db', seeded.db], {
-            KK_SPUR_BIN: stub,
+            KK_DECISION_HUB_ANSWERS: stub,
         });
         expect(result.code, result.err).toBe(0);
-        // A `source: default` answer keeps the heuristic value for the heuristic's five; the judgment
-        // decisions have no heuristic value, and 'ai-industry' is not a valid answer for either a
-        // 0-3 score or the audience choice, so they write no row at all.
+        // A `source: default` answer keeps the heuristic value for the category (5 heuristic rows plus
+        // its own default row); the judgment decisions have no heuristic value, and 'ai-industry' is
+        // not a valid answer for either a 0-3 score or the audience choice, so they write no row.
+        // 0317 R2: the graded four are not consulted by a non-decision-mode pass, so 4 consults.
         expect(JSON.parse(result.out)).toEqual(
             labelLine({
-                labeled: 10,
+                labeled: 6,
                 model: 0,
-                fallback: 5,
-                consults: 8,
-                consultMs: 0,
+                fallback: 1,
+                consults: 4,
+                consultMs: 400,
                 confidence: 'LOW',
-                degraded: true,
+                degraded: false,
             }),
         );
 
@@ -593,11 +629,11 @@ describe('kk store label — raw observations (0226 R1/R2)', () => {
         const seeded = await seed(dir, [AMBIGUOUS()]);
         const id = idAt(seeded.ids, 0);
         // A dead decision backend: every consult answers `source: default` (spur's no-backend rail).
-        const stub = stubSpur(dir, degradedAnswers());
+        const stub = stubHub(dir, degradedAnswers());
 
         const degraded = await run(
             ['store', 'label', '--run', 'run-1', '--new-ids', seeded.newIds, '--mode', 'decision', '--db', seeded.db],
-            { KK_SPUR_BIN: stub },
+            { KK_DECISION_HUB_ANSWERS: stub },
         );
         expect(degraded.code, degraded.err).toBe(0);
         // 5 heuristic + 8 default rows = 13 labelled; every one of the 8 consults fell back, so the
@@ -630,7 +666,7 @@ describe('kk store label — raw observations (0226 R1/R2)', () => {
         // A healthy pass over the same item is unaffected: no `degraded` flag and no stderr warning.
         const healthyDir = tempDir();
         const healthySeeded = await seed(healthyDir, [AMBIGUOUS()]);
-        const healthyStub = stubSpur(healthyDir, acceptedAnswers('ai-industry', [5, 4, 3, 2]));
+        const healthyStub = stubHub(healthyDir, acceptedAnswers('ai-industry', [5, 4, 3, 2]));
         const healthy = await run(
             [
                 'store',
@@ -644,7 +680,7 @@ describe('kk store label — raw observations (0226 R1/R2)', () => {
                 '--db',
                 healthySeeded.db,
             ],
-            { KK_SPUR_BIN: healthyStub },
+            { KK_DECISION_HUB_ANSWERS: healthyStub },
         );
         expect(healthy.code, healthy.err).toBe(0);
         expect(JSON.parse(healthy.out)).toEqual(
@@ -672,7 +708,7 @@ describe('kk store label — raw observations (0226 R1/R2)', () => {
         for (const [confidence, expected] of levels) {
             const dir = tempDir();
             const seeded = await seed(dir, [CONFIDENT()]);
-            const stub = stubSpur(dir, acceptedAnswers('ai-news', [5, 4, 3, 2], confidence));
+            const stub = stubHub(dir, acceptedAnswers('ai-news', [5, 4, 3, 2], confidence));
 
             const result = await run(
                 [
@@ -687,7 +723,7 @@ describe('kk store label — raw observations (0226 R1/R2)', () => {
                     '--db',
                     seeded.db,
                 ],
-                { KK_SPUR_BIN: stub },
+                { KK_DECISION_HUB_ANSWERS: stub },
             );
             expect(result.code, result.err).toBe(0);
             // The heuristic baseline is always LOW, so the pass can never claim more than LOW — but
@@ -713,10 +749,10 @@ describe('kk store label — raw observations (0226 R1/R2)', () => {
         ]);
         const subset = join(dir, 'subset.json');
         writeFileSync(subset, JSON.stringify([idAt(seeded.ids, 0), 'not-a-stored-id']));
-        const stub = stubSpur(dir, acceptedAnswers('ai-news', [5, 4, 3, 2]));
+        const stub = stubHub(dir, acceptedAnswers('ai-news', [5, 4, 3, 2]));
 
         const result = await run(['store', 'label', '--run', 'run-1', '--new-ids', subset, '--db', seeded.db], {
-            KK_SPUR_BIN: stub,
+            KK_DECISION_HUB_ANSWERS: stub,
         });
         expect(result.code, result.err).toBe(0);
         expect(JSON.parse(result.out)).toEqual(
@@ -728,12 +764,12 @@ describe('kk store label — raw observations (0226 R1/R2)', () => {
         // The run id is part of the observation identity (0225): a repeat of the same run updates in
         // place, a later run adds a second observation.
         const again = await run(['store', 'label', '--run', 'run-1', '--new-ids', subset, '--db', seeded.db], {
-            KK_SPUR_BIN: stub,
+            KK_DECISION_HUB_ANSWERS: stub,
         });
         expect(again.code, again.err).toBe(0);
         expect(labelRows(seeded.db)).toHaveLength(rows.length);
         const later = await run(['store', 'label', '--run', 'run-2', '--new-ids', subset, '--db', seeded.db], {
-            KK_SPUR_BIN: stub,
+            KK_DECISION_HUB_ANSWERS: stub,
         });
         expect(later.code, later.err).toBe(0);
         expect(labelRows(seeded.db)).toHaveLength(rows.length * 2);
@@ -745,7 +781,7 @@ describe('kk store label — the current label and the kk threshold (0226 AC2)',
         const dir = tempDir();
         const seeded = await seed(dir, [AMBIGUOUS()]);
         const id = idAt(seeded.ids, 0);
-        const stub = stubSpur(dir, {
+        const stub = stubHub(dir, {
             ...acceptedAnswers('ai-industry', [5, 4, 3, 2]),
             'kk-item-category': {
                 value: 'ai-industry',
@@ -759,7 +795,7 @@ describe('kk store label — the current label and the kk threshold (0226 AC2)',
 
         const result = await run(
             ['store', 'label', '--run', 'run-1', '--new-ids', seeded.newIds, '--mode', 'decision', '--db', seeded.db],
-            { KK_SPUR_BIN: stub },
+            { KK_DECISION_HUB_ANSWERS: stub },
         );
         expect(result.code, result.err).toBe(0);
 
@@ -793,9 +829,9 @@ describe('kk store label --replay (0226 R6/AC3)', () => {
             CONFIDENT(),
             doc('two', 'Another ships', 'A second body.', { source: 'aihot' }),
         ]);
-        const stub = stubSpur(dir, acceptedAnswers('ai-news', [5, 4, 3, 2]));
+        const stub = stubHub(dir, acceptedAnswers('ai-news', [5, 4, 3, 2]));
         const result = await run(['store', 'label', '--run', 'run-1', '--new-ids', seeded.newIds, '--db', seeded.db], {
-            KK_SPUR_BIN: stub,
+            KK_DECISION_HUB_ANSWERS: stub,
         });
         expect(result.code, result.err).toBe(0);
         return { dir, db: seeded.db, ids: seeded.ids, production: labelRows(seeded.db) };
@@ -803,10 +839,10 @@ describe('kk store label --replay (0226 R6/AC3)', () => {
 
     it('AC3 — a replay re-labels the pool under replay-<epoch> without touching production rows', async () => {
         const { dir, db, ids, production } = await seedProduction();
-        const stub = stubSpur(dir, replayAnswers('ai-industry', [5, 4, 3, 2]));
+        const stub = stubHub(dir, replayAnswers('ai-industry', [5, 4, 3, 2]));
 
         const result = await run(['store', 'label', '--replay', 'run:run-1', '--maker', 'backtest-a', '--db', db], {
-            KK_SPUR_BIN: stub,
+            KK_DECISION_HUB_ANSWERS: stub,
         });
         expect(result.code, result.err).toBe(0);
         const output = JSON.parse(result.out) as { replayed: number; consults: number; consultMs: number; run: string };
@@ -854,10 +890,10 @@ describe('kk store label --replay (0226 R6/AC3)', () => {
 
     it('R6 — --decisions routes exactly the requested decisions', async () => {
         const { dir, db } = await seedProduction();
-        const stub = stubSpur(dir, replayAnswers('ai-industry', [5, 4, 3, 2]));
+        const stub = stubHub(dir, replayAnswers('ai-industry', [5, 4, 3, 2]));
         // The production pass spawns the judgment decisions; clear the shared log so this test
         // counts only the replay's spawns.
-        rmSync(join(dir, 'spur-stub.spawns.log'), { force: true });
+        rmSync(spawnLogPath(stub), { force: true });
 
         const result = await run(
             [
@@ -872,7 +908,7 @@ describe('kk store label --replay (0226 R6/AC3)', () => {
                 '--db',
                 db,
             ],
-            { KK_SPUR_BIN: stub },
+            { KK_DECISION_HUB_ANSWERS: stub },
         );
         expect(result.code, result.err).toBe(0);
         expect(JSON.parse(result.out)).toMatchObject({ replayed: 2, consults: 4 });
@@ -891,12 +927,12 @@ describe('kk store label --replay (0226 R6/AC3)', () => {
 
     it('R6 — since: selects by first_seen_at and a 0-item selector reports replayed: 0', async () => {
         const { dir, db, production } = await seedProduction();
-        const stub = stubSpur(dir, replayAnswers('ai-industry', [5, 4, 3, 2]));
+        const stub = stubHub(dir, replayAnswers('ai-industry', [5, 4, 3, 2]));
 
         const empty = await run(
             ['store', 'label', '--replay', 'run:no-such-run', '--maker', 'backtest-c', '--db', db],
             {
-                KK_SPUR_BIN: stub,
+                KK_DECISION_HUB_ANSWERS: stub,
             },
         );
         expect(empty.code, empty.err).toBe(0);
@@ -904,7 +940,7 @@ describe('kk store label --replay (0226 R6/AC3)', () => {
         expect(labelRows(db, "WHERE run_id LIKE 'replay-%'")).toEqual([]);
 
         const windowed = await run(['store', 'label', '--replay', 'since:1d', '--maker', 'backtest-c', '--db', db], {
-            KK_SPUR_BIN: stub,
+            KK_DECISION_HUB_ANSWERS: stub,
         });
         expect(windowed.code, windowed.err).toBe(0);
         expect(JSON.parse(windowed.out)).toMatchObject({ replayed: 2, consults: 16 });
@@ -922,11 +958,11 @@ describe('kk store label --replay (0226 R6/AC3)', () => {
                 '\n',
             ),
         );
-        const stub = stubSpur(dir, replayAnswers('ai-industry', [5, 4, 3, 2]));
+        const stub = stubHub(dir, replayAnswers('ai-industry', [5, 4, 3, 2]));
 
         const result = await run(
             ['store', 'label', '--replay', 'topic:replay-topic', '--maker', 'backtest-d', '--db', db],
-            { KK_SPUR_BIN: stub, cwd: root },
+            { KK_DECISION_HUB_ANSWERS: stub, cwd: root },
         );
         expect(result.code, result.err).toBe(0);
         expect(JSON.parse(result.out)).toMatchObject({ replayed: 2, consults: 16 });
@@ -941,7 +977,7 @@ describe('kk store label failure paths (0226 R6)', () => {
     it('exits 1 with kk.store.label.failed, writing nothing, for every caller mistake', async () => {
         const dir = tempDir();
         const seeded = await seed(dir, [CONFIDENT()]);
-        const stub = stubSpur(dir, acceptedAnswers('ai-news', [5, 4, 3, 2]));
+        const stub = stubHub(dir, acceptedAnswers('ai-news', [5, 4, 3, 2]));
         const base = ['store', 'label', '--db', seeded.db];
 
         const cases: readonly [string, string[]][] = [
@@ -972,7 +1008,7 @@ describe('kk store label failure paths (0226 R6)', () => {
 
         const evidence: string[] = [];
         for (const [label, args] of cases) {
-            const result = await run(args, { KK_SPUR_BIN: stub });
+            const result = await run(args, { KK_DECISION_HUB_ANSWERS: stub });
             expect(result.code, `${label}: ${result.err}`).toBe(1);
             expect(result.err, label).toContain('kk.store.label.failed:');
             expect(result.out, label).toBe('');
@@ -1118,14 +1154,14 @@ describe('kk store label — china-politics prefilter and gate (0229 R3/R4/R5)',
     ): Promise<{ code: number; out: string; err: string }> {
         const subset = join(dir, `subset-${key}.json`);
         writeFileSync(subset, JSON.stringify([itemIdToLabel]));
-        const stub = stubSpur(
+        const stub = stubHub(
             dir,
             acceptedAnswers('ai-news', [4, 4, 3, 2], 0.95, { china: 0, ...judgment }),
             `spur-${key}.sh`,
         );
         const result = await run(
             ['store', 'label', '--run', `run-${key}`, '--new-ids', subset, '--mode', 'decision', '--db', db],
-            { KK_SPUR_BIN: stub },
+            { KK_DECISION_HUB_ANSWERS: stub },
         );
         expect(result.code, `${key}: ${result.err}`).toBe(0);
         return result;
@@ -1187,11 +1223,11 @@ describe('kk store label — china-politics prefilter and gate (0229 R3/R4/R5)',
         // Every decision answers EXCEPT china-politics: that spawn exits 1, so no row is written.
         const answers = acceptedAnswers('ai-news', [4, 4, 3, 2]);
         delete answers[CHINA_POLITICS_DECISION_ID];
-        const stub = stubSpur(dir, answers, 'spur-down.sh');
+        const stub = stubHub(dir, answers, 'down.answers.json');
 
         const result = await run(
             ['store', 'label', '--run', 'run-down', '--new-ids', subset, '--mode', 'decision', '--db', seeded.db],
-            { KK_SPUR_BIN: stub },
+            { KK_DECISION_HUB_ANSWERS: stub },
         );
         expect(result.code, result.err).toBe(0);
         for (const id of ids) {
@@ -1359,7 +1395,7 @@ describe('kk store label — score positions and refusals (0240 R1/R2/AC1/AC2)',
         const seeded = await seed(dir, [CONFIDENT()]);
         const id = idAt(seeded.ids, 0);
 
-        const stub = stubSpur(dir, {
+        const stub = stubHub(dir, {
             'kk-item-category': {
                 value: 'ai-news',
                 confidence: 0.9,
@@ -1401,7 +1437,7 @@ describe('kk store label — score positions and refusals (0240 R1/R2/AC1/AC2)',
                 '--db',
                 seeded.db,
             ],
-            { KK_SPUR_BIN: stub },
+            { KK_DECISION_HUB_ANSWERS: stub },
         );
         expect(result.code, result.err).toBe(0);
         const parsed = JSON.parse(result.out);
@@ -1427,7 +1463,7 @@ describe('kk store label — score positions and refusals (0240 R1/R2/AC1/AC2)',
     it('AC2 — prints refused: {} when there are no refusals', async () => {
         const dir = tempDir();
         const seeded = await seed(dir, [CONFIDENT()]);
-        const stub = stubSpur(dir, acceptedAnswers('ai-news', [5, 4, 3, 2]));
+        const stub = stubHub(dir, acceptedAnswers('ai-news', [5, 4, 3, 2]));
         const result = await run(
             [
                 'store',
@@ -1441,7 +1477,7 @@ describe('kk store label — score positions and refusals (0240 R1/R2/AC1/AC2)',
                 '--db',
                 seeded.db,
             ],
-            { KK_SPUR_BIN: stub },
+            { KK_DECISION_HUB_ANSWERS: stub },
         );
         expect(result.code, result.err).toBe(0);
         const parsed = JSON.parse(result.out);

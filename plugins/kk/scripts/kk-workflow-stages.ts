@@ -1648,6 +1648,11 @@ if (import.meta.main)
             dailySafetyGate(rest);
             break;
         }
+        case 'daily-safety-verdict': {
+            const { dailySafetyVerdict } = await loadDailyStages();
+            dailySafetyVerdict(rest);
+            break;
+        }
         case 'daily-safety-revise': {
             const { dailySafetyRevise } = await loadDailyStages();
             dailySafetyRevise(rest);

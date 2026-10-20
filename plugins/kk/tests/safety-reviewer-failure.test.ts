@@ -124,26 +124,35 @@ describe('kk-daily-safety reviewer steps — a failed reviewer reaches the gate,
         expect(expectFile).toContain('_09_safety-judge_verdict.json');
     });
 
-    it('only the two reviewer steps are survivable: the deterministic shells keep the default fail policy', () => {
-        const shells = (stateId: string): EnterAction[] =>
+    it('only the reviewer steps and the tolerated decide are survivable: the deterministic shells fail closed', () => {
+        const actions = (stateId: string, kind: string): EnterAction[] =>
             (machine.states.find((state) => state.id === stateId)?.onEnter ?? []).filter(
-                (action) => action.kind === 'shell',
+                (action) => action.kind === kind,
             );
-        expect(shells('review').length, 'review declares the prep shell').toBe(1);
-        expect(shells('judge').length, 'judge declares the gate shell').toBe(1);
-        expect(String(shells('judge').at(0)?.options?.command)).toContain('daily-safety-gate');
-        for (const action of [...shells('review'), ...shells('judge')]) {
+        expect(actions('review', 'shell').length, 'review declares the prep shell').toBe(1);
+        // judge: gate shell, the tolerated catalog decide, then the shell that folds the tokens.
+        const judgeShells = actions('judge', 'shell');
+        expect(judgeShells.length).toBe(2);
+        expect(String(judgeShells.at(0)?.options?.command)).toContain('daily-safety-gate');
+        expect(String(judgeShells.at(1)?.options?.command)).toContain('daily-safety-verdict');
+        for (const action of [...actions('review', 'shell'), ...judgeShells]) {
             expect(action.onError).toBeUndefined();
         }
+        // 0317 R6: the decision tolerates its own failure; the fold then refuses the absent row.
+        const decides = actions('judge', 'decide');
+        expect(decides.length).toBe(1);
+        expect(decides.at(0)?.onError).toBe('continue');
     });
 
-    it('AC4: the accept edge stays confidence-aware and the judge -> block catch-all stays unconditional', () => {
+    it('AC4: the accept edge reads the folded decision token and the judge -> block catch-all stays unconditional', () => {
         const outbound = machine.transitions.filter((transition) => transition.from === 'judge');
         // Declaration order is load-bearing: a refused verdict falls through clean and revise to block.
         expect(outbound.map((transition) => transition.to)).toEqual(['clean', 'revise', 'block']);
         const accept = outbound.at(0)?.command;
-        expect(accept).toContain('test("^(HIGH|MEDIUM|LOW)$")');
-        expect(accept).toContain('PASS');
+        // 0317 R6: the verdict/confidence read moved into `kk stage daily-safety-verdict`; the guard
+        // is now one predicate over the token that stage writes (ADR-115).
+        expect(accept).toContain('_09_safety-verdict.status');
+        expect(accept).toContain('= accept');
         const block = outbound.at(2);
         expect(block?.command).toBeNull();
         expect(block?.terminalReason).toBe('failed-check');
@@ -218,58 +227,57 @@ describe('the real judge -> clean guard verifies the confidence enum on every sh
         run_date: STAMP,
     });
 
-    /** A work dir with the verdict (and optionally the gate stamp) the guard reads. */
-    function judgeFixture(verdict: Record<string, unknown>, stampStatus: string | null): string {
+    /**
+     * A work dir with the gate's classification and (optionally) its stamp, plus the
+     * `kk-safety-verdict` row the judge state leaves behind — then the real fold stage. `decision:
+     * null` stands for a decide action the engine tolerated away, which leaves no row at all.
+     */
+    function judgeFixture(status: string, decision: string | null, stamp = true): { dir: string; stderr: string } {
         const dir = tempDir('kk-0270-judge-');
         const scriptDir = join(dir, '24-script');
         mkdirSync(scriptDir, { recursive: true });
-        writeFileSync(join(scriptDir, `${STAMP}_09_safety-judge_verdict.json`), JSON.stringify(verdict));
-        if (stampStatus !== null) {
+        writeFileSync(join(scriptDir, `${STAMP}_09_safety-judge_status.txt`), status);
+        if (stamp) {
             writeFileSync(
                 join(scriptDir, `${STAMP}_09_safety-judge_stamp.json`),
-                JSON.stringify({ digest: 'stub', status: stampStatus, excludedPlatforms: [] }),
+                JSON.stringify({ digest: 'stub', status, excludedPlatforms: [] }),
             );
         }
-        return dir;
+        if (decision !== null) {
+            writeFileSync(
+                join(scriptDir, `${STAMP}_09_safety-verdict.decision`),
+                JSON.stringify({ value: decision, method: 'choice', degraded: false, source: 'model' }),
+            );
+        }
+        // The real fold: `kk stage daily-safety-verdict` owns both the token and the refusal text.
+        const fold = spawnSync('bun', [STAGE_RUNNER, 'daily-safety-verdict', dir, STAMP], { encoding: 'utf-8' });
+        if (fold.status !== 0) throw new Error(`daily-safety-verdict failed: ${fold.stderr}`);
+        return { dir, stderr: fold.stderr };
     }
 
     it.each([
-        ['PASS + HIGH', { verdict: 'PASS', confidence: 'HIGH' }, 'pass'],
-        ['PASS + MEDIUM', { verdict: 'PASS', confidence: 'MEDIUM' }, 'pass'],
-        ['PASS + LOW', { verdict: 'PASS', confidence: 'LOW' }, 'pass'],
-        [
-            'NEEDS_REVISION + exclude stamp (admission reads through the same filter)',
-            { verdict: 'NEEDS_REVISION', confidence: 'LOW' },
-            'exclude',
-        ],
-    ])('%s is admitted: the guard matches and clean is the first passing edge', (_name, verdict, stampStatus) => {
-        const dir = judgeFixture(verdict, stampStatus);
+        ['a gate pass the decision confirms', 'pass', 'pass'],
+        ['a human escalation the decision confirms', 'escalate', 'escalate'],
+        ['an admission-only exclusion the decision confirms', 'exclude', 'exclude'],
+    ])('%s is admitted: the guard matches and clean is the first passing edge', (_name, status, decision) => {
+        const { dir, stderr } = judgeFixture(status, decision);
         const run = executeGuard(acceptTransition.command ?? '', judgeVars(dir), dir);
-        expect(run.matched, run.stderr).toBe(true);
-        expect(run.stderr).toBe('');
+        expect(run.matched, stderr).toBe(true);
+        expect(stderr).toBe('');
         expect(firstPassing('judge', dir)).toBe('judge->clean');
     });
 
     it.each([
-        ['PASS without a confidence', { verdict: 'PASS' }, 'pass', ['verdict PASS!']],
-        ['PASS + out-of-enum confidence (SURE)', { verdict: 'PASS', confidence: 'SURE' }, 'pass', ['verdict PASS!']],
-        ['PASS + lowercase confidence (high)', { verdict: 'PASS', confidence: 'high' }, 'pass', ['verdict PASS!']],
-        // A non-string confidence breaks the inner jq read: the refusal still fires (empty $v).
-        ['PASS + non-string confidence (1)', { verdict: 'PASS', confidence: 1 }, 'pass', []],
-        ['PASS + empty-string confidence', { verdict: 'PASS', confidence: '' }, 'pass', ['verdict PASS!']],
-        [
-            'PASS + HIGH with no stamp on disk (accept requires the gate stamp)',
-            { verdict: 'PASS', confidence: 'HIGH' },
-            null,
-            [],
-        ],
-    ])('%s is refused by name and block is the first passing edge', (_name, verdict, stampStatus, fragments) => {
-        const dir = judgeFixture(verdict, stampStatus);
+        ['a decide action the engine tolerated away (no row)', 'pass', null, 'decision-refused'],
+        ['a decision outside the admitted vocabulary', 'pass', 'block', 'decision-refused'],
+        ['a gate block the decision cannot overrule', 'block', 'pass', 'verdict-refused'],
+        ['a gate revise the decision cannot overrule', 'revise', 'pass', 'verdict-refused'],
+        ['a missing gate stamp', 'pass', 'pass', 'verdict-refused'],
+    ])('%s is refused by name and block is the first passing edge', (_name, status, decision, refusal) => {
+        const { dir, stderr } = judgeFixture(status, decision, _name !== 'a missing gate stamp');
         const run = executeGuard(acceptTransition.command ?? '', judgeVars(dir), dir);
         expect(run.matched, run.stdout).toBe(false);
-        expect(run.stderr).toContain('kk-daily-safety.judge.confidence-refused');
-        expect(run.stderr).toContain('HIGH|MEDIUM|LOW');
-        for (const fragment of fragments) expect(run.stderr).toContain(fragment);
+        expect(stderr).toContain(`kk-daily-safety.judge.${refusal}`);
         // Fail-closed without deadlock: the refusal falls through to the unconditional block edge.
         expect(firstPassing('judge', dir)).toBe('judge->block');
     });

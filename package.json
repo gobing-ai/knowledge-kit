@@ -16,6 +16,7 @@
             "@gobing-ai/ts-infra": "^0.5.32",
             "@gobing-ai/ts-runtime": "^0.5.32",
             "@gobing-ai/ts-utils": "^0.5.32",
+            "@gobing-ai/ts-ai-decision": "^0.5.32",
             "@gobing-ai/ts-browser-automation": "^0.5.32",
             "playwright": "1.55.0"
         }

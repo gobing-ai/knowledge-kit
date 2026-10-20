@@ -1,0 +1,44 @@
+# Solo-podcast outline binding (task 0317 R7).
+#
+# The outline gate in `kk-solo-podcast` (`outline-select`) always paused. Under an auto profile the
+# pipeline now asks this catalog decision over the written option files first and only pauses when
+# the decision cannot answer confidently — the same pattern `kk-itc` uses for its outline slot
+# (`plugins/kk/workflows/kk-itc-author.yaml` → `outline-autopick` → `itc-decision`).
+#
+# The fallback is a declared label because the catalog format requires one, but the workflow never
+# treats a fallback as a pick: its projection reads `degraded` and defers to the operator gate when
+# the answer did not come from a maker.
+#
+# Resolution: registered through `decisions.paths` in `.spur/config.yaml`
+# (project-relative `plugins/kk/decisions`).
+$schema: "@gobing-ai/spur/schemas/decision-catalog.schema.json"
+version: 1
+
+defaults:
+    # A low-confidence answer still names a slot; the workflow's own `degraded` check is what decides
+    # whether the answer is usable, so folding it into the fallback would lose the distinction.
+    minConfidence: 0
+
+decisions:
+    kk-podcast-outline:
+        type: choice
+        description: >-
+            Which written outline option should this episode follow, given the briefing and the
+            option files as evidence?
+        parameters:
+            briefing:
+                type: string
+                description: >-
+                    The briefing summary the options were written from (thesis, listener takeaways,
+                    audience, target spoken duration, tone).
+        criteria:
+            a: >-
+                The narrative / storytelling arc — the option that leads with a story or a single
+                thread and earns its conclusion.
+            b: >-
+                The analytical / explainer breakdown — the option that decomposes the topic into
+                ordered mechanics a listener can follow.
+            c: >-
+                The third written alternative, when the option files include one; never chosen when
+                no `outline-option-c.md` exists.
+        fallback: a

@@ -93,6 +93,31 @@ states:
         options:
           command: >-
             kk stage daily-safety-gate "${vars.work_dir}" "${vars.run_date}" "${vars.safety_max_revise}"
+      # 0317 R6: the publish verdict is a catalog DECISION over the same artifacts the gate read,
+      # not the judge's self-reported `confidence` re-parsed in a shell jq filter. `onError:
+      # continue` keeps a catalog/maker problem from aborting the machine — the accept guard below
+      # then refuses an absent row, which is the fail-closed direction.
+      - kind: decide
+        onError: continue
+        options:
+          id: safety-verdict
+          decision: kk-safety-verdict
+          params:
+            report: >-
+              Safety report ${vars.work_dir}/24-script/${vars.run_date}_09_safety-review_report.json,
+              judge verdict ${vars.work_dir}/24-script/${vars.run_date}_09_safety-judge_verdict.json,
+              and the gate's own classification in
+              ${vars.work_dir}/24-script/${vars.run_date}_09_safety-judge_status.txt.
+          evidence:
+            - ${vars.work_dir}/24-script/${vars.run_date}_09_safety-review_report.json
+            - ${vars.work_dir}/24-script/${vars.run_date}_09_safety-judge_verdict.json
+            - ${vars.work_dir}/24-script/${vars.run_date}_09_safety-judge_status.txt
+          resultFile: ${vars.work_dir}/24-script/${vars.run_date}_09_safety-verdict.decision
+      # Fold gate status + stamp + decision into the single accept token the accept guard reads.
+      - kind: shell
+        options:
+          command: >-
+            kk stage daily-safety-verdict "${vars.work_dir}" "${vars.run_date}"
       - kind: file.read.into-var
         options:
           path: ${vars.work_dir}/24-script/${vars.run_date}_09_safety-judge_status.txt
@@ -139,20 +164,22 @@ transitions:
   - from: judge
     to: clean
     description: >-
-      An admitted outcome: an explicit PASS (confidence HIGH|MEDIUM|LOW) with a stamp, or a
-      NEEDS_REVISION the gate has already classified `exclude` after the revise budget (admission-only
-      residue publishes at recorded risk — 2026-10-08). The gate writes safety-judge_stamp.json for
-      exactly pass|escalate|exclude. The verdict read is the same confidence-aware jq filter the itc/example judges
-      use (byte-identical, so the one contract cannot drift): a `verdict: PASS` whose `confidence`
-      is missing or outside HIGH|MEDIUM|LOW reads as `PASS!`, which this accept guard never matches,
-      and the refusal names the offending value on stderr first. The gate already blocks such a
-      verdict, so this guard is the belt-and-braces admission check on the accept edge, and it can
-      never strand the run: the unconditional `judge -> block` below always matches.
+      An admitted outcome: the gate classified the run pass|escalate|exclude and wrote its stamp,
+      AND the `kk-safety-verdict` decision (task 0317 R6) admits the same pair. The decision replaced
+      the judge's self-reported `confidence` re-parsed in a shell jq filter: it reads the report, the
+      verdict and the gate status as evidence and declares `escalate` as its fallback, so a missing
+      or garbled evidence set lands on a recorded human decision instead of a silent publish. The
+      gate stays authoritative on `block`/`revise`, which is why the status check is not redundant:
+      a decision cannot overrule the gate. An absent or out-of-vocabulary decision row refuses the
+      edge (fail-closed), and the unconditional `judge -> block` below always matches, so the loop
+      can never strand.
     guard:
       kind: shell
       options:
+        # One predicate over one result file (ADR-115): the three tokens are folded by
+        # `kk stage daily-safety-verdict`, which names any refusal on stderr.
         command: >-
-          jq -n -e --arg v "$(jq -r 'if (.verdict // "") == "PASS" then (.verdict + (if ((.confidence // "") | test("^(HIGH|MEDIUM|LOW)$")) then "" else "!" end)) else (.verdict // "") end' "${vars.work_dir}/24-script/${vars.run_date}_09_safety-judge_verdict.json" 2>/dev/null)" --arg s "$(jq -r '.status // ""' "${vars.work_dir}/24-script/${vars.run_date}_09_safety-judge_stamp.json" 2>/dev/null)" --arg bytes "$(wc -c < "${vars.work_dir}/24-script/${vars.run_date}_09_safety-judge_stamp.json" 2>/dev/null)" 'if (($v == "PASS" or ($v == "NEEDS_REVISION" and $s == "exclude")) and (($bytes | gsub("[^0-9]"; "") | tonumber? // 0) > 0)) then true else ("kk-daily-safety.judge.confidence-refused: verdict " + $v + " — a judge PASS is only usable with confidence HIGH|MEDIUM|LOW, so these drafts must not publish" | halt_error(1)) end' >/dev/null
+          test "$(cat "${vars.work_dir}/24-script/${vars.run_date}_09_safety-verdict.status" 2>/dev/null)" = accept
 
   - from: judge
     to: revise
