@@ -261,9 +261,18 @@ describe('runStageCancellable — exit status, spawn failure and signal forwardi
     it('forwards a host signal to the stage process group and disarms afterwards', async () => {
         // The child swallows SIGTERM and exits 0 on its own, so the escalation timer is armed and then
         // disarmed by the close handler — a real cancellation is proven end to end in the test above.
-        const argv1 = pkg('process.on("SIGTERM", () => {}); setTimeout(() => process.exit(0), 300);\n');
+        // The child announces its handler through a ready file: a fixed sleep raced child startup under
+        // full-suite load, delivering SIGTERM before the handler existed (exit 143 instead of 0).
+        const readyDir = realpathSync(mkdtempSync(join(tmpdir(), 'kk-cancel-ready-')));
+        made.push(readyDir);
+        const ready = join(readyDir, 'ready');
+        const argv1 = pkg(
+            `process.on("SIGTERM", () => {}); require("node:fs").writeFileSync(${JSON.stringify(ready)}, "1"); setTimeout(() => process.exit(0), 300);\n`,
+        );
         const pending = runStageCancellable(['daily-prepare'], process.execPath, argv1);
-        await new Promise((r) => setTimeout(r, 120));
+        const deadline = Date.now() + 20_000;
+        while (!existsSync(ready) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+        expect(existsSync(ready)).toBe(true);
         process.emit('SIGTERM');
         await expect(pending).resolves.toBe(0);
         // Handlers are removed on close: a further signal must not reach the finished run.
@@ -279,12 +288,17 @@ describe('runStageCancellable — escalation of a stage that ignores the signal 
             mkdirSync(join(dir, 'plugins/kk/scripts'), { recursive: true });
             writeFileSync(join(dir, 'dist/index.js'), 'process.exit(0);\n');
             // Swallows SIGTERM and lingers past CANCEL_ESCALATION_MS (5 s), so the escalation fires.
+            // The ready file is written only after the handler is installed: a fixed sleep raced it
+            // under load and the child died of the forwarded SIGTERM (143) instead of the SIGKILL.
+            const ready = join(dir, 'ready');
             writeFileSync(
                 join(dir, 'plugins/kk/scripts/kk-workflow-stages.ts'),
-                'process.on("SIGTERM", () => {}); setTimeout(() => process.exit(0), 30000);\n',
+                `process.on("SIGTERM", () => {}); require("node:fs").writeFileSync(${JSON.stringify(ready)}, "1"); setTimeout(() => process.exit(0), 30000);\n`,
             );
             const pending = runStageCancellable(['daily-prepare'], process.execPath, join(dir, 'dist/index.js'));
-            await new Promise((r) => setTimeout(r, 150));
+            const deadline = Date.now() + 20_000;
+            while (!existsSync(ready) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+            expect(existsSync(ready)).toBe(true);
             process.emit('SIGTERM');
             // The child is SIGKILLed, which is not one of the forwarded signals: exit status falls to 1.
             await expect(pending).resolves.toBe(1);
