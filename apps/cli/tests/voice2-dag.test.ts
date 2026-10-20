@@ -431,7 +431,7 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
         // window ladder; the topic and the floor/vdriver inputs that gate that ladder stay pinned.
         expect(String(extract?.action?.options?.command)).toContain('kk stage daily-extract');
         expect(String(extract?.action?.options?.command)).toContain('ai-news');
-        expect(String(extract?.action?.options?.command)).toContain('"${vars.episode_min_minutes}"');
+        expect(String(extract?.action?.options?.command)).toContain('"' + '$' + '{vars.episode_min_minutes}"');
         // 0228 R6c: exclusion is topic-scoped and always on; the workflow-scoped flag is gone.
         expect(String(extract?.action?.options?.command)).not.toContain('--exclude-used');
         // …and the old workflow-keyed ledger verb is gone from the DAG entirely (R5).
