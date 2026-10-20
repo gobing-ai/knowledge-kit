@@ -286,42 +286,96 @@ pmset -g custom | grep -E ' sleep| powernap| autorestart'
 
 ## 8. Verification matrix
 
-Each row is a command whose failure blocks the cutover. Evidence column records the 2026-10-20 run.
+Each row is a command whose failure blocks the cutover. The Evidence column is the 2026-10-20 run.
 
-| ID | Check | Command | Pass criterion |
-| --- | --- | --- | --- |
-| V1 | CLI versions | `kk --version; spur --version` | `0.1.5` / `0.4.18` |
-| V2 | Stage runner parity | `kk stage daily-preflight plugins/kk/workflows/kk-daily-ai-voice2.yaml plugins/kk/workflows/kk-daily-safety.yaml` | exit 0, no `unknown stage` |
-| V3 | Config visible to kk | `kk config show \| head` | keys from `~/.config/kk/config.yaml` |
-| V4 | Store pool | `kk store pool-count --topic ai-news --window 24h` | pool > 0 |
-| V5 | Decision makers | `spur decision run kk-item-quality --json` (probe input) | `reason: accepted`, not `error` |
-| V6 | Agent executor | `spur agent list` + one small `agent.run` | agent exits 0 and writes its file |
-| V7 | voxcpm render | one short paragraph through `kk executor run plugins/generations/voxcpm-tts` | WAV produced, non-silent, F0 spread sane |
-| V8 | Publish transport | `surfdash-pub` dry path / `git push --dry-run` in the checkout | succeeds |
-| V9 | Scheduler live | `launchctl print` + `spur status` job list | 5 jobs registered, agent `running` |
-| V10 | One real episode | leave the 04:30 tick to run, then read `.works/kk-daily-ai-voice2/<date>/` | episode audio + publish result + ledger row |
+| ID | Check | Command | Pass criterion | Evidence 2026-10-20 |
+| --- | --- | --- | --- | --- |
+| V1 | CLI versions | `kk --version; spur --version` | `0.1.5` / `0.4.18` | PASS |
+| V2 | Stage runner parity | `kk stage daily-preflight plugins/kk/workflows/kk-daily-ai-voice2.yaml plugins/kk/workflows/kk-daily-safety.yaml` | exit 0, no `unknown stage` | PASS — `preflight: stage runner advertises every stage …` |
+| V3 | Config is read | `kk store extract --topic ai-news --window 24h --include-selected` | same count as the source | PASS — 3 on both hosts (topic profile + store path resolve) |
+| V4 | Store pool | `kk store extract --topic ai-news --window 24h` | identical to the source | PASS — 0 on both (today's pool was already consumed) |
+| V5 | Decision makers | `spur decision run kk-item-quality --param title=… --param source=… --json` | `maker: laya-local`, `source: model` | PASS — value 1, confidence 0.326, `reason: accepted` |
+| V6 | Agent executors | `spur agent run "…write a file…" --agent scribe` and `--agent reviewer` | exit 0, file written | PASS — pi/minimax 12.8 s, pi/kimi-k3 15.6 s |
+| V7 | voxcpm render | `kk executor run voxcpm-tts --in smoke.json --out out.json` | WAV present, QC passed, non-silent | PASS — 7.02 s WAV, QC 100/100, mean −20.0 dB, peak −6.7 dB |
+| V8 | Publish transport | `git push --dry-run origin main` in the surfdash checkout | no auth error | PASS — `Everything up-to-date` as `robinmin` |
+| V9 | Scheduler live | `launchctl print gui/$(id -u)/ai.gobing.spur-serve` + `.spur/logs/spur.log` | agent `running`, 5 jobs | PASS — pid running, `Scheduler entries registered {jobs:5}` |
+| V10 | One real episode | leave the 04:30 tick to run, then read `.works/kk-daily-ai-voice2/<date>/` | episode audio + publish result + ledger row | pending — first unattended tick |
 
-Rows V1–V9 run before the cutover; **V10 is the cutover** — the first unattended tick on the target
+Rows V1–V9 ran before the cutover; **V10 is the cutover** — the first unattended tick on the target
 with the laptop's scheduler already stopped.
+
+### 8.1 Restore evidence beyond the matrix
+
+| Fact | Observed |
+| --- | --- |
+| Config tarball | 653 MiB (1.4 GiB expanded), `SHA256SUMS` verified on the target |
+| Checkout | `origin/main` @ `13581560` + 11-file working-tree patch applied cleanly (`git apply --3way`) |
+| Store | `.works/kk.db` 414 items on arrival; a real `kk-collect` run took it to 416 and reported `workflow done: kk-collect -> done` |
+| Voice weights | `openbmb/VoxCPM2` 4.6 GiB rsynced; voxcpm venv 1.4 GiB via `uv sync --locked` in 59 s |
+| Voice identity | `voices/robin-news.wav` sha256 `472cbee3…` identical on both hosts; both renders used the `reference` profile |
+| Laya maker | `laya-mlx==0.4.0` uv tool + 647 MiB `convaiinnovations/laya-multilingual` weights auto-pulled |
+| Render speed | 3 m 22 s cold (model load) vs ~36 s warm on the M5 laptop; episode-scale timing not yet measured |
+| Disk after restore | 19 GiB free (from 21 GiB) |
+| Headless survival | console session `robin`, `autoLoginUser=robin`, FileVault off, AC `sleep 0` |
+
+### 8.2 Findings that changed the procedure
+
+1. **`laya-mlx` is a hidden dependency.** Without it the `kk-item-quality` decision silently
+   degrades: `DecisionConfigError: laya-mlx runtime is not importable`, `confidenceLevel: LOW`,
+   fallback value — no error, no failed run, just worse labels. Install it as a *uv tool*
+   (`uv tool install laya-mlx==0.4.0`) because spur resolves
+   `~/.local/share/uv/tools/laya-mlx/bin/python` **before** `python3`.
+2. **`kk` resolved to the bun-global copy, not the home project.** The target's `~/.bun/bin/kk`
+   pointed at `~/.bun/install/global/…` while `~/node_modules/@gobing-ai/knowledge-kit` was the
+   copy §6.4 refreshes. Repointed both `kk`/`knowledge-kit` shims at `~/node_modules`, matching the
+   source layout.
+3. **The surfdash clone paused at a stale commit.** `git push --dry-run` failed with
+   "remote contains work that you do not have" — the source checkout was one commit behind
+   `origin/main`, and that commit also absorbed the content edits the rsync had copied. The two
+   colliding untracked files were byte-identical to the incoming blobs (`shasum` compared before
+   deleting), so `git pull --ff-only` was safe and the mini is now level with origin.
+4. **Low Power Mode is on.** `pmset -g custom` reports `lowpowermode 1` on AC, which throttles the
+   M4 during a long MPS render. Turning it off needs the operator's sudo password:
+   `sudo pmset -a lowpowermode 0`.
+5. **A pre-existing decision-maker bug, not a migration defect.** `kk-item-china-politics` and the
+   other `typesafe`-routed decisions currently fail with `TypeError: Body already used` and
+   fail closed to `3`; items that hit that path are excluded by the profile's `lte: 1` gate. It
+   reproduces identically on the source machine, and 176 items in the store still pass every gate
+   over a 7-day window, so the pool refills from the heuristic path. Worth fixing separately — a
+   consulted item is silently dropped.
+6. **Executor roster differs.** The target has 11 usable executors vs the source's 17: the whole
+   `antigravity-cli` (`agy`) family is missing, so `reviewer`/`planner` elect `pi/kimi-k3` instead of
+   `gemini-3.8-flash-high`, and `scribe` elects `minimax/MiniMax-M3.1-Flash-Preview`. Every role the
+   daily DAG uses (`scribe`, `reviewer`) still resolves and runs; output style may drift slightly.
 
 ---
 
 ## 9. Cutover and rollback
 
-Cutover, in this order:
+Cutover, in this order (executed 2026-10-20):
 
 ```bash
 # 1. target: everything above green, scheduler loaded and serving
-# 2. source: stop the scheduler so two machines are never both due at 04:30
+# 2. source: stop the scheduler so two machines are never both due at 04:30,
+#    and disable it so a source reboot does not bring it back
 launchctl bootout gui/$(id -u)/ai.gobing.spur-serve
+launchctl disable gui/$(id -u)/ai.gobing.spur-serve
 launchctl print gui/$(id -u)/ai.gobing.spur-serve   # -> "Could not find service"
+launchctl print-disabled gui/$(id -u) | grep gobing # -> ". => disabled"
 # 3. source: keep the plist file in place — it is the rollback
 ```
 
-Rollback (any time, ~1 min): re-bootstrap the source plist, then `launchctl bootout` the target's
-agent. The store fork is the only asymmetric state: whichever machine ran the tick owns that day's
-ledger row. If the target publishes and the source later re-runs the same date, `kk daily prepare`
-sees the ledger row and skips — verify with `kk ledger show --date <date>` before re-enabling.
+Rollback (any time, ~1 min):
+
+```bash
+launchctl enable gui/$(id -u)/ai.gobing.spur-serve
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.gobing.spur-serve.plist
+ssh homelab 'launchctl bootout gui/$(id -u)/ai.gobing.spur-serve'
+```
+
+The store fork is the only asymmetric state: whichever machine ran the tick owns that day's ledger
+row. If the target publishes and the source later re-runs the same date, `kk daily prepare` sees the
+ledger row and skips — verify with `kk ledger show --date <date>` before re-enabling.
 
 ---
 
@@ -340,19 +394,36 @@ sees the ledger row and skips — verify with `kk ledger show --date <date>` bef
    `daily-preflight` guard, surfdash-pub patching, daily-article-gen). Until they are committed and
    pushed, the target's checkout is a hand-carried snapshot with no provenance — land them on a
    branch soon after the trip.
-4. **Memory and disk.** 16 GB unified memory on M4: voxcpm on `mps` fits, but a concurrent
-   `spur serve` history-analyze tick plus a render can pressure swap. 21 GiB free disk before the
-   copy, ~8 GiB after; a 2 h episode render writes < 1 GiB. Monitor `df -h` weekly.
-5. **Fallback ceilings.** `gemini-tts` is Tier 1 (~100 requests/day) with
+4. **Memory, disk and throttling.** 16 GB unified memory on M4: voxcpm on `mps` fits, but a
+   concurrent `spur serve` history-analyze tick plus a render can pressure swap. 19 GiB free after
+   the copy; a 2 h episode render writes < 1 GiB. Low Power Mode is currently **on** (`lowpowermode
+   1`) and throttles MPS renders — `sudo pmset -a lowpowermode 0` if episodes run long. Monitor
+   `df -h` weekly.
+5. **Render throughput is unproven at episode scale.** One segment cost 3 m 22 s cold on the M4
+   versus a ~36 s warm render on the M5 laptop; the 2026-10-15 production episode took 21.8 min on
+   the laptop. The job's `timeoutMs` is 4 h, so a 3–5× slowdown still fits, but the first
+   unattended episode is the real measurement (V10). If it overruns, set `vdriver: gemini` in the
+   workflow vars (hosted, quota-bound) rather than editing the scheduler.
+6. **A reboot needs the GUI session back.** The agent is a `gui/$UID` LaunchAgent: it starts at
+   login, not at boot. `autoLoginUser=robin` and FileVault off mean a power-loss restart recovers
+   unattended (both verified 2026-10-20); a macOS update that lands on the login window without
+   auto-login would leave the scheduler dormant until someone logs in.
+7. **Fallback ceilings.** `gemini-tts` is Tier 1 (~100 requests/day) with
    `VOICEBOX_MAX_VERIFY_ATTEMPTS=1`; omni-voice is last and its 3 GB model is *not* pre-pulled, so on
    a cold fallback the render waits on a Hugging Face download.
-6. **Agent auth drift.** `agent.run` resolves whatever CLI is installed and logged in. The target has
+8. **Agent auth drift.** `agent.run` resolves whatever CLI is installed and logged in. The target has
    claude/codex/pi/omp/opencode; if a token expires while travelling the plan/article stages fail with
-   exit 3. Check `spur agent list` and one real `agent.run` before leaving (§8 V6).
-7. **Time-of-day is load-bearing.** `kk-collect` (:05) must finish before the 04:30 episode run reads
+   exit 3. Check `spur agent list` and one real `agent.run` before leaving (§8 V6). The target also
+   lacks the `agy` family, so `reviewer`/`planner` elect a different executor than the source.
+9. **Time-of-day is load-bearing.** `kk-collect` (:05) must finish before the 04:30 episode run reads
    the pool. Both hosts are `America/Los_Angeles`; do not change the target's timezone, and do not
    move the mini across a DST boundary mid-run.
-8. **Single machine, single point of failure.** No failover: if the mini is off, asleep on battery,
-   or its `spur serve` is killed, the day silently produces nothing (this happened 2026-10-12 — see
-   the plist header). `KeepAlive` + `sleep 0` on AC are the mitigations; check
-   `.works/spur-serve/serve.log` and `launchctl print` after the first unattended day.
+10. **Single machine, single point of failure.** No failover: if the mini is off, asleep on battery,
+    or its `spur serve` is killed, the day silently produces nothing (this happened 2026-10-12 — see
+    the plist header). `KeepAlive` + `sleep 0` on AC are the mitigations; check
+    `.works/spur-serve/serve.log` and `launchctl print` after the first unattended day.
+11. **The pool can close empty for reasons outside this migration.** `kk-item-china-politics` gates
+    the extract profile at `lte: 1`, and the `typesafe` maker currently errors (`Body already used`)
+    and fails closed to `3`. Observed 2026-10-20: a 24 h window holding only two fresh items produced
+    a 0-item pool while 176 items over 7 days pass every gate. A thin news day therefore closes
+    `done-no-content` by design, but a broken maker narrows it further.
