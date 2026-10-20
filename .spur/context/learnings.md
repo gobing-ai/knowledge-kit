@@ -2,6 +2,27 @@
 
 Conventions / decisions discovered the hard way. Newest first.
 
+## Learning: an in-process decision hub needs the subprocess transport beside it
+
+- **Convention/quirk:** `@gobing-ai/ts-ai-decision` constructs its makers from the consumer's module
+graph, while `spur decision run` constructs them from spur's own bundle. The TypeSafe driver needs
+`@opentelemetry/api` (a peer of `@gobing-ai/ts-infra` that only resolves inside spur's bundle), so an
+in-process `typesafe` decision returns `reason: error` in a plain bun install while the identical
+subprocess call returns `accepted`. Task 0317's `apps/cli/src/decision-hub.ts` therefore keeps
+`spur decision run` as a per-decision fallback (latched after two failures) instead of assuming the
+hub can serve every maker.
+- **Why it matters:** without the fallback the switch to in-process transport silently regresses every
+`typesafe` decision to its catalog fallback — the labels still look plausible, so nothing fails loudly.
+
+## Learning: `--replay` reports consults but not refusals
+
+- **Convention/quirk:** `kk store label --replay` prints `{replayed, consults, consultMs, run}`; an
+answer outside the decision's vocabulary or range is refused and simply not written, so `replayed`
+can exceed the number of `labels` rows (measured 27 vs 6 on one run, 21 refusals invisible). The
+non-replay pass prints a `refused` map; the replay pass does not.
+- **Why it matters:** an A/B that "labelled 105 items" may have written far fewer rows. Count rows by
+  `run_id`, never trust `replayed`.
+
 ## Learning: operator-requested confidence grades are report-level only
 
 - **Convention/quirk:** the operator asks (repeatedly, verbatim) to "add verification for: confidence
