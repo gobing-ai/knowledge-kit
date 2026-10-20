@@ -4,13 +4,14 @@ name: "Decision-maker effectiveness for item labeling: fm-local score collapse, 
 status: done
 template: issue
 created_at: 2026-10-19T18:02:15.261Z
-updated_at: "2026-10-20T02:47:22.004Z"
+updated_at: "2026-10-20T05:33:17.843Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
 priority: P2
 done_forced: "false"
 done_reason: unforced close; PASS artifact at .spur/memory/evidence/0317-verdict.json
+feature_id: G33
 ---
 
 ## 0317. Decision-maker effectiveness for item labeling: fm-local score collapse, laya restore, outcome-driven pruning, safety verdict
@@ -144,6 +145,14 @@ Scenario: AC7 — batch labelling runs in-process with identical results (req: R
 
 - **Implementation (R8):** the in-process hub is live for makers that construct outside spur's bundle (`fm-local`) and falls back to `spur decision run` for those that do not (`typesafe`: `@opentelemetry/api`, a `@gobing-ai/ts-infra` peer, resolves only inside spur's bundle). AC7 measured 20/20 items agreeing on value and reason between the two transports, with no subprocess spawned in the hub path (run with `spur` absent from `PATH`).
 
+#### Q&A entry — 2026-10-20T05:27:13.009Z
+
+- **Re-verify (R5, supersedes the 2026-10-20T01:10 R5 entry):** spur 0.4.17 ships `worker/laya_worker.py` (spur-new 1262 delivered). The `--force` re-verify restored `kk-item-quality: laya-local` at `.spur/config.yaml:257`. A live `spur decision run kk-item-quality` with no `--maker` flag returns `maker: laya-local`, `makerSource: config-decision`, `reason: accepted` (~1.4 s), so AC4 is now MET, not N/A. The re-verify also re-anchored stale Testing citations: `store.ts:587` → `decisionValue` at `:532`, and the truncated AC5 cell.
+
+#### Q&A entry — 2026-10-20T05:33:17.842Z
+
+- **Re-verify (review F2/F4 closed, feature link):** the `## Review` P4s marked "follow-up" are closed in this change rather than deferred. F2: `kk store label --replay` now prints `{replayed, labeled, consults, consultMs, refused, run}` (`apps/cli/src/commands/store.ts:1011`), pinned by `apps/cli/tests/store-label.test.ts:929`. F4: a 403-item `--replay since:14d --maker laya-local --decisions kk-item-quality` (0 refused, ~21 ms/item warm) followed by the outcome join gives laya-local AUC 0.423 on n=156, verdict `none`. The fm-local AUC 0.833 (n=25) does not replicate, so quality stays out of ranking (see report §5). The task is now linked to feature **G33**, which was created for it because the closest existing owner, G32, is closed and its 13 scenarios do not cover 0317.
+
 ### Design
 
 **Principle: measure against outcomes, not acceptance.** The `selections` table
@@ -211,24 +220,24 @@ pass/escalate/exclude a decide step with the report file as evidence and fallbac
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `apps/cli/src/commands/store.ts:587` (decisionValue stores the rubric index unchanged, no shift) + `plugins/kk/decisions/kk-items.yaml:1` (six-level rubrics whose 1–5 lines restate the heuristic) + `apps/cli/tests/store-label-scale.test.ts:66` (pins criteria length 6, fallback in range, model level 0 and 5 stored as 0/5, heuristic quality 1 / importance 3 on the same ladder) |
-| R2 | MET | `docs/tasks/0317_…scor.md` `### Q&A` (decision: no; evidence AUC 0.43–0.53 over 245 items, 0/72 selected items model-labelled) + `apps/cli/src/commands/store.ts:731` (graded dimensions consulted only in `--mode decision`) + `apps/cli/tests/store-label.test.ts:509` (routed item keeps category + judgment rows only) |
-| R3 | MET | `.works/test-artifacts/0317/decision-effectiveness-report.md` §1 + `ab-fm-local.log` / `ab-typesafe.log` (105 items × 4 dimensions; fm-local ~70 % accept @ ~4.9–5.7 s, typesafe ~98 % @ ~0.27 s, clef unavailable — no Cloudflare token) |
-| R4 | MET | `scripts/decision-signal-report.ts:87` (labels × selections join, Mann–Whitney AUC, verdict tokens) + `scripts/tests/decision-signal-report.test.ts:45` + report §2 (245 outcome-bearing items; only `kk-item-quality`/fm-local separates, AUC 0.833 on n=25 — recorded as a follow-up, not wired) |
-| R5 | MET | Precondition unmet: `.spur/config.yaml:254` records the 2026-10-19 re-check (`spur decision run … --maker laya-local` → `reason: error`, 23 ms; the installed package has no `worker/`) and the flip instruction for spur-new 1262. The restore's own precondition (a shipped bundled worker) is unmet, so the correct outcome is the recorded deferral: nothing to restore, and `fm-local` stays the working maker. AC4 is N/A for the same reason. |
-| R6 | MET | `plugins/kk/decisions/kk-safety.yaml:23` (choice pass/escalate/exclude, fallback `escalate`) + `plugins/kk/workflows/kk-daily-safety.yaml:104,120` (decide action over report/verdict/status, then the fold stage) + `plugins/kk/scripts/daily-stages.ts:1997` + `plugins/kk/workflows/kk-daily-safety.yaml:180` (single-predicate accept guard) |
-| R7 | MET | `plugins/kk/decisions/kk-podcast.yaml:23` + `plugins/kk/workflows/kk-solo-podcast.yaml:122` (autopick state: evidence file → decide → `.auto-pick` only when not degraded) + `apps/cli/tests/kk-solo-podcast-workflow.test.ts:245` (confident → pick, degraded/absent → empty → operator gate) |
-| R8 | MET | `apps/cli/src/decision-hub.ts:182` (one hub per batch, config maker routing, 2000-char evidence bound, dispose) + `apps/cli/src/commands/store.ts:1078,1107` (created/disposed around the pass) + `apps/cli/src/decision-hub.ts:92,275` (backend-failure fallback to `spur decision run`, latched) + `apps/cli/tests/decision-hub.test.ts:1` (routing/evidence/latch/dispose/loud config errors) |
+| R1 | MET | `apps/cli/src/commands/store.ts:532-540` (decisionValue stores the rubric level 0..levels-1 unchanged, no index shift) + `apps/cli/tests/store-label-scale.test.ts:64` (6 rubric levels per graded decision) + `apps/cli/tests/store-label-scale.test.ts:80` (model level stored as the same integer the heuristic writes) |
+| R2 | MET | Task Q&A 2026-10-20T01:10 (decision: no ranking consumer; AUC 0.43-0.53 over 245 items) + `apps/cli/src/commands/store.ts:112` (GRADED_DECISION_IDS) + `apps/cli/src/commands/store.ts:731` (graded dimensions skipped unless --mode decision) + `apps/cli/tests/store-label.test.ts:498` |
+| R3 | MET | `.works/test-artifacts/0317/decision-effectiveness-report.md` (gitignored run artifact) §1 + ab-fm-local.log / ab-typesafe.log: 105-item replay set, fm-local ~70% accept at ~5 s, typesafe ~98% at ~0.27 s, clef unavailable (no Cloudflare token) |
+| R4 | MET | `scripts/decision-signal-report.ts:87` (labels x selections join, Mann-Whitney AUC) + `scripts/tests/decision-signal-report.test.ts:48` + `.works/test-artifacts/0317/r4-signal-report.json` (gitignored run artifact); re-run this run after a 403-item laya-local replay (`.works/test-artifacts/0317/r4-signal-report-laya.json`): kk-item-quality/laya-local n=156 AUC 0.423 verdict none, so the fm-local AUC 0.833 (n=25) does not replicate |
+| R5 | MET | Fix pass this run: spur 0.4.17 now ships worker/laya_worker.py (spur-new 1262 delivered); `.spur/config.yaml:257` flipped to `kk-item-quality: laya-local`; live `spur decision run kk-item-quality --param title=… --param source=… --evidence ev.txt --json` returned maker laya-local, makerSource config-decision, reason accepted, value 1, 1448 ms |
+| R6 | MET | `plugins/kk/decisions/kk-safety.yaml:23` (choice pass/escalate/exclude) + `plugins/kk/decisions/kk-safety.yaml:46` (fallback escalate) + `plugins/kk/workflows/kk-daily-safety.yaml:100` (kind: decide) + `plugins/kk/scripts/daily-stages.ts:1997` (dailySafetyVerdict fold) + `plugins/kk/workflows/kk-daily-safety.yaml:182` (single-predicate accept guard) |
+| R7 | MET | `plugins/kk/decisions/kk-podcast.yaml:23` + `plugins/kk/workflows/kk-solo-podcast.yaml:118` (kind: decide in outline-autopick) + `apps/cli/tests/kk-solo-podcast-workflow.test.ts:245` |
+| R8 | MET | `apps/cli/src/decision-hub.ts:182` (createItemDecisionAsker) + `apps/cli/src/decision-hub.ts:92` (subprocess fallback latch) + `apps/cli/src/commands/store.ts:1088` (asker created per batch) + `apps/cli/src/commands/store.ts:1117` (dispose in finally) + `apps/cli/tests/decision-hub.test.ts:153`; in-process laya-local probe this run with no spur on PATH and the fallback stubbed: 3/3 model/accepted value 1 (1107 ms cold, 16-17 ms warm), dispose returned, exit 0 |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — model and heuristic scores share one scale (req: R1) | MET | test | `apps/cli/tests/store-label-scale.test.ts:66` — model levels 0 and 5 stored as `0`/`5` with matching `score`, heuristic quality `1` and importance `3` on the same ladder; `bun test apps/cli/tests/store-label-scale.test.ts` 2 pass |
-| AC2 — selection ranking either uses model scores or stops paying for them (req: R2) | MET | test | `apps/cli/tests/store-label.test.ts:509` — a routed item pays 4 consults (category + judgment), the graded four are silent unless `--mode decision`; and the Q&A records "no ranking consumer" with the join numbers |
-| AC3 — a maker is chosen per dimension from replay evidence (req: R3, R4) | MET | command | `.works/test-artifacts/0317/decision-effectiveness-report.md` §1/§3 (per-dimension accept rate, latency, distribution for fm-local and typesafe; drop decisions for all four graded dimensions, `typesafe` named as maker of record if a consumer appears) |
-| AC4 — quality is back on laya-local (req: R5) | N/A | n/a | Precondition unmet (spur-new 1262 unreleased): `.spur/config.yaml:254` + the 2026-10-19 live probe recorded in the report §4 and the Q&A |
-| AC5 — the daily safety verdict is a ledgered decision (req: R6) | MET | command | `spur decision run kk-safety-verdict --evidence …` returns `value: pass` and writes a `decision_logs` row (`kk-safety-verdict |
-| AC6 — podcast outline selection can be pre-answered (req: R7) | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:245` — a confident row writes `.auto-pick` (no pause), a degraded/absent row leaves it empty so `outline-select` pauses; edges pinned at `:230` |
-| AC7 — batch labelling runs in-process with identical results (req: R8) | MET | command | `.works/test-artifacts/0317/ac7-in-process.jsonl` vs `ac7-subprocess.jsonl` — 20/20 items agree on `value` and `reason`; the in-process run executed with `KK_SPUR_BIN=/nonexistent-spur-fallback` and no `spur` on `PATH`, and 12 answers came back `model` (proving no child was spawned) |
+| AC1 — model and heuristic scores share one scale (req: R1) | MET | test | `apps/cli/tests/store-label-scale.test.ts:80`; bun test of the 7 scoped files this run: 122 pass / 0 fail |
+| AC2 — selection ranking either uses model scores or stops paying for them (req: R2) | MET | test | `apps/cli/tests/store-label.test.ts:498` (unrouted item consults only the three judgment decisions) + `apps/cli/tests/store-label.test.ts:529`; 122 pass / 0 fail this run |
+| AC3 — a maker is chosen per dimension from replay evidence (req: R3, R4) | MET | command | `scripts/decision-signal-report.ts:87` run output `.works/test-artifacts/0317/r4-signal-report.json` + decision-effectiveness-report.md §1/§3 (drop decision for all four graded dimensions; typesafe named maker of record) |
+| AC4 — quality is back on laya-local (req: R5) | MET | command | `.spur/config.yaml:257`; live `spur decision run kk-item-quality` with no --maker flag this run: maker laya-local, makerSource config-decision, reason accepted (3 further --maker laya-local probes: accepted, 883-1561 ms, never error) |
+| AC5 — the daily safety verdict is a ledgered decision (req: R6) | MET | command | live `spur decision run kk-safety-verdict` this run: value pass, reason accepted, invocation d1cd0b25; `.spur/spur.db` decision_logs holds kk-safety-verdict rows; escalate fallback pinned at `apps/cli/tests/voice2-dag.test.ts:802`; missing decision refuses the edge at `apps/cli/tests/voice2-dag.test.ts:822` |
+| AC6 — podcast outline selection can be pre-answered (req: R7) | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:233` (binding before operator gate, defers on fallback) + `apps/cli/tests/kk-solo-podcast-workflow.test.ts:245` (confident writes .auto-pick; degraded/absent leaves it empty) |
+| AC7 — batch labelling runs in-process with identical results (req: R8) | MET | command | `.works/test-artifacts/0317/ac7-in-process.jsonl` vs ac7-subprocess.jsonl re-diffed this run: 20/20 rows identical on id, value, reason (13 model/accepted, 7 default/error from identical fm model refusals on both transports); in-process run had no spur on PATH; laya-local in-process probe this run matched the subprocess answer (value 1, accepted) with no fallback spawned |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
