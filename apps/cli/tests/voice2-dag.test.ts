@@ -1035,8 +1035,9 @@ describe('kk-daily-ai-voice2 — agent.run recovery siblings (0238 AC1–AC4)', 
         }
     });
     it('chains the voice tier voxcpm -> gemini -> omni, each gated on a valid upstream Content', () => {
-        // 2026-10-15 operator decision: today's production order tries voxcpm first; if it is good
-        // this order stands, otherwise the primary reverts to gemini. The gates accept ANY upstream
+        // 2026-10-15 operator decision, reaffirmed 2026-10-20: voxcpm stays primary for its speed and
+        // cost even though its long renders carry a measured 40 ms reflection and a 16-22 dB pause
+        // floor; gemini is the dry escape hatch in the first fallback slot. The gates accept ANY upstream
         // plugin id (stage stamps metadata.generator + qc.passed), so a failed attempt can neither
         // be relabeled nor mixed into the episode, and a successful primary makes its siblings skip.
         const dag = loadDag();
@@ -1052,6 +1053,7 @@ describe('kk-daily-ai-voice2 — agent.run recovery siblings (0238 AC1–AC4)', 
         expect(primary).toContain('vars.vdriver');
         expect(primary).not.toContain('"gemini"');
         expect(nodes[1]?.action?.options?.command).toContain('"gemini"');
+        expect(dag.vars?.vdriver).toBe('voxcpm');
         expect(nodes[2]?.action?.options?.command).toContain('"ominivoice"');
         expect(nodes[2]?.action?.options?.command).toContain('OMNIVOICE_SPEED=1.06');
         expect(nodes[1]?.dependsOn).toContain('generate');

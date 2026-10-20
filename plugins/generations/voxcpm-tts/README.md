@@ -79,6 +79,24 @@ that evidence belongs to task 0258.
 > Grade any render with `scripts/audit-speaker-consistency.py` (needs this plugin's venv):
 > a per-item F0 spread over 45 Hz means the profile is not anchoring a speaker.
 
+### Known artifact: a 40 ms echo lattice on long renders (2026-10-20)
+
+A `reference`-anchored profile renders short text clean and long text with a 40 ms (≈25 Hz) periodic
+reflection plus a pause floor only 16–22 dB below speech — heard as 「回声感、瓮声瓮气」. Measured on the
+raw model output (no ffmpeg join, no mp3): `kk stage audio-quality` reports `cepstrum 40 ms @ 27–31 dB`
+for renders >30 s, `pause floor −16…−22 dB`, while a 10 s render of the same profile/text measures
+`22 ms @ 19 dB / −22.5 dB` and the same days' `gemini-tts` episodes measure `20–25 ms @ 19–20 dB /
+−34…−37 dB`. `inference_timesteps`, `cfg_value` and `normalize` do not move it (measured 2026-10-20).
+
+```bash
+# reproducible in ~2.5 min, no episode needed:
+plugins/generations/voxcpm-tts/.venv/bin/python \
+  plugins/generations/voxcpm-tts/scripts/probe-long-render.py --out /tmp/voxcpm-probe
+kk stage audio-quality /tmp/voxcpm-probe/long-baseline.wav
+```
+
+Treat a driver/profile change as unproven until a LONG render is measured, not a single sentence.
+
 ## Control policy
 
 `normalize` maps directly; an explicit `seed` calls `torch.manual_seed` before synthesis (the

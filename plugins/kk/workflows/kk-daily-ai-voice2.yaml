@@ -25,9 +25,15 @@ vars:
   # Voice driver switch — voxcpm (voxcpm-tts) | gemini (gemini-tts) | voicebox (voice-gen)
   # | ominivoice (omni-voice-gen). The generate tier below mirrors the fallback order, and the
   # fit/duration gates take their spoken-char rate from this var — switching drivers here is enough.
-  # 2026-10-15 production test (operator decision): voxcpm first, then gemini, then omni. voxcpm
-  # rendered that episode in 21.8 min at a measured 5.19 字/秒 (fitted at 5.2); if the audio verdict
-  # is good this is the standing order, otherwise revert this default to "gemini".
+  # 2026-10-20 (operator decision): voxcpm STAYS the primary. It is audibly echoey - a 40 ms periodic
+  # reflection on renders longer than ~30 s plus a pause floor only 16-22 dB below speech, measured by
+  # `kk stage audio-quality` on every episode's raw model output since 10-15 (cepstrum 40 ms @ 26-31 dB
+  # / pauseFloor -16..-22 dB, versus gemini's 20-25 ms @ 19-20 dB / -34..-37 dB) - and no exposed knob
+  # (cfg_value, inference_timesteps, normalize, denoise) or usable checkpoint fixes it (VoxCPM1.5:
+  # 80 ms @ 31 dB; VoxCPM-0.5B loses the lattice but measures -15.5 dB at 16 kHz). The operator keeps
+  # the local driver for its speed and cost and will monitor it episode by episode until a proper fix
+  # exists; flipping this one var to "gemini" is the escape hatch (measured dry: 20-25 ms / -34..-37 dB)
+  # at the price of a 1h47m-2h21m remote render.
   vdriver: "voxcpm"
   intro_music: ".works/kk-daily-ai-voice/AI每日资讯_8秒播客片头.mp3"
   surfdash_root: "/Users/robin/xprojects/surfdash"
@@ -577,7 +583,7 @@ nodes:
   # its plugin id and the cache ignores foreign-driver sections, so a failed attempt can neither be
   # relabeled nor mix voices). Non-final siblings continue on error; the last one is loud.
   - id: generate-fallback
-    description: "Voice tier fallback 1: gemini (gemini-tts) when the primary driver left no valid Content"
+    description: "Voice tier fallback 1: gemini (gemini-tts) when the primary driver left no valid Content — the measured-dry escape hatch from voxcpm's lattice"
     dependsOn: [generate]
     condition:
       kind: shell

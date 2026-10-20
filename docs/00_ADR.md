@@ -1383,6 +1383,42 @@ voicebox's 5.6, which budgeted 24.6 min — 18 s inside the gate), and `kk daily
 manifest now accepts `voxcpm` in the `vdriver` choice list (0257 wired the stage but not the gate).
 `kk-daily-ai-voice` keeps its gemini default and single-generator shape.
 
+### Amendment — 2026-10-20 (voxcpm stays primary; its echo is measured, monitored, and not yet fixable)
+
+The 2026-10-15 order **stands unchanged**: `kk-daily-ai-voice2` keeps `vdriver: "voxcpm"` and the chain
+voxcpm → gemini → omni. What this amendment adds is (a) the measurement that makes the known audio
+defect explicit and re-checkable, and (b) the decision that the operator keeps the local driver for its
+speed and cost while monitoring each episode, rather than paying a 1h47m–2h21m remote render per day.
+Flipping `vdriver` to `"gemini"` remains the documented one-var escape hatch.
+
+Evidence (`kk stage audio-quality`, 2026-10-20; real-cepstrum echo probe + pause floor, measured on the
+raw model output of every episode and then on controlled renders of one 366-character paragraph):
+
+| source | cepstrum echo peak | pause floor (p20) |
+| --- | --- | --- |
+| `gemini-tts`, episodes 10-12…10-14 | 20–25 ms @ 19–20 dB | −34 … −37 dB |
+| `voxcpm-tts`, episodes 10-15…10-20 | **40 ms @ 27–30 dB** | **−16 … −22 dB** |
+| `VoxCPM2` long render with `inference_timesteps=20` / `cfg=2.5` / `normalize` / `denoise` | 40 ms @ 27–31 dB | −16 … −17 dB |
+| `VoxCPM1.5` (continuation; it cannot reference-clone) | 80 ms @ 31 dB | −16.6 dB |
+| `VoxCPM-0.5B` (continuation, 16 kHz native) | 20.6 ms @ 20.4 dB (no lattice) | **−15.5 dB** |
+| `omni-voice-gen` (clone profile, same paragraph) | 40 ms @ 37 dB | −20.9 dB |
+| the shared `robin-news.wav` reference | 23 ms @ 21 dB | −27.7 dB |
+
+What the sweep established: the artifact is **duration-dependent** (a 10 s render measures clean, >30 s
+reproduces it — which is why the 2026-10-15 A/B listen missed it); it is present in the **raw model
+output** before the ffmpeg join and the mp3 encode, so it is not a pipeline defect; it survives every
+sampler knob and every checkpoint that can still reference-clone the operator's voice (`VoxCPM1.5` and
+`VoxCPM-0.5B` cannot serve as drop-ins — they require continuation prompting, and the 16 kHz one
+measures an even worse pause floor); and it is **not voxcpm-specific**: the 40 ms lattice is VoxCPM2's
+own, while the raised pause floor is shared by the voxcpm family and by OmniVoice. No local driver is a
+substitute today, so there is no free win being left on the table.
+
+Monitoring is the deliverable: `kk stage audio-quality <file…>` reports cepstrum lag/prominence, pause
+floor, offset decay curve and band balance for any episode, and
+`plugins/generations/voxcpm-tts/scripts/probe-long-render.py` reproduces the artifact in ~2.5 minutes so
+a future checkpoint or upstream fix can be judged numerically. Re-open this amendment when either a
+voxcpm build drops the lattice or the operator accepts the Gemini render cost.
+
 ### Amendment — 2026-10-15 (the voxcpm profile must anchor a speaker; operator voice assets are private)
 
 The production test above exposed a defect in how the driver was configured, not in the driver: the
