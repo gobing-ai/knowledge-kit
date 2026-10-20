@@ -44,6 +44,13 @@ function fixtureDb(rows: { item: string; decision: string; maker: string; value:
     return db;
 }
 
+/** Captures the CLI's writers, so the suite asserts on the report instead of printing it. */
+function capture() {
+    const out: string[] = [];
+    const err: string[] = [];
+    return { out, err, writers: { out: (line: string) => out.push(line), err: (line: string) => err.push(line) } };
+}
+
 describe('decision signal report (0317 R4)', () => {
     it('AUC is the Mann-Whitney overlap: 1.0 separated, 0.5 constant, ties at half', () => {
         expect(aucOf([3, 4, 5], [0, 0, 1])).toBe(1);
@@ -117,7 +124,9 @@ describe('decision signal report (0317 R4)', () => {
     });
 
     it('fails loud on a missing database and prints the report for a real one', () => {
-        expect(runReportCli(['--db', '/nonexistent/kk.db'])).toBe(1);
+        const missing = capture();
+        expect(runReportCli(['--db', '/nonexistent/kk.db'], missing.writers)).toBe(1);
+        expect(missing.err.join('\n')).toContain('decision-signal-report: database not found: /nonexistent/kk.db');
 
         const dir = mkdtempSync(join(tmpdir(), 'kk-signal-report-'));
         const dbPath = join(dir, 'kk.db');
@@ -128,9 +137,18 @@ describe('decision signal report (0317 R4)', () => {
         db.exec(`VACUUM INTO '${dbPath}'`);
         db.close();
         try {
-            expect(runReportCli(['--db', dbPath, '--window', '100000d', '--json'])).toBe(0);
-            expect(runReportCli(['--db', dbPath, '--window', '100000d'])).toBe(0);
-            expect(() => runReportCli(['--db', dbPath, '--window', 'nonsense'])).toThrow('--window must be');
+            const json = capture();
+            expect(runReportCli(['--db', dbPath, '--window', '100000d', '--json'], json.writers)).toBe(0);
+            const parsed = JSON.parse(json.out.join('\n'));
+            expect(parsed.dbPath).toBe(dbPath);
+            expect(parsed.rows[0].decisionId).toBe('kk-item-importance');
+            const table = capture();
+            expect(runReportCli(['--db', dbPath, '--window', '100000d'], table.writers)).toBe(0);
+            expect(table.out[0]).toContain('# decision signal report');
+            expect(table.out.at(-1)).toContain('decision\tmaker\titems');
+            expect(() => runReportCli(['--db', dbPath, '--window', 'nonsense'], capture().writers)).toThrow(
+                '--window must be',
+            );
         } finally {
             rmSync(dir, { recursive: true, force: true });
         }

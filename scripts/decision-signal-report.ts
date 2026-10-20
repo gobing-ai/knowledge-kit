@@ -170,12 +170,21 @@ export function formatTable(rows: readonly SignalRow[]): string {
     return lines.join('\n');
 }
 
+/** Where the report's stdout/stderr go; injected so an in-process suite run does not print. */
+export interface ReportWriters {
+    out: (line: string) => void;
+    err: (line: string) => void;
+}
+
 /**
  * The CLI entry, returning the process exit code instead of exiting: the suite drives it in-process
  * (a spawned child's coverage is not attributed to the run), and `import.meta.main` below is the
  * only place that terminates.
  */
-export function runReportCli(args: readonly string[]): number {
+export function runReportCli(
+    args: readonly string[],
+    writers: ReportWriters = { out: console.log, err: console.error },
+): number {
     const flagValue = (flag: string, fallback?: string): string => {
         const index = args.indexOf(flag);
         const value = index === -1 ? undefined : args[index + 1];
@@ -187,7 +196,7 @@ export function runReportCli(args: readonly string[]): number {
     };
     const dbPath = resolve(flagValue('--db', '.works/kk.db'));
     if (!existsSync(dbPath)) {
-        console.error(`decision-signal-report: database not found: ${dbPath}`);
+        writers.err(`decision-signal-report: database not found: ${dbPath}`);
         return 1;
     }
     const since = parseWindow(flagValue('--window', '365d'));
@@ -195,13 +204,13 @@ export function runReportCli(args: readonly string[]): number {
     try {
         const rows = signalRows(db, since);
         if (args.includes('--json')) {
-            console.log(JSON.stringify({ dbPath, since, minItems: MIN_ITEMS, aucMargin: AUC_MARGIN, rows }, null, 2));
+            writers.out(JSON.stringify({ dbPath, since, minItems: MIN_ITEMS, aucMargin: AUC_MARGIN, rows }, null, 2));
         } else {
-            console.log(`# decision signal report — ${dbPath} (labeled_at >= ${new Date(since).toISOString()})`);
-            console.log(
+            writers.out(`# decision signal report — ${dbPath} (labeled_at >= ${new Date(since).toISOString()})`);
+            writers.out(
                 `# AUC = P(published outranks dropped); signal when |AUC-0.5| >= ${AUC_MARGIN} and items >= ${MIN_ITEMS}`,
             );
-            console.log(formatTable(rows));
+            writers.out(formatTable(rows));
         }
     } finally {
         db.close();
