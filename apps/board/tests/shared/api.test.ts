@@ -3,6 +3,7 @@ import {
     createBoardClient,
     DEFAULT_READER_ORIGIN,
     type FetchLike,
+    isHttpOrigin,
     isLoopbackHttpOrigin,
     readerOriginFrom,
     storeItemsQueryString,
@@ -21,6 +22,18 @@ describe('isLoopbackHttpOrigin', () => {
     });
 });
 
+describe('isHttpOrigin', () => {
+    it('accepts any http(s) origin with no path or credentials, including LAN and TLS ones', () => {
+        expect(isHttpOrigin('http://192.168.87.27:3003')).toBe(true);
+        expect(isHttpOrigin('https://board.example')).toBe(true);
+        expect(isHttpOrigin('http://127.0.0.1:4340/')).toBe(true);
+        expect(isHttpOrigin('ftp://board.example')).toBe(false);
+        expect(isHttpOrigin('http://user:pw@board.example')).toBe(false);
+        expect(isHttpOrigin('http://board.example/board')).toBe(false);
+        expect(isHttpOrigin('board.example')).toBe(false);
+    });
+});
+
 describe('readerOriginFrom', () => {
     it('accepts a loopback kkApi override and refuses a non-loopback one with a diagnostic', () => {
         expect(readerOriginFrom('?kkApi=http://127.0.0.1:5000')).toEqual({
@@ -35,13 +48,35 @@ describe('readerOriginFrom', () => {
 });
 
 describe('createBoardClient', () => {
-    it('refuses a non-loopback reader or board origin', () => {
+    it('refuses a cross-origin non-loopback reader or a malformed board origin', () => {
         expect(() =>
             createBoardClient({ readerOrigin: 'http://evil.example', boardOrigin: 'http://127.0.0.1:1' }),
         ).toThrow(/reader origin/);
         expect(() =>
-            createBoardClient({ readerOrigin: 'http://127.0.0.1:1', boardOrigin: 'https://evil.example' }),
+            createBoardClient({ readerOrigin: 'http://127.0.0.1:1', boardOrigin: 'http://evil.example/api' }),
         ).toThrow(/board origin/);
+    });
+
+    it('accepts a Board served on a LAN address in native mode, but not as the cross-origin reader', async () => {
+        const seen: string[] = [];
+        const fetchImpl: FetchLike = async (input) => {
+            seen.push(String(input));
+            return new Response(JSON.stringify({ total: 0, columns: [], rows: [] }), { status: 200 });
+        };
+        const client = createBoardClient({
+            readerOrigin: 'http://192.168.87.27:3003',
+            boardOrigin: 'http://192.168.87.27:3003',
+            fetchImpl,
+        });
+        expect(await client.storeRun('run 1')).toMatchObject({ runId: 'run 1' });
+        expect(seen[0]).toContain('http://192.168.87.27:3003/api/project/database/tables/collect_runs/rows');
+        // A loopback reader stays usable from a LAN-served Board, and a LAN reader never is.
+        expect(() =>
+            createBoardClient({ readerOrigin: 'http://127.0.0.1:4340', boardOrigin: 'http://192.168.87.27:3003' }),
+        ).not.toThrow();
+        expect(() =>
+            createBoardClient({ readerOrigin: 'http://192.168.0.9:4340', boardOrigin: 'http://192.168.87.27:3003' }),
+        ).toThrow(/reader origin/);
     });
 
     it('builds reader and board URLs through the injected fetch', async () => {

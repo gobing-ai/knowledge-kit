@@ -45,6 +45,13 @@ const MODULES = [
     { id: 'kk-itc', name: 'IT Content', icon: '✍️', entry: 'itc' },
 ] as const;
 
+/**
+ * A hostname that is not a loopback name, resolved to 127.0.0.1 inside Chromium by
+ * `--host-resolver-rules`, so the LAN-access case needs no real network. The Board allows it
+ * through `SPUR_CORS_ORIGINS`.
+ */
+const LAN_HOST = 'lan.test';
+
 /** Every long-running child + temp dir the suite owns, torn down in `afterAll`. */
 const children: { kill(): void }[] = [];
 /** Every long-running server, with the log file that captured its stdout+stderr. */
@@ -169,10 +176,16 @@ function childEnv(): NodeJS.ProcessEnv {
  * discarded. A server that exits before it listens is therefore diagnosable from the failure
  * message instead of a bare "Unable to connect".
  */
-function spawnServer(name: string, label: string, args: string[], cwd: string): (typeof servers)[number] {
+function spawnServer(
+    name: string,
+    label: string,
+    args: string[],
+    cwd: string,
+    extraEnv: Record<string, string> = {},
+): (typeof servers)[number] {
     const logFile = join(realTempDir(`kk-installed-${name}-`), 'server.log');
     const fd = openSync(logFile, 'a');
-    const child = Bun.spawn({ cmd: args, cwd, stdout: fd, stderr: fd, env: childEnv() });
+    const child = Bun.spawn({ cmd: args, cwd, stdout: fd, stderr: fd, env: { ...childEnv(), ...extraEnv } });
     children.push(child);
     const handle = { name, label, logFile, child };
     servers.push(handle);
@@ -566,6 +579,8 @@ async function setup(): Promise<void> {
         'installed Board (spur serve)',
         [...spur, 'serve', '--port', String(boardPort), '--host', '127.0.0.1', '--no-open', '--cwd', project],
         project,
+        // The LAN-origin case below reaches this same listener under a non-loopback hostname.
+        { SPUR_CORS_ORIGINS: `http://${LAN_HOST}:${boardPort}` },
     );
     await waitFor(`${boardOrigin}/api/health`, boardServer);
     const readerPort = freePort();
@@ -580,7 +595,7 @@ async function setup(): Promise<void> {
 
     // 6. A real browser; a missing runtime fails the setup loudly.
     try {
-        browser = await chromium.launch();
+        browser = await chromium.launch({ args: [`--host-resolver-rules=MAP ${LAN_HOST} 127.0.0.1`] });
     } catch (error) {
         const cause = error instanceof Error ? error.message : String(error);
         throw new Error(`Chromium is unavailable — run \`bunx playwright install chromium\`. Cause: ${cause}`);
@@ -689,6 +704,19 @@ describe('installed Board native modules (AC1/AC7)', () => {
                 module.id,
             ).toBeGreaterThan(0);
         }
+    }, 30_000);
+
+    it('mounts Collect when the Board is opened on a non-loopback hostname', async () => {
+        if (!ready || page === null) throw new Error('setup did not complete');
+        // The reported shape: http://192.168.87.27:3003/board/modules/kk-collect — a LAN name that
+        // is not a loopback origin for the module's reader/board origin rule.
+        const lanOrigin = `http://${LAN_HOST}:${new URL(boardOrigin).port}`;
+        await page.goto(`${lanOrigin}/board/modules/kk-collect`, { waitUntil: 'commit' });
+        await page.waitForSelector('.kk-board-collect', { timeout: 15_000 });
+        const body = await page.locator('body').innerText();
+        expect(body).not.toContain('could not be displayed');
+        // Native reads still resolve: the same-origin store routes answer on the LAN hostname.
+        await waitForRunOption('r-a');
     }, 30_000);
 });
 

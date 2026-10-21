@@ -161,6 +161,26 @@ export function isLoopbackHttpOrigin(origin: string): boolean {
     return url.hostname === '127.0.0.1' || url.hostname === 'localhost' || url.hostname === '[::1]';
 }
 
+/**
+ * True when `origin` is a well-formed http(s) origin with no path, query or credentials.
+ *
+ * The Board origin is never operator input — every module passes `window.location.origin` — and the
+ * browser enforces same-origin on the requests it carries. A Board served on a LAN address
+ * (`spur serve --host 0.0.0.0`, or behind a TLS proxy) is therefore usable; only a malformed value
+ * is refused.
+ */
+export function isHttpOrigin(origin: string): boolean {
+    let url: URL;
+    try {
+        url = new URL(origin);
+    } catch {
+        return false;
+    }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+    if (url.username !== '' || url.password !== '') return false;
+    return url.pathname === '/' && url.search === '' && url.hash === '';
+}
+
 /** Strip one trailing slash so path joins never double up. */
 function origin(base: string): string {
     return base.replace(/\/+$/, '');
@@ -196,20 +216,23 @@ function parseSpurDbRows<T = Record<string, unknown>>(pageData: SpurDbPage): T[]
 }
 
 /**
- * Build the client. Both origins are validated up front: a non-loopback reader or a
- * malformed Board origin is a programming error, never a silent broken link.
+ * Build the client. Both origins are validated up front: a malformed Board origin, or a
+ * cross-origin reader that is not loopback, is a programming error, never a silent broken link.
+ *
+ * Native mode (reader origin == Board origin) is exempt from the loopback rule: the Board itself may
+ * be served on a LAN address, where a loopback reader origin would name the *client's* machine.
  */
 export function createBoardClient(options: BoardClientOptions): BoardClient {
-    if (!isLoopbackHttpOrigin(options.readerOrigin)) {
-        throw new Error(`reader origin must be loopback http, got '${options.readerOrigin}'`);
-    }
-    if (!isLoopbackHttpOrigin(options.boardOrigin)) {
-        throw new Error(`board origin must be loopback http, got '${options.boardOrigin}'`);
-    }
     const reader = origin(options.readerOrigin);
     const board = origin(options.boardOrigin);
-    const doFetch: FetchLike = options.fetchImpl ?? fetch;
     const isNativeSpur = reader === board;
+    if (!isHttpOrigin(options.boardOrigin)) {
+        throw new Error(`board origin must be an http origin, got '${options.boardOrigin}'`);
+    }
+    if (!isNativeSpur && !isLoopbackHttpOrigin(options.readerOrigin)) {
+        throw new Error(`reader origin must be loopback http, got '${options.readerOrigin}'`);
+    }
+    const doFetch: FetchLike = options.fetchImpl ?? fetch;
 
     async function getJson<T>(url: string): Promise<T> {
         const response = await doFetch(url, { headers: { accept: 'application/json' } });

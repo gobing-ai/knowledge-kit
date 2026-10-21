@@ -439,7 +439,11 @@ empty; run rows are still served). Messages are bounded and never carry raw SQLi
    `GET /api/board/modules` use that `/modules/<id>` prefix). Opening the bare `/modules/<id>` page
    only shows the SPA's own 404. Definitions stay in **Settings → Workflows**
    (`/board/settings/workflows`). A validated `kkApi` query parameter selects a non-default loopback
-   reader port and is retained in saved URLs.
+   reader port and is retained in saved URLs. A Board served on a LAN address
+   (`spur serve --host 0.0.0.0`, opened as `http://<lan-ip>:<port>`) is supported too: the Board
+   origin a module validates is `window.location.origin`, so Collect's native mode reads the
+   Board's own routes and no module refuses to render. Only the `kkApi` reader override stays
+   loopback-only.
 
 **Restart / shutdown.** Both processes are foreground and stateless. `Ctrl-C` (SIGINT/SIGTERM) stops
 the Board (it releases the scheduler owner lock, stops its job children, closes the DB) and the
