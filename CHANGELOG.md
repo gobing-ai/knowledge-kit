@@ -1,3 +1,21 @@
+## [0.1.7] - 2026-10-20
+
+### Fixed
+
+- fix(daily): name the intro sting under `~/.config/kk/voices/` and expand `~/` / `$HOME/` in `dailyIntro`, because the quoted `"${vars.intro_music}"` argument reaches the stage unexpanded (fe24fed)
+<!-- src: plugins/kk/scripts/daily-stages.ts:1324 -->
+
+### Changed
+
+- docs(migration): transport the whole `.works` tree instead of only the store, and record the diverge-then-merge procedure — halt the scheduler, then merge `collect_runs` → `items` → `labels` by explicit id (9cee53d)
+<!-- src: docs/migration.md:260 -->
+- docs(migration): back the works-tree completeness claim with a file-level diff — 0 source-only paths against 48 target-only ones (be58434)
+<!-- src: docs/migration.md:574 -->
+- docs(migration): verify the final-state claims and restate the rollback as a two-command sequence, with only the `launchctl enable` half exercised (3f1298b)
+<!-- src: docs/migration.md:596 -->
+- docs: retarget the intro sting to the config root in migration C7 and the segmented-episode note, dropping the retired `.works` symlink (93a4f54)
+<!-- src: docs/migration.md:26 -->
+
 ## [0.1.6] - 2026-10-20
 
 ### Added
