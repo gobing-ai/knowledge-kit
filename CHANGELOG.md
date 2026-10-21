@@ -1,3 +1,45 @@
+## [0.1.6] - 2026-10-20
+
+### Added
+
+- feat(kk): add the measure-only `kk stage audio-quality` diagnostic — cepstrum echo peak, pause floor, offset decay curve and band balance, registered lazily in the runner (6381a52a)
+<!-- src: plugins/kk/scripts/kk-workflow-stages.ts:1655 -->
+- feat(rules): gate the closed `HIGH|MEDIUM|LOW` confidence vocabulary with a checker that reads every declared array, jq accept-edge and comparison chain (aab95930)
+<!-- src: .spur/rules/surface/confidence-level-enum.yaml:42 -->
+- feat: stamp `sub-category:ai-daily` on every daily article this generator emits (481e0960)
+<!-- src: plugins/generations/daily-article-gen/src/index.ts:127 -->
+
+### Fixed
+
+- fix(kk): fail a daily run at minute 0 when the installed stage runner lacks a stage its workflow invokes (fb36a65e)
+<!-- src: plugins/kk/scripts/daily-stages.ts:1999 -->
+- fix(cli): keep the TypeSafe decision response readable under Bun by handing the SDK an already-buffered response (1ee84e1f)
+<!-- src: apps/cli/src/decision-hub.ts:286 -->
+- fix(rules): treat a confidence comparison chain split across lines as one site, so a dropped level is caught (da2f1438)
+<!-- src: .spur/rules/surface/confidence-level-enum.sh:75 -->
+
+### Changed
+
+- chore(spur): retire the `feature-verification` wrapper references — add the `spur-check-feature` action target and drop the two assertions that required the deleted workflow (b5f9ae87)
+<!-- src: package.json:35 -->
+- docs(voxcpm): record the 40 ms echo lattice and keep voxcpm as primary under monitoring, with gemini as the measured-dry escape hatch (be94c265)
+<!-- src: docs/00_ADR.md:1391 -->
+- docs(voxcpm): cite the model-API claims in the plugin README and register that file in the citation rule (35dea34f)
+<!-- src: plugins/generations/voxcpm-tts/README.md:112 -->
+- docs(adr): cite the 2026-10-20 API and version claims — the SDK body drain, the spur 0.4.15→0.4.16 SDK jump, the `voxcpm` `_generate` signature (3223c622)
+<!-- src: docs/00_ADR.md:1352 -->
+- docs(voxcpm): name the monitored lattice in the generate tier's description (bf7cdc53)
+<!-- src: plugins/kk/workflows/kk-daily-ai-voice2.yaml:564 -->
+- docs: verify every migration claim in the mac mini runbook and withdraw the low-power-mode inference (92dc2845)
+<!-- src: docs/migration.md:63 -->
+- docs: correct the migration runbook for the bundle transfer and the laya runtime, removing the retired `feature-verification.yaml` (84666668)
+<!-- src: docs/migration.md:125 -->
+- docs: add the mac mini migration runbook for the scheduled jobs (6ac935a3)
+<!-- src: docs/migration.md:1 -->
+- docs: record the mac mini migration evidence, findings and cutover (cef927ed)
+- docs: record the first live scheduled tick on the mac mini (c6f7ba24)
+- docs(dogfood): index the 2026-10-20 daily-voice findings (868daba2)
+
 ## [0.1.5] - 2026-10-19
 
 ### Added
