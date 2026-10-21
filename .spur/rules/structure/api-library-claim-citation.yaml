@@ -31,6 +31,10 @@ $schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
 # SCOPE NOTE: `include` does not scope an `exit-code` rule — the evaluator runs whether or not the
 # globs match (measured 2026-10-12: an `include` that matched nothing still executed), so the checker's
 # own discovery owns the scope and these globs are documentation. Do not narrow them expecting effect.
+# The registry is therefore NOT limited to `docs/`: `plugins/generations/voxcpm-tts/README.md` is
+# registered because it carries the only reader-facing statement of the VoxCPM2-only
+# `reference_wav_path`, the `generate()` knob defaults this plugin leaves unset, and the
+# `VOXCPM_MODEL` contract (2026-10-20).
 rules:
   - id: api-library-claim-cites-source-and-confidence
     description: "Every row of an `API/library claim sources and confidence` block carries a Confidence cell beginning with HIGH|MEDIUM|LOW and EARNS it for that row: HIGH cites an http(s) URL, a `path:line`, or a path with a code/doc extension; MEDIUM/LOW cite the same or name what is unverified. The block must hold at least one data row. A claim therefore cannot ship as an uncited assertion, and a level cannot be invented or smuggled past the enum."
@@ -83,6 +87,7 @@ rules:
           - "--require-block=docs/design/voxcpm-daily-voice-driver.md"
           - "--require-block=docs/tasks/0256_add-standalone-voxcpm-generator-using-the-shared-voice-pipel.md"
           - "--require-block=docs/tasks/0257_wire-voxcpm-into-both-daily-workflows-with-driver-aware-audi.md"
+          - "--require-block=plugins/generations/voxcpm-tts/README.md"
           - "--require-block=docs/tasks/0258_compare-voxcpm-and-gemini-daily-audio-with-recorded-quality-.md"
         message: "exit {code}: a document declared in the claim registry carries no API/library claim block, or its rows do not cite and earn their level — add the cited claim table, or drop the document from the registry in .spur/rules/structure/api-library-claim-citation.yaml"
     include:

@@ -108,3 +108,16 @@ one for every segment, derived from its `emotion`, and the anchored clip already
 A per-request `engine`,
 `personality=true` or an active `effects_chain` is rejected. Speed stays in shared postprocessing.
 Transcription is omitted, so ASR-dependent QC is reported unavailable (not passing evidence).
+
+#### API/library claim sources and confidence
+
+The externally changeable claims this file makes about the installed `voxcpm` package, each with the
+artifact it was read from. This block is enforced by `structure/api-library-claim-citation` (the file
+is in that rule's `--require-block` registry), so a HIGH claim without a citation fails the gate.
+
+| Claim | Source | Local verification | Confidence |
+| --- | --- | --- | --- |
+| `reference_wav_path` is accepted only by VoxCPM2 checkpoints; any other model id refuses it, so a `reference` profile is VoxCPM2-only while older checkpoints clone through `prompt_wav_path` + `prompt_text` | installed `voxcpm` package | `plugins/generations/voxcpm-tts/.venv/lib/python3.12/site-packages/voxcpm/core.py:239` (`ValueError("reference_wav_path is only supported with VoxCPM2 models")`); reproduced with `scripts/probe-long-render.py --model openbmb/VoxCPM1.5` | HIGH |
+| `generate()`/`_generate()` exposes `cfg_value` (default 2.0), `inference_timesteps` (10), `normalize`, `denoise` and `max_len`, and this plugin passes none of them — the profile and text are the only inputs it sets | installed `voxcpm` package plus this plugin's worker | `…/site-packages/voxcpm/core.py:180`–`:193` (signature and defaults) and `python/worker.py:252`–`:262` (the three `generate(...)` call shapes) | HIGH |
+| `VOXCPM_MODEL` defaults to `openbmb/VoxCPM2`, the model self-reports its output rate, and that rate is what the WAV header carries (no resampling in this plugin) | this plugin's worker | `python/worker.py:181` (`environ.get("VOXCPM_MODEL", "openbmb/VoxCPM2")`), `:207` (`int(model.tts_model.sample_rate)`) and `:264` (`write_pcm16_wav(dest, pcm, sample_rate)`) | HIGH |
+| A `reference` profile pins one speaker (median-pitch swing 22–26 Hz, sd 9–12 Hz) while `instruct` samples a new speaker per request (141 Hz swing), so multi-segment work needs a reference or continuation profile | measured on this machine, 2026-10-15, three texts | `scripts/audit-speaker-consistency.py` grades a render; the 2026-10-15 figures are the ones its docstring records | MEDIUM |
