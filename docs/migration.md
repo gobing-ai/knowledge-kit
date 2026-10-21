@@ -592,3 +592,22 @@ explicit id, and only then restart the scheduler.
 | 13 | `kk` must be upgraded to 0.1.6 because the repo moved to it | `npm view @gobing-ai/knowledge-kit dist-tags` → `{ latest: '0.1.6' }`; after `bun add`, `kk --version` → `0.1.6` and preflight still exits 0 | H |
 | 14 | The repo's `bun.lock` change came from the version bump | **Unverified.** It was reverted with `git checkout -- bun.lock` because a generated lock diff does not belong in a hand-carried tree. The actual cause was not traced | L |
 | 15 | Transfer ran at ~2 MB/s / ~35 min and extraction took 23 s | Measured from the transfer loop's byte counters (3278 MB → 3877 MB over ~10 min, tapering to ~2 MB/s) and the `tar` wall clock | H |
+
+### 11.4 Final state report claims (2026-10-20, 19:45)
+
+| # | Claim | Evidence | Conf. |
+| --- | --- | --- | --- |
+| 1 | The source scheduler is durably disabled, not just stopped | `launchctl print-disabled gui/501` → `"ai.gobing.spur-serve" => disabled`; `ps` count of `spur serve` → 0 | H |
+| 2 | The target scheduler runs under launchd | `launchctl print` → `state = running`, `pid = 15393`; `/api/health` → `{"status":"ok",…,"uptime_seconds":…}` | H |
+| 3 | No scheduled job has failed on the target | `select count(*) from queue_jobs where type='scheduler.custom' and status!='completed'` → `0` | H |
+| 4 | Ticks completed at 16:00/16:05/16:30/17:00/17:30/19:00/19:30 | `queue_jobs` timestamps, quoted from the query output | H |
+| 5 | The 18:00 and 18:30 gaps came from my own halt during the works swap | Halt window observed: backup tarball created 17:39, `Starting Spur server` #2 at 18:31:48, `serve.log` modified 18:31:48. A tick between 17:30 and 19:00 is absent from `queue_jobs`, which is exactly that window | H |
+| 6 | A missed history tick self-heals from its checkpoint | Only the project's own comment says so: `.spur/config.yaml:81` "checkpoint resume self-heals the gap". Not exercised — no run was inspected for gap backfill | M |
+| 7 | The rollback needs `launchctl enable` before `bootstrap` | Verified the `enable` half only, and it is safe to verify: `enable` flips the flag without loading the agent (`ps` → 0, port 3003 → 0 lines), then the flag was set back to `disabled`. The full pair was **not** executed on the source, deliberately — loading it would re-arm a second 04:30 run | H (half) / M (pair) |
+| 8 | `publish-surfdash` and `publish-podcast` are hard-fail nodes | Both node blocks contain `0` `onError:` keys (block-scoped `awk`, count printed per node) | H |
+| 9 | The publish artifacts live in `31-publish/` | `ls .works/kk-daily-ai-voice2/20261020/31-publish/` → `…_14_publish-surfdash_result.json`, `…_16_publish-podcast_result.json`, `…_17_publish_completeness.json` | H |
+| 10 | Cadences: history every 30 min (07–23), episode 04:30, collect 04:05/10:05/16:05/22:05 | `.spur/config.yaml:83` (`*/30 7-23`), `:136` (`30 4`), `:171` (`5 4,10,16,22`); the observed 16:05 and 19:00/19:30 ticks match | H |
+| 11 | The source is a clean 1-command rollback | Overstated twice: it is a **two**-command sequence, and the rollback plist is only valid while `~/.config/kk` and `.works` stay untouched on the source | M |
+| 12 | A macOS update could leave the agent dormant at the login window | Inference only. The inputs were verified (`autoLoginUser=robin`, `fdesetup status` → FileVault Off, `stat /dev/console` → `robin`), but no reboot was performed | L |
+| 13 | The port-3003 listener seen on the source was unrelated | `lsof` → pid 42385, `spur-new/apps/cli/src/index.ts serve --cwd …/spur-new-runall-g11-8c1f`, i.e. another project's dev server, not a second knowledge-kit scheduler | H |
+| 14 | Transfer scratch is 4.4 GiB and removable | `du -sh /tmp/kk-migration` → 4.4G, of which `kk-works-full.tgz` is 3.8G; both `.works` copies are authoritative | H |
