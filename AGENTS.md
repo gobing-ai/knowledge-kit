@@ -202,14 +202,19 @@ If a check fails, fix the root cause. **Never** bypass with `--no-verify`, `--fo
 
 ### Editing `plugins/kk/scripts/` (stage bodies)
 
-`kk stage <name>` resolves its runner from the **installed** package (`$HOME/node_modules/@gobing-ai/`
-`knowledge-kit/plugins/kk/scripts/`), not from this checkout — product *plugins* resolve the opposite
-way (the project root shadows the install). A stage edit is therefore live for `kk executor run` but
-invisible to `kk stage`, and every scheduled workflow (the 04:30 daily voice run included) keeps
-executing the old body. Refresh the copy after editing:
+`kk stage <name>` resolves its runner from the **installed** package that the `kk` on PATH belongs
+to, not from this checkout — product *plugins* resolve the opposite way (the project root shadows the
+install). A stage edit is therefore live for `kk executor run` but invisible to `kk stage`, and every
+scheduled workflow (the 04:30 daily voice run included) keeps executing the old body. Resolve the
+package root from the CLI instead of assuming a location: this machine carries two installs, the live
+bun-global one (`~/.bun/install/global/node_modules/@gobing-ai/knowledge-kit`) and a stale
+`~/node_modules/@gobing-ai/knowledge-kit`, and on 2026-10-21 two merged daily-run fixes sat inert behind
+that staleness while the scheduled run kept replaying the old failure.
 
 ```bash
-rsync -a plugins/kk/scripts/ "$HOME/node_modules/@gobing-ai/knowledge-kit/plugins/kk/scripts/"
+KK_PKG="$(dirname "$(dirname "$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$(command -v kk)")")")"
+rsync -a plugins/kk/scripts/ "$KK_PKG/plugins/kk/scripts/"
+grep -c expectedItemSections "$KK_PKG/plugins/kk/scripts/daily-stages.ts"   # confirm the sync landed
 ```
 
 Until this repo is released and reinstalled, that copy is the one the cron actually runs.
