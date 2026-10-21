@@ -25,8 +25,14 @@ const LOGIN_TIMEOUT_MS = 180_000;
  * at that instant — so the poll must not spend all of it: a dead session then dies mid-report and
  * surfaces as `probe exit 1 (malformed probe output)` instead of `refused` (observed 2026-10-16, where
  * the 30s poll plus overhead overran `kk plugin check`'s 30s default).
+ *
+ * 25s, not 8s (2026-10-21): a dead session spends the WHOLE poll before it can report, so the reserve
+ * has to cover a cold `KK_BROWSER_CHANNEL=chrome` start, not a warm one — at 8s the first
+ * `kk plugin check wechatmp-pub xhs-pub --timeout 60000` of the day SIGKILLed the probe at 60s and
+ * reported `malformed probe output` while the immediately following run answered the real
+ * `refused — Authentication was not confirmed` in the same 60s budget.
  */
-const PROFILE_OVERHEAD_MS = 8_000;
+const PROFILE_OVERHEAD_MS = 25_000;
 /** Floor for the readiness poll, so a tiny `--timeout` still probes the console instead of refusing blind. */
 const MIN_READINESS_MS = 1_000;
 
