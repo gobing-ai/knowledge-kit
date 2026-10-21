@@ -895,7 +895,7 @@ The profile shape is `{ topic, where, order, limit }`:
 ```yaml
 topic: ai-news
 where:
-  kk-item-category: { in: [ai-news, ai-industry] }
+  kk-item-category: { in: [ai-news, ai-industry, ai-technical, ai-research] }
   kk-item-quality: { gte: 2 }
   kk-item-importance: { gte: 3 }
   kk-item-china-politics: { lte: 1 }

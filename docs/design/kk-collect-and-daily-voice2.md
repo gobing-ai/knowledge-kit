@@ -147,7 +147,10 @@ write survive, and the fail-closed defaults themselves are unchanged).
 ```yaml
 topic: ai-news
 where:
-  kk-item-category: { in: [ai-news, ai-industry] }
+  # the whole AI taxonomy (2026-10-21): the two-category gate front-ran the workflow's own
+  # `qc_categories` allowlist, so extract starved the pool at 6 items while ai-research/ai-technical
+  # stories sat labelled in the same window
+  kk-item-category: { in: [ai-news, ai-industry, ai-technical, ai-research] }
   # quality gate is gte 2 (task 0212): the heuristic labeler tops out at 1-2 and a gte-3 gate
   # emptied every real pool
   kk-item-quality: { gte: 2 }

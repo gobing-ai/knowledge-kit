@@ -173,10 +173,23 @@ describe('kk store extract', () => {
         const result = await run(['store', 'extract', '--topic', 'ai-news', '--db', dbPath, '--out', out]);
 
         expect(result.code).toBe(0);
-        expect(JSON.parse(result.out)).toEqual({ count: 2 });
+        // 2026-10-21: the profile admits the whole AI taxonomy, so the two `ai-research` items are
+        // pool members too. Order: urgency desc (newsB 5, research 3, newsA 2, research2 2), then
+        // impact desc breaks the urgency-2 tie.
+        expect(JSON.parse(result.out)).toEqual({ count: 4 });
         const docs = pool(out);
-        expect(docs.map((doc) => doc.id)).toEqual([itemId(CORPUS.newsB), itemId(CORPUS.newsA)]);
-        expect(docs.map((doc) => doc.title)).toEqual(['Model launch', 'Chip funding']);
+        expect(docs.map((doc) => doc.id)).toEqual([
+            itemId(CORPUS.newsB),
+            itemId(CORPUS.research),
+            itemId(CORPUS.newsA),
+            itemId(CORPUS.research2),
+        ]);
+        expect(docs.map((doc) => doc.title)).toEqual([
+            'Model launch',
+            'Alignment paper',
+            'Chip funding',
+            'Benchmark paper',
+        ]);
         expect(docs[0]).toEqual({
             id: itemId(CORPUS.newsB),
             title: 'Model launch',
@@ -231,7 +244,8 @@ describe('kk store extract', () => {
             join(dir, 'wide.json'),
         ]);
         // `stale` re-enters the wider window; `unlabelled` still cannot (no importance label).
-        expect(JSON.parse(wide.out)).toEqual({ count: 3 });
+        // Five, not three: the two `ai-research` items clear the widened category allowlist.
+        expect(JSON.parse(wide.out)).toEqual({ count: 5 });
     });
 
     it('writes [] and prints {count: 0} with exit 0 for an empty pool', async () => {
@@ -436,7 +450,9 @@ describe('kk store extract — the topic-scoped selection exclusion (R4/AC2)', (
         ]);
         await store.close();
 
-        // Both ai-news stories are excluded — no `--exclude-used` flag, no workflow argument.
+        // Both ai-news stories are excluded; the two ai-research items are still pool members (the
+        // category allowlist admits them), and the ai-research-topic selection above is another
+        // topic's business.
         const excluded = await run([
             'store',
             'extract',
@@ -448,7 +464,7 @@ describe('kk store extract — the topic-scoped selection exclusion (R4/AC2)', (
             join(dir, 'excluded.json'),
         ]);
         expect(excluded.code).toBe(0);
-        expect(JSON.parse(excluded.out)).toEqual({ count: 0 });
+        expect(JSON.parse(excluded.out)).toEqual({ count: 2 });
 
         // The explicit opt-out sees the whole pool again, in the profile's order.
         const included = await run([
@@ -463,15 +479,20 @@ describe('kk store extract — the topic-scoped selection exclusion (R4/AC2)', (
             join(dir, 'included.json'),
         ]);
         expect(included.code).toBe(0);
-        expect(JSON.parse(included.out)).toEqual({ count: 2 });
+        expect(JSON.parse(included.out)).toEqual({ count: 4 });
         expect(pool(join(dir, 'included.json')).map((entry) => entry.id)).toEqual([
             itemId(CORPUS.newsB),
+            itemId(CORPUS.research),
             itemId(CORPUS.newsA),
+            itemId(CORPUS.research2),
         ]);
 
         // The ai-research selection did NOT exclude anything from ai-news, and the ai-news
         // selections do not exclude the ai-research pool (the `--exclude-used` removal).
-        expect(pool(join(dir, 'excluded.json'))).toEqual([]);
+        expect(pool(join(dir, 'excluded.json')).map((entry) => entry.id)).toEqual([
+            itemId(CORPUS.research),
+            itemId(CORPUS.research2),
+        ]);
         artifact('extract-exclusion.json', {
             excluded: JSON.parse(excluded.out),
             included: JSON.parse(included.out),
@@ -510,7 +531,7 @@ describe('kk store extract artifacts', () => {
             '--out',
             join(dir, 'artifact-pool.json'),
         ]);
-        expect(JSON.parse(result.out)).toEqual({ count: 2 });
+        expect(JSON.parse(result.out)).toEqual({ count: 4 });
 
         mkdirSync(ARTIFACT_DIR, { recursive: true });
         writeFileSync(

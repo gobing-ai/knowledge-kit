@@ -12,7 +12,13 @@
 # `kk store extract --limit` overrides it.
 topic: ai-news
 where:
-  kk-item-category: { in: [ai-news, ai-industry] }
+  # 2026-10-21: the allowlist is the whole AI taxonomy, in lockstep with the workflow's
+  # qc_categories (`ai-news,ai-technical,ai-research,ai-industry`) and episode-plan-gen's
+  # DEFAULT_FILTER_CONFIG. The two-category gate here front-ran that widening one layer upstream:
+  # a live pool labelled 20 ai-industry + 7 ai-research + 7 ai-technical + 3 ai-news came out of
+  # extract as 6 items, so `daily-qc-content`'s floor refusal closed the day as no-content before
+  # the widened QC allowlist could admit a technical or research story.
+  kk-item-category: { in: [ai-news, ai-industry, ai-technical, ai-research] }
   # quality 2, not 3: real ingest bodies (last30days/aihot summaries) are stub-length, so the
   # heuristic labeler tops out at 1-2 and a gte-3 gate empties every real pool (task 0212 dogfood
   # finding). Raise this back when a full-text ingest source lands.

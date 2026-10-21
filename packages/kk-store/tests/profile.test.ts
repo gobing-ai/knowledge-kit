@@ -38,7 +38,12 @@ describe('parseProfile', () => {
 
         expect(profile.topic).toBe('ai-news');
         expect(profile.where).toEqual([
-            { decisionId: 'kk-item-category', op: 'in', values: ['ai-news', 'ai-industry'] },
+            // 2026-10-21: the whole AI taxonomy, in lockstep with the workflow's qc_categories.
+            {
+                decisionId: 'kk-item-category',
+                op: 'in',
+                values: ['ai-news', 'ai-industry', 'ai-technical', 'ai-research'],
+            },
             { decisionId: 'kk-item-quality', op: 'gte', value: 2 },
             { decisionId: 'kk-item-importance', op: 'gte', value: 2 },
             // Task 0229 R5: the conservative moderation gate. An inner join on `labels_current`,
