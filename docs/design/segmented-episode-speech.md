@@ -21,7 +21,7 @@ A section whose text still exceeds one driver request may be split into internal
 
 `dailyGenerate` (`plugins/kk/scripts/daily-stages.ts`) owns grouping, per-section requests, the section cache, and the speech join. No new workflow node. `kk-daily-ai-voice2.yaml` passes a sixth argument, `section_concurrency`. Absent or empty, the five-argument command stays today's one-shot job, which is what `kk-daily-ai-voice.yaml` calls. That file is not edited.
 
-`dailyIntro` still prepends `.works/kk-daily-ai-voice/AI每日资讯_8秒播客片头.mp3` (the `intro_music` var) after speech exists. The sting is not a section and is not sent to a voice driver. `dailyEpisodeDuration` still reads `30-audio/<date>_11_generate_content.json` `metadata.duration` and refuses an episode outside the workflow's window (`episode_min_minutes`–`episode_max_minutes`). Publish-prep still reads `metadata.mp3Path ?? audioPath`.
+`dailyIntro` still prepends the 8s sting under the config root, `~/.config/kk/voices/AI每日资讯_8秒播客片头.mp3` (the `intro_music` var; `~` expanded by the stage), after speech exists. The sting is not a section and is not sent to a voice driver. `dailyEpisodeDuration` still reads `30-audio/<date>_11_generate_content.json` `metadata.duration` and refuses an episode outside the workflow's window (`episode_min_minutes`–`episode_max_minutes`). Publish-prep still reads `metadata.mp3Path ?? audioPath`.
 
 ## 3. Cache and resume
 

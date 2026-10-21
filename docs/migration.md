@@ -23,7 +23,7 @@ target keyboard.
 | C4 | Voice generation works on the target: `uv` + the voxcpm venv + `openbmb/VoxCPM2` weights in the HF cache, `ffmpeg`/`ffprobe` present. |
 | C5 | Publishing works: the `surfdash` checkout exists at the path `vars.surfdash_root` names, and `gh` can push it as `robinmin`. |
 | C6 | The scheduler runs on the target under launchd (`ai.gobing.spur-serve`), surviving logout, with `TYPESAFE_API_KEY` in its environment. |
-| C7 | The target's store (`.works/kk.db`) carries the 24 h item pool, and the intro sting at `.works/kk-daily-ai-voice/AI每日资讯_8秒播客片头.mp3` exists. |
+| C7 | The target's store (`.works/kk.db`) carries the 24 h item pool, and the intro sting at `~/.config/kk/voices/AI每日资讯_8秒播客片头.mp3` exists (`intro_music` names it there; no `.works` symlink is needed). |
 | C8 | The laptop's scheduler is stopped last, after C1–C7 pass, so exactly one machine is due at 04:30. |
 
 ---
