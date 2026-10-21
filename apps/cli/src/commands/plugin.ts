@@ -201,7 +201,12 @@ function checkOne(record: PluginRecord, options: CheckOptions): CheckRow {
         return { name: record.name, kind: record.kind, status: 'error', detail: 'probe entry missing' };
     }
     // Documented default (docs/04_DESIGN.md): a hung browser probe must never wedge the run.
-    const timeoutMs = options.timeout !== undefined ? Number(options.timeout) : 30_000;
+    // 60s, not 30s (2026-10-21): every browser probe's own auth wait defaults to 30s and it prints
+    // its verdict only after that wait, so a 30s parent deadline raced the probe and produced
+    // `probe exit 1 (malformed probe output)` instead of the real `refused — session expired` — the
+    // daily run's session-preflight told the operator nothing. The parent must outlast the probe's
+    // own deadline, not match it.
+    const timeoutMs = options.timeout !== undefined ? Number(options.timeout) : 60_000;
     const result = spawnPluginProbe({
         entryPath: record.check,
         cwd: record.dir,

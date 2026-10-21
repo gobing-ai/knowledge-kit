@@ -185,7 +185,7 @@ nodes:
       options:
         onError: continue
         command: >-
-          kk plugin check wechatmp-pub xhs-pub
+          kk plugin check wechatmp-pub xhs-pub --timeout 60000
           || echo "session-preflight: a publish channel's saved session was refused — fix it before this run's publish step with: bun plugins/publishings/<channel>-pub/src/profile-check.ts login (wechatmp or xhs)"
 
   - id: extract
