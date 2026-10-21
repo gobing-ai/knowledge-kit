@@ -373,6 +373,27 @@ describe('content-safety verdict gate (task 0189 R10 / AC10)', () => {
     const OK_REPORT = { platforms: [{ platform: 'xiaoyuzhou', decision: 'OK', findings: [] }], escalate: false };
     const PASS_VERDICT = { verdict: 'PASS', rubric: 'compliance', score: 0.95, confidence: 'HIGH' };
     const at = (dir: string, name: string) => join(dir, '24-script', `${STAMP}_09_${name}`);
+    /** Opening + one spoken item + closing — the smallest script the section splitter counts as 1. */
+    const ONE_ITEM_SCRIPT = [
+        'title: T',
+        'segments:',
+        '  - text: 开场。',
+        '  - text: 只剩一条。',
+        '    gap_ms: 1200',
+        '  - text: 收尾。',
+        '',
+    ].join('\n');
+    const TWO_ITEM_SCRIPT = [
+        'title: T',
+        'segments:',
+        '  - text: 开场。',
+        '  - text: 第一条事实。',
+        '    gap_ms: 1200',
+        '  - text: 第二条事实。',
+        '    gap_ms: 1200',
+        '  - text: 收尾。',
+        '',
+    ].join('\n');
 
     /** Drafts + prep; the two agent.run outputs are written by the test in place of the agents. */
     function setup(report?: unknown, verdict?: unknown): string {
@@ -695,21 +716,11 @@ describe('content-safety verdict gate (task 0189 R10 / AC10)', () => {
     it('daily-safety-revise restores a VoiceScript whose item-section structure the edit broke', () => {
         // 2026-10-21 04:30: the remediation pass removed 3 segments (27 → 24, 6 → 5 item sections).
         // `daily-wrap-docs` derives the spoken sections from `gap_ms: 1200` and refuses a mismatch with
-        // the script plan, so the scheduled run died at `generate` and published nothing. The
-        // pre-revision bytes are snapshotted by `daily-safety-prep`; this stage puts them back.
+        // the episode's included items, so the scheduled run died at `generate` and published nothing.
+        // The pre-revision bytes are snapshotted by `daily-safety-prep`; this stage puts them back.
         const dir = setup(OK_REPORT, PASS_VERDICT);
         const scriptPath = join(dir, '24-script', `${STAMP}_08_script_voicescript.yaml`);
-        const twoItems = [
-            'title: T',
-            'segments:',
-            '  - text: 开场。',
-            '  - text: 第一条事实。',
-            '    gap_ms: 1200',
-            '  - text: 第二条事实。',
-            '    gap_ms: 1200',
-            '  - text: 收尾。',
-            '',
-        ].join('\n');
+        const twoItems = TWO_ITEM_SCRIPT;
         writeFileSync(scriptPath, twoItems);
         writeFileSync(
             join(dir, '24-script', `${STAMP}_08_script-write_plan.json`),
@@ -717,16 +728,68 @@ describe('content-safety verdict gate (task 0189 R10 / AC10)', () => {
         );
         // Re-open the review so the snapshot holds the two-item structure, then break it.
         expect(runStage(['daily-safety-prep', dir, STAMP, 'xiaoyuzhou']).status).toBe(0);
-        writeFileSync(
-            scriptPath,
-            'title: T\nsegments:\n  - text: 开场。\n  - text: 只剩一条。\n    gap_ms: 1200\n  - text: 收尾。\n',
-        );
+        writeFileSync(scriptPath, ONE_ITEM_SCRIPT);
 
         const repaired = runStage(['daily-safety-revise', dir, STAMP]);
         expect(repaired.status, repaired.stderr).toBe(0);
         expect(repaired.stderr).toContain('restored the pre-revision structure');
         expect(readFileSync(scriptPath, 'utf-8')).toBe(twoItems);
         expect(readFileSync(join(dir, '.safety-revise-count'), 'utf-8')).toBe('1\n');
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('daily-safety-revise keeps a VoiceScript drop the article boundary already recorded', () => {
+        // 2026-10-21: the article excluded the 通用汽车 buyback as non-technical, the safety pass removed
+        // it from the VoiceScript, and `generate` still refused 5 sections against the 6-item plan. The
+        // recorded exclusion is the contract, so the drop stands and the run continues.
+        const dir = setup(OK_REPORT, PASS_VERDICT);
+        const scriptPath = join(dir, '24-script', `${STAMP}_08_script_voicescript.yaml`);
+        writeFileSync(
+            join(dir, '22-article', `${STAMP}_06_article_content.json`),
+            JSON.stringify({ title: 'T', body: 'B', metadata: { excludedIds: ['b'] } }),
+        );
+        writeFileSync(scriptPath, TWO_ITEM_SCRIPT);
+        writeFileSync(
+            join(dir, '24-script', `${STAMP}_08_script-write_plan.json`),
+            JSON.stringify({ items: [{ id: 'a' }, { id: 'b' }] }),
+        );
+        expect(runStage(['daily-safety-prep', dir, STAMP, 'xiaoyuzhou']).status).toBe(0);
+        writeFileSync(scriptPath, ONE_ITEM_SCRIPT);
+
+        const revised = runStage(['daily-safety-revise', dir, STAMP]);
+        expect(revised.status, revised.stderr).toBe(0);
+        expect(revised.stderr).not.toContain('restored the pre-revision structure');
+        expect(readFileSync(scriptPath, 'utf-8')).toBe(ONE_ITEM_SCRIPT);
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('daily-generate counts the plan items the article excluded', () => {
+        // Same 2026-10-21 shape at the seam that actually failed: 2 plan items, 1 item the article
+        // excluded, a 1-section script. The count must hold, otherwise the run dies after the safety
+        // gate, hours after the decision was made.
+        const dir = setup(OK_REPORT, PASS_VERDICT);
+        const articlePath = join(dir, '22-article', `${STAMP}_06_article_content.json`);
+        writeFileSync(join(dir, '24-script', `${STAMP}_08_script_voicescript.yaml`), ONE_ITEM_SCRIPT);
+        writeFileSync(
+            join(dir, '24-script', `${STAMP}_08_script-write_plan.json`),
+            JSON.stringify({ items: [{ id: 'a' }, { id: 'b' }] }),
+        );
+        // `kk` never runs: the count check fires before synthesis, and the stub fails any TTS call.
+        const bin = join(dir, 'bin');
+        mkdirSync(bin, { recursive: true });
+        writeFileSync(join(bin, 'kk'), '#!/bin/sh\necho "kk stub: refusing" >&2\nexit 1\n');
+        chmodSync(join(bin, 'kk'), 0o755);
+        const env = { PATH: `${bin}:${process.env.PATH ?? ''}` };
+        const generate = () => runStage(['daily-generate', dir, STAMP, '', 'false', 'voxcpm', '1', '20'], env);
+
+        const refused = generate();
+        expect(refused.status).toBe(1);
+        expect(refused.stderr).toContain('does not match script item sections (1)');
+
+        writeFileSync(articlePath, JSON.stringify({ title: 'T', body: 'B', metadata: { excludedIds: ['b'] } }));
+        const admitted = generate();
+        expect(admitted.stderr).not.toContain('item sections');
+        expect(admitted.status).not.toBe(0);
         rmSync(dir, { recursive: true, force: true });
     });
 

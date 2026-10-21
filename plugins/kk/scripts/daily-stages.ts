@@ -938,11 +938,14 @@ export function dailyGenerate(args: string[]): void {
         if (existsSync(planPath)) {
             try {
                 const plan = readJson(planPath) as { items?: unknown[] };
-                if (Array.isArray(plan.items) && plan.items.length !== itemSections.length) {
-                    failWith(
-                        1,
-                        `generate: plan item count (${plan.items.length}) does not match script item sections (${itemSections.length})`,
-                    );
+                if (Array.isArray(plan.items)) {
+                    const expected = expectedItemSections(workDir, runDate, plan.items);
+                    if (expected !== itemSections.length) {
+                        failWith(
+                            1,
+                            `generate: plan item count (${plan.items.length}, ${plan.items.length - expected} recorded as excluded) does not match script item sections (${itemSections.length})`,
+                        );
+                    }
                 }
             } catch (e: unknown) {
                 if (e instanceof StageFailure) throw e;
@@ -2092,11 +2095,12 @@ export function dailySafetyPrep(args: string[]): void {
     timed(workDir, 'safety-review', () => {
         const digest = safetyDigest(workDir, runDate);
         // Structural snapshot of the VoiceScript BEFORE any remediation edit. `daily-safety-revise`
-        // restores it when the remediation pass changes the item-section structure: the agent is
-        // allowed to drop a 播报形态 line, not a whole item, because `daily-wrap-docs` derives the
-        // spoken item sections from `gap_ms: 1200` and fails the run when they no longer match the
-        // script plan (2026-10-21 04:30 run: 3 segments removed → 5 sections vs 6 plan items →
-        // `generate` refused at 05:03 and the whole day published nothing).
+        // restores it when the remediation pass changes the item-section structure without a recorded
+        // exclusion: the agent is allowed to drop a 播报形态 line, not an item the article kept,
+        // because `daily-wrap-docs` derives the spoken item sections from `gap_ms: 1200` and fails the
+        // run when they no longer match the episode's included items (2026-10-21 04:30 run: 3
+        // segments removed → 5 sections vs a 6-item plan → `generate` refused at 05:03 and the whole
+        // day published nothing).
         const [, scriptPath] = safetyDraftPaths(workDir, runDate);
         const snapshot = safetyPath(workDir, runDate, 'safety-prep_script-snapshot.yaml');
         if (isFile(scriptPath)) sted('write', snapshot, () => writeRaw(snapshot, readFileSync(scriptPath, 'utf-8')));
@@ -2168,16 +2172,39 @@ export function dailySafetyRevise(args: string[]): void {
 }
 
 /**
+ * The spoken item-section count the episode is contracted to carry: the script plan's items minus the
+ * ones the article boundary recorded in `metadata.excludedIds`.
+ *
+ * The article drops boundary docs at its own stage, the safety gate aligns the VoiceScript with the
+ * article it reviews, and `daily-show-notes` already filters the plan copy by the same ids — but
+ * `daily-generate` compared the sections against the raw plan length, so the 2026-10-21 run refused a
+ * 5-section script against a 6-item plan (the 6th was the article-excluded 通用汽车 buyback) after two
+ * hours of safety review and rendered nothing. Every consumer must count the same set.
+ */
+export function expectedItemSections(workDir: string, runDate: string, planItems: unknown[]): number {
+    const excluded = metadataOf(
+        readJson(join(workDir, '22-article', `${runDate}_06_article_content.json`)),
+    ).excludedIds;
+    if (!Array.isArray(excluded)) return planItems.length;
+    const dropped = new Set(excluded.filter((id): id is string => typeof id === 'string' && id !== ''));
+    if (dropped.size === 0) return planItems.length;
+    return planItems.filter(
+        (item) => !(item !== null && typeof item === 'object' && dropped.has(String((item as { id?: unknown }).id))),
+    ).length;
+}
+
+/**
  * Repair a remediation pass that changed the VoiceScript's item-section structure.
  *
  * `daily-wrap-docs` (and `daily-generate`) derive the spoken item sections from `gap_ms: 1200` and
- * refuse the run when they disagree with the script plan's item count. The safety agent is allowed
- * to reshape lines, not to remove an item, but it did on 2026-10-21 (27 → 24 segments, 6 → 5
- * sections) and the 04:30 scheduled run died at `generate` having published nothing. The pre-revise
- * bytes are snapshotted by `daily-safety-prep`, so a structural change is undone here, inside the
- * budget loop, and the report name is printed for the operator. The budget is still spent, so the
- * loop still converges (the re-review sees the unchanged script and the gate classifies the
- * residue) instead of the day failing hours later at the TTS seam.
+ * refuse the run when they disagree with the episode's included items. The safety agent is allowed
+ * to reshape lines, and to drop an item the article boundary already excluded (that drop is the
+ * contract, and `expectedItemSections` counts it out), but an unrecorded drop breaks the one-to-one
+ * audio/notes/plan relation — and on 2026-10-21 one killed the 04:30 run at `generate` after two
+ * hours of safety review. The pre-revise bytes are snapshotted by `daily-safety-prep`, so an
+ * unaccounted structural change is undone here, inside the budget loop, and named for the operator.
+ * The budget is still spent, so the loop still converges (the re-review sees the unchanged script and
+ * the gate classifies the residue) instead of the day failing hours later at the TTS seam.
  */
 function restoreStructureIfBroken(workDir: string, runDate: string, scriptPath: string): void {
     const planPath = join(workDir, '24-script', `${runDate}_08_script-write_plan.json`);
@@ -2199,13 +2226,13 @@ function restoreStructureIfBroken(workDir: string, runDate: string, scriptPath: 
         }
         return count + (pending ? 1 : 0);
     };
-    const expected = plan.items.length;
+    const expected = expectedItemSections(workDir, runDate, plan.items);
     const actual = sections(scriptPath);
     if (actual === expected) return;
     const original = sections(snapshot);
     sted('write', scriptPath, () => writeRaw(scriptPath, readFileSync(snapshot, 'utf-8')));
     console.error(
-        `safety-revise: the edit changed the VoiceScript item sections (${expected} plan items, ${original} before, ${actual} after) — restored the pre-revision structure from ${basename(snapshot)}; audio/notes stay one-to-one with the plan`,
+        `safety-revise: the edit changed the VoiceScript item sections (${expected} included plan items, ${original} before, ${actual} after) — restored the pre-revision structure from ${basename(snapshot)}; audio/notes stay one-to-one with the plan`,
     );
 }
 
