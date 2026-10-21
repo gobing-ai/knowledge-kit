@@ -113,9 +113,10 @@ git bundle create /tmp/kk-migration/laptop-main.bundle origin/main..main
 # B. ~/.config/kk, full copy (credentials, voices, presets, browser profiles)
 tar -C /Users/robin/.config -czf /tmp/kk-migration/kk-config.tgz kk
 
-# C. Store + intro sting
-tar -C /Users/robin/xprojects/knowledge-kit -czf /tmp/kk-migration/kk-works-state.tgz \
-    .works/kk.db .works/kk-daily-ai-voice
+# C. The whole works tree — every historical run artifact, plus the store
+#    (.works is gitignored, so this tarball is the only transport for history)
+tar -C /Users/robin/xprojects/knowledge-kit -czf /tmp/kk-migration/kk-works-full.tgz .works
+#    4.5 G -> 3.8 G; media (png/mp3/wav) does not compress. ~20 min over the LAN.
 
 # D. checksums for verification on the target
 shasum -a 256 /tmp/kk-migration/* > /tmp/kk-migration/SHA256SUMS
@@ -232,13 +233,68 @@ ls ~/.config/kk                                # config.yaml voices image-preset
 
 `config.yaml` uses absolute `/Users/robin/...` paths — identical on the target, so no rewriting.
 
-### 6.6 Store, sting, voice weights
+### 6.6 The works tree (history) — stop the scheduler first
+
+`.works` holds every historical run (audio, articles, covers, ledgers) **and** the store
+`kk.db`. It is gitignored, so nothing here is recoverable from the repo.
+
+**Stop the target's scheduler before touching the store.** A running `spur serve` holds the DB
+open and a tick can fire mid-extraction:
+
+```bash
+launchctl bootout gui/$(id -u)/ai.gobing.spur-serve
+```
+
+Then archive the target's own state, move its DB aside, and extract:
 
 ```bash
 cd ~/xprojects/knowledge-kit
-tar -xzf /tmp/kk-migration/kk-works-state.tgz  # .works/kk.db + intro sting
-sqlite3 .works/kk.db "select count(*) from items;"      # sanity: rows present
-ls ~/.cache/huggingface/hub | grep -E 'VoxCPM2|laya'
+tar -czf ~/kkmig-test/kk-works-mini-before-migration.tgz .works          # reversible
+tar -xzpf /tmp/kk-migration/kk-works-full.tgz --exclude=".works/spur-serve/serve.log"
+du -sh .works && sqlite3 .works/kk.db "select count(*) from items;"
+```
+
+The two intro-music files are **absolute symlinks** into `~/.config/kk/voices/`, so they resolve on
+the target only because §6.5 already ran — verify with `ls -laL`.
+
+### 6.6.1 The store diverges — merge, never blind-overwrite
+
+If the target's scheduler ran between the copy in §6.3 and this step, its `kk.db` and the source's
+have **both** moved: each collected items the other lacks (observed 2026-10-20: source 422 items,
+target 418, with 6 source-only and 2 target-only). Overwriting the target's DB silently drops its
+rows, so back it up and merge:
+
+```bash
+# diff what each side has (do this before extracting)
+sqlite3 .works/kk.db "select id from items order by id;" > /tmp/mini-items.txt
+sqlite3 .works/kk.db "attach '/path/to/source/kk.db' as new; \
+  select id from new.items where id not in (select id from items);"
+
+# merge: collect_runs -> items -> labels, each by explicit id list
+sqlite3 .works/kk.db <<'SQL'
+ATTACH '/Users/robin/kkmig-test/mini-db-before/kk.db' AS old;
+BEGIN;
+INSERT OR IGNORE INTO collect_runs SELECT * FROM old.collect_runs
+  WHERE run_id IN (SELECT first_seen_run FROM old.items WHERE id IN ('<ids>'));
+INSERT OR IGNORE INTO items SELECT * FROM old.items WHERE id IN ('<ids>');
+INSERT OR IGNORE INTO labels SELECT * FROM old.labels WHERE item_id IN ('<ids>');
+COMMIT;
+SQL
+sqlite3 .works/kk.db "PRAGMA integrity_check;"
+```
+
+`items`/`labels` carry **no foreign keys**, and `labels` has a unique index on
+`(item_id, decision_id, maker, run_id)`, so `INSERT OR IGNORE` is idempotent. Insert in that order,
+and select the label rows by **explicit item id** — a `WHERE item_id NOT IN (SELECT id FROM main.items)`
+clause is order-dependent and silently matches nothing once the items are already in (that mistake
+cost one merge attempt on 2026-10-20).
+
+Finish by restarting the scheduler and confirming it re-registers:
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.gobing.spur-serve.plist
+curl -s localhost:3003/api/health
+grep "Scheduler entries registered" .spur/logs/spur.log | tail -1     # -> {"jobs":5}
 ```
 
 ### 6.7 voxcpm venv + the laya decision runtime
@@ -495,3 +551,22 @@ independently exercised, **L** = inference or third-party claim not verified her
 | "the **likely cause** of the 3m22s render" (Low Power Mode) | Withdrawn — claim 11. The warm measurement rules it out as the sole cause; the real driver is per-invocation model load on a slower SoC. |
 | "**may** need one interactive login" per browser channel | Still conditional, and correctly so: it needs a login on *every* channel whose profile was copied (claim 6), not just "some". |
 | "**~22 min** episode on the M5" | Sourced from the workflow's own 2026-10-15 production measurement (`.spur/config.yaml` comment), not re-measured here — treat as M. |
+
+### 11.2 Works-tree migration (2026-10-20, evening)
+
+| Check | Result |
+| --- | --- |
+| Tarball | `.works` 4.5 GiB → 3.8 GiB (`tar -czf`), sha256 `06c55c8c…` verified on the target |
+| Transfer | ~35 min over this LAN (~2 MB/s) — the slowest step of the whole migration |
+| Extraction | 23 s, `tar -xzpf`, excluding the target's live `serve.log` |
+| Item parity before merge | source 422, target 418 — **6 source-only, 2 target-only**; the target was not a subset |
+| Merge | 2 items + 16 label rows + 1 `collect_runs` row inserted; `PRAGMA integrity_check` → `ok`; final **424 items / 8805 labels** |
+| Run artifacts | `kk-daily-ai-voice2` run dirs: **17 on both hosts**; the target holds ~49 extra files from its own post-cutover collects (additive) |
+| Symlinks | 4 absolute `voices/` symlinks resolve (`ls -laL` → 223862 bytes) |
+| Scheduler | halted during the swap, re-bootstrapped after: `state = running`, `Scheduler entries registered {jobs:5}` |
+| Backups retained | `~/kkmig-test/kk-works-mini-before-migration.tgz` (1.1 MiB), `~/kkmig-test/kk.db.pre-merge` (5.9 MiB) |
+| Disk after | 17 GiB free |
+
+**Lesson.** A "copy the folder over" instruction is not safe for `.works`: the store inside it is a
+live database that both machines advance independently. Diff first, back up the loser, merge by
+explicit id, and only then restart the scheduler.
