@@ -12,7 +12,7 @@ install or to ts-libs.
 | `typescript` | `typescript/` | TypeScript tooling, output boundaries, biome-suppression ban, no `debugger` |
 | `strict` | `strict/` | Opt-in strict rules (runtime boundaries, HTTP boundaries, structural) |
 | `boundary` | `boundary/` | DB/DAO boundary enforcement |
-| `structure` | `structure/` | File layout, protected files, plugin kind-collections (ADR-009), no focused/skipped tests |
+| `structure` | `structure/` | File layout, protected files, plugin kind-collections (ADR-009), no focused/skipped tests, generated-document citation + confidence discipline (`CHANGELOG` anchors) |
 | `quality` | `quality/` | Post-test gates (coverage) |
 | `surface` | `surface/` | CLI surface consistency (registerXxxCommand wiring, --json serialization) and the closed `HIGH|MEDIUM|LOW` confidence vocabulary those surfaces emit and guard |
 

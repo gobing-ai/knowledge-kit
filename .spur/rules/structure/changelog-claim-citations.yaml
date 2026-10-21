@@ -1,0 +1,65 @@
+$schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
+# The two verifications this file adds are the ones a PROCEDURE can only ask for:
+#
+#   1. a source citation per claim  — `sp-dev-changelog` requires exactly one `<!-- src: <anchor> -->`
+#      under every claim bullet and re-checks it by hand at the end of its run (dev-operations §8,
+#      steps 7-8).  A skill run can do that; nothing stopped the next release from shipping bullets
+#      with no anchor, or an anchor whose file was deleted or whose `:line` outlived the code.  The
+#      0.1.6 section (2026-10-20) happened to be correct — 17 bullets, 14 annotations, every anchor
+#      resolving — and verifying it needed a throwaway script, which is the shape of check that
+#      belongs in the gate.
+#   2. the confidence level        — ADR-138 records NO confidence level on a changelog claim
+#      ("No confidence level is recorded"), while ADR-041 keeps the closed HIGH|MEDIUM|LOW vocabulary
+#      for the product surfaces.  So the level is verified in both directions across the ruleset: it
+#      must be exactly {HIGH, MEDIUM, LOW} where it IS recorded
+#      (`surface/confidence-level-enum`, 10 sites, 12 falsification cases) and it must be absent here
+#      (this file, arm 2).  Sections written before ADR-138 do record `Confidence: HIGH` blocks; they
+#      are history, not defects, so both arms judge only the NEWEST section.
+#
+# SCOPE — deliberately the newest release section, for the same reason
+# `structure/api-library-claim-citation` refuses a presence rule over history: the anchors arrived
+# with the 0.1.6 section, so judging every past release would fail on 400 entries of history rather
+# than on a defect a release can still fix.
+#
+# The claim signal is mechanical, not a judgement call: a scoped package (`@scope/name`), a semantic
+# version (`1.2.3`), `kk stage`, `spur `, or a backticked token containing `.` or `/`.  A date, a
+# status move or an evidence filing carries no signal and therefore needs no anchor — which is how
+# the procedure's "skip merge/bookkeeping bullets" rule stays automatic.
+#
+# The checker lives in changelog-claim-citations.sh so its file/line detail is reachable by hand — the
+# `exit-code` evaluator reports only the exit status.  Its 16 falsification cases live in
+# changelog-claim-citations.test.sh, including both arms' negative controls, the "date is not a
+# version" case that caught a real bug while wiring this up (awk unescapes `-v` values, so the
+# semantic-version pattern's `\.` became a wildcard and matched `2026-10-20`), the history case, and
+# the real-file positive control.
+#
+# SCOPE NOTE: `include` does not scope an `exit-code` rule — the evaluator runs whether or not the
+# globs match, so the checker's own discovery owns the scope and these globs are documentation.
+rules:
+  - id: changelog-claim-citations-resolve
+    description: "In the newest CHANGELOG section every bullet that asserts a code/API/library/version fact carries exactly one `<!-- src: <anchor> -->` directly beneath it, and that anchor is an http(s) URL or an existing repo `path[:line]`. An annotation floating free of a bullet, two under one bullet, or one comment holding several anchors also fails — a citation is not a citation until it names something a reader can open."
+    severity: error
+    evaluator:
+      type: exit-code
+      config:
+        command: sh
+        args:
+          - ".spur/rules/structure/changelog-claim-citations.sh"
+          - "--citations-only"
+        message: "exit {code}: a claim bullet in the newest CHANGELOG section is uncited, or its anchor does not resolve — run `sh .spur/rules/structure/changelog-claim-citations.sh --citations-only` for the line, and `sh .spur/rules/structure/changelog-claim-citations.test.sh` for the falsification cases"
+    include:
+      - "CHANGELOG.md"
+
+  - id: changelog-records-no-confidence-level
+    description: "No confidence level is recorded on a changelog claim in the newest section (ADR-138: the anchor is the evidence). A `Confidence: HIGH|MEDIUM|LOW` assertion there fails; sections written before ADR-138 keep their historical blocks untouched, and the level itself is separately constrained to exactly {HIGH, MEDIUM, LOW} wherever the product does record it (surface/confidence-level-enum)."
+    severity: error
+    evaluator:
+      type: exit-code
+      config:
+        command: sh
+        args:
+          - ".spur/rules/structure/changelog-claim-citations.sh"
+          - "--confidence-only"
+        message: "exit {code}: the newest CHANGELOG section records a confidence level, which ADR-138 retired for changelog claims — run `sh .spur/rules/structure/changelog-claim-citations.sh --confidence-only` for the line"
+    include:
+      - "CHANGELOG.md"
