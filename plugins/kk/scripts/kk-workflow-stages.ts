@@ -751,7 +751,7 @@ function formatRunDate(): string {
 }
 
 /** Expand the `~/` and `$HOME/` prefixes the config examples use. */
-function expandHome(p: string): string {
+export function expandHome(p: string): string {
     if (p.startsWith('~/')) return join(homedir(), p.slice(2));
     if (p.startsWith('$HOME/')) return join(homedir(), p.slice('$HOME/'.length));
     return p;

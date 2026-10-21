@@ -35,7 +35,7 @@ vars:
   # exists; flipping this one var to "gemini" is the escape hatch (measured dry: 20-25 ms / -34..-37 dB)
   # at the price of a 1h47m-2h21m remote render.
   vdriver: "voxcpm"
-  intro_music: ".works/kk-daily-ai-voice/AI每日资讯_8秒播客片头.mp3"
+  intro_music: "~/.config/kk/voices/AI每日资讯_8秒播客片头.mp3"
   surfdash_root: "/Users/robin/xprojects/surfdash"
   title: ""
   skip_review: "false"

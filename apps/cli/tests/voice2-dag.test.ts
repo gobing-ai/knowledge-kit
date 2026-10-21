@@ -670,13 +670,18 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
         const diff = Bun.spawnSync(['git', 'diff', '--', 'plugins/kk/workflows/kk-daily-ai-voice.yaml'], {
             cwd: REPO,
         });
-        // Only comments and `description:` scalars may differ. A changed state id, command, edge,
-        // var default or condition line still fails here — the behaviour is what R1 froze.
         const changed = diff.stdout
             .toString()
             .split('\n')
             .filter((line) => /^[+-]/.test(line) && !/^(\+\+\+|---)/.test(line));
-        const behavioural = changed.filter((line) => !/^[+-]\s*#/.test(line) && !/^[+-]\s*description:/.test(line));
+        // Only comments and `description:` scalars may differ. A changed state id, command, edge,
+        // var default or condition line still fails here — the behaviour is what R1 froze.
+        // Exception (2026-10-20): `intro_music` points at the sting under the config root (ADR-042)
+        // in BOTH workflows. Same file as the retired works-tree symlink, and `dailyIntro` expands
+        // `~` for either workflow, so the frozen voice1 behaviour is unchanged.
+        const docOnly = (line: string): boolean =>
+            /^[+-]\s*#/.test(line) || /^[+-]\s*description:/.test(line) || /^[+-]\s*intro_music:/.test(line);
+        const behavioural = changed.filter((line) => !docOnly(line));
         expect(behavioural, `kk-daily-ai-voice.yaml changed beyond docs:\n${diff.stdout.toString()}`).toEqual([]);
     });
 });

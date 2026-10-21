@@ -3694,6 +3694,22 @@ describe('daily-intro (0176)', () => {
             expect(meta.audioPath).toBe(merged);
         });
     });
+
+    it('expands a ~/ intro path against HOME (the sting lives under the config root, ADR-042)', () => {
+        withTempDir((dir) => {
+            const home = join(dir, 'home');
+            const voices = join(home, '.config/kk/voices');
+            mkdirSync(voices, { recursive: true });
+            makeAudio(join(voices, 'intro.wav'), INTRO_SECS, 'wav');
+            const mp3 = join(dir, 'main.mp3');
+            makeAudio(mp3, MAIN_SECS, 'mp3');
+            const workDir = setupWorkDir(dir, { mp3Path: mp3, duration: 0.5 });
+
+            const res = run(['daily-intro', workDir, RUN_DATE, '~/.config/kk/voices/intro.wav'], { HOME: home });
+            expect(res.status, res.stderr).toBe(0);
+            expect(res.stdout).toContain('intro-music: merged');
+        });
+    });
 });
 
 describe('daily-voice-audit — advisory speaker-consistency check (20261016)', () => {

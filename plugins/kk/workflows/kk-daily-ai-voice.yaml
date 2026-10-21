@@ -30,7 +30,9 @@ vars:
   # env block; smoke render 6.8s). Flip back with vdriver="voicebox".
   vdriver: "gemini"
   # 20260917 review #7: 8s intro sting prepended to every daily output; empty = skip.
-  intro_music: ".works/kk-daily-ai-voice/AI每日资讯_8秒播客片头.mp3"
+  # The sting is an operator asset: it lives under the config root (ADR-042), never in the works
+  # tree. `~` is expanded by the daily-intro stage, so it stays machine-portable.
+  intro_music: "~/.config/kk/voices/AI每日资讯_8秒播客片头.mp3"
   # 20260917 review #4/#6: surfdash checkout the patch stage commits to.
   surfdash_root: "/Users/robin/xprojects/surfdash"
   title: ""

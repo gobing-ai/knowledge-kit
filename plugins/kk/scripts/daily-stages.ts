@@ -74,6 +74,7 @@ import {
     coverBrief,
     coverNormalizeBody,
     dedupPlanByTitle,
+    expandHome,
     fail,
     failWith,
     firstArtifact,
@@ -1317,7 +1318,10 @@ export function dailyIntro(args: string[]): void {
         if (rawFile === undefined) {
             failWith(1, 'intro-music: voice content carries no mp3Path/audioPath');
         }
-        const introPath = resolve(introSrc);
+        // The sting is an operator asset under the config root (ADR-042), not a works artifact:
+        // workflow vars carry it as `~/.config/kk/voices/…`, and a shell does not expand `~` inside
+        // the quoted "${vars.intro_music}" argument, so expansion happens here.
+        const introPath = resolve(expandHome(introSrc));
         if (!existsSync(introPath)) failWith(1, `intro-music: intro file not found: ${introPath}`);
         const mainPath = resolve(rawFile);
         if (!existsSync(mainPath)) failWith(1, `intro-music: generated audio not found: ${mainPath}`);

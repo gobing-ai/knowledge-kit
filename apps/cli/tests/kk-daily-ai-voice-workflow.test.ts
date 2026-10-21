@@ -106,7 +106,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(runnerSource).toContain("last30daysEnabled !== 'true'");
         expect(runnerSource).toContain("'10-ingest/last30days-docs.json'");
         expect(yaml).toContain('vdriver: "gemini"');
-        expect(yaml).toContain('intro_music: ".works/kk-daily-ai-voice/AI每日资讯_8秒播客片头.mp3"');
+        expect(yaml).toContain('intro_music: "~/.config/kk/voices/AI每日资讯_8秒播客片头.mp3"');
         expect(yaml).toContain('surfdash_root: "/Users/robin/xprojects/surfdash"');
         // Content QC thresholds ride the plugin env channel (0099-calibrated DEFAULT_FILTER_CONFIG).
         expect(yaml).toContain('qc_categories: "ai-news,ai-technical,ai-research,ai-industry"');
