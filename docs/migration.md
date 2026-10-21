@@ -177,6 +177,14 @@ hash -r; kk --version; spur --version        # 0.1.5 / 0.4.18
 The `ts-*` / laya extras are what the `kk-item-category` (`fm-local`) and `kk-item-quality`
 (`laya-local`) decision makers need; without them `kk store label` degrades or fails.
 
+`fm-local` additionally needs the Apple Foundation Models CLI licence accepted once per machine by a
+privileged user (`sudo fm license`). Until that is done every `fm-local` decision answers
+`no-backend` and falls back to its fail-closed default — `kk-item-category` returns `non-ai` for
+every item, so the `ai-news` extract profile admits nothing and the daily run closes as no-content
+even though collection worked. On a machine without the licence, route the labelling decisions to a
+maker that does answer (the laptop's `.spur/config.yaml` sends `kk-item-category`,
+`kk-item-importance`, `kk-item-urgency` and `kk-item-impact` to `typesafe` for this reason).
+
 ### 6.3 Checkout at the laptop's exact tree
 
 Two layers: the commits that exist only locally (a bundle), then the uncommitted working tree (a
