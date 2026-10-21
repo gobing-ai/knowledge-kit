@@ -2091,6 +2091,15 @@ export function dailySafetyPrep(args: string[]): void {
     const [workDir = '', runDate = '', platforms = ''] = args;
     timed(workDir, 'safety-review', () => {
         const digest = safetyDigest(workDir, runDate);
+        // Structural snapshot of the VoiceScript BEFORE any remediation edit. `daily-safety-revise`
+        // restores it when the remediation pass changes the item-section structure: the agent is
+        // allowed to drop a 播报形态 line, not a whole item, because `daily-wrap-docs` derives the
+        // spoken item sections from `gap_ms: 1200` and fails the run when they no longer match the
+        // script plan (2026-10-21 04:30 run: 3 segments removed → 5 sections vs 6 plan items →
+        // `generate` refused at 05:03 and the whole day published nothing).
+        const [, scriptPath] = safetyDraftPaths(workDir, runDate);
+        const snapshot = safetyPath(workDir, runDate, 'safety-prep_script-snapshot.yaml');
+        if (isFile(scriptPath)) sted('write', snapshot, () => writeRaw(snapshot, readFileSync(scriptPath, 'utf-8')));
         for (const name of [
             'safety-review_report.json',
             'safety-judge_verdict.json',
@@ -2150,11 +2159,54 @@ export function dailySafetyRevise(args: string[]): void {
             }
         }
         assertScriptContent(scriptPath);
+        restoreStructureIfBroken(workDir, runDate, scriptPath);
         const path = join(workDir, SAFETY_REVISE_COUNT);
         const next = readSafetyReviseCount(workDir) + 1;
         sted('write', path, () => writeFileSync(path, `${next}\n`));
         console.log(`safety-revise: remediation pass ${next} applied; drafts re-validated`);
     });
+}
+
+/**
+ * Repair a remediation pass that changed the VoiceScript's item-section structure.
+ *
+ * `daily-wrap-docs` (and `daily-generate`) derive the spoken item sections from `gap_ms: 1200` and
+ * refuse the run when they disagree with the script plan's item count. The safety agent is allowed
+ * to reshape lines, not to remove an item, but it did on 2026-10-21 (27 → 24 segments, 6 → 5
+ * sections) and the 04:30 scheduled run died at `generate` having published nothing. The pre-revise
+ * bytes are snapshotted by `daily-safety-prep`, so a structural change is undone here, inside the
+ * budget loop, and the report name is printed for the operator. The budget is still spent, so the
+ * loop still converges (the re-review sees the unchanged script and the gate classifies the
+ * residue) instead of the day failing hours later at the TTS seam.
+ */
+function restoreStructureIfBroken(workDir: string, runDate: string, scriptPath: string): void {
+    const planPath = join(workDir, '24-script', `${runDate}_08_script-write_plan.json`);
+    const plan = readJson(planPath) as { items?: unknown[] } | null;
+    if (plan === null || !Array.isArray(plan.items)) return;
+    const snapshot = safetyPath(workDir, runDate, 'safety-prep_script-snapshot.yaml');
+    if (!isFile(snapshot)) return;
+    const sections = (path: string): number => {
+        const parsed = Bun.YAML.parse(readFileSync(path, 'utf-8')) as { segments?: Array<Record<string, unknown>> };
+        const segments = Array.isArray(parsed.segments) ? parsed.segments : [];
+        let count = 0;
+        let pending = false;
+        for (const segment of segments.slice(1, -1)) {
+            pending = true;
+            if (segment.gap_ms === 1200) {
+                count += 1;
+                pending = false;
+            }
+        }
+        return count + (pending ? 1 : 0);
+    };
+    const expected = plan.items.length;
+    const actual = sections(scriptPath);
+    if (actual === expected) return;
+    const original = sections(snapshot);
+    sted('write', scriptPath, () => writeRaw(scriptPath, readFileSync(snapshot, 'utf-8')));
+    console.error(
+        `safety-revise: the edit changed the VoiceScript item sections (${expected} plan items, ${original} before, ${actual} after) — restored the pre-revision structure from ${basename(snapshot)}; audio/notes stay one-to-one with the plan`,
+    );
 }
 
 /** Block YAML for the fields a fitted VoiceScript actually carries. Strings use JSON quoting. */

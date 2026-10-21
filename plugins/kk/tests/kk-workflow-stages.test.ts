@@ -692,6 +692,44 @@ describe('content-safety verdict gate (task 0189 R10 / AC10)', () => {
         rmSync(dir, { recursive: true, force: true });
     });
 
+    it('daily-safety-revise restores a VoiceScript whose item-section structure the edit broke', () => {
+        // 2026-10-21 04:30: the remediation pass removed 3 segments (27 → 24, 6 → 5 item sections).
+        // `daily-wrap-docs` derives the spoken sections from `gap_ms: 1200` and refuses a mismatch with
+        // the script plan, so the scheduled run died at `generate` and published nothing. The
+        // pre-revision bytes are snapshotted by `daily-safety-prep`; this stage puts them back.
+        const dir = setup(OK_REPORT, PASS_VERDICT);
+        const scriptPath = join(dir, '24-script', `${STAMP}_08_script_voicescript.yaml`);
+        const twoItems = [
+            'title: T',
+            'segments:',
+            '  - text: 开场。',
+            '  - text: 第一条事实。',
+            '    gap_ms: 1200',
+            '  - text: 第二条事实。',
+            '    gap_ms: 1200',
+            '  - text: 收尾。',
+            '',
+        ].join('\n');
+        writeFileSync(scriptPath, twoItems);
+        writeFileSync(
+            join(dir, '24-script', `${STAMP}_08_script-write_plan.json`),
+            JSON.stringify({ items: [{ id: 'a' }, { id: 'b' }] }),
+        );
+        // Re-open the review so the snapshot holds the two-item structure, then break it.
+        expect(runStage(['daily-safety-prep', dir, STAMP, 'xiaoyuzhou']).status).toBe(0);
+        writeFileSync(
+            scriptPath,
+            'title: T\nsegments:\n  - text: 开场。\n  - text: 只剩一条。\n    gap_ms: 1200\n  - text: 收尾。\n',
+        );
+
+        const repaired = runStage(['daily-safety-revise', dir, STAMP]);
+        expect(repaired.status, repaired.stderr).toBe(0);
+        expect(repaired.stderr).toContain('restored the pre-revision structure');
+        expect(readFileSync(scriptPath, 'utf-8')).toBe(twoItems);
+        expect(readFileSync(join(dir, '.safety-revise-count'), 'utf-8')).toBe('1\n');
+        rmSync(dir, { recursive: true, force: true });
+    });
+
     it('daily-safety-revise validates the edited drafts and spends one budget unit per pass', () => {
         const dir = setup(OK_REPORT, PASS_VERDICT);
         expect(runStage(['daily-safety-revise', dir, STAMP]).status).toBe(0);
