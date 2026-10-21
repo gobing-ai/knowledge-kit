@@ -244,11 +244,13 @@ percentage for conditional/looping work.
 
 ## 7. Workflow discovery compatibility
 
-`plugins/kk/workflows/` is the canonical directory for repository-owned YAML, including
-`feature-verification.yaml`. `.spur/workflows -> ../plugins/kk/workflows` preserves legacy paths
+`plugins/kk/workflows/` is the canonical directory for repository-owned YAML.
+`.spur/workflows -> ../plugins/kk/workflows` preserves legacy paths
 and exposes the directory through Spur project discovery. Existing shared discovery paths remain. Remove the redundant registered `plugins/kk/workflows` path now that the
 project layer aliases it, so the CLI does not list definitions twice. Do not create physical copies. Verify the Settings catalog endpoint contains each
-of the three target workflows once and validates the legacy feature-verification path.
+of the three target workflows once and resolves through the symlink. (The legacy
+`feature-verification.yaml` path check is retired with the wrapper itself — spur's ADR-142 lifecycle
+binds verification receipts to the bundled `feature-lifecycle`.)
 
 ## 8. Delivery and verification
 

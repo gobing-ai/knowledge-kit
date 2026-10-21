@@ -201,9 +201,10 @@ redaction:
 # Values match the built-in defaults; adjust here instead of patching release code when
 # conventions change.
 builder:
-  # The bun preset resolves `check-feature` to `bun run spur-check-feature`, a script this repo
-  # never had; feature completion evaluates this action, so pin it to the repo-wide gate the
-  # local feature-verification.yaml override already runs.
+  # The bun preset resolves `check-feature` to `bun run spur-check-feature`, which now exists as an
+  # alias of the repo-wide gate (spur's feature-lifecycle FSM runs it when a feature enters
+  # `verifying`, ADR-142). The pin stays explicit so a future preset change cannot silently repoint
+  # feature completion at a narrower command.
   actions:
     check-feature: bun run spur-check
   bump-ver:

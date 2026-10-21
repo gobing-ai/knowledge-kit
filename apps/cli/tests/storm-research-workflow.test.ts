@@ -25,10 +25,6 @@ describe('kk-storm-research workflow (0059/0069)', () => {
         expect(existsSync(ssotPath)).toBe(true);
         expect(lstatSync(join(import.meta.dir, '../../../.spur/workflows')).isSymbolicLink()).toBe(true);
         expect(realpathSync(spurCopyPath)).toBe(realpathSync(ssotPath));
-        const verification = 'feature-verification.yaml';
-        expect(realpathSync(join(import.meta.dir, '../../../.spur/workflows', verification))).toBe(
-            realpathSync(join(import.meta.dir, '../../../plugins/kk/workflows', verification)),
-        );
     });
 
     it('generate — local-doc merge is array-safe jq (C4 dogfood P1-1 regression)', () => {

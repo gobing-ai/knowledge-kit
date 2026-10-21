@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.51.0
+version: 2.52.0
 created_at: 2026-07-22
-updated_at: 2026-10-18
+updated_at: 2026-10-20
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -1911,6 +1911,11 @@ lands on `illustration.width/height` beside the card.
 
 ## Repository workflow discovery
 
-Workflow files: `plugins/kk/workflows/` is canonical, including `feature-verification.yaml`.
-`.spur/workflows` is a relative symlink to `../plugins/kk/workflows`; existing workflow paths remain
-valid and Settings → Workflows discovers the plugin definitions via the project layer.
+Workflow files: `plugins/kk/workflows/` is canonical. `.spur/workflows` is a relative symlink to
+`../plugins/kk/workflows`; existing workflow paths remain valid and Settings → Workflows discovers
+the plugin definitions via the project layer. The retired `feature-verification` wrapper (removed
+with spur's script-absorption/lifecycle upgrade, ADR-142, live in @gobing-ai/spur@0.4.18) is gone:
+feature verification runs through the bundled `feature-lifecycle` FSM — entering `verifying` executes
+`spur feature verify <id>`, resolving SDLC action `check-feature` → `bun run spur-check-feature`
+(alias of the full `spur-check` gate) — and records a receipt bound to `feature-lifecycle`, never to
+a project workflow of that name.

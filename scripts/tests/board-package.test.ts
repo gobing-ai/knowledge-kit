@@ -114,7 +114,6 @@ describe('buildBoard', () => {
             expect(existsSync(join(canonical, `${name}.yaml`))).toBe(true);
             expect(existsSync(join(legacy, `${name}.yaml`))).toBe(true);
         }
-        expect(existsSync(join(legacy, 'feature-verification.yaml'))).toBe(true);
     });
 
     it('is wired into install, the root build, and the CLI bundle/prepack path', () => {
