@@ -256,19 +256,16 @@ decisions:
     - plugins/kk/decisions
   maker: fm-local
   makers:
-    # 2026-10-21: the four labelling decisions below moved off fm-local because the Apple
-    # Foundation Models CLI is unlicensed on this machine (`fm system model unavailable: YOU HAVE
-    # NOT AGREED TO THE APPLE FOUNDATION MODELS CLI LEGAL NOTICE & TERMS`, reason `no-backend`).
-    # Every ask fell back fail-closed: kk-item-category → `non-ai` on EVERY item, so the ai-news
-    # extract profile (`kk-item-category in [ai-news, ai-industry]`) could never admit a story and
-    # the daily pool stayed at 1-2 items no matter how many docs kk-collect ingested — the
-    # 2026-10-18..21 thin/no-content days and the 40-doc drift. typesafe answers these decisions
-    # correctly (verified `source: model`: ai-news / ai-industry / ai-technical). Restore fm-local
-    # after the operator accepts the licence in a privileged shell (`sudo fm license`).
-    kk-item-category: typesafe
-    kk-item-importance: typesafe
-    kk-item-urgency: typesafe
-    kk-item-impact: typesafe
+    # 2026-10-21: fm-local is primary again — the operator accepted the Apple Foundation Models CLI
+    # licence (09:46 local; `fm license --status` → "Agreed to license FM1 version 1.0"). The
+    # typesafe detour earlier that day existed only because every unlicensed ask answered
+    # `no-backend` and `kk-item-category` then fell back to `non-ai` for EVERY item, which emptied
+    # the ai-news pool. Keep the four decisions named explicitly so an unlicensed machine fails
+    # visibly here instead of silently starving the pool.
+    kk-item-category: fm-local
+    kk-item-importance: fm-local
+    kk-item-urgency: fm-local
+    kk-item-impact: fm-local
     # Restored to laya-local 2026-10-19 (task 0317 R5): spur 0.4.17 ships `worker/laya_worker.py`
     # (spur-new 1262), and `spur decision run kk-item-quality` answers `maker: laya-local,
     # reason: accepted` in ~1s. Before 0.4.17 every ask failed with `reason: error` in ~20ms.
