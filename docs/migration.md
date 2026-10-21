@@ -561,7 +561,7 @@ independently exercised, **L** = inference or third-party claim not verified her
 | Extraction | 23 s, `tar -xzpf`, excluding the target's live `serve.log` |
 | Item parity before merge | source 422, target 418 — **6 source-only, 2 target-only**; the target was not a subset |
 | Merge | 2 items + 16 label rows + 1 `collect_runs` row inserted; `PRAGMA integrity_check` → `ok`; final **424 items / 8805 labels** |
-| Run artifacts | `kk-daily-ai-voice2` run dirs: **17 on both hosts**; the target holds ~49 extra files from its own post-cutover collects (additive) |
+| Run artifacts | `kk-daily-ai-voice2` run dirs: **17 on both hosts**. File-level diff: **0 source-only paths**, 48 target-only paths (26 `kk-collect` files from its own `T2305Z` run, 22 `kk-smart-seo` preflights) — additive, nothing missing |
 | Symlinks | 4 absolute `voices/` symlinks resolve (`ls -laL` → 223862 bytes) |
 | Scheduler | halted during the swap, re-bootstrapped after: `state = running`, `Scheduler entries registered {jobs:5}` |
 | Backups retained | `~/kkmig-test/kk-works-mini-before-migration.tgz` (1.1 MiB), `~/kkmig-test/kk.db.pre-merge` (5.9 MiB) |
@@ -570,3 +570,25 @@ independently exercised, **L** = inference or third-party claim not verified her
 **Lesson.** A "copy the folder over" instruction is not safe for `.works`: the store inside it is a
 live database that both machines advance independently. Diff first, back up the loser, merge by
 explicit id, and only then restart the scheduler.
+
+### 11.3 Works-tree migration claims (2026-10-20, evening)
+
+`laptop-only files` is the decisive completeness measure: `comm -23 <source list> <target list>`.
+
+| # | Claim | Evidence | Conf. |
+| --- | --- | --- | --- |
+| 1 | `.works` is untracked, so the tarball is the only transport for history | `git check-ignore -v .works` → `.gitignore:180:/.works` | H |
+| 2 | The tarball is complete — nothing was left on the source | `comm -23 laptop-files.txt mini-files.txt` → **0 laptop-only files** (4877 vs 4892; every source path present) | H |
+| 3 | The target holds 48 files the source does not, all from its own post-cutover runs | `comm -13` → 48, composed of 26 `kk-collect/` files from runs `20261020T2004Z` (**source**) + `20261020T2305Z` (**target-local**) and 22 `kk-smart-seo/` preflight dirs | H |
+| 4 | `--exclude` preserved the target's live `serve.log` instead of overwriting it | target log: `size=582`, `created=Oct 20 12:54:33`, 2 start banners; source log: 1701 bytes, 5 banners. The source's content is absent → exclusion held, and the target's file was created before the migration and kept its inode | H |
+| 5 | Compression is only 16% because the bulk is media | measured 4.5 GiB → 3.8 GiB (84%); by count the tree is dominated by text (3521 `json`, 368 `txt`, 316 `md`) against 155 `wav`/123 `png`/115 `mp3`, but by bytes the media dominates — so 16% is the measured result, the media explanation is plausibility, not a measurement | H / M |
+| 6 | `items` and `labels` carry no foreign keys | `select sql from sqlite_master … \| grep -ci "foreign key"` → `0` | H |
+| 7 | `labels` is protected by a unique index, so a re-run of the merge cannot duplicate | `sqlite_master` → `CREATE UNIQUE INDEX "labels_observation_unique" ON labels (item_id, decision_id, maker, run_id)` | H |
+| 8 | `INSERT OR IGNORE` skips conflicting rows rather than aborting | Observed effect only: a second attempt at the same insert changed nothing (labels stayed 8789) and the corrected insert moved 8789 → 8805. The general semantics come from SQLite's conflict-clause documentation (sqlite.org/lang_conflict.html), **not fetched this session** | H (observed) / M (general) |
+| 9 | Blindly overwriting the target's DB would have dropped rows | Divergence observed before the merge: 422 vs 418 items, 6 source-only and 2 target-only ids. The loss is inferred from the row counts, not from attempting the overwrite | H |
+| 10 | The two intro-music files are absolute symlinks that resolve on the target | `readlink` → `/Users/robin/.config/kk/voices/…`; `ls -laL` → 223862 bytes on both hosts | H |
+| 11 | The stale `index.lock` had no owner and was safe to move | 0 bytes, `created 14:33`, no `git` process in `ps`, and `git status` in the same repo worked — so only write paths were blocked | H |
+| 12 | The target's scheduler kept running after cutover, which is why the store diverged | `queue_jobs` `scheduler.custom` rows completed at 16:00, 16:05, 16:30, 17:00, 17:30; the 16:05 tick is the one that added the 2 target-only items | H |
+| 13 | `kk` must be upgraded to 0.1.6 because the repo moved to it | `npm view @gobing-ai/knowledge-kit dist-tags` → `{ latest: '0.1.6' }`; after `bun add`, `kk --version` → `0.1.6` and preflight still exits 0 | H |
+| 14 | The repo's `bun.lock` change came from the version bump | **Unverified.** It was reverted with `git checkout -- bun.lock` because a generated lock diff does not belong in a hand-carried tree. The actual cause was not traced | L |
+| 15 | Transfer ran at ~2 MB/s / ~35 min and extraction took 23 s | Measured from the transfer loop's byte counters (3278 MB → 3877 MB over ~10 min, tapering to ~2 MB/s) and the `tar` wall clock | H |
