@@ -48,7 +48,12 @@ vars:
   cover_fallback: ""
   # 0219 R3: image-gen vendor fallback for the XHS render; "" restores strict fail-fast.
   xhs_fallback: "true"
-  xhs_enabled: "true"
+  # 2026-10-21 operator decision: OFF for now (was on since 2026-09-29). The plugin reported today's
+  # draft as saved (`草稿箱` 12 -> 13 plus a scoped `保存成功` toast) while the console showed the
+  # operator no draft, so the channel's success evidence is not trustworthy until that is resolved.
+  # Flip back to "true" to resume the card plan/render/draft series; `xhs_live` stays a separate
+  # launch-time switch and nothing else in the run depends on this target.
+  xhs_enabled: "false"
   xhs_cards: "4"
   xhs_style: "xhs-knowledge"
   xhs_provider: "minimax"
