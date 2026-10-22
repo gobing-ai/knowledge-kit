@@ -57,6 +57,15 @@ export interface CollectViewItemsFilter {
     search?: string;
 }
 
+/** One day's new-item yield per source channel (`CollectViewDao.channelYield`). */
+export interface CollectViewChannelDay {
+    /** Local calendar day, `YYYY-MM-DD`. */
+    day: string;
+    /** `items.source`; `(none)` when the collector stored an item without one. */
+    source: string;
+    items: number;
+}
+
 /** One item as the store views render it. */
 export interface CollectViewItem {
     id: string;
@@ -335,6 +344,30 @@ export class CollectViewDao extends BaseDao {
             "SELECT DISTINCT topic AS topic FROM selections WHERE topic <> '' ORDER BY topic",
         );
         return rows.map((row) => row.topic);
+    }
+
+    /**
+     * New-item yield per local calendar day per source channel (`first_seen_at`), newest day first.
+     *
+     * The channel-width read: whether an ingestion source is delivering at all, and whether the day's
+     * total is thin because one channel went quiet or because every channel did (2026-10-22). Days
+     * and hours use SQLite's `localtime`, so the DST boundary is the host's, not a fixed offset.
+     */
+    async channelYield(sinceMs: number): Promise<CollectViewChannelDay[]> {
+        const rows = await this.adapter.queryAll<{ day: string; source: string; items: number }>(
+            `SELECT date(first_seen_at / 1000, 'unixepoch', 'localtime') AS day,
+                    source AS source,
+                    COUNT(*) AS items
+             FROM items WHERE first_seen_at >= ?
+             GROUP BY day, source
+             ORDER BY day DESC, items DESC, source ASC`,
+            sinceMs,
+        );
+        return rows.map((row) => ({
+            day: row.day,
+            source: row.source === '' ? '(none)' : row.source,
+            items: row.items,
+        }));
     }
 
     /**

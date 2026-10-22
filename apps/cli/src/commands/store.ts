@@ -1308,6 +1308,91 @@ async function countPoolItems(fs: FileSystem, path: string): Promise<number> {
     }
 }
 
+/** Options accepted by `kk store stats`. */
+interface StatsOptions {
+    days: string;
+    db?: string;
+    json?: boolean;
+}
+
+/** Default `--days` window: long enough to see a channel go quiet, short enough to read. */
+const DEFAULT_STATS_DAYS = 14;
+
+/**
+ * `kk store stats [--days <n>] [--json] [--db <path>]` — new-item yield per local day per source
+ * channel over the trailing window.
+ *
+ * The channel-width read (2026-10-22): a thin day is only diagnosable if you can see WHICH source
+ * stopped delivering. `kk-collect`'s per-plugin counts live in `collect_runs`, but the stored
+ * `items.source` is the finer channel (rss/youtube/reddit/hackernews/polymarket/github/grounding),
+ * and a channel that has been dead for days is otherwise invisible. Read-only: one SELECT.
+ */
+async function statsAction(options: StatsOptions): Promise<void> {
+    try {
+        const days = Number(options.days === '' ? DEFAULT_STATS_DAYS : options.days);
+        if (!Number.isInteger(days) || days <= 0) {
+            throw new Error(`--days must be a positive integer, got '${options.days}'`);
+        }
+        const sinceMs = Date.now() - days * 86_400_000;
+        const dbPath = await resolveStorePath(resolveKkConfigPath(), options.db);
+        const store = await openStore({ path: dbPath });
+        try {
+            const rows = await store.collectView.channelYield(sinceMs);
+            const sources = [...new Set(rows.map((row) => row.source))].sort();
+            const byDay = new Map<string, Map<string, number>>();
+            for (const row of rows) {
+                const entry = byDay.get(row.day) ?? new Map<string, number>();
+                entry.set(row.source, (entry.get(row.source) ?? 0) + row.items);
+                byDay.set(row.day, entry);
+            }
+            const bySource: Record<string, number> = {};
+            for (const row of rows) {
+                bySource[row.source] = (bySource[row.source] ?? 0) + row.items;
+            }
+            const window = [...byDay.entries()].map(([day, counts]) => ({
+                day,
+                total: [...counts.values()].reduce((sum, n) => sum + n, 0),
+                sources: Object.fromEntries([...counts.entries()].sort(([a], [b]) => a.localeCompare(b))),
+            }));
+            if (options.json === true) {
+                consoleOutput.write(JSON.stringify({ days, byDay: window, bySource }));
+                return;
+            }
+            consoleOutput.write(renderChannelTable(window, sources, bySource));
+        } finally {
+            await store.close();
+        }
+    } catch (error) {
+        failLoud('kk.store.stats.failed', error);
+    }
+}
+
+/** Fixed-width text table: one row per day, one column per source channel plus the day's total. */
+function renderChannelTable(
+    window: Array<{ day: string; total: number; sources: Record<string, number> }>,
+    sources: readonly string[],
+    bySource: Record<string, number>,
+): string {
+    if (window.length === 0) return 'no items in the window';
+    const headers = ['day', ...sources, 'total'];
+    const body = window.map((entry) => [
+        entry.day,
+        ...sources.map((source) => String(entry.sources[source] ?? 0)),
+        String(entry.total),
+    ]);
+    const footer = [
+        'TOTAL',
+        ...sources.map((source) => String(bySource[source] ?? 0)),
+        String(window.reduce((sum, entry) => sum + entry.total, 0)),
+    ];
+    const widths = headers.map((header, i) =>
+        Math.max(header.length, ...body.map((row) => (row[i] ?? '').length), (footer[i] ?? '').length),
+    );
+    const line = (row: readonly string[]): string =>
+        row.map((cell, i) => (i === 0 ? cell.padEnd(widths[i] ?? 0) : cell.padStart(widths[i] ?? 0))).join('  ');
+    return [line(headers), ...body.map(line), line(footer)].join('\n');
+}
+
 /**
  * `kk store pool-count <file> --min <n>` — the workflow-guard predicate over a pool artifact:
  * exit 0 when the file holds at least `n` items, exit 1 (naming the count) otherwise.
@@ -1572,6 +1657,14 @@ export function registerStoreCommand(program: Command): void {
         .argument('<file>', 'Pool artifact: a Doc[] JSON file or an object carrying metadata.docs')
         .requiredOption('--min <n>', 'Minimum item count for exit 0')
         .action((file: string, options: { min: string }) => poolCountAction({ file, min: options.min }));
+
+    store
+        .command('stats')
+        .description('New-item yield per local day per source channel (read-only channel-width report)')
+        .option('--days <n>', 'Trailing window in days', String(DEFAULT_STATS_DAYS))
+        .option('--json', 'Print the {days, byDay, bySource} JSON instead of the table')
+        .option('--db <path>', 'Store database path (default: kk config store.db_path, else .works/kk.db)')
+        .action(statsAction);
 
     store
         .command('select')

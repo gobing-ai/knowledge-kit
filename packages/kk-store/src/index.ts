@@ -30,6 +30,7 @@ export {
 export {
     COLLECT_VIEW_PAGE_SIZE,
     type CollectItemLabelDetail,
+    type CollectViewChannelDay,
     CollectViewDao,
     type CollectViewItem,
     type CollectViewItemsFilter,
