@@ -82,6 +82,10 @@ docs/design/      # per-kind authoring specs (ingestion, generator, publish, fan
   `proto use` to install. Exception: `spur` and `superskill` are never pinned — always run and record
   "latest" (bare CLI, `@latest` installs); version numbers belong only in point-in-time evidence, not live
   configs.
+- **Untrusted config:** `biome`, `cog` and `lefthook` are `[plugins.tools]` entries, so proto ignores
+  them until this checkout is trusted. Run `proto trust .prototools` once per clone/worktree; without
+  it the lefthook shim exits 1 and the pre-push hook dies with `proto::tool::untrusted_plugin`
+  (CI is auto-trusted, so only local machines hit this).
 - **Single global install:** keep exactly one `spur` on PATH (the bun-global one) — a second npm-global
   copy shadows it and silently downgrades the engine.
 - **Git hooks:** Lefthook. **Conventional commits:** cocogitto (`cog`).
