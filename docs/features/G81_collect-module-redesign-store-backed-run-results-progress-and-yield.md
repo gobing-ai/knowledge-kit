@@ -133,6 +133,7 @@ Feature: Collect module redesign — store-backed run results, progress and yiel
 | 0307 | Serve read-only Collect store projections from the KK board reader | done |
 | 0308 | Redesign the Collect Board module with Overview, Run detail and Items tabs | done |
 | 0309 | Verify the redesigned Collect module in the installed Spur Board against the real store | done |
+| 0319 | Collect Summary tab: render the real channel yield (day x source) and per-plugin ingest counts | todo |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
