@@ -39,7 +39,46 @@
 > defect: a mixed-engine selector union (`text=上传音频, button:has-text(…)`), which Playwright parses
 > as pure CSS and matches nothing; the upload/cover clicks now click the `trySelectors` winner.
 
-Method: the plugins' own Chromium (Playwright 1.55 build) on the real profile dir
+> **Sixth pass — the 2026-10-21 draft's warnings, measured (five read-only probes on the live
+> session, evidence `.spur/memory/evidence/20261021-wechatmp/wechatmp-probe{,2,3,4,5}-20261021.json`
+> + `wechatmp-step-*.png`; probe scripts were scratch and are not kept).** The saved draft carried
+> `音频上传未成功` / `一键排版 … no 匹配目标格式 option` / `原创声明未生效` / `创作来源未生效` /
+> `原文链接 dialog` warnings. Every committed-state probe still exists (`#js_original`,
+> `.js_ori_setting_checkbox`, `#js_reward_setting_area`, `#js_claim_source_area`,
+> `.js_claim_source_selected`, `#author`, `textarea#title`, `div[data-placeholder*="标题"]`), so the
+> rail did not lose its ids — the entry paths and two file-input shapes changed:
+>
+> 1. **Audio upload (fixed 2026-10-21, `flow.ts` `AUDIO_UPLOAD_INPUT`).** 音频 toolbar item
+>    (`li#audio_music_plugin_btn`) → dropdown → the 音频 item → `.weui-desktop-dialog` "插入音频"
+>    (tabs `从素材库选择` / `从视频号选择` / `上传音频`, a `搜索音频` field, per-row checkboxes,
+>    `插入`/`取消`) → `上传音频` opens a SECOND dialog: "上传音频 … 上传文件 · 封面 上传封面 ·
+>    使用账号头像 · 标题 0/64 · 我已阅读并同意《公众平台音频上传服务规则》(already checked) · 保存".
+>    The audio file input carries **no `accept` attribute at all**, and the cover input carries
+>    `image/bmp, image/png, image/jpeg, image/jpg, image/gif, image/webp` (no slash-terminated
+>    `image/`). Every accept-qualified candidate in the old lists missed both, which is why no audio
+>    material uploaded — and with it the draft lost the player, the audio cover, and the library cover
+>    the 封面 step reuses (`lib 素材库` still stops at 2026-10-19, so 10-20 and 10-21 never uploaded).
+>    Proof the new candidates win: probe 5 reports
+>    `.weui-desktop-dialog input[type="file"]:not([accept*="image"])` found — the visible dialog input
+>    with `accept=''`.
+> 2. **一键排版 is inert in this build (behaviour unchanged, message corrected).** With a body in the
+>    editor, `div#ai_layout_container > div.ailayout-btn_wrp` is visible and clickable, and no option
+>    set ever renders (only a hidden `ailayout-edu_tips` onboarding block); the earlier 2026-10-13
+>    reading "no control at all" is superseded. Nothing programmable is left to click, so the stage
+>    now names that finding instead of hedging about the body's formatting.
+> 3. **Rail entry shapes measured, repair not landed.** 原创 opens from
+>    `#js_original i.read-more__icon__more-inactive` into a dialog ("原创 声明类型 文字原创/无需声明 ·
+>    作者 · 白名单 · 快捷转载 · 我已阅读并同意《微信公众平台原创声明及相关功能使用协议》(the checkbox is
+>    present but hidden) · 确定/取消"); 创作来源 opens from `#js_claim_source_area .allow_click_opr`
+>    into a dialog whose 声明类型 radios are `内容由AI生成` / `素材来源官方媒体/网络新闻` /
+>    `内容剧情演绎，仅供娱乐` / **`个人观点，仅供参考`** (the daily stage's stance exists) /
+>    `健康医疗分享，仅供参考` / `投资观点，仅供参考` / `无需声明`, confirmed with **`确认`**;
+>    原文链接's `allow_click_opr` ("未添加") did nothing in an empty editor and the row's
+>    `input.frm_checkbox.js_url_checkbox` is visible but not `check()`-able by Playwright, so that
+>    entry still needs a measured walk (click the row label, then read where the URL field appears).
+>    These three remain the draft's visible gaps (原创 unchecked → 赞赏/付费 disabled).
+>
+> Method: the plugins' own Chromium (Playwright 1.55 build) on the real profile dir
 `~/.config/kk/browser-profiles/wechatmp`, headed, driven by `.spur/run/discovery/wechatmp-walk.ts`.
 Operator attended and scanned the login QR in-window (the stored session had expired).
 **Draft-only:** no publish control was clicked and **no draft has been saved yet** (the save signal is
