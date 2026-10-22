@@ -154,7 +154,9 @@ kk board serve --board-origin <origin> [--port <n>]
 5. Validates output against the kind's output schema. Publish invocations additionally reject a
    parsed `Result { ok: false }` as an invocation failure (exit 1; artifact kept, 0110 I6).
    Manifest-declared `operations` dispatch (0110 I3) validates input/output per declaration;
-   undeclared array dispatch is rejected pre-spawn.
+   undeclared array dispatch is rejected pre-spawn. A plugin's stderr is forwarded to the caller on
+   **both** exits (2026-10-22): a valid-yet-empty result explains itself only there, so a source
+   emitting `[]` silently is otherwise indistinguishable from a healthy one.
 6. `--plugins-root` and `--plugins-path` are mutually exclusive (usage error, exit 2).
 7. Rejects `--in`/`--out` naming the same file — identity (dev+ino), not path string — pre-mutation (0110 I5, hardened 0157 R1) and unlinks the stale
    `--out` file before spawn, so only output produced by this invocation can establish success.
@@ -236,7 +238,8 @@ Merges N `Doc[]` files into one. Sibling of `executor run` so the single-plugin 
 stays intact (ADR-006). Spec: `docs/design/fan-in-and-fan-out-specification.md` §1.2, §2.
 Canonical path is `kk executor fan-in`; `kk fanin` is a hidden one-release alias (ADR-011).
 A missing `--out` parent directory is created (ADR-016); a write that genuinely fails still exits
-non-zero.
+non-zero. Each source's own stderr is forwarded (`[source:<plugin>] …`) even when it exited 0
+(2026-10-22) — a source that contributes nothing is otherwise silent.
 
 ```text
 kk executor fan-in --in <f1> [--in <f2> …] --out <merged.json> [--plugins-root <dir> | --plugins-path <dir> …]

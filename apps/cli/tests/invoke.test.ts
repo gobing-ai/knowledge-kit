@@ -1024,3 +1024,51 @@ describe('spawnPluginSession (0277 R3)', () => {
         });
     });
 });
+
+/**
+ * 2026-10-22: a plugin that succeeds while producing an empty result explains itself only on
+ * stderr. Dropping that stream on exit 0 kept a dead ingestion channel (horizon-ingest emitting
+ * `[]` for two days) invisible in the collect log.
+ */
+describe('runInvoke — successful-exit diagnostics', () => {
+    it('forwards a plugin’s stderr to the caller when the exit code is 0', async () => {
+        await withTempDir(async (root) => {
+            const pluginDir = pluginDirOf(root, 'ingestion', 'quiet-source');
+            const scriptsDir = join(pluginDir, 'scripts');
+            mkdirSync(scriptsDir, { recursive: true });
+            writeFileSync(
+                join(pluginDir, 'plugin.json'),
+                JSON.stringify({ name: 'quiet-source', kind: 'ingestion', entry: 'scripts/run.ts' }),
+            );
+            writeFileSync(
+                join(scriptsDir, 'run.ts'),
+                [
+                    "import { writeFileSync } from 'node:fs';",
+                    'const args = process.argv.slice(2);',
+                    "const outPath = args[args.indexOf('--out') + 1];",
+                    "console.error('quiet-source: no fresh digest — emitting []');",
+                    'writeFileSync(outPath, JSON.stringify([]));',
+                ].join('\n'),
+            );
+
+            const capture = captureOutput();
+            try {
+                const code = await runInvoke({
+                    plugin: 'quiet-source',
+                    inPath: (() => {
+                        const p = join(root, 'in.json');
+                        writeFileSync(p, JSON.stringify({}));
+                        return p;
+                    })(),
+                    outPath: join(root, 'out.json'),
+                    pluginsRoot: root,
+                });
+                expect(code).toBe(0);
+                expect(capture.readErr()).toContain('[plugin:quiet-source]');
+                expect(capture.readErr()).toContain('no fresh digest');
+            } finally {
+                capture.restore();
+            }
+        });
+    });
+});

@@ -319,6 +319,12 @@ async function collectSourceDocs(discovery: DiscoveryResult, source: FaninSource
             const why = proc.timedOut === true ? `timed out after ${timeoutMs}ms` : `exited with code ${proc.exitCode}`;
             throw new Error(`Plugin '${source.plugin}' ${why}: ${proc.stderr || proc.stdout || 'no output'}`);
         }
+        // A source can succeed while contributing nothing, and its own stderr is then the only
+        // explanation. Horizon-ingest's "no fresh digest … emitting []" never reached the collect
+        // log, so a channel that had been empty for two days (2026-10-22) looked healthy.
+        if (proc.stderr !== '') {
+            echoError(`[source:${source.plugin}] ${proc.stderr.trim()}`);
+        }
         if (!(await fs.exists(outTmp))) {
             throw new Error(`Plugin '${source.plugin}' succeeded but did not write an output file`);
         }
