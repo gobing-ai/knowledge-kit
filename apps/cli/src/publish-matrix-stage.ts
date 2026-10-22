@@ -1,5 +1,5 @@
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
-import { checkPublishMatrix, planPublishMatrix, sendPublishMatrix } from './publish-matrix';
+import { checkPublishMatrix, planPublishMatrix, runPublishMatrixClassify, sendPublishMatrix } from './publish-matrix';
 
 /**
  * Handle the `publish-matrix-*` workflow stages.
@@ -19,6 +19,8 @@ export async function runPublishMatrixStage(
             return checkPublishMatrix(rest, { fs });
         case 'publish-matrix-send':
             return sendPublishMatrix(rest, { fs });
+        case 'publish-matrix-classify':
+            return runPublishMatrixClassify(rest, { fs });
         default:
             return undefined;
     }

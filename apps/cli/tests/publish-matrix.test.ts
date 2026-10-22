@@ -5,7 +5,14 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { NodeProcessExecutor, type ProcessOptions, type ProcessResult } from '@gobing-ai/ts-runtime';
 import { PublishPresetSchema, resolveItcTargets } from '../src/itc-plan';
-import { checkPublishMatrix, planPublishMatrix, sendPublishMatrix } from '../src/publish-matrix';
+import { main } from '../src/main';
+import {
+    checkPublishMatrix,
+    classifyPublishMatrix,
+    planPublishMatrix,
+    runPublishMatrixClassify,
+    sendPublishMatrix,
+} from '../src/publish-matrix';
 import { captureOutput } from './capture';
 
 // Every way this surface can fail, written before the fixtures (AGENTS testing rule).
@@ -535,6 +542,237 @@ describe('publish-matrix-send (0321 R4, R5)', () => {
                 ).toBe(0);
                 // Nothing failed with effect:none, so --retry dispatches nothing.
                 expect(retry.calls).toHaveLength(0);
+            } finally {
+                out.restore();
+            }
+        }, fixture);
+    });
+});
+
+describe('publish-matrix receipt classification (0326 R1, R2)', () => {
+    const plan = {
+        schemaVersion: 1 as const,
+        window: 'after-generate' as const,
+        bundleRunId: 'gen-run-1',
+        parentRunId: 'gen-run-1',
+        presetName: 'daily-ai-voice',
+        presetDigest: 'd1',
+        rows: [
+            {
+                id: 'surfdash-pub.post',
+                plugin: 'surfdash-pub',
+                variant: 'article',
+                tier: 0,
+                window: 'after-generate' as const,
+                mode: 'draft' as const,
+                required: true,
+                approval: 'none' as const,
+                status: 'planned' as const,
+                payloadPath: 'p',
+                payloadDigest: 'd',
+            },
+            {
+                id: 'xhs-pub.写长文',
+                plugin: 'xhs-pub',
+                variant: 'article',
+                tier: 2,
+                window: 'after-generate' as const,
+                mode: 'dummy' as const,
+                required: false,
+                approval: 'none' as const,
+                status: 'planned' as const,
+                payloadPath: 'p',
+                payloadDigest: 'd',
+            },
+        ],
+    };
+
+    function receipt(target: string, fields: Record<string, unknown>): Record<string, unknown> {
+        return {
+            schemaVersion: 1,
+            parentRunId: 'gen-run-1',
+            planDigest: 'd1',
+            payloadDigest: 'd2',
+            plugin: target.split('.')[0],
+            profile: 'article',
+            mode: 'draft',
+            attemptId: 'attempt-1',
+            ...fields,
+            target,
+        };
+    }
+
+    it('classifies full, partial, none and dummy over the non-dummy rows only', () => {
+        const succeeded = receipt('surfdash-pub.post', { status: 'succeeded', effect: 'confirmed' });
+        const dummy = receipt('xhs-pub.写长文', { status: 'succeeded', effect: 'none', dummy: true });
+        const failed = receipt('surfdash-pub.post', { status: 'failed', effect: 'none' });
+
+        const full = classifyPublishMatrix(plan, [succeeded as never, dummy as never], '20261022');
+        expect(full.status).toBe('full');
+        expect(full.published).toBe(1);
+        expect(full.targets).toBe(1);
+        expect(full.rows.find((row) => row.id === 'xhs-pub.写长文')?.dummy).toBe(true);
+
+        expect(classifyPublishMatrix(plan, [failed as never, dummy as never], '20261022').status).toBe('none');
+
+        // A planned row with no receipt is not a success.
+        expect(classifyPublishMatrix(plan, [dummy as never], '20261022').status).toBe('none');
+
+        // All-dummy and no-receipts windows are `dummy`, never `full`.
+        const allDummyPlan = { ...plan, rows: [plan.rows[1] as (typeof plan.rows)[number]] };
+        expect(classifyPublishMatrix(allDummyPlan, [dummy as never], '20261022').status).toBe('dummy');
+        expect(classifyPublishMatrix(allDummyPlan, [], '20261022').status).toBe('none');
+    });
+
+    it('classifies partial when at least one non-dummy row succeeded', () => {
+        const partialPlan = {
+            ...plan,
+            rows: [
+                plan.rows[0] as (typeof plan.rows)[number],
+                { ...(plan.rows[1] as (typeof plan.rows)[number]), id: 'wechatmp-pub.文章', mode: 'draft' as const },
+            ],
+        };
+        const outcome = classifyPublishMatrix(
+            partialPlan,
+            [receipt('surfdash-pub.post', { status: 'succeeded', effect: 'confirmed' }) as never],
+            '20261022',
+        );
+        expect(outcome.status).toBe('partial');
+        expect(outcome.published).toBe(1);
+        expect(outcome.targets).toBe(2);
+    });
+
+    it('writes the outcome, the status file and the ledger summary, and bridges the legacy names', async () => {
+        const fixture = makeFixture([...TIER0, ...DOMESTIC]);
+        await withCleanup(async (fx) => {
+            const out = captureOutput();
+            try {
+                expect(await planPublishMatrix(planArgs(fx), { projectRoot: fx.root })).toBe(0);
+                const { dispatch } = fakeDispatch();
+                expect(await sendPublishMatrix([fx.workDir, '--window', 'after-generate'], { dispatch })).toBe(0);
+                expect(
+                    await runPublishMatrixClassify([
+                        fx.workDir,
+                        '--window',
+                        'after-generate',
+                        '--run-date',
+                        '20261022',
+                    ]),
+                ).toBe(0);
+
+                const publishDir = join(fx.workDir, '4-publish');
+                const outcome = JSON.parse(readFileSync(join(publishDir, 'outcome.after-generate.json'), 'utf-8')) as {
+                    status: string;
+                    published: number;
+                    targets: number;
+                    rows: Array<{ id: string; dummy: boolean }>;
+                };
+                // surfdash + podcast + wechatmp sent, xhs dummy → every real row succeeded.
+                expect(outcome.status).toBe('full');
+                expect(outcome.published).toBe(3);
+                expect(outcome.targets).toBe(3);
+                expect(outcome.rows.find((row) => row.id === 'xhs-pub.写长文')?.dummy).toBe(true);
+                expect(readFileSync(join(publishDir, 'publish-status.after-generate.txt'), 'utf-8').trim()).toBe(
+                    'full',
+                );
+                expect(readFileSync(join(fx.workDir, 'publish-classify.summary.txt'), 'utf-8')).toContain(
+                    '"status":"full","published":3,"targets":3',
+                );
+
+                const legacy = join(fx.workDir, '31-publish');
+                const surfdashLegacy = JSON.parse(
+                    readFileSync(join(legacy, '20261022_14_publish-surfdash_result.json'), 'utf-8'),
+                ) as { targets: Array<{ target: string }> };
+                expect(surfdashLegacy.targets[0]?.target).toBe('surfdash-pub');
+                expect(existsSync(join(legacy, '20261022_16_publish-podcast_result.json'))).toBe(true);
+
+                // The proof the bridge exists for: voice2's own classifier runs unchanged on this dir.
+                const legacyRun = await main([
+                    'node',
+                    'kk',
+                    'daily',
+                    'publish-classify',
+                    '--work-dir',
+                    fx.workDir,
+                    '--run-date',
+                    '20261022',
+                ]);
+                expect(legacyRun).toBe(0);
+            } finally {
+                out.restore();
+            }
+        }, fixture);
+    });
+
+    it('bridges nothing for an all-dummy window and nothing outside after-generate', async () => {
+        const dummyFixture = makeFixture([...TIER0]);
+        await withCleanup(async (fx) => {
+            const out = captureOutput();
+            try {
+                expect(await planPublishMatrix(planArgs(fx, ['--dummy']), { projectRoot: fx.root })).toBe(0);
+                const { dispatch } = fakeDispatch();
+                expect(await sendPublishMatrix([fx.workDir, '--window', 'after-generate'], { dispatch })).toBe(0);
+                expect(
+                    await runPublishMatrixClassify([
+                        fx.workDir,
+                        '--window',
+                        'after-generate',
+                        '--run-date',
+                        '20261022',
+                    ]),
+                ).toBe(0);
+                const publishDir = join(fx.workDir, '4-publish');
+                expect(readFileSync(join(publishDir, 'publish-status.after-generate.txt'), 'utf-8').trim()).toBe(
+                    'dummy',
+                );
+                expect(existsSync(join(fx.workDir, '31-publish'))).toBe(false);
+            } finally {
+                out.restore();
+            }
+        }, dummyFixture);
+
+        const peakFixture = makeFixture([
+            {
+                plugin: 'surfdash-pub',
+                operation: 'post',
+                variant: 'article',
+                tier: 0,
+                mode: 'draft',
+                window: 'cn-peak',
+            },
+        ]);
+        await withCleanup(async (fx) => {
+            const out = captureOutput();
+            try {
+                expect(
+                    await planPublishMatrix([...planArgs(fx).slice(0, 6), 'cn-peak'], { projectRoot: fx.root }),
+                ).toBe(0);
+                const { dispatch } = fakeDispatch();
+                expect(await sendPublishMatrix([fx.workDir, '--window', 'cn-peak'], { dispatch })).toBe(0);
+                expect(
+                    await runPublishMatrixClassify([fx.workDir, '--window', 'cn-peak', '--run-date', '20261022']),
+                ).toBe(0);
+                // The legacy names are the after-generate contract only.
+                expect(existsSync(join(fx.workDir, '31-publish'))).toBe(false);
+            } finally {
+                out.restore();
+            }
+        }, peakFixture);
+    });
+
+    it('reports none and exits 0 when the window has no plan', async () => {
+        const fixture = makeFixture([...TIER0]);
+        await withCleanup(async (fx) => {
+            const out = captureOutput();
+            try {
+                expect(
+                    await runPublishMatrixClassify([fx.workDir, '--window', 'overseas-rss', '--run-date', '20261022']),
+                ).toBe(0);
+                const status = readFileSync(
+                    join(fx.workDir, '4-publish/publish-status.overseas-rss.txt'),
+                    'utf-8',
+                ).trim();
+                expect(status).toBe('none');
             } finally {
                 out.restore();
             }

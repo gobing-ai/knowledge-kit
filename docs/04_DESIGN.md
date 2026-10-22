@@ -2057,5 +2057,21 @@ A dummy receipt is a succeeded receipt for resend purposes (a rerun skips it) **
 never blocks a real send: flipping the preset row to `draft` dispatches the target once on the next
 run. itc rows never carry `mode: dummy`, so the branch is unreachable there.
 
+**`publish-matrix-classify <workDir> --window <w> --run-date <stamp>`** (task 0326) turns the
+window's receipts into `4-publish/outcome.<window>.json`
+`{schemaVersion, window, runDate, status, published, targets, rows:[{id, tier, required, status, effect?, dummy}]}`
+plus `4-publish/publish-status.<window>.txt` and the ledger's `publish-classify.summary.txt`
+(`{status, published, targets}`). `classifyPublishMatrix(plan, receipts, runDate)` is pure, and the
+status is computed over the **non-dummy** rows only: `full` when every one succeeded, `partial` when
+at least one did, `none` when none did, `dummy` when the window holds only rehearsals. A planned row
+with no receipt is `missing` and counts as not succeeded, so a window that never dispatched never
+reads as published. The stage always exits 0 once it can read the plan (a missing plan reports
+`none`) — routing is the workflow's job. For `after-generate` it also bridges the tier-0 owned
+receipts' `aggregatePath` bytes into the legacy `31-publish/<runDate>_14_publish-surfdash_result.json`
+/ `_16_publish-podcast_result.json` names, only when the row is non-dummy, so `daily-patch-surfdash`,
+`daily-publish-partial`, `run-report` and the board keep working unchanged on a voice3 work dir; the
+bridge is the documented legacy seam and disappears with voice2. `kk daily publish-classify
+[--fold-tail]` and its tests are untouched.
+
 **Out of scope here:** the approval/monitoring console, bundle production, the publish3 workflow,
-`publish-classify` (0326) and generate-side copy shaping (0327).
+and generate-side copy shaping (0327).

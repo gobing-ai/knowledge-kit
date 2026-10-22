@@ -79,6 +79,94 @@ export const PublishPlanSchema = z
 /** Parsed plan. */
 export type PublishPlan = z.infer<typeof PublishPlanSchema>;
 
+/** One classified plan row: the receipt's own words, plus `missing` when none was written. */
+export const PublishOutcomeRowSchema = z
+    .object({
+        id: z.string().min(1),
+        tier: z.number().int().min(0).max(3),
+        required: z.boolean(),
+        status: z.enum(['succeeded', 'failed', 'uncertain', 'missing']),
+        effect: z.enum(['none', 'confirmed', 'unknown']).optional(),
+        dummy: z.boolean(),
+    })
+    .strict();
+
+/** One window's publish outcome (`4-publish/outcome.<window>.json`). */
+export const PublishOutcomeSchema = z
+    .object({
+        schemaVersion: z.literal(1).default(1),
+        window: PublishWindowSchema,
+        runDate: z.string().min(1),
+        status: z.enum(['full', 'partial', 'none', 'dummy']),
+        published: z.number().int().min(0),
+        targets: z.number().int().min(0),
+        rows: z.array(PublishOutcomeRowSchema),
+    })
+    .strict();
+
+/** Parsed publish outcome. */
+export type PublishOutcome = z.infer<typeof PublishOutcomeSchema>;
+
+/**
+ * Classify one window's plan against its receipts — pure, so it is checkable without a filesystem.
+ *
+ * Computed over the **non-dummy** rows only (task 0326 R2): a dummy receipt records a rehearsal, so
+ * it can never make a window `full`. `full` means every non-dummy row succeeded, `partial` that at
+ * least one did, `none` that none did, and `dummy` that the window had nothing but rehearsals. A
+ * planned row with no receipt is `missing` and counts as not succeeded — a window that never
+ * dispatched must not read as published.
+ */
+export function classifyPublishMatrix(
+    plan: PublishPlan,
+    receipts: readonly ItcReceipt[],
+    runDate: string,
+): PublishOutcome {
+    const byTarget = new Map<string, ItcReceipt>();
+    for (const receipt of receipts) {
+        const key = receipt.target ?? receipt.plugin;
+        byTarget.set(key, receipt);
+    }
+
+    const rows = plan.rows.map((row) => {
+        const receipt = byTarget.get(row.id);
+        return {
+            id: row.id,
+            tier: row.tier,
+            required: row.required,
+            status: receipt?.status ?? ('missing' as const),
+            ...(receipt?.effect !== undefined ? { effect: receipt.effect } : {}),
+            dummy: receipt?.dummy === true,
+        };
+    });
+
+    const real = rows.filter((row) => !row.dummy);
+    const succeeded = real.filter((row) => row.status === 'succeeded');
+    const status: PublishOutcome['status'] =
+        real.length === 0
+            ? 'dummy'
+            : succeeded.length === real.length
+              ? 'full'
+              : succeeded.length > 0
+                ? 'partial'
+                : 'none';
+
+    return {
+        schemaVersion: 1,
+        window: plan.window,
+        runDate,
+        status,
+        published: succeeded.length,
+        targets: real.length,
+        rows,
+    };
+}
+
+/** Legacy per-target result file each tier-0 owned plugin bridges into (task 0326 R3). */
+const LEGACY_RESULT_FILES: ReadonlyArray<{ plugin: string; file: string }> = [
+    { plugin: 'surfdash-pub', file: '_14_publish-surfdash_result.json' },
+    { plugin: 'podcast-pub', file: '_16_publish-podcast_result.json' },
+];
+
 /** Injection seams: the stage entry uses the defaults, the E2E test passes its own. */
 export interface PublishMatrixDeps {
     fs?: FileSystem;
@@ -461,6 +549,94 @@ export async function checkPublishMatrix(args: string[], deps: PublishMatrixDeps
         echoError(`publish-matrix-check: ${err instanceof Error ? err.message : String(err)}`);
         return 1;
     }
+}
+
+/**
+ * `publish-matrix-classify`: turn one window's receipts into `full|partial|none|dummy`.
+ *
+ * Always exits 0 once it can read the plan — routing is the workflow's job (task 0326 R1). For the
+ * `after-generate` window it also bridges the tier-0 owned receipts into the legacy
+ * `31-publish/<runDate>_14|_16_…_result.json` names, so `daily-patch-surfdash`,
+ * `daily-publish-partial`, `run-report` and the board keep working on a voice3 work dir.
+ */
+export async function runPublishMatrixClassify(args: string[], deps: PublishMatrixDeps = {}): Promise<number> {
+    const fs = deps.fs ?? createNodeFileSystem();
+    const [workDir = ''] = args;
+    const windowArg = flagValue(args, '--window');
+    const runDate = flagValue(args, '--run-date');
+    if (!workDir || windowArg === undefined || runDate === undefined) {
+        echoError('usage: publish-matrix-classify <work_dir> --window <w> --run-date <stamp>');
+        return 1;
+    }
+    const parsedWindow = PublishWindowSchema.safeParse(windowArg);
+    if (!parsedWindow.success) {
+        echoError(`publish-matrix-classify: unknown window '${windowArg}'`);
+        return 1;
+    }
+
+    const publishDir = join(workDir, '4-publish');
+    let plan: PublishPlan;
+    try {
+        plan = await readPlan(fs, workDir, parsedWindow.data);
+    } catch (err: unknown) {
+        // No plan means nothing was dispatched for this window: `none`, reported, never fatal.
+        echoError(`publish-matrix-classify: ${err instanceof Error ? err.message : String(err)}`);
+        await fs.ensureDir(publishDir);
+        const none: PublishOutcome = {
+            schemaVersion: 1,
+            window: parsedWindow.data,
+            runDate,
+            status: 'none',
+            published: 0,
+            targets: 0,
+            rows: [],
+        };
+        await fs.writeFile(join(publishDir, `outcome.${parsedWindow.data}.json`), `${JSON.stringify(none, null, 2)}\n`);
+        await fs.writeFile(join(publishDir, `publish-status.${parsedWindow.data}.txt`), 'none\n');
+        return 0;
+    }
+
+    const receiptsDir = join(publishDir, 'receipts');
+    const receipts: ItcReceipt[] = [];
+    for (const row of plan.rows) {
+        const path = join(receiptsDir, `${row.id}.json`);
+        if (!(await fs.exists(path))) continue;
+        try {
+            receipts.push(JSON.parse(await fs.readFile(path)) as ItcReceipt);
+        } catch {
+            // an unreadable receipt is a row with no evidence: it stays `missing`
+        }
+    }
+
+    const outcome = classifyPublishMatrix(plan, receipts, runDate);
+    await fs.ensureDir(publishDir);
+    await fs.writeFile(join(publishDir, `outcome.${outcome.window}.json`), `${JSON.stringify(outcome, null, 2)}\n`);
+    await fs.writeFile(join(publishDir, `publish-status.${outcome.window}.txt`), `${outcome.status}\n`);
+
+    // The ledger reads `<node>.summary.txt` for its Result cell (task 0212 R1); same shape as voice2.
+    await fs.writeFile(
+        join(workDir, 'publish-classify.summary.txt'),
+        `${JSON.stringify({ status: outcome.status, published: outcome.published, targets: outcome.targets })}\n`,
+    );
+
+    if (outcome.window === 'after-generate') {
+        // ponytail: legacy 31-publish names kept so voice2-era stages run on voice3 dirs; drop when
+        // voice2 retires (the receipt-native rewrite is the console task's).
+        const legacyDir = join(workDir, '31-publish');
+        for (const source of LEGACY_RESULT_FILES) {
+            const row = plan.rows.find((candidate) => candidate.plugin === source.plugin && candidate.tier === 0);
+            if (row === undefined || row.mode === 'dummy') continue;
+            const receipt = receipts.find((candidate) => (candidate.target ?? candidate.plugin) === row.id);
+            if (receipt === undefined || receipt.dummy === true || receipt.aggregatePath === undefined) continue;
+            const aggregate = receipt.aggregatePath;
+            if (!(await fs.exists(aggregate))) continue;
+            await fs.ensureDir(legacyDir);
+            await fs.writeFile(join(legacyDir, `${runDate}${source.file}`), await fs.readFile(aggregate));
+        }
+    }
+
+    echo(outcome.status);
+    return 0;
 }
 
 /**
