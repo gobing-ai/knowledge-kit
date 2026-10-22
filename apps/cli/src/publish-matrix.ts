@@ -420,6 +420,56 @@ export async function checkPublishMatrix(args: string[], deps: PublishMatrixDeps
 }
 
 /**
+ * Write the synthetic receipt a `mode: dummy` row gets (design §3, task 0322 R1).
+ *
+ * The payload is parsed as kk-core `Content` first, so a rehearsal still proves the row would send
+ * a valid payload; a parse failure is a failed receipt with `error: invalid-payload` and no send.
+ * `url: dummy://<id>` is what later tiers' link placeholders resolve to, which is why an all-dummy
+ * run needs no network for `{{article_url}}` / `{{podcast_url}}` either.
+ */
+async function writeDummyReceipt(
+    fs: FileSystem,
+    row: SendRow,
+    context: { payloadPath: string; payloadDigest: string; startedAt: string; parentRunId: string; planDigest: string },
+): Promise<ItcReceipt> {
+    const base: ItcReceipt = {
+        ...(row.receiptExtras ?? {}),
+        schemaVersion: 1,
+        parentRunId: context.parentRunId,
+        planDigest: context.planDigest,
+        payloadDigest: context.payloadDigest,
+        plugin: row.plugin,
+        profile: row.profile,
+        mode: 'draft',
+        attemptId: 'attempt-1',
+        status: 'succeeded',
+        effect: 'none',
+        publicUrlVerified: false,
+        dummy: true,
+        url: `dummy://${row.key}`,
+        startedAt: context.startedAt,
+        finishedAt: new Date().toISOString(),
+    };
+    let invalid: string | undefined;
+    try {
+        // The resolved payload, not the raw one: the digest below is over what would have been sent.
+        const raw = await fs.readFile(context.payloadPath);
+        const parsed = ContentSchema.safeParse(JSON.parse(raw));
+        if (!parsed.success) invalid = parsed.error.message;
+    } catch (err: unknown) {
+        invalid = err instanceof Error ? err.message : String(err);
+    }
+    if (invalid === undefined) return base;
+    return {
+        ...base,
+        status: 'failed',
+        effect: 'none',
+        error: 'invalid-payload',
+        url: undefined,
+    };
+}
+
+/**
  * Whether a row's receipt on disk (this pass or an earlier one) already records a success: one
  * tier-0 row skipping because it succeeded last night must not read as a failure, or "never resend"
  * would quietly become "never deliver".
@@ -519,7 +569,7 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
                 key: row.id,
                 plugin: row.plugin,
                 profile: row.profile ?? 'article',
-                mode: row.mode === 'live' ? 'live' : 'draft',
+                mode: row.mode,
                 payloadPath: join(workDir, row.payloadPath),
                 transport: 'fanout',
                 receiptExtras: { target: row.id, window: plan.window },
@@ -535,11 +585,10 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
                 label: 'publish-matrix-send',
                 fs,
                 ...(deps.dispatch ? { dispatch: deps.dispatch } : {}),
+                // A dummy row gets the same payload work as a real one — that is the rehearsal.
+                dummyReceipt: (row, context) =>
+                    writeDummyReceipt(fs, row, { ...context, parentRunId: plan.parentRunId, planDigest }),
                 preparePayload: async (row) => {
-                    const planRow = rows.find((candidate) => candidate.id === row.key);
-                    // shortcut: dummy rows record a no-effect failure instead of a synthetic receipt;
-                    // task 0322 replaces this branch with the real dummy semantics.
-                    if (planRow?.mode === 'dummy') return { error: 'dummy-mode-not-implemented' };
                     if (tier === 0) return { payloadPath: row.payloadPath };
                     const raw = (await fs.exists(row.payloadPath)) ? await fs.readFile(row.payloadPath) : '';
                     let resolved = raw;

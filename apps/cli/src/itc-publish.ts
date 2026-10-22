@@ -417,7 +417,8 @@ export interface SendRow {
     key: string;
     plugin: string;
     profile: string;
-    mode: 'draft' | 'live';
+    /** `dummy` rows are planned and validated but never dispatched (task 0322). */
+    mode: 'draft' | 'live' | 'dummy';
     /** Absolute payload path handed to `--content`. */
     payloadPath: string;
     transport: 'fanout' | 'browser';
@@ -452,6 +453,14 @@ export interface SendRowsOptions {
     preparePayload?: (row: SendRow) => Promise<{ payloadPath: string } | { error: string }>;
     /** Called with every receipt this pass writes, in order. */
     onReceipt?: (receipt: ItcReceipt) => Promise<void>;
+    /**
+     * Synthetic receipt writer for a `mode: dummy` row (task 0322). Absent means a dummy row cannot
+     * be completed and records a failure instead — never a dispatch.
+     */
+    dummyReceipt?: (
+        row: SendRow,
+        context: { payloadPath: string; payloadDigest: string; startedAt: string },
+    ) => Promise<ItcReceipt>;
 }
 
 /**
@@ -467,6 +476,7 @@ export async function sendRows(options: SendRowsOptions): Promise<SendRowsOutcom
     const result: SendRowsOutcome = { sent: [], skipped: [], receipts: [] };
 
     for (const row of rows) {
+        const startedAt = new Date().toISOString();
         const targetReceiptPath = join(receiptsDir, `${row.key}.json`);
         let reattempt = false;
         if (retry) {
@@ -486,7 +496,10 @@ export async function sendRows(options: SendRowsOptions): Promise<SendRowsOutcom
             // it is an operator decision (0314 / review finding f6815433).
             try {
                 const prior = JSON.parse(await fs.readFile(targetReceiptPath)) as ItcReceipt;
-                if (prior.status === 'succeeded') continue;
+                // A dummy receipt records that a rehearsal ran, not that the channel published
+                // (task 0322 R2): flipping the target to draft must send it for real.
+                const dummyOnly = prior.dummy === true && row.mode !== 'dummy';
+                if (prior.status === 'succeeded' && !dummyOnly) continue;
                 // A LIVE target whose previous attempt left its effect unknown may already be
                 // published: resending it could post twice. Skip it and say so — resolving it is an
                 // operator decision. A draft (or any non-live mode) is safe to re-attempt, which is
@@ -529,7 +542,8 @@ export async function sendRows(options: SendRowsOptions): Promise<SendRowsOutcom
                 payloadDigest,
                 plugin: row.plugin,
                 profile: row.profile,
-                mode: row.mode,
+                // `dummy` never reaches a plugin, so a receipt only ever states draft or live.
+                mode: row.mode === 'live' ? 'live' : 'draft',
                 attemptId: retry ? 'retry-1' : 'attempt-1',
                 status: 'failed',
                 effect: 'none',
@@ -538,6 +552,22 @@ export async function sendRows(options: SendRowsOptions): Promise<SendRowsOutcom
             };
             await fs.writeFile(targetReceiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
             result.receipts.push(receipt);
+            if (options.onReceipt) await options.onReceipt(receipt);
+            continue;
+        }
+
+        if (row.mode === 'dummy') {
+            // Dummy mode fakes exactly one thing — the dispatch — so the whole publish path can be
+            // rehearsed end to end without a plugin process or a network call (task 0322 R1).
+            if (options.dummyReceipt === undefined) {
+                echoError(`${label}: ${row.key} is dummy but no dummy receipt writer is configured; skipped`);
+                result.skipped.push(row.key);
+                continue;
+            }
+            const receipt = await options.dummyReceipt(row, { payloadPath, payloadDigest, startedAt });
+            await fs.writeFile(targetReceiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
+            result.receipts.push(receipt);
+            if (receipt.status === 'succeeded') result.sent.push(row.key);
             if (options.onReceipt) await options.onReceipt(receipt);
             continue;
         }
@@ -619,7 +649,7 @@ export async function sendRows(options: SendRowsOptions): Promise<SendRowsOutcom
             payloadDigest,
             plugin: row.plugin,
             profile: row.profile,
-            mode: row.mode,
+            mode: row.mode === 'live' ? 'live' : 'draft',
             attemptId: retry ? 'retry-1' : 'attempt-1',
             status: isSuccess ? 'succeeded' : effect === 'unknown' ? 'uncertain' : 'failed',
             effect,

@@ -412,7 +412,8 @@ describe('publish-matrix-send (0321 R4, R5)', () => {
                     .trim()
                     .split('\n')
                     .map((line) => JSON.parse(line) as { event: string; id?: string });
-                expect(events.filter((event) => event.event === 'sent')).toHaveLength(3);
+                // Three real sends plus the dummy row's synthetic succeeded receipt (task 0322).
+                expect(events.filter((event) => event.event === 'sent')).toHaveLength(4);
             } finally {
                 out.restore();
             }
@@ -534,6 +535,151 @@ describe('publish-matrix-send (0321 R4, R5)', () => {
                 ).toBe(0);
                 // Nothing failed with effect:none, so --retry dispatches nothing.
                 expect(retry.calls).toHaveLength(0);
+            } finally {
+                out.restore();
+            }
+        }, fixture);
+    });
+});
+
+describe('publish-matrix dummy mode (0322 R1, R2, R3)', () => {
+    /** Steps that must never run for a dummy row: a dispatch attempt fails the test loudly. */
+    function throwingDispatch() {
+        const calls: string[][] = [];
+        const dispatch = async (argv: string[]): Promise<number> => {
+            calls.push(argv);
+            throw new Error(`dummy row reached dispatch: ${argv.join(' ')}`);
+        };
+        return { dispatch, calls };
+    }
+
+    it('rehearses the whole matrix with zero dispatches and one synthetic receipt per row', async () => {
+        const fixture = makeFixture([...TIER0, ...DOMESTIC]);
+        await withCleanup(async (fx) => {
+            const out = captureOutput();
+            try {
+                // `--dummy` forces every planned row to dummy, so nothing can reach a plugin.
+                expect(await planPublishMatrix(planArgs(fx, ['--dummy']), { projectRoot: fx.root })).toBe(0);
+                const { dispatch, calls } = throwingDispatch();
+                expect(await sendPublishMatrix([fx.workDir, '--window', 'after-generate'], { dispatch })).toBe(0);
+                expect(calls).toHaveLength(0);
+
+                const receiptsDir = join(fx.workDir, '4-publish/receipts');
+                const receipts = [
+                    'surfdash-pub.post',
+                    'podcast-pub.episode',
+                    'wechatmp-pub.文章',
+                    'xhs-pub.写长文',
+                ].map(
+                    (id) =>
+                        JSON.parse(readFileSync(join(receiptsDir, `${id}.json`), 'utf-8')) as {
+                            status: string;
+                            effect: string;
+                            dummy: boolean;
+                            mode: string;
+                            url: string;
+                            target: string;
+                            window: string;
+                            startedAt: string;
+                            finishedAt: string;
+                        },
+                );
+                for (const receipt of receipts) {
+                    expect(receipt.status).toBe('succeeded');
+                    expect(receipt.effect).toBe('none');
+                    expect(receipt.dummy).toBe(true);
+                    expect(receipt.mode).toBe('draft');
+                    expect(receipt.url).toBe(`dummy://${receipt.target}`);
+                    expect(receipt.window).toBe('after-generate');
+                    expect(receipt.startedAt.length).toBeGreaterThan(0);
+                    expect(receipt.finishedAt.length).toBeGreaterThan(0);
+                }
+
+                // The tier-0 dummy urls are what the tier-2 copy links to: still no network needed.
+                const resolved = readFileSync(
+                    join(fx.workDir, '4-publish/payloads/content.wechatmp-pub.文章.resolved.json'),
+                    'utf-8',
+                );
+                expect(resolved).toContain('dummy://surfdash-pub.post');
+            } finally {
+                out.restore();
+            }
+        }, fixture);
+    });
+
+    it('is idempotent, and a dummy receipt never blocks a later real send', async () => {
+        const fixture = makeFixture([
+            { plugin: 'surfdash-pub', operation: 'post', variant: 'article', tier: 0, mode: 'dummy' },
+        ]);
+        await withCleanup(async (fx) => {
+            const out = captureOutput();
+            try {
+                expect(await planPublishMatrix(planArgs(fx), { projectRoot: fx.root })).toBe(0);
+                const first = throwingDispatch();
+                expect(
+                    await sendPublishMatrix([fx.workDir, '--window', 'after-generate'], { dispatch: first.dispatch }),
+                ).toBe(0);
+                expect(first.calls).toHaveLength(0);
+
+                // A rerun skips the succeeded dummy receipt like any other.
+                const rerun = throwingDispatch();
+                expect(
+                    await sendPublishMatrix([fx.workDir, '--window', 'after-generate'], { dispatch: rerun.dispatch }),
+                ).toBe(0);
+                expect(rerun.calls).toHaveLength(0);
+
+                // Flip the preset row to draft: the same target must now be sent for real, once.
+                const presetPath = join(fx.root, '.kk/publish-presets/daily-ai-voice.json');
+                const preset = JSON.parse(readFileSync(presetPath, 'utf-8')) as {
+                    targets: Array<{ mode?: string }>;
+                };
+                if (preset.targets[0] !== undefined) preset.targets[0].mode = 'draft';
+                writeFileSync(presetPath, JSON.stringify(preset));
+                expect(await planPublishMatrix(planArgs(fx), { projectRoot: fx.root })).toBe(0);
+
+                const real = fakeDispatch();
+                expect(
+                    await sendPublishMatrix([fx.workDir, '--window', 'after-generate'], { dispatch: real.dispatch }),
+                ).toBe(0);
+                expect(real.calls).toHaveLength(1);
+
+                const receipt = JSON.parse(
+                    readFileSync(join(fx.workDir, '4-publish/receipts/surfdash-pub.post.json'), 'utf-8'),
+                ) as { dummy?: boolean; status: string };
+                expect(receipt.dummy).toBeUndefined();
+                expect(receipt.status).toBe('succeeded');
+            } finally {
+                out.restore();
+            }
+        }, fixture);
+    });
+
+    it('fails a dummy row whose payload is not valid Content, without dispatching it', async () => {
+        const fixture = makeFixture([
+            { plugin: 'surfdash-pub', operation: 'post', variant: 'article', tier: 0, mode: 'dummy', required: true },
+        ]);
+        await withCleanup(async (fx) => {
+            const out = captureOutput();
+            try {
+                expect(await planPublishMatrix(planArgs(fx), { projectRoot: fx.root })).toBe(0);
+                // The planner refuses invalid Content, so corrupt the built payload the way a
+                // generate-side bug would: the rehearsal must still catch it at send time.
+                const payloadPath = join(fx.workDir, '4-publish/payloads/content.surfdash-pub.post.json');
+                const payload = JSON.parse(readFileSync(payloadPath, 'utf-8')) as Record<string, unknown>;
+                delete payload.body;
+                writeFileSync(payloadPath, `${JSON.stringify(payload)}\n`);
+
+                const { dispatch, calls } = throwingDispatch();
+                expect(await sendPublishMatrix([fx.workDir, '--window', 'after-generate'], { dispatch })).toBe(0);
+                expect(calls).toHaveLength(0);
+
+                const receipt = JSON.parse(
+                    readFileSync(join(fx.workDir, '4-publish/receipts/surfdash-pub.post.json'), 'utf-8'),
+                ) as { status: string; effect: string; dummy: boolean; error: string };
+                expect(receipt.status).toBe('failed');
+                expect(receipt.effect).toBe('none');
+                expect(receipt.dummy).toBe(true);
+                expect(receipt.error).toBe('invalid-payload');
             } finally {
                 out.restore();
             }

@@ -2041,10 +2041,16 @@ gains optional `target`, `window`, `dummy`, `error`, `startedAt`, `finishedAt` b
 `status`/`effect` shape, so an itc receipt is unchanged. `publish-events.jsonl` gets one
 `sent`/`failed` line per receipt. `--tier <n>` restricts the pass to exactly that tier.
 
-**Dummy rows do not send yet.** `mode: dummy` is planned, payload-built and schema-validated, but
-`send` records a no-effect failure (`error: dummy-mode-not-implemented`) instead of spawning a
-plugin; task 0322 replaces that branch with the synthetic `{ok: true, effect: "none", dummy: true}`
-receipt. The interval is honest rather than rehearsed: a dummy row can never reach a channel.
+**Dummy mode (task 0322).** A `mode: dummy` row is planned, payload-built and schema-validated like
+any other, then `send` writes the synthetic receipt
+`{status: "succeeded", effect: "none", dummy: true, mode: "draft", url: "dummy://<id>", target, window, startedAt, finishedAt}`
+and never calls the dispatcher — one branch in `sendRows` before `runFanout`, so no plugin process
+and no network call happens (the rehearsal still parses the payload as kk-core `Content`; a payload
+that is no longer valid Content gets a failed receipt with `error: "invalid-payload"`). Tier-2 link
+placeholders resolve to the tier-0 `dummy://` urls, so a full all-dummy run needs no network at all.
+A dummy receipt is a succeeded receipt for resend purposes (a rerun skips it) **except** that it
+never blocks a real send: flipping the preset row to `draft` dispatches the target once on the next
+run. itc rows never carry `mode: dummy`, so the branch is unreachable there.
 
 **Out of scope here:** the approval/monitoring console, bundle production, the publish3 workflow,
 `publish-classify` (0326) and generate-side copy shaping (0327).
