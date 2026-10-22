@@ -91,8 +91,9 @@ vars:
   episode_min_minutes: "15"
   # 2026-10-09 operator decision: ingest bodies are spoken in full and today's pools render 22-46
   # minutes at the current item counts, so the 20-minute ceiling refused real episodes before any
-  # TTS request. The pair drives BOTH the pre-spend estimate in `daily-generate` and the measured
-  # gate in `daily-episode-duration`.
+  # TTS request. The pair drives the pre-spend estimates (`daily-qc-content`'s pool gate, and
+  # `daily-generate`'s script gate, which measures the authored VoiceScript) and the measured gate
+  # in `daily-episode-duration`.
   episode_max_minutes: "25"
   # Run id, injected by spur at launch (0674 R5/R8) — the selections / ledger / mark-published
   # identity. A shell command may only reference declared vars.
@@ -580,7 +581,7 @@ nodes:
       options:
         onError: continue
         command: >-
-          OMNIVOICE_SPEED=1.06 kk stage daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "${vars.vdriver}" "1" "${vars.episode_max_minutes}"
+          OMNIVOICE_SPEED=1.06 kk stage daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "${vars.vdriver}" "1" "${vars.episode_max_minutes}" "${vars.episode_min_minutes}"
 
   # Driver fallback chain (2026-10-15, operator decision): voxcpm -> gemini -> omni. Each sibling
   # runs the same stage with a pinned driver; its condition re-checks the pool AND that NO upstream
@@ -601,7 +602,7 @@ nodes:
       options:
         onError: continue
         command: >-
-          kk stage daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "gemini" "1" "${vars.episode_max_minutes}"
+          kk stage daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "gemini" "1" "${vars.episode_max_minutes}" "${vars.episode_min_minutes}"
 
   - id: generate-fallback2
     description: "Voice tier fallback 2 (last, loud): omni-voice-gen when neither voxcpm nor gemini delivered"
@@ -616,7 +617,7 @@ nodes:
       kind: shell
       options:
         command: >-
-          OMNIVOICE_SPEED=1.06 kk stage daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "ominivoice" "1" "${vars.episode_max_minutes}"
+          OMNIVOICE_SPEED=1.06 kk stage daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "ominivoice" "1" "${vars.episode_max_minutes}" "${vars.episode_min_minutes}"
 
   - id: intro
     description: "Prepend the 8s intro sting (intro_music var; empty = skip), update duration/audioPath"

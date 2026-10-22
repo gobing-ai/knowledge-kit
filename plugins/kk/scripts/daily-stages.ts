@@ -162,7 +162,6 @@ export function dailyQcContent(args: string[]): void {
                 },
             },
         );
-        applyFloorGate(candidates, workDir, runDate, minMinutes, vdriver);
     });
     // Topic boundary (task 0189 R2) runs on every invocation — re-applying to already-filtered
     // candidates is a no-op, so cached reruns stay idempotent while a crash between the candidates
@@ -197,15 +196,21 @@ export function dailyQcContent(args: string[]): void {
     // `unknown-id`, the whole plan is rejected, and generate then sees a template with fewer sections.
     const currentDocs = excluded.length > 0 ? kept : boundaryDocs;
     const { kept: deduped, dropped } = dedupPlanByTitle(currentDocs as Array<{ id?: unknown; title?: unknown }>);
-    if (dropped.length === 0) return;
-    const dedupedContent = requireJson(candidates, 'qc-dedup');
-    const dedupedMeta = dedupedContent.metadata;
-    if (dedupedMeta === null || typeof dedupedMeta !== 'object') {
-        failWith(1, 'qc-dedup: candidates content carries no metadata object');
+    if (dropped.length > 0) {
+        const dedupedContent = requireJson(candidates, 'qc-dedup');
+        const dedupedMeta = dedupedContent.metadata;
+        if (dedupedMeta === null || typeof dedupedMeta !== 'object') {
+            failWith(1, 'qc-dedup: candidates content carries no metadata object');
+        }
+        (dedupedMeta as Record<string, unknown>).docs = deduped;
+        sted('write', candidates, () => writeJsonText(candidates, dedupedContent));
+        console.error(`qc: dropped ${dropped.length} near-duplicate candidate(s): ${dropped.join(', ')}`);
     }
-    (dedupedMeta as Record<string, unknown>).docs = deduped;
-    sted('write', candidates, () => writeJsonText(candidates, dedupedContent));
-    console.error(`qc: dropped ${dropped.length} near-duplicate candidate(s): ${dropped.join(', ')}`);
+    // Last, not inside the timed block above: the estimate must see the pool every shrink pass has
+    // already produced. 2026-10-22 cleared the floor on a 4-item pool (21.0 min estimated) that the
+    // topic boundary then cut to 3 (14.4 min), so the run paid for a full synthesis the measured
+    // gate refused. Covered here it also re-runs on a cached-rerun, which the timed block skipped.
+    applyFloorGate(candidates, workDir, runDate, minMinutes, vdriver);
 }
 
 /**
@@ -574,6 +579,52 @@ export function dailyVoiceAudit(args: string[]): void {
     }
 }
 
+/**
+ * Empty the QC candidates file so every downstream `pool-count --min 1` guard skips the content,
+ * audio, publish and XHS subtrees — the one mechanism both refusal paths use to close a run as
+ * no-content without aborting it (0266).
+ */
+function emptyCandidates(workDir: string, runDate: string): void {
+    const candidates = join(workDir, '21-plan', `${runDate}_04_quality-control-content_candidates.json`);
+    const content = readJson(candidates);
+    if (content === null) return;
+    sted('write', candidates, () =>
+        writeJsonText(candidates, { ...content, metadata: { ...metadataOf(content), docs: [] } }),
+    );
+}
+
+/**
+ * The pre-spend refusal of `daily-generate`'s script gate: same artifact and the same candidate
+ * emptying as the measured gate, plus `stage: "script"` so the run report can name which gate
+ * closed the day. Nothing was synthesized, so there is no measured duration to record.
+ */
+function refuseScriptBelowFloor(
+    workDir: string,
+    runDate: string,
+    gate: { chars: number; charRate: number; seconds: number; minMinutes: number },
+): void {
+    const candidates = join(workDir, '21-plan', `${runDate}_04_quality-control-content_candidates.json`);
+    const candidateDocs = metadataOf(readJson(candidates)).docs;
+    const keptCount = Array.isArray(candidateDocs) ? candidateDocs.length : 0;
+    const refusal = join(workDir, '30-audio', `${runDate}_11_generate_content_duration-refusal.json`);
+    const shown = (gate.seconds / 60).toFixed(1);
+    sted('write', refusal, () =>
+        writeJqText(refusal, {
+            stage: 'script',
+            estimatedMinutes: Math.round((gate.seconds / 60) * 10) / 10,
+            minMinutes: gate.minMinutes,
+            keptCount,
+            scriptChars: gate.chars,
+            charRate: gate.charRate,
+            reason: `the authored script estimates ${shown} min of speech, below the ${gate.minMinutes} min floor — refusing before the TTS spend`,
+        }),
+    );
+    emptyCandidates(workDir, runDate);
+    console.error(
+        `generate: script estimates ${shown} min (${gate.chars} chars at ${gate.charRate}/s), below the ${gate.minMinutes} min floor — candidates emptied, the run closes as no-content before any TTS spend (see ${refusal})`,
+    );
+}
+
 export function dailyEpisodeDuration(args: string[]): void {
     const [workDir = '', runDate = '', minArg = '', maxArg = '', vdriver = ''] = args;
     if (!workDir) fail('missing work_dir');
@@ -609,11 +660,7 @@ export function dailyEpisodeDuration(args: string[]): void {
         // A kill between the two writes below leaves the refusal beside non-empty candidates, which would
         // let the pool-gated publish fan package a sub-floor episode — so finish the emptying here.
         if (isFile(refusal)) {
-            if (content !== null && docs.length > 0) {
-                sted('write', candidates, () =>
-                    writeJsonText(candidates, { ...content, metadata: { ...metadataOf(content), docs: [] } }),
-                );
-            }
+            if (docs.length > 0) emptyCandidates(workDir, runDate);
             console.log(`episode-duration: duration refusal already recorded (${refusal}) — nothing to do`);
             return;
         }
@@ -629,11 +676,7 @@ export function dailyEpisodeDuration(args: string[]): void {
                 reason: `the episode ran ${shown} min of speech, below the ${minMinutes} min floor (pre-spend estimate ${estimated.minutes} min) — refusing after synthesis`,
             }),
         );
-        if (content !== null) {
-            sted('write', candidates, () =>
-                writeJsonText(candidates, { ...content, metadata: { ...metadataOf(content), docs: [] } }),
-            );
-        }
+        emptyCandidates(workDir, runDate);
         console.error(
             `episode-duration: episode ran ${shown} min (estimate ${estimated.minutes} min), below the ${minMinutes}–${maxMinutes} min requirement — candidates emptied, the run closes as no-content (see ${refusal})`,
         );
@@ -645,6 +688,17 @@ export function dailyEpisodeDuration(args: string[]): void {
             `episode-duration: episode runs ${shown} min, above the ${minMinutes}–${maxMinutes} min requirement. Trim items or per-item treatment.`,
         );
     }
+    // A passing gate leaves this artifact behind only: the 2026-10-20 run published an 8.4-min
+    // episode with nothing on disk to say whether the gate ran, passed, or was stale (2026-10-22).
+    const verdict = join(workDir, '30-audio', `${runDate}_11_generate_content_duration.json`);
+    sted('write', verdict, () =>
+        writeJqText(verdict, {
+            measuredMinutes: Math.round(minutes * 10) / 10,
+            minMinutes,
+            maxMinutes,
+            ok: true,
+        }),
+    );
     console.log(`episode-duration ok: ${shown} min within ${minMinutes}–${maxMinutes} min`);
 }
 
@@ -844,6 +898,7 @@ export function dailyGenerate(args: string[]): void {
         vdriver = '',
         sectionConcurrency = '',
         episodeMaxMinutes = '',
+        episodeMinMinutes = '',
     ] = args;
     // 20260917 review: the workflow picks a voice driver by short name; both drivers' envs are
     // passed unconditionally so switching `vdriver` needs no shell changes. Unknown -> fail loud.
@@ -867,6 +922,37 @@ export function dailyGenerate(args: string[]): void {
     }
     const docs = join(workDir, '30-audio', `${runDate}_10_wrap-docs_docs.json`);
     const content = join(workDir, '30-audio', `${runDate}_11_generate_content.json`);
+
+    // Pre-spend script floor gate (2026-10-22). QC's candidate-text estimate does not predict the
+    // spoken length — 20261020 planned 3968 chars and rendered 8.4 min, 20261021 planned 4548 and
+    // rendered 17.9 — but the authored VoiceScript IS the spoken text, and 14 measured episodes
+    // deliver it at 5.24-5.94 chars/s. Reusing `spokenCharRate` (the slowest measured band) makes the
+    // estimate over-predict slightly, which is the safe direction here: a thin day is refused before
+    // the 1-2 h synthesis, and one that would have cleared the floor is never refused.
+    const minMinutes = episodeMinMinutes === '' ? 0 : Number(episodeMinMinutes);
+    if (!Number.isFinite(minMinutes) || minMinutes < 0) {
+        failWith(1, `generate: invalid episode_min_minutes: ${episodeMinMinutes}`);
+    }
+    if (minMinutes > 0 && !wholeDocCache(content, voiceGenerator, transcodeMp3)) {
+        const scriptPath = join(workDir, '24-script', `${runDate}_08_script_voicescript.yaml`);
+        if (isFile(scriptPath)) {
+            const script = Bun.YAML.parse(readFileSync(scriptPath, 'utf8')) as {
+                segments?: Array<{ text?: unknown }>;
+            };
+            const segments = Array.isArray(script.segments) ? script.segments : [];
+            const chars = segments.reduce(
+                (sum, segment) => sum + (typeof segment.text === 'string' ? segment.text.length : 0),
+                0,
+            );
+            const charRate = spokenCharRate(vdriver);
+            const seconds = 8 + chars / charRate;
+            if (seconds < minMinutes * 60) {
+                refuseScriptBelowFloor(workDir, runDate, { chars, charRate, seconds, minMinutes });
+                return;
+            }
+            console.log(`script floor ok: ${chars} script chars ≈ ${(seconds / 60).toFixed(1)} min`);
+        }
+    }
 
     if (!sectionConcurrency) {
         timed(workDir, 'generate', () => {

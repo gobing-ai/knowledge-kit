@@ -1835,6 +1835,32 @@ Workspaces default to `$works_dir/<workflow-name>/<run-id>` per profile (`--dir`
 
 ### 7.3 `/tell-me` command + `explain-things` skill surface
 
+**`kk-daily-ai-voice2` duration gates (2026-10-22).** Three places decide whether a day is long
+enough, and each now leaves a trace:
+
+1. `daily-qc-content` runs the pre-spend pool estimate **after** topic admission and title dedup —
+   `applyFloorGate` is the stage's last step. It used to run before them, so on 2026-10-22 it cleared
+   a 4-item pool at 21.0 min that the boundary then cut to 3 (14.4 min), and the run paid 1 h 13 min
+   of voxcpm synthesis for an episode the measured gate refused.
+2. `daily-generate` takes `episode_min_minutes` as its 8th positional arg and estimates the authored
+   VoiceScript (Σ `segments[].text` at `spokenCharRate(vdriver)`, **no** expansion factor) before it
+   spawns the driver. Under the floor it writes the same
+   `_11_generate_content_duration-refusal.json` artifact with `stage: "script"` and empties the
+   candidates, so the run closes as no-content with no TTS spend and the run report names the script
+   gate. Candidate text cannot carry this estimate — 20261020 planned 3968 chars and rendered 8.4
+   min, 20261021 planned 4548 and rendered 17.9 — while 14 measured episodes deliver script chars at
+   5.24–5.94/s, so the reuse of the slowest measured band over-predicts slightly: it never refuses an
+   episode that would have cleared the floor.
+3. `daily-episode-duration` still measures the merged audio, and on a **pass** writes
+   `30-audio/<date>_11_generate_content_duration.json` (`{measuredMinutes, minMinutes, maxMinutes,
+   ok: true}`). A failing gate keeps its refusal artifact. A passing gate used to leave nothing,
+   which is why the 8.4-min episode published on 2026-10-20 cannot be told apart after the fact from
+   a stale stage body.
+
+`publish-classify --fold-tail` also stops escalating: `daily-patch-surfdash` skips with a warning
+(exit 0) when the surfdash result carries no `postPath`, instead of failing. On 2026-10-21 the
+surfdash `git push` was rejected (`fetch first`), classify correctly routed `partial`, and the
+folded patch tail then failed the whole run — the podcast episode was live and the run read `failed`.
 | Capability | Source path | Installed ID |
 | ---------- | ----------- | ------------ |
 | Fat skill | `plugins/kk/skills/explain-things/SKILL.md` (+ one-level `references/views.md`) | `kk:explain-things` |

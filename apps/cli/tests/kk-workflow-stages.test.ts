@@ -869,6 +869,50 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
+    it('daily-qc-content re-estimates after the topic boundary so a shrink below the floor is refused pre-spend (2026-10-22)', () => {
+        withTempDir((dir) => {
+            // 2026-10-22 in miniature: four items clear 15 min, one is dropped by topic admission as a
+            // public-policy dispute, and the surviving three fall under the floor. Gating before the
+            // boundary cleared the four and the run paid for a synthesis the measured gate refused.
+            const docs = [
+                { id: 'keep1', title: 'DuckDB 并行执行重构', body: 'y'.repeat(900) },
+                { id: 'keep2', title: 'Deno 团队被收购', body: 'y'.repeat(900) },
+                { id: 'keep3', title: '微软发布端侧笔记本', body: 'y'.repeat(900) },
+                { id: 'drop1', title: '习近平出席数据中心能耗座谈会', body: 'y'.repeat(900) },
+            ];
+            const env = fakeKk(
+                dir,
+                [
+                    "const fs = require('node:fs');",
+                    'const args = process.argv.slice(2);',
+                    "const out = args[args.indexOf('--out') + 1];",
+                    `fs.writeFileSync(out, JSON.stringify({ body: '', title: 'T', format: 'markdown', metadata: { docs: ${JSON.stringify(docs)} } }));`,
+                ].join('\n'),
+            );
+            mkdirSync(join(dir, '21-plan'), { recursive: true });
+            const stamp = '20261022';
+            writeFileSync(
+                join(dir, `21-plan/${stamp}_03_plan_content.json`),
+                JSON.stringify({ body: '', title: 'T', format: 'markdown', metadata: { docs } }),
+            );
+            const res = run(
+                ['daily-qc-content', dir, stamp, '', 'ai-news', '2', '3', '2', '1', '8', '15', 'voxcpm'],
+                env,
+            );
+            expect(res.status, res.stderr).toBe(0);
+            expect(res.stderr).toContain('floor gate');
+            const candidates = JSON.parse(
+                readFileSync(join(dir, `21-plan/${stamp}_04_quality-control-content_candidates.json`), 'utf-8'),
+            ) as { metadata: { docs: unknown[] } };
+            expect(candidates.metadata.docs).toEqual([]);
+            const refusal = JSON.parse(
+                readFileSync(join(dir, `21-plan/${stamp}_04_quality-control-content_floor-refusal.json`), 'utf-8'),
+            ) as { estimatedMinutes: number; ids: string[] };
+            expect(refusal.ids).toEqual(['keep1', 'keep2', 'keep3']);
+            expect(refusal.estimatedMinutes).toBeLessThan(15);
+        });
+    });
+
     it('daily-extract widens the store window only while the pool misses the floor (2026-10-19)', () => {
         withTempDir((dir) => {
             const calls = join(dir, 'calls.log');

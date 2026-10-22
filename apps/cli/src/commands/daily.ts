@@ -427,6 +427,11 @@ function noContentReason(workDir: string, runDate: string, poolCount: number | u
     if (measured !== null && measuredEstimate !== null && durationFloor !== null && keptCount !== null) {
         return `no-content: the episode ran ${measured} min (pre-spend estimate ${measuredEstimate} min), below the ${durationFloor} min floor — duration refusal after synthesis (pool ${poolCount ?? 0}, kept ${keptCount})`;
     }
+    // The same artifact written by `daily-generate`'s script gate: nothing was synthesized, so there
+    // is no measured duration — the estimate is the authored script's own length (2026-10-22).
+    if (duration?.stage === 'script' && measuredEstimate !== null && durationFloor !== null && keptCount !== null) {
+        return `no-content: the authored script estimates ${measuredEstimate} min of speech, below the ${durationFloor} min floor — script gate refusal before the TTS spend (pool ${poolCount ?? 0}, kept ${keptCount})`;
+    }
     const floor = readRefusal(join(workDir, '21-plan', `${runDate}_04_quality-control-content_floor-refusal.json`));
     const estimated = num(floor?.estimatedMinutes);
     const minMinutes = num(floor?.minMinutes);

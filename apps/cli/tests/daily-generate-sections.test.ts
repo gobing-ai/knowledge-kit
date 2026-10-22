@@ -1033,6 +1033,21 @@ describe('0266 — post-spend duration refusal closes the run as no-content', ()
         });
     });
 
+    it('AC2 — a passing gate leaves a duration verdict artifact (2026-10-22)', () => {
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupDurationFixture(dir, date, 17 * 60); // 17 min — inside the 15–25 min window
+            const dur = runStage(['daily-episode-duration', dir, date, '15', '25', 'voicebox'], binDir, logFile);
+            expect(dur.status, dur.stderr).toBe(0);
+            // An 8.4-min episode published on 2026-10-20 with nothing on disk saying whether this
+            // gate ran, passed, or was a stale stage body — the pass now leaves its own record.
+            const verdict = JSON.parse(
+                readFileSync(join(dir, '30-audio', `${date}_11_generate_content_duration.json`), 'utf-8'),
+            ) as Record<string, unknown>;
+            expect(verdict).toEqual({ measuredMinutes: 17, minMinutes: 15, maxMinutes: 25, ok: true });
+            expect(existsSync(refusalPath(dir, date))).toBe(false);
+        });
+    });
+
     it('AC2 — an over-max episode still fails loud and writes no refusal artifact', () => {
         withFixtureDir(({ dir, binDir, date, logFile }) => {
             setupDurationFixture(dir, date, 26 * 60); // 26 min — above the 25-min ceiling
@@ -1042,4 +1057,59 @@ describe('0266 — post-spend duration refusal closes the run as no-content', ()
             expect(existsSync(refusalPath(dir, date))).toBe(false);
         });
     });
+});
+
+/**
+ * 2026-10-22: `daily-generate` gates the authored VoiceScript before the TTS spend. QC's
+ * candidate-text estimate cannot predict the spoken length (20261020 planned for 31.6 min and
+ * rendered 8.4), so a thin day used to pay for the full synthesis and only then be refused.
+ */
+describe('2026-10-22 — pre-spend script floor gate in daily-generate', () => {
+    const refusalPath = (dir: string, date: string) =>
+        join(dir, '30-audio', `${date}_11_generate_content_duration-refusal.json`);
+    const candidatesPath = (dir: string, date: string) =>
+        join(dir, '21-plan', `${date}_04_quality-control-content_candidates.json`);
+
+    it('refuses a thin script before any TTS call: script refusal artifact, emptied candidates, exit 0', () => {
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+            setupDurationFixture(dir, date, 510);
+            // ~2000 spoken chars ≈ 6 min at the 5.6 字/秒 voicebox band — far under the 15-min floor.
+            writeScriptTotal(join(dir, '24-script', `${date}_08_script_voicescript.yaml`), 2000);
+            rmSync(logFile, { force: true });
+
+            const res = runStage(['daily-generate', dir, date, '', '', 'voicebox', '1', '25', '15'], binDir, logFile);
+            expect(res.status, res.stderr).toBe(0);
+            expect(res.stderr + res.stdout).toContain('below the 15 min floor');
+            // Nothing was synthesized: the driver was never invoked.
+            expect(existsSync(logFile) ? startEvents(logFile).length : 0).toBe(0);
+
+            const refusal = JSON.parse(readFileSync(refusalPath(dir, date), 'utf-8')) as Record<string, unknown>;
+            expect(refusal.stage).toBe('script');
+            expect(refusal.minMinutes).toBe(15);
+            expect(refusal.measuredMinutes).toBeUndefined();
+            expect(refusal.estimatedMinutes as number).toBeLessThan(15);
+            expect(refusal.keptCount).toBe(2);
+            const kept = JSON.parse(readFileSync(candidatesPath(dir, date), 'utf-8')) as {
+                metadata: { docs: unknown[] };
+            };
+            expect(kept.metadata.docs).toEqual([]);
+        });
+    }, 30_000);
+
+    it('lets a script that clears the floor through to the driver, and writes no refusal', () => {
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+            setupDurationFixture(dir, date, 510);
+            // ~6500 spoken chars ≈ 19.5 min — clears the floor, so the synthesis must proceed.
+            writeScriptTotal(join(dir, '24-script', `${date}_08_script_voicescript.yaml`), 6500);
+            rmSync(logFile, { force: true });
+
+            const res = runStage(['daily-generate', dir, date, '', '', 'voicebox', '1', '25', '15'], binDir, logFile);
+            expect(res.status, res.stderr).toBe(0);
+            expect(res.stdout).toContain('script floor ok');
+            expect(startEvents(logFile).length).toBeGreaterThan(0);
+            expect(existsSync(refusalPath(dir, date))).toBe(false);
+        });
+    }, 30_000);
 });
