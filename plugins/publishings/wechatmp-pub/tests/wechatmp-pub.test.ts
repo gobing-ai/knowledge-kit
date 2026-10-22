@@ -348,7 +348,7 @@ function makeConsole(initial: ConsoleState) {
                 if (expression.includes("state: 'noeditor'"))
                     return JSON.stringify({ state: 'top', identity: 'media-audio-1' });
                 // 0260 committed-value probes: a confirmed settings dialog leaves the setting committed.
-                if (expression.includes('#js_original, .js_ori_setting_checkbox')) return enriched.original;
+                if (expression.includes('#js_original input.weui-desktop-switch__input')) return enriched.original;
                 if (expression.includes('#js_reward_setting_area')) return enriched.reward;
                 if (expression.includes('#js_claim_source_area'))
                     return { enabled: enriched.claim, text: enriched.claim ? chosenClaim : '' };

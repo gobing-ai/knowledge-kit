@@ -86,9 +86,9 @@ function norm(value: unknown): string {
  * Playwright-only syntax (`:visible`, `:has-text`) never enters `querySelector` — it throws there.
  */
 const COMMITTED = {
-    /** 原创 enabled = the settings row's checkbox checked (`#js_original` / `.js_ori_setting_checkbox`). */
+    /** 原创 enabled = the settings row's real checkbox checked — scoped below the row (`#js_original`), never the dialog's own `.js_ori_setting_checkbox` (2026-10-21 measured: that class also exists hidden inside the open dialog, and the fresh page is checked=False there — the unscoped union read the dialog's template and the row always read as uncommitted). */
     original: `(() => {
-        const el = document.querySelector('#js_original, .js_ori_setting_checkbox');
+        const el = document.querySelector('#js_original input.weui-desktop-switch__input');
         return el ? el.checked === true : null;
     })()`,
     /** 赞赏 enabled = the reward settings checkbox checked (area-scoped, else the visible cell's). */

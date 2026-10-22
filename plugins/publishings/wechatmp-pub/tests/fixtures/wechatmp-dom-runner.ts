@@ -55,7 +55,11 @@ const SETTINGS_HTML = `
 <div class="settings-panel">
   <div class="setting-group">
     <div class="setting-group__switch js_original_apply js_edit_ori" data-op="original" style="width:80px;height:20px">原创声明</div>
-    <input type="checkbox" id="js_original" class="js_ori_setting_checkbox">
+    <div id="js_original">
+      <!-- 2026-10-21 measured: the committed probe reads the row-scoped switch input; the old bare
+           id-scoped union also matched the open dialog's template, so a fresh page read as uncommitted. -->
+      <input type="checkbox" class="weui-desktop-switch__input" data-op="original-switch">
+    </div>
   </div>
   <div class="setting-group">
     <div class="setting-group__switch js_reward_open" data-op="reward" style="width:80px;height:20px">赞赏</div>
@@ -102,7 +106,9 @@ const WIRE = `
         '<label style="width:90px;height:20px"><input type="radio" class="js_original_type_radio" name="ori">文字原创</label>' +
         '<label class="original_agreement"><input type="checkbox">同意</label>' },
       () => {
-        if (cfg.original.confirmApplies !== false) document.getElementById('js_original').checked = true;
+        if (cfg.original.confirmApplies !== false) {
+                document.querySelector('#js_original .weui-desktop-switch__input').checked = true;
+            }
         return cfg.original.confirmApplies !== false;
       });
     });
@@ -199,7 +205,7 @@ const COLLECT = `
     uploads: window.__ops.uploads,
     insertClicked: window.__ops.insertClicked,
     committed: {
-      original: state('#js_original'),
+      original: state('#js_original .weui-desktop-switch__input'),
       reward: state('.js_reward_setting_checkbox'),
       claim: state('.js_claim_source'),
     },
@@ -308,7 +314,9 @@ async function runScenario(scenario: string): Promise<Facts> {
             // Pre-set committed state before any production probe runs. A string evaluate cannot
             // take an argument — the values are inlined as JSON.
             const preset = [
-                cfg.original?.committed ? "document.getElementById('js_original').checked = true;" : '',
+                cfg.original?.committed
+                    ? "document.querySelector('#js_original .weui-desktop-switch__input').checked = true;"
+                    : '',
                 cfg.reward?.committed ? "document.querySelector('.js_reward_setting_checkbox').checked = true;" : '',
                 cfg.claim?.committed
                     ? `document.querySelector('.js_claim_source_selected').textContent = ${JSON.stringify(cfg.claim.text ?? '')};
