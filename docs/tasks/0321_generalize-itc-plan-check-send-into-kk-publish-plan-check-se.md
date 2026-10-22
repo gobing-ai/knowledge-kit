@@ -1,14 +1,16 @@
 ---
 schema_version: 1
 name: Generalize itc plan/check/send into kk publish plan|check|send with window, mode and approval rows
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-22T18:41:31.104Z
-updated_at: "2026-10-22T19:09:49.375Z"
+updated_at: "2026-10-22T20:36:27.982Z"
 feature_id: G15
 
 priority: P1
 estimate_hours: 8
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0321-verdict.json
 ---
 
 ## 0321. Generalize itc plan/check/send into kk publish plan|check|send with window, mode and approval rows
@@ -26,21 +28,21 @@ kk-itc already splits generate/publish (`apps/cli/src/itc-publish.ts` — `itcMa
 
 ### Requirements
 
-- [ ] R1. `kk stage run publish-matrix-plan <workDir> --bundle <bundle.json> --preset <slug> --window <after-generate|cn-peak|overseas-rss> [--channels a,b] [--live-channels a,b] [--dummy]` writes `<workDir>/4-publish/plan.<window>.json`. It has one row per preset target in that window with `mode != off`, carrying id, plugin, operation, variant, tier, window, mode (`dummy|draft|live`), required, approval (`none|required`), status (`planned`), payload path and payload sha256.
-- [ ] R2. Launch vars only narrow (`--channels`, matched on plugin or id) or promote to live (`--live-channels`). Promoting a target that the preset does not list in this window, or whose mode is `dummy`, fails the plan (exit 1, named target). `--dummy` forces every planned row to `dummy` (rehearsal). The preset file can never yield `live`: the schema rejects `mode: live`.
-- [ ] R3. `kk stage run publish-matrix-check <workDir> --window <w>` runs `kk plugin check` for the distinct plugins of the plan's non-dummy rows. It is warn-only (exit 0) and writes `4-publish/check.<window>.json`.
-- [ ] R4. `kk stage run publish-matrix-send <workDir> --window <w> [--retry] [--tier <n>]` sends the plan's rows in tier order (tier 0 serial and blocking: a failed required tier-0 row skips the later tiers). It writes `4-publish/receipts/<id>.json` and appends one line per receipt to `4-publish/publish-events.jsonl`. It reuses itc's resend rules: skip `succeeded`, never resend a live `uncertain|unknown` effect, and `--retry` resends only `effect: none` failures.
-- [ ] R5. Send resolves `{{article_url}}` / `{{podcast_url}}` placeholders in the payload from the tier-0 receipts' `url` (surfdash → article, podcast → podcast) into `payloads/content.<id>.resolved.json`. An unresolved placeholder fails that row with `effect: none`, error `unresolved-link`.
-- [ ] R6. kk-itc is unchanged in behaviour. The preset schema extension is optional-only, itc rows key as before (id = plugin), and the send loop is shared, not forked. `bun run test` keeps the itc suites green.
-- [ ] R7. `docs/04_DESIGN.md` gets the new stage surface and schemas in the same commit (T3).
+- [x] R1. `kk stage run publish-matrix-plan <workDir> --bundle <bundle.json> --preset <slug> --window <after-generate|cn-peak|overseas-rss> [--channels a,b] [--live-channels a,b] [--dummy]` writes `<workDir>/4-publish/plan.<window>.json`. It has one row per preset target in that window with `mode != off`, carrying id, plugin, operation, variant, tier, window, mode (`dummy|draft|live`), required, approval (`none|required`), status (`planned`), payload path and payload sha256.
+- [x] R2. Launch vars only narrow (`--channels`, matched on plugin or id) or promote to live (`--live-channels`). Promoting a target that the preset does not list in this window, or whose mode is `dummy`, fails the plan (exit 1, named target). `--dummy` forces every planned row to `dummy` (rehearsal). The preset file can never yield `live`: the schema rejects `mode: live`.
+- [x] R3. `kk stage run publish-matrix-check <workDir> --window <w>` runs `kk plugin check` for the distinct plugins of the plan's non-dummy rows. It is warn-only (exit 0) and writes `4-publish/check.<window>.json`.
+- [x] R4. `kk stage run publish-matrix-send <workDir> --window <w> [--retry] [--tier <n>]` sends the plan's rows in tier order (tier 0 serial and blocking: a failed required tier-0 row skips the later tiers). It writes `4-publish/receipts/<id>.json` and appends one line per receipt to `4-publish/publish-events.jsonl`. It reuses itc's resend rules: skip `succeeded`, never resend a live `uncertain|unknown` effect, and `--retry` resends only `effect: none` failures.
+- [x] R5. Send resolves `{{article_url}}` / `{{podcast_url}}` placeholders in the payload from the tier-0 receipts' `url` (surfdash → article, podcast → podcast) into `payloads/content.<id>.resolved.json`. An unresolved placeholder fails that row with `effect: none`, error `unresolved-link`.
+- [x] R6. kk-itc is unchanged in behaviour. The preset schema extension is optional-only, itc rows key as before (id = plugin), and the send loop is shared, not forked. `bun run test` keeps the itc suites green.
+- [x] R7. `docs/04_DESIGN.md` gets the new stage surface and schemas in the same commit (T3).
 - Out of scope: dummy send (0322), bundle production (0324/0327), the publish3 workflow (0323), the approval console.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — The channel matrix comes from a config-selected publish preset (req: R1, R2)
-- [ ] AC2 — Windows select disjoint target sets and never resend (req: R1, R4)
-- [ ] AC3 — Live publishing remains launch-only (req: R2)
-- [ ] AC4 — kk-itc publish behaviour is unchanged by the shared send core (req: R6)
+- [x] AC1 — The channel matrix comes from a config-selected publish preset (req: R1, R2)
+- [x] AC2 — Windows select disjoint target sets and never resend (req: R1, R4)
+- [x] AC3 — Live publishing remains launch-only (req: R2)
+- [x] AC4 — kk-itc publish behaviour is unchanged by the shared send core (req: R6)
 
 ### Q&A
 
@@ -113,15 +115,80 @@ kk-itc already splits generate/publish (`apps/cli/src/itc-publish.ts` — `itcMa
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+| Change | What / why |
+| --- | --- |
+| `apps/cli/src/itc-plan.ts:32` | `PublishWindowSchema` plus the optional matrix fields on `PublishPresetTargetSchema` (`id`, `operation`, `variant`, `tier`, `window`, `mode`, `required`, `options`). Optional-only and `mode` closed over `off|dummy|draft`, so every itc preset still validates and a preset file can never yield a live send (ADR-022). |
+| `apps/cli/src/itc-plan.ts:375` | `loadPublishPreset` exposes the existing project→package preset resolver with every row field intact (`resolveItcTargets` narrows to plugin+profile for itc). |
+| `apps/cli/src/itc-publish.ts:29` | `ItcReceiptSchema` gains optional `target`, `window`, `dummy`, `error`, `startedAt`, `finishedAt` — additive, so itc receipts are unchanged (R6). |
+| `apps/cli/src/itc-publish.ts:322` | `probePlugin` extracts the channel-probe run/parse/redact logic out of `itcCheckTargets` so the matrix probes warn-only on the same seam and env (R3, R6). |
+| `apps/cli/src/itc-publish.ts:405` | `SendRow` / `SendRowsOptions` / `sendRows`: the itc send loop generalized (`key` = receipt key). Resend rules, aggregate parsing, effect classification and receipt writing live here once; `--retry` and the never-resend-uncertain-live rule stay byte-for-byte itc's (R4, R6). |
+| `apps/cli/src/itc-publish.ts:644` | `itcSendTargets` reduced to row building plus one `sendRows` call with `key = plugin`, so itc artefacts keep their names (R6). |
+| `apps/cli/src/publish-matrix.ts:16` | `BundleSchema`, `PublishPlanRowSchema`, `PublishPlanSchema`, `PublishMatrixDeps`, `targetId` (keeps CJK; `${plugin}.${slug(operation)}`), and the link-source contract for placeholders. |
+| `apps/cli/src/publish-matrix.ts:140` | `composePlan`: window selection, `--channels` narrowing, `--live-channels` promotion with its refusals, variant lookup `${variant}@${plugin}` → `${variant}`, sha256 verification, payload build (`operation`, `publishStatus`, `options`), approval flag, duplicate-id guard. |
+| `apps/cli/src/publish-matrix.ts:315` | `planPublishMatrix` — the `publish-matrix-plan` stage: writes `4-publish/plan.<window>.json`, payloads and `planned` events; exit 1 naming the failing target. |
+| `apps/cli/src/publish-matrix.ts:379` | `checkPublishMatrix` — the `publish-matrix-check` stage: probes the plan's non-dummy plugins and writes `check.<window>.json`; warn-only. |
+| `apps/cli/src/publish-matrix.ts:434` | `sendPublishMatrix` — the `publish-matrix-send` stage: tier order, serial blocking tier 0, later-tier skip on a failed required tier-0 row, `{{article_url}}`/`{{podcast_url}}` resolution from tier-0 receipts, `publish-events.jsonl`, `--retry`, `--tier`. |
+| `apps/cli/src/publish-matrix-stage.ts:10` | Stage-name dispatcher for `publish-matrix-plan|check|send`, mirroring `itc-stage.ts`. |
+| `apps/cli/src/commands/stage.ts:47` | `commands/stage.ts` routes `publish-matrix-*` to the new dispatcher beside `itc-*` (no new noun, so no ADR-037 inventory change). |
+| `apps/cli/tests/publish-matrix.test.ts:1` | E2E over a fixture works dir (bundle + project preset): the nine failure modes listed at the top, then plan → check → send with an injected `dispatch`, asserting plan rows, receipts keyed by id, `publish-events.jsonl`, the no-resend rerun, tier-0 blocking, link resolution and live-promotion refusal. |
+| `apps/cli/tests/publish-matrix-stage.test.ts:1` | Stage-name routing test: each `publish-matrix-*` name reaches its implementation (plan → check → send over a dummy-only plan, so no plugin spawns) and every other name returns `undefined` for the generic runner. |
+| `docs/04_DESIGN.md:1966` | New stage surface, preset extension, plan-row/receipt shapes, bundle contract and the dummy-mode handoff to 0322 (T3). |
+
+**Verification:** `bun run lint` clean; `bun test` on the matrix suite plus every itc suite → 4089 tests: 4074 pass, 3 pre-existing skips, 0 fail. A `mode: dummy` row records `error: dummy-mode-not-implemented` instead of spawning a plugin — the explicit seam task 0322 replaces.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `apps/cli/src/publish-matrix.ts:310` writes `4-publish/plan.<window>.json` with one row per in-window `mode != off` preset target carrying id/plugin/operation/variant/tier/window/mode/required/approval/status/payloadPath/payloadDigest; `apps/cli/tests/publish-matrix.test.ts:144` asserts every field and the payload digest |
+| R2 | MET | narrowing at `apps/cli/src/publish-matrix.ts:165` (unlisted token refused, `--dummy` forces every row); promotion refusals for an unlisted window target and a dummy target; `PublishPresetTargetSchema.mode` is `off |
+| R3 | MET | `apps/cli/src/publish-matrix.ts:374` probes the distinct plugins of the non-dummy rows through the shared `probePlugin` seam and writes `4-publish/check.<window>.json`; warn-only exit 0 — `apps/cli/tests/publish-matrix.test.ts:545` |
+| R4 | MET | `apps/cli/src/publish-matrix.ts:463` sends in tier order, tier 0 serial and blocking, writes `4-publish/receipts/<id>.json` and one `publish-events.jsonl` line per receipt, and inherits the itc resend rules through `sendRows` — `apps/cli/tests/publish-matrix.test.ts:378`, `:422`, `:466`, `:483`, `:511` |
+| R5 | MET | placeholders resolve from tier-0 receipts (`apps/cli/src/publish-matrix.ts:143`, resolution in `preparePayload`) into `payloads/content.<id>.resolved.json`; an unresolved one fails the row with `effect: none`, `error: unresolved-link`, no spawn — `apps/cli/tests/publish-matrix.test.ts:378`, `:444` |
+| R6 | MET | `ItcReceiptSchema` extension is optional-only (`apps/cli/src/itc-publish.ts:29`); `itcSendTargets` now calls `sendRows` with `key = plugin` (`apps/cli/src/itc-publish.ts:644`) so itc artefact names and keying are unchanged; every itc suite passes and `apps/cli/tests/publish-matrix.test.ts:609` pins that an itc-shaped preset still resolves through `resolveItcTargets` |
+| R7 | MET | `docs/04_DESIGN.md:1966` records the stage surface, preset extension, plan/receipt shapes, bundle contract and the dummy-mode handoff |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — The channel matrix comes from a config-selected publish preset (req: R1, R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:144` (rows from the preset matrix), `:226` (narrowing), `:269` (refused promotions) |
+| AC2 — Windows select disjoint target sets and never resend (req: R1, R4) | MET | test | `apps/cli/tests/publish-matrix.test.ts:204` (windows disjoint), `:422` (no resend on rerun), `:483` (re-entry still delivers later tiers) |
+| AC3 — Live publishing remains launch-only (req: R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:297` (a preset carrying `mode: live` is rejected) and `:269` (promotion only through the launch var, only for a listed non-dummy target) |
+| AC4 — kk-itc publish behaviour is unchanged by the shared send core (req: R6) | MET | command | `bun test apps/cli/tests/itc-publish.test.ts apps/cli/tests/itc-plan.test.ts apps/cli/tests/itc-presets.test.ts apps/cli/tests/itc-stages.test.ts apps/cli/tests/itc-stage.test.ts` → 113 pass, 0 fail; full `bun run spur-check` → 4078 tests, 0 fail |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+Confidence: HIGH
+Verdict: PASS
+
+**Scope:** the working tree for 0321 — `apps/cli/src/publish-matrix.ts`, its stage dispatcher, the `itc-plan.ts`/`itc-publish.ts` extension and extractions, the stage wiring, two test files and `docs/04_DESIGN.md`.
+
+| Priority | Finding | Disposition |
+| --- | --- | --- |
+| P2 | Tier-0 blocking read only the current pass's receipts (`result.receipts`), so re-entering a window whose required tier-0 rows already succeeded marked the contract broken and skipped every later tier — "never resend" would silently have become "never deliver". | Fixed — `apps/cli/src/publish-matrix.ts:427` reads the on-disk receipt too; regression at `apps/cli/tests/publish-matrix.test.ts:483`. |
+| P3 | A `--live-channels` token belonging to another window was validated only inside the row loop, so a plan with no rows in that window accepted a promotion it could never apply. | Fixed — window membership is checked once for both launch-var lists in `composePlan` (`apps/cli/src/publish-matrix.ts:165`). |
+
+**SECUA / architecture**
+
+- **Security** — preset slugs, channel tokens and plugin names are matched, never concatenated into a shell command; payload rewriting happens in-process. `--live-channels` is the only path to a live send and it can only promote a target the preset already lists, preserving the ADR-022 launch-only rule (`apps/cli/src/publish-matrix.ts:165`).
+- **Efficiency** — one preset read, one bundle read, one payload write per row; `readLinkMap` reads at most the tier-0 receipts. No per-row directory scans.
+- **Correctness** — the plan is a pure function of (bundle, preset, window, launch vars), so identical inputs give byte-identical plans; the send's resend rules are the itc ones inherited through `sendRows` (`apps/cli/src/itc-publish.ts:463`), not a second implementation.
+- **Usability** — every refusal names the offending target or channel and exits 1; a green stage prints one summary line.
+- **Architecture** — no new noun (stage names only), no new dependency, no `kk publish` verb; the matrix adds one module and one dispatcher beside `itc-stage.ts`. itc keeps `key = plugin`, which is what makes R6 checkable rather than asserted.
+
+**Residual risk**
+
+- A `mode: dummy` row records `error: dummy-mode-not-implemented` instead of a synthetic receipt — an in-scope handoff, not a defect: task 0322 owns that branch, and the placeholder can never spawn a plugin, so a rehearsal cannot reach a channel.
+
+- `LINK_SOURCES` (`apps/cli/src/publish-matrix.ts:143`) names `surfdash-pub`/`podcast-pub` as the owned tier-0 link sources — design §5's publication contract, not a channel table; 0327 owns generate-side payload shaping.
+- `checkPublishMatrix` records `ok` for a plugin that declares no `check` entry — `probePlugin`'s existing contract, unchanged from itc.
+- The plan does not validate `plugin` + `operation` against each plugin's declared operations (design §5 aspiration); an unknown plugin is only refused at `check`/`send`, where the plugin list is resolved. Filed as a follow-up rather than taken here, to keep 0321's blast radius to the surface its ACs describe.
+
+**Verification:** `bun run spur-check` and a fresh `spur task gate 0321 run` both PASS on the final tree — 4078 tests, 0 failures, pre/post rule presets clean; `docs/04_DESIGN.md:1966` carries the T3 surface note.
 
 ### References
 
@@ -131,4 +198,7 @@ kk-itc already splits generate/publish (`apps/cli/src/itc-publish.ts` — `itcMa
 
 - 2026-10-22T18:59:28.584Z feature_id Q → G15 (system)
 - 2026-10-22T19:09:49.375Z backlog → todo (system)
+- 2026-10-22T19:33:50.503Z todo → wip (system)
+- 2026-10-22T20:36:25.769Z wip → testing (system)
+- 2026-10-22T20:36:27.974Z testing → done (system)
 

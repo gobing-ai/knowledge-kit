@@ -28,13 +28,36 @@ export const ItcPlanTargetRequestSchema = z
 /** Parsed target selector (plugin plus optional profile). */
 export type ItcPlanTargetRequest = z.infer<typeof ItcPlanTargetRequestSchema>;
 
-/** Target entry inside a publish preset. */
+/** Publish window a preset target belongs to (design kk-daily-ai-voice3 §5a, task 0321). */
+export const PublishWindowSchema = z.enum(['after-generate', 'cn-peak', 'overseas-rss']);
+
+/**
+ * Target entry inside a publish preset.
+ *
+ * The matrix fields are all optional so every shipped itc preset keeps validating (`mode` is
+ * deliberately closed over `off | dummy | draft`: a preset file can never yield a live send, which
+ * is launch-only per ADR-022).
+ */
 export const PublishPresetTargetSchema = z
     .object({
         plugin: z.string().min(1),
         profile: z.string().min(1).optional(),
+        id: z.string().min(1).optional(),
+        operation: z.string().min(1).optional(),
+        variant: z.string().min(1).optional(),
+        tier: z.number().int().min(0).max(3).optional(),
+        window: PublishWindowSchema.optional(),
+        mode: z.enum(['off', 'dummy', 'draft']).optional(),
+        required: z.boolean().optional(),
+        options: z.record(z.string(), z.unknown()).optional(),
     })
     .strict();
+
+/** One preset target row, including the optional channel-matrix fields. */
+export type PublishPresetTarget = z.infer<typeof PublishPresetTargetSchema>;
+
+/** Parsed publish window. */
+export type PublishWindow = z.infer<typeof PublishWindowSchema>;
 
 /** Preset v1 definition schema (task 0300). */
 export const PublishPresetSchema = z
@@ -345,6 +368,22 @@ export async function resolveItcTargets(
         targets: [],
         origin: 'none',
     };
+}
+
+/**
+ * Load one publish preset by slug, preserving every matrix field.
+ *
+ * `resolveItcTargets` narrows a preset to plugin+profile because that is all the itc plan binds;
+ * the channel matrix needs the full row, so it reads the same file through the same resolver.
+ */
+export async function loadPublishPreset(
+    slug: string,
+    roots: { projectRoot?: string; packageRoot?: string } = {},
+    fs: FileSystem = createNodeFileSystem(),
+): Promise<{ preset: PublishPreset; digest: string }> {
+    const projectRoot = roots.projectRoot ? resolve(roots.projectRoot) : process.cwd();
+    const packageRoot = roots.packageRoot ? resolve(roots.packageRoot) : await resolveDefaultPackageRoot(fs);
+    return resolvePresetFromRoots(fs, slug.trim(), projectRoot, packageRoot);
 }
 
 /** Check whether a cover image exists under 4-illustrations/cover.* */

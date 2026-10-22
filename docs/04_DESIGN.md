@@ -1964,3 +1964,87 @@ feature verification runs through the bundled `feature-lifecycle` FSM — enteri
 `spur feature verify <id>`, resolving SDLC action `check-feature` → `bun run spur-check-feature`
 (alias of the full `spur-check` gate) — and records a receipt bound to `feature-lifecycle`, never to
 a project workflow of that name.
+
+## publish-matrix stages: plan | check | send (2026-10-22, task 0321)
+
+`kk stage run publish-matrix-plan|check|send` — new stages, not a new noun (ADR-037 inventory
+unchanged), dispatched from `apps/cli/src/publish-matrix-stage.ts` through
+`apps/cli/src/commands/stage.ts` the same way `itc-*` is. Module: `apps/cli/src/publish-matrix.ts`
+(`BundleSchema`, `PublishPlanRowSchema`, `PublishPlanSchema`, `targetId`, `planPublishMatrix`,
+`checkPublishMatrix`, `sendPublishMatrix`).
+
+**Preset extension (optional-only).** `PublishPresetTargetSchema` gains `id`, `operation`,
+`variant`, `tier` (0–3, default 3), `window` (`after-generate`|`cn-peak`|`overseas-rss`, default
+`after-generate`), `mode` (`off`|`dummy`|`draft`, default `draft`), `required` (default false) and
+`options`. Every field is optional, so the shipped itc presets still validate and every itc target
+still keys by plugin name. `mode` is closed over `off|dummy|draft`: a preset file can never yield a
+live send (ADR-022) — live is only reachable through the launch var `--live-channels`.
+
+`targetId(row)` = `id` ?? `${plugin}.${slug(operation)}` ?? `plugin`; the slug keeps CJK and maps
+whitespace and `/` to `-`, so voice3's four xhs operations and two wechatmp operations get distinct
+receipt/payload keys while itc rows keep their plugin key (feature G211 adopts this key).
+
+**`publish-matrix-plan <workDir> --bundle <bundle.json> --preset <slug> --window <w> [--channels a,b] [--live-channels a,b] [--dummy]`**
+writes `4-publish/plan.<window>.json` and `4-publish/payloads/content.<id>.json`, and appends a
+`planned` line per row to `4-publish/publish-events.jsonl`. One row per preset target in that window
+with `mode != off`:
+
+```jsonc
+{ "id": "xhs-pub.写长文", "plugin": "xhs-pub", "operation": "写长文", "variant": "article",
+  "tier": 2, "window": "after-generate", "mode": "dummy", "required": false,
+  "approval": "none", "status": "planned", "profile": "article",
+  "payloadPath": "4-publish/payloads/content.xhs-pub.写长文.json", "payloadDigest": "<sha256>" }
+```
+
+Plan-level fields: `schemaVersion`, `window`, `bundleRunId`, `parentRunId` (bundle
+`parentRunId`, else its `runId` — receipts bind to a run either way), `presetName`, `presetDigest`.
+Payload build: variant `Content` + `metadata.operation` + `metadata.publishStatus`
+(`live` → `public`, else `draft`) with the row's `options` merged underneath, so an option can never
+flip the row's mode. `approval` is `required` for a live row — recorded, not enforced (the
+workflow's pause node and the future console own that). Payload variant lookup is
+`${variant}@${plugin}` then `${variant}`, so generate can ship channel-specific copy without a
+preset change. The plan fails (exit 1, naming the target) on: an unknown preset slug, a preset row
+carrying `mode: live`, a `--channels`/`--live-channels` token the preset never lists, a live
+promotion the window does not list or that lands on a `dummy` target, `--dummy` combined with
+`--live-channels`, a missing or digest-mismatched variant, a variant that is not valid Content, a
+preset target with no `variant`, and two rows resolving to the same id.
+
+**Bundle contract (consumed here, produced by 0324):**
+
+```jsonc
+{ "schemaVersion": 1, "runId": "…", "runDate": "YYYY-MM-DD", "parentRunId": "…", "runs": [],
+  "episode": { "title": "…", "guid": "…" },
+  "variants": { "article": { "path": "variants/article.json", "sha256": "<sha256>" } } }
+```
+
+`path` resolves against the bundle file's own directory and must match `sha256`; each entry parses
+as kk-core `ContentSchema`.
+
+**`publish-matrix-check <workDir> --window <w>`** probes the distinct plugins of the plan's
+**non-dummy** rows through each plugin's `check` entry (the shared `probePlugin` seam, same env
+injection and redaction as `itc-check-targets`) and writes
+`4-publish/check.<window>.json` `{schemaVersion, window, plugins:[{plugin, ok, detail?}]}`.
+Warn-only: a refusal is printed and recorded, and the stage exits 0. This replaces the hard-coded
+`wechatmp-pub xhs-pub` probe list (feature G15 T-c).
+
+**`publish-matrix-send <workDir> --window <w> [--retry] [--tier <n>]`** dispatches in tier order.
+Tier 0 is the publication contract: serial, and a failed `required` tier-0 row records a `skipped`
+event for every later tier and sends none of them. Rows at tier ≥ 1 get their payload's
+`{{article_url}}` / `{{podcast_url}}` placeholders resolved from the tier-0 receipts
+(`surfdash-pub` → article, `podcast-pub` → podcast) into
+`4-publish/payloads/content.<id>.resolved.json`; a placeholder that stays unresolved fails that row
+with `effect: none`, `error: unresolved-link`, and no spawn. Resend rules are inherited unchanged
+from the shared `sendRows` loop, which the itc sender now also uses (`key` = plugin there, target id
+here): skip a succeeded row, never resend a live row whose effect is `unknown`, and `--retry`
+resends only `effect: none` failures. Receipts land in `4-publish/receipts/<id>.json`; the schema
+gains optional `target`, `window`, `dummy`, `error`, `startedAt`, `finishedAt` beside the existing
+`status`/`effect` shape, so an itc receipt is unchanged. `publish-events.jsonl` gets one
+`sent`/`failed` line per receipt. `--tier <n>` restricts the pass to exactly that tier.
+
+**Dummy rows do not send yet.** `mode: dummy` is planned, payload-built and schema-validated, but
+`send` records a no-effect failure (`error: dummy-mode-not-implemented`) instead of spawning a
+plugin; task 0322 replaces that branch with the synthetic `{ok: true, effect: "none", dummy: true}`
+receipt. The interval is honest rather than rehearsed: a dummy row can never reach a channel.
+
+**Out of scope here:** the approval/monitoring console, bundle production, the publish3 workflow,
+`publish-classify` (0326) and generate-side copy shaping (0327).

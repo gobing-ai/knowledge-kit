@@ -1,5 +1,6 @@
 import { type Command, CommanderError } from 'commander';
 import { runItcStage } from '../itc-stage';
+import { runPublishMatrixStage } from '../publish-matrix-stage';
 import { runStageCancellable } from '../stage';
 
 /** Root options main() accepts before the `stage` token (the root -v/--verbose pair). */
@@ -45,10 +46,13 @@ export function registerStageCommand(program: Command): void {
         .argument('<args...>', 'Stage name followed by its positional arguments')
         .allowUnknownOption(true)
         .action((args: string[]) => {
-            if (args[0]?.startsWith('itc-')) {
+            const stageName = args[0] ?? '';
+            if (stageName.startsWith('itc-') || stageName.startsWith('publish-matrix-')) {
                 return (async () => {
-                    const itcCode = await runItcStage(args);
-                    const code = itcCode !== undefined ? itcCode : await runStageCancellable(args);
+                    const nativeCode = stageName.startsWith('itc-')
+                        ? await runItcStage(args)
+                        : await runPublishMatrixStage(args);
+                    const code = nativeCode !== undefined ? nativeCode : await runStageCancellable(args);
                     if (code !== 0) {
                         throw new CommanderError(code, 'kk.stage.failed', `stage failed with exit code ${code}`);
                     }

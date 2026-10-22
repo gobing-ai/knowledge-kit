@@ -43,6 +43,13 @@ export const ItcReceiptSchema = z
         publicUrlVerified: z.boolean().optional(),
         url: z.string().optional(),
         durationMs: z.number().optional(),
+        // Channel-matrix fields (task 0321): absent on every itc receipt.
+        target: z.string().min(1).optional(),
+        window: z.string().min(1).optional(),
+        dummy: z.boolean().optional(),
+        error: z.string().optional(),
+        startedAt: z.string().optional(),
+        finishedAt: z.string().optional(),
     })
     .strict();
 
@@ -315,6 +322,54 @@ async function prepareTargetPayloads(
 }
 
 /**
+ * One plugin readiness probe: `ok` plus the probe's own `status: detail` when it refused.
+ * `detail` is scrubbed of every config-injected value before it can reach the operator.
+ */
+export interface PluginProbeResult {
+    ok: boolean;
+    detail?: string;
+}
+
+/**
+ * Probe one plugin's `check` entry through the process seam (no direct spawn). Env comes from the
+ * shared injection seam (0311): config plugin env under `process.env`, project root anchored — the
+ * same env the send path hands this plugin.
+ *
+ * Policy-free on purpose: the itc caller fails the run on `!ok`, the matrix caller is warn-only.
+ */
+export async function probePlugin(
+    plugin: PluginRecord,
+    executor: ProcessExecutor = new NodeProcessExecutor(),
+): Promise<PluginProbeResult> {
+    if (!plugin.check) return { ok: true };
+    const probe = await executor.run({
+        command: process.execPath,
+        args: [plugin.check, 'check'],
+        env: pluginProcessEnv(plugin.kind, plugin.name) as Record<string, string>,
+        timeout: 60_000,
+    });
+    if (probe.exitCode === 0) return { ok: true };
+    // The probe's last stdout line carries {status, detail} — surface it so e.g. a stale profile
+    // SingletonLock isn't misreported as an auth expiry (dogfood 2026-10-17).
+    let detail = '';
+    try {
+        const last = probe.stdout.trim().split('\n').filter(Boolean).at(-1) ?? '';
+        const parsed = JSON.parse(last) as { status?: string; detail?: string };
+        if (parsed.detail) {
+            detail = `${parsed.status ?? 'refused'}: ${parsed.detail}`;
+            // A probe may echo a config-injected value in its detail (0311 R3): scrub every value
+            // the config overlay injected before the message reaches the operator.
+            for (const value of Object.values(pluginEnvFromConfig(plugin.kind, plugin.name))) {
+                if (value) detail = detail.split(value).join('<redacted>');
+            }
+        }
+    } catch {
+        // keep the generic hint
+    }
+    return { ok: false, ...(detail ? { detail } : {}) };
+}
+
+/**
  * Checks plugin readiness probes for declared targets before sending.
  */
 export async function itcCheckTargets(
@@ -338,46 +393,249 @@ export async function itcCheckTargets(
 
     for (const target of plan.targets) {
         const plugin = byName.get(target.plugin);
-        if (plugin?.check) {
-            // Run probe check through the process seam (no direct spawn). Env comes from the
-            // shared injection seam (0311): config plugin env under process.env, project root
-            // anchored — the same env the send path hands this plugin.
-            const probe = await executor.run({
-                command: process.execPath,
-                args: [plugin.check, 'check'],
-                env: pluginProcessEnv(plugin.kind, plugin.name) as Record<string, string>,
-                timeout: 60_000,
-            });
-
-            if (probe.exitCode !== 0) {
-                // The probe's last stdout line carries {status, detail} — surface it so e.g. a
-                // stale profile SingletonLock isn't misreported as an auth expiry (dogfood 2026-10-17).
-                let detail = '';
-                try {
-                    const last = probe.stdout.trim().split('\n').filter(Boolean).at(-1) ?? '';
-                    const parsed = JSON.parse(last) as { status?: string; detail?: string };
-                    if (parsed.detail) {
-                        detail = `${parsed.status ?? 'refused'}: ${parsed.detail}`;
-                        // A probe may echo a config-injected value in its detail (0311 R3): scrub every
-                        // value the config overlay injected before the message reaches the operator.
-                        for (const value of Object.values(pluginEnvFromConfig(plugin.kind, plugin.name))) {
-                            if (value) detail = detail.split(value).join('<redacted>');
-                        }
-                    }
-                } catch {
-                    // keep the generic hint
-                }
-                const botName = plugin.browserSession?.profileName ?? plugin.name;
-                echoError(
-                    detail
-                        ? `channel probe for '${target.plugin}' refused: ${detail}`
-                        : `channel probe for '${target.plugin}' refused: run \`kk bot open/login ${botName}\` to authenticate`,
-                );
-                return 1;
-            }
+        if (!plugin?.check) continue;
+        const probe = await probePlugin(plugin, executor);
+        if (!probe.ok) {
+            const botName = plugin.browserSession?.profileName ?? plugin.name;
+            echoError(
+                probe.detail
+                    ? `channel probe for '${target.plugin}' refused: ${probe.detail}`
+                    : `channel probe for '${target.plugin}' refused: run \`kk bot open/login ${botName}\` to authenticate`,
+            );
+            return 1;
         }
     }
     return 0;
+}
+
+/**
+ * One row the shared send loop dispatches. The itc plan and the channel matrix both reduce their
+ * own plan shape to this, so the resend rules and receipt writing live in exactly one place.
+ */
+export interface SendRow {
+    /** Receipt and aggregate file key (`<key>.json`, `fanout-result.<key>.json`). */
+    key: string;
+    plugin: string;
+    profile: string;
+    mode: 'draft' | 'live';
+    /** Absolute payload path handed to `--content`. */
+    payloadPath: string;
+    transport: 'fanout' | 'browser';
+    /** Caller-owned receipt fields (the matrix writes `target` and `window`). */
+    receiptExtras?: Partial<ItcReceipt>;
+}
+
+/** What one shared send pass did, keyed by row key. */
+export interface SendRowsOutcome {
+    sent: string[];
+    skipped: string[];
+    receipts: ItcReceipt[];
+}
+
+/** Seam the shared send loop reads and writes through. */
+export interface SendRowsOptions {
+    rows: readonly SendRow[];
+    /** Directory the `fanout-result.<key>.json` aggregates land in. */
+    publishDir: string;
+    receiptsDir: string;
+    parentRunId: string;
+    planDigest: string;
+    retry: boolean;
+    /** Operator-facing label for diagnostics and usage lines. */
+    label: string;
+    fs?: FileSystem;
+    dispatch?: (argv: string[]) => Promise<number>;
+    /**
+     * Optional payload rewrite before dispatch. Returning `{ error }` fails that row with
+     * `effect: none` and no spawn (the matrix uses it for an unresolved link placeholder).
+     */
+    preparePayload?: (row: SendRow) => Promise<{ payloadPath: string } | { error: string }>;
+    /** Called with every receipt this pass writes, in order. */
+    onReceipt?: (receipt: ItcReceipt) => Promise<void>;
+}
+
+/**
+ * The shared send loop: skip/resend policy, dispatch through fan-out, receipt per row.
+ *
+ * Extracted from `itcSendTargets` unchanged (task 0321 R6) so the itc caller and the channel matrix
+ * cannot drift: `key` is the plugin name for itc and the target id for the matrix.
+ */
+export async function sendRows(options: SendRowsOptions): Promise<SendRowsOutcome> {
+    const fs = options.fs ?? createNodeFileSystem();
+    const dispatch = options.dispatch ?? runFanout;
+    const { rows, publishDir, receiptsDir, parentRunId, planDigest, retry, label } = options;
+    const result: SendRowsOutcome = { sent: [], skipped: [], receipts: [] };
+
+    for (const row of rows) {
+        const targetReceiptPath = join(receiptsDir, `${row.key}.json`);
+        let reattempt = false;
+        if (retry) {
+            // In retry mode, only retry effect: none failures
+            if (!(await fs.exists(targetReceiptPath))) continue;
+            try {
+                const priorReceipt = JSON.parse(await fs.readFile(targetReceiptPath)) as ItcReceipt;
+                if (priorReceipt.status === 'succeeded' || priorReceipt.effect !== 'none') continue;
+            } catch {
+                continue;
+            }
+            reattempt = true;
+        } else if (await fs.exists(targetReceiptPath)) {
+            // Never resend a target the store already accepted, and never resend one whose previous
+            // attempt is `uncertain` (effect unknown — it may already be live): a lost response must
+            // not publish twice on re-entry. An uncertain target is surfaced, not retried; resolving
+            // it is an operator decision (0314 / review finding f6815433).
+            try {
+                const prior = JSON.parse(await fs.readFile(targetReceiptPath)) as ItcReceipt;
+                if (prior.status === 'succeeded') continue;
+                // A LIVE target whose previous attempt left its effect unknown may already be
+                // published: resending it could post twice. Skip it and say so — resolving it is an
+                // operator decision. A draft (or any non-live mode) is safe to re-attempt, which is
+                // what the stale-aggregate fix needs (0314 / review finding f6815433).
+                const mayAlreadyBeLive =
+                    (prior.status === 'uncertain' || prior.effect === 'unknown') &&
+                    (row.mode === 'live' || prior.mode === 'live');
+                if (mayAlreadyBeLive) {
+                    echoError(
+                        `${label}: ${row.key} has an unknown-effect live receipt (may already be published) — resolve it before resending; skipped`,
+                    );
+                    result.skipped.push(row.key);
+                    continue;
+                }
+            } catch {
+                // unreadable receipt: re-attempt, as before
+            }
+            reattempt = true;
+        }
+
+        let payloadPath = row.payloadPath;
+        let preparedError: string | undefined;
+        if (options.preparePayload) {
+            const prepared = await options.preparePayload(row);
+            if ('error' in prepared) {
+                preparedError = prepared.error;
+            } else {
+                payloadPath = prepared.payloadPath;
+            }
+        }
+        const payloadRaw = (await fs.exists(payloadPath)) ? await fs.readFile(payloadPath) : '{}';
+        const payloadDigest = createHash('sha256').update(payloadRaw).digest('hex');
+
+        if (preparedError !== undefined) {
+            const receipt: ItcReceipt = {
+                ...(row.receiptExtras ?? {}),
+                schemaVersion: 1,
+                parentRunId,
+                planDigest,
+                payloadDigest,
+                plugin: row.plugin,
+                profile: row.profile,
+                mode: row.mode,
+                attemptId: retry ? 'retry-1' : 'attempt-1',
+                status: 'failed',
+                effect: 'none',
+                publicUrlVerified: false,
+                error: preparedError,
+            };
+            await fs.writeFile(targetReceiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
+            result.receipts.push(receipt);
+            if (options.onReceipt) await options.onReceipt(receipt);
+            continue;
+        }
+
+        const outPath = join(publishDir, `fanout-result.${row.key}${retry ? '.retry' : ''}.json`);
+        // A re-attempt must re-dispatch: the exists guard is only crash recovery for a dispatch
+        // that never got its receipt written. Reusing the aggregate would re-read the old failure
+        // (dogfood 2026-10-17: fixed-target resend silently kept the stale error).
+        if (reattempt && (await fs.exists(outPath))) await fs.deleteFile(outPath);
+        const fanoutArgs = [
+            '--content',
+            payloadPath,
+            '--target',
+            row.plugin,
+            '--out',
+            outPath,
+            ...(row.transport === 'browser' ? ['--serial-target', row.plugin] : []),
+        ];
+
+        let fanoutExit = 0;
+        if (!(await fs.exists(outPath))) {
+            try {
+                fanoutExit = await dispatch(fanoutArgs);
+            } catch {
+                fanoutExit = 1;
+            }
+        }
+
+        let outcome: {
+            ok?: boolean;
+            status?: string;
+            url?: string;
+            error?: string;
+            durationMs?: number;
+            metadata?: Record<string, unknown>;
+        } = {};
+        if (await fs.exists(outPath)) {
+            try {
+                const agg = JSON.parse(await fs.readFile(outPath)) as {
+                    targets?: Array<{
+                        target?: string;
+                        ok?: boolean;
+                        status?: string;
+                        url?: string;
+                        error?: string;
+                        durationMs?: number;
+                        metadata?: Record<string, unknown>;
+                    }>;
+                };
+                const found = (agg.targets ?? []).find((t) => t.target === row.plugin);
+                if (found) outcome = found;
+            } catch {
+                outcome = { ok: false, status: 'failed', error: 'failed to parse fanout result' };
+            }
+        }
+
+        const isSuccess = fanoutExit === 0 && outcome.ok === true && outcome.status === 'published';
+        const itcDelivery = outcome.metadata?.itcDelivery as
+            | { effect?: 'none' | 'confirmed' | 'unknown'; publicUrlVerified?: boolean }
+            | undefined;
+
+        let effect: 'none' | 'confirmed' | 'unknown' = 'unknown';
+        let publicUrlVerified = false;
+
+        if (isSuccess) {
+            effect = 'confirmed';
+            if (row.mode === 'live' && outcome.url) {
+                publicUrlVerified = itcDelivery?.publicUrlVerified === true;
+            }
+        } else if (itcDelivery?.effect === 'none') {
+            effect = 'none';
+        }
+
+        const receipt: ItcReceipt = {
+            ...(row.receiptExtras ?? {}),
+            schemaVersion: 1,
+            parentRunId,
+            planDigest,
+            payloadDigest,
+            plugin: row.plugin,
+            profile: row.profile,
+            mode: row.mode,
+            attemptId: retry ? 'retry-1' : 'attempt-1',
+            status: isSuccess ? 'succeeded' : effect === 'unknown' ? 'uncertain' : 'failed',
+            effect,
+            publicUrlVerified,
+            ...(outcome.url ? { url: outcome.url } : {}),
+            ...(outcome.error ? { error: outcome.error } : {}),
+            ...(outcome.durationMs !== undefined ? { durationMs: outcome.durationMs } : {}),
+            aggregatePath: outPath,
+        };
+
+        await fs.writeFile(targetReceiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
+        result.receipts.push(receipt);
+        if (receipt.status === 'succeeded') result.sent.push(row.key);
+        if (options.onReceipt) await options.onReceipt(receipt);
+    }
+    return result;
 }
 
 /**
@@ -413,141 +671,26 @@ export async function itcSendTargets(
     const planRaw = await fs.readFile(planPath);
     const planDigest = createHash('sha256').update(planRaw).digest('hex');
 
-    for (const target of plan.targets) {
-        const targetReceiptPath = join(receiptsDir, `${target.plugin}.json`);
-        let reattempt = false;
-        if (isRetry) {
-            // In retry mode, only retry effect: none failures
-            if (!(await fs.exists(targetReceiptPath))) continue;
-            try {
-                const priorReceipt = JSON.parse(await fs.readFile(targetReceiptPath)) as ItcReceipt;
-                if (priorReceipt.status === 'succeeded' || priorReceipt.effect !== 'none') {
-                    continue;
-                }
-            } catch {
-                continue;
-            }
-            reattempt = true;
-        } else if (await fs.exists(targetReceiptPath)) {
-            // Never resend a target the store already accepted, and never resend one whose previous
-            // attempt is `uncertain` (effect unknown — it may already be live): a lost response must
-            // not publish twice on re-entry. An uncertain target is surfaced, not retried; resolving
-            // it is an operator decision (0314 / review finding f6815433).
-            try {
-                const prior = JSON.parse(await fs.readFile(targetReceiptPath)) as ItcReceipt;
-                if (prior.status === 'succeeded') continue;
-                // A LIVE target whose previous attempt left its effect unknown may already be
-                // published: resending it could post twice. Skip it and say so — resolving it is an
-                // operator decision. A draft (or any non-live mode) is safe to re-attempt, which is
-                // what the stale-aggregate fix needs (0314 / review finding f6815433).
-                const mayAlreadyBeLive =
-                    (prior.status === 'uncertain' || prior.effect === 'unknown') &&
-                    (target.mode === 'live' || prior.mode === 'live');
-                if (mayAlreadyBeLive) {
-                    echoError(
-                        `itc-send-targets: ${target.plugin} has an unknown-effect live receipt (may already be published) — resolve it before resending; skipped`,
-                    );
-                    continue;
-                }
-            } catch {
-                // unreadable receipt: re-attempt, as before
-            }
-            reattempt = true;
-        }
+    const rows: SendRow[] = plan.targets.map((target) => ({
+        key: target.plugin,
+        plugin: target.plugin,
+        profile: target.profile,
+        mode: target.mode as 'draft' | 'live',
+        payloadPath: join(workDir, target.payloadPath ?? `4-publish/content.${target.plugin}.json`),
+        transport: target.transport,
+    }));
 
-        const payloadRel = target.payloadPath ?? `4-publish/content.${target.plugin}.json`;
-        const payloadPath = join(workDir, payloadRel);
-        const payloadRaw = (await fs.exists(payloadPath)) ? await fs.readFile(payloadPath) : '{}';
-        const payloadDigest = createHash('sha256').update(payloadRaw).digest('hex');
-
-        const outPath = join(publishDir, `fanout-result.${target.plugin}${isRetry ? '.retry' : ''}.json`);
-        // A re-attempt must re-dispatch: the exists guard is only crash recovery for a dispatch
-        // that never got its receipt written. Reusing the aggregate would re-read the old failure
-        // (dogfood 2026-10-17: fixed-target resend silently kept the stale error).
-        if (reattempt && (await fs.exists(outPath))) await fs.deleteFile(outPath);
-        const fanoutArgs = [
-            '--content',
-            payloadPath,
-            '--target',
-            target.plugin,
-            '--out',
-            outPath,
-            ...(target.transport === 'browser' ? ['--serial-target', target.plugin] : []),
-        ];
-
-        let fanoutExit = 0;
-        if (!(await fs.exists(outPath))) {
-            try {
-                fanoutExit = await dispatch(fanoutArgs);
-            } catch {
-                fanoutExit = 1;
-            }
-        }
-
-        let outcome: {
-            ok?: boolean;
-            status?: string;
-            url?: string;
-            error?: string;
-            durationMs?: number;
-            metadata?: Record<string, unknown>;
-        } = {};
-        if (await fs.exists(outPath)) {
-            try {
-                const agg = JSON.parse(await fs.readFile(outPath)) as {
-                    targets?: Array<{
-                        target?: string;
-                        ok?: boolean;
-                        status?: string;
-                        url?: string;
-                        error?: string;
-                        durationMs?: number;
-                        metadata?: Record<string, unknown>;
-                    }>;
-                };
-                const found = (agg.targets ?? []).find((t) => t.target === target.plugin);
-                if (found) outcome = found;
-            } catch {
-                outcome = { ok: false, status: 'failed', error: 'failed to parse fanout result' };
-            }
-        }
-
-        const isSuccess = fanoutExit === 0 && outcome.ok === true && outcome.status === 'published';
-        const itcDelivery = outcome.metadata?.itcDelivery as
-            | { effect?: 'none' | 'confirmed' | 'unknown'; publicUrlVerified?: boolean }
-            | undefined;
-
-        let effect: 'none' | 'confirmed' | 'unknown' = 'unknown';
-        let publicUrlVerified = false;
-
-        if (isSuccess) {
-            effect = 'confirmed';
-            if (target.mode === 'live' && outcome.url) {
-                publicUrlVerified = itcDelivery?.publicUrlVerified === true;
-            }
-        } else if (itcDelivery?.effect === 'none') {
-            effect = 'none';
-        }
-
-        const receipt: ItcReceipt = {
-            schemaVersion: 1,
-            parentRunId,
-            planDigest,
-            payloadDigest,
-            plugin: target.plugin,
-            profile: target.profile,
-            mode: target.mode as 'draft' | 'live',
-            attemptId: isRetry ? 'retry-1' : 'attempt-1',
-            status: isSuccess ? 'succeeded' : effect === 'unknown' ? 'uncertain' : 'failed',
-            effect,
-            publicUrlVerified,
-            ...(outcome.url ? { url: outcome.url } : {}),
-            ...(outcome.durationMs !== undefined ? { durationMs: outcome.durationMs } : {}),
-            aggregatePath: outPath,
-        };
-
-        await fs.writeFile(targetReceiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
-    }
+    await sendRows({
+        rows,
+        publishDir,
+        receiptsDir,
+        parentRunId,
+        planDigest,
+        retry: isRetry,
+        label: 'itc-send-targets',
+        fs,
+        dispatch,
+    });
     return 0;
 }
 
