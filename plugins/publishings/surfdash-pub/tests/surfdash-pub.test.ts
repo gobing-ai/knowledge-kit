@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -49,7 +49,6 @@ describe('surfdash-pub plugin', () => {
         expect(markdown).toContain('title: "My Surfing Article"');
         expect(markdown).toContain('description: "Custom description from metadata"');
         expect(markdown).toContain('tags: ["web-dev","typescript"]');
-        expect(markdown).toContain('canonical: "https://example.com/ref-1"');
         expect(markdown).toContain('draft: false');
         expect(markdown).toContain('publishDate: "');
         expect(markdown).toContain('# My Surfing Article');
@@ -123,7 +122,11 @@ describe('surfdash-pub plugin', () => {
         const tmpDir = join(process.cwd(), '.tmp-mock-postsurfing-pass');
         await mkdir(tmpDir, { recursive: true });
         const mockBin = join(tmpDir, 'postsurfing');
-        await writeFile(mockBin, '#!/usr/bin/env bun\nconsole.log("Published"); process.exit(0);\n', 'utf-8');
+        await writeFile(
+            mockBin,
+            readFileSync(join(import.meta.dir, 'fixtures', 'fake-postsufing.ts'), 'utf-8'),
+            'utf-8',
+        );
         await Bun.spawn(['chmod', '+x', mockBin]).exited;
 
         process.env.POSTSURFING_BIN = mockBin;
@@ -152,7 +155,11 @@ describe('surfdash-pub plugin', () => {
         const tmpDir = join(process.cwd(), '.tmp-mock-postsurfing-cover');
         await mkdir(tmpDir, { recursive: true });
         const mockBin = join(tmpDir, 'postsurfing');
-        await writeFile(mockBin, '#!/usr/bin/env bun\nconsole.log("Published"); process.exit(0);\n', 'utf-8');
+        await writeFile(
+            mockBin,
+            readFileSync(join(import.meta.dir, 'fixtures', 'fake-postsufing.ts'), 'utf-8'),
+            'utf-8',
+        );
         await Bun.spawn(['chmod', '+x', mockBin]).exited;
         const coverSrc = join(tmpDir, 'source-cover.png');
         await writeFile(coverSrc, 'fake-png-bytes', 'utf-8');
@@ -648,7 +655,11 @@ describe('surfdash-pub operations (0096)', () => {
         await rm(tmpDir, { recursive: true, force: true });
         await mkdir(tmpDir, { recursive: true });
         const mockBin = join(tmpDir, 'postsurfing');
-        await writeFile(mockBin, '#!/usr/bin/env bun\nconsole.log("Published"); process.exit(0);\n', 'utf-8');
+        await writeFile(
+            mockBin,
+            readFileSync(join(import.meta.dir, 'fixtures', 'fake-postsufing.ts'), 'utf-8'),
+            'utf-8',
+        );
         await Bun.spawn(['chmod', '+x', mockBin]).exited;
 
         process.env.POSTSURFING_BIN = mockBin;
@@ -899,7 +910,7 @@ describe('normalizeLocaleFrontmatter (R3)', () => {
 describe('path-derived metadata validation (R4)', () => {
     const mockBin = async (dir: string): Promise<string> => {
         const bin = join(dir, 'postsurfing');
-        await writeFile(bin, '#!/usr/bin/env bun\nconsole.log("Published"); process.exit(0);\n', 'utf-8');
+        await writeFile(bin, readFileSync(join(import.meta.dir, 'fixtures', 'fake-postsufing.ts'), 'utf-8'), 'utf-8');
         await Bun.spawn(['chmod', '+x', bin]).exited;
         return bin;
     };

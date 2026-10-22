@@ -120,23 +120,22 @@ export function mapContentToSurfingMarkdown(content: Content, options: MapConten
     ].filter((tag) => tag.length > 0);
 
     const isoDate = options.publishDate ?? new Date().toISOString().slice(0, 10);
-    const firstRefUrl = content.references?.[0]?.url;
-    const canonical =
-        typeof firstRefUrl === 'string'
-            ? firstRefUrl
-            : typeof content.metadata?.canonicalUrl === 'string'
-              ? content.metadata.canonicalUrl
-              : undefined;
     const draft = typeof content.metadata?.published === 'boolean' ? !content.metadata.published : false;
 
     // Strict surfdash PostSchema (surfdash/src/content/schema.ts): publishDate (ISO date) is
     // required; unknown keys (`date`, `canonical_url`, `published`) are rejected.
+    //
+    // `canonical` is deliberately NOT written here. The canonical URL is the site's own route
+    // for this slug, which only the site can compute (locale prefix + collection segment); the
+    // previous `references[0].url` fallback pointed the canonical at an unrelated *external*
+    // source and would have dropped the post out of the sitemap if surfdash's refine step had
+    // not overwritten it. See docs/00_ADR.md ADR-008: the generator supplies content, the site
+    // supplies identity.
     const frontmatterObj: Record<string, unknown> = {
         title,
         description: description ?? '',
         tags,
         publishDate: isoDate,
-        ...(canonical ? { canonical } : {}),
         draft,
         ...(options.image ? { image: options.image, og_image: options.image } : {}),
     };
@@ -271,6 +270,49 @@ export function withEmdashTokenHint(errText: string): string {
     return /INVALID_TOKEN|API error 401/.test(errText)
         ? `${errText} — hint: regenerate the EmDash token (surfing.salty.vip admin console) and update EMDASH_API_TOKEN in ~/.config/kk/config.yaml`
         : errText;
+}
+
+/**
+ * Post-conditions the site guarantees after its publishing pipeline ran.
+ *
+ * The publisher does not derive SEO metadata any more (ADR-008): surfdash's refine step owns
+ * `refined`, `seo_title`, `canonical` and the digest title/description. Verifying the marker
+ * here turns a silently-regressed site pipeline into a loud publisher failure instead of a post
+ * that ships with a date-only title — which is exactly how the 2026-10-21 regression went
+ * unnoticed.
+ */
+export interface RefinedSnapshot {
+    title?: string;
+    seoTitle?: string;
+    description?: string;
+    canonical?: string;
+}
+
+/** Reads the frontmatter scalar fields the site owns; undefined when refine never ran. */
+export function readRefinedSnapshot(filePath: string): RefinedSnapshot | undefined {
+    if (!existsSync(filePath)) return undefined;
+    const raw = readFileSync(filePath, 'utf-8');
+    const block = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    const fm = block?.[1] ?? '';
+    if (!fm || !/^refined:\s*true$/m.test(fm)) return undefined;
+    const read = (key: string): string | undefined => {
+        const m = fm.match(new RegExp(`^${key}:\\s*(?:>-?\n((?:[ \\t]+.*\n?)+)|(.*))$`, 'm'));
+        if (!m) return undefined;
+        const value = (m[1] ?? m[2] ?? '').replace(/\n[ \t]+/g, ' ').trim();
+        return value.replace(/^["']|["']$/g, '') || undefined;
+    };
+    return {
+        title: read('title'),
+        seoTitle: read('seo_title'),
+        description: read('description'),
+        canonical: read('canonical'),
+    };
+}
+
+/** Error text when the site pipeline did not mark the post refined, else undefined. */
+export function requireRefined(filePath: string): string | undefined {
+    if (readRefinedSnapshot(filePath)) return undefined;
+    return `surfdash refine step did not run for ${filePath} (no \`refined: true\`): the publishing pipeline is broken — the post would ship with generator-supplied SEO metadata`;
 }
 
 /** Outcome of {@link pushPostGit} — the union keeps fail-loud errors typed at the call site. */
@@ -653,6 +695,11 @@ async function publishPost(payload: PublishTransportPayload): Promise<Result> {
             );
         }
 
+        // Contract check (ADR-008): the site, not this plugin, owns SEO metadata.
+        const notRefined = requireRefined(filePath);
+        if (notRefined) return fail(notRefined);
+        const refined = readRefinedSnapshot(filePath);
+
         // Deploy seam: commit + push the post so deploy.yml builds it, then wait for
         // the live URL — downstream show-notes advertise a real page, not a 404.
         // Tests (and offline runs) opt out via SURFDASH_AUTO_PUSH=0.
@@ -669,7 +716,7 @@ async function publishPost(payload: PublishTransportPayload): Promise<Result> {
                 message: 'Published via postsurfing CLI (auto-push disabled)',
                 // Absolute post path lets downstream steps (locale translation + CMS sync)
                 // derive the surfdash checkout root without extra configuration.
-                metadata: { postPath: filePath },
+                metadata: { postPath: filePath, refinedTitle: refined?.title, refinedCanonical: refined?.canonical },
             });
         }
         const relPostDir = join('content', 'posts', 'articles', locale, slug);
@@ -684,7 +731,7 @@ async function publishPost(payload: PublishTransportPayload): Promise<Result> {
             message: live
                 ? 'Published, committed, pushed, and live on the site'
                 : 'Published and pushed; URL not live within the verify window — check the surfdash deploy workflow',
-            metadata: { postPath: filePath, gitCommit: pushed.hash, live },
+            metadata: { postPath: filePath, gitCommit: pushed.hash, live, refinedTitle: refined?.title },
         });
     } catch (err: unknown) {
         return fail(`Postsurfing transport error: ${err instanceof Error ? err.message : String(err)}`);
