@@ -1,13 +1,15 @@
 ---
 schema_version: 1
 name: "wechatmp 文章 settings rail: measure and repair 原创/创作来源/原文链接 entries"
-status: testing
+status: done
 template: issue
 created_at: 2026-10-22T03:08:10.155Z
-updated_at: "2026-10-22T04:57:12.812Z"
+updated_at: "2026-10-22T05:01:08.613Z"
 
 priority: P2
 estimate_hours: 4
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0318. wechatmp 文章 settings rail: measure and repair 原创/创作来源/原文链接 entries
@@ -201,7 +203,7 @@ Design conformance: all five intended outcomes implemented. Two measurement-driv
 
 **Pipeline verify results**
 
-- Verdict: PARTIAL (from verdict artifact)
+- Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
@@ -209,50 +211,57 @@ Design conformance: all five intended outcomes implemented. Two measurement-driv
 | R2 | MET | `plugins/publishings/wechatmp-pub/src/enrich.ts:364` opens the claim expander, chooses the requested nested radio text and confirms with 确认; `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:96` proves an unavailable stance is named once. Live production rail observed claim enabled with exact 个人观点，仅供参考 text. |
 | R3 | MET | `docs/design/wechatmp-ui-discovery.md:88` records the URL popover measurement before repair; `plugins/publishings/wechatmp-pub/src/enrich.ts:329` waits for asynchronous popover close and verifies row URL/checkbox; `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:50` proves delayed commit and post-close readback. Live production rail observed the exact requested URL and checked row. |
 | R4 | MET | `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:87` proves the original/reward sequence. Live production rail and replay observed reward checked, and the inspected screenshot shows the active 赞赏 account row after original declaration. |
-| R5 | MET | `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:50` and `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:87` execute production expressions in Chromium against measured popover/twin-row/nested-radio shapes. Initial entries: 0 pass/2 fail; URL baseline: 2 pass/2 fail; twin-row baseline: 0 pass/1 fail; delayed URL baseline: 0 pass/1 fail. Final focused regression: 7 pass/0 fail. |
+| R5 | MET | `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:50` and `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:87` execute production expressions in Chromium against measured popover/twin-row/nested-radio shapes. Initial entries: 0 pass/2 fail; URL baseline: 2 pass/2 fail; twin-row baseline: 0 pass/1 fail; delayed URL baseline: 0 pass/1 fail. Final focused regression: 7 pass/0 fail, repeated successfully during recovery. Full-suite measured coverage: enrich.ts functions 96.77%, lines 99.16%. Proof artifacts: .spur/run/0318-verify-answer.txt lines 1–56 (entire answer), .spur/run/0318-verdict.json lines 1–161 (entire derived/folded verdict), .spur/run/0318-resume-regression.log and .spur/run/0318-resume-acceptance.log. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Scenario: AC1 — 原创 commits and re-reads as checked (req: R1) | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:79` and `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:87`; focused Chromium run passed. Live fresh editor and replay observed original checked, using the visible row branch rather than the stale first template. |
-| Scenario: AC2 — 创作来源 commits with its own confirm (req: R2) | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:87`; focused Chromium run passed with the dialog's 确认. Live fresh editor and replay observed exact requested stance and checked claim. |
-| Scenario: AC3 — 原文链接 entry is measured, then committed (req: R3) | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:50` through moved-field failure at `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:72`; all four URL scenarios passed. Live requested URL matched after asynchronous popover close and on replay. |
-| Scenario: AC4 — a committed 原创 unblocks 赞赏 (req: R4) | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:87`; Chromium observed original/reward both checked. Live fresh editor and replay also observed reward checked; inspected screenshot shows active account row. |
-| Scenario: AC5 — the fixture regression fails on the pre-fix entries (req: R5) | MET | command | Focused Chromium baseline failed before entry/visible-branch/popover timing repairs; final focused regression command passed 7 tests with 0 failures. The tracked scenarios begin at `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:50`. |
+| AC1 — 原创 commits and re-reads as checked (req: R1) | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:79` and `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:87`; focused Chromium run passed. Live fresh editor and replay observed original checked, using the visible row branch rather than the stale first template. |
+| AC2 — 创作来源 commits with its own confirm (req: R2) | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:87`; focused Chromium run passed with the dialog's 确认. Live fresh editor and replay observed exact requested stance and checked claim. |
+| AC3 — 原文链接 entry is measured, then committed (req: R3) | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:50` through moved-field failure at `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:72`; all four URL scenarios passed. Live requested URL matched after asynchronous popover close and on replay. |
+| AC4 — a committed 原创 unblocks 赞赏 (req: R4) | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:87`; Chromium observed original/reward both checked. Live fresh editor and replay also observed reward checked; inspected screenshot shows active account row. |
+| AC5 — the fixture regression fails on the pre-fix entries (req: R5) | MET | command | Focused Chromium baseline failed before entry/visible-branch/popover timing repairs; final focused regression command passed 7 tests with 0 failures. The tracked scenarios begin at `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:50`. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
 <!-- spur:record-review -->
 
-**SECU findings** (pipeline verify step — verdict: PARTIAL)
+**SECU findings** (pipeline verify step — verdict: PASS)
 
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
-| P1 | residual-sweep | — | blocking=5 deferrable=0 advisory=0 housekeeping=0; blocking ids: unchecked-box:fba3ae2c, unchecked-box:dc635e9e, unchecked-box:7c21718c, unchecked-box:1417fa60, unchecked-box:5055d375 |
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
-Verification invocation: `sp-dev-verify 0318 --auto --agent inline --next --force --focus all --fix all`.
+Final state: **done / verify PASS / task release readiness PASS**. All R1–R5 and AC1–AC5 are proven and checked. Final residual counts: blocking=0, deferrable=0, advisory=0, housekeeping=0. Readiness receipt: `.spur/run/0318-shippable.json`.
 
-All five requirements and all five AC scenarios have MET evidence. The final repository gate receipts are: lint/typecheck PASS, build PASS, pre-check 58 rules PASS, full suite 4050 pass / 3 pre-existing skips / 0 fail (exit 0), post-check PASS. Measured enrich.ts coverage is 96.77% functions / 99.16% lines. Live production-rail acceptance/replay passed all four settings with zero warnings and zero overlays; no draft was saved or published.
+Recovery was explicitly authorized by the operator's request to complete all remaining work before committing. The previous PARTIAL was a recorder ID mismatch: `prefixId` expects AC/R at the start of the verdict ID, but the answer carried `Scenario: AC1 …`. The answer now uses exact scenario titles beginning `AC1`–`AC5`; the proven AC boxes were reconciled through `spur task update`. Source inspected: Evidence: @gobing-ai/spur `spur.js` line 100635 (installed recorder's prefix matcher). No product source/test changes were necessary during recovery. Ordinary verdict, record, residual and done gates passed; no force-done/provenance bypass was used.
 
-The installed recorder left the five AC checklist boxes inside the Gherkin block unticked despite rendering their MET rows in Testing. Requirements boxes were flipped. The post-record residual scan consequently found five blocking unchecked boxes; fold changed PASS to PARTIAL. The downgraded artifact was re-recorded. Task remains testing; no done transition or gate bypass was attempted. Exact recorder cause is unverified (AC identity matching or fenced checklist handling); reconcile the proven checklist through the task CLI during recovery rather than changing product code.
+Verification receipts:
 
-Local artifact writes retained for audit:
+- Fresh recovery run: seven Chromium regressions passed; live production rail and idempotent replay passed original/reward/claim/URL checks, zero warnings and zero overlays. No draft saved or published.
+- Fresh lint/typechecks, build, 58 pre-check rules and two post-check rules passed (exit 0).
+- The full suite on the unchanged source passed: 4050 pass, three pre-existing skips, zero failures, 20088 assertions across 205 files. Measured enrich.ts coverage: functions 96.77%, lines 99.16%. Full-suite logs are retained; no extra full-suite run was needed for metadata-only reconciliation.
 
-- `.spur/run/0318-verify-answer.txt` lines 1–55: authored verification answer (pre-residual PASS).
-- `.spur/run/0318-verdict.json` lines 1–161: CLI-derived verdict, with residual fold producing final PARTIAL.
-- `.spur/run/0318-residuals.json` lines 1–54 and `.spur/run/0318-residual-report.md` lines 1–12: five blocking unchecked AC boxes.
-- `.spur/run/0318-acceptance.ts` lines 1–46: repeatable live driver; `.spur/run/0318-live-acceptance.png`: inspected binary screenshot.
+Local artifacts retained for audit:
+
+- `.spur/run/0318-verify-answer.txt` lines 1–56 and `.spur/run/0318-verdict.json` lines 1–161: authored answer and final CLI-derived/folded PASS verdict.
+- `.spur/run/0318-residuals.json`: final zero-item residual sweep. The earlier residual report describes the resolved attempt and is superseded by this final sweep.
+- `.spur/run/0318-acceptance.ts` lines 1–46: repeatable live driver; `.spur/run/0318-live-acceptance.png`: inspected screenshot.
 - `.spur/memory/evidence/20261021-wechatmp/0318-url-measure.json` lines 1–335 and `.spur/memory/evidence/20261021-wechatmp/0318-live-acceptance.json` lines 1–26: measured controls and passing live state/replay.
-- `.spur/run/0318-test-final.log`, `.spur/run/0318-lint.log`, `.spur/run/0318-build.log`, `.spur/run/0318-pre-check.log`, `.spur/run/0318-post-check.log`, `.spur/run/0318-regression.log`: final check receipts. Expected failing baselines remain in the corresponding red logs named in the verification answer.
+- `.spur/run/0318-resume-regression.log`, `.spur/run/0318-resume-acceptance.log`, `.spur/run/0318-resume-lint.log`, `.spur/run/0318-resume-build.log`, `.spur/run/0318-resume-pre-check.log`, `.spur/run/0318-resume-post-check.log`: fresh recovery receipts.
+- `.spur/run/0318-test-final.log`: full-suite receipt on unchanged source. Expected failing baselines are retained in the red logs named in the answer.
 
-The recorder transcribes requirement/AC tables but omits the verdict checks table and emits its default Coverage N/A sentence. Actual measured coverage and artifact disclosure are therefore retained here and in the canonical verdict/answer, rather than rewriting deterministic Testing manually.
+The recorder emits its default Coverage N/A sentence for verdict transcription; actual measured coverage and artifact ranges are recorded in R5's Testing evidence and the receipts above.
 
-Stop source: sp-dev-verify SKILL.md residual-sweep contract: “On a folded PARTIAL … a residual-failed task is routed to router C6 (HITL STOP), never another automatic fix loop.” Recovery emitted by the CLI: fix `.spur/run/0318-residual-report.md` items, then `/sp-dev-run 0318`. Shippable: N/A (no feature context). All work remains a reviewable diff; no commit/push/deployment.
+Task shipping readiness: PASS. Feature-level Shippable: N/A (0318 has no linked feature). This does not certify the broader E92 umbrella, whose separate task 0260 remains blocked. Product repair is now present in commit 6126369, observed during recovery; this agent did not create that commit. Only the final task-record updates remain uncommitted for the next step.
 
 ### History
 
 - 2026-10-22T04:21:52.240Z todo → wip (system)
 - 2026-10-22T04:49:09.768Z wip → testing (system)
+- 2026-10-22T04:58:26.615Z testing → done (system)
+
+- Operator-authorized recovery completed: corrected verdict AC identifiers and reconciled all proven AC checkboxes through Spur. Fresh seven-scenario Chromium regression and live acceptance/replay PASS; lint/build/pre/post rules PASS. Re-derived and recorded verify PASS, residual sweep zero items, ordinary lifecycle transition to done. Task release readiness PASS; feature-level gate N/A because task is unlinked. No commit, publish, deployment or gate bypass.
 
