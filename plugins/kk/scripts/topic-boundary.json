@@ -1,92 +1,27 @@
 {
-    "version": 1,
-    "note": "Task 0189 R2 topic admission for the AI 乱炖 column, with the 2026-10-02 operator scope correction: the political-diplomatic rule is China-only (中国政治/外交主线). Foreign public-affairs items are NOT floor-excluded — they flow to the plan and are handled by the article-write/script-write/cover 选题边界 prompts (skip + note / plan `excluded`) and the content-safety review. Excluded items are recorded with id, rule, reason and the matched keyword. Sources are never deleted or modified. Scan covers the title plus the first scanChars chars of the body. Precision first: these keywords are a floor, not a sieve — a rare false negative is caught by the prompt-layer boundaries and the content-safety skill review, and a suspected false positive is restored by hand with a recorded reason (manual review), never silently.",
+    "version": 2,
     "scanChars": 200,
     "rules": [
         {
-            "id": "political-diplomatic",
-            "reason": "中国政治/外交主线：涉及中国党政机构、领导人、外交部门或台海/中美关系的条目，不属于 AI 乱炖的技术分享范围（0189 R2；2026-10-02 操作者裁定本规则仅限中国，外国政治条目由选题边界提示与内容安全评审处理）。",
+            "id": "prc-leadership",
+            "reason": "中国最高领导人敏感线：现任及历任国家最高领导人属平台审核红线，不论条目是否与 AI 相关一律排除（2026-10-22 操作者裁定，取代 0189 R2 的五条规则——诉讼、出口管制、监管博弈、军事技术、社会事件本身都是 AI 产业新闻的主线，整类排除过严）。",
             "keywords": [
-                "领导人",
-                "主席访",
+                "习近平",
+                "毛泽东",
+                "邓小平",
+                "江泽民",
+                "胡锦涛",
+                "华国锋",
+                "赵紫阳",
+                "xi jinping",
+                "jiang zemin",
+                "deng xiaoping",
+                "hu jintao",
+                "mao zedong",
+                "国家主席",
                 "总书记",
-                "国务院总理",
-                "外交部",
-                "大使馆",
-                "国事访问",
-                "政治局",
-                "中南海",
-                "台海",
-                "两岸关系",
-                "中美关系"
-            ]
-        },
-        {
-            "id": "trade-controls",
-            "reason": "外交/贸易管制主线：制裁、关税、出口管制、实体清单等政府间管制动作属于公共事务，不是技术实践（0189 R2；涉管制的技术影响可在人工复审后改写为纯技术内容）。",
-            "keywords": [
-                "制裁",
-                "关税",
-                "出口管制",
-                "实体清单",
-                "贸易战",
-                "禁令",
-                "制裁清单",
-                "sanctions",
-                "tariff",
-                "export control",
-                "trade war",
-                "entity list"
-            ]
-        },
-        {
-            "id": "military",
-            "reason": "军事主线：军队、武器、作战相关的条目一律排除（0189 R2）。",
-            "keywords": [
-                "军队",
-                "军事",
-                "解放军",
-                "武器",
-                "导弹",
-                "无人机袭击",
-                "战场",
-                "military",
-                "pentagon",
-                "missile"
-            ]
-        },
-        {
-            "id": "policy-dispute",
-            "reason": "公共政策争议主线：立法、听证、反垄断等政策博弈是公共事务主线，不是技术内容（0189 R2；纯技术子话题需人工复审并重写后才可使用）。",
-            "keywords": [
-                "立法",
-                "听证",
-                "政策争议",
-                "反垄断",
-                "监管机构",
-                "监管新规",
-                "法案",
-                "regulation",
-                "antitrust",
-                "legislation",
-                "lawsuit"
-            ]
-        },
-        {
-            "id": "social-event",
-            "reason": "社会公共事件主线：事故、灾害、冲突现场等社会事件的报道不属于技术分享（0189 R2）。",
-            "keywords": [
-                "社会事件",
-                "踩踏",
-                "骚乱",
-                "抗议",
-                "示威",
-                "罢工",
-                "遇难",
-                "伤亡",
-                "protest",
-                "riot",
-                "casualties"
+                "政治局常委",
+                "中南海"
             ]
         }
     ],
