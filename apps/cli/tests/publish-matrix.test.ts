@@ -542,6 +542,103 @@ describe('publish-matrix-send (0321 R4, R5)', () => {
     });
 });
 
+describe('publish-matrix preset preflight (0325 R1, R2)', () => {
+    /** Injected plugin records: only ones that declare `check` are actually probed. */
+    const pluginRecords = ['wechatmp-pub', 'xhs-pub', 'surfdash-pub', 'podcast-pub'].map((name) => ({
+        name,
+        kind: 'publish' as const,
+        entry: `/tmp/${name}/index.js`,
+        check: `/tmp/${name}/check.js`,
+        dir: `/tmp/${name}`,
+        manifestPath: `/tmp/${name}/plugin.json`,
+        origin: 'builtin' as const,
+    }));
+
+    it('probes exactly the draft rows of every window from the preset, with no plan file', async () => {
+        const fixture = makeFixture([
+            { plugin: 'wechatmp-pub', operation: '文章', variant: 'article', tier: 2, mode: 'draft' },
+            { plugin: 'xhs-pub', operation: '写播客', variant: 'episode', tier: 1, mode: 'draft', window: 'cn-peak' },
+            { plugin: 'xhs-pub', operation: '写长文', variant: 'article', tier: 2, mode: 'dummy' },
+            { plugin: 'surfdash-pub', operation: 'post', variant: 'article', tier: 0, mode: 'off' },
+        ]);
+        await withCleanup(async (fx) => {
+            const out = captureOutput();
+            try {
+                const code = await checkPublishMatrix([fx.workDir, '--preset', 'daily-ai-voice', '--all-windows'], {
+                    projectRoot: fx.root,
+                    plugins: pluginRecords,
+                    executor: new (class extends NodeProcessExecutor {
+                        override async run(options: ProcessOptions): Promise<ProcessResult> {
+                            return {
+                                command: options.command,
+                                args: options.args ?? [],
+                                exitCode: 0,
+                                stdout: '',
+                                stderr: '',
+                                durationMs: 0,
+                            } as ProcessResult;
+                        }
+                    })(),
+                });
+                expect(code).toBe(0);
+
+                const record = JSON.parse(
+                    readFileSync(join(fx.workDir, '4-publish/check.preflight.json'), 'utf-8'),
+                ) as { window: string; plugins: Array<{ plugin: string; ok: boolean }> };
+                expect(record.window).toBe('preflight');
+                // Both windows contribute; dummy and off rows never do.
+                expect(record.plugins.map((probe) => probe.plugin)).toEqual(['wechatmp-pub', 'xhs-pub']);
+                expect(out.read()).toContain('2 probe(s) recorded for preflight');
+            } finally {
+                out.restore();
+            }
+        }, fixture);
+    });
+
+    it('passes with no probes when every preset row is dummy or off', async () => {
+        const fixture = makeFixture([
+            { plugin: 'wechatmp-pub', operation: '文章', variant: 'article', tier: 2, mode: 'dummy' },
+            { plugin: 'xhs-pub', operation: '写长文', variant: 'article', tier: 2, mode: 'off' },
+        ]);
+        await withCleanup(async (fx) => {
+            const out = captureOutput();
+            try {
+                expect(
+                    await checkPublishMatrix([fx.workDir, '--preset', 'daily-ai-voice', '--all-windows'], {
+                        projectRoot: fx.root,
+                        plugins: pluginRecords,
+                    }),
+                ).toBe(0);
+                expect(out.read()).toContain('no probes');
+                const record = JSON.parse(
+                    readFileSync(join(fx.workDir, '4-publish/check.preflight.json'), 'utf-8'),
+                ) as { plugins: unknown[] };
+                expect(record.plugins).toHaveLength(0);
+            } finally {
+                out.restore();
+            }
+        }, fixture);
+    });
+
+    it('fails an invalid preset that names an uninstalled plugin', async () => {
+        const fixture = makeFixture([{ plugin: 'linkedin-pub', variant: 'article', tier: 2, mode: 'draft' }]);
+        await withCleanup(async (fx) => {
+            const out = captureOutput();
+            try {
+                expect(
+                    await checkPublishMatrix([fx.workDir, '--preset', 'daily-ai-voice', '--all-windows'], {
+                        projectRoot: fx.root,
+                        plugins: pluginRecords,
+                    }),
+                ).toBe(1);
+                expect(out.readErr()).toContain('names uninstalled plugin(s): linkedin-pub');
+            } finally {
+                out.restore();
+            }
+        }, fixture);
+    });
+});
+
 describe('publish-matrix dummy mode (0322 R1, R2, R3)', () => {
     /** Steps that must never run for a dummy row: a dispatch attempt fails the test loudly. */
     function throwingDispatch() {

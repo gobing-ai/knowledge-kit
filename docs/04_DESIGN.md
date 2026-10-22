@@ -2020,12 +2020,17 @@ preset target with no `variant`, and two rows resolving to the same id.
 `path` resolves against the bundle file's own directory and must match `sha256`; each entry parses
 as kk-core `ContentSchema`.
 
-**`publish-matrix-check <workDir> --window <w>`** probes the distinct plugins of the plan's
-**non-dummy** rows through each plugin's `check` entry (the shared `probePlugin` seam, same env
-injection and redaction as `itc-check-targets`) and writes
-`4-publish/check.<window>.json` `{schemaVersion, window, plugins:[{plugin, ok, detail?}]}`.
-Warn-only: a refusal is printed and recorded, and the stage exits 0. This replaces the hard-coded
-`wechatmp-pub xhs-pub` probe list (feature G15 T-c).
+**`publish-matrix-check <workDir> --window <w>` | `--preset <slug> --all-windows`** probes each
+plugin's `check` entry (the shared `probePlugin` seam, same env injection and redaction as
+`itc-check-targets`). The window form probes the distinct plugins of the plan's **non-dummy** rows
+and writes `4-publish/check.<window>.json`; the preset form needs no plan — it probes the distinct
+plugins of every `draft` row across **all** windows of the preset and writes
+`4-publish/check.preflight.json` with `window: "preflight"`, because at generate time the bundle the
+plan needs does not exist yet (task 0325). Both shapes are `{schemaVersion, window, plugins:[{plugin, ok, detail?}]}`
+and both are warn-only: a refusal is printed and recorded and the stage exits 0; an empty probe set
+passes and prints `no probes`. The one fatal case is the preset form naming a plugin that is not
+installed — that is invalid preset data, not a runtime refusal. This replaces the hard-coded
+`wechatmp-pub xhs-pub` probe list (feature G15 T-c); voice2's own node is unchanged.
 
 **`publish-matrix-send <workDir> --window <w> [--retry] [--tier <n>]`** dispatches in tier order.
 Tier 0 is the publication contract: serial, and a failed `required` tier-0 row records a `skipped`

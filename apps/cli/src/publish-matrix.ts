@@ -375,26 +375,69 @@ export async function checkPublishMatrix(args: string[], deps: PublishMatrixDeps
     const fs = deps.fs ?? createNodeFileSystem();
     const [workDir = ''] = args;
     const windowArg = flagValue(args, '--window');
-    if (!workDir || windowArg === undefined) {
-        echoError('usage: publish-matrix-check <work_dir> --window <after-generate|cn-peak|overseas-rss>');
+    const presetArg = flagValue(args, '--preset');
+    const allWindows = args.includes('--all-windows');
+    const presetMode = presetArg !== undefined && allWindows;
+    if (!workDir || (windowArg === undefined && !presetMode)) {
+        echoError(
+            'usage: publish-matrix-check <work_dir> --window <after-generate|cn-peak|overseas-rss> | --preset <slug> --all-windows',
+        );
         return 1;
     }
-    const parsedWindow = PublishWindowSchema.safeParse(windowArg);
-    if (!parsedWindow.success) {
-        echoError(`publish-matrix-check: unknown window '${windowArg}'`);
-        return 1;
-    }
+
+    const plugins = deps.plugins ?? discoverAllPlugins().plugins;
+    const byName = new Map(plugins.map((plugin) => [plugin.name, plugin]));
+    const executor = deps.executor ?? new NodeProcessExecutor();
+    const probes: Array<{ plugin: string; ok: boolean; detail?: string }> = [];
 
     try {
-        const plan = await readPlan(fs, workDir, parsedWindow.data);
-        const plugins = deps.plugins ?? discoverAllPlugins().plugins;
-        const byName = new Map(plugins.map((plugin) => [plugin.name, plugin]));
-        const executor = deps.executor ?? new NodeProcessExecutor();
-        const probes: Array<{ plugin: string; ok: boolean; detail?: string }> = [];
+        // Two ways to reach the same probe loop. A plan answers "what will this window send?"; a
+        // preset answers "which channels does this operator publish to at all?", which is the only
+        // question answerable before generation exists (task 0325 R1/R2).
+        let names: string[];
+        let outFile: string;
+        let label: string;
+        if (presetMode) {
+            const { preset } = await loadPublishPreset(
+                presetArg,
+                { ...(deps.projectRoot ? { projectRoot: deps.projectRoot } : {}) },
+                fs,
+            );
+            const unknown = preset.targets.filter((target) => !byName.has(target.plugin));
+            if (unknown.length > 0) {
+                echoError(
+                    `publish-matrix-check: preset '${preset.name}' names uninstalled plugin(s): ${unknown
+                        .map((target) => target.plugin)
+                        .join(', ')}`,
+                );
+                return 1;
+            }
+            // A dummy or off row never spawns a plugin, so it never needs a warm session.
+            names = [
+                ...new Set(
+                    preset.targets
+                        .filter((target) => (target.mode ?? 'draft') !== 'off' && target.mode !== 'dummy')
+                        .map((target) => target.plugin),
+                ),
+            ];
+            label = 'preflight';
+            outFile = 'check.preflight.json';
+        } else {
+            const parsedWindow = PublishWindowSchema.safeParse(windowArg);
+            if (!parsedWindow.success) {
+                echoError(`publish-matrix-check: unknown window '${windowArg}'`);
+                return 1;
+            }
+            const plan = await readPlan(fs, workDir, parsedWindow.data);
+            names = [...new Set(plan.rows.filter((row) => row.mode !== 'dummy').map((row) => row.plugin))];
+            label = plan.window;
+            outFile = `check.${plan.window}.json`;
+        }
 
-        for (const name of [...new Set(plan.rows.filter((row) => row.mode !== 'dummy').map((row) => row.plugin))]) {
+        for (const name of names) {
             const plugin = byName.get(name);
             if (plugin === undefined) {
+                // Plan mode: a planned row whose plugin vanished is a runtime gap, reported not fatal.
                 probes.push({ plugin: name, ok: false, detail: 'plugin not installed' });
                 echoError(`publish-matrix-check: plugin '${name}' is not installed`);
                 continue;
@@ -409,9 +452,10 @@ export async function checkPublishMatrix(args: string[], deps: PublishMatrixDeps
         const publishDir = join(workDir, '4-publish');
         await fs.ensureDir(publishDir);
         await fs.writeFile(
-            join(publishDir, `check.${plan.window}.json`),
-            `${JSON.stringify({ schemaVersion: 1, window: plan.window, plugins: probes }, null, 2)}\n`,
+            join(publishDir, outFile),
+            `${JSON.stringify({ schemaVersion: 1, window: label, plugins: probes }, null, 2)}\n`,
         );
+        echo(names.length === 0 ? 'no probes' : `${probes.length} probe(s) recorded for ${label}`);
         return 0;
     } catch (err: unknown) {
         echoError(`publish-matrix-check: ${err instanceof Error ? err.message : String(err)}`);

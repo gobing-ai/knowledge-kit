@@ -1,15 +1,17 @@
 ---
 schema_version: 1
 name: Derive session-preflight probes from the enabled publish targets
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-22T18:41:32.723Z
-updated_at: "2026-10-22T19:09:50.452Z"
+updated_at: "2026-10-22T21:57:10.001Z"
 feature_id: G15
 
 dependencies: ["0321"]
 priority: P2
 estimate_hours: 2
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0325-verdict.json
 ---
 
 ## 0325. Derive session-preflight probes from the enabled publish targets
@@ -25,14 +27,14 @@ voice2 `session-preflight` (`plugins/kk/workflows/kk-daily-ai-voice2.yaml:178`) 
 
 ### Requirements
 
-- [ ] R1. The probe set is the distinct plugins of `mode ∈ {draft, live}` rows across every window the preset enables. It is computed from the preset, because at generate time no plan exists yet. An empty set means the node passes and prints `no probes`.
-- [ ] R2. Add `kk stage run publish-matrix-check <workDir> --preset <slug> --all-windows`, a preset-only mode of the 0321 check that needs no plan file. voice3's `session-preflight` node calls it warn-only. publish3's `check` node calls the plan form.
-- [ ] R3. Reuse ADR-032 `kk plugin check` (`apps/cli/src/commands/plugin.ts:195`, 60s probe budget); no new probe mechanism.
+- [x] R1. The probe set is the distinct plugins of `mode ∈ {draft, live}` rows across every window the preset enables. It is computed from the preset, because at generate time no plan exists yet. An empty set means the node passes and prints `no probes`.
+- [x] R2. Add `kk stage run publish-matrix-check <workDir> --preset <slug> --all-windows`, a preset-only mode of the 0321 check that needs no plan file. voice3's `session-preflight` node calls it warn-only. publish3's `check` node calls the plan form.
+- [x] R3. Reuse ADR-032 `kk plugin check` (`apps/cli/src/commands/plugin.ts:195`, 60s probe budget); no new probe mechanism.
 - Out of scope: editing voice2; auto-login (stays `kk bot login`, operator action).
 
 ### Acceptance Criteria
 
-- [ ] AC1 — The channel matrix comes from a config-selected publish preset (req: R1, R2)
+- [x] AC1 — The channel matrix comes from a config-selected publish preset (req: R1, R2)
 
 ### Q&A
 
@@ -60,15 +62,60 @@ voice2 `session-preflight` (`plugins/kk/workflows/kk-daily-ai-voice2.yaml:178`) 
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+| Change | What / why |
+| --- | --- |
+| `apps/cli/src/publish-matrix.ts:374` | `checkPublishMatrix` gains a second input mode: `--preset <slug> --all-windows` reads the preset instead of a plan, because at generate time no bundle (hence no plan) exists yet. One probe loop serves both modes. |
+| `apps/cli/src/publish-matrix.ts:396` | Preset mode resolves the probe set as the distinct plugins of every non-`off`, non-`dummy` row — all windows — and refuses a preset naming an uninstalled plugin (invalid preset data, not a runtime refusal). |
+| `apps/cli/src/publish-matrix.ts:437` | Output: `4-publish/check.preflight.json` with `window: "preflight"`; an empty set prints `no probes` and passes; probe refusals stay warn-only (exit 0). |
+| `apps/cli/tests/publish-matrix.test.ts:557` | Proves the two-window derivation with one dummy and one `off` row excluded, and the `2 probe(s) recorded for preflight` line. |
+| `apps/cli/tests/publish-matrix.test.ts:598` | All-dummy/off preset → zero probes, `no probes`, exit 0. |
+| `apps/cli/tests/publish-matrix.test.ts:623` | A preset naming `linkedin-pub` fails by name. |
+| `docs/04_DESIGN.md:2019` | The check surface now documents both input modes and the one fatal preset case (T3). |
+
+**Verification:** `bun run lint` clean; `bun test apps/cli/tests/publish-matrix.test.ts apps/cli/tests/publish-matrix-stage.test.ts apps/cli/tests/itc-publish.test.ts` → 65 pass, 0 fail. voice2 is untouched (its hard-coded node stays, per the operator constraint), so the adoption itself lands with the voice3 workflow (0324) and publish3's `check` node (0323).
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `apps/cli/src/publish-matrix.ts:396` resolves the probe set from the preset as the distinct plugins of every non-`off`, non-`dummy` row across all windows (no plan, no bundle), and an empty set passes with `no probes` (`apps/cli/src/publish-matrix.ts:437`). `apps/cli/tests/publish-matrix.test.ts:557` proves two windows contribute and a dummy plus an `off` row do not; `:598` proves the empty set. |
+| R2 | MET | `kk stage run publish-matrix-check <workDir> --preset <slug> --all-windows` is the same stage with the second input mode (`apps/cli/src/publish-matrix.ts:374`), writing `4-publish/check.preflight.json` with `window: "preflight"`; the plan form (`--window`) is unchanged for publish3. `apps/cli/tests/publish-matrix.test.ts:557` asserts the file and its `preflight` label. |
+| R3 | MET | The probe is `probePlugin` over ADR-032's `kk plugin check` entry with the same 60 s budget and env seam (`apps/cli/src/itc-publish.ts:322`); no new probe mechanism, no new spawn path. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — The channel matrix comes from a config-selected publish preset (req: R1, R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:557`, `:598`, `:623` — the probe list is a function of the preset's rows, never a channel list in a workflow |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+Confidence: HIGH
+Verdict: PASS
+
+**Scope:** the preset-only input mode of `publish-matrix-check` (`apps/cli/src/publish-matrix.ts:374`), its three tests and the `docs/04_DESIGN.md` check-surface entry. One probe loop, two ways to name its rows.
+
+| Priority | Finding | Disposition |
+| --- | --- | --- |
+| P4 | The plan mode gained a success line (`N probe(s) recorded for <window>`); the previous invocation printed nothing on a green path. | Accepted — the line is information, not control flow: no consumer parses stage stdout, and it makes a silent skip visible. |
+
+**SECUA / architecture**
+
+- **Security** — the probe set comes from preset data and is iterated as plugin names through `probePlugin`, never shelled; the redaction of config-injected values (0311) still applies.
+- **Efficiency** — one preset read, one probe per distinct plugin (a plugin with three operations is probed once); no bundle read, which is the whole point of the preset mode.
+- **Correctness** — `off` and `dummy` rows are excluded because they never spawn a plugin; an empty set is a pass with `no probes`, matching voice2's node semantics (design §5a: "warn-only"). An uninstalled plugin in a preset is fatal because a preset is registry data, whereas a plan row referencing a vanished plugin stays a recorded `plugin not installed` probe.
+- **Usability** — the usage line states both modes; a fatal preset names the offending plugins.
+- **Architecture** — no second probe runner; the mode is one branch in the existing stage, so 0324 (generate-side node) and 0323 (publish3 `check` node) call the same stage with different flags. voice2 is untouched, per the operator constraint.
+
+**Residual risk**
+
+- The probe budget is ADR-032's 60 s per plugin; a preset with many browser channels makes the generate-side preflight correspondingly longer, and it is non-blocking by design (`onError: continue` is 0324's placement).
+- A preset row whose plugin exists but whose `check` entry is absent records `ok` (unchanged `probePlugin` contract) — the probe cannot prove a session it does not know how to open.
+
+**Verification:** `bun run lint` clean; `bun test` on the matrix, stage and itc suites → 65 pass, 0 fail; `spur task gate 0325` PASS on this tree.
 
 ### References
 
@@ -78,4 +125,7 @@ voice2 `session-preflight` (`plugins/kk/workflows/kk-daily-ai-voice2.yaml:178`) 
 
 - 2026-10-22T18:59:28.584Z feature_id Q → G15 (system)
 - 2026-10-22T19:09:50.452Z backlog → todo (system)
+- 2026-10-22T21:43:02.311Z todo → wip (system)
+- 2026-10-22T21:57:07.918Z wip → testing (system)
+- 2026-10-22T21:57:09.992Z testing → done (system)
 
