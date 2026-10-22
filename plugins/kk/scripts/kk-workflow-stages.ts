@@ -1426,7 +1426,12 @@ function dailyPatchSurfdash(args: string[]): void {
         const pod = targetOf(podcastResult);
         const postPath = (sd.metadata as Record<string, unknown> | undefined)?.postPath;
         if (typeof postPath !== 'string' || postPath === '') {
-            failWith(1, 'patch-surfdash: surfdash result carries no postPath');
+            // A surfdash publish that never landed (2026-10-21: its `git push` was rejected with
+            // `fetch first`) leaves no postPath to patch. `publish-classify` has already recorded the
+            // run as `partial`, and failing here turned a published podcast episode into a `failed`
+            // run — the folded tail must not escalate what the classifier already routed.
+            console.error('patch-surfdash: surfdash result carries no postPath — nothing to patch, skip');
+            return;
         }
         const resultPath = join(workDir, '31-publish', `${runDate}_23_patch-surfdash_sync-result.json`);
         if (process.env.KK_SURFDASH_PATCH_OFFLINE === '1') {

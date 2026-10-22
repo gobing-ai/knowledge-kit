@@ -3622,6 +3622,29 @@ describe('daily-patch-surfdash git scoping and frontmatter (R6/R11)', () => {
         });
     });
 
+    it('skips (exit 0) when the surfdash publish carries no postPath — a partial publish must not fail the run', () => {
+        withTempDir((dir) => {
+            const fx = setupFixture(dir, 'https://cdn.example/c.png', 'Body.');
+            // 2026-10-21: the surfdash `git push` was rejected (`fetch first`), so the target landed
+            // with no postPath while the podcast episode published. classify routed `partial`, and the
+            // folded patch tail then failed the whole run — the episode was live, the run was `failed`.
+            writeFileSync(
+                join(fx.workDir, '31-publish', `${RUN_DATE}_14_publish-surfdash_result.json`),
+                JSON.stringify({ targets: [{ ok: false, status: 'failed', error: 'push rejected (fetch first)' }] }),
+                'utf-8',
+            );
+            const before = git(fx.root, 'rev-parse', 'HEAD').stdout.trim();
+
+            const res = run(['daily-patch-surfdash', fx.workDir, RUN_DATE, fx.root], { SURFDASH_AUTO_PUSH: '1' });
+
+            expect(res.status, res.stderr).toBe(0);
+            expect(res.stderr).toContain('carries no postPath');
+            expect(existsSync(join(fx.workDir, '31-publish', `${RUN_DATE}_23_patch-surfdash_patch.json`))).toBe(false);
+            // Nothing was committed for a post that does not exist.
+            expect(git(fx.root, 'rev-parse', 'HEAD').stdout.trim()).toBe(before);
+        });
+    });
+
     it('writes valid, frontmatter-only YAML when the value holds a quote and a dollar', () => {
         withTempDir((dir) => {
             const url = "https://cdn.example/it's-$&-cover.png";
