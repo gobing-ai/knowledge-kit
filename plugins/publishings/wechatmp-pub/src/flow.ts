@@ -210,12 +210,25 @@ const AUDIO_UPLOAD_INPUT = [
     '.weui-desktop-dialog input[type="file"][accept*=".mp3"]',
     '.audio_dialog input[type="file"][accept*="audio"]',
     'input[type="file"][accept*=".mp3"]',
+    // 2026-10-21 measured: this build's upload form exposes a plain `input[type=file]` with NO accept
+    // attribute, so every accept-qualified candidate above missed and the run reported `音频: no audio
+    // file input appeared` — which costs the draft its audio player, the audio material's cover, and
+    // the library cover the 封面 step reuses. Dialog-scoped on purpose: the editor's own image input
+    // lives outside `.weui-desktop-dialog`, so it can never be the winner here.
+    '.weui-desktop-dialog input[type="file"]:not([accept*="image"])',
+    '.audio_dialog input[type="file"]:not([accept*="image"])',
 ];
 const UPLOAD_COVER = ['text=上传封面', 'button:has-text("上传封面")'];
 const AUDIO_COVER_INPUT = [
     '.weui-desktop-dialog input[type="file"][accept*="image/"]',
     '.audio_dialog input[type="file"][accept*="image/"]',
     'input[type="file"][accept*=".png"]',
+    // 2026-10-21 measured: the upload form's cover input carries `image/bmp, image/png, image/jpeg,
+    // image/jpg, image/gif, image/webp` — space-separated MIME names WITHOUT a slash-terminated
+    // `image/` prefix match (`accept*="image/"` misses `image/bmp`), so the cover upload silently
+    // skipped on every run and the draft shipped with no cover.
+    '.weui-desktop-dialog input[type="file"][accept*="image"]',
+    '.audio_dialog input[type="file"][accept*="image"]',
 ];
 const AUDIO_TITLE_INPUT = [
     '.weui-desktop-dialog input[placeholder*="标题"]',
@@ -585,7 +598,11 @@ async function applyLayout(page: WechatPage, deps: ModeRunDeps): Promise<string 
     }
     const option = await tryFindSelector(page, LAYOUT_TARGET, 5_000);
     if (option === undefined) {
-        return '一键排版: clicked, but no 匹配目标格式 option appeared — the body may be unformatted; check the draft';
+        // Measured 2026-10-21 with a body in the editor: `div#ai_layout_container > div.ailayout-btn_wrp`
+        // is present and clickable, and no option set ever renders (only a hidden `ailayout-edu_tips`
+        // onboarding block). Nothing programmable is left to click, so name the finding instead of
+        // guessing at the body's formatting.
+        return '一键排版: the control exists but this build renders no 匹配目标格式 option (measured 2026-10-21 with a body in place) — layout skipped, apply 一键排版 by hand before publishing';
     }
     try {
         await clickSelector(page, option, 5_000);
