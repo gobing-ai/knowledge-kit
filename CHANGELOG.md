@@ -3,41 +3,41 @@
 ### Added
 
 - feat(board): accept a well-formed http(s) Board origin through `isHttpOrigin` and keep the loopback rule only for a cross-origin reader, so a Board served on a LAN address (`spur serve --host 0.0.0.0`) is usable while a malformed origin still fails loud (a68ce3a)
-<!-- src: apps/board/src/shared/api.ts:172 · confidence: HIGH -->
+<!-- src: apps/board/src/shared/api.ts:172 -->
 
 ### Fixed
 
 - fix(store): widen the `ai-news` extract allowlist to the whole AI taxonomy (`ai-news, ai-industry, ai-technical, ai-research`), in lockstep with the workflow's `qc_categories`, so the extract profile no longer closes the day as no-content upstream of the widened QC gate (479a257)
-<!-- src: plugins/kk/decisions/extract/ai-news.yaml:21 · confidence: HIGH -->
+<!-- src: plugins/kk/decisions/extract/ai-news.yaml:21 -->
 - fix(decisions): record the Apple Foundation Models CLI licence precondition in the migration runbook — until `sudo fm license` is accepted every `fm-local` decision answers `no-backend` and `kk-item-category` falls back to `non-ai`, which starves the `ai-news` pool even though collection worked (c940606)
-<!-- src: docs/migration.md:180 · confidence: HIGH -->
+<!-- src: docs/migration.md:180 -->
 - fix(daily): restore the pre-revision VoiceScript structure inside the safety budget when the remediation pass drops a spoken item, so the run converges in the gate instead of dying hours later at the TTS seam with `plan item count (6) does not match script item sections (5)` (1dc218e)
-<!-- src: plugins/kk/scripts/daily-stages.ts:2209 · confidence: HIGH -->
+<!-- src: plugins/kk/scripts/daily-stages.ts:2209 -->
 - fix(daily): count the episode's included items as plan items minus the article's `metadata.excludedIds`, via the shared `expectedItemSections` that `daily-generate` and `daily-safety-revise` both read, so a recorded exclusion no longer fails the run (8c21fee)
-<!-- src: plugins/kk/scripts/daily-stages.ts:2184 · confidence: HIGH -->
+<!-- src: plugins/kk/scripts/daily-stages.ts:2184 -->
 - fix(decisions): route the four labelling decisions back to `fm-local` after the operator accepted the FM1 licence, keeping them named explicitly so an unlicensed machine fails visibly instead of silently emptying the pool (2874ee6)
-<!-- src: .spur/config.yaml:265 · confidence: HIGH -->
+<!-- src: .spur/config.yaml:265 -->
 - fix(wechatmp): raise the readiness poll's `PROFILE_OVERHEAD_MS` reserve from 8s to 25s so a cold `KK_BROWSER_CHANNEL=chrome` start fits inside the deadline and reports the real `refused` verdict instead of `malformed probe output` (f27b99b)
-<!-- src: plugins/publishings/wechatmp-pub/src/profile-check.ts:35 · confidence: HIGH -->
+<!-- src: plugins/publishings/wechatmp-pub/src/profile-check.ts:35 -->
 - fix(plugin): raise the `kk plugin check` default timeout to 60s so the parent deadline outlasts a browser probe's own 30s auth wait, which it previously raced into `probe exit 1 (malformed probe output)` (39a2f4a)
-<!-- src: apps/cli/src/commands/plugin.ts:209 · confidence: HIGH -->
+<!-- src: apps/cli/src/commands/plugin.ts:209 -->
 - fix(wechatmp): add dialog-scoped audio and cover upload-input fallbacks for this build's bare `input[type=file]` and `image/bmp, image/png, …` accept list, which every accept-qualified candidate missed and left the draft without its player and covers (6868ac0)
-<!-- src: plugins/publishings/wechatmp-pub/src/flow.ts:218 · confidence: HIGH -->
+<!-- src: plugins/publishings/wechatmp-pub/src/flow.ts:218 -->
 - fix(wechatmp): read the 原创 committed probe from the visible `#js_original` row branch instead of an unscoped union that matched the open dialog's hidden template, so a fresh draft no longer reads as uncommitted and re-opens rows it already committed (45ba558)
-<!-- src: plugins/publishings/wechatmp-pub/src/enrich.ts:95 · confidence: HIGH -->
+<!-- src: plugins/publishings/wechatmp-pub/src/enrich.ts:95 -->
 - fix(wechatmp): repair the 文章 settings rail to the measured 2026-10-21 editor — 原创 from `#js_original .setting-group__content-info` with its own `确定`, 创作来源 from `.allow_click_opr` with its own `确认`, and 原文链接 through its measured popover with an asynchronous-close wait and row readback — then replaying the production rail on a fresh editor with nothing saved or published (6126369)
-<!-- src: plugins/publishings/wechatmp-pub/src/enrich.ts:55 · confidence: HIGH -->
+<!-- src: plugins/publishings/wechatmp-pub/src/enrich.ts:55 -->
 
 ### Changed
 
 - chore(daily): pause the XHS target in the voice2 workflow (`xhs_enabled: "false"`) until the evidence gap is explained — the plugin reported today's draft as saved while the console showed the operator none (953cc32)
-<!-- src: plugins/kk/workflows/kk-daily-ai-voice2.yaml:56 · confidence: HIGH -->
+<!-- src: plugins/kk/workflows/kk-daily-ai-voice2.yaml:56 -->
 - docs(agents): resolve the stage-body sync target from `command -v kk` instead of a hard-coded path, because this machine carries a live bun-global install and a stale `~/node_modules` copy that left two merged daily-run fixes inert (261b3b1)
-<!-- src: AGENTS.md:215 · confidence: HIGH -->
+<!-- src: AGENTS.md:215 -->
 - docs(wechatmp): record the sixth measurement pass over the 2026-10-21 draft's warnings — the audio-input miss, the probe-6 settings shapes, and the rail repair that followed (f1543b2)
-<!-- src: docs/design/wechatmp-ui-discovery.md:42 · confidence: HIGH -->
+<!-- src: docs/design/wechatmp-ui-discovery.md:42 -->
 - docs(wechatmp): refine 0318's R1–R5 to the measured selectors and the per-dialog confirm labels, so the requirement rows name what the build actually renders (5ff479d)
-<!-- src: docs/tasks/0318_wechatmp-settings-rail-measure-and-repair-entries.md:48 · confidence: HIGH -->
+<!-- src: docs/tasks/0318_wechatmp-settings-rail-measure-and-repair-entries.md:48 -->
 
 ## [0.1.7] - 2026-10-20
 
