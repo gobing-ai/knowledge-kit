@@ -21,6 +21,8 @@ interface Facts {
         committed?: { original: boolean | null; reward: boolean | null; claim: boolean | null };
         accountValue?: string | null;
         claimText?: string;
+        urlValue?: string;
+        urlPopoverOpen?: boolean;
         insertedMediaId?: string | null;
         tickedRows?: string[];
         dialogsOpen?: string[];
@@ -45,6 +47,60 @@ const run = (scenario: string): Facts => {
 };
 
 describe('wechatmp DOM fixtures (real Chromium, offline)', () => {
+    test('0318: URL commits from its popover and reads the row after the field disappears', () => {
+        const { warnings, ops } = run('0318-url-commit');
+        expect(warnings).toEqual([]);
+        expect(ops?.urlValue).toBe('https://example.com/0318');
+        expect(ops?.urlPopoverOpen).toBe(false);
+        expect(ops?.clicks).toEqual({ url: 1 });
+    }, 90_000);
+
+    test('0318: an already committed URL is never reopened', () => {
+        const { warnings, ops } = run('0318-url-skip');
+        expect(warnings).toEqual([]);
+        expect(ops?.urlValue).toBe('https://example.com/0318');
+        expect(ops?.clicks).toEqual({});
+    }, 90_000);
+
+    test('0318: a refused URL commit warns and releases its popover', () => {
+        const { warnings, ops } = run('0318-url-refused');
+        expect(warnings?.some((w) => w.startsWith('原文链接:'))).toBe(true);
+        expect(ops?.urlValue).toBe('');
+        expect(ops?.urlPopoverOpen).toBe(false);
+    }, 90_000);
+
+    test('0318: a moved URL field is named and its popover is released', () => {
+        const { warnings, ops } = run('0318-url-missing-field');
+        expect(warnings?.some((w) => w.includes('no URL field'))).toBe(true);
+        expect(ops?.urlValue).toBe('');
+        expect(ops?.urlPopoverOpen).toBe(false);
+    }, 90_000);
+
+    test('0318: an already checked agreement stays checked when original commits', () => {
+        const { warnings, ops } = run('0318-checked-agreement');
+        expect(warnings).toEqual([]);
+        expect(ops?.committed?.original).toBe(true);
+        expect(ops?.clicks).toEqual({ original: 1 });
+        expect(ops?.dialogsOpen).toEqual([]);
+    }, 90_000);
+
+    test('0318: measured entries commit original with hidden agreement, reward and claim with 确认', () => {
+        const { warnings, ops } = run('0318-measured-settings');
+        expect(warnings).toEqual([]);
+        expect(ops?.committed).toEqual({ original: true, reward: true, claim: true });
+        expect(ops?.claimText).toBe('个人观点，仅供参考');
+        expect(ops?.clicks).toEqual({ original: 1, reward: 1, claim: 1 });
+        expect(ops?.dialogsOpen).toEqual([]);
+    }, 120_000);
+
+    test('0318: an unavailable claim stance is named once and the dialog is closed', () => {
+        const { warnings, ops } = run('0318-unavailable-stance');
+        expect(warnings).toEqual(['创作来源: 平台未提供声明类型「个人观点，仅供参考」，已跳过']);
+        expect(ops?.clicks).toEqual({ claim: 1 });
+        expect(ops?.committed?.claim).toBe(false);
+        expect(ops?.dialogsOpen).toEqual([]);
+    }, 90_000);
+
     test('AC4: already-committed settings are never reopened or toggled off', () => {
         const { warnings, ops } = run('settings-committed-skip');
         expect(warnings).toEqual([]);

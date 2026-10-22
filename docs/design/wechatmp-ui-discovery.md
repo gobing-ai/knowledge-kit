@@ -78,6 +78,34 @@
 >    entry still needs a measured walk (click the row label, then read where the URL field appears).
 >    These three remain the draft's visible gaps (原创 unchecked → 赞赏/付费 disabled).
 >
+> **Task 0318 repair (2026-10-21, live editor acceptance passed).** The rail now opens 原创 from
+> `#js_original .setting-group__content-info` (fallback: its `.setting-group__title`), keeps the
+> 文字原创 radio, clicks `label.original_agreement` only when its hidden checkbox is unchecked, and
+> commits with `确定`. 创作来源 opens from `#js_claim_source_area .allow_click_opr`, selects the exact
+> requested radio label, and commits with its own `确认`; a missing stance is a named skip and the
+> dialog is swept. Real-Chromium fixtures reproduce the old entry failure and pre-checked agreement
+> toggle failure, then pass the repaired original/reward/claim sequence and unavailable-stance case.
+> **原文链接 measured before repair:** `#js_article_url_area .js_article_url_allow_click` opens a
+> popover outside `.weui-desktop-dialog`. Its `.popover_inner` contains
+> `.popover-article-setting__content input.js_url[name="source_url"]`; confirm is
+> `a.jsPopoverBt` with exact text `确定` (not a button). After confirm, the row's
+> `input.js_url_checkbox` is checked and `.article_url_setting` equals the requested URL.
+> Label/span clicks did nothing; clicking the checkbox was blocked by the open popover. Evidence:
+> `.spur/memory/evidence/20261021-wechatmp/0318-url-measure.json` (saved=false, published=false).
+> Session reuse requires restoring `storage-state.json` cookies and localStorage, as the channel
+> launcher already does; a raw persistent-profile launch alone produced a false login failure.
+> The live pass also found TWO hidden 原创 switch inputs within `#js_original` (false/true). The
+> committed probe now reads the input whose switch parent belongs to the visible row branch, so the
+> hidden undeclared template cannot mask a successful declaration. 创作来源's radio labels wrap a nested
+> text span; the rail matches that exact descendant text within a radio label. URL confirmation closes
+> asynchronously: the rail waits for the popover to hide before reading the row or sweeping overlays.
+> Live acceptance (`.spur/memory/evidence/20261021-wechatmp/0318-live-acceptance.json` and local
+> screenshot `.spur/run/0318-live-acceptance.png`) ran the production rail on a fresh editor and replayed
+> it: original/reward checked, claim checkbox checked with exact requested stance, URL checkbox checked
+> with exact requested URL, no warnings, and no dialogs/popovers left. No draft was saved or published;
+> today's saved article was untouched. Offline Chromium covers delayed/refused URL commit, moved field,
+> URL/setting skip, both original row templates, hidden/pre-checked agreement, and unavailable stance.
+>
 > Method: the plugins' own Chromium (Playwright 1.55 build) on the real profile dir
 `~/.config/kk/browser-profiles/wechatmp`, headed, driven by `.spur/run/discovery/wechatmp-walk.ts`.
 Operator attended and scanned the login QR in-window (the stored session had expired).

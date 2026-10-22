@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "wechatmp 文章 settings rail: measure and repair 原创/创作来源/原文链接 entries"
-status: todo
+status: testing
 template: issue
 created_at: 2026-10-22T03:08:10.155Z
-updated_at: "2026-10-22T04:09:08.809Z"
+updated_at: "2026-10-22T04:57:12.812Z"
 
 priority: P2
 estimate_hours: 4
@@ -43,23 +43,23 @@ The audio-material and cover-input selectors were already repaired on 2026-10-21
 
 ### Requirements
 
-- [ ] R1. 原创 commits: open the row from its measured entry (`#js_original
+- [x] R1. 原创 commits: open the row from its measured entry (`#js_original
   .setting-group__content-info`), satisfy the agreement control (label click; the real input is
   hidden), keep the default-checked 文字原创 radio, click `确定`, and verify
   `#js_original input.weui-desktop-switch__input` checked AFTER the dialog closes. A row whose switch
   is still unchecked is the named warning this task exists to remove.
-- [ ] R2. 创作来源 commits: open the row from `.allow_click_opr`, select the requested stance from the
+- [x] R2. 创作来源 commits: open the row from `.allow_click_opr`, select the requested stance from the
   声明类型 radios (`个人观点，仅供参考` is present), click **`确认`** (the 创作来源 dialog's label, not
   原创's `确定`), and verify `.js_claim_source_selected` carries the requested text. A stance the
   platform does not offer is a named skip.
-- [ ] R3. 原文链接 commits: measure the row's real entry first (label click vs `allow_click_opr`,
+- [x] R3. 原文链接 commits: measure the row's real entry first (label click vs `allow_click_opr`,
   then where the URL field appears), set the URL, and verify the committed readback equals the
   requested value. The unmeasured entry is named in the evidence doc before the rail changes.
-- [ ] R4. 赞赏 unblocks: with the 原创 committed probe scoped to the row (fixed 2026-10-21,
+- [x] R4. 赞赏 unblocks: with the 原创 committed probe scoped to the row (fixed 2026-10-21,
   `45ba558`), the 赞赏 row is no longer disabled by a false uncommitted read ("声明原创后才可开启"); the
   remaining work is to confirm the existing 赞赏 step reaches its own switch and verifies it on the next
   daily draft, or name why the platform kept it disabled.
-- [ ] R5. fixture-DOM regression: the measured shapes run against synthetic DOM in
+- [x] R5. fixture-DOM regression: the measured shapes run against synthetic DOM in
   `tests/fixtures/wechatmp-dom-runner.ts` (real Chromium), so the offline suite fails on the pre-fix
   entries and passes after.
 
@@ -70,26 +70,26 @@ loop and item-count seam (handled elsewhere); any live publish — every accepta
 ### Acceptance Criteria
 
 ```gherkin
-- [ ] AC1 — 原创 commits and re-reads as checked (req: R1)
+- [x] AC1 — 原创 commits and re-reads as checked (req: R1)
   Scenario: AC1 — 原创 commits and re-reads as checked (req: R1)
   Given a fresh 文章 draft and the operator's 原创 request, when the rail runs, then the dialog is
   entered from `#js_original .setting-group__content-info`, the agreement label is clicked, and after
   the dialog closes the row's `#js_original input.weui-desktop-switch__input` reads checked.
-- [ ] AC2 — 创作来源 commits with its own confirm (req: R2)
+- [x] AC2 — 创作来源 commits with its own confirm (req: R2)
   Scenario: AC2 — 创作来源 commits with its own confirm (req: R2)
   Given a fresh draft and `claimSource: "个人观点，仅供参考"`, when the rail runs, then the 声明类型
   radio `个人观点，仅供参考` is selected, the dialog is committed with `确认`, and after close
   `.js_claim_source_selected` reads the same text.
-- [ ] AC3 — 原文链接 entry is measured, then committed (req: R3)
+- [x] AC3 — 原文链接 entry is measured, then committed (req: R3)
   Scenario: AC3 — 原文链接 entry is measured, then committed (req: R3)
   Given a fresh draft and `originalUrl`, when the rail runs, then the measured entry opens the field,
   the URL is filled, and the committed readback equals the requested URL; a build whose entry moved
   names the failure instead of claiming success.
-- [ ] AC4 — a committed 原创 unblocks 赞赏 (req: R4)
+- [x] AC4 — a committed 原创 unblocks 赞赏 (req: R4)
   Scenario: AC4 — a committed 原创 unblocks 赞赏 (req: R4)
   Given a fresh draft, when 原创 commits, then the 赞赏 row is no longer "声明原创后才可开启" and the
   赞赏 step reaches its switch or names why the platform kept it disabled.
-- [ ] AC5 — the fixture regression fails on the pre-fix entries (req: R5)
+- [x] AC5 — the fixture regression fails on the pre-fix entries (req: R5)
   Scenario: AC5 — the fixture regression fails on the pre-fix entries (req: R5)
   Given `tests/fixtures/wechatmp-dom-runner.ts`, when `bun test plugins/publishings/wechatmp-pub/tests/`
   runs, then the rail's committed-skip and dialog steps exercise the measured shapes and pass.
@@ -186,18 +186,73 @@ hanging.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Settings rail repaired and accepted against a fresh live editor; final repository gates are recorded in Testing.
+
+- `plugins/publishings/wechatmp-pub/src/enrich.ts:27` uses the measured 原创 row-content/title entries, the hidden agreement label only when unchecked, and its own 确定 control. `plugins/publishings/wechatmp-pub/src/enrich.ts:95` fixes the remaining first-match trap: BOTH undeclared/declared branches keep hidden switch inputs, so the committed probe selects the input whose switch parent is in the visible row branch. It stays scoped below the row and never reads a dialog template.
+- `plugins/publishings/wechatmp-pub/src/enrich.ts:364` uses the measured 创作来源 expander, matches exact nested text within a radio label, commits with its own 确认, and names/sweeps unavailable stances once.
+- `plugins/publishings/wechatmp-pub/src/enrich.ts:55` models the measured 原文链接 popover outside the dialog tree: row-specific expander, source_url field, and 确定/取消 anchors. `plugins/publishings/wechatmp-pub/src/enrich.ts:329` waits for asynchronous validation to close the popover before verifying the row's checked checkbox and exact URL label; it preserves already committed URLs and cleans refused/moved-field popovers.
+- `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:50` covers delayed/refused URL commit, missing field and committed URL skip. `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:79` covers checked agreement preservation, both original row templates, original/reward/claim commits and unavailable stance. Existing fake-console fixtures follow the measured selectors and row readback.
+- `docs/design/wechatmp-ui-discovery.md:81` records the measurement before URL production changes and the passing live acceptance; `docs/04_DESIGN.md:1401` corrects the dialog/popover confirm contract.
+- Live production-rail acceptance and idempotent replay observed original/reward checked, requested claim text + checkbox, requested URL + checkbox, zero warnings and zero overlays. Artifacts: `.spur/memory/evidence/20261021-wechatmp/0318-live-acceptance.json`, `.spur/run/0318-live-acceptance.png`; repeatable driver `.spur/run/0318-acceptance.ts`. No draft was saved or published, and today's saved article was untouched.
+
+Design conformance: all five intended outcomes implemented. Two measurement-driven refinements preserve the design's goals: the scoped 原创 probe additionally filters the visible branch, and 原文链接 uses its actual popover rather than a dialog. Claim labels match their nested text span. No API, schema, package or dependency change.
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PARTIAL (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/publishings/wechatmp-pub/src/enrich.ts:95` reads the original switch in the visible row branch; `plugins/publishings/wechatmp-pub/src/enrich.ts:27` uses the measured original entry; `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:79` proves hidden/pre-checked agreement handling. Live production rail and replay observed original checked with no warnings. |
+| R2 | MET | `plugins/publishings/wechatmp-pub/src/enrich.ts:364` opens the claim expander, chooses the requested nested radio text and confirms with 确认; `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:96` proves an unavailable stance is named once. Live production rail observed claim enabled with exact 个人观点，仅供参考 text. |
+| R3 | MET | `docs/design/wechatmp-ui-discovery.md:88` records the URL popover measurement before repair; `plugins/publishings/wechatmp-pub/src/enrich.ts:329` waits for asynchronous popover close and verifies row URL/checkbox; `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:50` proves delayed commit and post-close readback. Live production rail observed the exact requested URL and checked row. |
+| R4 | MET | `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:87` proves the original/reward sequence. Live production rail and replay observed reward checked, and the inspected screenshot shows the active 赞赏 account row after original declaration. |
+| R5 | MET | `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:50` and `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:87` execute production expressions in Chromium against measured popover/twin-row/nested-radio shapes. Initial entries: 0 pass/2 fail; URL baseline: 2 pass/2 fail; twin-row baseline: 0 pass/1 fail; delayed URL baseline: 0 pass/1 fail. Final focused regression: 7 pass/0 fail. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Scenario: AC1 — 原创 commits and re-reads as checked (req: R1) | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:79` and `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:87`; focused Chromium run passed. Live fresh editor and replay observed original checked, using the visible row branch rather than the stale first template. |
+| Scenario: AC2 — 创作来源 commits with its own confirm (req: R2) | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:87`; focused Chromium run passed with the dialog's 确认. Live fresh editor and replay observed exact requested stance and checked claim. |
+| Scenario: AC3 — 原文链接 entry is measured, then committed (req: R3) | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:50` through moved-field failure at `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:72`; all four URL scenarios passed. Live requested URL matched after asynchronous popover close and on replay. |
+| Scenario: AC4 — a committed 原创 unblocks 赞赏 (req: R4) | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:87`; Chromium observed original/reward both checked. Live fresh editor and replay also observed reward checked; inspected screenshot shows active account row. |
+| Scenario: AC5 — the fixture regression fails on the pre-fix entries (req: R5) | MET | command | Focused Chromium baseline failed before entry/visible-branch/popover timing repairs; final focused regression command passed 7 tests with 0 failures. The tracked scenarios begin at `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:50`. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PARTIAL)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P1 | residual-sweep | — | blocking=5 deferrable=0 advisory=0 housekeeping=0; blocking ids: unchecked-box:fba3ae2c, unchecked-box:dc635e9e, unchecked-box:7c21718c, unchecked-box:1417fa60, unchecked-box:5055d375 |
 
 ### References
 
-<!-- Links to failing logs, related issues, tasks, docs, or external references. -->
+Verification invocation: `sp-dev-verify 0318 --auto --agent inline --next --force --focus all --fix all`.
+
+All five requirements and all five AC scenarios have MET evidence. The final repository gate receipts are: lint/typecheck PASS, build PASS, pre-check 58 rules PASS, full suite 4050 pass / 3 pre-existing skips / 0 fail (exit 0), post-check PASS. Measured enrich.ts coverage is 96.77% functions / 99.16% lines. Live production-rail acceptance/replay passed all four settings with zero warnings and zero overlays; no draft was saved or published.
+
+The installed recorder left the five AC checklist boxes inside the Gherkin block unticked despite rendering their MET rows in Testing. Requirements boxes were flipped. The post-record residual scan consequently found five blocking unchecked boxes; fold changed PASS to PARTIAL. The downgraded artifact was re-recorded. Task remains testing; no done transition or gate bypass was attempted. Exact recorder cause is unverified (AC identity matching or fenced checklist handling); reconcile the proven checklist through the task CLI during recovery rather than changing product code.
+
+Local artifact writes retained for audit:
+
+- `.spur/run/0318-verify-answer.txt` lines 1–55: authored verification answer (pre-residual PASS).
+- `.spur/run/0318-verdict.json` lines 1–161: CLI-derived verdict, with residual fold producing final PARTIAL.
+- `.spur/run/0318-residuals.json` lines 1–54 and `.spur/run/0318-residual-report.md` lines 1–12: five blocking unchecked AC boxes.
+- `.spur/run/0318-acceptance.ts` lines 1–46: repeatable live driver; `.spur/run/0318-live-acceptance.png`: inspected binary screenshot.
+- `.spur/memory/evidence/20261021-wechatmp/0318-url-measure.json` lines 1–335 and `.spur/memory/evidence/20261021-wechatmp/0318-live-acceptance.json` lines 1–26: measured controls and passing live state/replay.
+- `.spur/run/0318-test-final.log`, `.spur/run/0318-lint.log`, `.spur/run/0318-build.log`, `.spur/run/0318-pre-check.log`, `.spur/run/0318-post-check.log`, `.spur/run/0318-regression.log`: final check receipts. Expected failing baselines remain in the corresponding red logs named in the verification answer.
+
+The recorder transcribes requirement/AC tables but omits the verdict checks table and emits its default Coverage N/A sentence. Actual measured coverage and artifact disclosure are therefore retained here and in the canonical verdict/answer, rather than rewriting deterministic Testing manually.
+
+Stop source: sp-dev-verify SKILL.md residual-sweep contract: “On a folded PARTIAL … a residual-failed task is routed to router C6 (HITL STOP), never another automatic fix loop.” Recovery emitted by the CLI: fix `.spur/run/0318-residual-report.md` items, then `/sp-dev-run 0318`. Shippable: N/A (no feature context). All work remains a reviewable diff; no commit/push/deployment.
 
 ### History
+
+- 2026-10-22T04:21:52.240Z todo → wip (system)
+- 2026-10-22T04:49:09.768Z wip → testing (system)
+

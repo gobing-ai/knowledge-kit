@@ -21,16 +21,10 @@ import { clickSelector, fillSelector, modalState, tryFindSelector, type WechatPa
 const DIALOG = '.weui-desktop-dialog:visible';
 const CONFIRM = `${DIALOG} button:has-text("确认"), ${DIALOG} button:has-text("确定")`;
 /**
- * Every settings row follows one shape (operator walk 2026-10-10): a row control that opens a dialog,
- * an action inside it, then 确定. The row's own label is listed alongside its `>` expander because both
- * dispatch the same handler; the first selector that resolves wins.
+ * Dialog entries measured 2026-10-21. Confirm labels belong to each dialog: 原创 uses 确定,
+ * 创作来源 uses 确认. A generic text match can hit an inert row heading instead of its opener.
  */
-const ROW_ORIGINAL = [
-    '.setting-group__switch.js_original_apply.js_edit_ori',
-    '.setting-group__switch.js_edit_ori',
-    '.js_edit_ori',
-    'text=原创',
-];
+const ROW_ORIGINAL = ['#js_original .setting-group__content-info', '#js_original .setting-group__title'];
 // Measured 2026-10-13: the 赞-tipped rows are `.js_reward_open` / `.js_reward_allow_click` — the
 // old `.setting-group__switch.js_can_reward` no longer resolves. The 原创 dialog's own 赞赏
 // switch (`js_reward_switch`) must never be clicked by this row list (R3, drift task 0272).
@@ -42,9 +36,11 @@ const ROW_REWARD = [
     'text=赞赏',
 ];
 const ROW_COLLECTION = ['.allow_click_opr.js_article_tags_label', 'text=合集'];
-const ROW_URL = ['.allow_click_opr.js_url_checkbox', 'text=原文链接'];
-const ROW_CLAIM = ['#js_claim_source_area .frm_checkbox_label', 'text=创作来源'];
+const ROW_URL = ['#js_article_url_area .js_article_url_allow_click'];
+const ROW_CLAIM = ['#js_claim_source_area .allow_click_opr'];
 const DIALOG_CONFIRM = CONFIRM;
+const ORIGINAL_CONFIRM = `${DIALOG} button:text-is("确定")`;
+const CLAIM_CONFIRM = `${DIALOG} button:text-is("确认")`;
 const TAG_INPUT = 'input[placeholder*="合集"]';
 /** The 赞赏 dialog's account field, filled only when the platform leaves it empty. */
 const REWARD_ACCOUNT = [
@@ -53,15 +49,23 @@ const REWARD_ACCOUNT = [
     `${DIALOG} input.frm_input`,
 ];
 /**
- * The 原文链接 dialog's URL field.
- * `URL_INPUT[0]` doubles as the committed-readback locator, so it must be concrete (not `:visible`).
+ * 原文链接 is a popover outside the dialog tree (measured 2026-10-21, task 0318).
+ * Its field disappears on commit; committed readback belongs to the settings row.
  */
-const URL_INPUT = [`${DIALOG} input[type="url"]`, `${DIALOG} input[placeholder*="链接"]`, `${DIALOG} input.frm_input`];
+const URL_POPOVER = '.popover_inner:has(.popover-article-setting__content):visible';
+const URL_INPUT = [`${URL_POPOVER} input.js_url[name="source_url"]`];
+const URL_CONFIRM = `${URL_POPOVER} a.jsPopoverBt:text-is("确定")`;
+const URL_CANCEL = `${URL_POPOVER} a.jsPopoverBt:text-is("取消")`;
+const URL_COMMITTED = `(() => {
+    const area = document.querySelector('#js_article_url_area');
+    const checkbox = area?.querySelector('input.js_url_checkbox');
+    return checkbox?.checked === true ? area.querySelector('.article_url_setting')?.textContent ?? null : null;
+})()`;
 /** The 原创 dialog's declaration radio (measured 2026-10-13): the platform requires an explicit
  *  declaration type + the agreement check before 确定. `无需声明` is the undo choice, never a target. */
 const ORIGINAL_DECLARATION = `${DIALOG} label:has(.js_original_type_radio):has-text("文字原创")`;
-/** The 原创 agreement checkbox (measured 2026-10-13); absent on some account states — then 确定 speaks. */
-const ORIGINAL_AGREEMENT = `${DIALOG} .original_agreement`;
+/** Drive the hidden checkbox through its label, preserving a pre-checked agreement (probe 6). */
+const ORIGINAL_AGREEMENT = `${DIALOG} label.original_agreement:has(input[type="checkbox"]:not(:checked))`;
 /** The 合集 picker's options load after the dialog opens (the pre-ADR-029 settle, kept). */
 const COLLECTION_SETTLE_MS = 1_200;
 /** The settings panel re-renders after a dialog confirm and can briefly detach rows. */
@@ -86,9 +90,11 @@ function norm(value: unknown): string {
  * Playwright-only syntax (`:visible`, `:has-text`) never enters `querySelector` — it throws there.
  */
 const COMMITTED = {
-    /** 原创 enabled = the settings row's real checkbox checked — scoped below the row (`#js_original`), never the dialog's own `.js_ori_setting_checkbox` (2026-10-21 measured: that class also exists hidden inside the open dialog, and the fresh page is checked=False there — the unscoped union read the dialog's template and the row always read as uncommitted). */
+    /** Both undeclared and declared templates keep hidden inputs. Read the switch in the visible
+     * row branch, never the hidden undeclared template or the dialog's matching checkbox. */
     original: `(() => {
-        const el = document.querySelector('#js_original input.weui-desktop-switch__input');
+        const el = [...document.querySelectorAll('#js_original input.weui-desktop-switch__input')]
+            .find(input => input.parentElement?.getClientRects().length > 0);
         return el ? el.checked === true : null;
     })()`,
     /** 赞赏 enabled = the reward settings checkbox checked (area-scoped, else the visible cell's). */
@@ -133,7 +139,7 @@ export async function enrichArticle(page: WechatPage, meta: Record<string, unkno
     const on = (key: string) => meta[key] === true;
     // Sweep any leaked dialog so the next step (especially 保存为草稿) is never overlay-blocked.
     const sweep = async (): Promise<'closed' | 'unknown'> => {
-        const cancel = await trySelectors(page, ['button:has-text("取消")']);
+        const cancel = await trySelectors(page, ['button:has-text("取消")', URL_CANCEL]);
         if (cancel.found) {
             try {
                 await page
@@ -222,7 +228,7 @@ export async function enrichArticle(page: WechatPage, meta: Record<string, unkno
         if ((await readChecked(page, COMMITTED.original)) !== true) {
             const outcome = await step(name, async () => {
                 await openRow(ROW_ORIGINAL, '原创声明');
-                // Measured 2026-10-13: pick the 文字原创 radio, check the agreement when it renders,
+                // Measured 2026-10-21: keep the 文字原创 radio, click the agreement's label when it renders,
                 // then 确定. The plain-text probe the old rail used could hit the dialog heading.
                 await clickSelector(page, ORIGINAL_DECLARATION, 5_000);
                 // trySelectors absorbs its own probe failures (returns found:false) — no .catch here.
@@ -230,7 +236,7 @@ export async function enrichArticle(page: WechatPage, meta: Record<string, unkno
                 if (agreement.found) {
                     await clickSelector(page, ORIGINAL_AGREEMENT, 3_000);
                 }
-                await clickSelector(page, DIALOG_CONFIRM, 8_000);
+                await clickSelector(page, ORIGINAL_CONFIRM, 8_000);
             });
             if (
                 outcome !== 'capability' &&
@@ -305,27 +311,36 @@ export async function enrichArticle(page: WechatPage, meta: Record<string, unkno
     const originalUrl = str('originalUrl');
     if (originalUrl !== '') {
         const name = '原文链接';
+        const readUrl = async () => {
+            try {
+                return norm(await page.evaluate(URL_COMMITTED));
+            } catch {
+                return '';
+            }
+        };
         // Measured 2026-10-13: some accounts no longer render the 原文链接 row at all. That is an
         // unavailable capability — report it once, never fall back to the composer's unrelated
         // `链接` row (`btm-card-link__switch`).
-        const urlRow = await tryFindSelector(page, ROW_URL, 2_000);
+        const urlRow =
+            (await readUrl()) === norm(originalUrl) ? 'committed' : await tryFindSelector(page, ROW_URL, 2_000);
         if (urlRow === undefined) {
             warnings.push(`${name}: 行不存在（当前公众号不支持），请手动处理或移除 originalUrl`);
-        } else {
+        } else if (urlRow !== 'committed') {
             await step(name, async () => {
+                if ((await readUrl()) === norm(originalUrl)) return;
                 await openRow(ROW_URL, '原文链接');
                 const field = await trySelectors(page, URL_INPUT);
-                if (!field.found) throw new Error('no URL field in the 原文链接 dialog');
+                if (!field.found) throw new Error('no URL field in the 原文链接 popover');
                 await fillSelector(page, field.selector ?? URL_INPUT.join(', '), originalUrl);
-                await clickSelector(page, DIALOG_CONFIRM, 8_000);
+                await clickSelector(page, URL_CONFIRM, 8_000);
+                // URL validation closes the popover asynchronously. Sweeping before it closes
+                // cancels that pending commit and turns a valid URL into a false mismatch.
+                await page.locator(URL_POPOVER).first().waitFor?.({ state: 'hidden', timeout: 8_000 });
             });
-            await residual(name);
-            // Only a readable committed URL equal to the requested trimmed value counts; the
-            // composer `链接` row is never consulted.
-            const locator = page.locator(URL_INPUT[0] ?? '').first();
-            const committed =
-                typeof locator.inputValue === 'function' ? await locator.inputValue().catch(() => null) : null;
-            if (norm(committed) !== norm(originalUrl)) warnings.push(`${name}: 已提交但未读取到已保存的链接，请核对`);
+            if ((await readUrl()) !== norm(originalUrl)) warnings.push(`${name}: 已提交但未读取到已保存的链接，请核对`);
+            // Popovers are outside modalState's dialog inventory; release one even on a moved field
+            // or refused confirmation, before later settings and the draft save.
+            if ((await trySelectors(page, [URL_POPOVER])).found) await sweep();
         }
     }
 
@@ -343,17 +358,22 @@ export async function enrichArticle(page: WechatPage, meta: Record<string, unkno
                 return null;
             }
         };
+        let unavailable = false;
         if ((await claimMatched()) !== true) {
-            await step(name, async () => {
+            const outcome = await step(name, async () => {
                 await openRow(ROW_CLAIM, '创作来源');
-                const dialog = await waitForVisible(page, DIALOG, 3_000, { required: false });
-                if (dialog !== undefined) {
-                    await clickSelector(page, `${DIALOG} :text("${claimSource}")`, 8_000);
-                    await clickSelector(page, DIALOG_CONFIRM, 8_000);
+                await waitForVisible(page, DIALOG, 3_000);
+                const stance = `${DIALOG} label:has(input[type="radio"]):has(:text-is(${JSON.stringify(claimSource)}))`;
+                if ((await tryFindSelector(page, [stance], 1_500)) === undefined) {
+                    await sweep();
+                    throw new CapabilityError(`平台未提供声明类型「${claimSource}」，已跳过`);
                 }
+                await clickSelector(page, stance, 8_000);
+                await clickSelector(page, CLAIM_CONFIRM, 8_000);
             });
+            unavailable = outcome === 'capability';
         }
-        if ((await claimMatched()) !== true && !(await residual(name))) {
+        if (!unavailable && (await claimMatched()) !== true && !(await residual(name))) {
             warnings.push(`${name}: 未生效，请手动设置`);
         }
     }

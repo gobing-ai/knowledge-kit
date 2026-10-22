@@ -167,12 +167,12 @@ const isCoverFromLibrary = (selector: string) =>
  * The rail resolves each row before clicking it, so the fake has to model them.
  */
 const isSettingsRow = (selector: string) =>
-    selector.includes('js_edit_ori') ||
+    selector.includes('#js_original .setting-group__') ||
     selector.includes('js_reward_open') ||
     selector.includes('js_reward_allow_click') ||
     selector.includes('js_can_reward') ||
     selector.includes('js_article_tags_label') ||
-    selector.includes('js_url_checkbox') ||
+    selector.includes('js_article_url_allow_click') ||
     selector.includes('js_claim_source');
 const isCoverOpener = (selector: string) =>
     selector.includes('js_cover_btn_area') || selector.includes('换一张') || selector.includes('修改');
@@ -211,6 +211,7 @@ function makeConsole(initial: ConsoleState) {
     const enriched = { original: false, reward: false, claim: false, claimText: '' };
     let pendingDialog: 'original' | 'reward' | 'claim' | 'url' | 'collection' | null = null;
     let chosenClaim = '';
+    let urlValue = '';
     let coverCommittedSrc = '';
 
     const entryAttached = (selector: string): boolean => {
@@ -243,7 +244,7 @@ function makeConsole(initial: ConsoleState) {
             return state.mode === '文章' && state.layoutMissing !== true;
         // 0272 measured 2026-10-13: the 原文链接 row is absent on some accounts, and a 赏-blocked
         // dialog carries the 前往开通 prerequisite instead of the account field.
-        if (selector.includes('js_url_checkbox') && state.urlRowMissing === true) return false;
+        if (selector.includes('js_article_url_allow_click') && state.urlRowMissing === true) return false;
         if (selector.includes('前往开通') || selector.includes('无法开启')) return state.rewardBlocked === true;
         if (isSettingsRow(selector)) return state.mode === '文章';
         if (isCoverOpener(selector) || isCoverFromContent(selector)) return true;
@@ -293,7 +294,7 @@ function makeConsole(initial: ConsoleState) {
                         fill: async (text) => {
                             log.push({ op: 'fill', args: [selector, text] });
                             // 0260: the 原文链接 field's value is the committed-URL readback.
-                            if (selector.includes('input[type="url"]')) mirrorValue = text;
+                            if (selector.includes('input.js_url')) urlValue = text;
                         },
                         click: async () => {
                             log.push({ op: 'click', args: [selector] });
@@ -350,6 +351,7 @@ function makeConsole(initial: ConsoleState) {
                 // 0260 committed-value probes: a confirmed settings dialog leaves the setting committed.
                 if (expression.includes('#js_original input.weui-desktop-switch__input')) return enriched.original;
                 if (expression.includes('#js_reward_setting_area')) return enriched.reward;
+                if (expression.includes('.article_url_setting')) return urlValue;
                 if (expression.includes('#js_claim_source_area'))
                     return { enabled: enriched.claim, text: enriched.claim ? chosenClaim : '' };
                 // 0272 measured audio-dialog probes: dedupe (missing → upload), the post-upload
@@ -378,20 +380,20 @@ function makeConsole(initial: ConsoleState) {
                 return;
             }
             if (isSettingsRow(selector)) {
-                pendingDialog = selector.includes('js_edit_ori')
+                pendingDialog = selector.includes('#js_original .setting-group__')
                     ? 'original'
                     : selector.includes('js_reward')
                       ? 'reward'
                       : selector.includes('js_claim_source')
                         ? 'claim'
-                        : selector.includes('js_url_checkbox')
+                        : selector.includes('js_article_url_allow_click')
                           ? 'url'
                           : 'collection';
                 dialogOpen = true;
                 return;
             }
-            if (pendingDialog === 'claim' && selector.includes(':text(')) {
-                chosenClaim = /:text\("([^"]+)"\)/.exec(selector)?.[1] ?? chosenClaim;
+            if (pendingDialog === 'claim' && selector.includes('label:has(')) {
+                chosenClaim = /:text-is\("([^"]+)"\)/.exec(selector)?.[1] ?? chosenClaim;
             }
             if (menuItemLabel(selector) !== undefined) {
                 if (state.opensNewTab) openEditor();
@@ -1119,6 +1121,7 @@ interface RecordingOpts {
 
 /** A seam-shaped recording page for the enrichment unit tests. */
 function recordingPage(ops: string[], evalReturns: unknown[] = [], opts: RecordingOpts = {}): WechatPage {
+    let urlCommitted = false;
     const broken = (selector: string) => opts.failOn !== undefined && selector.includes(opts.failOn);
     const missing = (selector: string) =>
         (Array.isArray(opts.missingOn) ? opts.missingOn : [opts.missingOn ?? '']).some(
@@ -1159,6 +1162,7 @@ function recordingPage(ops: string[], evalReturns: unknown[] = [], opts: Recordi
                 click: async () => {
                     if (broken(selector)) throw new Error('detached row');
                     ops.push(`click ${selector}`);
+                    if (selector.includes('a.jsPopoverBt:text-is("确定")')) urlCommitted = true;
                 },
                 type: async (text) => {
                     ops.push(`type ${selector} = ${text}`);
@@ -1177,6 +1181,13 @@ function recordingPage(ops: string[], evalReturns: unknown[] = [], opts: Recordi
             ops.push(`files ${selector}`);
         },
         evaluate: async (expression) => {
+            if (expression.includes('.article_url_setting')) {
+                if (readbackBroken('input.js_url')) throw new Error('committed readback refused');
+                if (!urlCommitted) return null;
+                return typeof opts.inputValue === 'function'
+                    ? opts.inputValue('input.js_url')
+                    : (opts.inputValue ?? '');
+            }
             // The audio menu-opening evaluates are click actions, not probes: they never consume a
             // scripted return (0272 added the toolbar-trigger click to the same action pair).
             const isMenuOpen = expression.includes('js_insertaudio') || expression.includes('audio_music_plugin_btn');
@@ -1261,9 +1272,9 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
         expect(result.metadata?.enrichWarnings).toBeUndefined();
 
         const clicks = selectorsOf(console.calls.editor, 'click');
-        expect(clicks).toContain('.setting-group__switch.js_original_apply.js_edit_ori');
+        expect(clicks).toContain('#js_original .setting-group__content-info');
         expect(clicks).toContain('.allow_click_opr.js_article_tags_label');
-        expect(clicks).toContain('#js_claim_source_area .frm_checkbox_label');
+        expect(clicks).toContain('#js_claim_source_area .allow_click_opr');
         expect(clicks.some((selector) => selector.includes('文字原创'))).toBe(true);
         // 0272 measured: the declaration radio and the agreement checkbox are both clicked.
         expect(clicks.some((selector) => selector.includes('js_original_type_radio'))).toBe(true);
@@ -1297,7 +1308,7 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
         });
         expect(warnings).toEqual([]);
         // Committed settings are never re-opened (and never toggled off).
-        expect(ops.some((op) => op.includes('js_edit_ori'))).toBe(false);
+        expect(ops.some((op) => op.includes('#js_original .setting-group__'))).toBe(false);
     });
 
     test('原文链接 fills the surfdash URL, and 赞赏 takes its account from 作者 when empty', async () => {
@@ -1309,7 +1320,7 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
             recordingPage(ops, [false, true, false, false, false], {
                 // Only the 原文链接 dialog's URL field carries the committed value; the 赞赏账户 stays empty.
                 inputValue: (selector) =>
-                    selector.includes('input[type="url"]') ? 'https://surfing.salty.vip/zh/posts/20261010-ai-ai' : '',
+                    selector.includes('input.js_url') ? 'https://surfing.salty.vip/zh/posts/20261010-ai-ai' : '',
             }),
             {
                 reward: true,
@@ -1319,7 +1330,7 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
         );
         expect(warnings).toEqual([]);
         expect(ops).toContain('click .setting-group__switch.js_reward_open');
-        expect(ops).toContain('click .allow_click_opr.js_url_checkbox');
+        expect(ops).toContain('click #js_article_url_area .js_article_url_allow_click');
         // The 赞赏账户 defaults from 作者; the URL lands in the 原文链接 dialog's field.
         expect(ops.some((op) => op.startsWith('fill ') && op.includes('冰原奔狼'))).toBe(true);
         expect(ops.some((op) => op.startsWith('fill ') && op.includes('surfing.salty.vip'))).toBe(true);
@@ -1394,7 +1405,7 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
         // rejecting degrades to null and the mismatch warning — neither claims success silently.
         const warnings = await enrichArticle(
             recordingPage(ops, [false, true, false, false, false], {
-                inputValueFailsOn: ['赞赏', 'input[type="url"]'],
+                inputValueFailsOn: ['赞赏', 'input.js_url'],
             }),
             {
                 reward: true,

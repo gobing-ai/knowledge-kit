@@ -18,9 +18,10 @@ import { wrapPlaywrightPage } from '../../src/page';
 
 /** What a scenario wires and what the runner reports. Assertions stay in bun:test. */
 interface ScenarioConfig {
-    original?: { committed?: boolean; confirmApplies?: boolean; closable?: boolean };
+    original?: { committed?: boolean; confirmApplies?: boolean; closable?: boolean; agreementChecked?: boolean };
     reward?: { committed?: boolean; account?: string };
-    claim?: { committed?: boolean; text?: string; confirmApplies?: boolean };
+    claim?: { committed?: boolean; text?: string; confirmApplies?: boolean; unavailable?: boolean };
+    url?: { committed?: string; confirmApplies?: boolean; missingField?: boolean; delayCommitMs?: number };
     audio?: {
         rows?: Array<{ title: string; mediaId: string }>;
         uploadForm?: boolean;
@@ -53,12 +54,16 @@ interface Facts {
 
 const SETTINGS_HTML = `
 <div class="settings-panel">
+  <h3>原创声明</h3>
   <div class="setting-group">
-    <div class="setting-group__switch js_original_apply js_edit_ori" data-op="original" style="width:80px;height:20px">原创声明</div>
     <div id="js_original">
+      <div data-original-empty>
+      <div class="setting-group__content-info" data-op="original" style="width:100px;height:20px">原创</div>
       <!-- 2026-10-21 measured: the committed probe reads the row-scoped switch input; the old bare
            id-scoped union also matched the open dialog's template, so a fresh page read as uncommitted. -->
-      <input type="checkbox" class="weui-desktop-switch__input" data-op="original-switch">
+      <div class="setting-group__switch"><input type="checkbox" class="weui-desktop-switch__input" data-op="original-switch" hidden></div>
+      </div>
+      <div id="js_original_open" style="display:none"><div class="setting-group__switch"><input type="checkbox" class="weui-desktop-switch__input" hidden checked></div></div>
     </div>
   </div>
   <div class="setting-group">
@@ -66,9 +71,11 @@ const SETTINGS_HTML = `
     <span id="js_reward_setting_area"><input type="checkbox" class="js_reward_setting_checkbox"></span>
   </div>
   <div id="js_claim_source_area">
-    <div class="frm_checkbox_label" data-op="claim" style="width:100px;height:20px">创作来源<span class="js_claim_source_selected"></span><input type="checkbox" class="js_claim_source"></div>
+    <div class="frm_checkbox_label" style="width:180px;height:20px">创作来源<span class="allow_click_opr" data-op="claim">未选择</span><span class="js_claim_source_selected"></span><input type="checkbox" class="js_claim_source"></div>
   </div>
+  <div id="js_article_url_area"><label class="frm_checkbox_label"><input type="checkbox" class="js_url_checkbox"><span>原文链接</span><div class="allow_click_opr js_article_url_allow_click">未添加<span class="article_url_setting"></span></div></label></div>
 </div>
+<div class="popover_inner" id="url-popover" style="display:none"><div class="popover-article-setting__content"><input class="js_url" name="source_url" placeholder="输入或粘贴原文链接"></div><div class="popover_bar"><a class="jsPopoverBt btn_primary">确定</a><a class="jsPopoverBt btn_default">取消</a></div></div>
 <div id="audio_music_plugin_btn" style="width:40px;height:20px">音频</div>
 <ul><li class="js_insertaudio" style="display:none;width:40px;height:20px">音频</li></ul>
 <div class="ProseMirror" contenteditable="true"><p><br></p></div>
@@ -90,7 +97,7 @@ const WIRE = `
     const closable = cfg2.closable !== false;
     dlg.innerHTML = (closable ? '<button class="weui-desktop-dialog__close-btn">×</button>' : '') + (cfg2.body ?? '') +
       '<div>' + (closable ? '<button class="weui-cancel">取消</button>' : '') +
-      '<button class="weui-confirm weui-desktop-btn_primary">确定</button></div>';
+      '<button class="weui-confirm weui-desktop-btn_primary">' + (cfg2.confirm ?? '确定') + '</button></div>';
     wrp.style.display = 'block';
     if (closable) dlg.querySelector('.weui-cancel, .weui-desktop-dialog__close-btn').addEventListener('click', close);
     dlg.querySelector('.weui-confirm').addEventListener('click', () => {
@@ -99,15 +106,40 @@ const WIRE = `
     return close;
   };
   const claimText = () => document.querySelector('.js_claim_source_selected').textContent;
+  if (cfg.url) {
+    const popover = document.getElementById('url-popover');
+    if (cfg.url.missingField) popover.querySelector('input').remove();
+    if (cfg.url.committed) {
+      document.querySelector('#js_article_url_area input').checked = true;
+      document.querySelector('.article_url_setting').textContent = cfg.url.committed;
+    }
+    document.querySelector('.js_article_url_allow_click').addEventListener('click', (e) => {
+      e.preventDefault();
+      window.__op('url');
+      popover.style.display = 'block';
+    });
+    popover.querySelector('.btn_primary').addEventListener('click', () => {
+      if (cfg.url.confirmApplies === false) return;
+      const commit = () => {
+        document.querySelector('.article_url_setting').textContent = popover.querySelector('input').value;
+        document.querySelector('#js_article_url_area input').checked = true;
+        popover.style.display = 'none';
+      };
+      if (cfg.url.delayCommitMs) setTimeout(commit, cfg.url.delayCommitMs); else commit();
+    });
+    popover.querySelector('.btn_default').addEventListener('click', () => { popover.style.display = 'none'; });
+  }
   if (cfg.original) {
-    document.querySelector('.js_edit_ori').addEventListener('click', () => {
+    document.querySelector('#js_original .setting-group__content-info').addEventListener('click', () => {
       window.__op('original');
       dialog('dlg-wrp', { closable: cfg.original.closable, body:
-        '<label style="width:90px;height:20px"><input type="radio" class="js_original_type_radio" name="ori">文字原创</label>' +
-        '<label class="original_agreement"><input type="checkbox">同意</label>' },
-      () => {
+        '<label style="width:90px;height:20px"><input type="radio" class="js_original_type_radio" name="ori" checked>文字原创</label>' +
+        '<label class="original_agreement"><input type="checkbox" hidden ' + (cfg.original.agreementChecked ? 'checked' : '') + '>我已阅读并同意《微信公众平台原创声明及相关功能使用协议》</label>' },
+      (dlg) => {
+        if (!dlg.querySelector('.original_agreement input').checked || !dlg.querySelector('.js_original_type_radio').checked) return false;
         if (cfg.original.confirmApplies !== false) {
-                document.querySelector('#js_original .weui-desktop-switch__input').checked = true;
+                document.querySelector('[data-original-empty]').style.display = 'none';
+                document.querySelector('#js_original_open').style.display = 'block';
             }
         return cfg.original.confirmApplies !== false;
       });
@@ -126,8 +158,9 @@ const WIRE = `
   if (cfg.claim) {
     document.querySelector('[data-op="claim"]').addEventListener('click', () => {
       window.__op('claim');
-      dialog('dlg2-wrp', { body: '<div class="claim-option" style="width:150px;height:20px">个人观点，仅供参考</div>' },
-      () => {
+      dialog('dlg2-wrp', { confirm: '确认', body: cfg.claim.unavailable ? '<label>无需声明</label>' : '<label class="claim-option" style="width:150px;height:20px"><input type="radio" name="claim"><span>个人观点，仅供参考</span></label>' },
+      (dlg) => {
+        if (!dlg.querySelector('input[name=claim]:checked')) return false;
         if (cfg.claim.confirmApplies !== false) {
           document.querySelector('.js_claim_source_selected').textContent = '个人观点，仅供参考';
           document.querySelector('.js_claim_source').checked = true;
@@ -205,13 +238,14 @@ const COLLECT = `
     uploads: window.__ops.uploads,
     insertClicked: window.__ops.insertClicked,
     committed: {
-      original: state('#js_original .weui-desktop-switch__input'),
+      original: [...document.querySelectorAll('#js_original .weui-desktop-switch__input')].find(el => el.parentElement.getClientRects().length)?.checked ?? null,
       reward: state('.js_reward_setting_checkbox'),
       claim: state('.js_claim_source'),
     },
     claimText: document.querySelector('.js_claim_source_selected').textContent,
     accountValue: document.querySelector('#dlg input.frm_input')?.value ?? null,
-    urlValue: document.querySelector('.weui-desktop-dialog input[type=url]')?.value ?? null,
+    urlValue: document.querySelector('.article_url_setting')?.textContent ?? null,
+    urlPopoverOpen: document.getElementById('url-popover').style.display !== 'none',
     insertedMediaId: document.querySelector('.ProseMirror mpvoice, .ProseMirror [data-mediaid]')?.getAttribute('data-mediaid') ?? null,
     tickedRows: [...document.querySelectorAll('.audio_item input:checked')].map((el) => el.closest('li').getAttribute('data-mediaid')),
     dialogsOpen: [...document.querySelectorAll('.weui-desktop-dialog__wrp')]
@@ -222,6 +256,43 @@ const COLLECT = `
 
 async function runScenario(scenario: string): Promise<Facts> {
     const configs: Record<string, ScenarioConfig> = {
+        '0318-url-commit': {
+            run: 'enrich',
+            url: { delayCommitMs: 350 },
+            meta: { originalUrl: 'https://example.com/0318' },
+        },
+        '0318-url-skip': {
+            run: 'enrich',
+            url: { committed: 'https://example.com/0318' },
+            meta: { originalUrl: 'https://example.com/0318' },
+        },
+        '0318-url-refused': {
+            run: 'enrich',
+            url: { confirmApplies: false },
+            meta: { originalUrl: 'https://example.com/0318' },
+        },
+        '0318-url-missing-field': {
+            run: 'enrich',
+            url: { missingField: true },
+            meta: { originalUrl: 'https://example.com/0318' },
+        },
+        '0318-checked-agreement': {
+            run: 'enrich',
+            original: { agreementChecked: true },
+            meta: { original: true },
+        },
+        '0318-measured-settings': {
+            run: 'enrich',
+            original: {},
+            reward: { account: '' },
+            claim: {},
+            meta: { original: true, reward: true, author: '冰原奔狼', claimSource: '个人观点，仅供参考' },
+        },
+        '0318-unavailable-stance': {
+            run: 'enrich',
+            claim: { unavailable: true },
+            meta: { claimSource: '个人观点，仅供参考' },
+        },
         // AC4+: every requested setting is already committed — no row opens, no warning, no toggle-off.
         'settings-committed-skip': {
             run: 'enrich',
@@ -315,7 +386,7 @@ async function runScenario(scenario: string): Promise<Facts> {
             // take an argument — the values are inlined as JSON.
             const preset = [
                 cfg.original?.committed
-                    ? "document.querySelector('#js_original .weui-desktop-switch__input').checked = true;"
+                    ? "document.querySelector('[data-original-empty]').style.display = 'none'; document.querySelector('#js_original_open').style.display = 'block';"
                     : '',
                 cfg.reward?.committed ? "document.querySelector('.js_reward_setting_checkbox').checked = true;" : '',
                 cfg.claim?.committed
