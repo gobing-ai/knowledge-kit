@@ -1525,6 +1525,294 @@ export function dailyPlan(args: string[]): void {
 }
 
 /**
+ * The two public URLs every downstream channel links to (task 0327 R1).
+ *
+ * voice2 passes the real urls its tier-0 stages just produced; the variant stage passes
+ * `{{article_url}}` / `{{podcast_url}}` so a generate-side bundle can be frozen before anything is
+ * published, and `publish-matrix-send` resolves them from the tier-0 receipts at send time.
+ */
+export interface PublishLinks {
+    articleUrl: string;
+    podcastUrl: string;
+}
+
+/** Placeholder links: the variant contract publish-matrix-send resolves. */
+export const PLACEHOLDER_LINKS: PublishLinks = {
+    articleUrl: '{{article_url}}',
+    podcastUrl: '{{podcast_url}}',
+};
+
+/** The wechatmp-only closing line (operator request 2026-09-29). */
+const WECHAT_OUTRO = '\n\n欲听往期节目，可至小宇宙、Apple Podcast、YouTube 等平台搜索【咸话咸说】。';
+
+/** The brand strings this daily show pins on every 公众号 draft. */
+const WECHAT_BRAND = {
+    author: '冰原奔狼',
+    claimSource: '个人观点，仅供参考',
+    coverSource: 'library',
+} as const;
+
+/**
+ * The 公众号 article payload (task 0327 R1): the article Content plus MP draft enrichment.
+ *
+ * Every field is consumed by `wechatmp-pub`'s flow; the only link it needs is the 原文链接, which is
+ * the surfdash post — hence `links.articleUrl` rather than a path read.
+ */
+export function buildWechatArticleContent(
+    article: Record<string, unknown>,
+    options: {
+        links: PublishLinks;
+        publishStatus: 'draft' | 'public';
+        collection: string;
+        coverPath?: string;
+        audioPath?: string;
+        audioTitle?: string;
+        /**
+         * The 咸话咸说 closer is an article-only sign-post (operator request 2026-09-29: "appended
+         * to the wechat input body only, never the master article"). An audio-first 公众号 播客 post
+         * carries the episode body, so it passes `false`.
+         */
+        appendOutro?: boolean;
+    },
+): Record<string, unknown> {
+    const wechatmp: Record<string, unknown> = {
+        original: true,
+        // 赞赏 is enabled per episode; the plugin fills the 赞赏账户 only when the platform leaves it
+        // empty (it defaults from 作者, operator walk 2026-10-10).
+        reward: true,
+        author: WECHAT_BRAND.author,
+        collection: options.collection,
+        // 创作来源 is the column's own stance, not an AI-declaration label (2026-10-10).
+        claimSource: WECHAT_BRAND.claimSource,
+        // 封面 comes from 图片库: the episode cover is uploaded there as the audio material's cover.
+        coverSource: WECHAT_BRAND.coverSource,
+        ...(options.links.articleUrl !== '' ? { originalUrl: options.links.articleUrl } : {}),
+        ...(options.coverPath === undefined ? {} : { coverPath: options.coverPath }),
+        ...(options.audioPath === undefined
+            ? {}
+            : {
+                  audioPath: options.audioPath,
+                  audioTitle: options.audioTitle ?? '',
+                  audioCoverPath: options.coverPath ?? '',
+              }),
+    };
+    const body = typeof article.body === 'string' ? article.body : '';
+    return {
+        ...article,
+        body: options.appendOutro === false ? body : `${body}${WECHAT_OUTRO}`,
+        metadata: { ...metadataOf(article), publishStatus: options.publishStatus, wechatmp },
+    };
+}
+
+/**
+ * The 小红书 发播客 payload (task 0327 R1, extracted from `xhsPodcastNote`).
+ *
+ * The run's publish-prep Content carries the final mp3, the cover and the body; this only restates
+ * `metadata.audio` under the key the channel's 发播客 mode reads.
+ */
+export function buildXhsEpisodeContent(
+    prep: Record<string, unknown>,
+    options: { publishStatus: 'draft' | 'public'; links?: PublishLinks },
+): Record<string, unknown> {
+    const metadata = metadataOf(prep);
+    return {
+        ...prep,
+        metadata: {
+            ...metadata,
+            operation: '发播客',
+            audio: metadata.audioFile,
+            publishStatus: options.publishStatus,
+        },
+    };
+}
+
+/** The 小红书 写长文 payload (task 0327 R1): the article Content with its publish status. */
+export function buildXhsArticleContent(
+    article: Record<string, unknown>,
+    options: { publishStatus: 'draft' | 'public' },
+): Record<string, unknown> {
+    return {
+        ...article,
+        metadata: { ...metadataOf(article), publishStatus: options.publishStatus },
+    };
+}
+
+/** The 小红书 上传图文 payload (task 0327 R1): the rendered card series plus its status. */
+export function buildXhsCardsContent(
+    cards: Record<string, unknown>,
+    options: { publishStatus: 'draft' | 'public'; followUps?: unknown[] },
+): Record<string, unknown> {
+    return {
+        ...cards,
+        metadata: {
+            ...metadataOf(cards),
+            publishStatus: options.publishStatus,
+            ...(options.followUps === undefined ? {} : { followUps: options.followUps }),
+        },
+    };
+}
+
+/** The podcast payload (task 0327 R1): publish-prep Content plus the episode's show notes. */
+export function buildPodcastContent(
+    prep: Record<string, unknown>,
+    options: { showNotes: string; podcast?: Record<string, unknown> },
+): Record<string, unknown> {
+    return {
+        ...prep,
+        metadata: {
+            ...metadataOf(prep),
+            showNotes: options.showNotes,
+            // Podcast-specific SEO metadata (refined title/description, per-item plan) rides under
+            // one key so a channel payload cannot leak it into another channel's fields.
+            ...(options.podcast === undefined ? {} : { podcast: options.podcast }),
+        },
+    };
+}
+
+/**
+ * The surfdash payload (task 0327 R1): the article Content, unchanged.
+ *
+ * surfdash is the article's own publisher, so it consumes what `22-article` already composed — the
+ * builder exists so the variant set is uniform, not because it reshapes anything.
+ */
+export function buildSurfdashContent(article: Record<string, unknown>, _links: PublishLinks): Record<string, unknown> {
+    return { ...article };
+}
+
+/**
+ * One channel's short copy as a Content (task 0327 R3): the body is the authored post text and the
+ * episode cover rides along as `metadata.coverImage`.
+ */
+export function buildSocialContent(
+    copy: string,
+    options: { platform: string; coverPath?: string; maxChars: number },
+): Record<string, unknown> {
+    const trimmed = copy.trim();
+    // Backstop only: the authoring prompt owns the limit, so an over-length draft is truncated here
+    // rather than rejected — a publish stage can never re-author (design §6).
+    const body = trimmed.length > options.maxChars ? trimmed.slice(0, options.maxChars) : trimmed;
+    return {
+        title: `${options.platform} · 每日AI乱炖`,
+        format: 'text',
+        body,
+        metadata: {
+            platform: options.platform,
+            ...(trimmed.length > options.maxChars ? { truncatedFrom: trimmed.length } : {}),
+            ...(options.coverPath === undefined ? {} : { coverImage: options.coverPath }),
+        },
+    };
+}
+
+/** Character caps the social authoring prompt targets, enforced here as a backstop (task 0327 R3). */
+const SOCIAL_CAPS: Record<string, number> = { x: 280, weibo: 2000, threads: 500 };
+
+/** Variant key → file name: `social:x` becomes `social_x.content.json`. */
+function variantFileName(key: string): string {
+    return `${key.replaceAll(':', '_')}.content.json`;
+}
+
+/**
+ * `daily-bundle-variants <workDir> <runDate> <pluginsPath>` — the generate-side payload builder
+ * (task 0327 R2/R3).
+ *
+ * Everything the publish side used to assemble inline is produced here instead, once, as bundle
+ * variants under `30-variants/`. Links are the `{{article_url}}` / `{{podcast_url}}` placeholders,
+ * because at generate time nothing is published yet; `publish-matrix-send` resolves them from the
+ * tier-0 receipts. A variant whose source artifact is absent (channel disabled, cards never
+ * rendered, social copy not authored) is skipped with a log line, never invented.
+ */
+export function dailyBundleVariants(args: string[]): void {
+    const [workDir = '', runDate = '', _pluginsPath = ''] = args;
+    timed(workDir, 'bundle-variants', () => {
+        const outDir = join(workDir, '30-variants');
+        sted('mkdir', outDir, () => mkdirSync(outDir, { recursive: true }));
+        const articlePath = join(workDir, '22-article', `${runDate}_06_article_content.json`);
+        const prepPath = join(workDir, '31-publish', `${runDate}_13_publish-prep_content.json`);
+        const notesPath = join(workDir, '31-publish', `${runDate}_15_show-notes_show-notes.md`);
+        const cardsPath = join(workDir, '25-xhs', 'content.json');
+        const coverPath = join(workDir, '23-cover', `${runDate}_07_cover_cover.png`);
+        const socialDir = join(workDir, '26-social');
+        const cover = isFile(coverPath) ? coverPath : undefined;
+        const links = PLACEHOLDER_LINKS;
+        const written: string[] = [];
+        const skipped: string[] = [];
+
+        const article = readJson(articlePath);
+        const prep = readJson(prepPath);
+        const write = (key: string, content: Record<string, unknown>): void => {
+            const file = join(outDir, variantFileName(key));
+            sted('write', file, () => writeJsonText(file, content));
+            written.push(key);
+        };
+
+        // Generic variants first: a channel-specific variant wins over the shared one, so the
+        // shared copy must exist for the channels the preset does not specialise.
+        if (article === null) skipped.push('article (no 22-article content)');
+        else {
+            write('article', buildSurfdashContent(article, links));
+            write('article@surfdash-pub', buildSurfdashContent(article, links));
+            write('article@xhs-pub', buildXhsArticleContent(article, { publishStatus: 'draft' }));
+            write(
+                'article@wechatmp-pub',
+                buildWechatArticleContent(article, {
+                    links,
+                    publishStatus: 'draft',
+                    collection: '每日AI资讯',
+                    ...(cover === undefined ? {} : { coverPath: cover }),
+                }),
+            );
+        }
+
+        if (prep === null) skipped.push('episode (no publish-prep content)');
+        else {
+            const showNotes = isFile(notesPath) ? readFileSync(notesPath, 'utf-8') : '';
+            write('episode', buildPodcastContent(prep, { showNotes }));
+            write('episode@podcast-pub', buildPodcastContent(prep, { showNotes }));
+            write('episode@xhs-pub', buildXhsEpisodeContent(prep, { publishStatus: 'draft', links }));
+            // 公众号 播客 shares the episode with podcast-pub: same audio, same cover, no article body.
+            write(
+                'episode@wechatmp-pub',
+                buildWechatArticleContent(prep, {
+                    links,
+                    publishStatus: 'draft',
+                    collection: '每日AI资讯',
+                    // Audio-first post: it carries the episode body, so no article closer.
+                    appendOutro: false,
+                    ...(cover === undefined ? {} : { coverPath: cover }),
+                    ...(typeof metadataOf(prep).audioFile === 'string'
+                        ? { audioPath: String(metadataOf(prep).audioFile) }
+                        : {}),
+                }),
+            );
+        }
+
+        const cards = readJson(cardsPath);
+        if (cards === null) skipped.push('cards (no rendered card series)');
+        else write('cards@xhs-pub', buildXhsCardsContent(cards, { publishStatus: 'draft' }));
+
+        for (const platform of Object.keys(SOCIAL_CAPS)) {
+            const copyPath = join(socialDir, `${platform}.md`);
+            if (!isFile(copyPath)) {
+                skipped.push(`social:${platform} (no 26-social/${platform}.md)`);
+                continue;
+            }
+            const cap = SOCIAL_CAPS[platform] ?? 500;
+            write(
+                `social:${platform}`,
+                buildSocialContent(readFileSync(copyPath, 'utf-8'), {
+                    platform,
+                    maxChars: cap,
+                    ...(cover === undefined ? {} : { coverPath: cover }),
+                }),
+            );
+        }
+
+        console.log(`bundle-variants: ${written.length} variant(s) in ${outDir}: ${written.join(', ')}`);
+        if (skipped.length > 0) console.log(`bundle-variants: skipped ${skipped.join('; ')}`);
+    });
+}
+
+/**
  * Topic-boundary sidecar (task 0189 R2). Sibling of this file; node-builtins-only read.
  */
 /** Surfing frontmatter scalar. Inline on purpose: this file cannot import `@gobing-ai/*`. */
@@ -1615,14 +1903,10 @@ export function dailyPublishPodcast(args: string[]): void {
             if (refinedTitle !== '') podcast.refinedTitle = refinedTitle;
             if (refinedDescription) podcast.refinedDescription = refinedDescription;
             if (planItems.length > 0) podcast.planItems = planItems;
-            const merged = {
-                ...content,
-                metadata: {
-                    ...metadataOf(content),
-                    showNotes,
-                    ...(Object.keys(podcast).length > 0 ? { podcast } : {}),
-                },
-            };
+            const merged = buildPodcastContent(content, {
+                showNotes,
+                ...(Object.keys(podcast).length > 0 ? { podcast } : {}),
+            });
             sted('write', prep, () => writeJsonText(prep, merged));
             kk(
                 [
@@ -1791,47 +2075,26 @@ export function dailyPublishWechat(args: string[]): void {
             return;
         }
         const packaged = requireJson(article, 'publish-wechat');
-        // MP draft enrichment (operator preferences 2026-09-29, completed 2026-10-10): 原创, 赞赏,
-        // 作者, 合集, 原文链接 (the surfdash post), 创作来源, cover, audio material. The brand strings
-        // are this daily show's constants; every field here is consumed by `wechatmp-pub`'s flow.
+        // MP draft enrichment (operator preferences 2026-09-29, completed 2026-10-10) lives in the
+        // builder so a generate-side bundle can produce the same payload without publishing.
         const cover = join(workDir, '23-cover', `${runDate}_07_cover_cover.png`);
         const audio = join(workDir, '30-audio', `${runDate}_11_generate_content.mp3`);
         const surfdashResult = join(workDir, '31-publish', `${runDate}_14_publish-surfdash_result.json`);
         const originalUrl = isFile(surfdashResult) ? firstTargetUrl(readJson(surfdashResult), 'surfdash-pub') : '';
-        const wechatmp: Record<string, unknown> = {
-            original: true,
-            // 赞赏 is enabled per episode; the plugin fills the 赞赏账户 only when the platform
-            // leaves it empty (it defaults from 作者, operator walk 2026-10-10).
-            reward: true,
-            author: '冰原奔狼',
-            collection: collectionArg || '每日AI资讯',
-            // 创作来源 is the column's own stance, not an AI-declaration label — the operator owns
-            // the wording (2026-10-10).
-            claimSource: '个人观点，仅供参考',
-            // 封面 comes from 图片库: the episode cover is uploaded there as the audio material's
-            // cover, so the library's newest entry is the intended image.
-            coverSource: 'library',
-            ...(originalUrl !== '' ? { originalUrl } : {}),
-            ...(isFile(cover) ? { coverPath: cover } : {}),
-            // Audio block at the article top (operator request 2026-09-29; the plugin UPLOADS the
-            // material when the 素材库 has no same-title entry, 2026-10-10).
-            ...(isFile(audio)
-                ? {
-                      audioPath: audio,
-                      audioTitle: typeof packaged.title === 'string' ? packaged.title : '',
-                      audioCoverPath: isFile(cover) ? cover : '',
-                  }
-                : {}),
-        };
-        // WeChat-only closing line (operator request 2026-09-29): point readers/listeners back to
-        // the show's platforms. Appended to the wechat input body only, never the master article.
-        const outro = '\n\n欲听往期节目，可至小宇宙、Apple Podcast、YouTube 等平台搜索【咸话咸说】。';
+        const hasCover = isFile(cover);
+        const hasAudio = isFile(audio);
+        const firstLine = typeof packaged.title === 'string' ? packaged.title : '';
         sted('write', input, () =>
-            writeJsonText(input, {
-                ...packaged,
-                body: `${typeof packaged.body === 'string' ? packaged.body : ''}${outro}`,
-                metadata: { ...metadataOf(packaged), publishStatus: want, wechatmp },
-            }),
+            writeJsonText(
+                input,
+                buildWechatArticleContent(packaged, {
+                    links: { articleUrl: originalUrl, podcastUrl: '' },
+                    publishStatus: want,
+                    collection: collectionArg || '每日AI资讯',
+                    ...(hasCover ? { coverPath: cover } : {}),
+                    ...(hasAudio ? { audioPath: audio, audioTitle: firstLine } : {}),
+                }),
+            ),
         );
         // `soft` keeps the WeChat target non-blocking: the plugin still writes its own failed Result
         // and prints the failing step (session preflight, editor paste, save control), which is what
@@ -1899,14 +2162,13 @@ export function dailyPublishXhs(args: string[]): void {
         const packaged = requireJson(content, 'publish-xhs');
         const followUp = podcast === 'true' ? xhsPodcastNote(prep, want) : undefined;
         sted('write', input, () =>
-            writeJsonText(input, {
-                ...packaged,
-                metadata: {
-                    ...metadataOf(packaged),
+            writeJsonText(
+                input,
+                buildXhsCardsContent(packaged, {
                     publishStatus: want,
                     ...(followUp === undefined ? {} : { followUps: [followUp] }),
-                },
-            }),
+                }),
+            ),
         );
         // `soft` keeps the XHS target non-blocking: the plugin still writes its own failed Result
         // and prints the failing step (login gate, upload, body, submit control), which is what the
@@ -1938,16 +2200,7 @@ function xhsPodcastNote(prepPath: string, publishStatus: 'draft' | 'public'): Re
         console.log(`publish-xhs: no publish-prep Content at ${prepPath} — the 发播客 note is skipped`);
         return undefined;
     }
-    const metadata = metadataOf(prep);
-    return {
-        ...prep,
-        metadata: {
-            ...metadata,
-            operation: '发播客',
-            audio: metadata.audioFile,
-            publishStatus,
-        },
-    };
+    return buildXhsEpisodeContent(prep, { publishStatus });
 }
 
 /**

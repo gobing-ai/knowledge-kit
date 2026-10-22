@@ -2189,6 +2189,78 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
+    it('daily-bundle-variants writes the placeholder variant set and skips absent channels (0327 R2/R3)', () => {
+        withTempDir((dir) => {
+            const article = join(dir, '22-article');
+            const publish = join(dir, '31-publish');
+            const xhs = join(dir, '25-xhs');
+            const cover = join(dir, '23-cover');
+            const social = join(dir, '26-social');
+            for (const sub of [article, publish, xhs, cover, social]) mkdirSync(sub, { recursive: true });
+            writeFileSync(
+                join(article, '20260101_06_article_content.json'),
+                JSON.stringify({ title: '标题', format: 'markdown', body: '正文', metadata: {} }),
+            );
+            writeFileSync(
+                join(publish, '20260101_13_publish-prep_content.json'),
+                JSON.stringify({ title: '标题', body: '正文', metadata: { audioFile: '/tmp/e.mp3' } }),
+            );
+            writeFileSync(join(publish, '20260101_15_show-notes_show-notes.md'), '# 时间轴');
+            writeFileSync(join(cover, '20260101_07_cover_cover.png'), 'png');
+            writeFileSync(join(xhs, 'content.json'), JSON.stringify({ title: '卡片', body: '正文', metadata: {} }));
+            writeFileSync(join(social, 'x.md'), 'x 文案');
+
+            const result = run(['daily-bundle-variants', dir, '20260101', ''], {});
+            expect(result.status).toBe(0);
+
+            const variants = join(dir, '30-variants');
+            const read = (key: string): Record<string, unknown> =>
+                JSON.parse(readFileSync(join(variants, `${key}.content.json`), 'utf-8')) as Record<string, unknown>;
+
+            // The 公众号 payload carries the article-url placeholder, not a real link.
+            const wechat = read('article@wechatmp-pub') as {
+                body: string;
+                metadata: { wechatmp: { originalUrl?: string; coverPath?: string } };
+            };
+            expect(wechat.metadata.wechatmp.originalUrl).toBe('{{article_url}}');
+            expect(wechat.metadata.wechatmp.coverPath).toBe(join(cover, '20260101_07_cover_cover.png'));
+            expect(wechat.body).toContain('咸话咸说');
+
+            // The 公众号 播客 variant carries the episode body without the article-only closer.
+            const wechatEpisode = read('episode@wechatmp-pub') as { body: string };
+            expect(wechatEpisode.body).toBe('正文');
+
+            // The episode variants carry the show notes / the 发播客 operation.
+            const podcast = read('episode@podcast-pub') as { metadata: { showNotes: string } };
+            expect(podcast.metadata.showNotes).toBe('# 时间轴');
+            const xhsEpisode = read('episode@xhs-pub') as { metadata: { operation: string; audio: string } };
+            expect(xhsEpisode.metadata.operation).toBe('发播客');
+            expect(xhsEpisode.metadata.audio).toBe('/tmp/e.mp3');
+
+            // Social copy becomes a variant with the cover attached; the missing platforms are named.
+            const socialX = read('social_x') as { body: string; metadata: { coverImage?: string } };
+            expect(socialX.body).toBe('x 文案');
+            expect(socialX.metadata.coverImage).toBe(join(cover, '20260101_07_cover_cover.png'));
+            expect(result.stdout).toContain('social:weibo (no 26-social/weibo.md)');
+            expect(existsSync(join(variants, 'social_weibo.content.json'))).toBe(false);
+        });
+    });
+
+    it('daily-bundle-variants truncates over-length social copy as a backstop (0327 R3)', () => {
+        withTempDir((dir) => {
+            mkdirSync(join(dir, '26-social'), { recursive: true });
+            writeFileSync(join(dir, '26-social', 'x.md'), 'a'.repeat(400));
+            const result = run(['daily-bundle-variants', dir, '20260101', ''], {});
+            expect(result.status).toBe(0);
+            const variant = JSON.parse(readFileSync(join(dir, '30-variants', 'social_x.content.json'), 'utf-8')) as {
+                body: string;
+                metadata: { truncatedFrom?: number };
+            };
+            expect(variant.body).toHaveLength(280);
+            expect(variant.metadata.truncatedFrom).toBe(400);
+        });
+    });
+
     it('daily-publish-xhs drafts by default, caches per requested status, and never blocks the run (E8)', () => {
         withTempDir((dir) => {
             const record = join(dir, 'kk-argv.jsonl');

@@ -1747,6 +1747,11 @@ if (import.meta.main)
             dailyPublishWechat(rest);
             break;
         }
+        case 'daily-bundle-variants': {
+            const { dailyBundleVariants } = await loadDailyStages();
+            dailyBundleVariants(rest);
+            break;
+        }
         case 'daily-publish-classify':
             dailyPublishClassify(rest);
             break;

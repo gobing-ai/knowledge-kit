@@ -2057,6 +2057,26 @@ A dummy receipt is a succeeded receipt for resend purposes (a rerun skips it) **
 never blocks a real send: flipping the preset row to `draft` dispatches the target once on the next
 run. itc rows never carry `mode: dummy`, so the branch is unreachable there.
 
+**Generate-side payload builders and variants (task 0327).** The channel payload shaping that voice2
+performed inside its publish stages is exposed as pure builders in
+`plugins/kk/scripts/daily-stages.ts` — `buildSurfdashContent`, `buildPodcastContent`,
+`buildWechatArticleContent`, `buildXhsEpisodeContent`, `buildXhsArticleContent`,
+`buildXhsCardsContent`, `buildSocialContent` — each returning a `Content` and taking a
+`PublishLinks { articleUrl, podcastUrl }`. voice2's own `daily-publish-*` stages call them with the
+real tier-0 urls, so its outputs are unchanged. `kk stage run daily-bundle-variants <workDir>
+<runDate> <pluginsPath>` calls them with `PLACEHOLDER_LINKS` (`{{article_url}}` / `{{podcast_url}}`)
+and writes `30-variants/<key>.content.json` for `article`, `article@surfdash-pub`,
+`article@xhs-pub`, `article@wechatmp-pub`, `episode`, `episode@podcast-pub`, `episode@xhs-pub`,
+`episode@wechatmp-pub`, `cards@xhs-pub` and `social:{x,weibo,threads}` — the key `:` becomes `_` in
+the file name. That is exactly the bundle's `variants` map (`key → {path, sha256}`), and the plan's
+lookup order `${variant}@${plugin}` then `${variant}` is what lets a channel-specific variant win. A
+variant whose source artifact is absent (channel disabled, cards never rendered, social copy not
+authored) is skipped with a log line, never invented. Social copy is authored by the workflow's
+`social-write` node into `26-social/<platform>.md` and wrapped here: the body is the post text, the
+episode cover rides as `metadata.coverImage`, and the per-platform cap (x 280, weibo 2000,
+threads 500) is a truncation backstop — the prompt owns the limit, and a publish stage never
+re-authors (design §6).
+
 **`publish-matrix-classify <workDir> --window <w> --run-date <stamp>`** (task 0326) turns the
 window's receipts into `4-publish/outcome.<window>.json`
 `{schemaVersion, window, runDate, status, published, targets, rows:[{id, tier, required, status, effect?, dummy}]}`
