@@ -292,7 +292,7 @@ function applyFloorGate(
 }
 
 /** Widest window the extract ladder may reach; a "daily" show must not import a week-old story. */
-const LADDER_MAX_MS = 72 * 3_600_000;
+const LADDER_MAX_MS = 168 * 3_600_000;
 
 const WINDOW_UNIT_MS: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
 
@@ -312,13 +312,17 @@ function formatWindowMs(ms: number): string {
 
 /**
  * Pool extraction with a conditional window ladder (2026-10-19 operator decision, superseding the
- * 0266 D1 blanket rejection). `kk store extract` reads one first_seen window and `applyFloorGate`
+ * 0266 D1 blanket rejection; extended ×7/168h 2026-10-23 when upstream supply collapsed and the
+ * 72h ceiling again closed a day as no-content while a week of older unselected items sat in the
+ * store). `kk store extract` reads one first_seen window and `applyFloorGate`
  * then refuses a pool that cannot reach `episode_min_minutes`. Together they ate whole days: an
  * episode consumes 6-12 stories while a day of collection adds ~3-13 qualifying ones, so the 04:30
  * runs of 2026-10-18 and 2026-10-19 saw 2- and 3-item pools and closed as no-content while older
  * unselected items sat in the store. The ladder keeps the configured window as the first choice and
- * widens (×2, ×3, capped at 72h) ONLY when that pool's estimate misses the floor — a rich day is
- * extracted exactly once, and a thin one is filled from the backlog instead of dropped.
+ * widens (×2, ×3, ×7, capped at 168h) ONLY when that pool's estimate misses the floor — a rich day is
+ * extracted exactly once, and a thin one is filled from the backlog instead of dropped. The store's
+ * QC gates still read the aged items' decayed urgency, so a widened pool does not force stale stories
+ * into an episode by itself.
  *
  * The store's `selections` ledger still excludes every story a previous run took, so a widened
  * window can only add items no episode has used. The estimate here runs on the raw pool (before QC
@@ -334,7 +338,7 @@ export function dailyExtract(args: string[]): void {
     const floor = Number(minMinutes);
     const gated = minMinutes !== '' && Number.isFinite(floor) && floor > 0;
     const windows: number[] = [base];
-    for (const factor of gated ? [2, 3] : []) {
+    for (const factor of gated ? [2, 3, 7] : []) {
         const ms = base * factor;
         if (ms > LADDER_MAX_MS) break;
         windows.push(ms);

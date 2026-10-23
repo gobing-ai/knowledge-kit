@@ -226,7 +226,8 @@ nodes:
       store's `selections` ledger, written by the `select` node below). Writes
       <work_dir>/10-collect/pool.json (the fan-in blended.json shape) and prints {count}. An empty
       pool writes [] and exits 0 — the run's no-content path, not a failure. The `daily-extract`
-      stage widens the window (×2, ×3, capped at 72h) only when the configured window's pool cannot
+      stage widens the window (×2, ×3, ×7, capped at 168h — extended 2026-10-23 when the 72h
+      ceiling closed a supply-collapsed day as no-content) only when the configured window's pool cannot
       reach `episode_min_minutes` (2026-10-19): a published episode consumes more stories than a day
       of collection supplies, so the tight window alone closed 2026-10-18/19 as no-content while
       older unselected items sat in the store.
