@@ -796,7 +796,9 @@ describe('cancellation (R2)', () => {
             stdio: ['ignore', 'pipe', 'pipe'],
             env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}` },
         });
+        let closed = false;
         let code: number | null = null;
+        let signal: NodeJS.Signals | null = null;
         let stageOutput = '';
         child.stdout?.on('data', (chunk: Buffer) => {
             stageOutput += chunk.toString('utf-8');
@@ -804,15 +806,24 @@ describe('cancellation (R2)', () => {
         child.stderr?.on('data', (chunk: Buffer) => {
             stageOutput += chunk.toString('utf-8');
         });
-        child.on('close', (c) => {
+        child.on('close', (c, s) => {
+            closed = true;
             code = c;
+            signal = s;
         });
         try {
             expect(await waitForFile(pidFile)).not.toBeNull();
             process.kill(-(child.pid as number), 'SIGTERM');
             const deadline = Date.now() + 20_000;
-            while (code === null && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
-            expect({ code, stageOutput }).toEqual({ code: 143, stageOutput: expect.any(String) });
+            while (!closed && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+            // `closed` and `signal` tell a default-action kill (code null, signal SIGTERM) apart from a
+            // hung stage (closed false) when this intermittently fails under full-suite load.
+            expect({ closed, code, signal, stageOutput }).toEqual({
+                closed: true,
+                code: 143,
+                signal: null,
+                stageOutput: expect.any(String),
+            });
             expect(existsSync(join(workDir, 'cancelled.json'))).toBe(true);
             const marker = JSON.parse(readFileSync(join(workDir, 'cancelled.json'), 'utf-8'));
             expect(marker.signal).toBe('SIGTERM');
