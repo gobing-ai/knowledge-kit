@@ -95,6 +95,31 @@ vars:
   # `daily-generate`'s script gate, which measures the authored VoiceScript) and the measured gate
   # in `daily-episode-duration`.
   episode_max_minutes: "25"
+  # podcast-pub per-episode SEO (D9). Defaults match the plugin. Legacy publish output:
+  # podcast_seo=false, podcast_summary_paragraph=false, podcast_timeline_inline_style=before,
+  # podcast_auto_episode_number=false, podcast_link_field=url, podcast_slug=auto,
+  # podcast_round_duration=false. Title keywords stay in podcast-pub; ID3 keeps the date-only title.
+  podcast_seo: "true"
+  podcast_episode_title_mode: "as-is"
+  podcast_episode_title_pattern: "{series} · {date}：{keywords}"
+  podcast_series_name: "每日AI乱炖"
+  podcast_show_name: "咸话咸说"
+  podcast_title_max: "55"
+  podcast_title_max_keywords: "2"
+  podcast_seo_title_suffix: "｜咸话咸说"
+  podcast_seo_title_max: "60"
+  podcast_seo_description_min: "120"
+  podcast_seo_description_max: "155"
+  podcast_seo_description_source: "plan"
+  podcast_summary_paragraph: "true"
+  podcast_timeline_inline_style: "after"
+  podcast_auto_episode_number: "true"
+  podcast_title_sanitize: "normalize"
+  podcast_link_field: "none"
+  podcast_slug: "pattern"
+  podcast_slug_pattern: "daily-ai-{date}"
+  podcast_social_image: "false"
+  podcast_round_duration: "true"
   # Run id, injected by spur at launch (0674 R5/R8) — the selections / ledger / mark-published
   # identity. A shell command may only reference declared vars.
   __runId: ""
@@ -719,6 +744,27 @@ nodes:
       kind: shell
       options:
         command: >-
+          PODCAST_PUB_SEO="${vars.podcast_seo}"
+          PODCAST_PUB_EPISODE_TITLE_MODE="${vars.podcast_episode_title_mode}"
+          PODCAST_PUB_EPISODE_TITLE_PATTERN="${vars.podcast_episode_title_pattern}"
+          PODCAST_PUB_SERIES_NAME="${vars.podcast_series_name}"
+          PODCAST_PUB_SHOW_NAME="${vars.podcast_show_name}"
+          PODCAST_PUB_TITLE_MAX="${vars.podcast_title_max}"
+          PODCAST_PUB_TITLE_MAX_KEYWORDS="${vars.podcast_title_max_keywords}"
+          PODCAST_PUB_SEO_TITLE_SUFFIX="${vars.podcast_seo_title_suffix}"
+          PODCAST_PUB_SEO_TITLE_MAX="${vars.podcast_seo_title_max}"
+          PODCAST_PUB_SEO_DESCRIPTION_MIN="${vars.podcast_seo_description_min}"
+          PODCAST_PUB_SEO_DESCRIPTION_MAX="${vars.podcast_seo_description_max}"
+          PODCAST_PUB_SEO_DESCRIPTION_SOURCE="${vars.podcast_seo_description_source}"
+          PODCAST_PUB_SUMMARY_PARAGRAPH="${vars.podcast_summary_paragraph}"
+          PODCAST_PUB_TIMELINE_INLINE_STYLE="${vars.podcast_timeline_inline_style}"
+          PODCAST_PUB_AUTO_EPISODE_NUMBER="${vars.podcast_auto_episode_number}"
+          PODCAST_PUB_TITLE_SANITIZE="${vars.podcast_title_sanitize}"
+          PODCAST_PUB_LINK_FIELD="${vars.podcast_link_field}"
+          PODCAST_PUB_SLUG="${vars.podcast_slug}"
+          PODCAST_PUB_SLUG_PATTERN="${vars.podcast_slug_pattern}"
+          PODCAST_PUB_SOCIAL_IMAGE="${vars.podcast_social_image}"
+          PODCAST_PUB_ROUND_DURATION="${vars.podcast_round_duration}"
           kk stage daily-show-notes "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.title}"
 
   - id: publish-podcast
@@ -732,6 +778,27 @@ nodes:
       kind: shell
       options:
         command: >-
+          PODCAST_PUB_SEO="${vars.podcast_seo}"
+          PODCAST_PUB_EPISODE_TITLE_MODE="${vars.podcast_episode_title_mode}"
+          PODCAST_PUB_EPISODE_TITLE_PATTERN="${vars.podcast_episode_title_pattern}"
+          PODCAST_PUB_SERIES_NAME="${vars.podcast_series_name}"
+          PODCAST_PUB_SHOW_NAME="${vars.podcast_show_name}"
+          PODCAST_PUB_TITLE_MAX="${vars.podcast_title_max}"
+          PODCAST_PUB_TITLE_MAX_KEYWORDS="${vars.podcast_title_max_keywords}"
+          PODCAST_PUB_SEO_TITLE_SUFFIX="${vars.podcast_seo_title_suffix}"
+          PODCAST_PUB_SEO_TITLE_MAX="${vars.podcast_seo_title_max}"
+          PODCAST_PUB_SEO_DESCRIPTION_MIN="${vars.podcast_seo_description_min}"
+          PODCAST_PUB_SEO_DESCRIPTION_MAX="${vars.podcast_seo_description_max}"
+          PODCAST_PUB_SEO_DESCRIPTION_SOURCE="${vars.podcast_seo_description_source}"
+          PODCAST_PUB_SUMMARY_PARAGRAPH="${vars.podcast_summary_paragraph}"
+          PODCAST_PUB_TIMELINE_INLINE_STYLE="${vars.podcast_timeline_inline_style}"
+          PODCAST_PUB_AUTO_EPISODE_NUMBER="${vars.podcast_auto_episode_number}"
+          PODCAST_PUB_TITLE_SANITIZE="${vars.podcast_title_sanitize}"
+          PODCAST_PUB_LINK_FIELD="${vars.podcast_link_field}"
+          PODCAST_PUB_SLUG="${vars.podcast_slug}"
+          PODCAST_PUB_SLUG_PATTERN="${vars.podcast_slug_pattern}"
+          PODCAST_PUB_SOCIAL_IMAGE="${vars.podcast_social_image}"
+          PODCAST_PUB_ROUND_DURATION="${vars.podcast_round_duration}"
           kk stage daily-publish-podcast "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
 
   # ---- independent soft channels: xhs, wechat, locales (exit 0 on soft failure; fail-fast DAG) ----

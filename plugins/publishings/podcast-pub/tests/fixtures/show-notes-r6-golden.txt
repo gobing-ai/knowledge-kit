@@ -1,5 +1,7 @@
 # 每日 AI 要闻：Sora 2 发布与充裕的智能
 
+每日AI乱炖 2026-09-06：Sora 2；充裕的智能；Jakub 与 Szymon；温和的奇点；三点观察；反思；GPT-4o；真希望有人早告诉我这些；研究人员与创始人；如何获得创业想法；Driving Blender from a coding agent on macOS。 完整图文版：[本期完整文章](https://surfing.salty.vip/zh/posts/2026-09-06-ai-sora-2)
+
 ## 1. Sora 2
 
 OpenAI发布Sora应用，集成Sora 2模型，支持快速创作、分享和观看视频，团队称其为"创意领域的ChatGPT时刻"。核心功能包括cameo客串特性，可保持角色一致性并将用户及朋友置入视频。

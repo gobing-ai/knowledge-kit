@@ -2644,7 +2644,9 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                     targets: [{ target: 'surfdash-pub', ok: true, status: 'published', metadata: { postPath } }],
                 }),
             );
-            expect(run(['daily-show-notes', dir, stamp, '', 'Daily AI'], showNotesKk(dir)).status).toBe(0);
+            const rendered = run(['daily-show-notes', dir, stamp, '', 'Daily AI'], showNotesKk(dir));
+            expect(rendered.status).toBe(0);
+            expect(rendered.stderr).not.toContain('ARTICLE_POST_PATH is empty');
             expect(showNotesEnv(dir)).toMatchObject({
                 PODCAST_PUB_ARTICLE_POST_PATH: postPath,
                 PODCAST_PUB_RUN_DATE: stamp,
@@ -2660,7 +2662,11 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             mkdirSync(join(dir, '31-publish'), { recursive: true });
             const stamp = '20260101';
             // Absent file — the surfdash state never ran or published nothing.
-            expect(run(['daily-show-notes', dir, stamp, '', 'T'], showNotesKk(dir)).status).toBe(0);
+            const absent = run(['daily-show-notes', dir, stamp, '', 'T'], showNotesKk(dir));
+            expect(absent.status).toBe(0);
+            expect(absent.stderr).toContain(
+                'WARN podcast-pub: brief mode requested but ARTICLE_POST_PATH is empty; using legacy layout',
+            );
             expect(showNotesEnv(dir).PODCAST_PUB_ARTICLE_POST_PATH).toBe('');
             // Present file with a failed target — the legacy full-body layout must survive.
             writeFileSync(
@@ -2669,7 +2675,11 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                     targets: [{ target: 'surfdash-pub', ok: false, status: 'failed', metadata: { postPath: null } }],
                 }),
             );
-            expect(run(['daily-show-notes', dir, stamp, '', 'T'], showNotesKk(dir)).status).toBe(0);
+            const failed = run(['daily-show-notes', dir, stamp, '', 'T'], showNotesKk(dir));
+            expect(failed.status).toBe(0);
+            expect(failed.stderr).toContain(
+                'WARN podcast-pub: brief mode requested but ARTICLE_POST_PATH is empty; using legacy layout',
+            );
             expect(showNotesEnv(dir).PODCAST_PUB_ARTICLE_POST_PATH).toBe('');
         });
     });
@@ -2691,8 +2701,95 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                     ],
                 }),
             );
-            expect(run(['daily-show-notes', dir, stamp, '', 'T'], showNotesKk(dir)).status).toBe(0);
+            const later = run(['daily-show-notes', dir, stamp, '', 'T'], showNotesKk(dir));
+            expect(later.status).toBe(0);
+            expect(later.stderr).toContain(
+                'WARN podcast-pub: brief mode requested but ARTICLE_POST_PATH is empty; using legacy layout',
+            );
             expect(showNotesEnv(dir).PODCAST_PUB_ARTICLE_POST_PATH).toBe('');
+        });
+    });
+
+    it('daily-publish-podcast copies the Surfing refined title and omits it when the result has none', () => {
+        withTempDir((dir) => {
+            const stamp = '20260101';
+            mkdirSync(join(dir, '31-publish'), { recursive: true });
+            mkdirSync(join(dir, '21-plan'), { recursive: true });
+            const post = join(dir, 'index.md');
+            writeFileSync(post, '---\ntitle: 文章\ndescription: "今天的描述"\nrefined: true\n---\n正文\n');
+            const prepPath = join(dir, '31-publish', `${stamp}_13_publish-prep_content.json`);
+            writeFileSync(
+                prepPath,
+                JSON.stringify({
+                    title: '每日AI乱炖 · 2026-01-01',
+                    body: 'notes',
+                    format: 'markdown',
+                    metadata: { audioFile: '/tmp/a.mp3', podcast: { keep: true } },
+                }),
+            );
+            writeFileSync(join(dir, '31-publish', `${stamp}_15_show-notes_show-notes.md`), '# notes\n');
+            writeFileSync(
+                join(dir, '31-publish', `${stamp}_14_publish-surfdash_result.json`),
+                JSON.stringify({
+                    targets: [
+                        { target: 'other', ok: true, metadata: { refinedTitle: '忽略' } },
+                        { target: 'surfdash-pub', ok: false, metadata: { refinedTitle: '失败' } },
+                        {
+                            target: 'surfdash-pub',
+                            ok: true,
+                            metadata: { postPath: post, refinedTitle: '  每日AI乱炖 · 2026-01-01：甲、乙  ' },
+                        },
+                    ],
+                }),
+            );
+            writeFileSync(
+                join(dir, '21-plan', `${stamp}_03_plan_plan.json`),
+                JSON.stringify([{ title: '不应使用的全文计划' }]),
+            );
+            writeFileSync(
+                join(dir, '21-plan', `${stamp}_03_plan_plan-shownotes.json`),
+                JSON.stringify([
+                    { title: '甲，细节', body: '正文一句。', metadata: { brief: '简报优先。' } },
+                    { title: '  ' },
+                    null,
+                    { title: '乙', body: '只有正文。第二句。' },
+                ]),
+            );
+            const published = run(['daily-publish-podcast', dir, stamp, ''], fakeKk(dir, 'process.exit(0)'));
+            expect(published.status).toBe(0);
+            const prep = JSON.parse(readFileSync(prepPath, 'utf-8')) as {
+                metadata: { showNotes: string; podcast: Record<string, unknown> };
+            };
+            expect(prep.metadata.showNotes).toContain('# notes');
+            expect(prep.metadata.podcast.keep).toBe(true);
+            expect(prep.metadata.podcast.refinedTitle).toBe('每日AI乱炖 · 2026-01-01：甲、乙');
+            expect(prep.metadata.podcast.refinedDescription).toBe('今天的描述');
+            expect(prep.metadata.podcast.planItems).toEqual([
+                { title: '甲，细节', brief: '简报优先。' },
+                { title: '乙', brief: '只有正文。' },
+            ]);
+        });
+        withTempDir((dir) => {
+            const stamp = '20260102';
+            mkdirSync(join(dir, '31-publish'), { recursive: true });
+            const post = join(dir, 'empty.md');
+            writeFileSync(post, '---\ndescription: ""\n---\n');
+            const prepPath = join(dir, '31-publish', `${stamp}_13_publish-prep_content.json`);
+            writeFileSync(prepPath, JSON.stringify({ title: 'T', body: 'b', format: 'markdown', metadata: {} }));
+            writeFileSync(join(dir, '31-publish', `${stamp}_15_show-notes_show-notes.md`), 'notes');
+            writeFileSync(
+                join(dir, '31-publish', `${stamp}_14_publish-surfdash_result.json`),
+                JSON.stringify({
+                    targets: [{ target: 'surfdash-pub', ok: true, metadata: { postPath: post, refinedTitle: '   ' } }],
+                }),
+            );
+            mkdirSync(join(dir, '21-plan'), { recursive: true });
+            writeFileSync(join(dir, '21-plan', `${stamp}_03_plan_plan.json`), '{}');
+            const omitted = run(['daily-publish-podcast', dir, stamp, ''], fakeKk(dir, 'process.exit(0)'));
+            expect(omitted.status).toBe(0);
+            const prep = JSON.parse(readFileSync(prepPath, 'utf-8')) as { metadata: Record<string, unknown> };
+            expect(prep.metadata.podcast).toBeUndefined();
+            expect(prep.metadata.showNotes).toBe('notes');
         });
     });
 });

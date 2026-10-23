@@ -269,4 +269,11 @@ describe('install-hooks (root `prepare` half)', () => {
     it('propagates a lefthook failure, so a broken lefthook.yml stays loud', () => {
         expect(run('exit 3').status).toBe(3);
     });
+
+    it('skips instead of failing when proto refuses the untrusted .prototools', () => {
+        // A fresh clone or worktree has no trust record, so the lefthook shim exits 1 with this.
+        const result = run('echo \'{"code":"proto::tool::untrusted_plugin"}\'; exit 1');
+        expect(result.status).toBe(0);
+        expect(result.stderr).toContain('proto trust .prototools');
+    });
 });
