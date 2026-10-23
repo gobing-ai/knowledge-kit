@@ -4,9 +4,15 @@
  * Pure helpers: title pattern, `_microfeed.seo`, iTunes numbering, slug checks,
  * title sanitising, and show-notes summary text. Network stays in `index.ts`.
  * Lengths are Unicode code points, matching microfeed's slug rule.
+ *
+ * The one IO here is a binary PNG/JPEG header probe (`readLocalBytes`); the
+ * ts-runtime FileSystem seam is text-only, so `node:fs` is allowlisted for this
+ * file in `.spur/rules/strict/runtime-boundaries.yaml` (same class as
+ * `podcast-pub/src/index.ts`). Diagnostics go through ts-utils `echoError`.
  */
 
 import { readFileSync } from 'node:fs';
+import { echoError } from '@gobing-ai/ts-utils';
 
 /** Code-point length. Microfeed counts the same way for slugs and SEO limits. */
 export function codePointLength(value: string): number {
@@ -18,7 +24,7 @@ export const WARN_PREFIX = 'WARN podcast-pub:';
 /** Prints a stable stderr line and records it for result metadata. */
 export function warn(message: string, sink?: string[]): void {
     const line = message.startsWith(WARN_PREFIX) ? message : `${WARN_PREFIX} ${message}`;
-    console.error(line);
+    echoError(line);
     sink?.push(line);
 }
 
@@ -925,7 +931,7 @@ export function prepareEpisodeFields(
             }
         }
     }
-    for (const line of warnings) console.error(line);
+    for (const line of warnings) echoError(line);
     return {
         ok: true,
         fields: {

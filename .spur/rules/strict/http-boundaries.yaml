@@ -63,6 +63,10 @@ rules:
       # podcast-pub's MicrofeedClient is its transport's HTTP boundary: the
       # PublishTransport in index.ts composes it (docs/design/podcast-pub.md D1).
       - "plugins/publishings/podcast-pub/src/microfeed-client.ts"
+      # podcast-pub's index.ts implements PublishTransport; for D9 it fetches the
+      # operator-supplied social-image URL to verify its 1200×630 dimensions before
+      # sending it. That is boundary verification, not scattered plugin logic.
+      - "plugins/publishings/podcast-pub/src/index.ts"
 
   - id: no-globalthis-fetch
     description: "Avoid globalThis.fetch(...); route HTTP through a client seam when one exists."

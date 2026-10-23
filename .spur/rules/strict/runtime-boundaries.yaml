@@ -138,6 +138,10 @@ rules:
             # Binary audio bytes read for the presigned-URL PUT upload
             # (podcast-pub); the FileSystem seam is text-only.
             - "plugins/publishings/podcast-pub/src/index.ts"
+            # seo.ts `readLocalBytes` probes the PNG/JPEG magic bytes and IHDR/SOF header
+            # to gate the 1200×630 social image (D9) before any request; the FileSystem
+            # seam is text-only, same binary class as podcast-pub/src/index.ts.
+            - "plugins/publishings/podcast-pub/src/seo.ts"
             # surfdash-pub: sync existsSync probes in sync publish code, and binary
             # asset/cover copies via node:fs/promises (cp/copyFile) — the seam is
             # text-only, same class as podcast-pub. Sanctioned 2026-09-08 (sp fixall).

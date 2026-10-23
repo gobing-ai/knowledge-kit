@@ -6,10 +6,10 @@
  * `--retitle`, `--rewrite-body` and `--apply-slug` are separate opt-ins.
  */
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
 import type { Result } from '@gobing-ai/kk-core';
 import { ResultSchema } from '@gobing-ai/kk-core';
+import { ensureDirForFile, readJsonFile, writeJsonFile } from '@gobing-ai/ts-runtime';
+import { echo } from '@gobing-ai/ts-utils';
 import {
     type MicrofeedClient,
     type MicrofeedItem,
@@ -341,14 +341,13 @@ function describeEntry(entry: BackfillEntry): string {
 }
 
 async function writePlan(path: string, entries: BackfillEntry[], apply: boolean): Promise<void> {
-    const dir = dirname(path);
-    if (dir && dir !== '.') await mkdir(dir, { recursive: true });
-    await writeFile(path, JSON.stringify({ dryRun: !apply, items: entries }, null, 2));
+    await ensureDirForFile(path);
+    await writeJsonFile(path, { dryRun: !apply, items: entries });
 }
 
 async function loadPlan(path: string): Promise<{ entries: BackfillEntry[] } | { error: string }> {
     try {
-        const parsed: unknown = JSON.parse(await readFile(path, 'utf-8'));
+        const parsed: unknown = await readJsonFile(path);
         const record = asRecord(parsed);
         const items = record?.items;
         if (!Array.isArray(items)) return { error: `invalid backfill plan ${path}: expected { items: [...] }` };
@@ -441,7 +440,7 @@ export async function runBackfill(
             entries.push(planned);
         }
     }
-    for (const entry of entries) console.log(describeEntry(entry));
+    for (const entry of entries) echo(describeEntry(entry));
     if (flags.out) await writePlan(flags.out, entries, flags.apply);
     if (!flags.apply) {
         return ResultSchema.parse({
