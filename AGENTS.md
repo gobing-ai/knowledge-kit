@@ -219,6 +219,18 @@ grep -c expectedItemSections "$KK_PKG/plugins/kk/scripts/daily-stages.ts"   # co
 
 Until this repo is released and reinstalled, that copy is the one the cron actually runs.
 
+### Editing `apps/cli` / `packages` (the `kk` binary itself)
+
+The same staleness applies one layer up: `kk` runs `dist/index.js` from that package, so a CLI or
+store change (a new verb, a seam fix) is invisible to every scheduled job until the built bundle is
+copied in. `plugins/kk/scripts/` is read as source, but `apps/cli/` is read as **build output**.
+
+```bash
+bun run build
+cp apps/cli/dist/index.js "$KK_PKG/dist/index.js"   # back it up first if unsure
+kk store stats --days 1                              # confirm the new surface answers
+```
+
 ### Testing
 
 - Tests live in `tests/` next to the code (`<workspace>/tests/*.test.ts`), using `bun:test`.
