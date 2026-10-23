@@ -50,17 +50,44 @@ function installFakeApi(routes: ScriptedResponse[]): { requests: CapturedRequest
 
 const VALID_ENV = { MICROFEED_BASE_URL: 'https://feed.example.com', MICROFEED_API_KEY: 'mf_test_key' };
 
+const ENV_KEYS = [
+    'MICROFEED_BASE_URL',
+    'MICROFEED_API_KEY',
+    'MICROFEED_TIMEOUT_MS',
+    'PODCAST_PUB_TITLE',
+    'PODCAST_PUB_RUN_DATE',
+    'PODCAST_PUB_ARTICLE_BASE_URL',
+    'PODCAST_PUB_FOOTER_NOTE',
+    'PODCAST_PUB_BRIEF_MODE',
+    'PODCAST_PUB_ARTICLE_POST_PATH',
+    'PODCAST_PUB_SEO',
+    'PODCAST_PUB_EPISODE_TITLE_MODE',
+    'PODCAST_PUB_EPISODE_TITLE_PATTERN',
+    'PODCAST_PUB_SERIES_NAME',
+    'PODCAST_PUB_SHOW_NAME',
+    'PODCAST_PUB_TITLE_MAX',
+    'PODCAST_PUB_TITLE_MAX_KEYWORDS',
+    'PODCAST_PUB_SEO_TITLE_SUFFIX',
+    'PODCAST_PUB_SEO_TITLE_MAX',
+    'PODCAST_PUB_SEO_DESCRIPTION_MIN',
+    'PODCAST_PUB_SEO_DESCRIPTION_MAX',
+    'PODCAST_PUB_SEO_DESCRIPTION_SOURCE',
+    'PODCAST_PUB_SEO_DESCRIPTION_PATTERN',
+    'PODCAST_PUB_SUMMARY_PARAGRAPH',
+    'PODCAST_PUB_TIMELINE_INLINE_STYLE',
+    'PODCAST_PUB_AUTO_EPISODE_NUMBER',
+    'PODCAST_PUB_TITLE_SANITIZE',
+    'PODCAST_PUB_LINK_FIELD',
+    'PODCAST_PUB_SLUG',
+    'PODCAST_PUB_SLUG_PATTERN',
+    'PODCAST_PUB_SOCIAL_IMAGE',
+    'PODCAST_PUB_SOCIAL_IMAGE_ALT_PATTERN',
+    'PODCAST_PUB_ROUND_DURATION',
+];
+
 function withEnv<T>(env: Record<string, string | undefined>, fn: () => Promise<T>): Promise<T> {
     const saved: Record<string, string | undefined> = {};
-    for (const key of [
-        'MICROFEED_BASE_URL',
-        'MICROFEED_API_KEY',
-        'MICROFEED_TIMEOUT_MS',
-        'PODCAST_PUB_TITLE',
-        'PODCAST_PUB_RUN_DATE',
-        'PODCAST_PUB_ARTICLE_BASE_URL',
-        'PODCAST_PUB_FOOTER_NOTE',
-    ]) {
+    for (const key of ENV_KEYS) {
         saved[key] = process.env[key];
         if (env[key] === undefined) delete process.env[key];
         else process.env[key] = env[key];
@@ -344,8 +371,18 @@ describe('podcast-pub mapping', () => {
                 const body = api.requests[0]?.body as Record<string, unknown>;
                 expect(body.image).toBe('https://cdn.example.com/cover.png');
                 expect(body.date_published_ms).toBe(1725475200000);
-                expect(body.url).toBe('https://surfdash.example.com/zh/posts/x');
-                expect(body._microfeed).toEqual({ 'itunes:episodeType': 'full' });
+                // D9: articleUrl stays out of item url; the news day supplies season, episode, and the slug.
+                expect(body.url).toBeUndefined();
+                expect(body._microfeed).toEqual({
+                    'itunes:episodeType': 'full',
+                    'itunes:season': 2024,
+                    'itunes:episode': 248,
+                    seo: {
+                        title: 'Episode 1: Ground Up｜咸话咸说',
+                        description: '咸话咸说·每日AI乱炖 2024-09-04：',
+                    },
+                    slug: 'daily-ai-2024-09-04',
+                });
             } finally {
                 api.restore();
             }
@@ -408,7 +445,13 @@ describe('podcast-pub publish (R1/R3)', () => {
                             size_in_bytes: 8,
                         },
                     ],
-                    _microfeed: { 'itunes:episodeType': 'full' },
+                    _microfeed: {
+                        'itunes:episodeType': 'full',
+                        seo: {
+                            title: 'Episode 1: Ground Up｜咸话咸说',
+                            description: '咸话咸说·每日AI乱炖：',
+                        },
+                    },
                 });
             } finally {
                 api.restore();
@@ -513,7 +556,13 @@ describe('podcast-pub publish (R1/R3)', () => {
                             duration_in_seconds: 600,
                         },
                     ],
-                    _microfeed: { 'itunes:episodeType': 'full' },
+                    _microfeed: {
+                        'itunes:episodeType': 'full',
+                        seo: {
+                            title: 'Episode 1: Ground Up｜咸话咸说',
+                            description: '咸话咸说·每日AI乱炖（约 10 分钟）：',
+                        },
+                    },
                 });
             } finally {
                 api.restore();
@@ -1054,6 +1103,25 @@ describe('podcast-pub show-notes rendering (L1 R6)', () => {
         expect(rendered).toBe(await readFile(R6_GOLDEN, 'utf-8'));
     });
 
+    test('summary off and timeline style before reproduce the pre-D9 show notes byte for byte', async () => {
+        const docs = JSON.parse(await readFile(join(FIXTURES_DIR, 'show-notes-plan.json'), 'utf-8'));
+        const legacy = renderShowNotesMarkdown(docs, {
+            title: EPISODE_TITLE,
+            runDate: RUN_DATE,
+            summaryParagraph: false,
+            timelineStyle: 'before',
+        });
+        expect(legacy).toBe(await readFile(join(FIXTURES_DIR, 'show-notes-golden-legacy.txt'), 'utf-8'));
+        const r6 = JSON.parse(await readFile(R6_PLAN, 'utf-8'));
+        const legacyR6 = renderShowNotesMarkdown(r6, {
+            title: EPISODE_TITLE,
+            runDate: RUN_DATE,
+            summaryParagraph: false,
+            timelineStyle: 'before',
+        });
+        expect(legacyR6).toBe(await readFile(join(FIXTURES_DIR, 'show-notes-r6-golden-legacy.txt'), 'utf-8'));
+    });
+
     test('renderShowNotesMarkdown defaults the article base URL and falls back to the "post" slug', () => {
         const chineseOnly = renderShowNotesMarkdown([], { title: '每日要闻', runDate: '2026-01-02' });
         expect(chineseOnly).toContain(
@@ -1112,6 +1180,13 @@ describe('podcast-pub show-notes rendering (L1 R6)', () => {
         expect(rendered).toContain('href="https://surfing.salty.vip/zh/posts/20260906-ai-daily"');
         // Full body text is replaced by the briefing.
         expect(rendered).not.toContain('这是第二句。');
+        // D9: the timeline <style> sits after the list, still inside the markers.
+        const timeline = rendered.slice(
+            rendered.indexOf('<!--kk:timeline-->'),
+            rendered.indexOf('<!--/kk:timeline-->'),
+        );
+        expect(timeline.indexOf('<style>')).toBeGreaterThan(timeline.indexOf('</div>'));
+        expect(rendered.indexOf('完整图文版：')).toBeLessThan(rendered.indexOf('<!--kk:timeline-->'));
     });
 
     test('briefMode with audioSegments renders real monotonic offsets and skips the intro segment', () => {
@@ -1171,17 +1246,25 @@ describe('podcast-pub show-notes rendering (L1 R6)', () => {
                 metadata: { brief: 'OpenAI 发布 Sora 应用，集成 Sora 2 模型。' },
             },
         ] as Doc[];
-        const rendered = renderShowNotesMarkdown(docs, {
-            title: '每日 AI 要闻',
-            runDate: '2026-09-06',
-            briefMode: true,
-        });
+        const warnings: string[] = [];
+        const rendered = renderShowNotesMarkdown(
+            docs,
+            {
+                title: '每日 AI 要闻',
+                runDate: '2026-09-06',
+                briefMode: true,
+            },
+            warnings,
+        );
         // Legacy layout: two-sentence body, source link only, slug fallback footer.
         expect(rendered).toContain('OpenAI 发布 Sora 应用，集成 Sora 2 模型。这是第二句。');
         expect(rendered).not.toContain('· OpenAI');
         expect(rendered).not.toContain('[文章](');
         expect(rendered).toContain(
             '详情见本期完整文章：[ 每日 AI 要闻 ](https://surfing.salty.vip/zh/posts/2026-09-06-ai)',
+        );
+        expect(warnings.join('\n')).toContain(
+            'WARN podcast-pub: brief mode requested but ARTICLE_POST_PATH is empty; using legacy layout',
         );
     });
 });
@@ -1374,7 +1457,13 @@ describe('podcast-pub publish assembly options (L1 R6)', () => {
                             duration_in_seconds: 0,
                         },
                     ],
-                    _microfeed: { 'itunes:episodeType': 'full' },
+                    _microfeed: {
+                        'itunes:episodeType': 'full',
+                        seo: {
+                            title: 'Episode 1: Ground Up｜咸话咸说',
+                            description: '咸话咸说·每日AI乱炖：',
+                        },
+                    },
                 });
             } finally {
                 api.restore();
@@ -1407,7 +1496,7 @@ describe('podcast-pub publish assembly options (L1 R6)', () => {
                         url: 'https://media.example.com/media/audio/ASM01.wav',
                         mime_type: 'audio/mpeg',
                         size_in_bytes: 8,
-                        duration_in_seconds: 1234.5,
+                        duration_in_seconds: 1235,
                     },
                 ]);
                 // …cover uploaded and attached as the episode image.

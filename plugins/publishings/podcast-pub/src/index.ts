@@ -6,8 +6,23 @@ import { type Content, ContentSchema, DocListSchema, type Result, ResultSchema }
 import { FakeFileCliTransport, type PublishTransport, type PublishTransportPayload } from '@gobing-ai/publish-harness';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
+import { runBackfill } from './backfill';
 import { type EpisodeMapping, mapContentToEpisode } from './map';
-import { MicrofeedClient, type MicrofeedItem, type MicrofeedItemInput, resolveTimeoutMs } from './microfeed-client';
+import {
+    MicrofeedClient,
+    type MicrofeedItem,
+    type MicrofeedItemInput,
+    MicrofeedRequestError,
+    resolveTimeoutMs,
+} from './microfeed-client';
+import {
+    type PreparedEpisodeFields,
+    prepareEpisodeFields,
+    readImageDimensions,
+    resolvePodcastSeoConfig,
+    type SeoBlock,
+    warn,
+} from './seo';
 import { renderShowNotesMarkdown, type ShowNotesRenderOptions } from './show-notes';
 
 /** Result target name for this plugin. */
@@ -27,7 +42,7 @@ export function publicItemUrl(item: MicrofeedItem | undefined, itemId: string, c
 const TARGET = 'podcast-pub';
 
 /** Management operations routed via `options.operation` (design D5). */
-const OPERATIONS = ['publish', 'show-notes', 'list', 'get', 'update', 'delete', 'validate'] as const;
+const OPERATIONS = ['publish', 'show-notes', 'list', 'get', 'update', 'delete', 'validate', 'backfill-seo'] as const;
 type Operation = (typeof OPERATIONS)[number];
 
 /** Target-specific options carried on the invoke payload. */
@@ -50,6 +65,17 @@ interface PodcastPubOptions {
     audioFile?: unknown;
     coverPath?: unknown;
     durationSec?: unknown;
+    /** `backfill-seo` (R10). Dry-run unless `apply` is true. */
+    since?: unknown;
+    until?: unknown;
+    ids?: unknown;
+    out?: unknown;
+    plan?: unknown;
+    apply?: unknown;
+    retitle?: unknown;
+    rewriteBody?: unknown;
+    applySlug?: unknown;
+    overrides?: unknown;
 }
 
 /** Re-reads env each call so tests can set credentials without constructor plumbing (design D4). */
@@ -158,6 +184,9 @@ function resolveShowNotesRenderOptions(
             // Timeline offsets degrade to proportional — never block show-notes on audio metadata.
         }
     }
+    const seoConfig = resolvePodcastSeoConfig(undefined);
+    if ('error' in seoConfig) return { error: seoConfig.error };
+    const config = seoConfig.config;
     return {
         renderOptions: {
             title,
@@ -167,12 +196,22 @@ function resolveShowNotesRenderOptions(
             ...(articlePostPath !== undefined ? { articlePostPath } : {}),
             ...(footerNote !== undefined ? { footerNote } : {}),
             ...(audioSegments !== undefined ? { audioSegments } : {}),
+            summaryParagraph: config.summaryParagraph,
+            timelineStyle: config.timelineStyle,
+            seriesName: config.seriesName,
+            showName: config.showName,
+            descriptionMin: config.descriptionMin,
+            descriptionMax: config.descriptionMax,
+            descriptionSource: config.descriptionSource,
+            descriptionPattern: config.descriptionPattern,
         },
     };
 }
 
 /** Validates the plan Doc[] and renders show-notes markdown (pure render; no microfeed call). */
-function renderShowNotesFromOptions(options: ShowNotesOpOptions): { markdown: string } | { error: string } {
+function renderShowNotesFromOptions(
+    options: ShowNotesOpOptions,
+): { markdown: string; warnings: string[] } | { error: string } {
     const docs = DocListSchema.safeParse(options.docs);
     if (!docs.success) {
         const reason = docs.error.issues[0]?.message ?? 'invalid document list';
@@ -180,7 +219,8 @@ function renderShowNotesFromOptions(options: ShowNotesOpOptions): { markdown: st
     }
     const renderOptions = resolveShowNotesRenderOptions(options);
     if ('error' in renderOptions) return { error: renderOptions.error };
-    return { markdown: renderShowNotesMarkdown(docs.data, renderOptions.renderOptions) };
+    const warnings: string[] = [];
+    return { markdown: renderShowNotesMarkdown(docs.data, renderOptions.renderOptions, warnings), warnings };
 }
 
 /** Episode-assembly options (R2): present keys make the plugin merge article + audio + cover itself. */
@@ -236,22 +276,138 @@ function audioAttachment(
     };
 }
 
-/** Spreads optional episode fields (image, date, link, itunes) into a microfeed item payload. */
-function episodeExtras(episode: EpisodeMapping): MicrofeedItemInput {
+/** Spreads optional episode fields (image, date, link, itunes, seo) into a microfeed item payload. */
+function episodeExtras(episode: EpisodeMapping, seo?: SeoBlock): MicrofeedItemInput {
     return {
         ...(episode.imageUrl ? { image: episode.imageUrl } : {}),
         ...(episode.datePublishedMs !== undefined ? { date_published_ms: episode.datePublishedMs } : {}),
         ...(episode.link ? { url: episode.link } : {}),
-        ...{
-            _microfeed: {
-                'itunes:episodeType': episode.itunes?.episodeType ?? 'full',
-                ...(episode.itunes?.title ? { 'itunes:title': episode.itunes.title } : {}),
-                ...(episode.itunes?.season !== undefined ? { 'itunes:season': episode.itunes.season } : {}),
-                ...(episode.itunes?.episode !== undefined ? { 'itunes:episode': episode.itunes.episode } : {}),
-                ...(episode.itunes?.explicit !== undefined ? { 'itunes:explicit': episode.itunes.explicit } : {}),
-                ...(episode.itunes?.block !== undefined ? { 'itunes:block': episode.itunes.block } : {}),
-            },
+        _microfeed: {
+            'itunes:episodeType': episode.itunes?.episodeType ?? 'full',
+            ...(episode.itunes?.title ? { 'itunes:title': episode.itunes.title } : {}),
+            ...(episode.itunes?.season !== undefined ? { 'itunes:season': episode.itunes.season } : {}),
+            ...(episode.itunes?.episode !== undefined ? { 'itunes:episode': episode.itunes.episode } : {}),
+            ...(episode.itunes?.explicit !== undefined ? { 'itunes:explicit': episode.itunes.explicit } : {}),
+            ...(episode.itunes?.block !== undefined ? { 'itunes:block': episode.itunes.block } : {}),
+            ...(seo ? { seo } : {}),
         },
+    };
+}
+
+function shapedEpisode(episode: EpisodeMapping, fields: PreparedEpisodeFields): EpisodeMapping {
+    return {
+        ...episode,
+        title: fields.title,
+        ...(fields.itunes ? { itunes: fields.itunes } : {}),
+        ...(fields.durationSeconds !== undefined
+            ? { durationSeconds: fields.durationSeconds }
+            : { durationSeconds: undefined }),
+        link: fields.link,
+    };
+}
+
+/** First createItem carries the slug. A 409 retries once as `{slug}-2`, then publishes with no slug. */
+async function createEpisodeItem(
+    client: MicrofeedClient,
+    body: MicrofeedItemInput,
+    slug: string | undefined,
+    warnings: string[],
+): Promise<string> {
+    const withSlug = (itemSlug: string): MicrofeedItemInput => {
+        const micro = (body._microfeed as Record<string, unknown> | undefined) ?? {};
+        return { ...body, _microfeed: { ...micro, slug: itemSlug } };
+    };
+    if (!slug) return client.createItem(body, crypto.randomUUID());
+    try {
+        return await client.createItem(withSlug(slug), crypto.randomUUID());
+    } catch (error: unknown) {
+        if (!(error instanceof MicrofeedRequestError) || error.status !== 409) throw error;
+        const retry = `${slug}-2`;
+        try {
+            return await client.createItem(withSlug(retry), crypto.randomUUID());
+        } catch (retryError: unknown) {
+            if (!(retryError instanceof MicrofeedRequestError) || retryError.status !== 409) throw retryError;
+            warn(`slug "${slug}" conflicted (HTTP 409); publishing without a custom slug`, warnings);
+            return client.createItem(body, crypto.randomUUID());
+        }
+    }
+}
+
+/** Uploads a local 1200×630 image, or checks a remote one. A bad size skips the image and the publish continues. */
+async function resolveSocialImage(
+    client: MicrofeedClient,
+    fields: PreparedEpisodeFields,
+    warnings: string[],
+): Promise<NonNullable<SeoBlock['social_image']> | undefined> {
+    if (!fields.socialAlt) return undefined;
+    if (fields.socialLocalPath && fields.socialMime) {
+        const bytes = new Uint8Array(await readFile(fields.socialLocalPath));
+        const prepared = await client.prepareUpload({
+            category: 'image',
+            full_local_file_path: basename(fields.socialLocalPath),
+            size: bytes.byteLength,
+            type: fields.socialMime,
+        });
+        await client.uploadBytes(prepared.presignedUrl, bytes, fields.socialMime);
+        return {
+            url: prepared.mediaUrl,
+            width: 1200,
+            height: 630,
+            mime_type: fields.socialMime,
+            alt: fields.socialAlt,
+        };
+    }
+    if (!fields.socialRemoteUrl) return undefined;
+    let bytes: Uint8Array;
+    try {
+        const response = await fetch(fields.socialRemoteUrl);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        bytes = new Uint8Array(await response.arrayBuffer());
+    } catch (error: unknown) {
+        warn(
+            `social image skipped: could not read ${fields.socialRemoteUrl} (${error instanceof Error ? error.message : String(error)})`,
+            warnings,
+        );
+        return undefined;
+    }
+    const dims = readImageDimensions(bytes);
+    if (dims?.width !== 1200 || dims?.height !== 630) {
+        warn(
+            `social image skipped: expected a 1200×630 PNG or JPEG, got ${dims ? `${dims.width}×${dims.height}` : 'an unreadable file'}`,
+            warnings,
+        );
+        return undefined;
+    }
+    return {
+        url: fields.socialRemoteUrl,
+        width: 1200,
+        height: 630,
+        mime_type: dims.mime,
+        alt: fields.socialAlt,
+    };
+}
+
+function mergeSocial(
+    seo: SeoBlock | undefined,
+    social: NonNullable<SeoBlock['social_image']> | undefined,
+): SeoBlock | undefined {
+    if (!social) return seo;
+    return { ...(seo ?? {}), social_image: social };
+}
+
+/** Item body for `validate` when the caller did not pass `options.item`. Throws on a bad episode. */
+function mappedValidateInput(content: Content): MicrofeedItemInput {
+    const seoConfig = resolvePodcastSeoConfig(content.metadata);
+    if ('error' in seoConfig) throw new Error(seoConfig.error);
+    const episode = mapContentToEpisode(content);
+    const policy = prepareEpisodeFields(episode, content.metadata ?? {}, seoConfig.config);
+    if (!policy.ok) throw new Error(policy.error);
+    const shaped = shapedEpisode(episode, policy.fields);
+    return {
+        title: shaped.title,
+        content_html: shaped.contentHtml,
+        status: shaped.status,
+        ...episodeExtras(shaped, policy.fields.seo),
     };
 }
 
@@ -294,20 +450,32 @@ async function publishEpisode(
         return fail(`Invalid Content: ${error instanceof Error ? error.message : String(error)}`);
     }
 
-    // Caller-supplied uuid per publish attempt (design D3; microfeed makes create
-    // idempotent for 24h, so a retry after a lost response cannot duplicate the item).
-    const idempotencyKey = crypto.randomUUID();
+    const seoConfig = resolvePodcastSeoConfig(content.metadata);
+    if ('error' in seoConfig) return fail(seoConfig.error);
+    const policy = prepareEpisodeFields(episode, content.metadata ?? {}, seoConfig.config);
+    if (!policy.ok) return fail(policy.error);
+    const fields = policy.fields;
+    let social: NonNullable<SeoBlock['social_image']> | undefined;
+    try {
+        social = await resolveSocialImage(client, fields, fields.warnings);
+    } catch (error: unknown) {
+        return fail(error instanceof Error ? error.message : String(error));
+    }
+    const seo = mergeSocial(fields.seo, social);
+    episode = shapedEpisode(episode, fields);
 
     if (episode.audio.kind === 'url') {
-        const itemId = await client.createItem(
+        const itemId = await createEpisodeItem(
+            client,
             {
                 title: episode.title,
                 content_html: episode.contentHtml,
                 status: episode.status,
                 attachments: [audioAttachment(episode.audio, episode.audio.url, undefined, episode.durationSeconds)],
-                ...episodeExtras(episode),
+                ...episodeExtras(episode, seo),
             },
-            idempotencyKey,
+            fields.slug,
+            fields.warnings,
         );
         // Best-effort canonical-URL enrichment: the episode is already published, so a failed
         // follow-up GET (or an unparsable response) falls back to publicItemUrl's own chain.
@@ -323,17 +491,21 @@ async function publishEpisode(
             url: publicItemUrl(hostedItem, itemId, client),
             id: itemId,
             message: 'Published successfully to microfeed (hosted audio, single-call create)',
+            ...(fields.warnings.length > 0 ? { metadata: { warnings: fields.warnings } } : {}),
         });
     }
 
     // Phase 1: draft item without attachment (audio presign requires item_id).
-    const itemId = await client.createItem(
+    // The slug is sent only here — a later update would move an existing URL.
+    const itemId = await createEpisodeItem(
+        client,
         {
             title: episode.title,
             content_html: episode.contentHtml,
             status: 'unpublished',
         },
-        idempotencyKey,
+        fields.slug,
+        fields.warnings,
     );
 
     // Phase 2-3: presign against the draft, then PUT the raw bytes.
@@ -371,7 +543,7 @@ async function publishEpisode(
         status: episode.status,
         attachments: [audioAttachment(episode.audio, prepared.mediaUrl, bytes.byteLength, episode.durationSeconds)],
         ...(imageUrl ? { image: imageUrl } : {}),
-        ...episodeExtras(episode),
+        ...episodeExtras(episode, seo),
     });
 
     return ResultSchema.parse({
@@ -382,7 +554,11 @@ async function publishEpisode(
         message: 'Published successfully to microfeed (two-phase upload + publish)',
         // 20260917 review #6: downstream surfdash patch reuses the podcast-hosted cover URL
         // (no re-upload); null when the episode carried no local cover.
-        metadata: { itemId, imageUrl: imageUrl ?? null },
+        metadata: {
+            itemId,
+            imageUrl: imageUrl ?? null,
+            ...(fields.warnings.length > 0 ? { warnings: fields.warnings } : {}),
+        },
     });
 }
 
@@ -411,7 +587,10 @@ export class PodcastPubTransport implements PublishTransport {
                 ok: true,
                 target: TARGET,
                 message: 'Rendered show notes markdown (pure render; no microfeed API call)',
-                metadata: { markdown: rendered.markdown },
+                metadata: {
+                    markdown: rendered.markdown,
+                    ...(rendered.warnings.length > 0 ? { warnings: rendered.warnings } : {}),
+                },
             });
         }
 
@@ -475,20 +654,18 @@ export class PodcastPubTransport implements PublishTransport {
                         message: `Deleted microfeed item ${itemId.itemId}`,
                     });
                 }
+                case 'backfill-seo': {
+                    const config = resolvePodcastSeoConfig(payload.content.metadata);
+                    if ('error' in config) return fail(config.error);
+                    return await runBackfill(client, options, config.config);
+                }
                 case 'validate': {
                     // Validate the caller-supplied item input, or the Content-mapped
                     // draft when no explicit input is given (server-side schema check).
                     const input =
                         options.item !== undefined && typeof options.item === 'object' && options.item !== null
                             ? (options.item as MicrofeedItemInput)
-                            : (() => {
-                                  const episode = mapContentToEpisode(payload.content);
-                                  return {
-                                      title: episode.title,
-                                      content_html: episode.contentHtml,
-                                      status: episode.status,
-                                  } satisfies MicrofeedItemInput;
-                              })();
+                            : mappedValidateInput(payload.content);
                     await client.validateItem(input);
                     return ResultSchema.parse({
                         ok: true,
