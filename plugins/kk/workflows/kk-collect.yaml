@@ -110,6 +110,8 @@ states:
           # the same 45m leash the daily workflow pins. Writes <work_dir>/10-ingest/<stamp>_02_collect_blended.json.
           # A single failed source degrades to an error entry in the merge (exit 0, surviving docs kept);
           # only an all-sources failure exits 1 and leaves the file unwritten.
+          # Empty 6h windows exit 0 with no digest; the plugin falls back to the newest digest ≤26h old
+          # (2026-10-23: Oct 21 contributed zero docs when every tick hit an empty window).
           command: >-
             kk executor fan-in
             --source "aihot-ingest:${vars.work_dir}/10-ingest/source.json"

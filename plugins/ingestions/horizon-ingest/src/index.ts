@@ -19,7 +19,17 @@ const InputConfigSchema = z.object({
     hours: z.number().int().min(1).optional(),
     languages: z.array(z.string().trim().min(1)).optional(),
     horizon_dir: z.string().trim().min(1).optional(),
+    /**
+     * When this tick's run writes no digest (Horizon exits 0 on an empty 6h
+     * window), fall back to the newest digest at most this many ms old instead
+     * of emitting []. Doc ids are date-keyed and stable, so repeats dedupe
+     * downstream (2026-10-23: Oct 21 contributed zero docs — every tick hit an
+     * empty window).
+     */
+    stale_fallback_ms: z.number().int().min(0).optional(),
 });
+
+const DEFAULT_STALE_FALLBACK_MS = 26 * 3_600_000;
 
 export interface HorizonRunResult {
     exitCode: number;
@@ -165,6 +175,30 @@ export async function processIngestionIO(
         const stat = await fs.stat(file);
         if (!stat || stat.mtimeMs < runStartedAt - 1000) continue; // stale file from an earlier run
         docs.push(...digestToDocs(await fs.readFile(file), match[1], match[2]));
+    }
+    if (docs.length === 0) {
+        // This tick wrote no digest (empty fetch window exits 0). Reuse the newest
+        // digest while it is young enough to still matter for a daily podcast.
+        const fallbackMs = config.stale_fallback_ms ?? DEFAULT_STALE_FALLBACK_MS;
+        let newest: { entry: string; mtimeMs: number } | null = null;
+        for (const entry of entries) {
+            const match = entry.match(digestRe);
+            if (!match?.[1] || !match?.[2] || !langs.has(match[2])) continue;
+            const stat = await fs.stat(join(summariesDir, entry));
+            if (!stat) continue;
+            if (!newest || stat.mtimeMs > newest.mtimeMs) newest = { entry, mtimeMs: stat.mtimeMs };
+        }
+        if (newest && runStartedAt - newest.mtimeMs <= fallbackMs) {
+            const match = newest.entry.match(digestRe);
+            if (match?.[1] && match?.[2]) {
+                echoError(
+                    `horizon-ingest: no fresh digest this run — falling back to ${newest.entry} (${Math.round(
+                        (runStartedAt - newest.mtimeMs) / 3_600_000,
+                    )}h old)`,
+                );
+                docs.push(...digestToDocs(await fs.readFile(join(summariesDir, newest.entry)), match[1], match[2]));
+            }
+        }
     }
     if (docs.length === 0) {
         echoError(

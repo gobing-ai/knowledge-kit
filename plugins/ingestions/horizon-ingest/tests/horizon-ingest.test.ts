@@ -138,6 +138,43 @@ describe('processIngestionIO', () => {
         expect(docs).toEqual([]);
     });
 
+    test('no fresh digest this run falls back to the newest digest within stale_fallback_ms', async () => {
+        const now = new Date('2026-09-04T12:00:00Z');
+        const { docs } = await processIngestionIO(
+            { out: OUT_FILE },
+            { data_dir: join(FIXTURES_DIR, 'data'), languages: ['en'] },
+            async () => {
+                const summaries = join(FIXTURES_DIR, 'data', 'summaries');
+                await mkdir(summaries, { recursive: true });
+                const file = join(summaries, 'horizon-2026-08-30-en.md');
+                await writeFile(file, DIGEST);
+                await utimes(file, new Date('2026-09-04T06:00:00Z'), new Date('2026-09-04T06:00:00Z')); // 6h old
+                return { exitCode: 0, stderr: '' };
+            },
+            now,
+        );
+        expect(docs).toHaveLength(2);
+        expect(docs[0]?.id).toBe('horizon:2026-08-30-tech-news-1');
+    });
+
+    test('fallback is capped by stale_fallback_ms (0 disables it)', async () => {
+        const now = new Date('2026-09-04T12:00:00Z');
+        const { docs } = await processIngestionIO(
+            { out: OUT_FILE },
+            { data_dir: join(FIXTURES_DIR, 'data'), languages: ['en'], stale_fallback_ms: 0 },
+            async () => {
+                const summaries = join(FIXTURES_DIR, 'data', 'summaries');
+                await mkdir(summaries, { recursive: true });
+                const file = join(summaries, 'horizon-2026-08-30-en.md');
+                await writeFile(file, DIGEST);
+                await utimes(file, new Date('2026-09-04T06:00:00Z'), new Date('2026-09-04T06:00:00Z'));
+                return { exitCode: 0, stderr: '' };
+            },
+            now,
+        );
+        expect(docs).toEqual([]);
+    });
+
     test('fails loud when horizon exits non-zero', async () => {
         await expect(
             processIngestionIO({ out: OUT_FILE }, { data_dir: join(FIXTURES_DIR, 'data') }, fakeRunner(2, 'uv boom')),
