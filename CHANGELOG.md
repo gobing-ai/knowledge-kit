@@ -3,62 +3,62 @@
 ### Added
 
 - feat(store): add `kk store stats` for per-day, per-source channel yield so publish outcomes read from the store instead of ad-hoc queries (45394e5)
-<!-- src: apps/cli/src/commands/store.ts:1311 · confidence: HIGH -->
+<!-- src: apps/cli/src/commands/store.ts:1311 -->
 - feat(board): render the real channel yield and episode funnel in the Collect and Daily summaries, replacing the stand-in panels (b41d706)
-<!-- src: apps/board/src/collect/panels.tsx:94 · confidence: HIGH -->
+<!-- src: apps/board/src/collect/panels.tsx:94 -->
 - feat(podcast-pub): fill microfeed episodes with per-item SEO so each episode ships searchable show text (047945f)
-<!-- src: plugins/publishings/podcast-pub/src/seo.ts:18 · confidence: HIGH -->
+<!-- src: plugins/publishings/podcast-pub/src/seo.ts:18 -->
 - feat(cli): add the publish-matrix plan/check/send stages over the itc publish core (0321) (54570c4)
-<!-- src: apps/cli/src/publish-matrix.ts:399 · confidence: HIGH -->
+<!-- src: apps/cli/src/publish-matrix.ts:399 -->
 - feat(cli): add a dummy publish mode that writes synthetic no-effect receipts, so the matrix runs end-to-end without touching live channels (0322) (7565eb4)
-<!-- src: apps/cli/src/publish-matrix.ts:54 · confidence: HIGH -->
+<!-- src: apps/cli/src/publish-matrix.ts:54 -->
 - feat(cli): derive session-preflight probes from the publish preset (0325) (0912924)
-<!-- src: apps/cli/src/publish-matrix.ts:515 · confidence: HIGH -->
+<!-- src: apps/cli/src/publish-matrix.ts:515 -->
 - feat(cli): classify publishes from receipts with a legacy 31-publish bridge, replacing tail-scraped detail (0326) (bf1c45a)
-<!-- src: apps/cli/src/publish-matrix.ts:120 · confidence: HIGH -->
+<!-- src: apps/cli/src/publish-matrix.ts:120 -->
 - feat(publish): add kk-daily-publish3 windows, the daily-ai-voice preset, an overseas-RSS gate and schedules (0323) (263b746)
-<!-- src: apps/cli/src/publish-matrix.ts:411 · confidence: HIGH -->
+<!-- src: apps/cli/src/publish-matrix.ts:411 -->
 - feat(publish): add the kk-daily-ai-voice3 generate workflow with a bundle-freeze stage (0324) (c28ef98)
-<!-- src: plugins/kk/workflows/kk-daily-ai-voice3.yaml:795 · confidence: HIGH -->
+<!-- src: plugins/kk/workflows/kk-daily-ai-voice3.yaml:795 -->
 
 ### Fixed
 
 - fix(daily): extend the extract window ladder to ×7, capped at 168h, so a supply-collapsed day fills from a week of store backlog instead of closing as no-content (246dc14)
-<!-- src: plugins/kk/scripts/daily-stages.ts:295 · confidence: HIGH -->
+<!-- src: plugins/kk/scripts/daily-stages.ts:295 -->
 - fix(board): close the 0320 review residuals on the daily voice tab (b0cb11f)
-<!-- src: apps/cli/src/board/daily-voice.ts:560 · confidence: HIGH -->
+<!-- src: apps/cli/src/board/daily-voice.ts:560 -->
 - fix(publish): expand ~ in the preset config path, keep the ledger summary on an unplanned window, and enforce X's weighted social cap (a9a789f)
-<!-- src: apps/cli/src/publish-matrix.ts:1127 · confidence: HIGH -->
+<!-- src: apps/cli/src/publish-matrix.ts:1127 -->
 - fix(git): rewrite git's generated merge subject into a Conventional Commit so cog's commit-msg hook no longer rejects merge-based pulls (c25b0ec)
-<!-- src: scripts/merge-commit-subject.ts:2 · confidence: HIGH -->
+<!-- src: scripts/merge-commit-subject.ts:2 -->
 - fix(podcast-pub): route SEO diagnostics and plan IO through the project seams (4a9c5f2)
-<!-- src: plugins/publishings/podcast-pub/src/seo.ts:11 · confidence: HIGH -->
+<!-- src: plugins/publishings/podcast-pub/src/seo.ts:11 -->
 - fix(kk): refuse a post path where translate-sync expects the marker file (626e670)
-<!-- src: plugins/kk/scripts/daily-stages.ts:3063 · confidence: HIGH -->
+<!-- src: plugins/kk/scripts/daily-stages.ts:3063 -->
 - fix(publish): fast-forward the surfdash checkout before writing a post (cd2c849)
-<!-- src: plugins/publishings/surfdash-pub/src/index.ts:352 · confidence: HIGH -->
+<!-- src: plugins/publishings/surfdash-pub/src/index.ts:352 -->
 - fix(tooling): keep the hook installer alive when proto refuses the untrusted config (d3f23bf)
-<!-- src: scripts/install-hooks.ts:12 · confidence: HIGH -->
+<!-- src: scripts/install-hooks.ts:12 -->
 - fix(surfdash-pub): stop inventing the canonical URL and assert the site refined the post (f4b29b4)
-<!-- src: plugins/publishings/surfdash-pub/src/index.ts:126 · confidence: HIGH -->
+<!-- src: plugins/publishings/surfdash-pub/src/index.ts:126 -->
 - fix(kk): narrow the daily topic boundary to PRC top leadership (87e3917)
-<!-- src: plugins/kk/scripts/kk-workflow-stages.ts:851 · confidence: HIGH -->
+<!-- src: plugins/kk/scripts/kk-workflow-stages.ts:851 -->
 - fix(kk): skip the surfdash patch when the publish has no postPath (ced5f05)
-<!-- src: plugins/kk/scripts/kk-workflow-stages.ts:1198 · confidence: HIGH -->
+<!-- src: plugins/kk/scripts/kk-workflow-stages.ts:1198 -->
 - fix(kk): refuse an under-length daily episode before the TTS spend (8d981b5)
-<!-- src: plugins/kk/scripts/daily-stages.ts:225 · confidence: HIGH -->
+<!-- src: plugins/kk/scripts/daily-stages.ts:225 -->
 - fix(cli): forward a plugin's stderr when it exits 0, so a zero-exit plugin's warnings still surface (82ec130)
-<!-- src: apps/cli/src/fanin.ts:320 · confidence: HIGH -->
+<!-- src: apps/cli/src/fanin.ts:320 -->
 
 ### Changed
 
 - refactor(daily): extract channel payload builders and add the generate-side variant stage (0327) (a1c0e1d)
-<!-- src: plugins/kk/scripts/daily-stages.ts:1784 · confidence: HIGH -->
+<!-- src: plugins/kk/scripts/daily-stages.ts:1784 -->
 
 ### Other
 
 - test: diagnose the smart-seo cancellation flake under suite load (a6fdf72)
-<!-- src: plugins/kk/tests/smart-seo-workflow.test.ts:812 · confidence: HIGH -->
+<!-- src: plugins/kk/tests/smart-seo-workflow.test.ts:812 -->
 - docs(tasks): refresh review evidence for publish and daily tasks (05c9594)
 - chore: ignore /.omo agent-tool session state (8d42cd3)
 - chore(wrap): dev-runall feature:G15 close-out — ADR, architecture, design sync and learnings (3df912a)
@@ -70,11 +70,11 @@
 - docs(tasks): Add new tasks (771b55d)
 - docs(tasks): Add new tasks (a5605d3)
 - chore: merge sp/runall-0319-0320-f9bf (board channel yield and episode funnel) (3172202)
-<!-- src: apps/board/src · confidence: MEDIUM -->
+<!-- src: apps/board/src -->
 - chore: merge origin/main into main (161b0d5)
 - chore: reconcile local main with origin/main (5b9c481)
 - Merge pull request #1 from gobing-ai/cursor/podcast-pub-seo-f865 (8cadad4)
-<!-- src: plugins/publishings/podcast-pub · confidence: MEDIUM -->
+<!-- src: plugins/publishings/podcast-pub -->
 
 ## [0.1.8] - 2026-10-21
 
