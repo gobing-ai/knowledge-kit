@@ -343,6 +343,41 @@ async function assertMainBranch(surfdashRoot: string): Promise<{ ok: true } | { 
 }
 
 /**
+ * Fast-forward the checkout onto `origin/main` before anything is written (2026-10-22).
+ *
+ * Three consecutive publish days failed with `! [rejected] main -> main (fetch first)`: this
+ * checkout sat behind a remote another machine had pushed to, so the publish commit landed on a
+ * stale base and the push was rejected — after the article had already been written and committed,
+ * and after the podcast episode had already published, so the run closed `partial`/`failed` while a
+ * real episode was live. A fast-forward is lossless (HEAD moves only when local carries no commit of
+ * its own), which is exactly the case here; a DIVERGED checkout is the operator's call and fails
+ * loud with both counts. An unreachable remote is not fatal: the fetch error is swallowed so the
+ * push below reports the real reason.
+ */
+export async function fastForwardToOrigin(surfdashRoot: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    const fetched = await spawnCli(['git', 'fetch', '--quiet', 'origin', 'main'], surfdashRoot);
+    if (fetched.exitCode !== 0) return { ok: true };
+    const counts = await spawnCli(['git', 'rev-list', '--left-right', '--count', 'origin/main...HEAD'], surfdashRoot);
+    if (counts.exitCode !== 0) return { ok: true };
+    const [behindRaw = '0', aheadRaw = '0'] = counts.stdout.trim().split(/\s+/);
+    const behind = Number(behindRaw);
+    const ahead = Number(aheadRaw);
+    if (!Number.isFinite(behind) || !Number.isFinite(ahead) || behind === 0) return { ok: true };
+    if (ahead > 0) {
+        return {
+            ok: false,
+            error: `surfdash checkout diverged from origin/main (${ahead} local, ${behind} remote commit(s)): reconcile it by hand before publishing`,
+        };
+    }
+    const merged = await spawnCli(['git', 'merge', '--ff-only', '--quiet', 'origin/main'], surfdashRoot);
+    if (merged.exitCode !== 0) {
+        return { ok: false, error: `surfdash fast-forward to origin/main failed: ${cliErrorText(merged)}` };
+    }
+    echoError(`surfdash: fast-forwarded ${behind} commit(s) to origin/main before writing`);
+    return { ok: true };
+}
+
+/**
  * Commits several paths of the surfdash checkout and pushes them to `main` — the plural form of
  * {@link pushPostGit} the post-patch needs (it writes the posts and any copied cover). Same
  * pathspec-scoped commit, so unrelated staged work is never swept in, and the same idempotent retry:
@@ -357,6 +392,8 @@ export async function commitPostPaths(
     if (relPaths.length === 0) return { ok: true, hash: 'unchanged' };
     const branch = await assertMainBranch(surfdashRoot);
     if (!branch.ok) return branch;
+    const base = await fastForwardToOrigin(surfdashRoot);
+    if (!base.ok) return base;
     const add = await spawnCli(['git', 'add', '--', ...relPaths], surfdashRoot);
     if (add.exitCode !== 0) return { ok: false, error: `surfdash git add failed: ${cliErrorText(add)}` };
     const staged = await spawnCli(['git', 'diff', '--cached', '--quiet', '--', ...relPaths], surfdashRoot);

@@ -1,0 +1,282 @@
+---
+name: kk-daily-publish3
+kind: dag
+version: "1"
+description: >-
+  The publish half of voice3 (design `docs/design/kk-daily-ai-voice3.md` §5, §5a, §5b, task 0323):
+  three windows over one frozen bundle. `after-generate` drafts the draft-capable channels right
+  after generation, `cn-peak` goes live at 09:00 Asia/Shanghai, and `overseas-rss` runs behind the
+  podcast RSS gate. The channel matrix lives in the `daily-ai-voice` publish preset, never here.
+  Re-enter a failed window with
+  `spur workflow run plugins/kk/workflows/kk-daily-publish3.yaml --vars '{"work_dir":"<day dir>","window":"after-generate"}'`
+  — receipts make the rerun a no-op for anything already delivered.
+
+# ADR-022: live is launch-only. A workflow file never yields a live send; the operator's launch var
+# (or the installed schedule entry that carries it) is the consent. `dummy` is the rehearsal switch.
+vars:
+  work_dir: ""
+  run_date: ""
+  window: after-generate
+  # Empty = the operator's `workflows.kk-daily-ai-voice3.publish_preset` selector decides.
+  preset: ""
+  channels: ""
+  live_channels: ""
+  dummy: "false"
+  agent: "inline"
+  __runId: ""
+  __definitionDigest: ""
+
+nodes:
+  # ── cn-peak: the schedule fires in local time, the audience peaks in Shanghai ──────────────
+  - id: wait-until
+    description: >-
+      cn-peak only: the launchd entry fires at 17:00 local because launchd intervals follow the
+      machine's zone, so this node sleeps the remainder to 09:00 Asia/Shanghai (DST-safe, no-op when
+      already past).
+    condition:
+      kind: shell
+      options:
+        command: 'test "${vars.window}" = "cn-peak"'
+
+    action:
+      kind: shell
+      options:
+        command: 'kk stage run publish-matrix-wait-until 09:00 Asia/Shanghai'
+
+  # ── overseas-rss: never publish an episode the feed cannot prove ──────────────────────────
+  - id: rss-gate
+    description: >-
+      The overseas RSS gate, as a node that ALWAYS succeeds: for after-generate and cn-peak it is a
+      no-op, and for overseas-rss it records the verdict in `4-publish/rss-gate.json` (a miss is a
+      verdict, not a node failure). The graph routes on that artifact — `plan` requires a hit,
+      `diagnose` requires a miss — because a failing node would instead cascade-skip its dependents
+      through the engine's all-deps-skipped rule and take the incident path with it. `run_date` is
+      the previous day by the time this window runs, so the caller passes it; the gate never guesses.
+    action:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.window}" = "overseas-rss" || { echo "publish3: rss-gate not applicable to ${vars.window}"; exit 0; };
+          test -n "${vars.run_date}" || { echo "publish3: overseas-rss needs run_date" >&2; exit 1; };
+          kk stage run publish-matrix-rss-gate "${vars.work_dir}" --date "${vars.run_date}" || true
+
+  # ── every window: plan → check → send-confirm → send ──────────────────────────────────────
+  - id: plan
+    description: >-
+      Freeze this window's target rows and their payloads from the bundle and the preset
+      (`4-publish/plan.<window>.json`). Never runs for a gated-miss overseas day: the RSS gate's
+      non-zero exit skips its dependents, so an unpublished episode cannot be planned.
+    dependsOn: [rss-gate]
+    condition:
+      kind: shell
+      options:
+        # A gated miss plans nothing: overseas targets only exist once the feed proves the episode.
+        command: >-
+          test "${vars.window}" != "overseas-rss"
+          || jq -e '.hit == true' "${vars.work_dir}/4-publish/rss-gate.json" >/dev/null 2>&1
+
+    action:
+      kind: shell
+      options:
+        command: >-
+          BUNDLE="${vars.work_dir}/bundle.json";
+          test -f "$BUNDLE" || { echo "publish3: no bundle at $BUNDLE" >&2; exit 1; };
+          ARGS="--bundle $BUNDLE --window ${vars.window}";
+          test -z "${vars.preset}" || ARGS="$ARGS --preset ${vars.preset}";
+          test -z "${vars.channels}" || ARGS="$ARGS --channels ${vars.channels}";
+          test -z "${vars.live_channels}" || ARGS="$ARGS --live-channels ${vars.live_channels}";
+          test "${vars.dummy}" != "true" || ARGS="$ARGS --dummy";
+          kk stage run publish-matrix-plan "${vars.work_dir}" $ARGS
+
+  - id: check
+    description: >-
+      Readiness probes for the planned non-dummy channels. Warn-only by contract: a stale session is
+      recorded in `4-publish/check.<window>.json` and the window still runs, because the send's own
+      receipt is the authority on whether a channel could publish.
+    dependsOn: [plan]
+    action:
+      kind: shell
+      options:
+        command: 'kk stage run publish-matrix-check "${vars.work_dir}" --window "${vars.window}" || true'
+
+  - id: send-confirm
+    description: >-
+      Operator approval of a LIVE send: `pause: true` stops the run and RESUME is the approval;
+      cancelling is the rejection. Skipped for a draft-only window, so an unattended draft run and
+      every rehearsal proceed without a human.
+    dependsOn: [check]
+    pause: true
+    condition:
+      kind: shell
+      options:
+        command: >-
+          jq -e '[.rows[] | select(.mode == "live")] | length > 0'
+          "${vars.work_dir}/4-publish/plan.${vars.window}.json" >/dev/null 2>&1
+
+  - id: send
+    description: >-
+      Dispatch in tier order: tier 0 serial and blocking, later tiers after the tier-0 links resolve.
+      Receipts key every target, so a rerun never resends what was delivered, and a dummy row never
+      spawns a plugin. `check` is listed beside `send-confirm` on purpose: the engine skips a node only
+      when ALL its dependencies were skipped, so a draft window (no live row → `send-confirm` skipped)
+      still sends, while a gated/blocked plan (both ancestors skipped) still stops here.
+    dependsOn: [check, send-confirm]
+    action:
+      kind: shell
+      options:
+        command: 'kk stage run publish-matrix-send "${vars.work_dir}" --window "${vars.window}"'
+
+  - id: classify
+    description: >-
+      Turn the window's receipts into `full|partial|none|dummy` (`4-publish/outcome.<window>.json`),
+      always exit 0 — routing is this graph's job, not the classifier's.
+    dependsOn: [send]
+    action:
+      kind: shell
+      options:
+        command: >-
+          test -n "${vars.run_date}" || { echo "publish3: classify needs run_date" >&2; exit 1; };
+          kk stage run publish-matrix-classify "${vars.work_dir}" --window "${vars.window}" --run-date "${vars.run_date}"
+
+  # ── after-generate only: the voice2-era tail stages keep working on the bridged names ─────
+  - id: surfdash-patch
+    description: >-
+      after-generate only: cover and podcast cross-link patching plus the CMS re-sync, whenever tier 0
+      published something. Reads the legacy `31-publish` names the classifier bridged, so voice2's own
+      stage body is reused unchanged.
+    dependsOn: [classify]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.window}" = "after-generate"
+          && grep -qxE 'full|partial' "${vars.work_dir}/4-publish/publish-status.after-generate.txt" 2>/dev/null
+
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage run daily-patch-surfdash "${vars.work_dir}" "${vars.run_date}" "$KK_SURFDASH_ROOT" ""
+
+  - id: partial-marker
+    description: "after-generate only: record the partial-publish marker when the classifier said partial."
+    dependsOn: [classify]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.window}" = "after-generate"
+          && grep -qx 'partial' "${vars.work_dir}/4-publish/publish-status.after-generate.txt" 2>/dev/null
+
+    action:
+      kind: shell
+      options:
+        command: 'kk stage run daily-publish-partial "${vars.work_dir}" "${vars.run_date}"'
+
+  - id: mark-published
+    description: >-
+      after-generate only: mark the run's items published in the store once the owned platforms
+      delivered. Keyed by the voice3 run id the bundle records, never by this publish run.
+    dependsOn: [classify]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.window}" = "after-generate"
+          && grep -qxE 'full|partial' "${vars.work_dir}/4-publish/publish-status.after-generate.txt" 2>/dev/null
+
+    action:
+      kind: shell
+      options:
+        command: >-
+          PARENT="$(jq -r '.parentRunId // .runId' "${vars.work_dir}/bundle.json" 2>/dev/null)";
+          test -n "$PARENT" || { echo "publish3: bundle has no run id" >&2; exit 1; };
+          kk store mark-published --topic ai-news --run "$PARENT"
+
+  # ── the incident path: a gated miss is diagnosed, never silently dropped ─────────────────
+  - id: diagnose
+    description: >-
+      overseas-rss only, on a gate miss: classify why the episode is not in the feed
+      (`no-run | generation-failed@<node> | no-content | t0-failed | rss-lag`) and write
+      `4-publish/incident.json` + `incident.md`. `onError: continue` — a diagnosis must never mask the
+      miss it is describing.
+    dependsOn: [rss-gate]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.window}" = "overseas-rss"
+          && jq -e '.hit == false' "${vars.work_dir}/4-publish/rss-gate.json" >/dev/null 2>&1
+
+    action:
+      kind: agent.run
+      onError: continue
+      options:
+        role: scribe
+        agent: ${vars.agent}
+        input: |
+          Diagnose a missed overseas publish window. Read only these paths:
+          - ${vars.work_dir}/4-publish/rss-gate.json (the miss reason)
+          - ${vars.work_dir}/bundle.json (absent = no generation ran)
+          - ${vars.work_dir}/4-publish/outcome.after-generate.json and receipts/ (tier-0 evidence)
+          Run `spur workflow trace --json` for the voice3 run named in bundle.json if it exists.
+          Write ${vars.work_dir}/4-publish/incident.json with exactly
+          {"schemaVersion":1,"date":"<run_date>","class":"<one of no-run|generation-failed|<node>|no-content|t0-failed|rss-lag>","reason":"<one line>","evidence":["<paths>"]}
+          and ${vars.work_dir}/4-publish/incident.md with 3 sentences of operator prose: what is missing,
+          which class, and the one action that would fix it. Never regenerate content.
+        expectFile: ${vars.work_dir}/4-publish/incident.json
+
+  - id: repair
+    description: >-
+      overseas-rss only, on a gate miss: the ONE safe automatic repair — resend tier-0 targets whose
+      receipt is `effect: none`. It never regenerates content and never resends an uncertain live send
+      (the shared `--retry` rules), so a lost generation stays an operator decision.
+    dependsOn: [diagnose]
+    action:
+      kind: shell
+      options:
+        command: 'kk stage run publish-matrix-send "${vars.work_dir}" --window after-generate --retry --tier 0'
+
+  # ── traceability: one episode, several publish runs ───────────────────────────────────────
+  - id: bundle-runs
+    description: >-
+      Append this run id to `bundle.json` `runs[]`, idempotently, so one day's episode is traceable
+      across its generation run and its windows.
+    dependsOn: [classify]
+    action:
+      kind: shell
+      options:
+        command: >-
+          BUNDLE="${vars.work_dir}/bundle.json";
+          test -f "$BUNDLE" || exit 0;
+          jq --arg id "${vars.__runId}" 'if (.runs // []) | index($id) then . else .runs = ((.runs // []) + [$id]) end'
+          "$BUNDLE" > "$BUNDLE.tmp" && mv "$BUNDLE.tmp" "$BUNDLE"
+
+  - id: report
+    description: >-
+      The publish half's report: per-window status and every receipt, on one page. It also depends on
+      `diagnose`, so a gated-miss day (skipped `bundle-runs`, executed `diagnose`) still writes its
+      page — the same all-deps-skipped rule, read the other way.
+    dependsOn: [bundle-runs, diagnose]
+    action:
+      kind: shell
+      options:
+        # Straight statements, no `{ … }` group and no heredoc: the engine's shell wrapper treats a
+        # multi-line group as an interactive read and never returns.
+        command: >-
+          OUT="${vars.work_dir}/5-report/publish-${vars.window}.md";
+          mkdir -p "${vars.work_dir}/5-report";
+          STATUS="$(cat "${vars.work_dir}/4-publish/publish-status.${vars.window}.txt" 2>/dev/null || echo unknown)";
+          printf '# Publish report — %s — %s\n\n- status: %s\n\n| target | tier | status | effect | dummy |\n| --- | --- | --- | --- | --- |\n'
+          "${vars.window}" "${vars.run_date}" "$STATUS" > "$OUT";
+          jq -r '.rows[] | "| \(.id) | \(.tier) | \(.status) | \(.effect // "-") | \(.dummy) |"'
+          "${vars.work_dir}/4-publish/outcome.${vars.window}.json" >> "$OUT" 2>/dev/null || true
+
+  - id: ledger
+    description: "Append the window's row to the workflow ledger; `onError: continue` — bookkeeping never fails a publish."
+    dependsOn: [report]
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk ledger append --workflow kk-daily-publish3 --work-dir "${vars.work_dir}" --run "${vars.__runId}" || true

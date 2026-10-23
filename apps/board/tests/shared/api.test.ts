@@ -622,3 +622,40 @@ describe('native Spur board path', () => {
         expect(urls[3]).not.toContain('filterColumn');
     });
 });
+
+describe('channel-yield aggregate route (0319)', () => {
+    it('always targets the configured loopback aggregate reader, even in native mode', async () => {
+        const seen: string[] = [];
+        const fetchImpl: FetchLike = async (input) => {
+            seen.push(String(input));
+            return new Response(JSON.stringify({ ok: true }), { status: 200 });
+        };
+        const native = createBoardClient({
+            readerOrigin: 'http://127.0.0.1:4310',
+            boardOrigin: 'http://127.0.0.1:4310',
+            fetchImpl,
+        });
+        await native.storeChannels({ fromMs: 0, untilMs: 1, page: 1 });
+        expect(seen[0]).toBe('http://127.0.0.1:4340/api/workflows/kk-collect/store/channels?from=0&until=1&page=1');
+
+        seen.length = 0;
+        const overridden = createBoardClient({
+            readerOrigin: 'http://127.0.0.1:4310',
+            boardOrigin: 'http://127.0.0.1:4310',
+            aggregateReaderOrigin: 'http://127.0.0.1:5000',
+            fetchImpl,
+        });
+        await overridden.storeChannels({ fromMs: 0, untilMs: 1, page: 2 });
+        expect(seen[0]).toBe('http://127.0.0.1:5000/api/workflows/kk-collect/store/channels?from=0&until=1&page=2');
+    });
+
+    it('refuses a non-loopback aggregate reader origin', () => {
+        expect(() =>
+            createBoardClient({
+                readerOrigin: 'http://127.0.0.1:4310',
+                boardOrigin: 'http://127.0.0.1:4310',
+                aggregateReaderOrigin: 'http://evil.example',
+            }),
+        ).toThrow(/aggregate reader origin/);
+    });
+});

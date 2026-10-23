@@ -228,6 +228,7 @@ describe('kk command tree shape (0275 AC1 — A22 R1)', () => {
             'store pool-count',
             'store release',
             'store select',
+            'store stats',
         ]);
     });
 

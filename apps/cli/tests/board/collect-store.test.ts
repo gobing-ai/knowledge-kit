@@ -22,7 +22,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { CollectStoreItems } from '@gobing-ai/kk-board/contracts';
 import { itemId, openStore, type Store } from '@gobing-ai/kk-store';
-import { ITEM_TITLE_MAX, storeItems, storeOverview, storeRun, storeSelections } from '../../src/board/collect-store';
+import {
+    CHANNELS_PAGE_SIZE,
+    ITEM_TITLE_MAX,
+    storeChannels,
+    storeItems,
+    storeOverview,
+    storeRun,
+    storeSelections,
+} from '../../src/board/collect-store';
 import { collectStoreTestSeeded, type SeededFixture } from './collect-store-fixture';
 
 const tempDirs: string[] = [];
@@ -389,5 +397,264 @@ describe('storeSelections (R8)', () => {
         expect(page.selections).toEqual([]);
         expect(page.topics).toEqual([]);
         expect(await Bun.file(join(dir, '.works/kk.db')).exists()).toBe(false);
+    });
+});
+
+// Expected day keys come from SQLite itself — the exact `date(…,'localtime')` expression the DAO
+// groups by — because JS Intl (the process zone) and SQLite (the process-start zone) disagree by one
+// day between 17:00 PDT and midnight UTC, and a `process.env.TZ` pin set here is too late for SQLite.
+const zoneCalendar = new Database(':memory:');
+
+/** A local `YYYY-MM-DD` day key matching SQLite's `date(…, 'localtime')`. */
+function localDay(ms: number): string {
+    const row = zoneCalendar.query("select date(?1, 'unixepoch', 'localtime') as day").get(Math.floor(ms / 1000)) as {
+        day: string;
+    };
+    return row.day;
+}
+
+/** Seed two item days and two tick days with controlled `first_seen_at`/`started_at` (0319). */
+async function channelsFixture(store: Store, now: number): Promise<void> {
+    const dayMs = 86_400_000;
+    await store.collectRuns.start({
+        runId: 'c-1',
+        startedAt: now - dayMs,
+        sourceCounts: { 'aihot-ingest': 3, 'horizon-ingest': 1 },
+    });
+    await store.collectRuns.finish('c-1', { status: 'done', finishedAt: now - dayMs + 1 });
+    await store.collectRuns.start({
+        runId: 'c-2',
+        startedAt: now,
+        sourceCounts: { 'aihot-ingest': 2, 'last30days-ingest': 4 },
+    });
+    await store.collectRuns.finish('c-2', { status: 'done', finishedAt: now + 1 });
+    // Day A (now - dayMs): aihot × 2, github × 1. Day B (now): github × 1.
+    await store.items.upsertDocs(
+        'c-1',
+        [
+            { id: 'c-i1', title: 'a', body: 'b', sourceUri: 'https://example.com/c-i1', metadata: { source: 'aihot' } },
+            { id: 'c-i2', title: 'b', body: 'b', sourceUri: 'https://example.com/c-i2', metadata: { source: 'aihot' } },
+            {
+                id: 'c-i3',
+                title: 'c',
+                body: 'b',
+                sourceUri: 'https://example.com/c-i3',
+                metadata: { source: 'github' },
+            },
+        ],
+        now - dayMs,
+    );
+    await store.items.upsertDocs(
+        'c-2',
+        [
+            {
+                id: 'c-i4',
+                title: 'd',
+                body: 'b',
+                sourceUri: 'https://example.com/c-i4',
+                metadata: { source: 'github' },
+            },
+        ],
+        now,
+    );
+}
+
+describe('storeChannels (0319 R1/R2/R4)', () => {
+    it('serves both tables over the whole interval, newest day first, with last-positive times', async () => {
+        const now = Date.now();
+        const dayMs = 86_400_000;
+        const { projectPath } = await project('kk-cs-channels-', (store) => channelsFixture(store, now));
+        const page = await storeChannels(
+            { projectPath, configPath: configFile(projectPath) },
+            {
+                fromMs: now - 2 * dayMs,
+                untilMs: now + dayMs,
+                page: 1,
+            },
+        );
+
+        expect(page.schemaVersion).toBe(1);
+        expect(page.availability).toBe('available');
+        expect(page.page).toBe(1);
+        expect(page.pageSize).toBe(CHANNELS_PAGE_SIZE);
+        expect(page.totalDays).toBe(2);
+        expect(page.sources).toEqual(['aihot', 'github']);
+        expect(page.plugins).toEqual(['aihot-ingest', 'horizon-ingest', 'last30days-ingest']);
+        expect(page.bySource).toEqual({ aihot: 2, github: 2 });
+        // Newest day first; the oldest day's sources zero-fill every declared source.
+        expect(page.byDay.map((day) => day.day)).toEqual([localDay(now), localDay(now - dayMs)]);
+        expect(page.byDay[0]).toEqual({
+            day: localDay(now),
+            total: 1,
+            sources: { aihot: 0, github: 1 },
+        });
+        expect(page.byDay[1]).toEqual({
+            day: localDay(now - dayMs),
+            total: 3,
+            sources: { aihot: 2, github: 1 },
+        });
+        // The tick table is zero-filled on the missing side of a known day too.
+        expect(page.runsByDay.map((day) => day.day)).toEqual([localDay(now), localDay(now - dayMs)]);
+        expect(page.runsByDay[0]).toEqual({
+            day: localDay(now),
+            runs: 1,
+            plugins: { 'aihot-ingest': 2, 'horizon-ingest': 0, 'last30days-ingest': 4 },
+        });
+        expect(page.runsByDay[1]).toEqual({
+            day: localDay(now - dayMs),
+            runs: 1,
+            plugins: { 'aihot-ingest': 3, 'horizon-ingest': 1, 'last30days-ingest': 0 },
+        });
+        expect(page.lastPositiveAt).toEqual({
+            'aihot-ingest': now,
+            'horizon-ingest': now - dayMs,
+            'last30days-ingest': now,
+        });
+        expect(page.diagnostics).toEqual([]);
+    });
+
+    it('zero-fills a known day missing the other side (items-only vs tick-only days)', async () => {
+        const now = Date.now();
+        const dayMs = 86_400_000;
+        const { projectPath } = await project('kk-cs-channels-', async (store) => {
+            // Day A: one item, no tick. Day B: one tick, no item.
+            await store.items.upsertDocs(
+                'c-a',
+                [
+                    {
+                        id: 'c-a1',
+                        title: 'a',
+                        body: 'b',
+                        sourceUri: 'https://example.com/c-a1',
+                        metadata: { source: 'github' },
+                    },
+                ],
+                now - dayMs,
+            );
+            await store.collectRuns.start({ runId: 'c-b', startedAt: now, sourceCounts: { 'aihot-ingest': 5 } });
+        });
+        const page = await storeChannels(
+            { projectPath, configPath: configFile(projectPath) },
+            {
+                fromMs: now - 2 * dayMs,
+                untilMs: now + dayMs,
+                page: 1,
+            },
+        );
+        expect(page.totalDays).toBe(2);
+        expect(page.sources).toEqual(['github']);
+        expect(page.bySource).toEqual({ github: 1 });
+        // Newest day (tick-only) zero-fills the item side; oldest (item-only) zero-fills the tick side.
+        expect(page.byDay).toEqual([
+            { day: localDay(now), total: 0, sources: { github: 0 } },
+            { day: localDay(now - dayMs), total: 1, sources: { github: 1 } },
+        ]);
+        expect(page.runsByDay).toEqual([
+            {
+                day: localDay(now),
+                runs: 1,
+                plugins: { 'aihot-ingest': 5, 'horizon-ingest': 0, 'last30days-ingest': 0 },
+            },
+            {
+                day: localDay(now - dayMs),
+                runs: 0,
+                plugins: { 'aihot-ingest': 0, 'horizon-ingest': 0, 'last30days-ingest': 0 },
+            },
+        ]);
+        expect(page.lastPositiveAt).toEqual({
+            'aihot-ingest': now,
+            'horizon-ingest': null,
+            'last30days-ingest': null,
+        });
+    });
+
+    it('turns a malformed source_counts_json day into unknown plugin totals plus a diagnostic', async () => {
+        const now = Date.now();
+        const dayMs = 86_400_000;
+        const { projectPath } = await project('kk-cs-channels-', (store) => channelsFixture(store, now));
+        const raw = new Database(join(projectPath, '.works/kk.db'));
+        raw.run("UPDATE collect_runs SET source_counts_json = 'not json' WHERE run_id = 'c-1'");
+        raw.close();
+
+        const page = await storeChannels(
+            { projectPath, configPath: configFile(projectPath) },
+            {
+                fromMs: now - 2 * dayMs,
+                untilMs: now + dayMs,
+                page: 1,
+            },
+        );
+        expect(page.availability).toBe('available');
+        expect(page.diagnostics.map((d) => d.code)).toEqual(['board.store.channel-invalid']);
+        // The malformed day keeps its tick count but its plugin totals are unknown.
+        const badDay = page.runsByDay.find((day) => day.day === localDay(now - dayMs));
+        expect(badDay?.runs).toBe(1);
+        expect(badDay?.plugins).toBeNull();
+        // The item counts are unrelated to the malformed tick row and stay intact.
+        expect(page.bySource).toEqual({ aihot: 2, github: 2 });
+        // last-positive ignores the invalid row.
+        expect(page.lastPositiveAt['horizon-ingest']).toBeNull();
+        expect(page.lastPositiveAt['aihot-ingest']).toBe(now);
+    });
+
+    it('degrades a missing store to the unavailable envelope without creating it', async () => {
+        const dir = tempDir('kk-cs-channels-missing-');
+        mkdirSync(join(dir, '.works'), { recursive: true });
+        const page = await storeChannels(
+            { projectPath: dir, configPath: configFile(dir) },
+            {
+                fromMs: 0,
+                untilMs: 1,
+                page: 1,
+            },
+        );
+        expect(page.availability).toBe('unavailable');
+        expect(page.diagnostics.map((d) => d.code)).toEqual(['board.store.missing']);
+        expect(page.byDay).toEqual([]);
+        expect(page.runsByDay).toEqual([]);
+        expect(page.bySource).toEqual({});
+        expect(await Bun.file(join(dir, '.works/kk.db')).exists()).toBe(false);
+    });
+
+    it('leaves sqlite_master and row counts unchanged across the read (R1)', async () => {
+        const now = Date.now();
+        const dayMs = 86_400_000;
+        const { projectPath } = await project('kk-cs-channels-', (store) => channelsFixture(store, now));
+        const dbPath = join(projectPath, '.works/kk.db');
+        const before = digest(dbPath);
+        await storeChannels(
+            { projectPath, configPath: configFile(projectPath) },
+            {
+                fromMs: now - 2 * dayMs,
+                untilMs: now + dayMs,
+                page: 1,
+            },
+        );
+        expect(digest(dbPath)).toBe(before);
+    });
+
+    it('bounds every page to 30 distinct days while totals cover the whole interval (R3)', async () => {
+        const now = Date.now();
+        const dayMs = 86_400_000;
+        const { projectPath } = await project('kk-cs-channels-', async (store) => {
+            // 35 tick days, one run each; every source_counts_json is a valid empty map.
+            for (let i = 0; i < 35; i += 1) {
+                await store.collectRuns.start({
+                    runId: `pg-${i}`,
+                    startedAt: now - i * dayMs,
+                    sourceCounts: {},
+                });
+            }
+        });
+        const deps = { projectPath, configPath: configFile(projectPath) };
+        const first = await storeChannels(deps, { fromMs: 0, untilMs: now + dayMs, page: 1 });
+        expect(first.totalDays).toBe(35);
+        expect(first.byDay).toHaveLength(30);
+        expect(first.runsByDay).toHaveLength(30);
+        expect(first.bySource).toEqual({});
+        const second = await storeChannels(deps, { fromMs: 0, untilMs: now + dayMs, page: 2 });
+        expect(second.totalDays).toBe(35);
+        expect(second.byDay).toHaveLength(5);
+        expect(second.runsByDay).toHaveLength(5);
     });
 });

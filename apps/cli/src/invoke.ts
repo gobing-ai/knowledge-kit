@@ -607,6 +607,13 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
         return proc.exitCode;
     }
 
+    // Forward the child's own diagnostics on success too (2026-10-22). A plugin that produces a
+    // valid-yet-empty result explains itself only here — horizon-ingest's "no fresh digest …
+    // emitting []" was dropped, which is how a dead channel stayed invisible in the collect log.
+    if (proc.stderr !== '') {
+        echoError(`[plugin:${record.name}] ${proc.stderr}`);
+    }
+
     if (!existsSync(absOutPath)) {
         echoError(`Plugin entry succeeded but did not write output file: ${absOutPath}`);
         return 1;

@@ -70,6 +70,7 @@ Feature: Reusable browser sessions for publish channels
 | WBS | Task | Status |
 | --- | ---- | ------ |
 | 0177 | Migrate XHS publisher to ts-browser-automation and dogfood profile reuse | done |
+| 0328 | Add publish plugins for LinkedIn, Facebook, Instagram, shipinhao 图文 and threads images | backlog |
 <!-- END AUTO-GENERATED -->
 
 ## Notes

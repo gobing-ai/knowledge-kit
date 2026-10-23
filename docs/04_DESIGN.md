@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.52.0
+version: 2.53.0
 created_at: 2026-07-22
-updated_at: 2026-10-21
+updated_at: 2026-10-22
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -89,6 +89,7 @@ kk store label --run <id> --new-ids <path> [--maker <name>] [--mode heuristic|de
 kk store label --replay <topic:t|run:id|since:24h> --maker <name> [--decisions <ids>] [--window 24h] [--db <path>]
 kk store extract --topic <t> [--window 24h] [--limit <n>] [--include-selected]
                  --out <Doc[].json> [--db <path>]
+kk store stats [--days <n>] [--json] [--db <path>]
 kk store select --topic <t> --workflow <w> --run <id> --in <Doc[].json|metadata.docs> [--db <path>]
 kk store mark-published --topic <t> --run <id> [--in <Doc[].json|metadata.docs>] [--db <path>]
 kk store release --run <id> [--topic <t>] [--db <path>]
@@ -154,7 +155,9 @@ kk board serve --board-origin <origin> [--port <n>]
 5. Validates output against the kind's output schema. Publish invocations additionally reject a
    parsed `Result { ok: false }` as an invocation failure (exit 1; artifact kept, 0110 I6).
    Manifest-declared `operations` dispatch (0110 I3) validates input/output per declaration;
-   undeclared array dispatch is rejected pre-spawn.
+   undeclared array dispatch is rejected pre-spawn. A plugin's stderr is forwarded to the caller on
+   **both** exits (2026-10-22): a valid-yet-empty result explains itself only there, so a source
+   emitting `[]` silently is otherwise indistinguishable from a healthy one.
 6. `--plugins-root` and `--plugins-path` are mutually exclusive (usage error, exit 2).
 7. Rejects `--in`/`--out` naming the same file — identity (dev+ino), not path string — pre-mutation (0110 I5, hardened 0157 R1) and unlinks the stale
    `--out` file before spawn, so only output produced by this invocation can establish success.
@@ -236,7 +239,8 @@ Merges N `Doc[]` files into one. Sibling of `executor run` so the single-plugin 
 stays intact (ADR-006). Spec: `docs/design/fan-in-and-fan-out-specification.md` §1.2, §2.
 Canonical path is `kk executor fan-in`; `kk fanin` is a hidden one-release alias (ADR-011).
 A missing `--out` parent directory is created (ADR-016); a write that genuinely fails still exits
-non-zero.
+non-zero. Each source's own stderr is forwarded (`[source:<plugin>] …`) even when it exited 0
+(2026-10-22) — a source that contributes nothing is otherwise silent.
 
 ```text
 kk executor fan-in --in <f1> [--in <f2> …] --out <merged.json> [--plugins-root <dir> | --plugins-path <dir> …]
@@ -381,16 +385,17 @@ origin or project, `404` unknown capture/artifact or a changed owner, `405` muta
 unsatisfiable range, `422` malformed stored evidence, `503` Board authority unavailable.
 
 **Collect store views (G81, task 0307 — `docs/design/collect-store-views.md` §3).** ADR-035's
-2026-10-16 amendment lifts artifacts-only for `kk-collect` alone: three read-only routes project
+2026-10-16 amendment lifts artifacts-only for `kk-collect` alone: four read-only routes project
 `<project>/.works/kk.db` (never Spur, never a copy of the store into artifacts).
 
 | Route | Query | Identity |
 | ------- | ------- | ---------- |
 | `/api/workflows/kk-collect/store/overview` | `runs=<id>,…` (1–25 ids matching the reader's run-id rule) | ids only select rows; no Board call |
+| `/api/workflows/kk-collect/store/channels` | `from`/`until` (required nonnegative safe-integer epoch ms, `from < until`), `page` (≥1, default 1) | no Board call; one read-only aggregate, both tables, 30 days/page (0319) |
 | `/api/workflows/kk-collect/runs/<id>/store` | none | project + Spur run detail (no capture record) |
 | `/api/workflows/kk-collect/runs/<id>/store/items` | `page` (≥1), `source` (∈ the store's own values), `seen` (`new`/`reseen`), `decision`+`value` (`[A-Za-z0-9._-]{1,64}`, together or not at all), `selection` (`selected`/`published`/`dropped`/`none`) | project + Spur run detail (no capture record) |
 
-Only these three routes accept query parameters; every other route still refuses all of them
+Only these four routes accept query parameters; every other route still refuses all of them
 (`400 board.query.invalid`), and another workflow on a store route is `404 board.route.unknown`.
 The per-run routes authorize with the project + run-detail half of the shipped `authorize()`
 (`authorizeRun`, which `authorize()` now delegates to), so a run that predates capture still has its
@@ -399,11 +404,15 @@ store views while every capture-gated route keeps its refusals.
 Shapes (type-only in `apps/board/src/contracts.ts`): `CollectStoreOverview`
 (`{availability, schemaVersion: 1, lastStoredAt, rows: Record<runId, CollectRunStoreRow | null>}`),
 `CollectRunStore` (`{…, runId, row, labelQuality[]}`), `CollectStoreItems`
-(`{…, runId, page, pageSize: 25, total, items[], sources[]}`). A row carries `sourceCounts`,
+(`{…, runId, page, pageSize: 25, total, items[], sources[]}`), and (0319) `CollectChannelYield`
+(`{…, fromMs, untilMs, timeZone, page, pageSize: 30, totalDays, sources[], plugins[], byDay[],
+bySource, runsByDay[], lastPositiveAt}`). A row carries `sourceCounts`,
 `inserted`, `updated`, `labelRows` (observations), `labeledItems` (distinct items),
 `labelRowsBySource` and `yield` — items FIRST seen in the run by their strongest status
 (`published` > `selected` > `dropped`). Titles cap at 300 characters and `url` is served only when
 `canonical_url` is `http(s)`; `collect_runs.started_at`/`finished_at` are never shown as a duration.
+`bySource` and `totalDays` cover the whole `[fromMs, untilMs)` interval; `byDay`/`runsByDay` are the
+30-day page over the union of item/tick local-day keys, newest first, zero-filled on the missing side.
 
 Read-only contract: the file is `stat`-ed first (a missing path is never opened — `openStore` would
 create it), opened with `migrate: false`, closed per request, and no request changes `sqlite_master`
@@ -501,6 +510,24 @@ and a **Workflow Config Summary** of the sanitized captured settings only. ADR-0
 optional: only recorded output descriptors are served, and absent evidence is `unavailable`, never
 an invented zero. The digest-first topology capture, the artifact-only projection and the DAG
 producer fallback are frozen in `docs/design/workflow-board-modules.md` §9.
+
+Since 0320 (G82) the Summary tab also renders the **episode funnel** and one **supply-context
+panel**. The funnel (`summary.funnel`, contract `DailyEpisodeFunnel`) is artifact-backed by the
+run's own stage files — pool, annotation input, topic exclusions, QC rejections, post-dedup
+candidates, plan, the floor/duration/script refusals and the duration verdict — with every count
+carrying its fixed manifest artifact id in `evidence` (or `captured-settings` for the
+floor/ceiling fallbacks); refusal-cleared candidates are unknown rather than zero, stage
+disagreement (e.g. 2026-10-21: pool 3 vs annotated 7) keeps both numbers with a
+`board.daily.funnel.mismatch` diagnostic instead of arithmetic, and a no-content run's gate follows
+the precedence measured refusal → script refusal → QC floor → empty pool → qc-empty → unknown. The
+funnel JSON artifact ids (`episode-*`) download as sanitized count/reason projections — bounded
+rule/matched strings and refusal numbers, never the scraped doc bodies. The supply panel is the ONE
+store consumption Daily has (ADR-035 amendment 2026-10-22): the 0319 channels aggregate fetched
+through `BoardClient.storeChannels` for the half-open `[run.startedAt − captured window,
+run.startedAt)` interval, rendered with the shared `ChannelYieldTable`/`PluginRunTable`, labeled
+**configured context** because the extract ladder bounds are not persisted (the effective
+extraction window is unknown), and kept visibly distinct from the artifact-backed funnel. A run
+without a captured `window` or `startedAt` renders unknown and issues no store query.
 
 ### `kk-itc` Board capture + the IT Content module (G8, task 0254)
 
@@ -961,6 +988,15 @@ exit code. `--window` must be `'<n>s|m|h|d'` and `--limit` a positive integer; e
   are never touched: an aired episode must not silently re-admit. stdout is `{released}`; failures
   exit 1 with `kk.store.release.failed: <cause>`.
 
+`kk store stats [--days <n>] [--json] [--db <path>]` is the read-only channel-width report
+(2026-10-22): new items per **local** day per `items.source`, over the trailing `--days` window
+(default 14), as a fixed-width table with a `TOTAL` row, or `{days, byDay, bySource}` under `--json`.
+It exists because a thin day is only diagnosable if you can see *which* channel stopped delivering —
+`collect_runs.source_counts_json` is per ingestion plugin, and one dead upstream shows up there as a
+missing key, not a number. One SELECT through `CollectViewDao.channelYield`; day and DST boundaries
+are SQLite's `localtime`. An empty window prints `no items in the window` and exits 0; a
+non-positive `--days` exits 1 with `kk.store.stats.failed: <cause>`.
+
 `kk daily prepare --workflow <w>` additionally names, on stderr, every other run still holding
 `selected` rows for that workflow, each with the `kk store release --run <id>` that frees it (R7).
 The check is read-only, and a store that is missing or fails to open prints nothing and never fails
@@ -1029,11 +1065,16 @@ value is XML-escaped (`&`/`<`/`>`), because one raw `&` makes `launchctl bootstr
 | `kk-collect` | `launchd` | plist for `ai.gobing.kk-collect` (`launchd.plist.tmpl`): `StartCalendarInterval` 04:00/10:00/16:00/22:00 local (6 h; sleep coalesces missed fires to one run at wake), `ProgramArguments` = `spur workflow run plugins/kk/workflows/kk-collect.yaml`, `WorkingDirectory` = `--repo`, `EnvironmentVariables` = `PATH` + `TYPESAFE_API_KEY`, stdout+stderr = `<repo>/.works/kk-collect/launchd.log` |
 | `kk-collect` | `cron` | `0 4,10,16,22 * * * cd <repo> && TYPESAFE_API_KEY='<key>' spur workflow run plugins/kk/workflows/kk-collect.yaml >> <repo>/.works/kk-collect/launchd.log 2>&1` |
 | `kk-serve` | `launchd` | plist for `ai.gobing.spur-serve` (`kk-serve.launchd.plist.tmpl`): `RunAtLoad` + `KeepAlive` true, `ThrottleInterval` 10, `ProgramArguments` = `spur serve --cwd <repo> --host 127.0.0.1 --port 3003 --no-open`, `WorkingDirectory` = `--repo`, `EnvironmentVariables` = `PATH` + `TYPESAFE_API_KEY`, stdout+stderr = `<repo>/.works/spur-serve/serve.log` |
+| `kk-daily-publish3-cn-peak` | `cron` | `0 17 * * *` local (`kk-daily-publish3-cn-peak.cron.tmpl`): `spur workflow run plugins/kk/workflows/kk-daily-publish3.yaml --vars '{work_dir, run_date, window: cn-peak, live_channels: wechatmp-pub,xhs-pub,weibo-pub,x-pub}'`, `PATH` + `TZ=America/Los_Angeles`, log `<repo>/.works/kk-daily-publish3/cn-peak.log`. The baked `live_channels` **is** the ADR-022 consent for this window |
+| `kk-daily-publish3-overseas` | `cron` | `0 7 * * *` America/Los_Angeles (`kk-daily-publish3-overseas.cron.tmpl`): same workflow with `window: overseas-rss` and a **yesterday** `work_dir`/`run_date`, no `live_channels`, log `<repo>/.works/kk-daily-publish3/overseas.log` |
 
 `kk-serve` is **launchd only**: cron has no keepalive semantics, so `--platform cron` for it exits 1
 with `schedule 'kk-serve' has no cron template (expected launchd)` and prints nothing (task 0265 R3);
-`kk-collect` keeps both platforms. `kk-serve` freezes host/port as template constants and keeps the
-hand plist's `Label`, so re-rendering replaces the installed agent in place.
+`kk-collect` keeps both platforms. The two `kk-daily-publish3-*` windows are **cron only**: cn-peak's
+`wait-until` node absorbs the hosted-zone offset and the overseas tick is a plain daily fire, so
+neither needs launchd's calendar-interval or keepalive semantics. `kk-serve` freezes host/port as
+template constants and keeps the hand plist's `Label`, so re-rendering replaces the installed agent in
+place.
 
 Templates resolve from `--repo`'s own `plugins/kk/schedules/`, falling back to the running
 package's copy, so a checkout without the templates still renders. An unknown schedule or platform
@@ -1179,7 +1220,7 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `KK_IMAGE_PRESET_PATH` | no (image-gen) | `path.delimiter`-separated extra preset roots, lowest → highest after builtin → `~/.config/kk/image-presets` → `<KNOWLEDGE_KIT_PROJECT_ROOT>/.kk/image-presets` (ADR-012 root order); non-directory entries are skipped |
 | `SURFDASH_ROOT` | no (surfdash-pub) | Surfdash checkout root; default derives from `POSTSURFING_BIN` (`<root>/scripts/<cli>`). The article markdown must land at `content/posts/articles/<locale>/<slug>/index.md` |
 | `SURFDASH_LOCALE` | no (surfdash-pub) | Content locale directory for the published post (default `zh`) |
-| `SURFDASH_AUTO_PUSH` | no (surfdash-pub) | `0` disables the post-publish deploy seam (git commit/push of the post path + live-URL poll); any other value or unset auto-pushes. Production deploys run from surfdash's `deploy.yml` on every push to `main` — without the seam the article 404s until a manual commit (dogfood 2026-09-12) |
+| `SURFDASH_AUTO_PUSH` | no (surfdash-pub) | `0` disables the post-publish deploy seam (git commit/push of the post path + live-URL poll); any other value or unset auto-pushes. Production deploys run from surfdash's `deploy.yml` on every push to `main` — without the seam the article 404s until a manual commit (dogfood 2026-09-12). Before writing anything the seam fast-forwards the checkout onto `origin/main` when local carries no commit of its own (2026-10-22: three publish days died on `! [rejected] main -> main (fetch first)` after the article had been committed on a stale base and the episode had already published); a **diverged** checkout fails the publish naming both counts instead of rewriting history, and an unreachable remote is not fatal (the push then reports the real error) |
 | `SURFDASH_URL` | no (surfdash-pub) | Base URL for the live-URL poll and `url` in the Result (default `https://surfing.salty.vip`); article derived as `<base>/<locale>/posts/<slug>` |
 | `VOICEBOX_MAX_CHUNK_CHARS` | no (voice-gen) | Max chunk characters (default: `800`, range 100–5000) |
 | `VOICEBOX_CROSSFADE_MS` | no (voice-gen) | Crossfade duration in ms (default: `50`, range 0–500) |
@@ -1204,6 +1245,7 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `MICROFEED_BASE_URL` | yes (podcast-pub) | Base URL for self-hosted microfeed REST API (e.g. `https://<instance>.workers.dev`) |
 | `MICROFEED_API_KEY` | yes (podcast-pub) | microfeed named API key (`mf_…`) with write scope |
 | `MICROFEED_TIMEOUT_MS` | no (podcast-pub) | Request / upload timeout in ms (default: `300000`) |
+| `PODCAST_PUB_SEO` and the other D9 keys | no (podcast-pub) | Per-episode SEO, slug, numbering, summary, and duration rounding. Defaults and the legacy combination are in `docs/design/podcast-pub.md` (D9 / §5). `PODCAST_PUB_TITLE` remains the show-notes H1, not the episode title pattern. |
 | `SUBSTACK_PUBLICATION_URL` | yes (substack-pub) | Publication the Substack editor URL is derived from: the URL without its trailing `/` or `/publish`, plus `/publish/post` (the bare route — Substack rewrites it to `/publish/post/<id>` on autosave; the legacy `/publish/post/new` never rewrites, measured 0193). Unset, blank or non-`https:` → `ok: false` naming this var before any browser opens (there is no default publication — `substack.com/new` picks an arbitrary one). A per-run `options.publicationUrl` (or the CLI's `--publication <url>`) wins |
 | `KK_BROWSER_PROFILE_DIR` | no (x-pub `article`, xhs-pub, juejin-pub, infoq-pub, substack-pub, weibo-pub, jike-pub, csdn-pub, cnblogs-pub, sspai-pub, xiaoyuzhou-pub, shipinhao-pub, bilibili-pub) | Shared fallback browser profile dir for the `script` browser transports; a per-channel override wins (`X_PROFILE_DIR` / `XHS_PROFILE_DIR` / `JUEJIN_PROFILE_DIR` / `INFOQ_PROFILE_DIR` / `SUBSTACK_PROFILE_DIR` / `WEIBO_PROFILE_DIR` / `JIKE_PROFILE_DIR` / `CSDN_PROFILE_DIR` / `CNBLOGS_PROFILE_DIR` / `SSPAI_PROFILE_DIR` / `XYZF_PROFILE_DIR` / `SHP_PROFILE_DIR` / `BILIBILI_PROFILE_DIR`). Tiers are resolved by `resolveChannelProfileDir(channel, override)` (`@gobing-ai/publish-harness/browser`, ADR-027); blank values count as unset. Default `~/.config/kk/browser-profiles/<channel>` (`resolveBrowserProfileDir`) |
 | `KK_BROWSER_CHANNEL` | no (every browser publish channel) | Playwright channel for `kkBrowserLauncher` (0214): `chromium` (default; full Chromium, also in headless mode) or `chrome` (installed Google Chrome). Blank counts as unset. Headed login and headless check then share one cookie store; Playwright's default headless shell can't read a headed login's cookies |
@@ -1263,6 +1305,7 @@ type crosses `src/index.ts`.
 | `itemFacts(doc)`, `ItemFacts`, `SourceTier` | function / types | The deterministic fact columns (0227 R1): `engagement`, `bodyChars`, `sourceTier`, `lang`, `domain` |
 | `storyTokens(title)`, `storyIdFor(title, candidates, threshold)`, `storyIdForUrls(urls, candidates)`, `StoryPolicy`, `StoryCandidate`, `StoryUrlIdentity`, `DEFAULT_STORY_POLICY`, `DEFAULT_STORY_THRESHOLD`, `DEFAULT_STORY_WINDOW_HOURS` | functions / types / consts | Deterministic story key (0227 R2; URL identity 0316 R1): `storyIdForUrls` matches URL identity first — the item's own `canonical_url` or its `bodyUrls` against a candidate's `canonicalUrl`/`bodyUrls`, either direction — then `storyIdFor` clusters titles: CJK bigrams + Latin words, Jaccard at `>= threshold`; ties by earliest `first_seen_at` then smallest `id` |
 | `ItemRecord`, `UpsertDocsResult`, `CollectRunRecord`, `LabelRecord`, `LabelSource`, `LabelConfidence`, `LockRecord`, … | types | Row and input types for the DAOs above; `LabelRecord.confidence` is the `HIGH \| MEDIUM \| LOW` level, `null` only on a row no `kk store label` pass wrote |
+| `CollectViewDao`, `CollectViewChannelDay`, `CollectViewRunDay` | class / type | Read-only aggregate tier over the four Collect tables (GROUP BY only, no writes): `channelYield(sinceMs, untilMs?)` — new items per local day per `items.source`, behind `kk store stats` and the 0319 channels route — plus `channelRunYield(fromMs, untilMs)` (daily `collect_runs` ticks and validated plugin counts), and the Board reader's `runRows` / `itemSources` / `itemsPage` views |
 
 Migrations are embedded `KkMigration[]` (`{id, sql}`, append-only; `0001_kk_store_init` + `0002_labels_confidence_run_id` today) whose
 DDL is derived from each `defineTable(...).createTableSql` — there is no hand-written DDL file — and
@@ -1586,7 +1629,7 @@ the audio script, and the show notes.
 | `filterAnnotated(docs, config)` | function | Quality-controller gate (`--mode filter`, 0094): annotated `Doc[]` → `{ kept, rejected }`; survivor = category in the `QC_CATEGORIES` allowlist AND every `metadata.scores` dim ≥ its inclusive `QC_MIN_*` min (score == min passes); each `RejectedDoc` carries every failed check (`category:not-in-allowlist`, `quality:2<3`); missing/invalid annotations exit 1 naming the doc id; rejection audit at `<out>.rejected.json` as `{ rejected, config, total }`; zero survivors is a valid exit-0 (`metadata.docs: []`) |
 | `main()` | function | Executor `--in`/`--out` `--mode plan\|filter`; mode precedence flag > `EPISODE_PLAN_MODE` env > `plan` (unknown value → exit 1 naming both sources); env `EPISODE_PLAN_MAX_ITEMS` (default 20), `EPISODE_PLAN_DATE`, `QC_*` (filter mode); exit 0 success / 1 failure |
 
-Daily workflow wiring: `plan_max_items` (default `"20"`) caps selection; `plan-translate` (agent.run, gated by `plan_translate_enabled`) translates `needsTranslation` items in place before the article step consumes the plan. `DAILYNEWS_MAX_ITEMS` is no longer set by the workflow — the plan is the single limiter. `--mode filter` (0094) is wired into the workflow since 0097: the `quality-control-content` state runs it as `EPISODE_PLAN_MODE=filter` (`kk executor run` forwards only `--in`/`--out`, so the mode rides the env channel) with the `done-no-content` terminal + `qc_*` vars + rejection audit at `21-plan/candidates.rejected.json`. Task 0189 R2: after the filter, the stage also applies the topic-boundary admission pass (data-driven rules from `plugins/kk/scripts/topic-boundary.json` — political/diplomatic-trade, military, policy-dispute, social-event mainlines, plus a published-after-run-date date-conflict check) to the candidates, recording each exclusion with id/rule/matched keyword at `${run_date}_04_quality-control-content_exclusions.json` and rewriting the candidates in place; zero kept docs leaves the empty candidates for the `done-no-content` edge.
+Daily workflow wiring: `plan_max_items` (default `"20"`) caps selection; `plan-translate` (agent.run, gated by `plan_translate_enabled`) translates `needsTranslation` items in place before the article step consumes the plan. `DAILYNEWS_MAX_ITEMS` is no longer set by the workflow — the plan is the single limiter. `--mode filter` (0094) is wired into the workflow since 0097: the `quality-control-content` state runs it as `EPISODE_PLAN_MODE=filter` (`kk executor run` forwards only `--in`/`--out`, so the mode rides the env channel) with the `done-no-content` terminal + `qc_*` vars + rejection audit at `21-plan/candidates.rejected.json`. Task 0189 R2: after the filter, the stage also applies the topic-boundary admission pass (data-driven rules from `plugins/kk/scripts/topic-boundary.json`, plus a published-after-run-date date-conflict check) to the candidates, recording each exclusion with id/rule/matched keyword at `${run_date}_04_quality-control-content_exclusions.json` and rewriting the candidates in place; zero kept docs leaves the empty candidates for the `done-no-content` edge. That pass runs **last**, after title dedup, so its exclusions are inside the floor-gate estimate (2026-10-22). The spec holds one rule since 2026-10-22 — `prc-leadership` (现任及历任国家最高领导人, zh names/titles plus pinyin) — because the five 0189 rules excluded whole classes of AI-industry news: every exclusion the store ever recorded was a `lawsuit` hit, including Character.AI's acquisition and Meta's torrent training-data case (operator ruling, spec `version: 2`).
 
 ### `@gobing-ai/dailynews-gen` (`plugins/generations/dailynews-gen`, kind `generator`)
 
@@ -1688,12 +1731,12 @@ Runbook (`VOXCPM_MODEL`/`VOXCPM_DEVICE`/`VOXCPM_PROFILES_PATH`, profile modes, c
 
 | Export | Kind | Notes |
 | -------- | ------ | ------- |
-| `PodcastPubTransport` | class | `file-cli` transport: Bearer REST client + two-phase presigned upload (audio, then optional local episode cover as `image/png`); requires `MICROFEED_BASE_URL`, `MICROFEED_API_KEY`; `publish` accepts additive assembly options `{audioFile, coverPath, durationSec}` (plugin merges article + audio + cover itself, L1 R6) |
+| `PodcastPubTransport` | class | `file-cli` transport: Bearer REST client + two-phase presigned upload (audio, then optional local episode cover); requires `MICROFEED_BASE_URL`, `MICROFEED_API_KEY`; `publish` accepts additive assembly options `{audioFile, coverPath, durationSec}` and D9 SEO (`_microfeed.seo`, pattern slug on create, iTunes numbers). `options.operation`: `publish`, `show-notes`, `list`, `get`, `update`, `delete`, `validate`, `backfill-seo` (dry-run unless `apply`) |
 | `mapContentToEpisode(content)` | function | Maps Content to episode fields: `title`, `contentHtml` (sanitized HTML — markdown showNotes/body rendered via the closed-dialect renderer in `show-notes.ts`; `format: 'html'` bodies pass through), `status`, `audio` (`metadata.audioUrl` or `metadata.audioPath`/`audioFile`), `durationSeconds`, `imagePath` (non-http `coverImage`), `imageUrl` (http cover); throws `unsupported audio MIME type "<type>" for Apple Podcasts: expected one of <list>` when the resolved audio MIME (after any `metadata.mimeType` override) is outside the Apple allowlist `audio/mpeg`, `audio/x-m4a`, `audio/mp4`, `video/mp4`, `video/quicktime`, `video/x-m4v` — refused before any network call (0170) |
 | `resolveAudioMimeType(ref, mimeType?)` | function | Extension → audio MIME mapping with override |
 | `getPublishTransport()` | function | Returns `FakeFileCliTransport` when `KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake`, else `PodcastPubTransport` |
-| `processPublishIO(inputPath, outputPath, transport?)` | function | `--in`/`--out` IO per the publish spec §1; supports `options.operation` (`publish`, `show-notes`, `list`, `get`, `update`, `delete`, `validate`); a bare Doc[] `--in` selects `show-notes` and writes the markdown file to `--out` (render options via `PODCAST_PUB_TITLE` / `PODCAST_PUB_RUN_DATE` / `PODCAST_PUB_ARTICLE_BASE_URL` / `PODCAST_PUB_BRIEF_MODE` / `PODCAST_PUB_ARTICLE_POST_PATH`) |
-| `renderShowNotesMarkdown(docs, opts)` | function | Renders plan Doc[] → show-notes markdown (L1 R6 port of the workflow's inline renderer): `# title`, per-item `## N.` sections capped at two 。！？ sentences, `[来源：…]` links, full-article footer (default base `https://surfing.salty.vip`); with `articlePostPath` (0118) the footer is `<base>/<locale>/posts/<postSlug>` derived O(1) from the published path, else the legacy fallback `<base>/zh/posts/<runDate>-<slug>`; `briefMode: true` + a postPath renders the timeline layout (`HH:MM` briefs, per-item `[文章]` link); golden-fixture byte-pinned in the plugin tests |
+| `processPublishIO(inputPath, outputPath, transport?)` | function | `--in`/`--out` IO per the publish spec §1; supports `options.operation` (`publish`, `show-notes`, `list`, `get`, `update`, `delete`, `validate`, `backfill-seo`); a bare Doc[] `--in` selects `show-notes` and writes the markdown file to `--out` (render options via `PODCAST_PUB_TITLE` / `PODCAST_PUB_RUN_DATE` / `PODCAST_PUB_ARTICLE_BASE_URL` / `PODCAST_PUB_BRIEF_MODE` / `PODCAST_PUB_ARTICLE_POST_PATH`, plus the D9 `PODCAST_PUB_*` keys in `docs/design/podcast-pub.md` D9) |
+| `renderShowNotesMarkdown(docs, opts)` | function | Renders plan Doc[] → show-notes markdown (L1 R6 port of the workflow's inline renderer): `# title`, a D9 summary paragraph (R3 text without the show prefix, then the Surfing cross-link), per-item `## N.` sections capped at two 。！？ sentences, `[来源：…]` links, full-article footer (default base `https://surfing.salty.vip`); with `articlePostPath` (0118) the footer is `<base>/<locale>/posts/<postSlug>` derived O(1) from the published path, else the legacy fallback `<base>/zh/posts/<runDate>-<slug>` and a stderr warning; `briefMode: true` + a postPath renders the timeline layout with `<style>` after the list; golden-fixture byte-pinned in the plugin tests |
 | `main()` | function | CLI `--in`/`--out` entry point; exit 0 success / 1 failure |
 
 ### `@gobing-ai/knowledge-kit` (`apps/cli`)
@@ -1733,7 +1776,7 @@ File: `.spur/config.yaml`
 | Daily news generator | `docs/design/dailynews-gen.md` | Generator plugin compiling news Doc[] into broadcast VoiceScript Content (F6 **shipped** 2026-08-21) |
 | Daily AI voice workflow | `docs/design/kk-daily-ai-voice.md` | Product state-machine: one collect state (fan-in --source: aihot-ingest + last30days-ingest + horizon-ingest) -> core-facts-gen -> plan (episode-plan-gen + plan-translate) -> content QC (episode-plan-gen filter via EPISODE_PLAN_MODE; empty kept set -> done-no-content) -> article + cover + dailynews-gen script + the `${vars.vdriver}` voice driver (`gemini` -> gemini-tts default (2026-09-29), `voicebox` -> voice-gen, `ominivoice` -> omni-voice-gen, `voxcpm` -> voxcpm-tts (opt-in, ADR-036); unknown alias fails loud) -> publish (podcast-pub show notes + surfdash-pub/podcast-pub fan-out; failed targets -> publish-partial); daily audio defaults to MP3 with ID3 tags (0171), and `intro-music` joins from the raw render to a distinct `.intro.wav` output (0176) (F61 destination; restructured 2026-09-06 by 0097); the `xhs-write`/`xhs-publish` pair appends a Xiaohongshu card draft (lead-item card plan agent.run -> pinned `xhs-card` x `xhs-knowledge` presets -> `kk stage daily-xhs-render` -> `kk stage daily-publish-xhs`, draft unless `xhs_live`) as an independent, non-blocking target that never enters `publish_status` (E8); the `wechat-publish` state appends a WeChat MP draft (article → `kk stage daily-publish-wechat` → `wechatmp-pub` console browser transport, draft unless `wechat_live`) on the same independent, non-blocking terms (2026-09-29); a publishing run (`publish_enabled`) passes the `safety-review` → `safety-judge` verdict gate between `script` and `review`/`wrap-docs` (0189 R10: `kk stage daily-safety-prep <work_dir> <run_date> <platforms>` + `kk:content-safety` agent.run + `kk:content-judge` compliance agent.run + `kk stage daily-safety-gate <work_dir> <run_date> <safety_max_revise>` → `safety_status` pass\|escalate\|exclude\|revise\|block; the safety `review`/`judge` agent actions tolerate a failed run (`onError: continue`, 0270) so a missing/malformed report still reaches the fail-closed gate, `revise` stays failure-tolerant, and the deterministic prep/gate shells keep default-fail so the nested machine aborts loudly (0270); the safety verdict must carry a `HIGH\|MEDIUM\|LOW` confidence level — missing or out-of-enum values block (20261003); 20261005 the gate adjusts instead of halting: `revise` loops the drafts through `safety-revise` (`kk:content-safety` detect+revise agent.run + `kk stage daily-safety-revise`, budget `safety_max_revise`, default 2) back into `safety-review`, `exclude` drops the admission-blocked platforms from the run and publishes the rest (the stamp's `excludedPlatforms`, honoured by the per-target stages), escalate always pauses at `review` (20261007 operator decision: on the disposition contract only a finding marked `disposition:"escalate"` escalates — a report with no `disposition` field anywhere keeps the legacy any-RISK/escalate pause, fail-closed; gap/note/fix-class RISK on a clean pass lands in `exclude` at recorded risk with empty `excludedPlatforms`; a disposition-contract report must carry report-level `HIGH\|MEDIUM\|LOW` confidence — missing or out-of-enum blocks (20261007 amendment, ADR-033 R5)), and `daily-publish-prep` refuses drafts without a matching pass\|escalate\|exclude digest stamp — only draft-integrity findings (a PII finding on a blocked platform, or a must-pass `fail` outside the admission criteria), an out-of-contract verdict, or edited-after-review drafts reach `failed`); on a `block` the drafts are quarantined to `24-script/.quarantine-<run_date>-judge-block/` instead of being deleted, and the run continues to its normal terminal, so a rejected draft stays on disk for inspection rather than being re-judged in place (20261005); `kk stage daily-publish-completeness <work_dir> <run_date>` (called in `run-report`'s onEnter, terminal join point) records the independent channels' state (en/ja locales, XHS, WeChat, surfdash CMS re-sync) in `31-publish/<run_date>_17_publish_completeness.json` and warns on any gap — those channels never enter `publish_status`, so a hand-driven tail that skips them is otherwise invisible (20261003; 0220 moved out of classify into terminal stage)|
 | kk-collect workflow | `docs/design/kk-collect-and-daily-voice2.md` §3, §5 | Product state-machine for standalone 6-hourly collection (task 0208, G31): `lock` (`kk ledger sync` + `kk stage collect-prepare` workspace composition + `kk lock acquire`, a held claim routes `skipped`) → `collect` (`kk executor fan-in --source` aihot/last30days/horizon with the 45 m horizon leash + `kk stage daily-collect-facts`) → `store` (`kk store ingest`) → `label` (`kk store label --run … --new-ids …`, task 0209 — heuristic-first decision labels) → `release` (`kk lock release`; the run's ledger section is written by the next tick's `kk ledger sync`, since an in-run `append` always refuses a `running` trace); `collect`/`store`/`label` failures route to `release-failed` (a state-machine aborts on a failed action without transitioning, so those actions continue-on-error behind a positive-artifact guard) so the lock is never left behind. The `label` guard reads the pass verdict through the confidence-aware `jq` filter (task 0213, G31 R14): only `verdict: PASS` with a `HIGH|MEDIUM|LOW` confidence reaches `release`, and a missing or out-of-enum level is refused by name and routed to `release-failed` — fail-closed without deadlocking. Collection only: it never generates, renders audio or publishes, and the store is the sole state it shares with the daily workflow. `plugins/kk/schedules/` + `kk schedule render` provide the operator-installed 6 h launchd/cron trigger **shipped (task 0208)** |
-| kk-collect + daily voice2 | `docs/design/kk-collect-and-daily-voice2.md` | `@gobing-ai/kk-store` (ts-db SQLite, `store.db_path`, boundary rules), `kk store migrate\|lock\|ingest\|backfill-facts\|label\|extract\|select\|mark-published\|release`, `kk ledger append\|sync\|cutover-check`, `kk schedule render`, kk decision catalog + extraction profiles, 6h `kk-collect` state-machine, `kk-daily-ai-voice2` DAG (ADR-030/031, features G31 / G11 / G71 — **shipped**; G11 by tasks 0211–0212, first green dogfood run `4a9b22f0` 2026-10-08; 0237 turns the episode speech into an opening + one section per item + closing, cached per section under `30-audio/sections/<date>/` and joined by ffmpeg before the intro sting, with a pre-spend character-rate estimate calibrated to the measured driver rates; 0238 gives the two hard-fail `agent.run` producers `onError: continue` plus a `-retry` sibling on `agent_retry` and makes every `21-plan/<date>_03_plan_plan.json` reader depend on both; the episode window is the var pair `episode_min_minutes`–`episode_max_minutes`, default 15–25 since 2026-10-09, and it drives **both** the estimate and the measured `daily-episode-duration` gate; since 2026-10-15 (ADR-036 amendment, reaffirmed 2026-10-20) voice2 defaults to `vdriver: "voxcpm"` and runs a three-tier voice chain — `generate` (the var), `generate-fallback` (gemini), `generate-fallback2` (omni); the 2026-10-20 measurement (`40 ms` cepstrum peak / `−16…−22 dB` pause floor vs gemini's `20–25 ms` / `−34…−37 dB`, via `kk stage audio-quality`) is recorded and monitored rather than acted on, with gemini one var away — where each fallback is gated on the pool count plus the absence of a valid upstream render, and `intro` waits on all three; since 2026-10-20 the DAG's `prepare` node starts with `kk stage daily-preflight <workflow.yaml>…`, which checks the workflow files this checkout ships against the dispatch switch of the stage runner the installed `kk` actually loads, and refuses at minute 0 naming any stage it lacks — the scheduler runs checkout YAML against the installed package, so a commit that adds a stage used to fail only where that stage was first reached (2026-10-20: `unknown stage: daily-safety-verdict` 29 minutes in at `safety`, nothing published)) |
+| kk-collect + daily voice2 | `docs/design/kk-collect-and-daily-voice2.md` | `@gobing-ai/kk-store` (ts-db SQLite, `store.db_path`, boundary rules), `kk store migrate\|lock\|ingest\|backfill-facts\|label\|extract\|stats\|select\|mark-published\|release`, `kk ledger append\|sync\|cutover-check`, `kk schedule render`, kk decision catalog + extraction profiles, 6h `kk-collect` state-machine, `kk-daily-ai-voice2` DAG (ADR-030/031, features G31 / G11 / G71 — **shipped**; G11 by tasks 0211–0212, first green dogfood run `4a9b22f0` 2026-10-08; 0237 turns the episode speech into an opening + one section per item + closing, cached per section under `30-audio/sections/<date>/` and joined by ffmpeg before the intro sting, with a pre-spend character-rate estimate calibrated to the measured driver rates; 0238 gives the two hard-fail `agent.run` producers `onError: continue` plus a `-retry` sibling on `agent_retry` and makes every `21-plan/<date>_03_plan_plan.json` reader depend on both; the episode window is the var pair `episode_min_minutes`–`episode_max_minutes`, default 15–25 since 2026-10-09, and it drives **both** the estimate and the measured `daily-episode-duration` gate; since 2026-10-15 (ADR-036 amendment, reaffirmed 2026-10-20) voice2 defaults to `vdriver: "voxcpm"` and runs a three-tier voice chain — `generate` (the var), `generate-fallback` (gemini), `generate-fallback2` (omni); the 2026-10-20 measurement (`40 ms` cepstrum peak / `−16…−22 dB` pause floor vs gemini's `20–25 ms` / `−34…−37 dB`, via `kk stage audio-quality`) is recorded and monitored rather than acted on, with gemini one var away — where each fallback is gated on the pool count plus the absence of a valid upstream render, and `intro` waits on all three; since 2026-10-20 the DAG's `prepare` node starts with `kk stage daily-preflight <workflow.yaml>…`, which checks the workflow files this checkout ships against the dispatch switch of the stage runner the installed `kk` actually loads, and refuses at minute 0 naming any stage it lacks — the scheduler runs checkout YAML against the installed package, so a commit that adds a stage used to fail only where that stage was first reached (2026-10-20: `unknown stage: daily-safety-verdict` 29 minutes in at `safety`, nothing published)) |
 | Daily voice script plan | `docs/design/daily-voice-script-plan.md` | `script-write` agent.run -> per-item script plan (intro/outro/lead/insight) under a checked-in style contract; dailynews-gen validates + builds from it, template fallback stamped `scriptSource` in the run report (F613 **shipped** 2026-09-25 by 0161+0162: `kk stage daily-script-style` snapshot, `script_write_enabled`+zh guarded `script-write` state with `onError: continue`, `NEWS_REPORT_SCRIPT_FILE` -> `脚本来源` line) |
 | Image-gen runtime fallback | `docs/features/D6_image-gen-runtime-fallback.md` | Opt-in `metadata.imageGen.fallback` on the image-gen envelope: absent = strict fail-fast (one provider, original error), `true` = retry down AUTO_ORDER (minus NEVER_AUTO), a list = retry in exactly that order; `metadata.attempts` records every failed provider try `{image, provider, model, errorClass, message}` (present only when non-empty), policy rejections never fall back, and each paid retry is WARN-logged on stderr first (D6 **shipped** 2026-09-25 by 0164–0166) |
 | Audio quality stage | `docs/dogfood/2026-10-20-voxcpm-echo-triage.md` (local evidence), `docs/design/kk-daily-ai-voice.md` | `kk stage audio-quality [--json] [--baseline <file>] <file…>` and `kk stage audio-quality --treat <ref-in> <ref-out>`: a MEASURE-ONLY diagnostic for narrated audio, deliberately outside every workflow node. Reports peak/rms/crest/DC/clipping, short-term envelope quantiles (the room/wash floor), the energy-decay curve 50/100/200 ms after each phrase end, the real-cepstrum echo peak (delay + prominence), an envelope-autocorrelation repetition and the octave-band balance with centroid/rolloff; `--baseline` adds per-band deltas, `--treat` writes a de-boxed REFERENCE clip (82 Hz high-pass, −3.5 dB at 320 Hz, +2 dB at 3 kHz, compression, limiting). Thresholds are advisory and calibrated on this repo's own corpus (dry `gemini-tts` `20–25 ms @ 19–20 dB / −34…−37 dB` versus `voxcpm-tts` `40 ms @ 27–30 dB / −16…−22 dB`); `plugins/generations/voxcpm-tts/scripts/probe-long-render.py` renders a ~60 s sample so a driver or checkpoint change can be judged numerically in ~2.5 min (2026-10-20, task-less operator tooling) |
@@ -1821,6 +1864,32 @@ Workspaces default to `$works_dir/<workflow-name>/<run-id>` per profile (`--dir`
 
 ### 7.3 `/tell-me` command + `explain-things` skill surface
 
+**`kk-daily-ai-voice2` duration gates (2026-10-22).** Three places decide whether a day is long
+enough, and each now leaves a trace:
+
+1. `daily-qc-content` runs the pre-spend pool estimate **after** topic admission and title dedup —
+   `applyFloorGate` is the stage's last step. It used to run before them, so on 2026-10-22 it cleared
+   a 4-item pool at 21.0 min that the boundary then cut to 3 (14.4 min), and the run paid 1 h 13 min
+   of voxcpm synthesis for an episode the measured gate refused.
+2. `daily-generate` takes `episode_min_minutes` as its 8th positional arg and estimates the authored
+   VoiceScript (Σ `segments[].text` at `spokenCharRate(vdriver)`, **no** expansion factor) before it
+   spawns the driver. Under the floor it writes the same
+   `_11_generate_content_duration-refusal.json` artifact with `stage: "script"` and empties the
+   candidates, so the run closes as no-content with no TTS spend and the run report names the script
+   gate. Candidate text cannot carry this estimate — 20261020 planned 3968 chars and rendered 8.4
+   min, 20261021 planned 4548 and rendered 17.9 — while 14 measured episodes deliver script chars at
+   5.24–5.94/s, so the reuse of the slowest measured band over-predicts slightly: it never refuses an
+   episode that would have cleared the floor.
+3. `daily-episode-duration` still measures the merged audio, and on a **pass** writes
+   `30-audio/<date>_11_generate_content_duration.json` (`{measuredMinutes, minMinutes, maxMinutes,
+   ok: true}`). A failing gate keeps its refusal artifact. A passing gate used to leave nothing,
+   which is why the 8.4-min episode published on 2026-10-20 cannot be told apart after the fact from
+   a stale stage body.
+
+`publish-classify --fold-tail` also stops escalating: `daily-patch-surfdash` skips with a warning
+(exit 0) when the surfdash result carries no `postPath`, instead of failing. On 2026-10-21 the
+surfdash `git push` was rejected (`fetch first`), classify correctly routed `partial`, and the
+folded patch tail then failed the whole run — the podcast episode was live and the run read `failed`.
 | Capability | Source path | Installed ID |
 | ---------- | ----------- | ------------ |
 | Fat skill | `plugins/kk/skills/explain-things/SKILL.md` (+ one-level `references/views.md`) | `kk:explain-things` |
@@ -1923,3 +1992,229 @@ feature verification runs through the bundled `feature-lifecycle` FSM — enteri
 `spur feature verify <id>`, resolving SDLC action `check-feature` → `bun run spur-check-feature`
 (alias of the full `spur-check` gate) — and records a receipt bound to `feature-lifecycle`, never to
 a project workflow of that name.
+
+## publish-matrix stages: plan | check | send | classify | bundle | rss-gate | wait-until (2026-10-22, tasks 0321–0327, ADR-043)
+
+`kk stage run publish-matrix-*` — new stages, not a new noun (ADR-037 inventory
+unchanged), dispatched from `apps/cli/src/publish-matrix-stage.ts` through
+`apps/cli/src/commands/stage.ts` the same way `itc-*` is. Module: `apps/cli/src/publish-matrix.ts`
+(`BundleSchema`, `PublishPlanRowSchema`, `PublishPlanSchema`, `targetId`, `planPublishMatrix`,
+`checkPublishMatrix`, `sendPublishMatrix`, `classifyPublishMatrix` + `runPublishMatrixClassify`,
+`runPublishMatrixBundle`, `runPublishMatrixRssGate`, `runPublishMatrixWaitUntil`).
+
+**Preset extension (optional-only).** `PublishPresetTargetSchema` gains `id`, `operation`,
+`variant`, `tier` (0–3, default 3), `window` (`after-generate`|`cn-peak`|`overseas-rss`, default
+`after-generate`), `mode` (`off`|`dummy`|`draft`, default `draft`), `required` (default false) and
+`options`. Every field is optional, so the shipped itc presets still validate and every itc target
+still keys by plugin name. `mode` is closed over `off|dummy|draft`: a preset file can never yield a
+live send (ADR-022) — live is only reachable through the launch var `--live-channels`.
+
+`targetId(row)` = `id` ?? `${plugin}.${slug(operation)}` ?? `plugin`; the slug keeps CJK and maps
+whitespace and `/` to `-`, so voice3's four xhs operations and two wechatmp operations get distinct
+receipt/payload keys while itc rows keep their plugin key (feature G211 adopts this key).
+
+**`publish-matrix-plan <workDir> --bundle <bundle.json> --preset <slug> --window <w> [--channels a,b] [--live-channels a,b] [--dummy]`**
+writes `4-publish/plan.<window>.json` and `4-publish/payloads/content.<id>.json`, and appends a
+`planned` line per row to `4-publish/publish-events.jsonl`. One row per preset target in that window
+with `mode != off`:
+
+```jsonc
+{ "id": "xhs-pub.写长文", "plugin": "xhs-pub", "operation": "写长文", "variant": "article",
+  "tier": 2, "window": "after-generate", "mode": "dummy", "required": false,
+  "approval": "none", "status": "planned", "profile": "article",
+  "payloadPath": "4-publish/payloads/content.xhs-pub.写长文.json", "payloadDigest": "<sha256>" }
+```
+
+Plan-level fields: `schemaVersion`, `window`, `bundleRunId`, `parentRunId` (bundle
+`parentRunId`, else its `runId` — receipts bind to a run either way), `presetName`, `presetDigest`.
+Payload build: variant `Content` + `metadata.operation` + `metadata.publishStatus`
+(`live` → `public`, else `draft`) with the row's `options` merged underneath, so an option can never
+flip the row's mode. `approval` is `required` for a live row — recorded, not enforced (the
+workflow's pause node and the future console own that). Payload variant lookup is
+`${variant}@${plugin}` then `${variant}`, so generate can ship channel-specific copy without a
+preset change. The plan fails (exit 1, naming the target) on: an unknown preset slug, a preset row
+carrying `mode: live`, a `--channels`/`--live-channels` token the preset never lists, a live
+promotion the window does not list or that lands on a `dummy` target, `--dummy` combined with
+`--live-channels`, a missing or digest-mismatched variant, a variant that is not valid Content, a
+preset target with no `variant`, and two rows resolving to the same id.
+
+**Bundle contract (consumed here, produced by 0324):**
+
+```jsonc
+{ "schemaVersion": 1, "runId": "…", "runDate": "YYYY-MM-DD", "parentRunId": "…", "runs": [],
+  "episode": { "title": "…", "guid": "…" },
+  "variants": { "article": { "path": "variants/article.json", "sha256": "<sha256>" } } }
+```
+
+`path` resolves against the bundle file's own directory and must match `sha256`; each entry parses
+as kk-core `ContentSchema`.
+
+**`publish-matrix-check <workDir> --window <w>` | `--preset <slug> --all-windows`** probes each
+plugin's `check` entry (the shared `probePlugin` seam, same env injection and redaction as
+`itc-check-targets`). The window form probes the distinct plugins of the plan's **non-dummy** rows
+and writes `4-publish/check.<window>.json`; the preset form needs no plan — it probes the distinct
+plugins of every `draft` row across **all** windows of the preset and writes
+`4-publish/check.preflight.json` with `window: "preflight"`, because at generate time the bundle the
+plan needs does not exist yet (task 0325). Both shapes are `{schemaVersion, window, plugins:[{plugin, ok, detail?}]}`
+and both are warn-only: a refusal is printed and recorded and the stage exits 0; an empty probe set
+passes and prints `no probes`. The one fatal case is the preset form naming a plugin that is not
+installed — that is invalid preset data, not a runtime refusal. This replaces the hard-coded
+`wechatmp-pub xhs-pub` probe list (feature G15 T-c); voice2's own node is unchanged.
+
+**`publish-matrix-send <workDir> --window <w> [--retry] [--tier <n>]`** dispatches in tier order.
+Tier 0 is the publication contract: serial, and a failed `required` tier-0 row records a `skipped`
+event for every later tier and sends none of them. Rows at tier ≥ 1 get their payload's
+`{{article_url}}` / `{{podcast_url}}` placeholders resolved from the tier-0 receipts
+(`surfdash-pub` → article, `podcast-pub` → podcast) into
+`4-publish/payloads/content.<id>.resolved.json`; a placeholder that stays unresolved fails that row
+with `effect: none`, `error: unresolved-link`, and no spawn. Resend rules are inherited unchanged
+from the shared `sendRows` loop, which the itc sender now also uses (`key` = plugin there, target id
+here): skip a succeeded row, never resend a live row whose effect is `unknown`, and `--retry`
+resends only `effect: none` failures. Receipts land in `4-publish/receipts/<id>.json`; the schema
+gains optional `target`, `window`, `dummy`, `error`, `startedAt`, `finishedAt` beside the existing
+`status`/`effect` shape, so an itc receipt is unchanged. `publish-events.jsonl` gets one
+`sent`/`failed` line per receipt. `--tier <n>` restricts the pass to exactly that tier.
+
+**Dummy mode (task 0322).** A `mode: dummy` row is planned, payload-built and schema-validated like
+any other, then `send` writes the synthetic receipt
+`{status: "succeeded", effect: "none", dummy: true, mode: "draft", url: "dummy://<id>", target, window, startedAt, finishedAt}`
+and never calls the dispatcher — one branch in `sendRows` before `runFanout`, so no plugin process
+and no network call happens (the rehearsal still parses the payload as kk-core `Content`; a payload
+that is no longer valid Content gets a failed receipt with `error: "invalid-payload"`). Tier-2 link
+placeholders resolve to the tier-0 `dummy://` urls, so a full all-dummy run needs no network at all.
+A dummy receipt is a succeeded receipt for resend purposes (a rerun skips it) **except** that it
+never blocks a real send: flipping the preset row to `draft` dispatches the target once on the next
+run. itc rows never carry `mode: dummy`, so the branch is unreachable there.
+
+**Generate-side payload builders and variants (task 0327).** The channel payload shaping that voice2
+performed inside its publish stages is exposed as pure builders in
+`plugins/kk/scripts/daily-stages.ts` — `buildSurfdashContent`, `buildPodcastContent`,
+`buildWechatArticleContent`, `buildXhsEpisodeContent`, `buildXhsArticleContent`,
+`buildXhsCardsContent`, `buildSocialContent` — each returning a `Content` and taking a
+`PublishLinks { articleUrl, podcastUrl }`. voice2's own `daily-publish-*` stages call them with the
+real tier-0 urls, so its outputs are unchanged. `kk stage run daily-bundle-variants <workDir>
+<runDate> <pluginsPath>` calls them with `PLACEHOLDER_LINKS` (`{{article_url}}` / `{{podcast_url}}`)
+and writes `30-variants/<key>.content.json` for `article`, `article@surfdash-pub`,
+`article@xhs-pub`, `article@wechatmp-pub`, `episode`, `episode@podcast-pub`, `episode@xhs-pub`,
+`episode@wechatmp-pub`, `cards@xhs-pub` and `social:{x,weibo,threads}` — the key `:` becomes `_` in
+the file name. That is exactly the bundle's `variants` map (`key → {path, sha256}`), and the plan's
+lookup order `${variant}@${plugin}` then `${variant}` is what lets a channel-specific variant win. A
+variant whose source artifact is absent (channel disabled, cards never rendered, social copy not
+authored) is skipped with a log line, never invented. Social copy is authored by the workflow's
+`social-write` node into `26-social/<platform>.md` and wrapped here: the body is the post text, the
+episode cover rides as `metadata.coverImage`, and the per-platform cap (x 280, weibo 2000,
+threads 500) is a truncation backstop — the prompt owns the limit, and a publish stage never
+re-authors (design §6).
+
+**`publish-matrix-classify <workDir> --window <w> --run-date <stamp>`** (task 0326) turns the
+window's receipts into `4-publish/outcome.<window>.json`
+`{schemaVersion, window, runDate, status, published, targets, rows:[{id, tier, required, status, effect?, dummy}]}`
+plus `4-publish/publish-status.<window>.txt` and the ledger's `publish-classify.summary.txt`
+(`{status, published, targets}`). `classifyPublishMatrix(plan, receipts, runDate)` is pure, and the
+status is computed over the **non-dummy** rows only: `full` when every one succeeded, `partial` when
+at least one did, `none` when none did, `dummy` when the window holds only rehearsals. A planned row
+with no receipt is `missing` and counts as not succeeded, so a window that never dispatched never
+reads as published. The stage always exits 0 once it can read the plan (a missing plan reports
+`none`) — routing is the workflow's job. For `after-generate` it also bridges the tier-0 owned
+receipts' `aggregatePath` bytes into the legacy `31-publish/<runDate>_14_publish-surfdash_result.json`
+/ `_16_publish-podcast_result.json` names, only when the row is non-dummy, so `daily-patch-surfdash`,
+`daily-publish-partial`, `run-report` and the board keep working unchanged on a voice3 work dir; the
+bridge is the documented legacy seam and disappears with voice2. `kk daily publish-classify
+[--fold-tail]` and its tests are untouched.
+
+**`kk-daily-ai-voice3` — the generate half (task 0324).** `plugins/kk/workflows/kk-daily-ai-voice3.yaml`
+(`kind: dag`) carries voice2's generation graph — `prepare` → read chain → `extract` → `plan` →
+`qc-content` → `select` → translate → article/cover/script drafts → nested `safety` → `review` pause →
+audio (split/generate/fallbacks/intro/audit/duration) → `quality` → `show-notes` → card
+`cards-write`/`cards-render` — and then the generate-side tail this feature adds:
+
+| Node | What it does |
+| --- | --- |
+| `pool-gate` | the ONE `kk store pool-count --min 1` over the candidates file; records `PASS`/`EMPTY` at `.spur/run/<runId>-pool-gate.status` |
+| `social-write` | `agent.run` (`onError: continue`) writing zh short posts to `26-social/{x,weibo,threads}.md` inside each platform's cap |
+| `bundle-variants` | `kk stage run daily-bundle-variants …` → `30-variants/<key>.content.json` with `{{article_url}}`/`{{podcast_url}}` |
+| `bundle-freeze` | `kk stage run publish-matrix-bundle <workDir> --run-date <d> --run-id <id>` → `bundle.json` |
+| `generation-report` | `kk daily run-report` (no store writes) |
+| `publish` | nested `kk-daily-publish3` when `auto_publish=true`, launcher vars stripped |
+| `ledger` | `kk ledger append`, `onError: continue` |
+
+**No channel enablement.** `xhs_enabled`, `wechat_enabled`, `xhs_live`, `wechat_live`, `xhs_cards` and
+`publish_enabled` are gone: the publish preset owns which channels exist, and this graph publishes
+nothing except through the nested window. What remains is generation switches — `cards_enabled` /
+`cards` (billed card rendering, off by default because the preset's cards row is `off`),
+`plan_translate_enabled`, `article_write_enabled`, `script_write_enabled`, `cover_enabled`,
+`transcode_mp3`, `skip_review` — plus the four publish hand-off vars
+(`auto_publish`, `publish_window`, `publish_preset`, `publish_dummy`). The 合集 tag a channel payload
+carries is that channel's preset `options`, not a var.
+
+**One pool guard, recorded as a token.** voice2 repeated `kk store pool-count --min 1` on twenty-one
+conditions. `pool-gate` runs it once and writes `.spur/run/<runId>-pool-gate.status`; every node that
+used to carry the guard checks that token instead. A token rather than a bare `dependsOn`, because the
+engine skips a node only when **all** its dependencies were skipped — a failed gate beside a done
+dependency would still admit the node, which is exactly the bug the second copy of the guard used to
+prevent.
+
+**`publish-matrix-bundle` (the only `bundle.json` producer).** It lists `30-variants/`, validates each
+file as kk-core `Content`, records `{path, sha256}` per key (the file name's `_` maps back to `:`), and
+fills `episode.title` from the episode/article variant, else `每日AI乱炖 · <runDate>`. It refuses to
+freeze when the article or episode variant is missing, and a re-freeze preserves an existing
+`runs[]` — a publish window's record must survive the next generate run.
+
+**`kk-daily-publish3` — the publish half (task 0323).** `plugins/kk/workflows/kk-daily-publish3.yaml`
+(`kind: dag`) runs one **window** per launch; the channel matrix is never in the YAML. Vars:
+`work_dir` (the voice3 day dir holding `bundle.json`), `run_date`, `window`
+(`after-generate|cn-peak|overseas-rss`), `preset` (empty = the operator's selector), `channels`,
+`live_channels`, `dummy`, `agent`.
+
+Nodes and their gating rule:
+
+| Node | Window | Notes |
+| --- | --- | --- |
+| `wait-until` | cn-peak | `publish-matrix-wait-until 09:00 Asia/Shanghai`; the schedule fires 17:00 local and this node sleeps the remainder (DST-safe, no-op when past) |
+| `rss-gate` | every window (no-op outside overseas) | `publish-matrix-rss-gate --date <run_date>`; a miss is a **verdict in `4-publish/rss-gate.json`**, not a node failure |
+| `plan` | hit or non-overseas | `publish-matrix-plan --bundle … --window …` (+ `--channels/--live-channels/--dummy` when set) |
+| `check` | every planned window | `publish-matrix-check --window …`, warn-only |
+| `send-confirm` | `pause: true`, condition = the plan has a live row | resume = approval; skipped for a draft window |
+| `send` | depends on `check` **and** `send-confirm` | tier order, dummy-aware, receipt-keyed |
+| `classify` | every sent window | `publish-matrix-classify --window … --run-date …` |
+| `surfdash-patch`, `partial-marker`, `mark-published` | after-generate only | the voice2-era tails on the bridged `31-publish` names |
+| `diagnose` | overseas + gate miss | `agent.run` (`role: scribe`, `onError: continue`) refining `4-publish/incident.{json,md}` |
+| `repair` | after `diagnose` | `publish-matrix-send --window after-generate --retry --tier 0` — the one safe automatic repair |
+| `bundle-runs` | after `classify` | appends this run id to `bundle.runs[]`, idempotently |
+| `report` | after `bundle-runs` and `diagnose` | `5-report/publish-<window>.md` |
+| `ledger` | after `report` | `kk ledger append`, `onError: continue` |
+
+**Two engine facts the graph is shaped around.** A DAG node is skipped only when **all** its
+dependencies were skipped, so (a) `send` lists `check` beside the conditional `send-confirm` — a
+draft window still sends, while a gated plan still stops; (b) `report` lists `diagnose` beside
+`bundle-runs` so a gated-miss day still writes its page. A node whose *only* dependency is
+conditional would silently vanish from the chain. The RSS gate therefore always succeeds and
+records its verdict, instead of failing and cascade-skipping the incident path.
+
+**A gated miss** plans and sends nothing: `plan`'s condition requires `.hit == true`, and the gate
+itself writes the deterministic incident floor (`class: rss-lag`, the feed URL, the miss reason)
+before `diagnose` refines it from the bundle and receipts. `repair` may only resend tier-0 rows whose
+receipt is `effect: none`; regenerating content stays an operator action (design §5a).
+
+**Shipped preset.** `plugins/kk/publish-presets/daily-ai-voice.json` carries design §3's matrix,
+each row assigned to exactly one window: T0 owned + draft-capable domestic on `after-generate`
+(公众号 播客/文章 draft, 小红书 发播客 draft, 小红书 写长文 dummy, 小红书 上传图文 off), the
+no-draft domestic rows on `cn-peak` (微博 头条, X article draft), and the short-copy channels on
+`overseas-rss` (`social:x`, `social:weibo`, `social:threads` draft); the gap channels
+(视频号 图文, threads images) are `off`. A row's `variant` is the **shared** bundle key
+(`article`, `episode`, `cards`, `social:x`): a channel-specific bundle variant is keyed
+`<variant>@<plugin>` and wins the lookup, which is how generate ships channel copy without a preset
+edit. The selector is `workflows.kk-daily-ai-voice3.publish_preset` (default `daily-ai-voice`,
+`plugins/kk/config.example.yaml`), resolved with the itc contract: a missing file/block means the
+compiled default, an unknown key or a non-slug value is refused by name.
+
+**Schedules.** `kk schedule render kk-daily-publish3-cn-peak|kk-daily-publish3-overseas --platform cron
+--repo <checkout>` renders the two windows' cron entries; kk never installs them. cn-peak fires
+`0 17 * * *` local and carries `live_channels` in the rendered line — that installed line **is** the
+operator's ADR-022 consent. overseas fires `0 7 * * *` and passes yesterday's `run_date`, because the
+observed episodes land after 07:00. Neither has a launchd template (no keepalive semantics needed).
+
+**Out of scope here:** the approval/monitoring console (the surface that would read a plan row's
+`approval` and flip it to granted), new channel plugins, and voice2's retirement — voice2's schedule,
+YAML and `kk daily publish-classify --fold-tail` path are untouched by this surface and stay as they
+are until the operator installs the two publish3 schedules and freezes it (design §8 step 3).

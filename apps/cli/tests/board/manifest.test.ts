@@ -9,8 +9,11 @@ import {
     artifactById,
     artifactsFor,
     COLLECT_ARTIFACTS,
+    CONFIDENCE_LEVELS,
+    DAILY_VOICE_ARTIFACTS,
     expandPattern,
     ITC_ARTIFACTS,
+    isConfidenceLevel,
     resolveAvailability,
     resolveWithin,
     WORKFLOW_NAMES,
@@ -68,6 +71,75 @@ describe('artifact manifest', () => {
     });
 });
 
+describe('daily episode-funnel artifacts (G82/0320)', () => {
+    const byId = new Map(DAILY_VOICE_ARTIFACTS.map((spec) => [spec.id, spec]));
+    it("pins the funnel specs to the workflow's fixed relative paths and DAG producers", () => {
+        expect(byId.get('episode-pool')).toMatchObject({
+            pattern: '10-collect/pool.json',
+            producerNode: 'extract',
+        });
+        expect(byId.get('episode-annotated')).toMatchObject({
+            pattern: '21-plan/{stamp}_04_quality-control-content_annotated.json',
+            producerNode: 'qc-content',
+        });
+        expect(byId.get('episode-qc-rejections')).toMatchObject({
+            pattern: '21-plan/{stamp}_04_quality-control-content_candidates.rejected.json',
+            producerNode: 'qc-content',
+        });
+        expect(byId.get('episode-exclusions')).toMatchObject({
+            pattern: '21-plan/{stamp}_04_quality-control-content_exclusions.json',
+            producerNode: 'qc-content',
+        });
+        expect(byId.get('episode-candidates')).toMatchObject({
+            pattern: '21-plan/{stamp}_04_quality-control-content_candidates.json',
+            producerNode: 'qc-content',
+        });
+        expect(byId.get('episode-plan')).toMatchObject({
+            pattern: '21-plan/{stamp}_03_plan_plan.json',
+            producerNode: 'plan',
+        });
+        expect(byId.get('episode-floor-refusal')).toMatchObject({
+            pattern: '21-plan/{stamp}_04_quality-control-content_floor-refusal.json',
+            producerNode: 'qc-content',
+        });
+        expect(byId.get('episode-duration')).toMatchObject({
+            pattern: '30-audio/{stamp}_11_generate_content_duration.json',
+            producerNode: 'duration',
+        });
+    });
+
+    it('shares one refusal file across three specs with distinct producer nodes', () => {
+        const refusal = '30-audio/{stamp}_11_generate_content_duration-refusal.json';
+        expect(byId.get('episode-duration-refusal')).toMatchObject({ pattern: refusal, producerNode: 'duration' });
+        expect(byId.get('episode-script-refusal')).toMatchObject({ pattern: refusal, producerNode: 'generate' });
+        expect(byId.get('episode-script-refusal-fallback')).toMatchObject({
+            pattern: refusal,
+            producerNode: 'generate-fallback',
+        });
+        expect(byId.get('episode-script-refusal-fallback2')).toMatchObject({
+            pattern: refusal,
+            producerNode: 'generate-fallback2',
+        });
+        // Every funnel spec is DAG-node identified: no state-machine action keys sneak in.
+        for (const id of [
+            'episode-pool',
+            'episode-annotated',
+            'episode-qc-rejections',
+            'episode-exclusions',
+            'episode-candidates',
+            'episode-plan',
+            'episode-floor-refusal',
+            'episode-duration-refusal',
+            'episode-script-refusal',
+            'episode-script-refusal-fallback',
+            'episode-script-refusal-fallback2',
+            'episode-duration',
+        ]) {
+            expect(byId.get(id)?.producerActionKey, id).toBeUndefined();
+        }
+    });
+});
+
 describe('resolveAvailability', () => {
     it('never returns available without an owned marker, a successful producer and a file', () => {
         expect(resolveAvailability('owned', 'success', 'present', true)).toBe('available');
@@ -81,5 +153,16 @@ describe('resolveAvailability', () => {
         expect(resolveAvailability('owned', 'success', 'unreadable', true)).toBe('invalid');
         expect(resolveAvailability('owned', 'pending', 'absent', false)).toBe('pending');
         expect(resolveAvailability('owned', 'pending', 'absent', true)).toBe('missing');
+    });
+});
+
+describe('confidence vocabulary', () => {
+    it('recognizes exactly the three judge spellings and refuses everything else', () => {
+        for (const level of CONFIDENCE_LEVELS) {
+            expect(isConfidenceLevel(level)).toBe(true);
+        }
+        for (const other of ['high', 'CERTAIN', '', null, undefined, 0, 'HIGH '] as unknown[]) {
+            expect(isConfidenceLevel(other)).toBe(false);
+        }
     });
 });

@@ -9,6 +9,14 @@ defaults:
   maxResults: 8
   fixture: false
 
+# Per-workflow settings. `publish_preset` names the publish preset that owns the daily channel
+# matrix (files live in `plugins/kk/publish-presets/`, overridable per project under
+# `.kk/publish-presets/`). The preset decides WHICH channels publish; `live` is never in a preset
+# file — it is a launch var (`live_channels`) or an installed schedule entry (ADR-022).
+workflows:
+  kk-daily-ai-voice3:
+    publish_preset: "daily-ai-voice"
+
 # Plugin credentials — paste values between the quotes.
 # Path: plugins/<collection>/<name>/env — each entry is injected into that plugin's
 # process environment at exec time. A real environment variable always wins

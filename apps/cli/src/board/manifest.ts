@@ -278,6 +278,93 @@ export const DAILY_VOICE_ARTIFACTS: readonly ArtifactSpec[] = [
         pattern: '{stamp}_19_run-report_report.md',
         producerNode: 'run-report',
     },
+    // G82/0320 — the episode-funnel specs. The three refusal specs share ONE fixed file
+    // (`…_duration-refusal.json`) with distinct producer nodes: the shape (measured vs
+    // stage=script) decides which gate it evidences, the producer decides who may write it.
+    {
+        id: 'episode-pool',
+        label: 'Episode pool',
+        kind: 'json',
+        pattern: '10-collect/pool.json',
+        producerNode: 'extract',
+    },
+    {
+        id: 'episode-annotated',
+        label: 'QC annotation input',
+        kind: 'json',
+        pattern: '21-plan/{stamp}_04_quality-control-content_annotated.json',
+        producerNode: 'qc-content',
+    },
+    {
+        id: 'episode-qc-rejections',
+        label: 'QC rejections',
+        kind: 'json',
+        pattern: '21-plan/{stamp}_04_quality-control-content_candidates.rejected.json',
+        producerNode: 'qc-content',
+    },
+    {
+        id: 'episode-exclusions',
+        label: 'Topic exclusions',
+        kind: 'json',
+        pattern: '21-plan/{stamp}_04_quality-control-content_exclusions.json',
+        producerNode: 'qc-content',
+    },
+    {
+        id: 'episode-candidates',
+        label: 'Post-QC candidates',
+        kind: 'json',
+        pattern: '21-plan/{stamp}_04_quality-control-content_candidates.json',
+        producerNode: 'qc-content',
+    },
+    {
+        id: 'episode-plan',
+        label: 'Episode plan',
+        kind: 'json',
+        pattern: '21-plan/{stamp}_03_plan_plan.json',
+        producerNode: 'plan',
+    },
+    {
+        id: 'episode-floor-refusal',
+        label: 'QC floor refusal',
+        kind: 'json',
+        pattern: '21-plan/{stamp}_04_quality-control-content_floor-refusal.json',
+        producerNode: 'qc-content',
+    },
+    {
+        id: 'episode-duration',
+        label: 'Duration verdict',
+        kind: 'json',
+        pattern: '30-audio/{stamp}_11_generate_content_duration.json',
+        producerNode: 'duration',
+    },
+    {
+        id: 'episode-duration-refusal',
+        label: 'Duration refusal',
+        kind: 'json',
+        pattern: '30-audio/{stamp}_11_generate_content_duration-refusal.json',
+        producerNode: 'duration',
+    },
+    {
+        id: 'episode-script-refusal',
+        label: 'Script refusal',
+        kind: 'json',
+        pattern: '30-audio/{stamp}_11_generate_content_duration-refusal.json',
+        producerNode: 'generate',
+    },
+    {
+        id: 'episode-script-refusal-fallback',
+        label: 'Script refusal (fallback)',
+        kind: 'json',
+        pattern: '30-audio/{stamp}_11_generate_content_duration-refusal.json',
+        producerNode: 'generate-fallback',
+    },
+    {
+        id: 'episode-script-refusal-fallback2',
+        label: 'Script refusal (second fallback)',
+        kind: 'json',
+        pattern: '30-audio/{stamp}_11_generate_content_duration-refusal.json',
+        producerNode: 'generate-fallback2',
+    },
 ];
 
 /**

@@ -47,6 +47,7 @@ describe('registerStoreCommand', () => {
             'label',
             'extract',
             'pool-count',
+            'stats',
             'select',
             'mark-published',
             'release',
@@ -331,6 +332,75 @@ describe('kk store migrate', () => {
             join(ARTIFACT_DIR, 'kk-store-migrate-error.txt'),
             `exit: ${result.code}\nstderr: ${result.err.trim()}\n`,
         );
+    });
+});
+
+describe('kk store stats (2026-10-22 channel-width report)', () => {
+    it('counts new items per local day per source channel, as a table and as JSON', async () => {
+        const dir = tempDir();
+        const dbPath = join(dir, 'stats.db');
+        const input = join(dir, 'docs.json');
+        writeFileSync(
+            input,
+            JSON.stringify([
+                { id: 'a', title: 'A', body: 'x', sourceUri: 'https://example.com/a', metadata: { source: 'rss' } },
+                { id: 'b', title: 'B', body: 'y', sourceUri: 'https://example.com/b', metadata: { source: 'rss' } },
+                {
+                    id: 'c',
+                    title: 'C',
+                    body: 'z',
+                    sourceUri: 'https://example.com/c',
+                    metadata: { source: 'youtube' },
+                },
+            ]),
+        );
+        const ingest = await run([
+            'store',
+            'ingest',
+            '--run',
+            'run-1',
+            '--in',
+            input,
+            '--new-ids',
+            join(dir, 'stats-ids.json'),
+            '--db',
+            dbPath,
+        ]);
+        expect(ingest.code, ingest.err).toBe(0);
+
+        const json = await run(['store', 'stats', '--days', '1', '--json', '--db', dbPath]);
+        expect(json.code, json.err).toBe(0);
+        const parsed = JSON.parse(json.out) as {
+            days: number;
+            byDay: Array<{ day: string; total: number; sources: Record<string, number> }>;
+            bySource: Record<string, number>;
+        };
+        expect(parsed.days).toBe(1);
+        expect(parsed.bySource).toEqual({ rss: 2, youtube: 1 });
+        expect(parsed.byDay).toHaveLength(1);
+        expect(parsed.byDay[0]?.total).toBe(3);
+        expect(parsed.byDay[0]?.sources).toEqual({ rss: 2, youtube: 1 });
+
+        // The default rendering is the operator table: one row per day plus the TOTAL line.
+        const table = await run(['store', 'stats', '--days', '1', '--db', dbPath]);
+        expect(table.code, table.err).toBe(0);
+        expect(table.out).toContain('day');
+        expect(table.out).toContain('rss');
+        expect(table.out).toContain('youtube');
+        expect(table.out).toContain('TOTAL');
+    });
+
+    it('reports an empty window without failing, and refuses a nonsensical --days', async () => {
+        const dir = tempDir();
+        const dbPath = join(dir, 'empty-stats.db');
+        const empty = await run(['store', 'stats', '--days', '7', '--db', dbPath]);
+        expect(empty.code, empty.err).toBe(0);
+        expect(empty.out).toContain('no items in the window');
+
+        const bad = await run(['store', 'stats', '--days', '0', '--db', dbPath]);
+        expect(bad.code).toBe(1);
+        expect(bad.err).toContain('kk.store.stats.failed');
+        expect(bad.err).toContain('--days must be a positive integer');
     });
 });
 

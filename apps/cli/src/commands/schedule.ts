@@ -29,6 +29,11 @@ const CHECKOUT_ROOT = resolve(import.meta.dir, '../../../..');
 const SCHEDULE_TEMPLATES: Record<string, Partial<Record<SchedulePlatform, string>>> = {
     'kk-collect': { launchd: 'launchd.plist.tmpl', cron: 'cron.tmpl' },
     'kk-serve': { launchd: 'kk-serve.launchd.plist.tmpl' },
+    // The two publish3 windows (task 0323 R5). Cron-only by design: the overseas window is a plain
+    // daily tick, and cn-peak's `wait-until` node absorbs the hosted-zone offset, so neither needs
+    // launchd's keepalive or calendar-interval semantics.
+    'kk-daily-publish3-cn-peak': { cron: 'kk-daily-publish3-cn-peak.cron.tmpl' },
+    'kk-daily-publish3-overseas': { cron: 'kk-daily-publish3-overseas.cron.tmpl' },
 };
 
 /** Options accepted by `kk schedule render`. */

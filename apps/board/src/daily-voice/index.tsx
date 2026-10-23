@@ -1,6 +1,7 @@
 import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { RunConfig, RunResults } from '../contracts';
-import { type BoardClient, createBoardClient, readerOriginFrom } from '../shared/api';
+import type { CollectChannelYield, RunConfig, RunResults } from '../contracts';
+import { type BoardClient, createBoardClient, DEFAULT_READER_ORIGIN, readerOriginFrom } from '../shared/api';
+import { ChannelYieldTable, PluginRunTable } from '../shared/channel-yield';
 import { artifactViews } from '../shared/collect';
 import { dedupeDiagnostics, diagnosticLine, formatTimestamp } from '../shared/format';
 import {
@@ -11,6 +12,7 @@ import {
     HISTORY_POLL_MS,
     initialRefresh,
     type RefreshState,
+    requestSequence,
     succeeded,
     tick,
 } from '../shared/refresh';
@@ -25,7 +27,16 @@ import {
     selectionPath,
     syncSelectionUrl,
 } from '../shared/run-selection';
-import { type DailyChannelView, type DailyProgressView, dailySummary, dailySummaryFacts } from './view';
+import {
+    type DailyChannelView,
+    type DailyFunnelView,
+    type DailyProgressView,
+    type DailySupplyContext,
+    dailySummary,
+    dailySummaryFacts,
+    funnelView,
+    supplyContextOf,
+} from './view';
 
 /**
  * The Daily AI Voice Board module (`kk-daily-ai-voice2`), rendered inside the host's React tree.
@@ -59,6 +70,11 @@ function messageOf(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
+/** A fetch that never reached the reader reads as offline, not as missing data. */
+function isOfflineError(message: string): boolean {
+    return message.includes('Failed to fetch') || message.includes('NetworkError') || message.includes('ECONNREFUSED');
+}
+
 /**
  * Poll one async loader on a steady interval with a capped backoff after failures, stopping while
  * the document is hidden. The loader owns its own bookkeeping through `src/shared/refresh.ts`.
@@ -90,10 +106,18 @@ function usePolling(loader: () => Promise<void>, intervalMs: number, refresh: Re
 export function DailyVoiceModule() {
     const [link] = useState(() => parseDeepLink(window.location.search));
     const [reader] = useState(() => readerOriginFrom(window.location.search));
+    // G82: the ONE store consumption — the 0319 channels aggregate, read through the loopback
+    // aggregate reader (a valid kkApi override wins, else the documented default; ADR-035 2026-10-22).
+    const [aggregateReader] = useState(() => readerOriginFrom(window.location.search, DEFAULT_READER_ORIGIN));
     const readerOrigin = reader.origin;
     const client = useMemo<BoardClient>(
-        () => createBoardClient({ readerOrigin, boardOrigin: window.location.origin }),
-        [readerOrigin],
+        () =>
+            createBoardClient({
+                readerOrigin,
+                aggregateReaderOrigin: aggregateReader.origin,
+                boardOrigin: window.location.origin,
+            }),
+        [readerOrigin, aggregateReader.origin],
     );
     const [rows, setRows] = useState<RunListRow[]>([]);
     const [cursor, setCursor] = useState<string | null>(null);
@@ -101,12 +125,20 @@ export function DailyVoiceModule() {
     const [diagnostics, setDiagnostics] = useState(() => [
         ...link.diagnostics,
         ...(reader.diagnostic === null ? [] : [reader.diagnostic]),
+        ...(aggregateReader.diagnostic === null ? [] : [aggregateReader.diagnostic]),
     ]);
     const [historyRefresh, setHistoryRefresh] = useState<RefreshState>(() => initialRefresh(HISTORY_POLL_MS));
     const [readerRefresh, setReaderRefresh] = useState<RefreshState>(() => initialRefresh(ACTIVE_POLL_MS));
     const [results, setResults] = useState<RunResults | null>(null);
     const [config, setConfig] = useState<RunConfig | null>(null);
     const [filterQuery, setFilterQuery] = useState('');
+
+    // G82: supply context (channels aggregate) for the Summary tab. Keyed to run + bounds, with a
+    // sequence token so a stale response never overwrites the panel of a newer selection.
+    const [supply, setSupply] = useState<CollectChannelYield | null>(null);
+    const [storeOffline, setStoreOffline] = useState(false);
+    const supplyRequests = useRef(requestSequence());
+    const supplyKeyRef = useRef<string | null>(null);
 
     // One busy ref per source: a manual Refresh/"Load more" click can never overlap an in-flight poll.
     const historyBusy = useRef(false);
@@ -140,15 +172,26 @@ export function DailyVoiceModule() {
         if (runId === null) return;
         readerBusy.current = true;
         setReaderRefresh((state) => tick(state));
+        // A response for a run the operator has already left is stale: it is discarded and the
+        // newly selected run is fetched immediately (no wrong-run panel for a whole poll cycle).
+        let stale = false;
         try {
             const [nextResults, nextConfig] = await Promise.all([
                 client.results(WORKFLOW, runId),
                 client.config(WORKFLOW, runId),
             ]);
+            if (selectionRef.current.runId !== runId) {
+                stale = true;
+                return;
+            }
             setResults(nextResults);
             setConfig(nextConfig);
             setReaderRefresh(() => succeeded(Date.now(), ACTIVE_POLL_MS));
         } catch (error) {
+            if (selectionRef.current.runId !== runId) {
+                stale = true;
+                return;
+            }
             setDiagnostics((existing) => [
                 ...existing,
                 { code: 'board.reader.unavailable', message: messageOf(error) },
@@ -156,6 +199,7 @@ export function DailyVoiceModule() {
             setReaderRefresh((state) => failed(state, Date.now()));
         } finally {
             readerBusy.current = false;
+            if (stale) void loadReader();
         }
     }, [client]);
 
@@ -176,6 +220,39 @@ export function DailyVoiceModule() {
     const now = Date.now();
     const summary = results === null ? null : dailySummary(results);
     const facts = results === null ? [] : dailySummaryFacts(results, now);
+    const funnel = funnelView(results?.summary.funnel);
+    const context = supplyContextOf(config?.settings.window ?? null, summary?.startedAt ?? null);
+    // G82: the configured supply interval — [startedAt − captured window, startedAt). Unknown
+    // input renders unknown and issues NO store query (ADR-035 2026-10-22).
+    useEffect(() => {
+        const bounds = tab === 'summary' && context !== null ? context : null;
+        const key = bounds === null ? null : `${selection.runId}:${bounds.fromMs}:${bounds.untilMs}`;
+        if (key === supplyKeyRef.current) return;
+        supplyKeyRef.current = key;
+        if (bounds === null) {
+            setSupply(null);
+            return;
+        }
+        const token = supplyRequests.current.begin();
+        let cancelled = false;
+        void (async () => {
+            try {
+                const page = await client.storeChannels({ fromMs: bounds.fromMs, untilMs: bounds.untilMs, page: 1 });
+                if (cancelled || !supplyRequests.current.isCurrent(token)) return;
+                setSupply(page);
+                setStoreOffline(false);
+            } catch (error) {
+                if (cancelled || !supplyRequests.current.isCurrent(token)) return;
+                setSupply(null);
+                const message = messageOf(error);
+                if (isOfflineError(message)) setStoreOffline(true);
+                else setDiagnostics((existing) => [...existing, { code: 'board.store.channels-unavailable', message }]);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [client, tab, context, selection.runId]);
     const artifacts = results === null ? [] : artifactViews(results, readerOrigin);
     const selectedRow = rows.find((row) => row.id === selection.runId);
     const filteredRows = useMemo(() => {
@@ -270,7 +347,17 @@ export function DailyVoiceModule() {
                     <a href="/board/settings/workflows">Settings → Workflows</a>.
                 </p>
             ) : null}
-            {tab === 'summary' ? <SummaryPanel facts={facts} results={results} /> : null}
+            {tab === 'summary' ? (
+                <SummaryPanel
+                    facts={facts}
+                    results={results}
+                    funnel={funnel}
+                    artifacts={artifacts}
+                    context={context}
+                    supply={supply}
+                    storeOffline={storeOffline}
+                />
+            ) : null}
             {tab === 'results' ? <ResultsPanel artifacts={artifacts} channels={summary?.channels ?? []} /> : null}
             {tab === 'progress' ? <ProgressPanel progress={summary?.progress ?? null} /> : null}
             {tab === 'config' ? <ConfigPanel config={config} /> : null}
@@ -291,8 +378,24 @@ export function DailyVoiceModule() {
     );
 }
 
-/** Summary: execution status, result outcome and channel counts with every unknown explicit. */
-function SummaryPanel({ facts, results }: { facts: ReturnType<typeof dailySummaryFacts>; results: RunResults | null }) {
+/** Summary: execution status, result outcome, the episode funnel and the supply context panel. */
+function SummaryPanel({
+    facts,
+    results,
+    funnel,
+    artifacts,
+    context,
+    supply,
+    storeOffline,
+}: {
+    facts: ReturnType<typeof dailySummaryFacts>;
+    results: RunResults | null;
+    funnel: DailyFunnelView;
+    artifacts: ReturnType<typeof artifactViews>;
+    context: DailySupplyContext | null;
+    supply: CollectChannelYield | null;
+    storeOffline: boolean;
+}) {
     if (results === null) return <p>No captured results for the selected run.</p>;
     const summary = dailySummary(results);
     const liveChannels = summary.channels.filter((c) => c.state === 'live').length;
@@ -336,7 +439,202 @@ function SummaryPanel({ facts, results }: { facts: ReturnType<typeof dailySummar
                     </div>
                 ))}
             </dl>
+            <FunnelPanel funnel={funnel} artifacts={artifacts} />
+            <SupplyPanel context={context} supply={supply} storeOffline={storeOffline} />
         </div>
+    );
+}
+
+/** A count that is `unavailable` when the artifact evidence was never recorded. */
+function funnelCount(value: number | null): string {
+    return value === null ? 'unavailable' : String(value);
+}
+
+/** Minutes with one decimal, or `unavailable` — never a guessed duration. */
+function funnelMinutes(value: number | null): string {
+    return value === null ? 'unavailable' : `${value.toFixed(1)} min`;
+}
+
+/** The evidence chip for one funnel field: the fixed artifact id, linked when authorized. */
+function EvidenceChip({
+    field,
+    funnel,
+    artifacts,
+}: {
+    field: string;
+    funnel: DailyFunnelView;
+    artifacts: ReturnType<typeof artifactViews>;
+}) {
+    const evidenceId = funnel.evidence[field];
+    if (evidenceId === undefined) return <span className="kk-board-state">no evidence</span>;
+    if (evidenceId === 'captured-settings') return <code>captured-settings</code>;
+    const artifact = artifacts.find((candidate) => candidate.id === evidenceId);
+    return artifact === undefined || artifact.href === null ? (
+        <code>
+            {evidenceId} ({artifact?.state ?? 'missing'})
+        </code>
+    ) : (
+        <a href={artifact.href}>
+            <code>{evidenceId}</code>
+        </a>
+    );
+}
+
+/**
+ * The artifact-backed episode funnel: pool → annotation → topic filter → QC rejection → dedup →
+ * plan, the duration ladder bounds and the no-content gate. Counts come from the run's own
+ * artifacts with their evidence ids; unknown stays unavailable, never 0.
+ */
+function FunnelPanel({ funnel, artifacts }: { funnel: DailyFunnelView; artifacts: ReturnType<typeof artifactViews> }) {
+    const rows: { label: string; value: string; field: string }[] = [
+        { label: '1 · Episode pool', value: funnelCount(funnel.poolCount), field: 'poolCount' },
+        { label: '2 · Annotated', value: funnelCount(funnel.annotatedCount), field: 'annotatedCount' },
+        { label: '3 · Topic filter kept', value: funnelCount(funnel.topicKeptCount), field: 'topicKeptCount' },
+        { label: '4 · QC rejected', value: funnelCount(funnel.qcRejectedCount), field: 'qcRejectedCount' },
+        {
+            label: '5 · Post-dedup survivors',
+            value:
+                funnel.dedupKeptCount === null && funnel.plannedCount !== null
+                    ? 'unknown — plan recorded'
+                    : funnel.dedupKeptCount === null &&
+                        (funnel.gate === 'episode-duration' || funnel.gate === 'script' || funnel.gate === 'qc-floor')
+                      ? 'unknown — cleared by the refusal'
+                      : funnelCount(funnel.dedupKeptCount),
+            field: 'dedupKeptCount',
+        },
+        { label: '6 · Episode plan', value: funnelCount(funnel.plannedCount), field: 'plannedCount' },
+    ];
+    return (
+        <section className="kk-card kk-daily-funnel">
+            <div className="kk-card-header">
+                <h2>Episode funnel</h2>
+                <span className="kk-stat-sub">artifact-backed by this run</span>
+            </div>
+            <dl>
+                {rows.map((row) => (
+                    <div key={row.label}>
+                        <dt>{row.label}</dt>
+                        <dd>
+                            {row.value} · evidence{' '}
+                            <EvidenceChip field={row.field} funnel={funnel} artifacts={artifacts} />
+                        </dd>
+                    </div>
+                ))}
+                <div key="minutes">
+                    <dt>Duration ladder</dt>
+                    <dd>
+                        measured {funnelMinutes(funnel.measuredMinutes)} · estimated{' '}
+                        {funnelMinutes(funnel.estimatedMinutes)} · floor {funnelMinutes(funnel.minMinutes)} · ceiling{' '}
+                        {funnelMinutes(funnel.maxMinutes)}
+                    </dd>
+                </div>
+                <div key="gate">
+                    <dt>No-content gate</dt>
+                    <dd>
+                        {funnel.gateName} · evidence <EvidenceChip field="gate" funnel={funnel} artifacts={artifacts} />
+                    </dd>
+                </div>
+            </dl>
+            {funnel.exclusions.length === 0 ? null : (
+                <div>
+                    <h3>Topic-filter exclusions</h3>
+                    <ul className="kk-board-channels">
+                        {funnel.exclusions.map((exclusion) => (
+                            // One rule can exclude several matched strings, so both identify a row.
+                            <li key={`${exclusion.rule}::${exclusion.matched}`}>
+                                <strong>{exclusion.rule}</strong>
+                                {exclusion.matched === '' ? null : ` — matched “${exclusion.matched}”`}
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+            {funnel.diagnostics.length === 0 ? null : (
+                <ul>
+                    {funnel.diagnostics.map((diagnostic) => (
+                        <li key={diagnostic.code} role="status" className="kk-board-diagnostic">
+                            {diagnostic.code}: {diagnostic.message}
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </section>
+    );
+}
+
+/**
+ * The ONE store consumption (ADR-035 2026-10-22): the 0319 channels aggregate rendered as supply
+ * CONTEXT for the half-open interval configured for this run. The extract ladder bounds are not
+ * persisted, so the panel is labeled configured context and the effective extraction window stays
+ * unknown; the artifact-backed funnel above remains the consumption truth.
+ */
+function SupplyPanel({
+    context,
+    supply,
+    storeOffline,
+}: {
+    context: DailySupplyContext | null;
+    supply: CollectChannelYield | null;
+    storeOffline: boolean;
+}) {
+    return (
+        <section className="kk-card kk-daily-supply">
+            <div className="kk-card-header">
+                <h2>Supply context (configured)</h2>
+                <span className="kk-stat-sub">read from the kk-collect store</span>
+            </div>
+            {context === null ? (
+                <p>
+                    The configured supply interval is unknown — no captured window setting or run start was recorded, so
+                    no store query was issued.
+                </p>
+            ) : (
+                <p>
+                    Window <code>{context.fromLabel}</code> → <code>{context.untilLabel}</code>
+                    {supply === null ? '' : ` · time zone ${supply.timeZone}`} — configured context; the effective
+                    extraction window (ladder bounds) is unknown, not persisted.
+                </p>
+            )}
+            {storeOffline ? <p>The store reader is offline; supply counts are unavailable.</p> : null}
+            {supply !== null && supply.availability === 'unavailable' ? (
+                <p>The store could not be read for this window; no counts are shown.</p>
+            ) : null}
+            {supply !== null && supply.availability === 'unavailable' && supply.diagnostics.length > 0 ? (
+                <ul>
+                    {supply.diagnostics.map((diagnostic) => (
+                        <li key={diagnostic.code} className="kk-board-diagnostic">
+                            {diagnostic.code}: {diagnostic.message}
+                        </li>
+                    ))}
+                </ul>
+            ) : null}
+            {supply !== null && supply.availability === 'available' ? (
+                <div className="kk-summary-grids">
+                    <div className="kk-card">
+                        <div className="kk-card-header">
+                            <h2>New items by day and source</h2>
+                            <span className="kk-stat-sub">{supply.sources.length} sources</span>
+                        </div>
+                        <div className="kk-table-container">
+                            <ChannelYieldTable data={supply} />
+                        </div>
+                    </div>
+                    <div className="kk-card">
+                        <div className="kk-card-header">
+                            <h2>Collection ticks and plugin contributions</h2>
+                            <span className="kk-stat-sub">{supply.plugins.length} plugins</span>
+                        </div>
+                        <div className="kk-table-container">
+                            <PluginRunTable data={supply} />
+                        </div>
+                    </div>
+                </div>
+            ) : null}
+            <p className="kk-board-footnote">
+                A source absent from this window recorded 0 contributions; its health is unknown. The episode funnel
+                above stays artifact-backed — supply here is context, not the run’s consumption record.
+            </p>
+        </section>
     );
 }
 

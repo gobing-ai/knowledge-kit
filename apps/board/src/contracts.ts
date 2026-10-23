@@ -109,6 +109,38 @@ export interface RunResults {
     diagnostics: BoardDiagnostic[];
 }
 
+/** One operator exclusion reason: the rule that fired and the text it matched (bounded lengths). */
+export interface DailyFunnelExclusion {
+    rule: string;
+    matched: string;
+}
+
+/**
+ * The Daily AI Voice episode funnel (G82, task 0320) — additive optional field under
+ * `RunResults.summary.funnel` (schemaVersion stays 1; older readers ignore it). Every count comes
+ * from one authorized run artifact; `evidence` maps the field name to the fixed manifest artifact
+ * id (or `captured-settings`) that supplied it. Null is explicit unknown, never zero.
+ */
+export interface DailyEpisodeFunnel {
+    poolCount: number | null;
+    annotatedCount: number | null;
+    qcRejectedCount: number | null;
+    topicKeptCount: number | null;
+    /** Post-dedup survivors; unknown after a refusal cleared the candidates file. */
+    dedupKeptCount: number | null;
+    plannedCount: number | null;
+    estimatedMinutes: number | null;
+    measuredMinutes: number | null;
+    minMinutes: number | null;
+    maxMinutes: number | null;
+    /** The evidenced gate that closed a no-content run, null for a content run, `unknown` when unproven. */
+    gate: 'episode-duration' | 'script' | 'qc-floor' | 'empty-pool' | 'qc-empty' | 'unknown' | null;
+    exclusions: DailyFunnelExclusion[];
+    /** Field name → fixed manifest artifact id (or `captured-settings`); never a caller path. */
+    evidence: Record<string, string>;
+    diagnostics: BoardDiagnostic[];
+}
+
 /* ------------------------------------------------------------------------------------------------
  * Collect store views (G81, task 0307 — docs/design/collect-store-views.md §3)
  *
@@ -231,4 +263,45 @@ export interface CollectStoreSelections extends CollectStoreAvailability {
     total: number;
     selections: CollectStoreSelection[];
     topics: string[];
+}
+
+/** `GET /api/workflows/kk-collect/store/channels` query (task 0319). */
+export interface StoreChannelsQuery {
+    fromMs: number;
+    untilMs: number;
+    page: number;
+}
+
+/** One channel-yield day: new items per source, plus the day's total. */
+export interface CollectChannelDay {
+    day: string;
+    total: number;
+    sources: Record<string, number>;
+}
+
+/** One tick day: `collect_runs` count plus summed plugin counts (`null` = malformed evidence). */
+export interface CollectRunDay {
+    day: string;
+    runs: number;
+    plugins: Record<string, number> | null;
+}
+
+/**
+ * `GET /api/workflows/kk-collect/store/channels` — both aggregate tables, one 30-day page.
+ * `bySource` and `totalDays` cover the whole requested interval, not just this page.
+ */
+export interface CollectChannelYield extends CollectStoreAvailability {
+    schemaVersion: 1;
+    fromMs: number;
+    untilMs: number;
+    timeZone: string;
+    page: number;
+    pageSize: 30;
+    totalDays: number;
+    sources: string[];
+    plugins: string[];
+    byDay: CollectChannelDay[];
+    bySource: Record<string, number>;
+    runsByDay: CollectRunDay[];
+    lastPositiveAt: Record<string, number | null>;
 }

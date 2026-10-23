@@ -26,6 +26,7 @@ import {
     SummaryPanel,
 } from '../../src/collect/panels';
 import type {
+    CollectChannelYield,
     CollectRunStore,
     CollectStoreItem,
     CollectStoreItems,
@@ -35,6 +36,8 @@ import type {
     RunResults,
 } from '../../src/contracts';
 import type { StoreItemsQuery } from '../../src/shared/api';
+import { ChannelYieldTable } from '../../src/shared/channel-yield';
+import { requestSequence } from '../../src/shared/refresh';
 
 const NOW = Date.parse('2026-10-16T12:00:00Z');
 
@@ -81,6 +84,33 @@ function overview(overrides: Partial<CollectStoreOverview> = {}): CollectStoreOv
         diagnostics: [],
         lastStoredAt: '2026-10-16T09:00:00Z',
         rows: { 'r-stored': storeRow, 'r-failed': null, 'r-running': null, 'r-done-empty': null },
+        ...overrides,
+    };
+}
+
+function channels(overrides: Partial<CollectChannelYield> = {}): CollectChannelYield {
+    return {
+        schemaVersion: 1,
+        availability: 'available',
+        diagnostics: [],
+        fromMs: 0,
+        untilMs: 0,
+        timeZone: 'UTC',
+        page: 1,
+        pageSize: 30,
+        totalDays: 1,
+        sources: ['aihot-ingest', 'hn-ingest'],
+        plugins: ['aihot-ingest', 'horizon-ingest', 'last30days-ingest'],
+        byDay: [{ day: '2026-10-16', total: 10, sources: { 'aihot-ingest': 6, 'hn-ingest': 4 } }],
+        bySource: { 'aihot-ingest': 6, 'hn-ingest': 4 },
+        runsByDay: [
+            {
+                day: '2026-10-16',
+                runs: 2,
+                plugins: { 'aihot-ingest': 6, 'horizon-ingest': 0, 'last30days-ingest': 0 },
+            },
+        ],
+        lastPositiveAt: { 'aihot-ingest': 0, 'horizon-ingest': null, 'last30days-ingest': null },
         ...overrides,
     };
 }
@@ -680,59 +710,96 @@ describe('shipped panels (AC6)', () => {
     });
 });
 
-describe('SummaryPanel (Redesigned Executive Dashboard)', () => {
-    it('renders KPI stat cards, time pills, charts, and breakdown tables', () => {
+describe('SummaryPanel (channel yield + plugin counts)', () => {
+    it('renders the time pills and the two aggregate tables, with no label/yield tiles', () => {
         const html = renderToStaticMarkup(
-            <SummaryPanel
-                runs={runs}
-                overview={overview()}
-                now={NOW}
-                timeRange="24h"
-                onTimeRangeChange={() => {}}
-                onInspectRun={() => {}}
-            />,
+            <SummaryPanel channels={channels()} timeRange="14d" onTimeRangeChange={() => {}} />,
         );
         // Time pills
         expect(html).toContain('24h');
+        expect(html).toContain('14d');
         expect(html).toContain('kk-time-pill active');
 
-        // KPI stat cards
-        expect(html).toContain('Total Ingested Items');
-        expect(html).toContain('Ingestion Success Rate');
-        expect(html).toContain('Label Decisions');
-        expect(html).toContain('Selection Yield');
-
-        // Timeline charts
-        expect(html).toContain('Ingestion Volume Over Time');
-        expect(html).toContain('Decision Volume &amp; Selection Activity');
-        expect(html).toContain('kk-chart-svg');
-
-        // Breakdowns
-        expect(html).toContain('Top Ingestion Sources');
-        expect(html).toContain('Recent Collection Runs');
+        // The two aggregate tables, driven by the channels route.
+        expect(html).toContain('New items by day and source');
+        expect(html).toContain('Collection ticks and plugin contributions');
         expect(html).toContain('aihot-ingest');
         expect(html).toContain('hn-ingest');
-        expect(html).toContain('r-stored');
+        expect(html).toContain('kk-channel-yield-table');
+        expect(html).toContain('kk-plugin-run-table');
+        // R2/AC2: a zero is a recorded zero, never a claim that the plugin ran or failed.
+        expect(html).toContain('Zero recorded contributions');
+        expect(html).toContain('plugin invocation health unknown');
+
+        // R5: unsupported native label/yield totals, ratios and trends are gone.
+        expect(html).not.toContain('Label Decisions');
+        expect(html).not.toContain('Selection Yield');
+        expect(html).not.toContain('Ingestion Volume Over Time');
+        expect(html).not.toContain('Top Ingestion Sources');
     });
 
-    it('renders fallback states when overview is loading or unavailable', () => {
-        const loadingHtml = renderToStaticMarkup(<SummaryPanel runs={runs} overview={null} now={NOW} timeRange="4h" />);
-        expect(loadingHtml).toContain('Total Ingested Items');
-        expect(loadingHtml).toContain('The store overview has not loaded yet.');
+    it('renders loading and unavailable states without inventing counts', () => {
+        const loadingHtml = renderToStaticMarkup(<SummaryPanel channels={null} timeRange="14d" />);
+        expect(loadingHtml).toContain('The channel-yield aggregate has not loaded yet.');
+        expect(loadingHtml).not.toContain('kk-channel-yield-table');
 
         const unavailHtml = renderToStaticMarkup(
             <SummaryPanel
-                runs={runs}
-                overview={overview({
+                channels={channels({
                     availability: 'unavailable',
-                    diagnostics: [{ code: 'board.store.unavailable', message: 'Database busy' }],
+                    diagnostics: [{ code: 'board.store.missing', message: 'No store is present.' }],
+                    byDay: [],
+                    runsByDay: [],
+                    sources: [],
+                    bySource: {},
+                    totalDays: 0,
                 })}
-                now={NOW}
-                timeRange="4h"
+                timeRange="14d"
             />,
         );
-        expect(unavailHtml).toContain('The store could not be read for this page');
-        expect(unavailHtml).toContain('Database busy');
+        expect(unavailHtml).toContain('The store could not be read for this range; no counts are shown.');
+        expect(unavailHtml).toContain('board.store.missing: No store is present.');
+        expect(unavailHtml).not.toContain('kk-channel-yield-table');
+    });
+
+    it('labels a malformed plugin day unknown and shows last-positive contribution times', () => {
+        const html = renderToStaticMarkup(
+            <SummaryPanel
+                channels={channels({
+                    runsByDay: [{ day: '2026-10-16', runs: 1, plugins: null }],
+                    diagnostics: [{ code: 'board.store.channel-invalid', message: 'bad plugin counts' }],
+                })}
+                timeRange="14d"
+            />,
+        );
+        expect(html).toContain('unknown');
+        expect(html).toContain('board.store.channel-invalid: bad plugin counts');
+        expect(html).toContain('Last positive aihot-ingest');
+    });
+
+    it('pages the aggregate when the interval spans more than one 30-day page', () => {
+        const deltas: number[] = [];
+        const html = renderToStaticMarkup(
+            <SummaryPanel
+                channels={channels({ totalDays: 60 })}
+                timeRange="All"
+                channelsPage={1}
+                onChannelsPageChange={(delta) => deltas.push(delta)}
+            />,
+        );
+        expect(html).toContain('Page 1 of 2 · 60 days');
+        const tree = SummaryPanel({
+            channels: channels({ totalDays: 60 }),
+            timeRange: 'All',
+            channelsPage: 1,
+            onChannelsPageChange: (delta) => deltas.push(delta),
+        });
+        const pager = mustFind(tree, (element) => element.props.className === 'kk-collect-pager');
+        for (const label of ['Previous', 'Next']) {
+            const button = mustFind(pager, (element) => element.type === 'button' && textOf(element) === label);
+            (button.props as { onClick: () => void }).onClick();
+        }
+        expect(deltas).toEqual([-1, 1]);
     });
 });
 
@@ -904,9 +971,7 @@ describe('0317 drilldown surfaces', () => {
     it('routes a Summary time-range pill to its handler', () => {
         const ranges: string[] = [];
         const tree = SummaryPanel({
-            runs,
-            overview: overview(),
-            now: NOW,
+            channels: channels(),
             onTimeRangeChange: (range) => ranges.push(range),
         });
         const pill = mustFind(
@@ -1141,18 +1206,16 @@ describe('SelectionsPanel', () => {
         expect(statuses).toEqual(['published', undefined]);
     });
 
-    it('renders SummaryPanel with no runs showing empty chart states', () => {
+    it('renders SummaryPanel with an empty aggregate as an explicit empty state', () => {
         const html = renderToStaticMarkup(
             <SummaryPanel
-                runs={[]}
-                overview={null}
-                now={NOW}
-                timeRange="24h"
+                channels={channels({ byDay: [], runsByDay: [], bySource: {}, sources: [], totalDays: 0 })}
+                timeRange="14d"
                 onTimeRangeChange={() => {}}
-                onInspectRun={() => {}}
             />,
         );
-        expect(html).toContain('No runs recorded in this time range');
+        expect(html).toContain('No new items in this range.');
+        expect(html).toContain('No collection ticks in this range.');
     });
 
     it('filters RunDetailsPanel by search and status, showing empty message when none match', () => {
@@ -1189,5 +1252,80 @@ describe('SelectionsPanel', () => {
         onChange({ target: { value: 'r-failed' } });
         onChange({ target: { value: '' } });
         expect(selectedRuns).toEqual(['r-failed', undefined]);
+    });
+});
+
+describe('channel-yield table partial-day labels (0319 AC1)', () => {
+    const partialFixture: CollectChannelYield = {
+        schemaVersion: 1,
+        availability: 'available',
+        diagnostics: [],
+        fromMs: Date.parse('2026-01-01T12:00:00Z'),
+        untilMs: Date.parse('2026-01-02T12:00:00Z'),
+        timeZone: 'UTC',
+        page: 1,
+        pageSize: 30,
+        totalDays: 2,
+        sources: ['aihot'],
+        plugins: [],
+        byDay: [
+            { day: '2026-01-02', total: 1, sources: { aihot: 1 } },
+            { day: '2026-01-01', total: 1, sources: { aihot: 1 } },
+        ],
+        bySource: { aihot: 2 },
+        runsByDay: [],
+        lastPositiveAt: {},
+    };
+
+    it('labels a boundary day partial when the interval cuts into it', () => {
+        const html = renderToStaticMarkup(<ChannelYieldTable data={partialFixture} />);
+        expect(html).toContain('2026-01-02 (partial)');
+        expect(html).toContain('2026-01-01 (partial)');
+    });
+
+    it('does not label a whole-day boundary partial', () => {
+        const whole = renderToStaticMarkup(
+            <ChannelYieldTable
+                data={{
+                    ...partialFixture,
+                    fromMs: Date.parse('2026-01-01T00:00:00Z'),
+                    untilMs: Date.parse('2026-01-02T00:00:00Z'),
+                }}
+            />,
+        );
+        expect(whole).not.toContain('(partial)');
+    });
+});
+
+describe('channels stale-range guard (0319 AC6)', () => {
+    function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+        let resolve!: (value: T) => void;
+        const promise = new Promise<T>((settle) => {
+            resolve = settle;
+        });
+        return { promise, resolve };
+    }
+
+    it('applies only the newest range when an older range resolves after it', async () => {
+        const sequence = requestSequence();
+        const applied: string[] = [];
+        const older = deferred<{ fromMs: number }>();
+        const newer = deferred<{ fromMs: number }>();
+
+        // The channels loader's shape: begin a token, await the page, apply only while current.
+        const load = async (payload: Promise<{ fromMs: number }>): Promise<void> => {
+            const token = sequence.begin();
+            const value = await payload;
+            if (sequence.isCurrent(token)) applied.push(`range ${value.fromMs}`);
+        };
+
+        const first = load(older.promise); // 14d range, resolves last
+        const second = load(newer.promise); // 7d range, resolves first
+        newer.resolve({ fromMs: 7 });
+        await second;
+        older.resolve({ fromMs: 14 });
+        await first;
+
+        expect(applied).toEqual(['range 7']);
     });
 });

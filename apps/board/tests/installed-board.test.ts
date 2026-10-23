@@ -299,8 +299,14 @@ function writeWorkflows(): void {
     writeFileSync(
         join(dir, 'kk-daily-ai-voice2.yaml'),
         stateMachine('kk-daily-ai-voice2', [
+            { id: 'extract', actions: 1 },
+            { id: 'plan', actions: 1 },
+            { id: 'qc-content', actions: 1 },
             { id: 'generate', actions: 1 },
             { id: 'safety', actions: 1 },
+            { id: 'duration', actions: 1 },
+            { id: 'publish-classify', actions: 1 },
+            { id: 'run-report', actions: 1 },
         ]),
     );
     writeFileSync(join(dir, 'kk-itc.yaml'), stateMachine('kk-itc', [{ id: 'prepare', actions: 1 }]));
@@ -378,6 +384,91 @@ function writeDailyAudio(workDirRel: string, stamp: string): void {
     // 64 deterministic bytes: a real media payload, not `String(bytes)`.
     const bytes = new Uint8Array(Array.from({ length: 64 }, (_, index) => (index * 3) % 256));
     writeFileSync(join(dir, `${stamp}_11_generate_content.mp3`), bytes);
+}
+
+/**
+ * G82/0320 — write one funnel-gate run's workspace. Every file is one of the fixed manifest
+ * paths; the variant names the run so `d-funnel` is the measured refusal, `d-mismatch` the full
+ * run whose stages disagree (pool 3 / annotated 7 / plan 6), and the rest one gate each.
+ */
+function writeDailyFunnelFiles(workDirRel: string, stamp: string, variant: string): void {
+    const dir = join(project, workDirRel);
+    const pool = (count: number): string =>
+        JSON.stringify(
+            Array.from({ length: count }, (_, index) => ({ id: `p${index}`, title: `Title p${index}`, body: 'body' })),
+        );
+    const write = (rel: string, body: string): void => {
+        mkdirSync(dirname(join(dir, rel)), { recursive: true });
+        writeFileSync(join(dir, rel), body);
+    };
+    write('10-collect/pool.json', pool(variant === 'd-empty' ? 0 : 4));
+    write(`21-plan/${stamp}_04_quality-control-content_annotated.json`, pool(variant === 'd-mismatch' ? 7 : 4));
+    write(
+        `21-plan/${stamp}_04_quality-control-content_candidates.rejected.json`,
+        JSON.stringify({ rejected: [{ doc: { id: 'x' }, reasons: ['low quality'] }, { doc: { id: 'y' } }], total: 2 }),
+    );
+    if (variant !== 'd-unk' && variant !== 'd-empty' && variant !== 'd-qce' && variant !== 'd-script') {
+        write(
+            `21-plan/${stamp}_04_quality-control-content_exclusions.json`,
+            JSON.stringify({
+                version: 1,
+                runDate: stamp,
+                excluded: [{ id: 'd', title: 'Secret title', rule: 'policy-dispute', matched: 'lawsuit' }],
+                kept: ['a', 'b', 'c'],
+            }),
+        );
+    }
+    if (variant !== 'd-mismatch' && variant !== 'd-empty' && variant !== 'd-unk') {
+        // Post-dedup survivors; a refusal clears the real file, so only runs without one carry docs.
+        // d-qce's pre-refusal candidates are genuinely EMPTY (QC emptied the pool); d-funnel and
+        // d-floor had theirs cleared by the refusal itself, so their docs bag is empty too.
+        const docs =
+            variant === 'd-qce'
+                ? []
+                : variant === 'd-funnel' || variant === 'd-floor'
+                  ? []
+                  : [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+        write(
+            `21-plan/${stamp}_04_quality-control-content_candidates.json`,
+            JSON.stringify({ metadata: { doc_count: docs.length, docs } }),
+        );
+    }
+    if (variant === 'd-mismatch') {
+        write(`21-plan/${stamp}_03_plan_plan.json`, pool(6));
+    }
+    if (variant === 'd-floor') {
+        write(
+            `21-plan/${stamp}_04_quality-control-content_floor-refusal.json`,
+            JSON.stringify({ estimatedMinutes: 6.2, minMinutes: 15, candidateChars: 900 }),
+        );
+    }
+    if (variant === 'd-script') {
+        write(
+            `30-audio/${stamp}_11_generate_content_duration-refusal.json`,
+            JSON.stringify({ stage: 'script', estimatedMinutes: 5.1, minMinutes: 15, keptCount: 3 }),
+        );
+    }
+    if (variant === 'd-funnel') {
+        write(
+            `30-audio/${stamp}_11_generate_content_duration-refusal.json`,
+            JSON.stringify({
+                measuredMinutes: 8.9,
+                estimatedMinutes: 14.4,
+                minMinutes: 15,
+                keptCount: 3,
+                candidateChars: 4300,
+            }),
+        );
+    }
+    write(
+        `${stamp}_19_run-report_report.md`,
+        `# Daily run report
+
+no-content: the episode was refused (${variant})`,
+    );
+    if (variant === 'd-mismatch') {
+        write(`31-publish/${stamp}_17_publish_publish-status.txt`, 'full');
+    }
 }
 
 /** The throwaway project's kk store — the file the seeded DAOs write and the reader reads. */
@@ -482,9 +573,61 @@ async function seedCollectStore(): Promise<void> {
 }
 
 /**
- * Run `fn` while collecting the page's console errors and uncaught page errors (R1: the store
- * views must render without one). React logs warnings, not errors, so a clean run is `[]`.
+ * G82/0320 — seed the supply context for the d-funnel run: one positive `aihot-ingest` tick and
+ * five items, both recorded 2 h before the run's own `startedAt`, i.e. INSIDE the configured
+ * `[startedAt − 24h, startedAt)` window. `horizon-ingest` is deliberately absent from the window,
+ * so the panel must show 0 recorded contributions and unknown health for it.
  */
+async function seedDailySupply(): Promise<void> {
+    const response = await fetch(`${boardOrigin}/api/runs/d-funnel`);
+    expect(response.status).toBe(200);
+    const run = ((await response.json()) as { run: { startedAt: string | null } }).run;
+    const startedAt = run.startedAt === null || run.startedAt === undefined ? null : Date.parse(run.startedAt);
+    if (startedAt === null || !Number.isFinite(startedAt)) throw new Error('d-funnel carries no startedAt');
+    const at = startedAt - 2 * 3_600_000;
+    const store = await openStore({ path: storeDbPath() });
+    try {
+        await store.collectRuns.start({
+            runId: 'd-supply-tick',
+            startedAt: at,
+            sourceCounts: { 'aihot-ingest': 5 },
+        });
+        await store.collectRuns.finish('d-supply-tick', { status: 'done', finishedAt: at + 1 });
+        await store.items.upsertDocs(
+            'd-supply-tick',
+            Array.from({ length: 5 }, (_, index) => ({
+                id: `d-supply-${index}`,
+                title: `Daily supply item ${index}`,
+                body: `Supply body ${index}`,
+                metadata: { source: 'aihot-ingest' },
+            })),
+            at,
+        );
+    } finally {
+        await store.close();
+    }
+}
+
+/**
+ * G81/0319 — seed 35 extra tick days (one `collect_runs` row each) so the All range has more than
+ * one 30-day aggregate page. Each row is a valid empty source-count map: the plugin table must show
+ * the named plugins as zero, never invent a count.
+ */
+async function seedChannelTicks(): Promise<void> {
+    const store = await openStore({ path: storeDbPath() });
+    try {
+        const now = Date.now();
+        const dayMs = 86_400_000;
+        for (let i = 0; i < 35; i += 1) {
+            const startedAt = now - (i + 1) * dayMs;
+            await store.collectRuns.start({ runId: `pg-${i}`, startedAt, sourceCounts: {} });
+            await store.collectRuns.finish(`pg-${i}`, { status: 'done', finishedAt: startedAt + 1 });
+        }
+    } finally {
+        await store.close();
+    }
+}
+
 async function consoleErrorsDuring(fn: () => Promise<void>): Promise<string[]> {
     if (page === null) throw new Error('browser page not ready');
     const errors: string[] = [];
@@ -553,6 +696,10 @@ async function setup(): Promise<void> {
     for (const runId of ['r-a', 'r-b', 'r-sup-old', 'r-sup-new', 'r-empty']) runWorkflow('kk-collect', runId);
     runWorkflow('kk-daily-ai-voice2', 'd-audio');
     runWorkflow('kk-daily-ai-voice2', 'd-conf');
+    // G82/0320: one run per funnel gate, plus the mismatched full run and the unknown run.
+    for (const runId of ['d-funnel', 'd-mismatch', 'd-script', 'd-floor', 'd-empty', 'd-qce', 'd-unk']) {
+        runWorkflow('kk-daily-ai-voice2', runId);
+    }
 
     // 4. Captures + hand-written artifacts (the installed capture seam writes the record + marker).
     capture('kk-collect', 'r-a', '.works/kk-collect/S1', 'S1', ['limit=10']);
@@ -568,8 +715,31 @@ async function setup(): Promise<void> {
     writeDailyConfidence('.works/kk-daily-ai-voice2/D1', 'D1', 'HIGH');
     capture('kk-daily-ai-voice2', 'd-conf', '.works/kk-daily-ai-voice2/D2', 'D2');
     writeDailyConfidence('.works/kk-daily-ai-voice2/D2', 'D2', 'HIGH');
+    // G82/0320: funnel workspaces — every capture carries the configured window and episode bounds.
+    const funnelSettings = ['window=24h', 'episode_min_minutes=15', 'episode_max_minutes=25'];
+    const funnelDirs: Record<string, string> = {
+        'd-funnel': 'F1',
+        'd-mismatch': 'F2',
+        'd-script': 'F3',
+        'd-floor': 'F4',
+        'd-empty': 'F5',
+        'd-qce': 'F6',
+        'd-unk': 'F7',
+    };
+    for (const [runId, stamp] of Object.entries(funnelDirs)) {
+        capture(
+            'kk-daily-ai-voice2',
+            runId,
+            `.works/kk-daily-ai-voice2/${stamp}`,
+            stamp,
+            runId === 'd-mismatch' ? [...funnelSettings, 'publish_enabled=true'] : funnelSettings,
+        );
+        writeDailyFunnelFiles(`.works/kk-daily-ai-voice2/${stamp}`, stamp, runId);
+    }
     // 4b. G81/0309: the store plane, seeded through the real DAOs (r-a has a row, r-b none).
     await seedCollectStore();
+    // 4c. G81/0319: 35 extra tick days so the All channel-yield aggregate spans multiple pages.
+    await seedChannelTicks();
 
     // 5. The installed Board, then the reader bound to that exact origin.
     const boardPort = freePort();
@@ -592,6 +762,9 @@ async function setup(): Promise<void> {
         project,
     );
     await waitFor(`${readerOrigin}/api/health`, readerServer);
+    // 5b. G82/0320: in-window supply for d-funnel — a tick plus items BACKDATED to 2 h before the
+    // run's own start, through the real DAOs (no raw SQL).
+    await seedDailySupply();
 
     // 6. A real browser; a missing runtime fails the setup loudly.
     try {
@@ -1212,6 +1385,292 @@ describe('Collect store views with the store file removed (G81/0309 R2)', () => 
             renameSync(away, storePath);
         }
     }, 30_000);
+});
+
+describe('Collect channel yield over a seeded store (0319)', () => {
+    it('serves both aggregate tables from one read-only route', async () => {
+        if (!ready) throw new Error('setup did not complete');
+        const now = Date.now();
+        const dayMs = 86_400_000;
+        const response = await readerFetch(
+            `/api/workflows/kk-collect/store/channels?from=${now - 14 * dayMs}&until=${now + dayMs}&page=1`,
+        );
+        expect(response.status).toBe(200);
+        const body = (await response.json()) as {
+            availability: string;
+            sources: string[];
+            plugins: string[];
+            bySource: Record<string, number>;
+            byDay: { day: string; total: number; sources: Record<string, number> }[];
+            runsByDay: { day: string; runs: number; plugins: Record<string, number> | null }[];
+            lastPositiveAt: Record<string, number | null>;
+        };
+        expect(body.availability).toBe('available');
+        expect(body.sources).toEqual(['aihot-ingest', 'horizon-ingest']);
+        // 20 seeded collect items + the 5 daily-supply items seeded 2 h before d-funnel's start
+        // (G82/0320) fall inside this 14-day window.
+        expect(body.bySource).toEqual({ 'aihot-ingest': 25, 'horizon-ingest': 7 });
+        expect(body.byDay.reduce((sum, day) => sum + day.total, 0)).toBe(32);
+        expect(body.plugins).toContain('aihot-ingest');
+        expect(body.plugins).toContain('horizon-ingest');
+        expect(body.lastPositiveAt['aihot-ingest']).not.toBeNull();
+        const tickTotals = body.runsByDay.reduce(
+            (acc, day) => {
+                if (day.plugins === null) return acc;
+                for (const [plugin, count] of Object.entries(day.plugins)) acc[plugin] = (acc[plugin] ?? 0) + count;
+                return acc;
+            },
+            {} as Record<string, number>,
+        );
+        expect(tickTotals['aihot-ingest']).toBeGreaterThanOrEqual(20);
+        expect(tickTotals['horizon-ingest']).toBeGreaterThanOrEqual(7);
+    }, 30_000);
+
+    it('renders the two Summary tables, drops label/yield tiles, and keeps range on reload', async () => {
+        if (!ready || page === null) throw new Error('setup did not complete');
+        const view: Page = page;
+        await openModule('kk-collect', query({ tab: 'summary', range: '7d' }));
+        await view.waitForSelector('.kk-channel-yield-table');
+        await view.waitForSelector('.kk-plugin-run-table');
+        expect(new URL(view.url()).searchParams.get('range')).toBe('7d');
+        const text = await view.locator('.kk-collect-overview').innerText();
+        expect(text).toContain('New items by day and source');
+        expect(text).toContain('Collection ticks and plugin contributions');
+        expect(text).not.toContain('Label Decisions');
+        expect(text).not.toContain('Selection Yield');
+        await view.reload({ waitUntil: 'domcontentloaded' });
+        await view.waitForSelector('.kk-channel-yield-table');
+        expect(new URL(view.url()).searchParams.get('range')).toBe('7d');
+        expect(new URL(view.url()).searchParams.get('tab')).toBe('summary');
+    }, 30_000);
+
+    it('pages the All aggregate at 30 days per page', async () => {
+        if (!ready || page === null) throw new Error('setup did not complete');
+        const view: Page = page;
+        await openModule('kk-collect', query({ tab: 'summary', range: 'All' }));
+        await view.waitForSelector('.kk-channel-yield-table');
+        // 36 tick days (r-a plus 35 seeded) exceed one 30-day page.
+        await view.waitForSelector('.kk-collect-pager');
+        const pager = view.locator('.kk-collect-pager');
+        expect(await pager.innerText()).toContain('Page 1 of');
+        expect(await pager.innerText()).toContain('days');
+        await pager.getByRole('button', { name: 'Next' }).click();
+        await view.waitForFunction(
+            () => document.querySelector('.kk-collect-pager')?.textContent?.includes('Page 2 of') ?? false,
+            undefined,
+            { timeout: 15_000 },
+        );
+    }, 30_000);
+
+    it('degrades a missing store to a bounded diagnostic on the two panels only', async () => {
+        if (!ready || page === null) throw new Error('setup did not complete');
+        const view: Page = page;
+        const storePath = storeDbPath();
+        const away = `${storePath}.away`;
+        renameSync(storePath, away);
+        try {
+            await openModule('kk-collect', query({ tab: 'summary', range: '14d' }));
+            const diagnostic = view.locator('.kk-collect-overview .kk-board-diagnostic').first();
+            await diagnostic.waitFor();
+            expect(await diagnostic.innerText()).toContain('no kk store at .works/kk.db');
+            await waitForRunOption('r-a');
+            expect(await view.locator('.kk-channel-yield-table').count()).toBe(0);
+        } finally {
+            renameSync(away, storePath);
+        }
+    }, 30_000);
+});
+
+describe('Daily episode funnel and supply context (G82/0320)', () => {
+    /** The funnel section text once mounted. */
+    async function funnelText(): Promise<string> {
+        const panel = view0().locator('.kk-daily-funnel');
+        await panel.waitFor();
+        return panel.innerText();
+    }
+
+    function view0() {
+        if (page === null) throw new Error('browser page not ready');
+        return page;
+    }
+
+    /** d-funnel's configured supply window, resolved from the Board's own run start. */
+    async function funnelWindow(): Promise<{ fromMs: number; untilMs: number }> {
+        const response = await fetch(`${boardOrigin}/api/runs/d-funnel`);
+        const startedAt = Date.parse(((await response.json()) as { run: { startedAt: string } }).run.startedAt);
+        return { fromMs: startedAt - 24 * 3_600_000, untilMs: startedAt };
+    }
+
+    it('renders the real channel yield inside the configured window with exact bounds (AC1/AC2)', async () => {
+        if (!ready || page === null) throw new Error('setup did not complete');
+        const view: Page = page;
+        const { fromMs, untilMs } = await funnelWindow();
+        await openModule('kk-daily-ai-voice2', query({ run: 'd-funnel', tab: 'summary' }));
+        const supply = view.locator('.kk-daily-supply');
+        await supply.waitFor();
+        await view.waitForSelector('.kk-daily-supply .kk-channel-yield-table');
+        await view.waitForSelector('.kk-daily-supply .kk-plugin-run-table');
+        const text = await supply.innerText();
+        // Exact half-open bounds of the query the panel issued, verbatim with timestamps.
+        expect(text).toContain(new Date(fromMs).toISOString());
+        expect(text).toContain(new Date(untilMs).toISOString());
+        expect(text).toContain('configured context');
+        expect(text).toContain('effective extraction window (ladder bounds) is unknown');
+        // The day × source matrix and plugin table render the SEEDED in-window supply only:
+        // one source column (aihot-ingest), one day row totalling 5, one tick run.
+        const matrix = await view.locator('.kk-daily-supply .kk-channel-yield-table').innerText();
+        expect(matrix).toContain('aihot-ingest');
+        expect(matrix).toMatch(/Total\s+5\s+5\s*$/);
+        const ticks = await view.locator('.kk-daily-supply .kk-plugin-run-table').innerText();
+        expect(ticks).toContain('aihot-ingest');
+        expect(ticks).toMatch(/\b1\b/);
+        // The store answer matches the direct route for the same window (no invented totals).
+        const route = await readerFetch(
+            `/api/workflows/kk-collect/store/channels?from=${fromMs}&until=${untilMs}&page=1`,
+        );
+        expect(route.status).toBe(200);
+        const body = (await route.json()) as { bySource: Record<string, number>; sources: string[] };
+        expect(body.bySource['aihot-ingest']).toBe(5);
+        // horizon-ingest recorded 0 in-window contributions: stated, never a guessed yield.
+        expect(text).toContain('Zero recorded contributions');
+        // The funnel is visibly the artifact-backed plane, distinct from the store panel.
+        expect(await funnelText()).toContain('artifact-backed by this run');
+    }, 60_000);
+
+    it('renders the measured-refusal funnel with its evidence, minutes and gate (AC3/AC4)', async () => {
+        if (!ready || page === null) throw new Error('setup did not complete');
+        const view: Page = page;
+        await openModule('kk-daily-ai-voice2', query({ run: 'd-funnel', tab: 'summary' }));
+        const text = await funnelText();
+        for (const row of [
+            '1 · Episode pool',
+            '2 · Annotated',
+            '3 · Topic filter kept',
+            '4 · QC rejected',
+            '6 · Episode plan',
+        ]) {
+            expect(text).toContain(row);
+        }
+        // The 2026-10-22-shaped evidence: pool 4, kept 3, QC rejected 2, refused at 8.9 min of 15.
+        expect(text.match(/1 · Episode pool\s*4/u) === null).toBe(false);
+        expect(text.match(/3 · Topic filter kept\s*3/u) === null).toBe(false);
+        expect(text.match(/4 · QC rejected\s*2/u) === null).toBe(false);
+        expect(text).toContain('measured 8.9 min');
+        expect(text).toContain('estimated 14.4 min');
+        expect(text).toContain('floor 15.0 min');
+        expect(text).toContain('ceiling 25.0 min');
+        expect(text).toContain('Duration floor refusal');
+        // Evidence ids are the fixed manifest ids, linked for available artifacts.
+        expect(text).toContain('episode-pool');
+        expect(text).toContain('episode-duration-refusal');
+        // Refusal-cleared survivors stay unknown — never "QC kept 0" and never an empty pool.
+        expect(text).toContain('unknown — cleared by the refusal');
+        // The one topic exclusion row, bounded.
+        expect(text).toContain('policy-dispute');
+        expect(text).toContain('lawsuit');
+        // The recorded outcome stays no-content; nothing is rewritten into success.
+        expect(await view.locator('header').first().innerText()).toContain('no-content');
+    }, 60_000);
+
+    it('keeps the mismatched 2026-10-21-shaped stages side by side with a diagnostic (AC3)', async () => {
+        if (!ready || page === null) throw new Error('setup did not complete');
+        await openModule('kk-daily-ai-voice2', query({ run: 'd-mismatch', tab: 'summary' }));
+        const text = await funnelText();
+        expect(text.match(/1 · Episode pool\s*4/u) === null).toBe(false);
+        expect(text.match(/2 · Annotated\s*7/u) === null).toBe(false);
+        expect(text.match(/6 · Episode plan\s*6/u) === null).toBe(false);
+        expect(text).toContain('board.daily.funnel.mismatch');
+        expect(text).toContain('not applicable — a content run has no gate');
+    }, 60_000);
+
+    it('renders every no-content gate exactly once, each from its own evidence (AC4)', async () => {
+        if (!ready || page === null) throw new Error('setup did not complete');
+        const gates: [string, string][] = [
+            ['d-funnel', 'Duration floor refusal'],
+            ['d-script', 'Script refusal'],
+            ['d-floor', 'QC floor refusal'],
+            ['d-empty', 'Empty pool'],
+            ['d-qce', 'QC emptied the pool'],
+            ['d-unk', 'unknown — no gate proven'],
+        ];
+        for (const [runId, gate] of gates) {
+            await openModule('kk-daily-ai-voice2', query({ run: runId, tab: 'summary' }));
+            const text = await funnelText();
+            expect(text).toContain(gate);
+            // No other gate name leaks into this run's panel.
+            for (const [, other] of gates) {
+                if (other !== gate) expect(text).not.toContain(`No-content gate\n${other}`);
+            }
+        }
+    }, 120_000);
+
+    it('keeps the funnel standing when the store is unreachable or evidence is malformed (AC5)', async () => {
+        if (!ready || page === null) throw new Error('setup did not complete');
+        const view: Page = page;
+        await view.route('**/api/workflows/kk-collect/store/channels**', (route) => route.abort());
+        try {
+            await openModule('kk-daily-ai-voice2', query({ run: 'd-funnel', tab: 'summary' }));
+            const text = await funnelText();
+            expect(text.match(/1 · Episode pool\s*4/u) === null).toBe(false);
+            await view.locator('.kk-daily-supply').waitFor();
+            const supply = await view.locator('.kk-daily-supply').innerText();
+            expect(supply).toContain('offline');
+            expect(await view.locator('.kk-daily-supply .kk-channel-yield-table').count()).toBe(0);
+        } finally {
+            await view.unroute('**/api/workflows/kk-collect/store/channels**');
+        }
+        // A malformed pool degrades to an explicit unknown for that stage only.
+        const poolPath = join(project, '.works/kk-daily-ai-voice2/F1', '10-collect/pool.json');
+        const original = readFileSync(poolPath, 'utf8');
+        try {
+            writeFileSync(poolPath, '{not json');
+            await openModule('kk-daily-ai-voice2', query({ run: 'd-funnel', tab: 'summary' }));
+            const text = await funnelText();
+            expect(text.match(/1 · Episode pool\s*unavailable/u) === null).toBe(false);
+            expect(text.match(/2 · Annotated\s*4/u) === null).toBe(false);
+        } finally {
+            writeFileSync(poolPath, original);
+        }
+    }, 60_000);
+
+    it('never shows the previous run’s funnel after a switch mid-flight (AC6)', async () => {
+        if (!ready || page === null) throw new Error('setup did not complete');
+        const view: Page = page;
+        // The first run's reader answers land 6 s late — after the operator has switched runs.
+        await view.route('**/api/workflows/kk-daily-ai-voice2/runs/d-funnel/*', async (route) => {
+            await new Promise((resolve) => setTimeout(resolve, 6_000));
+            await route.continue();
+        });
+        try {
+            await openModule('kk-daily-ai-voice2', query({ run: 'd-funnel', tab: 'summary' }));
+            await view.locator('.kk-board-run-selector select').waitFor();
+            await view.locator('.kk-board-run-selector select').selectOption('d-mismatch');
+            // Sample the panel: d-funnel's gate must never appear while d-mismatch is selected.
+            let sawStale = false;
+            const deadline = Date.now() + 9_000;
+            while (Date.now() < deadline) {
+                const body = (await view.locator('.kk-board-daily-voice').innerText()) ?? '';
+                if (body.includes('Duration floor refusal')) {
+                    sawStale = true;
+                    break;
+                }
+                await view.waitForTimeout(200);
+            }
+            expect(sawStale).toBe(false);
+            // The selected run's own panel settles with its own numbers.
+            await view.waitForFunction(
+                () => document.querySelector('.kk-board-daily-voice')?.textContent?.includes('QC') ?? false,
+                undefined,
+                { timeout: 15_000 },
+            );
+            const settled = await funnelText();
+            expect(settled.match(/6 · Episode plan\s*6/u) === null).toBe(false);
+            expect(settled).toContain('not applicable — a content run has no gate');
+            expect((await view.locator('.kk-board-run-selector select').inputValue()) ?? '').toBe('d-mismatch');
+        } finally {
+            await view.unroute('**/api/workflows/kk-daily-ai-voice2/runs/d-funnel/*');
+        }
+    }, 60_000);
 });
 
 /** An unused loopback port for the reader-outage scenario. */

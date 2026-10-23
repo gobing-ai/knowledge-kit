@@ -162,7 +162,6 @@ export function dailyQcContent(args: string[]): void {
                 },
             },
         );
-        applyFloorGate(candidates, workDir, runDate, minMinutes, vdriver);
     });
     // Topic boundary (task 0189 R2) runs on every invocation — re-applying to already-filtered
     // candidates is a no-op, so cached reruns stay idempotent while a crash between the candidates
@@ -197,15 +196,21 @@ export function dailyQcContent(args: string[]): void {
     // `unknown-id`, the whole plan is rejected, and generate then sees a template with fewer sections.
     const currentDocs = excluded.length > 0 ? kept : boundaryDocs;
     const { kept: deduped, dropped } = dedupPlanByTitle(currentDocs as Array<{ id?: unknown; title?: unknown }>);
-    if (dropped.length === 0) return;
-    const dedupedContent = requireJson(candidates, 'qc-dedup');
-    const dedupedMeta = dedupedContent.metadata;
-    if (dedupedMeta === null || typeof dedupedMeta !== 'object') {
-        failWith(1, 'qc-dedup: candidates content carries no metadata object');
+    if (dropped.length > 0) {
+        const dedupedContent = requireJson(candidates, 'qc-dedup');
+        const dedupedMeta = dedupedContent.metadata;
+        if (dedupedMeta === null || typeof dedupedMeta !== 'object') {
+            failWith(1, 'qc-dedup: candidates content carries no metadata object');
+        }
+        (dedupedMeta as Record<string, unknown>).docs = deduped;
+        sted('write', candidates, () => writeJsonText(candidates, dedupedContent));
+        console.error(`qc: dropped ${dropped.length} near-duplicate candidate(s): ${dropped.join(', ')}`);
     }
-    (dedupedMeta as Record<string, unknown>).docs = deduped;
-    sted('write', candidates, () => writeJsonText(candidates, dedupedContent));
-    console.error(`qc: dropped ${dropped.length} near-duplicate candidate(s): ${dropped.join(', ')}`);
+    // Last, not inside the timed block above: the estimate must see the pool every shrink pass has
+    // already produced. 2026-10-22 cleared the floor on a 4-item pool (21.0 min estimated) that the
+    // topic boundary then cut to 3 (14.4 min), so the run paid for a full synthesis the measured
+    // gate refused. Covered here it also re-runs on a cached-rerun, which the timed block skipped.
+    applyFloorGate(candidates, workDir, runDate, minMinutes, vdriver);
 }
 
 /**
@@ -574,6 +579,52 @@ export function dailyVoiceAudit(args: string[]): void {
     }
 }
 
+/**
+ * Empty the QC candidates file so every downstream `pool-count --min 1` guard skips the content,
+ * audio, publish and XHS subtrees — the one mechanism both refusal paths use to close a run as
+ * no-content without aborting it (0266).
+ */
+function emptyCandidates(workDir: string, runDate: string): void {
+    const candidates = join(workDir, '21-plan', `${runDate}_04_quality-control-content_candidates.json`);
+    const content = readJson(candidates);
+    if (content === null) return;
+    sted('write', candidates, () =>
+        writeJsonText(candidates, { ...content, metadata: { ...metadataOf(content), docs: [] } }),
+    );
+}
+
+/**
+ * The pre-spend refusal of `daily-generate`'s script gate: same artifact and the same candidate
+ * emptying as the measured gate, plus `stage: "script"` so the run report can name which gate
+ * closed the day. Nothing was synthesized, so there is no measured duration to record.
+ */
+function refuseScriptBelowFloor(
+    workDir: string,
+    runDate: string,
+    gate: { chars: number; charRate: number; seconds: number; minMinutes: number },
+): void {
+    const candidates = join(workDir, '21-plan', `${runDate}_04_quality-control-content_candidates.json`);
+    const candidateDocs = metadataOf(readJson(candidates)).docs;
+    const keptCount = Array.isArray(candidateDocs) ? candidateDocs.length : 0;
+    const refusal = join(workDir, '30-audio', `${runDate}_11_generate_content_duration-refusal.json`);
+    const shown = (gate.seconds / 60).toFixed(1);
+    sted('write', refusal, () =>
+        writeJqText(refusal, {
+            stage: 'script',
+            estimatedMinutes: Math.round((gate.seconds / 60) * 10) / 10,
+            minMinutes: gate.minMinutes,
+            keptCount,
+            scriptChars: gate.chars,
+            charRate: gate.charRate,
+            reason: `the authored script estimates ${shown} min of speech, below the ${gate.minMinutes} min floor — refusing before the TTS spend`,
+        }),
+    );
+    emptyCandidates(workDir, runDate);
+    console.error(
+        `generate: script estimates ${shown} min (${gate.chars} chars at ${gate.charRate}/s), below the ${gate.minMinutes} min floor — candidates emptied, the run closes as no-content before any TTS spend (see ${refusal})`,
+    );
+}
+
 export function dailyEpisodeDuration(args: string[]): void {
     const [workDir = '', runDate = '', minArg = '', maxArg = '', vdriver = ''] = args;
     if (!workDir) fail('missing work_dir');
@@ -609,11 +660,7 @@ export function dailyEpisodeDuration(args: string[]): void {
         // A kill between the two writes below leaves the refusal beside non-empty candidates, which would
         // let the pool-gated publish fan package a sub-floor episode — so finish the emptying here.
         if (isFile(refusal)) {
-            if (content !== null && docs.length > 0) {
-                sted('write', candidates, () =>
-                    writeJsonText(candidates, { ...content, metadata: { ...metadataOf(content), docs: [] } }),
-                );
-            }
+            if (docs.length > 0) emptyCandidates(workDir, runDate);
             console.log(`episode-duration: duration refusal already recorded (${refusal}) — nothing to do`);
             return;
         }
@@ -629,11 +676,7 @@ export function dailyEpisodeDuration(args: string[]): void {
                 reason: `the episode ran ${shown} min of speech, below the ${minMinutes} min floor (pre-spend estimate ${estimated.minutes} min) — refusing after synthesis`,
             }),
         );
-        if (content !== null) {
-            sted('write', candidates, () =>
-                writeJsonText(candidates, { ...content, metadata: { ...metadataOf(content), docs: [] } }),
-            );
-        }
+        emptyCandidates(workDir, runDate);
         console.error(
             `episode-duration: episode ran ${shown} min (estimate ${estimated.minutes} min), below the ${minMinutes}–${maxMinutes} min requirement — candidates emptied, the run closes as no-content (see ${refusal})`,
         );
@@ -645,6 +688,17 @@ export function dailyEpisodeDuration(args: string[]): void {
             `episode-duration: episode runs ${shown} min, above the ${minMinutes}–${maxMinutes} min requirement. Trim items or per-item treatment.`,
         );
     }
+    // A passing gate leaves this artifact behind only: the 2026-10-20 run published an 8.4-min
+    // episode with nothing on disk to say whether the gate ran, passed, or was stale (2026-10-22).
+    const verdict = join(workDir, '30-audio', `${runDate}_11_generate_content_duration.json`);
+    sted('write', verdict, () =>
+        writeJqText(verdict, {
+            measuredMinutes: Math.round(minutes * 10) / 10,
+            minMinutes,
+            maxMinutes,
+            ok: true,
+        }),
+    );
     console.log(`episode-duration ok: ${shown} min within ${minMinutes}–${maxMinutes} min`);
 }
 
@@ -844,6 +898,7 @@ export function dailyGenerate(args: string[]): void {
         vdriver = '',
         sectionConcurrency = '',
         episodeMaxMinutes = '',
+        episodeMinMinutes = '',
     ] = args;
     // 20260917 review: the workflow picks a voice driver by short name; both drivers' envs are
     // passed unconditionally so switching `vdriver` needs no shell changes. Unknown -> fail loud.
@@ -867,6 +922,37 @@ export function dailyGenerate(args: string[]): void {
     }
     const docs = join(workDir, '30-audio', `${runDate}_10_wrap-docs_docs.json`);
     const content = join(workDir, '30-audio', `${runDate}_11_generate_content.json`);
+
+    // Pre-spend script floor gate (2026-10-22). QC's candidate-text estimate does not predict the
+    // spoken length — 20261020 planned 3968 chars and rendered 8.4 min, 20261021 planned 4548 and
+    // rendered 17.9 — but the authored VoiceScript IS the spoken text, and 14 measured episodes
+    // deliver it at 5.24-5.94 chars/s. Reusing `spokenCharRate` (the slowest measured band) makes the
+    // estimate over-predict slightly, which is the safe direction here: a thin day is refused before
+    // the 1-2 h synthesis, and one that would have cleared the floor is never refused.
+    const minMinutes = episodeMinMinutes === '' ? 0 : Number(episodeMinMinutes);
+    if (!Number.isFinite(minMinutes) || minMinutes < 0) {
+        failWith(1, `generate: invalid episode_min_minutes: ${episodeMinMinutes}`);
+    }
+    if (minMinutes > 0 && !wholeDocCache(content, voiceGenerator, transcodeMp3)) {
+        const scriptPath = join(workDir, '24-script', `${runDate}_08_script_voicescript.yaml`);
+        if (isFile(scriptPath)) {
+            const script = Bun.YAML.parse(readFileSync(scriptPath, 'utf8')) as {
+                segments?: Array<{ text?: unknown }>;
+            };
+            const segments = Array.isArray(script.segments) ? script.segments : [];
+            const chars = segments.reduce(
+                (sum, segment) => sum + (typeof segment.text === 'string' ? segment.text.length : 0),
+                0,
+            );
+            const charRate = spokenCharRate(vdriver);
+            const seconds = 8 + chars / charRate;
+            if (seconds < minMinutes * 60) {
+                refuseScriptBelowFloor(workDir, runDate, { chars, charRate, seconds, minMinutes });
+                return;
+            }
+            console.log(`script floor ok: ${chars} script chars ≈ ${(seconds / 60).toFixed(1)} min`);
+        }
+    }
 
     if (!sectionConcurrency) {
         timed(workDir, 'generate', () => {
@@ -1439,8 +1525,358 @@ export function dailyPlan(args: string[]): void {
 }
 
 /**
+ * The two public URLs every downstream channel links to (task 0327 R1).
+ *
+ * voice2 passes the real urls its tier-0 stages just produced; the variant stage passes
+ * `{{article_url}}` / `{{podcast_url}}` so a generate-side bundle can be frozen before anything is
+ * published, and `publish-matrix-send` resolves them from the tier-0 receipts at send time.
+ */
+export interface PublishLinks {
+    articleUrl: string;
+    podcastUrl: string;
+}
+
+/** Placeholder links: the variant contract publish-matrix-send resolves. */
+export const PLACEHOLDER_LINKS: PublishLinks = {
+    articleUrl: '{{article_url}}',
+    podcastUrl: '{{podcast_url}}',
+};
+
+/** The wechatmp-only closing line (operator request 2026-09-29). */
+const WECHAT_OUTRO = '\n\n欲听往期节目，可至小宇宙、Apple Podcast、YouTube 等平台搜索【咸话咸说】。';
+
+/** The brand strings this daily show pins on every 公众号 draft. */
+const WECHAT_BRAND = {
+    author: '冰原奔狼',
+    claimSource: '个人观点，仅供参考',
+    coverSource: 'library',
+} as const;
+
+/**
+ * The 公众号 article payload (task 0327 R1): the article Content plus MP draft enrichment.
+ *
+ * Every field is consumed by `wechatmp-pub`'s flow; the only link it needs is the 原文链接, which is
+ * the surfdash post — hence `links.articleUrl` rather than a path read.
+ */
+export function buildWechatArticleContent(
+    article: Record<string, unknown>,
+    options: {
+        links: PublishLinks;
+        publishStatus: 'draft' | 'public';
+        collection: string;
+        coverPath?: string;
+        audioPath?: string;
+        audioTitle?: string;
+        /**
+         * The 咸话咸说 closer is an article-only sign-post (operator request 2026-09-29: "appended
+         * to the wechat input body only, never the master article"). An audio-first 公众号 播客 post
+         * carries the episode body, so it passes `false`.
+         */
+        appendOutro?: boolean;
+    },
+): Record<string, unknown> {
+    const wechatmp: Record<string, unknown> = {
+        original: true,
+        // 赞赏 is enabled per episode; the plugin fills the 赞赏账户 only when the platform leaves it
+        // empty (it defaults from 作者, operator walk 2026-10-10).
+        reward: true,
+        author: WECHAT_BRAND.author,
+        collection: options.collection,
+        // 创作来源 is the column's own stance, not an AI-declaration label (2026-10-10).
+        claimSource: WECHAT_BRAND.claimSource,
+        // 封面 comes from 图片库: the episode cover is uploaded there as the audio material's cover.
+        coverSource: WECHAT_BRAND.coverSource,
+        ...(options.links.articleUrl !== '' ? { originalUrl: options.links.articleUrl } : {}),
+        ...(options.coverPath === undefined ? {} : { coverPath: options.coverPath }),
+        ...(options.audioPath === undefined
+            ? {}
+            : {
+                  audioPath: options.audioPath,
+                  audioTitle: options.audioTitle ?? '',
+                  audioCoverPath: options.coverPath ?? '',
+              }),
+    };
+    const body = typeof article.body === 'string' ? article.body : '';
+    return {
+        ...article,
+        body: options.appendOutro === false ? body : `${body}${WECHAT_OUTRO}`,
+        metadata: { ...metadataOf(article), publishStatus: options.publishStatus, wechatmp },
+    };
+}
+
+/**
+ * The 小红书 发播客 payload (task 0327 R1, extracted from `xhsPodcastNote`).
+ *
+ * The run's publish-prep Content carries the final mp3, the cover and the body; this only restates
+ * `metadata.audio` under the key the channel's 发播客 mode reads.
+ */
+export function buildXhsEpisodeContent(
+    prep: Record<string, unknown>,
+    options: { publishStatus: 'draft' | 'public'; links?: PublishLinks },
+): Record<string, unknown> {
+    const metadata = metadataOf(prep);
+    return {
+        ...prep,
+        metadata: {
+            ...metadata,
+            operation: '发播客',
+            audio: metadata.audioFile,
+            publishStatus: options.publishStatus,
+        },
+    };
+}
+
+/** The 小红书 写长文 payload (task 0327 R1): the article Content with its publish status. */
+export function buildXhsArticleContent(
+    article: Record<string, unknown>,
+    options: { publishStatus: 'draft' | 'public' },
+): Record<string, unknown> {
+    return {
+        ...article,
+        metadata: { ...metadataOf(article), publishStatus: options.publishStatus },
+    };
+}
+
+/** The 小红书 上传图文 payload (task 0327 R1): the rendered card series plus its status. */
+export function buildXhsCardsContent(
+    cards: Record<string, unknown>,
+    options: { publishStatus: 'draft' | 'public'; followUps?: unknown[] },
+): Record<string, unknown> {
+    return {
+        ...cards,
+        metadata: {
+            ...metadataOf(cards),
+            publishStatus: options.publishStatus,
+            ...(options.followUps === undefined ? {} : { followUps: options.followUps }),
+        },
+    };
+}
+
+/** The podcast payload (task 0327 R1): publish-prep Content plus the episode's show notes. */
+export function buildPodcastContent(
+    prep: Record<string, unknown>,
+    options: { showNotes: string; podcast?: Record<string, unknown> },
+): Record<string, unknown> {
+    return {
+        ...prep,
+        metadata: {
+            ...metadataOf(prep),
+            showNotes: options.showNotes,
+            // Podcast-specific SEO metadata (refined title/description, per-item plan) rides under
+            // one key so a channel payload cannot leak it into another channel's fields.
+            ...(options.podcast === undefined ? {} : { podcast: options.podcast }),
+        },
+    };
+}
+
+/**
+ * The surfdash payload (task 0327 R1): the article Content, unchanged.
+ *
+ * surfdash is the article's own publisher, so it consumes what `22-article` already composed — the
+ * builder exists so the variant set is uniform, not because it reshapes anything.
+ */
+export function buildSurfdashContent(article: Record<string, unknown>, _links: PublishLinks): Record<string, unknown> {
+    return { ...article };
+}
+
+/**
+ * One channel's short copy as a Content (task 0327 R3): the body is the authored post text and the
+ * episode cover rides along as `metadata.coverImage`.
+ */
+export function buildSocialContent(
+    copy: string,
+    options: { platform: string; coverPath?: string; maxChars: number },
+): Record<string, unknown> {
+    const trimmed = copy.trim();
+    // Backstop only: the authoring prompt owns the limit, so an over-length draft is truncated here
+    // rather than rejected — a publish stage can never re-author (design §6).
+    const body = trimmed.length > options.maxChars ? trimmed.slice(0, options.maxChars) : trimmed;
+    return {
+        title: `${options.platform} · 每日AI乱炖`,
+        format: 'text',
+        body,
+        metadata: {
+            platform: options.platform,
+            ...(trimmed.length > options.maxChars ? { truncatedFrom: trimmed.length } : {}),
+            ...(options.coverPath === undefined ? {} : { coverImage: options.coverPath }),
+        },
+    };
+}
+
+/** Character caps the social authoring prompt targets, enforced here as a backstop (task 0327 R3). */
+const SOCIAL_CAPS: Record<string, number> = { x: 280, weibo: 2000, threads: 500 };
+
+/** Variant key → file name: `social:x` becomes `social_x.content.json`. */
+function variantFileName(key: string): string {
+    return `${key.replaceAll(':', '_')}.content.json`;
+}
+
+/**
+ * `daily-bundle-variants <workDir> <runDate> <pluginsPath>` — the generate-side payload builder
+ * (task 0327 R2/R3).
+ *
+ * Everything the publish side used to assemble inline is produced here instead, once, as bundle
+ * variants under `30-variants/`. Links are the `{{article_url}}` / `{{podcast_url}}` placeholders,
+ * because at generate time nothing is published yet; `publish-matrix-send` resolves them from the
+ * tier-0 receipts. A variant whose source artifact is absent (channel disabled, cards never
+ * rendered, social copy not authored) is skipped with a log line, never invented.
+ */
+export function dailyBundleVariants(args: string[]): void {
+    const [workDir = '', runDate = '', _pluginsPath = ''] = args;
+    timed(workDir, 'bundle-variants', () => {
+        const outDir = join(workDir, '30-variants');
+        sted('mkdir', outDir, () => mkdirSync(outDir, { recursive: true }));
+        const articlePath = join(workDir, '22-article', `${runDate}_06_article_content.json`);
+        const prepPath = join(workDir, '31-publish', `${runDate}_13_publish-prep_content.json`);
+        const notesPath = join(workDir, '31-publish', `${runDate}_15_show-notes_show-notes.md`);
+        const cardsPath = join(workDir, '25-xhs', 'content.json');
+        const coverPath = join(workDir, '23-cover', `${runDate}_07_cover_cover.png`);
+        const socialDir = join(workDir, '26-social');
+        const cover = isFile(coverPath) ? coverPath : undefined;
+        const links = PLACEHOLDER_LINKS;
+        const written: string[] = [];
+        const skipped: string[] = [];
+
+        const article = readJson(articlePath);
+        const prep = readJson(prepPath);
+        const write = (key: string, content: Record<string, unknown>): void => {
+            const file = join(outDir, variantFileName(key));
+            sted('write', file, () => writeJsonText(file, content));
+            written.push(key);
+        };
+
+        // Generic variants first: a channel-specific variant wins over the shared one, so the
+        // shared copy must exist for the channels the preset does not specialise.
+        if (article === null) skipped.push('article (no 22-article content)');
+        else {
+            write('article', buildSurfdashContent(article, links));
+            write('article@surfdash-pub', buildSurfdashContent(article, links));
+            write('article@xhs-pub', buildXhsArticleContent(article, { publishStatus: 'draft' }));
+            write(
+                'article@wechatmp-pub',
+                buildWechatArticleContent(article, {
+                    links,
+                    publishStatus: 'draft',
+                    collection: '每日AI资讯',
+                    ...(cover === undefined ? {} : { coverPath: cover }),
+                }),
+            );
+        }
+
+        if (prep === null) skipped.push('episode (no publish-prep content)');
+        else {
+            const showNotes = isFile(notesPath) ? readFileSync(notesPath, 'utf-8') : '';
+            write('episode', buildPodcastContent(prep, { showNotes }));
+            write('episode@podcast-pub', buildPodcastContent(prep, { showNotes }));
+            write('episode@xhs-pub', buildXhsEpisodeContent(prep, { publishStatus: 'draft', links }));
+            // 公众号 播客 shares the episode with podcast-pub: same audio, same cover, no article body.
+            write(
+                'episode@wechatmp-pub',
+                buildWechatArticleContent(prep, {
+                    links,
+                    publishStatus: 'draft',
+                    collection: '每日AI资讯',
+                    // Audio-first post: it carries the episode body, so no article closer.
+                    appendOutro: false,
+                    ...(cover === undefined ? {} : { coverPath: cover }),
+                    ...(typeof metadataOf(prep).audioFile === 'string'
+                        ? { audioPath: String(metadataOf(prep).audioFile) }
+                        : {}),
+                }),
+            );
+        }
+
+        const cards = readJson(cardsPath);
+        if (cards === null) skipped.push('cards (no rendered card series)');
+        else write('cards@xhs-pub', buildXhsCardsContent(cards, { publishStatus: 'draft' }));
+
+        for (const platform of Object.keys(SOCIAL_CAPS)) {
+            const copyPath = join(socialDir, `${platform}.md`);
+            if (!isFile(copyPath)) {
+                skipped.push(`social:${platform} (no 26-social/${platform}.md)`);
+                continue;
+            }
+            const cap = SOCIAL_CAPS[platform] ?? 500;
+            write(
+                `social:${platform}`,
+                buildSocialContent(readFileSync(copyPath, 'utf-8'), {
+                    platform,
+                    maxChars: cap,
+                    ...(cover === undefined ? {} : { coverPath: cover }),
+                }),
+            );
+        }
+
+        console.log(`bundle-variants: ${written.length} variant(s) in ${outDir}: ${written.join(', ')}`);
+        if (skipped.length > 0) console.log(`bundle-variants: skipped ${skipped.join('; ')}`);
+    });
+}
+
+/**
  * Topic-boundary sidecar (task 0189 R2). Sibling of this file; node-builtins-only read.
  */
+/** Surfing frontmatter scalar. Inline on purpose: this file cannot import `@gobing-ai/*`. */
+function readFrontmatterScalar(filePath: string, key: string): string | undefined {
+    if (!isFile(filePath)) return undefined;
+    let raw: string;
+    try {
+        raw = readFileSync(filePath, 'utf-8');
+    } catch {
+        return undefined;
+    }
+    const block = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw);
+    const matter = block?.[1];
+    if (!matter) return undefined;
+    const match = new RegExp(`^${key}:\\s*(.*)$`, 'm').exec(matter);
+    if (!match?.[1]) return undefined;
+    const value = match[1].trim().replace(/^["']|["']$/g, '');
+    return value.length > 0 ? value : undefined;
+}
+
+function firstRefinedTitle(parsed: Record<string, unknown> | null): string {
+    const targets = parsed?.targets;
+    if (!Array.isArray(targets)) return '';
+    for (const entry of targets) {
+        if (entry === null || typeof entry !== 'object') continue;
+        const record = entry as Record<string, unknown>;
+        if (record.target !== 'surfdash-pub' || record.ok !== true) continue;
+        const title = metadataOf(record).refinedTitle;
+        if (typeof title === 'string' && title.trim() !== '') return title.trim();
+    }
+    return '';
+}
+
+/** Plan titles and briefs in audio order. The show-notes filter wins when it dropped boundary items. */
+function planItemsForPodcast(workDir: string, runDate: string): Array<{ title: string; brief?: string }> {
+    const filtered = join(workDir, '21-plan', `${runDate}_03_plan_plan-shownotes.json`);
+    const full = join(workDir, '21-plan', `${runDate}_03_plan_plan.json`);
+    const path = isFile(filtered) ? filtered : full;
+    if (!isFile(path)) return [];
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(readFileSync(path, 'utf-8'));
+    } catch {
+        return [];
+    }
+    if (!Array.isArray(parsed)) return [];
+    const items: Array<{ title: string; brief?: string }> = [];
+    for (const entry of parsed) {
+        if (entry === null || typeof entry !== 'object') continue;
+        const record = entry as Record<string, unknown>;
+        const title = typeof record.title === 'string' ? record.title.trim() : '';
+        if (title === '') continue;
+        const meta = record.metadata;
+        const metaBrief =
+            meta !== null && typeof meta === 'object' && typeof (meta as Record<string, unknown>).brief === 'string'
+                ? String((meta as Record<string, unknown>).brief).trim()
+                : '';
+        const body = typeof record.body === 'string' ? record.body.trim() : '';
+        const brief = metaBrief || (body.split(/(?<=[。！？])\s*/)[0] ?? '').trim();
+        items.push(brief.length > 0 ? { title, brief } : { title });
+    }
+    return items;
+}
+
 export function dailyPublishPodcast(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = ''] = args;
     const prep = join(workDir, '31-publish', `${runDate}_13_publish-prep_content.json`);
@@ -1454,7 +1890,23 @@ export function dailyPublishPodcast(args: string[]): void {
         try {
             const content = requireJson(prep, 'publish-podcast');
             const showNotes = readFileSync(notes, 'utf-8');
-            const merged = { ...content, metadata: { ...metadataOf(content), showNotes } };
+            const surfdash = readJson(join(workDir, '31-publish', `${runDate}_14_publish-surfdash_result.json`));
+            const postPath = firstPostPath(surfdash, 'surfdash-pub');
+            const refinedTitle = firstRefinedTitle(surfdash);
+            const refinedDescription = postPath !== '' ? readFrontmatterScalar(postPath, 'description') : undefined;
+            const planItems = planItemsForPodcast(workDir, runDate);
+            const prior = metadataOf(content).podcast;
+            const podcast: Record<string, unknown> =
+                prior !== null && typeof prior === 'object' && !Array.isArray(prior)
+                    ? { ...(prior as Record<string, unknown>) }
+                    : {};
+            if (refinedTitle !== '') podcast.refinedTitle = refinedTitle;
+            if (refinedDescription) podcast.refinedDescription = refinedDescription;
+            if (planItems.length > 0) podcast.planItems = planItems;
+            const merged = buildPodcastContent(content, {
+                showNotes,
+                ...(Object.keys(podcast).length > 0 ? { podcast } : {}),
+            });
             sted('write', prep, () => writeJsonText(prep, merged));
             kk(
                 [
@@ -1623,47 +2075,26 @@ export function dailyPublishWechat(args: string[]): void {
             return;
         }
         const packaged = requireJson(article, 'publish-wechat');
-        // MP draft enrichment (operator preferences 2026-09-29, completed 2026-10-10): 原创, 赞赏,
-        // 作者, 合集, 原文链接 (the surfdash post), 创作来源, cover, audio material. The brand strings
-        // are this daily show's constants; every field here is consumed by `wechatmp-pub`'s flow.
+        // MP draft enrichment (operator preferences 2026-09-29, completed 2026-10-10) lives in the
+        // builder so a generate-side bundle can produce the same payload without publishing.
         const cover = join(workDir, '23-cover', `${runDate}_07_cover_cover.png`);
         const audio = join(workDir, '30-audio', `${runDate}_11_generate_content.mp3`);
         const surfdashResult = join(workDir, '31-publish', `${runDate}_14_publish-surfdash_result.json`);
         const originalUrl = isFile(surfdashResult) ? firstTargetUrl(readJson(surfdashResult), 'surfdash-pub') : '';
-        const wechatmp: Record<string, unknown> = {
-            original: true,
-            // 赞赏 is enabled per episode; the plugin fills the 赞赏账户 only when the platform
-            // leaves it empty (it defaults from 作者, operator walk 2026-10-10).
-            reward: true,
-            author: '冰原奔狼',
-            collection: collectionArg || '每日AI资讯',
-            // 创作来源 is the column's own stance, not an AI-declaration label — the operator owns
-            // the wording (2026-10-10).
-            claimSource: '个人观点，仅供参考',
-            // 封面 comes from 图片库: the episode cover is uploaded there as the audio material's
-            // cover, so the library's newest entry is the intended image.
-            coverSource: 'library',
-            ...(originalUrl !== '' ? { originalUrl } : {}),
-            ...(isFile(cover) ? { coverPath: cover } : {}),
-            // Audio block at the article top (operator request 2026-09-29; the plugin UPLOADS the
-            // material when the 素材库 has no same-title entry, 2026-10-10).
-            ...(isFile(audio)
-                ? {
-                      audioPath: audio,
-                      audioTitle: typeof packaged.title === 'string' ? packaged.title : '',
-                      audioCoverPath: isFile(cover) ? cover : '',
-                  }
-                : {}),
-        };
-        // WeChat-only closing line (operator request 2026-09-29): point readers/listeners back to
-        // the show's platforms. Appended to the wechat input body only, never the master article.
-        const outro = '\n\n欲听往期节目，可至小宇宙、Apple Podcast、YouTube 等平台搜索【咸话咸说】。';
+        const hasCover = isFile(cover);
+        const hasAudio = isFile(audio);
+        const firstLine = typeof packaged.title === 'string' ? packaged.title : '';
         sted('write', input, () =>
-            writeJsonText(input, {
-                ...packaged,
-                body: `${typeof packaged.body === 'string' ? packaged.body : ''}${outro}`,
-                metadata: { ...metadataOf(packaged), publishStatus: want, wechatmp },
-            }),
+            writeJsonText(
+                input,
+                buildWechatArticleContent(packaged, {
+                    links: { articleUrl: originalUrl, podcastUrl: '' },
+                    publishStatus: want,
+                    collection: collectionArg || '每日AI资讯',
+                    ...(hasCover ? { coverPath: cover } : {}),
+                    ...(hasAudio ? { audioPath: audio, audioTitle: firstLine } : {}),
+                }),
+            ),
         );
         // `soft` keeps the WeChat target non-blocking: the plugin still writes its own failed Result
         // and prints the failing step (session preflight, editor paste, save control), which is what
@@ -1731,14 +2162,13 @@ export function dailyPublishXhs(args: string[]): void {
         const packaged = requireJson(content, 'publish-xhs');
         const followUp = podcast === 'true' ? xhsPodcastNote(prep, want) : undefined;
         sted('write', input, () =>
-            writeJsonText(input, {
-                ...packaged,
-                metadata: {
-                    ...metadataOf(packaged),
+            writeJsonText(
+                input,
+                buildXhsCardsContent(packaged, {
                     publishStatus: want,
                     ...(followUp === undefined ? {} : { followUps: [followUp] }),
-                },
-            }),
+                }),
+            ),
         );
         // `soft` keeps the XHS target non-blocking: the plugin still writes its own failed Result
         // and prints the failing step (login gate, upload, body, submit control), which is what the
@@ -1770,16 +2200,7 @@ function xhsPodcastNote(prepPath: string, publishStatus: 'draft' | 'public'): Re
         console.log(`publish-xhs: no publish-prep Content at ${prepPath} — the 发播客 note is skipped`);
         return undefined;
     }
-    const metadata = metadataOf(prep);
-    return {
-        ...prep,
-        metadata: {
-            ...metadata,
-            operation: '发播客',
-            audio: metadata.audioFile,
-            publishStatus,
-        },
-    };
+    return buildXhsEpisodeContent(prep, { publishStatus });
 }
 
 /**
@@ -2460,6 +2881,9 @@ export function dailyShowNotes(args: string[]): void {
         // Inlined parse — this file must not import @gobing-ai/* (header contract); the same note
         // grammar lives in daily-article-gen's excludedIdsFromNote.
         const postPath = firstPostPath(readJson(result), 'surfdash-pub');
+        if (postPath === '') {
+            console.error('WARN podcast-pub: brief mode requested but ARTICLE_POST_PATH is empty; using legacy layout');
+        }
         const articleContent = readJson(article);
         const articleBody = articleContent?.body;
         const excluded = new Set<string>();
@@ -2606,10 +3030,19 @@ export function dailyTranslateSync(args: string[]): void {
     timed(workDir, 'translate-sync', () => {
         // Reads the marker file itself — the collapsed `translate` state has no
         // cross-state var to hand the path through.
-        const zhPostPath = isFile(zhPathFile) ? readFileSync(zhPathFile, 'utf-8') : '';
+        const zhPostPath = isFile(zhPathFile) ? readFileSync(zhPathFile, 'utf-8').trim() : '';
         if (zhPostPath === '') {
             console.log('no zh post path — skip translate-sync');
             return;
+        }
+        // The 4th argument is the MARKER file, not the post (2026-10-22). Passing the post made the
+        // plugin read the whole article as `postPath` and echo it back inside its error, which cost a
+        // confusing round trip on a manual recovery run.
+        if (zhPathFile.endsWith('.md') || !zhPostPath.startsWith('/') || !isFile(zhPostPath)) {
+            failWith(
+                1,
+                `translate-sync: 4th argument must be the zh marker file (${runDate}_20_translate-localize_zh-post-path.txt), not the post itself — '${zhPathFile}' holds ${zhPostPath.includes('\n') ? 'a multi-line document' : `'${zhPostPath}'`}`,
+            );
         }
         sted('write', sync, () =>
             writeJqText(sync, { body: '', options: { operation: 'sync', postPath: zhPostPath } }),

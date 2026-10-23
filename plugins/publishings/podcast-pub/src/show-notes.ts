@@ -12,6 +12,14 @@
  */
 
 import type { Doc } from '@gobing-ai/kk-core';
+import {
+    type PlanItem,
+    type PodcastSeoConfig,
+    SEO_DEFAULTS,
+    showNotesSummaryParagraph,
+    type TimelineStyle,
+    warn,
+} from './seo';
 
 /** Escapes text content and attribute values (`&`, `<`, `>`, `"`). */
 function escapeHtml(value: string): string {
@@ -133,7 +141,7 @@ function isGeneratedTimeline(block: string): boolean {
  * input. `ponytail`: no JS — timestamp deep-linking depends on the theme's player
  * API; add when microfeed exposes one.
  */
-function renderTimelineHtml(docs: Doc[], offsets: number[], articleUrl: string): string {
+function renderTimelineHtml(docs: Doc[], offsets: number[], articleUrl: string, style: TimelineStyle): string {
     const rows = docs
         .map((d, i) => {
             const title = escapeHtml(d.title ?? `条目 ${i + 1}`);
@@ -152,11 +160,15 @@ function renderTimelineHtml(docs: Doc[], offsets: number[], articleUrl: string):
     const articleTail = isHttpUrl(articleUrl)
         ? `<p>完整图文版：<a href="${escapeHtml(articleUrl)}" target="_blank" rel="noopener">${escapeHtml('本期完整文章')}</a></p>`
         : `<p>${escapeHtml('本期完整文章')}</p>`;
+    const styleBlock = style === 'omit' ? '' : `${TIMELINE_STYLE}\n`;
+    // `after` (default) keeps the style inside the markers but after the list, so content_text
+    // does not open on CSS. `before` is the pre-D9 position, for a byte-identical legacy render.
+    const before = style === 'before' ? styleBlock : '';
+    const after = style === 'after' ? styleBlock : '';
     return `<!--kk:timeline-->
-${TIMELINE_STYLE}
-<div class="kk-tl">${rows}
+${before}<div class="kk-tl">${rows}
 </div>
-${articleTail}
+${after}${articleTail}
 <!--/kk:timeline-->`;
 }
 
@@ -277,6 +289,22 @@ export interface ShowNotesRenderOptions {
      * matched monotonically against segment transcriptions; otherwise `--:--`.
      */
     audioSegments?: Array<{ duration?: number; transcription?: string }>;
+    /** R4. Omit to keep the default (summary on). `false` reproduces the pre-D9 body. */
+    summaryParagraph?: boolean;
+    /** R4. `after` moves `<style>` below the timeline; `before` is the legacy position; `omit` drops it. */
+    timelineStyle?: TimelineStyle;
+    seriesName?: string;
+    showName?: string;
+    descriptionMin?: number;
+    descriptionMax?: number;
+    descriptionSource?: PodcastSeoConfig['descriptionSource'];
+    descriptionPattern?: string;
+    /** Playback seconds for the `（约 N 分钟）` clause. Segment durations are the fallback. */
+    durationSeconds?: number;
+    /** Link text for the summary cross-link. Falls back to 本期完整文章. */
+    surfingTitle?: string;
+    refinedDescription?: string;
+    summaryClauses?: string[];
 }
 
 /** Per-item 1–2-sentence briefing: `metadata.brief` first, body sentences as fallback. */
@@ -298,7 +326,7 @@ function itemBrief(d: Doc): string {
  * a `[来源：<label>](<sourceUri>)` link per item, and the full-article footer.
  * Downstream HTML rendering stays with {@link renderShowNotesHtml}.
  */
-export function renderShowNotesMarkdown(docs: Doc[], opts: ShowNotesRenderOptions): string {
+export function renderShowNotesMarkdown(docs: Doc[], opts: ShowNotesRenderOptions, warnings?: string[]): string {
     const slugify = (t: string): string => {
         const s = t
             .toLowerCase()
@@ -323,6 +351,9 @@ export function renderShowNotesMarkdown(docs: Doc[], opts: ShowNotesRenderOption
         postSlug.length > 0
             ? `${baseUrl}${localePrefix}/posts/${postSlug}`
             : `${baseUrl}/zh/posts/${opts.runDate}-${slugify(opts.title)}`;
+    if (opts.briefMode === true && postSlug.length === 0) {
+        warn('brief mode requested but ARTICLE_POST_PATH is empty; using legacy layout', warnings);
+    }
     const briefMode = opts.briefMode === true && postSlug.length > 0;
     const sourceLabel = (d: Doc): string => {
         const m = d.metadata ?? {};
@@ -335,10 +366,44 @@ export function renderShowNotesMarkdown(docs: Doc[], opts: ShowNotesRenderOption
     };
     const offsets = computeAudioOffsets(docs, opts.audioSegments);
     const lines: string[] = [`# ${opts.title}`, ''];
+    const summaryOn = opts.summaryParagraph !== false;
+    if (summaryOn) {
+        const segmentSeconds = opts.audioSegments?.reduce((sum, segment) => sum + (segment.duration ?? 0), 0);
+        const durationSeconds =
+            opts.durationSeconds ?? (segmentSeconds && segmentSeconds > 0 ? segmentSeconds : undefined);
+        const plan: PlanItem[] = docs.map((doc) => {
+            const title = doc.title?.trim() ?? '';
+            const brief = itemBrief(doc);
+            return brief.length > 0 ? { title, brief } : { title };
+        });
+        const config: PodcastSeoConfig = {
+            ...SEO_DEFAULTS,
+            ...(opts.seriesName ? { seriesName: opts.seriesName } : {}),
+            ...(opts.showName ? { showName: opts.showName } : {}),
+            ...(opts.descriptionMin !== undefined ? { descriptionMin: opts.descriptionMin } : {}),
+            ...(opts.descriptionMax !== undefined ? { descriptionMax: opts.descriptionMax } : {}),
+            ...(opts.descriptionSource ? { descriptionSource: opts.descriptionSource } : {}),
+            ...(opts.descriptionPattern ? { descriptionPattern: opts.descriptionPattern } : {}),
+            summaryParagraph: true,
+            timelineStyle: opts.timelineStyle ?? 'after',
+        };
+        const summary = showNotesSummaryParagraph({
+            config,
+            runDate: opts.runDate,
+            ...(durationSeconds !== undefined ? { durationSeconds } : {}),
+            plan,
+            ...(opts.refinedDescription ? { refinedDescription: opts.refinedDescription } : {}),
+            ...(opts.summaryClauses ? { summaryClauses: opts.summaryClauses } : {}),
+            articleUrl,
+            linkText: opts.surfingTitle?.trim() || '本期完整文章',
+        });
+        for (const line of summary.warnings) warn(line.replace(/^WARN podcast-pub:\s*/, ''), warnings);
+        lines.push(summary.markdown, '');
+    }
     if (briefMode) {
         // Timeline layout (2026-09-16 feedback): real audio offsets left, title + briefing
         // right, article link last — the whole brief body is one pre-built HTML block.
-        lines.push(renderTimelineHtml(docs, offsets, articleUrl), '');
+        lines.push(renderTimelineHtml(docs, offsets, articleUrl, opts.timelineStyle ?? 'after'), '');
     } else {
         docs.forEach((d, i) => {
             const body = (d.body ?? '').trim();

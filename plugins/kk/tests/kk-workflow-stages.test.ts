@@ -102,30 +102,50 @@ function qcDoc(id: string, title: string, publishedAt = '2026-09-16T00:20:39.000
     };
 }
 
-describe('topic boundary — applyTopicBoundary (task 0189 R2/R3/F1)', () => {
-    it('excludes a zh political-mainline doc with its rule, reason and matched keyword', () => {
+describe('topic boundary — applyTopicBoundary (task 0189 R2/R3/F1; narrowed 2026-10-22)', () => {
+    it('excludes a zh top-leadership doc with its rule, reason and matched keyword', () => {
         const { kept, excluded } = applyBoundary(
-            [qcDoc('zh-1', '台海局势牵动芯片供应链'), qcDoc('ok-1', '浏览器端零依赖语音实现')],
+            [qcDoc('zh-1', '习近平出席人工智能治理峰会'), qcDoc('ok-1', '浏览器端零依赖语音实现')],
             STAMP,
         );
         expect(kept.map((doc) => doc.id)).toEqual(['ok-1']);
         expect(excluded).toEqual([
             {
                 id: 'zh-1',
-                title: '台海局势牵动芯片供应链',
-                rule: 'political-diplomatic',
-                reason: expect.stringContaining('政治/外交主线'),
-                matched: '台海',
+                title: '习近平出席人工智能治理峰会',
+                rule: 'prc-leadership',
+                reason: expect.stringContaining('最高领导人'),
+                matched: '习近平',
             },
         ]);
     });
 
-    it('excludes a headline-capitalized English keyword (F2: matching is case-insensitive)', () => {
-        const { kept, excluded } = applyBoundary([qcDoc('en-1', 'Antitrust suit targets search ad stack')], STAMP);
+    it('excludes a headline-capitalized English leader name (F2: matching is case-insensitive)', () => {
+        const { kept, excluded } = applyBoundary([qcDoc('en-1', 'Xi Jinping meets chip executives')], STAMP);
         expect(kept).toEqual([]);
         expect(excluded).toEqual([
-            expect.objectContaining({ id: 'en-1', rule: 'policy-dispute', matched: 'antitrust' }),
+            expect.objectContaining({ id: 'en-1', rule: 'prc-leadership', matched: 'xi jinping' }),
         ]);
+    });
+
+    /**
+     * 2026-10-22 operator ruling: only PRC top leadership is out of scope. The five pre-existing
+     * rules (political-diplomatic, trade-controls, military, policy-dispute, social-event) excluded
+     * whole classes of AI-industry news — every exclusion this store ever recorded was a `lawsuit`
+     * hit, including Character.AI's acquisition and Meta's training-data case.
+     */
+    it('admits AI-industry litigation, export controls and geopolitics that the old rules excluded', () => {
+        const { kept, excluded } = applyBoundary(
+            [
+                qcDoc('ai-1', 'Disney found a way to buy Character.AI without buying its lawsuits'),
+                qcDoc('ai-2', 'Antitrust suit targets search ad stack'),
+                qcDoc('ai-3', 'New tariffs hit GPU imports'),
+                qcDoc('ai-4', '台海局势牵动芯片供应链'),
+            ],
+            STAMP,
+        );
+        expect(excluded).toEqual([]);
+        expect(kept.map((doc) => doc.id)).toEqual(['ai-1', 'ai-2', 'ai-3', 'ai-4']);
     });
 
     it('excludes a doc published after the run date as inadmissible date-conflict evidence (R3)', () => {
@@ -142,18 +162,20 @@ describe('topic boundary — applyTopicBoundary (task 0189 R2/R3/F1)', () => {
         ]);
     });
 
-    it('does not match an English keyword buried inside a longer word (patriot ≠ riot)', () => {
+    it('does not match a keyword buried inside a longer word (word-start boundary)', () => {
         const { kept, excluded } = applyBoundary(
-            [qcDoc('fp-1', 'Model selection heuristics for agents'), qcDoc('fp-2', 'Patriot: a Rust tracing library')],
+            [
+                qcDoc('fp-1', 'Model selection heuristics for agents'),
+                // `leader`/`leadership` is deliberately NOT a keyword: a startup's leadership change is
+                // AI-industry news. No natural English word embeds a leader's full name, so the second
+                // doc pins the `\b` rule synthetically.
+                qcDoc('fp-2', 'Board leadership shuffle at a startup'),
+                qcDoc('fp-3', 'Taxijinping model release notes'),
+            ],
             STAMP,
         );
         expect(excluded).toEqual([]);
-        expect(kept.map((doc) => doc.id)).toEqual(['fp-1', 'fp-2']);
-    });
-
-    it('still matches an English keyword at a word start, including plurals', () => {
-        const { excluded } = applyBoundary([qcDoc('en-2', 'New tariffs hit GPU imports')], STAMP);
-        expect(excluded).toEqual([expect.objectContaining({ id: 'en-2', rule: 'trade-controls', matched: 'tariff' })]);
+        expect(kept.map((doc) => doc.id)).toEqual(['fp-1', 'fp-2', 'fp-3']);
     });
 
     it('judges date-conflict against the local run day, not UTC (a Pacific-evening item is not future-dated)', () => {
@@ -169,11 +191,11 @@ describe('topic boundary — applyTopicBoundary (task 0189 R2/R3/F1)', () => {
 
     it('keeps nothing when every doc is excluded (zero-kept → done-no-content edge)', () => {
         const { kept, excluded } = applyBoundary(
-            [qcDoc('zh-1', '台海局势再度紧张'), qcDoc('zh-2', '中美关系谈判重启')],
+            [qcDoc('zh-1', '习近平会见科技企业代表'), qcDoc('zh-2', '政治局常委会议讨论人工智能')],
             STAMP,
         );
         expect(kept).toEqual([]);
-        expect(excluded.map((entry) => entry.rule)).toEqual(['political-diplomatic', 'political-diplomatic']);
+        expect(excluded.map((entry) => entry.rule)).toEqual(['prc-leadership', 'prc-leadership']);
     });
 });
 
@@ -195,7 +217,7 @@ describe('daily-qc-content stage — exclusions audit + idempotent rerun (task 0
 
     it('writes the exclusions audit {version, runDate, excluded, kept} and narrows candidates to kept docs', () => {
         const dir = setup([
-            qcDoc('zh-1', '台海局势牵动芯片供应链'),
+            qcDoc('zh-1', '习近平出席人工智能治理峰会'),
             qcDoc('future-1', '前沿模型训练暂停报告', '2026-09-17T08:00:00.000Z'),
             qcDoc('ok-1', '浏览器端零依赖语音实现'),
         ]);
@@ -209,7 +231,7 @@ describe('daily-qc-content stage — exclusions audit + idempotent rerun (task 0
             expect(audit.version).toBe(1);
             expect(audit.runDate).toBe(STAMP);
             expect(audit.excluded.map((entry) => [entry.id, entry.rule])).toEqual([
-                ['zh-1', 'political-diplomatic'],
+                ['zh-1', 'prc-leadership'],
                 ['future-1', 'date-conflict'],
             ]);
             expect(audit.kept).toEqual(['ok-1']);
@@ -221,7 +243,7 @@ describe('daily-qc-content stage — exclusions audit + idempotent rerun (task 0
     });
 
     it('rerun is idempotent: cached candidates, boundary no-op, audit and candidates untouched', () => {
-        const dir = setup([qcDoc('zh-1', '台海局势牵动芯片供应链'), qcDoc('ok-1', '浏览器端零依赖语音实现')]);
+        const dir = setup([qcDoc('zh-1', '习近平出席人工智能治理峰会'), qcDoc('ok-1', '浏览器端零依赖语音实现')]);
         try {
             expect(runStage(['daily-qc-content', dir, STAMP, ...qcStageArgs], fakeKk(dir)).status).toBe(0);
             const auditBefore = readFileSync(exclusionsPath(dir), 'utf-8');
@@ -239,7 +261,7 @@ describe('daily-qc-content stage — exclusions audit + idempotent rerun (task 0
     });
 
     it('zero kept docs leaves candidates empty for the workflow done-no-content edge', () => {
-        const dir = setup([qcDoc('zh-1', '台海局势再度紧张'), qcDoc('zh-2', '中美关系谈判重启')]);
+        const dir = setup([qcDoc('zh-1', '习近平会见科技企业代表'), qcDoc('zh-2', '政治局常委会议讨论人工智能')]);
         try {
             const result = runStage(['daily-qc-content', dir, STAMP, ...qcStageArgs], fakeKk(dir));
             expect(result.status).toBe(0);
@@ -296,7 +318,7 @@ describe('daily-qc-content stage — cached-candidates title dedup (task 0250 R2
             const afterFirst = readFileSync(candidatesPath(dir), 'utf-8');
             const second = stage(dir, fakeKk(dir));
             expect(second.status).toBe(0);
-            // daily-stages.ts:192 — dropped.length === 0 returns without a write.
+            // daily-stages.ts — the dedup stage returns without a write when nothing was dropped.
             expect(second.stderr).not.toContain('qc: dropped');
             expect(readFileSync(candidatesPath(dir), 'utf-8')).toBe(afterFirst);
         } finally {
@@ -309,7 +331,7 @@ describe('offline generation → publish-payload E2E (task 0189 F4b)', () => {
     it('daily-qc-content → daily-article renders the publish payload from kept docs only', () => {
         const dir = mkdtempSync(join(tmpdir(), 'kk-0189-e2e-'));
         mkdirSync(join(dir, '21-plan'), { recursive: true });
-        const docs = [qcDoc('zh-1', '台海局势牵动芯片供应链'), qcDoc('ok-1', '浏览器端零依赖语音实现')];
+        const docs = [qcDoc('zh-1', '习近平出席人工智能治理峰会'), qcDoc('ok-1', '浏览器端零依赖语音实现')];
         writeFileSync(join(dir, '21-plan', `${STAMP}_03_plan_content.json`), JSON.stringify({ metadata: { docs } }));
         const env = fakeKk(dir);
         try {

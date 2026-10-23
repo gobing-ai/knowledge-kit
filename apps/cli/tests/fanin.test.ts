@@ -258,6 +258,8 @@ interface FixturePluginOptions {
     docId?: string;
     /** Register under a non-ingestion kind (kind-mismatch test). */
     kind?: 'ingestion' | 'generator';
+    /** Emit this stderr line while still exiting 0 and writing a Doc list. */
+    stderrOnSuccess?: string;
 }
 
 /** Write a fixture plugin named `name` under `pluginsRoot`; its entry honors `--out` per `opts`. */
@@ -284,6 +286,9 @@ function writeFixtureIngestionPlugin(pluginsRoot: string, name: string, opts: Fi
         lines.push(`process.exit(${opts.exitCode});`);
     } else {
         const docId = opts.docId ?? name;
+        if (opts.stderrOnSuccess !== undefined) {
+            lines.push(`console.error(${JSON.stringify(opts.stderrOnSuccess)});`);
+        }
         lines.push(`writeFileSync(outPath, JSON.stringify([{ id: '${docId}', body: 'doc from ${name}' }]));`);
     }
     writeFileSync(join(dir, 'src', 'index.ts'), `${lines.join('\n')}\n`);
@@ -406,6 +411,27 @@ describe('runFanin source-runner mode (--source)', () => {
             expect(code).toBe(0);
             const outData = JSON.parse(await Bun.file(outFile).text());
             expect(outData.map((d: { id: string }) => d.id)).toEqual(['root-1']);
+        });
+    });
+
+    it('surfaces a source’s own stderr when it succeeds with an empty result (2026-10-22)', async () => {
+        await withTempDir(async (root) => {
+            const pluginsRoot = join(root, 'plugins');
+            writeFixtureIngestionPlugin(pluginsRoot, 'quiet-src', {
+                stderrOnSuccess: 'quiet-src: no fresh digest — emitting []',
+            });
+            const inFile = join(root, 'in.json');
+            writeFileSync(inFile, '[]');
+            const outFile = join(root, 'merged.json');
+
+            const code = await withoutPluginPath(() =>
+                runFanin(['--source', `quiet-src:${inFile}`, '--out', outFile, '--plugins-root', pluginsRoot]),
+            );
+
+            expect(code).toBe(0);
+            // The source produced nothing but a valid Doc list; only its stderr explains why.
+            expect(errLog()).toContain('[source:quiet-src]');
+            expect(errLog()).toContain('no fresh digest');
         });
     });
 
