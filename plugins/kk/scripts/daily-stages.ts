@@ -2692,10 +2692,19 @@ export function dailyTranslateSync(args: string[]): void {
     timed(workDir, 'translate-sync', () => {
         // Reads the marker file itself — the collapsed `translate` state has no
         // cross-state var to hand the path through.
-        const zhPostPath = isFile(zhPathFile) ? readFileSync(zhPathFile, 'utf-8') : '';
+        const zhPostPath = isFile(zhPathFile) ? readFileSync(zhPathFile, 'utf-8').trim() : '';
         if (zhPostPath === '') {
             console.log('no zh post path — skip translate-sync');
             return;
+        }
+        // The 4th argument is the MARKER file, not the post (2026-10-22). Passing the post made the
+        // plugin read the whole article as `postPath` and echo it back inside its error, which cost a
+        // confusing round trip on a manual recovery run.
+        if (zhPathFile.endsWith('.md') || !zhPostPath.startsWith('/') || !isFile(zhPostPath)) {
+            failWith(
+                1,
+                `translate-sync: 4th argument must be the zh marker file (${runDate}_20_translate-localize_zh-post-path.txt), not the post itself — '${zhPathFile}' holds ${zhPostPath.includes('\n') ? 'a multi-line document' : `'${zhPostPath}'`}`,
+            );
         }
         sted('write', sync, () =>
             writeJqText(sync, { body: '', options: { operation: 'sync', postPath: zhPostPath } }),

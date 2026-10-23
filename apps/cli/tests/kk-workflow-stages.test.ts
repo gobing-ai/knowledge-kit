@@ -13,7 +13,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 /**
  * 0131/0132 (ADR-115) — behaviour of the shared kk stage runner that replaced the inline
@@ -2555,7 +2555,12 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             expect(existsSync(join(publish, `${stamp}_24_translate-sync_sync.json`))).toBe(false);
 
             const marker = join(publish, `${stamp}_20_translate-localize_zh-post-path.txt`);
-            writeFileSync(marker, 'posts/zh/index.md');
+            // The shipped marker holds the post's ABSOLUTE path inside the checkout; the plugin
+            // itself rejects anything else, so the fixture writes the real shape (2026-10-22).
+            const post = join(dir, 'checkout', 'content', 'posts', 'articles', 'zh', `post`, 'index.md');
+            mkdirSync(dirname(post), { recursive: true });
+            writeFileSync(post, '---\ntitle: T\n---\n');
+            writeFileSync(marker, post);
             const env = fakeKk(
                 dir,
                 [
@@ -2569,7 +2574,15 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             const sync = JSON.parse(readFileSync(join(publish, `${stamp}_24_translate-sync_sync.json`), 'utf-8')) as {
                 options: Record<string, string>;
             };
-            expect(sync.options).toEqual({ operation: 'sync', postPath: 'posts/zh/index.md' });
+            expect(sync.options).toEqual({ operation: 'sync', postPath: post });
+
+            // Passing the POST as the 4th argument instead of the marker fails loud and never
+            // forwards the article body to the plugin as a `postPath` (2026-10-22).
+            rmSync(join(publish, `${stamp}_24_translate-sync_sync.json`), { force: true });
+            const wrong = run(['daily-translate-sync', dir, stamp, '', post], env);
+            expect(wrong.status).toBe(1);
+            expect(wrong.stderr).toContain('must be the zh marker file');
+            expect(existsSync(join(publish, `${stamp}_24_translate-sync_sync.json`))).toBe(false);
         });
     });
 
