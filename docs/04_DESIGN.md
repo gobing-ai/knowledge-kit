@@ -2093,6 +2093,44 @@ receipts' `aggregatePath` bytes into the legacy `31-publish/<runDate>_14_publish
 bridge is the documented legacy seam and disappears with voice2. `kk daily publish-classify
 [--fold-tail]` and its tests are untouched.
 
+**`kk-daily-ai-voice3` — the generate half (task 0324).** `plugins/kk/workflows/kk-daily-ai-voice3.yaml`
+(`kind: dag`) carries voice2's generation graph — `prepare` → read chain → `extract` → `plan` →
+`qc-content` → `select` → translate → article/cover/script drafts → nested `safety` → `review` pause →
+audio (split/generate/fallbacks/intro/audit/duration) → `quality` → `show-notes` → card
+`cards-write`/`cards-render` — and then the generate-side tail this feature adds:
+
+| Node | What it does |
+| --- | --- |
+| `pool-gate` | the ONE `kk store pool-count --min 1` over the candidates file; records `PASS`/`EMPTY` at `.spur/run/<runId>-pool-gate.status` |
+| `social-write` | `agent.run` (`onError: continue`) writing zh short posts to `26-social/{x,weibo,threads}.md` inside each platform's cap |
+| `bundle-variants` | `kk stage run daily-bundle-variants …` → `30-variants/<key>.content.json` with `{{article_url}}`/`{{podcast_url}}` |
+| `bundle-freeze` | `kk stage run publish-matrix-bundle <workDir> --run-date <d> --run-id <id>` → `bundle.json` |
+| `generation-report` | `kk daily run-report` (no store writes) |
+| `publish` | nested `kk-daily-publish3` when `auto_publish=true`, launcher vars stripped |
+| `ledger` | `kk ledger append`, `onError: continue` |
+
+**No channel enablement.** `xhs_enabled`, `wechat_enabled`, `xhs_live`, `wechat_live`, `xhs_cards` and
+`publish_enabled` are gone: the publish preset owns which channels exist, and this graph publishes
+nothing except through the nested window. What remains is generation switches — `cards_enabled` /
+`cards` (billed card rendering, off by default because the preset's cards row is `off`),
+`plan_translate_enabled`, `article_write_enabled`, `script_write_enabled`, `cover_enabled`,
+`transcode_mp3`, `skip_review` — plus the four publish hand-off vars
+(`auto_publish`, `publish_window`, `publish_preset`, `publish_dummy`). The 合集 tag a channel payload
+carries is that channel's preset `options`, not a var.
+
+**One pool guard, recorded as a token.** voice2 repeated `kk store pool-count --min 1` on twenty-one
+conditions. `pool-gate` runs it once and writes `.spur/run/<runId>-pool-gate.status`; every node that
+used to carry the guard checks that token instead. A token rather than a bare `dependsOn`, because the
+engine skips a node only when **all** its dependencies were skipped — a failed gate beside a done
+dependency would still admit the node, which is exactly the bug the second copy of the guard used to
+prevent.
+
+**`publish-matrix-bundle` (the only `bundle.json` producer).** It lists `30-variants/`, validates each
+file as kk-core `Content`, records `{path, sha256}` per key (the file name's `_` maps back to `:`), and
+fills `episode.title` from the episode/article variant, else `每日AI乱炖 · <runDate>`. It refuses to
+freeze when the article or episode variant is missing, and a re-freeze preserves an existing
+`runs[]` — a publish window's record must survive the next generate run.
+
 **`kk-daily-publish3` — the publish half (task 0323).** `plugins/kk/workflows/kk-daily-publish3.yaml`
 (`kind: dag`) runs one **window** per launch; the channel matrix is never in the YAML. Vars:
 `work_dir` (the voice3 day dir holding `bundle.json`), `run_date`, `window`

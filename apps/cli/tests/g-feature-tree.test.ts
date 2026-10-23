@@ -27,10 +27,13 @@ const FEATURES = join(REPO, 'docs/features');
  * (C/D/E), `package` is the generic packager, `stage` is a namespace whose stages each belong to one
  * workflow, `store` is the storage platform G3 introduced and G31/G32 widened, and `ledger` is the
  * observability surface G7 defined, G71 renders and G11/G31 wire in. Each is co-owned infrastructure,
- * so "exactly one claimer" cannot apply to it (same reason as `stage`).
+ * so "exactly one claimer" cannot apply to it (same reason as `stage`). `daily` is exempt for a
+ * different reason: it is an ordinary English word that appears in many children's Scope through
+ * FILENAMES (`kk-daily-ai-voice2.yaml`, `kk-daily-safety.yaml`) and prose, so no prose-derived rule can
+ * name its single owner — that owner is G1's "the daily AI-voice workflow(s)" and is recorded there.
  * G's Scope puts engine/runtime and plugin work Out.
  */
-const NON_INFRA_FAMILIES = new Set(['executor', 'package', 'stage', 'store', 'ledger']);
+const NON_INFRA_FAMILIES = new Set(['executor', 'package', 'stage', 'store', 'ledger', 'daily']);
 
 interface Child {
     id: string;
@@ -86,8 +89,13 @@ function homes(stem: string): Set<string> {
     );
 }
 
+/**
+ * `kk <family>` command invocations. The `(?=\s)` lookahead is load-bearing: without it a FILENAME
+ * such as `kk-daily-safety.yaml` or `kk-daily-ai-voice2.yaml` matched as family `daily`, so three
+ * unrelated children looked like co-claimers of the `daily` command family.
+ */
 function families(text: string): Set<string> {
-    return new Set([...text.matchAll(/(?:^|[\s"'(;|&])kk ([a-z][a-z-]+)/gm)].map((m) => m[1] as string));
+    return new Set([...text.matchAll(/(?:^|[\s"'(;|&])kk ([a-z][a-z-]+)(?=\s)/gm)].map((m) => m[1] as string));
 }
 
 describe('feature G — the kk workflow tree', () => {

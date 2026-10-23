@@ -96,6 +96,19 @@ describe('publish-matrix stage names (0321 R7)', () => {
             expect(existsSync(join(workDir, '4-publish/rss-gate.json'))).toBe(true);
             expect(await runPublishMatrixStage(['publish-matrix-wait-until', '00:00', 'Asia/Shanghai'])).toBe(0);
 
+            // The bundle writer (task 0324) is the last publish-matrix stage: this work dir has no
+            // variants, so the dispatcher must reach it and surface its named refusal.
+            expect(
+                await runPublishMatrixStage([
+                    'publish-matrix-bundle',
+                    workDir,
+                    '--run-date',
+                    '2026-10-22',
+                    '--run-id',
+                    'r',
+                ]),
+            ).toBe(1);
+
             expect(await runPublishMatrixStage(['itc-publish-plan'])).toBeUndefined();
             expect(await runPublishMatrixStage(['some-other-stage'])).toBeUndefined();
             expect(await runPublishMatrixStage([])).toBeUndefined();

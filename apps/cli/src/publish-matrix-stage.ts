@@ -2,6 +2,7 @@ import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import {
     checkPublishMatrix,
     planPublishMatrix,
+    runPublishMatrixBundle,
     runPublishMatrixClassify,
     runPublishMatrixRssGate,
     runPublishMatrixWaitUntil,
@@ -28,6 +29,8 @@ export async function runPublishMatrixStage(
             return sendPublishMatrix(rest, { fs });
         case 'publish-matrix-classify':
             return runPublishMatrixClassify(rest, { fs });
+        case 'publish-matrix-bundle':
+            return runPublishMatrixBundle(rest, { fs });
         case 'publish-matrix-rss-gate':
             return runPublishMatrixRssGate(rest, { fs });
         case 'publish-matrix-wait-until':

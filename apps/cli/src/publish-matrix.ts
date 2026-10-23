@@ -1151,3 +1151,108 @@ export async function readPublishPresetSelector(
     }
     return value;
 }
+
+/**
+ * `publish-matrix-bundle <workDir> --run-date <d> --run-id <id>` — the only producer of
+ * `bundle.json` (task 0324 R2).
+ *
+ * The variant map is the `30-variants/` listing, so no hard-coded variant list lives in the
+ * workflow: every `<key>.content.json` becomes `variants[key] = { path, sha256 }` (relative to the
+ * bundle, so a bundle and its variants move together). The episode title comes from the plan, the
+ * episode Content, or the run date, and a missing required variant fails the freeze — a bundle must
+ * never advertise an artifact it cannot deliver.
+ */
+export async function runPublishMatrixBundle(args: string[], deps: PublishMatrixDeps = {}): Promise<number> {
+    const fs = deps.fs ?? createNodeFileSystem();
+    const [workDir = ''] = args;
+    const runDate = flagValue(args, '--run-date');
+    const parentRunId = flagValue(args, '--run-id');
+    if (!workDir || runDate === undefined || parentRunId === undefined) {
+        echoError('usage: publish-matrix-bundle <work_dir> --run-date <YYYY-MM-DD> --run-id <voice3 run id>');
+        return 1;
+    }
+    const variantsDir = join(workDir, '30-variants');
+    if (!(await fs.exists(variantsDir))) {
+        echoError(`publish-matrix-bundle: no variants at ${variantsDir}; run daily-bundle-variants first`);
+        return 1;
+    }
+
+    try {
+        const entries = (await fs.readDir(variantsDir)).filter((file) => file.endsWith('.content.json')).sort();
+        if (entries.length === 0) throw new Error(`no *.content.json under ${variantsDir}`);
+
+        const variants: Record<string, { path: string; sha256: string }> = {};
+        for (const file of entries) {
+            const key = file.replace(/\.content\.json$/, '').replaceAll('_', ':');
+            const raw = await fs.readFile(join(variantsDir, file));
+            // Parse as Content here: a variant that is not a Content would fail every consumer later.
+            const parsed = ContentSchema.safeParse(JSON.parse(raw));
+            if (!parsed.success) {
+                throw new Error(`variant '${key}' is not valid Content: ${parsed.error.message}`);
+            }
+            variants[key] = {
+                path: `30-variants/${file}`,
+                sha256: createHash('sha256').update(raw).digest('hex'),
+            };
+        }
+
+        // `{{article_url}}` / `{{podcast_url}}` must not survive a freeze as a *variant* omission:
+        // the publish side resolves them, so a bundle that carries no placeholder at all is a
+        // generate-side mistake (the builders own those links).
+        const placeholders = Object.entries(variants).some(([, entry]) =>
+            ['article', 'episode'].some((base) => entry.path.includes(`${base}.content.json`)),
+        );
+        if (!placeholders) {
+            echoError('publish-matrix-bundle: no article/episode variant — the publication contract needs both');
+            return 1;
+        }
+
+        const articleTitle = await readVariantTitle(fs, workDir, variants);
+        const bundle: Bundle = {
+            schemaVersion: 1,
+            runId: `${runDate}-${parentRunId}`,
+            runDate,
+            parentRunId,
+            runs: [],
+            episode: { title: articleTitle === '' ? `每日AI乱炖 · ${runDate}` : articleTitle },
+            variants,
+        };
+        const validated = BundleSchema.parse(bundle);
+        const bundlePath = join(workDir, 'bundle.json');
+        // An existing bundle keeps its `runs[]`: a re-freeze must not forget which windows already
+        // published against it.
+        if (await fs.exists(bundlePath)) {
+            try {
+                const prior = BundleSchema.parse(JSON.parse(await fs.readFile(bundlePath)));
+                if (prior.runs.length > 0) validated.runs = prior.runs;
+            } catch {
+                // an unreadable prior bundle is replaced by this validated one
+            }
+        }
+        await fs.writeFile(bundlePath, `${JSON.stringify(validated, null, 2)}\n`);
+        echo(`bundle frozen: ${Object.keys(variants).length} variant(s) -> ${bundlePath}`);
+        return 0;
+    } catch (err: unknown) {
+        echoError(`publish-matrix-bundle: ${err instanceof Error ? err.message : String(err)}`);
+        return 1;
+    }
+}
+
+/** The episode title for the bundle: the episode variant's own title, else the article's, else ''. */
+async function readVariantTitle(
+    fs: FileSystem,
+    workDir: string,
+    variants: Record<string, { path: string }>,
+): Promise<string> {
+    for (const key of ['episode', 'episode@podcast-pub', 'article']) {
+        const entry = variants[key];
+        if (entry === undefined) continue;
+        try {
+            const parsed = ContentSchema.parse(JSON.parse(await fs.readFile(join(workDir, entry.path))));
+            if (parsed.title !== undefined && parsed.title.trim() !== '') return parsed.title.trim();
+        } catch {
+            // fall through to the next candidate
+        }
+    }
+    return '';
+}
