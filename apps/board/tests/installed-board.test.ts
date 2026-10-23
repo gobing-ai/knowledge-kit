@@ -401,7 +401,7 @@ function writeDailyFunnelFiles(workDirRel: string, stamp: string, variant: strin
         mkdirSync(dirname(join(dir, rel)), { recursive: true });
         writeFileSync(join(dir, rel), body);
     };
-    write('10-collect/pool.json', pool(variant === 'd-empty' ? 0 : 4));
+    write('10-collect/pool.json', pool(variant === 'd-empty' ? 0 : variant === 'd-mismatch' ? 3 : 4));
     write(`21-plan/${stamp}_04_quality-control-content_annotated.json`, pool(variant === 'd-mismatch' ? 7 : 4));
     write(
         `21-plan/${stamp}_04_quality-control-content_candidates.rejected.json`,
@@ -433,8 +433,9 @@ function writeDailyFunnelFiles(workDirRel: string, stamp: string, variant: strin
             JSON.stringify({ metadata: { doc_count: docs.length, docs } }),
         );
     }
-    if (variant === 'd-mismatch') {
-        write(`21-plan/${stamp}_03_plan_plan.json`, pool(6));
+    if (variant === 'd-mismatch' || variant === 'd-funnel') {
+        // 2026-10-21 planned 6 episodes; 2026-10-22 planned 3 before the duration refusal.
+        write(`21-plan/${stamp}_03_plan_plan.json`, pool(variant === 'd-mismatch' ? 6 : 3));
     }
     if (variant === 'd-floor') {
         write(
@@ -1516,21 +1517,29 @@ describe('Daily episode funnel and supply context (G82/0320)', () => {
         expect(text).toContain(new Date(untilMs).toISOString());
         expect(text).toContain('configured context');
         expect(text).toContain('effective extraction window (ladder bounds) is unknown');
-        // The day × source matrix and plugin table render the SEEDED in-window supply only:
-        // one source column (aihot-ingest), one day row totalling 5, one tick run.
+        // The day × source matrix renders the SEEDED in-window supply only: one source column
+        // (aihot-ingest), one day row totalling 5.
         const matrix = await view.locator('.kk-daily-supply .kk-channel-yield-table').innerText();
         expect(matrix).toContain('aihot-ingest');
         expect(matrix).toMatch(/Total\s+5\s+5\s*$/);
-        const ticks = await view.locator('.kk-daily-supply .kk-plugin-run-table').innerText();
-        expect(ticks).toContain('aihot-ingest');
-        expect(ticks).toMatch(/\b1\b/);
         // The store answer matches the direct route for the same window (no invented totals).
         const route = await readerFetch(
             `/api/workflows/kk-collect/store/channels?from=${fromMs}&until=${untilMs}&page=1`,
         );
         expect(route.status).toBe(200);
-        const body = (await route.json()) as { bySource: Record<string, number>; sources: string[] };
+        const body = (await route.json()) as {
+            bySource: Record<string, number>;
+            sources: string[];
+            runsByDay: { day: string; runs: number }[];
+        };
         expect(body.bySource['aihot-ingest']).toBe(5);
+        // The tick table equals the route day by day. Other fixtures' ticks (r-a at seed − 1h,
+        // pg-0 at seed − 24h) also fall inside this window, and whether they share a local-day row
+        // depends on the wall clock — so compare against the route, never a fixed run count.
+        const ticks = await view.locator('.kk-daily-supply .kk-plugin-run-table').innerText();
+        expect(ticks).toContain('aihot-ingest');
+        expect(body.runsByDay.length).toBeGreaterThan(0);
+        for (const { day, runs } of body.runsByDay) expect(ticks).toMatch(new RegExp(`${day}\\s+${runs}\\b`));
         // horizon-ingest recorded 0 in-window contributions: stated, never a guessed yield.
         expect(text).toContain('Zero recorded contributions');
         // The funnel is visibly the artifact-backed plane, distinct from the store panel.
@@ -1551,8 +1560,9 @@ describe('Daily episode funnel and supply context (G82/0320)', () => {
         ]) {
             expect(text).toContain(row);
         }
-        // The 2026-10-22-shaped evidence: pool 4, kept 3, QC rejected 2, refused at 8.9 min of 15.
+        // The 2026-10-22-shaped evidence: pool 4, kept 3, QC rejected 2, plan 3, refused at 8.9 min of 15.
         expect(text.match(/1 · Episode pool\s*4/u) === null).toBe(false);
+        expect(text.match(/6 · Episode plan\s*3/u) === null).toBe(false);
         expect(text.match(/3 · Topic filter kept\s*3/u) === null).toBe(false);
         expect(text.match(/4 · QC rejected\s*2/u) === null).toBe(false);
         expect(text).toContain('measured 8.9 min');
@@ -1576,7 +1586,7 @@ describe('Daily episode funnel and supply context (G82/0320)', () => {
         if (!ready || page === null) throw new Error('setup did not complete');
         await openModule('kk-daily-ai-voice2', query({ run: 'd-mismatch', tab: 'summary' }));
         const text = await funnelText();
-        expect(text.match(/1 · Episode pool\s*4/u) === null).toBe(false);
+        expect(text.match(/1 · Episode pool\s*3/u) === null).toBe(false);
         expect(text.match(/2 · Annotated\s*7/u) === null).toBe(false);
         expect(text.match(/6 · Episode plan\s*6/u) === null).toBe(false);
         expect(text).toContain('board.daily.funnel.mismatch');

@@ -939,6 +939,8 @@ describe('projectFunnel (pure)', () => {
             { settings: {} },
         );
         expect((qcEmpty.summary as unknown as DailySummary).funnel.gate).toBe('qc-empty');
+        // The proving artifact is the empty candidates file, not an empty id (which rendered "(missing)").
+        expect((qcEmpty.summary as unknown as DailySummary).funnel.evidence.gate).toBe('episode-candidates');
         const unknown = funnelResults({ report: 'no-content' }, { settings: {} });
         expect((unknown.summary as unknown as DailySummary).funnel.gate).toBe('unknown');
         // A cleared-candidates file is NOT pre-refusal evidence once a refusal cleared it.

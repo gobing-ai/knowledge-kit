@@ -493,12 +493,14 @@ function FunnelPanel({ funnel, artifacts }: { funnel: DailyFunnelView; artifacts
         { label: '4 · QC rejected', value: funnelCount(funnel.qcRejectedCount), field: 'qcRejectedCount' },
         {
             label: '5 · Post-dedup survivors',
+            // The refusal is the specific cause (2026-10-22 planned 3, then the duration refusal cleared
+            // the survivors), so it outranks the generic plan-recorded reason.
             value:
-                funnel.dedupKeptCount === null && funnel.plannedCount !== null
-                    ? 'unknown — plan recorded'
-                    : funnel.dedupKeptCount === null &&
-                        (funnel.gate === 'episode-duration' || funnel.gate === 'script' || funnel.gate === 'qc-floor')
-                      ? 'unknown — cleared by the refusal'
+                funnel.dedupKeptCount === null &&
+                (funnel.gate === 'episode-duration' || funnel.gate === 'script' || funnel.gate === 'qc-floor')
+                    ? 'unknown — cleared by the refusal'
+                    : funnel.dedupKeptCount === null && funnel.plannedCount !== null
+                      ? 'unknown — plan recorded'
                       : funnelCount(funnel.dedupKeptCount),
             field: 'dedupKeptCount',
         },

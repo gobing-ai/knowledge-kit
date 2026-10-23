@@ -588,6 +588,14 @@ workspace reuse, config provenance, DAG evidence and integration flow are specif
 G8 reuses Settings → Workflows for definition selection, YAML and static graphs; its config tab
 owns only captured run settings and provenance.
 
+Store access is the one bounded exception to artifacts-only (ADR-035 amendments 2026-10-16 and
+2026-10-22): the reader opens `kk.db` read-only (`migrate:false`) for the Collect store routes, and
+Daily AI Voice consumes exactly one of them — the GET-only `kk-collect/store/channels` aggregate — as
+a configured supply-context panel for `[run.startedAt − captured window, run.startedAt)`, distinct from
+its artifact-backed episode funnel. IT Content stays artifacts-only. Detail:
+[collect-store-views.md](design/collect-store-views.md) and
+[workflow-board-modules.md](design/workflow-board-modules.md) §9.
+
 ## Repository workflow discovery
 
 Repository workflows have one physical home at

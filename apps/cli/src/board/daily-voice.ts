@@ -637,6 +637,7 @@ export function projectFunnel(
         else if (poolCount !== null && poolCount > 0 && candidateDocs === 0) gate = 'qc-empty';
         else gate = 'unknown';
         if (gate === 'empty-pool') evidence.gate = 'episode-pool';
+        else if (gate === 'qc-empty') evidence.gate = 'episode-candidates';
         else if (gate !== 'unknown') evidence.gate = measured?.id ?? script?.id ?? floor?.id ?? '';
     }
 
@@ -740,9 +741,6 @@ export function sanitizeFunnelArtifact(
 }
 
 /**
- * Project one daily run's results. Pure: the reader supplies the observed file states and the
- * run-detail action rows it read from the Board's own run API.
- *//**
  * Project one daily run's results. Pure: the reader supplies the observed file states and the
  * run-detail action rows it read from the Board's own run API.
  */

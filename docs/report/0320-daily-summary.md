@@ -66,3 +66,42 @@ previous run's funnel.
 
 Chromium was available in this environment (`chromium-1194`), so the installed-package acceptance
 ran for real; no assertion was weakened or skipped.
+
+## Historical observations (live artifacts, observed 2026-10-23T07:38:24Z)
+
+AC7 asks for timestamped observations of the 2026-10-21 and 2026-10-22 runs. Both run directories
+are present in this checkout under `.works/kk-daily-ai-voice2/` (`.works/` is gitignored, so a
+worktree checkout does not carry them; the observation below was taken in the main tree). Recorded
+verbatim, as mutable evidence — **no number here is frozen as an assertion**; the deterministic
+fixtures remain the acceptance basis.
+
+**Provenance first, date directory second** (the task's own warning). The plain `20261022` directory
+is *not* the run the task body describes: it holds **17** pool docs and no refusal — it is a later,
+different run. The no-content 2026-10-22 run the task body quotes is
+`.works/kk-daily-ai-voice2/20261022-nocontent-1902Z/`, identified by its own refusal artifact, not by
+its date name.
+
+| Run (directory) | Pool | Annotated | Plan | Gate evidence | Observed |
+| --- | ---: | ---: | ---: | --- | --- |
+| `20261022-nocontent-1902Z` | 4 | 4 | 3 | `30-audio/20261022_11_generate_content_duration-refusal.json`: measured 8.9 / estimated 14.4 / min 15, `keptCount` 3 | no-content, duration gate |
+| `20261021` | 3 | 7 | 6 | none (published run) | content run, audio 1075.296167 s → **17.9 min** once |
+| `20261022` | 17 | 13 | 8 | none | **different run**, not the one quoted in the task body |
+
+Exclusions on the no-content run: `excluded: [{rule: policy-dispute, matched: lawsuit}]`, `kept: 3`
+— matching the task body, and the reason `pool 4 → kept 3 → plan 3` must not be reconciled by
+subtraction.
+
+Commands used (read-only, from the main tree):
+
+```bash
+cd .works/kk-daily-ai-voice2
+ls -d 2026102*                                    # 20261020, 20261021, 20261022, 20261022-nocontent-1902Z
+python3 -c "…len(json.load(open('10-collect/pool.json')))…"           # per-run pool size
+python3 -c "…json.load(open('30-audio/*duration-refusal.json'))…"      # gate measurements
+python3 -c "…json.load(open('21-plan/*exclusions.json'))…"             # kept / excluded
+```
+
+`20261021`'s stage mismatch (pool 3 / annotated 7 / plan 6) is the shape the Chromium
+`d-mismatch` fixture reproduces; `20261022-nocontent-1902Z` is the shape `d-funnel` reproduces
+(pool 4, kept 3, QC rejected 2, refused at 8.9 of 15 min). No historical artifact was read for
+writing, copied, or mutated to make a test pass.
