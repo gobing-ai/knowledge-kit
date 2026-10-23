@@ -2102,9 +2102,12 @@ lookup order `${variant}@${plugin}` then `${variant}` is what lets a channel-spe
 variant whose source artifact is absent (channel disabled, cards never rendered, social copy not
 authored) is skipped with a log line, never invented. Social copy is authored by the workflow's
 `social-write` node into `26-social/<platform>.md` and wrapped here: the body is the post text, the
-episode cover rides as `metadata.coverImage`, and the per-platform cap (x 280, weibo 2000,
-threads 500) is a truncation backstop — the prompt owns the limit, and a publish stage never
-re-authors (design §6).
+episode cover rides as `metadata.coverImage`, and the per-platform cap is a truncation backstop —
+the prompt owns the limit, and a publish stage never re-authors (design §6). The cap is measured in the
+channel's own unit: X's 280 is **weighted** (CJK counts 2, so ~140 汉字), while weibo's 2000 and
+threads' 500 count characters. Truncation walks code points and records `truncatedFrom` plus
+`truncatedUnit`, so an over-length draft is cut without splitting a surrogate pair and the operator can
+see which unit was enforced.
 
 **`publish-matrix-classify <workDir> --window <w> --run-date <stamp>`** (task 0326) turns the
 window's receipts into `4-publish/outcome.<window>.json`

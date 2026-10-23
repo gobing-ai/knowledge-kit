@@ -43,11 +43,15 @@ const FEED = `<?xml version="1.0"?><rss><channel>
 
 /** `kk` shim: real `publish-matrix-*` stages, recorded voice2-era tails, no wait-until sleep. */
 function writeKkShim(binDir: string, logPath: string, feedPath: string): void {
+    // `STAGE` is captured once at the top and used throughout, so no case has to reason about how far
+    // `shift` has moved `$3` (the previous version rewrote the script text after templating, which a
+    // future edit mentioning "$3" would have silently broken).
     const script = `#!/usr/bin/env bash
 set -u
+STAGE="$3"
 printf '%s\\n' "kk $*" >> "${logPath}"
 if [ "$1" = "stage" ] && [ "$2" = "run" ]; then
-  case "$3" in
+  case "$STAGE" in
     publish-matrix-wait-until)
       echo "shim: wait-until recorded, not slept"
       exit 0
@@ -72,11 +76,8 @@ if [ "$1" = "stage" ] && [ "$2" = "run" ]; then
       shift 3
       exec bun "${REPO}/apps/cli/src/index.ts" stage run "$STAGE" "$@"
       ;;
-    dwim)
-      exit 0
-      ;;
     *)
-      echo "shim: recorded tail stage $3"
+      echo "shim: recorded tail stage $STAGE"
       exit 0
       ;;
   esac
@@ -84,9 +85,7 @@ fi
 echo "shim: recorded kk $*"
 exit 0
 `;
-    // `STAGE` has to survive the shift; export it before rewriting.
-    const withStage = script.replaceAll('"$3"', '"$STAGE"').replace('set -u', 'set -u\nSTAGE="$3"');
-    writeFileSync(join(binDir, 'kk'), withStage);
+    writeFileSync(join(binDir, 'kk'), script);
     chmodSync(join(binDir, 'kk'), 0o755);
 }
 

@@ -695,6 +695,17 @@ describe('publish3 stage surface (0323 R2, R3, R5)', () => {
             writeFileSync(empty, 'workflows:\n  kk-daily-ai-voice3: {}\n');
             expect(await readPublishPresetSelector({ KK_CONFIG: empty, HOME: root }, fs)).toBe(DEFAULT_PUBLISH_PRESET);
 
+            // `~` must expand against $HOME, exactly like `itc-config.ts` resolves every other kk
+            // config read: an unexpanded `~` silently read a file under the cwd instead.
+            mkdirSync(join(root, '.config', 'kk'), { recursive: true });
+            writeFileSync(
+                join(root, '.config', 'kk', 'config.yaml'),
+                'workflows:\n  kk-daily-ai-voice3:\n    publish_preset: from-home\n',
+            );
+            expect(await readPublishPresetSelector({ KK_CONFIG: '~/.config/kk/config.yaml', HOME: root }, fs)).toBe(
+                'from-home',
+            );
+
             const unknownKey = join(root, 'unknown.yaml');
             writeFileSync(unknownKey, 'workflows:\n  kk-daily-ai-voice3:\n    channels: x\n');
             await expect(readPublishPresetSelector({ KK_CONFIG: unknownKey, HOME: root }, fs)).rejects.toThrow(
@@ -947,6 +958,10 @@ describe('publish-matrix receipt classification (0326 R1, R2)', () => {
                     'utf-8',
                 ).trim();
                 expect(status).toBe('none');
+                // The ledger's Result cell reads this file; a never-planned window must say `none`.
+                expect(readFileSync(join(fx.workDir, 'publish-classify.summary.txt'), 'utf-8')).toContain(
+                    '"status":"none","published":0,"targets":0',
+                );
             } finally {
                 out.restore();
             }

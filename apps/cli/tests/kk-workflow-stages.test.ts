@@ -2246,6 +2246,33 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
+    it("daily-bundle-variants applies X's weighted cap, not a raw character count (0327 R3)", () => {
+        withTempDir((dir) => {
+            mkdirSync(join(dir, '26-social'), { recursive: true });
+            // 200 CJK characters = 400 of X's units (CJK counts 2), so a code-unit count would let the
+            // whole post through; the weighted backstop must cut it to at most 280 units.
+            writeFileSync(join(dir, '26-social', 'x.md'), '字'.repeat(200));
+            expect(run(['daily-bundle-variants', dir, '20260101', ''], {}).status).toBe(0);
+            const variant = JSON.parse(readFileSync(join(dir, '30-variants', 'social_x.content.json'), 'utf-8')) as {
+                body: string;
+                metadata: { truncatedFrom?: number; truncatedUnit?: string };
+            };
+            expect([...variant.body]).toHaveLength(140);
+            expect(variant.metadata.truncatedFrom).toBe(400);
+            expect(variant.metadata.truncatedUnit).toBe('weighted');
+
+            // A Latin post of the same length is within budget and stays whole.
+            writeFileSync(join(dir, '26-social', 'x.md'), 'a'.repeat(200));
+            expect(run(['daily-bundle-variants', dir, '20260101', ''], {}).status).toBe(0);
+            const latin = JSON.parse(readFileSync(join(dir, '30-variants', 'social_x.content.json'), 'utf-8')) as {
+                body: string;
+                metadata: { truncatedFrom?: number };
+            };
+            expect(latin.body).toHaveLength(200);
+            expect(latin.metadata.truncatedFrom).toBeUndefined();
+        });
+    });
+
     it('daily-bundle-variants truncates over-length social copy as a backstop (0327 R3)', () => {
         withTempDir((dir) => {
             mkdirSync(join(dir, '26-social'), { recursive: true });

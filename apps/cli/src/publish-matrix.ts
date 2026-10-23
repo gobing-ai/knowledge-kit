@@ -9,6 +9,7 @@ import {
 } from '@gobing-ai/ts-runtime';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import { z } from 'zod';
+import { resolveItcConfigPath } from './itc-config';
 import { loadPublishPreset, type PublishPresetTarget, type PublishWindow, PublishWindowSchema } from './itc-plan';
 import { type ItcReceipt, probePlugin, type SendRow, sendRows } from './itc-publish';
 
@@ -596,6 +597,12 @@ export async function runPublishMatrixClassify(args: string[], deps: PublishMatr
         };
         await fs.writeFile(join(publishDir, `outcome.${parsedWindow.data}.json`), `${JSON.stringify(none, null, 2)}\n`);
         await fs.writeFile(join(publishDir, `publish-status.${parsedWindow.data}.txt`), 'none\n');
+        // `kk ledger append` reads `<node>.summary.txt` for its Result cell, so the none branch writes
+        // it too: a window that never planned must read `none` in the ledger, not blank.
+        await fs.writeFile(
+            join(workDir, 'publish-classify.summary.txt'),
+            `${JSON.stringify({ status: 'none', published: 0, targets: 0 })}\n`,
+        );
         return 0;
     }
 
@@ -1117,10 +1124,10 @@ export async function readPublishPresetSelector(
     env: Record<string, string | undefined> = process.env,
     fs: FileSystem = createNodeFileSystem(),
 ): Promise<string> {
-    const explicit = env.KK_CONFIG?.trim();
-    const home = env.HOME ?? '';
-    const configPath =
-        explicit !== undefined && explicit !== '' ? resolve(explicit) : join(home, '.config', 'kk', 'config.yaml');
+    // The ONE kk config path convention (`itc-config.ts`): `$KK_CONFIG` (with `~` expanded) or
+    // `$HOME/.config/kk/config.yaml`. Hand-rolling it here resolved `~` against the cwd instead, so a
+    // `KK_CONFIG=~/.config/kk/config.yaml` launch read a different file than every itc stage.
+    const configPath = resolveItcConfigPath(env, env.HOME ?? '');
     if (!(await fs.exists(configPath))) return DEFAULT_PUBLISH_PRESET;
     let parsed: unknown;
     try {
@@ -1199,10 +1206,10 @@ export async function runPublishMatrixBundle(args: string[], deps: PublishMatrix
         // `{{article_url}}` / `{{podcast_url}}` must not survive a freeze as a *variant* omission:
         // the publish side resolves them, so a bundle that carries no placeholder at all is a
         // generate-side mistake (the builders own those links).
-        const placeholders = Object.entries(variants).some(([, entry]) =>
-            ['article', 'episode'].some((base) => entry.path.includes(`${base}.content.json`)),
-        );
-        if (!placeholders) {
+        // The publication contract needs at least the shared article or episode variant: they are what
+        // the tier-0 owned channels publish and what every later tier's link placeholders resolve to.
+        const hasOwnedVariant = Object.keys(variants).some((key) => key === 'article' || key === 'episode');
+        if (!hasOwnedVariant) {
             echoError('publish-matrix-bundle: no article/episode variant — the publication contract needs both');
             return 1;
         }

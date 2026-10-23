@@ -1683,28 +1683,93 @@ export function buildSurfdashContent(article: Record<string, unknown>, _links: P
  * One channel's short copy as a Content (task 0327 R3): the body is the authored post text and the
  * episode cover rides along as `metadata.coverImage`.
  */
+/**
+ * A channel's length budget: `max` in that channel's own counting unit.
+ *
+ * `weighted` is X's rule (CJK counts 2, a Latin letter 1) — the design's "280 weighted chars". Counting
+ * code points instead let a 280-character Chinese post through at ~560 of X's units, which is exactly
+ * the over-length draft the backstop exists to catch.
+ */
+interface SocialLimit {
+    max: number;
+    weighted?: boolean;
+}
+
+/** Weight of one code point in X's unit system: CJK ideographs and fullwidth forms count 2. */
+function weightedCharWeight(char: string): number {
+    const code = char.codePointAt(0) ?? 0;
+    const wide =
+        (code >= 0x1100 && code <= 0x115f) || // Hangul Jamo
+        (code >= 0x2e80 && code <= 0xa4cf) || // CJK radicals … Yi
+        (code >= 0xac00 && code <= 0xd7a3) || // Hangul syllables
+        (code >= 0xf900 && code <= 0xfaff) || // CJK compatibility ideographs
+        (code >= 0xfe30 && code <= 0xfe6f) || // CJK compatibility forms
+        (code >= 0xff00 && code <= 0xff60) || // fullwidth forms
+        (code >= 0xffe0 && code <= 0xffe6);
+    return wide ? 2 : 1;
+}
+
+/** Weighted length of `text` (code-point based, so an emoji counts once before its weight). */
+function weightedLength(text: string): number {
+    let total = 0;
+    for (const char of text) total += weightedCharWeight(char);
+    return total;
+}
+
+/**
+ * One channel's short copy as a Content (task 0327 R3): the body is the authored post text and the
+ * episode cover rides along as `metadata.coverImage`.
+ *
+ * The cap is a backstop, not the author: the prompt owns the limit, so an over-length draft is
+ * truncated rather than rejected, and `truncatedFrom` records what was cut. Truncation respects the
+ * channel's own unit — see {@link SocialLimit}.
+ */
 export function buildSocialContent(
     copy: string,
-    options: { platform: string; coverPath?: string; maxChars: number },
+    options: { platform: string; coverPath?: string; limit: SocialLimit },
 ): Record<string, unknown> {
     const trimmed = copy.trim();
-    // Backstop only: the authoring prompt owns the limit, so an over-length draft is truncated here
-    // rather than rejected — a publish stage can never re-author (design §6).
-    const body = trimmed.length > options.maxChars ? trimmed.slice(0, options.maxChars) : trimmed;
+    const measure = (text: string): number => (options.limit.weighted === true ? weightedLength(text) : text.length);
+    let body = trimmed;
+    if (measure(trimmed) > options.limit.max) {
+        // Walk code points, adding while the budget holds: a slice by code units could split a
+        // surrogate pair or bust the weighted budget on CJK text.
+        let kept = '';
+        let used = 0;
+        for (const char of trimmed) {
+            const weight = options.limit.weighted === true ? weightedCharWeight(char) : 1;
+            if (used + weight > options.limit.max) break;
+            kept += char;
+            used += weight;
+        }
+        body = kept;
+    }
     return {
         title: `${options.platform} · 每日AI乱炖`,
         format: 'text',
         body,
         metadata: {
             platform: options.platform,
-            ...(trimmed.length > options.maxChars ? { truncatedFrom: trimmed.length } : {}),
+            ...(body === trimmed
+                ? {}
+                : {
+                      truncatedFrom: measure(trimmed),
+                      truncatedUnit: options.limit.weighted === true ? 'weighted' : 'code_units',
+                  }),
             ...(options.coverPath === undefined ? {} : { coverImage: options.coverPath }),
         },
     };
 }
 
-/** Character caps the social authoring prompt targets, enforced here as a backstop (task 0327 R3). */
-const SOCIAL_CAPS: Record<string, number> = { x: 280, weibo: 2000, threads: 500 };
+/**
+ * Length budgets the social authoring prompt targets, enforced here as a backstop (task 0327 R3).
+ * X counts CJK at 2 (`weighted`); weibo and threads count characters.
+ */
+const SOCIAL_LIMITS: Record<string, SocialLimit> = {
+    x: { max: 280, weighted: true },
+    weibo: { max: 2000 },
+    threads: { max: 500 },
+};
 
 /** Variant key → file name: `social:x` becomes `social_x.content.json`. */
 function variantFileName(key: string): string {
@@ -1790,18 +1855,18 @@ export function dailyBundleVariants(args: string[]): void {
         if (cards === null) skipped.push('cards (no rendered card series)');
         else write('cards@xhs-pub', buildXhsCardsContent(cards, { publishStatus: 'draft' }));
 
-        for (const platform of Object.keys(SOCIAL_CAPS)) {
+        for (const platform of Object.keys(SOCIAL_LIMITS)) {
             const copyPath = join(socialDir, `${platform}.md`);
             if (!isFile(copyPath)) {
                 skipped.push(`social:${platform} (no 26-social/${platform}.md)`);
                 continue;
             }
-            const cap = SOCIAL_CAPS[platform] ?? 500;
+            const limit = SOCIAL_LIMITS[platform] ?? { max: 500 };
             write(
                 `social:${platform}`,
                 buildSocialContent(readFileSync(copyPath, 'utf-8'), {
                     platform,
-                    maxChars: cap,
+                    limit,
                     ...(cover === undefined ? {} : { coverPath: cover }),
                 }),
             );
