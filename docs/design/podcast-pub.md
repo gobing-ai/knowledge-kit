@@ -32,6 +32,7 @@ extends the E2/E4/E5 publish precedents; two-way door (delete the plugin dir).
 | D6 | Content mapping: `title` → item `title`; `body` (markdown) → `content_html`; `metadata.audioUrl` **or** `metadata.audioFile` (local path) → attachment; `metadata.durationSeconds`, `metadata.mimeType`, `metadata.status` (`published` default) | New Content schema fields; WAV→MP3 transcode in plugin | kk-core schemas unchanged (scope). Transcode belongs to a generator/ffmpeg step, not publish. |
 | D7 | Offline tests via `FakeFileCliTransport` fixtures; live smoke check is a manual gated step after deployment | Live-dependent CI tests | House precedent (E3–E5); CI must not depend on the operator's instance. |
 | D8 | No ADR | ADR for "publish to microfeed" | Extends E2/E4/E5 precedent. Reversible. |
+| D9 | Per-episode SEO in podcast-pub (R1–R11). Keyword titles, `_microfeed.seo`, summary-first show notes, iTunes numbers, JSON-LD-safe titles, in-body Surfing link, `daily-ai-{date}` slug, optional social-image alt, integer duration, and a dry-run `backfill-seo` op. Title pattern uses Surfing's ` · ` separator. microfeed 1.0.13 fields, upstream commit `bb84a81` (2026-09-24). `vendors/microfeed` is not in this tree. | Keyword titles in daily-article-gen; item `url` pointing at Surfing; theme CSS for the timeline; generating 1200×630 social images | The theme writes `item.title` unescaped into JSON-LD (`{{{items.0.title}}}`). SEO title and description are per item (`_microfeed.seo`, no site suffix). A custom slug is sent only on the first create. PUT merges `seo` per key. |
 
 ---
 
@@ -42,9 +43,12 @@ plugins/publishings/podcast-pub/
   plugin.json            # kind: publish, entry ./src/index.ts
   package.json           # @gobing-ai/podcast-pub
   src/index.ts           # PublishTransport impl: publish() + management ops + processPublishIO (Content | bare Doc[] array)
+  src/seo.ts             # D9: title, SEO block, numbering, slug, sanitise, summary text (no network)
+  src/backfill.ts        # D9: backfill-seo dry-run / apply
   src/microfeed-client.ts# Bearer REST client (items CRUD, feed list, validate, presigned upload)
   src/map.ts             # Content → apiItemInputSchema mapping
   src/show-notes.ts      # Show-notes markdown renderer (episode-plan Doc[] → markdown, 0095)
+  README.md              # backfill-seo and PODCAST_PUB_* keys
   tests/                 # FakeFileCliTransport-based, no network
 docs/design/podcast-pub.md   # this satellite
 ```
@@ -65,9 +69,11 @@ plugins, the executor, and voice-gen still work. The only lost capability is
 | Get item | `GET /api/v1/items/{itemId}` | JSON Feed item shape |
 | Update item | `PUT /api/v1/items/{itemId}` | Body `apiItemInputSchema`; returns updated item |
 | Delete item | `DELETE /api/v1/items/{itemId}` | 200 `{}` / 404 |
-| List items | `GET /api/v1/feed` | JSON Feed document |
+| List items | `GET /api/v1/feed` | JSON Feed document. A same-origin `next_url` is followed, at most 20 pages. microfeed 1.0.13 returns the whole feed in one document. |
 | Prepare upload | `POST /api/v1/media_files/presigned_urls` | Body `apiUploadInputSchema` (`category`, `full_local_file_path`, `item_id` required for audio, `size`, `type`); 201 → `{presigned_url, media_url}` |
 | Upload bytes | `PUT <presigned_url>` | Same-origin; then persist `media_url` on the item |
+| Episode SEO | `_microfeed.seo` on create/update | `{ title ≤ 4096, description ≤ 10000, social_image? }` from microfeed 1.0.13 (`bb84a81`). `social_image` is `{ url, width: 1200, height: 630, mime_type: image/jpeg\|image/png, alt ≤ 2000 }`. The SEO title is used verbatim (no site suffix). |
+| Custom slug | `_microfeed.slug` on the **first** create only | `^[a-z0-9][a-z0-9-]*$`, ≤ 120, no trailing `-`. A 409 retries once as `{slug}-2`, then the create proceeds without a slug. Applying a slug later 301s the old path; backfill does that only with `applySlug`. |
 
 Attachment (`apiAttachmentSchema`): `category: "audio"`, `url` (the returned
 `media_url`), optional `mime_type`, `size_in_bytes`, `duration_in_seconds`.
@@ -76,6 +82,17 @@ This becomes the RSS enclosure / JSON Feed `attachments[0]`.
 Auth: every request carries `Authorization: Bearer $MICROFEED_API_KEY`; API
 access must be enabled in the dashboard and the key needs write scope.
 Error shape: `{error: string}` with 4xx/5xx (see `apiErrorSchema`).
+
+`PUT /api/v1/items/{id}` is a partial patch: the body is merged onto the
+stored item, and `_microfeed.seo` merges per key (`null` or `""` clears a
+key). Backfill therefore sends only the keys that change. It never sends
+`guid`, `id`, attachments, `date_published`, `status`, or `url`. A slug is
+sent only when `applySlug` is set.
+
+`item.url`, when set, becomes the canonical URL, `og:url`, and the JSON-LD
+URL, and the episode drops out of the podcast sitemap. The default
+`PODCAST_PUB_LINK_FIELD=none` keeps `metadata.articleUrl` in the show-notes
+body only.
 
 ## 4. Publish sequence (D2)
 
@@ -155,7 +172,39 @@ plugins:
         MICROFEED_BASE_URL: ""   # e.g. https://<instance>.workers.dev; custom domain later
         MICROFEED_API_KEY:  ""   # mf_… named key, write scope
         MICROFEED_TIMEOUT_MS: "300000"  # optional; large audio uploads
+        # D9 per-episode SEO. Defaults match the plugin. Legacy output:
+        # SEO=false, SUMMARY_PARAGRAPH=false, TIMELINE_INLINE_STYLE=before,
+        # AUTO_EPISODE_NUMBER=false, LINK_FIELD=url, SLUG=auto, ROUND_DURATION=false.
+        PODCAST_PUB_SEO: "true"
+        PODCAST_PUB_EPISODE_TITLE_MODE: "as-is"   # as-is | headline
+        PODCAST_PUB_EPISODE_TITLE_PATTERN: "{series} · {date}：{keywords}"
+        PODCAST_PUB_SERIES_NAME: "每日AI乱炖"
+        PODCAST_PUB_SHOW_NAME: "咸话咸说"
+        PODCAST_PUB_TITLE_MAX: "55"
+        PODCAST_PUB_TITLE_MAX_KEYWORDS: "2"
+        PODCAST_PUB_SEO_TITLE_SUFFIX: "｜咸话咸说"
+        PODCAST_PUB_SEO_TITLE_MAX: "60"
+        PODCAST_PUB_SEO_DESCRIPTION_MIN: "120"
+        PODCAST_PUB_SEO_DESCRIPTION_MAX: "155"
+        PODCAST_PUB_SEO_DESCRIPTION_SOURCE: "plan"  # plan | surfing
+        PODCAST_PUB_SUMMARY_PARAGRAPH: "true"
+        PODCAST_PUB_TIMELINE_INLINE_STYLE: "after"  # after | before | omit
+        PODCAST_PUB_AUTO_EPISODE_NUMBER: "true"
+        PODCAST_PUB_TITLE_SANITIZE: "normalize"  # normalize | reject
+        PODCAST_PUB_LINK_FIELD: "none"  # none | url
+        PODCAST_PUB_SLUG: "pattern"  # pattern | auto
+        PODCAST_PUB_SLUG_PATTERN: "daily-ai-{date}"
+        PODCAST_PUB_SOCIAL_IMAGE: "false"
+        PODCAST_PUB_ROUND_DURATION: "true"
 ```
+
+`PODCAST_PUB_TITLE` stays the show-notes H1. It is not the episode title pattern.
+The same keys are accepted on `metadata.podcast.*` (the item wins). Empty string
+means unset. Unknown values fail the publish and name the key.
+`kk-daily-ai-voice2.yaml` prefixes the show-notes and publish-podcast
+commands with these assignments (one command, no `export`) so a workflow var
+reaches the plugin (`process.env` wins over plugin config). Keyword titles stay in podcast-pub; `episodeTitle()` in
+daily-article-gen stays date-only for ID3 and the show-notes H1.
 
 ## 6. Verification
 
@@ -363,6 +412,14 @@ Recorded rather than silently dropped. Each needs a microfeed (or Cloudflare)
 change, which is out of scope here — a microfeed fork is the upgrade path if
 Apple or a validator turns one into a blocker.
 
+D9 fills the per-item fields the 1.0.13 theme already reads: `_microfeed.seo.title`,
+`_microfeed.seo.description`, `_microfeed.slug` on create, and `itunes:season` /
+`itunes:episode`. Titles are sanitised because the episode template writes
+`item.title` unescaped into JSON-LD. The timeline `<style>` stays inside the
+episode, after the summary and the timeline list; moving it into theme CSS is
+out of scope. `seo.social_image` alt text stays behind `PODCAST_PUB_SOCIAL_IMAGE`
+(default off) until a real 1200×630 image exists. The gaps below are unchanged.
+
 | Gap | Evidence | Consequence | Upgrade path |
 | ---- | -------- | ----------- | ------------ |
 | Episode `<itunes:author>` | the item builder emits `title`, `guid`, `pubDate`, `itunes:explicit`, `description`, link, item image, enclosure and the `itunes:season`/`episode` tags — but no author (`src/server/feed/FeedPublicRssBuilder.ts:28-93`) | every episode shows the channel author; per-episode hosts/guests cannot be expressed | microfeed fork (item builder); until then the channel `publisher` is the author of record |
@@ -377,3 +434,28 @@ every episode to be playable, so submitting the feed with that item live would
 likely fail review. See
 `docs/features/E61_apple-podcasts-compliance-for-the-microfeed-podcast-feed.md`
 → Notes.
+
+## 9. Changelog (D9, default-on)
+
+These defaults change what a new publish sends. RSS `<title>` stays the as-is
+title (`PODCAST_PUB_EPISODE_TITLE_MODE=as-is`) unless headline mode is turned on.
+
+| Change | Default | Legacy flag |
+| ------ | ------- | ----------- |
+| `_microfeed.seo.title` and `.description` | on | `PODCAST_PUB_SEO=false` |
+| Summary paragraph after the H1; timeline `<style>` after the list | on / `after` | `PODCAST_PUB_SUMMARY_PARAGRAPH=false`, `PODCAST_PUB_TIMELINE_INLINE_STYLE=before` |
+| `itunes:season` = year, `itunes:episode` = day-of-year when missing | on | `PODCAST_PUB_AUTO_EPISODE_NUMBER=false` |
+| `metadata.articleUrl` is not copied to item `url` | `none` | `PODCAST_PUB_LINK_FIELD=url` |
+| `_microfeed.slug` `daily-ai-{date}` on the first create | `pattern` | `PODCAST_PUB_SLUG=auto` |
+| `duration_in_seconds` rounded to the nearest integer | on | `PODCAST_PUB_ROUND_DURATION=false` |
+
+Title sanitising (`normalize`) is also on. Fixtures without `"`, `\`, `<>`, or
+control characters stay byte-identical. `backfill-seo` is dry-run by default
+and only fills SEO fields plus missing iTunes numbers. `--retitle`,
+`--rewrite-body`, and `--apply-slug` are separate opt-ins. The 10-06 themed
+title is kept with `overrides[{id}].title`.
+
+The title pattern is `{series} · {date}：{keywords}` (middle dot, same separator
+as the Surfing refined title). The spec's section 8 examples use a space there;
+this implementation follows the approved separator. The description prefix stays
+`咸话咸说·每日AI乱炖` with no spaces around that dot.

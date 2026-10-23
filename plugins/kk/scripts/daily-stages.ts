@@ -1441,6 +1441,68 @@ export function dailyPlan(args: string[]): void {
 /**
  * Topic-boundary sidecar (task 0189 R2). Sibling of this file; node-builtins-only read.
  */
+/** Surfing frontmatter scalar. Inline on purpose: this file cannot import `@gobing-ai/*`. */
+function readFrontmatterScalar(filePath: string, key: string): string | undefined {
+    if (!isFile(filePath)) return undefined;
+    let raw: string;
+    try {
+        raw = readFileSync(filePath, 'utf-8');
+    } catch {
+        return undefined;
+    }
+    const block = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw);
+    const matter = block?.[1];
+    if (!matter) return undefined;
+    const match = new RegExp(`^${key}:\\s*(.*)$`, 'm').exec(matter);
+    if (!match?.[1]) return undefined;
+    const value = match[1].trim().replace(/^["']|["']$/g, '');
+    return value.length > 0 ? value : undefined;
+}
+
+function firstRefinedTitle(parsed: Record<string, unknown> | null): string {
+    const targets = parsed?.targets;
+    if (!Array.isArray(targets)) return '';
+    for (const entry of targets) {
+        if (entry === null || typeof entry !== 'object') continue;
+        const record = entry as Record<string, unknown>;
+        if (record.target !== 'surfdash-pub' || record.ok !== true) continue;
+        const title = metadataOf(record).refinedTitle;
+        if (typeof title === 'string' && title.trim() !== '') return title.trim();
+    }
+    return '';
+}
+
+/** Plan titles and briefs in audio order. The show-notes filter wins when it dropped boundary items. */
+function planItemsForPodcast(workDir: string, runDate: string): Array<{ title: string; brief?: string }> {
+    const filtered = join(workDir, '21-plan', `${runDate}_03_plan_plan-shownotes.json`);
+    const full = join(workDir, '21-plan', `${runDate}_03_plan_plan.json`);
+    const path = isFile(filtered) ? filtered : full;
+    if (!isFile(path)) return [];
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(readFileSync(path, 'utf-8'));
+    } catch {
+        return [];
+    }
+    if (!Array.isArray(parsed)) return [];
+    const items: Array<{ title: string; brief?: string }> = [];
+    for (const entry of parsed) {
+        if (entry === null || typeof entry !== 'object') continue;
+        const record = entry as Record<string, unknown>;
+        const title = typeof record.title === 'string' ? record.title.trim() : '';
+        if (title === '') continue;
+        const meta = record.metadata;
+        const metaBrief =
+            meta !== null && typeof meta === 'object' && typeof (meta as Record<string, unknown>).brief === 'string'
+                ? String((meta as Record<string, unknown>).brief).trim()
+                : '';
+        const body = typeof record.body === 'string' ? record.body.trim() : '';
+        const brief = metaBrief || (body.split(/(?<=[。！？])\s*/)[0] ?? '').trim();
+        items.push(brief.length > 0 ? { title, brief } : { title });
+    }
+    return items;
+}
+
 export function dailyPublishPodcast(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = ''] = args;
     const prep = join(workDir, '31-publish', `${runDate}_13_publish-prep_content.json`);
@@ -1454,7 +1516,27 @@ export function dailyPublishPodcast(args: string[]): void {
         try {
             const content = requireJson(prep, 'publish-podcast');
             const showNotes = readFileSync(notes, 'utf-8');
-            const merged = { ...content, metadata: { ...metadataOf(content), showNotes } };
+            const surfdash = readJson(join(workDir, '31-publish', `${runDate}_14_publish-surfdash_result.json`));
+            const postPath = firstPostPath(surfdash, 'surfdash-pub');
+            const refinedTitle = firstRefinedTitle(surfdash);
+            const refinedDescription = postPath !== '' ? readFrontmatterScalar(postPath, 'description') : undefined;
+            const planItems = planItemsForPodcast(workDir, runDate);
+            const prior = metadataOf(content).podcast;
+            const podcast: Record<string, unknown> =
+                prior !== null && typeof prior === 'object' && !Array.isArray(prior)
+                    ? { ...(prior as Record<string, unknown>) }
+                    : {};
+            if (refinedTitle !== '') podcast.refinedTitle = refinedTitle;
+            if (refinedDescription) podcast.refinedDescription = refinedDescription;
+            if (planItems.length > 0) podcast.planItems = planItems;
+            const merged = {
+                ...content,
+                metadata: {
+                    ...metadataOf(content),
+                    showNotes,
+                    ...(Object.keys(podcast).length > 0 ? { podcast } : {}),
+                },
+            };
             sted('write', prep, () => writeJsonText(prep, merged));
             kk(
                 [
@@ -2460,6 +2542,9 @@ export function dailyShowNotes(args: string[]): void {
         // Inlined parse — this file must not import @gobing-ai/* (header contract); the same note
         // grammar lives in daily-article-gen's excludedIdsFromNote.
         const postPath = firstPostPath(readJson(result), 'surfdash-pub');
+        if (postPath === '') {
+            console.error('WARN podcast-pub: brief mode requested but ARTICLE_POST_PATH is empty; using legacy layout');
+        }
         const articleContent = readJson(article);
         const articleBody = articleContent?.body;
         const excluded = new Set<string>();

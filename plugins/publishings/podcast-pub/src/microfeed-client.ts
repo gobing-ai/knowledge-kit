@@ -5,6 +5,17 @@
  * diagnostic — never silent (R4).
  */
 
+/** HTTP failure from `/api/v1/`. `status` lets callers retry a slug 409 without parsing the message. */
+export class MicrofeedRequestError extends Error {
+    readonly status: number;
+
+    constructor(status: number, message: string) {
+        super(message);
+        this.name = 'MicrofeedRequestError';
+        this.status = status;
+    }
+}
+
 /** microfeed API responses are `apiItemInputSchema`-shaped loose objects. */
 export type MicrofeedItemInput = Record<string, unknown>;
 /** microfeed item output (`apiItemOutputSchema` shape). */
@@ -76,7 +87,8 @@ export class MicrofeedClient {
             } catch {
                 // keep raw text as the detail
             }
-            throw new Error(
+            throw new MicrofeedRequestError(
+                response.status,
                 `microfeed API request failed (HTTP ${response.status} ${response.statusText} ${path}): ${detail || 'Unknown error'}`,
             );
         }
@@ -144,9 +156,26 @@ export class MicrofeedClient {
         });
     }
 
-    /** `GET /api/v1/feed` — the full JSON Feed document. */
+    /**
+     * `GET /api/v1/feed` — the JSON Feed document. A `next_url` on the same origin is followed
+     * (at most 20 pages). microfeed 1.0.13 returns the whole feed in one document; the follow
+     * is only for a deployment that pages.
+     */
     public async listItems(): Promise<MicrofeedFeed> {
-        return (await this.request('/api/v1/feed', { method: 'GET' })) as MicrofeedFeed;
+        const first = (await this.request('/api/v1/feed', { method: 'GET' })) as MicrofeedFeed;
+        const items = [...(first.items ?? [])];
+        const seen = new Set<string>(['/api/v1/feed']);
+        let next = typeof first.next_url === 'string' ? first.next_url : '';
+        // The first document is page 1. Follow at most 19 more so the whole walk stays within 20 pages.
+        for (let page = 1; page < 20 && next !== '' && !seen.has(next); page++) {
+            seen.add(next);
+            const path = next.startsWith(this.baseUrl) ? next.slice(this.baseUrl.length) || '/' : next;
+            if (!path.startsWith('/')) break;
+            const more = (await this.request(path, { method: 'GET' })) as MicrofeedFeed;
+            items.push(...(more.items ?? []));
+            next = typeof more.next_url === 'string' ? more.next_url : '';
+        }
+        return { ...first, items };
     }
 
     /**
