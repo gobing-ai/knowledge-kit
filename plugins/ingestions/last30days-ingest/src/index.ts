@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Doc, DocListSchema } from '@gobing-ai/kk-core';
 import { atomicWriteJson, createNodeFileSystem, readJsonFile } from '@gobing-ai/ts-runtime';
@@ -36,6 +37,14 @@ export type RunLast30Days = (
 
 export const defaultRunner: RunLast30Days = async (config, outputPath) => {
     const skillDir = process.env.LAST30DAYS_SKILL_DIR ?? join(homedir(), '.agents', 'skills', 'last30days');
+    // The skill dir is the spawn cwd: when the ~/.agents/skills/last30days symlink dangles,
+    // Bun reports it as `ENOENT ... posix_spawn 'python3'` — pointing at the interpreter, not
+    // the dir (2026-10-20 incident lost 9h of diagnosis to that). Fail with the real problem.
+    if (!existsSync(skillDir)) {
+        throw new Error(
+            `skill dir missing at ${skillDir} — restore the last30days skill checkout/symlink or set LAST30DAYS_SKILL_DIR`,
+        );
+    }
     const argv = [
         process.env.LAST30DAYS_PYTHON ?? 'python3',
         join(skillDir, 'scripts', 'last30days.py'),
@@ -109,7 +118,10 @@ export async function processIngestionIO(
     runner: RunLast30Days = defaultRunner,
 ): Promise<{ docs: Doc[] }> {
     const fs = createNodeFileSystem();
-    const outDir = dirname(options.out);
+    // Relative --out would split cwd semantics: the engine writes its capture relative to the
+    // skill dir (its cwd) while we read it relative to ours. Pin everything to an absolute path.
+    const out = resolve(options.out);
+    const outDir = dirname(out);
     if (outDir && outDir !== '.') await fs.ensureDir(outDir);
     const capturePath = join(outDir || '.', '.last30days-agent.json');
     const run = await runner(config, capturePath);
@@ -117,7 +129,7 @@ export async function processIngestionIO(
         throw new Error(`last30days exited ${run.exitCode}: ${run.stderr.trim() || 'no stderr'}`);
     }
     const docs = mapResultsToDocs(await readJsonFile(capturePath), config.topic);
-    await atomicWriteJson(options.out, docs, fs);
+    await atomicWriteJson(out, docs, fs);
     return { docs };
 }
 
