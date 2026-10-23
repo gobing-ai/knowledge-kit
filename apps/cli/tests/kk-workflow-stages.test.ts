@@ -949,7 +949,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             expect(readFileSync(calls, 'utf-8').trim().split('\n')).toEqual(['24h']);
             expect((JSON.parse(readFileSync(poolPath, 'utf-8')) as unknown[]).length).toBe(3);
 
-            // Every rung misses the floor: the ladder stops at the 72h cap and the WIDEST pool is
+            // Every rung misses the floor: the ladder stops at the 168h cap and the WIDEST pool is
             // written, so a genuinely thin day closes as no-content on the best candidates it has
             // rather than on the narrowest window.
             fakeKk(
@@ -966,8 +966,8 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             writeFileSync(calls, '');
             const capped = run(['daily-extract', dir, 'ai-news', '24h', '60', 'voxcpm'], { ...env, CALLS: calls });
             expect(capped.status, capped.stderr).toBe(0);
-            expect(readFileSync(calls, 'utf-8').trim().split('\n')).toEqual(['24h', '48h', '72h']);
-            expect((JSON.parse(readFileSync(poolPath, 'utf-8')) as { id: string }[]).map((d) => d.id)).toEqual(['72h']);
+            expect(readFileSync(calls, 'utf-8').trim().split('\n')).toEqual(['24h', '48h', '72h', '168h']);
+            expect((JSON.parse(readFileSync(poolPath, 'utf-8')) as { id: string }[]).map((d) => d.id)).toEqual(['168h']);
         });
     });
 
