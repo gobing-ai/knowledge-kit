@@ -282,3 +282,7 @@
   rewritable) — a cosmetic card killed the whole episode via DAG fail-fast. The fit loop now
   measures with `white-space: nowrap` and restores wrapping after. Reproduce any card refusal
   without spending provider credit by composing with `illustration: undefined` (blank band).
+- Don't trust the binary name in Bun's `posix_spawn 'x'` ENOENT — for `spawnSync` it means the **cwd**
+  doesn't exist; verify the dir, not the interpreter. And never provision a pipeline binary via a
+  shell-only PATH entry (e.g. `~/.local/bin`): scheduled runs get the launchd plist PATH only, so
+  brew everything onto `/opt/homebrew/bin`.

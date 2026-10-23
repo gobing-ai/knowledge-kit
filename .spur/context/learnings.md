@@ -548,3 +548,11 @@ the same text with one hedge adverb restored in the WeChat row → `{"ok":false,
   worktree's own allocator, so 0310/0311 were claimed twice while the batch ran. Landing halts on a
   duplicate; drop the branch's copies before the merge and re-file through `spur task create` after
   it (the allocator then picks 0312/0313) — never renumber by hand.
+- **kk-collect 2026-10-20 ENOENT + youtube outage (post-mortem)**: `~/.agents/skills/last30days` is a
+  symlink into `~/tools/dot_files`; it dangled 2026-10-20 12:54→21 00:18 PDT, and Bun reports a
+  missing spawn **cwd** as `ENOENT … posix_spawn 'python3'` — the interpreter name in the message is
+  the argv[0], not the culprit (a PATH miss says `Executable not found in $PATH` instead). The same
+  12:54 maintenance restarted `spur serve` under the launchd plist env, dropping whatever PATH entry
+  had carried yt-dlp, so the youtube chain (yt-dlp → scrapecreators, neither config-armed) went
+  unconfigured permanently. Fix: `brew install yt-dlp` (on `/opt/homebrew/bin`, which the plist PATH
+  pins); the ingest plugin now guards the skill dir before spawning and resolves `--out` absolute.
