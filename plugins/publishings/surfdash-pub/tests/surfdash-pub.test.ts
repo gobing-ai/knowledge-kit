@@ -9,6 +9,7 @@ import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils
 import { runInvoke } from '../../../../apps/cli/src/invoke';
 import {
     awaitArticleLive,
+    fastForwardToOrigin,
     getPublishTransport,
     main,
     mapContentToSurfingMarkdown,
@@ -1281,6 +1282,101 @@ describe('surfdash-pub patch operation (2026-10-12 boundary move)', () => {
         } finally {
             delete process.env.SURFDASH_ROOT;
             await rm(fx.root, { recursive: true, force: true });
+        }
+    });
+});
+
+/**
+ * 2026-10-21/22: three publish days died on `! [rejected] main -> main (fetch first)` because the
+ * checkout sat behind a remote another machine had pushed to. The article was written and committed
+ * on a stale base, the push was rejected, and the run closed `partial` — with the podcast episode
+ * already live. A fast-forward before writing is lossless; a diverged checkout is not ours to fix.
+ */
+describe('fastForwardToOrigin', () => {
+    const gitRun = async (cmd: string[], cwd: string): Promise<string> => {
+        const proc = Bun.spawn(cmd, { cwd, stdout: 'pipe', stderr: 'pipe' });
+        const [code, out, err] = await Promise.all([
+            proc.exited,
+            new Response(proc.stdout).text(),
+            new Response(proc.stderr).text(),
+        ]);
+        if (code !== 0) throw new Error(`${cmd.join(' ')} exited ${code}: ${err}`);
+        return out;
+    };
+
+    /** A bare origin plus two clones: `work` (the publisher) and `peer` (another machine). */
+    async function setupPair(): Promise<{ base: string; origin: string; work: string; peer: string }> {
+        const base = join(process.cwd(), `.tmp-ff-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+        await mkdir(base, { recursive: true });
+        const origin = join(base, 'origin.git');
+        const work = join(base, 'work');
+        await gitRun(['git', 'init', '--bare', '-b', 'main', origin], base);
+        for (const dir of [work, join(base, 'peer')]) {
+            await gitRun(['git', 'init', '-b', 'main', dir], base);
+            await gitRun(['git', 'config', 'user.email', 'test@test'], dir);
+            await gitRun(['git', 'config', 'user.name', 'test'], dir);
+        }
+        const peer = join(base, 'peer');
+        await writeFile(join(peer, 'seed.md'), 'seed');
+        await gitRun(['git', 'add', '.'], peer);
+        await gitRun(['git', 'commit', '-m', 'seed'], peer);
+        await gitRun(['git', 'remote', 'add', 'origin', origin], peer);
+        await gitRun(['git', 'push', '-u', 'origin', 'main'], peer);
+        await gitRun(['git', 'remote', 'add', 'origin', origin], work);
+        await gitRun(['git', 'pull', '--quiet', 'origin', 'main'], work);
+        return { base, origin, work, peer };
+    }
+
+    test('fast-forwards a checkout that is strictly behind, so the next push is accepted', async () => {
+        const { base, work, peer } = await setupPair();
+        try {
+            // The other machine publishes first.
+            await writeFile(join(peer, 'remote-post.md'), 'post');
+            await gitRun(['git', 'add', '.'], peer);
+            await gitRun(['git', 'commit', '-m', 'content: from the other machine'], peer);
+            await gitRun(['git', 'push', 'origin', 'main'], peer);
+            const behindBefore = (await gitRun(['git', 'rev-parse', 'HEAD'], work)).trim();
+
+            const ff = await fastForwardToOrigin(work);
+            expect(ff.ok).toBe(true);
+            const headAfter = (await gitRun(['git', 'rev-parse', 'HEAD'], work)).trim();
+            expect(headAfter).not.toBe(behindBefore);
+            expect(headAfter).toBe((await gitRun(['git', 'rev-parse', 'origin/main'], work)).trim());
+
+            // With the base current, the publish push no longer has to be rejected.
+            const postRel = join('content', 'posts', 'articles', 'zh', '20261022-x');
+            await mkdir(join(work, postRel), { recursive: true });
+            await writeFile(join(work, postRel, 'index.md'), 'post');
+            const outcome = await pushPostGit(work, postRel, 'content: 20261022');
+            expect(outcome.ok).toBe(true);
+        } finally {
+            await rm(base, { recursive: true, force: true });
+        }
+    });
+
+    test('refuses a diverged checkout and names both counts instead of rewriting history', async () => {
+        const { base, origin, work, peer } = await setupPair();
+        try {
+            for (const [dir, file, message] of [
+                [peer, 'remote-post.md', 'content: remote'],
+                [work, 'local-post.md', 'content: local'],
+            ] as const) {
+                await writeFile(join(dir, file), 'x');
+                await gitRun(['git', 'add', '.'], dir);
+                await gitRun(['git', 'commit', '-m', message], dir);
+            }
+            await gitRun(['git', 'push', 'origin', 'main'], peer);
+            const headBefore = (await gitRun(['git', 'rev-parse', 'HEAD'], work)).trim();
+
+            const ff = await fastForwardToOrigin(work);
+            expect(ff.ok).toBe(false);
+            if (!ff.ok) expect(ff.error).toContain('diverged from origin/main (1 local, 1 remote commit(s))');
+            // Nothing was rewritten: the local commit is still HEAD and still unpushed.
+            expect((await gitRun(['git', 'rev-parse', 'HEAD'], work)).trim()).toBe(headBefore);
+            const remoteLog = await gitRun(['git', '--git-dir', origin, 'log', '--format=%s', '-1', 'main'], base);
+            expect(remoteLog.trim()).toBe('content: remote');
+        } finally {
+            await rm(base, { recursive: true, force: true });
         }
     });
 });
