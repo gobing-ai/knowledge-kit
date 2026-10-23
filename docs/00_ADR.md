@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.40.0
+version: 1.41.0
 created_at: 2026-05-28
-updated_at: 2026-10-15
+updated_at: 2026-10-22
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -1550,3 +1550,25 @@ Login records optional `bot.json` facts — `lastLoginAt`, an estimated `expires
 **Why.** The two planes were mixed: the compiled default itself put disposable runs inside the config root, ad-hoc spur artifacts accumulated beside workflow runs, and stale config-dir workflow overrides shadowed shipped fixes invisibly. Separating durability contracts makes cleanup safe by construction (`rm -rf <works>` loses nothing but `kk.db`), makes migration a single rsync of `~/.config/kk/`, and makes the config root small enough to audit at a glance.
 
 **Migration note (2026-10-18).** One-time reorganization moved voice profile registries into `voices/`, rotated `*.bak-*` into `backups/`, retired the stale `workflows/` override (archived under `backups/`), and consolidated non-conforming works trees under `.works/_archive/`. `browser-profiles/` does not survive a machine move reliably (Chromium cookie encryption is Keychain-bound) — plan per-channel `kk bot login` on a new host.
+
+---
+
+## ADR-043: Daily voice generation and publishing are two workflows joined by a frozen bundle
+
+**Status:** Accepted · **Date:** 2026-10-22 (feature G15, tasks 0321–0327 shipped; voice2 still the installed path)
+
+**Decision.** The daily AI-voice product is two workflows, not one: `kk-daily-ai-voice3` generates and
+freezes a `bundle.json` of validated `Content` variants, and `kk-daily-publish3` publishes exactly one
+**window** of that bundle per launch (`after-generate`, `cn-peak`, `overseas-rss`). The channel matrix —
+which plugin, operation, variant, tier and draft/dummy mode — lives in a config-selected publish preset
+(`workflows.kk-daily-ai-voice3.publish_preset`), never in workflow YAML and never in a `*_enabled` var; a
+preset row can never carry `live` (ADR-022). Publish status is classified from per-target receipts, and
+channel payloads are shaped on the generate side, so publishing never re-authors content.
+
+**Why.** Re-sending one failed channel must cost seconds instead of an hour of regeneration, and adding a
+channel must be a preset edit instead of a four-place workflow edit.
+
+**Detail:** `docs/03_ARCHITECTURE.md` §Daily voice3 generate/publish split; `docs/04_DESIGN.md`
+§publish-matrix stages; `docs/design/kk-daily-ai-voice3.md` §2, §5a, §8. Extends ADR-021/ADR-022 to the
+daily pipeline and generalizes ADR-040's preset idea beyond ITC; surface stays `kk stage run
+publish-matrix-*`, so ADR-037's noun inventory is unchanged.

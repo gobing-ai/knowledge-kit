@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.52.0
+version: 2.53.0
 created_at: 2026-07-22
-updated_at: 2026-10-21
+updated_at: 2026-10-22
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -1042,11 +1042,16 @@ value is XML-escaped (`&`/`<`/`>`), because one raw `&` makes `launchctl bootstr
 | `kk-collect` | `launchd` | plist for `ai.gobing.kk-collect` (`launchd.plist.tmpl`): `StartCalendarInterval` 04:00/10:00/16:00/22:00 local (6 h; sleep coalesces missed fires to one run at wake), `ProgramArguments` = `spur workflow run plugins/kk/workflows/kk-collect.yaml`, `WorkingDirectory` = `--repo`, `EnvironmentVariables` = `PATH` + `TYPESAFE_API_KEY`, stdout+stderr = `<repo>/.works/kk-collect/launchd.log` |
 | `kk-collect` | `cron` | `0 4,10,16,22 * * * cd <repo> && TYPESAFE_API_KEY='<key>' spur workflow run plugins/kk/workflows/kk-collect.yaml >> <repo>/.works/kk-collect/launchd.log 2>&1` |
 | `kk-serve` | `launchd` | plist for `ai.gobing.spur-serve` (`kk-serve.launchd.plist.tmpl`): `RunAtLoad` + `KeepAlive` true, `ThrottleInterval` 10, `ProgramArguments` = `spur serve --cwd <repo> --host 127.0.0.1 --port 3003 --no-open`, `WorkingDirectory` = `--repo`, `EnvironmentVariables` = `PATH` + `TYPESAFE_API_KEY`, stdout+stderr = `<repo>/.works/spur-serve/serve.log` |
+| `kk-daily-publish3-cn-peak` | `cron` | `0 17 * * *` local (`kk-daily-publish3-cn-peak.cron.tmpl`): `spur workflow run plugins/kk/workflows/kk-daily-publish3.yaml --vars '{work_dir, run_date, window: cn-peak, live_channels: wechatmp-pub,xhs-pub,weibo-pub,x-pub}'`, `PATH` + `TZ=America/Los_Angeles`, log `<repo>/.works/kk-daily-publish3/cn-peak.log`. The baked `live_channels` **is** the ADR-022 consent for this window |
+| `kk-daily-publish3-overseas` | `cron` | `0 7 * * *` America/Los_Angeles (`kk-daily-publish3-overseas.cron.tmpl`): same workflow with `window: overseas-rss` and a **yesterday** `work_dir`/`run_date`, no `live_channels`, log `<repo>/.works/kk-daily-publish3/overseas.log` |
 
 `kk-serve` is **launchd only**: cron has no keepalive semantics, so `--platform cron` for it exits 1
 with `schedule 'kk-serve' has no cron template (expected launchd)` and prints nothing (task 0265 R3);
-`kk-collect` keeps both platforms. `kk-serve` freezes host/port as template constants and keeps the
-hand plist's `Label`, so re-rendering replaces the installed agent in place.
+`kk-collect` keeps both platforms. The two `kk-daily-publish3-*` windows are **cron only**: cn-peak's
+`wait-until` node absorbs the hosted-zone offset and the overseas tick is a plain daily fire, so
+neither needs launchd's calendar-interval or keepalive semantics. `kk-serve` freezes host/port as
+template constants and keeps the hand plist's `Label`, so re-rendering replaces the installed agent in
+place.
 
 Templates resolve from `--repo`'s own `plugins/kk/schedules/`, falling back to the running
 package's copy, so a checkout without the templates still renders. An unknown schedule or platform
@@ -1965,13 +1970,14 @@ feature verification runs through the bundled `feature-lifecycle` FSM — enteri
 (alias of the full `spur-check` gate) — and records a receipt bound to `feature-lifecycle`, never to
 a project workflow of that name.
 
-## publish-matrix stages: plan | check | send (2026-10-22, task 0321)
+## publish-matrix stages: plan | check | send | classify | bundle | rss-gate | wait-until (2026-10-22, tasks 0321–0327, ADR-043)
 
-`kk stage run publish-matrix-plan|check|send` — new stages, not a new noun (ADR-037 inventory
+`kk stage run publish-matrix-*` — new stages, not a new noun (ADR-037 inventory
 unchanged), dispatched from `apps/cli/src/publish-matrix-stage.ts` through
 `apps/cli/src/commands/stage.ts` the same way `itc-*` is. Module: `apps/cli/src/publish-matrix.ts`
 (`BundleSchema`, `PublishPlanRowSchema`, `PublishPlanSchema`, `targetId`, `planPublishMatrix`,
-`checkPublishMatrix`, `sendPublishMatrix`).
+`checkPublishMatrix`, `sendPublishMatrix`, `classifyPublishMatrix` + `runPublishMatrixClassify`,
+`runPublishMatrixBundle`, `runPublishMatrixRssGate`, `runPublishMatrixWaitUntil`).
 
 **Preset extension (optional-only).** `PublishPresetTargetSchema` gains `id`, `operation`,
 `variant`, `tier` (0–3, default 3), `window` (`after-generate`|`cn-peak`|`overseas-rss`, default
@@ -2185,5 +2191,7 @@ compiled default, an unknown key or a non-slug value is refused by name.
 operator's ADR-022 consent. overseas fires `0 7 * * *` and passes yesterday's `run_date`, because the
 observed episodes land after 07:00. Neither has a launchd template (no keepalive semantics needed).
 
-**Out of scope here:** the approval/monitoring console, bundle production, the publish3 workflow,
-and generate-side copy shaping (0327).
+**Out of scope here:** the approval/monitoring console (the surface that would read a plan row's
+`approval` and flip it to granted), new channel plugins, and voice2's retirement — voice2's schedule,
+YAML and `kk daily publish-classify --fold-tail` path are untouched by this surface and stay as they
+are until the operator installs the two publish3 schedules and freezes it (design §8 step 3).

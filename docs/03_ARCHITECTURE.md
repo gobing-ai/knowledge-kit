@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.40.0
+version: 2.41.0
 created_at: 2026-07-22
-updated_at: 2026-10-18
+updated_at: 2026-10-22
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -483,6 +483,55 @@ publish-agent → publish-retry → report`.
 - Drafts are the default, and every target's own draft switch is written explicitly (ADR-022).
 
 Full design: `docs/design/kk-itc-end-to-end.md`.
+
+## Daily voice3 generate/publish split (ADR-043, shipped — G15)
+
+The daily AI-voice product is two DAGs joined by a file, not one DAG. `kk-daily-ai-voice3`
+(generate, fail-fast) ends by freezing `bundle.json`; `kk-daily-publish3` (publish, one window per
+launch) reads it and never regenerates content. The bundle **is** the interface: `runId`,
+`runDate`, `parentRunId`, `runs[]` (every publish run that touched the bundle, append-only so a
+window's record survives the next generate run), `episode {title, guid}`, and
+`variants { key → {path, sha256} }` where each `path` is a kk-core `Content` and the digest is
+verified before any plan accepts it.
+
+Invariants, each mechanically checkable:
+
+- No channel name appears in a workflow YAML. The matrix is a publish preset
+  (`plugins/kk/publish-presets/`) selected by `workflows.kk-daily-ai-voice3.publish_preset`; launch
+  vars (`channels`, `live_channels`, `dummy`) may **narrow or promote** the preset's rows, never
+  extend them — a token the preset does not list in that window fails the plan.
+- A preset row's `mode` is closed over `off|dummy|draft`, so `live` is launch-only (ADR-022); the
+  installed cron line carrying `live_channels` is the operator's consent.
+- Publish status is derived from receipts, never from an exit code: `publish-matrix-send` exits 0
+  on a failed row, and `publish-matrix-classify` reduces a window to `full|partial|none|dummy`
+  over **non-dummy** rows only, a planned row with no receipt counting as not succeeded.
+- A `dummy` row is planned, payload-validated and receipted but never dispatched, so a full
+  rehearsal spawns no plugin process and makes no network call.
+- Channel copy is shaped on the generate side (`30-variants/`; a channel-specific key is
+  `<variant>@<plugin>` and wins the lookup over the shared `<variant>`), and `{{article_url}}` /
+  `{{podcast_url}}` resolve at send time from the tier-0 receipts — a publish plugin only ever
+  receives finished content.
+- Tier 0 is the publication contract: serial, and a failed required tier-0 row blocks every later
+  tier rather than letting them send against a content URL that does not exist.
+
+**Module boundary.** `apps/cli/src/publish-matrix.ts` owns the `publish-matrix-*` stage family
+(plan, check, send, classify, bundle, rss-gate, wait-until), dispatched by
+`apps/cli/src/publish-matrix-stage.ts` beside `itc-stage.ts` and reachable only as
+`kk stage run publish-matrix-*` — no new noun (ADR-037). The send loop is **shared with itc, not
+forked**: `sendRows` in `apps/cli/src/itc-publish.ts` owns resend rules, effect classification and
+receipt writing, and the two callers differ only in receipt key (plugin for itc, target id here),
+where `targetId = id ?? ${plugin}.${slugify(operation)} ?? plugin` lets one plugin hold several
+concurrent receipt keys. `ItcReceiptSchema` is extended additively (`target`, `window`, `dummy`,
+`error`, timestamps), so an itc receipt never changes shape.
+
+**Engine constraint this layout is shaped around** (§Execution substrate): a DAG node is skipped
+only when *all* its dependencies were skipped, so a conditional node can never gate a chain alone.
+The RSS gate therefore always succeeds and records its verdict in `4-publish/rss-gate.json` (a
+failed node would cascade-skip the incident path), and every node depending on a conditional node
+lists a second, unconditional dependency.
+
+Full design and rollout: `docs/design/kk-daily-ai-voice3.md`; shapes: `docs/04_DESIGN.md`
+§publish-matrix stages.
 
 ## Multi-root discovery (ADR-012)
 
