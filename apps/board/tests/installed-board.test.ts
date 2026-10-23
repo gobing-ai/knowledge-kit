@@ -1618,6 +1618,18 @@ describe('Daily episode funnel and supply context (G82/0320)', () => {
         if (!ready || page === null) throw new Error('setup did not complete');
         const view: Page = page;
         await view.route('**/api/workflows/kk-collect/store/channels**', (route) => route.abort());
+        // Under suite load the arming can lose to an in-flight fetch (CI run 39997854269); prove the
+        // abort is live before opening the module. The probe is a read-only GET on an existing store.
+        for (let probe = 0; probe < 50; probe++) {
+            const outcome = await view.evaluate(() =>
+                fetch('/api/workflows/kk-collect/store/channels?probe=1', { cache: 'no-store' }).then(
+                    () => 'passed',
+                    () => 'aborted',
+                ),
+            );
+            if (outcome === 'aborted') break;
+            await view.waitForTimeout(100);
+        }
         try {
             await openModule('kk-daily-ai-voice2', query({ run: 'd-funnel', tab: 'summary' }));
             const text = await funnelText();
