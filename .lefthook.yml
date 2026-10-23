@@ -3,6 +3,14 @@ commit-msg:
     cog:
       run: cog verify --file {1}
 
+prepare-commit-msg:
+  commands:
+    merge-subject:
+      # cog parses every message as a Conventional Commit, merges included, but git writes
+      # `Merge branch 'main' of <url>` — so the merge auto-commit is rejected and left open with
+      # MERGE_HEAD set. Rewrite the subject before commit-msg sees it (scripts/merge-commit-subject.ts).
+      run: bun scripts/merge-commit-subject.ts {1} {2} "$(git rev-parse --short MERGE_HEAD 2>/dev/null || echo unknown)" "$(git branch --show-current)"
+
 pre-commit:
   parallel: true
   commands:

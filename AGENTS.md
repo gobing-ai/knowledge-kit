@@ -301,6 +301,12 @@ superskill <agent|skill|command|hook|magent> --help
 
 - Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`, …); breaking changes in a
   `BREAKING CHANGE:` footer.
+- **Merge commits:** the `prepare-commit-msg` hook rewrites git's generated `Merge branch …` subject
+  into `chore: merge <sha> into <branch>` (`scripts/merge-commit-subject.ts`), keeping git's own text
+  in the body. cog's `commit-msg` hook parses merges as Conventional Commits, so without the rewrite a
+  merge-based `git pull` cannot commit, leaves `MERGE_HEAD` behind, and every later pull dies with
+  "You have not concluded your merge"; a leftover merge is concluded with plain `git commit` (the hook
+  fixes the subject). Human-written messages are never touched.
 - Cross-workspace imports use `@gobing-ai/<pkg>` only.
 - Never commit secrets or `.env*`. Never edit `.github/workflows/` without approval.
 - Surgical changes only — no drive-by refactors or speculative abstractions.
