@@ -2093,5 +2093,59 @@ receipts' `aggregatePath` bytes into the legacy `31-publish/<runDate>_14_publish
 bridge is the documented legacy seam and disappears with voice2. `kk daily publish-classify
 [--fold-tail]` and its tests are untouched.
 
+**`kk-daily-publish3` — the publish half (task 0323).** `plugins/kk/workflows/kk-daily-publish3.yaml`
+(`kind: dag`) runs one **window** per launch; the channel matrix is never in the YAML. Vars:
+`work_dir` (the voice3 day dir holding `bundle.json`), `run_date`, `window`
+(`after-generate|cn-peak|overseas-rss`), `preset` (empty = the operator's selector), `channels`,
+`live_channels`, `dummy`, `agent`.
+
+Nodes and their gating rule:
+
+| Node | Window | Notes |
+| --- | --- | --- |
+| `wait-until` | cn-peak | `publish-matrix-wait-until 09:00 Asia/Shanghai`; the schedule fires 17:00 local and this node sleeps the remainder (DST-safe, no-op when past) |
+| `rss-gate` | every window (no-op outside overseas) | `publish-matrix-rss-gate --date <run_date>`; a miss is a **verdict in `4-publish/rss-gate.json`**, not a node failure |
+| `plan` | hit or non-overseas | `publish-matrix-plan --bundle … --window …` (+ `--channels/--live-channels/--dummy` when set) |
+| `check` | every planned window | `publish-matrix-check --window …`, warn-only |
+| `send-confirm` | `pause: true`, condition = the plan has a live row | resume = approval; skipped for a draft window |
+| `send` | depends on `check` **and** `send-confirm` | tier order, dummy-aware, receipt-keyed |
+| `classify` | every sent window | `publish-matrix-classify --window … --run-date …` |
+| `surfdash-patch`, `partial-marker`, `mark-published` | after-generate only | the voice2-era tails on the bridged `31-publish` names |
+| `diagnose` | overseas + gate miss | `agent.run` (`role: scribe`, `onError: continue`) refining `4-publish/incident.{json,md}` |
+| `repair` | after `diagnose` | `publish-matrix-send --window after-generate --retry --tier 0` — the one safe automatic repair |
+| `bundle-runs` | after `classify` | appends this run id to `bundle.runs[]`, idempotently |
+| `report` | after `bundle-runs` and `diagnose` | `5-report/publish-<window>.md` |
+| `ledger` | after `report` | `kk ledger append`, `onError: continue` |
+
+**Two engine facts the graph is shaped around.** A DAG node is skipped only when **all** its
+dependencies were skipped, so (a) `send` lists `check` beside the conditional `send-confirm` — a
+draft window still sends, while a gated plan still stops; (b) `report` lists `diagnose` beside
+`bundle-runs` so a gated-miss day still writes its page. A node whose *only* dependency is
+conditional would silently vanish from the chain. The RSS gate therefore always succeeds and
+records its verdict, instead of failing and cascade-skipping the incident path.
+
+**A gated miss** plans and sends nothing: `plan`'s condition requires `.hit == true`, and the gate
+itself writes the deterministic incident floor (`class: rss-lag`, the feed URL, the miss reason)
+before `diagnose` refines it from the bundle and receipts. `repair` may only resend tier-0 rows whose
+receipt is `effect: none`; regenerating content stays an operator action (design §5a).
+
+**Shipped preset.** `plugins/kk/publish-presets/daily-ai-voice.json` carries design §3's matrix,
+each row assigned to exactly one window: T0 owned + draft-capable domestic on `after-generate`
+(公众号 播客/文章 draft, 小红书 发播客 draft, 小红书 写长文 dummy, 小红书 上传图文 off), the
+no-draft domestic rows on `cn-peak` (微博 头条, X article draft), and the short-copy channels on
+`overseas-rss` (`social:x`, `social:weibo`, `social:threads` draft); the gap channels
+(视频号 图文, threads images) are `off`. A row's `variant` is the **shared** bundle key
+(`article`, `episode`, `cards`, `social:x`): a channel-specific bundle variant is keyed
+`<variant>@<plugin>` and wins the lookup, which is how generate ships channel copy without a preset
+edit. The selector is `workflows.kk-daily-ai-voice3.publish_preset` (default `daily-ai-voice`,
+`plugins/kk/config.example.yaml`), resolved with the itc contract: a missing file/block means the
+compiled default, an unknown key or a non-slug value is refused by name.
+
+**Schedules.** `kk schedule render kk-daily-publish3-cn-peak|kk-daily-publish3-overseas --platform cron
+--repo <checkout>` renders the two windows' cron entries; kk never installs them. cn-peak fires
+`0 17 * * *` local and carries `live_channels` in the rendered line — that installed line **is** the
+operator's ADR-022 consent. overseas fires `0 7 * * *` and passes yesterday's `run_date`, because the
+observed episodes land after 07:00. Neither has a launchd template (no keepalive semantics needed).
+
 **Out of scope here:** the approval/monitoring console, bundle production, the publish3 workflow,
 and generate-side copy shaping (0327).

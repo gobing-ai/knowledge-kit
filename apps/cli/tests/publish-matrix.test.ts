@@ -3,14 +3,25 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { NodeProcessExecutor, type ProcessOptions, type ProcessResult } from '@gobing-ai/ts-runtime';
+import {
+    createNodeFileSystem,
+    NodeProcessExecutor,
+    type ProcessOptions,
+    type ProcessResult,
+} from '@gobing-ai/ts-runtime';
 import { PublishPresetSchema, resolveItcTargets } from '../src/itc-plan';
 import { main } from '../src/main';
 import {
     checkPublishMatrix,
     classifyPublishMatrix,
+    DEFAULT_PUBLISH_PRESET,
+    feedItems,
+    matchRssGate,
     planPublishMatrix,
+    readPublishPresetSelector,
     runPublishMatrixClassify,
+    runPublishMatrixRssGate,
+    runPublishMatrixWaitUntil,
     sendPublishMatrix,
 } from '../src/publish-matrix';
 import { captureOutput } from './capture';
@@ -546,6 +557,169 @@ describe('publish-matrix-send (0321 R4, R5)', () => {
                 out.restore();
             }
         }, fixture);
+    });
+});
+
+describe('publish3 stage surface (0323 R2, R3, R5)', () => {
+    const FEED = `<?xml version="1.0"?><rss><channel>
+      <item><title>每日AI乱炖 · 2026-10-20</title><guid>ep-10-20</guid></item>
+      <item><title><![CDATA[每日AI乱炖 · 2026-10-21]]></title><guid>ep-10-21</guid></item>
+    </channel></rss>`;
+
+    it('parses feed items and matches on guid first, then the title date', () => {
+        const items = feedItems(FEED);
+        expect(items).toEqual([
+            { title: '每日AI乱炖 · 2026-10-20', guid: 'ep-10-20' },
+            { title: '每日AI乱炖 · 2026-10-21', guid: 'ep-10-21' },
+        ]);
+        expect(matchRssGate(items, '2026-10-21', 'ep-10-21')).toBe('guid');
+        // The guid wins even when the date belongs to a different item.
+        expect(matchRssGate(items, '2026-10-20', 'ep-10-21')).toBe('guid');
+        // Title fallback when no receipt guid is available.
+        expect(matchRssGate(items, '2026-10-20', '')).toBe('title');
+        expect(matchRssGate(items, '2026-10-22', '')).toBe('missing');
+    });
+
+    it('exits 0 on a gate hit and 3 on a miss, writing rss-gate.json either way', async () => {
+        const fixture = makeFixture([...TIER0]);
+        await withCleanup(async (fx) => {
+            const out = captureOutput();
+            try {
+                expect(
+                    await runPublishMatrixRssGate([fx.workDir, '--date', '2026-10-21'], {
+                        readFeed: async () => FEED,
+                    }),
+                ).toBe(0);
+                const hit = JSON.parse(readFileSync(join(fx.workDir, '4-publish/rss-gate.json'), 'utf-8')) as {
+                    hit: boolean;
+                    reason: string;
+                    date: string;
+                };
+                expect(hit.hit).toBe(true);
+                expect(hit.reason).toBe('title');
+                expect(hit.date).toBe('2026-10-21');
+
+                expect(
+                    await runPublishMatrixRssGate([fx.workDir, '--date', '2026-10-22'], {
+                        readFeed: async () => FEED,
+                    }),
+                ).toBe(3);
+                const miss = JSON.parse(readFileSync(join(fx.workDir, '4-publish/rss-gate.json'), 'utf-8')) as {
+                    hit: boolean;
+                    reason: string;
+                };
+                expect(miss.hit).toBe(false);
+                expect(miss.reason).toBe('missing');
+
+                // An outage is a miss, never a hit: an unpublished episode must not slip through.
+                expect(
+                    await runPublishMatrixRssGate([fx.workDir, '--date', '2026-10-21'], {
+                        readFeed: async () => {
+                            throw new Error('ECONNREFUSED');
+                        },
+                    }),
+                ).toBe(3);
+                const failed = JSON.parse(readFileSync(join(fx.workDir, '4-publish/rss-gate.json'), 'utf-8')) as {
+                    hit: boolean;
+                    reason: string;
+                    detail: string;
+                };
+                expect(failed.hit).toBe(false);
+                expect(failed.reason).toBe('fetch-failed');
+                expect(failed.detail).toContain('ECONNREFUSED');
+
+                const events = readFileSync(join(fx.workDir, '4-publish/publish-events.jsonl'), 'utf-8');
+                expect(events).toContain('gate-miss');
+            } finally {
+                out.restore();
+            }
+        }, fixture);
+    });
+
+    it('waits only when the target wall-clock time is still ahead, and corrects for DST', async () => {
+        const slept: number[] = [];
+        const out = captureOutput();
+        try {
+            // 2026-10-22T23:00Z is 16:00 in Los Angeles and 07:00 the next day in Shanghai, so a
+            // 09:00 Shanghai target is two hours away.
+            const base = Date.UTC(2026, 9, 22, 23, 0, 0);
+            expect(
+                await runPublishMatrixWaitUntil(['09:00', 'Asia/Shanghai'], {
+                    now: () => base,
+                    sleep: async (ms) => {
+                        slept.push(ms);
+                    },
+                }),
+            ).toBe(0);
+            expect(slept).toHaveLength(1);
+            expect(Math.round((slept[0] ?? 0) / 60_000)).toBe(120);
+
+            // Already past: no sleep at all.
+            slept.length = 0;
+            expect(
+                await runPublishMatrixWaitUntil(['09:00', 'Asia/Shanghai'], {
+                    now: () => Date.UTC(2026, 9, 23, 3, 0, 0), // 11:00 Shanghai
+                    sleep: async (ms) => {
+                        slept.push(ms);
+                    },
+                }),
+            ).toBe(0);
+            expect(slept).toHaveLength(0);
+        } finally {
+            out.restore();
+        }
+
+        const bad = captureOutput();
+        try {
+            expect(await runPublishMatrixWaitUntil(['25:00', 'Asia/Shanghai'])).toBe(1);
+            expect(await runPublishMatrixWaitUntil(['09:00'])).toBe(1);
+        } finally {
+            bad.restore();
+        }
+    });
+
+    it('selects the preset from config, defaulting when the block is absent and refusing an unknown key', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'kk-publish3-config-'));
+        try {
+            const fs = createNodeFileSystem();
+            const missing = join(root, 'nope.yaml');
+            expect(await readPublishPresetSelector({ KK_CONFIG: missing, HOME: root }, fs)).toBe(
+                DEFAULT_PUBLISH_PRESET,
+            );
+
+            const good = join(root, 'good.yaml');
+            writeFileSync(good, 'workflows:\n  kk-daily-ai-voice3:\n    publish_preset: my-preset\n');
+            expect(await readPublishPresetSelector({ KK_CONFIG: good, HOME: root }, fs)).toBe('my-preset');
+
+            const empty = join(root, 'empty.yaml');
+            writeFileSync(empty, 'workflows:\n  kk-daily-ai-voice3: {}\n');
+            expect(await readPublishPresetSelector({ KK_CONFIG: empty, HOME: root }, fs)).toBe(DEFAULT_PUBLISH_PRESET);
+
+            const unknownKey = join(root, 'unknown.yaml');
+            writeFileSync(unknownKey, 'workflows:\n  kk-daily-ai-voice3:\n    channels: x\n');
+            await expect(readPublishPresetSelector({ KK_CONFIG: unknownKey, HOME: root }, fs)).rejects.toThrow(
+                'is not a declared setting',
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('ships a preset whose every row belongs to exactly one window, with no live mode', async () => {
+        const shipped = JSON.parse(
+            readFileSync(join(import.meta.dir, '../../../plugins/kk/publish-presets/daily-ai-voice.json'), 'utf-8'),
+        ) as { targets: Array<{ plugin: string; window?: string; mode?: string }> };
+        const parsed = PublishPresetSchema.safeParse(shipped);
+        expect(parsed.success).toBe(true);
+        for (const target of shipped.targets) {
+            expect(['after-generate', 'cn-peak', 'overseas-rss']).toContain(target.window ?? '');
+            // ADR-022: a preset file can never yield a live send.
+            expect(target.mode).not.toBe('live');
+        }
+        // The owned publication contract is required and draft on after-generate.
+        const tier0 = shipped.targets.filter((target) => target.window === 'after-generate');
+        expect(tier0.some((target) => target.plugin === 'surfdash-pub')).toBe(true);
+        expect(tier0.some((target) => target.plugin === 'podcast-pub')).toBe(true);
     });
 });
 

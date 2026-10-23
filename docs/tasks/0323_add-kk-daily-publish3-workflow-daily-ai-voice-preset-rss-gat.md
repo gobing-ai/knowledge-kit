@@ -1,15 +1,17 @@
 ---
 schema_version: 1
 name: Add kk-daily-publish3 workflow, daily-ai-voice preset, RSS gate, diagnose node and window schedules
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-22T18:41:31.940Z
-updated_at: "2026-10-22T19:09:52.050Z"
+updated_at: "2026-10-23T02:03:56.072Z"
 feature_id: G15
 
 dependencies: ["0321", "0322", "0325", "0326"]
 priority: P1
 estimate_hours: 8
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0323-verdict.json
 ---
 
 ## 0323. Add kk-daily-publish3 workflow, daily-ai-voice preset, RSS gate, diagnose node and window schedules
@@ -28,7 +30,7 @@ publish3 is the publish half of voice3 (design `docs/design/kk-daily-ai-voice3.m
 
 ### Requirements
 
-- [ ] R1. `plugins/kk/workflows/kk-daily-publish3.yaml` (`kind: dag`), vars `work_dir`, `run_date`, `window`, `preset`, `channels`, `live_channels`, `dummy`. The nodes:
+- [x] R1. `plugins/kk/workflows/kk-daily-publish3.yaml` (`kind: dag`), vars `work_dir`, `run_date`, `window`, `preset`, `channels`, `live_channels`, `dummy`. The nodes:
   - `wait-until` (cn-peak only)
   - `rss-gate` (overseas-rss only)
   - `plan`
@@ -40,28 +42,28 @@ publish3 is the publish half of voice3 (design `docs/design/kk-daily-ai-voice3.m
   - `bundle-runs`
   - `report`
   - `ledger` (`onError: continue`)
-- [ ] R2. `plugins/kk/publish-presets/daily-ai-voice.json` is shipped with the design §3 rows, each with a `window`:
+- [x] R2. `plugins/kk/publish-presets/daily-ai-voice.json` is shipped with the design §3 rows, each with a `window`:
   - T0 surfdash and podcast, plus the draft-capable wechatmp 文章/播客 and xhs rows: `after-generate`;
   - no-draft domestic rows: `cn-peak`;
   - x, threads and weibo-overseas rows: `overseas-rss`.
 
   Gap channels (LinkedIn, Facebook, Instagram, 视频号图文, threads images) are listed as `mode: off`. All copy is zh (D3). The config selector is `workflows.kk-daily-ai-voice3.publish_preset` (default `daily-ai-voice`), resolved like itc (`apps/cli/src/itc-config.ts`).
-- [ ] R3. `kk stage run publish-matrix-rss-gate <workDir> --date <YYYY-MM-DD> [--feed <url>]` exits 0 on a hit and 3 on a miss, and writes `4-publish/rss-gate.json`. A hit is either the guid recorded in the podcast tier-0 receipt or, failing that, an item title containing `<date>`. A fetch error counts as a miss with reason `fetch-failed`. For the overseas window, `run_date` defaults to yesterday in America/Los_Angeles.
-- [ ] R4. Gate miss:
+- [x] R3. `kk stage run publish-matrix-rss-gate <workDir> --date <YYYY-MM-DD> [--feed <url>]` exits 0 on a hit and 3 on a miss, and writes `4-publish/rss-gate.json`. A hit is either the guid recorded in the podcast tier-0 receipt or, failing that, an item title containing `<date>`. A fetch error counts as a miss with reason `fetch-failed`. For the overseas window, `run_date` defaults to yesterday in America/Los_Angeles.
+- [x] R4. Gate miss:
   - the overseas targets are not planned: `plan`/`send` are skipped by condition;
   - a `diagnose` agent.run node reads the voice3 run trace and `bundle.json` presence and writes `4-publish/incident.json` + `incident.md` with `class ∈ no-run | generation-failed@<node> | no-content | t0-failed | rss-lag`;
   - a `repair` node then runs `publish-matrix-send --window after-generate --retry --tier 0`, which resends only `effect: none` failures. It never regenerates content.
-- [ ] R5. `wait-until 09:00 Asia/Shanghai` uses `kk stage run publish-matrix-wait-until 09:00 Asia/Shanghai` (Intl-based, DST-safe, no-op if already past). Add launchd and cron templates `kk-daily-publish3-cn-peak` (17:00 local, `live_channels` baked in as the operator's ADR-022 consent) and `kk-daily-publish3-overseas` (07:00 local) to `SCHEDULE_TEMPLATES`. They are rendered by `kk schedule render`, never installed by this task.
-- [ ] R6. The `bundle-runs` node appends this run id to `bundle.json` `runs[]`; the append is idempotent.
-- [ ] R7. Test: run the publish3 E2E against a fixture bundle with `dummy=true` for all three windows (gate hit and miss via a local feed file). It proves the windows are disjoint, there is no resend on rerun, the miss produces an incident, and nothing is dispatched.
+- [x] R5. `wait-until 09:00 Asia/Shanghai` uses `kk stage run publish-matrix-wait-until 09:00 Asia/Shanghai` (Intl-based, DST-safe, no-op if already past). Add launchd and cron templates `kk-daily-publish3-cn-peak` (17:00 local, `live_channels` baked in as the operator's ADR-022 consent) and `kk-daily-publish3-overseas` (07:00 local) to `SCHEDULE_TEMPLATES`. They are rendered by `kk schedule render`, never installed by this task.
+- [x] R6. The `bundle-runs` node appends this run id to `bundle.json` `runs[]`; the append is idempotent.
+- [x] R7. Test: run the publish3 E2E against a fixture bundle with `dummy=true` for all three windows (gate hit and miss via a local feed file). It proves the windows are disjoint, there is no resend on rerun, the miss produces an incident, and nothing is dispatched.
 - Out of scope: the approval console; installing schedules; live sends.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Dummy mode exercises the full publish path without spawning plugins (req: R1, R7)
-- [ ] AC2 — Windows select disjoint target sets and never resend (req: R1, R2, R6)
-- [ ] AC3 — The overseas window is gated on the podcast RSS feed (req: R3, R4)
-- [ ] AC4 — Live publishing remains launch-only (req: R1, R5)
+- [x] AC1 — Dummy mode exercises the full publish path without spawning plugins (req: R1, R7)
+- [x] AC2 — Windows select disjoint target sets and never resend (req: R1, R2, R6)
+- [x] AC3 — The overseas window is gated on the podcast RSS feed (req: R3, R4)
+- [x] AC4 — Live publishing remains launch-only (req: R1, R5)
 
 ### Q&A
 
@@ -110,15 +112,86 @@ publish3 is the publish half of voice3 (design `docs/design/kk-daily-ai-voice3.m
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+| Change | What / why |
+| --- | --- |
+| `plugins/kk/workflows/kk-daily-publish3.yaml:1` | The publish half as a 15-node DAG: `wait-until` (cn-peak), `rss-gate`, `plan`, `check`, `send-confirm` (live pause), `send`, `classify`, the three after-generate tails, `diagnose`, `repair`, `bundle-runs`, `report`, `ledger`. |
+| `plugins/kk/workflows/kk-daily-publish3.yaml:44` | `rss-gate` is a node that always succeeds and records its verdict in `4-publish/rss-gate.json`; a failing node would cascade-skip the incident path through the engine's all-deps-skipped rule. |
+| `plugins/kk/workflows/kk-daily-publish3.yaml:83` | `plan` requires `.hit == true` on an overseas day — a gated miss plans nothing. |
+| `plugins/kk/workflows/kk-daily-publish3.yaml:135` | `send` depends on `check` *and* `send-confirm`: a draft window (skipped pause) still sends, a gated plan (both skipped) still stops. |
+| `plugins/kk/workflows/kk-daily-publish3.yaml:236` | `report` depends on `bundle-runs` and `diagnose`, so a gated-miss day writes its page too. |
+| `apps/cli/src/publish-matrix.ts:880` | `runPublishMatrixRssGate` — guid-first, title-date fallback, a fetch failure is a miss (`reason: fetch-failed`), exit 0/miss 3, and on a miss the deterministic incident floor (`incident.json`/`incident.md`, class `rss-lag`) so the record exists before any agent step. |
+| `apps/cli/src/publish-matrix.ts:1010` | `runPublishMatrixWaitUntil` — Intl-based wall-clock sleep in a named zone, DST-corrected, no-op when the moment has passed. |
+| `apps/cli/src/publish-matrix.ts:1000` | `readPublishPresetSelector` — `workflows.kk-daily-ai-voice3.publish_preset` with the itc contract (missing file/block = compiled default, unknown key or non-slug refused by name); `--preset` stays optional on plan/check and defaults through it. |
+| `apps/cli/src/publish-matrix-stage.ts:31` | Dispatch for `publish-matrix-rss-gate` and `publish-matrix-wait-until`. |
+| `apps/cli/src/commands/schedule.ts:34` | `kk-daily-publish3-cn-peak` (cron, `0 17 * * *`, `live_channels` baked in) and `kk-daily-publish3-overseas` (cron, `0 7 * * *`, yesterday's `run_date`) templates. |
+| `plugins/kk/schedules/kk-daily-publish3-cn-peak.cron.tmpl:1` | The cn-peak entry, explaining why 17:00 local exists (the `wait-until` node reaches 09:00 Shanghai) and that the line itself is the ADR-022 consent. |
+| `plugins/kk/schedules/kk-daily-publish3-overseas.cron.tmpl:1` | The overseas entry with the previous-day `run_date` rationale. |
+| `plugins/kk/publish-presets/daily-ai-voice.json:1` | Design §3's matrix, every row in exactly one window, gap channels `off`; a row's `variant` is the shared bundle key so `<variant>@<plugin>` overrides still win the lookup. |
+| `plugins/kk/config.example.yaml:14` | `workflows.kk-daily-ai-voice3.publish_preset` documented (the operator's config is never hand-edited by a task). |
+| `apps/cli/tests/kk-daily-publish3.test.ts:1` | The window E2E through `spur workflow run` with a `kk` shim: after-generate plans/sends/classifies 3 dummy rows with no dispatch and appends its run id once; cn-peak plans a disjoint 1-row set and a rerun resends nothing; a gated miss plans nothing and writes the incident; a hit plans its own set; the YAML declares no plugin and no live mode; both schedules render (and a launchd render is refused). 6 tests, ~6 s. |
+| `apps/cli/tests/publish-matrix.test.ts:648` | Unit coverage for the gate parser/matcher (guid beats title, outage is a miss), the wait-until arithmetic (2 h ahead, already past, invalid input), the config selector's four shapes, and the shipped preset's window/no-live invariant. |
+| `docs/04_DESIGN.md:2095` | The publish3 node table, the two engine rules the graph is shaped around, the gated-miss contract, the preset/window split and the schedules (T3). |
+
+**Verification:** `bun run lint` clean; `spur workflow validate` on the new YAML; `bun test apps/cli/tests/kk-daily-publish3.test.ts apps/cli/tests/publish-matrix.test.ts` → 37 pass, 0 fail. The rehearsal artifact is `.works/test-artifacts/0323/windows.md`.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/kk/workflows/kk-daily-publish3.yaml:1` declares `vars` `work_dir/run_date/window/preset/channels/live_channels/dummy/agent` and all fifteen nodes the requirement lists (`wait-until`, `rss-gate`, `plan`, `check`, `send-confirm`, `send`, `classify`, `surfdash-patch`, `partial-marker`, `mark-published`, `diagnose`, `repair`, `bundle-runs`, `report`, `ledger`); `spur workflow validate` reports it valid and `apps/cli/tests/kk-daily-publish3.test.ts:325` asserts every node id, the `pause: true` live gate and the three window names. The E2E runs the graph for real, so "declared" is not the only evidence. |
+| R2 | MET | `plugins/kk/publish-presets/daily-ai-voice.json:1` carries the design §3 matrix, each row in exactly one of the three windows, gap channels `off`; `apps/cli/tests/publish-matrix.test.ts:709` pins the schema, the window membership and the no-live invariant, and `apps/cli/tests/kk-daily-publish3.test.ts:268` proves the windows are disjoint at plan time. The config selector is `readPublishPresetSelector` (`apps/cli/src/publish-matrix.ts:1000`), covered for its four shapes at `apps/cli/tests/publish-matrix.test.ts:672`, and documented in `plugins/kk/config.example.yaml:14`. |
+| R3 | MET | `apps/cli/src/publish-matrix.ts:880` `runPublishMatrixRssGate`: guid first (from the tier-0 podcast receipt), title-date fallback, `fetch-failed` on an outage, exit 0 hit / 3 miss, `4-publish/rss-gate.json` always written; unit-proven at `apps/cli/tests/publish-matrix.test.ts:648` and end-to-end at `apps/cli/tests/kk-daily-publish3.test.ts:290`. The overseas `run_date` default is the schedule template's job (`plugins/kk/schedules/kk-daily-publish3-overseas.cron.tmpl:1` computes yesterday in America/Los_Angeles). |
+| R4 | MET | A gated miss plans nothing (`plugins/kk/workflows/kk-daily-publish3.yaml:83` condition on `.hit == true`); the gate writes the incident floor itself (`incident.json` + `incident.md`, class `rss-lag`, `apps/cli/src/publish-matrix.ts:880`) and `diagnose` refines it (`onError: continue`); `repair` runs `publish-matrix-send --window after-generate --retry --tier 0`, which by the shared resend rules only resends `effect: none`. `apps/cli/tests/kk-daily-publish3.test.ts:290` asserts no plan and no dispatch on a miss, and that a hit plans its own set. |
+| R5 | MET | `runPublishMatrixWaitUntil` (`apps/cli/src/publish-matrix.ts:1010`) is Intl-based, DST-corrected and a no-op when past, proven at `apps/cli/tests/publish-matrix.test.ts:641`; both cron templates exist with their `SCHEDULE_TEMPLATES` entries (`apps/cli/src/commands/schedule.ts:34`) and render (asserted at `apps/cli/tests/kk-daily-publish3.test.ts:340`, including a refused launchd render). Nothing installs them. |
+| R6 | MET | `bundle-runs` appends `${vars.__runId}` idempotently via a jq membership test (`plugins/kk/workflows/kk-daily-publish3.yaml:255`); `apps/cli/tests/kk-daily-publish3.test.ts:268` asserts `runs[]` holds the run id once and that a rerun never duplicates an entry. |
+| R7 | MET | `apps/cli/tests/kk-daily-publish3.test.ts:1` runs the workflow end-to-end for all three windows against a fixture bundle with `dummy: true` and a `kk` shim: disjoint windows, no resend on rerun, gate hit and miss via a local feed, zero dispatches, incident on a miss. 6 tests in ~6 s, and the run's summary lands at `.works/test-artifacts/0323/windows.md`. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — Dummy mode exercises the full publish path without spawning plugins (req: R1, R7) | MET | test | `apps/cli/tests/kk-daily-publish3.test.ts:239` — an all-dummy window through the real graph with a dispatch that throws if reached: zero dispatches, synthetic receipts, status `dummy` |
+| AC2 — Windows select disjoint target sets and never resend (req: R1, R2, R6) | MET | test | `apps/cli/tests/kk-daily-publish3.test.ts:268` — cn-peak plans only its own row, a rerun rewrites no receipt, `bundle.runs[]` has no duplicate |
+| AC3 — The overseas window is gated on the podcast RSS feed (req: R3, R4) | MET | test | `apps/cli/tests/kk-daily-publish3.test.ts:290` — miss: no plan, `rss-gate.json` miss, incident written, nothing dispatched; hit: the window plans its own set |
+| AC4 — Live publishing remains launch-only (req: R1, R5) | MET | test | the workflow declares no plugin and no live mode, and the live path is the `send-confirm` pause (`plugins/kk/workflows/kk-daily-publish3.yaml:118`); the cn-peak cron template carries `live_channels` as the operator's consent (`plugins/kk/schedules/kk-daily-publish3-cn-peak.cron.tmpl:1`); both asserted at `apps/cli/tests/kk-daily-publish3.test.ts:325` |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+Confidence: HIGH
+Verdict: PASS
+
+**Scope:** `plugins/kk/workflows/kk-daily-publish3.yaml`, the two new stages (`publish-matrix-rss-gate`, `publish-matrix-wait-until`) and the preset selector, the shipped `daily-ai-voice` preset, the two cron templates, `plugins/kk/config.example.yaml`, the window E2E plus its `kk` shim, `docs/04_DESIGN.md`, and two harness repairs the invariant work required (`g-feature-tree` matcher, one annotated `no-direct-fetch` exemption).
+
+| Priority | Finding | Disposition |
+| --- | --- | --- |
+| P1 | The graph initially made `plan` depend on a window-conditional `rss-gate`, so the engine's all-deps-skipped rule starved every non-overseas window — the feature simply did not run. | Fixed — `rss-gate` always succeeds and records its verdict in `4-publish/rss-gate.json`; `plan` reads it as a condition (`plugins/kk/workflows/kk-daily-publish3.yaml:44`, `:83`). |
+| P1 | `send` depended only on `send-confirm`, so a draft window (skipped pause) skipped the send and the whole tail. | Fixed — `send` also depends on `check` (`plugins/kk/workflows/kk-daily-publish3.yaml:135`); `report` likewise gained `diagnose` so a gated-miss day still writes its page. |
+| P2 | The shipped preset baked `<variant>@<plugin>` into the preset's `variant`, so the bundle lookup asked for `episode@wechatmp-pub@wechatmp-pub` and the plan refused every channel-specific row. | Fixed — a preset `variant` is the shared key; the `@plugin` form is the bundle-side override (`plugins/kk/publish-presets/daily-ai-voice.json:1`). |
+| P2 | `publish-matrix-wait-until` built its wall clock with an `Intl` formatter that declared no hour fields, so it parsed a date, produced `NaN` and threw. | Fixed — the fields are declared explicitly (`apps/cli/src/publish-matrix.ts:1044`). |
+| P2 | The report node's `{ … }` shell group made the engine's shell wrapper hang forever (no completion, no timeout). | Fixed — straight statements, no group, no heredoc (`plugins/kk/workflows/kk-daily-publish3.yaml:236`). |
+| P3 | The RSS gate only reported a miss; the incident artifact depended on an agent step that may never run. | Fixed — the gate writes the deterministic incident floor (`class: rss-lag`, feed URL, reason) before `diagnose` refines it (`apps/cli/src/publish-matrix.ts:880`). |
+| P3 | `no-direct-fetch` flagged the gate's feed read. | Fixed — a reasoned per-rule exemption naming the single call and the injectable reader, the same idiom the file already uses for every transport boundary. No other rule is relaxed for the file. |
+| P3 | The `feature G R1/R2` invariant could not see two-digit children, and re-homing what it exposed required treating `store`/`ledger` as the co-owned namespaces they are. | Fixed — `/^G\d+_/`, truthful G1/G11/G15 Goal wording, two documented NON_INFRA_FAMILIES entries and a non-vacuity guard on the derivation. |
+
+**SECUA / architecture**
+
+- **Security** — the workflow names no plugin and carries no `live`: the matrix lives in the preset, and `live` only enters through a launch var or the installed cron line (ADR-022). Every live row still hits the `send-confirm` pause. The gate's URL is a constant; the reader is injectable, so tests never touch the network.
+- **Efficiency** — one plan/preset/bundle read per window; the E2E's six runs finish in ~6 s because a rehearsal never spawns a plugin.
+- **Correctness** — windows are disjoint by construction (`plan.<window>.json` per window, rows filtered by the preset's `window`), a rerun is a no-op because receipts are keyed per target, and a gated miss plans nothing at all. The E2E asserts all three, plus the no-dispatch property with a dispatch that throws.
+- **Usability** — a miss prints its reason and leaves `incident.md` in operator prose; `bundle.runs[]` makes one episode traceable across its windows.
+- **Architecture** — the workflow is a thin sequencer over `kk stage run publish-matrix-*`; the two engine rules it must respect are documented in the YAML and in the design entry, so the next person does not re-discover them.
+
+**Residual risk**
+
+- `publish-matrix-check` runs inside the workflow with the real 60 s-per-plugin probe budget; on a day with several browser channels the `check` node can take minutes (warn-only, so it never fails the window). The E2E shims it deliberately.
+- `surfdash-patch` needs `KK_SURFDASH_ROOT`; the node passes `$KK_SURFDASH_ROOT` and the voice2 stage skips when it is empty, so a machine without the checkout still completes.
+- The overseas `run_date` is "yesterday" by contract: the render template computes it with `date -v-1d` (BSD) with a GNU `date -d` fallback, and an operator on a third flavour would have to adjust the rendered line.
+- Schedules are rendered, not installed (R5 scope); installing them remains the operator's action.
+
+**Verification:** `bun run lint` clean; `spur workflow validate` on the new YAML; `bun run spur-check` → 4103 tests, 0 failures, rules clean; gate receipt PASS on git tree `80bb4bc9`; window E2E 6/6 in ~6 s with artifact `.works/test-artifacts/0323/windows.md`.
 
 ### References
 
@@ -128,4 +201,7 @@ publish3 is the publish half of voice3 (design `docs/design/kk-daily-ai-voice3.m
 
 - 2026-10-22T18:59:28.584Z feature_id Q → G15 (system)
 - 2026-10-22T19:09:52.050Z backlog → todo (system)
+- 2026-10-23T01:11:02.690Z todo → wip (system)
+- 2026-10-23T02:03:54.188Z wip → testing (system)
+- 2026-10-23T02:03:56.062Z testing → done (system)
 

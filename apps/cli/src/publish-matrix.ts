@@ -399,15 +399,15 @@ export async function planPublishMatrix(args: string[], deps: PublishMatrixDeps 
     const fs = deps.fs ?? createNodeFileSystem();
     const [workDir = ''] = args;
     const bundlePath = flagValue(args, '--bundle');
-    const preset = flagValue(args, '--preset');
+    const presetFlag = flagValue(args, '--preset');
     const windowArg = flagValue(args, '--window');
     const channels = listValue(args, '--channels');
     const liveChannels = listValue(args, '--live-channels');
     const dummy = args.includes('--dummy');
 
-    if (!workDir || bundlePath === undefined || preset === undefined || windowArg === undefined) {
+    if (!workDir || bundlePath === undefined || windowArg === undefined) {
         echoError(
-            'usage: publish-matrix-plan <work_dir> --bundle <bundle.json> --preset <slug> --window <after-generate|cn-peak|overseas-rss> [--channels a,b] [--live-channels a,b] [--dummy]',
+            'usage: publish-matrix-plan <work_dir> --bundle <bundle.json> [--preset <slug>] --window <after-generate|cn-peak|overseas-rss> [--channels a,b] [--live-channels a,b] [--dummy]',
         );
         return 1;
     }
@@ -422,6 +422,9 @@ export async function planPublishMatrix(args: string[], deps: PublishMatrixDeps 
     }
 
     try {
+        // `--preset` wins; otherwise the operator's config selector decides (task 0323 R2), so the
+        // workflow YAML never names a preset file.
+        const preset = presetFlag ?? (await readPublishPresetSelector(process.env, fs));
         const plan = await composePlan(fs, {
             workDir,
             bundlePath,
@@ -463,12 +466,12 @@ export async function checkPublishMatrix(args: string[], deps: PublishMatrixDeps
     const fs = deps.fs ?? createNodeFileSystem();
     const [workDir = ''] = args;
     const windowArg = flagValue(args, '--window');
-    const presetArg = flagValue(args, '--preset');
+    const presetFlag = flagValue(args, '--preset');
     const allWindows = args.includes('--all-windows');
-    const presetMode = presetArg !== undefined && allWindows;
+    const presetMode = allWindows;
     if (!workDir || (windowArg === undefined && !presetMode)) {
         echoError(
-            'usage: publish-matrix-check <work_dir> --window <after-generate|cn-peak|overseas-rss> | --preset <slug> --all-windows',
+            'usage: publish-matrix-check <work_dir> --window <after-generate|cn-peak|overseas-rss> | [--preset <slug>] --all-windows',
         );
         return 1;
     }
@@ -487,7 +490,7 @@ export async function checkPublishMatrix(args: string[], deps: PublishMatrixDeps
         let label: string;
         if (presetMode) {
             const { preset } = await loadPublishPreset(
-                presetArg,
+                presetFlag ?? (await readPublishPresetSelector(process.env, fs)),
                 { ...(deps.projectRoot ? { projectRoot: deps.projectRoot } : {}) },
                 fs,
             );
@@ -858,4 +861,293 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
         echoError(`publish-matrix-send: ${err instanceof Error ? err.message : String(err)}`);
         return 1;
     }
+}
+
+/** Result of one RSS gate probe, written to `4-publish/rss-gate.json`. */
+export const RssGateResultSchema = z
+    .object({
+        schemaVersion: z.literal(1).default(1),
+        date: z.string().min(1),
+        feedUrl: z.string().min(1),
+        hit: z.boolean(),
+        reason: z.enum(['guid', 'title', 'missing', 'fetch-failed']),
+        detail: z.string().optional(),
+    })
+    .strict();
+
+/** Parsed RSS gate result. */
+export type RssGateResult = z.infer<typeof RssGateResultSchema>;
+
+/** One `<item>` of the podcast feed: the two fields the gate matches on. */
+interface FeedItem {
+    title: string;
+    guid: string;
+}
+
+/**
+ * Extract `<item>` title/guid pairs from a podcast RSS document.
+ *
+ * Deliberately a regex over the known feed shape rather than an XML parser: the document is a
+ * podcast feed with a fixed element order, and a dependency for two fields is not worth it.
+ */
+export function feedItems(xml: string): FeedItem[] {
+    const items: FeedItem[] = [];
+    for (const block of xml.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
+        const body = block[1] ?? '';
+        const title = /<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/.exec(body)?.[1]?.trim() ?? '';
+        const guid = /<guid[^>]*>([\s\S]*?)<\/guid>/.exec(body)?.[1]?.trim() ?? '';
+        items.push({ title, guid });
+    }
+    return items;
+}
+
+/**
+ * Decide whether the feed carries the gated episode (task 0323 R3).
+ *
+ * A guid match is authoritative — it is the receipt's own identity for the episode. A title match is
+ * the fallback for a run whose tier-0 receipt is absent (the gate also runs before publish). A feed
+ * that could not be fetched is a **miss**, never a hit: an outage must not let an unpublished
+ * episode through, and `reason` keeps the two distinguishable in the incident.
+ */
+export function matchRssGate(items: readonly FeedItem[], date: string, guid: string): RssGateResult['reason'] {
+    if (guid !== '' && items.some((item) => item.guid === guid)) return 'guid';
+    if (items.some((item) => item.title.includes(date))) return 'title';
+    return 'missing';
+}
+
+/** `--flag value` already exists as `flagValue`; fetch one feed through the injected reader. */
+export interface RssGateDeps extends PublishMatrixDeps {
+    /** Injected feed reader (the test passes a local fixture); defaults to `fetch`. */
+    readFeed?: (url: string) => Promise<string>;
+}
+
+/**
+ * `publish-matrix-rss-gate <workDir> --date <YYYY-MM-DD> [--feed <url>]` — the overseas window's
+ * gate (task 0323 R3).
+ *
+ * Exits 0 on a hit and 3 on a miss, so a `kind: dag` node can route on the exit code; the JSON
+ * artifact carries the reason either way. The guid comes from the tier-0 podcast receipt when one
+ * exists (the episode's own identity), the title date is the fallback.
+ */
+export async function runPublishMatrixRssGate(args: string[], deps: RssGateDeps = {}): Promise<number> {
+    const fs = deps.fs ?? createNodeFileSystem();
+    const [workDir = ''] = args;
+    const date = flagValue(args, '--date');
+    const feedUrl = flagValue(args, '--feed') ?? 'https://podcast.salty.vip/rss/';
+    if (!workDir || date === undefined) {
+        echoError('usage: publish-matrix-rss-gate <work_dir> --date <YYYY-MM-DD> [--feed <url>]');
+        return 1;
+    }
+    const publishDir = join(workDir, '4-publish');
+
+    // A tier-0 podcast receipt carries the guid the feed must contain; a receipt that records none
+    // leaves the title-date match as the only evidence.
+    let guid = '';
+    const receiptsDir = join(publishDir, 'receipts');
+    if (await fs.exists(receiptsDir)) {
+        for (const planWindow of ['after-generate', 'cn-peak'] as const) {
+            const planPath = join(publishDir, `plan.${planWindow}.json`);
+            if (!(await fs.exists(planPath))) continue;
+            const plan = JSON.parse(await fs.readFile(planPath)) as PublishPlan;
+            for (const row of plan.rows) {
+                if (row.plugin !== 'podcast-pub') continue;
+                const receiptPath = join(receiptsDir, `${row.id}.json`);
+                if (!(await fs.exists(receiptPath))) continue;
+                const receipt = JSON.parse(await fs.readFile(receiptPath)) as ItcReceipt & { guid?: string };
+                if (typeof receipt.guid === 'string') guid = receipt.guid;
+            }
+        }
+    }
+
+    const write = async (result: RssGateResult): Promise<number> => {
+        await fs.ensureDir(publishDir);
+        await fs.writeFile(join(publishDir, 'rss-gate.json'), `${JSON.stringify(result, null, 2)}\n`);
+        await appendEvent(fs, publishDir, {
+            event: result.hit ? 'gate-hit' : 'gate-miss',
+            window: 'overseas-rss',
+            reason: result.reason,
+            date: result.date,
+        });
+        if (!result.hit) {
+            // The deterministic incident floor: the gate already knows its own class, so the miss is
+            // recorded even if the workflow's `diagnose` agent step never gets to run. `diagnose`
+            // may refine the class from the bundle and receipts; it always finds this file.
+            const incident = {
+                schemaVersion: 1,
+                date: result.date,
+                class: 'rss-lag',
+                reason: `feed ${result.feedUrl} has no episode for ${result.date} (${result.reason})`,
+                evidence: ['4-publish/rss-gate.json', ...(result.detail === undefined ? [] : [result.detail])],
+            };
+            await fs.writeFile(join(publishDir, 'incident.json'), `${JSON.stringify(incident, null, 2)}\n`);
+            await fs.writeFile(
+                join(publishDir, 'incident.md'),
+                [
+                    `# Overseas window missed — ${result.date}`,
+                    '',
+                    `The podcast feed \`${result.feedUrl}\` does not carry the ${result.date} episode (${result.reason}).`,
+                    'Class `rss-lag`: the episode is not in the feed yet.',
+                    result.detail === undefined ? '' : `Detail: ${result.detail}`,
+                    '',
+                    'Next: confirm the generation run published the podcast tier-0 target, then re-run the',
+                    'overseas window for this date. An automatic repair only resends `effect: none` tier-0 rows.',
+                ]
+                    .filter((line) => line !== '')
+                    .join('\n'),
+            );
+            echoError(`publish-matrix-rss-gate: miss (${result.reason}) for ${result.date}`);
+        }
+        return result.hit ? 0 : 3;
+    };
+
+    let xml: string;
+    try {
+        const read = deps.readFeed ?? (async (url: string) => (await fetch(url)).text());
+        xml = await read(feedUrl);
+    } catch (err: unknown) {
+        return write({
+            schemaVersion: 1,
+            date,
+            feedUrl,
+            hit: false,
+            reason: 'fetch-failed',
+            detail: err instanceof Error ? err.message : String(err),
+        });
+    }
+
+    const reason = matchRssGate(feedItems(xml), date, guid);
+    return write({ schemaVersion: 1, date, feedUrl, hit: reason !== 'missing', reason });
+}
+
+/**
+ * `publish-matrix-wait-until <HH:MM> <Area/City>` — sleep until that local wall-clock time in the
+ * given zone (task 0323 R5).
+ *
+ * DST-safe and no-op when the moment is already past, because the launchd entry fires in the
+ * machine's local zone: the cn-peak tick at 17:00 PDT must sleep to 09:00 Shanghai, and after the
+ * DST flip the same tick is only an hour early. The offset is computed twice — now and at the
+ * target — so a window that straddles a transition still wakes at the right instant.
+ */
+export async function runPublishMatrixWaitUntil(
+    args: string[],
+    deps: { now?: () => number; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<number> {
+    const [target = '', zone = ''] = args;
+    const match = /^(\d{1,2}):(\d{2})$/.exec(target);
+    if (!match || zone === '') {
+        echoError('usage: publish-matrix-wait-until <HH:MM> <Area/City>');
+        return 1;
+    }
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    if (hours > 23 || minutes > 59) {
+        echoError(`publish-matrix-wait-until: '${target}' is not a valid wall-clock time`);
+        return 1;
+    }
+    const now = deps.now ?? Date.now;
+    const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+
+    // The zone's offset at `at`, in minutes east of UTC.
+    const offsetAt = (at: number): number => {
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: zone,
+            hour12: false,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+        }).formatToParts(new Date(at));
+        const get = (type: string): number => Number(parts.find((part) => part.type === type)?.value ?? '0');
+        const asUtc = Date.UTC(
+            get('year'),
+            get('month') - 1,
+            get('day'),
+            get('hour') % 24,
+            get('minute'),
+            get('second'),
+        );
+        return Math.round((asUtc - at) / 60_000);
+    };
+
+    // The fields must be declared: an `Intl` formatter with only `timeZone` prints a DATE, not a
+    // clock, and parsing that back yields NaN.
+    const wall = new Intl.DateTimeFormat('en-US', {
+        timeZone: zone,
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+    }).formatToParts(new Date(now()));
+    const part = (type: string): number => Number(wall.find((entry) => entry.type === type)?.value ?? '0');
+    const localHour = part('hour') % 24;
+    const localMinute = part('minute');
+    const already = localHour * 60 + localMinute;
+    if (already >= hours * 60 + minutes) {
+        echo(`publish-matrix-wait-until: ${zone} is already past ${target}`);
+        return 0;
+    }
+
+    let wait = (hours * 60 + minutes - already) * 60_000;
+    // A DST transition inside the wait window shifts the target by the offset delta; one correction
+    // is enough for a wait under 24 h, and a zero/negative result means the target already passed.
+    const delta = offsetAt(now() + wait) - offsetAt(now());
+    wait -= delta * 60_000;
+    if (wait <= 0) {
+        echo(`publish-matrix-wait-until: ${zone} is already past ${target}`);
+        return 0;
+    }
+    echo(`publish-matrix-wait-until: sleeping ${Math.round(wait / 60_000)} min to ${target} ${zone}`);
+    await sleep(wait);
+    return 0;
+}
+
+/** Compiled default for the voice3/publish3 preset selector (task 0323 R2). */
+export const DEFAULT_PUBLISH_PRESET = 'daily-ai-voice';
+
+/**
+ * Resolve the operator's `workflows.kk-daily-ai-voice3.publish_preset` selector (task 0323 R2).
+ *
+ * Mirrors the itc resolver's contract exactly: `$KK_CONFIG`, else `$HOME/.config/kk/config.yaml`;
+ * a missing file or block is the compiled default; a malformed block, an unknown declared key or a
+ * non-slug value throws naming the key, never the value. The preset is only *selected* here — its
+ * contents stay in the reviewable preset file the plan digest records.
+ */
+export async function readPublishPresetSelector(
+    env: Record<string, string | undefined> = process.env,
+    fs: FileSystem = createNodeFileSystem(),
+): Promise<string> {
+    const explicit = env.KK_CONFIG?.trim();
+    const home = env.HOME ?? '';
+    const configPath =
+        explicit !== undefined && explicit !== '' ? resolve(explicit) : join(home, '.config', 'kk', 'config.yaml');
+    if (!(await fs.exists(configPath))) return DEFAULT_PUBLISH_PRESET;
+    let parsed: unknown;
+    try {
+        parsed = Bun.YAML.parse(await fs.readFile(configPath));
+    } catch {
+        throw new Error(`config file is not valid YAML: ${configPath}`);
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return DEFAULT_PUBLISH_PRESET;
+    const workflows = (parsed as Record<string, unknown>).workflows;
+    if (workflows === null || typeof workflows !== 'object' || Array.isArray(workflows)) return DEFAULT_PUBLISH_PRESET;
+    const block = (workflows as Record<string, unknown>)['kk-daily-ai-voice3'];
+    if (block === undefined) return DEFAULT_PUBLISH_PRESET;
+    if (block === null || typeof block !== 'object' || Array.isArray(block)) {
+        throw new Error("config key 'workflows.kk-daily-ai-voice3' must be a mapping");
+    }
+    const settings = block as Record<string, unknown>;
+    for (const key of Object.keys(settings)) {
+        if (key !== 'publish_preset') {
+            throw new Error(
+                `config key 'workflows.kk-daily-ai-voice3.${key}' is not a declared setting (allowed: publish_preset)`,
+            );
+        }
+    }
+    const value = settings.publish_preset;
+    if (value === undefined) return DEFAULT_PUBLISH_PRESET;
+    if (typeof value !== 'string' || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(value)) {
+        throw new Error("config key 'workflows.kk-daily-ai-voice3.publish_preset' must be a lowercase hyphenated slug");
+    }
+    return value;
 }

@@ -6,14 +6,14 @@ status: verifying
 priority: P2
 tags: []
 created_at: "2026-10-07T04:52:24.450Z"
-updated_at: "2026-10-13T22:11:20.914Z"
+updated_at: "2026-10-23T01:27:22.684Z"
 ---
 
 # G1: kk-daily-ai-voice
 
 ## Goal
 
-Home for the daily AI-news voice pipeline `plugins/kk/workflows/kk-daily-ai-voice.yaml` and its DAG successor `kk-daily-ai-voice2.yaml`.
+Home for the daily AI-news voice pipeline `plugins/kk/workflows/kk-daily-ai-voice.yaml`, plus its DAG successor `kk-daily-ai-voice2` (owned and tracked by G11) and its two-way split `kk-daily-ai-voice3` / `kk-daily-publish3` (tracked by G15).
 
 ## Scope
 

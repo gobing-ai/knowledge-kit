@@ -6,14 +6,14 @@ status: active
 priority: P2
 tags: []
 created_at: "2026-10-07T04:52:37.329Z"
-updated_at: "2026-10-13T03:30:16.280Z"
+updated_at: "2026-10-23T01:27:48.459Z"
 ---
 
 # G11: kk-daily-ai-voice2: DAG daily workflow from the store, cut-over
 
 ## Goal
 
-Rebuild the daily AI-news episode pipeline as `plugins/kk/workflows/kk-daily-ai-voice2.yaml`, a thin `kind: dag` workflow that starts from the kk-collect store pool, runs independent branches concurrently with plugin-owned `kk` steps, and replaces `kk-daily-ai-voice.yaml` after a measured parity streak.
+Rebuild the daily AI-news episode pipeline as `plugins/kk/workflows/kk-daily-ai-voice2.yaml`, a thin `kind: dag` workflow that starts from the kk-collect store pool, runs independent branches concurrently with plugin-owned `kk` steps, and replaces the original `kk-daily-ai-voice` pipeline (owned by G1) after a measured parity streak.
 
 ## Scope
 

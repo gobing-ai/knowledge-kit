@@ -1,0 +1,20 @@
+# kk-daily-publish3-cn-peak — domestic live window (task 0323 R5).
+#
+# Fires at 17:00 local because the audience window is 09:00 Asia/Shanghai and launchd/cron
+# intervals follow the MACHINE's zone; the first node (`publish-matrix-wait-until 09:00
+# Asia/Shanghai`) sleeps the remainder, which is 1 h from 17:00 PDT and 0 h after the DST flip —
+# so the entry never needs editing twice a year.
+#
+# `live_channels` is baked in: this installed line IS the operator's ADR-022 consent for a live
+# send. Nothing in the workflow or the preset can produce `live` on its own.
+#
+# Rendered by `kk schedule render kk-daily-publish3-cn-peak --platform cron --repo <checkout>`;
+# kk never edits the operator's crontab. MERGE, never replace:
+#
+#     crontab -l > /tmp/kk-cn-peak.cron 2>/dev/null || :
+#     kk schedule render kk-daily-publish3-cn-peak --platform cron --repo "$PWD" >> /tmp/kk-cn-peak.cron
+#     crontab /tmp/kk-cn-peak.cron
+#
+# `run_date` is computed at tick time in America/Los_Angeles: a run that starts at 17:00 PDT is
+# still "today" for the day dir the 04:30 generation wrote.
+0 17 * * * cd {{repo}} && mkdir -p .works/kk-daily-publish3 && PATH="{{home}}/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" TZ=America/Los_Angeles spur workflow run plugins/kk/workflows/kk-daily-publish3.yaml --vars "{\"work_dir\":\"{{repo}}/.works/kk-daily-publish3/$(TZ=America/Los_Angeles date +%Y%m%d)\",\"run_date\":\"$(TZ=America/Los_Angeles date +%F)\",\"window\":\"cn-peak\",\"live_channels\":\"wechatmp-pub,xhs-pub,weibo-pub,x-pub\"}" >> {{repo}}/.works/kk-daily-publish3/cn-peak.log 2>&1

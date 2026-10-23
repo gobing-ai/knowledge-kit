@@ -1,0 +1,17 @@
+# kk-daily-publish3-overseas — overseas window behind the podcast RSS gate (task 0323 R5).
+#
+# 07:00 America/Los_Angeles, which needs no DST adjustment: the entry is defined in the zone the
+# machine already runs in. The gated date is the PREVIOUS day, because the observed episodes land
+# 13:43–15:22 PDT (after this tick) — `run_date` is therefore yesterday's date, not today's.
+#
+# The gate decides whether anything publishes: a miss cancels the overseas targets and runs
+# `diagnose` + the tier-0-only repair. This line carries no `live_channels`; the overseas channels
+# in the shipped preset are `draft`, so a live overseas post stays an operator launch.
+#
+# Rendered by `kk schedule render kk-daily-publish3-overseas --platform cron --repo <checkout>`;
+# kk never edits the operator's crontab. MERGE, never replace:
+#
+#     crontab -l > /tmp/kk-overseas.cron 2>/dev/null || :
+#     kk schedule render kk-daily-publish3-overseas --platform cron --repo "$PWD" >> /tmp/kk-overseas.cron
+#     crontab /tmp/kk-overseas.cron
+0 7 * * * cd {{repo}} && mkdir -p .works/kk-daily-publish3 && PATH="{{home}}/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" TZ=America/Los_Angeles spur workflow run plugins/kk/workflows/kk-daily-publish3.yaml --vars "{\"work_dir\":\"{{repo}}/.works/kk-daily-publish3/$(TZ=America/Los_Angeles date -v-1d +%Y%m%d 2>/dev/null || TZ=America/Los_Angeles date -d yesterday +%Y%m%d)\",\"run_date\":\"$(TZ=America/Los_Angeles date -v-1d +%F 2>/dev/null || TZ=America/Los_Angeles date -d yesterday +%F)\",\"window\":\"overseas-rss\"}" >> {{repo}}/.works/kk-daily-publish3/overseas.log 2>&1

@@ -1,0 +1,123 @@
+{
+    "schemaVersion": 1,
+    "name": "daily-ai-voice",
+    "targets": [
+        {
+            "plugin": "surfdash-pub",
+            "operation": "post",
+            "variant": "article",
+            "tier": 0,
+            "window": "after-generate",
+            "mode": "draft",
+            "required": true
+        },
+        {
+            "plugin": "podcast-pub",
+            "operation": "episode",
+            "variant": "episode",
+            "tier": 0,
+            "window": "after-generate",
+            "mode": "draft",
+            "required": true
+        },
+        {
+            "plugin": "wechatmp-pub",
+            "operation": "播客",
+            "variant": "episode",
+            "tier": 1,
+            "window": "after-generate",
+            "mode": "draft"
+        },
+        {
+            "plugin": "xhs-pub",
+            "operation": "发播客",
+            "variant": "episode",
+            "tier": 1,
+            "window": "after-generate",
+            "mode": "draft"
+        },
+        {
+            "plugin": "wechatmp-pub",
+            "operation": "文章",
+            "variant": "article",
+            "tier": 2,
+            "window": "after-generate",
+            "mode": "draft",
+            "options": {
+                "collection": "每日AI资讯"
+            }
+        },
+        {
+            "plugin": "xhs-pub",
+            "operation": "写长文",
+            "variant": "article",
+            "tier": 2,
+            "window": "after-generate",
+            "mode": "dummy"
+        },
+        {
+            "plugin": "xhs-pub",
+            "operation": "上传图文",
+            "variant": "cards",
+            "tier": 3,
+            "window": "after-generate",
+            "mode": "off"
+        },
+        {
+            "plugin": "weibo-pub",
+            "operation": "article",
+            "variant": "article",
+            "tier": 2,
+            "window": "cn-peak",
+            "mode": "draft"
+        },
+        {
+            "plugin": "x-pub",
+            "operation": "article",
+            "variant": "article",
+            "tier": 2,
+            "window": "cn-peak",
+            "mode": "draft"
+        },
+        {
+            "plugin": "x-pub",
+            "operation": "post",
+            "variant": "social:x",
+            "tier": 3,
+            "window": "overseas-rss",
+            "mode": "draft"
+        },
+        {
+            "plugin": "weibo-pub",
+            "operation": "post",
+            "variant": "social:weibo",
+            "tier": 3,
+            "window": "overseas-rss",
+            "mode": "draft"
+        },
+        {
+            "plugin": "threads-pub",
+            "operation": "post",
+            "variant": "social:threads",
+            "tier": 3,
+            "window": "overseas-rss",
+            "mode": "draft"
+        },
+        {
+            "plugin": "shipinhao-pub",
+            "operation": "图文",
+            "variant": "cards",
+            "tier": 3,
+            "window": "overseas-rss",
+            "mode": "off"
+        },
+        {
+            "plugin": "threads-pub",
+            "operation": "post-images",
+            "variant": "cards",
+            "tier": 3,
+            "window": "overseas-rss",
+            "mode": "off"
+        }
+    ]
+}

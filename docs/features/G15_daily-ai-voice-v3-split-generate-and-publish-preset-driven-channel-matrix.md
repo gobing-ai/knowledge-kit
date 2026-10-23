@@ -6,14 +6,14 @@ status: active
 priority: P2
 tags: []
 created_at: "2026-10-22T18:40:58.202Z"
-updated_at: "2026-10-22T20:36:26.498Z"
+updated_at: "2026-10-23T01:26:48.502Z"
 ---
 
 # G15: Daily AI Voice v3: split generate and publish, preset-driven channel matrix
 
 ## Goal
 
-Replace the monolithic `kk-daily-ai-voice2` DAG with two workflows joined by a frozen `bundle.json`: `kk-daily-ai-voice3` (generate: topic → QC/translate → drafts → audio/images → bundle) and `kk-daily-publish3` (publish: plan → check → send per window → classify → report). The channel matrix moves into a publish preset selected from `~/.config/kk/config.yaml`, every target can run `off | dummy | draft | live`, and publishing follows three windows (D4). Design: `docs/design/kk-daily-ai-voice3.md` (operator decisions D1–D4, 2026-10-22). voice2 stays production until shadow cut-over.
+Replace the monolithic `kk-daily-ai-voice2` DAG with two workflows joined by a frozen `bundle.json`: `kk-daily-ai-voice3` (`plugins/kk/workflows/kk-daily-ai-voice3.yaml` — generate: topic → QC/translate → drafts → audio/images → bundle) and `kk-daily-publish3` (`plugins/kk/workflows/kk-daily-publish3.yaml` — publish: plan → check → send per window → classify → report). The channel matrix moves into a publish preset selected from `~/.config/kk/config.yaml`, every target can run `off | dummy | draft | live`, and publishing follows three windows (D4). The two publish windows are installed as `kk schedule render` templates (`kk-daily-publish3-cn-peak`, `kk-daily-publish3-overseas`). Design: `docs/design/kk-daily-ai-voice3.md` (operator decisions D1–D4, 2026-10-22). voice2 stays production until shadow cut-over.
 
 ## Scope
 
