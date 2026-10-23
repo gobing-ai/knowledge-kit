@@ -4,7 +4,7 @@ name: Add kk-daily-ai-voice3 generate workflow that freezes bundle.json
 status: done
 template: feature-impl
 created_at: 2026-10-22T18:41:32.327Z
-updated_at: "2026-10-23T02:45:21.231Z"
+updated_at: "2026-10-23T14:57:04.686Z"
 feature_id: G15
 
 dependencies: ["0323", "0327"]
@@ -105,16 +105,16 @@ This is the generate half of the voice3 split (design §4). voice2 stays untouch
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `plugins/kk/workflows/kk-daily-ai-voice3.yaml:1` carries voice2's generation nodes (`prepare`, read chain, `extract`, `plan`, `qc-content`, `select`, translate pair, `article-write` pair, `article`, `cover-brief`, `cover`, `cover-normalize`, `script-style`, `script-write`, `script`, nested `safety`, `review` pause, `wrap-docs`, `generate` + two fallbacks, `intro`, `voice-audit`, `duration`, `quality`, `show-notes`, `cards-write`, `cards-render`) and none of the voice2 channel vars: `apps/cli/tests/voice3-dag.test.ts:143` proves no `xhs_enabled`/`wechat_enabled`/`*_live`/`publish_enabled` var is declared or referenced, and `:196` proves every copied node still exists in voice2 (R4). `session-preflight` now calls `kk stage run publish-matrix-check --all-windows` (`plugins/kk/workflows/kk-daily-ai-voice3.yaml:186`), the 0325 preset probe. |
-| R2 | MET | `social-write` (`plugins/kk/workflows/kk-daily-ai-voice3.yaml:753`) and `bundle-variants` (`:776`) precede `bundle-freeze` (`:788`), which runs `kk stage run publish-matrix-bundle --run-date … --run-id …`. `apps/cli/src/publish-matrix.ts:1165` writes `bundle.json` as `BundleSchema` with every variant's sha256 and the episode title, and fails on a missing article/episode variant or a non-Content variant (`apps/cli/tests/voice3-dag.test.ts:74`, `:92`). |
-| R3 | MET | `pool-gate` (`plugins/kk/workflows/kk-daily-ai-voice3.yaml:742`) holds the single `kk store pool-count --min 1` over the candidates file and records `PASS`/`EMPTY`; the fifteen nodes that repeated it check the token instead. `apps/cli/tests/voice3-dag.test.ts:158` asserts exactly one candidate-file guard, that it lives inside `pool-gate`, and that at least fifteen nodes read the token. |
-| R4 | MET | `publish` (`plugins/kk/workflows/kk-daily-ai-voice3.yaml:810`) runs `kk-daily-publish3` nested only when `auto_publish=true`, passing `work_dir`/`run_date`/`window`/`preset`/`dummy`, and strips `SPUR_WORKFLOW_RUN_ACTIVE`/`SPUR_EXPECTED_DEFINITION_DIGEST`; its non-zero exit fails the step, so the nested window's outcome is surfaced. `apps/cli/tests/voice3-dag.test.ts:171` asserts the gate, the env strip and the nested invocation. |
-| R5 | MET | `apps/cli/tests/voice3-dag.test.ts:1` — a DAG shape suite (no channel switch, one pool guard, the payload tail, voice2 untouched) plus three bundle-freeze tests including the `runs[]`-preserving re-freeze. The consumer side is proven by `apps/cli/tests/kk-daily-publish3.test.ts`, which plans from a frozen bundle; `spur workflow validate` reports the graph valid. |
+| R1 | MET | `plugins/kk/workflows/kk-daily-ai-voice3.yaml:125` prepare onward carries voice2's generation nodes; `apps/cli/tests/voice3-dag.test.ts:182` copied nodes still exist in voice2; `apps/cli/tests/voice3-dag.test.ts:141` |
+| R2 | MET | `plugins/kk/workflows/kk-daily-ai-voice3.yaml:760` social-write, `plugins/kk/workflows/kk-daily-ai-voice3.yaml:783` bundle-variants, `plugins/kk/workflows/kk-daily-ai-voice3.yaml:795` bundle-freeze; `apps/cli/src/publish-matrix.ts:1172` runPublishMatrixBundle; `apps/cli/tests/voice3-dag.test.ts:54`, `apps/cli/tests/voice3-dag.test.ts:82`, `apps/cli/tests/voice3-dag.test.ts:108` |
+| R3 | MET | `plugins/kk/workflows/kk-daily-ai-voice3.yaml:743` pool-gate single guard; `apps/cli/tests/voice3-dag.test.ts:153` |
+| R4 | MET | `plugins/kk/workflows/kk-daily-ai-voice3.yaml:817` nested publish gated on auto_publish; `apps/cli/tests/voice3-dag.test.ts:164` |
+| R5 | MET | `apps/cli/tests/voice3-dag.test.ts:53` bundle suite + `apps/cli/tests/voice3-dag.test.ts:138` shape suite; `spur workflow validate plugins/kk/workflows/kk-daily-ai-voice3.yaml` → valid this run |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — voice3 generate freezes a bundle publish3 can consume (req: R2, R4, R5) | MET | test | `apps/cli/tests/voice3-dag.test.ts:74` (freeze writes the exact `BundleSchema` the plan stage reads), `apps/cli/tests/kk-daily-publish3.test.ts:239` (publish3 consumes a bundle of that shape for real) |
-| AC2 — Channel enablement no longer lives in the generate workflow (req: R1, R3) | MET | test | `apps/cli/tests/voice3-dag.test.ts:143` (no channel var declared or referenced, no publish plugin named) and `:158` (one pool guard) |
+| AC1 — voice3 generate freezes a bundle publish3 can consume (req: R2, R4, R5) | MET | test | `apps/cli/tests/voice3-dag.test.ts:54`, `apps/cli/tests/kk-daily-publish3.test.ts:244` |
+| AC2 — Channel enablement no longer lives in the generate workflow (req: R1, R3) | MET | test | `apps/cli/tests/voice3-dag.test.ts:141`, `apps/cli/tests/voice3-dag.test.ts:153` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

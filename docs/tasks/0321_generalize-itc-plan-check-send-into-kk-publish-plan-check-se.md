@@ -4,7 +4,7 @@ name: Generalize itc plan/check/send into kk publish plan|check|send with window
 status: done
 template: feature-impl
 created_at: 2026-10-22T18:41:31.104Z
-updated_at: "2026-10-22T20:36:27.982Z"
+updated_at: "2026-10-23T14:57:00.856Z"
 feature_id: G15
 
 priority: P1
@@ -144,20 +144,20 @@ kk-itc already splits generate/publish (`apps/cli/src/itc-publish.ts` — `itcMa
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `apps/cli/src/publish-matrix.ts:310` writes `4-publish/plan.<window>.json` with one row per in-window `mode != off` preset target carrying id/plugin/operation/variant/tier/window/mode/required/approval/status/payloadPath/payloadDigest; `apps/cli/tests/publish-matrix.test.ts:144` asserts every field and the payload digest |
-| R2 | MET | narrowing at `apps/cli/src/publish-matrix.ts:165` (unlisted token refused, `--dummy` forces every row); promotion refusals for an unlisted window target and a dummy target; `PublishPresetTargetSchema.mode` is `off |
-| R3 | MET | `apps/cli/src/publish-matrix.ts:374` probes the distinct plugins of the non-dummy rows through the shared `probePlugin` seam and writes `4-publish/check.<window>.json`; warn-only exit 0 — `apps/cli/tests/publish-matrix.test.ts:545` |
-| R4 | MET | `apps/cli/src/publish-matrix.ts:463` sends in tier order, tier 0 serial and blocking, writes `4-publish/receipts/<id>.json` and one `publish-events.jsonl` line per receipt, and inherits the itc resend rules through `sendRows` — `apps/cli/tests/publish-matrix.test.ts:378`, `:422`, `:466`, `:483`, `:511` |
-| R5 | MET | placeholders resolve from tier-0 receipts (`apps/cli/src/publish-matrix.ts:143`, resolution in `preparePayload`) into `payloads/content.<id>.resolved.json`; an unresolved one fails the row with `effect: none`, `error: unresolved-link`, no spawn — `apps/cli/tests/publish-matrix.test.ts:378`, `:444` |
-| R6 | MET | `ItcReceiptSchema` extension is optional-only (`apps/cli/src/itc-publish.ts:29`); `itcSendTargets` now calls `sendRows` with `key = plugin` (`apps/cli/src/itc-publish.ts:644`) so itc artefact names and keying are unchanged; every itc suite passes and `apps/cli/tests/publish-matrix.test.ts:609` pins that an itc-shaped preset still resolves through `resolveItcTargets` |
-| R7 | MET | `docs/04_DESIGN.md:1966` records the stage surface, preset extension, plan/receipt shapes, bundle contract and the dummy-mode handoff |
+| R1 | MET | `apps/cli/src/publish-matrix.ts:399` planPublishMatrix → composePlan (`apps/cli/src/publish-matrix.ts:254`) writes plan.<window>.json rows with payload path and digest; `apps/cli/tests/publish-matrix.test.ts:162` asserts every field |
+| R2 | MET | `apps/cli/src/publish-matrix.ts:292` unlisted channel refused; `apps/cli/src/itc-plan.ts:50` preset mode is off/dummy/draft only; `apps/cli/tests/publish-matrix.test.ts:244`, `apps/cli/tests/publish-matrix.test.ts:287`, `apps/cli/tests/publish-matrix.test.ts:315` |
+| R3 | MET | `apps/cli/src/publish-matrix.ts:466` checkPublishMatrix probes distinct non-dummy plugins, warn-only at `apps/cli/src/publish-matrix.ts:540`; `apps/cli/tests/publish-matrix.test.ts:1215` |
+| R4 | MET | `apps/cli/src/publish-matrix.ts:743` sendPublishMatrix through shared `apps/cli/src/itc-publish.ts:472` sendRows; `apps/cli/tests/publish-matrix.test.ts:396`, `apps/cli/tests/publish-matrix.test.ts:441`, `apps/cli/tests/publish-matrix.test.ts:485`, `apps/cli/tests/publish-matrix.test.ts:502`, `apps/cli/tests/publish-matrix.test.ts:530` |
+| R5 | MET | `apps/cli/src/publish-matrix.ts:232` LINK_SOURCES placeholders; `apps/cli/src/publish-matrix.ts:831` unresolved-link fails the row without dispatch; `apps/cli/tests/publish-matrix.test.ts:396`, `apps/cli/tests/publish-matrix.test.ts:463` |
+| R6 | MET | `apps/cli/src/itc-publish.ts:29` ItcReceiptSchema optional-only extension; `apps/cli/src/itc-publish.ts:705` itcSendTargets keys by plugin; `apps/cli/tests/publish-matrix.test.ts:1279`; itc suites 113 pass / 0 fail this run |
+| R7 | MET | `docs/04_DESIGN.md:2016` plan surface, `docs/04_DESIGN.md:2064` send surface |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — The channel matrix comes from a config-selected publish preset (req: R1, R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:144` (rows from the preset matrix), `:226` (narrowing), `:269` (refused promotions) |
-| AC2 — Windows select disjoint target sets and never resend (req: R1, R4) | MET | test | `apps/cli/tests/publish-matrix.test.ts:204` (windows disjoint), `:422` (no resend on rerun), `:483` (re-entry still delivers later tiers) |
-| AC3 — Live publishing remains launch-only (req: R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:297` (a preset carrying `mode: live` is rejected) and `:269` (promotion only through the launch var, only for a listed non-dummy target) |
-| AC4 — kk-itc publish behaviour is unchanged by the shared send core (req: R6) | MET | command | `bun test apps/cli/tests/itc-publish.test.ts apps/cli/tests/itc-plan.test.ts apps/cli/tests/itc-presets.test.ts apps/cli/tests/itc-stages.test.ts apps/cli/tests/itc-stage.test.ts` → 113 pass, 0 fail; full `bun run spur-check` → 4078 tests, 0 fail |
+| AC1 — The channel matrix comes from a config-selected publish preset (req: R1, R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:162`, `apps/cli/tests/publish-matrix.test.ts:244`, `apps/cli/tests/publish-matrix.test.ts:287` |
+| AC2 — Windows select disjoint target sets and never resend (req: R1, R4) | MET | test | `apps/cli/tests/publish-matrix.test.ts:222`, `apps/cli/tests/publish-matrix.test.ts:441`, `apps/cli/tests/publish-matrix.test.ts:502` |
+| AC3 — Live publishing remains launch-only (req: R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:315` preset live rejected; `apps/cli/tests/publish-matrix.test.ts:265`, `apps/cli/tests/publish-matrix.test.ts:287` promotion only via launch var |
+| AC4 — kk-itc publish behaviour is unchanged by the shared send core (req: R6) | MET | command | `bun test apps/cli/tests/itc-publish.test.ts apps/cli/tests/itc-plan.test.ts apps/cli/tests/itc-presets.test.ts apps/cli/tests/itc-stages.test.ts apps/cli/tests/itc-stage.test.ts` → 113 pass, 0 fail this run |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

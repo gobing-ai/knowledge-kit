@@ -4,7 +4,7 @@ name: Add kk-daily-publish3 workflow, daily-ai-voice preset, RSS gate, diagnose 
 status: done
 template: feature-impl
 created_at: 2026-10-22T18:41:31.940Z
-updated_at: "2026-10-23T02:03:56.072Z"
+updated_at: "2026-10-23T14:57:03.405Z"
 feature_id: G15
 
 dependencies: ["0321", "0322", "0325", "0326"]
@@ -142,20 +142,20 @@ publish3 is the publish half of voice3 (design `docs/design/kk-daily-ai-voice3.m
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `plugins/kk/workflows/kk-daily-publish3.yaml:1` declares `vars` `work_dir/run_date/window/preset/channels/live_channels/dummy/agent` and all fifteen nodes the requirement lists (`wait-until`, `rss-gate`, `plan`, `check`, `send-confirm`, `send`, `classify`, `surfdash-patch`, `partial-marker`, `mark-published`, `diagnose`, `repair`, `bundle-runs`, `report`, `ledger`); `spur workflow validate` reports it valid and `apps/cli/tests/kk-daily-publish3.test.ts:325` asserts every node id, the `pause: true` live gate and the three window names. The E2E runs the graph for real, so "declared" is not the only evidence. |
-| R2 | MET | `plugins/kk/publish-presets/daily-ai-voice.json:1` carries the design §3 matrix, each row in exactly one of the three windows, gap channels `off`; `apps/cli/tests/publish-matrix.test.ts:709` pins the schema, the window membership and the no-live invariant, and `apps/cli/tests/kk-daily-publish3.test.ts:268` proves the windows are disjoint at plan time. The config selector is `readPublishPresetSelector` (`apps/cli/src/publish-matrix.ts:1000`), covered for its four shapes at `apps/cli/tests/publish-matrix.test.ts:672`, and documented in `plugins/kk/config.example.yaml:14`. |
-| R3 | MET | `apps/cli/src/publish-matrix.ts:880` `runPublishMatrixRssGate`: guid first (from the tier-0 podcast receipt), title-date fallback, `fetch-failed` on an outage, exit 0 hit / 3 miss, `4-publish/rss-gate.json` always written; unit-proven at `apps/cli/tests/publish-matrix.test.ts:648` and end-to-end at `apps/cli/tests/kk-daily-publish3.test.ts:290`. The overseas `run_date` default is the schedule template's job (`plugins/kk/schedules/kk-daily-publish3-overseas.cron.tmpl:1` computes yesterday in America/Los_Angeles). |
-| R4 | MET | A gated miss plans nothing (`plugins/kk/workflows/kk-daily-publish3.yaml:83` condition on `.hit == true`); the gate writes the incident floor itself (`incident.json` + `incident.md`, class `rss-lag`, `apps/cli/src/publish-matrix.ts:880`) and `diagnose` refines it (`onError: continue`); `repair` runs `publish-matrix-send --window after-generate --retry --tier 0`, which by the shared resend rules only resends `effect: none`. `apps/cli/tests/kk-daily-publish3.test.ts:290` asserts no plan and no dispatch on a miss, and that a hit plans its own set. |
-| R5 | MET | `runPublishMatrixWaitUntil` (`apps/cli/src/publish-matrix.ts:1010`) is Intl-based, DST-corrected and a no-op when past, proven at `apps/cli/tests/publish-matrix.test.ts:641`; both cron templates exist with their `SCHEDULE_TEMPLATES` entries (`apps/cli/src/commands/schedule.ts:34`) and render (asserted at `apps/cli/tests/kk-daily-publish3.test.ts:340`, including a refused launchd render). Nothing installs them. |
-| R6 | MET | `bundle-runs` appends `${vars.__runId}` idempotently via a jq membership test (`plugins/kk/workflows/kk-daily-publish3.yaml:255`); `apps/cli/tests/kk-daily-publish3.test.ts:268` asserts `runs[]` holds the run id once and that a rerun never duplicates an entry. |
-| R7 | MET | `apps/cli/tests/kk-daily-publish3.test.ts:1` runs the workflow end-to-end for all three windows against a fixture bundle with `dummy: true` and a `kk` shim: disjoint windows, no resend on rerun, gate hit and miss via a local feed, zero dispatches, incident on a miss. 6 tests in ~6 s, and the run's summary lands at `.works/test-artifacts/0323/windows.md`. |
+| R1 | MET | `plugins/kk/workflows/kk-daily-publish3.yaml:31` wait-until through `plugins/kk/workflows/kk-daily-publish3.yaml:275` ledger (all fifteen nodes); `spur workflow validate plugins/kk/workflows/kk-daily-publish3.yaml` → valid this run; `apps/cli/tests/kk-daily-publish3.test.ts:319` |
+| R2 | MET | `plugins/kk/publish-presets/daily-ai-voice.json:1`; `apps/cli/src/publish-matrix.ts:1123` readPublishPresetSelector; `plugins/kk/config.example.yaml:12-18`; `apps/cli/tests/publish-matrix.test.ts:681`, `apps/cli/tests/publish-matrix.test.ts:719`, `apps/cli/tests/kk-daily-publish3.test.ts:276` |
+| R3 | MET | `apps/cli/src/publish-matrix.ts:939` runPublishMatrixRssGate, `apps/cli/src/publish-matrix.ts:919` guid-then-title match; `apps/cli/tests/publish-matrix.test.ts:569`, `apps/cli/tests/publish-matrix.test.ts:583`, `apps/cli/tests/kk-daily-publish3.test.ts:296` |
+| R4 | MET | `plugins/kk/workflows/kk-daily-publish3.yaml:76` plan only on rss-gate hit; `plugins/kk/workflows/kk-daily-publish3.yaml:197` diagnose; `plugins/kk/workflows/kk-daily-publish3.yaml:229` repair; `apps/cli/tests/kk-daily-publish3.test.ts:296` miss writes incident, nothing dispatched |
+| R5 | MET | `apps/cli/src/publish-matrix.ts:1038` runPublishMatrixWaitUntil; `apps/cli/tests/publish-matrix.test.ts:639` DST; `apps/cli/src/commands/schedule.ts:35-36` templates; `apps/cli/tests/kk-daily-publish3.test.ts:354` |
+| R6 | MET | `plugins/kk/workflows/kk-daily-publish3.yaml:241-252` bundle-runs idempotent jq append; `apps/cli/tests/kk-daily-publish3.test.ts:244` run id recorded once |
+| R7 | MET | `apps/cli/tests/kk-daily-publish3.test.ts:243` E2E suite (6 tests) and `apps/cli/tests/kk-daily-publish3.test.ts:411` writes `.works/test-artifacts/0323/windows.md`; publish3/voice3/matrix suites 44 pass / 0 fail this run |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Dummy mode exercises the full publish path without spawning plugins (req: R1, R7) | MET | test | `apps/cli/tests/kk-daily-publish3.test.ts:239` — an all-dummy window through the real graph with a dispatch that throws if reached: zero dispatches, synthetic receipts, status `dummy` |
-| AC2 — Windows select disjoint target sets and never resend (req: R1, R2, R6) | MET | test | `apps/cli/tests/kk-daily-publish3.test.ts:268` — cn-peak plans only its own row, a rerun rewrites no receipt, `bundle.runs[]` has no duplicate |
-| AC3 — The overseas window is gated on the podcast RSS feed (req: R3, R4) | MET | test | `apps/cli/tests/kk-daily-publish3.test.ts:290` — miss: no plan, `rss-gate.json` miss, incident written, nothing dispatched; hit: the window plans its own set |
-| AC4 — Live publishing remains launch-only (req: R1, R5) | MET | test | the workflow declares no plugin and no live mode, and the live path is the `send-confirm` pause (`plugins/kk/workflows/kk-daily-publish3.yaml:118`); the cn-peak cron template carries `live_channels` as the operator's consent (`plugins/kk/schedules/kk-daily-publish3-cn-peak.cron.tmpl:1`); both asserted at `apps/cli/tests/kk-daily-publish3.test.ts:325` |
+| AC1 — Dummy mode exercises the full publish path without spawning plugins (req: R1, R7) | MET | test | `apps/cli/tests/kk-daily-publish3.test.ts:244` |
+| AC2 — Windows select disjoint target sets and never resend (req: R1, R2, R6) | MET | test | `apps/cli/tests/kk-daily-publish3.test.ts:276`, `apps/cli/tests/kk-daily-publish3.test.ts:244` |
+| AC3 — The overseas window is gated on the podcast RSS feed (req: R3, R4) | MET | test | `apps/cli/tests/kk-daily-publish3.test.ts:296`, `apps/cli/tests/publish-matrix.test.ts:583` |
+| AC4 — Live publishing remains launch-only (req: R1, R5) | MET | test | `apps/cli/tests/kk-daily-publish3.test.ts:319` no live mode in YAML; `plugins/kk/workflows/kk-daily-publish3.yaml:102` send-confirm pause; `plugins/kk/schedules/kk-daily-publish3-cn-peak.cron.tmpl:1` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

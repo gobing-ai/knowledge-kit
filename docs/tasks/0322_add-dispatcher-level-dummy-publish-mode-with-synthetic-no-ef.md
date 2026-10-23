@@ -4,7 +4,7 @@ name: Add dispatcher-level dummy publish mode with synthetic no-effect receipts
 status: done
 template: feature-impl
 created_at: 2026-10-22T18:41:31.549Z
-updated_at: "2026-10-22T21:38:27.082Z"
+updated_at: "2026-10-23T14:57:02.130Z"
 feature_id: G15
 
 dependencies: ["0321"]
@@ -98,14 +98,14 @@ No publish plugin has a dry-run mode, so the whole publish3 flow can only be reh
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `apps/cli/src/itc-publish.ts:559` is the dummy branch: after payload resolution and digesting and before `runFanout`; `apps/cli/src/publish-matrix.ts:430` parses the resolved payload with kk-core `ContentSchema` and writes `{status: succeeded, effect: none, dummy: true, mode: draft, url: dummy://<id>, target, window, startedAt, finishedAt}` (or `{status: failed, effect: none, dummy: true, error: invalid-payload}`). `apps/cli/tests/publish-matrix.test.ts:556` asserts the full receipt shape; `:657` asserts the invalid-payload failure and that dispatch is never reached. |
-| R2 | MET | `apps/cli/src/itc-publish.ts:501` — a succeeded receipt is skipped unless it is `dummy: true` and the row is no longer dummy. `apps/cli/tests/publish-matrix.test.ts:610` proves an idempotent rerun (zero dispatches) and then a preset flip to `draft` that dispatches the same target exactly once. |
-| R3 | MET | `apps/cli/tests/publish-matrix.test.ts:556` runs an all-dummy plan of the full domestic matrix with an injected `dispatch` that throws when called: zero calls, four synthetic receipts, exit 0, and the tier-2 copy resolves to `dummy://surfdash-pub.post`. |
+| R1 | MET | `apps/cli/src/itc-publish.ts:559` dummy branch before dispatch; `apps/cli/src/publish-matrix.ts:660` writeDummyReceipt (effect none, dummy://<id>); `apps/cli/tests/publish-matrix.test.ts:1080`, `apps/cli/tests/publish-matrix.test.ts:1181` |
+| R2 | MET | `apps/cli/src/itc-publish.ts:501` dummy-only prior receipt does not block a real send; `apps/cli/tests/publish-matrix.test.ts:1134` |
+| R3 | MET | `apps/cli/tests/publish-matrix.test.ts:1080` full matrix with a throwing dispatch: zero calls, one synthetic receipt per row |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Dummy mode exercises the full publish path without spawning plugins (req: R1, R3) | MET | test | `apps/cli/tests/publish-matrix.test.ts:556` (plan → send → receipts, throwing dispatch never hit), `:657` (payload validation still runs) |
-| AC2 — A dummy receipt never blocks a later real send of the same target (req: R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:610` (flip to draft → dispatched once, receipt no longer `dummy`) |
+| AC1 — Dummy mode exercises the full publish path without spawning plugins (req: R1, R3) | MET | test | `apps/cli/tests/publish-matrix.test.ts:1080`, `apps/cli/tests/publish-matrix.test.ts:1181` |
+| AC2 — A dummy receipt never blocks a later real send of the same target (req: R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:1134` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

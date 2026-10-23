@@ -4,7 +4,7 @@ name: Split publish-classify --fold-tail into classify, mark-published and repor
 status: done
 template: feature-impl
 created_at: 2026-10-22T18:41:33.110Z
-updated_at: "2026-10-22T22:27:36.387Z"
+updated_at: "2026-10-23T14:57:07.236Z"
 feature_id: G15
 
 dependencies: ["0321"]
@@ -106,15 +106,15 @@ publish3 needs its publish outcome (`full|partial|none`) computed from the 0321 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `apps/cli/src/publish-matrix.ts:562` reads `4-publish/plan.<w>.json` plus the receipts and writes `outcome.<w>.json` (schema at `:90`) and `publish-status.<w>.txt`, always exiting 0 once the plan is readable. `apps/cli/tests/publish-matrix.test.ts:645` asserts both artifacts; `:763` asserts a missing plan reports `none` with exit 0. |
-| R2 | MET | `apps/cli/src/publish-matrix.ts:119` computes status over non-dummy rows only: `full` all succeeded, `partial` at least one, `none` none, `dummy` no non-dummy rows; a planned row with no receipt is `missing` and counts as not succeeded. `apps/cli/tests/publish-matrix.test.ts:605` proves all four plus the missing-receipt and all-dummy cases; `:707` proves an all-dummy window classifies `dummy`, never `full`. |
-| R3 | MET | `apps/cli/src/publish-matrix.ts:600` bridges the tier-0 surfdash/podcast receipts' `aggregatePath` bytes to `31-publish/<runDate>_14_publish-surfdash_result.json` / `_16_publish-podcast_result.json`, only for non-dummy successes, and writes `publish-classify.summary.txt` for `kk ledger`. `apps/cli/tests/publish-matrix.test.ts:645` asserts both legacy files and then runs voice2's own `kk daily publish-classify` unchanged over the work dir (exit 0); `:707` asserts no bridge for all-dummy and none outside `after-generate`. |
-| R4 | MET | `git diff --stat apps/cli/src/commands/daily.ts apps/cli/tests/commands/daily.test.ts apps/cli/tests/voice2-dag.test.ts` is empty; voice2's classify suites pass unchanged in the full gate. |
+| R1 | MET | `apps/cli/src/publish-matrix.ts:566` runPublishMatrixClassify, outcome schema `apps/cli/src/publish-matrix.ts:84-96`; `apps/cli/tests/publish-matrix.test.ts:830`, `apps/cli/tests/publish-matrix.test.ts:948` |
+| R2 | MET | `apps/cli/src/publish-matrix.ts:120` classifyPublishMatrix over non-dummy rows; `apps/cli/tests/publish-matrix.test.ts:790`, `apps/cli/tests/publish-matrix.test.ts:812`, `apps/cli/tests/publish-matrix.test.ts:892` |
+| R3 | MET | `apps/cli/src/publish-matrix.ts:166` LEGACY_RESULT_FILES, bridge `apps/cli/src/publish-matrix.ts:636-641`, summary `apps/cli/src/publish-matrix.ts:603`; `apps/cli/tests/publish-matrix.test.ts:830` |
+| R4 | MET | `git log bf1c45a^..HEAD -- apps/cli/src/commands/daily.ts apps/cli/tests/voice2-dag.test.ts` → empty this run; voice2 suites 200 pass / 0 fail |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Dummy mode exercises the full publish path without spawning plugins (req: R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:605`, `:707` — dummy receipts are never counted as published and an all-dummy window reports `dummy` |
-| AC2 — Receipt-based classification feeds the existing tail stages unchanged (req: R1, R3, R4) | MET | test | `apps/cli/tests/publish-matrix.test.ts:645` — bridged files then drive voice2's `kk daily publish-classify` on a voice3 work dir; voice2 sources and tests untouched |
+| AC1 — Dummy mode exercises the full publish path without spawning plugins (req: R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:790`, `apps/cli/tests/publish-matrix.test.ts:892` |
+| AC2 — Receipt-based classification feeds the existing tail stages unchanged (req: R1, R3, R4) | MET | test | `apps/cli/tests/publish-matrix.test.ts:830` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

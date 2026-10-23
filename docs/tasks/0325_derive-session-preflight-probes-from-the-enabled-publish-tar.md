@@ -4,7 +4,7 @@ name: Derive session-preflight probes from the enabled publish targets
 status: done
 template: feature-impl
 created_at: 2026-10-22T18:41:32.723Z
-updated_at: "2026-10-22T21:57:10.001Z"
+updated_at: "2026-10-23T14:57:05.953Z"
 feature_id: G15
 
 dependencies: ["0321"]
@@ -82,13 +82,13 @@ voice2 `session-preflight` (`plugins/kk/workflows/kk-daily-ai-voice2.yaml:178`) 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `apps/cli/src/publish-matrix.ts:396` resolves the probe set from the preset as the distinct plugins of every non-`off`, non-`dummy` row across all windows (no plan, no bundle), and an empty set passes with `no probes` (`apps/cli/src/publish-matrix.ts:437`). `apps/cli/tests/publish-matrix.test.ts:557` proves two windows contribute and a dummy plus an `off` row do not; `:598` proves the empty set. |
-| R2 | MET | `kk stage run publish-matrix-check <workDir> --preset <slug> --all-windows` is the same stage with the second input mode (`apps/cli/src/publish-matrix.ts:374`), writing `4-publish/check.preflight.json` with `window: "preflight"`; the plan form (`--window`) is unchanged for publish3. `apps/cli/tests/publish-matrix.test.ts:557` asserts the file and its `preflight` label. |
-| R3 | MET | The probe is `probePlugin` over ADR-032's `kk plugin check` entry with the same 60 s budget and env seam (`apps/cli/src/itc-publish.ts:322`); no new probe mechanism, no new spawn path. |
+| R1 | MET | `apps/cli/src/publish-matrix.ts:466` checkPublishMatrix, `apps/cli/src/publish-matrix.ts:471` --all-windows derives probes from the preset; `apps/cli/src/publish-matrix.ts:550` no probes; `apps/cli/tests/publish-matrix.test.ts:984`, `apps/cli/tests/publish-matrix.test.ts:1025` |
+| R2 | MET | `apps/cli/src/publish-matrix.ts:515-516` preflight label and check.preflight.json; `apps/cli/tests/publish-matrix.test.ts:984` |
+| R3 | MET | `apps/cli/src/itc-publish.ts:340` probePlugin (kk plugin check entry, 60 s budget) reused; `apps/cli/tests/publish-matrix.test.ts:1050` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — The channel matrix comes from a config-selected publish preset (req: R1, R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:557`, `:598`, `:623` — the probe list is a function of the preset's rows, never a channel list in a workflow |
+| AC1 — The channel matrix comes from a config-selected publish preset (req: R1, R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:984`, `apps/cli/tests/publish-matrix.test.ts:1025`, `apps/cli/tests/publish-matrix.test.ts:1050` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
