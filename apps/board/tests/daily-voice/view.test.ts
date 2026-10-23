@@ -16,8 +16,11 @@ import {
     type DailySummaryView,
     dailySummary,
     dailySummaryFacts,
+    funnelView,
     isChannelOutcome,
     isConfidenceLevel,
+    parseWindowMs,
+    supplyContextOf,
 } from '../../src/daily-voice/view';
 
 function results(summary: Record<string, unknown>, artifacts: RunResults['artifacts'] = []): RunResults {
@@ -214,5 +217,87 @@ describe('confidence levels (HIGH/MEDIUM/LOW)', () => {
         expect(recorded).toMatchObject({ value: 'LOW', availability: 'available' });
         const absent = dailySummaryFacts(results({}), 0).find((fact) => fact.label === 'Safety confidence');
         expect(absent).toMatchObject({ value: 'not recorded', availability: 'unverified' });
+    });
+});
+
+/* G82/0320 — the funnel view and the configured supply interval. */
+describe('funnelView', () => {
+    it('narrows a recorded funnel, keeps unknown counts and labels the gate', () => {
+        const view = funnelView({
+            poolCount: 4,
+            annotatedCount: 4,
+            qcRejectedCount: 2,
+            topicKeptCount: 3,
+            dedupKeptCount: null,
+            plannedCount: null,
+            estimatedMinutes: 14.4,
+            measuredMinutes: 8.9,
+            minMinutes: 15,
+            maxMinutes: 25,
+            gate: 'episode-duration',
+            exclusions: [
+                { rule: 'policy-dispute', matched: 'lawsuit' },
+                { rule: 'keyword', matched: '' },
+            ],
+            evidence: { poolCount: 'episode-pool', maxMinutes: 'captured-settings' },
+            diagnostics: [{ code: 'board.daily.funnel.truncated', message: 'bounded' }],
+        });
+        expect(view.gate).toBe('episode-duration');
+        expect(view.gateName).toBe('Duration floor refusal');
+        expect(view.exclusions).toHaveLength(2);
+        expect(view.evidence).toEqual({ poolCount: 'episode-pool', maxMinutes: 'captured-settings' });
+        expect(view.diagnostics[0]?.code).toBe('board.daily.funnel.truncated');
+    });
+
+    it('degrades malformed input to an all-unknown funnel without dropping the gate copy', () => {
+        const view = funnelView({ poolCount: 'four', gate: 'certainly-not', exclusions: 'no' });
+        expect(view.poolCount).toBeNull();
+        expect(view.gate).toBeNull();
+        expect(view.gateName).toBe('not applicable — a content run has no gate');
+        expect(view.exclusions).toEqual([]);
+        expect(funnelView(null).gateName).toBe('not applicable — a content run has no gate');
+    });
+
+    it('names each gate and the unknown row', () => {
+        for (const [gate, name] of [
+            ['script', 'Script refusal'],
+            ['qc-floor', 'QC floor refusal'],
+            ['empty-pool', 'Empty pool'],
+            ['qc-empty', 'QC emptied the pool'],
+            ['unknown', 'unknown — no gate proven'],
+        ] as const) {
+            expect(funnelView({ gate }).gateName).toBe(name);
+        }
+    });
+});
+
+describe('parseWindowMs / supplyContextOf', () => {
+    it('accepts only <n>s|m|h|d durations above zero, mirroring kk store extract', () => {
+        expect(parseWindowMs('24h')).toBe(24 * 3_600_000);
+        expect(parseWindowMs('30m')).toBe(1_800_000);
+        expect(parseWindowMs('90s')).toBe(90_000);
+        expect(parseWindowMs('2d')).toBe(172_800_000);
+        expect(parseWindowMs(' 24h ')).toBe(86_400_000); // surrounding whitespace is tolerated
+        for (const malformed of ['24', 'h', '24x', '0h', '', '24 h', null, undefined]) {
+            expect(parseWindowMs(malformed as string | null)).toBeNull();
+        }
+    });
+
+    it('builds the half-open supply interval and labels both bounds', () => {
+        const startedAt = '2026-10-22T06:00:00.000Z';
+        const context = supplyContextOf('24h', startedAt);
+        expect(context).toMatchObject({
+            windowMs: 86_400_000,
+            fromMs: Date.parse(startedAt) - 86_400_000,
+            untilMs: Date.parse(startedAt),
+        });
+        expect(context?.fromLabel).toContain('2026-10-21');
+        expect(context?.untilLabel).toContain('2026-10-22');
+    });
+
+    it('returns null — never a defaulted window — when either input is unknown', () => {
+        expect(supplyContextOf(null, '2026-10-22T06:00:00.000Z')).toBeNull();
+        expect(supplyContextOf('24h', null)).toBeNull();
+        expect(supplyContextOf('24h', 'not-a-date')).toBeNull();
     });
 });

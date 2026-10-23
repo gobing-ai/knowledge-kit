@@ -665,3 +665,491 @@ describe('kk daily prepare capture wiring', () => {
         expect(realpathSync(join(project, '.works/.board/runs'))).toBeTruthy();
     });
 });
+
+/* ------------------------------------------------------------------------------------------------
+ * G82/0320 — the artifact-backed episode funnel (projectFunnel) and its reader surface.
+ *
+ * Failure-first list (written before the code):
+ * 11. counts come only from authorized stage artifacts, each with its evidence id, never 0;
+ * 12. a measured duration refusal wins gate precedence, then script, then QC floor, then
+ *     empty-pool, then qc-empty — never a guessed gate;
+ * 13. refusal-cleared candidates are unknown, never "QC kept 0" and never an empty pool;
+ * 14. a fallback-authored script refusal is accepted only with its own successful node;
+ * 15. annotation/pool mismatch keeps both values and diagnoses, never reconciles by arithmetic;
+ * 16. minutes: refusal/verdict first, audio-record seconds converted once (one decimal), then null;
+ * 17. min/max come from refusal/verdict then captured settings, independently;
+ * 18. exclusion rows are bounded (100 rows, 200 chars) with a truncation diagnostic;
+ * 19. the downloadable funnel JSON ids serve SANITIZED count/reason projections, no doc bodies;
+ * 20. malformed/oversized/unauthorized evidence leaves the other funnel fields standing.
+ * ---------------------------------------------------------------------------------------------- */
+
+const FUNNEL_SETTINGS = {
+    publish_enabled: 'true',
+    window: '24h',
+    episode_min_minutes: '15',
+    episode_max_minutes: '25',
+};
+
+/** A pool doc carrying a body the sanitizer must never serve. */
+function pooledDoc(id: string): Record<string, unknown> {
+    return { id, title: `Title ${id}`, body: 'SECRET-BODY', metadata: { source: 'aihot-ingest' } };
+}
+
+/** The 2026-10-22-shaped measured-refusal workspace: pool 4, kept 3, refused at 8.9 min. */
+function seedFunnelWorkspace(workDir: string, overrides: Record<string, string | null> = {}): void {
+    mkdirSync(join(workDir, '10-collect'), { recursive: true });
+    mkdirSync(join(workDir, '21-plan'), { recursive: true });
+    mkdirSync(join(workDir, '30-audio'), { recursive: true });
+    const files: Record<string, string> = {
+        '10-collect/pool.json': JSON.stringify([pooledDoc('a'), pooledDoc('b'), pooledDoc('c'), pooledDoc('d')]),
+        [`21-plan/${STAMP}_04_quality-control-content_annotated.json`]: JSON.stringify([
+            pooledDoc('a'),
+            pooledDoc('b'),
+            pooledDoc('c'),
+            pooledDoc('d'),
+        ]),
+        [`21-plan/${STAMP}_04_quality-control-content_candidates.rejected.json`]: JSON.stringify({
+            rejected: [{ doc: pooledDoc('x'), reasons: ['low quality'] }, { doc: pooledDoc('y') }],
+            total: 2,
+        }),
+        [`21-plan/${STAMP}_04_quality-control-content_exclusions.json`]: JSON.stringify({
+            version: 1,
+            runDate: STAMP,
+            excluded: [{ id: 'd', title: 'Secret title', rule: 'policy-dispute', matched: 'lawsuit' }],
+            kept: ['a', 'b', 'c'],
+        }),
+        [`21-plan/${STAMP}_04_quality-control-content_candidates.json`]: JSON.stringify({
+            metadata: { doc_count: 3, docs: [] },
+        }),
+        [`30-audio/${STAMP}_11_generate_content_duration-refusal.json`]: JSON.stringify({
+            measuredMinutes: 8.9,
+            estimatedMinutes: 14.4,
+            minMinutes: 15,
+            keptCount: 3,
+            candidateChars: 4300,
+            reason: 'the episode ran 8.9 min of speech, below the 15 min floor — refusing after synthesis',
+        }),
+        [`${STAMP}_19_run-report_report.md`]: '# Daily run report\n\nno-content: the episode was refused',
+    };
+    for (const [rel, body] of Object.entries({ ...files, ...overrides })) {
+        if (body === null) continue;
+        writeFileSync(join(workDir, rel), body);
+    }
+}
+
+/** The extra DAG nodes the funnel artifacts need as successful producers. */
+function funnelActions(): ActionRow[] {
+    return ['extract', 'plan', 'qc-content', 'duration', 'generate-fallback', 'generate-fallback2'].map((node) => ({
+        id: `${node}-1`,
+        node,
+        status: 'passed',
+        ok: true,
+        durationMs: 900,
+    }));
+}
+
+/** Drive the pure projection with observations for the funnel specs only. */
+function funnelResults(
+    texts: Record<string, string>,
+    options: { settings?: Record<string, string>; marker?: 'owned' | 'foreign' | 'invalid' | 'absent' } = {},
+) {
+    return projectDailyResults({
+        record: {
+            schemaVersion: 1 as const,
+            projectPath: '/proj',
+            workflow: 'kk-daily-ai-voice2' as WorkflowName,
+            runId: 'run-1',
+            workspacePath: '/proj/.works/kk-daily-ai-voice2/S',
+            stamp: STAMP,
+            capturedAt: '2026-10-22T12:00:00.000Z',
+            settings: options.settings ?? FUNNEL_SETTINGS,
+        },
+        detail: {
+            id: 'run-1',
+            workflowName: 'kk-daily-ai-voice2',
+            status: 'done',
+            startedAt: null,
+            completedAt: null,
+        },
+        marker: options.marker ?? 'owned',
+        actions: [],
+        producerOf: () => 'success',
+        observationOf: (spec) => {
+            // The three script specs share ONE refusal file, like the reader's pattern match.
+            const refusalFile = '30-audio/{stamp}_11_generate_content_duration-refusal.json';
+            const raw =
+                spec.pattern === refusalFile ? (texts[spec.id] ?? texts['episode-duration-refusal']) : texts[spec.id];
+            return raw === undefined ? { state: 'absent' } : { state: 'present', text: raw, bytes: raw.length };
+        },
+    });
+}
+
+const refusal = (extra: Record<string, unknown>): string =>
+    JSON.stringify({ measuredMinutes: 8.9, estimatedMinutes: 14.4, minMinutes: 15, keptCount: 3, ...extra });
+
+describe('projectFunnel (pure)', () => {
+    it('projects the 2026-10-22 measured refusal with evidence ids and no invented zeros', () => {
+        const texts: Record<string, string> = {
+            'episode-pool': JSON.stringify([pooledDoc('a'), pooledDoc('b'), pooledDoc('c'), pooledDoc('d')]),
+            'episode-annotated': JSON.stringify([pooledDoc('a'), pooledDoc('b'), pooledDoc('c'), pooledDoc('d')]),
+            'episode-qc-rejections': JSON.stringify({
+                rejected: [{ doc: pooledDoc('x') }, { doc: pooledDoc('y') }],
+                total: 2,
+            }),
+            'episode-exclusions': JSON.stringify({
+                excluded: [{ id: 'd', rule: 'policy-dispute', matched: 'lawsuit' }],
+                kept: ['a', 'b', 'c'],
+            }),
+            'episode-candidates': JSON.stringify({ metadata: { doc_count: 3, docs: [] } }),
+            'episode-duration-refusal': refusal({}),
+            report: 'no-content: refused',
+        };
+        const funnel = (funnelResults(texts).summary as unknown as DailySummary).funnel;
+        expect(funnel).toMatchObject({
+            poolCount: 4,
+            annotatedCount: 4,
+            qcRejectedCount: 2,
+            topicKeptCount: 3,
+            dedupKeptCount: null,
+            plannedCount: null,
+            estimatedMinutes: 14.4,
+            measuredMinutes: 8.9,
+            minMinutes: 15,
+            maxMinutes: 25,
+            gate: 'episode-duration',
+            exclusions: [{ rule: 'policy-dispute', matched: 'lawsuit' }],
+        });
+        expect(funnel.evidence).toMatchObject({
+            poolCount: 'episode-pool',
+            annotatedCount: 'episode-annotated',
+            qcRejectedCount: 'episode-qc-rejections',
+            topicKeptCount: 'episode-exclusions',
+            estimatedMinutes: 'episode-duration-refusal',
+            measuredMinutes: 'episode-duration-refusal',
+            minMinutes: 'episode-duration-refusal',
+            maxMinutes: 'captured-settings',
+            gate: 'episode-duration-refusal',
+        });
+        // Evidence values are fixed manifest ids (or the settings marker), never caller paths.
+        expect(Object.values(funnel.evidence).every((value) => !value.includes('/'))).toBe(true);
+        // A no-content outcome is not rewritten into a published success.
+        expect((funnelResults(texts).summary as unknown as DailySummary).outcome).toBe('no-content');
+    });
+
+    it('keeps maxMinutes unknown when neither the verdict nor the settings carried it', () => {
+        const funnel = (
+            funnelResults(
+                { 'episode-duration-refusal': refusal({}), report: 'no-content' },
+                { settings: { window: '24h', episode_min_minutes: '15' } },
+            ).summary as unknown as DailySummary
+        ).funnel;
+        expect(funnel.maxMinutes).toBeNull();
+        expect(funnel.minMinutes).toBe(15);
+        expect(funnel.evidence.minMinutes).toBe('episode-duration-refusal');
+    });
+
+    it('prefers the duration verdict over the audio-record fallback and converts seconds once', () => {
+        const funnel = (
+            funnelResults(
+                {
+                    'episode-plan': JSON.stringify([pooledDoc('a'), pooledDoc('b'), pooledDoc('c')]),
+                    'episode-candidates': JSON.stringify({
+                        metadata: { doc_count: 3, docs: [pooledDoc('a'), pooledDoc('b'), pooledDoc('c')] },
+                    }),
+                    'episode-duration': JSON.stringify({
+                        measuredMinutes: 17.5,
+                        minMinutes: 15,
+                        maxMinutes: 25,
+                        ok: true,
+                    }),
+                    'audio-record': JSON.stringify({ metadata: { duration: 1075.296167 } }),
+                    'publish-status': 'full',
+                },
+                { settings: {} },
+            ).summary as unknown as DailySummary
+        ).funnel;
+        expect(funnel.measuredMinutes).toBe(17.5);
+        expect(funnel.evidence.measuredMinutes).toBe('episode-duration');
+        expect(funnel.gate).toBeNull();
+    });
+
+    it('falls back to audio-record seconds → minutes (one decimal) without a verdict', () => {
+        const funnel = (
+            funnelResults({ 'audio-record': JSON.stringify({ metadata: { duration: 1075.296167 } }) }, { settings: {} })
+                .summary as unknown as DailySummary
+        ).funnel;
+        expect(funnel.measuredMinutes).toBe(17.9);
+        expect(funnel.evidence.measuredMinutes).toBe('audio-record');
+    });
+
+    it('names the script gate only from stage=script evidence, including fallback authors', () => {
+        const script = refusal({ stage: 'script', measuredMinutes: undefined });
+        const measured = funnelResults({ 'episode-duration-refusal': script, report: 'no-content' }, { settings: {} });
+        // A stage=script file is never mistaken for a measured refusal (the duration spec refuses it).
+        expect((measured.summary as unknown as DailySummary).funnel.gate).toBe('script');
+        expect((measured.summary as unknown as DailySummary).funnel.estimatedMinutes).toBe(14.4);
+    });
+
+    it('accepts a script refusal only with its own successful producer node', async () => {
+        // Built against the reader below via actions; here the pure half: a stage=script refusal
+        // read through the fallback spec still names the same gate.
+        const funnel = (
+            funnelResults(
+                { 'episode-script-refusal-fallback': refusal({ stage: 'script' }), report: 'no-content' },
+                { settings: {} },
+            ).summary as unknown as DailySummary
+        ).funnel;
+        expect(funnel.gate).toBe('script');
+        expect(funnel.evidence.gate).toBe('episode-script-refusal-fallback');
+    });
+
+    it('names the QC floor gate and never reads cleared candidates as an empty pool', () => {
+        const funnel = (
+            funnelResults(
+                {
+                    'episode-pool': JSON.stringify([pooledDoc('a'), pooledDoc('b'), pooledDoc('c'), pooledDoc('d')]),
+                    'episode-floor-refusal': JSON.stringify({
+                        estimatedMinutes: 6.2,
+                        minMinutes: 15,
+                        candidateChars: 900,
+                        ids: ['a', 'b', 'c', 'd'],
+                    }),
+                    'episode-candidates': JSON.stringify({ metadata: { doc_count: 4, docs: [] } }),
+                    report: 'no-content',
+                },
+                { settings: {} },
+            ).summary as unknown as DailySummary
+        ).funnel;
+        expect(funnel.gate).toBe('qc-floor');
+        expect(funnel.poolCount).toBe(4);
+        expect(funnel.dedupKeptCount).toBeNull();
+        expect(funnel.estimatedMinutes).toBe(6.2);
+    });
+
+    it('names empty-pool and qc-empty distinctly, and unknown when nothing is proven', () => {
+        const emptyPool = funnelResults({ 'episode-pool': '[]', report: 'no-content' }, { settings: {} });
+        expect((emptyPool.summary as unknown as DailySummary).funnel.gate).toBe('empty-pool');
+        expect((emptyPool.summary as unknown as DailySummary).funnel.poolCount).toBe(0);
+        const qcEmpty = funnelResults(
+            {
+                'episode-pool': JSON.stringify([pooledDoc('a')]),
+                'episode-candidates': JSON.stringify({ metadata: { doc_count: 0, docs: [] } }),
+                report: 'no-content',
+            },
+            { settings: {} },
+        );
+        expect((qcEmpty.summary as unknown as DailySummary).funnel.gate).toBe('qc-empty');
+        const unknown = funnelResults({ report: 'no-content' }, { settings: {} });
+        expect((unknown.summary as unknown as DailySummary).funnel.gate).toBe('unknown');
+        // A cleared-candidates file is NOT pre-refusal evidence once a refusal cleared it.
+        const refused = funnelResults(
+            {
+                'episode-pool': JSON.stringify([pooledDoc('a')]),
+                'episode-candidates': JSON.stringify({ metadata: { doc_count: 1, docs: [] } }),
+                'episode-duration-refusal': refusal({}),
+                report: 'no-content',
+            },
+            { settings: {} },
+        );
+        expect((refused.summary as unknown as DailySummary).funnel.gate).toBe('episode-duration');
+    });
+
+    it('retains the 2026-10-21 mismatch with a diagnostic instead of reconciling arithmetic', () => {
+        const funnel = (
+            funnelResults(
+                {
+                    'episode-pool': JSON.stringify([pooledDoc('a'), pooledDoc('b'), pooledDoc('c')]),
+                    'episode-annotated': JSON.stringify(
+                        Array.from({ length: 7 }, (_, index) => pooledDoc(`p${index}`)),
+                    ),
+                    'episode-exclusions': JSON.stringify({
+                        excluded: [{ id: 'q', rule: 'policy-dispute', matched: 'lawsuit' }],
+                        kept: ['a', 'b', 'c', 'd', 'e', 'f'],
+                    }),
+                    'episode-candidates': JSON.stringify({
+                        metadata: {
+                            doc_count: 7,
+                            docs: Array.from({ length: 6 }, (_, index) => pooledDoc(`p${index}`)),
+                        },
+                    }),
+                    'episode-plan': JSON.stringify(Array.from({ length: 6 }, (_, index) => pooledDoc(`p${index}`))),
+                    'publish-status': 'full',
+                },
+                { settings: {} },
+            ).summary as unknown as DailySummary
+        ).funnel;
+        expect(funnel.poolCount).toBe(3);
+        expect(funnel.annotatedCount).toBe(7);
+        expect(funnel.topicKeptCount).toBe(6);
+        expect(funnel.dedupKeptCount).toBe(6);
+        expect(funnel.plannedCount).toBe(6);
+        expect(funnel.gate).toBeNull();
+        expect(funnel.diagnostics.map((diagnostic) => diagnostic.code)).toContain('board.daily.funnel.mismatch');
+    });
+
+    it('bounds exclusion rows to 100 with 200-char strings and truncation diagnostics', () => {
+        const excluded = Array.from({ length: 101 }, (_, index) => ({
+            id: `x${index}`,
+            rule: `${'r'.repeat(250)}-${index}`,
+            matched: 'm'.repeat(250),
+        }));
+        const funnel = (
+            funnelResults(
+                { 'episode-exclusions': JSON.stringify({ excluded, kept: [] }), report: 'no-content' },
+                { settings: {} },
+            ).summary as unknown as DailySummary
+        ).funnel;
+        expect(funnel.exclusions).toHaveLength(100);
+        expect(funnel.exclusions[0]?.rule).toHaveLength(200);
+        expect(funnel.exclusions[0]?.matched).toHaveLength(200);
+        expect(funnel.diagnostics.map((diagnostic) => diagnostic.code)).toContain('board.daily.funnel.truncated');
+    });
+
+    it('keeps malformed or missing evidence explicit without zeroing the other stages', () => {
+        const funnel = (
+            funnelResults(
+                {
+                    'episode-pool': '{not json',
+                    'episode-annotated': JSON.stringify([pooledDoc('a')]),
+                    'episode-qc-rejections': JSON.stringify({ rejected: 'no-array' }),
+                    report: 'no-content',
+                },
+                { settings: {} },
+            ).summary as unknown as DailySummary
+        ).funnel;
+        expect(funnel.poolCount).toBeNull();
+        expect(funnel.annotatedCount).toBe(1);
+        expect(funnel.qcRejectedCount).toBeNull();
+        expect(funnel.gate).toBe('unknown');
+    });
+
+    it('diagnoses contradictory refusal evidence on a completed run without rewriting the outcome', () => {
+        const summary = funnelResults(
+            { 'episode-duration-refusal': refusal({}), 'publish-status': 'full' },
+            { settings: {} },
+        ).summary as unknown as DailySummary;
+        expect(summary.outcome).toBe('full');
+        expect(summary.funnel.gate).toBeNull();
+        expect(summary.funnel.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+            'board.daily.funnel.contradictory',
+        );
+    });
+
+    it('nulls the whole funnel for a superseded workspace', () => {
+        const funnel = (
+            funnelResults({ 'episode-pool': '[{"id":"a"}]', report: 'no-content' }, { marker: 'foreign' })
+                .summary as unknown as DailySummary
+        ).funnel;
+        expect(funnel.poolCount).toBeNull();
+        expect(funnel.gate).toBe('unknown');
+    });
+});
+
+describe('reader funnel surface (real server + files)', () => {
+    async function seededFunnelProject(overrides?: Record<string, string | null>) {
+        const root = tempDir('kk-daily-funnel-proj-');
+        const workDir = join(root, '.works', 'kk-daily-ai-voice2', STAMP);
+        mkdirSync(workDir, { recursive: true });
+        seedFunnelWorkspace(workDir, overrides ?? {});
+        await captureRun(
+            { workflow: 'kk-daily-ai-voice2', runId: 'run-1', workDir, stamp: STAMP, settings: FUNNEL_SETTINGS },
+            { projectPath: root },
+        );
+        return { root, workDir };
+    }
+
+    it('serves the funnel through the results route with available funnel artifacts', async () => {
+        const { root } = await seededFunnelProject();
+        const board = startFakeBoard(root, [...passedActions(), ...funnelActions()]);
+        const reader = startReader(board.origin, root);
+        const results = await getResults(reader);
+        const funnel = (results.summary as unknown as DailySummary).funnel;
+        expect(funnel).toMatchObject({
+            poolCount: 4,
+            topicKeptCount: 3,
+            gate: 'episode-duration',
+            measuredMinutes: 8.9,
+            estimatedMinutes: 14.4,
+        });
+        const ids = Object.fromEntries(results.artifacts.map((artifact) => [artifact.id, artifact.availability]));
+        expect(ids['episode-pool']).toBe('available');
+        expect(ids['episode-annotated']).toBe('available');
+        expect(ids['episode-exclusions']).toBe('available');
+        expect(ids['episode-duration-refusal']).toBe('available');
+        // The duration spec owns the measured shape; the generate specs refuse it here (producer ok,
+        // shape not stage=script) — one file may legitimately serve several specs' availability.
+        expect(ids['episode-script-refusal']).toBe('available');
+    }, 20_000);
+
+    it('serves sanitized funnel downloads: counts and reasons, never doc bodies', async () => {
+        const { root } = await seededFunnelProject();
+        const board = startFakeBoard(root, [...passedActions(), ...funnelActions()]);
+        const reader = startReader(board.origin, root);
+        const pool = await (
+            await fetch(`${reader}/api/workflows/kk-daily-ai-voice2/runs/run-1/artifacts/episode-pool`)
+        ).json();
+        expect(JSON.stringify(pool)).not.toContain('SECRET-BODY');
+        expect(JSON.stringify(pool)).not.toContain('Title a');
+        expect(JSON.stringify(pool)).toContain('"count":4');
+        const exclusions = await (
+            await fetch(`${reader}/api/workflows/kk-daily-ai-voice2/runs/run-1/artifacts/episode-exclusions`)
+        ).json();
+        expect(JSON.stringify(exclusions)).toContain('policy-dispute');
+        expect(JSON.stringify(exclusions)).toContain('lawsuit');
+        expect(JSON.stringify(exclusions)).not.toContain('Secret title');
+        const refusalBody = await (
+            await fetch(`${reader}/api/workflows/kk-daily-ai-voice2/runs/run-1/artifacts/episode-duration-refusal`)
+        ).json();
+        expect(JSON.stringify(refusalBody)).toContain('"measuredMinutes":8.9');
+        expect(JSON.stringify(refusalBody)).toContain('"minMinutes":15');
+    }, 20_000);
+
+    it('accepts a fallback-authored script refusal only through its own successful node', async () => {
+        const { root } = await seededFunnelProject({
+            [`30-audio/${STAMP}_11_generate_content_duration-refusal.json`]: refusal({ stage: 'script' }),
+        });
+        // generate failed; generate-fallback2 passed (and passedActions carries a failed generate).
+        const actions = [...passedActions(), ...funnelActions()].map((action) =>
+            action.node === 'generate' ? { ...action, status: 'failed', ok: false } : action,
+        );
+        const board = startFakeBoard(root, actions);
+        const reader = startReader(board.origin, root);
+        const results = await getResults(reader);
+        const funnel = (results.summary as unknown as DailySummary).funnel;
+        expect(funnel.gate).toBe('script');
+        // A failed primary never authorizes the primary spec, even for a shared file.
+        const ids = Object.fromEntries(results.artifacts.map((artifact) => [artifact.id, artifact.availability]));
+        expect(ids['episode-script-refusal']).toBe('missing');
+        expect(ids['episode-script-refusal-fallback']).toBe('available');
+    }, 20_000);
+
+    it('never authorizes funnel files with only failed or absent producers', async () => {
+        const { root } = await seededFunnelProject();
+        // No extract/qc-content/duration node recorded anything.
+        const board = startFakeBoard(root, passedActions());
+        const reader = startReader(board.origin, root);
+        const results = await getResults(reader);
+        const funnel = (results.summary as unknown as DailySummary).funnel;
+        expect(funnel.poolCount).toBeNull();
+        expect(funnel.gate).toBe('unknown');
+        expect(
+            (await fetch(`${reader}/api/workflows/kk-daily-ai-voice2/runs/run-1/artifacts/episode-pool`)).status,
+        ).toBe(404);
+    }, 20_000);
+
+    it('reports oversized funnel evidence as oversized, never truncated', async () => {
+        const { root } = await seededFunnelProject({
+            '10-collect/pool.json': JSON.stringify({
+                docs: Array.from({ length: 30_000 }, (_, i) => pooledDoc(`d${i}`)),
+            }),
+        });
+        const board = startFakeBoard(root, [...passedActions(), ...funnelActions()]);
+        const reader = startReader(board.origin, root);
+        const results = await getResults(reader);
+        const ids = Object.fromEntries(results.artifacts.map((artifact) => [artifact.id, artifact.availability]));
+        expect(ids['episode-pool']).toBe('oversized');
+        const funnel = (results.summary as unknown as DailySummary).funnel;
+        expect(funnel.poolCount).toBeNull();
+        expect(funnel.annotatedCount).toBe(4);
+    }, 20_000);
+});

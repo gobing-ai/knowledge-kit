@@ -281,3 +281,167 @@ export function dailySummaryFacts(results: RunResults, now: number): ResultFact[
     ];
     return facts;
 }
+
+/* ------------------------------------------------------------------------------------------------
+ * G82/0320 — the episode funnel view and the supply-context interval.
+ *
+ * The funnel is artifact-backed: counts, minutes and the gate come from the narrowed
+ * `summary.funnel` bag with their evidence ids; unknown stays unknown, never 0. The supply panel's
+ * interval is CONFIGURED context: `[startedAt − captured window, startedAt)` — the extract ladder
+ * bounds are not persisted, so the effective extraction window is explicitly unknown.
+ * ---------------------------------------------------------------------------------------------- */
+
+/** One operator exclusion reason rendered on the funnel panel (bounded rule + matched text). */
+export interface DailyFunnelExclusionView {
+    rule: string;
+    matched: string;
+}
+
+/** The evidenced gate that closed a no-content run; `unknown` means no artifact proved one. */
+export type DailyFunnelGateView =
+    | 'episode-duration'
+    | 'script'
+    | 'qc-floor'
+    | 'empty-pool'
+    | 'qc-empty'
+    | 'unknown'
+    | null;
+
+/** The narrowed funnel row, mirroring the contract without trusting it. */
+export interface DailyFunnelView {
+    poolCount: number | null;
+    annotatedCount: number | null;
+    qcRejectedCount: number | null;
+    topicKeptCount: number | null;
+    dedupKeptCount: number | null;
+    plannedCount: number | null;
+    estimatedMinutes: number | null;
+    measuredMinutes: number | null;
+    minMinutes: number | null;
+    maxMinutes: number | null;
+    gate: DailyFunnelGateView;
+    gateName: string;
+    exclusions: DailyFunnelExclusionView[];
+    /** Field name → fixed manifest artifact id (or `captured-settings`), for the evidence chips. */
+    evidence: Record<string, string>;
+    /** Gate/shape diagnostics the projection recorded (mismatch, truncation, contradiction). */
+    diagnostics: { code: string; message: string }[];
+}
+
+const GATE_NAMES: Record<Exclude<DailyFunnelGateView, null>, string> = {
+    'episode-duration': 'Duration floor refusal',
+    script: 'Script refusal',
+    'qc-floor': 'QC floor refusal',
+    'empty-pool': 'Empty pool',
+    'qc-empty': 'QC emptied the pool',
+    unknown: 'unknown — no gate proven',
+};
+
+function isFunnelGate(value: unknown): value is Exclude<DailyFunnelGateView, null> {
+    return (
+        value === 'episode-duration' ||
+        value === 'script' ||
+        value === 'qc-floor' ||
+        value === 'empty-pool' ||
+        value === 'qc-empty' ||
+        value === 'unknown'
+    );
+}
+
+/** Narrow the `summary.funnel` bag; a malformed funnel degrades to an all-unknown row. */
+export function funnelView(value: unknown): DailyFunnelView {
+    const record = asRecord(value);
+    const gate = isFunnelGate(record?.gate) ? record.gate : null;
+    return {
+        poolCount: asNumber(record?.poolCount),
+        annotatedCount: asNumber(record?.annotatedCount),
+        qcRejectedCount: asNumber(record?.qcRejectedCount),
+        topicKeptCount: asNumber(record?.topicKeptCount),
+        dedupKeptCount: asNumber(record?.dedupKeptCount),
+        plannedCount: asNumber(record?.plannedCount),
+        estimatedMinutes: asNumber(record?.estimatedMinutes),
+        measuredMinutes: asNumber(record?.measuredMinutes),
+        minMinutes: asNumber(record?.minMinutes),
+        maxMinutes: asNumber(record?.maxMinutes),
+        gate,
+        gateName: gate === null ? 'not applicable — a content run has no gate' : GATE_NAMES[gate],
+        exclusions: Array.isArray(record?.exclusions)
+            ? record.exclusions
+                  .map((entry) => {
+                      const row = asRecord(entry);
+                      return row === null || typeof row.rule !== 'string'
+                          ? null
+                          : { rule: row.rule, matched: typeof row.matched === 'string' ? row.matched : '' };
+                  })
+                  .filter((row): row is DailyFunnelExclusionView => row !== null)
+            : [],
+        evidence:
+            record === null
+                ? {}
+                : Object.fromEntries(
+                      Object.entries(record.evidence ?? {}).filter(
+                          (entry): entry is [string, string] => typeof entry[1] === 'string',
+                      ),
+                  ),
+        diagnostics: Array.isArray(record?.diagnostics)
+            ? record.diagnostics
+                  .map((entry) => {
+                      const row = asRecord(entry);
+                      return row === null ? null : { code: String(row.code ?? ''), message: String(row.message ?? '') };
+                  })
+                  .filter((row): row is { code: string; message: string } => row !== null)
+            : [],
+    };
+}
+
+const WINDOW_UNITS: Record<'s' | 'm' | 'h' | 'd', number> = {
+    s: 1000,
+    m: 60_000,
+    h: 3_600_000,
+    d: 86_400_000,
+};
+
+/**
+ * `window` as milliseconds, mirroring `kk store extract --window` (`<n>s|m|h|d`). A unitless,
+ * zero or malformed value is NOT defaulted — it yields null so the panel renders unknown.
+ */
+export function parseWindowMs(raw: string | null | undefined): number | null {
+    if (raw === null || raw === undefined) return null;
+    const match = /^(\d+)([smhd])$/.exec(raw.trim());
+    if (match === null) return null;
+    const [, amountText, unitText] = match;
+    const unit = unitText === 's' || unitText === 'm' || unitText === 'h' || unitText === 'd' ? unitText : null;
+    if (amountText === undefined || unit === null) return null;
+    const milliseconds = Number(amountText) * WINDOW_UNITS[unit];
+    return milliseconds > 0 ? milliseconds : null;
+}
+
+/** The configured supply interval: half-open `[startedAt − window, startedAt)`. */
+export interface DailySupplyContext {
+    windowMs: number;
+    fromMs: number;
+    untilMs: number;
+    fromLabel: string;
+    untilLabel: string;
+}
+
+/**
+ * The supply panel's configured context from the CAPTURED window setting and the run's own
+ * `startedAt` (server clock). Unknown input → null: the panel then renders the gap instead of
+ * issuing a query whose bounds nobody captured.
+ */
+export function supplyContextOf(
+    windowSetting: string | null | undefined,
+    startedAt: string | null | undefined,
+): DailySupplyContext | null {
+    const windowMs = parseWindowMs(windowSetting);
+    const started = startedAt === null || startedAt === undefined ? null : Date.parse(startedAt);
+    if (windowMs === null || started === null || !Number.isFinite(started)) return null;
+    return {
+        windowMs,
+        fromMs: started - windowMs,
+        untilMs: started,
+        fromLabel: formatTimestamp(new Date(started - windowMs).toISOString()),
+        untilLabel: formatTimestamp(new Date(started).toISOString()),
+    };
+}

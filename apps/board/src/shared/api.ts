@@ -1,6 +1,7 @@
 import type {
     BoardDiagnostic,
     BoardHealth,
+    CollectChannelYield,
     CollectItemLabelDetail,
     CollectRunStore,
     CollectRunStoreRow,
@@ -11,6 +12,7 @@ import type {
     CollectStoreSelections,
     RunConfig,
     RunResults,
+    StoreChannelsQuery,
     WorkflowName,
 } from '../contracts';
 import type { RunListPage } from './run-selection';
@@ -86,6 +88,16 @@ export function storeSelectionsQueryString(query: StoreSelectionsQuery): string 
     return params.toString();
 }
 
+/** The channels route's query string: `from`/`until`/`page` are always present (0319). */
+export function storeChannelsQueryString(query: StoreChannelsQuery): string {
+    const params = new URLSearchParams({
+        from: String(query.fromMs),
+        until: String(query.untilMs),
+        page: String(query.page),
+    });
+    return params.toString();
+}
+
 /** The documented default reader origin (design §4). */
 export const DEFAULT_READER_ORIGIN = 'http://127.0.0.1:4340';
 
@@ -95,6 +107,11 @@ export interface BoardClientOptions {
     readerOrigin: string;
     /** Exact Board origin the reader is configured to accept. */
     boardOrigin: string;
+    /**
+     * The loopback reader origin the Collect channel-yield aggregate always targets (0319), even in
+     * native mode. Defaults to {@link DEFAULT_READER_ORIGIN}; must be loopback http.
+     */
+    aggregateReaderOrigin?: string;
     /** Injectable fetch (tests); defaults to the platform implementation. */
     fetchImpl?: FetchLike;
 }
@@ -123,6 +140,8 @@ export interface BoardClient {
     storeItems(runId?: string, query?: StoreItemsQuery): Promise<CollectStoreItems>;
     /** One page of selections, filtered. */
     storeSelections(query?: StoreSelectionsQuery): Promise<CollectStoreSelections>;
+    /** The 30-day channel-yield + plugin-count aggregate (always the loopback aggregate reader). */
+    storeChannels(query: StoreChannelsQuery): Promise<CollectChannelYield>;
 }
 
 /**
@@ -231,6 +250,10 @@ export function createBoardClient(options: BoardClientOptions): BoardClient {
     }
     if (!isNativeSpur && !isLoopbackHttpOrigin(options.readerOrigin)) {
         throw new Error(`reader origin must be loopback http, got '${options.readerOrigin}'`);
+    }
+    const aggregateReader = origin(options.aggregateReaderOrigin ?? DEFAULT_READER_ORIGIN);
+    if (!isLoopbackHttpOrigin(options.aggregateReaderOrigin ?? DEFAULT_READER_ORIGIN)) {
+        throw new Error(`aggregate reader origin must be loopback http, got '${options.aggregateReaderOrigin}'`);
     }
     const doFetch: FetchLike = options.fetchImpl ?? fetch;
 
@@ -763,6 +786,10 @@ export function createBoardClient(options: BoardClientOptions): BoardClient {
                 : getJson<CollectStoreSelections>(
                       `${reader}/api/workflows/kk-collect/store/selections?${storeSelectionsQueryString(query)}`,
                   ),
+        storeChannels: (query) =>
+            getJson<CollectChannelYield>(
+                `${aggregateReader}/api/workflows/kk-collect/store/channels?${storeChannelsQueryString(query)}`,
+            ),
         runDetail: (runId) => getJson<unknown>(`${board}/api/runs/${encodeURIComponent(runId)}`),
         progress: (runId) => getJson<unknown>(`${board}/api/runs/${encodeURIComponent(runId)}/progress`),
     };

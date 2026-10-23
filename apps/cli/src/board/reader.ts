@@ -1,4 +1,11 @@
-import type { BoardDiagnostic, RunCapture, RunConfig, RunResults, WorkflowName } from '@gobing-ai/kk-board/contracts';
+import type {
+    BoardDiagnostic,
+    RunCapture,
+    RunConfig,
+    RunResults,
+    StoreChannelsQuery,
+    WorkflowName,
+} from '@gobing-ai/kk-board/contracts';
 import { ITEM_DECISION_IDS } from '@gobing-ai/kk-store';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { captureRecordPath, markerPath, readCaptureRecord, readOwnerMarker } from './capture';
@@ -6,12 +13,13 @@ import { type ArtifactObservation, isTerminalStatus, projectCollectResults, type
 import {
     type CollectStoreItemsQuery,
     type CollectStoreSelectionsQuery,
+    storeChannels,
     storeItems,
     storeOverview,
     storeRun,
     storeSelections,
 } from './collect-store';
-import { dagProducerState, projectDailyResults } from './daily-voice';
+import { dagProducerState, projectDailyResults, sanitizeFunnelArtifact } from './daily-voice';
 import { itcResultSpecs, projectItcResults } from './itc';
 import {
     type ArtifactSpec,
@@ -569,6 +577,15 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
                 },
             };
         }
+        // G82/0320: the daily funnel JSON ids serve a sanitized projection (counts and bounded
+        // rule/reason strings), never the scraped doc bodies the raw artifacts carry.
+        const sanitized = sanitizeFunnelArtifact(workflow, artifactId, observed.text);
+        if (sanitized !== null) {
+            return {
+                status: 200,
+                body: { schemaVersion: 1, artifact: artifactId, projection: sanitized },
+            };
+        }
         return {
             status: range === null ? 200 : 206,
             body: {
@@ -609,6 +626,10 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         return { status: 200, body: await storeSelections({ projectPath, fs }, query) };
     }
 
+    async function storeChannelsFor(query: StoreChannelsQuery): Promise<BoardResponse> {
+        return { status: 200, body: await storeChannels({ projectPath, fs }, query) };
+    }
+
     const server = Bun.serve({
         hostname: '127.0.0.1',
         port,
@@ -643,6 +664,7 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
             }
             const overviewMatch = /^\/api\/workflows\/([^/]+)\/store\/overview$/.exec(path);
             const selectionsMatch = /^\/api\/workflows\/([^/]+)\/store\/selections$/.exec(path);
+            const channelsMatch = /^\/api\/workflows\/([^/]+)\/store\/channels$/.exec(path);
             const storeItemsMatch = /^\/api\/workflows\/([^/]+)\/store\/items$/.exec(path);
             const runStoreSelectionsMatch = /^\/api\/workflows\/([^/]+)\/runs\/([^/]+)\/store\/selections$/.exec(path);
             const runStoreMatch = /^\/api\/workflows\/([^/]+)\/runs\/([^/]+)\/store$/.exec(path);
@@ -650,6 +672,7 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
             const storeMatch =
                 overviewMatch ??
                 selectionsMatch ??
+                channelsMatch ??
                 storeItemsMatch ??
                 runStoreSelectionsMatch ??
                 runStoreMatch ??
@@ -671,6 +694,12 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
                     const query = parseSelectionsQuery(url.searchParams);
                     if ('response' in query) return jsonResponse(query.response.body, query.response.status, cors);
                     const response = await storeSelectionsFor(query.query);
+                    return jsonResponse(response.body, response.status, cors);
+                }
+                if (channelsMatch !== null) {
+                    const query = parseChannelsQuery(url.searchParams);
+                    if ('response' in query) return jsonResponse(query.response.body, query.response.status, cors);
+                    const response = await storeChannelsFor(query.query);
                     return jsonResponse(response.body, response.status, cors);
                 }
                 if (storeItemsMatch !== null) {
@@ -769,6 +798,9 @@ const ITEMS_QUERY_KEYS = new Set(['page', 'source', 'seen', 'decision', 'value',
 
 /** The query keys `…/store/selections` declares. */
 const SELECTIONS_QUERY_KEYS = new Set(['page', 'runId', 'topic', 'status', 'search']);
+
+/** The query keys `…/store/channels` declares (0319). */
+const CHANNELS_QUERY_KEYS = new Set(['from', 'until', 'page']);
 
 /** A bounded 400 for a malformed store query: the offending value is never echoed. */
 function invalidQuery(message: string): BoardResponse {
@@ -885,6 +917,46 @@ export function parseSelectionsQuery(
             ...(search ? { search } : {}),
         },
     };
+}
+
+/**
+ * The `…/store/channels` query (0319): `from`/`until` are required nonnegative safe-integer epoch
+ * milliseconds with `from < until`; `page` is a positive safe integer (default 1). Duplicates and
+ * extra keys are refused, exactly like every other store route.
+ */
+export function parseChannelsQuery(
+    params: URLSearchParams,
+): { query: StoreChannelsQuery } | { response: BoardResponse } {
+    for (const key of params.keys()) {
+        if (!CHANNELS_QUERY_KEYS.has(key)) return { response: invalidQuery('Unknown query parameter.') };
+    }
+    for (const key of CHANNELS_QUERY_KEYS) {
+        if (params.getAll(key).length > 1) return { response: invalidQuery('Duplicate query parameter.') };
+    }
+    const rawFrom = params.get('from');
+    const rawUntil = params.get('until');
+    if (rawFrom === null || rawUntil === null) {
+        return { response: invalidQuery('`from` and `until` are required.') };
+    }
+    const fromMs = parseEpochMs(rawFrom);
+    const untilMs = parseEpochMs(rawUntil);
+    if (fromMs === null || untilMs === null) {
+        return { response: invalidQuery('`from` and `until` must be nonnegative integer epoch milliseconds.') };
+    }
+    if (fromMs >= untilMs) return { response: invalidQuery('`from` must be less than `until`.') };
+    const rawPage = params.get('page');
+    const page = rawPage === null ? 1 : Number(rawPage);
+    if (rawPage !== null && (!/^\d+$/.test(rawPage) || !Number.isSafeInteger(page) || page < 1)) {
+        return { response: invalidQuery('`page` must be an integer of at least 1.') };
+    }
+    return { query: { fromMs, untilMs, page } };
+}
+
+/** A nonnegative safe-integer epoch-millisecond value, or `null` when it is not one. */
+function parseEpochMs(raw: string): number | null {
+    if (!/^\d+$/.test(raw)) return null;
+    const value = Number(raw);
+    return Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 
 /** Reject unknown query parameters: a reader route takes none (§9). */

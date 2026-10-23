@@ -385,16 +385,17 @@ origin or project, `404` unknown capture/artifact or a changed owner, `405` muta
 unsatisfiable range, `422` malformed stored evidence, `503` Board authority unavailable.
 
 **Collect store views (G81, task 0307 — `docs/design/collect-store-views.md` §3).** ADR-035's
-2026-10-16 amendment lifts artifacts-only for `kk-collect` alone: three read-only routes project
+2026-10-16 amendment lifts artifacts-only for `kk-collect` alone: four read-only routes project
 `<project>/.works/kk.db` (never Spur, never a copy of the store into artifacts).
 
 | Route | Query | Identity |
 | ------- | ------- | ---------- |
 | `/api/workflows/kk-collect/store/overview` | `runs=<id>,…` (1–25 ids matching the reader's run-id rule) | ids only select rows; no Board call |
+| `/api/workflows/kk-collect/store/channels` | `from`/`until` (required nonnegative safe-integer epoch ms, `from < until`), `page` (≥1, default 1) | no Board call; one read-only aggregate, both tables, 30 days/page (0319) |
 | `/api/workflows/kk-collect/runs/<id>/store` | none | project + Spur run detail (no capture record) |
 | `/api/workflows/kk-collect/runs/<id>/store/items` | `page` (≥1), `source` (∈ the store's own values), `seen` (`new`/`reseen`), `decision`+`value` (`[A-Za-z0-9._-]{1,64}`, together or not at all), `selection` (`selected`/`published`/`dropped`/`none`) | project + Spur run detail (no capture record) |
 
-Only these three routes accept query parameters; every other route still refuses all of them
+Only these four routes accept query parameters; every other route still refuses all of them
 (`400 board.query.invalid`), and another workflow on a store route is `404 board.route.unknown`.
 The per-run routes authorize with the project + run-detail half of the shipped `authorize()`
 (`authorizeRun`, which `authorize()` now delegates to), so a run that predates capture still has its
@@ -403,11 +404,15 @@ store views while every capture-gated route keeps its refusals.
 Shapes (type-only in `apps/board/src/contracts.ts`): `CollectStoreOverview`
 (`{availability, schemaVersion: 1, lastStoredAt, rows: Record<runId, CollectRunStoreRow | null>}`),
 `CollectRunStore` (`{…, runId, row, labelQuality[]}`), `CollectStoreItems`
-(`{…, runId, page, pageSize: 25, total, items[], sources[]}`). A row carries `sourceCounts`,
+(`{…, runId, page, pageSize: 25, total, items[], sources[]}`), and (0319) `CollectChannelYield`
+(`{…, fromMs, untilMs, timeZone, page, pageSize: 30, totalDays, sources[], plugins[], byDay[],
+bySource, runsByDay[], lastPositiveAt}`). A row carries `sourceCounts`,
 `inserted`, `updated`, `labelRows` (observations), `labeledItems` (distinct items),
 `labelRowsBySource` and `yield` — items FIRST seen in the run by their strongest status
 (`published` > `selected` > `dropped`). Titles cap at 300 characters and `url` is served only when
 `canonical_url` is `http(s)`; `collect_runs.started_at`/`finished_at` are never shown as a duration.
+`bySource` and `totalDays` cover the whole `[fromMs, untilMs)` interval; `byDay`/`runsByDay` are the
+30-day page over the union of item/tick local-day keys, newest first, zero-filled on the missing side.
 
 Read-only contract: the file is `stat`-ed first (a missing path is never opened — `openStore` would
 create it), opened with `migrate: false`, closed per request, and no request changes `sqlite_master`
@@ -505,6 +510,24 @@ and a **Workflow Config Summary** of the sanitized captured settings only. ADR-0
 optional: only recorded output descriptors are served, and absent evidence is `unavailable`, never
 an invented zero. The digest-first topology capture, the artifact-only projection and the DAG
 producer fallback are frozen in `docs/design/workflow-board-modules.md` §9.
+
+Since 0320 (G82) the Summary tab also renders the **episode funnel** and one **supply-context
+panel**. The funnel (`summary.funnel`, contract `DailyEpisodeFunnel`) is artifact-backed by the
+run's own stage files — pool, annotation input, topic exclusions, QC rejections, post-dedup
+candidates, plan, the floor/duration/script refusals and the duration verdict — with every count
+carrying its fixed manifest artifact id in `evidence` (or `captured-settings` for the
+floor/ceiling fallbacks); refusal-cleared candidates are unknown rather than zero, stage
+disagreement (e.g. 2026-10-21: pool 3 vs annotated 7) keeps both numbers with a
+`board.daily.funnel.mismatch` diagnostic instead of arithmetic, and a no-content run's gate follows
+the precedence measured refusal → script refusal → QC floor → empty pool → qc-empty → unknown. The
+funnel JSON artifact ids (`episode-*`) download as sanitized count/reason projections — bounded
+rule/matched strings and refusal numbers, never the scraped doc bodies. The supply panel is the ONE
+store consumption Daily has (ADR-035 amendment 2026-10-22): the 0319 channels aggregate fetched
+through `BoardClient.storeChannels` for the half-open `[run.startedAt − captured window,
+run.startedAt)` interval, rendered with the shared `ChannelYieldTable`/`PluginRunTable`, labeled
+**configured context** because the extract ladder bounds are not persisted (the effective
+extraction window is unknown), and kept visibly distinct from the artifact-backed funnel. A run
+without a captured `window` or `startedAt` renders unknown and issues no store query.
 
 ### `kk-itc` Board capture + the IT Content module (G8, task 0254)
 
@@ -1276,7 +1299,7 @@ type crosses `src/index.ts`.
 | `itemFacts(doc)`, `ItemFacts`, `SourceTier` | function / types | The deterministic fact columns (0227 R1): `engagement`, `bodyChars`, `sourceTier`, `lang`, `domain` |
 | `storyTokens(title)`, `storyIdFor(title, candidates, threshold)`, `storyIdForUrls(urls, candidates)`, `StoryPolicy`, `StoryCandidate`, `StoryUrlIdentity`, `DEFAULT_STORY_POLICY`, `DEFAULT_STORY_THRESHOLD`, `DEFAULT_STORY_WINDOW_HOURS` | functions / types / consts | Deterministic story key (0227 R2; URL identity 0316 R1): `storyIdForUrls` matches URL identity first — the item's own `canonical_url` or its `bodyUrls` against a candidate's `canonicalUrl`/`bodyUrls`, either direction — then `storyIdFor` clusters titles: CJK bigrams + Latin words, Jaccard at `>= threshold`; ties by earliest `first_seen_at` then smallest `id` |
 | `ItemRecord`, `UpsertDocsResult`, `CollectRunRecord`, `LabelRecord`, `LabelSource`, `LabelConfidence`, `LockRecord`, … | types | Row and input types for the DAOs above; `LabelRecord.confidence` is the `HIGH \| MEDIUM \| LOW` level, `null` only on a row no `kk store label` pass wrote |
-| `CollectViewDao`, `CollectViewChannelDay` | class / type | Read-only aggregate tier over the four Collect tables (GROUP BY only, no writes): `channelYield(sinceMs)` — new items per local day per `items.source`, behind `kk store stats` — plus the Board reader's `runRows` / `itemSources` / `itemsPage` views |
+| `CollectViewDao`, `CollectViewChannelDay`, `CollectViewRunDay` | class / type | Read-only aggregate tier over the four Collect tables (GROUP BY only, no writes): `channelYield(sinceMs, untilMs?)` — new items per local day per `items.source`, behind `kk store stats` and the 0319 channels route — plus `channelRunYield(fromMs, untilMs)` (daily `collect_runs` ticks and validated plugin counts), and the Board reader's `runRows` / `itemSources` / `itemsPage` views |
 
 Migrations are embedded `KkMigration[]` (`{id, sql}`, append-only; `0001_kk_store_init` + `0002_labels_confidence_run_id` today) whose
 DDL is derived from each `defineTable(...).createTableSql` — there is no hand-written DDL file — and
