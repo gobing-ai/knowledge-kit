@@ -967,7 +967,9 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             const capped = run(['daily-extract', dir, 'ai-news', '24h', '60', 'voxcpm'], { ...env, CALLS: calls });
             expect(capped.status, capped.stderr).toBe(0);
             expect(readFileSync(calls, 'utf-8').trim().split('\n')).toEqual(['24h', '48h', '72h', '168h']);
-            expect((JSON.parse(readFileSync(poolPath, 'utf-8')) as { id: string }[]).map((d) => d.id)).toEqual(['168h']);
+            expect((JSON.parse(readFileSync(poolPath, 'utf-8')) as { id: string }[]).map((d) => d.id)).toEqual([
+                '168h',
+            ]);
         });
     });
 
