@@ -66,6 +66,23 @@ export interface CollectViewChannelDay {
     items: number;
 }
 
+/** One day's tick count plus summed plugin counts (`CollectViewDao.channelRunYield`). */
+export interface CollectViewRunDay {
+    /** Local calendar day of `collect_runs.started_at`, `YYYY-MM-DD`. */
+    day: string;
+    /** Number of `collect_runs` rows that day (never invalidated by malformed evidence). */
+    runs: number;
+    /** Summed nonnegative-integer plugin counts, or `null` when any row that day is malformed. */
+    plugins: Record<string, number> | null;
+}
+
+/** The daily plugin table plus the last positive contribution time per plugin. */
+export interface CollectViewRunYield {
+    days: CollectViewRunDay[];
+    /** plugin → the newest valid positive tick `started_at` before `untilMs` (retained history). */
+    lastPositiveAt: Record<string, number>;
+}
+
 /** One item as the store views render it. */
 export interface CollectViewItem {
     id: string;
@@ -199,6 +216,27 @@ function statusOf(rank: number | null): SelectionStatus | 'none' {
     if (rank === 2) return 'selected';
     if (rank === 1) return 'dropped';
     return 'none';
+}
+
+/**
+ * `collect_runs.source_counts_json` as a nonnegative-integer map, or `null` when it is malformed:
+ * unparseable JSON, a non-object/array, or any value that is not an integer ≥ 0. A valid row with
+ * an absent key simply omits that plugin (zero recorded contributions).
+ */
+function parseSourceCounts(raw: string): Record<string, number> | null {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(raw);
+    } catch {
+        return null;
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+    const counts: Record<string, number> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+        if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) return null;
+        counts[key] = value;
+    }
+    return counts;
 }
 
 /** DAO for the Board reader's read-only Collect store views. */
@@ -353,21 +391,92 @@ export class CollectViewDao extends BaseDao {
      * total is thin because one channel went quiet or because every channel did (2026-10-22). Days
      * and hours use SQLite's `localtime`, so the DST boundary is the host's, not a fixed offset.
      */
-    async channelYield(sinceMs: number): Promise<CollectViewChannelDay[]> {
-        const rows = await this.adapter.queryAll<{ day: string; source: string; items: number }>(
-            `SELECT date(first_seen_at / 1000, 'unixepoch', 'localtime') AS day,
-                    source AS source,
-                    COUNT(*) AS items
-             FROM items WHERE first_seen_at >= ?
-             GROUP BY day, source
-             ORDER BY day DESC, items DESC, source ASC`,
-            sinceMs,
-        );
+    async channelYield(sinceMs: number, untilMs?: number): Promise<CollectViewChannelDay[]> {
+        const rows =
+            untilMs === undefined
+                ? await this.adapter.queryAll<{ day: string; source: string; items: number }>(
+                      `SELECT date(first_seen_at / 1000, 'unixepoch', 'localtime') AS day,
+                              source AS source,
+                              COUNT(*) AS items
+                       FROM items WHERE first_seen_at >= ?
+                       GROUP BY day, source
+                       ORDER BY day DESC, items DESC, source ASC`,
+                      sinceMs,
+                  )
+                : await this.adapter.queryAll<{ day: string; source: string; items: number }>(
+                      `SELECT date(first_seen_at / 1000, 'unixepoch', 'localtime') AS day,
+                              source AS source,
+                              COUNT(*) AS items
+                       FROM items WHERE first_seen_at >= ? AND first_seen_at < ?
+                       GROUP BY day, source
+                       ORDER BY day DESC, items DESC, source ASC`,
+                      sinceMs,
+                      untilMs,
+                  );
         return rows.map((row) => ({
             day: row.day,
             source: row.source === '' ? '(none)' : row.source,
             items: row.items,
         }));
+    }
+
+    /**
+     * Daily plugin counts and tick counts over `[fromMs, untilMs)` (the 0319 channels route).
+     *
+     * `collect_runs.started_at` is an ingest timestamp, never a duration; days use SQLite's
+     * `localtime` like {@link channelYield}. A malformed `source_counts_json` (or any non-integer /
+     * negative value) invalidates only that day's plugin totals — the day's tick count survives and
+     * the caller reports a bounded diagnostic. `lastPositiveAt` is computed over retained history
+     * (`started_at < untilMs`), not just the interval, so a plugin that went quiet is still named.
+     */
+    async channelRunYield(fromMs: number, untilMs: number): Promise<CollectViewRunYield> {
+        const rows = await this.adapter.queryAll<{ day: string; startedAt: number; sourceCountsJson: string }>(
+            `SELECT date(started_at / 1000, 'unixepoch', 'localtime') AS day,
+                    started_at AS startedAt,
+                    source_counts_json AS sourceCountsJson
+             FROM collect_runs WHERE started_at >= ? AND started_at < ?
+             ORDER BY started_at ASC`,
+            fromMs,
+            untilMs,
+        );
+        const byDay = new Map<string, { runs: number; plugins: Record<string, number> | null }>();
+        for (const row of rows) {
+            const entry = byDay.get(row.day) ?? { runs: 0, plugins: {} as Record<string, number> | null };
+            entry.runs += 1;
+            const counts = parseSourceCounts(row.sourceCountsJson);
+            if (counts === null) {
+                entry.plugins = null;
+            } else if (entry.plugins !== null) {
+                for (const [plugin, count] of Object.entries(counts)) {
+                    entry.plugins[plugin] = (entry.plugins[plugin] ?? 0) + count;
+                }
+            }
+            byDay.set(row.day, entry);
+        }
+
+        const history = await this.adapter.queryAll<{ startedAt: number; sourceCountsJson: string }>(
+            `SELECT started_at AS startedAt, source_counts_json AS sourceCountsJson
+             FROM collect_runs WHERE started_at < ?
+             ORDER BY started_at ASC`,
+            untilMs,
+        );
+        const lastPositiveAt: Record<string, number> = {};
+        for (const row of history) {
+            const counts = parseSourceCounts(row.sourceCountsJson);
+            if (counts === null) continue; // invalid rows never count as a positive contribution
+            for (const [plugin, count] of Object.entries(counts)) {
+                if (count > 0) lastPositiveAt[plugin] = row.startedAt;
+            }
+        }
+
+        return {
+            days: [...byDay.entries()].map(([day, entry]) => ({
+                day,
+                runs: entry.runs,
+                plugins: entry.plugins,
+            })),
+            lastPositiveAt,
+        };
     }
 
     /**

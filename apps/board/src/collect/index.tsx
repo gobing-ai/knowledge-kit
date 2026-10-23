@@ -9,6 +9,8 @@ import {
     useState,
 } from 'react';
 import type {
+    BoardDiagnostic,
+    CollectChannelYield,
     CollectRunStore,
     CollectStoreItem,
     CollectStoreItems,
@@ -20,6 +22,7 @@ import type {
 import {
     type BoardClient,
     createBoardClient,
+    DEFAULT_READER_ORIGIN,
     MAX_OVERVIEW_RUNS,
     readerOriginFrom,
     type StoreItemFilterName,
@@ -40,6 +43,7 @@ import {
     tick,
 } from '../shared/refresh';
 import {
+    COLLECT_MODULE_PATH,
     COLLECT_TAB_ALIASES,
     COLLECT_TABS,
     type CollectTab,
@@ -82,6 +86,31 @@ function messageOf(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
+/** The channel-yield range pills, in display order (0319). */
+const COLLECT_RANGES = ['24h', '7d', '14d', '30d', 'All'] as const;
+type CollectRange = (typeof COLLECT_RANGES)[number];
+
+/** `?range=` resolution: an invalid or missing range defaults to 14d (R3). */
+function parseRange(search: string): { range: CollectRange; diagnostic: BoardDiagnostic | null } {
+    const raw = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search).get('range');
+    if (raw === null) return { range: '14d', diagnostic: null };
+    if ((COLLECT_RANGES as readonly string[]).includes(raw)) {
+        return { range: raw as CollectRange, diagnostic: null };
+    }
+    return {
+        range: '14d',
+        diagnostic: { code: 'board.deeplink.unknown-range', message: `Unknown range '${raw}'; showing 14d.` },
+    };
+}
+
+/** The `[fromMs, untilMs)` window a range pill names, from one captured `now` (R3). */
+function rangeWindow(range: CollectRange, now: number): { fromMs: number; untilMs: number } {
+    const untilMs = now;
+    if (range === 'All') return { fromMs: 0, untilMs };
+    const days = range === '24h' ? 1 : range === '7d' ? 7 : range === '14d' ? 14 : 30;
+    return { fromMs: untilMs - days * 86_400_000, untilMs };
+}
+
 /**
  * Poll one async loader on a steady interval with a capped backoff after failures, stopping
  * while the document is hidden.
@@ -115,11 +144,16 @@ function isOfflineError(msg: string): boolean {
 /** The six tabs of the Collect module. */
 export function CollectModule() {
     const [link] = useState(() => parseDeepLink(window.location.search, COLLECT_TABS, COLLECT_TAB_ALIASES));
+    const [rangeLink] = useState(() => parseRange(window.location.search));
     const [reader] = useState(() => readerOriginFrom(window.location.search, window.location.origin));
+    // The channel-yield aggregate always targets the loopback reader, resolved independently of the
+    // native client: a valid kkApi override wins, else the documented default reader (0319).
+    const [aggregateReader] = useState(() => readerOriginFrom(window.location.search, DEFAULT_READER_ORIGIN));
     const readerOrigin = reader.origin;
+    const aggregateReaderOrigin = aggregateReader.origin;
     const client = useMemo<BoardClient>(
-        () => createBoardClient({ readerOrigin, boardOrigin: window.location.origin }),
-        [readerOrigin],
+        () => createBoardClient({ readerOrigin, aggregateReaderOrigin, boardOrigin: window.location.origin }),
+        [readerOrigin, aggregateReaderOrigin],
     );
 
     const [rows, setRows] = useState<RunListRow[]>([]);
@@ -130,7 +164,9 @@ export function CollectModule() {
     });
     const [diagnostics, setDiagnostics] = useState(() => [
         ...link.diagnostics,
+        ...(rangeLink.diagnostic === null ? [] : [rangeLink.diagnostic]),
         ...(reader.diagnostic === null ? [] : [reader.diagnostic]),
+        ...(aggregateReader.diagnostic === null ? [] : [aggregateReader.diagnostic]),
     ]);
     const [isReaderOffline, setIsReaderOffline] = useState(false);
 
@@ -150,13 +186,17 @@ export function CollectModule() {
     const [selections, setSelections] = useState<CollectStoreSelections | null>(null);
     const [selectionsFilters, setSelectionsFilters] = useState<StoreSelectionsQuery>({ page: 1 });
 
+    // Summary channel-yield aggregate state (0319)
+    const [channels, setChannels] = useState<CollectChannelYield | null>(null);
+    const [channelsPage, setChannelsPage] = useState(1);
+
     // Modals and view controls
     const [selectedModalRunId, setSelectedModalRunId] = useState<string | null>(null);
     const [modalStoreRun, setModalStoreRun] = useState<CollectRunStore | null>(null);
     const [modalResults, setModalResults] = useState<RunResults | null>(null);
     const [modalProgress, setModalProgress] = useState<unknown>(null);
     const [modalConfig, setModalConfig] = useState<RunConfig | null>(null);
-    const [timeRange, setTimeRange] = useState('24h');
+    const [timeRange, setTimeRange] = useState<CollectRange>(rangeLink.range);
     const [showEffective, setShowEffective] = useState(false);
     const [runSearchQuery, setRunSearchQuery] = useState('');
     const [runStatusFilter, setRunStatusFilter] = useState<'all' | 'done' | 'failed' | 'running'>('all');
@@ -310,6 +350,34 @@ export function CollectModule() {
         }
     }, [client, selectionsFilters]);
 
+    // Channel-yield loader with a sequence token, so a stale range response never wins (R6).
+    const channelsRequests = useRef(requestSequence());
+    const loadChannels = useCallback(async () => {
+        const token = channelsRequests.current.begin();
+        const { fromMs, untilMs } = rangeWindow(timeRange, Date.now());
+        try {
+            const page = await client.storeChannels({ fromMs, untilMs, page: channelsPage });
+            if (!channelsRequests.current.isCurrent(token)) return;
+            setChannels(page);
+            setIsReaderOffline(false);
+        } catch (error) {
+            if (!channelsRequests.current.isCurrent(token)) return;
+            setChannels(null);
+            const msg = messageOf(error);
+            if (isOfflineError(msg)) {
+                setIsReaderOffline(true);
+            } else {
+                setDiagnostics((existing) => [...existing, { code: 'board.store.channels-unavailable', message: msg }]);
+            }
+        }
+    }, [client, timeRange, channelsPage]);
+
+    /** A range change restarts the aggregate at page 1 (R3). */
+    const rangeChanged = useCallback((range: string) => {
+        setTimeRange(range as CollectRange);
+        setChannelsPage(1);
+    }, []);
+
     // Dedicated modal run data loader
     useEffect(() => {
         if (!selectedModalRunId) {
@@ -388,6 +456,12 @@ export function CollectModule() {
         void loadSelections();
     }, [selection.tab, loadSelections]);
 
+    // Fetch the channel-yield aggregate when the Summary tab is selected (R1/R2).
+    useEffect(() => {
+        if (selection.tab !== 'summary') return;
+        void loadChannels();
+    }, [selection.tab, loadChannels]);
+
     // First visit picks newest run
     useEffect(() => {
         if (selection.runId === null && rows.length > 0) {
@@ -399,6 +473,15 @@ export function CollectModule() {
     useEffect(() => {
         syncSelectionUrl(selection, { location: window.location, history: window.history });
     }, [selection]);
+
+    // Persist the range pill in the URL (R3); the selection sync above preserves it on rewrite.
+    useEffect(() => {
+        if (window.location.pathname !== COLLECT_MODULE_PATH) return;
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('range') === timeRange) return;
+        params.set('range', timeRange);
+        window.history.replaceState(window.history.state, '', `${window.location.pathname}?${params.toString()}`);
+    }, [timeRange]);
 
     const tab = selection.tab;
     const now = Date.now();
@@ -445,7 +528,8 @@ export function CollectModule() {
             d.code !== 'board.store.run-unavailable' &&
             d.code !== 'board.store.unavailable' &&
             d.code !== 'board.store.items-unavailable' &&
-            d.code !== 'board.store.selections-unavailable'
+            d.code !== 'board.store.selections-unavailable' &&
+            d.code !== 'board.store.channels-unavailable'
         );
     });
 
@@ -465,6 +549,7 @@ export function CollectModule() {
                             void loadHistory();
                             if (selection.tab === 'items') void loadItems(selection.runId ?? '');
                             if (selection.tab === 'selections') void loadSelections();
+                            if (selection.tab === 'summary') void loadChannels();
                         }}
                         title="Refresh data"
                     >
@@ -500,6 +585,7 @@ export function CollectModule() {
                             void loadHistory();
                             if (selection.tab === 'items') void loadItems(selection.runId ?? '');
                             if (selection.tab === 'selections') void loadSelections();
+                            if (selection.tab === 'summary') void loadChannels();
                         }}
                     >
                         ↻ Retry Connection
@@ -531,12 +617,11 @@ export function CollectModule() {
             {/* Panel 1: Summary (Executive Operational Telemetry) */}
             {tab === 'summary' ? (
                 <SummaryPanel
-                    runs={rows}
-                    overview={overview}
-                    now={now}
+                    channels={channels}
                     timeRange={timeRange}
-                    onTimeRangeChange={setTimeRange}
-                    onInspectRun={handleInspectRun}
+                    onTimeRangeChange={rangeChanged}
+                    channelsPage={channelsPage}
+                    onChannelsPageChange={(delta) => setChannelsPage((page) => Math.max(1, page + delta))}
                 />
             ) : null}
 

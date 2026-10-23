@@ -1349,6 +1349,23 @@ skipped ticks have no row); an unreadable, missing, locked or schema-newer store
 only on routes that declare them. Daily AI Voice and IT Content stay artifacts-only. Detail:
 [Collect store views](design/collect-store-views.md).
 
+### Amendment — 2026-10-22 (G82: Daily AI Voice consumes Collect's read-only aggregate counts)
+
+Widens the 2026-10-16 amendment by exactly one consumption: the Daily AI Voice module may read the
+`GET /api/workflows/kk-collect/store/channels` aggregate (0319) to render one **supply-context**
+panel — the day × source new-item matrix and the per-day tick/plugin table — for the half-open
+window `[run.startedAt − captured config.window, run.startedAt)` of the selected `kk-daily-ai-voice2`
+run. This is the same read-only loopback route, the same `CollectChannelYield` contract and the same
+presentational tables the Collect module already serves; Daily adds no second DAO, route or query
+surface. Constraints: the panel is labelled **configured context** — the run's effective extraction
+window (the dailyExtract ladder's bounds) is not persisted and stays explicitly unknown; a run with
+no captured `window` setting or no recorded `startedAt` renders unknown and issues no query; store
+supply stays visibly distinct from the episode funnel, which continues to come only from the run's
+own authorized artifacts; a missing plugin key reads as 0 recorded contributions with invocation
+health unknown, never a dead source. Everything else about Daily stays artifacts-only (the funnel is
+artifact-backed), and IT Content stays artifacts-only without exception. Detail:
+[Workflow board modules](design/workflow-board-modules.md) §9.
+
 #### API/library claim sources and confidence
 
 | Claim | Source | Local verification | Confidence |

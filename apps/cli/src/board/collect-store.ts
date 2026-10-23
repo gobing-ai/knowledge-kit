@@ -1,12 +1,14 @@
 import { join } from 'node:path';
 import type {
     BoardDiagnostic,
+    CollectChannelYield,
     CollectRunStore,
     CollectRunStoreRow,
     CollectStoreItem,
     CollectStoreItems,
     CollectStoreOverview,
     CollectStoreSelections,
+    StoreChannelsQuery,
 } from '@gobing-ai/kk-board/contracts';
 import {
     type CollectViewItem,
@@ -84,6 +86,18 @@ const POLICY: BoardDiagnostic = {
 const SOURCE_COUNTS: BoardDiagnostic = {
     code: 'board.store.row-invalid',
     message: 'A stored run row carries source counts that are not valid JSON.',
+};
+
+/** The three named ingest plugins the plugin table always shows, plus observed keys (0319). */
+const NAMED_PLUGINS = ['aihot-ingest', 'horizon-ingest', 'last30days-ingest'] as const;
+
+/** Days per aggregate page for the channels route (design: 30). */
+export const CHANNELS_PAGE_SIZE = 30;
+
+/** One bounded diagnostic for malformed plugin counts on a channels day. */
+const CHANNEL_INVALID: BoardDiagnostic = {
+    code: 'board.store.channel-invalid',
+    message: 'A stored run row carries plugin counts that are not nonnegative integers.',
 };
 
 /** One opened store plus the label policy its effective-label reads use. */
@@ -443,4 +457,120 @@ function emptyItems(runId: string, query: CollectStoreItemsQuery, sources: strin
         sources,
         diagnostics: [],
     };
+}
+
+/** The reader host's IANA time zone, consistent with SQLite's `localtime` day grouping. */
+function hostTimeZone(): string {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
+/** The empty `…/store/channels` shape: no fabricated zero, just the unavailable envelope. */
+function emptyChannels(query: StoreChannelsQuery, diagnostics: BoardDiagnostic[]): CollectChannelYield {
+    return {
+        schemaVersion: 1,
+        availability: 'unavailable',
+        fromMs: query.fromMs,
+        untilMs: query.untilMs,
+        timeZone: hostTimeZone(),
+        page: query.page,
+        pageSize: CHANNELS_PAGE_SIZE,
+        totalDays: 0,
+        sources: [],
+        plugins: [],
+        byDay: [],
+        bySource: {},
+        runsByDay: [],
+        lastPositiveAt: {},
+        diagnostics,
+    };
+}
+
+/**
+ * `GET /api/workflows/kk-collect/store/channels` — one read-only aggregate serving BOTH tables:
+ * new-item yield (day × source) and tick/plugin counts (day × plugin), each bounded to 30 days.
+ *
+ * `bySource` and `totalDays` cover the whole `[fromMs, untilMs)` interval; only `byDay`/`runsByDay`
+ * are paged. A day known to one table but not the other is zero-filled on the missing side. A
+ * malformed `source_counts_json` day keeps its tick count but its plugin totals are `null` plus a
+ * bounded diagnostic. `lastPositiveAt` spans retained history, so a quiet plugin is still named.
+ */
+export async function storeChannels(deps: CollectStoreDeps, query: StoreChannelsQuery): Promise<CollectChannelYield> {
+    const session = await sessionFor(deps);
+    if (!session.ok) return emptyChannels(query, session.diagnostics);
+    const { store, diagnostics } = session.session;
+    try {
+        const [itemDays, runYield] = await Promise.all([
+            store.collectView.channelYield(query.fromMs, query.untilMs),
+            store.collectView.channelRunYield(query.fromMs, query.untilMs),
+        ]);
+
+        const sources = [...new Set(itemDays.map((row) => row.source))].sort();
+        const bySource: Record<string, number> = {};
+        const itemByDay = new Map<string, { total: number; sources: Record<string, number> }>();
+        for (const row of itemDays) {
+            const entry = itemByDay.get(row.day) ?? { total: 0, sources: {} };
+            entry.total += row.items;
+            entry.sources[row.source] = (entry.sources[row.source] ?? 0) + row.items;
+            itemByDay.set(row.day, entry);
+            bySource[row.source] = (bySource[row.source] ?? 0) + row.items;
+        }
+
+        const runByDay = new Map(runYield.days.map((day) => [day.day, day]));
+        const observedPlugins = new Set<string>();
+        for (const day of runYield.days) {
+            if (day.plugins !== null) for (const plugin of Object.keys(day.plugins)) observedPlugins.add(plugin);
+        }
+        for (const plugin of Object.keys(runYield.lastPositiveAt)) observedPlugins.add(plugin);
+        const plugins = [...new Set([...NAMED_PLUGINS, ...observedPlugins])].sort();
+
+        // The union of item/tick local-day keys, newest first. No synthetic empty calendar days.
+        const days = [...new Set([...itemByDay.keys(), ...runByDay.keys()])].sort().reverse();
+        const totalDays = days.length;
+        const offset = (Math.max(1, query.page) - 1) * CHANNELS_PAGE_SIZE;
+        const pageDays = days.slice(offset, offset + CHANNELS_PAGE_SIZE);
+
+        const byDay = pageDays.map((day) => {
+            const item = itemByDay.get(day);
+            const sourcesOfDay: Record<string, number> = {};
+            for (const source of sources) sourcesOfDay[source] = item?.sources[source] ?? 0;
+            return { day, total: item?.total ?? 0, sources: sourcesOfDay };
+        });
+
+        const runsByDay = pageDays.map((day) => {
+            const run = runByDay.get(day);
+            const pluginsOfDay =
+                run?.plugins === null
+                    ? null
+                    : Object.fromEntries(plugins.map((plugin) => [plugin, run?.plugins?.[plugin] ?? 0]));
+            return { day, runs: run?.runs ?? 0, plugins: pluginsOfDay };
+        });
+
+        const lastPositiveAt: Record<string, number | null> = {};
+        for (const plugin of plugins) lastPositiveAt[plugin] = runYield.lastPositiveAt[plugin] ?? null;
+
+        const channelDiagnostics = [...diagnostics];
+        if (runYield.days.some((day) => day.plugins === null)) channelDiagnostics.push(CHANNEL_INVALID);
+
+        return {
+            schemaVersion: 1,
+            availability: 'available',
+            fromMs: query.fromMs,
+            untilMs: query.untilMs,
+            timeZone: hostTimeZone(),
+            page: query.page,
+            pageSize: CHANNELS_PAGE_SIZE,
+            totalDays,
+            sources,
+            plugins,
+            byDay,
+            bySource,
+            runsByDay,
+            lastPositiveAt,
+            diagnostics: channelDiagnostics,
+        };
+    } catch {
+        return emptyChannels(query, [...diagnostics, UNREADABLE]);
+    } finally {
+        await store.close();
+    }
 }

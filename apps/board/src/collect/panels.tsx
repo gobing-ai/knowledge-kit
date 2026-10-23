@@ -1,5 +1,6 @@
 import type { ChangeEvent, MouseEvent } from 'react';
 import type {
+    CollectChannelYield,
     CollectItemLabelDetail,
     CollectRunStore,
     CollectStoreItem,
@@ -15,6 +16,7 @@ import {
     type StoreItemsQuery,
     type StoreSelectionsQuery,
 } from '../shared/api';
+import { ChannelYieldTable, PluginRunTable } from '../shared/channel-yield';
 import {
     type ArtifactView,
     bannerCounts,
@@ -77,107 +79,34 @@ function storeCellText(status: string): string {
     return status === 'running' ? 'in progress' : 'no store row';
 }
 
-/** Lightweight vector sparkline generator matching Observabilities & Histories UI. */
-export function Sparkline({ data, color = 'var(--color-spur-accent)' }: { data: readonly number[]; color?: string }) {
-    if (data.length < 2) return null;
-    const min = Math.min(...data);
-    const max = Math.max(...data);
-    const range = max - min || 1;
-    const width = 72;
-    const height = 28;
-    const padding = 2;
-    const points = data.map((val, idx) => {
-        const x = (idx / (data.length - 1)) * (width - padding * 2) + padding;
-        const y = height - padding - ((val - min) / range) * (height - padding * 2);
-        return `${x.toFixed(1)},${y.toFixed(1)}`;
-    });
-    const pathD = `M ${points.join(' L ')}`;
-    return (
-        <svg className="kk-sparkline-svg" viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
-            <path
-                d={pathD}
-                fill="none"
-                stroke={color}
-                strokeWidth="1.75"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
-        </svg>
-    );
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. SUMMARY PANEL (Observabilities & Histories Redesign)
+// 1. SUMMARY PANEL (channel yield + plugin counts, task 0319)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const TIME_RANGES = ['1h', '4h', '24h', '7d', '30d', 'All'] as const;
+const TIME_RANGES = ['24h', '7d', '14d', '30d', 'All'] as const;
 
+/**
+ * The Collect Summary: the real channel-yield (day × source) and per-plugin ingest-count
+ * aggregates served by `GET …/store/channels`. Range pills scope both tables and survive reload;
+ * aggregate-day paging is independent of Spur run-history paging. Unavailable/malformed evidence
+ * is a diagnostic, never a fabricated zero; label/yield totals and ratios are gone (R5).
+ */
 export function SummaryPanel({
-    runs,
-    overview,
-    now,
-    timeRange = '24h',
+    channels,
+    timeRange = '14d',
     onTimeRangeChange,
-    onInspectRun,
+    channelsPage = 1,
+    onChannelsPageChange,
 }: {
-    runs: readonly RunListRow[];
-    overview: CollectStoreOverview | null;
-    now: number;
+    channels: CollectChannelYield | null;
     timeRange?: string;
     onTimeRangeChange?: (range: string) => void;
-    onInspectRun?: (runId: string) => void;
+    channelsPage?: number;
+    onChannelsPageChange?: (delta: number) => void;
 }) {
-    const page = runs.slice(0, MAX_OVERVIEW_RUNS);
-    const storeState = overview === null ? 'loading' : overview.availability;
-    const counts = overview !== null && storeState === 'available' ? bannerCounts(page, overview.rows) : null;
-    const cadence = overview === null ? null : cadenceState(overview.lastStoredAt, now);
-
-    // Compute aggregate facts across stored runs
-    let totalInserted = 0;
-    let totalUpdated = 0;
-    let totalLabelRows = 0;
-    let totalLabeledItems = 0;
-    let totalYieldSelected = 0;
-    let totalYieldPublished = 0;
-    let totalYieldDropped = 0;
-    const sourceTotals = new Map<string, number>();
-    const insertedTrend: number[] = [];
-    const yieldTrend: number[] = [];
-
-    if (overview !== null && storeState === 'available') {
-        for (const run of page) {
-            const row = overview.rows[run.id];
-            if (row) {
-                totalInserted += row.inserted;
-                totalUpdated += row.updated;
-                totalLabelRows += row.labelRows;
-                totalLabeledItems += row.labeledItems;
-                totalYieldSelected += row.yield.selected;
-                totalYieldPublished += row.yield.published;
-                totalYieldDropped += row.yield.dropped;
-                insertedTrend.push(row.inserted + row.updated);
-                yieldTrend.push(row.yield.selected);
-
-                for (const [source, count] of Object.entries(row.sourceCounts)) {
-                    sourceTotals.set(source, (sourceTotals.get(source) ?? 0) + count);
-                }
-            }
-        }
-    }
-
-    const totalCollected = totalInserted + totalUpdated;
-    const completedRuns = page.filter((r) => r.status === 'done').length;
-    const failedRuns = page.filter((r) => r.status === 'failed').length;
-    const successRate = page.length > 0 ? Math.round((completedRuns / page.length) * 100) : 100;
-    const totalSelections = totalYieldSelected + totalYieldPublished + totalYieldDropped;
-    const yieldRate = totalCollected > 0 ? Math.round((totalSelections / totalCollected) * 100) : 0;
-
-    // Source breakdown sorted descending
-    const sortedSources = [...sourceTotals.entries()].sort((a, b) => b[1] - a[1]);
-
-    // Reverse runs for chronological left-to-right charts
-    const chartRuns = page.slice(0, 16).reverse();
-
+    const totalPages = channels === null ? 1 : Math.max(1, Math.ceil(channels.totalDays / channels.pageSize));
+    const showPager =
+        channels !== null && channels.availability === 'available' && channels.totalDays > channels.pageSize;
     return (
         <section className="kk-card kk-collect-overview">
             {/* Top Toolbar / Filters Bar */}
@@ -195,427 +124,86 @@ export function SummaryPanel({
                             </button>
                         ))}
                     </div>
-                    <span className={`kk-badge ${cadenceBadge(cadence)}`}>
-                        ● {cadence?.state ?? 'cadence: pending'}
-                    </span>
-                    {counts !== null && counts.failed + counts.doneWithoutRow > 0 ? (
-                        <span className="kk-badge kk-badge-warning">
-                            {counts.failed + counts.doneWithoutRow} needs attention
-                        </span>
-                    ) : null}
                 </div>
                 <div className="kk-summary-kpi-footer">
-                    <span>{cadence?.detail ?? 'The store has not answered yet.'}</span>
-                    {overview?.lastStoredAt ? (
-                        <span>· Last store: {formatTimestamp(overview.lastStoredAt)}</span>
-                    ) : null}
+                    {channels === null ? (
+                        <span>The channel-yield aggregate has not loaded yet.</span>
+                    ) : channels.availability === 'unavailable' ? (
+                        <span>The store could not be read; no counts are shown.</span>
+                    ) : (
+                        <span>
+                            {channels.totalDays} day{channels.totalDays === 1 ? '' : 's'} · time zone{' '}
+                            {channels.timeZone}
+                        </span>
+                    )}
                 </div>
             </div>
 
-            {overview !== null && overview.availability === 'unavailable' ? (
+            {channels !== null && channels.availability === 'unavailable' ? (
                 <>
-                    <p>The store could not be read for this page; no counts are shown.</p>
-                    <StoreState diagnostics={overview.diagnostics} />
+                    <p>The store could not be read for this range; no counts are shown.</p>
+                    <StoreState diagnostics={channels.diagnostics} />
                 </>
             ) : null}
-            {overview === null ? <p>The store overview has not loaded yet.</p> : null}
+            {channels !== null && channels.availability === 'available' && channels.diagnostics.length > 0 ? (
+                <StoreState diagnostics={channels.diagnostics} />
+            ) : null}
+            {channels === null ? <p>The channel-yield aggregate has not loaded yet.</p> : null}
 
-            {/* 4 Premium KPI Stat Cards */}
-            <div className="kk-summary-kpis">
-                <div className="kk-summary-kpi-card">
-                    <div className="kk-summary-kpi-header">
-                        <span className="kk-stat-label">Total Ingested Items</span>
-                        <span className="kk-badge kk-badge-success">+{totalInserted} new</span>
-                    </div>
-                    <div className="kk-summary-kpi-body">
-                        <span className="kk-summary-kpi-val">{totalCollected.toLocaleString()}</span>
-                        <Sparkline data={insertedTrend.length >= 2 ? insertedTrend : [2, 5, 4, 8, 7, 10]} />
-                    </div>
-                    <div className="kk-summary-kpi-footer">
-                        <span>
-                            {totalInserted} inserted · {totalUpdated} updated
-                        </span>
-                    </div>
-                </div>
-
-                <div className="kk-summary-kpi-card">
-                    <div className="kk-summary-kpi-header">
-                        <span className="kk-stat-label">Ingestion Success Rate</span>
-                        <span className="kk-badge kk-badge-running">{completedRuns} completed</span>
-                    </div>
-                    <div className="kk-summary-kpi-body">
-                        <span className="kk-summary-kpi-val">{successRate}%</span>
-                        <Sparkline data={[95, 98, 97, 100, 99, successRate]} color="var(--color-spur-success)" />
-                    </div>
-                    <div className="kk-summary-kpi-footer">
-                        <span>
-                            {completedRuns} ok / {failedRuns} failed runs
-                        </span>
-                    </div>
-                </div>
-
-                <div className="kk-summary-kpi-card">
-                    <div className="kk-summary-kpi-header">
-                        <span className="kk-stat-label">Label Decisions</span>
-                        <span className="kk-badge kk-badge-neutral">{totalLabeledItems} items</span>
-                    </div>
-                    <div className="kk-summary-kpi-body">
-                        <span className="kk-summary-kpi-val">{totalLabelRows.toLocaleString()}</span>
-                        <Sparkline data={[120, 140, 135, 180, 190, 210]} color="#a855f7" />
-                    </div>
-                    <div className="kk-summary-kpi-footer">
-                        <span>Evaluated across {totalLabeledItems} distinct items</span>
-                    </div>
-                </div>
-
-                <div className="kk-summary-kpi-card">
-                    <div className="kk-summary-kpi-header">
-                        <span className="kk-stat-label">Selection Yield</span>
-                        <span className="kk-badge kk-badge-success">{yieldRate}% yield</span>
-                    </div>
-                    <div className="kk-summary-kpi-body">
-                        <span className="kk-summary-kpi-val">{totalYieldSelected.toLocaleString()}</span>
-                        <Sparkline data={yieldTrend.length >= 2 ? yieldTrend : [3, 4, 2, 5, 4, 6]} color="#06b6d4" />
-                    </div>
-                    <div className="kk-summary-kpi-footer">
-                        <span>
-                            {totalYieldSelected} selected · {totalYieldPublished} published
-                        </span>
-                    </div>
-                </div>
-            </div>
-
-            {/* 2 Activity & Volume SVG Charts */}
-            <div className="kk-summary-charts">
-                <div className="kk-chart-card">
-                    <div className="kk-chart-header">
-                        <div>
-                            <h3 className="kk-chart-title">Ingestion Volume Over Time</h3>
-                            <span className="kk-chart-subtitle">Distribution stacked by source per collection run</span>
-                        </div>
-                    </div>
-                    <div className="kk-chart-svg-wrap">
-                        <svg
-                            role="img"
-                            aria-label="Ingestion Volume Over Time"
-                            width="100%"
-                            height="160"
-                            viewBox="0 0 460 160"
-                            preserveAspectRatio="none"
-                        >
-                            <title>Ingestion Volume Over Time</title>
-                            <line
-                                x1="10"
-                                y1="130"
-                                x2="450"
-                                y2="130"
-                                stroke="var(--color-spur-border)"
-                                strokeWidth="1"
-                            />
-                            <line
-                                x1="10"
-                                y1="80"
-                                x2="450"
-                                y2="80"
-                                stroke="var(--color-spur-border)"
-                                strokeWidth="1"
-                                strokeDasharray="3 3"
-                            />
-                            <line
-                                x1="10"
-                                y1="30"
-                                x2="450"
-                                y2="30"
-                                stroke="var(--color-spur-border)"
-                                strokeWidth="1"
-                                strokeDasharray="3 3"
-                            />
-                            {chartRuns.map((run, i) => {
-                                const row = overview?.rows[run.id];
-                                const count = row ? row.inserted + row.updated : 0;
-                                const barHeight = Math.min(110, Math.max(4, count * 6));
-                                const x = 20 + i * 27;
-                                const y = 130 - barHeight;
-                                return (
-                                    <g key={run.id}>
-                                        <rect
-                                            x={x}
-                                            y={y}
-                                            width="18"
-                                            height={barHeight}
-                                            rx="3"
-                                            fill={
-                                                run.status === 'failed'
-                                                    ? 'var(--color-spur-error)'
-                                                    : 'var(--color-spur-accent)'
-                                            }
-                                            opacity={0.85}
-                                        >
-                                            <title>{`${run.id}: ${count} items (${run.status})`}</title>
-                                        </rect>
-                                    </g>
-                                );
-                            })}
-                            {chartRuns.length === 0 ? (
-                                <text
-                                    x="230"
-                                    y="85"
-                                    textAnchor="middle"
-                                    fill="var(--color-spur-text-muted)"
-                                    fontSize="13"
-                                >
-                                    No runs recorded in this time range
-                                </text>
-                            ) : null}
-                        </svg>
-                    </div>
-                    <div className="kk-chart-legend">
-                        <span className="kk-chart-legend-item">
-                            <span className="kk-chart-legend-dot" style={{ background: 'var(--color-spur-accent)' }} />
-                            Ingested Items
-                        </span>
-                        <span className="kk-chart-legend-item">
-                            <span className="kk-chart-legend-dot" style={{ background: 'var(--color-spur-error)' }} />
-                            Failed Run
-                        </span>
-                    </div>
-                </div>
-
-                <div className="kk-chart-card">
-                    <div className="kk-chart-header">
-                        <div>
-                            <h3 className="kk-chart-title">Decision Volume & Selection Activity</h3>
-                            <span className="kk-chart-subtitle">Labeled items volume with selection yield overlay</span>
-                        </div>
-                    </div>
-                    <div className="kk-chart-svg-wrap">
-                        <svg
-                            role="img"
-                            aria-label="Decision Volume and Selection Activity"
-                            width="100%"
-                            height="160"
-                            viewBox="0 0 460 160"
-                            preserveAspectRatio="none"
-                        >
-                            <title>Decision Volume and Selection Activity</title>
-                            <line
-                                x1="10"
-                                y1="130"
-                                x2="450"
-                                y2="130"
-                                stroke="var(--color-spur-border)"
-                                strokeWidth="1"
-                            />
-                            <line
-                                x1="10"
-                                y1="80"
-                                x2="450"
-                                y2="80"
-                                stroke="var(--color-spur-border)"
-                                strokeWidth="1"
-                                strokeDasharray="3 3"
-                            />
-                            <line
-                                x1="10"
-                                y1="30"
-                                x2="450"
-                                y2="30"
-                                stroke="var(--color-spur-border)"
-                                strokeWidth="1"
-                                strokeDasharray="3 3"
-                            />
-                            {chartRuns.map((run, i) => {
-                                const row = overview?.rows[run.id];
-                                const labeled = row?.labeledItems ?? 0;
-                                const barHeight = Math.min(100, Math.max(3, labeled * 5));
-                                const x = 20 + i * 27;
-                                const y = 130 - barHeight;
-                                return (
-                                    <rect
-                                        key={run.id}
-                                        x={x}
-                                        y={y}
-                                        width="18"
-                                        height={barHeight}
-                                        rx="3"
-                                        fill="#a855f7"
-                                        opacity={0.8}
-                                    >
-                                        <title>{`${run.id}: ${labeled} labeled`}</title>
-                                    </rect>
-                                );
-                            })}
-                            {chartRuns.length === 0 ? (
-                                <text
-                                    x="230"
-                                    y="85"
-                                    textAnchor="middle"
-                                    fill="var(--color-spur-text-muted)"
-                                    fontSize="13"
-                                >
-                                    No runs recorded in this time range
-                                </text>
-                            ) : null}
-                            {/* Yield overlay line */}
-                            {chartRuns.length > 1 ? (
-                                <polyline
-                                    fill="none"
-                                    stroke="var(--color-spur-success)"
-                                    strokeWidth="2"
-                                    points={chartRuns
-                                        .map((run, i) => {
-                                            const row = overview?.rows[run.id];
-                                            const sel = row?.yield.selected ?? 0;
-                                            const py = 120 - Math.min(90, sel * 12);
-                                            const px = 29 + i * 27;
-                                            return `${px},${py}`;
-                                        })
-                                        .join(' ')}
-                                />
-                            ) : null}
-                        </svg>
-                    </div>
-                    <div className="kk-chart-legend">
-                        <span className="kk-chart-legend-item">
-                            <span className="kk-chart-legend-dot" style={{ background: '#a855f7' }} />
-                            Labeled Items
-                        </span>
-                        <span className="kk-chart-legend-item">
-                            <span className="kk-chart-legend-dot" style={{ background: 'var(--color-spur-success)' }} />
-                            Selection Yield
-                        </span>
-                    </div>
-                </div>
-            </div>
-
-            {/* Dual Bottom Grids: Top Ingestion Sources & Recent Collection Runs */}
+            {/* The two aggregate tables, rendered only from a real (available) reader answer. */}
             <div className="kk-summary-grids">
                 <div className="kk-card">
                     <div className="kk-card-header">
-                        <h2>Top Ingestion Sources</h2>
-                        <span className="kk-stat-sub">{sortedSources.length} tracked sources</span>
+                        <h2>New items by day and source</h2>
+                        <span className="kk-stat-sub">{channels?.sources.length ?? 0} sources</span>
                     </div>
                     <div className="kk-table-container">
-                        <table className="kk-table">
-                            <thead>
-                                <tr>
-                                    <th scope="col">Source</th>
-                                    <th scope="col">Items</th>
-                                    <th scope="col">Share</th>
-                                    <th scope="col">Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {sortedSources.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={4} className="kk-board-state">
-                                            No source telemetry recorded yet.
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    sortedSources.map(([source, count]) => {
-                                        const share =
-                                            totalCollected > 0 ? Math.round((count / totalCollected) * 100) : 0;
-                                        return (
-                                            <tr key={source}>
-                                                <td>
-                                                    <strong>{source}</strong>
-                                                </td>
-                                                <td>{count}</td>
-                                                <td>
-                                                    <span
-                                                        style={{
-                                                            display: 'inline-flex',
-                                                            alignItems: 'center',
-                                                            gap: '0.5rem',
-                                                        }}
-                                                    >
-                                                        <span className="kk-collect-bar" style={{ width: '5rem' }}>
-                                                            <span
-                                                                className="kk-collect-bar-seg"
-                                                                style={{ width: `${Math.max(10, share)}%` }}
-                                                            />
-                                                        </span>
-                                                        <span className="kk-stat-sub">{share}%</span>
-                                                    </span>
-                                                </td>
-                                                <td>
-                                                    <span className="kk-badge kk-badge-success">Active</span>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })
-                                )}
-                            </tbody>
-                        </table>
+                        {channels !== null && channels.availability === 'available' ? (
+                            <ChannelYieldTable data={channels} />
+                        ) : null}
                     </div>
                 </div>
 
                 <div className="kk-card">
                     <div className="kk-card-header">
-                        <h2>Recent Collection Runs & Health</h2>
-                        <span className="kk-stat-sub">Last {Math.min(5, page.length)} runs</span>
+                        <h2>Collection ticks and plugin contributions</h2>
+                        <span className="kk-stat-sub">{channels?.plugins.length ?? 0} plugins</span>
                     </div>
                     <div className="kk-table-container">
-                        <table className="kk-table">
-                            <thead>
-                                <tr>
-                                    <th scope="col">Run ID</th>
-                                    <th scope="col">Status</th>
-                                    <th scope="col">Items</th>
-                                    <th scope="col">Yield</th>
-                                    <th scope="col">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {page.slice(0, 5).map((run) => {
-                                    const row = overview?.rows[run.id];
-                                    const itemsCount = row ? row.inserted + row.updated : '—';
-                                    const yieldCount = row ? row.yield.selected : '—';
-                                    return (
-                                        <tr key={run.id}>
-                                            <td>
-                                                <button
-                                                    type="button"
-                                                    className="kk-collect-run-link"
-                                                    onClick={() => onInspectRun?.(run.id)}
-                                                    title={`Inspect run ${run.id}`}
-                                                >
-                                                    {run.id}
-                                                </button>
-                                                <div className="kk-stat-sub">{formatTimestamp(run.startedAt)}</div>
-                                            </td>
-                                            <td>
-                                                <span
-                                                    className={`kk-badge ${run.status === 'done' ? 'kk-badge-success' : run.status === 'failed' ? 'kk-badge-failed' : 'kk-badge-running'}`}
-                                                >
-                                                    {run.status}
-                                                </span>
-                                            </td>
-                                            <td>{itemsCount}</td>
-                                            <td>{yieldCount}</td>
-                                            <td>
-                                                <button
-                                                    type="button"
-                                                    className="kk-table-btn"
-                                                    onClick={() => onInspectRun?.(run.id)}
-                                                >
-                                                    Inspect
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
+                        {channels !== null && channels.availability === 'available' ? (
+                            <PluginRunTable data={channels} />
+                        ) : null}
                     </div>
                 </div>
             </div>
+
+            {showPager ? (
+                <div className="kk-collect-pager">
+                    <button
+                        type="button"
+                        className="kk-table-btn"
+                        onClick={() => onChannelsPageChange?.(-1)}
+                        disabled={channelsPage <= 1}
+                    >
+                        Previous
+                    </button>
+                    <span>
+                        Page {channelsPage} of {totalPages} · {channels?.totalDays ?? 0} days
+                    </span>
+                    <button
+                        type="button"
+                        className="kk-table-btn"
+                        onClick={() => onChannelsPageChange?.(1)}
+                        disabled={channelsPage >= totalPages}
+                    >
+                        Next
+                    </button>
+                </div>
+            ) : null}
         </section>
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 2. RUN DETAILS PANEL (Table from previous Overview, drilldown into modal)
 // ─────────────────────────────────────────────────────────────────────────────
 

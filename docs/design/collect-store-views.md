@@ -49,7 +49,7 @@ Tabs (deep-linkable `?run=&tab=`, shipped run selector and 25-row paging unchang
 
 | Tab id | Label | Content |
 | --- | --- | --- |
-| `summary` (default) | Summary | cadence badge, time-range pills, four KPI cards (collected, ingestion success, label decisions, selection yield) and two inline SVG volume charts over the current run-list page |
+| `summary` (default) | Summary | time-range pills (24h/7d/14d/30d/All, default 14d), the real channel-yield matrix (day × source) and the per-day tick/plugin table from the loopback channels aggregate |
 | `runs` | Run Details | cadence banner + needs-attention counts + the per-run store table for the current run-list page; the row link and `Inspect` open the run modal (funnel, label quality, core facts, artifact evidence) |
 | `items` | Items | paged items browser for the selected run |
 | `selections` | Selections | topic selections joined onto their items, with topic/status/search filters and paging |
@@ -60,11 +60,15 @@ Shipped `?tab=results` links resolve to `runs` and legacy `?tab=overview` links 
 links): `parseDeepLink` takes optional `tabs` and `aliases` (defaults = shipped `BOARD_TABS`, no
 aliases), so Daily Voice and ITC are unchanged.
 
-**Summary.** Aggregates the current run-list page: total collected (`inserted + updated`), ingestion
-success rate (done ÷ page), label decisions (distinct labeled items and label rows) and selection yield
-(selected ÷ collected, with published alongside), each with a sparkline; then ingestion volume over
-time stacked per run and decision volume with the selection overlay. The cadence badge and its detail
-line state how long the store has been quiet.
+**Summary.** Renders the real channel-yield aggregate (`GET …/store/channels`, task 0319), not the
+loaded run page: new items grouped by host-local day and `items.source` over an explicit
+`[fromMs, untilMs)` window (default trailing 14d), with row totals, source totals, newest day first
+and boundary days labelled `partial`. A second table shows `COUNT(collect_runs)` and the summed
+nonnegative-integer `source_counts_json` values per plugin (`aihot-ingest`, `last30days-ingest`,
+`horizon-ingest` plus observed keys), with last-positive contribution time per plugin. Absent keys in
+valid rows are zero recorded contributions; malformed JSON/counts make that day's plugin totals
+`unknown` plus one bounded diagnostic. Unsupported native label/yield totals, ratios and trends are
+removed rather than shown as fabricated zeros.
 
 **Run details.** Banner: time since the last stored collection vs the 6 h schedule — `on schedule`
 (≤ 6 h), `late` (≤ 12 h), `stalled` (> 12 h), `unknown` without `lastStoredAt`; plus counts of `failed`
@@ -100,6 +104,7 @@ the same one `kk store` uses.
 | Route | Query | Identity |
 | --- | --- | --- |
 | `/api/workflows/kk-collect/store/overview` | `runs=<id>,…` (1–25 ids, each matching the reader's `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$` run-id rule) | ids only select rows; no Spur call |
+| `/api/workflows/kk-collect/store/channels` | `from`/`until` (required nonnegative safe-integer epoch ms, `from < until`), `page` (≥1, default 1) | no Spur call; one read-only aggregate, both tables, 30 days/page |
 | `/api/workflows/kk-collect/runs/<id>/store` | none | `authorizeRun` (project + Spur run workflow; no capture needed) |
 | `/api/workflows/kk-collect/runs/<id>/store/items` | `page` (≥1), `source`, `seen` (`new\|reseen`), `decision`+`value`, `selection` (`selected\|published\|dropped\|none`) | `authorizeRun` |
 
@@ -157,6 +162,15 @@ Yield counts distinct items with `first_seen_run = run`, taking each item's stro
 (`published` > `selected` > `dropped`) across selection rows. `selection` on an item uses the same
 rule. Title is capped at 300 chars; `url` is `canonical_url` only when `http(s)`.
 
+The channels route returns `CollectChannelYield`
+(`{availability, schemaVersion: 1, fromMs, untilMs, timeZone, page, pageSize: 30, totalDays,
+sources[], plugins[], byDay[], bySource, runsByDay[], lastPositiveAt, diagnostics}`): `bySource` and
+`totalDays` cover the whole interval while `byDay`/`runsByDay` are the 30-day page (union of item and
+tick local-day keys, newest first, zero-filled on the missing side). `sources` is the sorted union of
+observed `items.source`; `plugins` is the three named defaults plus observed keys, sorted;
+`lastPositiveAt` is per plugin over retained history (`null` when none recorded). Unavailable replies
+carry empty arrays/maps plus a diagnostic, never usable zero totals.
+
 **Store access.** `Store` exposes only DAOs (the adapter is protected), so the aggregate SQL lives in a
 read-only `CollectViewDao` (`packages/kk-store/src/dao/collect-view.ts`, `Store.collectView`).
 
@@ -173,11 +187,11 @@ the diagnostic, not zeros. A label-policy read failure only empties `effective`
 | Owner | Change |
 | --- | --- |
 | `apps/board/src/contracts.ts` | the types above (type-only export) |
-| `apps/cli/src/board/collect-store.ts` (new) | store open, three projections, availability mapping |
-| `packages/kk-store/src/dao/collect-view.ts` (new), `migrations.ts`, `db.ts` | read-only aggregates, `unknownKkMigrationIds`, `Store.collectView` |
-| `apps/cli/src/board/reader.ts` | three routes, `authorizeRun`, per-route query parsing |
+| `apps/cli/src/board/collect-store.ts` (new) | store open, four projections, availability mapping |
+| `packages/kk-store/src/dao/collect-view.ts` (new), `migrations.ts`, `db.ts` | read-only aggregates (`channelYield`, `channelRunYield`), `unknownKkMigrationIds`, `Store.collectView` |
+| `apps/cli/src/board/reader.ts` | four routes, `authorizeRun`, per-route query parsing |
 | `apps/board/src/shared/run-selection.ts` | `parseDeepLink` tabs/aliases parameters |
-| `apps/board/src/shared/api.ts`, `shared/collect.ts` | client calls and view-model helpers |
+| `apps/board/src/shared/api.ts`, `shared/channel-yield.tsx` | client calls and the two presentational aggregate tables |
 | `apps/board/src/collect/index.tsx`, `board.css` | Summary / Run Details / Items / Selections tabs |
 | `docs/04_DESIGN.md` `kk board` | routes and shapes, same commit (T3) |
 | `workflow-board-modules.md` §2, §9 | point Collect to this document; artifacts-only kept for the others |

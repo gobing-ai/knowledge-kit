@@ -362,12 +362,26 @@ recorded evidence includes `status`, `ok`, `startedAt`, `completedAt`, `duration
 Retain separate action IDs as attempts; do not promise an attempt counter absent from this API.
 
 Use artifacts only; no optional store/DAO reader in this delivery. (Amended 2026-10-16, ADR-035/G81: the
-Collect module adds read-only store views — see [Collect store views](collect-store-views.md); Daily AI Voice
-and IT Content stay artifacts-only.) Collect `store-result.json`
+Collect module adds read-only store views — see [Collect store views](collect-store-views.md). Amended
+2026-10-22, ADR-035/G82: the Daily Summary tab additionally renders one read-only supply-CONTEXT panel from
+the 0319 channels aggregate — same route, contract and tables, no second DAO/route/query surface; see the
+dated amendment in [ADR-035](../00_ADR.md#adr-035-workflow-visibility-uses-native-spur-board-modules-and-a-kk-owned-local-reader). The panel covers the half-open
+`[run.startedAt − captured window, run.startedAt)` interval, is labeled configured context (the extract
+ladder bounds are not persisted, so the effective extraction window is unknown), and stays visibly distinct
+from the artifact-backed episode funnel beside it. All other Daily data and all IT Content data stay
+artifacts-only.) Collect `store-result.json`
 provides inserted/updated/unchanged; `label-result.txt` provides aggregate labeled/model/fallback
 and verdict/confidence, not a per-label histogram. Source counts may be derived from the captured
 blended Doc[] using the existing source-count rule. Missing per-label/source failure detail is
 explicitly unavailable unless the run's recorded producer output actually provides it.
+
+The Collect Summary reads the real channel-yield aggregate (0319): `GET
+/api/workflows/kk-collect/store/channels?from=<ms>&until=<ms>&page=<n>` returns both the day × source
+new-item matrix and the per-day tick/plugin table in one read-only page. `BoardClient.storeChannels`
+always targets a distinct loopback `aggregateReaderOrigin` (default `http://127.0.0.1:4340`) — even in
+native same-origin mode it never falls back to the Spur database API — and the Summary persists
+`range` (`24h|7d|14d|30d|All`, default `14d`) alongside `tab`/`run` in the URL, resetting the aggregate
+page on a range change. The two presentational tables live in `shared/channel-yield.tsx`.
 
 ### Capture timing, ownership and execution topology
 

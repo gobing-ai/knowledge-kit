@@ -29,6 +29,7 @@ import {
     MAX_OVERVIEW_RUNS,
     MAX_PREVIEW_BYTES,
     mimeFor,
+    parseChannelsQuery,
     parseItemsQuery,
     parseRunsQuery,
     producerStateFrom,
@@ -736,5 +737,105 @@ describe('collect store routes (0307 R4/R6/R7/R8)', () => {
         expect('query' in parseItemsQuery(new URLSearchParams('page=2&seen=new&selection=none'))).toBe(true);
         const parsed = parseItemsQuery(new URLSearchParams('page=2'));
         expect('query' in parsed && parsed.query.page).toBe(2);
+    });
+});
+
+describe('collect channels route (0319 R3/R4/R6)', () => {
+    /** The captured project plus a REAL seeded store with controlled item/tick timestamps. */
+    async function channelsProject(): Promise<{ root: string; now: number }> {
+        const { root } = await seededProject();
+        const now = Date.now();
+        const dayMs = 86_400_000;
+        const store = await openStore({ path: join(root, '.works', 'kk.db') });
+        try {
+            await store.collectRuns.start({
+                runId: 'c-1',
+                startedAt: now - dayMs,
+                sourceCounts: { 'aihot-ingest': 3, 'horizon-ingest': 1 },
+            });
+            await store.collectRuns.finish('c-1', { status: 'done', finishedAt: now - dayMs + 1 });
+            await store.items.upsertDocs(
+                'c-1',
+                [
+                    {
+                        id: 'c-i1',
+                        title: 'a',
+                        body: 'b',
+                        sourceUri: 'https://example.com/c-i1',
+                        metadata: { source: 'aihot' },
+                    },
+                ],
+                now - dayMs,
+            );
+        } finally {
+            await store.close();
+        }
+        return { root, now };
+    }
+
+    it('parses the channels query by contract and refuses malformed values', () => {
+        const ok = parseChannelsQuery(new URLSearchParams('from=0&until=1000'));
+        expect('query' in ok && ok.query).toEqual({ fromMs: 0, untilMs: 1000, page: 1 });
+        const paged = parseChannelsQuery(new URLSearchParams('from=0&until=1000&page=2'));
+        expect('query' in paged && paged.query.page).toBe(2);
+
+        for (const query of [
+            '',
+            'from=0',
+            'until=1000',
+            'from=-1&until=1000',
+            'from=abc&until=1000',
+            'from=0&until=0',
+            'from=10&until=5',
+            'from=0&until=1000&page=0',
+            'from=0&until=1000&page=1.5',
+            'from=0&until=1000&extra=1',
+            'from=0&from=1&until=1000',
+            'from=0&until=1000&page=1&page=2',
+        ]) {
+            expect('response' in parseChannelsQuery(new URLSearchParams(query)), query).toBe(true);
+        }
+    });
+
+    it('serves the two aggregate tables through the loopback security envelope', async () => {
+        const { root, now } = await channelsProject();
+        const board = startFakeBoard(root);
+        const reader = startReader(board.origin, root);
+        const dayMs = 86_400_000;
+        const url = `${reader}/api/workflows/kk-collect/store/channels?from=${now - 2 * dayMs}&until=${now + dayMs}&page=1`;
+        const response = await fetch(url, { headers: { origin: board.origin } });
+        expect(response.status).toBe(200);
+        const body = (await response.json()) as {
+            availability: string;
+            sources: string[];
+            bySource: Record<string, number>;
+            runsByDay: { runs: number }[];
+            lastPositiveAt: Record<string, number | null>;
+        };
+        expect(body.availability).toBe('available');
+        expect(body.sources).toEqual(['aihot']);
+        expect(body.bySource).toEqual({ aihot: 1 });
+        expect(body.runsByDay.map((day) => day.runs)).toEqual([1]);
+        expect(body.lastPositiveAt['aihot-ingest']).toBe(now - dayMs);
+        // No Board call is needed: a foreign project still answers the aggregate.
+        board.state.projectPath = tempDir('kk-foreign-project-');
+        expect((await fetch(url, { headers: { origin: board.origin } })).status).toBe(200);
+    });
+
+    it('refuses non-GET, malformed and cross-workflow channels requests', async () => {
+        const { root, now } = await channelsProject();
+        const board = startFakeBoard(root);
+        const reader = startReader(board.origin, root);
+        const dayMs = 86_400_000;
+        const good = `${reader}/api/workflows/kk-collect/store/channels?from=${now - 2 * dayMs}&until=${now + dayMs}&page=1`;
+        // Method envelope (405) and origin (403).
+        expect((await fetch(good, { method: 'POST' })).status).toBe(405);
+        expect((await fetch(good, { headers: { origin: 'http://evil.example' } })).status).toBe(403);
+        // Malformed query (400), and another workflow on a store route (404).
+        expect((await fetch(`${reader}/api/workflows/kk-collect/store/channels?from=0`)).status).toBe(400);
+        expect((await fetch(`${reader}/api/workflows/kk-collect/store/channels?from=0&until=1&page=0`)).status).toBe(
+            400,
+        );
+        expect((await fetch(`${reader}/api/workflows/kk-itc/store/channels?from=0&until=1`)).status).toBe(404);
     });
 });

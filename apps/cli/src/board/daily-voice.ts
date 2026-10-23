@@ -1,6 +1,7 @@
 import type {
     ArtifactDescriptor,
     BoardDiagnostic,
+    DailyEpisodeFunnel,
     RunCapture,
     RunResults,
     WorkflowName,
@@ -89,6 +90,8 @@ export interface DailySummary {
     quality: { overallScore: number | null; passed: boolean | null; criticalIssues: string[] } | null;
     /** Content-safety verdict evidence, or null when it was not recorded. */
     safety: { verdict: string | null; confidence: ConfidenceLevel | null } | null;
+    /** The artifact-backed episode funnel (G82/0320), or null when nothing was recorded. */
+    funnel: DailyEpisodeFunnel;
     progress: DailyProgress | null;
     counts: {
         artifactsAvailable: number;
@@ -393,7 +396,353 @@ function stringArray(value: unknown): string[] {
     return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
 }
 
+/* ------------------------------------------------------------------------------------------------
+ * G82/0320 — the artifact-backed episode funnel.
+ *
+ * Every count comes from one authorized stage artifact (pool → annotated → exclusions/candidates →
+ * plan), each with its fixed evidence id. A refusal that cleared `candidates.json` makes the
+ * post-dedup count unknown — never 0, and never a reason to call the original pool empty. Gate
+ * precedence for a no-content run: measured duration refusal → script refusal → QC floor →
+ * empty-pool → qc-empty → unknown.
+ * ---------------------------------------------------------------------------------------------- */
+
+/** Bound for exclusion rows and each rule/matched string (0320 Design). */
+const FUNNEL_EXCLUSION_ROWS = 100;
+const FUNNEL_TEXT_CHARS = 200;
+
+/** Parse any JSON document (the pool/annotated/plan artifacts are TOP-LEVEL ARRAYS). */
+function parseAnyJson(raw: string | undefined): unknown {
+    if (raw === undefined) return null;
+    try {
+        return JSON.parse(raw) as unknown;
+    } catch {
+        return null;
+    }
+}
+
+/** A finite nonnegative number, else null (never a negative or NaN "minute"). */
+function nonNegativeNumber(value: unknown): number | null {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+/** The length of `value` when it is an array, else null (a count comes only from a real array). */
+function arrayCount(value: unknown): number | null {
+    return Array.isArray(value) ? value.length : null;
+}
+
+/** Seconds → minutes, rounded ONCE to one decimal (display math happens once). */
+function minutesFromSeconds(seconds: number): number {
+    return Math.round((seconds / 60) * 10) / 10;
+}
+
+/** One bounded rule/matched pair, or null when the entry carries no string rule. */
+function exclusionRow(entry: unknown): { rule: string; matched: string } | null {
+    const record = asRecord(entry);
+    if (record === null || typeof record.rule !== 'string') return null;
+    return {
+        rule: record.rule.slice(0, FUNNEL_TEXT_CHARS),
+        matched: typeof record.matched === 'string' ? record.matched.slice(0, FUNNEL_TEXT_CHARS) : '',
+    };
+}
+
+/** The measured-refusal evidence: only a validated measuredMinutes/minMinutes pair (no stage). */
+function measuredRefusalOf(record: Record<string, unknown> | null): {
+    measuredMinutes: number;
+    estimatedMinutes: number | null;
+    minMinutes: number;
+    keptCount: number | null;
+    id: string;
+} | null {
+    if (record === null || record.stage === 'script') return null;
+    const measuredMinutes = nonNegativeNumber(record.measuredMinutes);
+    const minMinutes = nonNegativeNumber(record.minMinutes);
+    if (measuredMinutes === null || minMinutes === null) return null;
+    return {
+        measuredMinutes,
+        estimatedMinutes: nonNegativeNumber(record.estimatedMinutes),
+        minMinutes,
+        keptCount: nonNegativeNumber(record.keptCount),
+        id: 'episode-duration-refusal',
+    };
+}
+
+/** The script-refusal evidence: only `stage === 'script'`, from whichever spec was authorized. */
+function scriptRefusalOf(
+    availability: ReadonlyMap<string, ArtifactDescriptor['availability']>,
+    jsonOf: (id: string) => Record<string, unknown> | null,
+): { estimatedMinutes: number | null; minMinutes: number | null; keptCount: number | null; id: string } | null {
+    for (const id of [
+        'episode-script-refusal',
+        'episode-script-refusal-fallback',
+        'episode-script-refusal-fallback2',
+    ]) {
+        if (availability.get(id) !== 'available') continue;
+        const record = jsonOf(id);
+        if (record === null || record.stage !== 'script') continue;
+        return {
+            estimatedMinutes: nonNegativeNumber(record.estimatedMinutes),
+            minMinutes: nonNegativeNumber(record.minMinutes),
+            keptCount: nonNegativeNumber(record.keptCount),
+            id,
+        };
+    }
+    return null;
+}
+
+/** The QC floor-refusal evidence. */
+function floorRefusalOf(record: Record<string, unknown> | null): {
+    estimatedMinutes: number | null;
+    minMinutes: number | null;
+    id: string;
+} | null {
+    if (record === null) return null;
+    return {
+        estimatedMinutes: nonNegativeNumber(record.estimatedMinutes),
+        minMinutes: nonNegativeNumber(record.minMinutes),
+        id: 'episode-floor-refusal',
+    };
+}
+
 /**
+ * Project the episode funnel from the run's own authorized artifacts. Pure: the availability map
+ * and text reader are the same ones every other summary field uses, so marker/producer/size
+ * authorization is inherited, never re-implemented.
+ */
+export function projectFunnel(
+    settings: Record<string, string>,
+    availability: ReadonlyMap<string, ArtifactDescriptor['availability']>,
+    textOf: (id: string) => string | undefined,
+    outcome: string | null,
+): DailyEpisodeFunnel {
+    const diagnostics: BoardDiagnostic[] = [];
+    const evidence: Record<string, string> = {};
+    const rawOf = (id: string): unknown => parseAnyJson(textOf(id));
+
+    const poolRecord = rawOf('episode-pool');
+    const poolCount = arrayCount(poolRecord);
+    if (poolCount !== null) evidence.poolCount = 'episode-pool';
+    const annotatedCount = arrayCount(rawOf('episode-annotated'));
+    if (annotatedCount !== null) evidence.annotatedCount = 'episode-annotated';
+    const qcRejectedCount = arrayCount(asRecord(rawOf('episode-qc-rejections'))?.rejected);
+    if (qcRejectedCount !== null) evidence.qcRejectedCount = 'episode-qc-rejections';
+    const exclusionsRecord = asRecord(rawOf('episode-exclusions'));
+    const topicKeptCount = arrayCount(exclusionsRecord?.kept);
+    if (topicKeptCount !== null) evidence.topicKeptCount = 'episode-exclusions';
+    const plannedCount = arrayCount(rawOf('episode-plan'));
+    if (plannedCount !== null) evidence.plannedCount = 'episode-plan';
+
+    // Exclusion reasons: bounded rows of bounded strings, with a truncation diagnostic.
+    const exclusions: { rule: string; matched: string }[] = [];
+    const excludedRaw = Array.isArray(exclusionsRecord?.excluded) ? exclusionsRecord.excluded : [];
+    const truncated =
+        excludedRaw.length > FUNNEL_EXCLUSION_ROWS ||
+        excludedRaw.some(
+            (entry) =>
+                typeof (entry as Record<string, unknown> | null)?.rule === 'string' &&
+                ((entry as Record<string, unknown>).rule as string).length > FUNNEL_TEXT_CHARS,
+        );
+    for (const entry of excludedRaw.slice(0, FUNNEL_EXCLUSION_ROWS)) {
+        const row = exclusionRow(entry);
+        if (row !== null) exclusions.push(row);
+    }
+    if (truncated) {
+        diagnostics.push({
+            code: 'board.daily.funnel.truncated',
+            message: `Exclusion evidence was bounded to ${FUNNEL_EXCLUSION_ROWS} rows of ${FUNNEL_TEXT_CHARS} characters.`,
+        });
+    }
+
+    // A refusal clears candidates.json, so the post-dedup count survives only without one.
+    const measured = measuredRefusalOf(asRecord(rawOf('episode-duration-refusal')));
+    const script = scriptRefusalOf(availability, (id) => asRecord(rawOf(id)) ?? null);
+    const floor = floorRefusalOf(asRecord(rawOf('episode-floor-refusal')));
+    const refusalPresent = measured !== null || script !== null || floor !== null;
+    const candidatesRecord = asRecord(rawOf('episode-candidates'));
+    const candidateDocs = arrayCount(metadataOf(candidatesRecord ?? {})?.docs);
+    const dedupKeptCount = refusalPresent ? null : candidateDocs;
+    if (dedupKeptCount !== null) evidence.dedupKeptCount = 'episode-candidates';
+
+    // Minutes: refusal/verdict evidence first, converted once; the settings floor/ceiling are
+    // independent fallbacks and never overwrite recorded evidence.
+    const verdict = asRecord(rawOf('episode-duration'));
+    const verdictMeasured = nonNegativeNumber(verdict?.measuredMinutes);
+    const verdictMin = nonNegativeNumber(verdict?.minMinutes);
+    const verdictMax = nonNegativeNumber(verdict?.maxMinutes);
+    const audioSeconds = nonNegativeNumber(asRecord(asRecord(rawOf('audio-record'))?.metadata)?.duration);
+    let measuredMinutes: number | null = null;
+    if (measured !== null) {
+        measuredMinutes = measured.measuredMinutes;
+        evidence.measuredMinutes = measured.id;
+    } else if (verdictMeasured !== null) {
+        measuredMinutes = verdictMeasured;
+        evidence.measuredMinutes = 'episode-duration';
+    } else if (audioSeconds !== null) {
+        measuredMinutes = minutesFromSeconds(audioSeconds);
+        evidence.measuredMinutes = 'audio-record';
+    }
+    let estimatedMinutes: number | null = null;
+    if (measured?.estimatedMinutes != null) {
+        estimatedMinutes = measured.estimatedMinutes;
+        evidence.estimatedMinutes = measured.id;
+    } else if (script?.estimatedMinutes != null) {
+        estimatedMinutes = script.estimatedMinutes;
+        evidence.estimatedMinutes = script.id;
+    } else if (floor?.estimatedMinutes != null) {
+        estimatedMinutes = floor.estimatedMinutes;
+        evidence.estimatedMinutes = floor.id;
+    }
+    const settingsNumber = (key: string): number | null => {
+        const value = Number(settings[key]);
+        return settings[key] !== undefined && Number.isFinite(value) && value >= 0 ? value : null;
+    };
+    let minMinutes: number | null = measured?.minMinutes ?? script?.minMinutes ?? floor?.minMinutes ?? verdictMin;
+    if (minMinutes !== null) evidence.minMinutes = measured?.id ?? script?.id ?? floor?.id ?? 'episode-duration';
+    else if (settingsNumber('episode_min_minutes') !== null) {
+        minMinutes = settingsNumber('episode_min_minutes');
+        evidence.minMinutes = 'captured-settings';
+    }
+    let maxMinutes: number | null = verdictMax;
+    if (maxMinutes !== null) evidence.maxMinutes = 'episode-duration';
+    else if (settingsNumber('episode_max_minutes') !== null) {
+        maxMinutes = settingsNumber('episode_max_minutes');
+        evidence.maxMinutes = 'captured-settings';
+    }
+
+    // Population mismatch (2026-10-21: pool 3 vs annotated 7): keep both values, diagnose, never
+    // reconcile by subtraction — planning also filters/caps/translates.
+    if (poolCount !== null && annotatedCount !== null && poolCount !== annotatedCount) {
+        diagnostics.push({
+            code: 'board.daily.funnel.mismatch',
+            message: `Stage evidence disagrees: the pool records ${poolCount} item(s) while the annotation input carries ${annotatedCount}; both are shown as recorded.`,
+        });
+    }
+
+    // Gate precedence (0320 Design): measured refusal → script refusal → QC floor → empty pool →
+    // qc-empty — and `unknown` when nothing is proven. The run's recorded outcome is never
+    // rewritten; a refusal beside a completed run is a diagnostic, not a gate.
+    let gate: DailyEpisodeFunnel['gate'] = null;
+    if (outcome === 'full' || outcome === 'partial') {
+        if (refusalPresent) {
+            diagnostics.push({
+                code: 'board.daily.funnel.contradictory',
+                message:
+                    'A refusal artifact is present beside a recorded content outcome; the outcome stands and the gate stays unset.',
+            });
+        }
+    } else {
+        if (measured !== null) gate = 'episode-duration';
+        else if (script !== null) gate = 'script';
+        else if (floor !== null) gate = 'qc-floor';
+        else if (poolCount === 0) gate = 'empty-pool';
+        else if (poolCount !== null && poolCount > 0 && candidateDocs === 0) gate = 'qc-empty';
+        else gate = 'unknown';
+        if (gate === 'empty-pool') evidence.gate = 'episode-pool';
+        else if (gate !== 'unknown') evidence.gate = measured?.id ?? script?.id ?? floor?.id ?? '';
+    }
+
+    return {
+        poolCount,
+        annotatedCount,
+        qcRejectedCount,
+        topicKeptCount,
+        dedupKeptCount,
+        plannedCount,
+        estimatedMinutes,
+        measuredMinutes,
+        minMinutes,
+        maxMinutes,
+        gate,
+        exclusions,
+        evidence,
+        diagnostics,
+    };
+}
+
+/** A bounded text field for sanitized downloads (never a doc body, never an unbounded string). */
+function boundedText(value: unknown, limit = FUNNEL_TEXT_CHARS): string | null {
+    return typeof value === 'string' && value !== '' ? value.slice(0, limit) : null;
+}
+
+function countProjection(value: unknown, key = 'count'): Record<string, unknown> | null {
+    return Array.isArray(value) ? { [key]: value.length } : null;
+}
+
+/**
+ * G82/0320: sanitized projections for the downloadable funnel JSON ids. The raw pool/candidate
+ * artifacts carry scraped doc bodies and titles; downloads serve counts, bounded rule/matched
+ * strings and the refusal's numeric evidence instead. `null` = not a funnel id (raw serving
+ * path). Parse failures degrade to `{ note: 'malformed' }` rather than 500s.
+ */
+export function sanitizeFunnelArtifact(
+    workflow: WorkflowName,
+    artifactId: string,
+    raw: string | undefined,
+): Record<string, unknown> | null {
+    if (workflow !== 'kk-daily-ai-voice2') return null;
+    const parsed = parseAnyJson(raw);
+    if (parsed === null && raw !== undefined) return { note: 'malformed' };
+    const record = asRecord(parsed);
+    switch (artifactId) {
+        case 'episode-pool':
+        case 'episode-annotated':
+        case 'episode-plan':
+            return countProjection(parsed);
+        case 'episode-qc-rejections':
+            return countProjection(record?.rejected, 'rejectedCount');
+        case 'episode-candidates':
+            return countProjection(metadataOf(record ?? {})?.docs, 'docCount');
+        case 'episode-exclusions': {
+            if (record === null) return null;
+            const excluded = Array.isArray(record.excluded) ? record.excluded : [];
+            return {
+                keptCount: arrayCount(record.kept),
+                excluded: excluded
+                    .slice(0, FUNNEL_EXCLUSION_ROWS)
+                    .map((entry) => exclusionRow(entry))
+                    .filter((row): row is { rule: string; matched: string } => row !== null),
+            };
+        }
+        case 'episode-floor-refusal':
+            return record === null
+                ? null
+                : {
+                      estimatedMinutes: nonNegativeNumber(record.estimatedMinutes),
+                      minMinutes: nonNegativeNumber(record.minMinutes),
+                      candidateChars: nonNegativeNumber(record.candidateChars),
+                      reason: boundedText(record.reason),
+                  };
+        case 'episode-duration':
+            return record === null
+                ? null
+                : {
+                      measuredMinutes: nonNegativeNumber(record.measuredMinutes),
+                      minMinutes: nonNegativeNumber(record.minMinutes),
+                      maxMinutes: nonNegativeNumber(record.maxMinutes),
+                      ok: typeof record.ok === 'boolean' ? record.ok : null,
+                  };
+        case 'episode-duration-refusal':
+        case 'episode-script-refusal':
+        case 'episode-script-refusal-fallback':
+        case 'episode-script-refusal-fallback2':
+            return record === null
+                ? null
+                : {
+                      stage: record.stage === 'script' ? 'script' : null,
+                      measuredMinutes: nonNegativeNumber(record.measuredMinutes),
+                      estimatedMinutes: nonNegativeNumber(record.estimatedMinutes),
+                      minMinutes: nonNegativeNumber(record.minMinutes),
+                      keptCount: nonNegativeNumber(record.keptCount),
+                      reason: boundedText(record.reason),
+                  };
+        default:
+            return null;
+    }
+}
+
+/**
+ * Project one daily run's results. Pure: the reader supplies the observed file states and the
+ * run-detail action rows it read from the Board's own run API.
+ *//**
  * Project one daily run's results. Pure: the reader supplies the observed file states and the
  * run-detail action rows it read from the Board's own run API.
  */
@@ -455,6 +804,7 @@ export function projectDailyResults(input: {
         channels,
         quality,
         safety,
+        funnel: projectFunnel(record.settings, availability, textOf, outcome),
         progress: projectProgress(input.actions, record.topology),
         counts: {
             artifactsAvailable: availableCount,
