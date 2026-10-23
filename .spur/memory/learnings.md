@@ -2314,3 +2314,225 @@ Basis for the level, reproducible in this tree:
 
 Confidence: HIGH — every claim above is a command run in this session or a `path:line`; the single
 deferred item (live-store re-cluster of `.works/kk.db`) is named rather than implied.
+Readings done. Docs wrap-up complete.
+
+**Drift repaired (§7 repair protocol, authority first):**
+
+| Doc | Finding | Repair |
+| --- | --- | --- |
+| `docs/00_ADR.md:1546` | No ADR for the G15 cross-cutting decision; the design satellite said "ADR entry pending" while the batch shipped (T1) | **ADR-043** appended (Accepted, 2026-10-22), extending ADR-021/022 to the daily pipeline and ADR-040's preset idea; frontmatter 1.40.0→1.41.0 |
+| `docs/03_ARCHITECTURE.md:487` | `03` had no mechanism for the generate/publish split — the derived doc lagged the shipped DAG topology and the shared `sendRows` boundary (§6.4 rule 4) | New `## Daily voice3 generate/publish split (ADR-043, shipped — G15)`: bundle contract, six enforceable invariants, `publish-matrix.ts` boundary, the all-deps-skipped engine constraint; 2.40.0→2.41.0 |
+| `docs/04_DESIGN.md:1045` | §1.11 `kk schedule render` table listed only `kk-collect`/`kk-serve` — both new publish3 schedules missing from their owner section (T3) | Two cron rows transcribed from the shipped `.cron.tmpl` files + the launchd-absence sentence |
+| `docs/04_DESIGN.md:1972` | Heading enumerated three stages; the section documents seven | Heading → `plan \| check \| send \| classify \| bundle \| rss-gate \| wait-until (tasks 0321–0327, ADR-043)`; module export list completed from `publish-matrix.ts` |
+| `docs/04_DESIGN.md:2192` | "Out of scope here: … bundle production, the publish3 workflow, and generate-side copy shaping (0327)" contradicted the body documenting all three | Rewritten to the real remaining gap (approval console, new channels, voice2 retirement) |
+| `docs/design/kk-daily-ai-voice3.md:3` | Satellite still `ACCEPTED design … ADR entry pending` after 7 of its tasks shipped (§8 lesson: flip status in the same change) | `SHIPPED as designed (ADR-043 …)`; §10 title marked T-a…T-e shipped, T-f/T-g open |
+
+Deliberately **not** done: no row re-added for the superseded satellite in `04`; no `docs/tasks*` / `docs/features*` writes; `01_PRD` scope row F6 already covers the daily voice pipeline, so no T4 edit was needed. The two `docs/features/*` files in `git status` were already dirty before this session — untouched.
+
+**Verification:** `bun run lint` (Biome 2.5.15 + all workspace typechecks) clean; `spur rule run` → **all 58 rules passed**. Every documented name/signature was transcribed from code (`publish-matrix-stage.ts` dispatch, `PublishPresetTargetSchema`, `targetId`, `sendRows` at `itc-publish.ts:472`, `runPublishMatrixBundle`, the two cron templates) — none from memory. Untested: nothing in this change is executable, so there is no runtime path to exercise.
+
+Artifact written: `.spur/run/wrap-g15-batch-wrapup-learnings.md`
+
+# G15 batch wrap-up — working learnings
+
+Scope: feature G15 voice3 split, tasks 0321–0327 (all closed, unforced PASS). Extracted from each
+task's Refine corrections / Solution / Review sections, not from memory.
+
+## 2026-10-22
+
+### 0321 — generalize itc plan/check/send into `publish-matrix-*` stages
+
+- **Convention: generalize by parameterizing the loop, never by copying it.** `sendRows`
+  (`apps/cli/src/itc-publish.ts:472`) kept resend rules, effect classification and receipt writing
+  in one place; itc and the matrix differ only in receipt key (`plugin` vs `targetId`). A forked
+  loop was the named anti-pattern; sharing it is what made "itc unchanged" checkable rather than
+  asserted.
+- **Convention: a new capability does not need a new noun.** The surface shipped as
+  `kk stage run publish-matrix-*`, so ADR-037's noun inventory stayed untouched. Stage names were
+  chosen to dodge collisions with existing `daily-*` stages and board node ids — hence the
+  `publish-matrix-` prefix, not `publish-*`.
+- **Pattern: optional-only schema extension.** Every matrix field on `PublishPresetTargetSchema`
+  is optional and `mode` is closed over `off|dummy|draft`, so all shipped itc presets still
+  validate *and* a preset file structurally cannot produce a live send (ADR-022).
+- **Pattern: per-target receipt keys.** `targetId = id ?? ${plugin}.${slugify(operation)} ?? plugin`
+  keeps CJK and lets one plugin hold several concurrent keys (xhs ×4, wechatmp ×2) while itc rows
+  keep the plugin key. This is the same key G211 needs.
+- **Error fixed (P2): resend state must be read from disk, not from the current pass.** Tier-0
+  blocking originally inspected only `result.receipts`, so re-entering a window whose required
+  tier-0 rows had already succeeded read as "contract broken" and skipped every later tier —
+  "never resend" would have silently become "never deliver". Fixed at
+  `apps/cli/src/publish-matrix.ts:427` with a regression at `apps/cli/tests/publish-matrix.test.ts:483`.
+- **Error fixed (P3): validate launch vars against the target window once, not inside the row
+  loop.** A `--live-channels` token belonging to another window was accepted on a plan that had no
+  rows there, i.e. a promotion that could never apply.
+- **Gotcha: a silent green path is worse than a chatty one.** Plan mode gained a success line; the
+  review accepted it because no consumer parses stage stdout and the line makes a skip visible.
+
+### 0322 — dispatcher-level dummy mode
+
+- **Pattern: pick the bypass point that proves the most for the least code.** The fake lives in
+  `sendRows` *before* `runFanout` (`apps/cli/src/itc-publish.ts:559`), not inside fan-out. Faking
+  inside fan-out would still write aggregates and require a fake `Result` — more code for a weaker
+  proof.
+- **Pattern: a rehearsal receipt is a real receipt.** `{status:'succeeded', effect:'none',
+  dummy:true}` with `url: dummy://<id>` reuses the existing schema, so consumers exclude dummy rows
+  by flag rather than by plugin name.
+- **Error fixed (P3): validate the payload you would actually have sent.** `writeDummyReceipt`
+  validated the raw payload while digesting the resolved one, so a tier-≥1 dummy row could validate
+  bytes it would never send. Fixed by reading `context.payloadPath`.
+- **Error fixed (P4): do not carry a fallback for a caller that cannot exist.** A twenty-line inline
+  fallback receipt became a named diagnostic (`dummy-receipt-unavailable`); every planning path
+  already injects the writer.
+- **Gotcha: "already rehearsed" must not mean "already published".** The skip rule counts a
+  `dummy: true` receipt as not-yet-sent when the row is no longer dummy, so flipping a preset row
+  from `dummy` to `draft` dispatches exactly once on the next run.
+- **Gotcha: an unrelated flake will find you.** `apps/board/tests/installed-board.test.ts:1038`
+  (`on schedule` → `unknown`) failed once under load and passed on immediate recheck — recorded as
+  out of scope and green in isolation, not papered over.
+
+### 0323 — `kk-daily-publish3`, `daily-ai-voice` preset, RSS gate, window schedules
+
+- **Error fixed (P1): a conditional-only dependency starves the whole graph.** A DAG node is skipped
+  only when *all* its dependencies were skipped, so `plan` depending on a window-conditional
+  `rss-gate` skipped every non-overseas window — the feature simply did not run. Fix: the gate
+  always succeeds and records its verdict in `4-publish/rss-gate.json`
+  (`plugins/kk/workflows/kk-daily-publish3.yaml:44`, `:83`).
+- **Error fixed (P1): the same rule bites a pause node.** `send` depending only on the conditional
+  `send-confirm` skipped the send *and* the whole tail for a draft window; it now also depends on
+  `check` (`:135`), and `report` also depends on `diagnose` so a gated-miss day still writes a page.
+- **Error fixed (P2): a preset `variant` is the shared bundle key, not a channel-qualified one.**
+  Baking `<variant>@<plugin>` into the preset produced `episode@wechatmp-pub@wechatmp-pub` and the
+  plan refused every channel-specific row. The `@plugin` form is the bundle-side override that
+  wins the lookup.
+- **Error fixed (P2): declare the `Intl.DateTimeFormat` fields you read.** `publish-matrix-wait-until`
+  formatted a date with no hour fields, got `NaN` and threw (`apps/cli/src/publish-matrix.ts:1044`).
+- **Error fixed (P2): a shell group hangs the engine's wrapper.** A `{ … }` block in a node body
+  produced no completion and no timeout; straight statements, no group and no heredoc.
+- **Error fixed (P3): a gate must leave a deterministic artifact.** The first miss path left the
+  incident to an agent step that may never run, so the gate now writes the incident floor
+  (`class: rss-lag`, feed URL, reason) before `diagnose` refines it.
+- **Convention: rule exemptions are reasoned and per-rule.** The feed read tripped
+  `no-direct-fetch`; the fix is one exemption naming the single call and its injectable reader —
+  the same idiom the file already uses at every transport boundary. No other rule was relaxed.
+- **Error fixed (P3): prose-derived owner matching needs word boundaries.** The `feature G R1/R2`
+  invariant could not see two-digit children, and `kk-daily-safety.yaml` read as the `daily`
+  command family. Fix: `/^G\d+_/`, a `(?=\s)` lookahead, two documented `NON_INFRA_FAMILIES`
+  entries and a non-vacuity guard on the derivation.
+- **Convention: schedules are rendered, never installed.** `KK_SCHEDULE_TEMPLATES` gained
+  cron-only entries; the installed cn-peak line carrying `live_channels` *is* the operator's
+  ADR-022 consent, so the template file documents that rather than encoding a live default.
+- **Gotcha: window defaults are per window.** `after-generate` takes the run date from voice3,
+  cn-peak is today in `America/Los_Angeles`, overseas is *yesterday* because observed episodes land
+  13:43–15:22 PDT (after the 07:00 tick). The workflow never guesses the date.
+- **Gotcha: a nested run must strip `SPUR_WORKFLOW_RUN_ACTIVE` and
+  `SPUR_EXPECTED_DEFINITION_DIGEST`** (voice2 precedent at `kk-daily-ai-voice2.yaml:532`).
+
+### 0325 — preset-only preflight probes
+
+- **Pattern: derive the probe set from the artifact that exists at that moment.** At generate time
+  no bundle exists, so no plan exists — the preflight derives plugins from the preset's
+  non-`off`/non-`dummy` rows across all windows instead (one extra input mode on
+  `checkPublishMatrix`, not a second runner).
+- **Convention: reuse the existing probe.** ADR-032's `kk plugin check` and the shared `probePlugin`
+  seam (same 60 s budget, same env injection and redaction) — no new probe mechanism.
+- **Gotcha: distinguish invalid registry data from a runtime refusal.** A preset naming an
+  uninstalled plugin is fatal (the preset is data); a *plan* row referencing a vanished plugin stays
+  a recorded `plugin not installed` probe. An empty probe set passes and prints `no probes`.
+- **Convention: the operator's "do not edit voice2" is a contract.** voice2's hard-coded probe node
+  stays; the adoption lands only in voice3/publish3.
+
+### 0326 — receipt-based publish classification
+
+- **Refine beats implementation: the ticket's premise was wrong.** `publish-classify --fold-tail`
+  never included mark-published or the run report — the real coupling was two hard-coded input file
+  names (`31-publish/<date>_14_publish-surfdash_result.json`, `_16_publish-podcast_result.json`)
+  shared by `daily-stages.ts`, `kk-workflow-stages.ts` and `board/manifest.ts`. Re-scoping to
+  "classifier + legacy bridge" was much smaller than the requested split.
+- **Pattern: keep the classifier pure.** `classifyPublishMatrix(plan, receipts, runDate)` has no fs,
+  so all four statuses plus `missing` are unit-proven; the stage is a thin writer around it.
+- **Convention: a stage exits 0 and writes its verdict; routing belongs to the workflow.** A missing
+  plan reports `none`, never `full` — that is exactly the failure masking voice2's rule exists to
+  prevent.
+- **Gotcha: exclude dummy rows from the numerator *and* the denominator.** Otherwise a rehearsal
+  either reads as a publish or as a total failure.
+- **Error fixed (P3): bridge only bytes you know the provenance of.** Copying `aggregatePath`
+  verbatim could carry another target's rows into the legacy file; the bridge now requires a
+  non-dummy `succeeded` receipt with a readable aggregate.
+- **Convention: a legacy seam is named and given a retirement condition** (`// ponytail:` comment +
+  the 04 entry), so its removal is scheduled rather than forgotten.
+
+### 0327 — generate-side payload builders and variants
+
+- **Gotcha (project-level, costly): `plugins/kk/scripts/` edits are invisible to `kk stage` until
+  synced into the installed package.** Tests run against the checkout; the E2E rehearsal runs the
+  installed copy. Any workflow rehearsal after editing stage bodies must re-sync first.
+- **Pattern: extract builders in place, keep the callers.** The seven `build*` functions stayed in
+  `daily-stages.ts` beside their callers (fewest files); voice2 calls them with real urls, the
+  variant stage calls the same functions with `PLACEHOLDER_LINKS`. Byte-identical voice2 output is
+  the proof, and the suite count (193 → 195) shows it ran.
+- **Refine beats implementation, again: `social-write` is new authoring, not a move.** voice2 never
+  published x/weibo/threads, so there was no copy to move.
+- **Error fixed (P3): a shared builder must not carry one channel's closer.** `dailyBundleVariants`
+  produced `episode@wechatmp-pub` through the article builder, which appends the 咸话咸说 outro to
+  what is an episode body. Fixed with an `appendOutro` switch; that variant is the audio carrier
+  (cover + `audioPath`), not a second article.
+- **Pattern: uniform signature over honest parameter use.** `buildSurfdashContent` takes `_links`
+  and ignores it (surfdash *is* the article publisher) — documented, because the uniform signature
+  is what lets the variant stage treat all builders alike.
+- **Convention: skip and name an absent variant, never invent one.** `social:weibo (no
+  26-social/weibo.md)` makes a disabled channel visible instead of a silent gap in the frozen
+  bundle.
+- **Gotcha: truncation is a backstop, not a limiter.** A 400-char body becomes 280 with
+  `truncatedFrom: 400` recorded, so the prompt can be tuned from evidence rather than the stage
+  silently cutting copy.
+
+## 2026-10-23
+
+### 0324 — `kk-daily-ai-voice3` generate workflow + bundle freeze
+
+- **Error fixed (P2): a dependency is not a guard.** `pool-gate` collapsing voice2's twenty-one
+  `kk store pool-count --min 1` conditions cannot be done with `dependsOn`, because the engine
+  admits a node whose dependencies are a done+skipped mix — a failed gate beside a done dependency
+  would run anyway, reopening the exact hole the repeated guard covered. Fix: the gate records
+  `PASS`/`EMPTY` at `.spur/run/<runId>-pool-gate.status` and the fifteen former guard nodes check
+  that token. **A guard that must be fail-closed has to be data, not an edge.**
+- **Error fixed (P2): prune by ownership, not by name.** The first prune dropped
+  `cards-write`/`cards-render` as "publish" nodes, but card authoring and rendering are generate-side
+  (billed image work) and `cards@xhs-pub` lost its producer. Renamed off the channel prefix and
+  gated by `cards_enabled`.
+- **Error fixed (P4): a re-freeze must not destroy another run's record.** Overwriting `bundle.json`
+  discarded the `runs[]` a publish window had appended; the writer now preserves it
+  (`apps/cli/src/publish-matrix.ts:1165`, pinned at `apps/cli/tests/voice3-dag.test.ts:104`).
+- **Convention: the channel switches are deleted, not defaulted off.** No `xhs_enabled`,
+  `wechat_enabled`, `*_live`, `publish_enabled` var exists in voice3; only generation switches
+  (`cards_enabled`, `plan_translate_enabled`, …) and the four publish hand-off vars remain. A
+  channel option lives in the preset row's `options`, so adding a channel is a preset edit.
+- **Pattern: keep the content, drop the distribution.** `show-notes` authoring stays on the
+  generate side because it is content; its publish half moves. Reuse voice2's stage commands rather
+  than re-implementing them.
+- **Convention: the bundle has exactly one producer.** `publish-matrix-bundle` validates every
+  variant as kk-core `Content` and records `{path, sha256}`, so the publish side's digest check can
+  only pass on the bytes generate actually produced; a missing article/episode variant fails the
+  freeze instead of shipping a bundle the publication contract cannot satisfy.
+
+## Cross-task conventions worth carrying forward
+
+- **Refine before implementing.** Three of seven tasks (0325, 0326, 0327) had a premise that the
+  refinement step corrected: the wrong artifact to derive from, the wrong thing to split, and a
+  "move" that was really new authoring. Re-scoping early saved more than any implementation
+  decision.
+- **Do not edit voice2.** Four tasks carried "voice2 YAML / stages / tests untouched" as an explicit
+  requirement, verified with an empty `git diff`. It kept a shipped production path stable while a
+  replacement was built, and it is why every legacy seam has a named retirement condition.
+- **Surface a new capability through `kk stage run <family>-*`; add a noun only when ADR-037 says
+  so.** No `kk publish` verb was added.
+- **Two engine facts shape every new DAG**: a node is skipped only when *all* deps were skipped
+  (so gate with data, and pair a conditional dependency with an unconditional one), and the engine
+  shell wrapper does not tolerate a `{ … }` group.
+- **Doc sync is part of the task, not the wrap-up.** Each task updated `docs/04_DESIGN.md` in its
+  own commit (T3). What the batch still owed at wrap-up was the ADR (ADR-043), the `03` mechanism
+  section, the satellite status flip and three stale 04 statements the per-task edits left behind
+  (a heading enumerating three stages, an "out of scope" line naming work documented above it, and
+  a `kk schedule render` table missing both new schedules).
+
+Skipped/risk: I did not run the full `bun run gate` test suite (docs-only change; `bun run lint` + all 58 constraint rules passed). `docs/features/*` shows as modified in `git status` from before this session — preserved, not mine.
