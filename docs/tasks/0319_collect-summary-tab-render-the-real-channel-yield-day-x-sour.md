@@ -4,7 +4,7 @@ name: "Collect Summary tab: render the real channel yield (day x source) and per
 status: done
 template: feature-impl
 created_at: 2026-10-22T17:52:34.011Z
-updated_at: "2026-10-22T22:43:38.799Z"
+updated_at: "2026-10-23T05:20:48.780Z"
 feature_id: G81
 
 ac_altitude: task-local
@@ -217,7 +217,7 @@ new finding.
 - sqlite3 cause check (bound `1792000000000`) → `50|500|1920|288`, exit 0.
 - Python column-sum of Table 2 → `[76, 760, 2959, 480]`, exit 0.
 - `bun apps/cli/src/index.ts store stats --days 14 --json --db <snapshot>` → byDay/bySource identical to the report, exit 0.
-- Full tier (`bun run test`, `spur self exec check`) not re-run per brief — PASSed twice on this tree (receipt `.spur/run/0319-check-receipt.json`); `bun run lint` exit 0 after the markdown edit.
+- Full tier (`bun run test`, `spur self exec check`) not re-run per brief — PASSed twice on this tree (receipt `.spur/run/0319-check-receipt.json` — LOST with the agent worktree per ADR-131; the inline sqlite3 evidence above stands); `bun run lint` exit 0 after the markdown edit.
 
 ##### Residual risk
 
