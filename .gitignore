@@ -178,4 +178,6 @@ plugins/*/*/.spur/
 /data/backends/cuda
 
 /.works
+# Agent-tool session state (oh-my-openagent run continuation); never tracked or linted.
+/.omo
 plugins/generations/image-gen/.spur/
