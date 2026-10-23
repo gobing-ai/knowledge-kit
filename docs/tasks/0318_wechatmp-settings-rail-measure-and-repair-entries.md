@@ -4,7 +4,7 @@ name: "wechatmp 文章 settings rail: measure and repair 原创/创作来源/原
 status: done
 template: issue
 created_at: 2026-10-22T03:08:10.155Z
-updated_at: "2026-10-22T05:01:08.613Z"
+updated_at: "2026-10-23T03:44:50.088Z"
 
 priority: P2
 estimate_hours: 4
@@ -211,7 +211,7 @@ Design conformance: all five intended outcomes implemented. Two measurement-driv
 | R2 | MET | `plugins/publishings/wechatmp-pub/src/enrich.ts:364` opens the claim expander, chooses the requested nested radio text and confirms with 确认; `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:96` proves an unavailable stance is named once. Live production rail observed claim enabled with exact 个人观点，仅供参考 text. |
 | R3 | MET | `docs/design/wechatmp-ui-discovery.md:88` records the URL popover measurement before repair; `plugins/publishings/wechatmp-pub/src/enrich.ts:329` waits for asynchronous popover close and verifies row URL/checkbox; `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:50` proves delayed commit and post-close readback. Live production rail observed the exact requested URL and checked row. |
 | R4 | MET | `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:87` proves the original/reward sequence. Live production rail and replay observed reward checked, and the inspected screenshot shows the active 赞赏 account row after original declaration. |
-| R5 | MET | `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:50` and `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:87` execute production expressions in Chromium against measured popover/twin-row/nested-radio shapes. Initial entries: 0 pass/2 fail; URL baseline: 2 pass/2 fail; twin-row baseline: 0 pass/1 fail; delayed URL baseline: 0 pass/1 fail. Final focused regression: 7 pass/0 fail, repeated successfully during recovery. Full-suite measured coverage: enrich.ts functions 96.77%, lines 99.16%. Proof artifacts: .spur/run/0318-verify-answer.txt lines 1–56 (entire answer), .spur/run/0318-verdict.json lines 1–161 (entire derived/folded verdict), .spur/run/0318-resume-regression.log and .spur/run/0318-resume-acceptance.log. |
+| R5 | MET | `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:50` and `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts:87` execute production expressions in Chromium against measured popover/twin-row/nested-radio shapes. Initial entries: 0 pass/2 fail; URL baseline: 2 pass/2 fail; twin-row baseline: 0 pass/1 fail; delayed URL baseline: 0 pass/1 fail. Final focused regression: 7 pass/0 fail, repeated successfully during recovery. Full-suite measured coverage: enrich.ts functions 96.77%, lines 99.16%. Proof artifacts recorded at the time: .spur/run/0318-verify-answer.txt lines 1–56 (entire answer), .spur/run/0318-verdict.json lines 1–161 (entire derived/folded verdict), .spur/run/0318-resume-regression.log and .spur/run/0318-resume-acceptance.log — all LOST with the 2026-10-22 run-plane cleanup (see References). |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
@@ -244,16 +244,19 @@ Verification receipts:
 - Fresh lint/typechecks, build, 58 pre-check rules and two post-check rules passed (exit 0).
 - The full suite on the unchanged source passed: 4050 pass, three pre-existing skips, zero failures, 20088 assertions across 205 files. Measured enrich.ts coverage: functions 96.77%, lines 99.16%. Full-suite logs are retained; no extra full-suite run was needed for metadata-only reconciliation.
 
-Local artifacts retained for audit:
+Local artifacts — LOST. The 2026-10-22 run-plane cleanup removed this task's `.spur/run/` receipts
+and the `20261021-wechatmp/` evidence directory (ADR-131 makes those planes disposable per tree). The
+pointer set is listed so the record stays auditable; no claim above rests on it — the durable proof is
+the source and test citations in Testing.
 
-- `.spur/run/0318-verify-answer.txt` lines 1–56 and `.spur/run/0318-verdict.json` lines 1–161: authored answer and final CLI-derived/folded PASS verdict.
-- `.spur/run/0318-residuals.json`: final zero-item residual sweep. The earlier residual report describes the resolved attempt and is superseded by this final sweep.
-- `.spur/run/0318-acceptance.ts` lines 1–46: repeatable live driver; `.spur/run/0318-live-acceptance.png`: inspected screenshot.
-- `.spur/memory/evidence/20261021-wechatmp/0318-url-measure.json` lines 1–335 and `.spur/memory/evidence/20261021-wechatmp/0318-live-acceptance.json` lines 1–26: measured controls and passing live state/replay.
-- `.spur/run/0318-resume-regression.log`, `.spur/run/0318-resume-acceptance.log`, `.spur/run/0318-resume-lint.log`, `.spur/run/0318-resume-build.log`, `.spur/run/0318-resume-pre-check.log`, `.spur/run/0318-resume-post-check.log`: fresh recovery receipts.
-- `.spur/run/0318-test-final.log`: full-suite receipt on unchanged source. Expected failing baselines are retained in the red logs named in the answer.
+- LOST (2026-10-22) `.spur/run/0318-verify-answer.txt` lines 1–56 and `.spur/run/0318-verdict.json` lines 1–161: authored answer and final CLI-derived/folded PASS verdict.
+- LOST (2026-10-22) `.spur/run/0318-residuals.json`: final zero-item residual sweep; it superseded the earlier residual report.
+- LOST (2026-10-22) `.spur/run/0318-acceptance.ts` lines 1–46 (repeatable live driver) and `.spur/run/0318-live-acceptance.png` (inspected screenshot).
+- LOST (2026-10-22) `.spur/memory/evidence/20261021-wechatmp/0318-url-measure.json` lines 1–335 and `.spur/memory/evidence/20261021-wechatmp/0318-live-acceptance.json` lines 1–26: measured controls and passing live state/replay. The same directory held the `wechatmp-probe{,2,3,4,5,6}-20261021.json` measurements cited in Background, Design and Root Cause.
+- LOST (2026-10-22) `.spur/run/0318-resume-regression.log`, `.spur/run/0318-resume-acceptance.log`, `.spur/run/0318-resume-lint.log`, `.spur/run/0318-resume-build.log`, `.spur/run/0318-resume-pre-check.log`, `.spur/run/0318-resume-post-check.log`: fresh recovery receipts.
+- LOST (2026-10-22) `.spur/run/0318-test-final.log` (full-suite receipt on unchanged source) and `.spur/run/0318-shippable.json` (readiness receipt). The red baseline logs named in the answer are gone with them.
 
-The recorder emits its default Coverage N/A sentence for verdict transcription; actual measured coverage and artifact ranges are recorded in R5's Testing evidence and the receipts above.
+The recorder emits its default Coverage N/A sentence for verdict transcription; the actual measured coverage is recorded in R5's Testing evidence, and the artifact ranges were carried by the now-LOST receipts listed above.
 
 Task shipping readiness: PASS. Feature-level Shippable: N/A (0318 has no linked feature). This does not certify the broader E92 umbrella, whose separate task 0260 remains blocked. Product repair is now present in commit 6126369, observed during recovery; this agent did not create that commit. Only the final task-record updates remain uncommitted for the next step.
 
