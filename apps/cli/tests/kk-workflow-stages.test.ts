@@ -4038,3 +4038,92 @@ describe('daily-voice-audit — advisory speaker-consistency check (20261016)', 
         });
     });
 });
+
+describe('daily-translate-sync pre-sync structural check (20261023 splice regression)', () => {
+    const STAMP = '20261023';
+
+    function postPath(dir: string, locale: 'zh' | 'en' | 'ja'): string {
+        return join(dir, 'surfdash', 'content', 'posts', 'articles', locale, `${STAMP}-ai-post`, 'index.md');
+    }
+
+    function writePost(
+        dir: string,
+        locale: 'zh' | 'en' | 'ja',
+        frontmatter: { description: string; keyPoints: string[] },
+    ): void {
+        const file = postPath(dir, locale);
+        mkdirSync(dirname(file), { recursive: true });
+        const points = frontmatter.keyPoints.map((p) => `  - "${p}"`).join('\n');
+        writeFileSync(
+            file,
+            `---\ntitle: T ${locale}\ndescription: "${frontmatter.description}"\ntags:\n  - ai-news\npublishDate: 2026-10-23\ndraft: true\nkey_points:\n${points}\n---\n\nBody.\n`,
+        );
+    }
+
+    /** PATH kk shim: records argv and exits 0 — the stage must reach the real sync spawn only when the gate passes. */
+    function kkShim(dir: string, logPath: string): Record<string, string> {
+        const bin = join(dir, 'bin');
+        mkdirSync(bin, { recursive: true });
+        const path = join(bin, 'kk');
+        writeFileSync(path, `#!/usr/bin/env bash\nprintf '%s\\n' "kk $*" >> "${logPath}"\nexit 0\n`);
+        chmodSync(path, 0o755);
+        return { PATH: `${bin}:${process.env.PATH ?? ''}` };
+    }
+
+    function markerFile(dir: string, zhPath: string): string {
+        const publish = join(dir, '31-publish');
+        mkdirSync(publish, { recursive: true });
+        const marker = join(publish, `${STAMP}_20_translate-localize_zh-post-path.txt`);
+        writeFileSync(marker, zhPath);
+        return marker;
+    }
+
+    it('fails loud on a spliced en key_points list (merged items) and never spawns the sync', () => {
+        withTempDir((dir) => {
+            const zhPath = postPath(dir, 'zh');
+            writePost(dir, 'zh', { description: '中文摘要', keyPoints: ['a', 'b', 'c', 'd'] });
+            writePost(dir, 'en', { description: 'English summary', keyPoints: ['spliced a and b', 'c plus d'] });
+            writePost(dir, 'ja', { description: '日本語の要約', keyPoints: ['a', 'b', 'c', 'd'] });
+            const log = join(dir, 'kk-calls.log');
+            const res = run(['daily-translate-sync', dir, STAMP, '', markerFile(dir, zhPath)], kkShim(dir, log));
+            expect(res.status).toBe(1);
+            expect(res.stderr).toContain('pre-sync structural check');
+            expect(res.stderr).toContain('key_points count 2 != zh 4');
+            expect(existsSync(log)).toBe(false);
+        });
+    });
+
+    it('fails loud on an empty en description', () => {
+        withTempDir((dir) => {
+            const zhPath = postPath(dir, 'zh');
+            writePost(dir, 'zh', { description: '中文摘要', keyPoints: ['a', 'b'] });
+            writePost(dir, 'en', { description: '', keyPoints: ['a', 'b'] });
+            const log = join(dir, 'kk-calls.log');
+            const res = run(['daily-translate-sync', dir, STAMP, '', markerFile(dir, zhPath)], kkShim(dir, log));
+            expect(res.status).toBe(1);
+            expect(res.stderr).toContain('description missing/empty');
+            expect(existsSync(log)).toBe(false);
+        });
+    });
+
+    it('passes matching en/ja drafts through to the surfdash-pub sync', () => {
+        withTempDir((dir) => {
+            const zhPath = postPath(dir, 'zh');
+            writePost(dir, 'zh', { description: '中文摘要', keyPoints: ['a', 'b'] });
+            writePost(dir, 'en', { description: 'English summary', keyPoints: ['a', 'b'] });
+            writePost(dir, 'ja', { description: '日本語の要約', keyPoints: ['a', 'b'] });
+            const log = join(dir, 'kk-calls.log');
+            const res = run(['daily-translate-sync', dir, STAMP, '', markerFile(dir, zhPath)], kkShim(dir, log));
+            expect(res.status).toBe(0);
+            expect(readFileSync(log, 'utf-8')).toContain('executor run surfdash-pub');
+        });
+    });
+
+    it('skips without a zh marker file', () => {
+        withTempDir((dir) => {
+            const res = run(['daily-translate-sync', dir, STAMP, '', join(dir, 'missing.txt')]);
+            expect(res.status).toBe(0);
+            expect(res.stdout).toContain('no zh post path');
+        });
+    });
+});

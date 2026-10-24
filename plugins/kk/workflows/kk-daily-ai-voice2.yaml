@@ -918,6 +918,7 @@ nodes:
           English: ${vars.work_dir}/31-publish/${vars.run_date}_20_translate-localize_en-post-path.txt
           Japanese: ${vars.work_dir}/31-publish/${vars.run_date}_20_translate-localize_ja-post-path.txt
           For each: if the marker is empty or unreadable, skip that locale. Otherwise edit the named file in place — translate the frontmatter title and the whole markdown body to natural English/Japanese respectively. Keep frontmatter keys, dates, URLs, code, and the assets/ image reference untouched. Set draft: false (the translated post publishes to the site) and remove any canonical: frontmatter line pointing at a different locale's URL.
+          Also translate these frontmatter values into the target locale, keeping all other keys untouched: description, seo_title, seo_description, and each key_points item. Each stays one coherent standalone sentence that summarizes the same story as the zh source — never splice fragments from different items or stories into one, and key_points must keep exactly the same number of items as the zh post. The 2026-10-23 run failed this: spliced description/key_points had to be hand-repaired before sync.
           Keep frontmatter valid YAML: double-quote any value containing ': '. Read the surfdash translator glossary if present at the surfdash checkout root under .agents/skills/surfdash-translator/glossary.md and apply its terminology.
           Do not wait for operator confirmation. Each edited file must end fully in its target language.
 

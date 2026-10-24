@@ -1902,6 +1902,27 @@ function readFrontmatterScalar(filePath: string, key: string): string | undefine
     return value.length > 0 ? value : undefined;
 }
 
+/** Count `key_points` list items in a Surfing post's frontmatter; undefined when absent/unreadable. */
+export function countKeyPoints(filePath: string): number | undefined {
+    if (!isFile(filePath)) return undefined;
+    let raw: string;
+    try {
+        raw = readFileSync(filePath, 'utf-8');
+    } catch {
+        return undefined;
+    }
+    const block = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw)?.[1];
+    if (!block) return undefined;
+    // Slice from `key_points` to the first top-level key (or block end), then count item-start
+    // lines (`- `), so folded (`>-`) and quoted single-line items both count once.
+    const head = /^key_points:\n/m.exec(block);
+    if (!head) return undefined;
+    const body = block.slice(head.index + head[0].length);
+    const endMatch = /^\S/m.exec(body);
+    const list = endMatch ? body.slice(0, endMatch.index) : body;
+    return list.split('\n').filter((line) => /^[ \t]+- /.test(line)).length;
+}
+
 function firstRefinedTitle(parsed: Record<string, unknown> | null): string {
     const targets = parsed?.targets;
     if (!Array.isArray(targets)) return '';
@@ -3112,6 +3133,26 @@ export function dailyTranslateSync(args: string[]): void {
                 1,
                 `translate-sync: 4th argument must be the zh marker file (${runDate}_20_translate-localize_zh-post-path.txt), not the post itself — '${zhPathFile}' holds ${zhPostPath.includes('\n') ? 'a multi-line document' : `'${zhPostPath}'`}`,
             );
+        }
+        // The 2026-10-23 translate run published spliced en/ja description/key_points; the locale
+        // channel has no judge, so gate the structural minimum here before the CMS sync:
+        // a summary must exist and the key_points count must match the zh post (splices merge items).
+        const zhPoints = countKeyPoints(zhPostPath);
+        for (const locale of ['en', 'ja'] as const) {
+            const sibling = zhPostPath.replace('/zh/', `/${locale}/`);
+            if (!isFile(sibling)) continue;
+            const problems: string[] = [];
+            if (readFrontmatterScalar(sibling, 'description') === undefined) problems.push('description missing/empty');
+            const points = countKeyPoints(sibling);
+            if (zhPoints !== undefined && points !== undefined && points !== zhPoints) {
+                problems.push(`key_points count ${points} != zh ${zhPoints} (spliced or merged items)`);
+            }
+            if (problems.length > 0) {
+                failWith(
+                    1,
+                    `translate-sync: ${locale} draft failed the pre-sync structural check (${problems.join('; ')}) — repair ${sibling} per the translate stage contract before syncing`,
+                );
+            }
         }
         sted('write', sync, () =>
             writeJqText(sync, { body: '', options: { operation: 'sync', postPath: zhPostPath } }),
