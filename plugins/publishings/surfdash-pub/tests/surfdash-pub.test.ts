@@ -21,7 +21,7 @@ import {
     slugify,
     withEmdashTokenHint,
 } from '../src/index';
-import { localeIndexPath, patchPostFiles, upsertFrontmatterKey } from '../src/patch';
+import { crossLinkFor, localeIndexPath, patchPostFiles, upsertFrontmatterKey } from '../src/patch';
 
 // Auto-push targets the real surfdash checkout — CLI-path tests run offline with stub binaries.
 process.env.SURFDASH_AUTO_PUSH ??= '0';
@@ -1107,6 +1107,60 @@ describe('surfdash-pub post-patch (2026-10-12 boundary move from the kk stage)',
         expect(inserted).toBe("---\ntitle: T\npublishDate: X\nimage: 'u'\n---\nBody\n");
     });
 
+    test("crossLinkFor names each locale's canonical series (2026-10-23 retired-name regression)", () => {
+        expect(crossLinkFor('zh', '2026-10-23', 'https://pod.example/i/9')).toBe(
+            '🎧 本期已同步制作为播客节目，[点击收听《每日AI乱炖 · 2026-10-23》](https://pod.example/i/9)。',
+        );
+        expect(crossLinkFor('en', '2026-10-23', 'https://pod.example/i/9')).toBe(
+            '🎧 This episode is also available as a podcast: [listen to Daily AI Stew · 2026-10-23](https://pod.example/i/9).',
+        );
+        expect(crossLinkFor('ja', '2026-10-23', 'https://pod.example/i/9')).toBe(
+            '🎧 本エピソードはポッドキャストでも配信中：[デイリーAIシチュー · 2026-10-23 を聴く](https://pod.example/i/9)。',
+        );
+    });
+
+    test('patchPostFiles replaces a stale 🎧 cross-link line instead of appending a second one', async () => {
+        await withTree(async (root, localCover) => {
+            // A previous run left the en cross-link carrying the zh series name (2026-10-23 shape):
+            // the URL is present, so the old append-only logic kept the retired name forever.
+            const stale =
+                '🎧 This episode is also available as a podcast: [listen to 每日AI乱炖 · 2026-10-11](https://pod.example/i/1).';
+            const enPath = post(root, 'en');
+            await writeFile(
+                enPath,
+                `---\ntitle: T\npublishDate: '2026-10-11'\nimage: ./assets/cover.png\n---\n\nBody line\n\n${stale}\n`,
+            );
+            const outcome = await patchPostFiles({
+                postPath: post(root, 'zh'),
+                coverUrl: 'https://cdn.example/cover.png',
+                showNotesUrl: 'https://pod.example/i/1',
+                localCover,
+                dateIso: '2026-10-11',
+            });
+            const en = await readFile(enPath, 'utf-8');
+            expect(en).toContain('[listen to Daily AI Stew · 2026-10-11](https://pod.example/i/1)');
+            expect(en).not.toContain('每日AI乱炖');
+            expect(en.match(/pod\.example\/i\/1/g)).toHaveLength(1);
+            expect(en.match(/🎧/g)).toHaveLength(1);
+            expect(outcome.changed).toBe(2); // zh gains its cross-link; en swaps the stale line
+
+            // A prose line that merely mentions the URL is left alone — only 🎧 lines refresh.
+            const prose = 'Earlier coverage: https://pod.example/i/2 is worth a listen.';
+            await writeFile(
+                enPath,
+                `---\ntitle: T\n---\n\n${prose}\n\n🎧 This episode is also available as a podcast: [listen to Daily AI Stew · 2026-10-11](https://pod.example/i/2).\n`,
+            );
+            await patchPostFiles({
+                postPath: post(root, 'zh'),
+                coverUrl: '',
+                showNotesUrl: 'https://pod.example/i/2',
+                localCover,
+                dateIso: '2026-10-11',
+            });
+            expect(await readFile(enPath, 'utf-8')).toContain(prose);
+        });
+    });
+
     test('patchPostFiles writes the cover URL and the cross-link for every published locale', async () => {
         await withTree(async (root, localCover) => {
             const outcome = await patchPostFiles({
@@ -1127,7 +1181,7 @@ describe('surfdash-pub post-patch (2026-10-12 boundary move from the kk stage)',
             expect(zh).toContain("image: 'https://cdn.example/cover.png'");
             expect(zh).toContain('[点击收听《每日AI乱炖 · 2026-10-11》](https://pod.example/i/1)');
             const en = await readFile(post(root, 'en'), 'utf-8');
-            expect(en).toContain('[listen to 每日AI乱炖 · 2026-10-11](https://pod.example/i/1)');
+            expect(en).toContain('[listen to Daily AI Stew · 2026-10-11](https://pod.example/i/1)');
 
             // Idempotent: a second pass changes nothing and writes nothing.
             const again = await patchPostFiles({
@@ -1139,6 +1193,30 @@ describe('surfdash-pub post-patch (2026-10-12 boundary move from the kk stage)',
             });
             expect(again.changed).toBe(0);
             expect(again.written).toEqual([]);
+        });
+    });
+
+    test('patchPostFiles adds the full-series-name listen link to zh, en and ja once the episode is published', async () => {
+        await withTree(async (root, localCover) => {
+            const jaPath = post(root, 'ja');
+            await mkdir(dirname(jaPath), { recursive: true });
+            await writeFile(jaPath, `---\ntitle: T\npublishDate: '2026-10-23'\n---\n\n本文\n`);
+            const url = 'https://podcast.salty.vip/i/daily-ai-2026-10-23/';
+            const outcome = await patchPostFiles({
+                postPath: post(root, 'zh'),
+                coverUrl: '',
+                showNotesUrl: url,
+                localCover,
+                dateIso: '2026-10-23',
+            });
+            expect(outcome.absent).toEqual([]);
+            expect(await readFile(post(root, 'zh'), 'utf-8')).toContain(
+                `[点击收听《每日AI乱炖 · 2026-10-23》](${url})`,
+            );
+            const en = await readFile(post(root, 'en'), 'utf-8');
+            expect(en).toContain(`[listen to Daily AI Stew · 2026-10-23](${url})`);
+            expect(en).not.toMatch(/listen to AI Stew/);
+            expect(await readFile(jaPath, 'utf-8')).toContain(`[デイリーAIシチュー · 2026-10-23 を聴く](${url})`);
         });
     });
 

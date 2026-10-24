@@ -60,13 +60,23 @@ export function localeIndexPath(postPath: string, locale: PatchLocale): string |
 
 /**
  * The podcast cross-link line per locale (task 0189 R4: the column's episode-title pattern, not the
- * retired news-bulletin name).
+ * retired news-bulletin name). The series names are fixed per-locale product identity (2026-10-23:
+ * the translate agent had been inventing them) and must agree with the pipeline's single table in
+ * plugins/kk/scripts/series-names.ts — the two packages cannot import each other, so tests assert
+ * the agreement.
  */
+const SERIES_NAMES: Record<PatchLocale, string> = {
+    zh: '每日AI乱炖',
+    en: 'Daily AI Stew',
+    ja: 'デイリーAIシチュー',
+};
+
 export function crossLinkFor(locale: PatchLocale, dateIso: string, showNotesUrl: string): string {
+    const series = SERIES_NAMES[locale];
     const links: Record<PatchLocale, string> = {
-        zh: `🎧 本期已同步制作为播客节目，[点击收听《每日AI乱炖 · ${dateIso}》](${showNotesUrl})。`,
-        en: `🎧 This episode is also available as a podcast: [listen to 每日AI乱炖 · ${dateIso}](${showNotesUrl}).`,
-        ja: `🎧 本エピソードはポッドキャストでも配信中：[每日AI乱炖 · ${dateIso} を聴く](${showNotesUrl})。`,
+        zh: `🎧 本期已同步制作为播客节目，[点击收听《${series} · ${dateIso}》](${showNotesUrl})。`,
+        en: `🎧 This episode is also available as a podcast: [listen to ${series} · ${dateIso}](${showNotesUrl}).`,
+        ja: `🎧 本エピソードはポッドキャストでも配信中：[${series} · ${dateIso} を聴く](${showNotesUrl})。`,
     };
     return links[locale];
 }
@@ -131,8 +141,23 @@ export async function patchPostFiles(request: PatchPostRequest): Promise<PatchPo
             md = upsertFrontmatterKey(md, 'og_image', './assets/cover.png');
             images[locale] = './assets/cover.png';
         }
-        if (request.showNotesUrl !== '' && !md.includes(request.showNotesUrl)) {
-            md = `${md.replace(/\s*$/, '')}\n\n${crossLinkFor(locale, request.dateIso, request.showNotesUrl)}\n`;
+        if (request.showNotesUrl !== '') {
+            // 2026-10-23: a previous run may have left a 🎧 cross-link line carrying a retired
+            // series name — refresh that line in place instead of keeping it forever (the URL it
+            // carries made a fresh append a no-op). A non-cross-link line mentioning the URL is
+            // left alone; the fresh link is only appended when no line carries the URL at all.
+            const link = crossLinkFor(locale, request.dateIso, request.showNotesUrl);
+            const lines = md.split('\n');
+            const carriesUrl = lines.some((line) => line.includes(request.showNotesUrl));
+            if (!carriesUrl) {
+                md = `${md.replace(/\s*$/, '')}\n\n${link}\n`;
+            } else {
+                md = lines
+                    .map((line) =>
+                        line.includes(request.showNotesUrl) && line.trimStart().startsWith('🎧') ? link : line,
+                    )
+                    .join('\n');
+            }
         }
         if (md !== before) {
             await fs.writeFile(indexMd, md);
