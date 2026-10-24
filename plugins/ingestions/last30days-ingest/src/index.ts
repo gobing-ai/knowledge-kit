@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -40,7 +39,7 @@ export const defaultRunner: RunLast30Days = async (config, outputPath) => {
     // The skill dir is the spawn cwd: when the ~/.agents/skills/last30days symlink dangles,
     // Bun reports it as `ENOENT ... posix_spawn 'python3'` — pointing at the interpreter, not
     // the dir (2026-10-20 incident lost 9h of diagnosis to that). Fail with the real problem.
-    if (!existsSync(skillDir)) {
+    if (!createNodeFileSystem().exists(skillDir)) {
         throw new Error(
             `skill dir missing at ${skillDir} — restore the last30days skill checkout/symlink or set LAST30DAYS_SKILL_DIR`,
         );
