@@ -282,6 +282,47 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         }
     });
 
+    it('translate prompt pins the per-locale series names (20261023 retired-name regression)', () => {
+        // The 2026-10-23 run: the agent invented the en/ja series names (ja 毎日AIブレンド, en
+        // "Daily AI Medley"/hodgepodge phrasing) and left the zh name in en/ja listen links. The
+        // prompt now names the fixed identity per locale; retired names may appear only inside the
+        // never-emit list, and the deterministic rewrite lives in daily-stages translate-sync
+        // (asserted by apps/cli/tests/kk-workflow-stages.test.ts).
+        const yaml2 = readFileSync(
+            join(import.meta.dir, '../../../plugins/kk/workflows/kk-daily-ai-voice2.yaml'),
+            'utf-8',
+        );
+        const block = yaml2.match(/- id: translate\n[\s\S]*?(?=\n {2}- id: translate-sync)/)?.[0] ?? '';
+        expect(block).not.toBe('');
+        for (const marker of [
+            '"Daily AI Stew"',
+            '"Salty Talk"',
+            '"デイリーAIシチュー"',
+            '"咸話咸説"',
+            'Your Daily AI Stew from Robin, on Salty Talk.',
+            '咸話咸説のデイリーAIシチュー、Robin がお届けします。',
+            '"[listen to Daily AI Stew · <date>](<url>)"',
+            '"[デイリーAIシチュー · <date> を聴く](<url>)"',
+        ]) {
+            expect(block, `${marker} in the translate prompt`).toContain(marker);
+        }
+        // Retired names appear only inside the never-emit sentence, never as instructions.
+        const never = block.match(/Never emit [^\n]*(?=\(a URL keeps)/)?.[0] ?? '';
+        expect(never, 'the never-emit list exists').not.toBe('');
+        for (const retired of [
+            '毎日AIブレンド',
+            'ごった煮',
+            'Daily AI Medley',
+            'hodgepodge',
+            'Daily AI Briefing',
+            '每日AI乱炖',
+        ]) {
+            if (block.includes(retired)) expect(never, `${retired} only in the never-emit list`).toContain(retired);
+        }
+        // The zh name is never taught as an en/ja output — it is named only as forbidden.
+        expect(block.match(/每日AI乱炖/g)?.length ?? 0).toBe(1);
+    });
+
     it('R4 (0138) — the plan-translate prompt carries the copy-discipline contract', () => {
         // The prompt is the primary defence against research scaffolding reaching published copy;
         // the deterministic strip in daily-article-gen is the fallback. Naming each scaffold label
