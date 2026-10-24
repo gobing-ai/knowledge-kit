@@ -55,15 +55,15 @@ describe('surfdash-pub plugin', () => {
         expect(markdown).toContain('# My Surfing Article');
     });
 
-    test('mapContentToSurfingMarkdown extracts title and lead paragraph when metadata is absent', () => {
+    test('mapContentToSurfingMarkdown leaves description empty when metadata.description is absent (refine owns it)', () => {
         const content: Content = {
-            body: '# Extracted Title\n\nThis lead paragraph will become the description.\n\nMore text.',
+            body: '# Extracted Title\n\nThis lead paragraph will not become the description.\n\nMore text.',
             format: 'markdown',
         };
 
         const markdown = mapContentToSurfingMarkdown(content);
         expect(markdown).toContain('title: "Extracted Title"');
-        expect(markdown).toContain('description: "This lead paragraph will become the description."');
+        expect(markdown).toContain('description: ""');
         expect(markdown).toContain('draft: false');
     });
 
@@ -1240,6 +1240,48 @@ describe('surfdash-pub post-patch (2026-10-12 boundary move from the kk stage)',
             expect(await readFile(post(root, 'zh'), 'utf-8')).toContain("image: './assets/cover.png'");
         });
     });
+
+    test('patchPostFiles rejects a coverUrl that is not an absolute https:// URL', async () => {
+        await withTree(async (root, localCover) => {
+            await expect(
+                patchPostFiles({
+                    postPath: post(root, 'zh'),
+                    coverUrl: 'http://insecure.example/cover.png',
+                    showNotesUrl: '',
+                    localCover,
+                    dateIso: '2026-10-11',
+                }),
+            ).rejects.toThrow('coverUrl must be an absolute https:// URL');
+
+            await expect(
+                patchPostFiles({
+                    postPath: post(root, 'zh'),
+                    coverUrl: './assets/cover.png',
+                    showNotesUrl: '',
+                    localCover,
+                    dateIso: '2026-10-11',
+                }),
+            ).rejects.toThrow('coverUrl must be an absolute https:// URL');
+        });
+    });
+
+    test('patchPostFiles throws naming the locale when coverUrl is empty, frontmatter has no image key, and localCover is missing', async () => {
+        await withTree(async (root, _localCover) => {
+            for (const locale of ['zh', 'en']) {
+                const md = await readFile(post(root, locale), 'utf-8');
+                await writeFile(post(root, locale), md.replace(/^image:.*$/m, '').replace(/^og_image:.*$/m, ''));
+            }
+            await expect(
+                patchPostFiles({
+                    postPath: post(root, 'zh'),
+                    coverUrl: '',
+                    showNotesUrl: '',
+                    localCover: join(root, 'non-existent-cover.png'),
+                    dateIso: '2026-10-11',
+                }),
+            ).rejects.toThrow('zh post has no cover');
+        });
+    });
 });
 
 describe('surfdash-pub patch operation (2026-10-12 boundary move)', () => {
@@ -1466,6 +1508,177 @@ describe('fastForwardToOrigin', () => {
             expect(remoteLog.trim()).toBe('content: remote');
         } finally {
             await rm(base, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('publishPost cover validation (Item 2)', () => {
+    const mockBin = async (dir: string): Promise<string> => {
+        const bin = join(dir, 'postsurfing');
+        await writeFile(bin, readFileSync(join(import.meta.dir, 'fixtures', 'fake-postsufing.ts'), 'utf-8'), 'utf-8');
+        await Bun.spawn(['chmod', '+x', bin]).exited;
+        return bin;
+    };
+
+    test('fails before writing anything if metadata.coverImage is a string but does not exist', async () => {
+        const tmpDir = join(process.cwd(), '.works/tmp/test-cover-missing');
+        await mkdir(tmpDir, { recursive: true });
+        process.env.POSTSURFING_BIN = await mockBin(tmpDir);
+        process.env.SURFDASH_ROOT = tmpDir;
+        try {
+            const transport = new PostsurfingFileCliTransport();
+            const content: Content = {
+                title: 'No Cover File',
+                body: '正文',
+                format: 'markdown',
+                metadata: {
+                    coverImage: join(tmpDir, 'non-existent-cover.png'),
+                },
+            };
+            const result = await transport.publish({ content });
+            expect(result.ok).toBe(false);
+            expect(result.error).toContain('metadata.coverImage not found:');
+            expect(existsSync(join(tmpDir, 'content', 'posts', 'articles', 'zh'))).toBe(false);
+        } finally {
+            delete process.env.POSTSURFING_BIN;
+            delete process.env.SURFDASH_ROOT;
+            await rm(tmpDir, { recursive: true, force: true });
+        }
+    });
+
+    test.each([
+        ['tags', { tags: ['sub-category:ai-daily'] }],
+        ['keywords', { keywords: ['sub-category:ai-daily'] }],
+        ['subCategory', { subCategory: 'ai-daily' }],
+    ])('digest post marked by %s fails if it has no cover image', async (_label, metadata) => {
+        const tmpDir = join(process.cwd(), `.works/tmp/test-digest-nocover-${_label}`);
+        await mkdir(tmpDir, { recursive: true });
+        process.env.POSTSURFING_BIN = await mockBin(tmpDir);
+        process.env.SURFDASH_ROOT = tmpDir;
+        try {
+            const transport = new PostsurfingFileCliTransport();
+            const content: Content = {
+                title: 'Digest Without Cover',
+                body: '正文',
+                format: 'markdown',
+                metadata,
+            };
+            const result = await transport.publish({ content });
+            expect(result.ok).toBe(false);
+            expect(result.error).toBe('digest post has no cover image (metadata.coverImage)');
+            expect(existsSync(join(tmpDir, 'content', 'posts', 'articles', 'zh'))).toBe(false);
+        } finally {
+            delete process.env.POSTSURFING_BIN;
+            delete process.env.SURFDASH_ROOT;
+            await rm(tmpDir, { recursive: true, force: true });
+        }
+    });
+
+    test('non-digest posts without coverImage keep working', async () => {
+        const tmpDir = join(process.cwd(), '.works/tmp/test-nondigest-nocover');
+        await mkdir(tmpDir, { recursive: true });
+        process.env.POSTSURFING_BIN = await mockBin(tmpDir);
+        process.env.SURFDASH_ROOT = tmpDir;
+        try {
+            const transport = new PostsurfingFileCliTransport();
+            const content: Content = {
+                title: 'Ordinary Article',
+                body: '正文',
+                format: 'markdown',
+                metadata: { tags: ['tech', 'programming'] },
+            };
+            const result = await transport.publish({ content });
+            expect(result.ok).toBe(true);
+        } finally {
+            delete process.env.POSTSURFING_BIN;
+            delete process.env.SURFDASH_ROOT;
+            await rm(tmpDir, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('digest frontmatter check wiring in publishPost and syncPost (Item 4)', () => {
+    const mockBin = async (dir: string): Promise<string> => {
+        const bin = join(dir, 'postsurfing');
+        await writeFile(bin, readFileSync(join(import.meta.dir, 'fixtures', 'fake-postsufing.ts'), 'utf-8'), 'utf-8');
+        await Bun.spawn(['chmod', '+x', bin]).exited;
+        return bin;
+    };
+
+    test('publishPost fails when refined digest frontmatter violates contract, passes when warn env is set', async () => {
+        const tmpDir = join(process.cwd(), '.works/tmp/test-publish-digest-gate');
+        await mkdir(tmpDir, { recursive: true });
+        process.env.POSTSURFING_BIN = await mockBin(tmpDir);
+        process.env.SURFDASH_ROOT = tmpDir;
+        process.env.FAKE_POSTSURFING_BAD_DIGEST = '1';
+
+        const coverSrc = join(tmpDir, 'valid-cover.png');
+        await writeFile(coverSrc, 'fake-png-bytes');
+
+        const content: Content = {
+            title: 'Daily Digest',
+            body: '# Daily Digest\n\n正文。',
+            format: 'markdown',
+            metadata: {
+                runDate: '20261023',
+                subCategory: 'ai-daily',
+                coverImage: coverSrc,
+            },
+        };
+
+        try {
+            const transport = new PostsurfingFileCliTransport();
+            const failResult = await transport.publish({ content });
+            expect(failResult.ok).toBe(false);
+            expect(failResult.error).toContain('digest frontmatter check failed:');
+
+            // With warn env, logs warning and proceeds
+            process.env.SURFDASH_DIGEST_CHECK = 'warn';
+            const warnResult = await transport.publish({ content });
+            expect(warnResult.ok).toBe(true);
+        } finally {
+            delete process.env.FAKE_POSTSURFING_BAD_DIGEST;
+            delete process.env.SURFDASH_DIGEST_CHECK;
+            delete process.env.POSTSURFING_BIN;
+            delete process.env.SURFDASH_ROOT;
+            await rm(tmpDir, { recursive: true, force: true });
+        }
+    });
+
+    test('syncPost fails when synced post has bad digest frontmatter, passes when warn env is set', async () => {
+        const root = join(process.cwd(), '.works/tmp/test-sync-digest-gate');
+        await writeSurfdashFixture(root);
+
+        // Create a zh post with sub-category:ai-daily and bad digest frontmatter (e.g. date-only title)
+        const zhDir = join(root, 'content', 'posts', 'articles', 'zh', '20261023-post');
+        await mkdir(zhDir, { recursive: true });
+        const zhPostPath = join(zhDir, 'index.md');
+        await writeFile(
+            zhPostPath,
+            '---\ntitle: "每日AI乱炖 · 2026-10-23"\ntags: ["sub-category:ai-daily"]\npublishDate: "2026-10-23"\ndescription: "太短。"\ndraft: false\n---\n\n正文。\n',
+            'utf-8',
+        );
+
+        process.env.SURFDASH_ROOT = root;
+        try {
+            const transport = new PostsurfingFileCliTransport();
+            const failResult = await transport.publish({
+                content: { title: 'unused', body: 'unused', format: 'markdown' },
+                options: { operation: 'sync', postPath: zhPostPath },
+            });
+            expect(failResult.ok).toBe(false);
+            expect(failResult.error).toContain('digest frontmatter check failed:');
+
+            process.env.SURFDASH_DIGEST_CHECK = 'warn';
+            const warnResult = await transport.publish({
+                content: { title: 'unused', body: 'unused', format: 'markdown' },
+                options: { operation: 'sync', postPath: zhPostPath },
+            });
+            expect(warnResult.ok).toBe(true);
+        } finally {
+            delete process.env.SURFDASH_DIGEST_CHECK;
+            delete process.env.SURFDASH_ROOT;
+            await rm(root, { recursive: true, force: true });
         }
     });
 });

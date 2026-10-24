@@ -63,9 +63,9 @@ export function localeIndexPath(postPath: string, locale: PatchLocale): string |
  * retired news-bulletin name). The series names are fixed per-locale product identity (2026-10-23:
  * the translate agent had been inventing them) and must agree with the pipeline's single table in
  * plugins/kk/scripts/series-names.ts — the two packages cannot import each other, so tests assert
- * the agreement.
+ * the agreement. digest-check.ts imports this table as the title-contract series names.
  */
-const SERIES_NAMES: Record<PatchLocale, string> = {
+export const SERIES_NAMES: Record<PatchLocale, string> = {
     zh: '每日AI乱炖',
     en: 'Daily AI Stew',
     ja: 'デイリーAIシチュー',
@@ -128,11 +128,23 @@ export async function patchPostFiles(request: PatchPostRequest): Promise<PatchPo
         const end = frontmatterEnd(md);
         const fm = end < 0 ? md : md.slice(0, end);
         if (request.coverUrl !== '') {
+            // A relative or http:// cover would ship an unservable OG card — the deployed worker
+            // only serves absolute https URLs (prod feedback 2026-09-29).
+            if (!/^https:\/\//.test(request.coverUrl)) {
+                throw new Error(`coverUrl must be an absolute https:// URL, got: ${request.coverUrl}`);
+            }
             md = upsertFrontmatterKey(md, 'image', request.coverUrl);
             md = upsertFrontmatterKey(md, 'og_image', request.coverUrl);
             images[locale] = request.coverUrl;
-        } else if (!/^image:/m.test(fm) && (await fs.exists(request.localCover))) {
+        } else if (!/^image:/m.test(fm)) {
             // Fallback for a run without a podcast cover: ship the rendered cover with the post.
+            // A locale with no cover anywhere must fail naming the locale, not silently skip —
+            // the CMS card would carry no servable image at all.
+            if (!(await fs.exists(request.localCover))) {
+                throw new Error(
+                    `${locale} post has no cover: coverUrl is empty, the frontmatter has no image key, and localCover does not exist (${request.localCover})`,
+                );
+            }
             const asset = join(dir, 'assets', 'cover.png');
             await fs.ensureDir(dirname(asset));
             await fs.copy(request.localCover, asset);
