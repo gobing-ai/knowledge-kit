@@ -24,8 +24,10 @@ import { dirname, join, resolve } from 'node:path';
  */
 const runner = join(import.meta.dir, '../../../plugins/kk/scripts/kk-workflow-stages.ts');
 // R7 (0211): the daily-* stage bodies live in this sibling; a runner copy can only run a daily
-// stage when the sibling ships beside it.
+// stage when the sibling ships beside it. series-names.ts is daily-stages' own pure sibling
+// (2026-10-23 series naming) and ships with it.
 const dailyStages = join(import.meta.dir, '../../../plugins/kk/scripts/daily-stages.ts');
+const seriesNames = join(import.meta.dir, '../../../plugins/kk/scripts/series-names.ts');
 
 // A real 1x1 JPEG (generated once via `sips -s format jpeg` from a 1x1 png) so the jpg transcode
 // test exercises sips with data it can actually decode.
@@ -2687,6 +2689,177 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
+    // 2026-10-23: the translate agent invented locale series names (ja 毎日AIブレンド, en
+    // "Daily AI Medley"/hodgepodge phrasing, zh-name listen links inside en/ja). The prompt pins
+    // the names; these tests pin the deterministic backstop in the stage — rewrite the known bad
+    // set per locale before the CMS sync, fail on anything the rewrite cannot make safe, and gate
+    // the key_points label discipline.
+    describe('daily-translate-sync series names + key_points labels (20261023)', () => {
+        interface Draft {
+            title: string;
+            body: string[];
+            items: string[];
+        }
+
+        function localeTree(
+            dir: string,
+            stamp: string,
+            drafts: { en?: Draft; ja?: Draft; zhShortForm?: boolean },
+        ): {
+            marker: string;
+            at: (locale: string) => string;
+        } {
+            const publish = join(dir, '31-publish');
+            mkdirSync(publish, { recursive: true });
+            const marker = join(publish, `${stamp}_20_translate-localize_zh-post-path.txt`);
+            const at = (locale: string) =>
+                join(dir, 'checkout', 'content', 'posts', 'articles', locale, 'post', 'index.md');
+            mkdirSync(dirname(at('zh')), { recursive: true });
+            writeFileSync(
+                at('zh'),
+                [
+                    '---',
+                    'title: 每日AI乱炖 · 2026-10-23',
+                    'key_points:',
+                    '  - "模型 — OpenAI 发布了 GPT-5.2。"',
+                    '---',
+                    '',
+                    drafts.zhShortForm === true
+                        ? '这里是由Robin为你带来的咸话咸说之AI乱炖。'
+                        : '这里是由Robin为你带来的咸话咸说之每日AI乱炖。',
+                    '',
+                ].join('\n'),
+            );
+            writeFileSync(marker, at('zh'));
+            const stock = {
+                en: {
+                    title: 'Daily AI Medley · 2026-10-23',
+                    body: [
+                        'Your daily AI hodgepodge from Robin, on Salty Talk.',
+                        '[listen to 每日AI乱炖 · 2026-10-23](https://pod.example/i/1).',
+                    ],
+                    items: ['"Model launch — OpenAI shipped GPT-5.2 with new tools."'],
+                },
+                ja: {
+                    title: '毎日AIブレンド · 2026-10-23',
+                    body: [
+                        '咸話咸説の毎日AIブレンド、Robin がお届けします。',
+                        '[每日AI乱炖 · 2026-10-23 を聴く](https://pod.example/i/1)。',
+                    ],
+                    items: ['"モデル公開 — OpenAI が GPT-5.2 をリリース。"'],
+                },
+            } as Record<'en' | 'ja', Draft>;
+            for (const locale of ['en', 'ja'] as const) {
+                const draft = drafts[locale] ?? stock[locale];
+                mkdirSync(dirname(at(locale)), { recursive: true });
+                writeFileSync(
+                    at(locale),
+                    [
+                        '---',
+                        `title: ${draft.title}`,
+                        'description: "A summary."',
+                        'key_points:',
+                        ...draft.items.map((item) => `  - ${item}`),
+                        '---',
+                        '',
+                        ...draft.body,
+                        '',
+                    ].join('\n'),
+                );
+            }
+            return { marker, at };
+        }
+
+        const okKk = (dir: string): Record<string, string> =>
+            fakeKk(
+                dir,
+                [
+                    "const fs = require('node:fs');",
+                    'const args = process.argv.slice(2);',
+                    "const out = args[args.indexOf('--out') + 1];",
+                    'fs.writeFileSync(out, JSON.stringify({ ok: true }));',
+                ].join('\n'),
+            );
+
+        it('rewrites the retired/wrong-locale series names in all three posts before syncing', () => {
+            withTempDir((dir) => {
+                const stamp = '20260101';
+                const { marker, at } = localeTree(dir, stamp, { zhShortForm: true });
+                expect(run(['daily-translate-sync', dir, stamp, '', marker], okKk(dir)).status).toBe(0);
+                expect(readFileSync(at('zh'), 'utf-8')).toContain('咸话咸说之每日AI乱炖。');
+                const en = readFileSync(at('en'), 'utf-8');
+                expect(en).toContain('title: Daily AI Stew · 2026-10-23');
+                expect(en).toContain('Your Daily AI Stew from Robin, on Salty Talk.');
+                expect(en).toContain('[listen to Daily AI Stew · 2026-10-23](https://pod.example/i/1)');
+                const ja = readFileSync(at('ja'), 'utf-8');
+                expect(ja).toContain('title: デイリーAIシチュー · 2026-10-23');
+                expect(ja).toContain('咸話咸説のデイリーAIシチュー、Robin がお届けします。');
+                expect(ja).toContain('[デイリーAIシチュー · 2026-10-23 を聴く](https://pod.example/i/1)');
+                expect(existsSync(join(dir, '31-publish', `${stamp}_24_translate-sync_sync.json`))).toBe(true);
+            });
+        });
+
+        it('fails the sync when a retired name cannot be rewritten safely', () => {
+            withTempDir((dir) => {
+                const stamp = '20260101';
+                const { marker } = localeTree(dir, stamp, {
+                    en: {
+                        title: 'Daily AI Stew · 2026-10-23',
+                        body: ['The stack is a hodgepodge of APIs.'],
+                        items: ['"Model launch — OpenAI shipped GPT-5.2 with new tools."'],
+                    },
+                });
+                const failed = run(['daily-translate-sync', dir, stamp, '', marker], okKk(dir));
+                expect(failed.status).toBe(1);
+                expect(failed.stderr).toContain('en draft failed the pre-sync structural check');
+                expect(failed.stderr).toContain('retired series names left after rewrite: hodgepodge');
+                expect(existsSync(join(dir, '31-publish', `${stamp}_24_translate-sync_sync.json`))).toBe(false);
+            });
+        });
+
+        it('fails the sync on key_points labels over the locale cap or …-truncated', () => {
+            withTempDir((dir) => {
+                const stamp = '20260101';
+                const good = {
+                    title: 'Daily AI Stew · 2026-10-23',
+                    body: ['Body line.'],
+                    items: ['"Model launch — OpenAI shipped GPT-5.2 with new tools."'],
+                };
+                const longLabel = {
+                    ...good,
+                    items: ['"OpenAI launches its next-generation flagship — GPT-5.2 shipped with new tools."'],
+                };
+                const truncated = {
+                    title: 'デイリーAIシチュー · 2026-10-23',
+                    body: ['本文。'],
+                    items: ['"新モデルの発表が… — OpenAI が GPT-5.2 をリリース。"'],
+                };
+                const cases = [
+                    { drafts: { en: longLabel }, locale: 'en', cap: 28 },
+                    { drafts: { ja: truncated }, locale: 'ja', cap: 14 },
+                ];
+                for (const { drafts, locale, cap } of cases) {
+                    withTempDir((inner) => {
+                        const tree = localeTree(inner, stamp, drafts);
+                        const failed = run(['daily-translate-sync', inner, stamp, '', tree.marker], okKk(inner));
+                        expect(failed.status).toBe(1);
+                        expect(failed.stderr).toContain(`${locale} draft failed the pre-sync structural check`);
+                        expect(failed.stderr).toContain(`key_points label over ${cap} chars or …-truncated`);
+                    });
+                }
+                // A cap-compliant label syncs cleanly — the YAML quotes do not count toward the cap
+                // (the 14-char ja label "Character.AI買収" from the 2026-10-23 post sits exactly at it).
+                const jaAtCap = {
+                    title: 'デイリーAIシチュー · 2026-10-23',
+                    body: ['本文。'],
+                    items: ['"Character.AI買収 — Character.AI は今週正式に破産を申請した。"'],
+                };
+                const clean = localeTree(dir, stamp, { en: good, ja: jaAtCap });
+                expect(run(['daily-translate-sync', dir, stamp, '', clean.marker], okKk(dir)).status).toBe(0);
+            });
+        });
+    });
+
     // The marker is the run's artifact, so it belongs under the run's workDir — a cwd-relative
     // path both littered whatever tree the caller stood in and moved the note out of the episode.
     it('daily-publish-partial names the failed targets and writes the retry file under workDir', () => {
@@ -3587,6 +3760,7 @@ describe('F613 (0162) — script-write stage wiring', () => {
             const loneRunner = join(dir, 'kk-workflow-stages.ts');
             copyFileSync(runner, loneRunner);
             copyFileSync(dailyStages, join(dir, 'daily-stages.ts'));
+            copyFileSync(seriesNames, join(dir, 'series-names.ts'));
             const result = run(
                 ['daily-script-style', dir, '20260925'],
                 { HOME: dir, KK_WORKFLOWS_DIR: '' },
