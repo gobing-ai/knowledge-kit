@@ -1267,6 +1267,24 @@ describe('podcast-pub show-notes rendering (L1 R6)', () => {
             'WARN podcast-pub: brief mode requested but ARTICLE_POST_PATH is empty; using legacy layout',
         );
     });
+
+    test('itemBrief does not end inside 「」 quotes (2026-10-24 quote-aware split)', () => {
+        const docs = [
+            {
+                id: 'q',
+                title: 'Quotes Brief',
+                body: '「第一句。第二句。」第三句。第四句。',
+                sourceUri: 'https://example.com/q',
+                mediaType: 'text/markdown',
+            },
+        ] as Doc[];
+        const rendered = renderShowNotesMarkdown(docs, {
+            title: '测试',
+            runDate: '2026-09-06',
+            briefMode: false,
+        });
+        expect(rendered).toContain('「第一句。第二句。」第三句。');
+    });
 });
 
 describe('podcast-pub show-notes operation (L1 R6)', () => {

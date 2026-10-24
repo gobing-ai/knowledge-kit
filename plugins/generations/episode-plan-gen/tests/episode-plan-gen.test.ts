@@ -532,6 +532,22 @@ describe('annotate wiring in planEpisode', () => {
         expect(item?.metadata?.publishAt).toBe('2026-09-06T08:00:00.000Z');
     });
 
+    test('brief derived from body does not end inside 「」 quotes (2026-10-24 quote-aware split)', () => {
+        const itemWithQuotes = planEpisode(
+            [
+                doc({
+                    id: 'q',
+                    title: 'Quotes Test',
+                    body: '「模型发布。详细参数已公开。」这是第三句。这是第四句。',
+                    metadata: { source: 'aihot' },
+                }),
+            ],
+            { maxItems: 10, date: '2026-09-06' },
+        );
+        const q = itemWithQuotes.find((d) => d.id === 'q');
+        expect(q?.metadata?.brief).toBe('「模型发布。详细参数已公开。」这是第三句。');
+    });
+
     test('plan items without a parseable timestamp omit publishAt (show-notes renders --:--)', () => {
         const undated = planEpisode(
             [

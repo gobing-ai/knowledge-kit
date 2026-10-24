@@ -114,6 +114,7 @@ import {
     type XhsCard,
     xhsPlan,
 } from './kk-workflow-stages.ts';
+import { splitSentences } from './sentences.ts';
 import { normalizeSeriesNames } from './series-names.ts';
 
 export function dailyQcContent(args: string[]): void {
@@ -1972,7 +1973,7 @@ function planItemsForPodcast(workDir: string, runDate: string): Array<{ title: s
                 ? String((meta as Record<string, unknown>).brief).trim()
                 : '';
         const body = typeof record.body === 'string' ? record.body.trim() : '';
-        const brief = metaBrief || (body.split(/(?<=[。！？])\s*/)[0] ?? '').trim();
+        const brief = metaBrief || (splitSentences(body, { cjkOnly: true })[0] ?? '').trim();
         items.push(brief.length > 0 ? { title, brief } : { title });
     }
     return items;

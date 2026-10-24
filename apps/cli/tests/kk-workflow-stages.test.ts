@@ -25,9 +25,10 @@ import { dirname, join, resolve } from 'node:path';
 const runner = join(import.meta.dir, '../../../plugins/kk/scripts/kk-workflow-stages.ts');
 // R7 (0211): the daily-* stage bodies live in this sibling; a runner copy can only run a daily
 // stage when the sibling ships beside it. series-names.ts is daily-stages' own pure sibling
-// (2026-10-23 series naming) and ships with it.
+// (2026-10-23 series naming) and ships with it; so does sentences.ts (2026-10-24 splitter).
 const dailyStages = join(import.meta.dir, '../../../plugins/kk/scripts/daily-stages.ts');
 const seriesNames = join(import.meta.dir, '../../../plugins/kk/scripts/series-names.ts');
+const sentences = join(import.meta.dir, '../../../plugins/kk/scripts/sentences.ts');
 
 // A real 1x1 JPEG (generated once via `sips -s format jpeg` from a 1x1 png) so the jpg transcode
 // test exercises sips with data it can actually decode.
@@ -3761,6 +3762,7 @@ describe('F613 (0162) — script-write stage wiring', () => {
             copyFileSync(runner, loneRunner);
             copyFileSync(dailyStages, join(dir, 'daily-stages.ts'));
             copyFileSync(seriesNames, join(dir, 'series-names.ts'));
+            copyFileSync(sentences, join(dir, 'sentences.ts'));
             const result = run(
                 ['daily-script-style', dir, '20260925'],
                 { HOME: dir, KK_WORKFLOWS_DIR: '' },
