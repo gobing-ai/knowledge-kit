@@ -1,6 +1,6 @@
 import { dirname } from 'node:path';
 import { parseArgs } from 'node:util';
-import { type Content, ContentSchema, type Doc, DocListSchema } from '@gobing-ai/kk-core';
+import { type Content, ContentSchema, type Doc, DocListSchema, splitSentences } from '@gobing-ai/kk-core';
 import { atomicWriteJson, createNodeFileSystem, readJsonFile } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 
@@ -597,9 +597,7 @@ export function planEpisode(docs: Doc[], options: PlanOptions): Doc[] {
         // Task 0118: 1–2-sentence briefing (first two 。！？-terminated sentences of the
         // cleaned body) + best-effort publish timestamp ride the plan metadata so the
         // podcast show-notes brief/timeline render stays deterministic, no LLM.
-        const brief = (r.doc.body ?? '')
-            .trim()
-            .split(/(?<=[。！？])\s*/)
+        const brief = splitSentences((r.doc.body ?? '').trim(), { cjkOnly: true })
             .slice(0, 2)
             .join('');
         const published = docTimestamp(r.doc);

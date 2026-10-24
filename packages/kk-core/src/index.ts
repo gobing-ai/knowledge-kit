@@ -78,6 +78,7 @@ export {
     type TargetOutcome,
     TargetOutcomeSchema,
 } from './schemas';
+export { type SplitSentencesOptions, splitSentences } from './sentences';
 export {
     splitThreadContent,
     type ThreadSplitOptions,

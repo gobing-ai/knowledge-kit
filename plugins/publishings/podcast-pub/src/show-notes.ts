@@ -11,7 +11,7 @@
  * input is escaped first, and only the tags this module emits reach the API.
  */
 
-import type { Doc } from '@gobing-ai/kk-core';
+import { type Doc, splitSentences } from '@gobing-ai/kk-core';
 import {
     type PlanItem,
     type PodcastSeoConfig,
@@ -311,9 +311,7 @@ export interface ShowNotesRenderOptions {
 function itemBrief(d: Doc): string {
     const meta = d.metadata ?? {};
     if (typeof meta.brief === 'string' && meta.brief.trim().length > 0) return meta.brief.trim();
-    return (d.body ?? '')
-        .trim()
-        .split(/(?<=[。！？])\s*/)
+    return splitSentences((d.body ?? '').trim(), { cjkOnly: true })
         .slice(0, 2)
         .join('');
 }
@@ -407,10 +405,7 @@ export function renderShowNotesMarkdown(docs: Doc[], opts: ShowNotesRenderOption
     } else {
         docs.forEach((d, i) => {
             const body = (d.body ?? '').trim();
-            const sentences = body
-                .split(/(?<=[。！？])\s*/)
-                .slice(0, 2)
-                .join('');
+            const sentences = splitSentences(body, { cjkOnly: true }).slice(0, 2).join('');
             lines.push(
                 `## ${i + 1}. ${d.title ?? `条目 ${i + 1}`}`,
                 '',
