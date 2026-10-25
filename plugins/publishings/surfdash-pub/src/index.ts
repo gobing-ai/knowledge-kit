@@ -1,3 +1,20 @@
+/**
+ * surfdash-pub plugin — publishing transport for the Surfdash site.
+ *
+ * Site gate:
+ * Before committing and pushing post content to surfdash `main` (both in the main publish
+ * path and the patch path), `runSiteGate` executes `bun run sd check digest` and
+ * `bun run check:content` in the surfdash checkout. The surfdash site gate is the authoritative
+ * validation suite before deployment.
+ *
+ * Environment variables:
+ * - `SURFDASH_DIGEST_CHECK`:
+ *   - unset / default: fail-loud on gate failure; commit and push are blocked.
+ *   - `warn`: echoes gate failures via `echoError` prefixed with `site gate (warn):` and continues to push.
+ *   - `off`: bypasses the gate check.
+ * - `SURFDASH_AUTO_PUSH`:
+ *   - '0': disables auto-commit and push (used in tests and offline runs).
+ */
 import { existsSync, readFileSync } from 'node:fs';
 import { copyFile, cp, writeFile } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -333,6 +350,7 @@ export function requireRefined(filePath: string): string | undefined {
  * undefined when ok / downgraded. `SURFDASH_DIGEST_CHECK=warn` echoes each problem and continues.
  */
 export function digestCheckGate(filePath: string, locale: DigestLocale): string | undefined {
+    if (process.env.SURFDASH_DIGEST_CHECK === 'off') return undefined;
     const problems = checkDigestFrontmatter(readFileSync(filePath, 'utf-8'), locale);
     if (problems.length === 0) return undefined;
     if (process.env.SURFDASH_DIGEST_CHECK === 'warn') {
@@ -340,6 +358,58 @@ export function digestCheckGate(filePath: string, locale: DigestLocale): string 
         return undefined;
     }
     return `digest frontmatter check failed: ${problems.join('; ')}`;
+}
+
+/** Outcome of {@link runSiteGate}. */
+export type SiteGateOutcome = { ok: true } | { ok: false; error: string };
+
+/** Commands executed by the surfdash site gate before commit and push to main. */
+const SITE_GATE_COMMANDS: readonly (readonly string[])[] = [
+    ['bun', 'run', 'sd', 'check', 'digest'],
+    ['bun', 'run', 'check:content'],
+];
+
+/**
+ * Extracts a failing post hint (path or identifier) from CLI error output if detectable.
+ */
+export function extractFailingPostHint(text: string): string | undefined {
+    const match = text.match(/(?:content[\\/])?posts[\\/][^\s:)]+/);
+    if (!match) return undefined;
+    return match[0].replace(/[.,;]+$/, '');
+}
+
+/**
+ * Runs the surfdash site gates (`bun run sd check digest` then `bun run check:content`)
+ * with cwd = `surfdashRoot` via `spawnCli`.
+ *
+ * If either command exits non-zero:
+ * - With `SURFDASH_DIGEST_CHECK=warn`: echoes each line of the failure via `echoError`
+ *   prefixed with `site gate (warn):` and continues.
+ * - With `SURFDASH_DIGEST_CHECK=off`: skips the gate completely.
+ * - Default (unset or any other value): fails loud with command, trimmed output, and post hint.
+ */
+export async function runSiteGate(surfdashRoot: string): Promise<SiteGateOutcome> {
+    if (process.env.SURFDASH_DIGEST_CHECK === 'off') {
+        return { ok: true };
+    }
+
+    for (const cmd of SITE_GATE_COMMANDS) {
+        const spawned = await spawnCli([...cmd], surfdashRoot);
+        if (spawned.exitCode !== 0) {
+            const output = cliErrorText(spawned);
+            const postHint = extractFailingPostHint(output);
+            const hint = postHint ? ` [failing post: ${postHint}]` : '';
+            const error = `site gate failed: ${cmd.join(' ')} (exit ${spawned.exitCode})${hint}: ${output}`;
+            if (process.env.SURFDASH_DIGEST_CHECK === 'warn') {
+                for (const line of error.split('\n')) {
+                    echoError(`site gate (warn): ${line}`);
+                }
+                continue;
+            }
+            return { ok: false, error };
+        }
+    }
+    return { ok: true };
 }
 
 /** Outcome of {@link pushPostGit} — the union keeps fail-loud errors typed at the call site. */
@@ -659,6 +729,10 @@ async function patchPost(options: SurfdashPubOptions): Promise<Result> {
             commitPaths.add(relative(surfdashRoot, assetsDir));
         }
     }
+    if (process.env.SURFDASH_AUTO_PUSH !== '0') {
+        const gate = await runSiteGate(surfdashRoot);
+        if (!gate.ok) return fail(gate.error);
+    }
     const commit = await commitPostPaths(
         surfdashRoot,
         [...commitPaths],
@@ -803,6 +877,8 @@ async function publishPost(payload: PublishTransportPayload): Promise<Result> {
                 metadata: { postPath: filePath, refinedTitle: refined?.title, refinedCanonical: refined?.canonical },
             });
         }
+        const gate = await runSiteGate(surfdashRoot);
+        if (!gate.ok) return fail(gate.error);
         const relPostDir = join('content', 'posts', 'articles', locale, slug);
         const pushed = await pushPostGit(surfdashRoot, relPostDir, `content: daily AI news ${dateStamp} (zh)`);
         if (!pushed.ok) return fail(pushed.error);

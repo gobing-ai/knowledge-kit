@@ -3964,6 +3964,17 @@ describe('daily-patch-surfdash git scoping and frontmatter (R6/R11)', () => {
         git(root, 'config', 'user.email', 'test@example.com');
         git(root, 'config', 'user.name', 'Test');
         writeFileSync(join(root, 'other.txt'), 'unrelated\n', 'utf-8');
+        // surfdash-pub runs the site gate (`bun run sd check digest`, `bun run check:content`) in the
+        // checkout before it pushes; stub both as passing so these tests stay about git scoping.
+        writeFileSync(
+            join(root, 'package.json'),
+            JSON.stringify({
+                name: 'surfdash-fixture',
+                private: true,
+                scripts: { sd: 'true', 'check:content': 'true' },
+            }),
+            'utf-8',
+        );
         git(root, 'add', '-A');
         git(root, 'commit', '-m', 'init');
         // The operator's unrelated work is *modified and staged* so it is visible in the index and
