@@ -288,6 +288,9 @@ describe('podcast-pub titles, descriptions, and numbering (R1–R6, R11)', () =>
         expect(clauseFromTitle('甲「train」，乙')).toBe('甲train');
         expect(firstSentence('')).toBe('');
         expect(firstSentence('一句。二句')).toBe('一句。');
+        expect(firstSentence('「一句。二句。」三句。')).toBe('「一句。二句。」');
+        expect(firstSentence('Character.AI 宣布破产。')).toBe('Character.AI 宣布破产。');
+        expect(firstSentence('llama.cpp v1.2 runs on LWN.net.\n Next one.')).toBe('llama.cpp v1.2 runs on LWN.net.');
         expect(
             planItemsFromMetadata({ podcast: { planItems: [{ title: '甲', brief: '简' }, { title: '' }, 'nope'] } }),
         ).toEqual([{ title: '甲', brief: '简' }]);

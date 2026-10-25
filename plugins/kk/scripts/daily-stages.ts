@@ -114,6 +114,8 @@ import {
     type XhsCard,
     xhsPlan,
 } from './kk-workflow-stages.ts';
+import { splitSentences } from './sentences.ts';
+import { normalizeSeriesNames } from './series-names.ts';
 
 export function dailyQcContent(args: string[]): void {
     const [
@@ -1902,8 +1904,8 @@ function readFrontmatterScalar(filePath: string, key: string): string | undefine
     return value.length > 0 ? value : undefined;
 }
 
-/** Count `key_points` list items in a Surfing post's frontmatter; undefined when absent/unreadable. */
-export function countKeyPoints(filePath: string): number | undefined {
+/** The `key_points` item texts of a Surfing post's frontmatter; undefined when absent/unreadable. */
+export function readKeyPointItems(filePath: string): string[] | undefined {
     if (!isFile(filePath)) return undefined;
     let raw: string;
     try {
@@ -1913,14 +1915,24 @@ export function countKeyPoints(filePath: string): number | undefined {
     }
     const block = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw)?.[1];
     if (!block) return undefined;
-    // Slice from `key_points` to the first top-level key (or block end), then count item-start
-    // lines (`- `), so folded (`>-`) and quoted single-line items both count once.
+    // Slice from `key_points` to the first top-level key (or block end), then take the item lines
+    // (`- `), so folded (`>-`) and quoted single-line items both read once.
     const head = /^key_points:\n/m.exec(block);
     if (!head) return undefined;
     const body = block.slice(head.index + head[0].length);
     const endMatch = /^\S/m.exec(body);
     const list = endMatch ? body.slice(0, endMatch.index) : body;
-    return list.split('\n').filter((line) => /^[ \t]+- /.test(line)).length;
+    // A quoted scalar's quotes are YAML syntax, not text — strip them so label lengths are real.
+    return list
+        .split('\n')
+        .filter((line) => /^[ \t]+- /.test(line))
+        .map((line) => line.replace(/^[ \t]+- /, '').trim())
+        .map((item) => item.replace(/^(["'])(.*)\1$/, '$2'));
+}
+
+/** Count `key_points` list items in a Surfing post's frontmatter; undefined when absent/unreadable. */
+export function countKeyPoints(filePath: string): number | undefined {
+    return readKeyPointItems(filePath)?.length;
 }
 
 function firstRefinedTitle(parsed: Record<string, unknown> | null): string {
@@ -1961,7 +1973,7 @@ function planItemsForPodcast(workDir: string, runDate: string): Array<{ title: s
                 ? String((meta as Record<string, unknown>).brief).trim()
                 : '';
         const body = typeof record.body === 'string' ? record.body.trim() : '';
-        const brief = metaBrief || (body.split(/(?<=[。！？])\s*/)[0] ?? '').trim();
+        const brief = metaBrief || (splitSentences(body, { cjkOnly: true })[0] ?? '').trim();
         items.push(brief.length > 0 ? { title, brief } : { title });
     }
     return items;
@@ -3137,15 +3149,47 @@ export function dailyTranslateSync(args: string[]): void {
         // The 2026-10-23 translate run published spliced en/ja description/key_points; the locale
         // channel has no judge, so gate the structural minimum here before the CMS sync:
         // a summary must exist and the key_points count must match the zh post (splices merge items).
+        // The same run also invented retired series names (毎日AIブレンド, "Daily AI Medley",
+        // zh-name listen links inside en/ja): normalizeSeriesNames rewrites the known bad set per
+        // locale deterministically (URLs untouched) and any leftover it cannot make safe fails the
+        // sync. The zh post rides the same sync, so it gets the same series-name pass.
         const zhPoints = countKeyPoints(zhPostPath);
-        for (const locale of ['en', 'ja'] as const) {
-            const sibling = zhPostPath.replace('/zh/', `/${locale}/`);
+        for (const locale of ['zh', 'en', 'ja'] as const) {
+            const sibling = locale === 'zh' ? zhPostPath : zhPostPath.replace('/zh/', `/${locale}/`);
             if (!isFile(sibling)) continue;
             const problems: string[] = [];
-            if (readFrontmatterScalar(sibling, 'description') === undefined) problems.push('description missing/empty');
-            const points = countKeyPoints(sibling);
-            if (zhPoints !== undefined && points !== undefined && points !== zhPoints) {
-                problems.push(`key_points count ${points} != zh ${zhPoints} (spliced or merged items)`);
+            const raw = readFileSync(sibling, 'utf-8');
+            const { markdown, remaining } = normalizeSeriesNames(raw, locale);
+            if (markdown !== raw) sted('write', sibling, () => writeRaw(sibling, markdown));
+            if (remaining.length > 0) {
+                problems.push(`retired series names left after rewrite: ${remaining.join(' / ')}`);
+            }
+            if (locale !== 'zh') {
+                if (readFrontmatterScalar(sibling, 'description') === undefined) {
+                    problems.push('description missing/empty');
+                }
+                const points = countKeyPoints(sibling);
+                if (zhPoints !== undefined && points !== undefined && points !== zhPoints) {
+                    problems.push(`key_points count ${points} != zh ${zhPoints} (spliced or merged items)`);
+                }
+                // Label discipline (same 2026-10-23 audit): a key_points item is `Label — sentence`
+                // and the label is a short phrase — ≤14 chars for ja, ≤28 for en — never a
+                // sentence and never an ellipsis-truncated fragment.
+                const items = readKeyPointItems(sibling);
+                if (items !== undefined) {
+                    const cap = locale === 'en' ? 28 : 14;
+                    const overLimit = items.filter((item) => {
+                        const sep = item.indexOf(' — ');
+                        if (sep < 0) return false;
+                        const label = item.slice(0, sep);
+                        return label.includes('…') || Array.from(label).length > cap;
+                    });
+                    if (overLimit.length > 0) {
+                        problems.push(
+                            `key_points label over ${cap} chars or …-truncated: ${overLimit.length} of ${items.length} items`,
+                        );
+                    }
+                }
             }
             if (problems.length > 0) {
                 failWith(

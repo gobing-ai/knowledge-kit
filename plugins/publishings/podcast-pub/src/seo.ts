@@ -12,6 +12,7 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { splitSentences } from '@gobing-ai/kk-core';
 import { echoError } from '@gobing-ai/ts-utils';
 
 /** Code-point length. Microfeed counts the same way for slugs and SEO limits. */
@@ -506,10 +507,7 @@ export function clauseFromTitle(title: string): string {
 }
 
 export function firstSentence(text: string): string {
-    const trimmed = text.replace(/\s+/g, ' ').trim();
-    if (trimmed.length === 0) return '';
-    const parts = trimmed.split(/(?<=[。！？.!?])/);
-    return (parts[0] ?? trimmed).trim();
+    return splitSentences(text.replace(/\s+/g, ' ').trim())[0] ?? '';
 }
 
 export function planItemsFromMetadata(metadata: Record<string, unknown> | undefined): PlanItem[] {

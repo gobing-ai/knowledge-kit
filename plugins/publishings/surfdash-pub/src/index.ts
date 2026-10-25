@@ -6,7 +6,11 @@ import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-
 import type { PublishTransport, PublishTransportPayload } from '@gobing-ai/publish-harness';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
+// The plugin's public digest-contract surface (2026-10-24).
+import { checkDigestFrontmatter, DIGEST_TAG, type DigestLocale } from './digest-check';
 import { localeIndexPath, PATCH_LOCALES, type PatchPostOutcome, patchPostFiles } from './patch';
+
+export { checkDigestFrontmatter, DIGEST_TAG, type DigestLocale } from './digest-check';
 
 /** Result target name for this plugin. */
 const TARGET = 'surfdash';
@@ -76,28 +80,14 @@ export function normalizeTag(raw: string): string {
 }
 
 /**
- * Maps Content object into Surfing frontmatter and body per the publish spec.
+ * The content's tag sources (metadata.tags, keywords, subCategory) as normalized frontmatter tags.
+ *
+ * `slugify` drops non-ASCII, so a Chinese tag (`硬件发布`) collapsed to '' and shipped as an empty
+ * YAML tag — the site renders it as a blank chip (seen on 20261011-ai-2026-10-11). Case variants
+ * also collapsed to the same slug twice (`AI` + `ai`), so the set dedupes. `normalizeTag` preserves
+ * `sub-category:<slug>` colon prefixes so sub-category series tags survive into frontmatter.
  */
-export function mapContentToSurfingMarkdown(content: Content, options: MapContentOptions = {}): string {
-    let title = content.title;
-    if (!title) {
-        const match = content.body.match(/^#\s+(.+)$/m);
-        title = match?.[1] ? match[1].trim() : 'Untitled Post';
-    }
-
-    let description: string | undefined;
-    if (typeof content.metadata?.description === 'string') {
-        description = content.metadata.description;
-    } else {
-        const paragraphs = content.body
-            .split(/\n\s*\n/)
-            .map((p) => p.replace(/^#+\s+.*$/, '').trim())
-            .filter((p) => p.length > 0);
-        if (paragraphs.length > 0) {
-            description = paragraphs[0];
-        }
-    }
-
+export function contentTags(content: Content): string[] {
     const rawTags: unknown[] = Array.isArray(content.metadata?.tags)
         ? [...content.metadata.tags]
         : Array.isArray(content.metadata?.keywords)
@@ -107,17 +97,33 @@ export function mapContentToSurfingMarkdown(content: Content, options: MapConten
         const subRaw = content.metadata.subCategory.trim();
         rawTags.push(/^sub-category\s*:/i.test(subRaw) ? subRaw : `sub-category:${subRaw}`);
     }
-    // `slugify` drops non-ASCII, so a Chinese tag (`硬件发布`) collapsed to '' and shipped as an empty
-    // YAML tag — the site renders it as a blank chip (seen on 20261011-ai-2026-10-11). Case variants
-    // also collapsed to the same slug twice (`AI` + `ai`), so the set dedupes. `normalizeTag` preserves
-    // `sub-category:<slug>` colon prefixes so sub-category series tags survive into frontmatter.
-    const tags = [
+    return [
         ...new Set(
             rawTags
                 .filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
                 .map((t: string) => normalizeTag(t)),
         ),
     ].filter((tag) => tag.length > 0);
+}
+
+/**
+ * Maps Content object into Surfing frontmatter and body per the publish spec.
+ */
+export function mapContentToSurfingMarkdown(content: Content, options: MapContentOptions = {}): string {
+    let title = content.title;
+    if (!title) {
+        const match = content.body.match(/^#\s+(.+)$/m);
+        title = match?.[1] ? match[1].trim() : 'Untitled Post';
+    }
+
+    // ADR-008: the site's refine step owns the digest/SEO description; the generator's
+    // first-paragraph fallback shipped the raw lede as SEO metadata before refine existed.
+    const description =
+        typeof content.metadata?.description === 'string' && content.metadata.description.length > 0
+            ? content.metadata.description
+            : '';
+
+    const tags = contentTags(content);
 
     const isoDate = options.publishDate ?? new Date().toISOString().slice(0, 10);
     const draft = typeof content.metadata?.published === 'boolean' ? !content.metadata.published : false;
@@ -133,7 +139,7 @@ export function mapContentToSurfingMarkdown(content: Content, options: MapConten
     // supplies identity.
     const frontmatterObj: Record<string, unknown> = {
         title,
-        description: description ?? '',
+        description,
         tags,
         publishDate: isoDate,
         draft,
@@ -142,6 +148,11 @@ export function mapContentToSurfingMarkdown(content: Content, options: MapConten
 
     const yamlLines = ['---', ...Object.entries(frontmatterObj).map(([k, v]) => `${k}: ${JSON.stringify(v)}`), '---'];
     return `${yamlLines.join('\n')}\n\n${content.body.trim()}\n`;
+}
+
+/** True when the content's tag sources (contentTags) mark it as a daily digest post. */
+function isDigestContent(content: Content): boolean {
+    return contentTags(content).some((tag) => tag.includes(DIGEST_TAG));
 }
 
 /** `Result` failure helper: ok false + error (podcast-pub pattern). */
@@ -250,6 +261,7 @@ async function spawnCli(cmd: string[], cwd: string): Promise<CliSpawnResult> {
         cwd,
         stdout: 'pipe',
         stderr: 'pipe',
+        env: process.env,
     });
     const [exitCode, stdout, stderr] = await Promise.all([
         proc.exited,
@@ -313,6 +325,21 @@ export function readRefinedSnapshot(filePath: string): RefinedSnapshot | undefin
 export function requireRefined(filePath: string): string | undefined {
     if (readRefinedSnapshot(filePath)) return undefined;
     return `surfdash refine step did not run for ${filePath} (no \`refined: true\`): the publishing pipeline is broken — the post would ship with generator-supplied SEO metadata`;
+}
+
+/**
+ * Post-refine digest contract gate (2026-10-24): `requireRefined` proves refine ran; this proves
+ * the refined values still satisfy the digest contract. Returns the fail-loud error text, or
+ * undefined when ok / downgraded. `SURFDASH_DIGEST_CHECK=warn` echoes each problem and continues.
+ */
+export function digestCheckGate(filePath: string, locale: DigestLocale): string | undefined {
+    const problems = checkDigestFrontmatter(readFileSync(filePath, 'utf-8'), locale);
+    if (problems.length === 0) return undefined;
+    if (process.env.SURFDASH_DIGEST_CHECK === 'warn') {
+        for (const problem of problems) echoError(`digest check (warn): ${problem}`);
+        return undefined;
+    }
+    return `digest frontmatter check failed: ${problems.join('; ')}`;
 }
 
 /** Outcome of {@link pushPostGit} — the union keeps fail-loud errors typed at the call site. */
@@ -563,6 +590,13 @@ async function syncPost(options: SurfdashPubOptions): Promise<Result> {
                 `publish-orchestrator sync failed (exit ${spawned.exitCode}): ${withEmdashTokenHint(cliErrorText(spawned))}`,
             );
         }
+        // Digest contract (2026-10-24): verify the synced post's frontmatter for its own locale;
+        // paths outside content/posts/articles/<zh|en|ja>/ carry no digest series to check.
+        const localeInPath = postPath.postPath.match(/[\\/]content[\\/]posts[\\/]articles[\\/](zh|en|ja)[\\/]/);
+        if (localeInPath) {
+            const digestProblem = digestCheckGate(postPath.postPath, localeInPath[1] as DigestLocale);
+            if (digestProblem) return fail(digestProblem);
+        }
         return ResultSchema.parse({
             ok: true,
             target: TARGET,
@@ -700,8 +734,18 @@ async function publishPost(payload: PublishTransportPayload): Promise<Result> {
         return fail(`post path escapes ${articlesRoot}`);
     }
     const coverPath = payload.content.metadata?.coverImage;
-    if (typeof coverPath === 'string' && existsSync(coverPath) && !COVER_EXTS.has(extname(coverPath).toLowerCase())) {
+    // R4 + 2026-10-24: a coverImage that does not exist must fail before anything is written —
+    // the old silent skip published a coverless post while the run believed it had one.
+    if (typeof coverPath === 'string' && !existsSync(coverPath)) {
+        return fail(`metadata.coverImage not found: ${coverPath}`);
+    }
+    if (typeof coverPath === 'string' && !COVER_EXTS.has(extname(coverPath).toLowerCase())) {
         return fail(`metadata.coverImage must be one of ${[...COVER_EXTS].join(', ')}`);
+    }
+    // Daily digest posts are the series' public face: a missing cover ships a blank OG card.
+    // The check uses the same tag sources as mapContentToSurfingMarkdown (contentTags).
+    if (isDigestContent(payload.content) && typeof coverPath !== 'string') {
+        return fail('digest post has no cover image (metadata.coverImage)');
     }
 
     await createNodeFileSystem().ensureDir(postDir);
@@ -709,7 +753,7 @@ async function publishPost(payload: PublishTransportPayload): Promise<Result> {
     // Cover image: metadata.coverImage (absolute local path) is copied into the post's
     // assets dir and referenced relatively — the surfdash PostSchema accepts ./assets/<file>.
     let imageFrontmatter: string | undefined;
-    if (typeof coverPath === 'string' && existsSync(coverPath)) {
+    if (typeof coverPath === 'string') {
         const assetsDir = join(postDir, 'assets');
         await createNodeFileSystem().ensureDir(assetsDir);
         const coverName = `cover${extname(coverPath).toLowerCase()}`;
@@ -735,6 +779,9 @@ async function publishPost(payload: PublishTransportPayload): Promise<Result> {
         // Contract check (ADR-008): the site, not this plugin, owns SEO metadata.
         const notRefined = requireRefined(filePath);
         if (notRefined) return fail(notRefined);
+        // Digest contract (2026-10-24): the refined values themselves must hold, before any push.
+        const digestProblem = digestCheckGate(filePath, locale as DigestLocale);
+        if (digestProblem) return fail(digestProblem);
         const refined = readRefinedSnapshot(filePath);
 
         // Deploy seam: commit + push the post so deploy.yml builds it, then wait for
