@@ -3,33 +3,33 @@
 ### Added
 
 - feat(kk-core): add a quote-aware sentence splitter that keeps closing quotes with their sentence and never splits dotted tokens such as Character.AI (056bc67)
-<!-- src: packages/kk-core/src/sentences.ts:43 · confidence: HIGH -->
+<!-- src: packages/kk-core/src/sentences.ts:43 -->
 
 ### Fixed
 
 - fix(daily): retry the safety review, judge and revise steps on the capable tier, sharing each prompt via a YAML anchor, because one failed executor otherwise left no artifact and the gate failed closed as `block` (e74b5d1)
-<!-- src: plugins/kk/workflows/kk-daily-safety.yaml:105 · confidence: HIGH -->
+<!-- src: plugins/kk/workflows/kk-daily-safety.yaml:105 -->
 - fix(daily): gate the locale frontmatter summary before the CMS sync, failing loud on an empty description or a key_points count that diverges from the zh post, after a spliced summary published (e324aac)
-<!-- src: plugins/kk/scripts/daily-stages.ts:1934 · confidence: HIGH -->
+<!-- src: plugins/kk/scripts/daily-stages.ts:1934 -->
 - fix(kk): normalize retired series names and English/Japanese key_points labels during translate-sync via a new per-locale name table, so a leftover name or over-long label fails the sync instead of publishing (6b69527)
-<!-- src: plugins/kk/scripts/daily-stages.ts:3134 · confidence: HIGH -->
+<!-- src: plugins/kk/scripts/daily-stages.ts:3134 -->
 - fix(kk): pin the en/ja series names and their openers in the voice2 translate prompt, so the translator cannot invent a name (d4544f8)
-<!-- src: plugins/kk/workflows/kk-daily-ai-voice2.yaml:932 · confidence: HIGH -->
+<!-- src: plugins/kk/workflows/kk-daily-ai-voice2.yaml:932 -->
 - fix(surfdash-pub): use each locale's own series name in the podcast listen cross-links instead of hardcoding the zh name in every locale (6ab4f1d)
-<!-- src: plugins/publishings/surfdash-pub/src/patch.ts:70 · confidence: HIGH -->
+<!-- src: plugins/publishings/surfdash-pub/src/patch.ts:70 -->
 - fix(surfdash-pub): require a cover on disk and add a digest frontmatter gate after refine and after the locale sync, dropping the first-body-paragraph description fallback (abe5e1c)
-<!-- src: plugins/publishings/surfdash-pub/src/digest-check.ts:134 · confidence: HIGH -->
+<!-- src: plugins/publishings/surfdash-pub/src/digest-check.ts:134 -->
 - fix(ingest): guard the last30days skill-dir spawn, so a dangling skill symlink fails with the real problem instead of reading as a missing interpreter (75cac5b)
-<!-- src: plugins/ingestions/last30days-ingest/src/index.ts:40 · confidence: HIGH -->
+<!-- src: plugins/ingestions/last30days-ingest/src/index.ts:40 -->
 - fix(ingest): probe the last30days skill dir through the ts-runtime filesystem seam (b5d8005)
-<!-- src: plugins/ingestions/last30days-ingest/src/index.ts:42 · confidence: HIGH -->
+<!-- src: plugins/ingestions/last30days-ingest/src/index.ts:42 -->
 
 ### Other
 
 - docs(context): record the 2026-10-20 last30days outage post-mortem (82820c9)
-<!-- src: .spur/context/learnings.md:551 · confidence: HIGH -->
+<!-- src: .spur/context/learnings.md:551 -->
 - docs(context): record the 2026-10-24 daily-run post-mortem (72588da)
-<!-- src: .spur/context/pitfalls.md:290 · confidence: HIGH -->
+<!-- src: .spur/context/pitfalls.md:290 -->
 
 ## [0.1.9] - 2026-10-23
 
