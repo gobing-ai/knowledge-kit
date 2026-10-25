@@ -1,5 +1,10 @@
 /**
- * Post-refine digest contract check (2026-10-24).
+ * Fast offline pre-check for post-refine digest contract (2026-10-24).
+ *
+ * NOTE: This module is a fast, offline pre-check run before the slower site gate to catch
+ * frontmatter shape errors early in-process. The authoritative source of truth is the surfdash
+ * site gate (`bun run sd check digest` and `bun run check:content`), which runs in the surfdash
+ * checkout before commit+push.
  *
  * The surfdash refine step (scripts/lib/seo-digest.ts) owns the daily-digest title, description
  * and key_points (ADR-008). `requireRefined` only proves refine *ran*; this module re-verifies the

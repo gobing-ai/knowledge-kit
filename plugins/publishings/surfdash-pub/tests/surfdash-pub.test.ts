@@ -9,6 +9,7 @@ import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils
 import { runInvoke } from '../../../../apps/cli/src/invoke';
 import {
     awaitArticleLive,
+    extractFailingPostHint,
     fastForwardToOrigin,
     getPublishTransport,
     main,
@@ -18,6 +19,7 @@ import {
     PostsurfingFileCliTransport,
     processPublishIO,
     pushPostGit,
+    runSiteGate,
     slugify,
     withEmdashTokenHint,
 } from '../src/index';
@@ -1680,5 +1682,295 @@ describe('digest frontmatter check wiring in publishPost and syncPost (Item 4)',
             delete process.env.SURFDASH_ROOT;
             await rm(root, { recursive: true, force: true });
         }
+    });
+
+    describe('surfdash site gate before commit/push', () => {
+        interface GateFixture {
+            base: string;
+            origin: string;
+            work: string;
+            coverSrc: string;
+        }
+
+        const run = async (cmd: string[], cwd: string): Promise<void> => {
+            const proc = Bun.spawn(cmd, { cwd, stdout: 'pipe', stderr: 'pipe' });
+            const [code, , err] = await Promise.all([
+                proc.exited,
+                new Response(proc.stdout).text(),
+                new Response(proc.stderr).text(),
+            ]);
+            if (code !== 0) throw new Error(`${cmd.join(' ')} exited ${code}: ${err}`);
+        };
+
+        const setupGateFixture = async (name: string): Promise<GateFixture> => {
+            const base = join(
+                process.cwd(),
+                `.works/tmp/${name}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            );
+            await mkdir(base, { recursive: true });
+            const origin = join(base, 'origin.git');
+            const work = join(base, 'work');
+
+            await run(['git', 'init', '--bare', '-b', 'main', origin], base);
+            await run(['git', 'init', '-b', 'main', work], base);
+            await run(['git', 'config', 'user.email', 'test@test'], work);
+            await run(['git', 'config', 'user.name', 'test'], work);
+            await writeFile(join(work, 'seed.md'), 'seed');
+            await run(['git', 'add', '.'], work);
+            await run(['git', 'commit', '-m', 'seed'], work);
+            await run(['git', 'remote', 'add', 'origin', origin], work);
+            await run(['git', 'push', '-u', 'origin', 'main'], work);
+
+            await mkdir(join(work, 'scripts'), { recursive: true });
+            await writeFile(
+                join(work, 'package.json'),
+                JSON.stringify({
+                    name: 'fake-surfdash',
+                    private: true,
+                    scripts: {
+                        sd: 'bun scripts/sd.ts',
+                        'check:content': 'bun scripts/check-content.ts',
+                    },
+                }),
+                'utf-8',
+            );
+
+            const sdScript = `
+const argv = process.argv.slice(2);
+if (argv[0] === 'check' && argv[1] === 'digest') {
+    if (process.env.TEST_SD_CHECK_DIGEST_FAIL === '1') {
+        console.error('sd check digest failed: content/posts/articles/zh/20261024-test/index.md: filler sentence detected');
+        process.exit(1);
+    }
+    console.log('sd check digest ok');
+    process.exit(0);
+}
+console.error('unknown sd args: ' + argv.join(' '));
+process.exit(1);
+`;
+            await writeFile(join(work, 'scripts', 'sd.ts'), `${sdScript.trim()}\n`, 'utf-8');
+
+            const checkContentScript = `
+if (process.env.TEST_CHECK_CONTENT_FAIL === '1') {
+    console.error('check:content error in content/posts/articles/zh/20261024-test/index.md: label mismatch');
+    process.exit(1);
+}
+console.log('check:content ok');
+process.exit(0);
+`;
+            await writeFile(join(work, 'scripts', 'check-content.ts'), `${checkContentScript.trim()}\n`, 'utf-8');
+
+            const bin = join(work, 'postsurfing');
+            await writeFile(
+                bin,
+                readFileSync(join(import.meta.dir, 'fixtures', 'fake-postsufing.ts'), 'utf-8'),
+                'utf-8',
+            );
+            await Bun.spawn(['chmod', '+x', bin]).exited;
+
+            const coverSrc = join(work, 'valid-cover.png');
+            await writeFile(coverSrc, 'fake-png-bytes');
+
+            return { base, origin, work, coverSrc };
+        };
+
+        const makeContent = (coverSrc: string): Content => ({
+            title: 'Test Post',
+            body: '# Test Post\n\n正文段落。',
+            format: 'markdown',
+            metadata: {
+                runDate: '20261024',
+                subCategory: 'ai-daily',
+                coverImage: coverSrc,
+            },
+        });
+
+        const mockLiveFetch = (): (() => void) => {
+            const origFetch = globalThis.fetch;
+            globalThis.fetch = (async () => new Response('ok', { status: 200 })) as unknown as typeof fetch;
+            return () => {
+                globalThis.fetch = origFetch;
+            };
+        };
+
+        test('gate pass -> push happens', async () => {
+            const fx = await setupGateFixture('test-gate-pass');
+            const restoreFetch = mockLiveFetch();
+
+            process.env.POSTSURFING_BIN = join(fx.work, 'postsurfing');
+            process.env.SURFDASH_ROOT = fx.work;
+            process.env.SURFDASH_AUTO_PUSH = '1';
+            try {
+                const transport = new PostsurfingFileCliTransport();
+                const result = await transport.publish({ content: makeContent(fx.coverSrc) });
+                expect(result.ok).toBe(true);
+
+                const pushed = await new Response(
+                    Bun.spawn(['git', '--git-dir', fx.origin, 'log', '-1', '--format=%s', 'main']).stdout,
+                ).text();
+                expect(pushed).toContain('daily AI news 20261024');
+            } finally {
+                restoreFetch();
+                delete process.env.POSTSURFING_BIN;
+                delete process.env.SURFDASH_ROOT;
+                process.env.SURFDASH_AUTO_PUSH = '0';
+                await rm(fx.base, { recursive: true, force: true });
+            }
+        });
+
+        test('sd check digest fails -> no commit/push and error text contains output', async () => {
+            const fx = await setupGateFixture('test-sd-fail');
+            const restoreFetch = mockLiveFetch();
+
+            process.env.POSTSURFING_BIN = join(fx.work, 'postsurfing');
+            process.env.SURFDASH_ROOT = fx.work;
+            process.env.SURFDASH_AUTO_PUSH = '1';
+            process.env.TEST_SD_CHECK_DIGEST_FAIL = '1';
+            try {
+                const transport = new PostsurfingFileCliTransport();
+                const result = await transport.publish({ content: makeContent(fx.coverSrc) });
+                expect(result.ok).toBe(false);
+                expect(result.error).toContain('bun run sd check digest');
+                expect(result.error).toContain('filler sentence detected');
+                expect(result.error).toContain('failing post: content/posts/articles/zh/20261024-test/index.md');
+
+                const pushed = await new Response(
+                    Bun.spawn(['git', '--git-dir', fx.origin, 'log', '-1', '--format=%s', 'main']).stdout,
+                ).text();
+                expect(pushed.trim()).toBe('seed');
+            } finally {
+                restoreFetch();
+                delete process.env.TEST_SD_CHECK_DIGEST_FAIL;
+                delete process.env.POSTSURFING_BIN;
+                delete process.env.SURFDASH_ROOT;
+                process.env.SURFDASH_AUTO_PUSH = '0';
+                await rm(fx.base, { recursive: true, force: true });
+            }
+        });
+
+        test('check:content fails -> no commit/push and error text contains output', async () => {
+            const fx = await setupGateFixture('test-content-fail');
+            const restoreFetch = mockLiveFetch();
+
+            process.env.POSTSURFING_BIN = join(fx.work, 'postsurfing');
+            process.env.SURFDASH_ROOT = fx.work;
+            process.env.SURFDASH_AUTO_PUSH = '1';
+            process.env.TEST_CHECK_CONTENT_FAIL = '1';
+            try {
+                const transport = new PostsurfingFileCliTransport();
+                const result = await transport.publish({ content: makeContent(fx.coverSrc) });
+                expect(result.ok).toBe(false);
+                expect(result.error).toContain('bun run check:content');
+                expect(result.error).toContain('label mismatch');
+                expect(result.error).toContain('failing post: content/posts/articles/zh/20261024-test/index.md');
+
+                const pushed = await new Response(
+                    Bun.spawn(['git', '--git-dir', fx.origin, 'log', '-1', '--format=%s', 'main']).stdout,
+                ).text();
+                expect(pushed.trim()).toBe('seed');
+            } finally {
+                restoreFetch();
+                delete process.env.TEST_CHECK_CONTENT_FAIL;
+                delete process.env.POSTSURFING_BIN;
+                delete process.env.SURFDASH_ROOT;
+                process.env.SURFDASH_AUTO_PUSH = '0';
+                await rm(fx.base, { recursive: true, force: true });
+            }
+        });
+
+        test('warn mode -> push happens and warning echoed', async () => {
+            const fx = await setupGateFixture('test-gate-warn');
+            const restoreFetch = mockLiveFetch();
+
+            process.env.POSTSURFING_BIN = join(fx.work, 'postsurfing');
+            process.env.SURFDASH_ROOT = fx.work;
+            process.env.SURFDASH_AUTO_PUSH = '1';
+            process.env.TEST_SD_CHECK_DIGEST_FAIL = '1';
+            process.env.SURFDASH_DIGEST_CHECK = 'warn';
+
+            const errTarget = createBufferTarget();
+            const restore = setDefaultOutputTargets({ stderr: errTarget });
+            try {
+                const transport = new PostsurfingFileCliTransport();
+                const result = await transport.publish({ content: makeContent(fx.coverSrc) });
+                expect(result.ok).toBe(true);
+                expect(errTarget.text()).toContain('site gate (warn):');
+                expect(errTarget.text()).toContain('filler sentence detected');
+
+                const pushed = await new Response(
+                    Bun.spawn(['git', '--git-dir', fx.origin, 'log', '-1', '--format=%s', 'main']).stdout,
+                ).text();
+                expect(pushed).toContain('daily AI news 20261024');
+            } finally {
+                restore();
+                restoreFetch();
+                delete process.env.TEST_SD_CHECK_DIGEST_FAIL;
+                delete process.env.SURFDASH_DIGEST_CHECK;
+                delete process.env.POSTSURFING_BIN;
+                delete process.env.SURFDASH_ROOT;
+                process.env.SURFDASH_AUTO_PUSH = '0';
+                await rm(fx.base, { recursive: true, force: true });
+            }
+        });
+
+        test('runSiteGate supports off mode and extractFailingPostHint helper', async () => {
+            process.env.SURFDASH_DIGEST_CHECK = 'off';
+            try {
+                const outcome = await runSiteGate('/nonexistent');
+                expect(outcome.ok).toBe(true);
+            } finally {
+                delete process.env.SURFDASH_DIGEST_CHECK;
+            }
+
+            expect(extractFailingPostHint('Error in content/posts/articles/zh/slug/index.md: bad')).toBe(
+                'content/posts/articles/zh/slug/index.md',
+            );
+            expect(extractFailingPostHint('Error in posts/articles/en/slug.')).toBe('posts/articles/en/slug');
+            expect(extractFailingPostHint('no post path here')).toBeUndefined();
+        });
+
+        test('patchPost respects site gate when auto push is enabled', async () => {
+            const fx = await setupGateFixture('test-patch-gate');
+            process.env.TEST_CHECK_CONTENT_FAIL = '1';
+            process.env.SURFDASH_ROOT = fx.work;
+            process.env.SURFDASH_AUTO_PUSH = '1';
+
+            const zhPostPath = join(fx.work, 'content', 'posts', 'articles', 'zh', '20261024-post', 'index.md');
+            await mkdir(dirname(zhPostPath), { recursive: true });
+            await writeFile(
+                zhPostPath,
+                `---\ntitle: ZH\npublishDate: '2026-10-24'\nimage: ./assets/cover.png\n---\n\nBody\n`,
+            );
+
+            await writeFile(join(fx.work, 'scripts', 'publish-orchestrator.ts'), 'process.exit(0);\n');
+
+            const gitRun = async (cmd: string[], cwd: string): Promise<void> => {
+                const proc = Bun.spawn(cmd, { cwd, stdout: 'pipe', stderr: 'pipe' });
+                await proc.exited;
+            };
+            await gitRun(['git', 'add', '-A'], fx.work);
+            await gitRun(['git', 'commit', '-m', 'add-post'], fx.work);
+            await gitRun(['git', 'push', 'origin', 'main'], fx.work);
+
+            try {
+                const transport = new PostsurfingFileCliTransport();
+                const result = await transport.publish({
+                    content: { title: 'unused', body: 'unused', format: 'markdown' },
+                    options: {
+                        operation: 'patch',
+                        postPath: zhPostPath,
+                        coverUrl: 'https://cdn.example/cover.png',
+                        dateIso: '2026-10-24',
+                    },
+                });
+                expect(result.ok).toBe(false);
+                expect(result.error).toContain('bun run check:content');
+            } finally {
+                delete process.env.TEST_CHECK_CONTENT_FAIL;
+                delete process.env.SURFDASH_ROOT;
+                process.env.SURFDASH_AUTO_PUSH = '0';
+                await rm(fx.base, { recursive: true, force: true });
+            }
+        });
     });
 });

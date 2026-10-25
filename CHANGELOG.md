@@ -1,3 +1,10 @@
+## [Unreleased]
+
+### Fixed
+
+- fix(surfdash-pub): run the surfdash site gate (`bun run sd check digest`, then `bun run check:content`, in the surfdash checkout) before every commit and push to main, on both the publish and the patch path. On failure, refuse to push and report the command, its output and the failing post; `SURFDASH_DIGEST_CHECK=warn` echoes the failure and pushes anyway, and `off` skips it. The in-process digest-check copy stays only as a fast pre-check
+<!-- src: plugins/publishings/surfdash-pub/src/index.ts:391 -->
+
 ## [0.1.10] - 2026-10-24
 
 ### Added
