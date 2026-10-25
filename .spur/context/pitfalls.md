@@ -286,3 +286,36 @@
   doesn't exist; verify the dir, not the interpreter. And never provision a pipeline binary via a
   shell-only PATH entry (e.g. `~/.local/bin`): scheduled runs get the launchd plist PATH only, so
   brew everything onto `/opt/homebrew/bin`.
+
+## 2026-10-24 — daily voice2: nothing published, and the safety gate hid why
+
+- **A quota-disabled executor climbs the ladder into a dead write path.** With every `agy-*` profile
+  disabled (`disabled: {owner: quota}` — written back into `~/.config/spur/config.yaml` at 21:00), the
+  `scribe` rung resolves to `opencode`, whose free-tier key answered `Invalid credential`. The `-retry`
+  sibling then resolved `${vars.agent_retry}` → `inline` → `agy-gemini`, and headless agy's terminal
+  sandbox denies workspace writes, so BOTH attempts exited without an artifact. Probe a candidate rung
+  with a write-then-read round trip before trusting it: `claude -p "<prompt>" --permission-mode acceptEdits
+  --allowedTools Write Edit --add-dir <workdir>` passed on 2026-10-24 while `agy --mode accept-edits`
+  did not. A `-retry` sibling that lands on an unusable rung is not a retry.
+- **A retry sibling only helps the states that HAVE one.** `kk-daily-safety` declared no retry for
+  `review`/`judge`/`revise` and those states have no back-edge, so one failed executor produced zero
+  artifacts and `daily-safety-gate` scored `block` — the run failed "closed" on a review that never
+  happened. The gate is right to fail closed on a missing report; the gap was upstream. Every agent
+  step in that machine now carries a capable-tier sibling sharing its prompt via a YAML anchor.
+- **`revise` silently spends budget on unchanged bytes.** A failed revise still runs
+  `daily-safety-revise`, which spends one unit and re-opens the review over the same drafts, so two
+  executor failures exhaust `safety_max_revise` and land on `exclude`/`block` with nothing remediated.
+- **`translate` is `onError: continue` with no sibling**, so a failed locale translation left both
+  en/ja scaffolds at `draft: true`, `translate-sync` synced nothing, and `publish-classify` still wrote
+  `full`. `daily-publish-completeness` records `locales=failed` in its own artifact — read that file,
+  never `publish-status.txt` alone, when asking "did the day publish everything".
+- **A failed run holds its store selections; the next run then extracts an EMPTY pool.** Releasing
+  only the newest dead run is not enough: `kk store extract` ran `count:0` until every failed run of
+  the day was released (`kk store release --run <id>` each). The DAG treats an empty pool as a
+  legitimate `no-content` close and exits `done` in ~11 s, which reads as "nothing to do" instead of
+  "you forgot to release".
+- **Do not `git stash pop` into a moved surfdash checkout.** Popping a stash taken before a pull left
+  85 files with conflict markers in the shared surfdash tree; the plugin's `refine` step then died on
+  `Expected identifier but found "<<"` at `scripts/lib/seo-digest.ts`, which surfaced only as
+  "surfdash-pub exited 1". `surfdash` publishes with `git merge --ff-only origin/main` and refuses a
+  diverged checkout, so keep that tree clean rather than stashing its unrelated edits.
