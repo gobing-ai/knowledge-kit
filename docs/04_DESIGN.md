@@ -2065,7 +2065,7 @@ installed — that is invalid preset data, not a runtime refusal. This replaces 
 Tier 0 is the publication contract: serial, and a failed `required` tier-0 row records a `skipped`
 event for every later tier and sends none of them. Rows at tier ≥ 1 get their payload's
 `{{article_url}}` / `{{podcast_url}}` placeholders resolved from the tier-0 receipts
-(`surfdash-pub` → article, `podcast-pub` → podcast) into
+(`surfdash-pub` → article, `podcast-pub` → podcast, each url inserted JSON-string-escaped) into
 `4-publish/payloads/content.<id>.resolved.json`; a placeholder that stays unresolved fails that row
 with `effect: none`, `error: unresolved-link`, and no spawn. Resend rules are inherited unchanged
 from the shared `sendRows` loop, which the itc sender now also uses (`key` = plugin there, target id
@@ -2081,7 +2081,9 @@ any other, then `send` writes the synthetic receipt
 and never calls the dispatcher — one branch in `sendRows` before `runFanout`, so no plugin process
 and no network call happens (the rehearsal still parses the payload as kk-core `Content`; a payload
 that is no longer valid Content gets a failed receipt with `error: "invalid-payload"`). Tier-2 link
-placeholders resolve to the tier-0 `dummy://` urls, so a full all-dummy run needs no network at all.
+placeholders of a *dummy* row resolve to the tier-0 `dummy://` urls, so a full all-dummy run needs no
+network at all; a `draft`/`live` row never resolves from a dummy receipt, so a rehearsed tier 0 leaves
+its placeholder unresolved and the row fails `unresolved-link` before dispatch.
 A dummy receipt is a succeeded receipt for resend purposes (a rerun skips it) **except** that it
 never blocks a real send: flipping the preset row to `draft` dispatches the target once on the next
 run. itc rows never carry `mode: dummy`, so the branch is unreachable there.
@@ -2174,7 +2176,7 @@ Nodes and their gating rule:
 | Node | Window | Notes |
 | --- | --- | --- |
 | `wait-until` | cn-peak | `publish-matrix-wait-until 09:00 Asia/Shanghai`; the schedule fires 17:00 local and this node sleeps the remainder (DST-safe, no-op when past) |
-| `rss-gate` | every window (no-op outside overseas) | `publish-matrix-rss-gate --date <run_date>`; a miss is a **verdict in `4-publish/rss-gate.json`**, not a node failure |
+| `rss-gate` | every window (no-op outside overseas) | `publish-matrix-rss-gate --date <run_date>`; a miss is a **verdict in `4-publish/rss-gate.json`**, not a node failure (an HTTP error status or a 30 s fetch timeout is reason `fetch-failed`) |
 | `plan` | hit or non-overseas | `publish-matrix-plan --bundle … --window …` (+ `--channels/--live-channels/--dummy` when set) |
 | `check` | every planned window | `publish-matrix-check --window …`, warn-only |
 | `send-confirm` | `pause: true`, condition = the plan has a live row | resume = approval; skipped for a draft window |
