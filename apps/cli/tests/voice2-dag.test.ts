@@ -738,14 +738,46 @@ describe('kk-daily-safety — decision-bound publish verdict (AC6, 0317 R6)', ()
     it('names the judge verdict path with its step prefix and stays inside the ADR-115 prompt cap', () => {
         const yaml = readFileSync(SAFETY, 'utf-8');
         const block = yaml.match(/- id: judge\n[\s\S]*?(?=\n {2}- id: )/)?.[0] ?? '';
-        // The reviewer's prompt scalar is indented 12 spaces; anything at <= 10 ends it.
-        const input = (block.split('input: |')[1] ?? '').split(/\n {0,10}\S/)[0] ?? '';
+        // The judge prompt is a shared YAML anchor (`&safety-judge-input`) so the primary and its
+        // retry cannot drift (2026-10-24); the anchored body is the contract, not the reference.
+        const anchored = yaml.match(/input: &safety-judge-input \|\n([\s\S]*?)(?=\n {0,10}\S)/)?.[1] ?? '';
+        const ref = block.match(/input: (\*[\w-]+)/)?.[1];
+        const input = ref === undefined ? anchored : anchored;
+        expect(ref, 'judge steps must reference the shared anchor').toBe('*safety-judge-input');
         // On 2026-10-10 the safety-judge agent wrote its verdict to ..._08_safety-judge_verdict.json
         // instead of ..._09_..., which spur reports as a contract violation and fails the run with no
         // verdict at all. The prompt must name the prefix, and it must stay under the 1000-char cap.
         expect(input).toContain('prefix `09_`, never `08_`');
         expect(input).toContain('_09_safety-judge_verdict.json');
         expect(input.length).toBeLessThanOrEqual(1000);
+        expect(block, 'the judge carries one prompt, shared by both attempts').not.toContain('input: |');
+    });
+
+    it('retries each agent step on a capable tier when the primary leaves no artifact (2026-10-24)', () => {
+        // The failure this pins: `opencode ... Invalid credential` failed `review`, then `judge`, on
+        // every attempt because both named `${vars.agent}` (a scribe/cheap rung). With no report the
+        // gate scored `block` — an episode withheld although nothing had reviewed it. A retry on a
+        // DIFFERENT, higher rung is what recovered the run the same day.
+        type SafetyAction = { kind?: string; options?: Record<string, unknown> };
+        const parsed = Bun.YAML.parse(readFileSync(SAFETY, 'utf-8')) as {
+            vars: Record<string, string>;
+            states: { id: string; onEnter?: SafetyAction[] }[];
+        };
+        const agentSteps = (id: string): SafetyAction[] =>
+            (parsed.states.find((state) => state.id === id)?.onEnter ?? []).filter(
+                (action) => action.kind === 'agent.run',
+            );
+        for (const id of ['review', 'judge', 'revise']) {
+            const steps = agentSteps(id);
+            expect(String(steps[0]?.options?.agent ?? ''), `${id}'s primary keeps the caller executor`).toContain(
+                'vars.agent',
+            );
+            expect(String(steps[1]?.options?.agent ?? ''), `${id} must retry on vars.agent_retry`).toContain(
+                'vars.agent_retry',
+            );
+        }
+        // Declared, not an inline literal, so an operator can re-point it without editing the graph.
+        expect(parsed.vars.agent_retry).toBeTruthy();
     });
 
     it('is a state machine whose loop is the review → judge → revise chain', () => {
@@ -767,8 +799,18 @@ describe('kk-daily-safety — decision-bound publish verdict (AC6, 0317 R6)', ()
                 .filter((action) => action.kind === 'agent.run')
                 .map((action) => ({ state: state.id, onError: action.onError })),
         );
-        // Non-vacuous: review, judge and revise each run one.
-        expect(agentSteps.map((step) => step.state).sort()).toEqual(['judge', 'review', 'revise']);
+        // Non-vacuous: review, judge and revise each run an agent step — and since 2026-10-24 each
+        // carries a `-retry` sibling here (a capable-tier second attempt), because the state
+        // machine has no back-edge for `review`/`judge` and a failed first attempt used to leave no
+        // artifact at all, which the gate then failed CLOSED as `block`.
+        expect(agentSteps.map((step) => step.state).sort()).toEqual([
+            'judge',
+            'judge',
+            'review',
+            'review',
+            'revise',
+            'revise',
+        ]);
         // 0270: an untolerated agent failure aborts the machine at that node, so `daily-safety-gate`
         // never runs and the nested run ends `-> review` having written no status (2026-10-12 — an out
         // of balance executor plus a refusing failover model took the whole daily DAG down that way).

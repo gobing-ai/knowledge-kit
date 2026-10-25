@@ -84,16 +84,30 @@ function tempDir(prefix: string): string {
     return dir;
 }
 
-/** The state's agent.run step whose expectFile carries `expectFragment` (the reviewer pin). */
+/**
+ * The state's PRIMARY agent.run step whose expectFile carries `expectFragment` (the reviewer pin).
+ * Since 2026-10-24 a state may declare a `-retry` sibling with the SAME pin on a higher tier, so
+ * the primary is the first match and the count assertion moved to the retry test below.
+ */
 function reviewerStep(stateId: string, expectFragment: string): EnterAction {
     const steps = (machine.states.find((state) => state.id === stateId)?.onEnter ?? []).filter(
         (action) => action.kind === 'agent.run' && String(action.options?.expectFile ?? '').includes(expectFragment),
     );
     const step = steps.at(0);
-    if (steps.length !== 1 || step === undefined) {
-        throw new Error(
-            `${stateId}: expected exactly one agent.run expecting ${expectFragment}, found ${steps.length}`,
-        );
+    if (step === undefined) {
+        throw new Error(`${stateId}: expected an agent.run expecting ${expectFragment}, found none`);
+    }
+    return step;
+}
+
+/** The `-retry` sibling of {@link reviewerStep}: same pin, a different (declared) executor. */
+function reviewerRetryStep(stateId: string, expectFragment: string): EnterAction {
+    const steps = (machine.states.find((state) => state.id === stateId)?.onEnter ?? []).filter(
+        (action) => action.kind === 'agent.run' && String(action.options?.expectFile ?? '').includes(expectFragment),
+    );
+    const step = steps.at(1);
+    if (step === undefined) {
+        throw new Error(`${stateId}: expected a retry agent.run for ${expectFragment}, found ${steps.length}`);
     }
     return step;
 }
@@ -122,6 +136,31 @@ describe('kk-daily-safety reviewer steps — a failed reviewer reaches the gate,
         const expectFile = String(judge.options?.expectFile);
         expect(expectFile).toContain(varRef('work_dir'));
         expect(expectFile).toContain('_09_safety-judge_verdict.json');
+    });
+
+    it('AC3: each reviewer step retries on the declared capable tier when the primary leaves no artifact (2026-10-24)', () => {
+        // 2026-10-24: a scribe-rung executor failed `review` and then `judge` with no artifact, so the
+        // gate scored `block` and the episode was withheld although nothing had reviewed it. The
+        // machine has no back-edge for those two states, so the retry has to live in the same onEnter.
+        for (const [stateId, fragment] of [
+            ['review', '_09_safety-review_report.json'],
+            ['judge', '_09_safety-judge_verdict.json'],
+        ] as const) {
+            const retry = reviewerRetryStep(stateId, fragment);
+            expect(retry.onError, `${stateId}'s retry must still hand its failure to the gate`).toBe('continue');
+            expect(String(retry.options?.agent), `${stateId} must retry on vars.agent_retry`).toContain(
+                'vars.agent_retry',
+            );
+        }
+        // `revise` edits the drafts in place (requireDiff), so it has no expectFile pin — match on
+        // that option instead: a failed remediation spends a budget unit and re-reviews UNCHANGED
+        // bytes, so it needs the same second attempt.
+        const reviseAgents = (machine.states.find((state) => state.id === 'revise')?.onEnter ?? [])
+            .filter((action) => action.kind === 'agent.run' && action.options?.requireDiff === true)
+            .map((action) => String(action.options?.agent));
+        expect(reviseAgents).toHaveLength(2);
+        expect(reviseAgents.at(0)).toContain('vars.agent');
+        expect(reviseAgents.at(1)).toContain('vars.agent_retry');
     });
 
     it('only the reviewer steps and the tolerated decide are survivable: the deterministic shells fail closed', () => {

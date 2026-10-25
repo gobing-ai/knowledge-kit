@@ -80,7 +80,12 @@ vars:
   # siblings declare `role: reviewer` (capable-1), two rungs above the primary's `scribe`, so the
   # default `inline` resolves the retry above any rung the primary reaches by climbing past an
   # unusable cheap executor (ac5-live-1). The operator may still pin a known-good executor here.
-  agent_retry: "inline"
+  # 2026-10-24 pin: `inline` resolved to agy-gemini, whose headless write path is dead (terminal
+  # sandbox denies workspace writes), so the retry failed the same way twice — the whole day closed
+  # with no plan. `claude` carries `--permission-mode acceptEdits --allowedTools Write Edit` and is
+  # the tier that actually delivered both producers on this date. Re-point it at whatever
+  # `spur agent doctor <name>` reports usable; an empty retry tier fails the run loudly.
+  agent_retry: "claude"
   # QC pins — lockstep with episode-plan-gen's DEFAULT_FILTER_CONFIG (env wins), same as voice1.
   qc_categories: "ai-news,ai-technical,ai-research,ai-industry"
   qc_min_quality: "2"
@@ -913,7 +918,12 @@ nodes:
         onError: continue
         role: scribe
         agent: ${vars.agent}
-        input: |
+        # 2026-10-24: `onError: continue` documents the locales as non-blocking, but a failure here
+        # landed AFTER surfdash/podcast and left `translate-sync` to sync nothing while
+        # `publish-classify` still reported the day `full` — the en/ja posts never existed. The
+        # retry sibling below carries the capable tier; `daily-publish-completeness` is what makes
+        # the residue visible instead of a silent skip.
+        input: &translate-input |
           Translate the en/ja draft posts of the zh article. Read the two marker files at these fixed paths — each holds one draft path, or is empty when that locale was not scaffolded:
           English: ${vars.work_dir}/31-publish/${vars.run_date}_20_translate-localize_en-post-path.txt
           Japanese: ${vars.work_dir}/31-publish/${vars.run_date}_20_translate-localize_ja-post-path.txt
@@ -922,9 +932,31 @@ nodes:
           Keep frontmatter valid YAML: double-quote any value containing ': '. Read the surfdash translator glossary if present at the surfdash checkout root under .agents/skills/surfdash-translator/glossary.md and apply its terminology.
           Do not wait for operator confirmation. Each edited file must end fully in its target language.
 
+  # 2026-10-24: the locale translation carried `onError: continue` with NO retry sibling, so a
+  # failed executor left the en/ja drafts untranslated and `translate-sync` synced nothing while the
+  # day still classified `full`. Same shape as the two hard-fail producers above: the primary
+  # tolerates, this sibling is loud-tolerant (a locale is an independent channel, so it continues
+  # rather than failing the DAG) and runs only when a scaffolded draft is still untranslated.
+  - id: translate-retry
+    description: "Retry the en/ja locale translation on the capable tier when the primary left a scaffolded draft untranslated (2026-10-24)"
+    dependsOn: [translate]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          test "$(cat "${vars.work_dir}/31-publish/${vars.run_date}_20_translate-localize_zh-post-path.txt" 2>/dev/null)" != ""
+          && { for L in en ja; do M="${vars.work_dir}/31-publish/${vars.run_date}_20_translate-localize_$L-post-path.txt"; P="$(cat "$M" 2>/dev/null)"; [ -z "$P" ] && continue; grep -q '^draft: *false' "$P" || { echo "untranslated: $L ($P)"; exit 0; }; done; exit 1; }
+    action:
+      kind: agent.run
+      options:
+        onError: continue
+        role: reviewer
+        agent: ${vars.agent_retry}
+        input: *translate-input
+
   - id: translate-sync
     description: "Sync the translated en/ja drafts into the surfdash CMS (the zh post path rides the marker file)"
-    dependsOn: [translate]
+    dependsOn: [translate, translate-retry]
     action:
       kind: shell
       options:
