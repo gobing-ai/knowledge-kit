@@ -4,7 +4,7 @@ name: Derive session-preflight probes from the enabled publish targets
 status: done
 template: feature-impl
 created_at: 2026-10-22T18:41:32.723Z
-updated_at: "2026-10-23T14:57:05.953Z"
+updated_at: "2026-10-25T04:35:37.772Z"
 feature_id: G15
 
 dependencies: ["0321"]
@@ -82,13 +82,13 @@ voice2 `session-preflight` (`plugins/kk/workflows/kk-daily-ai-voice2.yaml:178`) 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `apps/cli/src/publish-matrix.ts:466` checkPublishMatrix, `apps/cli/src/publish-matrix.ts:471` --all-windows derives probes from the preset; `apps/cli/src/publish-matrix.ts:550` no probes; `apps/cli/tests/publish-matrix.test.ts:984`, `apps/cli/tests/publish-matrix.test.ts:1025` |
-| R2 | MET | `apps/cli/src/publish-matrix.ts:515-516` preflight label and check.preflight.json; `apps/cli/tests/publish-matrix.test.ts:984` |
-| R3 | MET | `apps/cli/src/itc-publish.ts:340` probePlugin (kk plugin check entry, 60 s budget) reused; `apps/cli/tests/publish-matrix.test.ts:1050` |
+| R1 | MET | `apps/cli/src/publish-matrix.ts:466` checkPublishMatrix, `apps/cli/src/publish-matrix.ts:471` --all-windows derives probes from the preset; `apps/cli/src/publish-matrix.ts:550` no probes; `apps/cli/tests/publish-matrix.test.ts:1014`, `apps/cli/tests/publish-matrix.test.ts:1055` |
+| R2 | MET | `apps/cli/src/publish-matrix.ts:515-516` preflight label and check.preflight.json; `apps/cli/tests/publish-matrix.test.ts:1014` |
+| R3 | MET | `apps/cli/src/itc-publish.ts:340` probePlugin (kk plugin check entry, 60 s budget) reused; `apps/cli/tests/publish-matrix.test.ts:1080` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — The channel matrix comes from a config-selected publish preset (req: R1, R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:984`, `apps/cli/tests/publish-matrix.test.ts:1025`, `apps/cli/tests/publish-matrix.test.ts:1050` |
+| AC1 — The channel matrix comes from a config-selected publish preset (req: R1, R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:1014`, `apps/cli/tests/publish-matrix.test.ts:1055`, `apps/cli/tests/publish-matrix.test.ts:1080` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

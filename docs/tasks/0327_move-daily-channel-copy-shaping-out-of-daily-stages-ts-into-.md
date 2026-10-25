@@ -4,7 +4,7 @@ name: Move daily channel copy shaping out of daily-stages.ts into a generate-sid
 status: done
 template: feature-impl
 created_at: 2026-10-22T18:41:33.500Z
-updated_at: "2026-10-23T14:57:08.603Z"
+updated_at: "2026-10-25T04:35:39.547Z"
 feature_id: G15
 
 dependencies: ["0321"]
@@ -114,15 +114,15 @@ So publishing re-assembles content (boundary violation, design §6). voice3 need
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | builders `plugins/kk/scripts/daily-stages.ts:1561`, `plugins/kk/scripts/daily-stages.ts:1613`, `plugins/kk/scripts/daily-stages.ts:1630`, `plugins/kk/scripts/daily-stages.ts:1641`, `plugins/kk/scripts/daily-stages.ts:1656`, `plugins/kk/scripts/daily-stages.ts:1678`; called by `plugins/kk/scripts/daily-stages.ts:1945`, `plugins/kk/scripts/daily-stages.ts:2115`, `plugins/kk/scripts/daily-stages.ts:2198` |
-| R2 | MET | `plugins/kk/scripts/daily-stages.ts:1789` dailyBundleVariants with placeholder links; `apps/cli/tests/kk-workflow-stages.test.ts:2192` |
-| R3 | MET | `plugins/kk/scripts/daily-stages.ts:1727` buildSocialContent; `plugins/kk/workflows/kk-daily-ai-voice3.yaml:760` social-write; `apps/cli/tests/kk-workflow-stages.test.ts:2192`, `apps/cli/tests/kk-workflow-stages.test.ts:2249`, `apps/cli/tests/kk-workflow-stages.test.ts:2276` |
-| R4 | MET | `git diff --stat a1c0e1d^ -- plugins/kk/workflows/kk-daily-ai-voice2.yaml` → empty this run; voice2 suites 200 pass / 0 fail |
+| R1 | MET | builders `plugins/kk/scripts/daily-stages.ts:1567` buildWechatArticleContent, `plugins/kk/scripts/daily-stages.ts:1619` buildXhsEpisodeContent, `plugins/kk/scripts/daily-stages.ts:1647` buildXhsCardsContent, `plugins/kk/scripts/daily-stages.ts:1662` buildPodcastContent, `plugins/kk/scripts/daily-stages.ts:1684` buildSurfdashContent, `plugins/kk/scripts/daily-stages.ts:1733` buildSocialContent; voice2 callers `plugins/kk/scripts/daily-stages.ts:2008`, `plugins/kk/scripts/daily-stages.ts:2192`, `plugins/kk/scripts/daily-stages.ts:2269`, `plugins/kk/scripts/daily-stages.ts:2305` |
+| R2 | MET | `plugins/kk/scripts/daily-stages.ts:1795` dailyBundleVariants with placeholder links; `apps/cli/tests/kk-workflow-stages.test.ts:2197` |
+| R3 | MET | `plugins/kk/scripts/daily-stages.ts:1733` buildSocialContent; `plugins/kk/workflows/kk-daily-ai-voice3.yaml:760` social-write; `apps/cli/tests/kk-workflow-stages.test.ts:2197`, `apps/cli/tests/kk-workflow-stages.test.ts:2254`, `apps/cli/tests/kk-workflow-stages.test.ts:2281` |
+| R4 | MET | `git show --stat --format= a1c0e1d -- plugins/kk/workflows/kk-daily-ai-voice2.yaml` → empty this run (later commits edit voice2 for unrelated fixes, so the range form no longer applies); voice2 suites 208 pass / 0 fail |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — voice3 generate freezes a bundle publish3 can consume (req: R2, R3) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:2192` |
-| AC2 — voice2 publish payloads are unchanged by the builder extraction (req: R1, R4) | MET | command | `bun test apps/cli/tests/voice2-dag.test.ts apps/cli/tests/commands/daily.test.ts apps/cli/tests/kk-workflow-stages.test.ts` → 200 pass, 0 fail this run; `plugins/kk/scripts/daily-stages.ts:1575` appendOutro default keeps voice2 body |
+| AC1 — voice3 generate freezes a bundle publish3 can consume (req: R2, R3) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:2197`, `apps/cli/tests/kk-workflow-stages.test.ts:2254` |
+| AC2 — voice2 publish payloads are unchanged by the builder extraction (req: R1, R4) | MET | command | `bun test apps/cli/tests/voice2-dag.test.ts apps/cli/tests/commands/daily.test.ts apps/cli/tests/kk-workflow-stages.test.ts` → 208 pass, 0 fail this run; `plugins/kk/scripts/daily-stages.ts:1608` appendOutro default keeps voice2 body (bundle opts out at `plugins/kk/scripts/daily-stages.ts:1851`) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

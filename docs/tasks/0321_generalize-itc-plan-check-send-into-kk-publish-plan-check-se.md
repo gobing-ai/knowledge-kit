@@ -4,7 +4,7 @@ name: Generalize itc plan/check/send into kk publish plan|check|send with window
 status: done
 template: feature-impl
 created_at: 2026-10-22T18:41:31.104Z
-updated_at: "2026-10-23T14:57:00.856Z"
+updated_at: "2026-10-25T04:36:12.748Z"
 feature_id: G15
 
 priority: P1
@@ -146,11 +146,11 @@ kk-itc already splits generate/publish (`apps/cli/src/itc-publish.ts` — `itcMa
 |-------------|--------|----------|
 | R1 | MET | `apps/cli/src/publish-matrix.ts:399` planPublishMatrix → composePlan (`apps/cli/src/publish-matrix.ts:254`) writes plan.<window>.json rows with payload path and digest; `apps/cli/tests/publish-matrix.test.ts:162` asserts every field |
 | R2 | MET | `apps/cli/src/publish-matrix.ts:292` unlisted channel refused; `apps/cli/src/itc-plan.ts:50` preset mode is off/dummy/draft only; `apps/cli/tests/publish-matrix.test.ts:244`, `apps/cli/tests/publish-matrix.test.ts:287`, `apps/cli/tests/publish-matrix.test.ts:315` |
-| R3 | MET | `apps/cli/src/publish-matrix.ts:466` checkPublishMatrix probes distinct non-dummy plugins, warn-only at `apps/cli/src/publish-matrix.ts:540`; `apps/cli/tests/publish-matrix.test.ts:1215` |
-| R4 | MET | `apps/cli/src/publish-matrix.ts:743` sendPublishMatrix through shared `apps/cli/src/itc-publish.ts:472` sendRows; `apps/cli/tests/publish-matrix.test.ts:396`, `apps/cli/tests/publish-matrix.test.ts:441`, `apps/cli/tests/publish-matrix.test.ts:485`, `apps/cli/tests/publish-matrix.test.ts:502`, `apps/cli/tests/publish-matrix.test.ts:530` |
-| R5 | MET | `apps/cli/src/publish-matrix.ts:232` LINK_SOURCES placeholders; `apps/cli/src/publish-matrix.ts:831` unresolved-link fails the row without dispatch; `apps/cli/tests/publish-matrix.test.ts:396`, `apps/cli/tests/publish-matrix.test.ts:463` |
-| R6 | MET | `apps/cli/src/itc-publish.ts:29` ItcReceiptSchema optional-only extension; `apps/cli/src/itc-publish.ts:705` itcSendTargets keys by plugin; `apps/cli/tests/publish-matrix.test.ts:1279`; itc suites 113 pass / 0 fail this run |
-| R7 | MET | `docs/04_DESIGN.md:2016` plan surface, `docs/04_DESIGN.md:2064` send surface |
+| R3 | MET | `apps/cli/src/publish-matrix.ts:466` checkPublishMatrix probes distinct non-dummy plugins, warn-only at `apps/cli/src/publish-matrix.ts:540`; `apps/cli/tests/publish-matrix.test.ts:1293` |
+| R4 | MET | `apps/cli/src/publish-matrix.ts:754` sendPublishMatrix through shared `apps/cli/src/itc-publish.ts:472` sendRows; `apps/cli/tests/publish-matrix.test.ts:396`, `apps/cli/tests/publish-matrix.test.ts:441`, `apps/cli/tests/publish-matrix.test.ts:485`, `apps/cli/tests/publish-matrix.test.ts:502`, `apps/cli/tests/publish-matrix.test.ts:530` |
+| R5 | MET | `apps/cli/src/publish-matrix.ts:232` LINK_SOURCES placeholders; `apps/cli/src/publish-matrix.ts:845` unresolved-link fails the row without dispatch; `apps/cli/tests/publish-matrix.test.ts:396`, `apps/cli/tests/publish-matrix.test.ts:463`; re-audit fixes: `apps/cli/src/publish-matrix.ts:738` dummy receipts excluded from real-row links, `apps/cli/src/publish-matrix.ts:842` url JSON-escaped on insertion — `apps/cli/tests/publish-matrix.test.ts:1164`, `apps/cli/tests/publish-matrix.test.ts:1191` (both fail on HEAD, pass now) |
+| R6 | MET | `apps/cli/src/itc-publish.ts:29` ItcReceiptSchema optional-only extension; `apps/cli/src/itc-publish.ts:705` itcSendTargets keys by plugin; `apps/cli/tests/publish-matrix.test.ts:1357`; itc suites 113 pass / 0 fail this run |
+| R7 | MET | `docs/04_DESIGN.md:2016` plan surface, `docs/04_DESIGN.md:2064` send surface; `docs/04_DESIGN.md:2068` JSON-escaped link insertion |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|

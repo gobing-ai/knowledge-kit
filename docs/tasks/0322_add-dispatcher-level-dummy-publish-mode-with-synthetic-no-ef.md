@@ -4,7 +4,7 @@ name: Add dispatcher-level dummy publish mode with synthetic no-effect receipts
 status: done
 template: feature-impl
 created_at: 2026-10-22T18:41:31.549Z
-updated_at: "2026-10-23T14:57:02.130Z"
+updated_at: "2026-10-25T04:35:35.104Z"
 feature_id: G15
 
 dependencies: ["0321"]
@@ -98,14 +98,14 @@ No publish plugin has a dry-run mode, so the whole publish3 flow can only be reh
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `apps/cli/src/itc-publish.ts:559` dummy branch before dispatch; `apps/cli/src/publish-matrix.ts:660` writeDummyReceipt (effect none, dummy://<id>); `apps/cli/tests/publish-matrix.test.ts:1080`, `apps/cli/tests/publish-matrix.test.ts:1181` |
-| R2 | MET | `apps/cli/src/itc-publish.ts:501` dummy-only prior receipt does not block a real send; `apps/cli/tests/publish-matrix.test.ts:1134` |
-| R3 | MET | `apps/cli/tests/publish-matrix.test.ts:1080` full matrix with a throwing dispatch: zero calls, one synthetic receipt per row |
+| R1 | MET | `apps/cli/src/itc-publish.ts:559` dummy branch before dispatch; `apps/cli/src/publish-matrix.ts:660` writeDummyReceipt (effect none, dummy://<id>); `apps/cli/tests/publish-matrix.test.ts:1110`, `apps/cli/tests/publish-matrix.test.ts:1259`; a dummy tier-0 url never reaches a draft/live row (`apps/cli/src/publish-matrix.ts:738`, `apps/cli/tests/publish-matrix.test.ts:1164`) |
+| R2 | MET | `apps/cli/src/itc-publish.ts:501` dummy-only prior receipt does not block a real send; `apps/cli/tests/publish-matrix.test.ts:1212` |
+| R3 | MET | `apps/cli/tests/publish-matrix.test.ts:1110` full matrix with a throwing dispatch: zero calls, one synthetic receipt per row |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Dummy mode exercises the full publish path without spawning plugins (req: R1, R3) | MET | test | `apps/cli/tests/publish-matrix.test.ts:1080`, `apps/cli/tests/publish-matrix.test.ts:1181` |
-| AC2 — A dummy receipt never blocks a later real send of the same target (req: R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:1134` |
+| AC1 — Dummy mode exercises the full publish path without spawning plugins (req: R1, R3) | MET | test | `apps/cli/tests/publish-matrix.test.ts:1110`, `apps/cli/tests/publish-matrix.test.ts:1259` |
+| AC2 — A dummy receipt never blocks a later real send of the same target (req: R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:1212` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

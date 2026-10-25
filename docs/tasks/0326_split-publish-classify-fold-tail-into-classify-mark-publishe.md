@@ -4,7 +4,7 @@ name: Split publish-classify --fold-tail into classify, mark-published and repor
 status: done
 template: feature-impl
 created_at: 2026-10-22T18:41:33.110Z
-updated_at: "2026-10-23T14:57:07.236Z"
+updated_at: "2026-10-25T04:35:38.661Z"
 feature_id: G15
 
 dependencies: ["0321"]
@@ -106,15 +106,15 @@ publish3 needs its publish outcome (`full|partial|none`) computed from the 0321 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `apps/cli/src/publish-matrix.ts:566` runPublishMatrixClassify, outcome schema `apps/cli/src/publish-matrix.ts:84-96`; `apps/cli/tests/publish-matrix.test.ts:830`, `apps/cli/tests/publish-matrix.test.ts:948` |
-| R2 | MET | `apps/cli/src/publish-matrix.ts:120` classifyPublishMatrix over non-dummy rows; `apps/cli/tests/publish-matrix.test.ts:790`, `apps/cli/tests/publish-matrix.test.ts:812`, `apps/cli/tests/publish-matrix.test.ts:892` |
-| R3 | MET | `apps/cli/src/publish-matrix.ts:166` LEGACY_RESULT_FILES, bridge `apps/cli/src/publish-matrix.ts:636-641`, summary `apps/cli/src/publish-matrix.ts:603`; `apps/cli/tests/publish-matrix.test.ts:830` |
+| R1 | MET | `apps/cli/src/publish-matrix.ts:566` runPublishMatrixClassify, outcome schema `apps/cli/src/publish-matrix.ts:84-96`; `apps/cli/tests/publish-matrix.test.ts:860`, `apps/cli/tests/publish-matrix.test.ts:978` |
+| R2 | MET | `apps/cli/src/publish-matrix.ts:120` classifyPublishMatrix over non-dummy rows; `apps/cli/tests/publish-matrix.test.ts:820`, `apps/cli/tests/publish-matrix.test.ts:842`, `apps/cli/tests/publish-matrix.test.ts:922` |
+| R3 | MET | `apps/cli/src/publish-matrix.ts:166` LEGACY_RESULT_FILES, bridge `apps/cli/src/publish-matrix.ts:636-641`, summary `apps/cli/src/publish-matrix.ts:603`; `apps/cli/tests/publish-matrix.test.ts:860` |
 | R4 | MET | `git log bf1c45a^..HEAD -- apps/cli/src/commands/daily.ts apps/cli/tests/voice2-dag.test.ts` → empty this run; voice2 suites 200 pass / 0 fail |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Dummy mode exercises the full publish path without spawning plugins (req: R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:790`, `apps/cli/tests/publish-matrix.test.ts:892` |
-| AC2 — Receipt-based classification feeds the existing tail stages unchanged (req: R1, R3, R4) | MET | test | `apps/cli/tests/publish-matrix.test.ts:830` |
+| AC1 — Dummy mode exercises the full publish path without spawning plugins (req: R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:820`, `apps/cli/tests/publish-matrix.test.ts:922` |
+| AC2 — Receipt-based classification feeds the existing tail stages unchanged (req: R1, R3, R4) | MET | test | `apps/cli/tests/publish-matrix.test.ts:860` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

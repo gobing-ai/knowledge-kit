@@ -4,7 +4,7 @@ name: Add kk-daily-ai-voice3 generate workflow that freezes bundle.json
 status: done
 template: feature-impl
 created_at: 2026-10-22T18:41:32.327Z
-updated_at: "2026-10-23T14:57:04.686Z"
+updated_at: "2026-10-25T04:35:36.884Z"
 feature_id: G15
 
 dependencies: ["0323", "0327"]
@@ -106,7 +106,7 @@ This is the generate half of the voice3 split (design §4). voice2 stays untouch
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
 | R1 | MET | `plugins/kk/workflows/kk-daily-ai-voice3.yaml:125` prepare onward carries voice2's generation nodes; `apps/cli/tests/voice3-dag.test.ts:182` copied nodes still exist in voice2; `apps/cli/tests/voice3-dag.test.ts:141` |
-| R2 | MET | `plugins/kk/workflows/kk-daily-ai-voice3.yaml:760` social-write, `plugins/kk/workflows/kk-daily-ai-voice3.yaml:783` bundle-variants, `plugins/kk/workflows/kk-daily-ai-voice3.yaml:795` bundle-freeze; `apps/cli/src/publish-matrix.ts:1172` runPublishMatrixBundle; `apps/cli/tests/voice3-dag.test.ts:54`, `apps/cli/tests/voice3-dag.test.ts:82`, `apps/cli/tests/voice3-dag.test.ts:108` |
+| R2 | MET | `plugins/kk/workflows/kk-daily-ai-voice3.yaml:760` social-write, `plugins/kk/workflows/kk-daily-ai-voice3.yaml:783` bundle-variants, `plugins/kk/workflows/kk-daily-ai-voice3.yaml:795` bundle-freeze; `apps/cli/src/publish-matrix.ts:1194` runPublishMatrixBundle; `apps/cli/tests/voice3-dag.test.ts:54`, `apps/cli/tests/voice3-dag.test.ts:82`, `apps/cli/tests/voice3-dag.test.ts:108` |
 | R3 | MET | `plugins/kk/workflows/kk-daily-ai-voice3.yaml:743` pool-gate single guard; `apps/cli/tests/voice3-dag.test.ts:153` |
 | R4 | MET | `plugins/kk/workflows/kk-daily-ai-voice3.yaml:817` nested publish gated on auto_publish; `apps/cli/tests/voice3-dag.test.ts:164` |
 | R5 | MET | `apps/cli/tests/voice3-dag.test.ts:53` bundle suite + `apps/cli/tests/voice3-dag.test.ts:138` shape suite; `spur workflow validate plugins/kk/workflows/kk-daily-ai-voice3.yaml` → valid this run |

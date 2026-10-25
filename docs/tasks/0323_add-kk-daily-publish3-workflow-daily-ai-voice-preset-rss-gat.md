@@ -4,7 +4,7 @@ name: Add kk-daily-publish3 workflow, daily-ai-voice preset, RSS gate, diagnose 
 status: done
 template: feature-impl
 created_at: 2026-10-22T18:41:31.940Z
-updated_at: "2026-10-23T14:57:03.405Z"
+updated_at: "2026-10-25T04:35:35.996Z"
 feature_id: G15
 
 dependencies: ["0321", "0322", "0325", "0326"]
@@ -143,18 +143,18 @@ publish3 is the publish half of voice3 (design `docs/design/kk-daily-ai-voice3.m
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
 | R1 | MET | `plugins/kk/workflows/kk-daily-publish3.yaml:31` wait-until through `plugins/kk/workflows/kk-daily-publish3.yaml:275` ledger (all fifteen nodes); `spur workflow validate plugins/kk/workflows/kk-daily-publish3.yaml` → valid this run; `apps/cli/tests/kk-daily-publish3.test.ts:319` |
-| R2 | MET | `plugins/kk/publish-presets/daily-ai-voice.json:1`; `apps/cli/src/publish-matrix.ts:1123` readPublishPresetSelector; `plugins/kk/config.example.yaml:12-18`; `apps/cli/tests/publish-matrix.test.ts:681`, `apps/cli/tests/publish-matrix.test.ts:719`, `apps/cli/tests/kk-daily-publish3.test.ts:276` |
-| R3 | MET | `apps/cli/src/publish-matrix.ts:939` runPublishMatrixRssGate, `apps/cli/src/publish-matrix.ts:919` guid-then-title match; `apps/cli/tests/publish-matrix.test.ts:569`, `apps/cli/tests/publish-matrix.test.ts:583`, `apps/cli/tests/kk-daily-publish3.test.ts:296` |
+| R2 | MET | `plugins/kk/publish-presets/daily-ai-voice.json:1`; `apps/cli/src/publish-matrix.ts:1145` readPublishPresetSelector; `plugins/kk/config.example.yaml:12-18`; `apps/cli/tests/publish-matrix.test.ts:711`, `apps/cli/tests/publish-matrix.test.ts:749`, `apps/cli/tests/kk-daily-publish3.test.ts:276` |
+| R3 | MET | `apps/cli/src/publish-matrix.ts:953` runPublishMatrixRssGate, `apps/cli/src/publish-matrix.ts:933` guid-then-title match; `apps/cli/tests/publish-matrix.test.ts:569`, `apps/cli/tests/publish-matrix.test.ts:583`, `apps/cli/tests/kk-daily-publish3.test.ts:296`; default fetch bounded and status-checked `apps/cli/src/publish-matrix.ts:1031` — `apps/cli/tests/publish-matrix.test.ts:639` (HTTP 503 → fetch-failed) |
 | R4 | MET | `plugins/kk/workflows/kk-daily-publish3.yaml:76` plan only on rss-gate hit; `plugins/kk/workflows/kk-daily-publish3.yaml:197` diagnose; `plugins/kk/workflows/kk-daily-publish3.yaml:229` repair; `apps/cli/tests/kk-daily-publish3.test.ts:296` miss writes incident, nothing dispatched |
-| R5 | MET | `apps/cli/src/publish-matrix.ts:1038` runPublishMatrixWaitUntil; `apps/cli/tests/publish-matrix.test.ts:639` DST; `apps/cli/src/commands/schedule.ts:35-36` templates; `apps/cli/tests/kk-daily-publish3.test.ts:354` |
+| R5 | MET | `apps/cli/src/publish-matrix.ts:1060` runPublishMatrixWaitUntil; `apps/cli/tests/publish-matrix.test.ts:669` DST; `apps/cli/src/commands/schedule.ts:35-36` templates; `apps/cli/tests/kk-daily-publish3.test.ts:354` |
 | R6 | MET | `plugins/kk/workflows/kk-daily-publish3.yaml:241-252` bundle-runs idempotent jq append; `apps/cli/tests/kk-daily-publish3.test.ts:244` run id recorded once |
-| R7 | MET | `apps/cli/tests/kk-daily-publish3.test.ts:243` E2E suite (6 tests) and `apps/cli/tests/kk-daily-publish3.test.ts:411` writes `.works/test-artifacts/0323/windows.md`; publish3/voice3/matrix suites 44 pass / 0 fail this run |
+| R7 | MET | `apps/cli/tests/kk-daily-publish3.test.ts:243` E2E suite (6 tests) and `apps/cli/tests/kk-daily-publish3.test.ts:411` writes `.works/test-artifacts/0323/windows.md`; publish3/voice3/matrix suites 47 pass / 0 fail this run |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
 | AC1 — Dummy mode exercises the full publish path without spawning plugins (req: R1, R7) | MET | test | `apps/cli/tests/kk-daily-publish3.test.ts:244` |
 | AC2 — Windows select disjoint target sets and never resend (req: R1, R2, R6) | MET | test | `apps/cli/tests/kk-daily-publish3.test.ts:276`, `apps/cli/tests/kk-daily-publish3.test.ts:244` |
-| AC3 — The overseas window is gated on the podcast RSS feed (req: R3, R4) | MET | test | `apps/cli/tests/kk-daily-publish3.test.ts:296`, `apps/cli/tests/publish-matrix.test.ts:583` |
+| AC3 — The overseas window is gated on the podcast RSS feed (req: R3, R4) | MET | test | `apps/cli/tests/kk-daily-publish3.test.ts:296`, `apps/cli/tests/publish-matrix.test.ts:583`, `apps/cli/tests/publish-matrix.test.ts:639` |
 | AC4 — Live publishing remains launch-only (req: R1, R5) | MET | test | `apps/cli/tests/kk-daily-publish3.test.ts:319` no live mode in YAML; `plugins/kk/workflows/kk-daily-publish3.yaml:102` send-confirm pause; `plugins/kk/schedules/kk-daily-publish3-cn-peak.cron.tmpl:1` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
