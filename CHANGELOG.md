@@ -1,5 +1,10 @@
 ## [Unreleased]
 
+### Added
+
+- feat(surfdash-pub): run `sd seo listen-link --backfill --write` before site gate and commit in publish (when auto-push is on) and patch flows, including backfilled posts in the scoped commit pathspec (best-effort, skippable via `SURFDASH_LISTEN_BACKFILL=off`)
+<!-- src: plugins/publishings/surfdash-pub/src/index.ts:392 -->
+
 ### Fixed
 
 - fix(surfdash-pub): run the surfdash site gate (`bun run sd check digest`, then `bun run check:content`, in the surfdash checkout) before every commit and push to main, on both the publish and the patch path. On failure, refuse to push and report the command, its output and the failing post; `SURFDASH_DIGEST_CHECK=warn` echoes the failure and pushes anyway, and `off` skips it. The in-process digest-check copy stays only as a fast pre-check
