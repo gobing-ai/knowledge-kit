@@ -1,0 +1,34 @@
+[
+    {
+        "wbs": "0334",
+        "status": "todo",
+        "findings": [
+            {
+                "layer": "L4",
+                "code": "L4.prerequisite-not-done",
+                "severity": "warning",
+                "section": "",
+                "message": "Prerequisite 0329 is todo; task 0334 is not ready until it is done"
+            },
+            {
+                "layer": "L4",
+                "code": "L4.prerequisite-not-done",
+                "severity": "warning",
+                "section": "",
+                "message": "Prerequisite 0330 is todo; task 0334 is not ready until it is done"
+            },
+            {
+                "layer": "L4",
+                "code": "L4.prerequisite-not-done",
+                "severity": "warning",
+                "section": "",
+                "message": "Prerequisite 0332 is todo; task 0334 is not ready until it is done"
+            }
+        ],
+        "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+        "missingSections": [],
+        "pass": true,
+        "notes": [],
+        "repairs": []
+    }
+]

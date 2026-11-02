@@ -1,0 +1,6 @@
+- Parent feature: G15, docs/features/G15_daily-ai-voice-v3-split-generate-and-publish-preset-driven-channel-matrix.md.
+- Source audit: .spur/reports/voice3-migration-review-2026-10-25.md; all owned findings and current-code premises are embedded in Background so this task is self-contained.
+- Authority: docs/00_ADR.md:957 (ADR-022), docs/00_ADR.md:1223 (ADR-031), docs/design/kk-daily-ai-voice3.md:227 (accepted operator decisions), docs/99_PROJECT_CONSTITUTION.md:160 (surface/status synchronization).
+- Dependencies: 0329, 0330, 0332.
+- Batch map and readiness evidence: .spur/reports/voice3-task-plan/handoff.md and readiness.json.
+- Code/test targets and observable failure matrix: Design.

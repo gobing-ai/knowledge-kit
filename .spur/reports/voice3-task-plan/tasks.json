@@ -1,0 +1,383 @@
+[
+    {
+        "wbs": "0329",
+        "key": "generation",
+        "name": "Repair voice3 generation closure, pool routing and complete episode bundles",
+        "priority": "P1",
+        "hours": 10,
+        "deps": [],
+        "findings": ["F01", "F02", "F06", "F15", "F16", "F21", "F23"],
+        "path": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0329_repair-voice3-generation-closure-pool-routing-and-complete-e.md",
+        "status": "todo",
+        "check": [
+            {
+                "wbs": "0329",
+                "status": "todo",
+                "findings": [],
+                "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                "missingSections": [],
+                "pass": true,
+                "notes": [],
+                "repairs": []
+            }
+        ],
+        "admission": [
+            {
+                "wbs": "0329",
+                "status": "todo",
+                "findings": [],
+                "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                "missingSections": [],
+                "pass": true,
+                "notes": [],
+                "repairs": []
+            }
+        ]
+    },
+    {
+        "wbs": "0330",
+        "key": "modes",
+        "name": "Enforce operation-specific draft and live boundaries for matrix publishing",
+        "priority": "P1",
+        "hours": 8,
+        "deps": [],
+        "findings": ["F03", "C01"],
+        "path": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0330_enforce-operation-specific-draft-and-live-boundaries-for-mat.md",
+        "status": "todo",
+        "check": [
+            {
+                "wbs": "0330",
+                "status": "todo",
+                "findings": [],
+                "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                "missingSections": [],
+                "pass": true,
+                "notes": [],
+                "repairs": []
+            }
+        ],
+        "admission": [
+            {
+                "wbs": "0330",
+                "status": "todo",
+                "findings": [],
+                "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                "missingSections": [],
+                "pass": true,
+                "notes": [],
+                "repairs": []
+            }
+        ]
+    },
+    {
+        "wbs": "0331",
+        "key": "safety",
+        "name": "Carry reviewed variant safety and platform exclusions through the voice3 bundle",
+        "priority": "P1",
+        "hours": 12,
+        "deps": ["0329", "0330"],
+        "findings": ["F04", "F05"],
+        "path": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0331_carry-reviewed-variant-safety-and-platform-exclusions-throug.md",
+        "status": "todo",
+        "check": [
+            {
+                "wbs": "0331",
+                "status": "todo",
+                "findings": [
+                    {
+                        "layer": "L4",
+                        "code": "L4.prerequisite-not-done",
+                        "severity": "warning",
+                        "section": "",
+                        "message": "Prerequisite 0329 is todo; task 0331 is not ready until it is done"
+                    },
+                    {
+                        "layer": "L4",
+                        "code": "L4.prerequisite-not-done",
+                        "severity": "warning",
+                        "section": "",
+                        "message": "Prerequisite 0330 is todo; task 0331 is not ready until it is done"
+                    }
+                ],
+                "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                "missingSections": [],
+                "pass": true,
+                "notes": [],
+                "repairs": []
+            }
+        ],
+        "admission": [
+            {
+                "wbs": "0331",
+                "status": "todo",
+                "findings": [
+                    {
+                        "layer": "L4",
+                        "code": "L4.prerequisite-not-done",
+                        "severity": "error",
+                        "section": "",
+                        "message": "Prerequisite 0329 is todo; task 0331 is not ready until it is done"
+                    },
+                    {
+                        "layer": "L4",
+                        "code": "L4.prerequisite-not-done",
+                        "severity": "error",
+                        "section": "",
+                        "message": "Prerequisite 0330 is todo; task 0331 is not ready until it is done"
+                    }
+                ],
+                "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                "missingSections": [],
+                "pass": false,
+                "notes": [],
+                "repairs": []
+            }
+        ]
+    },
+    {
+        "wbs": "0332",
+        "key": "delivery",
+        "name": "Bind matrix receipts, links and RSS proof to the current bundle revision",
+        "priority": "P1",
+        "hours": 10,
+        "deps": ["0331"],
+        "findings": ["F11", "F12", "F13", "F17", "F19"],
+        "path": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0332_bind-matrix-receipts-links-and-rss-proof-to-the-current-bund.md",
+        "status": "todo",
+        "check": [
+            {
+                "wbs": "0332",
+                "status": "todo",
+                "findings": [
+                    {
+                        "layer": "L4",
+                        "code": "L4.prerequisite-not-done",
+                        "severity": "warning",
+                        "section": "",
+                        "message": "Prerequisite 0331 is todo; task 0332 is not ready until it is done"
+                    }
+                ],
+                "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                "missingSections": [],
+                "pass": true,
+                "notes": [],
+                "repairs": []
+            }
+        ],
+        "admission": [
+            {
+                "wbs": "0332",
+                "status": "todo",
+                "findings": [
+                    {
+                        "layer": "L4",
+                        "code": "L4.prerequisite-not-done",
+                        "severity": "error",
+                        "section": "",
+                        "message": "Prerequisite 0331 is todo; task 0332 is not ready until it is done"
+                    }
+                ],
+                "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                "missingSections": [],
+                "pass": false,
+                "notes": [],
+                "repairs": []
+            }
+        ]
+    },
+    {
+        "wbs": "0333",
+        "key": "outcomes",
+        "name": "Make publish3 outcomes, retries and store settlement receipt-aware",
+        "priority": "P1",
+        "hours": 8,
+        "deps": ["0332"],
+        "findings": ["F07", "F14", "F18", "F20"],
+        "path": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0333_make-publish3-outcomes-retries-and-store-settlement-receipt-.md",
+        "status": "todo",
+        "check": [
+            {
+                "wbs": "0333",
+                "status": "todo",
+                "findings": [
+                    {
+                        "layer": "L4",
+                        "code": "L4.prerequisite-not-done",
+                        "severity": "warning",
+                        "section": "",
+                        "message": "Prerequisite 0332 is todo; task 0333 is not ready until it is done"
+                    }
+                ],
+                "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                "missingSections": [],
+                "pass": true,
+                "notes": [],
+                "repairs": []
+            }
+        ],
+        "admission": [
+            {
+                "wbs": "0333",
+                "status": "todo",
+                "findings": [
+                    {
+                        "layer": "L4",
+                        "code": "L4.prerequisite-not-done",
+                        "severity": "error",
+                        "section": "",
+                        "message": "Prerequisite 0332 is todo; task 0333 is not ready until it is done"
+                    }
+                ],
+                "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                "missingSections": [],
+                "pass": false,
+                "notes": [],
+                "repairs": []
+            }
+        ]
+    },
+    {
+        "wbs": "0334",
+        "key": "scheduling",
+        "name": "Prepare correct voice3 migration schedules and an explicit safe channel preset",
+        "priority": "P1",
+        "hours": 6,
+        "deps": ["0329", "0330", "0332"],
+        "findings": ["F08", "F09", "F10", "C01", "C02", "C03", "C04", "C05"],
+        "path": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0334_prepare-correct-voice3-migration-schedules-and-an-explicit-s.md",
+        "status": "todo",
+        "check": [
+            {
+                "wbs": "0334",
+                "status": "todo",
+                "findings": [
+                    {
+                        "layer": "L4",
+                        "code": "L4.prerequisite-not-done",
+                        "severity": "warning",
+                        "section": "",
+                        "message": "Prerequisite 0329 is todo; task 0334 is not ready until it is done"
+                    },
+                    {
+                        "layer": "L4",
+                        "code": "L4.prerequisite-not-done",
+                        "severity": "warning",
+                        "section": "",
+                        "message": "Prerequisite 0330 is todo; task 0334 is not ready until it is done"
+                    },
+                    {
+                        "layer": "L4",
+                        "code": "L4.prerequisite-not-done",
+                        "severity": "warning",
+                        "section": "",
+                        "message": "Prerequisite 0332 is todo; task 0334 is not ready until it is done"
+                    }
+                ],
+                "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                "missingSections": [],
+                "pass": true,
+                "notes": [],
+                "repairs": []
+            }
+        ],
+        "admission": [
+            {
+                "wbs": "0334",
+                "status": "todo",
+                "findings": [
+                    {
+                        "layer": "L4",
+                        "code": "L4.prerequisite-not-done",
+                        "severity": "error",
+                        "section": "",
+                        "message": "Prerequisite 0329 is todo; task 0334 is not ready until it is done"
+                    },
+                    {
+                        "layer": "L4",
+                        "code": "L4.prerequisite-not-done",
+                        "severity": "error",
+                        "section": "",
+                        "message": "Prerequisite 0330 is todo; task 0334 is not ready until it is done"
+                    },
+                    {
+                        "layer": "L4",
+                        "code": "L4.prerequisite-not-done",
+                        "severity": "error",
+                        "section": "",
+                        "message": "Prerequisite 0332 is todo; task 0334 is not ready until it is done"
+                    }
+                ],
+                "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                "missingSections": [],
+                "pass": false,
+                "notes": [],
+                "repairs": []
+            }
+        ]
+    },
+    {
+        "wbs": "0335",
+        "key": "rehearsal",
+        "name": "Prove voice3 replacement with a fresh offline multi-window migration rehearsal",
+        "priority": "P2",
+        "hours": 8,
+        "deps": ["0333", "0334"],
+        "findings": ["F22", "C01", "C02", "C03", "C04", "C05"],
+        "path": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0335_prove-voice3-replacement-with-a-fresh-offline-multi-window-m.md",
+        "status": "todo",
+        "check": [
+            {
+                "wbs": "0335",
+                "status": "todo",
+                "findings": [
+                    {
+                        "layer": "L4",
+                        "code": "L4.prerequisite-not-done",
+                        "severity": "warning",
+                        "section": "",
+                        "message": "Prerequisite 0333 is todo; task 0335 is not ready until it is done"
+                    },
+                    {
+                        "layer": "L4",
+                        "code": "L4.prerequisite-not-done",
+                        "severity": "warning",
+                        "section": "",
+                        "message": "Prerequisite 0334 is todo; task 0335 is not ready until it is done"
+                    }
+                ],
+                "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                "missingSections": [],
+                "pass": true,
+                "notes": [],
+                "repairs": []
+            }
+        ],
+        "admission": [
+            {
+                "wbs": "0335",
+                "status": "todo",
+                "findings": [
+                    {
+                        "layer": "L4",
+                        "code": "L4.prerequisite-not-done",
+                        "severity": "error",
+                        "section": "",
+                        "message": "Prerequisite 0333 is todo; task 0335 is not ready until it is done"
+                    },
+                    {
+                        "layer": "L4",
+                        "code": "L4.prerequisite-not-done",
+                        "severity": "error",
+                        "section": "",
+                        "message": "Prerequisite 0334 is todo; task 0335 is not ready until it is done"
+                    }
+                ],
+                "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                "missingSections": [],
+                "pass": false,
+                "notes": [],
+                "repairs": []
+            }
+        ]
+    }
+]

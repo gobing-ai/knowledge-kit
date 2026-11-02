@@ -1,0 +1,40 @@
+[
+    {
+        "name": "Repair voice3 generation closure, pool routing and complete episode bundles",
+        "depends_on_names": []
+    },
+    {
+        "name": "Enforce operation-specific draft and live boundaries for matrix publishing",
+        "depends_on_names": []
+    },
+    {
+        "name": "Carry reviewed variant safety and platform exclusions through the voice3 bundle",
+        "depends_on_names": [
+            "Repair voice3 generation closure, pool routing and complete episode bundles",
+            "Enforce operation-specific draft and live boundaries for matrix publishing"
+        ]
+    },
+    {
+        "name": "Bind matrix receipts, links and RSS proof to the current bundle revision",
+        "depends_on_names": ["Carry reviewed variant safety and platform exclusions through the voice3 bundle"]
+    },
+    {
+        "name": "Make publish3 outcomes, retries and store settlement receipt-aware",
+        "depends_on_names": ["Bind matrix receipts, links and RSS proof to the current bundle revision"]
+    },
+    {
+        "name": "Prepare correct voice3 migration schedules and an explicit safe channel preset",
+        "depends_on_names": [
+            "Repair voice3 generation closure, pool routing and complete episode bundles",
+            "Enforce operation-specific draft and live boundaries for matrix publishing",
+            "Bind matrix receipts, links and RSS proof to the current bundle revision"
+        ]
+    },
+    {
+        "name": "Prove voice3 replacement with a fresh offline multi-window migration rehearsal",
+        "depends_on_names": [
+            "Make publish3 outcomes, retries and store settlement receipt-aware",
+            "Prepare correct voice3 migration schedules and an explicit safe channel preset"
+        ]
+    }
+]

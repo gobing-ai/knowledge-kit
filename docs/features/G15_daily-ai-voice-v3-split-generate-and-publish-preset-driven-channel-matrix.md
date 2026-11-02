@@ -2,11 +2,11 @@
 schema_version: 1
 id: "G15"
 name: "Daily AI Voice v3: split generate and publish, preset-driven channel matrix"
-status: done
+status: active
 priority: P2
 tags: []
 created_at: "2026-10-22T18:40:58.202Z"
-updated_at: "2026-10-23T03:03:42.110Z"
+updated_at: "2026-10-26T00:11:49.574Z"
 ---
 
 # G15: Daily AI Voice v3: split generate and publish, preset-driven channel matrix
@@ -100,6 +100,57 @@ Feature: Daily AI Voice v3: split generate and publish, preset-driven channel ma
     Given kk-daily-ai-voice3.yaml
     When its nodes are inspected
     Then no node names a publish plugin and only pool-gate carries the pool-count guard
+
+
+  @core
+  Scenario: R12 — Fresh voice3 runs select current items and freeze complete validated bundles
+    Given the voice3 migration audit identified F01, F02, F06, F15, F16, F21, F23
+    When repair voice3 generation closure, pool routing and complete episode bundles
+    Then the task requirements and failure cases have repeatable local evidence
+    And no production publication or scheduler activation is performed by verification
+
+  @core
+  Scenario: R13 — Draft and dummy launches never publish live on any selected operation
+    Given the voice3 migration audit identified F03, C01
+    When enforce operation-specific draft and live boundaries for matrix publishing
+    Then the task requirements and failure cases have repeatable local evidence
+    And no production publication or scheduler activation is performed by verification
+
+  @core
+  Scenario: R14 — Every real publish variant carries current platform-aware safety evidence
+    Given the voice3 migration audit identified F04, F05
+    When carry reviewed variant safety and platform exclusions through the voice3 bundle
+    Then the task requirements and failure cases have repeatable local evidence
+    And no production publication or scheduler activation is performed by verification
+
+  @core
+  Scenario: R15 — Window sends bind receipts and RSS proof to one bundle revision
+    Given the voice3 migration audit identified F11, F12, F13, F17, F19
+    When bind matrix receipts, links and rss proof to the current bundle revision
+    Then the task requirements and failure cases have repeatable local evidence
+    And no production publication or scheduler activation is performed by verification
+
+  @core
+  Scenario: R16 — Receipt outcomes drive safe retries settlement and mixed dummy tails
+    Given the voice3 migration audit identified F07, F14, F18, F20
+    When make publish3 outcomes, retries and store settlement receipt-aware
+    Then the task requirements and failure cases have repeatable local evidence
+    And no production publication or scheduler activation is performed by verification
+
+  @core
+  Scenario: R17 — Rendered migration schedules resolve the correct bundle and approval model
+    Given the voice3 migration audit identified F08, F09, F10, C01, C02, C03, C04, C05
+    When prepare correct voice3 migration schedules and an explicit safe channel preset
+    Then the task requirements and failure cases have repeatable local evidence
+    And no production publication or scheduler activation is performed by verification
+
+  @core
+  Scenario: R18 — Offline migration rehearsal proves the complete voice3 replacement contract
+    Given the voice3 migration audit identified F22, C01, C02, C03, C04, C05
+    When prove voice3 replacement with a fresh offline multi-window migration rehearsal
+    Then the task requirements and failure cases have repeatable local evidence
+    And no production publication or scheduler activation is performed by verification
+
 ```
 
 ## Tasks
@@ -114,9 +165,20 @@ Feature: Daily AI Voice v3: split generate and publish, preset-driven channel ma
 | 0325 | Derive session-preflight probes from the enabled publish targets | done |
 | 0326 | Split publish-classify --fold-tail into classify, mark-published and report nodes | done |
 | 0327 | Move daily channel copy shaping out of daily-stages.ts into a generate-side social-write stage | done |
+| 0329 | Repair voice3 generation closure, pool routing and complete episode bundles | todo |
+| 0330 | Enforce operation-specific draft and live boundaries for matrix publishing | todo |
+| 0331 | Carry reviewed variant safety and platform exclusions through the voice3 bundle | todo |
+| 0332 | Bind matrix receipts, links and RSS proof to the current bundle revision | todo |
+| 0333 | Make publish3 outcomes, retries and store settlement receipt-aware | todo |
+| 0334 | Prepare correct voice3 migration schedules and an explicit safe channel preset | todo |
+| 0335 | Prove voice3 replacement with a fresh offline multi-window migration rehearsal | todo |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
+
+Corrective implementation batch filed 2026-10-25 from the voice3 replacement audit (.spur/reports/voice3-migration-review-2026-10-25.md). G15 reopened from done to active because existing completion evidence did not prove safe replacement. Original tasks 0321-0327 remain completed historical work. New tasks cover F01-F23 and operating constraints C01-C05; per-task regression scenarios extend feature acceptance criteria R12-R18.
+
+Planning is executed autonomously under the operator request to file implementation-ready tasks; the decomposition confirmation checkpoint is auto-skipped for this authorized corpus filing. Tasks include Requirements, Design, Plan, AC, estimates, dependency edges, current-source premises and failure-first E2E evidence contracts. This filing does not authorize publishing, scheduler installation or production config changes. Accepted D1-D4 remain: Chinese-only parity, preset ownership, split workflows and three windows. Manual live confirmation remains; a future production switch is a separate operator action.
 
 ## History
 
@@ -124,4 +186,5 @@ Feature: Daily AI Voice v3: split generate and publish, preset-driven channel ma
 - 2026-10-22T20:36:26.498Z backlog → active (system)
 - 2026-10-23T03:03:40.320Z active → verifying (system)
 - 2026-10-23T03:03:42.110Z verifying → done (system)
+- 2026-10-26T00:07:21.835Z done → active (system)
 

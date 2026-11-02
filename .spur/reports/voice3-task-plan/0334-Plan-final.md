@@ -1,0 +1,5 @@
+- [ ] Step 0 — Inspect worktree/status and owning task dependencies; read cited current code and ADR-022/031; preserve concurrent edits and identify checkout-bound CLI runner.
+- [ ] Step 1 — Before production edits, add failing E2E/behavior cases for R1-R7: Rendered commands through cron-percent parser; configured works root with spaces; today/yesterday date; PDT/PST CN target; missing bundle; mismatched date; exact CN token set; live launch stops for resume; auto_publish rehearsal path; migration preset operation inventory; no actual scheduler mutation.
+- [ ] Step 2 — Implement R1-R7 within the listed ownership and frozen design; keep upstream contracts and legacy voice2/kk-itc compatibility.
+- [ ] Step 3 — Run the focused real-dispatcher cases; inspect receipts and measured artifacts for failures, no-content and resume, not only process exit.
+- [ ] Step 4 — Update owning surface docs, run required project checks, review the diff against every R-item, and record exact verification evidence and remaining limitations through Spur.

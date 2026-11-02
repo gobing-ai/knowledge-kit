@@ -1,0 +1,23 @@
+{
+    "exitCode": 1,
+    "result": [
+        {
+            "wbs": "0332",
+            "status": "todo",
+            "findings": [
+                {
+                    "layer": "L4",
+                    "code": "L4.prerequisite-not-done",
+                    "severity": "error",
+                    "section": "",
+                    "message": "Prerequisite 0331 is todo; task 0332 is not ready until it is done"
+                }
+            ],
+            "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+            "missingSections": [],
+            "pass": false,
+            "notes": [],
+            "repairs": []
+        }
+    ]
+}

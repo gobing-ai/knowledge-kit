@@ -1,0 +1,15 @@
+{
+    "exitCode": 0,
+    "result": [
+        {
+            "wbs": "0330",
+            "status": "todo",
+            "findings": [],
+            "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+            "missingSections": [],
+            "pass": true,
+            "notes": [],
+            "repairs": []
+        }
+    ]
+}

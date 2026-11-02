@@ -1,0 +1,62 @@
+[
+    {
+        "id": "G15",
+        "status": "active",
+        "findings": [
+            {
+                "layer": "L4",
+                "code": "L4.scenario-unverified",
+                "severity": "warning",
+                "section": "Acceptance Criteria",
+                "message": "Feature scenario \"R12 — Fresh voice3 runs select current items and freeze complete validated bundles\" is linked but unverified: covering task(s) 0329 have no PASS verdict with MET requirement"
+            },
+            {
+                "layer": "L4",
+                "code": "L4.scenario-unverified",
+                "severity": "warning",
+                "section": "Acceptance Criteria",
+                "message": "Feature scenario \"R13 — Draft and dummy launches never publish live on any selected operation\" is linked but unverified: covering task(s) 0330 have no PASS verdict with MET requirement"
+            },
+            {
+                "layer": "L4",
+                "code": "L4.scenario-unverified",
+                "severity": "warning",
+                "section": "Acceptance Criteria",
+                "message": "Feature scenario \"R14 — Every real publish variant carries current platform-aware safety evidence\" is linked but unverified: covering task(s) 0331 have no PASS verdict with MET requirement"
+            },
+            {
+                "layer": "L4",
+                "code": "L4.scenario-unverified",
+                "severity": "warning",
+                "section": "Acceptance Criteria",
+                "message": "Feature scenario \"R15 — Window sends bind receipts and RSS proof to one bundle revision\" is linked but unverified: covering task(s) 0332 have no PASS verdict with MET requirement"
+            },
+            {
+                "layer": "L4",
+                "code": "L4.scenario-unverified",
+                "severity": "warning",
+                "section": "Acceptance Criteria",
+                "message": "Feature scenario \"R16 — Receipt outcomes drive safe retries settlement and mixed dummy tails\" is linked but unverified: covering task(s) 0333 have no PASS verdict with MET requirement"
+            },
+            {
+                "layer": "L4",
+                "code": "L4.scenario-unverified",
+                "severity": "warning",
+                "section": "Acceptance Criteria",
+                "message": "Feature scenario \"R17 — Rendered migration schedules resolve the correct bundle and approval model\" is linked but unverified: covering task(s) 0334 have no PASS verdict with MET requirement"
+            },
+            {
+                "layer": "L4",
+                "code": "L4.scenario-unverified",
+                "severity": "warning",
+                "section": "Acceptance Criteria",
+                "message": "Feature scenario \"R18 — Offline migration rehearsal proves the complete voice3 replacement contract\" is linked but unverified: covering task(s) 0335 have no PASS verdict with MET requirement"
+            }
+        ],
+        "requiredSections": [],
+        "missingSections": [],
+        "pass": true,
+        "notes": [],
+        "repairs": []
+    }
+]

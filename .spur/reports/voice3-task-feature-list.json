@@ -1,0 +1,1736 @@
+[
+    {
+        "id": "A",
+        "name": "Project foundation",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/A_cli-monorepo-foundation.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "A",
+            "name": "Project foundation",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-07-23T17:53:08.254Z",
+            "updated_at": "2026-07-30T22:24:39.407Z"
+        }
+    },
+    {
+        "id": "A1",
+        "name": "Feature tree restructure (wayfinder map)",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/A1_feature-tree-restructure-wayfinder-map.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "A1",
+            "name": "Feature tree restructure (wayfinder map)",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-07-29T18:29:27.336Z",
+            "updated_at": "2026-07-29T18:49:49.234Z"
+        }
+    },
+    {
+        "id": "A2",
+        "name": "kk product CLI surface",
+        "status": "done",
+        "priority": "P1",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/A2_kk-product-cli-surface.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "A2",
+            "name": "kk product CLI surface",
+            "status": "done",
+            "priority": "P1",
+            "tags": [],
+            "created_at": "2026-08-12T17:13:50.092Z",
+            "updated_at": "2026-08-12T18:37:02.315Z"
+        }
+    },
+    {
+        "id": "A21",
+        "name": "Two-layer CLI nouns (executor + plugin)",
+        "status": "done",
+        "priority": "P1",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/A21_two-layer-cli-nouns-executor-plugin.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "A21",
+            "name": "Two-layer CLI nouns (executor + plugin)",
+            "status": "done",
+            "priority": "P1",
+            "tags": [],
+            "created_at": "2026-08-13T00:54:08.128Z",
+            "updated_at": "2026-08-13T03:48:55.280Z"
+        }
+    },
+    {
+        "id": "A22",
+        "name": "Strict kk noun-verb CLI and named browser bots",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/A22_strict-kk-noun-verb-cli-and-named-browser-bots.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "A22",
+            "name": "Strict kk noun-verb CLI and named browser bots",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-13T22:21:11.075Z",
+            "updated_at": "2026-10-14T08:32:00.645Z"
+        }
+    },
+    {
+        "id": "A23",
+        "name": "kk bot session facts and authenticated exec",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/A23_kk-bot-session-facts-and-authenticated-exec.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "A23",
+            "name": "kk bot session facts and authenticated exec",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-17T02:56:36.650Z",
+            "updated_at": "2026-10-17T06:10:02.181Z"
+        }
+    },
+    {
+        "id": "A3",
+        "name": "ts-libs logging foundation",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/A3_ts-libs-logging-foundation.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "A3",
+            "name": "ts-libs logging foundation",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-08-17T05:01:33.104Z",
+            "updated_at": "2026-08-17T21:18:02.904Z"
+        }
+    },
+    {
+        "id": "B",
+        "name": "Plugin platform",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/B_kk-plugin-platform.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "B",
+            "name": "Plugin platform",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-07-23T17:53:09.865Z",
+            "updated_at": "2026-08-12T01:59:34.067Z"
+        }
+    },
+    {
+        "id": "B1",
+        "name": "Plugin manifest and registry discovery",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/B1_plugin-manifest-and-registry-discovery.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "B1",
+            "name": "Plugin manifest and registry discovery",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-07-23T17:54:14.977Z",
+            "updated_at": "2026-08-12T16:43:44.689Z"
+        }
+    },
+    {
+        "id": "B2",
+        "name": "Typed lifecycle contracts",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/B2_typed-lifecycle-contracts.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "B2",
+            "name": "Typed lifecycle contracts",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-07-23T17:54:16.256Z",
+            "updated_at": "2026-07-25T16:24:14.657Z"
+        }
+    },
+    {
+        "id": "B3",
+        "name": "Spur workflow integration",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/B3_spur-workflow-integration.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "B3",
+            "name": "Spur workflow integration",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-07-23T17:54:17.511Z",
+            "updated_at": "2026-07-29T19:06:05.748Z"
+        }
+    },
+    {
+        "id": "B4",
+        "name": "CLI surface",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/B4_cli-surface.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "B4",
+            "name": "CLI surface",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-07-29T18:41:07.455Z",
+            "updated_at": "2026-07-31T04:09:11.847Z"
+        }
+    },
+    {
+        "id": "B5",
+        "name": "End-to-end pipeline acceptance",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/B5_end-to-end-pipeline-acceptance.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "B5",
+            "name": "End-to-end pipeline acceptance",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-07-29T19:05:58.981Z",
+            "updated_at": "2026-08-02T22:30:14.594Z"
+        }
+    },
+    {
+        "id": "B6",
+        "name": "Sequential fan-in/fan-out steps",
+        "status": "active",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/B6_sequential-fan-in-fan-out-steps.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "B6",
+            "name": "Sequential fan-in/fan-out steps",
+            "status": "active",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-08-03T01:02:09.641Z",
+            "updated_at": "2026-10-10T07:14:31.768Z"
+        }
+    },
+    {
+        "id": "B7",
+        "name": "Multi-root plugin auto-discovery",
+        "status": "done",
+        "priority": "P1",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/B7_multi-root-plugin-auto-discovery.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "B7",
+            "name": "Multi-root plugin auto-discovery",
+            "status": "done",
+            "priority": "P1",
+            "tags": [],
+            "created_at": "2026-08-13T05:02:52.265Z",
+            "updated_at": "2026-08-14T02:23:08.831Z"
+        }
+    },
+    {
+        "id": "C",
+        "name": "Ingestion",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/C_ingestionplugin-karakeep-local.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "C",
+            "name": "Ingestion",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-07-23T17:53:11.170Z",
+            "updated_at": "2026-08-17T21:18:03.775Z"
+        }
+    },
+    {
+        "id": "C1",
+        "name": "Ingestion plugin design",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/C1_ingestion-plugin-design.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "C1",
+            "name": "Ingestion plugin design",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-07-29T18:41:08.763Z",
+            "updated_at": "2026-07-30T22:50:18.825Z"
+        }
+    },
+    {
+        "id": "C2",
+        "name": "Karakeep-local",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/C2_karakeep-local.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "C2",
+            "name": "Karakeep-local",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-07-29T18:41:10.042Z",
+            "updated_at": "2026-08-12T16:43:44.854Z"
+        }
+    },
+    {
+        "id": "C3",
+        "name": "STORM topic-research workflow",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/C3_storm-topic-research-workflow.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "C3",
+            "name": "STORM topic-research workflow",
+            "status": "done",
+            "priority": "P2",
+            "tags": ["wayfinder-map"],
+            "created_at": "2026-08-14T03:32:40.505Z",
+            "updated_at": "2026-08-14T06:12:08.074Z"
+        }
+    },
+    {
+        "id": "C4",
+        "name": "Daily-usable STORM research",
+        "status": "done",
+        "priority": "P1",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/C4_daily-usable-storm-research.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "C4",
+            "name": "Daily-usable STORM research",
+            "status": "done",
+            "priority": "P1",
+            "tags": ["wayfinder-map"],
+            "created_at": "2026-08-14T07:24:49.711Z",
+            "updated_at": "2026-08-15T04:13:05.149Z"
+        }
+    },
+    {
+        "id": "C5",
+        "name": "STORM research workflow evidence hardening",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/C5_storm-research-workflow-evidence-hardening.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "C5",
+            "name": "STORM research workflow evidence hardening",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-08-16T03:01:11.655Z",
+            "updated_at": "2026-08-17T03:41:03.330Z"
+        }
+    },
+    {
+        "id": "D",
+        "name": "Content generation",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/D_contentgeneratorplugin.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "D",
+            "name": "Content generation",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-07-23T17:53:12.592Z",
+            "updated_at": "2026-08-17T21:18:03.447Z"
+        }
+    },
+    {
+        "id": "D1",
+        "name": "Study vendors-storm and pick P1 stand-in",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/D1_study-vendors-storm-and-pick-p1-stand-in.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "D1",
+            "name": "Study vendors-storm and pick P1 stand-in",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-07-23T17:54:18.790Z",
+            "updated_at": "2026-08-12T00:51:25.284Z"
+        }
+    },
+    {
+        "id": "D2",
+        "name": "Wire existing generator skill to contract",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/D2_wire-existing-generator-skill-to-contract.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "D2",
+            "name": "Wire existing generator skill to contract",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-07-23T17:54:21.375Z",
+            "updated_at": "2026-08-12T16:43:44.993Z"
+        }
+    },
+    {
+        "id": "D3",
+        "name": "Generator plugin design",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/D3_generator-plugin-design.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "D3",
+            "name": "Generator plugin design",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-07-29T18:41:11.501Z",
+            "updated_at": "2026-07-31T00:42:49.252Z"
+        }
+    },
+    {
+        "id": "D4",
+        "name": "Own STORM generator",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/D4_own-storm-generator.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "D4",
+            "name": "Own STORM generator",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-07-29T18:41:12.782Z",
+            "updated_at": "2026-08-12T16:44:19.751Z"
+        }
+    },
+    {
+        "id": "D5",
+        "name": "Voice generator (Voicebox)",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/D5_voice-generator-voicebox.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "D5",
+            "name": "Voice generator (Voicebox)",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-08-19T22:48:18.045Z",
+            "updated_at": "2026-08-20T00:45:16.551Z"
+        }
+    },
+    {
+        "id": "D6",
+        "name": "image-gen-runtime-fallback",
+        "status": "done",
+        "priority": "P3",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/D6_image-gen-runtime-fallback.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "D6",
+            "name": "image-gen-runtime-fallback",
+            "status": "done",
+            "priority": "P3",
+            "tags": [],
+            "created_at": "2026-09-25T18:04:51.295Z",
+            "updated_at": "2026-09-26T00:20:19.646Z"
+        }
+    },
+    {
+        "id": "D7",
+        "name": "image-gen pre-spend illustration anchor validation",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/D7_image-gen-pre-spend-illustration-anchor-validation.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "D7",
+            "name": "image-gen pre-spend illustration anchor validation",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-09-25T19:44:56.632Z",
+            "updated_at": "2026-09-25T22:43:36.122Z"
+        }
+    },
+    {
+        "id": "E",
+        "name": "Multi-channel publish",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/E_publishplugin-surfdash.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "E",
+            "name": "Multi-channel publish",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-07-23T17:53:14.192Z",
+            "updated_at": "2026-09-25T18:14:23.553Z"
+        }
+    },
+    {
+        "id": "E1",
+        "name": "wt-publish audit",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/E1_wt-publish-audit.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "E1",
+            "name": "wt-publish audit",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-07-23T17:54:22.988Z",
+            "updated_at": "2026-08-19T21:07:48.497Z"
+        }
+    },
+    {
+        "id": "E2",
+        "name": "Publish design and test harness",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/E2_publishplugin-contract-and-test-harness.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "E2",
+            "name": "Publish design and test harness",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-07-23T17:54:24.219Z",
+            "updated_at": "2026-07-31T03:41:13.804Z"
+        }
+    },
+    {
+        "id": "E3",
+        "name": "Surfdash publisher tested",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/E3_surfdash-publisher-tested.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "E3",
+            "name": "Surfdash publisher tested",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-07-23T17:54:26.164Z",
+            "updated_at": "2026-08-12T16:43:45.136Z"
+        }
+    },
+    {
+        "id": "E4",
+        "name": "Multi-channel suite harvest",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/E4_multi-channel-suite-harvest.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "E4",
+            "name": "Multi-channel suite harvest",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-08-03T01:02:26.050Z",
+            "updated_at": "2026-08-12T08:05:46.118Z"
+        }
+    },
+    {
+        "id": "E5",
+        "name": "EmDash CMS publisher",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/E5_emdash-cms-publisher.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "E5",
+            "name": "EmDash CMS publisher",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-08-15T06:38:41.069Z",
+            "updated_at": "2026-08-16T00:09:32.531Z"
+        }
+    },
+    {
+        "id": "E6",
+        "name": "microfeed podcast publisher",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/E6_microfeed-podcast-publisher.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "E6",
+            "name": "microfeed podcast publisher",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-09-02T17:53:52.849Z",
+            "updated_at": "2026-09-03T02:17:30.758Z"
+        }
+    },
+    {
+        "id": "E61",
+        "name": "Apple Podcasts compliance for the microfeed podcast feed",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/E61_apple-podcasts-compliance-for-the-microfeed-podcast-feed.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "E61",
+            "name": "Apple Podcasts compliance for the microfeed podcast feed",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-09-25T22:41:30.242Z",
+            "updated_at": "2026-09-27T03:22:13.974Z"
+        }
+    },
+    {
+        "id": "E7",
+        "name": "Remaining wt-publish harvest",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/E7_remaining-wt-publish-harvest.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "E7",
+            "name": "Remaining wt-publish harvest",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-09-17T22:45:42.508Z",
+            "updated_at": "2026-09-18T03:16:45.216Z"
+        }
+    },
+    {
+        "id": "E8",
+        "name": "Xiaohongshu image-card authoring and publishing",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/E8_xiaohongshu-image-card-authoring-and-publishing.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "E8",
+            "name": "Xiaohongshu image-card authoring and publishing",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-09-25T17:55:29.129Z",
+            "updated_at": "2026-09-26T07:37:17.720Z"
+        }
+    },
+    {
+        "id": "E9",
+        "name": "Reusable browser sessions for publish channels",
+        "status": "active",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/E9_reusable-browser-sessions-for-publish-channels.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "E9",
+            "name": "Reusable browser sessions for publish channels",
+            "status": "active",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-09-27T04:10:01.049Z",
+            "updated_at": "2026-09-28T01:17:16.655Z"
+        }
+    },
+    {
+        "id": "E91",
+        "name": "Browser publish channels on ts-browser-automation (InfoQ, Juejin, Substack, X articles) + shared browser command library",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/E91_browser-publish-channels-on-ts-browser-automation-infoq-juejin-substack-x-articles-shared-browser-command-library.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "E91",
+            "name": "Browser publish channels on ts-browser-automation (InfoQ, Juejin, Substack, X articles) + shared browser command library",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-09-30T03:54:58.376Z",
+            "updated_at": "2026-10-08T00:03:52.138Z"
+        }
+    },
+    {
+        "id": "E92",
+        "name": "Publish channel UI fidelity: per-mode discovery and gap fixes",
+        "status": "active",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/E92_publish-channel-ui-fidelity-per-mode-discovery-and-gap-fixes.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "E92",
+            "name": "Publish channel UI fidelity: per-mode discovery and gap fixes",
+            "status": "active",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-05T17:58:49.842Z",
+            "updated_at": "2026-10-13T20:53:13.202Z"
+        }
+    },
+    {
+        "id": "E93",
+        "name": "kk plugin check / login — live channel readiness probe (ADR-032)",
+        "status": "active",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/E93_kk-plugin-check-login-live-channel-readiness-probe-adr-032.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "E93",
+            "name": "kk plugin check / login — live channel readiness probe (ADR-032)",
+            "status": "active",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-07T18:24:07.082Z",
+            "updated_at": "2026-10-10T07:14:31.933Z"
+        }
+    },
+    {
+        "id": "E94",
+        "name": "Weibo and Threads publish channels (weibo-pub browser script, threads-pub official API)",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/E94_weibo-and-threads-publish-channels-weibo-pub-browser-script-threads-pub-official-api.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "E94",
+            "name": "Weibo and Threads publish channels (weibo-pub browser script, threads-pub official API)",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-09T23:15:23.509Z",
+            "updated_at": "2026-10-14T05:19:57.356Z"
+        }
+    },
+    {
+        "id": "E95",
+        "name": "Publish harness hardening: MAIN-world anti-detection and core content limit invariants",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/E95_publish-harness-hardening-main-world-anti-detection-and-core-content-limit-invariants.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "E95",
+            "name": "Publish harness hardening: MAIN-world anti-detection and core content limit invariants",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-15T05:38:49.905Z",
+            "updated_at": "2026-10-16T10:21:12.181Z"
+        }
+    },
+    {
+        "id": "E96",
+        "name": "WeChat MP publisher modernization: same-origin CGI draft and media pipeline",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/E96_wechat-mp-publisher-modernization-same-origin-cgi-draft-and-media-pipeline.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "E96",
+            "name": "WeChat MP publisher modernization: same-origin CGI draft and media pipeline",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-15T05:38:54.063Z",
+            "updated_at": "2026-10-16T10:21:13.052Z"
+        }
+    },
+    {
+        "id": "E97",
+        "name": "Tech and community blog publishers: jike-pub, csdn-pub, cnblogs-pub, sspai-pub",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/E97_tech-and-community-blog-publishers-jike-pub-csdn-pub-cnblogs-pub-sspai-pub.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "E97",
+            "name": "Tech and community blog publishers: jike-pub, csdn-pub, cnblogs-pub, sspai-pub",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-15T05:38:54.315Z",
+            "updated_at": "2026-10-16T10:21:13.922Z"
+        }
+    },
+    {
+        "id": "E98",
+        "name": "Audio and short-video publishers: xiaoyuzhou-pub, shipinhao-pub, bilibili-pub",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/E98_audio-and-short-video-publishers-xiaoyuzhou-pub-shipinhao-pub-bilibili-pub.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "E98",
+            "name": "Audio and short-video publishers: xiaoyuzhou-pub, shipinhao-pub, bilibili-pub",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-15T05:38:54.588Z",
+            "updated_at": "2026-10-16T10:21:14.786Z"
+        }
+    },
+    {
+        "id": "F",
+        "name": "kk plugin collection",
+        "status": "backlog",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/F_kk-plugin-collection.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "F",
+            "name": "kk plugin collection",
+            "status": "backlog",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-08-12T01:52:51.276Z",
+            "updated_at": "2026-08-12T16:43:45.591Z"
+        }
+    },
+    {
+        "id": "F1",
+        "name": "LLM-as-judge agent skills",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/F1_llm-as-judge-agent-skills.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "F1",
+            "name": "LLM-as-judge agent skills",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-08-03T01:02:09.752Z",
+            "updated_at": "2026-08-19T22:01:58.176Z"
+        }
+    },
+    {
+        "id": "F2",
+        "name": "Topic-core authoring skill",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/F2_wt-generator-harvest.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "F2",
+            "name": "Topic-core authoring skill",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-07-29T18:41:14.020Z",
+            "updated_at": "2026-08-15T04:13:05.589Z"
+        }
+    },
+    {
+        "id": "F3",
+        "name": "ITC generating skill",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/F3_itc-generating-skill.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "F3",
+            "name": "ITC generating skill",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-08-19T18:47:18.194Z",
+            "updated_at": "2026-08-19T19:15:44.146Z"
+        }
+    },
+    {
+        "id": "F4",
+        "name": "IT-content workflow and product YAML home",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/F4_it-content-workflow-and-product-yaml-home.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "F4",
+            "name": "IT-content workflow and product YAML home",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-08-19T22:01:41.610Z",
+            "updated_at": "2026-08-19T22:21:24.898Z"
+        }
+    },
+    {
+        "id": "F41",
+        "name": "kk-itc end-to-end: rough idea to multi-platform publish (HITL and auto)",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/F41_kk-itc-end-to-end-rough-idea-to-multi-platform-publish-hitl-and-auto.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "F41",
+            "name": "kk-itc end-to-end: rough idea to multi-platform publish (HITL and auto)",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-09-22T07:00:20.511Z",
+            "updated_at": "2026-09-22T23:49:16.258Z"
+        }
+    },
+    {
+        "id": "F5",
+        "name": "Solo-podcast workflow (voice-gen dogfood)",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/F5_solo-podcast-workflow-voice-gen-dogfood.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "F5",
+            "name": "Solo-podcast workflow (voice-gen dogfood)",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-08-20T05:11:48.508Z",
+            "updated_at": "2026-08-20T18:28:31.397Z"
+        }
+    },
+    {
+        "id": "F6",
+        "name": "Daily AI news workflow and plugins",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/F6_daily-ai-news-workflow-and-plugins.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "F6",
+            "name": "Daily AI news workflow and plugins",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-08-22T04:15:30.932Z",
+            "updated_at": "2026-08-22T05:12:45.471Z"
+        }
+    },
+    {
+        "id": "F61",
+        "name": "Daily AI news end-to-end pipeline (wayfinder map)",
+        "status": "active",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/F61_daily-ai-news-end-to-end-pipeline-wayfinder-map.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "F61",
+            "name": "Daily AI news end-to-end pipeline (wayfinder map)",
+            "status": "active",
+            "priority": "P2",
+            "tags": ["wayfinder-map"],
+            "created_at": "2026-09-03T04:18:12.482Z",
+            "updated_at": "2026-09-04T00:28:06.793Z"
+        }
+    },
+    {
+        "id": "F611",
+        "name": "OmniVoice voice generator plugin (omni-voice-gen)",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/F611_omnivoice-voice-generator-plugin-omni-voice-gen.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "F611",
+            "name": "OmniVoice voice generator plugin (omni-voice-gen)",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-09-13T05:52:20.651Z",
+            "updated_at": "2026-09-13T23:09:04.779Z"
+        }
+    },
+    {
+        "id": "F612",
+        "name": "Gemini TTS voice generator plugin (gemini-tts)",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/F612_gemini-tts-voice-generator-plugin-gemini-tts.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "F612",
+            "name": "Gemini TTS voice generator plugin (gemini-tts)",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-09-24T17:41:01.637Z",
+            "updated_at": "2026-09-24T21:44:33.008Z"
+        }
+    },
+    {
+        "id": "F613",
+        "name": "Daily voice script: news-driven coverage with a fixed style contract",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/F613_daily-voice-script-news-driven-coverage-with-a-fixed-style-contract.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "F613",
+            "name": "Daily voice script: news-driven coverage with a fixed style contract",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-09-25T03:47:57.152Z",
+            "updated_at": "2026-09-25T06:11:04.781Z"
+        }
+    },
+    {
+        "id": "F614",
+        "name": "Daily cover: news-driven image with a fixed visual style",
+        "status": "active",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/F614_daily-cover-news-driven-image-with-a-fixed-visual-style.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "F614",
+            "name": "Daily cover: news-driven image with a fixed visual style",
+            "status": "active",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-09-25T06:50:27.570Z",
+            "updated_at": "2026-09-25T08:44:31.297Z"
+        }
+    },
+    {
+        "id": "F615",
+        "name": "XHS daily card target with automation-risk guard (ADR-025)",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/F615_xhs-daily-card-target-with-automation-risk-guard-adr-025.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "F615",
+            "name": "XHS daily card target with automation-risk guard (ADR-025)",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-09-29T02:25:40.906Z",
+            "updated_at": "2026-09-29T02:31:14.041Z"
+        }
+    },
+    {
+        "id": "F616",
+        "name": "Legible XHS card text via deterministic typesetting",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/F616_legible-xhs-card-text-via-deterministic-typesetting.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "F616",
+            "name": "Legible XHS card text via deterministic typesetting",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-09-29T02:25:41.090Z",
+            "updated_at": "2026-10-01T21:13:16.000Z"
+        }
+    },
+    {
+        "id": "F618",
+        "name": "image-gen preset canvas: declared width/height never reach the provider",
+        "status": "active",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/F618_image-gen-preset-canvas-declared-width-height-never-reach-the-provider.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "F618",
+            "name": "image-gen preset canvas: declared width/height never reach the provider",
+            "status": "active",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-09-29T02:25:45.197Z",
+            "updated_at": "2026-10-02T10:47:27.182Z"
+        }
+    },
+    {
+        "id": "F7",
+        "name": "Audio-authoring skill extraction (wayfinder map)",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/F7_audio-authoring-skill-extraction-wayfinder-map.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "F7",
+            "name": "Audio-authoring skill extraction (wayfinder map)",
+            "status": "done",
+            "priority": "P2",
+            "tags": ["wayfinder-map"],
+            "created_at": "2026-08-23T22:20:04.851Z",
+            "updated_at": "2026-08-24T05:46:03.041Z"
+        }
+    },
+    {
+        "id": "F8",
+        "name": "Run-anywhere workflow and script resolution",
+        "status": "active",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/F8_run-anywhere-workflow-and-script-resolution.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "F8",
+            "name": "Run-anywhere workflow and script resolution",
+            "status": "active",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-08-24T06:31:17.413Z",
+            "updated_at": "2026-09-14T17:59:51.770Z"
+        }
+    },
+    {
+        "id": "F9",
+        "name": "Explain-things skill and tell-me command",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/F9_explain-things-skill-and-tell-me-command.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "F9",
+            "name": "Explain-things skill and tell-me command",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-08-26T22:42:16.297Z",
+            "updated_at": "2026-08-27T03:22:12.257Z"
+        }
+    },
+    {
+        "id": "G",
+        "name": "kk workflows",
+        "status": "backlog",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G_kk-workflows.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G",
+            "name": "kk workflows",
+            "status": "backlog",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-07T04:52:12.642Z",
+            "updated_at": "2026-10-08T00:10:27.729Z"
+        }
+    },
+    {
+        "id": "G1",
+        "name": "kk-daily-ai-voice",
+        "status": "verifying",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G1_kk-daily-ai-voice.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G1",
+            "name": "kk-daily-ai-voice",
+            "status": "verifying",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-07T04:52:24.450Z",
+            "updated_at": "2026-10-23T01:27:22.684Z"
+        }
+    },
+    {
+        "id": "G11",
+        "name": "kk-daily-ai-voice2: DAG daily workflow from the store, cut-over",
+        "status": "active",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G11_kk-daily-ai-voice2-dag-daily-workflow-from-the-store-cut-over.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G11",
+            "name": "kk-daily-ai-voice2: DAG daily workflow from the store, cut-over",
+            "status": "active",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-07T04:52:37.329Z",
+            "updated_at": "2026-10-23T01:27:48.459Z"
+        }
+    },
+    {
+        "id": "G12",
+        "name": "XHS notes for 每日AI乱炖: 上传图文 and single-episode 发播客",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G12_xhs-notes-for-ai-and-single-episode.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G12",
+            "name": "XHS notes for 每日AI乱炖: 上传图文 and single-episode 发播客",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-09T06:23:49.880Z",
+            "updated_at": "2026-10-10T02:09:06.868Z"
+        }
+    },
+    {
+        "id": "G13",
+        "name": "Segmented episode speech for daily voice2",
+        "status": "active",
+        "priority": "P0",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G13_segmented-episode-speech-for-daily-voice2.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G13",
+            "name": "Segmented episode speech for daily voice2",
+            "status": "active",
+            "priority": "P0",
+            "tags": [],
+            "created_at": "2026-10-09T07:24:31.697Z",
+            "updated_at": "2026-10-10T03:56:57.205Z"
+        }
+    },
+    {
+        "id": "G14",
+        "name": "VoxCPM voice driver for both daily AI voice workflows",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G14_voxcpm-voice-driver-for-both-daily-ai-voice-workflows.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G14",
+            "name": "VoxCPM voice driver for both daily AI voice workflows",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-12T00:05:13.508Z",
+            "updated_at": "2026-10-13T18:57:16.279Z"
+        }
+    },
+    {
+        "id": "G15",
+        "name": "Daily AI Voice v3: split generate and publish, preset-driven channel matrix",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G15_daily-ai-voice-v3-split-generate-and-publish-preset-driven-channel-matrix.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G15",
+            "name": "Daily AI Voice v3: split generate and publish, preset-driven channel matrix",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-22T18:40:58.202Z",
+            "updated_at": "2026-10-23T03:03:42.110Z"
+        }
+    },
+    {
+        "id": "G2",
+        "name": "kk-itc",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G2_kk-itc.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G2",
+            "name": "kk-itc",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-07T04:52:25.292Z",
+            "updated_at": "2026-10-08T03:14:38.696Z"
+        }
+    },
+    {
+        "id": "G21",
+        "name": "kk-itc refactor: collected topics, plugin-owned publishing and reliable recovery",
+        "status": "active",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G21_kk-itc-refactor-collected-topics-plugin-owned-publishing-and-reliable-recovery.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G21",
+            "name": "kk-itc refactor: collected topics, plugin-owned publishing and reliable recovery",
+            "status": "active",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-15T21:56:49.422Z",
+            "updated_at": "2026-10-16T01:30:46.812Z"
+        }
+    },
+    {
+        "id": "G211",
+        "name": "Profile-aware publish dispatch: same-plugin multi-profile fan-out and per-locale surfdash",
+        "status": "backlog",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G211_profile-aware-publish-dispatch-same-plugin-multi-profile-fan-out-and-per-locale-surfdash.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G211",
+            "name": "Profile-aware publish dispatch: same-plugin multi-profile fan-out and per-locale surfdash",
+            "status": "backlog",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-17T07:34:19.974Z",
+            "updated_at": "2026-10-17T07:36:05.066Z"
+        }
+    },
+    {
+        "id": "G212",
+        "name": "Profile-aware publish dispatch: same-plugin multi-profile fan-out and per-locale surfdash",
+        "status": "cancelled",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G212_profile-aware-publish-dispatch-same-plugin-multi-profile-fan-out-and-per-locale-surfdash.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G212",
+            "name": "Profile-aware publish dispatch: same-plugin multi-profile fan-out and per-locale surfdash",
+            "status": "cancelled",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-17T07:34:28.918Z",
+            "updated_at": "2026-10-17T07:35:11.597Z"
+        }
+    },
+    {
+        "id": "G3",
+        "name": "kk-collect",
+        "status": "backlog",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G3_kk-collect.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G3",
+            "name": "kk-collect",
+            "status": "backlog",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-07T04:52:25.525Z",
+            "updated_at": "2026-10-08T18:18:21.798Z"
+        }
+    },
+    {
+        "id": "G31",
+        "name": "kk-collect: SQLite store, 4h collection, decision labels, topic extraction",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G31_kk-collect-kk-daily-ai-voice2-sqlite-store-decision-labels-dag-daily-workflow-run-ledger.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G31",
+            "name": "kk-collect: SQLite store, 4h collection, decision labels, topic extraction",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-07T03:50:34.546Z",
+            "updated_at": "2026-10-08T18:18:46.542Z"
+        }
+    },
+    {
+        "id": "G32",
+        "name": "kk-collect store v2: backtestable labels, item facts, story dedup, topic-scoped selections",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G32_kk-collect-store-v2-backtestable-labels-item-facts-story-dedup-topic-scoped-selections.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G32",
+            "name": "kk-collect store v2: backtestable labels, item facts, story dedup, topic-scoped selections",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-09T01:26:20.180Z",
+            "updated_at": "2026-10-09T22:09:43.166Z"
+        }
+    },
+    {
+        "id": "G33",
+        "name": "kk-collect decision-maker effectiveness: score scale, outcome pruning, laya restore, ledgered safety and podcast decisions, in-process hub",
+        "status": "backlog",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G33_kk-collect-decision-maker-effectiveness-score-scale-outcome-pruning-laya-restore-ledgered-safety-and-podcast-decisions-in-process-hub.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G33",
+            "name": "kk-collect decision-maker effectiveness: score scale, outcome pruning, laya restore, ledgered safety and podcast decisions, in-process hub",
+            "status": "backlog",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-20T05:31:07.912Z",
+            "updated_at": "2026-10-20T05:31:34.613Z"
+        }
+    },
+    {
+        "id": "G4",
+        "name": "kk-solo-podcast",
+        "status": "backlog",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G4_kk-solo-podcast.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G4",
+            "name": "kk-solo-podcast",
+            "status": "backlog",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-07T04:52:25.762Z",
+            "updated_at": "2026-10-07T04:53:47.670Z"
+        }
+    },
+    {
+        "id": "G5",
+        "name": "kk-storm-research",
+        "status": "backlog",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G5_kk-storm-research.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G5",
+            "name": "kk-storm-research",
+            "status": "backlog",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-07T04:52:26.023Z",
+            "updated_at": "2026-10-07T04:53:48.509Z"
+        }
+    },
+    {
+        "id": "G6",
+        "name": "kk-ingest-generate-publish",
+        "status": "backlog",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G6_kk-ingest-generate-publish.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G6",
+            "name": "kk-ingest-generate-publish",
+            "status": "backlog",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-07T04:52:26.270Z",
+            "updated_at": "2026-10-07T04:53:49.273Z"
+        }
+    },
+    {
+        "id": "G7",
+        "name": "kk workflow run ledger",
+        "status": "active",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G7_kk-workflow-run-ledger.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G7",
+            "name": "kk workflow run ledger",
+            "status": "active",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-07T04:52:26.497Z",
+            "updated_at": "2026-10-13T22:42:38.093Z"
+        }
+    },
+    {
+        "id": "G71",
+        "name": "Per-workflow run ledger from spur action_runs",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G71_per-workflow-run-ledger-from-spur-action-runs.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G71",
+            "name": "Per-workflow run ledger from spur action_runs",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-07T04:52:37.924Z",
+            "updated_at": "2026-10-08T04:49:30.854Z"
+        }
+    },
+    {
+        "id": "G8",
+        "name": "Workflow visibility in Spur Board: Collect, Daily AI Voice, IT Content",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G8_workflow-visibility-in-spur-board-collect-daily-ai-voice-it-content.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G8",
+            "name": "Workflow visibility in Spur Board: Collect, Daily AI Voice, IT Content",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-11T23:18:58.413Z",
+            "updated_at": "2026-10-19T05:52:09.792Z"
+        }
+    },
+    {
+        "id": "G81",
+        "name": "Collect module redesign: store-backed run results, progress and yield",
+        "status": "active",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G81_collect-module-redesign-store-backed-run-results-progress-and-yield.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G81",
+            "name": "Collect module redesign: store-backed run results, progress and yield",
+            "status": "active",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-17T05:00:32.680Z",
+            "updated_at": "2026-10-17T06:44:51.881Z"
+        }
+    },
+    {
+        "id": "G82",
+        "name": "Daily AI Voice module Summary: real channel yield and episode funnel",
+        "status": "active",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G82_daily-ai-voice-module-summary-real-channel-yield-and-episode-funnel.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G82",
+            "name": "Daily AI Voice module Summary: real channel yield and episode funnel",
+            "status": "active",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-22T17:52:31.280Z",
+            "updated_at": "2026-10-22T18:05:37.174Z"
+        }
+    },
+    {
+        "id": "G9",
+        "name": "kk-smart-seo: evidence-grounded SEO and GEO audits",
+        "status": "active",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/G9_kk-smart-seo-evidence-grounded-seo-and-geo-audits.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "G9",
+            "name": "kk-smart-seo: evidence-grounded SEO and GEO audits",
+            "status": "active",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-15T04:39:32.556Z",
+            "updated_at": "2026-10-16T06:41:46.142Z"
+        }
+    },
+    {
+        "id": "H",
+        "name": "Real STORM generator and wt generator harvest",
+        "status": "cancelled",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/H_real-storm-generator-and-wt-generator-harvest.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "H",
+            "name": "Real STORM generator and wt generator harvest",
+            "status": "cancelled",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-07-23T17:53:18.153Z",
+            "updated_at": "2026-07-29T18:41:36.343Z"
+        }
+    },
+    {
+        "id": "I",
+        "name": "LLM wiki",
+        "status": "backlog",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/I_llm-wiki.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "I",
+            "name": "LLM wiki",
+            "status": "backlog",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-07-23T17:53:19.625Z",
+            "updated_at": "2026-07-30T23:54:02.712Z"
+        }
+    },
+    {
+        "id": "J",
+        "name": "Reposition knowledge-kit as an ingest-create-publish platform (wayfinder map)",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/J_reposition-knowledge-kit-as-an-ingest-create-publish-platform-wayfinder-map.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "J",
+            "name": "Reposition knowledge-kit as an ingest-create-publish platform (wayfinder map)",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-08-03T00:10:18.831Z",
+            "updated_at": "2026-08-03T03:37:34.765Z"
+        }
+    },
+    {
+        "id": "K",
+        "name": "kk image pipeline — migrate wt image skills to a TypeScript generator plugin (wayfinder map)",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/K_kk-image-pipeline-migrate-wt-image-skills-to-a-typescript-generator-plugin-wayfinder-map.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "K",
+            "name": "kk image pipeline — migrate wt image skills to a TypeScript generator plugin (wayfinder map)",
+            "status": "done",
+            "priority": "P2",
+            "tags": ["wayfinder-map"],
+            "created_at": "2026-09-09T18:22:49.655Z",
+            "updated_at": "2026-09-25T19:46:39.687Z"
+        }
+    },
+    {
+        "id": "L",
+        "name": "kk-daily-ai-voice — daily AI voice news pipeline",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/L_kk-daily-ai-voice-daily-ai-voice-news-pipeline.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "L",
+            "name": "kk-daily-ai-voice — daily AI voice news pipeline",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-09-06T17:41:31.372Z",
+            "updated_at": "2026-09-11T04:51:22.175Z"
+        }
+    },
+    {
+        "id": "L1",
+        "name": "Redesign kk-daily-ai-voice workflow: kk-owned concurrent collect, explicit content QC seam, plugin-owned publish mechanics",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/L1_redesign-kk-daily-ai-voice-workflow-kk-owned-concurrent-collect-explicit-content-qc-seam-plugin-owned-publish-mechanics.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "L1",
+            "name": "Redesign kk-daily-ai-voice workflow: kk-owned concurrent collect, explicit content QC seam, plugin-owned publish mechanics",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-09-06T14:18:07.904Z",
+            "updated_at": "2026-09-07T20:56:02.235Z"
+        }
+    },
+    {
+        "id": "M",
+        "name": "kk-user-config-roots",
+        "status": "backlog",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/M_kk-user-config-roots.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "M",
+            "name": "kk-user-config-roots",
+            "status": "backlog",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-09-10T06:31:32.124Z",
+            "updated_at": "2026-09-10T06:41:43.670Z"
+        }
+    },
+    {
+        "id": "N",
+        "name": "daily-ai-voice-cover-image-authoring",
+        "status": "done",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/N_daily-ai-voice-cover-image-authoring.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "N",
+            "name": "daily-ai-voice-cover-image-authoring",
+            "status": "done",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-09-11T05:55:33.954Z",
+            "updated_at": "2026-09-11T21:35:44.745Z"
+        }
+    },
+    {
+        "id": "O",
+        "name": "kk-daily-ai-voice: run report, show-notes revamp, real surfdash publish",
+        "status": "active",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/O_kk-daily-ai-voice-run-report-show-notes-revamp-real-surfdash-publish.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "O",
+            "name": "kk-daily-ai-voice: run report, show-notes revamp, real surfdash publish",
+            "status": "active",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-09-11T23:50:41.670Z",
+            "updated_at": "2026-09-16T18:30:34.493Z"
+        }
+    },
+    {
+        "id": "P",
+        "name": "Workflow folder fallback and per-workflow workspace defaults",
+        "status": "cancelled",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/P_workflow-folder-fallback-and-per-workflow-workspace-defaults.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "P",
+            "name": "Workflow folder fallback and per-workflow workspace defaults",
+            "status": "cancelled",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-09-14T17:43:54.641Z",
+            "updated_at": "2026-09-14T21:49:28.227Z"
+        }
+    },
+    {
+        "id": "R",
+        "name": "Publish channel UI fidelity: per-mode discovery and gap fixes",
+        "status": "cancelled",
+        "priority": "P2",
+        "filePath": "/Users/robin/xprojects/knowledge-kit/docs/features/R_publish-channel-ui-fidelity-per-mode-discovery-and-gap-fixes.md",
+        "frontmatter": {
+            "schema_version": 1,
+            "id": "R",
+            "name": "Publish channel UI fidelity: per-mode discovery and gap fixes",
+            "status": "cancelled",
+            "priority": "P2",
+            "tags": [],
+            "created_at": "2026-10-05T17:58:54.716Z",
+            "updated_at": "2026-10-05T17:59:28.809Z"
+        }
+    }
+]

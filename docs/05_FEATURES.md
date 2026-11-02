@@ -3,9 +3,9 @@ name: Features
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state
 authority: derived
-version: 2.30.1
+version: 2.30.2
 created_at: 2026-07-22
-updated_at: 2026-10-16
+updated_at: 2026-10-25
 derived_from: [01_PRD, 02_ROADMAP]
 edit_rules: 99 §6.6
 sync: [T4]
@@ -95,6 +95,7 @@ sync: [T4]
 | **G** | kk workflows (repurposed 2026-10-07) | ⏳ planned | — | parent: one child per `plugins/kk/workflows/*.yaml`; shipped workflow features keep their IDs (see children Notes) |
 | G1 | kk-daily-ai-voice | ⏳ planned | — | home node; historical: F6, F61*, L, L1, N, O |
 | G14 | VoxCPM voice driver for both daily AI voice workflows | ⏳ planned | P2 | opt-in adapter, driver-aware cache and render-only quality comparison; ADR-036; `docs/design/voxcpm-daily-voice-driver.md`; no product access to `vendors/` |
+| G15 | Daily AI Voice v3: split generation and preset-driven publishing | ⏳ active | P2 | Reopened 2026-10-25 after replacement-readiness review; corrective tasks `0329`–`0335` cover generation, safety, draft enforcement, receipt recovery and schedules. Acceptance requires a fresh offline three-window rehearsal with measured evidence; voice2 remains production until a separately authorized cutover. See `docs/features/G15_daily-ai-voice-v3-split-generate-and-publish-preset-driven-channel-matrix.md`. |
 | G11 | kk-daily-ai-voice2 — DAG daily workflow from the store, cut-over | ⏳ active | — | `0269` (stage-owned bounded XHS card retry) and `0270` (failed safety agents reach the fail-closed gate) done 2026-10-13; `0272` (WeChat console measurement/drift repair, upstream of E92 task `0260`) done 2026-10-13; `0273` cancelled with its valid retry-coverage concern merged into `0269`; `0265`–`0267` and earlier `0211`/`0212` done; ADR-031 shipped; satellite `docs/design/kk-collect-and-daily-voice2.md` |
 | G2 | kk-itc | ⏳ planned | — | home node; historical: F4, F41 |
 | G21 | kk-itc refactor: collected topics, plugin-owned publishing and reliable recovery | ⏳ planned | — | tasks `0298`–`0303`; 18 scenarios; DAG/child FSM, canonical config/workspaces, SEO handoff; accepted design ADR-040 amended and `docs/design/kk-itc-refactor.md`; no product implementation yet |

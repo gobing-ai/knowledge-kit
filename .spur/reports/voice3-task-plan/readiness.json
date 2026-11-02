@@ -1,0 +1,1268 @@
+{
+    "date": "2026-10-25",
+    "feature": "G15",
+    "scope": "implementation-ready specifications; dependency-aware execution admission",
+    "source": "operator requested filing and ready refinement; no implementation was performed",
+    "coverage": {
+        "F01": ["0329"],
+        "F02": ["0329"],
+        "F06": ["0329"],
+        "F15": ["0329"],
+        "F16": ["0329"],
+        "F21": ["0329"],
+        "F23": ["0329"],
+        "F03": ["0330"],
+        "C01": ["0330", "0334", "0335"],
+        "F04": ["0331"],
+        "F05": ["0331"],
+        "F11": ["0332"],
+        "F12": ["0332"],
+        "F13": ["0332"],
+        "F17": ["0332"],
+        "F19": ["0332"],
+        "F07": ["0333"],
+        "F14": ["0333"],
+        "F18": ["0333"],
+        "F20": ["0333"],
+        "F08": ["0334"],
+        "F09": ["0334"],
+        "F10": ["0334"],
+        "C02": ["0334", "0335"],
+        "C03": ["0334", "0335"],
+        "C04": ["0334", "0335"],
+        "C05": ["0334", "0335"],
+        "F22": ["0335"]
+    },
+    "tasks": [
+        {
+            "wbs": "0329",
+            "key": "generation",
+            "name": "Repair voice3 generation closure, pool routing and complete episode bundles",
+            "priority": "P1",
+            "hours": 10,
+            "deps": [],
+            "findings": ["F01", "F02", "F06", "F15", "F16", "F21", "F23"],
+            "path": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0329_repair-voice3-generation-closure-pool-routing-and-complete-e.md",
+            "status": "todo",
+            "check": [
+                {
+                    "wbs": "0329",
+                    "status": "todo",
+                    "findings": [],
+                    "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                    "missingSections": [],
+                    "pass": true,
+                    "notes": [],
+                    "repairs": []
+                }
+            ],
+            "admission": [
+                {
+                    "wbs": "0329",
+                    "status": "todo",
+                    "findings": [],
+                    "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                    "missingSections": [],
+                    "pass": true,
+                    "notes": [],
+                    "repairs": []
+                }
+            ],
+            "specificationComplete": true,
+            "executionReady": true,
+            "documentSha256": "c03984e447ac395e99b3b825a70031a653006475bf50b5436b1c35cabaea6b16",
+            "checks": [
+                {
+                    "id": "requirements",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0329_repair-voice3-generation-closure-pool-routing-and-complete-e.md: Requirements — 6 observable R-items; explicit non-goals in Design"
+                },
+                {
+                    "id": "design",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0329_repair-voice3-generation-closure-pool-routing-and-complete-e.md: Design — named code ownership, frozen names/compatibility policy, algorithm and rejected approaches; current native mapper/safety/receipt APIs inspected"
+                },
+                {
+                    "id": "plan",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0329_repair-voice3-generation-closure-pool-routing-and-complete-e.md: Plan — failure cases precede implementation, focused evidence then lint/test/build/rule gates"
+                },
+                {
+                    "id": "ac",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0329_repair-voice3-generation-closure-pool-routing-and-complete-e.md: Acceptance Criteria — exact G15 scenario title; all requirements mapped using (req: Rn) with ac_numbering task-local; task check passes"
+                },
+                {
+                    "id": "decisions",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0329_repair-voice3-generation-closure-pool-routing-and-complete-e.md: Q&A and Design — closed D1-D4 decisions, no production activation, manual live confirmation; 0334 closes explicit nested publish_live_channels forwarding"
+                },
+                {
+                    "id": "dependencies",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0329_repair-voice3-generation-closure-pool-routing-and-complete-e.md: frontmatter dependencies none; exact inbound/outbound handoffs; graph acyclic. Execution admission passes now"
+                },
+                {
+                    "id": "premises",
+                    "pass": true,
+                    "evidence": "plugins/kk/workflows/kk-daily-ai-voice3.yaml:253; plugins/kk/scripts/daily-stages.ts:1801; plugins/kk/scripts/daily-stages.ts:660; plugins/kk/workflows/kk-daily-ai-voice3.yaml:788; plugins/kk/scripts/daily-stages.ts:2314"
+                }
+            ],
+            "premises": [
+                {
+                    "citation": "plugins/kk/workflows/kk-daily-ai-voice3.yaml:253",
+                    "context": "      excludes what it planned. Guarded on the QC candidates — a pool that filtered to zero items\n      selects nothing.\n    dependsOn: [qc-content]\n    condition:\n      kind: shell\n      options:\n        # 0324 R3: the pool verdict is `pool-gate`'s token, never a repeated `kk store pool-count`.\n        command: 'test \"$(cat \".spur/run/${vars.__runId}-pool-gate.status\" 2>/dev/null)\" = PASS'\n    action:\n      kind: shell\n      options:\n        command: >-\n          kk store select --topic ai-news --workflow kk-daily-ai-voice2 --run \"${vars.__runId}\""
+                },
+                {
+                    "citation": "plugins/kk/scripts/daily-stages.ts:1801",
+                    "context": "        sted('mkdir', outDir, () => mkdirSync(outDir, { recursive: true }));\n        const articlePath = join(workDir, '22-article', `${runDate}_06_article_content.json`);\n        const prepPath = join(workDir, '31-publish', `${runDate}_13_publish-prep_content.json`);\n        const notesPath = join(workDir, '31-publish', `${runDate}_15_show-notes_show-notes.md`);\n        const cardsPath = join(workDir, '25-xhs', 'content.json');\n        const coverPath = join(workDir, '23-cover', `${runDate}_07_cover_cover.png`);\n        const socialDir = join(workDir, '26-social');\n        const cover = isFile(coverPath) ? coverPath : undefined;\n        const links = PLACEHOLDER_LINKS;\n        const written: string[] = [];\n        const skipped: string[] = [];\n\n        const article = readJson(articlePath);"
+                },
+                {
+                    "citation": "plugins/kk/scripts/daily-stages.ts:660",
+                    "context": "    const minutes = seconds / 60;\n    const shown = minutes.toFixed(1);\n    if (minutes < minMinutes) {\n        const refusal = join(workDir, '30-audio', `${runDate}_11_generate_content_duration-refusal.json`);\n        const candidates = join(workDir, '21-plan', `${runDate}_04_quality-control-content_candidates.json`);\n        const content = readJson(candidates);\n        const docs = Array.isArray(metadataOf(content).docs) ? (metadataOf(content).docs as unknown[]) : [];\n        // Idempotency first: a rerun must not recompute an estimate from the already-emptied candidates.\n        // A kill between the two writes below leaves the refusal beside non-empty candidates, which would\n        // let the pool-gated publish fan package a sub-floor episode — so finish the emptying here.\n        if (isFile(refusal)) {\n            if (docs.length > 0) emptyCandidates(workDir, runDate);\n            console.log(`episode-duration: duration refusal already recorded (${refusal}) — nothing to do`);"
+                },
+                {
+                    "citation": "plugins/kk/workflows/kk-daily-ai-voice3.yaml:788",
+                    "context": "      for article / episode / cards plus the channel-specific keys and the social posts, all with\n      `{{article_url}}` / `{{podcast_url}}` placeholders because nothing is published yet.\n    dependsOn: [quality, social-write]\n    action:\n      kind: shell\n      options:\n        command: >-\n          kk stage run daily-bundle-variants \"${vars.work_dir}\" \"${vars.run_date}\" \"${vars.plugins_path}\"\n\n  - id: bundle-freeze\n    description: >-\n      Freeze `bundle.json` (0321 `BundleSchema`): every `30-variants/*` file with its sha256 plus the\n      episode title, so the publish half can run later, or three times a day, against exactly these"
+                },
+                {
+                    "citation": "plugins/kk/scripts/daily-stages.ts:2314",
+                    "context": " * outcome never enters `publish_status` (surfdash + podcast remain the publication contract).\n */\nexport function dailyQualityReport(args: string[]): void {\n    const [workDir = '', runDate = ''] = args;\n    const content = join(workDir, '30-audio', `${runDate}_11_generate_content.json`);\n    timed(workDir, 'quality-control', () => {\n        const qc = metadataOf(readJson(content)).qc as Record<string, unknown> | undefined;\n        console.log('=== Voice Quality Control Report ===');\n        console.log(`Overall Score: ${qc ? qc.overallScore : 100}/100 | Passed: ${qc ? qc.passed : true}`);\n        const issues = qc?.criticalIssues;\n        if (Array.isArray(issues) && issues.length > 0) {\n            console.warn(`QC Issues:\\n${issues.map((issue) => `  - ${issue}`).join('\\n')}`);\n        } else {"
+                }
+            ],
+            "taskCheck": {
+                "exitCode": 0,
+                "result": [
+                    {
+                        "wbs": "0329",
+                        "status": "todo",
+                        "findings": [],
+                        "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                        "missingSections": [],
+                        "pass": true,
+                        "notes": [],
+                        "repairs": []
+                    }
+                ]
+            },
+            "executionAdmission": {
+                "exitCode": 0,
+                "result": [
+                    {
+                        "wbs": "0329",
+                        "status": "todo",
+                        "findings": [],
+                        "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                        "missingSections": [],
+                        "pass": true,
+                        "notes": [],
+                        "repairs": []
+                    }
+                ]
+            }
+        },
+        {
+            "wbs": "0330",
+            "key": "modes",
+            "name": "Enforce operation-specific draft and live boundaries for matrix publishing",
+            "priority": "P1",
+            "hours": 8,
+            "deps": [],
+            "findings": ["F03", "C01"],
+            "path": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0330_enforce-operation-specific-draft-and-live-boundaries-for-mat.md",
+            "status": "todo",
+            "check": [
+                {
+                    "wbs": "0330",
+                    "status": "todo",
+                    "findings": [],
+                    "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                    "missingSections": [],
+                    "pass": true,
+                    "notes": [],
+                    "repairs": []
+                }
+            ],
+            "admission": [
+                {
+                    "wbs": "0330",
+                    "status": "todo",
+                    "findings": [],
+                    "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                    "missingSections": [],
+                    "pass": true,
+                    "notes": [],
+                    "repairs": []
+                }
+            ],
+            "specificationComplete": true,
+            "executionReady": true,
+            "documentSha256": "7e442da86b405c787b25920101d536a55e91870474307ba7174ce390c6d5444e",
+            "checks": [
+                {
+                    "id": "requirements",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0330_enforce-operation-specific-draft-and-live-boundaries-for-mat.md: Requirements — 5 observable R-items; explicit non-goals in Design"
+                },
+                {
+                    "id": "design",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0330_enforce-operation-specific-draft-and-live-boundaries-for-mat.md: Design — named code ownership, frozen names/compatibility policy, algorithm and rejected approaches; current native mapper/safety/receipt APIs inspected"
+                },
+                {
+                    "id": "plan",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0330_enforce-operation-specific-draft-and-live-boundaries-for-mat.md: Plan — failure cases precede implementation, focused evidence then lint/test/build/rule gates"
+                },
+                {
+                    "id": "ac",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0330_enforce-operation-specific-draft-and-live-boundaries-for-mat.md: Acceptance Criteria — exact G15 scenario title; all requirements mapped using (req: Rn) with ac_numbering task-local; task check passes"
+                },
+                {
+                    "id": "decisions",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0330_enforce-operation-specific-draft-and-live-boundaries-for-mat.md: Q&A and Design — closed D1-D4 decisions, no production activation, manual live confirmation; 0334 closes explicit nested publish_live_channels forwarding"
+                },
+                {
+                    "id": "dependencies",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0330_enforce-operation-specific-draft-and-live-boundaries-for-mat.md: frontmatter dependencies none; exact inbound/outbound handoffs; graph acyclic. Execution admission passes now"
+                },
+                {
+                    "id": "premises",
+                    "pass": true,
+                    "evidence": "apps/cli/src/publish-matrix.ts:346; plugins/publishings/surfdash-pub/src/index.ts:129; plugins/publishings/x-pub/src/index.ts:109; plugins/publishings/threads-pub/src/index.ts:150; plugins/publishings/weibo-pub/src/index.ts:299"
+                }
+            ],
+            "premises": [
+                {
+                    "citation": "apps/cli/src/publish-matrix.ts:346",
+                    "context": "        }\n\n        const payload: Content = {\n            ...parsedContent.data,\n            metadata: {\n                ...(parsedContent.data.metadata ?? {}),\n                ...(target.options ?? {}),\n                // Operation and publish status are last so a stray `options` key cannot flip a row's\n                // mode behind the plan's back.\n                ...(target.operation !== undefined ? { operation: target.operation } : {}),\n                publishStatus: mode === 'live' ? 'public' : 'draft',\n            },\n        };"
+                },
+                {
+                    "citation": "plugins/publishings/surfdash-pub/src/index.ts:129",
+                    "context": "\n    const isoDate = options.publishDate ?? new Date().toISOString().slice(0, 10);\n    const draft = typeof content.metadata?.published === 'boolean' ? !content.metadata.published : false;\n\n    // Strict surfdash PostSchema (surfdash/src/content/schema.ts): publishDate (ISO date) is\n    // required; unknown keys (`date`, `canonical_url`, `published`) are rejected.\n    //\n    // `canonical` is deliberately NOT written here. The canonical URL is the site's own route\n    // for this slug, which only the site can compute (locale prefix + collection segment); the\n    // previous `references[0].url` fallback pointed the canonical at an unrelated *external*\n    // source and would have dropped the post out of the sitemap if surfdash's refine step had\n    // not overwritten it. See docs/00_ADR.md ADR-008: the generator supplies content, the site\n    // supplies identity."
+                },
+                {
+                    "citation": "plugins/publishings/x-pub/src/index.ts:109",
+                    "context": "    public async publish(payload: PublishTransportPayload): Promise<Result> {\n        const missing = TOKEN_ENVS.filter((key) => {\n            const value = process.env[key];\n            return !value || value.trim().length === 0;\n        });\n        if (missing.length > 0) {\n            return fail(\n                `${missing.join(', ')} environment variable${missing.length > 1 ? 's are' : ' is'} required: X developer user-context credentials. post does not fall back to a browser (X Automation Rules).`,\n            );\n        }\n        const text = payload.content.body.trim() || payload.content.title?.trim() || '';\n        if (text.length === 0) {\n            return fail('X post requires Content.body or Content.title');"
+                },
+                {
+                    "citation": "plugins/publishings/threads-pub/src/index.ts:150",
+                    "context": "\n        const missing = TOKEN_ENVS.filter((key) => {\n            const value = process.env[key];\n            return !value || value.trim().length === 0;\n        });\n        if (missing.length > 0) {\n            return fail(\n                `${missing.join(', ')} environment variable${missing.length > 1 ? 's are' : ' is'} required: Threads Graph API credentials. post does not fall back to a browser.`,\n            );\n        }\n\n        const text = payload.content.body.trim() || payload.content.title?.trim() || '';\n        if (text.length === 0) {"
+                },
+                {
+                    "citation": "plugins/publishings/weibo-pub/src/index.ts:299",
+                    "context": "        }\n        const publishStatus = requested === 'public' ? 'public' : 'draft';\n        if (this.operation === 'post' && publishStatus !== 'public') {\n            return fail('weibo post has no draft; set publishStatus: public');\n        }\n        const text = payload.content.body.trim() || payload.content.title?.trim() || '';\n        if (this.operation === 'post' && text.length === 0) {\n            return fail('weibo post requires Content.body or Content.title');\n        }\n        const cover = await resolveCover(payload.options, payload.content, this.operation);\n        if (cover !== undefined && 'error' in cover) return fail(cover.error);\n        // An episode announcement carries its cover: `post` accepts exactly one image (R9, 0246).\n"
+                }
+            ],
+            "taskCheck": {
+                "exitCode": 0,
+                "result": [
+                    {
+                        "wbs": "0330",
+                        "status": "todo",
+                        "findings": [],
+                        "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                        "missingSections": [],
+                        "pass": true,
+                        "notes": [],
+                        "repairs": []
+                    }
+                ]
+            },
+            "executionAdmission": {
+                "exitCode": 0,
+                "result": [
+                    {
+                        "wbs": "0330",
+                        "status": "todo",
+                        "findings": [],
+                        "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                        "missingSections": [],
+                        "pass": true,
+                        "notes": [],
+                        "repairs": []
+                    }
+                ]
+            }
+        },
+        {
+            "wbs": "0331",
+            "key": "safety",
+            "name": "Carry reviewed variant safety and platform exclusions through the voice3 bundle",
+            "priority": "P1",
+            "hours": 12,
+            "deps": ["0329", "0330"],
+            "findings": ["F04", "F05"],
+            "path": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0331_carry-reviewed-variant-safety-and-platform-exclusions-throug.md",
+            "status": "todo",
+            "check": [
+                {
+                    "wbs": "0331",
+                    "status": "todo",
+                    "findings": [
+                        {
+                            "layer": "L4",
+                            "code": "L4.prerequisite-not-done",
+                            "severity": "warning",
+                            "section": "",
+                            "message": "Prerequisite 0329 is todo; task 0331 is not ready until it is done"
+                        },
+                        {
+                            "layer": "L4",
+                            "code": "L4.prerequisite-not-done",
+                            "severity": "warning",
+                            "section": "",
+                            "message": "Prerequisite 0330 is todo; task 0331 is not ready until it is done"
+                        }
+                    ],
+                    "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                    "missingSections": [],
+                    "pass": true,
+                    "notes": [],
+                    "repairs": []
+                }
+            ],
+            "admission": [
+                {
+                    "wbs": "0331",
+                    "status": "todo",
+                    "findings": [
+                        {
+                            "layer": "L4",
+                            "code": "L4.prerequisite-not-done",
+                            "severity": "error",
+                            "section": "",
+                            "message": "Prerequisite 0329 is todo; task 0331 is not ready until it is done"
+                        },
+                        {
+                            "layer": "L4",
+                            "code": "L4.prerequisite-not-done",
+                            "severity": "error",
+                            "section": "",
+                            "message": "Prerequisite 0330 is todo; task 0331 is not ready until it is done"
+                        }
+                    ],
+                    "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                    "missingSections": [],
+                    "pass": false,
+                    "notes": [],
+                    "repairs": []
+                }
+            ],
+            "specificationComplete": true,
+            "executionReady": false,
+            "documentSha256": "0362a753777c175a13150fb1d8ecaeaa2efbf0b04a0b78d36227b8513fab88b9",
+            "checks": [
+                {
+                    "id": "requirements",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0331_carry-reviewed-variant-safety-and-platform-exclusions-throug.md: Requirements — 6 observable R-items; explicit non-goals in Design"
+                },
+                {
+                    "id": "design",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0331_carry-reviewed-variant-safety-and-platform-exclusions-throug.md: Design — named code ownership, frozen names/compatibility policy, algorithm and rejected approaches; current native mapper/safety/receipt APIs inspected"
+                },
+                {
+                    "id": "plan",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0331_carry-reviewed-variant-safety-and-platform-exclusions-throug.md: Plan — failure cases precede implementation, focused evidence then lint/test/build/rule gates"
+                },
+                {
+                    "id": "ac",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0331_carry-reviewed-variant-safety-and-platform-exclusions-throug.md: Acceptance Criteria — exact G15 scenario title; all requirements mapped using (req: Rn) with ac_numbering task-local; task check passes"
+                },
+                {
+                    "id": "decisions",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0331_carry-reviewed-variant-safety-and-platform-exclusions-throug.md: Q&A and Design — closed D1-D4 decisions, no production activation, manual live confirmation; 0334 closes explicit nested publish_live_channels forwarding"
+                },
+                {
+                    "id": "dependencies",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0331_carry-reviewed-variant-safety-and-platform-exclusions-throug.md: frontmatter dependencies 0329, 0330; exact inbound/outbound handoffs; graph acyclic. Execution admission waits for unfinished predecessors; no bypass"
+                },
+                {
+                    "id": "premises",
+                    "pass": true,
+                    "evidence": "plugins/kk/scripts/daily-stages.ts:2090; plugins/kk/scripts/kk-workflow-stages.ts:1139; plugins/kk/workflows/kk-daily-ai-voice3.yaml:760; apps/cli/src/publish-matrix.ts:30"
+                }
+            ],
+            "premises": [
+                {
+                    "citation": "plugins/kk/scripts/daily-stages.ts:2090",
+                    "context": "            },\n        };\n        // Task 0189 R10: the last program seam before anything is dispatched. No stamp, or a\n        // stamp issued on different bytes (edited after PASS, or an older draft), never publishes.\n        const stamp = readJson(safetyPath(workDir, runDate, 'safety-judge_stamp.json'));\n        if (stamp === null) failWith(1, 'publish-prep: no content-safety verdict stamp for this run — not publishing');\n        // 20261005: pass/escalate/exclude all stamp the drafts as publishable; only `block` (draft\n        // integrity) has no stamp. An `exclude` stamp carries the admission-blocked platforms so\n        // the per-target stages can skip those targets instead of failing the run.\n        if (stamp.status !== 'pass' && stamp.status !== 'escalate' && stamp.status !== 'exclude') {\n            failWith(1, `publish-prep: content-safety status ${String(stamp.status)} does not publish`);\n        }\n        if (stamp.digest !== safetyDigest(workDir, runDate)) {"
+                },
+                {
+                    "citation": "plugins/kk/scripts/kk-workflow-stages.ts:1139",
+                    "context": " * PASS — including a HITL edit at `review` — invalidates the stamp instead of riding on it.\n */\nexport function safetyDigest(workDir: string, runDate: string): string {\n    const hash = createHash('sha256');\n    for (const path of safetyDraftPaths(workDir, runDate)) {\n        if (!isFile(path)) failWith(1, `safety-review: required draft not found: ${path}`);\n        hash.update(readFileSync(path)).update('\\0');\n    }\n    return hash.digest('hex');\n}\n\n/** The drafts under review — the digest's bytes, and the quarantine set on a quality block. */\nexport function safetyDraftPaths(workDir: string, runDate: string): [string, string] {"
+                },
+                {
+                    "citation": "plugins/kk/workflows/kk-daily-ai-voice3.yaml:760",
+                    "context": "          else echo EMPTY > \"$OUT\"; exit 1; fi\n\n  - id: social-write\n    description: >-\n      Author one short post per social platform (x, weibo, threads) from the approved plan, in zh,\n      inside each platform's character cap. `daily-bundle-variants` truncates as a backstop, so a\n      missed cap degrades rather than fails; a missing file simply skips that platform's variant.\n    dependsOn: [quality]\n    action:\n      kind: agent.run\n      onError: continue\n      options:\n        role: scribe"
+                },
+                {
+                    "citation": "apps/cli/src/publish-matrix.ts:30",
+                    "context": " * together as one artifact.\n */\nexport const BundleSchema = z\n    .object({\n        schemaVersion: z.literal(1).default(1),\n        runId: z.string().min(1),\n        runDate: z.string().min(1),\n        parentRunId: z.string().min(1).optional(),\n        runs: z.array(z.string()).default([]),\n        episode: z.object({ title: z.string().min(1), guid: z.string().optional() }).strict(),\n        variants: z.record(z.string(), BundleVariantSchema),\n    })\n    .strict();"
+                }
+            ],
+            "taskCheck": {
+                "exitCode": 0,
+                "result": [
+                    {
+                        "wbs": "0331",
+                        "status": "todo",
+                        "findings": [
+                            {
+                                "layer": "L4",
+                                "code": "L4.prerequisite-not-done",
+                                "severity": "warning",
+                                "section": "",
+                                "message": "Prerequisite 0329 is todo; task 0331 is not ready until it is done"
+                            },
+                            {
+                                "layer": "L4",
+                                "code": "L4.prerequisite-not-done",
+                                "severity": "warning",
+                                "section": "",
+                                "message": "Prerequisite 0330 is todo; task 0331 is not ready until it is done"
+                            }
+                        ],
+                        "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                        "missingSections": [],
+                        "pass": true,
+                        "notes": [],
+                        "repairs": []
+                    }
+                ]
+            },
+            "executionAdmission": {
+                "exitCode": 1,
+                "result": [
+                    {
+                        "wbs": "0331",
+                        "status": "todo",
+                        "findings": [
+                            {
+                                "layer": "L4",
+                                "code": "L4.prerequisite-not-done",
+                                "severity": "error",
+                                "section": "",
+                                "message": "Prerequisite 0329 is todo; task 0331 is not ready until it is done"
+                            },
+                            {
+                                "layer": "L4",
+                                "code": "L4.prerequisite-not-done",
+                                "severity": "error",
+                                "section": "",
+                                "message": "Prerequisite 0330 is todo; task 0331 is not ready until it is done"
+                            }
+                        ],
+                        "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                        "missingSections": [],
+                        "pass": false,
+                        "notes": [],
+                        "repairs": []
+                    }
+                ]
+            }
+        },
+        {
+            "wbs": "0332",
+            "key": "delivery",
+            "name": "Bind matrix receipts, links and RSS proof to the current bundle revision",
+            "priority": "P1",
+            "hours": 10,
+            "deps": ["0331"],
+            "findings": ["F11", "F12", "F13", "F17", "F19"],
+            "path": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0332_bind-matrix-receipts-links-and-rss-proof-to-the-current-bund.md",
+            "status": "todo",
+            "check": [
+                {
+                    "wbs": "0332",
+                    "status": "todo",
+                    "findings": [
+                        {
+                            "layer": "L4",
+                            "code": "L4.prerequisite-not-done",
+                            "severity": "warning",
+                            "section": "",
+                            "message": "Prerequisite 0331 is todo; task 0332 is not ready until it is done"
+                        }
+                    ],
+                    "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                    "missingSections": [],
+                    "pass": true,
+                    "notes": [],
+                    "repairs": []
+                }
+            ],
+            "admission": [
+                {
+                    "wbs": "0332",
+                    "status": "todo",
+                    "findings": [
+                        {
+                            "layer": "L4",
+                            "code": "L4.prerequisite-not-done",
+                            "severity": "error",
+                            "section": "",
+                            "message": "Prerequisite 0331 is todo; task 0332 is not ready until it is done"
+                        }
+                    ],
+                    "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                    "missingSections": [],
+                    "pass": false,
+                    "notes": [],
+                    "repairs": []
+                }
+            ],
+            "specificationComplete": true,
+            "executionReady": false,
+            "documentSha256": "770c6834cd6db58e35a22047513e32ecb173b395d5aafc0fb21f3c23edc7a0e0",
+            "checks": [
+                {
+                    "id": "requirements",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0332_bind-matrix-receipts-links-and-rss-proof-to-the-current-bund.md: Requirements — 7 observable R-items; explicit non-goals in Design"
+                },
+                {
+                    "id": "design",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0332_bind-matrix-receipts-links-and-rss-proof-to-the-current-bund.md: Design — named code ownership, frozen names/compatibility policy, algorithm and rejected approaches; current native mapper/safety/receipt APIs inspected"
+                },
+                {
+                    "id": "plan",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0332_bind-matrix-receipts-links-and-rss-proof-to-the-current-bund.md: Plan — failure cases precede implementation, focused evidence then lint/test/build/rule gates"
+                },
+                {
+                    "id": "ac",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0332_bind-matrix-receipts-links-and-rss-proof-to-the-current-bund.md: Acceptance Criteria — exact G15 scenario title; all requirements mapped using (req: Rn) with ac_numbering task-local; task check passes"
+                },
+                {
+                    "id": "decisions",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0332_bind-matrix-receipts-links-and-rss-proof-to-the-current-bund.md: Q&A and Design — closed D1-D4 decisions, no production activation, manual live confirmation; 0334 closes explicit nested publish_live_channels forwarding"
+                },
+                {
+                    "id": "dependencies",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0332_bind-matrix-receipts-links-and-rss-proof-to-the-current-bund.md: frontmatter dependencies 0331; exact inbound/outbound handoffs; graph acyclic. Execution admission waits for unfinished predecessors; no bypass"
+                },
+                {
+                    "id": "premises",
+                    "pass": true,
+                    "evidence": "apps/cli/src/itc-publish.ts:499; apps/cli/src/publish-matrix.ts:729; plugins/kk/workflows/kk-daily-publish3.yaml:138; apps/cli/tests/kk-daily-publish3.test.ts:314; plugins/kk/workflows/kk-daily-ai-voice3.yaml:781; apps/cli/src/publish-matrix.ts:329"
+                }
+            ],
+            "premises": [
+                {
+                    "citation": "apps/cli/src/itc-publish.ts:499",
+                    "context": "            try {\n                const prior = JSON.parse(await fs.readFile(targetReceiptPath)) as ItcReceipt;\n                // A dummy receipt records that a rehearsal ran, not that the channel published\n                // (task 0322 R2): flipping the target to draft must send it for real.\n                const dummyOnly = prior.dummy === true && row.mode !== 'dummy';\n                if (prior.status === 'succeeded' && !dummyOnly) continue;\n                // A LIVE target whose previous attempt left its effect unknown may already be\n                // published: resending it could post twice. Skip it and say so — resolving it is an\n                // operator decision. A draft (or any non-live mode) is safe to re-attempt, which is\n                // what the stale-aggregate fix needs (0314 / review finding f6815433).\n                const mayAlreadyBeLive =\n                    (prior.status === 'uncertain' || prior.effect === 'unknown') &&\n                    (row.mode === 'live' || prior.mode === 'live');"
+                },
+                {
+                    "citation": "apps/cli/src/publish-matrix.ts:729",
+                    "context": "    const real: LinkMap = {};\n    const all: LinkMap = {};\n    for (const source of LINK_SOURCES) {\n        const row = rows.find((candidate) => candidate.plugin === source.plugin && candidate.tier === 0);\n        if (row === undefined) continue;\n        const path = join(receiptsDir, `${row.id}.json`);\n        if (!(await fs.exists(path))) continue;\n        try {\n            const receipt = JSON.parse(await fs.readFile(path)) as ItcReceipt;\n            if (receipt.status !== 'succeeded' || !receipt.url) continue;\n            all[source.receipt] = receipt.url;\n            if (receipt.dummy !== true) real[source.receipt] = receipt.url;\n        } catch {"
+                },
+                {
+                    "citation": "plugins/kk/workflows/kk-daily-publish3.yaml:138",
+                    "context": "      options:\n        command: >-\n          test -n \"${vars.run_date}\" || { echo \"publish3: classify needs run_date\" >&2; exit 1; };\n          kk stage run publish-matrix-classify \"${vars.work_dir}\" --window \"${vars.window}\" --run-date \"${vars.run_date}\"\n\n  # ── after-generate only: the voice2-era tail stages keep working on the bridged names ─────\n  - id: surfdash-patch\n    description: >-\n      after-generate only: cover and podcast cross-link patching plus the CMS re-sync, whenever tier 0\n      published something. Reads the legacy `31-publish` names the classifier bridged, so voice2's own\n      stage body is reused unchanged.\n    dependsOn: [classify]\n    condition:"
+                },
+                {
+                    "citation": "apps/cli/tests/kk-daily-publish3.test.ts:314",
+                    "context": "\n        // A hit lets the same window plan its own (disjoint) set.\n        const hitRun = runWindow(cwd, workDir, 'overseas-rss', { run_date: '2026-10-21' });\n        expect(hitRun.code).toBe(0);\n        expect(planRows(workDir, 'overseas-rss').map((row) => row.id)).toEqual(['x-pub.post']);\n    }, 180_000);\n\n    it('declares the matrix in the preset, never in the workflow YAML', () => {\n        const yaml = readFileSync(WORKFLOW, 'utf-8');\n        for (const plugin of ['surfdash-pub', 'podcast-pub', 'wechatmp-pub', 'xhs-pub', 'weibo-pub', 'threads-pub']) {\n            expect(yaml).not.toContain(plugin);\n        }\n        // ADR-022: the workflow can never produce a live row on its own."
+                },
+                {
+                    "citation": "plugins/kk/workflows/kk-daily-ai-voice3.yaml:781",
+                    "context": "          plan, no hashtag spam, no emoji, no \"点击链接\", no invented facts. Plain text, no markdown\n          headings. Deliver with your file-write tool; each file must be non-empty.\n        expectFile: ${vars.work_dir}/26-social/x.md\n\n  - id: bundle-variants\n    description: >-\n      Build the channel payloads from the run's own artifacts (0327 builders): `30-variants/<key>`\n      for article / episode / cards plus the channel-specific keys and the social posts, all with\n      `{{article_url}}` / `{{podcast_url}}` placeholders because nothing is published yet.\n    dependsOn: [quality, social-write]\n    action:\n      kind: shell\n      options:"
+                },
+                {
+                    "citation": "apps/cli/src/publish-matrix.ts:329",
+                    "context": "        }\n        // A channel-specific variant wins over the shared one, so generate can ship 小红书-only copy\n        // without a preset change.\n        const entry = bundle.variants[`${target.variant}@${target.plugin}`] ?? bundle.variants[target.variant];\n        if (entry === undefined) {\n            throw new Error(`bundle has no variant '${target.variant}' for target '${id}'`);\n        }\n        const variantPath = resolve(bundleDir, entry.path);\n        if (!(await fs.exists(variantPath))) throw new Error(`variant file not found: ${variantPath}`);\n        const variantRaw = await fs.readFile(variantPath);\n        const actual = createHash('sha256').update(variantRaw).digest('hex');\n        if (actual !== entry.sha256) {\n            throw new Error(`variant digest mismatch for '${target.variant}': expected ${entry.sha256}, got ${actual}`);"
+                }
+            ],
+            "taskCheck": {
+                "exitCode": 0,
+                "result": [
+                    {
+                        "wbs": "0332",
+                        "status": "todo",
+                        "findings": [
+                            {
+                                "layer": "L4",
+                                "code": "L4.prerequisite-not-done",
+                                "severity": "warning",
+                                "section": "",
+                                "message": "Prerequisite 0331 is todo; task 0332 is not ready until it is done"
+                            }
+                        ],
+                        "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                        "missingSections": [],
+                        "pass": true,
+                        "notes": [],
+                        "repairs": []
+                    }
+                ]
+            },
+            "executionAdmission": {
+                "exitCode": 1,
+                "result": [
+                    {
+                        "wbs": "0332",
+                        "status": "todo",
+                        "findings": [
+                            {
+                                "layer": "L4",
+                                "code": "L4.prerequisite-not-done",
+                                "severity": "error",
+                                "section": "",
+                                "message": "Prerequisite 0331 is todo; task 0332 is not ready until it is done"
+                            }
+                        ],
+                        "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                        "missingSections": [],
+                        "pass": false,
+                        "notes": [],
+                        "repairs": []
+                    }
+                ]
+            }
+        },
+        {
+            "wbs": "0333",
+            "key": "outcomes",
+            "name": "Make publish3 outcomes, retries and store settlement receipt-aware",
+            "priority": "P1",
+            "hours": 8,
+            "deps": ["0332"],
+            "findings": ["F07", "F14", "F18", "F20"],
+            "path": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0333_make-publish3-outcomes-retries-and-store-settlement-receipt-.md",
+            "status": "todo",
+            "check": [
+                {
+                    "wbs": "0333",
+                    "status": "todo",
+                    "findings": [
+                        {
+                            "layer": "L4",
+                            "code": "L4.prerequisite-not-done",
+                            "severity": "warning",
+                            "section": "",
+                            "message": "Prerequisite 0332 is todo; task 0333 is not ready until it is done"
+                        }
+                    ],
+                    "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                    "missingSections": [],
+                    "pass": true,
+                    "notes": [],
+                    "repairs": []
+                }
+            ],
+            "admission": [
+                {
+                    "wbs": "0333",
+                    "status": "todo",
+                    "findings": [
+                        {
+                            "layer": "L4",
+                            "code": "L4.prerequisite-not-done",
+                            "severity": "error",
+                            "section": "",
+                            "message": "Prerequisite 0332 is todo; task 0333 is not ready until it is done"
+                        }
+                    ],
+                    "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                    "missingSections": [],
+                    "pass": false,
+                    "notes": [],
+                    "repairs": []
+                }
+            ],
+            "specificationComplete": true,
+            "executionReady": false,
+            "documentSha256": "d4b8799f3abcbf20940b1dc846d9735e06cb92d4788a1d1dbe6af27997b2168d",
+            "checks": [
+                {
+                    "id": "requirements",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0333_make-publish3-outcomes-retries-and-store-settlement-receipt-.md: Requirements — 6 observable R-items; explicit non-goals in Design"
+                },
+                {
+                    "id": "design",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0333_make-publish3-outcomes-retries-and-store-settlement-receipt-.md: Design — named code ownership, frozen names/compatibility policy, algorithm and rejected approaches; current native mapper/safety/receipt APIs inspected"
+                },
+                {
+                    "id": "plan",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0333_make-publish3-outcomes-retries-and-store-settlement-receipt-.md: Plan — failure cases precede implementation, focused evidence then lint/test/build/rule gates"
+                },
+                {
+                    "id": "ac",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0333_make-publish3-outcomes-retries-and-store-settlement-receipt-.md: Acceptance Criteria — exact G15 scenario title; all requirements mapped using (req: Rn) with ac_numbering task-local; task check passes"
+                },
+                {
+                    "id": "decisions",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0333_make-publish3-outcomes-retries-and-store-settlement-receipt-.md: Q&A and Design — closed D1-D4 decisions, no production activation, manual live confirmation; 0334 closes explicit nested publish_live_channels forwarding"
+                },
+                {
+                    "id": "dependencies",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0333_make-publish3-outcomes-retries-and-store-settlement-receipt-.md: frontmatter dependencies 0332; exact inbound/outbound handoffs; graph acyclic. Execution admission waits for unfinished predecessors; no bypass"
+                },
+                {
+                    "id": "premises",
+                    "pass": true,
+                    "evidence": "apps/cli/src/publish-matrix.ts:637; plugins/kk/scripts/kk-workflow-stages.ts:1416; plugins/kk/workflows/kk-daily-publish3.yaml:176; apps/cli/src/publish-matrix.ts:881; plugins/kk/scripts/kk-workflow-stages.ts:1373"
+                }
+            ],
+            "premises": [
+                {
+                    "citation": "apps/cli/src/publish-matrix.ts:637",
+                    "context": "        const legacyDir = join(workDir, '31-publish');\n        for (const source of LEGACY_RESULT_FILES) {\n            const row = plan.rows.find((candidate) => candidate.plugin === source.plugin && candidate.tier === 0);\n            if (row === undefined || row.mode === 'dummy') continue;\n            const receipt = receipts.find((candidate) => (candidate.target ?? candidate.plugin) === row.id);\n            if (receipt === undefined || receipt.dummy === true || receipt.aggregatePath === undefined) continue;\n            const aggregate = receipt.aggregatePath;\n            if (!(await fs.exists(aggregate))) continue;\n            await fs.ensureDir(legacyDir);\n            await fs.writeFile(join(legacyDir, `${runDate}${source.file}`), await fs.readFile(aggregate));\n        }\n    }\n"
+                },
+                {
+                    "citation": "plugins/kk/scripts/kk-workflow-stages.ts:1416",
+                    "context": "    }\n    timed(workDir, 'patch-surfdash', () => {\n        const sdResult = join(workDir, '31-publish', `${runDate}_14_publish-surfdash_result.json`);\n        const podcastResult = join(workDir, '31-publish', `${runDate}_16_publish-podcast_result.json`);\n        if (!isFile(sdResult) || !isFile(podcastResult)) {\n            failWith(1, 'patch-surfdash: missing surfdash/podcast publish results — run the publish states first');\n        }\n        const targetOf = (path: string): Record<string, unknown> => {\n            const parsed = readJson(path) as { targets?: Array<Record<string, unknown>> };\n            return parsed.targets?.[0] ?? {};\n        };\n        const sd = targetOf(sdResult);\n        const pod = targetOf(podcastResult);"
+                },
+                {
+                    "citation": "plugins/kk/workflows/kk-daily-publish3.yaml:176",
+                    "context": "        command: 'kk stage run daily-publish-partial \"${vars.work_dir}\" \"${vars.run_date}\"'\n\n  - id: mark-published\n    description: >-\n      after-generate only: mark the run's items published in the store once the owned platforms\n      delivered. Keyed by the voice3 run id the bundle records, never by this publish run.\n    dependsOn: [classify]\n    condition:\n      kind: shell\n      options:\n        command: >-\n          test \"${vars.window}\" = \"after-generate\"\n          && grep -qxE 'full|partial' \"${vars.work_dir}/4-publish/publish-status.after-generate.txt\" 2>/dev/null"
+                },
+                {
+                    "citation": "apps/cli/src/publish-matrix.ts:881",
+                    "context": "        echo(`window ${plan.window}: ${pending.length} target(s) dispatched`);\n        return 0;\n    } catch (err: unknown) {\n        echoError(`publish-matrix-send: ${err instanceof Error ? err.message : String(err)}`);\n        return 1;\n    }\n}\n\n/** Result of one RSS gate probe, written to `4-publish/rss-gate.json`. */\nexport const RssGateResultSchema = z\n    .object({\n        schemaVersion: z.literal(1).default(1),\n        date: z.string().min(1),"
+                },
+                {
+                    "citation": "plugins/kk/scripts/kk-workflow-stages.ts:1373",
+                    "context": "function dailyPublishPartial(args: string[]): void {\n    const [workDir = '', runDate = ''] = args;\n    const result = join(workDir, '31-publish', `${runDate}_17_publish_result.json`);\n    // The marker describes this run, so it belongs under that run's workDir — a cwd-relative path\n    // litters whatever tree the caller stood in and hides the note from the episode it describes.\n    const marker =\n        workDir === ''\n            ? join('.spur', 'run', `publish-partial-${runDate}.txt`)\n            : join(workDir, '.spur', 'run', `publish-partial-${runDate}.txt`);\n    timed(workDir, 'publish-partial', () => {\n        const failed = targetsOf(result)\n            .filter((entry) => entry.ok !== true || entry.status !== 'published')\n            .map((entry) => `${entry.target ?? ''}`)"
+                }
+            ],
+            "taskCheck": {
+                "exitCode": 0,
+                "result": [
+                    {
+                        "wbs": "0333",
+                        "status": "todo",
+                        "findings": [
+                            {
+                                "layer": "L4",
+                                "code": "L4.prerequisite-not-done",
+                                "severity": "warning",
+                                "section": "",
+                                "message": "Prerequisite 0332 is todo; task 0333 is not ready until it is done"
+                            }
+                        ],
+                        "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                        "missingSections": [],
+                        "pass": true,
+                        "notes": [],
+                        "repairs": []
+                    }
+                ]
+            },
+            "executionAdmission": {
+                "exitCode": 1,
+                "result": [
+                    {
+                        "wbs": "0333",
+                        "status": "todo",
+                        "findings": [
+                            {
+                                "layer": "L4",
+                                "code": "L4.prerequisite-not-done",
+                                "severity": "error",
+                                "section": "",
+                                "message": "Prerequisite 0332 is todo; task 0333 is not ready until it is done"
+                            }
+                        ],
+                        "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                        "missingSections": [],
+                        "pass": false,
+                        "notes": [],
+                        "repairs": []
+                    }
+                ]
+            }
+        },
+        {
+            "wbs": "0334",
+            "key": "scheduling",
+            "name": "Prepare correct voice3 migration schedules and an explicit safe channel preset",
+            "priority": "P1",
+            "hours": 6,
+            "deps": ["0329", "0330", "0332"],
+            "findings": ["F08", "F09", "F10", "C01", "C02", "C03", "C04", "C05"],
+            "path": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0334_prepare-correct-voice3-migration-schedules-and-an-explicit-s.md",
+            "status": "todo",
+            "check": [
+                {
+                    "wbs": "0334",
+                    "status": "todo",
+                    "findings": [
+                        {
+                            "layer": "L4",
+                            "code": "L4.prerequisite-not-done",
+                            "severity": "warning",
+                            "section": "",
+                            "message": "Prerequisite 0329 is todo; task 0334 is not ready until it is done"
+                        },
+                        {
+                            "layer": "L4",
+                            "code": "L4.prerequisite-not-done",
+                            "severity": "warning",
+                            "section": "",
+                            "message": "Prerequisite 0330 is todo; task 0334 is not ready until it is done"
+                        },
+                        {
+                            "layer": "L4",
+                            "code": "L4.prerequisite-not-done",
+                            "severity": "warning",
+                            "section": "",
+                            "message": "Prerequisite 0332 is todo; task 0334 is not ready until it is done"
+                        }
+                    ],
+                    "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                    "missingSections": [],
+                    "pass": true,
+                    "notes": [],
+                    "repairs": []
+                }
+            ],
+            "admission": [
+                {
+                    "wbs": "0334",
+                    "status": "todo",
+                    "findings": [
+                        {
+                            "layer": "L4",
+                            "code": "L4.prerequisite-not-done",
+                            "severity": "error",
+                            "section": "",
+                            "message": "Prerequisite 0329 is todo; task 0334 is not ready until it is done"
+                        },
+                        {
+                            "layer": "L4",
+                            "code": "L4.prerequisite-not-done",
+                            "severity": "error",
+                            "section": "",
+                            "message": "Prerequisite 0330 is todo; task 0334 is not ready until it is done"
+                        },
+                        {
+                            "layer": "L4",
+                            "code": "L4.prerequisite-not-done",
+                            "severity": "error",
+                            "section": "",
+                            "message": "Prerequisite 0332 is todo; task 0334 is not ready until it is done"
+                        }
+                    ],
+                    "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                    "missingSections": [],
+                    "pass": false,
+                    "notes": [],
+                    "repairs": []
+                }
+            ],
+            "specificationComplete": true,
+            "executionReady": false,
+            "documentSha256": "e135fc5e58bab0e2a4c04f52ef244ffc7ab300c331d96e6aa864f75b0f05b5c2",
+            "checks": [
+                {
+                    "id": "requirements",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0334_prepare-correct-voice3-migration-schedules-and-an-explicit-s.md: Requirements — 7 observable R-items; explicit non-goals in Design"
+                },
+                {
+                    "id": "design",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0334_prepare-correct-voice3-migration-schedules-and-an-explicit-s.md: Design — named code ownership, frozen names/compatibility policy, algorithm and rejected approaches; current native mapper/safety/receipt APIs inspected"
+                },
+                {
+                    "id": "plan",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0334_prepare-correct-voice3-migration-schedules-and-an-explicit-s.md: Plan — failure cases precede implementation, focused evidence then lint/test/build/rule gates"
+                },
+                {
+                    "id": "ac",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0334_prepare-correct-voice3-migration-schedules-and-an-explicit-s.md: Acceptance Criteria — exact G15 scenario title; all requirements mapped using (req: Rn) with ac_numbering task-local; task check passes"
+                },
+                {
+                    "id": "decisions",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0334_prepare-correct-voice3-migration-schedules-and-an-explicit-s.md: Q&A and Design — closed D1-D4 decisions, no production activation, manual live confirmation; 0334 closes explicit nested publish_live_channels forwarding"
+                },
+                {
+                    "id": "dependencies",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0334_prepare-correct-voice3-migration-schedules-and-an-explicit-s.md: frontmatter dependencies 0329, 0330, 0332; exact inbound/outbound handoffs; graph acyclic. Execution admission waits for unfinished predecessors; no bypass"
+                },
+                {
+                    "id": "premises",
+                    "pass": true,
+                    "evidence": "plugins/kk/schedules/kk-daily-publish3-cn-peak.cron.tmpl:20; apps/cli/src/publish-matrix.ts:295; plugins/kk/workflows/kk-daily-ai-voice3.yaml:23; plugins/kk/publish-presets/daily-ai-voice.json:1; docs/design/kk-daily-ai-voice3.md:232"
+                }
+            ],
+            "premises": [
+                {
+                    "citation": "plugins/kk/schedules/kk-daily-publish3-cn-peak.cron.tmpl:20",
+                    "context": "# `run_date` is computed at tick time in America/Los_Angeles: a run that starts at 17:00 PDT is\n# still \"today\" for the day dir the 04:30 generation wrote.\n0 17 * * * cd {{repo}} && mkdir -p .works/kk-daily-publish3 && PATH=\"{{home}}/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\" TZ=America/Los_Angeles spur workflow run plugins/kk/workflows/kk-daily-publish3.yaml --vars \"{\\\"work_dir\\\":\\\"{{repo}}/.works/kk-daily-publish3/$(TZ=America/Los_Angeles date +%Y%m%d)\\\",\\\"run_date\\\":\\\"$(TZ=America/Los_Angeles date +%F)\\\",\\\"window\\\":\\\"cn-peak\\\",\\\"live_channels\\\":\\\"wechatmp-pub,xhs-pub,weibo-pub,x-pub\\\"}\" >> {{repo}}/.works/kk-daily-publish3/cn-peak.log 2>&1\n"
+                },
+                {
+                    "citation": "apps/cli/src/publish-matrix.ts:295",
+                    "context": "        }\n    }\n    for (const token of [...input.channels, ...input.liveChannels]) {\n        if (!inWindow.some((target) => matches(target, token))) {\n            throw new Error(`channel '${token}' has no target in window '${input.window}'`);\n        }\n    }\n\n    const selected =\n        input.channels.length === 0\n            ? inWindow\n            : inWindow.filter((target) => input.channels.some((token) => matches(target, token)));\n"
+                },
+                {
+                    "citation": "plugins/kk/workflows/kk-daily-ai-voice3.yaml:23",
+                    "context": "  # Card count (voice2's `xhs_cards`, minus the channel name): the card plan targets this many.\n  cards: \"6\"\n  auto_publish: \"false\"\n  publish_window: \"after-generate\"\n  publish_preset: \"\"\n  publish_dummy: \"false\"\n  # Composed by the `prepare` node (`kk daily prepare`), then read back into vars through the\n  # single-node read chain below — shell actions cannot set vars, and a concurrent `setVars` merge\n  # is last-writer-wins, so the DAG exchanges data by fixed paths under work_dir, never by vars.\n  work_dir: \"\"\n  # Digits-only run-date stamp the artifact names carry; projected from <work_dir>/run-date.txt.\n  run_date: \"\"\n  # Store extract window (kk store extract --window). The old workflow's ingestion window was"
+                },
+                {
+                    "citation": "plugins/kk/publish-presets/daily-ai-voice.json:1",
+                    "context": "{\n    \"schemaVersion\": 1,\n    \"name\": \"daily-ai-voice\",\n    \"targets\": [\n        {\n            \"plugin\": \"surfdash-pub\",\n            \"operation\": \"post\",\n            \"variant\": \"article\",\n            \"tier\": 0,\n            \"window\": \"after-generate\",\n            \"mode\": \"draft\","
+                },
+                {
+                    "citation": "docs/design/kk-daily-ai-voice3.md:232",
+                    "context": "- **D1 — accepted:** split generate (voice3) / publish (publish3), joined by `bundle.json`.\n- **D2 — accepted:** channel matrix in a publish preset; config.yaml selects the preset.\n- **D3 — zh everywhere for now:** the audio is zh only, so every channel, overseas included, gets\n  the zh variants. Per-locale variants are revisited once other-language audio exists (the preset's\n  `variant` field is where a locale suffix would go; no schema change needed).\n- **D4 — three windows (§5a):** draft-capable targets → drafts right after generation; no-draft\n  domestic targets → live at 09:00 Beijing; overseas → 07:00 PDT behind the RSS gate, a miss\n  triggers `diagnose`. Windows are re-tuned later from engagement data — a preset edit only.\n- Approval / monitoring console: out of scope; integration surface reserved in §5b.\n\n## 10. Follow-up tasks found while reviewing (T-a…T-e shipped 2026-10-22/23; T-f, T-g open)\n\nTracked as feature **G15** (under G1): T-a → 0321, T-b → 0322, T-c → 0325, T-d → 0326, T-e → 0327, publish3 → 0323, voice3 → 0324, T-f → 0328 (E9; LinkedIn first). Surface frozen 2026-10-22 as `kk stage run publish-matrix-*` (no new `kk publish` noun, so no ADR-037 inventory change)."
+                }
+            ],
+            "taskCheck": {
+                "exitCode": 0,
+                "result": [
+                    {
+                        "wbs": "0334",
+                        "status": "todo",
+                        "findings": [
+                            {
+                                "layer": "L4",
+                                "code": "L4.prerequisite-not-done",
+                                "severity": "warning",
+                                "section": "",
+                                "message": "Prerequisite 0329 is todo; task 0334 is not ready until it is done"
+                            },
+                            {
+                                "layer": "L4",
+                                "code": "L4.prerequisite-not-done",
+                                "severity": "warning",
+                                "section": "",
+                                "message": "Prerequisite 0330 is todo; task 0334 is not ready until it is done"
+                            },
+                            {
+                                "layer": "L4",
+                                "code": "L4.prerequisite-not-done",
+                                "severity": "warning",
+                                "section": "",
+                                "message": "Prerequisite 0332 is todo; task 0334 is not ready until it is done"
+                            }
+                        ],
+                        "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                        "missingSections": [],
+                        "pass": true,
+                        "notes": [],
+                        "repairs": []
+                    }
+                ]
+            },
+            "executionAdmission": {
+                "exitCode": 1,
+                "result": [
+                    {
+                        "wbs": "0334",
+                        "status": "todo",
+                        "findings": [
+                            {
+                                "layer": "L4",
+                                "code": "L4.prerequisite-not-done",
+                                "severity": "error",
+                                "section": "",
+                                "message": "Prerequisite 0329 is todo; task 0334 is not ready until it is done"
+                            },
+                            {
+                                "layer": "L4",
+                                "code": "L4.prerequisite-not-done",
+                                "severity": "error",
+                                "section": "",
+                                "message": "Prerequisite 0330 is todo; task 0334 is not ready until it is done"
+                            },
+                            {
+                                "layer": "L4",
+                                "code": "L4.prerequisite-not-done",
+                                "severity": "error",
+                                "section": "",
+                                "message": "Prerequisite 0332 is todo; task 0334 is not ready until it is done"
+                            }
+                        ],
+                        "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                        "missingSections": [],
+                        "pass": false,
+                        "notes": [],
+                        "repairs": []
+                    }
+                ]
+            }
+        },
+        {
+            "wbs": "0335",
+            "key": "rehearsal",
+            "name": "Prove voice3 replacement with a fresh offline multi-window migration rehearsal",
+            "priority": "P2",
+            "hours": 8,
+            "deps": ["0333", "0334"],
+            "findings": ["F22", "C01", "C02", "C03", "C04", "C05"],
+            "path": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0335_prove-voice3-replacement-with-a-fresh-offline-multi-window-m.md",
+            "status": "todo",
+            "check": [
+                {
+                    "wbs": "0335",
+                    "status": "todo",
+                    "findings": [
+                        {
+                            "layer": "L4",
+                            "code": "L4.prerequisite-not-done",
+                            "severity": "warning",
+                            "section": "",
+                            "message": "Prerequisite 0333 is todo; task 0335 is not ready until it is done"
+                        },
+                        {
+                            "layer": "L4",
+                            "code": "L4.prerequisite-not-done",
+                            "severity": "warning",
+                            "section": "",
+                            "message": "Prerequisite 0334 is todo; task 0335 is not ready until it is done"
+                        }
+                    ],
+                    "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                    "missingSections": [],
+                    "pass": true,
+                    "notes": [],
+                    "repairs": []
+                }
+            ],
+            "admission": [
+                {
+                    "wbs": "0335",
+                    "status": "todo",
+                    "findings": [
+                        {
+                            "layer": "L4",
+                            "code": "L4.prerequisite-not-done",
+                            "severity": "error",
+                            "section": "",
+                            "message": "Prerequisite 0333 is todo; task 0335 is not ready until it is done"
+                        },
+                        {
+                            "layer": "L4",
+                            "code": "L4.prerequisite-not-done",
+                            "severity": "error",
+                            "section": "",
+                            "message": "Prerequisite 0334 is todo; task 0335 is not ready until it is done"
+                        }
+                    ],
+                    "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                    "missingSections": [],
+                    "pass": false,
+                    "notes": [],
+                    "repairs": []
+                }
+            ],
+            "specificationComplete": true,
+            "executionReady": false,
+            "documentSha256": "1baed0a74006b841ec2637d6df4a2570d20166079325db9c4e5ee5eb2bf908de",
+            "checks": [
+                {
+                    "id": "requirements",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0335_prove-voice3-replacement-with-a-fresh-offline-multi-window-m.md: Requirements — 6 observable R-items; explicit non-goals in Design"
+                },
+                {
+                    "id": "design",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0335_prove-voice3-replacement-with-a-fresh-offline-multi-window-m.md: Design — named code ownership, frozen names/compatibility policy, algorithm and rejected approaches; current native mapper/safety/receipt APIs inspected"
+                },
+                {
+                    "id": "plan",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0335_prove-voice3-replacement-with-a-fresh-offline-multi-window-m.md: Plan — failure cases precede implementation, focused evidence then lint/test/build/rule gates"
+                },
+                {
+                    "id": "ac",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0335_prove-voice3-replacement-with-a-fresh-offline-multi-window-m.md: Acceptance Criteria — exact G15 scenario title; all requirements mapped using (req: Rn) with ac_numbering task-local; task check passes"
+                },
+                {
+                    "id": "decisions",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0335_prove-voice3-replacement-with-a-fresh-offline-multi-window-m.md: Q&A and Design — closed D1-D4 decisions, no production activation, manual live confirmation; 0334 closes explicit nested publish_live_channels forwarding"
+                },
+                {
+                    "id": "dependencies",
+                    "pass": true,
+                    "evidence": "/Users/robin/xprojects/knowledge-kit/docs/tasks/0335_prove-voice3-replacement-with-a-fresh-offline-multi-window-m.md: frontmatter dependencies 0333, 0334; exact inbound/outbound handoffs; graph acyclic. Execution admission waits for unfinished predecessors; no bypass"
+                },
+                {
+                    "id": "premises",
+                    "pass": true,
+                    "evidence": "apps/cli/tests/voice3-dag.test.ts:138; apps/cli/tests/kk-daily-publish3.test.ts:55; apps/cli/tests/kk-daily-publish3.test.ts:411"
+                }
+            ],
+            "premises": [
+                {
+                    "citation": "apps/cli/tests/voice3-dag.test.ts:138",
+                    "context": "});\n\ndescribe('kk-daily-ai-voice3 shape (0324 R1, R3, R4)', () => {\n    const yaml = readFileSync(WORKFLOW, 'utf-8');\n\n    it('carries no channel enablement switch and no publish plugin', () => {\n        // Comments may NAME the removed switches (the graph explains why they are gone); what must not\n        // exist is a declared var or a templated reference to one.\n        for (const token of ['xhs_enabled', 'wechat_enabled', 'xhs_live', 'wechat_live', 'publish_enabled']) {\n            expect({ token, declared: new RegExp(`^  ${token}:`, 'm').test(yaml) }).toEqual({ token, declared: false });\n            expect({ token, referenced: yaml.includes(`\\${vars.${token}}`) }).toEqual({ token, referenced: false });\n        }\n        for (const plugin of ['surfdash-pub', 'podcast-pub', 'wechatmp-pub', 'xhs-pub', 'weibo-pub', 'threads-pub']) {"
+                },
+                {
+                    "citation": "apps/cli/tests/kk-daily-publish3.test.ts:55",
+                    "context": "if [ \"$1\" = \"stage\" ] && [ \"$2\" = \"run\" ]; then\n  case \"$STAGE\" in\n    publish-matrix-wait-until)\n      echo \"shim: wait-until recorded, not slept\"\n      exit 0\n      ;;\n    publish-matrix-check)\n      # A real probe spawns the channel's own \\`kk plugin check\\` with a 60 s budget; this suite is\n      # not about session readiness and its own unit test covers the probe loop.\n      echo \"shim: check recorded, not probed\"\n      exit 0\n      ;;\n    publish-matrix-rss-gate)"
+                },
+                {
+                    "citation": "apps/cli/tests/kk-daily-publish3.test.ts:411",
+                    "context": "    }, 60_000);\n\n    it('keeps a repeatable artifact of these runs for the operator', () => {\n        mkdirSync(ARTIFACTS, { recursive: true });\n        writeFileSync(\n            join(ARTIFACTS, 'windows.md'),\n            [\n                '# publish3 window rehearsal (task 0323)',\n                '',\n                'Every row dummy, local feed fixture, no plugin process.',\n                '',\n                '| window | planned | status |',\n                '| --- | --- | --- |',"
+                }
+            ],
+            "taskCheck": {
+                "exitCode": 0,
+                "result": [
+                    {
+                        "wbs": "0335",
+                        "status": "todo",
+                        "findings": [
+                            {
+                                "layer": "L4",
+                                "code": "L4.prerequisite-not-done",
+                                "severity": "warning",
+                                "section": "",
+                                "message": "Prerequisite 0333 is todo; task 0335 is not ready until it is done"
+                            },
+                            {
+                                "layer": "L4",
+                                "code": "L4.prerequisite-not-done",
+                                "severity": "warning",
+                                "section": "",
+                                "message": "Prerequisite 0334 is todo; task 0335 is not ready until it is done"
+                            }
+                        ],
+                        "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                        "missingSections": [],
+                        "pass": true,
+                        "notes": [],
+                        "repairs": []
+                    }
+                ]
+            },
+            "executionAdmission": {
+                "exitCode": 1,
+                "result": [
+                    {
+                        "wbs": "0335",
+                        "status": "todo",
+                        "findings": [
+                            {
+                                "layer": "L4",
+                                "code": "L4.prerequisite-not-done",
+                                "severity": "error",
+                                "section": "",
+                                "message": "Prerequisite 0333 is todo; task 0335 is not ready until it is done"
+                            },
+                            {
+                                "layer": "L4",
+                                "code": "L4.prerequisite-not-done",
+                                "severity": "error",
+                                "section": "",
+                                "message": "Prerequisite 0334 is todo; task 0335 is not ready until it is done"
+                            }
+                        ],
+                        "requiredSections": ["Background", "Acceptance Criteria", "Design", "Plan"],
+                        "missingSections": [],
+                        "pass": false,
+                        "notes": [],
+                        "repairs": []
+                    }
+                ]
+            }
+        }
+    ],
+    "featureCheck": {
+        "exitCode": 0,
+        "result": [
+            {
+                "id": "G15",
+                "status": "active",
+                "findings": [
+                    {
+                        "layer": "L4",
+                        "code": "L4.scenario-unverified",
+                        "severity": "warning",
+                        "section": "Acceptance Criteria",
+                        "message": "Feature scenario \"R12 — Fresh voice3 runs select current items and freeze complete validated bundles\" is linked but unverified: covering task(s) 0329 have no PASS verdict with MET requirement"
+                    },
+                    {
+                        "layer": "L4",
+                        "code": "L4.scenario-unverified",
+                        "severity": "warning",
+                        "section": "Acceptance Criteria",
+                        "message": "Feature scenario \"R13 — Draft and dummy launches never publish live on any selected operation\" is linked but unverified: covering task(s) 0330 have no PASS verdict with MET requirement"
+                    },
+                    {
+                        "layer": "L4",
+                        "code": "L4.scenario-unverified",
+                        "severity": "warning",
+                        "section": "Acceptance Criteria",
+                        "message": "Feature scenario \"R14 — Every real publish variant carries current platform-aware safety evidence\" is linked but unverified: covering task(s) 0331 have no PASS verdict with MET requirement"
+                    },
+                    {
+                        "layer": "L4",
+                        "code": "L4.scenario-unverified",
+                        "severity": "warning",
+                        "section": "Acceptance Criteria",
+                        "message": "Feature scenario \"R15 — Window sends bind receipts and RSS proof to one bundle revision\" is linked but unverified: covering task(s) 0332 have no PASS verdict with MET requirement"
+                    },
+                    {
+                        "layer": "L4",
+                        "code": "L4.scenario-unverified",
+                        "severity": "warning",
+                        "section": "Acceptance Criteria",
+                        "message": "Feature scenario \"R16 — Receipt outcomes drive safe retries settlement and mixed dummy tails\" is linked but unverified: covering task(s) 0333 have no PASS verdict with MET requirement"
+                    },
+                    {
+                        "layer": "L4",
+                        "code": "L4.scenario-unverified",
+                        "severity": "warning",
+                        "section": "Acceptance Criteria",
+                        "message": "Feature scenario \"R17 — Rendered migration schedules resolve the correct bundle and approval model\" is linked but unverified: covering task(s) 0334 have no PASS verdict with MET requirement"
+                    },
+                    {
+                        "layer": "L4",
+                        "code": "L4.scenario-unverified",
+                        "severity": "warning",
+                        "section": "Acceptance Criteria",
+                        "message": "Feature scenario \"R18 — Offline migration rehearsal proves the complete voice3 replacement contract\" is linked but unverified: covering task(s) 0335 have no PASS verdict with MET requirement"
+                    }
+                ],
+                "requiredSections": [],
+                "missingSections": [],
+                "pass": true,
+                "notes": [],
+                "repairs": []
+            }
+        ]
+    },
+    "planningDigest": "not computed: source-local Spur readiness implementation is unavailable in this checkout; documentSha256 is an ordinary document snapshot, not a Spur planning digest",
+    "rulePrecheck": {
+        "exitCode": 0,
+        "preset": "recommended-pre-check",
+        "ruleCount": 58,
+        "findings": [],
+        "fixes": []
+    },
+    "diffWhitespaceCheck": {
+        "command": "git diff --check",
+        "exitCode": 0
+    }
+}
