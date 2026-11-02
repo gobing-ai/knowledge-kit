@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.53.0
+version: 2.54.0
 created_at: 2026-07-22
-updated_at: 2026-10-22
+updated_at: 2026-11-01
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -1038,6 +1038,60 @@ future ones — gets authoritative timing and token figures without kk-owned tim
   `KK_SPUR_BIN` overrides the `spur` binary (tests, non-PATH installs).
 
 ### 1.11 `schedule` — shipped (task 0208)
+
+**Daily supervision (task 0338).** `bun plugins/kk/scripts/daily-scheduled-run.ts --repo <checkout>
+--works-dir <works-root> --agent <executor> --retry-agent <executor>` launches the existing voice2
+workflow with explicit `publish_enabled=true` and `skip_review=true`. It preserves channel draft/live
+settings. The optional `--run-id`, `--receipt`, and positive `--timeout-ms` (default 13,500,000 ms,
+below the scheduler's four-hour limit) support repeatable diagnostics and bounded execution. Owned
+process groups are stopped on timeout/signals; the parent and `<run-id>-safety` run records are
+cancelled by id, and the ledger is synced after termination. The default receipt is
+`<works-root>/kk-daily-ai-voice2/<local YYYYMMDD>/schedule-receipt.json`.
+Failed runs release their store reservations only when their own identified trace proves no
+channel-send action began. An attempted or uncertain send, unreadable trace or failed release
+retains reservations; the receipt records that distinction.
+
+The receipt distinguishes process failure, interruption, timeout, no-content and incomplete
+delivery. `--required-channels` is a comma-separated enabled tail-channel list (default
+`wechat,locales,cms-resync`, matching the installed voice2 configuration; disabled XHS is excluded).
+Exit 0 requires a successful workflow, a `full` primary publication marker and exactly one `done`
+completeness row for each required channel; exit 4
+denotes no-content/incomplete delivery, 124 a timeout and 143 interruption. Underlying nonzero
+workflow exit codes are retained. The receipt includes `channelCompleteness` and
+`missingRequiredChannels`; primary settlement remains separate from tail-channel completion.
+Installing this launcher requires operator approval. It was activated on November 1 following
+Robin's approval; evidence is in `docs/report/2026-11-01-daily-ai-news-recovery.md`.
+
+**Planning caches (task 0338).** `daily-plan` and `daily-qc-content` write adjacent SHA-256 cache
+fingerprints over decisive input bytes and settings. A changed pool, item cap, QC threshold,
+duration floor or driver invalidates the relevant cache. A successful reevaluation removes an old
+floor-refusal artifact. Changing the plan after authored downstream artifacts exist refuses with
+an actionable error rather than silently mixing those artifacts with a different source plan.
+
+**Primary publication receipts (task 0338).** `kk daily publish-classify` preserves observed successes
+when another primary receipt is absent or malformed. `full` requires exactly one published success
+for each of `surfdash-pub` and `podcast-pub`; duplicate or unrelated targets cannot establish it.
+Output includes `issues[]` for invalid receipts and `completenessError` when the completeness stage
+fails or produces an invalid result. That probe failure downgrades `full` to `partial` and appears
+in `missing[]`; independent channel gaps remain separately reported.
+
+**Interrupted send recovery (task 0338).** Podcast create requests use a deterministic UUID
+idempotency key over canonical request data and audio content identity, retaining the backend's
+existing 24-hour idempotency window. Temporary audio path changes do not create a new identity;
+changed content or media does. The Surfdash stage journals an intent before dispatch and records
+`metadata.deliveryState: uncertain` when the dispatch has no usable receipt. That state must be
+reconciled with the dated remote post before replay; an absent local receipt never proves a remote
+send did not happen. Publisher failures are replayable only when their metadata explicitly says
+`deliveryState: not-sent`; failures during or after postsurfing are `uncertain`.
+
+**Safety control flow (task 0338; activated November 1).** Primary and fallback safety
+producers use distinct states with artifact-contract guards. Review and judge calls have 20-minute
+deadlines; remediation calls have 10-minute deadlines. `unattended` defaults to `false`; voice2
+forwards `skip_review`. A genuine gate-status `escalate` refuses unattended publication, while a
+decision-backend fallback cannot override an otherwise admitted gate. Remediation completion uses
+`24-script/<date>_09_safety-revise_attempt.json` plus digest and structural checks, never a Git-diff
+requirement on ignored run artifacts. Unchanged remediation still spends the existing bounded
+budget before admission-only exclusions are classified.
 
 `kk schedule render <schedule> --platform launchd|cron [--repo <dir>]` prints the scheduling
 artifact for a shipped schedule from `plugins/kk/schedules/`, with `{{repo}}` bound to the `--repo`

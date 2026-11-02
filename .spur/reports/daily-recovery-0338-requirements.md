@@ -1,0 +1,5 @@
+- [ ] R1. Preserve valid primary safety artifacts, retry only missing or invalid outputs, bound agent calls, and retain fail-closed draft-integrity checks.
+- [ ] R2. Recompute stale plan/QC caches when their decisive inputs change, allowing a no-content refusal to recover without manual file deletion or relaxed quality gates.
+- [ ] R3. Derive primary publish classification from actual named receipts and never promote store selections to published unless both required primary channels published.
+- [ ] R4. Record dated scheduler/run/channel evidence and honestly distinguish generation, primary publication, optional channel failures and unavailable authentication.
+- [ ] R5. Verify through failure-first automated behavior checks, required project gates and a fresh isolated workflow rehearsal; activate only approved runtime changes, with no historical backfill or duplicate live sends.

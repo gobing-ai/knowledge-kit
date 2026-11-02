@@ -1,0 +1,5 @@
+- [x] Trace historical scheduler, agent sessions, channel readiness and installed runtime; preserve baseline changes.
+- [x] Write failure-first safety retry, cache recovery and primary receipt regression checks.
+- [x] Apply minimal source fixes and prepare reviewed scheduler/runtime changes. Active workflow promotion and runtime activation remain pending approval.
+- [ ] Run focused behavior checks, project lint/tests/build/rules and review final diff.
+- [ ] Run isolated fresh rehearsal, activate approved fixes and verify tomorrow's schedule; record limitations and evidence.

@@ -1,5 +1,39 @@
 # E92 runall batch session memory (appended 2026-10-06)
 
+## 2026-11-01 — daily AI news outage recovery (0338, active)
+
+- User scope: investigate every missed generation/delivery since October 26; repair tomorrow's
+  unattended path, without historical backfill. Preserve starting publish-matrix/corpus edits.
+- Evidence report: `docs/report/2026-11-01-daily-ai-news-recovery.md`; task 0338 remains wip.
+- Scheduler fired daily: October 26 no-content, October 27–29 hit four-hour outer kill (queue
+  evidence), October 30–November 1 failed nested safety. Primary safety artifacts were valid, but
+  unconditional Claude retries removed expectFile before expired-OAuth failure. Gate correctly blocked.
+- Source fixes: input-aware plan/QC caches with downstream guards; exact primary receipt classifier;
+  stable podcast create idempotency; conservative Surfdash send intent/uncertainty; folded YAML list
+  parser; supervised scheduled launcher with owned-tree teardown, terminal receipts and conservative
+  pre-send reservation recovery. Safety helper validates full judge contract and unattended escalations.
+- Reviewable workflow replacements and scheduler command are under
+  `.spur/reports/daily-recovery-prepared/`; `deployment/` copies reference active paths, not reports.
+  Active workflows, scheduler config, installed package and production selections remain unchanged.
+- Approval was explicitly requested via async UI for workflow edits/runtime activation; no answer
+  has arrived. A separate pending question asks whether to restore installed channels or expand them.
+  Generic "continue" did not specify workflow/runtime or channel changes. Do not infer expansion.
+- External blocker: saved WeChat authentication expired; XHS intentionally disabled. Podcast API
+  authenticated GET 200; synthetic VoxCPM render 3.68s; actual configured codex-sol safety rehearsal
+  completed clean in 180s (review78s/judge86s). No news edition or post regenerated/sent.
+- Forty-six selected rows from six proven pre-publication failed runs remain reserved. CLI release
+  simulation on SQLite backup increases eligible168h pool22→67. Release live only with runtime scope.
+- Checks: focused prepared safety/cache/launcher29 pass335 assertions; latest safety25pass176;
+  Surfdash recovery/plugin70pass0fail. Build/typecheck and changed-source Biome pass; pre58/post2
+  rules pass. Initial full suite4303pass3existing skip2known active-safety regression failures.
+  Final candidate suite (prepared safety via KK_SAFETY_WORKFLOW): 4,319 pass, 3 existing skips,
+  0 failed assertions, 21,938 assertions; exit 1 solely digest-check functions 88.89%. An equivalent
+  explicit fallback loop removes unnecessary unexercised callbacks; 45 existing tests still pass,
+  module coverage 100% functions / 94.97% lines.
+  Full gate on promoted files still required before closure; logs/evidence under
+  `.works/tmp/test-daily-recovery/`. Repository lint fails pre-existing reports JSON formatting;
+  do not rewrite unrelated reports. No final verify PASS or production-readiness claim yet.
+
 ## State
 Worktree `/Users/robin/xprojects/kk-runall-e92`, branch `sp/runall-e92-20261006-100124`, base 9943fa4b.
 Marker (invoking tree): `/Users/robin/xprojects/knowledge-kit/.spur/run/batch-e92-wt.json` (status active).
@@ -77,3 +111,10 @@ Tasks 0200–0204 all in `testing`. Recipe replay per task: (a) spur task show �
   then `spur feature sync G9` (or `spur task wrapup feature-transition`).
 - NEXT: close `0304` (its item is fixed), then attempt the G9 `verifying → done` transition after the
   plugin install.
+
+## 2026-10-26 · 20261025 daily AI voice recovery → fully published
+
+- Goal: root-cause 2026-10-25 no-content closure; drive to all-published. Outcome: surfdash (zh/en/ja) + podcast ALL LIVE; publish-classify `full`; 3 selections marked published; run-report real (3 items); ledger synced. Open: wechat only (QR login expired, awaiting Robin).
+- Root cause of the digest-gate failure: surfdash-pub's line-based YAML parser (`plugins/publishings/surfdash-pub/src/digest-check.ts`) read `- >-` folded block-list items as literal `">-"`; the refine writer folds long CJK bullets to `>-`. FIXED in the project copy (block-list items matching `/^[>|][+-]?$/` now consume indented continuation lines) — UNCOMMITTED, dist copy in the global install still stale.
+- ja trap: `topicPhrase()` (seo-digest.ts) splits headings on `[，,：:（(—–|]` — `、` is NOT in the set; ja headings must use `：` or `sharedKeyPointPlan` (retitle.ts:198, intersects per-locale fillable slots) collapses slots for ALL locales (one locale fails → all shrink).
+- Recovery mechanics: stage arg `$WD` must be exported before use (prefix-assignment `WD=… kk stage … "$WD"` expands empty); tail verbs are `kk daily publish-classify --fold-tail` and `kk daily run-report --candidates <qc> --pool <docs>` (no flags → false no-content; post-mark-published `10-collect/pool.json` is empty by design — use `21-plan/*_03_plan_content.json` as the run's pool evidence); result-file repair: `_14/_17` surfdash entry + translate-localize markers → then `kk stage daily-translate-sync` and `daily-patch-surfdash` (args: workDir runDate surfdashRoot pluginsPath) write their own `_24`/`_23` artifacts; ledger `append` is idempotent — re-render impossible, stale Result cell hand-corrected with note.

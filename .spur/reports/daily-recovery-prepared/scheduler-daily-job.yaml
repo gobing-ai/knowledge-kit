@@ -1,0 +1,11 @@
+      # Supervised local 04:30 daily run; explicit publishing/review vars and works root.
+      # Internal 3h45m deadline closes owned runs before the outer four-hour kill.
+      # codex-sol passed a real artifact-write probe during the 2026-11-01 recovery.
+      - name: kk-daily-ai-voice
+        cron: "30 4 * * *"
+        timeoutMs: 14400000
+        command: >-
+          bun plugins/kk/scripts/daily-scheduled-run.ts
+          --repo /Users/robin/xprojects/knowledge-kit
+          --works-dir /Users/robin/xprojects/knowledge-kit/.works
+          --agent codex-sol --retry-agent codex-sol
