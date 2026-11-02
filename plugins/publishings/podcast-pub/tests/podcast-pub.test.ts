@@ -460,6 +460,69 @@ describe('podcast-pub publish (R1/R3)', () => {
         });
     });
 
+    test('retries an uncertain create with the same key while changing content or media changes it', async () => {
+        await withEnv({ ...VALID_ENV }, async () => {
+            const committed = new Map<string, string>();
+            let createAttempts = 0;
+            let api: { requests: CapturedRequest[]; restore: () => void };
+            api = installFakeApi([
+                {
+                    match: (r) => r.method === 'POST' && r.url.endsWith('/api/v1/items'),
+                    respond: () => {
+                        const request = api.requests.at(-1);
+                        const key = request?.headers.get('Idempotency-Key');
+                        if (!key) throw new Error('missing idempotency key');
+                        let itemId = committed.get(key);
+                        if (!itemId) {
+                            itemId = `REPLAY${committed.size + 1}`;
+                            committed.set(key, itemId);
+                        }
+                        createAttempts += 1;
+                        // Simulate a remote create that committed before the response was lost.
+                        if (createAttempts === 1) throw new Error('connection reset after remote create');
+                        return new Response(JSON.stringify({ id: itemId }), { status: 201 });
+                    },
+                },
+                {
+                    match: (r) => r.method === 'GET' && r.url.includes('/api/v1/items/'),
+                    respond: () => new Response(JSON.stringify({ version: '1.1', items: [] }), { status: 200 }),
+                },
+            ]);
+            try {
+                const original = { content: episodeContent({ audioUrl: 'https://cdn.example.com/ep1.mp3' }) };
+                const first = await new PodcastPubTransport().publish(original);
+                const replay = await new PodcastPubTransport().publish(original);
+                const changedContent = await new PodcastPubTransport().publish({
+                    content: {
+                        ...episodeContent({ audioUrl: 'https://cdn.example.com/ep1.mp3' }),
+                        title: 'Episode 2: Changed',
+                        body: '# Episode 2: Changed\n\nDifferent show notes body.',
+                    },
+                });
+                const changedEpisode = await new PodcastPubTransport().publish({
+                    content: episodeContent({ audioUrl: 'https://cdn.example.com/ep2.mp3' }),
+                });
+
+                expect(first.ok).toBe(false);
+                expect(first.error).toContain('connection reset after remote create');
+                expect(replay.ok).toBe(true);
+                expect(changedContent.ok).toBe(true);
+                expect(changedEpisode.ok).toBe(true);
+
+                const creates = api.requests.filter((request) => request.method === 'POST');
+                expect(creates).toHaveLength(4);
+                const keys = creates.map((request) => request.headers.get('Idempotency-Key'));
+                expect(keys[0]).toMatch(/^[0-9a-f-]{36}$/);
+                expect(keys[0]).toBe(keys[1]);
+                expect(keys[2]).not.toBe(keys[0]);
+                expect(keys[3]).not.toBe(keys[0]);
+                expect(keys[3]).not.toBe(keys[2]);
+            } finally {
+                api.restore();
+            }
+        });
+    });
+
     test('a .wav audioFile is refused before any microfeed request (R3)', async () => {
         await withEnv({ ...VALID_ENV }, async () => {
             const api = installFakeApi([]);

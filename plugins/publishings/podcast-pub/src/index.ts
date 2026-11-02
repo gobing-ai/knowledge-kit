@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { basename, dirname, extname } from 'node:path';
@@ -306,29 +307,72 @@ function shapedEpisode(episode: EpisodeMapping, fields: PreparedEpisodeFields): 
     };
 }
 
+/**
+ * Canonical JSON for the create request fingerprint. The API's idempotency window is only 24h,
+ * so the key must be stable across a process restart while remaining different for a changed body.
+ * Object-key ordering is normalized because callers build the same logical payload in more than
+ * one branch (hosted audio and the draft half of local-audio publishing).
+ */
+function canonicalJson(value: unknown): string {
+    if (value === null || value === undefined) return 'null';
+    if (typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value);
+    if (typeof value === 'number') return Number.isFinite(value) ? JSON.stringify(value) : 'null';
+    if (Array.isArray(value)) return `[${value.map((entry) => canonicalJson(entry)).join(',')}]`;
+    if (typeof value === 'object') {
+        const entries = Object.entries(value as Record<string, unknown>)
+            .filter(([, entry]) => entry !== undefined)
+            .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+        return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`).join(',')}}`;
+    }
+    return JSON.stringify(String(value));
+}
+
+/** RFC 4122 UUIDv5-shaped key; microfeed validates Idempotency-Key as a UUID. */
+function deterministicUuid(name: string): string {
+    // The URL namespace is only a stable namespace marker; the payload remains the name input.
+    const namespace = Buffer.from('6ba7b8119dad11d180b400c04fd430c8', 'hex');
+    const digest = createHash('sha1').update(namespace).update(name, 'utf8').digest();
+    digest[6] = ((digest[6] ?? 0) & 0x0f) | 0x50;
+    digest[8] = ((digest[8] ?? 0) & 0x3f) | 0x80;
+    const hex = digest.subarray(0, 16).toString('hex');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/**
+ * Derives the caller-supplied create key from the exact request body and its primary media.
+ * Local audio uses content identity rather than its temporary path, so a resumed run can replay
+ * the same draft even when the workspace path changes.
+ */
+function createItemIdempotencyKey(body: MicrofeedItemInput, mediaIdentity: string): string {
+    return deterministicUuid(canonicalJson({ mediaIdentity, payload: body }));
+}
+
 /** First createItem carries the slug. A 409 retries once as `{slug}-2`, then publishes with no slug. */
 async function createEpisodeItem(
     client: MicrofeedClient,
     body: MicrofeedItemInput,
     slug: string | undefined,
     warnings: string[],
+    mediaIdentity: string,
 ): Promise<string> {
+    const create = (input: MicrofeedItemInput): Promise<string> =>
+        client.createItem(input, createItemIdempotencyKey(input, mediaIdentity));
     const withSlug = (itemSlug: string): MicrofeedItemInput => {
         const micro = (body._microfeed as Record<string, unknown> | undefined) ?? {};
         return { ...body, _microfeed: { ...micro, slug: itemSlug } };
     };
-    if (!slug) return client.createItem(body, crypto.randomUUID());
+    if (!slug) return create(body);
     try {
-        return await client.createItem(withSlug(slug), crypto.randomUUID());
+        return await create(withSlug(slug));
     } catch (error: unknown) {
         if (!(error instanceof MicrofeedRequestError) || error.status !== 409) throw error;
         const retry = `${slug}-2`;
         try {
-            return await client.createItem(withSlug(retry), crypto.randomUUID());
+            return await create(withSlug(retry));
         } catch (retryError: unknown) {
             if (!(retryError instanceof MicrofeedRequestError) || retryError.status !== 409) throw retryError;
             warn(`slug "${slug}" conflicted (HTTP 409); publishing without a custom slug`, warnings);
-            return client.createItem(body, crypto.randomUUID());
+            return create(body);
         }
     }
 }
@@ -464,6 +508,15 @@ async function publishEpisode(
     const seo = mergeSocial(fields.seo, social);
     episode = shapedEpisode(episode, fields);
 
+    let localAudioBytes: Uint8Array | undefined;
+    let mediaIdentity: string;
+    if (episode.audio.kind === 'url') {
+        mediaIdentity = `audio-url:${episode.audio.url}\0${episode.audio.mimeType}`;
+    } else {
+        localAudioBytes = new Uint8Array(await readFile(episode.audio.path));
+        mediaIdentity = `audio-file-sha256:${createHash('sha256').update(localAudioBytes).digest('hex')}\0${episode.audio.mimeType}`;
+    }
+
     if (episode.audio.kind === 'url') {
         const itemId = await createEpisodeItem(
             client,
@@ -476,6 +529,7 @@ async function publishEpisode(
             },
             fields.slug,
             fields.warnings,
+            mediaIdentity,
         );
         // Best-effort canonical-URL enrichment: the episode is already published, so a failed
         // follow-up GET (or an unparsable response) falls back to publicItemUrl's own chain.
@@ -506,10 +560,13 @@ async function publishEpisode(
         },
         fields.slug,
         fields.warnings,
+        mediaIdentity,
     );
 
     // Phase 2-3: presign against the draft, then PUT the raw bytes.
-    const bytes = new Uint8Array(await readFile(episode.audio.path));
+    // The bytes were read before create so their digest can make a resumed create idempotent.
+    const bytes = localAudioBytes;
+    if (!bytes) return fail('local audio identity was not prepared before item creation');
     const prepared = await client.prepareUpload({
         category: 'audio',
         full_local_file_path: episode.audio.path,
