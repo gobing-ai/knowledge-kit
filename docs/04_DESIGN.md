@@ -1047,7 +1047,7 @@ below the scheduler's four-hour limit) support repeatable diagnostics and bounde
 process groups are stopped on timeout/signals; the parent and `<run-id>-safety` run records are
 cancelled by id, and the ledger is synced after termination. The default receipt is
 `<works-root>/kk-daily-ai-voice2/<local YYYYMMDD>/schedule-receipt.json`.
-Failed runs release their store reservations only when their own identified trace proves no
+Failed and terminal no-content runs release their store reservations only when their own identified trace proves no
 channel-send action began. An attempted or uncertain send, unreadable trace or failed release
 retains reservations; the receipt records that distinction.
 

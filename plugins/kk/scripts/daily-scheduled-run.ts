@@ -133,21 +133,25 @@ if (child.pid !== undefined && (timedOut || interrupted || exitCode !== 0)) {
     await Bun.sleep(100);
 }
 const workflowStatus = timedOut ? 'timed-out' : interrupted ? 'interrupted' : exitCode === 0 ? 'done' : 'failed';
+const primaryPublishStatus = readOptional(join(workDir, '31-publish', `${stamp}_17_publish_publish-status.txt`));
+const runSummary = readOptional(join(workDir, 'run-report.summary.txt'));
 const cleanup: { command: string; exitCode: number | null }[] = [];
 let reservationRecovery: { status: string; reason: string; released?: number } = {
     status: 'retained',
     reason: 'workflow completed; publication settlement owns its reservations',
 };
-if (workflowStatus !== 'done') {
+if (workflowStatus !== 'done' || runSummary?.startsWith('no-content:')) {
     // The caller gives the nested safety run this exact id. Unknown/already-terminal ids are
     // harmless cleanup failures; they never override the original workflow failure.
-    for (const id of [`${runId}-safety`, runId]) {
-        const result = spawnSync('spur', ['workflow', 'cancel', id, '--json'], {
-            cwd: repo,
-            encoding: 'utf-8',
-            timeout: 20000,
-        });
-        cleanup.push({ command: `spur workflow cancel ${id}`, exitCode: result.status });
+    if (workflowStatus !== 'done') {
+        for (const id of [`${runId}-safety`, runId]) {
+            const result = spawnSync('spur', ['workflow', 'cancel', id, '--json'], {
+                cwd: repo,
+                encoding: 'utf-8',
+                timeout: 20000,
+            });
+            cleanup.push({ command: `spur workflow cancel ${id}`, exitCode: result.status });
+        }
     }
     // Only a complete trace proving no channel send began permits recycling reservations. A
     // missing receipt alone is insufficient: a remote send may have succeeded before it crashed.
@@ -177,7 +181,7 @@ if (workflowStatus !== 'done') {
             trace.status === 0 &&
             parsed.run?.runId === runId &&
             parsed.run?.workflowName === 'kk-daily-ai-voice2' &&
-            parsed.run?.status === 'failed' &&
+            parsed.run?.status === (workflowStatus === 'done' ? 'done' : 'failed') &&
             Date.parse(parsed.run.startedAt ?? '') >= Date.parse(startedAt) - 1000 &&
             Date.parse(parsed.run.startedAt ?? '') <= Date.now() &&
             Array.isArray(parsed.events) &&
@@ -227,15 +231,13 @@ const ledger = spawnSync('kk', ['ledger', 'sync', '--workflow', 'kk-daily-ai-voi
     timeout: 20000,
 });
 cleanup.push({ command: 'kk ledger sync', exitCode: ledger.status });
-const readOptional = (path: string): string | null => {
+function readOptional(path: string): string | null {
     try {
         return readFileSync(path, 'utf-8').trim();
     } catch {
         return null;
     }
-};
-const primaryPublishStatus = readOptional(join(workDir, '31-publish', `${stamp}_17_publish_publish-status.txt`));
-const runSummary = readOptional(join(workDir, 'run-report.summary.txt'));
+}
 const requiredChannels = values['required-channels']
     .split(',')
     .map((channel) => channel.trim())
