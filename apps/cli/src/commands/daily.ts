@@ -279,13 +279,67 @@ async function prepareAction(options: DailyPrepareOptions): Promise<void> {
 /** One publish target as the per-target result files record it. */
 type PublishTarget = Record<string, unknown>;
 
-/** `targets[]` of a per-target result file, or `[]` when the file is missing/unparsable. */
-function targetsOf(path: string): PublishTarget[] {
-    if (!existsSync(path)) return [];
-    const parsed = parseJson(readFileSync(path, 'utf-8')) as { targets?: unknown };
-    return Array.isArray(parsed?.targets)
-        ? (parsed.targets.filter((e) => e !== null && typeof e === 'object') as PublishTarget[])
-        : [];
+const PRIMARY_PUBLISH_TARGETS = ['surfdash-pub', 'podcast-pub'] as const;
+type PrimaryPublishTarget = (typeof PRIMARY_PUBLISH_TARGETS)[number];
+
+interface PrimaryReceiptRead {
+    targets: PublishTarget[];
+    issue?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function failedPrimaryTarget(target: PrimaryPublishTarget, reason: string): PublishTarget {
+    return { target, ok: false, status: 'failed', error: reason };
+}
+
+/** Read one primary receipt without allowing a missing or malformed receipt to disappear. */
+function readPrimaryReceipt(path: string, expectedTarget: PrimaryPublishTarget): PrimaryReceiptRead {
+    if (!existsSync(path)) {
+        const issue = `${expectedTarget} receipt file is missing`;
+        return { targets: [failedPrimaryTarget(expectedTarget, issue)], issue };
+    }
+
+    let parsed: unknown;
+    try {
+        parsed = parseJson(readFileSync(path, 'utf-8'));
+    } catch {
+        const issue = `${expectedTarget} receipt is not valid JSON`;
+        return { targets: [failedPrimaryTarget(expectedTarget, issue)], issue };
+    }
+
+    if (!isRecord(parsed) || !Array.isArray(parsed.targets)) {
+        const issue = `${expectedTarget} receipt has no targets array`;
+        return { targets: [failedPrimaryTarget(expectedTarget, issue)], issue };
+    }
+
+    const rawTargets = parsed.targets;
+    const targets = rawTargets.filter(isRecord);
+    const issues: string[] = [];
+    if (targets.length !== rawTargets.length) {
+        issues.push(`${expectedTarget} receipt contains malformed target records`);
+    }
+    if (targets.length === 0) {
+        issues.push(`${expectedTarget} receipt targets array is empty`);
+    }
+
+    const observedExpected = targets.some((entry) => entry.target === expectedTarget);
+    if (!observedExpected) {
+        targets.push(failedPrimaryTarget(expectedTarget, `${expectedTarget} receipt has no named target record`));
+        issues.push(`${expectedTarget} receipt has no named target record`);
+    }
+
+    return { targets, issue: issues.length === 0 ? undefined : issues.join('; ') };
+}
+
+function isPublishedPrimaryTarget(entry: PublishTarget): boolean {
+    return (
+        PRIMARY_PUBLISH_TARGETS.some((target) => target === entry.target) &&
+        entry.ok === true &&
+        entry.status === 'published'
+    );
 }
 
 /**
@@ -305,22 +359,53 @@ async function publishClassifyAction(options: PublishClassifyOptions): Promise<v
         const dir = join(workDir, '31-publish');
         const resultPath = join(dir, `${runDate}_17_publish_result.json`);
         const statusPath = join(dir, `${runDate}_17_publish_publish-status.txt`);
-        // Both per-target files must exist: the pre-0133 `jq -s … || echo '[]'` chain could not read
-        // a missing one (jq exits 2 after printing the slurped partial), which drove status to
-        // `none`. Classifying over whichever file happens to exist would report `full` for a publish
-        // that never dispatched — the failure masking this rule exists to prevent.
+        // Read both primary receipts independently. A missing/malformed receipt is an observed
+        // failure row, not an empty target set: otherwise one successful primary could be promoted
+        // to `full` and the store settlement would lose the missing channel.
         const surfdash = join(dir, `${runDate}_14_publish-surfdash_result.json`);
         const podcast = join(dir, `${runDate}_16_publish-podcast_result.json`);
-        const bothWritten = existsSync(surfdash) && existsSync(podcast);
-        const targets = bothWritten ? [...targetsOf(surfdash), ...targetsOf(podcast)] : [];
-        const okCount = targets.filter((entry) => entry.ok === true && entry.status === 'published').length;
+        const receipts = [readPrimaryReceipt(surfdash, 'surfdash-pub'), readPrimaryReceipt(podcast, 'podcast-pub')];
+        const targets = receipts.flatMap((receipt) => receipt.targets);
+        const receiptIssues = receipts.flatMap((receipt) => (receipt.issue === undefined ? [] : [receipt.issue]));
+        const okCount = targets.filter(isPublishedPrimaryTarget).length;
         const total = targets.length;
-        const status = okCount > 0 && okCount === total ? 'full' : okCount > 0 ? 'partial' : 'none';
+        const exactPrimarySet =
+            receiptIssues.length === 0 &&
+            targets.length === PRIMARY_PUBLISH_TARGETS.length &&
+            PRIMARY_PUBLISH_TARGETS.every(
+                (target) => targets.filter((entry) => entry.target === target).length === 1,
+            ) &&
+            targets.every(isPublishedPrimaryTarget);
+        let status = exactPrimarySet ? 'full' : okCount > 0 ? 'partial' : 'none';
         mkdirSync(dir, { recursive: true });
-        writeFileSync(resultPath, `${JSON.stringify({ ok: okCount === total && total > 0, targets }, null, 2)}`);
-        writeFileSync(statusPath, status);
+        const writeClassification = (completenessError?: string): void => {
+            const result = {
+                ok: status === 'full',
+                targets,
+                ...(receiptIssues.length === 0 ? {} : { issues: receiptIssues }),
+                ...(completenessError === undefined ? {} : { completenessError }),
+            };
+            writeFileSync(resultPath, `${JSON.stringify(result, null, 2)}`);
+            writeFileSync(statusPath, status);
+        };
+        writeClassification();
         // The ledger's Result cell for the publish-classify node (task 0212 R1): `kk ledger append`
         // reads `<node>.summary.txt`, so cutover-check can compare target sets across ledgers.
+        const writeSummary = (missing: string[], completenessError?: string): void => {
+            writeFileSync(
+                join(workDir, 'publish-classify.summary.txt'),
+                `${JSON.stringify({
+                    status,
+                    published: okCount,
+                    targets: total,
+                    ...(receiptIssues.length === 0 ? {} : { issues: receiptIssues }),
+                    ...(completenessError === undefined ? {} : { completenessError }),
+                    missing,
+                })}\n`,
+            );
+        };
+        // Preserve the pre-tail ledger sidecar even when a folded tail fails. The final call below
+        // rewrites it with completeness diagnostics once the terminal probe has settled.
         writeFileSync(
             join(workDir, 'publish-classify.summary.txt'),
             `${JSON.stringify({ status, published: okCount, targets: total })}\n`,
@@ -338,21 +423,52 @@ async function publishClassifyAction(options: PublishClassifyOptions): Promise<v
             }
         }
 
-        // 0220 R3: delegate completeness to the terminal stage after the folded tail
-        runStage(['daily-publish-completeness', workDir, runDate]);
+        // 0220 R3: delegate completeness to the terminal stage after the folded tail. A stage exit,
+        // missing artifact, or malformed probe result is itself a negative signal; never turn it
+        // into `missing=[]`, which makes a full primary publish look healthy to settlement.
+        let completenessError: string | undefined;
+        let completenessCode = 1;
+        try {
+            completenessCode = runStage(['daily-publish-completeness', workDir, runDate]);
+        } catch (error) {
+            completenessError = `completeness stage failed: ${error instanceof Error ? error.message : String(error)}`;
+        }
         const completenessPath = join(dir, `${runDate}_17_publish_completeness.json`);
         let missing: string[] = [];
-        if (existsSync(completenessPath)) {
+        if (completenessError === undefined && completenessCode !== 0) {
+            completenessError = `completeness stage exited ${completenessCode}`;
+        } else if (completenessError === undefined && !existsSync(completenessPath)) {
+            completenessError = 'completeness result artifact is missing';
+        } else if (completenessError === undefined) {
             try {
-                const parsed = parseJson(readFileSync(completenessPath, 'utf-8')) as { missing?: unknown };
-                if (Array.isArray(parsed?.missing)) {
-                    missing = parsed.missing.filter((item): item is string => typeof item === 'string');
+                const parsed = parseJson(readFileSync(completenessPath, 'utf-8'));
+                if (
+                    !isRecord(parsed) ||
+                    !Array.isArray(parsed.missing) ||
+                    !parsed.missing.every((item) => typeof item === 'string')
+                ) {
+                    completenessError = 'completeness result has no valid missing[] probe';
+                } else {
+                    missing = parsed.missing;
                 }
             } catch {
-                missing = [];
+                completenessError = 'completeness result is not valid JSON';
             }
         }
-        consoleOutput.write(JSON.stringify({ status, published: okCount, targets: total, missing }));
+        if (completenessError !== undefined) missing = ['completeness'];
+        if (completenessError !== undefined && status === 'full') status = 'partial';
+        writeClassification(completenessError);
+        writeSummary(missing, completenessError);
+        consoleOutput.write(
+            JSON.stringify({
+                status,
+                published: okCount,
+                targets: total,
+                missing,
+                ...(receiptIssues.length === 0 ? {} : { issues: receiptIssues }),
+                ...(completenessError === undefined ? {} : { completenessError }),
+            }),
+        );
     } catch (error) {
         if (error instanceof CommanderError) throw error;
         failLoud('kk.daily.publish-classify.failed', error);

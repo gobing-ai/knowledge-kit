@@ -57,6 +57,7 @@ import {
     copyFileSync,
     existsSync,
     mkdirSync,
+    readdirSync,
     readFileSync,
     renameSync,
     rmSync,
@@ -135,10 +136,41 @@ export function dailyQcContent(args: string[]): void {
     const annotated = join(workDir, '21-plan', `${runDate}_04_quality-control-content_annotated.json`);
     const exclusions = join(workDir, '21-plan', `${runDate}_04_quality-control-content_exclusions.json`);
     const planContent = join(workDir, '21-plan', `${runDate}_03_plan_content.json`);
+    const cachePath = `${candidates}.cache.json`;
+    const fingerprint = stageCacheFingerprint(planContent, {
+        qcCategories,
+        minQuality,
+        minImportance,
+        minUrgency,
+        minImpact,
+        minEpisodeItems,
+        minMinutes,
+        vdriver,
+    });
+    let recomputed = false;
     timed(workDir, 'quality-control-content', () => {
-        if (isFile(candidates)) {
+        // Voice1's standalone QC tests and old workspaces may carry a candidates artifact without
+        // the newer plan input or sidecar. Preserve that explicitly cache-only surface; voice2
+        // always has planContent, so its stale/malformed cache is recomputed below.
+        const legacyCandidatesCache = isFile(candidates) && !isFile(planContent) && !isFile(cachePath);
+        if (stageCacheMatches(candidates, cachePath, fingerprint) || legacyCandidatesCache) {
             console.log(`candidates cached: ${candidates}`);
             return;
+        }
+        if (isFile(candidates)) {
+            const descendants = authoredPlanDescendants(workDir, runDate);
+            if (descendants.length > 0) {
+                failWith(
+                    1,
+                    `QC cache changed after downstream artifacts were authored; refusing to pair new candidates with stale outputs (${descendants.join(', ')})`,
+                );
+            }
+            console.log(`candidates cache stale: ${candidates}`);
+        }
+        for (const stale of [exclusions, `${runDate}_04_quality-control-content_floor-refusal.json`].map((name) =>
+            name.startsWith('/') ? name : join(workDir, '21-plan', name),
+        )) {
+            if (isFile(stale)) unlinkSync(stale);
         }
         sted('write', annotated, () => writeJqText(annotated, metadataOf(readJson(planContent)).docs ?? null));
         kk(
@@ -164,6 +196,9 @@ export function dailyQcContent(args: string[]): void {
                 },
             },
         );
+        if (!isFile(candidates)) failWith(1, `quality-control-content: ${candidates} not written`);
+        sted('write', cachePath, () => writeStageCache(cachePath, fingerprint));
+        recomputed = true;
     });
     // Topic boundary (task 0189 R2) runs on every invocation — re-applying to already-filtered
     // candidates is a no-op, so cached reruns stay idempotent while a crash between the candidates
@@ -212,7 +247,48 @@ export function dailyQcContent(args: string[]): void {
     // already produced. 2026-10-22 cleared the floor on a 4-item pool (21.0 min estimated) that the
     // topic boundary then cut to 3 (14.4 min), so the run paid for a full synthesis the measured
     // gate refused. Covered here it also re-runs on a cached-rerun, which the timed block skipped.
-    applyFloorGate(candidates, workDir, runDate, minMinutes, vdriver);
+    applyFloorGate(candidates, workDir, runDate, minMinutes, vdriver, recomputed);
+}
+
+/**
+ * Cache only deterministic stage inputs. The source bytes are part of the key so a new collect
+ * pool or translated plan cannot inherit a prior run's refusal; the invocation parameters cover
+ * every threshold that changes the QC/floor result.
+ */
+function stageCacheFingerprint(sourcePath: string, inputs: Record<string, unknown>): string {
+    const source = isFile(sourcePath) ? readFileSync(sourcePath, 'utf-8') : '<missing>';
+    return createHash('sha256')
+        .update(JSON.stringify({ version: 1, source, inputs }))
+        .digest('hex');
+}
+
+function stageCacheMatches(outputPath: string, cachePath: string, fingerprint: string): boolean {
+    if (!isFile(outputPath) || !isFile(cachePath)) return false;
+    try {
+        const cache = JSON.parse(readFileSync(cachePath, 'utf-8')) as { version?: unknown; fingerprint?: unknown };
+        return cache.version === 1 && cache.fingerprint === fingerprint;
+    } catch {
+        return false;
+    }
+}
+
+function writeStageCache(path: string, fingerprint: string): void {
+    writeJsonText(path, { version: 1, fingerprint });
+}
+
+function authoredPlanDescendants(workDir: string, runDate: string): string[] {
+    const descendants: string[] = [];
+    for (const directory of ['22-article', '23-cover', '24-script', '30-audio', '31-publish']) {
+        const root = join(workDir, directory);
+        if (!existsSync(root)) continue;
+        // The directory contents are stage-owned artifacts. A date-prefixed file means that a
+        // previous non-empty run already authored downstream material that must not be silently
+        // paired with a newly generated plan.
+        for (const entry of readdirSync(root)) {
+            if (entry.startsWith(`${runDate}_`)) descendants.push(join(root, entry));
+        }
+    }
+    return descendants;
 }
 
 /**
@@ -261,18 +337,26 @@ function applyFloorGate(
     runDate: string,
     minMinutes: string,
     vdriver: string,
+    clearStaleRefusal = false,
 ): void {
+    const refusal = join(workDir, '21-plan', `${runDate}_04_quality-control-content_floor-refusal.json`);
     const floor = Number(minMinutes);
-    if (minMinutes === '' || !Number.isFinite(floor) || floor <= 0) return;
+    if (minMinutes === '' || !Number.isFinite(floor) || floor <= 0) {
+        if (clearStaleRefusal && isFile(refusal)) unlinkSync(refusal);
+        return;
+    }
     const content = readJson(candidates);
     const docs = metadataOf(content).docs;
-    if (!Array.isArray(docs) || docs.length === 0) return;
+    if (!Array.isArray(docs) || docs.length === 0) {
+        if (clearStaleRefusal && isFile(refusal)) unlinkSync(refusal);
+        return;
+    }
     const { minutes: estimatedMinutes, seconds: estimatedSeconds, chars } = estimateSpokenMinutes(docs, vdriver);
     if (estimatedSeconds >= floor * 60) {
+        if (clearStaleRefusal && isFile(refusal)) unlinkSync(refusal);
         console.log(`floor gate: estimated ${estimatedMinutes} min from ${chars} chars — above the ${floor} min floor`);
         return;
     }
-    const refusal = join(workDir, '21-plan', `${runDate}_04_quality-control-content_floor-refusal.json`);
     const ids = docs.map((doc) => String((doc as Record<string, unknown> | null)?.id ?? ''));
     sted('write', refusal, () =>
         writeJqText(refusal, {
@@ -1511,10 +1595,27 @@ export function dailyPlan(args: string[]): void {
     // translation. Voice1 omits the arg and still materializes the file (its translate node has no
     // skip guard and overwrites it).
     const deferDocs = deferPlanDocs === 'true';
+    const target = deferDocs ? planContent : planDocs;
+    const targetCache = `${target}.cache.json`;
+    const fingerprint = stageCacheFingerprint(blended, {
+        runDate,
+        planMaxItems,
+        deferPlanDocs,
+    });
     timed(workDir, 'plan', () => {
-        if (deferDocs ? isFile(planContent) : isFile(planDocs)) {
+        if (stageCacheMatches(target, targetCache, fingerprint)) {
             console.log(`plan cached: ${deferDocs ? planContent : planDocs}`);
             return;
+        }
+        if (isFile(target)) {
+            const descendants = authoredPlanDescendants(workDir, runDate);
+            if (descendants.length > 0) {
+                failWith(
+                    1,
+                    `plan cache changed after downstream artifacts were authored; refusing to pair a new plan with stale outputs (${descendants.join(', ')})`,
+                );
+            }
+            console.log(`plan cache stale: ${target}`);
         }
         kk(
             ['executor', 'run', 'episode-plan-gen', '--in', blended, '--out', planContent, ...pluginsArgs(pluginsPath)],
@@ -1524,9 +1625,17 @@ export function dailyPlan(args: string[]): void {
         );
         const docs = metadataOf(readJson(planContent)).docs;
         if (!Array.isArray(docs) || docs.length === 0) failWith(1, 'plan: content.metadata.docs missing or empty');
-        if (deferDocs) return;
-        sted('write', planDocs, () => writeJsonText(planDocs, docs));
-        if (!isFile(planDocs)) failWith(1, `plan: ${planDocs} not written after episode-plan-gen`);
+        if (deferDocs) {
+            // A translated plan is a descendant of this content plan. Remove only the stale
+            // translation when no authored downstream artifact exists; otherwise the guard above
+            // fails closed and leaves the operator a reviewable workspace.
+            if (isFile(planDocs)) unlinkSync(planDocs);
+            if (isFile(`${planDocs}.cache.json`)) unlinkSync(`${planDocs}.cache.json`);
+        } else {
+            sted('write', planDocs, () => writeJsonText(planDocs, docs));
+            if (!isFile(planDocs)) failWith(1, `plan: ${planDocs} not written after episode-plan-gen`);
+        }
+        sted('write', targetCache, () => writeStageCache(targetCache, fingerprint));
     });
 }
 
@@ -2113,15 +2222,208 @@ export function dailyPublishPrep(args: string[]): void {
     });
 }
 
+type SurfdashDeliveryState = 'missing' | 'success' | 'failure' | 'uncertain';
+
+interface SurfdashSendIntent {
+    version: 1;
+    target: 'surfdash-pub';
+    runDate: string;
+    payloadPath: string;
+    payloadSha256: string;
+    createdAt: string;
+}
+
+function surfdashPayloadSha256(path: string): string {
+    return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+function readSurfdashSendIntent(
+    path: string,
+): { kind: 'missing' } | { kind: 'valid'; value: SurfdashSendIntent } | { kind: 'invalid'; reason: string } {
+    if (!isFile(path)) return { kind: 'missing' };
+    const parsed = readJson(path);
+    if (parsed === null) return { kind: 'invalid', reason: 'send intent is unreadable or invalid JSON' };
+    if (
+        parsed.version !== 1 ||
+        parsed.target !== 'surfdash-pub' ||
+        typeof parsed.runDate !== 'string' ||
+        typeof parsed.payloadPath !== 'string' ||
+        typeof parsed.createdAt !== 'string' ||
+        typeof parsed.payloadSha256 !== 'string' ||
+        !/^[0-9a-f]{64}$/.test(parsed.payloadSha256)
+    ) {
+        return { kind: 'invalid', reason: 'send intent is malformed' };
+    }
+    return { kind: 'valid', value: parsed as unknown as SurfdashSendIntent };
+}
+
+function surfdashTargetEntries(result: Record<string, unknown> | null): Record<string, unknown>[] {
+    const targets = result?.targets;
+    if (!Array.isArray(targets)) return [];
+    return targets.filter(
+        (entry): entry is Record<string, unknown> =>
+            entry !== null && typeof entry === 'object' && (entry as Record<string, unknown>).target === 'surfdash-pub',
+    );
+}
+
+/** A push can have reached the remote even when the publisher reports a failed receipt. */
+function surfdashFailureMayHaveRemoteEffect(entry: Record<string, unknown>): boolean {
+    return (
+        entry.ok === false &&
+        entry.status === 'failed' &&
+        (entry.metadata as Record<string, unknown> | undefined)?.deliveryState !== 'not-sent'
+    );
+}
+
+function surfdashTargetState(result: Record<string, unknown> | null): SurfdashDeliveryState {
+    const matches = surfdashTargetEntries(result);
+    if (matches.length === 0) return 'missing';
+    if (
+        matches.some(
+            (entry) =>
+                (entry.metadata as Record<string, unknown> | undefined)?.deliveryState === 'uncertain' ||
+                surfdashFailureMayHaveRemoteEffect(entry),
+        )
+    ) {
+        return 'uncertain';
+    }
+    if (matches.length !== 1) return 'missing';
+    const target = matches[0];
+    if (target.ok === true && target.status === 'published') return 'success';
+    if (target.ok === false && target.status === 'failed') return 'failure';
+    return 'missing';
+}
+
+function writeSurfdashUncertainReceipt(
+    resultPath: string,
+    intentPath: string,
+    runDate: string,
+    payloadSha256: string | undefined,
+    currentPayloadSha256: string | undefined,
+    reason: string,
+): void {
+    const metadata: Record<string, unknown> = {
+        deliveryState: 'uncertain',
+        runDate,
+        intentPath,
+        ...(payloadSha256 ? { payloadSha256 } : {}),
+        ...(currentPayloadSha256 ? { currentPayloadSha256 } : {}),
+    };
+    const error = `surfdash delivery is uncertain: ${reason}; reconcile the dated remote post/commit before clearing this uncertainty and retrying`;
+    sted('write', resultPath, () =>
+        writeJsonText(resultPath, {
+            ok: false,
+            summary: { total: 1, succeeded: 0, failed: 1, skipped: 0 },
+            targets: [
+                {
+                    target: 'surfdash-pub',
+                    ok: false,
+                    status: 'failed',
+                    error,
+                    metadata,
+                },
+            ],
+        }),
+    );
+    console.error(error);
+}
+
 export function dailyPublishSurfdash(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = ''] = args;
     const prep = join(workDir, '31-publish', `${runDate}_13_publish-prep_content.json`);
     const result = join(workDir, '31-publish', `${runDate}_14_publish-surfdash_result.json`);
+    const intentPath = join(workDir, '31-publish', `${runDate}_14_publish-surfdash_intent.json`);
     timed(workDir, 'publish-surfdash', () => {
-        if (targetPublished(result, 'surfdash-pub')) {
+        const priorState = surfdashTargetState(readJson(result));
+        if (priorState === 'uncertain') {
+            const priorTarget = surfdashTargetEntries(readJson(result))[0];
+            if (
+                priorTarget !== undefined &&
+                (priorTarget.metadata as Record<string, unknown> | undefined)?.deliveryState !== 'uncertain'
+            ) {
+                const priorError =
+                    typeof priorTarget.error === 'string'
+                        ? priorTarget.error
+                        : 'publisher reported an ambiguous delivery failure';
+                writeSurfdashUncertainReceipt(result, intentPath, runDate, undefined, undefined, priorError);
+            }
+            console.log(`publish-surfdash blocked: uncertain delivery is sticky in ${result}`);
+            return;
+        }
+        if (priorState === 'success') {
             console.log(`publish-surfdash cached: surfdash target ok in ${result}`);
             return;
         }
+
+        const intent = readSurfdashSendIntent(intentPath);
+        if (intent.kind === 'invalid') {
+            writeSurfdashUncertainReceipt(result, intentPath, runDate, undefined, undefined, intent.reason);
+            return;
+        }
+
+        let payloadSha256: string | undefined;
+        if (intent.kind === 'valid') {
+            if (intent.value.runDate !== runDate) {
+                writeSurfdashUncertainReceipt(
+                    result,
+                    intentPath,
+                    runDate,
+                    intent.value.payloadSha256,
+                    undefined,
+                    `send intent run date ${intent.value.runDate} does not match requested run date ${runDate}`,
+                );
+                return;
+            }
+            // An existing intent binds this dated post to the original bytes. A changed payload is
+            // never allowed to overwrite the same slug after an interrupted remote send.
+            if (isFile(prep)) payloadSha256 = surfdashPayloadSha256(prep);
+            if (payloadSha256 !== undefined && payloadSha256 !== intent.value.payloadSha256) {
+                writeSurfdashUncertainReceipt(
+                    result,
+                    intentPath,
+                    runDate,
+                    intent.value.payloadSha256,
+                    payloadSha256,
+                    'prepared payload changed after the send intent',
+                );
+                return;
+            }
+            if (priorState === 'missing') {
+                writeSurfdashUncertainReceipt(
+                    result,
+                    intentPath,
+                    runDate,
+                    intent.value.payloadSha256,
+                    payloadSha256,
+                    'no publish result was recorded after the prior send intent',
+                );
+                return;
+            }
+            if (payloadSha256 === undefined) {
+                writeSurfdashUncertainReceipt(
+                    result,
+                    intentPath,
+                    runDate,
+                    intent.value.payloadSha256,
+                    undefined,
+                    'prepared payload is missing, so the original request cannot be replayed safely',
+                );
+                return;
+            }
+        } else {
+            if (!isFile(prep)) failWith(1, `publish-surfdash: required input not found: ${prep}`);
+            payloadSha256 = surfdashPayloadSha256(prep);
+            const sendIntent: SurfdashSendIntent = {
+                version: 1,
+                target: 'surfdash-pub',
+                runDate,
+                payloadPath: prep,
+                payloadSha256,
+                createdAt: new Date().toISOString(),
+            };
+            sted('write', intentPath, () => writeJsonText(intentPath, sendIntent));
+        }
+
         kk(
             [
                 'executor',
@@ -2139,6 +2441,18 @@ export function dailyPublishSurfdash(args: string[]): void {
                 soft: true,
             },
         );
+
+        // A killed or unusable child can leave a real remote commit with no aggregate receipt. The
+        // intent now makes that state explicit; the next invocation will refuse to dispatch again.
+        const afterState = surfdashTargetState(readJson(result));
+        if (afterState === 'missing' || afterState === 'uncertain') {
+            const afterTarget = surfdashTargetEntries(readJson(result))[0];
+            const afterError =
+                afterState === 'uncertain' && afterTarget !== undefined && typeof afterTarget.error === 'string'
+                    ? `publisher reported an ambiguous delivery failure: ${afterTarget.error}`
+                    : 'no publish result was recorded after dispatch';
+            writeSurfdashUncertainReceipt(result, intentPath, runDate, payloadSha256, payloadSha256, afterError);
+        }
         console.log('publish-surfdash: surfdash target dispatched; classification happens after podcast publish');
     });
 }

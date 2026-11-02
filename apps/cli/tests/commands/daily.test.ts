@@ -13,7 +13,8 @@
  * 5. `run-report` on a pool with items must invoke the report generator and surface its body; a
  *    generator that fails must exit 1 with the `kk.daily.run-report.failed` contract;
  * 6. `publish-classify` must derive full / partial / none from the per-target result files, and
- *    treat a missing per-target file as `none` (never as `full`);
+ *    treat a missing or malformed primary receipt as `partial` when the other primary published;
+ *    the observed receipt must remain in the classified artifact;
  * 7. `--fold-tail` must record the partial marker for a partial outcome, and must skip the
  *    surfdash patch when the checkout is absent (the patch refuses to run blindly);
  * 8. an unusable `--min`/missing store must not silently pass a guard.
@@ -444,15 +445,30 @@ describe('kk daily publish-classify', () => {
         expect(readFileSync(join(publish, '20261007_17_publish_publish-status.txt'), 'utf-8')).toBe('full');
     });
 
-    it('classifies none when a per-target result file is missing', async () => {
+    it('classifies partial when a primary result file is missing and preserves the published receipt', async () => {
         const dir = tempDir();
-        publishFixtures(dir, { targets: [{ target: 'surfdash-pub', ok: true, status: 'published' }] }, null);
+        const publish = publishFixtures(
+            dir,
+            { targets: [{ target: 'surfdash-pub', ok: true, status: 'published', url: 'https://surfdash.test/post' }] },
+            null,
+        );
         const result = await run(['daily', 'publish-classify', '--work-dir', dir, '--run-date', '20261007']);
         expect(result.code).toBe(0);
-        expect(JSON.parse(result.out).status).toBe('none');
+        expect(JSON.parse(result.out)).toMatchObject({ status: 'partial', published: 1, targets: 2 });
+        const classified = JSON.parse(readFileSync(join(publish, '20261007_17_publish_result.json'), 'utf-8'));
+        expect(classified.ok).toBe(false);
+        expect(classified.targets).toContainEqual({
+            target: 'surfdash-pub',
+            ok: true,
+            status: 'published',
+            url: 'https://surfdash.test/post',
+        });
+        expect(classified.targets).toContainEqual(
+            expect.objectContaining({ target: 'podcast-pub', ok: false, status: 'failed' }),
+        );
     });
 
-    it('treats a result file without a targets array as unpublished', async () => {
+    it('fails closed on a result file without a targets array while preserving the published receipt', async () => {
         const dir = tempDir();
         const publish = publishFixtures(
             dir,
@@ -463,8 +479,54 @@ describe('kk daily publish-classify', () => {
         writeFileSync(join(publish, '20261007_16_publish-podcast_result.json'), JSON.stringify({ ok: true }));
         const result = await run(['daily', 'publish-classify', '--work-dir', dir, '--run-date', '20261007']);
         expect(result.code).toBe(0);
-        // The channel folds on `ok`, not on the targets detail — an ok:true result publishes.
-        expect(JSON.parse(result.out).status).toBe('full');
+        expect(JSON.parse(result.out)).toMatchObject({ status: 'partial', published: 1, targets: 2 });
+        const classified = JSON.parse(readFileSync(join(publish, '20261007_17_publish_result.json'), 'utf-8'));
+        expect(classified.ok).toBe(false);
+        expect(classified.targets).toContainEqual({ target: 'surfdash-pub', ok: true, status: 'published' });
+        expect(classified.targets).toContainEqual(
+            expect.objectContaining({ target: 'podcast-pub', ok: false, status: 'failed' }),
+        );
+    });
+
+    it('fails closed on invalid JSON while preserving the other primary receipt', async () => {
+        const dir = tempDir();
+        const publish = publishFixtures(
+            dir,
+            { targets: [{ target: 'surfdash-pub', ok: true, status: 'published' }] },
+            null,
+        );
+        writeFileSync(join(publish, '20261007_16_publish-podcast_result.json'), '{not-json');
+        const result = await run(['daily', 'publish-classify', '--work-dir', dir, '--run-date', '20261007']);
+        expect(result.code).toBe(0);
+        expect(JSON.parse(result.out)).toMatchObject({ status: 'partial', published: 1, targets: 2 });
+        const classified = JSON.parse(readFileSync(join(publish, '20261007_17_publish_result.json'), 'utf-8'));
+        expect(classified.targets).toContainEqual({ target: 'surfdash-pub', ok: true, status: 'published' });
+        expect(classified.targets).toContainEqual(
+            expect.objectContaining({ target: 'podcast-pub', ok: false, status: 'failed' }),
+        );
+    });
+
+    it('does not classify duplicate or unrelated published targets as full', async () => {
+        const dir = tempDir();
+        const publish = publishFixtures(
+            dir,
+            {
+                targets: [
+                    { target: 'surfdash-pub', ok: true, status: 'published' },
+                    { target: 'surfdash-pub', ok: true, status: 'published' },
+                ],
+            },
+            {
+                targets: [
+                    { target: 'podcast-pub', ok: true, status: 'published' },
+                    { target: 'xhs-pub', ok: true, status: 'published' },
+                ],
+            },
+        );
+        const result = await run(['daily', 'publish-classify', '--work-dir', dir, '--run-date', '20261007']);
+        expect(result.code).toBe(0);
+        expect(JSON.parse(result.out).status).toBe('partial');
+        expect(JSON.parse(readFileSync(join(publish, '20261007_17_publish_result.json'), 'utf-8')).ok).toBe(false);
     });
 
     it('folds the tail: a partial outcome records its marker, and an absent checkout skips the patch', async () => {
