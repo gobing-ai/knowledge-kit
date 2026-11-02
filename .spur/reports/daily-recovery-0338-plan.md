@@ -1,5 +1,5 @@
 - [x] Trace historical scheduler, agent sessions, channel readiness and installed runtime; preserve baseline changes.
 - [x] Write failure-first safety retry, cache recovery and primary receipt regression checks.
-- [x] Apply minimal source fixes and prepare reviewed scheduler/runtime changes. Active workflow promotion and runtime activation remain pending approval.
-- [ ] Run focused behavior checks, project lint/tests/build/rules and review final diff.
-- [ ] Run isolated fresh rehearsal, activate approved fixes and verify tomorrow's schedule; record limitations and evidence.
+- [x] Apply minimal source fixes, promote the reviewed workflows and activate the runtime after Robin's explicit approval.
+- [x] Run focused behavior checks, project lint/tests/build/rules and review final diff. Full active tests pass; unrelated pre-existing report formatting still fails repository lint and is recorded separately.
+- [x] Run isolated fresh rehearsal, activate approved fixes and verify tomorrow's schedule; record limitations and evidence. WeChat authentication remains an explicit external prerequisite, not a completed channel check.

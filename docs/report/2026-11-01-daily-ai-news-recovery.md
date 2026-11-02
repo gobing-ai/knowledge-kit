@@ -3,10 +3,11 @@
 Task: 0338. Robin explicitly approved activation in this conversation on November 1. The fixed
 workflows, installed CLI/stages/publisher bundles and supervised 04:30 schedule are now activated.
 Historical editions were not regenerated or published. WeChat authentication remains unavailable;
-the one-time login window expired without a QR scan. Final active-suite verification is in progress.
+the first login window expired without a QR scan and a longer login window is now open.
+Final active-suite verification passed: 4,319 tests, 0 failures, exit 0 (3 existing skips).
 This report distinguishes observed activation from end-to-end delivery proof.
 
-## Findings
+## Findings before repair
 
 | Severity | Finding | Evidence and consequence |
 | --- | --- | --- |
@@ -81,7 +82,11 @@ The queue's measured failures and timeout reasons are saved in
   A subsequent read-only `git ls-remote` found remote main `d4a1688b4848d451f73aa2eabf6847f2241e37a1`
   versus local HEAD `d52047b001349ce562109b510174c32edc181cc6`. The remote object is not present
   locally, so ancestry is unverified; the plugin's existing fetch/fast-forward preflight must settle
-  this before publishing. No Surfdash working-tree or remote changes were made.
+  this before publishing. During approved activation, a fresh fetch confirmed local main was
+  116 commits behind with zero divergence and no untracked-file collisions. A local fast-forward
+  aligned it with origin/main; existing untracked files were preserved. No remote write was made.
+  The configured Surfdash CLI starts and an authenticated existing-post GET returned HTTP 200
+  (`probes/surfdash-api-readiness.json`).
 - A SQLite backup was used for a release simulation through the actual store CLI. At the measured
   168-hour window and explicit limit 1,000, eligible supply increased from 22 to 67 stories after
   releasing the six failed pre-publication runs. The subsequently approved production cleanup
@@ -128,14 +133,24 @@ bounded admission-only exclusion. The focused safety suite remains 25 pass, 0 fa
   04:30 America/Los_Angeles (12:30 UTC)**, using `codex-sol` and the supervisor with pinned works root.
 - WeChat login attempt: headed login waited 180 seconds and exited 1 because no QR scan completed.
   WeChat remains a required enabled draft channel; it was not silently disabled. XHS stays disabled.
-- Final full `bun run test` is running against the active workflows without a candidate override.
-  Focused active DAG/safety/settlement checks pass 70 tests / 708 assertions. Repository lint still
-  reports pre-existing unrelated report formatting. No final whole-workflow delivery is claimed.
+- Final full `bun run test` against the active workflows, without a candidate override, passed
+  with exit 0: **4,319 pass, 3 existing skips, 0 failures, 21,949 assertions**, 676 seconds. The
+  script-only no-content release delta also passed its focused 141-assertion process regression.
+  Focused active DAG/safety/settlement checks pass 70 tests / 708 assertions. All 58 pre-check and
+  both post-check rules pass. Build, workspace typecheck, changed-source Biome and diff checks pass.
+  Repository-wide lint still fails on pre-existing unrelated report formatting; those artifacts
+  were preserved. No final all-channel delivery or task verification PASS is claimed.
+- A fresh synthetic real-model run through the activated safety workflow and installed stage body
+  reached `clean` in 161 seconds (`daily-recovery-activated-safety-20261101`). Evidence:
+  `activated-model-safety/run.json` and `trace.json`. No publication step was included.
+- Final supervisor edge check: a terminal no-content run can already own reservations if it was
+  refused after selection. That path now releases only after the same invocation-bound stable
+  trace proves no channel send began; a no-content run with an attempted send stays reserved.
+  Failure-first regression passes 141 assertions. This script-only delta was synced to the runtime.
 
 ## Remaining verification / operation
 
-1. Finish the final active-suite check and record exit code, coverage and rule results.
-2. Restore WeChat authentication through its existing login surface. Keep XHS disabled unless Robin
+1. Restore WeChat authentication through its existing login surface. Keep XHS disabled unless Robin
    explicitly enables it; the broader voice3 migration requires its separate corrective work.
-3. Inspect tomorrow's supervisor and channel receipts. Missing enabled channels now produce an
+2. Inspect tomorrow's supervisor and channel receipts. Missing enabled channels now produce an
    incomplete scheduled result instead of silent green. No historical generation or live test posts.

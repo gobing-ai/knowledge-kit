@@ -2,6 +2,38 @@
 
 ## 2026-11-01 — daily AI news outage recovery (0338, active)
 
+### Approved activation (same conversation)
+
+- Robin explicitly answered `approved` to workflow/runtime activation and confirmed failed-run
+  cleanup. Backups are at `~/.config/kk/backups/daily-recovery-20261101-1955/`, including both DBs.
+- Active safety/voice2 workflows promoted; scheduler uses the supervisor and codex-sol at the same
+  04:30 PST tick. Installed CLI, affected stage scripts and publisher bundles synced; seven hashes
+  verified. Deployment CLI excludes the pre-existing unrelated publish-matrix working diff via a
+  build-only HEAD-source overlay. Source/index changes belonging to others were preserved.
+- Six known orphan parent/safety records cancelled; 46 selections released only after trace proof
+  of zero send actions. Live 168h pool now has 67 eligible stories.
+- launchd scheduler restarted with zero processing jobs at 2026-11-02T04:00:44Z; new PID 21269,
+  Board HTTP 200, five scheduler registrations and worker startup observed. Next tick Nov 2 04:30 PST.
+- Actual activated model safety rehearsal reached clean in 161 seconds. Active focused DAG/safety
+  suite: 70 pass / 708 assertions. Full active suite passed exit 0: 4,319 pass, 3 existing skips,
+  0 failures, 21,949 assertions. Pre-check 58 rules and post-check 2 rules pass; build/typecheck and
+  18 changed-source style checks pass. Root lint retains pre-existing report-format failures.
+- Late supervisor no-content reservation recovery regression: 141 assertions pass. Terminal
+  no-content releases only with stable identified trace and no attempted send; synced to runtime.
+- WeChat headed login was opened; no QR scan completed within 180 seconds, so login exited 1.
+  Reopened using the configured Chrome channel and a 600-second timeout (exec session 66567), still
+  waiting at 20:14 PST. The user supplied text that may be a credential; its contents are not saved
+  here or used. An async question asks which password prompt it is intended for. Wait for that
+  clarification or QR completion; never infer a target from the text. Keep WeChat enabled/draft-only,
+  XHS disabled. No historical editions or test posts sent. Remaining blocker is WeChat auth;
+  root lint still has unrelated report formatting failures. No task closure/full-delivery claim.
+- Final Surfdash preflight: fetched origin, found main 116 commits behind / 0 ahead and zero
+  untracked-file collisions. Fast-forwarded locally, preserving untracked files; now even with
+  origin/main. No remote write. Configured Surfdash CLI starts and authenticated existing-post
+  GET returns HTTP 200. Podcast authenticated GET also passed. Final runtime seven hashes rechecked.
+
+### Investigation snapshot before the approval above
+
 - User scope: investigate every missed generation/delivery since October 26; repair tomorrow's
   unattended path, without historical backfill. Preserve starting publish-matrix/corpus edits.
 - Evidence report: `docs/report/2026-11-01-daily-ai-news-recovery.md`; task 0338 remains wip.

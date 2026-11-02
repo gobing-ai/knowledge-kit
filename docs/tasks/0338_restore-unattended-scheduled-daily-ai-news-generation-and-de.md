@@ -4,7 +4,7 @@ name: Restore unattended scheduled daily AI news generation and delivery after O
 status: wip
 template: issue
 created_at: 2026-11-02T02:34:11.966Z
-updated_at: "2026-11-02T03:33:13.406Z"
+updated_at: "2026-11-02T04:14:26.563Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -71,6 +71,25 @@ Then a durable report records outcomes remaining authentication blockers and the
 
 <!-- Clarifications and triage decisions. Keep empty if none. -->
 
+#### Q&A entry — 2026-11-02T04:09:21.954Z
+
+Robin explicitly answered `approved` to the concrete activation request in this conversation.
+The request covered the prepared workflow fixes for the existing channel set, installed-package
+sync, scheduler restart and cleanup of confirmed failed-run reservations. It did not authorize
+historical edition regeneration, new channels or changing draft operations to live sends.
+
+Activation performed on November 1: active workflow promotion and supervisor scheduler command;
+backup and sync of affected installed code; six confirmed orphan records closed; 46 selections
+released only after trace proof of no publication attempt. The scheduler restarted idle and
+registered all five jobs. Evidence is in `.works/tmp/test-daily-recovery/probes/activation.json`,
+`runtime-activation.json`, `runtime-verified.json`, `orphan-cleanup.json`,
+`production-releases.json`, and `activated-scheduler-readiness.json`.
+
+WeChat remains enabled and draft-only. Its first login window timed out without a QR scan. A
+second login was opened using the existing configured Chrome channel with a longer timeout;
+the operator's QR scan remains necessary. No authentication was fabricated and no new browser
+dependency was installed. Final active-suite checks are in progress; no task verify PASS yet.
+
 ### Design
 
 Keep the active voice2 product path and its current channel draft/live settings. Do not activate the separately planned voice3 migration during outage recovery. Preserve the existing safety gate, independent judge, remediation budget and admission-only exclusions.
@@ -87,9 +106,9 @@ Live prerequisites are separate: installed-bundle backup/sync/restart and histor
 
 - [x] Trace historical scheduler, agent sessions, channel readiness and installed runtime; preserve baseline changes.
 - [x] Write failure-first safety retry, cache recovery and primary receipt regression checks.
-- [x] Apply minimal source fixes and prepare reviewed scheduler/runtime changes. Active workflow promotion and runtime activation remain pending approval.
-- [ ] Run focused behavior checks, project lint/tests/build/rules and review final diff.
-- [ ] Run isolated fresh rehearsal, activate approved fixes and verify tomorrow's schedule; record limitations and evidence.
+- [x] Apply minimal source fixes, promote the reviewed workflows and activate the runtime after Robin's explicit approval.
+- [x] Run focused behavior checks, project lint/tests/build/rules and review final diff. Full active tests pass; unrelated pre-existing report formatting still fails repository lint and is recorded separately.
+- [x] Run isolated fresh rehearsal, activate approved fixes and verify tomorrow's schedule; record limitations and evidence. WeChat authentication remains an explicit external prerequisite, not a completed channel check.
 
 ### Root Cause
 
@@ -118,11 +137,11 @@ Implemented source changes (entry anchors: `plugins/kk/scripts/daily-stages.ts:1
 - `plugins/kk/scripts/safety-artifact-check.ts`: complete report/judge/revision contracts and unattended escalation predicate.
 - Regression tests cover each behavior before its fix; safety legacy coverage remains intact for both the active and prepared state machines.
 
-Prepared, not activated: split safety producer/retry states, per-action deadlines, explicit work-dir and retry forwarding, deterministic child-run identity, guarded store settlement, and supervised 04:30 scheduler command. Deployment-ready workflow copies are under `.spur/reports/daily-recovery-prepared/deployment/`; schema validation passes. An attempt receipt declares remediation completion without deleting the in-place drafts.
+Activated following Robin's explicit approval: split safety producer/retry states, per-action deadlines, explicit work-dir and retry forwarding, deterministic child-run identity, guarded store settlement, and supervised 04:30 scheduler command. Deployment-ready workflow copies were promoted to the active workflow paths; schema validation passes. An attempt receipt declares remediation completion without deleting the in-place drafts.
 
-Operational evidence: scheduler fired daily, three four-hour kills left orphans, expired Claude retry deleted successful primary evidence, 46 selections remain reserved, WeChat authentication is refused, XHS is intentionally disabled, current collector is healthy. No historical editions or live test posts were produced. Actual model/voice/API probes and SQLite-copy release simulation are recorded in the investigation report.
+Operational evidence: scheduler fired daily, three four-hour kills left orphans, expired Claude retry deleted successful primary evidence. The six known orphan records are now closed and the 46 proven pre-publication reservations released; live eligible supply is 67 stories. WeChat authentication is refused; XHS stays intentionally disabled. No historical editions or live test posts were produced. The installed runtime is backed up, synced and hash-verified; the scheduler restarted idle and registered five jobs. Surfdash locally fast-forwarded to origin/main while preserving untracked files; authenticated Surfdash and podcast reads pass. Actual active model safety rehearsal reached clean in 161 seconds. Late no-content reservation recovery passes a 141-assertion process test.
 
-Not complete: workflow/runtime activation and production cleanup await the explicitly requested operator answer; WeChat requires a fresh authenticated session. Generic continuation has not expanded channel draft/live permissions. No final verification PASS or tomorrow-readiness guarantee is asserted.
+Remaining limitations: WeChat still needs its one-time authenticated session; the reopened Chrome login window is waiting for the operator. Full active tests passed with exit0 (4319 pass,3 existing skips,0 fail); both rule presets, build, typecheck and changed-source checks pass. Repository lint retains pre-existing report formatting failures. No new channel or live-send permission was inferred, no task-wide verify PASS is asserted, and final all-channel delivery remains unproven until authentication and real scheduled receipts exist.
 
 ### Testing
 
@@ -144,11 +163,31 @@ Evidence root: `.works/tmp/test-daily-recovery/`.
 - Store backup simulation releases the six confirmed pre-publication failed runs and increases 168h eligible supply from 22 to 67; production store remains unchanged.
 - Final candidate full suite with `KK_SAFETY_WORKFLOW` pointing at the prepared safety copy: 4319 pass, 3 existing skips, 0 failed assertions, 21938 assertions, 678.37 seconds. Exit 1 was solely digest-check function coverage 88.89%, line95.45%. Removed two unnecessary callback closures in the malformed-input fallback in favor of an equivalent explicit loop. Existing45 digest tests pass; focused digest module measures100% functions and94.97% lines. The full gate on promoted active files remains required before closure. Candidate selection is not production deployment.
 
-No new tests were skipped or assertions weakened. No live posting, historical regeneration, installed-package sync, scheduler restart or production reservation changes occurred. Task remains wip; no final verify PASS.
+Post-approval activation checks:
+- `bun run test` against active files, no candidate override: exit0,4319 pass,3 existing skips,0fail,21949 assertions,676.41 seconds. Late supervisor script-only no-content release delta:141 assertions pass, including retained reservations after any send attempt.
+- Focused active DAG/safety/settlement suite:70pass,0fail,708assertions. Build and workspace typecheck pass. Changed-source Biome:18files clean. `git diff --check` passes. Recommended-pre-check:58rules pass; recommended-post-check:2rules pass.
+- Active model safety through the installed stage body: clean in161seconds. Active DAG dry-run:done. Installed classifier smoke:partial with one observed success and a named missing podcast failure.
+- Runtime backup/sync complete; seven hash checks match. Deployment CLI excludes unrelated pre-existing publish-matrix working changes using a build-only source overlay, leaving the source intact.
+- Six historical orphan records closed and46 reservations released after trace proof of no send. Live eligible168h pool67. Scheduler restarted idle; new PID21269, BoardHTTP200,five jobs registered, next daily tick November2at04:30PST.
+- Surfdash fast-forwarded116commits with no divergence or untracked-file collisions. Authenticated existing-postGET200; podcastauthenticatedread200. WeChat login timed out after180seconds; reopened using configured Chrome with a longer timeout and awaits the operator.
+- Repository-wide lint still fails on unrelated pre-existing report formatting. No new tests skipped, assertions weakened, historical edition generated or test post sent. WeChat authentication and all-channel live completion remain unverified; task remains wip, no final task verifyPASS.
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+Review outcome: code/runtime recovery activated and tested; overall operational completion remains PARTIAL.
+
+Resolved findings:
+- Unconditional safety retry deleting successful primary artifacts: separate guarded states, real-dispatcher regression and active real-model rehearsal.
+- Missing/contradictory judge contracts and unattended real escalations: full contract predicates and fail-closed unattended routing. Admission-only no-op remediation still spends its bounded budget and can exclude platforms.
+- Stale plan/QC caches and changed candidates paired with old drafts: decisive-input fingerprints and downstream-artifact guards.
+- Incorrect receipt completeness and store promotion: exact named primary target set and full-only settlement predicate.
+- Timeout/orphan/reservation loss: owned-tree supervision including detached workers, durable outcome receipts, exact cancellation, stable terminal invocation-bound trace before pre-send release. No-content after selection is covered; attempted/uncertain sends retain reservations.
+- Duplicate remote effects: deterministic podcast request/media identity within the existing24h backend window; Surfdash intent journal and explicit not-sent/uncertain failure metadata.
+- Installed/runtime drift and stale Surfdash checkout: backed up and synced affected files, hash proof, idle scheduler restart, local fast-forward with untracked files preserved.
+
+Verification evidence: active full suite4319pass/3existing skips/0fail,exit0; active focused70pass/708assertions; final supervisor141assertions; build/typecheck/changed-source style pass; pre58/post2rules pass. Evidence is under `.works/tmp/test-daily-recovery/` and summarized in the investigation report.
+
+Open operational prerequisite: WeChat authentication was refused and the firstQR login expired; the longer login window awaits the operator. Keep its draft-only channel enabled and required; do not claim all-channel success or fabricate login. XHS remains disabled by the existing configuration. Root lint retains unrelated pre-existing report-format findings. No overall task verifyPASS or end-to-end live-publication proof is asserted, and no historical editions were replayed.
 
 ### References
 
