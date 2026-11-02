@@ -1,0 +1,188 @@
+import { describe, expect, it } from 'bun:test';
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+
+const repo = resolve(import.meta.dir, '../../..');
+const runner = join(repo, 'plugins/kk/scripts/daily-scheduled-run.ts');
+const evidence = join(repo, '.works/tmp/test-daily-recovery/scheduler');
+
+describe('scheduled daily run supervision (0338)', () => {
+    it('records success, closes failures, and reaps a timed-out workflow before finalizing its ledger', async () => {
+        const results: Record<string, unknown>[] = [];
+        for (const scenario of [
+            'success',
+            'no-content',
+            'partial',
+            'missing-result',
+            'channel-failure',
+            'missing-completeness',
+            'failure',
+            'failure-after-send',
+            'failure-classify',
+            'failure-stale-trace',
+            'failure-inflight-trace',
+            'timeout',
+            'timeout-ignore-term',
+            'timeout-detached',
+        ]) {
+            const dir = join(evidence, String(process.pid), scenario);
+            rmSync(dir, { recursive: true, force: true });
+            mkdirSync(join(dir, 'bin'), { recursive: true });
+            const fake = join(dir, 'bin/spur');
+            writeFileSync(
+                fake,
+                `#!${process.execPath}
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const args = process.argv.slice(2);
+appendFileSync(process.env.PROBE_ACTIONS, JSON.stringify(args) + '\\n');
+if (args.includes('trace')) {
+    const startedAt = new Date(Number(readFileSync(process.env.PROBE_STARTTIME, 'utf8')) - (process.env.PROBE_SCENARIO === 'failure-stale-trace' ? 86400000 : 0)).toISOString();
+    const status = process.env.PROBE_SCENARIO === 'failure-inflight-trace' ? 'running' : 'failed';
+    const sendNode = process.env.PROBE_SCENARIO === 'failure-after-send' ? 'publish-surfdash' : process.env.PROBE_SCENARIO === 'failure-classify' ? 'publish-classify' : 'safety';
+    console.log(JSON.stringify({run:{runId:args[args.indexOf('trace')+1],workflowName:'kk-daily-ai-voice2',startedAt,status},events:[{kind:'action',node:sendNode,status:'failed'}]}));
+}
+if (args.includes('release')) console.log(JSON.stringify({released:3}));
+if (args.includes('run')) {
+    writeFileSync(process.env.PROBE_STARTED, String(process.pid));
+    writeFileSync(process.env.PROBE_STARTTIME, String(Date.now()));
+    const vars = JSON.parse(args[args.indexOf('--vars') + 1]);
+    mkdirSync(join(vars.work_dir, '31-publish'), { recursive: true });
+    if (['success', 'partial', 'channel-failure', 'missing-completeness'].includes(process.env.PROBE_SCENARIO)) {
+        writeFileSync(join(vars.work_dir, '31-publish', vars.run_date + '_17_publish_publish-status.txt'), process.env.PROBE_SCENARIO === 'partial' ? 'partial' : 'full');
+    }
+    if (process.env.PROBE_SCENARIO !== 'missing-completeness') {
+        writeFileSync(join(vars.work_dir, '31-publish', vars.run_date + '_17_publish_completeness.json'), JSON.stringify({rows:[{channel:'wechat',state:process.env.PROBE_SCENARIO==='channel-failure'?'failed':'done'},{channel:'locales',state:'done'},{channel:'cms-resync',state:'done'},{channel:'xhs',state:'not-run'}]}));
+    }
+    if (process.env.PROBE_SCENARIO === 'no-content') writeFileSync(join(vars.work_dir, 'run-report.summary.txt'), 'no-content: insufficient source material');
+    if (process.env.PROBE_SCENARIO.startsWith('timeout')) {
+        if (process.env.PROBE_SCENARIO === 'timeout-ignore-term') process.on('SIGTERM', () => {});
+        const child = Bun.spawn([process.execPath, '-e', 'setInterval(() => {}, 1000)'], {detached:process.env.PROBE_SCENARIO==='timeout-detached'});
+        writeFileSync(process.env.PROBE_CHILD, String(child.pid));
+        setInterval(() => {}, 1000);
+    } else process.exit(process.env.PROBE_SCENARIO.startsWith('failure') ? 7 : 0);
+}
+`,
+            );
+            chmodSync(fake, 0o755);
+            writeFileSync(join(dir, 'bin/kk'), readFileSync(fake));
+            chmodSync(join(dir, 'bin/kk'), 0o755);
+            const actionsFile = join(dir, 'actions.jsonl');
+            const receipt = join(dir, 'receipt.json');
+            const proc = Bun.spawn(
+                [
+                    process.execPath,
+                    runner,
+                    '--repo',
+                    repo,
+                    '--works-dir',
+                    join(dir, 'works'),
+                    '--run-id',
+                    `recovery-test-${scenario}`,
+                    '--timeout-ms',
+                    scenario.startsWith('timeout') ? '400' : '5000',
+                    '--receipt',
+                    receipt,
+                    '--agent',
+                    'fixture',
+                    '--retry-agent',
+                    'fixture-retry',
+                ],
+                {
+                    env: {
+                        ...process.env,
+                        PATH: `${join(dir, 'bin')}:${process.env.PATH ?? ''}`,
+                        PROBE_ACTIONS: actionsFile,
+                        PROBE_SCENARIO: scenario,
+                        PROBE_STARTED: join(dir, 'started'),
+                        PROBE_STARTTIME: join(dir, 'start-time'),
+                        PROBE_CHILD: join(dir, 'child'),
+                    },
+                    stdout: 'pipe',
+                    stderr: 'pipe',
+                },
+            );
+            let watchdogForced = false;
+            const watchdog = setTimeout(() => {
+                watchdogForced = true;
+                try {
+                    process.kill(-Number(readFileSync(join(dir, 'started'), 'utf-8')), 'SIGKILL');
+                } catch {}
+                try {
+                    process.kill(Number(readFileSync(join(dir, 'child'), 'utf-8')), 'SIGKILL');
+                } catch {}
+            }, 2500);
+            const [exitCode, stdout, stderr] = await Promise.all([
+                proc.exited,
+                new Response(proc.stdout).text(),
+                new Response(proc.stderr).text(),
+            ]);
+            clearTimeout(watchdog);
+            expect(watchdogForced).toBe(false);
+            expect({ scenario, exitCode, stdout, stderr }).toMatchObject({
+                exitCode:
+                    scenario === 'success'
+                        ? 0
+                        : scenario.startsWith('failure')
+                          ? 7
+                          : scenario.startsWith('timeout')
+                            ? 124
+                            : 4,
+            });
+            const row = JSON.parse(readFileSync(receipt, 'utf-8')) as Record<string, unknown>;
+            expect(row.runId).toBe(`recovery-test-${scenario}`);
+            expect(row.status).toBe(
+                scenario === 'success'
+                    ? 'done'
+                    : scenario.startsWith('failure')
+                      ? 'failed'
+                      : scenario.startsWith('timeout')
+                        ? 'timed-out'
+                        : scenario === 'no-content'
+                          ? 'no-content'
+                          : 'incomplete',
+            );
+            const actions = readFileSync(actionsFile, 'utf-8')
+                .trim()
+                .split('\n')
+                .map((line) => JSON.parse(line) as string[]);
+            const launch = actions.find((args) => args.includes('run'));
+            expect(launch).toBeDefined();
+            const vars = JSON.parse(launch?.[(launch?.indexOf('--vars') ?? -1) + 1] ?? '{}');
+            expect(vars).toMatchObject({
+                publish_enabled: 'true',
+                skip_review: 'true',
+                agent: 'fixture',
+                agent_retry: 'fixture-retry',
+            });
+            expect(actions.some((args) => args.includes('sync'))).toBe(true);
+            const cancelled = actions.filter((args) => args.includes('cancel'));
+            expect(cancelled.length).toBe(scenario.startsWith('failure') || scenario.startsWith('timeout') ? 2 : 0);
+            expect(actions.some((args) => args.includes('release'))).toBe(
+                scenario === 'failure' || scenario.startsWith('timeout'),
+            );
+            if (scenario.startsWith('timeout')) {
+                for (const path of ['started', 'child']) {
+                    const pid = Number(readFileSync(join(dir, path), 'utf-8'));
+                    let running = true;
+                    try {
+                        process.kill(pid, 0);
+                    } catch {
+                        running = false;
+                    }
+                    if (running) {
+                        try {
+                            process.kill(pid, 'SIGKILL');
+                        } catch {}
+                    }
+                    expect({ path, pid, running }).toMatchObject({ running: false });
+                }
+            }
+            results.push({ scenario, exitCode, receipt: row, actions });
+        }
+        writeFileSync(
+            join(evidence, 'summary.json'),
+            JSON.stringify({ checkedAt: new Date().toISOString(), results }, null, 2),
+        );
+    }, 20000);
+});

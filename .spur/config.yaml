@@ -132,33 +132,17 @@ bootstrap:
       # ready=false, streak 1/5 — the newest voice2 runs are dry-run (no classify
       # step), so publish parity against voice1 is unproven. This job is the first
       # scheduled voice2 publishing path; check the first two ticks.
+      # Supervised local 04:30 daily run; explicit publishing/review vars and works root.
+      # Internal 3h45m deadline closes owned runs before the outer four-hour kill.
+      # codex-sol passed a real artifact-write probe during the 2026-11-01 recovery.
       - name: kk-daily-ai-voice
         cron: "30 4 * * *"
-        # 4h child budget (default is 600s — the 06:00 runs of 2026-09-19/20 died
-        # at ten minutes). Covers the slowest healthy E2E: measured voice2
-        # whole-run 1h47m (2026-10-10) and 2h30m (2026-10-08), of which voice
-        # generation alone is 1h47m-2h21m. Chosen above the queue's two-hour
-        # visibility ceiling on purpose: durable single-flight (queue_jobs unique
-        # index, task 0863) folds any redelivered sibling, so a wedged run is
-        # killed at 4h instead of a legitimate slow run being killed at 2h.
         timeoutMs: 14400000
-        # Only two vars, and both are load-bearing:
-        # - publish_enabled defaults to false; this is a publishing run.
-        # - skip_review=true skips the `review` pause node (pause: true) — a cron
-        #   run has nobody to answer it.
-        # No run_date: voice2's prepare derives the date itself
-        # (`kk daily prepare --run-date ""` → today) and projects it back from
-        # <work_dir>/run-date.txt. Not passing it also drops the
-        # "$(date +%F)"-inside-a-var hazard that cost the 2026-09-13..18 runs
-        # (var values reach non-shell steps verbatim, so the date only expands
-        # for shell steps). No safety_escalate_policy either: that var was
-        # voice1's backstop against an escalate landing on the `review` HITL.
-        # voice2 delegates safety to the nested kk-daily-safety.yaml state
-        # machine, whose terminal `clean` already covers pass|escalate|exclude,
-        # so an unattended run can no longer be stranded by an escalation.
         command: >-
-          spur --no-logo workflow run plugins/kk/workflows/kk-daily-ai-voice2.yaml --quiet
-          --vars "{\"publish_enabled\":\"true\",\"skip_review\":\"true\"}"
+          bun plugins/kk/scripts/daily-scheduled-run.ts
+          --repo /Users/robin/xprojects/knowledge-kit
+          --works-dir /Users/robin/xprojects/knowledge-kit/.works
+          --agent codex-sol --retry-agent codex-sol
 
       # 04:05, 10:05, 16:05, 22:05 daily: kk-collect standalone 6-hourly collection
       # into the kk store (aihot + last30days + horizon -> store ingest -> label).
