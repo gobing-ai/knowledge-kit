@@ -1,3 +1,5 @@
+# Deployment-ready copy. Promote this file to plugins/kk/workflows/kk-daily-ai-voice2.yaml only
+# after approval; all self-validation and nested-workflow references intentionally use active paths.
 name: kk-daily-ai-voice2
 kind: dag
 description: >-
@@ -166,7 +168,7 @@ nodes:
         command: >-
           kk stage daily-preflight plugins/kk/workflows/kk-daily-ai-voice2.yaml
           plugins/kk/workflows/kk-daily-safety.yaml
-          && kk daily prepare --workflow kk-daily-ai-voice2 --run-date "${vars.run_date}" --ledger-sync
+          && kk daily prepare --workflow kk-daily-ai-voice2 --work-dir "${vars.work_dir}" --run-date "${vars.run_date}" --ledger-sync
           --run "${vars.__runId}" --definition-digest "${vars.__definitionDigest}"
           --setting window="${vars.window}" --setting language="${vars.language}" --setting vdriver="${vars.vdriver}"
           --setting skip_review="${vars.skip_review}" --setting transcode_mp3="${vars.transcode_mp3}"
@@ -322,6 +324,7 @@ nodes:
       options:
         role: scribe
         agent: ${vars.agent}
+        timeoutMs: 600000
         # ADR-115 error tier: keep this prompt <= 1000 chars (0133 R3; 0138 R4a copy discipline).
         # The anchor is shared with plan-translate-retry so the two attempts cannot drift apart.
         # 20261015 forensics: headless agy's terminal sandbox denies workspace writes for EVERY
@@ -359,6 +362,7 @@ nodes:
       options:
         role: reviewer
         agent: ${vars.agent_retry}
+        timeoutMs: 600000
         input: *plan-translate-input
         expectFile: ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json
         allowAppend: false
@@ -380,6 +384,7 @@ nodes:
       options:
         role: scribe
         agent: ${vars.agent}
+        timeoutMs: 600000
         # ADR-115 error tier: keep this prompt <= 1000 chars. No title line: the canonical episode
         # title is computed by daily-article-gen (0189 R4).
         # The anchor is shared with article-write-retry so the two attempts cannot drift apart.
@@ -411,6 +416,7 @@ nodes:
       options:
         role: reviewer
         agent: ${vars.agent_retry}
+        timeoutMs: 600000
         input: *article-write-input
         expectFile: ${vars.work_dir}/22-article/${vars.run_date}_06_article-write_body.md
         allowAppend: false
@@ -455,6 +461,7 @@ nodes:
       options:
         role: scribe
         agent: ${vars.agent}
+        timeoutMs: 600000
         # ADR-115 error tier: keep this prompt <= 1000 chars.
         input: |
           Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of plan docs; don't edit it.
@@ -517,6 +524,7 @@ nodes:
       options:
         role: scribe
         agent: ${vars.agent}
+        timeoutMs: 600000
         # ADR-115 error tier: keep this prompt <= 1000 chars.
         input: |
           Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of docs; don't edit it. Also read the style contract ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_style.md and obey its char caps, duration budget and banned phrases.
@@ -552,6 +560,8 @@ nodes:
       are stripped at the nested-spur boundary (the same two `NESTED_SPUR_UNSET` vars the stage
       runner strips, kk-workflow-stages.ts): without it `spur workflow run` refuses to start inside
       an active run. Non-publishing runs skip the gate entirely, exactly like voice1.
+      `skip_review` is forwarded as the nested `unattended` flag, so a real safety escalation cannot
+      silently reach publication when the caller has no pause node.
     dependsOn: [script]
     condition:
       kind: shell
@@ -563,7 +573,8 @@ nodes:
         command: >-
           env -u SPUR_WORKFLOW_RUN_ACTIVE -u SPUR_EXPECTED_DEFINITION_DIGEST
           spur workflow run plugins/kk/workflows/kk-daily-safety.yaml
-          --vars "{\"work_dir\":\"${vars.work_dir}\",\"run_date\":\"${vars.run_date}\",\"safety_max_revise\":\"${vars.safety_max_revise}\",\"safety_platforms\":\"${vars.safety_platforms}\",\"agent\":\"${vars.agent}\"}"
+          --run-id "${vars.__runId}-safety"
+          --vars "{\"work_dir\":\"${vars.work_dir}\",\"run_date\":\"${vars.run_date}\",\"safety_max_revise\":\"${vars.safety_max_revise}\",\"safety_platforms\":\"${vars.safety_platforms}\",\"agent\":\"${vars.agent}\",\"agent_retry\":\"${vars.agent_retry}\",\"unattended\":\"${vars.skip_review}\"}"
           --quiet --no-plan
 
   - id: review
@@ -823,6 +834,7 @@ nodes:
       options:
         role: scribe
         agent: ${vars.agent}
+        timeoutMs: 600000
         # ADR-115 error tier: keep this prompt <= 1000 chars.
         input: |
           Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of news docs; don't edit it.
@@ -918,6 +930,7 @@ nodes:
         onError: continue
         role: scribe
         agent: ${vars.agent}
+        timeoutMs: 600000
         # 2026-10-24: `onError: continue` documents the locales as non-blocking, but a failure here
         # landed AFTER surfdash/podcast and left `translate-sync` to sync nothing while
         # `publish-classify` still reported the day `full` — the en/ja posts never existed. The
@@ -953,6 +966,7 @@ nodes:
         onError: continue
         role: reviewer
         agent: ${vars.agent_retry}
+        timeoutMs: 600000
         input: *translate-input
 
   - id: translate-sync
@@ -997,7 +1011,8 @@ nodes:
       kind: shell
       options:
         command: >-
-          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
+          test "$(cat "${vars.work_dir}/31-publish/${vars.run_date}_17_publish_publish-status.txt" 2>/dev/null)" = "full"
+          && kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
           && test "${vars.publish_enabled}" = "true"
     action:
       kind: shell

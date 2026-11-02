@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 /**
  * Task 0270 — a failed safety reviewer must reach the gate, not abort the nested run.
@@ -20,7 +20,9 @@ import { join } from 'node:path';
  */
 
 const REPO = join(import.meta.dir, '../../..');
-const SAFETY_MACHINE = 'plugins/kk/workflows/kk-daily-safety.yaml';
+const SAFETY_MACHINE = resolve(
+    process.env.KK_SAFETY_WORKFLOW ?? join(REPO, 'plugins/kk/workflows/kk-daily-safety.yaml'),
+);
 const VOICE2 = 'plugins/kk/workflows/kk-daily-ai-voice2.yaml';
 const STAGE_RUNNER = join(import.meta.dir, '../scripts/kk-workflow-stages.ts');
 const STAMP = '20260916';
@@ -47,8 +49,8 @@ interface Machine {
 }
 
 /** Parse a state machine: states with their onEnter actions, transitions with unwrapped guards. */
-function loadMachine(rel: string): Machine {
-    const parsed = Bun.YAML.parse(readFileSync(join(REPO, rel), 'utf-8')) as {
+function loadMachine(path: string): Machine {
+    const parsed = Bun.YAML.parse(readFileSync(path, 'utf-8')) as {
         vars?: Record<string, string>;
         states?: { id?: string; onEnter?: EnterAction[] }[];
         transitions?: {
@@ -71,6 +73,7 @@ function loadMachine(rel: string): Machine {
 }
 
 const machine = loadMachine(SAFETY_MACHINE);
+const SPLIT_MACHINE = machine.states.some((state) => state.id === 'review-retry');
 
 /** Every fixture leaves with the test run — verdict/stamp files and prepared work dirs are disposable. */
 const tempDirs: string[] = [];
@@ -84,11 +87,7 @@ function tempDir(prefix: string): string {
     return dir;
 }
 
-/**
- * The state's PRIMARY agent.run step whose expectFile carries `expectFragment` (the reviewer pin).
- * Since 2026-10-24 a state may declare a `-retry` sibling with the SAME pin on a higher tier, so
- * the primary is the first match and the count assertion moved to the retry test below.
- */
+/** The state's primary reviewer action whose expectFile carries `expectFragment`. */
 function reviewerStep(stateId: string, expectFragment: string): EnterAction {
     const steps = (machine.states.find((state) => state.id === stateId)?.onEnter ?? []).filter(
         (action) => action.kind === 'agent.run' && String(action.options?.expectFile ?? '').includes(expectFragment),
@@ -100,14 +99,17 @@ function reviewerStep(stateId: string, expectFragment: string): EnterAction {
     return step;
 }
 
-/** The `-retry` sibling of {@link reviewerStep}: same pin, a different (declared) executor. */
+/** The retry reviewer action: inline legacy states keep it in one onEnter list; split states use a sibling state. */
 function reviewerRetryStep(stateId: string, expectFragment: string): EnterAction {
-    const steps = (machine.states.find((state) => state.id === stateId)?.onEnter ?? []).filter(
+    const retryState = SPLIT_MACHINE
+        ? ({ review: 'review-retry', judge: 'judge-retry', revise: 'revise-retry' }[stateId] ?? `${stateId}-retry`)
+        : stateId;
+    const steps = (machine.states.find((state) => state.id === retryState)?.onEnter ?? []).filter(
         (action) => action.kind === 'agent.run' && String(action.options?.expectFile ?? '').includes(expectFragment),
     );
-    const step = steps.at(1);
+    const step = steps.at(SPLIT_MACHINE ? 0 : 1);
     if (step === undefined) {
-        throw new Error(`${stateId}: expected a retry agent.run for ${expectFragment}, found ${steps.length}`);
+        throw new Error(`${retryState}: expected a retry agent.run for ${expectFragment}, found ${steps.length}`);
     }
     return step;
 }
@@ -122,23 +124,78 @@ describe('kk-daily-safety reviewer steps — a failed reviewer reaches the gate,
         expect(expectFile).toContain(varRef('work_dir'));
         expect(expectFile).toContain('/24-script/');
         expect(expectFile).toContain('_09_safety-review_report.json');
-        // The unconditional review -> judge edge is what then carries the run onward.
         const outbound = machine.transitions.filter((transition) => transition.from === 'review');
-        expect(outbound.map((transition) => transition.to)).toEqual(['judge']);
-        expect(outbound.at(0)?.command).toBeNull();
+        if (SPLIT_MACHINE) {
+            const retry = reviewerStep('review-retry', '_09_safety-review_report.json');
+            expect(retry.onError, 'the split retry must still hand its failure to the gate').toBe('continue');
+            expect(String(retry.options?.agent)).toContain('vars.agent_retry');
+            expect(outbound.map((transition) => transition.to)).toEqual(['review-retry', 'judge-primary']);
+            expect(outbound.at(0)?.command).toContain('report-valid');
+            expect(outbound.at(0)?.command).toContain('! bun');
+            expect(outbound.at(1)?.command).toContain('report-valid');
+        } else {
+            // The legacy machine keeps the retry in the same onEnter sequence and uses an unconditional
+            // review -> judge edge to carry the run onward.
+            expect(outbound.map((transition) => transition.to)).toEqual(['judge']);
+            expect(outbound.at(0)?.command).toBeNull();
+        }
     });
 
     it('AC2: the judge re-check step carries the same onError continue policy with its own pin', () => {
-        const judge = reviewerStep('judge', '_09_safety-judge_verdict.json');
-        expect(judge.onError, 'a failed judge re-check must reach the gate in the same onEnter sequence').toBe(
-            'continue',
-        );
+        const judgeState = SPLIT_MACHINE ? 'judge-primary' : 'judge';
+        const judge = reviewerStep(judgeState, '_09_safety-judge_verdict.json');
+        expect(judge.onError, 'a failed judge re-check must reach the gate').toBe('continue');
         const expectFile = String(judge.options?.expectFile);
         expect(expectFile).toContain(varRef('work_dir'));
         expect(expectFile).toContain('_09_safety-judge_verdict.json');
+        if (SPLIT_MACHINE) {
+            const retry = reviewerStep('judge-retry', '_09_safety-judge_verdict.json');
+            expect(retry.onError).toBe('continue');
+            expect(String(retry.options?.agent)).toContain('vars.agent_retry');
+        }
     });
 
     it('AC3: each reviewer step retries on the declared capable tier when the primary leaves no artifact (2026-10-24)', () => {
+        if (SPLIT_MACHINE) {
+            for (const [stateId, retryStateId, fragment] of [
+                ['review', 'review-retry', '_09_safety-review_report.json'],
+                ['judge-primary', 'judge-retry', '_09_safety-judge_verdict.json'],
+            ] as const) {
+                const primary = reviewerStep(stateId, fragment);
+                const retry = reviewerStep(retryStateId, fragment);
+                expect(primary.onError, `${stateId}'s primary must hand failure to its guarded retry`).toBe('continue');
+                expect(retry.onError, `${retryStateId} must still hand failure to the gate`).toBe('continue');
+                expect(String(retry.options?.agent), `${retryStateId} must retry on vars.agent_retry`).toContain(
+                    'vars.agent_retry',
+                );
+            }
+            const reviseAgents = (machine.states.find((state) => state.id === 'revise')?.onEnter ?? [])
+                .filter((action) => action.kind === 'agent.run')
+                .map((action) => String(action.options?.agent));
+            expect(reviseAgents).toEqual([varRef('agent')]);
+            const reviseRetryAgents = (machine.states.find((state) => state.id === 'revise-retry')?.onEnter ?? [])
+                .filter((action) => action.kind === 'agent.run')
+                .map((action) => String(action.options?.agent));
+            expect(reviseRetryAgents).toEqual([varRef('agent_retry')]);
+            expect(
+                (machine.states.find((state) => state.id === 'revise-retry')?.onEnter ?? []).filter(
+                    (action) => action.kind === 'agent.run',
+                ),
+            ).toHaveLength(1);
+            const reviseTransitions = machine.transitions.filter(
+                (transition) => transition.from === 'revise' || transition.from === 'revise-retry',
+            );
+            expect(reviseTransitions.map((transition) => `${transition.from}->${transition.to}`)).toEqual([
+                'revise->revise-retry',
+                'revise->revise-apply',
+                'revise-retry->revise-apply',
+            ]);
+            expect(reviseTransitions.at(0)?.command).toContain('revision-valid');
+            expect(reviseTransitions.at(1)?.command).toContain('revision-valid');
+            expect(reviseTransitions.at(2)?.command).toBeNull();
+            return;
+        }
+
         // 2026-10-24: a scribe-rung executor failed `review` and then `judge` with no artifact, so the
         // gate scored `block` and the episode was withheld although nothing had reviewed it. The
         // machine has no back-edge for those two states, so the retry has to live in the same onEnter.
@@ -181,6 +238,12 @@ describe('kk-daily-safety reviewer steps — a failed reviewer reaches the gate,
         const decides = actions('judge', 'decide');
         expect(decides.length).toBe(1);
         expect(decides.at(0)?.onError).toBe('continue');
+        if (SPLIT_MACHINE) {
+            expect(actions('review-retry', 'shell')).toHaveLength(0);
+            expect(actions('judge-primary', 'shell')).toHaveLength(0);
+            expect(actions('judge-retry', 'shell')).toHaveLength(0);
+            expect(actions('revise-retry', 'shell')).toHaveLength(0);
+        }
     });
 
     it('AC4: the accept edge reads the folded decision token and the judge -> block catch-all stays unconditional', () => {
@@ -188,10 +251,15 @@ describe('kk-daily-safety reviewer steps — a failed reviewer reaches the gate,
         // Declaration order is load-bearing: a refused verdict falls through clean and revise to block.
         expect(outbound.map((transition) => transition.to)).toEqual(['clean', 'revise', 'block']);
         const accept = outbound.at(0)?.command;
-        // 0317 R6: the verdict/confidence read moved into `kk stage daily-safety-verdict`; the guard
-        // is now one predicate over the token that stage writes (ADR-115).
-        expect(accept).toContain('_09_safety-verdict.status');
-        expect(accept).toContain('= accept');
+        if (SPLIT_MACHINE) {
+            expect(accept).toContain('safety-artifact-check.ts publish-valid');
+            expect(accept).toContain(varRef('unattended'));
+        } else {
+            // 0317 R6: the verdict/confidence read moved into `kk stage daily-safety-verdict`; the guard
+            // is now one predicate over the token that stage writes (ADR-115).
+            expect(accept).toContain('_09_safety-verdict.status');
+            expect(accept).toContain('= accept');
+        }
         const block = outbound.at(2);
         expect(block?.command).toBeNull();
         expect(block?.terminalReason).toBe('failed-check');
@@ -252,7 +320,7 @@ describe('the real judge -> clean guard verifies the confidence enum on every sh
     const firstPassing = (state: string, dir: string): string | null => {
         const vars = judgeVars(dir);
         for (const transition of machine.transitions.filter((candidate) => candidate.from === state)) {
-            if (transition.command === null || matches(transition.command, vars, dir)) {
+            if (transition.command === null || matches(transition.command, vars, REPO)) {
                 return `${transition.from}->${transition.to}`;
             }
         }
@@ -300,7 +368,7 @@ describe('the real judge -> clean guard verifies the confidence enum on every sh
         ['an admission-only exclusion the decision confirms', 'exclude', 'exclude'],
     ])('%s is admitted: the guard matches and clean is the first passing edge', (_name, status, decision) => {
         const { dir, stderr } = judgeFixture(status, decision);
-        const run = executeGuard(acceptTransition.command ?? '', judgeVars(dir), dir);
+        const run = executeGuard(acceptTransition.command ?? '', judgeVars(dir), REPO);
         expect(run.matched, stderr).toBe(true);
         expect(stderr).toBe('');
         expect(firstPassing('judge', dir)).toBe('judge->clean');
@@ -314,7 +382,7 @@ describe('the real judge -> clean guard verifies the confidence enum on every sh
         ['a missing gate stamp', 'pass', 'pass', 'verdict-refused'],
     ])('%s is refused by name and block is the first passing edge', (_name, status, decision, refusal) => {
         const { dir, stderr } = judgeFixture(status, decision, _name !== 'a missing gate stamp');
-        const run = executeGuard(acceptTransition.command ?? '', judgeVars(dir), dir);
+        const run = executeGuard(acceptTransition.command ?? '', judgeVars(dir), REPO);
         expect(run.matched, run.stdout).toBe(false);
         expect(stderr).toContain(`kk-daily-safety.judge.${refusal}`);
         // Fail-closed without deadlock: the refusal falls through to the unconditional block edge.

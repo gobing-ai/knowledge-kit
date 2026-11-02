@@ -731,13 +731,13 @@ describe('kk-daily-safety — decision-bound publish verdict (AC6, 0317 R6)', ()
         const guard = transitions.find((t) => t.from === 'judge' && t.to === 'clean');
         expect(guard?.command).not.toBeNull();
         const vars = { ...safety.vars, work_dir: dir, run_date: '20261007', safety_status: options.status };
-        const result = runGuard(String(guard?.command), vars, dir);
+        const result = runGuard(String(guard?.command), vars, REPO);
         return { ...result, stderr: `${stage.stderr.toString()}${result.stderr}`, dir };
     }
 
     it('names the judge verdict path with its step prefix and stays inside the ADR-115 prompt cap', () => {
         const yaml = readFileSync(SAFETY, 'utf-8');
-        const block = yaml.match(/- id: judge\n[\s\S]*?(?=\n {2}- id: )/)?.[0] ?? '';
+        const block = yaml.match(/- id: judge-retry\n[\s\S]*?(?=\n {2}- id: )/)?.[0] ?? '';
         // The judge prompt is a shared YAML anchor (`&safety-judge-input`) so the primary and its
         // retry cannot drift (2026-10-24); the anchored body is the contract, not the reference.
         const anchored = yaml.match(/input: &safety-judge-input \|\n([\s\S]*?)(?=\n {0,10}\S)/)?.[1] ?? '';
@@ -767,12 +767,19 @@ describe('kk-daily-safety — decision-bound publish verdict (AC6, 0317 R6)', ()
             (parsed.states.find((state) => state.id === id)?.onEnter ?? []).filter(
                 (action) => action.kind === 'agent.run',
             );
-        for (const id of ['review', 'judge', 'revise']) {
+        for (const [id, retryId] of [
+            ['review', 'review-retry'],
+            ['judge-primary', 'judge-retry'],
+            ['revise', 'revise-retry'],
+        ] as const) {
             const steps = agentSteps(id);
             expect(String(steps[0]?.options?.agent ?? ''), `${id}'s primary keeps the caller executor`).toContain(
                 'vars.agent',
             );
-            expect(String(steps[1]?.options?.agent ?? ''), `${id} must retry on vars.agent_retry`).toContain(
+            expect(steps).toHaveLength(1);
+            const retry = agentSteps(retryId ?? '');
+            expect(retry).toHaveLength(1);
+            expect(String(retry[0]?.options?.agent ?? ''), `${id} must retry on vars.agent_retry`).toContain(
                 'vars.agent_retry',
             );
         }
@@ -783,8 +790,25 @@ describe('kk-daily-safety — decision-bound publish verdict (AC6, 0317 R6)', ()
     it('is a state machine whose loop is the review → judge → revise chain', () => {
         expect(safety.kind).toBe('state-machine');
         expect(safety.initialState).toBe('review');
-        expect(safety.states.map((state) => state.id)).toEqual(['review', 'judge', 'revise', 'clean', 'block']);
-        expect(transitions.some((t) => t.from === 'revise' && t.to === 'review')).toBe(true);
+        expect(safety.states.map((state) => state.id)).toEqual([
+            'review',
+            'review-retry',
+            'judge-primary',
+            'judge-retry',
+            'judge',
+            'revise',
+            'revise-retry',
+            'revise-apply',
+            'clean',
+            'block',
+        ]);
+        expect(transitions.some((t) => t.from === 'revise-apply' && t.to === 'review')).toBe(true);
+        expect(transitions.find((t) => t.from === 'review' && t.to === 'review-retry')?.command).toContain(
+            'report-valid',
+        );
+        expect(transitions.find((t) => t.from === 'judge-primary' && t.to === 'judge-retry')?.command).toContain(
+            'judge-valid',
+        );
         // The revise transition is bounded by the gate's budget var, which the DAG forwards.
         expect(safety.vars.safety_max_revise).toBe('2');
     });
@@ -804,12 +828,12 @@ describe('kk-daily-safety — decision-bound publish verdict (AC6, 0317 R6)', ()
         // machine has no back-edge for `review`/`judge` and a failed first attempt used to leave no
         // artifact at all, which the gate then failed CLOSED as `block`.
         expect(agentSteps.map((step) => step.state).sort()).toEqual([
-            'judge',
-            'judge',
+            'judge-primary',
+            'judge-retry',
             'review',
-            'review',
+            'review-retry',
             'revise',
-            'revise',
+            'revise-retry',
         ]);
         // 0270: an untolerated agent failure aborts the machine at that node, so `daily-safety-gate`
         // never runs and the nested run ends `-> review` having written no status (2026-10-12 — an out
@@ -820,13 +844,24 @@ describe('kk-daily-safety — decision-bound publish verdict (AC6, 0317 R6)', ()
             expect(step.onError, `${step.state} must tolerate its agent failing`).toBe('continue');
         // …and the gate really does follow the agent step in the SAME state (verified engine behaviour:
         // a later onEnter action still runs after a tolerated failure), so tolerating it cannot skip it.
-        for (const id of ['review', 'judge']) {
+        for (const id of ['review', 'judge-primary']) {
             const actions = states.find((state) => state.id === id)?.onEnter ?? [];
             const agentAt = actions.findIndex((action) => action.kind === 'agent.run');
             const commandAt = actions.findIndex((action) => action.kind === 'shell');
             expect(agentAt, `${id} has no agent.run step`).toBeGreaterThanOrEqual(0);
-            if (id === 'judge') expect(commandAt, 'the gate must follow the judge agent').toBeGreaterThan(agentAt);
+            if (id === 'review') expect(commandAt, 'prep precedes the primary reviewer').toBeLessThan(agentAt);
         }
+        expect(
+            states
+                .find((state) => state.id === 'judge')
+                ?.onEnter?.some(
+                    (action) =>
+                        action.kind === 'shell' && String(action.options?.command).includes('daily-safety-gate'),
+                ),
+        ).toBe(true);
+        expect(
+            states.find((state) => state.id === 'judge')?.onEnter?.some((action) => action.kind === 'agent.run'),
+        ).toBe(false);
     });
 
     it.each([
@@ -908,15 +943,17 @@ describe('kk-daily-safety — decision-bound publish verdict (AC6, 0317 R6)', ()
         expect(readFileSync(join(dir, '24-script', '20261007_09_safety-judge_status.txt'), 'utf-8')).toBe('block');
     });
 
-    it('reads one token: the accept guard is a single predicate over the folded status file', () => {
+    it('uses one predicate over the folded verdict and unattended escalation policy', () => {
         const guard = transitions.find((t) => t.from === 'judge' && t.to === 'clean');
         expect(String(guard?.command).trim()).toBe(
             [
-                'test "$(cat "',
+                'bun plugins/kk/scripts/safety-artifact-check.ts publish-valid "',
                 varRef('work_dir'),
-                '/24-script/',
+                '" "',
                 varRef('run_date'),
-                '_09_safety-verdict.status" 2>/dev/null)" = accept',
+                '" "',
+                varRef('unattended'),
+                '"',
             ].join(''),
         );
         // Every `${…}` the guard carries is a declared var (a builtin reference fails the run).
