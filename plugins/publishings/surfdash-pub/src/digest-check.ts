@@ -8,9 +8,9 @@
  * ellipsis, `label — sentence` key_points) so a regressed derivation fails the publish loud
  * instead of shipping broken SEO metadata.
  *
- * Pure, line-based frontmatter parsing — no YAML dependency (same stance as
- * {@link normalizeLocaleFrontmatter} and the site's own check-digest script). Handles `"..."`,
- * `'...'`, plain and `>-`-folded scalars, flow arrays and `  - "..."` block lists.
+ * Line-based frontmatter parsing with Bun's stdlib YAML renderer for block scalars (no package
+ * dependency; same field compatibility as the site's own check-digest script). Handles `"..."`,
+ * `'...'`, plain and folded/literal block scalars, flow arrays and `  - "..."` block lists.
  */
 import { SERIES_NAMES } from './patch';
 
@@ -31,8 +31,64 @@ type FrontmatterValue = string | string[];
 
 /** Opening `key:` line: bare key, no leading whitespace (frontmatter is never indented). */
 const KEY_LINE = /^([A-Za-z_][A-Za-z0-9_-]*):(.*)$/;
+const BLOCK_SCALAR = /^[>|][+-]?$/;
 
 const escapeRe = (token: string): string => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Number of leading indentation characters; YAML block indentation is spaces in refined posts. */
+function leadingIndent(line: string): number {
+    return line.match(/^[ \t]*/)?.[0].length ?? 0;
+}
+
+/**
+ * Reads one block scalar without allowing a same-indentation sibling list item to become text.
+ * Bun's YAML renderer supplies folded/literal and blank-line semantics once the indentation
+ * boundary is known. The fallback keeps malformed frontmatter non-fatal, matching the old
+ * line parser's permissive behavior.
+ */
+function readBlockScalar(
+    lines: string[],
+    start: number,
+    end: number,
+    parentIndent: number,
+    indicator: string,
+): { value: string; nextIndex: number } {
+    const content: string[] = [];
+    let j = start;
+    while (j < end) {
+        const line = lines[j] ?? '';
+        if (line.trim() === '') {
+            content.push('');
+            j++;
+            continue;
+        }
+        if (leadingIndent(line) <= parentIndent) break;
+        content.push(line);
+        j++;
+    }
+    if (content.length === 0) return { value: '', nextIndex: j };
+
+    const normalized = content.map((line) =>
+        line === '' ? '' : line.slice(Math.min(parentIndent, leadingIndent(line))),
+    );
+    try {
+        const parsed = Bun.YAML.parse([`value: ${indicator}`, ...normalized, 'sentinel: null'].join('\n')) as {
+            value?: unknown;
+        };
+        if (typeof parsed.value === 'string') return { value: parsed.value, nextIndex: j };
+    } catch {
+        // Keep the checker useful for malformed drafts; the contract gate reports the field issue.
+    }
+    const folded = indicator.startsWith('>');
+    const parts: string[] = [];
+    for (const line of normalized) {
+        if (line !== '') parts.push(line.trim());
+    }
+    return {
+        value: parts.join(folded ? ' ' : '\n'),
+        nextIndex: j,
+    };
+}
 
 /** Unquotes a YAML scalar: `"…"` via JSON (mapContent writes JSON.stringify), `'…'` with '' unescape. */
 function unquote(value: string): string {
@@ -50,7 +106,7 @@ function unquote(value: string): string {
 }
 
 /**
- * Line-based frontmatter parse: scalars (plain/quoted/folded) and string lists (block `- item`
+ * Line-based frontmatter parse: scalars (plain/quoted/folded/literal) and string lists (block `- item`
  * or flow `[a, b]`). Unknown shapes degrade to the raw text; a missing frontmatter yields {}.
  */
 export function parseFrontmatterScalars(markdown: string): Map<string, FrontmatterValue> {
@@ -66,29 +122,34 @@ export function parseFrontmatterScalars(markdown: string): Map<string, Frontmatt
         if (!match?.[1] || match[2] === undefined) continue;
         const key = match[1];
         const value = match[2].trim();
-        if (value === '>-' || value === '>' || value === '>+' || value === '|-' || value === '|') {
-            // Folded scalar: indented continuation lines, joined with spaces (block scalars too —
-            // descriptions are prose, a stray newline matters less than losing the text).
-            const parts: string[] = [];
-            let j = i + 1;
-            while (j < end) {
-                const continuation = lines[j];
-                if (!continuation || !/^[ \t]+\S/.test(continuation)) break;
-                parts.push(continuation.trim());
-                j++;
-            }
-            out.set(key, parts.join(' '));
-            i = j - 1;
+        if (BLOCK_SCALAR.test(value)) {
+            const block = readBlockScalar(lines, i + 1, end, leadingIndent(line), value);
+            out.set(key, block.value);
+            i = block.nextIndex - 1;
             continue;
         }
         if (value === '') {
             // Block list: `key:` followed by `  - item` lines; an empty key stays ''.
             const items: string[] = [];
+            let listIndent: number | undefined;
             let j = i + 1;
             while (j < end) {
                 const itemLine = lines[j];
                 if (!itemLine || !/^\s*-\s+/.test(itemLine)) break;
-                items.push(unquote(itemLine.replace(/^\s*-\s+/, '').trim()));
+                const itemIndent = leadingIndent(itemLine);
+                if (listIndent === undefined) listIndent = itemIndent;
+                if (itemIndent !== listIndent) break;
+                const raw = itemLine.replace(/^\s*-\s+/, '').trim();
+                // Folded item (`- >-`): the refine writer folds long CJK bullets, and a bare
+                // ">-" item would fail the " — " separator check downstream — read the
+                // indented continuation lines into the item with YAML's block-scalar semantics.
+                if (BLOCK_SCALAR.test(raw)) {
+                    const block = readBlockScalar(lines, j + 1, end, itemIndent, raw);
+                    items.push(block.value);
+                    j = block.nextIndex;
+                    continue;
+                }
+                items.push(unquote(raw));
                 j++;
             }
             if (items.length > 0) {

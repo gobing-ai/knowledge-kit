@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { checkDigestFrontmatter, type DigestLocale } from '../src/digest-check';
+import { checkDigestFrontmatter, type DigestLocale, parseFrontmatterScalars } from '../src/digest-check';
 import { SERIES_NAMES } from '../src/patch';
 
 /**
@@ -295,5 +295,57 @@ describe('checkDigestFrontmatter', () => {
             );
         const res = checkDigestFrontmatter(md, 'zh');
         expect(res).toEqual([]);
+    });
+
+    describe('block scalar list parsing', () => {
+        test('keeps folded and literal sibling items separate and resumes at the next frontmatter key', () => {
+            const markdown = [
+                '---',
+                'key_points:',
+                '  - >-',
+                '    Alpha — first sentence.',
+                '    Alpha second sentence.',
+                '  - >-',
+                '    Beta — second sentence.',
+                '  - |-',
+                '    Gamma — literal first line.',
+                '    Gamma literal second line.',
+                '  - |-',
+                '    Delta — fourth sentence.',
+                'tags:',
+                '  - sub-category:ai-daily',
+                'publishDate: 2026-10-23',
+                '---',
+            ].join('\n');
+
+            const frontmatter = parseFrontmatterScalars(markdown);
+
+            expect(frontmatter.get('key_points')).toEqual([
+                'Alpha — first sentence. Alpha second sentence.',
+                'Beta — second sentence.',
+                'Gamma — literal first line.\nGamma literal second line.',
+                'Delta — fourth sentence.',
+            ]);
+            expect(frontmatter.get('tags')).toEqual(['sub-category:ai-daily']);
+            expect(frontmatter.get('publishDate')).toBe('2026-10-23');
+        });
+
+        test('preserves folded paragraph breaks while folding adjacent lines', () => {
+            const markdown = [
+                '---',
+                'description: >-',
+                '  first paragraph line one.',
+                '  first paragraph line two.',
+                '',
+                '  second paragraph line one.',
+                '  second paragraph line two.',
+                'tags: [sub-category:ai-daily]',
+                '---',
+            ].join('\n');
+
+            expect(parseFrontmatterScalars(markdown).get('description')).toBe(
+                'first paragraph line one. first paragraph line two.\nsecond paragraph line one. second paragraph line two.',
+            );
+        });
     });
 });

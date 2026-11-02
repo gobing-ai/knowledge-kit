@@ -89,6 +89,7 @@ describe('surfdash-pub plugin', () => {
             expect(result.ok).toBe(false);
             expect(result.target).toBe('surfdash');
             expect(result.error).toContain('Postsurfing transport error');
+            expect(result.metadata?.deliveryState).toBe('uncertain');
         } finally {
             delete process.env.SURFDASH_ROOT;
             delete process.env.POSTSURFING_BIN;
@@ -112,6 +113,7 @@ describe('surfdash-pub plugin', () => {
             expect(result.ok).toBe(false);
             expect(result.target).toBe('surfdash');
             expect(result.error).toContain('postsurfing CLI failed (exit 1): CLI error');
+            expect(result.metadata?.deliveryState).toBe('uncertain');
         } finally {
             delete process.env.POSTSURFING_BIN;
             delete process.env.SURFDASH_ROOT;
@@ -1538,6 +1540,7 @@ describe('publishPost cover validation (Item 2)', () => {
             const result = await transport.publish({ content });
             expect(result.ok).toBe(false);
             expect(result.error).toContain('metadata.coverImage not found:');
+            expect(result.metadata?.deliveryState).toBe('not-sent');
             expect(existsSync(join(tmpDir, 'content', 'posts', 'articles', 'zh'))).toBe(false);
         } finally {
             delete process.env.POSTSURFING_BIN;

@@ -160,6 +160,21 @@ function fail(error: string): Result {
     return ResultSchema.parse({ ok: false, target: TARGET, error });
 }
 
+type DeliveryState = 'not-sent' | 'uncertain';
+
+/** A failed publish is replay-safe only when it was rejected before postsurfing was invoked. */
+function failWithDeliveryState(error: string, deliveryState: DeliveryState): Result {
+    return ResultSchema.parse({ ok: false, target: TARGET, error, metadata: { deliveryState } });
+}
+
+function failNotSent(error: string): Result {
+    return failWithDeliveryState(error, 'not-sent');
+}
+
+function failUncertain(error: string): Result {
+    return failWithDeliveryState(error, 'uncertain');
+}
+
 /**
  * Writes a Result JSON to `outputPath`, creating the directory as needed. Shared by the success
  * path and the invalid-input path so a malformed payload still produces the spec §2.5 `ok:false`
@@ -705,14 +720,14 @@ async function publishPost(payload: PublishTransportPayload): Promise<Result> {
     // (its refine step rejects other layouts); the root resolution lives in resolveSurfdashRoot().
     const surfdashRoot = resolveSurfdashRoot();
     if (!surfdashRoot) {
-        return fail('SURFDASH_ROOT is required when POSTSURFING_BIN is not a path inside the surfdash checkout');
+        return failNotSent('SURFDASH_ROOT is required when POSTSURFING_BIN is not a path inside the surfdash checkout');
     }
 
     const locale = process.env.SURFDASH_LOCALE ?? 'zh';
     // Fail loud on legacy locale codes ('cn' is the pre-migration name for zh) —
     // they'd write a content dir no route serves.
     if (!['zh', 'en', 'ja'].includes(locale)) {
-        return fail(`SURFDASH_LOCALE must be one of zh/en/ja, got '${locale}'`);
+        return failNotSent(`SURFDASH_LOCALE must be one of zh/en/ja, got '${locale}'`);
     }
     // Date-stamped slug (metadata.runDate, e.g. 20260904) keeps same-title daily posts
     // from colliding; Chinese titles slugify to '' and fall back to the bare date.
@@ -725,27 +740,27 @@ async function publishPost(payload: PublishTransportPayload): Promise<Result> {
     // tree would write a post outside it, and a non-image `coverImage` would be copied into a post
     // that pushPostGit then publishes to a public repo.
     if (runDate !== '' && !/^\d{8}$/.test(runDate)) {
-        return fail(`metadata.runDate must be YYYYMMDD, got '${runDate}'`);
+        return failNotSent(`metadata.runDate must be YYYYMMDD, got '${runDate}'`);
     }
     const articlesRoot = resolve(surfdashRoot, 'content', 'posts', 'articles');
     const localeRoot = resolve(articlesRoot, locale);
     const postDir = resolve(localeRoot, slug);
     if (dirname(localeRoot) !== articlesRoot || dirname(postDir) !== localeRoot) {
-        return fail(`post path escapes ${articlesRoot}`);
+        return failNotSent(`post path escapes ${articlesRoot}`);
     }
     const coverPath = payload.content.metadata?.coverImage;
     // R4 + 2026-10-24: a coverImage that does not exist must fail before anything is written —
     // the old silent skip published a coverless post while the run believed it had one.
     if (typeof coverPath === 'string' && !existsSync(coverPath)) {
-        return fail(`metadata.coverImage not found: ${coverPath}`);
+        return failNotSent(`metadata.coverImage not found: ${coverPath}`);
     }
     if (typeof coverPath === 'string' && !COVER_EXTS.has(extname(coverPath).toLowerCase())) {
-        return fail(`metadata.coverImage must be one of ${[...COVER_EXTS].join(', ')}`);
+        return failNotSent(`metadata.coverImage must be one of ${[...COVER_EXTS].join(', ')}`);
     }
     // Daily digest posts are the series' public face: a missing cover ships a blank OG card.
     // The check uses the same tag sources as mapContentToSurfingMarkdown (contentTags).
     if (isDigestContent(payload.content) && typeof coverPath !== 'string') {
-        return fail('digest post has no cover image (metadata.coverImage)');
+        return failNotSent('digest post has no cover image (metadata.coverImage)');
     }
 
     await createNodeFileSystem().ensureDir(postDir);
@@ -771,17 +786,17 @@ async function publishPost(payload: PublishTransportPayload): Promise<Result> {
         const spawned = await spawnCli([postsurfingBin, 'publish', filePath], surfdashRoot);
 
         if (spawned.exitCode !== 0) {
-            return fail(
+            return failUncertain(
                 `postsurfing CLI failed (exit ${spawned.exitCode}): ${withEmdashTokenHint(cliErrorText(spawned))}`,
             );
         }
 
         // Contract check (ADR-008): the site, not this plugin, owns SEO metadata.
         const notRefined = requireRefined(filePath);
-        if (notRefined) return fail(notRefined);
+        if (notRefined) return failUncertain(notRefined);
         // Digest contract (2026-10-24): the refined values themselves must hold, before any push.
         const digestProblem = digestCheckGate(filePath, locale as DigestLocale);
-        if (digestProblem) return fail(digestProblem);
+        if (digestProblem) return failUncertain(digestProblem);
         const refined = readRefinedSnapshot(filePath);
 
         // Deploy seam: commit + push the post so deploy.yml builds it, then wait for
@@ -805,7 +820,7 @@ async function publishPost(payload: PublishTransportPayload): Promise<Result> {
         }
         const relPostDir = join('content', 'posts', 'articles', locale, slug);
         const pushed = await pushPostGit(surfdashRoot, relPostDir, `content: daily AI news ${dateStamp} (zh)`);
-        if (!pushed.ok) return fail(pushed.error);
+        if (!pushed.ok) return failUncertain(pushed.error);
         const live = await awaitArticleLive(articleUrl);
 
         return ResultSchema.parse({
@@ -818,7 +833,7 @@ async function publishPost(payload: PublishTransportPayload): Promise<Result> {
             metadata: { postPath: filePath, gitCommit: pushed.hash, live, refinedTitle: refined?.title },
         });
     } catch (err: unknown) {
-        return fail(`Postsurfing transport error: ${err instanceof Error ? err.message : String(err)}`);
+        return failUncertain(`Postsurfing transport error: ${err instanceof Error ? err.message : String(err)}`);
     }
 }
 
