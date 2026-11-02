@@ -714,9 +714,18 @@ async function readSucceeded(fs: FileSystem, receiptsDir: string, id: string): P
     }
 }
 
-/** Read the tier-0 receipts a link placeholder resolves from. */
-async function readLinkMap(fs: FileSystem, receiptsDir: string, rows: readonly PublishPlanRow[]): Promise<LinkMap> {
-    const map: LinkMap = {};
+/**
+ * Read the tier-0 receipts a link placeholder resolves from. `real` excludes dummy receipts: a draft
+ * or live row must never publish a `dummy://` link, so with only a rehearsed tier 0 its placeholder
+ * stays unresolved and the row fails with effect none; `all` serves dummy rows.
+ */
+async function readLinkMap(
+    fs: FileSystem,
+    receiptsDir: string,
+    rows: readonly PublishPlanRow[],
+): Promise<{ real: LinkMap; all: LinkMap }> {
+    const real: LinkMap = {};
+    const all: LinkMap = {};
     for (const source of LINK_SOURCES) {
         const row = rows.find((candidate) => candidate.plugin === source.plugin && candidate.tier === 0);
         if (row === undefined) continue;
@@ -724,12 +733,14 @@ async function readLinkMap(fs: FileSystem, receiptsDir: string, rows: readonly P
         if (!(await fs.exists(path))) continue;
         try {
             const receipt = JSON.parse(await fs.readFile(path)) as ItcReceipt;
-            if (receipt.status === 'succeeded' && receipt.url) map[source.receipt] = receipt.url;
+            if (receipt.status !== 'succeeded' || !receipt.url) continue;
+            all[source.receipt] = receipt.url;
+            if (receipt.dummy !== true) real[source.receipt] = receipt.url;
         } catch {
             // an unreadable tier-0 receipt simply leaves the placeholder unresolved
         }
     }
-    return map;
+    return { real, all };
 }
 
 /**
@@ -794,7 +805,7 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
                 continue;
             }
 
-            const links = tier === 0 ? {} : await readLinkMap(fs, receiptsDir, plan.rows);
+            const linkMaps = tier === 0 ? { real: {}, all: {} } : await readLinkMap(fs, receiptsDir, plan.rows);
             const sendRowsInput: SendRow[] = rows.map((row) => ({
                 key: row.id,
                 plugin: row.plugin,
@@ -821,11 +832,14 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
                 preparePayload: async (row) => {
                     if (tier === 0) return { payloadPath: row.payloadPath };
                     const raw = (await fs.exists(row.payloadPath)) ? await fs.readFile(row.payloadPath) : '';
+                    const links: LinkMap = row.mode === 'dummy' ? linkMaps.all : linkMaps.real;
                     let resolved = raw;
                     for (const source of LINK_SOURCES) {
                         const url = links[source.receipt];
                         if (url === undefined) continue;
-                        resolved = resolved.split(source.placeholder).join(url);
+                        // The payload is JSON text: escape the URL as a string fragment so a quote or
+                        // backslash in it cannot break the document.
+                        resolved = resolved.split(source.placeholder).join(JSON.stringify(url).slice(1, -1));
                     }
                     if (LINK_SOURCES.some((source) => resolved.includes(source.placeholder))) {
                         return { error: 'unresolved-link' };
@@ -1009,7 +1023,15 @@ export async function runPublishMatrixRssGate(args: string[], deps: RssGateDeps 
 
     let xml: string;
     try {
-        const read = deps.readFeed ?? (async (url: string) => (await fetch(url)).text());
+        const read =
+            deps.readFeed ??
+            (async (url: string) => {
+                // Bounded and status-checked: a hung feed must not stall the node, and an HTTP error
+                // page is a fetch failure, not a feed that lacks today's item.
+                const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return res.text();
+            });
         xml = await read(feedUrl);
     } catch (err: unknown) {
         return write({
@@ -1203,14 +1225,13 @@ export async function runPublishMatrixBundle(args: string[], deps: PublishMatrix
             };
         }
 
-        // `{{article_url}}` / `{{podcast_url}}` must not survive a freeze as a *variant* omission:
-        // the publish side resolves them, so a bundle that carries no placeholder at all is a
-        // generate-side mistake (the builders own those links).
         // The publication contract needs at least the shared article or episode variant: they are what
         // the tier-0 owned channels publish and what every later tier's link placeholders resolve to.
         const hasOwnedVariant = Object.keys(variants).some((key) => key === 'article' || key === 'episode');
         if (!hasOwnedVariant) {
-            echoError('publish-matrix-bundle: no article/episode variant — the publication contract needs both');
+            echoError(
+                'publish-matrix-bundle: no article/episode variant — the publication contract needs at least one',
+            );
             return 1;
         }
 

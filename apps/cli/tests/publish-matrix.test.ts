@@ -636,6 +636,36 @@ describe('publish3 stage surface (0323 R2, R3, R5)', () => {
         }, fixture);
     });
 
+    it('reads the feed over HTTP by default and treats an error status as fetch-failed, not missing', async () => {
+        const fixture = makeFixture([...TIER0]);
+        const server = Bun.serve({
+            port: 0,
+            fetch: (req) =>
+                new URL(req.url).pathname === '/ok' ? new Response(FEED) : new Response('oops', { status: 503 }),
+        });
+        await withCleanup(async (fx) => {
+            const out = captureOutput();
+            try {
+                const base = `http://127.0.0.1:${server.port}`;
+                expect(
+                    await runPublishMatrixRssGate([fx.workDir, '--date', '2026-10-21', '--feed', `${base}/ok`]),
+                ).toBe(0);
+                expect(
+                    await runPublishMatrixRssGate([fx.workDir, '--date', '2026-10-21', '--feed', `${base}/down`]),
+                ).toBe(3);
+                const failed = JSON.parse(readFileSync(join(fx.workDir, '4-publish/rss-gate.json'), 'utf-8')) as {
+                    reason: string;
+                    detail: string;
+                };
+                expect(failed.reason).toBe('fetch-failed');
+                expect(failed.detail).toContain('HTTP 503');
+            } finally {
+                out.restore();
+                server.stop(true);
+            }
+        }, fixture);
+    });
+
     it('waits only when the target wall-clock time is still ahead, and corrects for DST', async () => {
         const slept: number[] = [];
         const out = captureOutput();
@@ -1125,6 +1155,54 @@ describe('publish-matrix dummy mode (0322 R1, R2, R3)', () => {
                     'utf-8',
                 );
                 expect(resolved).toContain('dummy://surfdash-pub.post');
+            } finally {
+                out.restore();
+            }
+        }, fixture);
+    });
+
+    it('never links a real row to a dummy tier-0 url, while a dummy row still resolves it', async () => {
+        const fixture = makeFixture([...TIER0_SOFT.map((target) => ({ ...target, mode: 'dummy' })), ...DOMESTIC]);
+        await withCleanup(async (fx) => {
+            const out = captureOutput();
+            try {
+                expect(await planPublishMatrix(planArgs(fx), { projectRoot: fx.root })).toBe(0);
+                const { dispatch, calls } = fakeDispatch();
+                expect(await sendPublishMatrix([fx.workDir, '--window', 'after-generate'], { dispatch })).toBe(0);
+                // The draft 文章 row would have published `dummy://…`: it fails before dispatch instead.
+                expect(calls).toHaveLength(0);
+                const receipt = JSON.parse(
+                    readFileSync(join(fx.workDir, '4-publish/receipts/wechatmp-pub.文章.json'), 'utf-8'),
+                ) as { effect: string; error: string };
+                expect(receipt.effect).toBe('none');
+                expect(receipt.error).toBe('unresolved-link');
+
+                const rehearsed = readFileSync(
+                    join(fx.workDir, '4-publish/payloads/content.xhs-pub.写长文.resolved.json'),
+                    'utf-8',
+                );
+                expect(rehearsed).toContain('dummy://surfdash-pub.post');
+            } finally {
+                out.restore();
+            }
+        }, fixture);
+    });
+
+    it('escapes a tier-0 url as a JSON string fragment when resolving a placeholder', async () => {
+        const fixture = makeFixture([...TIER0, ...DOMESTIC]);
+        await withCleanup(async (fx) => {
+            const out = captureOutput();
+            try {
+                expect(await planPublishMatrix(planArgs(fx), { projectRoot: fx.root })).toBe(0);
+                const { dispatch } = fakeDispatch({ 'surfdash-pub': { ok: true, url: 'https://surfdash.test/a"b' } });
+                expect(await sendPublishMatrix([fx.workDir, '--window', 'after-generate'], { dispatch })).toBe(0);
+                const resolved = JSON.parse(
+                    readFileSync(
+                        join(fx.workDir, '4-publish/payloads/content.wechatmp-pub.文章.resolved.json'),
+                        'utf-8',
+                    ),
+                ) as { body: string };
+                expect(resolved.body).toContain('https://surfdash.test/a"b');
             } finally {
                 out.restore();
             }
