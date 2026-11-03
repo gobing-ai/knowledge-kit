@@ -636,12 +636,18 @@ describe('storeChannels (0319 R1/R2/R4)', () => {
     it('bounds every page to 30 distinct days while totals cover the whole interval (R3)', async () => {
         const now = Date.now();
         const dayMs = 86_400_000;
+        const calendarAnchor = new Date(now);
+        calendarAnchor.setHours(12, 0, 0, 0);
         const { projectPath } = await project('kk-cs-channels-', async (store) => {
-            // 35 tick days, one run each; every source_counts_json is a valid empty map.
+            // Seed 35 local calendar days at noon. Fixed 24-hour ticks duplicate a day across
+            // the fall-back transition (the local day is 25 hours), making this pagination test
+            // intermittently observe 34 distinct days.
             for (let i = 0; i < 35; i += 1) {
+                const calendarDay = new Date(calendarAnchor);
+                calendarDay.setDate(calendarDay.getDate() - i);
                 await store.collectRuns.start({
                     runId: `pg-${i}`,
-                    startedAt: now - i * dayMs,
+                    startedAt: calendarDay.getTime(),
                     sourceCounts: {},
                 });
             }
