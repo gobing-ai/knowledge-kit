@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -373,13 +374,14 @@ async function writeSurfdashFixture(root: string, opts: { sdExit?: number; syncE
     ];
     await writeFile(join(root, 'scripts', 'sd.ts'), `${sdLines.join('\n')}\n`, 'utf-8');
     const orchestratorLines = [
-        "import { appendFileSync } from 'node:fs';",
+        "import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';",
         "import { join } from 'node:path';",
         `const failExit = ${opts.syncExit ?? 0};`,
         'const argv = process.argv.slice(2);',
         'const [cmd, postPath] = argv;',
-        "if (cmd !== 'sync' || !postPath) { console.error('usage: publish-orchestrator sync <postPath>'); process.exit(2); }",
+        "if (!postPath || !['refine', 'sync'].includes(cmd)) { console.error('usage: publish-orchestrator <refine|sync> <postPath>'); process.exit(2); }",
         "if (failExit !== 0) { console.error('orchestrator sync exploded'); process.exit(failExit); }",
+        "if (cmd === 'refine') { const raw = readFileSync(postPath, 'utf-8'); if (!raw.includes('refined: true')) writeFileSync(postPath, raw.replace('refined: false', 'refined: true')); appendFileSync(join(import.meta.dir, '..', 'refine-log.txt'), postPath + '\\n'); process.exit(0); }",
         "appendFileSync(join(import.meta.dir, '..', 'sync-log.txt'), 'synced ' + postPath + '\\n');",
         "console.log('sync ok');",
     ];
@@ -402,6 +404,84 @@ async function writeFixtureZhPost(root: string, slug = '20260906-post'): Promise
 
 describe('surfdash-pub operations (0096)', () => {
     const unusedContent: Content = { title: 'unused', body: 'unused', format: 'markdown' };
+
+    test('prepare materializes the zh post without invoking postsurfing or CMS sync', async () => {
+        const root = join(process.cwd(), '.tmp-surfdash-fixture-prepare');
+        await writeSurfdashFixture(root);
+        const expectedPath = join(root, 'content', 'posts', 'articles', 'zh', '20261102-prepared-post', 'index.md');
+
+        process.env.SURFDASH_ROOT = root;
+        process.env.POSTSURFING_BIN = join(root, 'missing-postsurfing');
+        try {
+            const transport = new PostsurfingFileCliTransport();
+            const result = await transport.publish({
+                content: {
+                    title: 'Prepared Post',
+                    body: '# Prepared Post\n\nPrepared before locale translation.',
+                    format: 'markdown',
+                    metadata: { runDate: '20261102' },
+                },
+                options: { operation: 'prepare' },
+            });
+
+            expect(result.ok).toBe(true);
+            expect(result.target).toBe('surfdash');
+            expect(result.metadata?.postPath).toBe(expectedPath);
+            expect(existsSync(expectedPath)).toBe(true);
+            expect(existsSync(join(root, 'sd-args.log'))).toBe(false);
+            expect(existsSync(join(root, 'sync-log.txt'))).toBe(false);
+        } finally {
+            delete process.env.SURFDASH_ROOT;
+            delete process.env.POSTSURFING_BIN;
+            await rm(root, { recursive: true, force: true });
+        }
+    });
+
+    test('refine-prepared delegates every locale to Surfdash refine and returns the post-fingerprint', async () => {
+        const root = join(process.cwd(), '.tmp-surfdash-fixture-refine-prepared');
+        await writeSurfdashFixture(root);
+        const zhPostPath = await writeFixtureZhPost(root);
+        await writeFile(
+            zhPostPath,
+            (await readFile(zhPostPath, 'utf-8')).replace('draft: true', 'draft: false\nrefined: false'),
+            'utf-8',
+        );
+        const localePaths = {
+            zh: zhPostPath,
+            en: zhPostPath.replace('/zh/', '/en/'),
+            ja: zhPostPath.replace('/zh/', '/ja/'),
+        };
+        for (const locale of ['en', 'ja'] as const) {
+            await mkdir(dirname(localePaths[locale]), { recursive: true });
+            await writeFile(
+                localePaths[locale],
+                '---\ntitle: "translated post"\npublishDate: "2026-09-06"\ndraft: false\nrefined: false\n---\n\nTranslated body.\n',
+                'utf-8',
+            );
+        }
+
+        process.env.SURFDASH_ROOT = root;
+        try {
+            const result = await new PostsurfingFileCliTransport().publish({
+                content: unusedContent,
+                options: {
+                    operation: 'refine-prepared',
+                    postPath: zhPostPath,
+                    runDate: '20260906',
+                },
+            });
+            expect(result.ok).toBe(true);
+            expect(result.metadata?.postPath).toBe(zhPostPath);
+            expect(result.metadata?.runDate).toBe('20260906');
+            expect(typeof result.metadata?.localeFingerprint).toBe('string');
+            const refinedPaths = [localePaths.zh, localePaths.en, localePaths.ja];
+            for (const path of refinedPaths) expect(await readFile(path, 'utf-8')).toContain('refined: true');
+            expect((await readFile(join(root, 'refine-log.txt'), 'utf-8')).trim().split('\n')).toEqual(refinedPaths);
+        } finally {
+            delete process.env.SURFDASH_ROOT;
+            await rm(root, { recursive: true, force: true });
+        }
+    });
 
     test('scaffold-locale on a fixture zh post returns the en draft path and creates the scaffolded file', async () => {
         const root = join(process.cwd(), '.tmp-surfdash-fixture-scaffold');
@@ -427,6 +507,17 @@ describe('surfdash-pub operations (0096)', () => {
             // The sd CLI received the exact frozen argv shape.
             const sdArgs = JSON.parse(await readFile(join(root, 'sd-args.log'), 'utf-8')) as string[];
             expect(sdArgs).toEqual(['translate', zhPostPath, '--source', 'zh', '--target', 'en']);
+
+            const forced = await transport.publish({
+                content: unusedContent,
+                options: { operation: 'scaffold-locale', postPath: zhPostPath, target: 'en', force: true },
+            });
+            expect(forced.ok).toBe(true);
+            const sdArgLines = (await readFile(join(root, 'sd-args.log'), 'utf-8'))
+                .trim()
+                .split('\n')
+                .map((line) => JSON.parse(line) as string[]);
+            expect(sdArgLines[1]).toEqual(['translate', zhPostPath, '--source', 'zh', '--target', 'en', '--force']);
         } finally {
             delete process.env.SURFDASH_ROOT;
             await rm(root, { recursive: true, force: true });
@@ -492,7 +583,305 @@ describe('surfdash-pub operations (0096)', () => {
         expect(result.ok).toBe(false);
         expect(result.target).toBe('surfdash');
         expect(result.error).toContain('invalid options.operation "teleport"');
-        expect(result.error).toContain('publish, scaffold-locale, sync');
+        expect(result.error).toContain('publish, prepare, refine-prepared, publish-prepared, scaffold-locale, sync');
+    });
+
+    test('publish-prepared validates the locale identity and publishes without rematerializing zh', async () => {
+        const root = join(process.cwd(), '.tmp-surfdash-fixture-publish-prepared');
+        await writeSurfdashFixture(root);
+        const zhPostPath = await writeFixtureZhPost(root, '20260906-prepared');
+        const zhBody =
+            '---\ntitle: "validated zh"\npublishDate: "2026-09-06"\ndraft: false\nrefined: true\n---\n\nValidated body\n';
+        await writeFile(zhPostPath, zhBody, 'utf-8');
+        const enPostPath = zhPostPath.replace('/zh/', '/en/');
+        const jaPostPath = zhPostPath.replace('/zh/', '/ja/');
+        await mkdir(dirname(enPostPath), { recursive: true });
+        await mkdir(dirname(jaPostPath), { recursive: true });
+        await writeFile(enPostPath, '---\ntitle: en\ndraft: false\n---\n\nEnglish\n', 'utf-8');
+        await writeFile(jaPostPath, '---\ntitle: ja\ndraft: false\n---\n\nJapanese\n', 'utf-8');
+        const localePaths = { zh: zhPostPath, en: enPostPath, ja: jaPostPath };
+        const localeDigests = {
+            zh: createHash('sha256')
+                .update(await readFile(zhPostPath))
+                .digest('hex'),
+            en: createHash('sha256')
+                .update(await readFile(enPostPath))
+                .digest('hex'),
+            ja: createHash('sha256')
+                .update(await readFile(jaPostPath))
+                .digest('hex'),
+        };
+        const identity = { runDate: '20260906', postPath: zhPostPath, localePaths, localeDigests };
+        const fingerprint = createHash('sha256').update(JSON.stringify(identity)).digest('hex');
+        const before = await readFile(zhPostPath, 'utf-8');
+        const mockBin = join(root, 'postsurfing');
+        await writeFile(
+            mockBin,
+            readFileSync(join(import.meta.dir, 'fixtures', 'fake-postsufing.ts'), 'utf-8'),
+            'utf-8',
+        );
+        await Bun.spawn(['chmod', '+x', mockBin]).exited;
+
+        process.env.SURFDASH_ROOT = root;
+        process.env.POSTSURFING_BIN = mockBin;
+        try {
+            const result = await new PostsurfingFileCliTransport().publish({
+                content: { title: 'must not replace validated bytes', body: 'wrong', format: 'markdown' },
+                options: {
+                    operation: 'publish-prepared',
+                    postPath: zhPostPath,
+                    runDate: '20260906',
+                    expectedPostSha256: localeDigests.zh,
+                    expectedLocaleFingerprint: fingerprint,
+                },
+            });
+            expect(result.ok).toBe(true);
+            expect(result.metadata?.postPath).toBe(zhPostPath);
+            expect(result.metadata?.localeFingerprint).toBe(fingerprint);
+            expect(await readFile(zhPostPath, 'utf-8')).toBe(before);
+            expect(existsSync(join(root, 'sd-args.log'))).toBe(false);
+        } finally {
+            delete process.env.SURFDASH_ROOT;
+            delete process.env.POSTSURFING_BIN;
+            await rm(root, { recursive: true, force: true });
+        }
+    });
+
+    test('publish-prepared rejects a remote phase that mutates locale bytes after validation', async () => {
+        const root = join(process.cwd(), '.tmp-surfdash-fixture-publish-prepared-mutation');
+        await writeSurfdashFixture(root);
+        const zhPostPath = await writeFixtureZhPost(root, '20260906-prepared-mutation');
+        await writeFile(
+            zhPostPath,
+            (await readFile(zhPostPath, 'utf-8')).replace('draft: true', 'draft: false\nrefined: true'),
+            'utf-8',
+        );
+        const enPostPath = zhPostPath.replace('/zh/', '/en/');
+        const jaPostPath = zhPostPath.replace('/zh/', '/ja/');
+        await mkdir(dirname(enPostPath), { recursive: true });
+        await mkdir(dirname(jaPostPath), { recursive: true });
+        await writeFile(enPostPath, '---\ntitle: en\ndraft: false\nrefined: true\n---\n\nEnglish\n', 'utf-8');
+        await writeFile(jaPostPath, '---\ntitle: ja\ndraft: false\nrefined: true\n---\n\nJapanese\n', 'utf-8');
+        const localePaths = { zh: zhPostPath, en: enPostPath, ja: jaPostPath };
+        const localeDigests = {
+            zh: createHash('sha256')
+                .update(await readFile(zhPostPath))
+                .digest('hex'),
+            en: createHash('sha256')
+                .update(await readFile(enPostPath))
+                .digest('hex'),
+            ja: createHash('sha256')
+                .update(await readFile(jaPostPath))
+                .digest('hex'),
+        };
+        const identity = { runDate: '20260906', postPath: zhPostPath, localePaths, localeDigests };
+        const fingerprint = createHash('sha256').update(JSON.stringify(identity)).digest('hex');
+        const mutatingBin = join(root, 'postsurfing-mutates');
+        await writeFile(
+            mutatingBin,
+            "#!/usr/bin/env bun\nimport { readFileSync, writeFileSync } from 'node:fs';\nconst zh = process.argv[3];\nconst en = zh.replace('/zh/', '/en/');\nwriteFileSync(en, readFileSync(en, 'utf-8') + '\\nremote mutation\\n');\n",
+            'utf-8',
+        );
+        await Bun.spawn(['chmod', '+x', mutatingBin]).exited;
+
+        process.env.SURFDASH_ROOT = root;
+        process.env.POSTSURFING_BIN = mutatingBin;
+        try {
+            const result = await new PostsurfingFileCliTransport().publish({
+                content: unusedContent,
+                options: {
+                    operation: 'publish-prepared',
+                    postPath: zhPostPath,
+                    runDate: '20260906',
+                    expectedPostSha256: localeDigests.zh,
+                    expectedLocaleFingerprint: fingerprint,
+                },
+            });
+            expect(result.ok).toBe(false);
+            expect(result.metadata?.deliveryState).toBe('uncertain');
+            expect(result.error).toContain('prepared locale files changed after remote publish');
+        } finally {
+            delete process.env.SURFDASH_ROOT;
+            delete process.env.POSTSURFING_BIN;
+            await rm(root, { recursive: true, force: true });
+        }
+    });
+
+    test('publish-prepared commits every locale post and asset, not only the zh directory', async () => {
+        const base = join(process.cwd(), `.tmp-surfdash-fixture-publish-prepared-locales-${Date.now()}`);
+        const root = join(base, 'work');
+        const origin = join(base, 'origin.git');
+        await writeSurfdashFixture(root);
+        const zhPostPath = await writeFixtureZhPost(root, '20260906-prepared-all-locales');
+        const localePaths = {
+            zh: zhPostPath,
+            en: zhPostPath.replace('/zh/', '/en/'),
+            ja: zhPostPath.replace('/zh/', '/ja/'),
+        };
+        await writeFile(
+            localePaths.zh,
+            (await readFile(localePaths.zh, 'utf-8')).replace('draft: true', 'draft: false\nrefined: true'),
+        );
+        for (const locale of ['en', 'ja'] as const) {
+            await mkdir(join(dirname(localePaths[locale]), 'assets'), { recursive: true });
+            await writeFile(
+                localePaths[locale],
+                `---\ntitle: ${locale}\npublishDate: "2026-09-06"\ndraft: false\nrefined: true\n---\n\n${locale} body\n`,
+            );
+            await writeFile(join(dirname(localePaths[locale]), 'assets', 'cover.png'), `${locale} initial asset`);
+        }
+
+        const runGit = (...args: string[]): void => {
+            const result = Bun.spawnSync(['git', '-C', root, ...args], { stdout: 'pipe', stderr: 'pipe' });
+            if (result.exitCode !== 0) {
+                throw new Error(`git ${args.join(' ')} failed: ${result.stderr.toString()}`);
+            }
+        };
+        try {
+            runGit('init', '-q', '-b', 'main');
+            runGit('config', 'user.email', 'test@test');
+            runGit('config', 'user.name', 'test');
+            runGit('add', '-A');
+            runGit('commit', '-q', '-m', 'seed');
+            runGit('init', '--bare', '-q', '-b', 'main', origin);
+            runGit('remote', 'add', 'origin', origin);
+            runGit('push', '-q', '-u', 'origin', 'main');
+
+            for (const locale of ['zh', 'en', 'ja'] as const) {
+                await writeFile(localePaths[locale], `${await readFile(localePaths[locale], 'utf-8')}updated\n`);
+                await writeFile(join(dirname(localePaths[locale]), 'assets', 'cover.png'), `${locale} updated asset`);
+            }
+            const localeDigests = Object.fromEntries(
+                (['zh', 'en', 'ja'] as const).map((locale) => [
+                    locale,
+                    createHash('sha256').update(readFileSync(localePaths[locale])).digest('hex'),
+                ]),
+            ) as { zh: string; en: string; ja: string };
+            const identity = { runDate: '20260906', postPath: zhPostPath, localePaths, localeDigests };
+            const fingerprint = createHash('sha256').update(JSON.stringify(identity)).digest('hex');
+            const fakeBin = join(root, 'postsurfing');
+            await writeFile(fakeBin, readFileSync(join(import.meta.dir, 'fixtures', 'fake-postsufing.ts'), 'utf-8'));
+            await Bun.spawn(['chmod', '+x', fakeBin]).exited;
+
+            process.env.SURFDASH_ROOT = root;
+            process.env.POSTSURFING_BIN = fakeBin;
+            const previousAutoPush = process.env.SURFDASH_AUTO_PUSH;
+            const previousSurfdashUrl = process.env.SURFDASH_URL;
+            const liveServer = Bun.serve({ port: 0, fetch: () => new Response('ok') });
+            process.env.SURFDASH_AUTO_PUSH = '1';
+            process.env.SURFDASH_URL = `http://127.0.0.1:${liveServer.port}`;
+            try {
+                const result = await new PostsurfingFileCliTransport().publish({
+                    content: unusedContent,
+                    options: {
+                        operation: 'publish-prepared',
+                        postPath: zhPostPath,
+                        runDate: '20260906',
+                        expectedPostSha256: localeDigests.zh,
+                        expectedLocaleFingerprint: fingerprint,
+                    },
+                });
+                expect(result.ok, result.error).toBe(true);
+                const pushedPaths = Bun.spawnSync(
+                    ['git', '--git-dir', origin, 'diff-tree', '--no-commit-id', '--name-only', '-r', 'main'],
+                    { stdout: 'pipe', stderr: 'pipe' },
+                ).stdout.toString();
+                for (const locale of ['zh', 'en', 'ja']) {
+                    expect(pushedPaths).toContain(
+                        `content/posts/articles/${locale}/20260906-prepared-all-locales/index.md`,
+                    );
+                    expect(pushedPaths).toContain(
+                        `content/posts/articles/${locale}/20260906-prepared-all-locales/assets/cover.png`,
+                    );
+                }
+            } finally {
+                if (previousAutoPush === undefined) delete process.env.SURFDASH_AUTO_PUSH;
+                else process.env.SURFDASH_AUTO_PUSH = previousAutoPush;
+                if (previousSurfdashUrl === undefined) delete process.env.SURFDASH_URL;
+                else process.env.SURFDASH_URL = previousSurfdashUrl;
+                liveServer.stop();
+            }
+        } finally {
+            delete process.env.SURFDASH_ROOT;
+            delete process.env.POSTSURFING_BIN;
+            await rm(base, { recursive: true, force: true });
+        }
+    });
+
+    test('publish-prepared refuses changed slug or locale bytes before invoking postsurfing', async () => {
+        const root = join(process.cwd(), '.tmp-surfdash-fixture-publish-prepared-guard');
+        await writeSurfdashFixture(root);
+        const originalZh = await writeFixtureZhPost(root, '20260906-original');
+        const otherZh = await writeFixtureZhPost(root, '20260906-other');
+        for (const zhPath of [originalZh, otherZh]) {
+            await writeFile(
+                zhPath,
+                '---\ntitle: same\npublishDate: "2026-09-06"\ndraft: false\nrefined: true\n---\n\nBody\n',
+                'utf-8',
+            );
+            for (const locale of ['en', 'ja']) {
+                const sibling = zhPath.replace('/zh/', `/${locale}/`);
+                await mkdir(dirname(sibling), { recursive: true });
+                await writeFile(sibling, `---\ntitle: ${locale}\ndraft: false\n---\n\n${locale}\n`, 'utf-8');
+            }
+        }
+        const enOriginal = originalZh.replace('/zh/', '/en/');
+        const jaOriginal = originalZh.replace('/zh/', '/ja/');
+        const originalDigests = {
+            zh: createHash('sha256')
+                .update(await readFile(originalZh))
+                .digest('hex'),
+            en: createHash('sha256')
+                .update(await readFile(enOriginal))
+                .digest('hex'),
+            ja: createHash('sha256')
+                .update(await readFile(jaOriginal))
+                .digest('hex'),
+        };
+        const originalIdentity = {
+            runDate: '20260906',
+            postPath: originalZh,
+            localePaths: { zh: originalZh, en: enOriginal, ja: jaOriginal },
+            localeDigests: originalDigests,
+        };
+        const originalFingerprint = createHash('sha256').update(JSON.stringify(originalIdentity)).digest('hex');
+        await writeFile(enOriginal, 'changed after validation', 'utf-8');
+        process.env.SURFDASH_ROOT = root;
+        process.env.POSTSURFING_BIN = join(root, 'missing-postsurfing');
+        try {
+            const transport = new PostsurfingFileCliTransport();
+            const changedLocale = await transport.publish({
+                content: { title: 'ignored', body: 'ignored', format: 'markdown' },
+                options: {
+                    operation: 'publish-prepared',
+                    postPath: originalZh,
+                    runDate: '20260906',
+                    expectedPostSha256: originalDigests.zh,
+                    expectedLocaleFingerprint: originalFingerprint,
+                },
+            });
+            expect(changedLocale.ok).toBe(false);
+            expect(changedLocale.metadata?.deliveryState).toBe('not-sent');
+            expect(existsSync(join(root, 'sd-args.log'))).toBe(false);
+
+            const changedSlug = await transport.publish({
+                content: { title: 'ignored', body: 'ignored', format: 'markdown' },
+                options: {
+                    operation: 'publish-prepared',
+                    postPath: otherZh,
+                    runDate: '20260906',
+                    expectedPostSha256: originalDigests.zh,
+                    expectedLocaleFingerprint: originalFingerprint,
+                },
+            });
+            expect(changedSlug.ok).toBe(false);
+            expect(changedSlug.metadata?.deliveryState).toBe('not-sent');
+            expect(existsSync(join(root, 'sd-args.log'))).toBe(false);
+        } finally {
+            delete process.env.SURFDASH_ROOT;
+            delete process.env.POSTSURFING_BIN;
+            await rm(root, { recursive: true, force: true });
+        }
     });
 
     test('scaffold-locale and sync validate their options fail-loud (no defaults)', async () => {

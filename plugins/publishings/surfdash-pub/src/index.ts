@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { copyFile, cp, writeFile } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -16,12 +17,21 @@ export { checkDigestFrontmatter, DIGEST_TAG, type DigestLocale } from './digest-
 const TARGET = 'surfdash';
 
 /** Management operations routed via `options.operation` (L1 R7; pattern from podcast-pub). */
-const OPERATIONS = ['publish', 'scaffold-locale', 'sync', 'patch'] as const;
+const OPERATIONS = [
+    'publish',
+    'prepare',
+    'refine-prepared',
+    'publish-prepared',
+    'scaffold-locale',
+    'sync',
+    'patch',
+] as const;
 type Operation = (typeof OPERATIONS)[number];
 
 /** Locales `scaffold-locale` can scaffold; LLM translation stays in the workflow's agent step. */
 const SCAFFOLD_LOCALES = ['en', 'ja'] as const;
 type ScaffoldLocale = (typeof SCAFFOLD_LOCALES)[number];
+type SupportedLocale = 'zh' | 'en' | 'ja';
 
 /** Cover-image extensions accepted from `metadata.coverImage` (R4): anything else is rejected, not copied. */
 const COVER_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
@@ -33,6 +43,16 @@ interface SurfdashPubOptions {
     postPath?: unknown;
     /** Draft locale to scaffold; required for `scaffold-locale`. */
     target?: unknown;
+    /** Rebuild an existing locale draft after the zh source fingerprint changes. */
+    force?: unknown;
+    /** `publish-prepared`: YYYYMMDD run identity bound to the validated locale files. */
+    runDate?: unknown;
+    /** `refine-prepared`: ask the site-owned orchestrator to refine all three local locale files. */
+    // The plugin never writes `refined: true` itself; the site command owns all managed fields.
+    /** `publish-prepared`: SHA-256 of the prepared zh post, checked before postsurfing runs. */
+    expectedPostSha256?: unknown;
+    /** `publish-prepared`: fingerprint of the prepared zh/en/ja files, checked before postsurfing runs. */
+    expectedLocaleFingerprint?: unknown;
     /** `patch`: podcast-hosted cover URL for `image`/`og_image` (empty → the local cover fallback). */
     coverUrl?: unknown;
     /** `patch`: podcast episode URL appended as the cross-link (empty → none). */
@@ -519,8 +539,20 @@ async function scaffoldLocale(options: SurfdashPubOptions): Promise<Result> {
     }
 
     try {
+        const force = options.force === true;
         const spawned = await spawnCli(
-            ['bun', 'run', 'sd', 'translate', postPath.postPath, '--source', 'zh', '--target', target.locale],
+            [
+                'bun',
+                'run',
+                'sd',
+                'translate',
+                postPath.postPath,
+                '--source',
+                'zh',
+                '--target',
+                target.locale,
+                ...(force ? ['--force'] : []),
+            ],
             surfdashRoot,
         );
         if (spawned.exitCode !== 0) {
@@ -708,81 +740,306 @@ async function patchPost(options: SurfdashPubOptions): Promise<Result> {
     });
 }
 
-/**
- * Publish path (behavior unchanged since E3): maps Content into surfdash markdown under
- * `content/posts/<collection>/<locale>/<slug>/index.md` and invokes the postsurfing CLI.
- */
-async function publishPost(payload: PublishTransportPayload): Promise<Result> {
-    const postsurfingBin = process.env.POSTSURFING_BIN ?? 'postsurfing';
+interface PreparedPost {
+    surfdashRoot: string;
+    locale: SupportedLocale;
+    dateStamp: string;
+    slug: string;
+    filePath: string;
+    relPostDir: string;
+    /** Prepared daily publishes carry all translated sibling directories into the deploy commit. */
+    relPostDirs?: string[];
+    articleUrl: string;
+}
 
-    // The publishing FSM requires the markdown at
-    // content/posts/<collection>/<locale>/<slug>/index.md inside the surfdash site tree
-    // (its refine step rejects other layouts); the root resolution lives in resolveSurfdashRoot().
+interface PreparedLocaleIdentity {
+    runDate: string;
+    postPath: string;
+    localePaths: Record<SupportedLocale, string>;
+    localeDigests: Record<SupportedLocale, string>;
+    fingerprint: string;
+}
+
+function fileSha256(filePath: string): string {
+    return createHash('sha256').update(readFileSync(filePath)).digest('hex');
+}
+
+/**
+ * Computes the exact identity used by the daily locale gate. This is intentionally derived from
+ * bytes on disk immediately before the remote publishing FSM starts; a cached result must never
+ * satisfy a different slug, payload, or translated-locale set.
+ */
+function preparedLocaleIdentity(
+    postPath: string,
+    runDate: string,
+): { ok: true; value: PreparedLocaleIdentity } | { ok: false; error: string } {
+    const enPath = deriveLocaleDraftPath(postPath, 'en');
+    const jaPath = deriveLocaleDraftPath(postPath, 'ja');
+    if (enPath === undefined || jaPath === undefined) {
+        return { ok: false, error: `prepared zh post path must contain a "/zh/" locale segment: ${postPath}` };
+    }
+    const localePaths: Record<SupportedLocale, string> = { zh: postPath, en: enPath, ja: jaPath };
+    const localeDigests = {} as Record<SupportedLocale, string>;
+    for (const locale of ['zh', 'en', 'ja'] as const) {
+        const path = localePaths[locale];
+        if (!existsSync(path)) return { ok: false, error: `${locale} locale file is missing: ${path}` };
+        try {
+            localeDigests[locale] = fileSha256(path);
+        } catch (error: unknown) {
+            return {
+                ok: false,
+                error: `${locale} locale file cannot be fingerprinted: ${error instanceof Error ? error.message : String(error)}`,
+            };
+        }
+    }
+    const identity = { runDate, postPath, localePaths, localeDigests };
+    return {
+        ok: true,
+        value: { ...identity, fingerprint: createHash('sha256').update(JSON.stringify(identity)).digest('hex') },
+    };
+}
+
+interface PreparedLocaleSet {
+    surfdashRoot: string;
+    runDate: string;
+    postPath: string;
+    slug: string;
+    localePaths: Record<SupportedLocale, string>;
+}
+
+/**
+ * Resolves the exact three-file daily post set without writing anything. Both the local refine
+ * phase and the final prepared publish use this guard so they cannot drift to different slugs or
+ * locale siblings between validation and dispatch.
+ */
+function resolvePreparedLocaleSet(
+    options: SurfdashPubOptions,
+): { ok: true; value: PreparedLocaleSet } | { ok: false; result: Result } {
+    const postPath = resolvePostPath(options);
+    if ('error' in postPath) return { ok: false, result: failNotSent(postPath.error) };
     const surfdashRoot = resolveSurfdashRoot();
     if (!surfdashRoot) {
-        return failNotSent('SURFDASH_ROOT is required when POSTSURFING_BIN is not a path inside the surfdash checkout');
+        return {
+            ok: false,
+            result: failNotSent(
+                'SURFDASH_ROOT is required when POSTSURFING_BIN is not a path inside the surfdash checkout',
+            ),
+        };
+    }
+    const outsideRoot = postPathOutsideRoot(postPath.postPath, surfdashRoot);
+    if (outsideRoot) return { ok: false, result: failNotSent(outsideRoot) };
+    if (!existsSync(postPath.postPath))
+        return { ok: false, result: failNotSent(`prepared post does not exist: ${postPath.postPath}`) };
+    const runDate = options.runDate;
+    if (typeof runDate !== 'string' || !/^\d{8}$/.test(runDate)) {
+        return { ok: false, result: failNotSent(`options.runDate must be YYYYMMDD, got '${String(runDate)}'`) };
+    }
+    const articlesRoot = resolve(surfdashRoot, 'content', 'posts', 'articles');
+    const relativePost = relative(articlesRoot, postPath.postPath);
+    const parts = relativePost.split(sep);
+    const slug = parts[1];
+    if (parts.length !== 3 || parts[0] !== 'zh' || parts[2] !== 'index.md' || slug === undefined || slug === '') {
+        return {
+            ok: false,
+            result: failNotSent(
+                `options.postPath must be content/posts/articles/zh/<slug>/index.md: ${postPath.postPath}`,
+            ),
+        };
+    }
+    const enPath = deriveLocaleDraftPath(postPath.postPath, 'en');
+    const jaPath = deriveLocaleDraftPath(postPath.postPath, 'ja');
+    if (enPath === undefined || jaPath === undefined) {
+        return {
+            ok: false,
+            result: failNotSent(`prepared zh post path must contain a "/zh/" locale segment: ${postPath.postPath}`),
+        };
+    }
+    const localePaths: Record<SupportedLocale, string> = { zh: postPath.postPath, en: enPath, ja: jaPath };
+    for (const locale of ['zh', 'en', 'ja'] as const) {
+        if (!existsSync(localePaths[locale])) {
+            return { ok: false, result: failNotSent(`${locale} locale file is missing: ${localePaths[locale]}`) };
+        }
+    }
+    return { ok: true, value: { surfdashRoot, runDate, postPath: postPath.postPath, slug, localePaths } };
+}
+
+function resolvePreparedPost(
+    options: SurfdashPubOptions,
+): { ok: true; prepared: PreparedPost; identity: PreparedLocaleIdentity } | { ok: false; result: Result } {
+    const resolved = resolvePreparedLocaleSet(options);
+    if (!resolved.ok) return resolved;
+    const { surfdashRoot, runDate, postPath: preparedPath, slug } = resolved.value;
+    const expectedPostSha256 = options.expectedPostSha256;
+    if (typeof expectedPostSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(expectedPostSha256)) {
+        return { ok: false, result: failNotSent('options.expectedPostSha256 must be a lowercase SHA-256 digest') };
+    }
+    const expectedLocaleFingerprint = options.expectedLocaleFingerprint;
+    if (typeof expectedLocaleFingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(expectedLocaleFingerprint)) {
+        return {
+            ok: false,
+            result: failNotSent('options.expectedLocaleFingerprint must be a lowercase SHA-256 digest'),
+        };
+    }
+    const identity = preparedLocaleIdentity(preparedPath, runDate);
+    if (!identity.ok) return { ok: false, result: failNotSent(identity.error) };
+    if (identity.value.localeDigests.zh !== expectedPostSha256) {
+        return {
+            ok: false,
+            result: failNotSent(`prepared zh post bytes changed after validation: ${preparedPath}`),
+        };
+    }
+    if (identity.value.fingerprint !== expectedLocaleFingerprint) {
+        return {
+            ok: false,
+            result: failNotSent(
+                'prepared locale files changed after validation; refresh the locale gate before publishing',
+            ),
+        };
+    }
+    const baseUrl = (process.env.SURFDASH_URL ?? 'https://surfing.salty.vip').replace(/\/$/, '');
+    return {
+        ok: true,
+        prepared: {
+            surfdashRoot,
+            locale: 'zh',
+            dateStamp: runDate,
+            slug,
+            filePath: preparedPath,
+            relPostDir: join('content', 'posts', 'articles', 'zh', slug),
+            relPostDirs: ['zh', 'en', 'ja'].map((locale) => join('content', 'posts', 'articles', locale, slug)),
+            articleUrl: `${baseUrl}/zh/posts/${slug}`,
+        },
+        identity: identity.value,
+    };
+}
+
+type PrepareOutcome = { ok: true; prepared: PreparedPost } | { ok: false; result: Result };
+
+/**
+ * Materializes the local post without invoking the external publishing FSM.
+ *
+ * Locale scaffolding and translation must happen before Surfdash's strict sync gate runs. The
+ * normal `publish` operation uses the same preparation path before refine, CMS sync and deploy.
+ */
+async function preparePost(payload: PublishTransportPayload): Promise<PrepareOutcome> {
+    const surfdashRoot = resolveSurfdashRoot();
+    if (!surfdashRoot) {
+        return {
+            ok: false,
+            result: failNotSent(
+                'SURFDASH_ROOT is required when POSTSURFING_BIN is not a path inside the surfdash checkout',
+            ),
+        };
     }
 
-    const locale = process.env.SURFDASH_LOCALE ?? 'zh';
-    // Fail loud on legacy locale codes ('cn' is the pre-migration name for zh) —
-    // they'd write a content dir no route serves.
-    if (!['zh', 'en', 'ja'].includes(locale)) {
-        return failNotSent(`SURFDASH_LOCALE must be one of zh/en/ja, got '${locale}'`);
+    const rawLocale = process.env.SURFDASH_LOCALE ?? 'zh';
+    if (!['zh', 'en', 'ja'].includes(rawLocale)) {
+        return { ok: false, result: failNotSent(`SURFDASH_LOCALE must be one of zh/en/ja, got '${rawLocale}'`) };
     }
-    // Date-stamped slug (metadata.runDate, e.g. 20260904) keeps same-title daily posts
-    // from colliding; Chinese titles slugify to '' and fall back to the bare date.
+    const locale = rawLocale as SupportedLocale;
     const runDate = typeof payload.content.metadata?.runDate === 'string' ? payload.content.metadata.runDate : '';
     const today = new Date().toISOString().slice(0, 10).replaceAll('-', '');
     const dateStamp = runDate || today;
     const titleSlug = slugify(payload.content.title ?? '');
     const slug = titleSlug ? `${dateStamp}-${titleSlug}` : `${dateStamp}-post`;
-    // Validate before touching disk (R4): a `metadata.runDate` or slug that escapes the articles
-    // tree would write a post outside it, and a non-image `coverImage` would be copied into a post
-    // that pushPostGit then publishes to a public repo.
     if (runDate !== '' && !/^\d{8}$/.test(runDate)) {
-        return failNotSent(`metadata.runDate must be YYYYMMDD, got '${runDate}'`);
+        return { ok: false, result: failNotSent(`metadata.runDate must be YYYYMMDD, got '${runDate}'`) };
     }
     const articlesRoot = resolve(surfdashRoot, 'content', 'posts', 'articles');
     const localeRoot = resolve(articlesRoot, locale);
     const postDir = resolve(localeRoot, slug);
     if (dirname(localeRoot) !== articlesRoot || dirname(postDir) !== localeRoot) {
-        return failNotSent(`post path escapes ${articlesRoot}`);
+        return { ok: false, result: failNotSent(`post path escapes ${articlesRoot}`) };
     }
+
     const coverPath = payload.content.metadata?.coverImage;
-    // R4 + 2026-10-24: a coverImage that does not exist must fail before anything is written —
-    // the old silent skip published a coverless post while the run believed it had one.
     if (typeof coverPath === 'string' && !existsSync(coverPath)) {
-        return failNotSent(`metadata.coverImage not found: ${coverPath}`);
+        return { ok: false, result: failNotSent(`metadata.coverImage not found: ${coverPath}`) };
     }
     if (typeof coverPath === 'string' && !COVER_EXTS.has(extname(coverPath).toLowerCase())) {
-        return failNotSent(`metadata.coverImage must be one of ${[...COVER_EXTS].join(', ')}`);
+        return {
+            ok: false,
+            result: failNotSent(`metadata.coverImage must be one of ${[...COVER_EXTS].join(', ')}`),
+        };
     }
-    // Daily digest posts are the series' public face: a missing cover ships a blank OG card.
-    // The check uses the same tag sources as mapContentToSurfingMarkdown (contentTags).
     if (isDigestContent(payload.content) && typeof coverPath !== 'string') {
-        return failNotSent('digest post has no cover image (metadata.coverImage)');
+        return { ok: false, result: failNotSent('digest post has no cover image (metadata.coverImage)') };
     }
 
-    await createNodeFileSystem().ensureDir(postDir);
-
-    // Cover image: metadata.coverImage (absolute local path) is copied into the post's
-    // assets dir and referenced relatively — the surfdash PostSchema accepts ./assets/<file>.
-    let imageFrontmatter: string | undefined;
-    if (typeof coverPath === 'string') {
-        const assetsDir = join(postDir, 'assets');
-        await createNodeFileSystem().ensureDir(assetsDir);
-        const coverName = `cover${extname(coverPath).toLowerCase()}`;
-        await copyFile(coverPath, join(assetsDir, coverName));
-        imageFrontmatter = `./assets/${coverName}`;
-    }
-    const markdown = mapContentToSurfingMarkdown(payload.content, {
-        image: imageFrontmatter,
-        publishDate: runDate ? `${runDate.slice(0, 4)}-${runDate.slice(4, 6)}-${runDate.slice(6, 8)}` : undefined,
-    });
     const filePath = join(postDir, 'index.md');
+    try {
+        await createNodeFileSystem().ensureDir(postDir);
+        let imageFrontmatter: string | undefined;
+        if (typeof coverPath === 'string') {
+            const assetsDir = join(postDir, 'assets');
+            await createNodeFileSystem().ensureDir(assetsDir);
+            const coverName = `cover${extname(coverPath).toLowerCase()}`;
+            await copyFile(coverPath, join(assetsDir, coverName));
+            imageFrontmatter = `./assets/${coverName}`;
+        }
+        const markdown = mapContentToSurfingMarkdown(payload.content, {
+            image: imageFrontmatter,
+            publishDate: runDate ? `${runDate.slice(0, 4)}-${runDate.slice(4, 6)}-${runDate.slice(6, 8)}` : undefined,
+        });
+        await createNodeFileSystem().writeFile(filePath, markdown);
+    } catch (err: unknown) {
+        return {
+            ok: false,
+            result: failNotSent(
+                `Surfdash post preparation failed: ${err instanceof Error ? err.message : String(err)}`,
+            ),
+        };
+    }
+
+    const baseUrl = (process.env.SURFDASH_URL ?? 'https://surfing.salty.vip').replace(/\/$/, '');
+    const articleUrl = `${baseUrl}${locale === 'en' ? '' : `/${locale}`}/posts/${slug}`;
+    return {
+        ok: true,
+        prepared: {
+            surfdashRoot,
+            locale,
+            dateStamp,
+            slug,
+            filePath,
+            relPostDir: join('content', 'posts', 'articles', locale, slug),
+            articleUrl,
+        },
+    };
+}
+
+/** `prepare` operation: write the local post and return its path for locale scaffolding. */
+async function preparePostResult(payload: PublishTransportPayload): Promise<Result> {
+    const outcome = await preparePost(payload);
+    if (!outcome.ok) return outcome.result;
+    return ResultSchema.parse({
+        ok: true,
+        target: TARGET,
+        message: `Prepared ${outcome.prepared.locale} post at ${outcome.prepared.filePath}`,
+        metadata: {
+            postPath: outcome.prepared.filePath,
+            articleUrl: outcome.prepared.articleUrl,
+            dateStamp: outcome.prepared.dateStamp,
+            slug: outcome.prepared.slug,
+        },
+    });
+}
+
+/** Invokes the remote publishing FSM for an already-materialized post path. */
+async function publishPreparedFile(
+    prepared: PreparedPost,
+    identity?: Pick<PreparedLocaleIdentity, 'runDate' | 'fingerprint'> & { postSha256?: string },
+): Promise<Result> {
+    const postsurfingBin = process.env.POSTSURFING_BIN ?? 'postsurfing';
+    const { surfdashRoot, locale, dateStamp, filePath, relPostDir, relPostDirs, articleUrl } = prepared;
+    const identityMetadata = identity
+        ? {
+              runDate: identity.runDate,
+              localeFingerprint: identity.fingerprint,
+              ...(identity.postSha256 ? { postSha256: identity.postSha256 } : {}),
+          }
+        : {};
 
     try {
-        await createNodeFileSystem().writeFile(filePath, markdown);
         const spawned = await spawnCli([postsurfingBin, 'publish', filePath], surfdashRoot);
 
         if (spawned.exitCode !== 0) {
@@ -791,11 +1048,27 @@ async function publishPost(payload: PublishTransportPayload): Promise<Result> {
             );
         }
 
+        // The real Surfdash FSM runs its own refine step before CMS sync. The daily workflow runs
+        // site-owned refine locally first, so this must be idempotent; otherwise the remote phase
+        // would silently mutate the bytes whose fingerprint admitted this publish. Treat any
+        // mutation as uncertain because CMS/git may already have side effects.
+        if (identity !== undefined) {
+            const afterRemote = preparedLocaleIdentity(filePath, identity.runDate);
+            if (!afterRemote.ok)
+                return failUncertain(`prepared locale files changed after remote publish: ${afterRemote.error}`);
+            if (
+                afterRemote.value.fingerprint !== identity.fingerprint ||
+                (identity.postSha256 !== undefined && afterRemote.value.localeDigests.zh !== identity.postSha256)
+            ) {
+                return failUncertain('prepared locale files changed after remote publish; reconcile before retrying');
+            }
+        }
+
         // Contract check (ADR-008): the site, not this plugin, owns SEO metadata.
         const notRefined = requireRefined(filePath);
         if (notRefined) return failUncertain(notRefined);
         // Digest contract (2026-10-24): the refined values themselves must hold, before any push.
-        const digestProblem = digestCheckGate(filePath, locale as DigestLocale);
+        const digestProblem = digestCheckGate(filePath, locale);
         if (digestProblem) return failUncertain(digestProblem);
         const refined = readRefinedSnapshot(filePath);
 
@@ -805,8 +1078,6 @@ async function publishPost(payload: PublishTransportPayload): Promise<Result> {
         // URL shape mirrors surfdash's localePathPrefix (surfdash/src/lib/seo.ts):
         // en is served at the site root, zh/ja carry a /<locale> prefix. Composing
         // /<locale>/posts/<slug> unconditionally 404s en posts.
-        const baseUrl = (process.env.SURFDASH_URL ?? 'https://surfing.salty.vip').replace(/\/$/, '');
-        const articleUrl = `${baseUrl}${locale === 'en' ? '' : `/${locale}`}/posts/${slug}`;
         if (process.env.SURFDASH_AUTO_PUSH === '0') {
             return ResultSchema.parse({
                 ok: true,
@@ -815,11 +1086,21 @@ async function publishPost(payload: PublishTransportPayload): Promise<Result> {
                 message: 'Published via postsurfing CLI (auto-push disabled)',
                 // Absolute post path lets downstream steps (locale translation + CMS sync)
                 // derive the surfdash checkout root without extra configuration.
-                metadata: { postPath: filePath, refinedTitle: refined?.title, refinedCanonical: refined?.canonical },
+                metadata: {
+                    postPath: filePath,
+                    ...identityMetadata,
+                    refinedTitle: refined?.title,
+                    refinedCanonical: refined?.canonical,
+                },
             });
         }
-        const relPostDir = join('content', 'posts', 'articles', locale, slug);
-        const pushed = await pushPostGit(surfdashRoot, relPostDir, `content: daily AI news ${dateStamp} (zh)`);
+        const commitPaths = relPostDirs ?? [relPostDir];
+        const commitLocales: SupportedLocale[] = relPostDirs === undefined ? [locale] : ['zh', 'en', 'ja'];
+        const pushed = await commitPostPaths(
+            surfdashRoot,
+            commitPaths,
+            `content: daily AI news ${dateStamp} (${commitLocales.join(', ')})`,
+        );
         if (!pushed.ok) return failUncertain(pushed.error);
         const live = await awaitArticleLive(articleUrl);
 
@@ -830,7 +1111,13 @@ async function publishPost(payload: PublishTransportPayload): Promise<Result> {
             message: live
                 ? 'Published, committed, pushed, and live on the site'
                 : 'Published and pushed; URL not live within the verify window — check the surfdash deploy workflow',
-            metadata: { postPath: filePath, gitCommit: pushed.hash, live, refinedTitle: refined?.title },
+            metadata: {
+                postPath: filePath,
+                ...identityMetadata,
+                gitCommit: pushed.hash,
+                live,
+                refinedTitle: refined?.title,
+            },
         });
     } catch (err: unknown) {
         return failUncertain(`Postsurfing transport error: ${err instanceof Error ? err.message : String(err)}`);
@@ -838,8 +1125,81 @@ async function publishPost(payload: PublishTransportPayload): Promise<Result> {
 }
 
 /**
+ * Publish path (behavior unchanged since E3): maps Content into surfdash markdown under
+ * `content/posts/<collection>/<locale>/<slug>/index.md` and invokes the postsurfing CLI.
+ */
+async function publishPost(payload: PublishTransportPayload): Promise<Result> {
+    const outcome = await preparePost(payload);
+    if (!outcome.ok) return outcome.result;
+    return publishPreparedFile(outcome.prepared);
+}
+
+/**
+ * Runs the site-owned refine command over zh/en/ja without CMS, git, or remote effects. The daily
+ * workflow fingerprints only after this operation; the real publish FSM can then revisit refine
+ * idempotently instead of rewriting a validated locale set during its remote phase.
+ */
+async function refinePreparedPost(options: SurfdashPubOptions): Promise<Result> {
+    const resolved = resolvePreparedLocaleSet(options);
+    if (!resolved.ok) return resolved.result;
+    const orchestrator = join(resolved.value.surfdashRoot, 'scripts', 'publish-orchestrator.ts');
+    if (!existsSync(orchestrator)) return failNotSent(`Surfdash refine orchestrator is missing: ${orchestrator}`);
+    try {
+        for (const locale of ['zh', 'en', 'ja'] as const) {
+            const filePath = resolved.value.localePaths[locale];
+            const spawned = await spawnCli(
+                [process.execPath, orchestrator, 'refine', filePath],
+                resolved.value.surfdashRoot,
+            );
+            if (spawned.exitCode !== 0) {
+                return failNotSent(
+                    `Surfdash refine failed for ${locale} (exit ${spawned.exitCode}): ${cliErrorText(spawned)}`,
+                );
+            }
+            const notRefined = requireRefined(filePath);
+            if (notRefined) return failNotSent(notRefined);
+            const digestProblem = digestCheckGate(filePath, locale);
+            if (digestProblem) return failNotSent(digestProblem);
+        }
+    } catch (error: unknown) {
+        return failNotSent(
+            `Surfdash refine transport error: ${error instanceof Error ? error.message : String(error)}`,
+        );
+    }
+    const identity = preparedLocaleIdentity(resolved.value.postPath, resolved.value.runDate);
+    if (!identity.ok) return failNotSent(identity.error);
+    return ResultSchema.parse({
+        ok: true,
+        target: TARGET,
+        message: 'Refined zh/en/ja via the Surfdash-owned orchestrator',
+        metadata: {
+            postPath: resolved.value.postPath,
+            runDate: resolved.value.runDate,
+            localePaths: identity.value.localePaths,
+            localeDigests: identity.value.localeDigests,
+            localeFingerprint: identity.value.fingerprint,
+        },
+    });
+}
+
+/**
+ * Final daily voice2 operation. Unlike `publish`, this never maps Content or rewrites the prepared
+ * zh post. It verifies the exact validated bytes and locale fingerprint immediately before invoking
+ * postsurfing, so a regenerated same-day payload cannot silently replace the validated material.
+ */
+async function publishPreparedPost(options: SurfdashPubOptions): Promise<Result> {
+    const outcome = resolvePreparedPost(options);
+    if (!outcome.ok) return outcome.result;
+    return publishPreparedFile(outcome.prepared, {
+        runDate: outcome.identity.runDate,
+        fingerprint: outcome.identity.fingerprint,
+        postSha256: outcome.identity.localeDigests.zh,
+    });
+}
+
+/**
  * FileCli transport invoking postsurfing CLI for `publish` (default) and the
- * `scaffold-locale` / `sync` surfdash mechanics via `options.operation` (L1 R7).
+ * prepared-path / `scaffold-locale` / `sync` surfdash mechanics via `options.operation` (L1 R7).
  */
 export class PostsurfingFileCliTransport implements PublishTransport {
     public readonly kind = 'file-cli';
@@ -854,6 +1214,12 @@ export class PostsurfingFileCliTransport implements PublishTransport {
         if ('error' in routed) return fail(routed.error);
 
         switch (routed.operation) {
+            case 'prepare':
+                return preparePostResult(payload);
+            case 'refine-prepared':
+                return refinePreparedPost(options);
+            case 'publish-prepared':
+                return publishPreparedPost(options);
             case 'scaffold-locale':
                 return scaffoldLocale(options);
             case 'sync':
@@ -880,10 +1246,9 @@ export function getPublishTransport(): PublishTransport {
 /**
  * Processes input Content and writes output Result via transport.
  *
- * The input JSON may carry a top-level `options` object (`operation`, `postPath`,
- * `target`) alongside the Content fields; it is forwarded to the transport so
- * `kk executor run` callers can select scaffold-locale/sync without extra flags
- * (podcast-pub pattern, 0096).
+ * The input JSON may carry a top-level `options` object (`operation`, `postPath`, `target`, and
+ * prepared-path identity fields) alongside the Content fields; it is forwarded to the transport so
+ * `kk executor run` callers can select locale/publish mechanics without extra flags (0096).
  */
 export async function processPublishIO(
     inputPath: string,
