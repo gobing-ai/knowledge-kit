@@ -923,6 +923,9 @@ function makeMiniConsole(): MiniConsole {
                         pastedHtml = /setData\('text\/html',\s*(".*?")\);/.exec(expression)?.[1] ?? '';
                         return true;
                     }
+                    // 0283 crop readback: only the committed scan matches here; the identify scan
+                    // answers via the img-picker branch below.
+                    if (expression.includes('img.crop-img')) return '[]';
                     if (expression.includes('weui-desktop-img-picker__item')) {
                         const wanted = JSON.parse(
                             /const wanted = (\[[^\]]*\])/.exec(expression)?.[1] ?? '[]',
