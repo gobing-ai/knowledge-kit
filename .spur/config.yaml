@@ -139,10 +139,10 @@ bootstrap:
         cron: "30 4 * * *"
         timeoutMs: 14400000
         command: >-
-          bun plugins/kk/scripts/daily-scheduled-run.ts
+          KK_BROWSER_CHANNEL=chrome bun plugins/kk/scripts/daily-scheduled-run.ts
           --repo /Users/robin/xprojects/knowledge-kit
           --works-dir /Users/robin/xprojects/knowledge-kit/.works
-          --agent codex-sol --retry-agent codex-sol
+          --agent codex-sol --retry-agent codex-sol --wechat-live
 
       # 04:05, 10:05, 16:05, 22:05 daily: kk-collect standalone 6-hourly collection
       # into the kk store (aihot + last30days + horizon -> store ingest -> label).

@@ -15,6 +15,7 @@ const { values } = parseArgs({
         agent: { type: 'string', default: 'inline' },
         'retry-agent': { type: 'string', default: 'claude' },
         'required-channels': { type: 'string', default: 'wechat,locales,cms-resync' },
+        'wechat-live': { type: 'boolean', default: false },
     },
 });
 const timeoutMs = Number(values['timeout-ms']);
@@ -35,6 +36,7 @@ const vars = {
     skip_review: 'true',
     agent: values.agent,
     agent_retry: values['retry-agent'],
+    wechat_live: values['wechat-live'] === true ? 'true' : 'false',
     work_dir: workDir,
     run_date: stamp,
 };
