@@ -1,3 +1,27 @@
+/**
+ * surfdash-pub plugin — publishing transport for the Surfdash site.
+ *
+ * Listen-link backfill:
+ * Runs `bun run sd seo listen-link --backfill --write` before the site gate and commit
+ * in both the main publish path (when auto-push is on) and the patch path. Any modified
+ * files under `content/posts` are included in the scoped commit pathspec.
+ *
+ * Site gate:
+ * Before committing and pushing post content to surfdash `main` (both in the main publish
+ * path and the patch path), `runSiteGate` executes `bun run sd check digest` and
+ * `bun run check:content` in the surfdash checkout. The surfdash site gate is the authoritative
+ * validation suite before deployment.
+ *
+ * Environment variables:
+ * - `SURFDASH_LISTEN_BACKFILL`:
+ *   - `off`: skips the listen-link backfill command.
+ * - `SURFDASH_DIGEST_CHECK`:
+ *   - unset / default: fail-loud on gate failure; commit and push are blocked.
+ *   - `warn`: echoes gate failures via `echoError` prefixed with `site gate (warn):` and continues to push.
+ *   - `off`: bypasses the gate check.
+ * - `SURFDASH_AUTO_PUSH`:
+ *   - '0': disables auto-commit and push (used in tests and offline runs).
+ */
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { copyFile, cp, writeFile } from 'node:fs/promises';
@@ -368,6 +392,7 @@ export function requireRefined(filePath: string): string | undefined {
  * undefined when ok / downgraded. `SURFDASH_DIGEST_CHECK=warn` echoes each problem and continues.
  */
 export function digestCheckGate(filePath: string, locale: DigestLocale): string | undefined {
+    if (process.env.SURFDASH_DIGEST_CHECK === 'off') return undefined;
     const problems = checkDigestFrontmatter(readFileSync(filePath, 'utf-8'), locale);
     if (problems.length === 0) return undefined;
     if (process.env.SURFDASH_DIGEST_CHECK === 'warn') {
@@ -375,6 +400,109 @@ export function digestCheckGate(filePath: string, locale: DigestLocale): string 
         return undefined;
     }
     return `digest frontmatter check failed: ${problems.join('; ')}`;
+}
+
+/**
+ * Helper to parse file paths from `git status --porcelain` output.
+ */
+function parsePorcelainPaths(stdout: string): string[] {
+    return stdout
+        .split('\n')
+        .map((line) => line.trimEnd())
+        .filter((line) => line.length > 3)
+        .map((line) => {
+            const raw = line.slice(3).trim();
+            const arrowIdx = raw.indexOf(' -> ');
+            const target = arrowIdx >= 0 ? raw.slice(arrowIdx + 4).trim() : raw;
+            if (target.startsWith('"') && target.endsWith('"')) {
+                return target.slice(1, -1);
+            }
+            return target;
+        })
+        .filter((p) => p.length > 0);
+}
+
+/**
+ * Runs the surfdash listen-link backfill command (`bun run sd seo listen-link --backfill --write`)
+ * with cwd = `surfdashRoot` via `spawnCli`.
+ *
+ * Scans recent non-draft digest posts and links the podcast episode URL when live.
+ * Best-effort: non-zero exit is reported via `echoError` prefixed with `listen-link backfill:`
+ * and never throws or fails publish/patch.
+ *
+ * Returns relative paths under `content/posts` modified by the backfill, by diffing
+ * `git status --porcelain -- content/posts` before and after the run.
+ * Skipped when `SURFDASH_LISTEN_BACKFILL=off`.
+ */
+export async function runListenLinkBackfill(surfdashRoot: string): Promise<string[]> {
+    if (process.env.SURFDASH_LISTEN_BACKFILL === 'off') {
+        return [];
+    }
+
+    const before = await spawnCli(['git', 'status', '--porcelain', '--', 'content/posts'], surfdashRoot);
+    const beforePaths = new Set(parsePorcelainPaths(before.stdout));
+
+    const spawned = await spawnCli(['bun', 'run', 'sd', 'seo', 'listen-link', '--backfill', '--write'], surfdashRoot);
+    if (spawned.exitCode !== 0) {
+        echoError(`listen-link backfill: ${cliErrorText(spawned)}`);
+    }
+
+    const after = await spawnCli(['git', 'status', '--porcelain', '--', 'content/posts'], surfdashRoot);
+    const afterPaths = parsePorcelainPaths(after.stdout);
+
+    return [...new Set(afterPaths.filter((p) => !beforePaths.has(p)))];
+}
+
+/** Outcome of {@link runSiteGate}. */
+export type SiteGateOutcome = { ok: true } | { ok: false; error: string };
+
+/** Commands executed by the surfdash site gate before commit and push to main. */
+const SITE_GATE_COMMANDS: readonly (readonly string[])[] = [
+    ['bun', 'run', 'sd', 'check', 'digest'],
+    ['bun', 'run', 'check:content'],
+];
+
+/**
+ * Extracts a failing post hint (path or identifier) from CLI error output if detectable.
+ */
+export function extractFailingPostHint(text: string): string | undefined {
+    const match = text.match(/(?:content[\\/])?posts[\\/][^\s:)]+/);
+    if (!match) return undefined;
+    return match[0].replace(/[.,;]+$/, '');
+}
+
+/**
+ * Runs the surfdash site gates (`bun run sd check digest` then `bun run check:content`)
+ * with cwd = `surfdashRoot` via `spawnCli`.
+ *
+ * If either command exits non-zero:
+ * - With `SURFDASH_DIGEST_CHECK=warn`: echoes each line of the failure via `echoError`
+ *   prefixed with `site gate (warn):` and continues.
+ * - With `SURFDASH_DIGEST_CHECK=off`: skips the gate completely.
+ * - Default (unset or any other value): fails loud with command, trimmed output, and post hint.
+ */
+export async function runSiteGate(surfdashRoot: string): Promise<SiteGateOutcome> {
+    if (process.env.SURFDASH_DIGEST_CHECK === 'off') {
+        return { ok: true };
+    }
+
+    for (const cmd of SITE_GATE_COMMANDS) {
+        const spawned = await spawnCli([...cmd], surfdashRoot);
+        if (spawned.exitCode !== 0) {
+            const output = cliErrorText(spawned);
+            const postHint = extractFailingPostHint(output);
+            const hint = postHint ? ` [failing post: ${postHint}]` : '';
+            const error = `site gate failed: ${cmd.join(' ')} (exit ${spawned.exitCode})${hint}: ${output}`;
+            if (process.env.SURFDASH_DIGEST_CHECK === 'warn') {
+                for (const line of error.split('\n')) {
+                    echoError(`site gate (warn): ${line}`);
+                }
+                continue;
+            }
+            return { ok: false, error };
+        }
+    }
+    return { ok: true };
 }
 
 /** Outcome of {@link pushPostGit} — the union keeps fail-loud errors typed at the call site. */
@@ -387,8 +515,15 @@ export type GitPushOutcome = { ok: true; hash: string } | { ok: false; error: st
  * Committing with a pathspec (`git commit -- <path>`) keeps unrelated staged files
  * out of the publish commit. Fails loud on branch/commit/push errors.
  */
-export async function pushPostGit(surfdashRoot: string, relPostDir: string, message: string): Promise<GitPushOutcome> {
-    return commitPostPaths(surfdashRoot, [relPostDir], message);
+export async function pushPostGit(
+    surfdashRoot: string,
+    relPostDir: string | string[],
+    message: string,
+    extraPaths: string[] = [],
+): Promise<GitPushOutcome> {
+    const rawPaths = Array.isArray(relPostDir) ? [...relPostDir, ...extraPaths] : [relPostDir, ...extraPaths];
+    const paths = [...new Set(rawPaths)];
+    return commitPostPaths(surfdashRoot, paths, message);
 }
 /** Refuse a checkout that cannot deploy before anything is written (`deploy.yml` builds `main` only). */
 async function assertMainBranch(surfdashRoot: string): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -705,6 +840,12 @@ async function patchPost(options: SurfdashPubOptions): Promise<Result> {
         if (existsSync(assetsDir)) {
             commitPaths.add(relative(surfdashRoot, assetsDir));
         }
+    }
+    if (process.env.SURFDASH_AUTO_PUSH !== '0') {
+        const backfilled = await runListenLinkBackfill(surfdashRoot);
+        for (const p of backfilled) commitPaths.add(p);
+        const gate = await runSiteGate(surfdashRoot);
+        if (!gate.ok) return fail(gate.error);
     }
     const commit = await commitPostPaths(
         surfdashRoot,
@@ -1094,12 +1235,16 @@ async function publishPreparedFile(
                 },
             });
         }
+        const backfilled = await runListenLinkBackfill(surfdashRoot);
+        const gate = await runSiteGate(surfdashRoot);
+        if (!gate.ok) return failUncertain(gate.error);
         const commitPaths = relPostDirs ?? [relPostDir];
         const commitLocales: SupportedLocale[] = relPostDirs === undefined ? [locale] : ['zh', 'en', 'ja'];
-        const pushed = await commitPostPaths(
+        const pushed = await pushPostGit(
             surfdashRoot,
             commitPaths,
             `content: daily AI news ${dateStamp} (${commitLocales.join(', ')})`,
+            backfilled,
         );
         if (!pushed.ok) return failUncertain(pushed.error);
         const live = await awaitArticleLive(articleUrl);

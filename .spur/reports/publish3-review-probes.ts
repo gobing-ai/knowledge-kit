@@ -2,7 +2,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { sendRows } from '../../apps/cli/src/itc-publish';
-import { classifyPublishMatrix, planPublishMatrix } from '../../apps/cli/src/publish-matrix';
+import { planPublishMatrix } from '../../apps/cli/src/publish-matrix';
 import { mapContentToEpisode } from '../../plugins/publishings/podcast-pub/src/map';
 import { mapContentToSurfingMarkdown } from '../../plugins/publishings/surfdash-pub/src/index';
 import { ThreadsPostApiTransport } from '../../plugins/publishings/threads-pub/src/index';
@@ -46,7 +46,7 @@ const requests: Array<{ method: string; url: string }> = [];
 const priorFetch = globalThis.fetch;
 globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
-    requests.push({ method: init?.method ?? 'GET', url: url.split('?')[0]! });
+    requests.push({ method: init?.method ?? 'GET', url: url.split('?')[0] ?? url });
     return Response.json(
         url.includes('api.x.com')
             ? { data: { id: '123' } }

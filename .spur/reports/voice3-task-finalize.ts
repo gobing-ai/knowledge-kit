@@ -12,12 +12,13 @@ function cli(args: string[], allowFailure = false) {
 function section(content: string, name: string) {
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const matched = new RegExp(`^### ${escaped}\\s*\\n([\\s\\S]*?)(?=^### |$(?![\\s\\S]))`, 'm').exec(content);
-    if (!matched) throw new Error(`missing section ${name}`);
-    return matched[1]!.trim();
+    const body = matched?.[1];
+    if (body === undefined) throw new Error(`missing section ${name}`);
+    return body.trim();
 }
 function update(wbs: string, name: string, text: string) {
     const path = `${dir}/${wbs}-${name.replaceAll(/[^A-Za-z]/g, '')}-final.md`;
-    writeFileSync(path, text + '\n');
+    writeFileSync(path, `${text}\n`);
     cli(['task', 'update', wbs, '--section', name, '--from-file', path]);
 }
 // Remove ambiguity in the launch-only route for explicitly authorized owned live sends.
@@ -213,4 +214,4 @@ const handoff = [
     '',
     'Accepted scope: zh-only variants; manual live send-confirm; launch-only publish_live_channels; explicit migration preset real/dummy/off inventory; offline clock/RSS fixtures. No new channels, remote draft-promotion API, real account probes, installed-package synchronization, production config edits or schedule installation.',
 ].join('\n');
-writeFileSync(`${dir}/handoff.md`, handoff + '\n');
+writeFileSync(`${dir}/handoff.md`, `${handoff}\n`);

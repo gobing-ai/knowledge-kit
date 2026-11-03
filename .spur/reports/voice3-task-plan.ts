@@ -200,8 +200,7 @@ const specs = [
     },
 ];
 
-for (let i = 0; i < specs.length; i++) {
-    const s = specs[i]!;
+for (const s of specs) {
     const req = s.requirements.map((r, n) => `- [ ] R${n + 1}. ${r}`).join('\n');
     const refs = s.requirements.map((_, n) => `R${n + 1}`).join(', ');
     const background = `${common}\n\nOwned audit findings: ${s.findings.join(', ')}. Priority reflects the highest owned severity; estimate ${s.hours} engineer-hours includes failure-first tests, docs and final checks.\n\n${s.premises.map((p) => `- ${p}`).join('\n')}\n\n${environment}\n\n**Refine corrections (2026-10-25)**\n- Findings were checked against the current tree, including concurrent matrix edits; none of this task's owned defects is already fixed. Preserve existing fixes rather than reopening them.\n- Completed G15 work is historical, not proof of migration readiness. This task is new corrective implementation, not a completed verification.\n- Operational constraints C01-C05 mean: explicit real/dummy/off inventory; manual live confirmation; opt-in auto_publish and prepared launchers; accepted zh-only locale parity; deterministic fixtures for wait/RSS. They are assigned as implementation/runbook work without authorizing production activation.`;
@@ -241,7 +240,14 @@ writeFileSync(
 writeFileSync(
     `${dir}/order.json`,
     JSON.stringify(
-        specs.map((s) => ({ name: s.name, depends_on_names: s.deps.map((d) => specs.find((x) => x.key === d)!.name) })),
+        specs.map((s) => ({
+            name: s.name,
+            depends_on_names: s.deps.map((dependency) => {
+                const match = specs.find((candidate) => candidate.key === dependency);
+                if (match === undefined) throw new Error(`Unknown dependency ${dependency} for ${s.key}`);
+                return match.name;
+            }),
+        })),
         null,
         2,
     ),

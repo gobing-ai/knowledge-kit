@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -10,6 +10,7 @@ import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils
 import { runInvoke } from '../../../../apps/cli/src/invoke';
 import {
     awaitArticleLive,
+    extractFailingPostHint,
     fastForwardToOrigin,
     getPublishTransport,
     main,
@@ -19,6 +20,8 @@ import {
     PostsurfingFileCliTransport,
     processPublishIO,
     pushPostGit,
+    runListenLinkBackfill,
+    runSiteGate,
     slugify,
     withEmdashTokenHint,
 } from '../src/index';
@@ -712,6 +715,25 @@ describe('surfdash-pub operations (0096)', () => {
         const root = join(base, 'work');
         const origin = join(base, 'origin.git');
         await writeSurfdashFixture(root);
+        // The merged publisher runs the site's gate/backfill before committing. Keep those
+        // external commands local while exercising the real locale identity and Git pathspec.
+        const sdPath = join(root, 'scripts', 'sd.ts');
+        await writeFile(
+            sdPath,
+            `if (['check', 'seo'].includes(process.argv[2])) {
+                const { appendFileSync } = await import('node:fs');
+                appendFileSync(${JSON.stringify(join(root, 'site-gate.log'))}, JSON.stringify(process.argv.slice(2)) + '\\n');
+                process.exit(0);
+            }\n${await readFile(sdPath, 'utf-8')}`,
+        );
+        await writeFile(
+            join(root, 'package.json'),
+            JSON.stringify({
+                name: 'fake-surfdash',
+                private: true,
+                scripts: { sd: 'bun scripts/sd.ts', 'check:content': 'bun scripts/sd.ts check content' },
+            }),
+        );
         const zhPostPath = await writeFixtureZhPost(root, '20260906-prepared-all-locales');
         const localePaths = {
             zh: zhPostPath,
@@ -782,6 +804,15 @@ describe('surfdash-pub operations (0096)', () => {
                     },
                 });
                 expect(result.ok, result.error).toBe(true);
+                const gateCalls = (await readFile(join(root, 'site-gate.log'), 'utf-8'))
+                    .trim()
+                    .split('\n')
+                    .map((line) => JSON.parse(line));
+                expect(gateCalls).toEqual([
+                    ['seo', 'listen-link', '--backfill', '--write'],
+                    ['check', 'digest'],
+                    ['check', 'content'],
+                ]);
                 const pushedPaths = Bun.spawnSync(
                     ['git', '--git-dir', origin, 'diff-tree', '--no-commit-id', '--name-only', '-r', 'main'],
                     { stdout: 'pipe', stderr: 'pipe' },
@@ -2072,5 +2103,644 @@ describe('digest frontmatter check wiring in publishPost and syncPost (Item 4)',
             delete process.env.SURFDASH_ROOT;
             await rm(root, { recursive: true, force: true });
         }
+    });
+
+    describe('surfdash site gate before commit/push', () => {
+        interface GateFixture {
+            base: string;
+            origin: string;
+            work: string;
+            coverSrc: string;
+        }
+
+        const run = async (cmd: string[], cwd: string): Promise<void> => {
+            const proc = Bun.spawn(cmd, { cwd, stdout: 'pipe', stderr: 'pipe' });
+            const [code, , err] = await Promise.all([
+                proc.exited,
+                new Response(proc.stdout).text(),
+                new Response(proc.stderr).text(),
+            ]);
+            if (code !== 0) throw new Error(`${cmd.join(' ')} exited ${code}: ${err}`);
+        };
+
+        const setupGateFixture = async (name: string): Promise<GateFixture> => {
+            const base = join(
+                process.cwd(),
+                `.works/tmp/${name}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            );
+            await mkdir(base, { recursive: true });
+            const origin = join(base, 'origin.git');
+            const work = join(base, 'work');
+
+            await run(['git', 'init', '--bare', '-b', 'main', origin], base);
+            await run(['git', 'init', '-b', 'main', work], base);
+            await run(['git', 'config', 'user.email', 'test@test'], work);
+            await run(['git', 'config', 'user.name', 'test'], work);
+            await writeFile(join(work, 'seed.md'), 'seed');
+            await run(['git', 'add', '.'], work);
+            await run(['git', 'commit', '-m', 'seed'], work);
+            await run(['git', 'remote', 'add', 'origin', origin], work);
+            await run(['git', 'push', '-u', 'origin', 'main'], work);
+
+            await mkdir(join(work, 'scripts'), { recursive: true });
+            await writeFile(
+                join(work, 'package.json'),
+                JSON.stringify({
+                    name: 'fake-surfdash',
+                    private: true,
+                    scripts: {
+                        sd: 'bun scripts/sd.ts',
+                        'check:content': 'bun scripts/check-content.ts',
+                    },
+                }),
+                'utf-8',
+            );
+
+            const sdScript = `
+const argv = process.argv.slice(2);
+if (argv[0] === 'seo' && argv[1] === 'listen-link') {
+    if (process.env.TEST_SD_LISTEN_BACKFILL_FAIL === '1') {
+        console.error('listen-link backfill failed: network error');
+        process.exit(1);
+    }
+    console.log('seo listen-link backfill — 0 linked (written), 0 not-live, 0 already-linked');
+    process.exit(0);
+}
+if (argv[0] === 'check' && argv[1] === 'digest') {
+    if (process.env.TEST_SD_CHECK_DIGEST_FAIL === '1') {
+        console.error('sd check digest failed: content/posts/articles/zh/20261024-test/index.md: filler sentence detected');
+        process.exit(1);
+    }
+    console.log('sd check digest ok');
+    process.exit(0);
+}
+console.error('unknown sd args: ' + argv.join(' '));
+process.exit(1);
+`;
+            await writeFile(join(work, 'scripts', 'sd.ts'), `${sdScript.trim()}\n`, 'utf-8');
+
+            const checkContentScript = `
+if (process.env.TEST_CHECK_CONTENT_FAIL === '1') {
+    console.error('check:content error in content/posts/articles/zh/20261024-test/index.md: label mismatch');
+    process.exit(1);
+}
+console.log('check:content ok');
+process.exit(0);
+`;
+            await writeFile(join(work, 'scripts', 'check-content.ts'), `${checkContentScript.trim()}\n`, 'utf-8');
+
+            const bin = join(work, 'postsurfing');
+            await writeFile(
+                bin,
+                readFileSync(join(import.meta.dir, 'fixtures', 'fake-postsufing.ts'), 'utf-8'),
+                'utf-8',
+            );
+            await Bun.spawn(['chmod', '+x', bin]).exited;
+
+            const coverSrc = join(work, 'valid-cover.png');
+            await writeFile(coverSrc, 'fake-png-bytes');
+
+            return { base, origin, work, coverSrc };
+        };
+
+        const makeContent = (coverSrc: string): Content => ({
+            title: 'Test Post',
+            body: '# Test Post\n\n正文段落。',
+            format: 'markdown',
+            metadata: {
+                runDate: '20261024',
+                subCategory: 'ai-daily',
+                coverImage: coverSrc,
+            },
+        });
+
+        const mockLiveFetch = (): (() => void) => {
+            const spy = spyOn(globalThis, 'fetch').mockImplementation(
+                (async () => new Response('ok', { status: 200 })) as unknown as typeof fetch,
+            );
+            return () => {
+                spy.mockRestore();
+            };
+        };
+
+        test('gate pass -> push happens', async () => {
+            const fx = await setupGateFixture('test-gate-pass');
+            const restoreFetch = mockLiveFetch();
+
+            process.env.POSTSURFING_BIN = join(fx.work, 'postsurfing');
+            process.env.SURFDASH_ROOT = fx.work;
+            process.env.SURFDASH_AUTO_PUSH = '1';
+            try {
+                const transport = new PostsurfingFileCliTransport();
+                const result = await transport.publish({ content: makeContent(fx.coverSrc) });
+                expect(result.ok).toBe(true);
+
+                const pushed = await new Response(
+                    Bun.spawn(['git', '--git-dir', fx.origin, 'log', '-1', '--format=%s', 'main']).stdout,
+                ).text();
+                expect(pushed).toContain('daily AI news 20261024');
+            } finally {
+                restoreFetch();
+                delete process.env.POSTSURFING_BIN;
+                delete process.env.SURFDASH_ROOT;
+                process.env.SURFDASH_AUTO_PUSH = '0';
+                await rm(fx.base, { recursive: true, force: true });
+            }
+        });
+
+        test('sd check digest fails -> no commit/push and error text contains output', async () => {
+            const fx = await setupGateFixture('test-sd-fail');
+            const restoreFetch = mockLiveFetch();
+
+            process.env.POSTSURFING_BIN = join(fx.work, 'postsurfing');
+            process.env.SURFDASH_ROOT = fx.work;
+            process.env.SURFDASH_AUTO_PUSH = '1';
+            process.env.TEST_SD_CHECK_DIGEST_FAIL = '1';
+            try {
+                const transport = new PostsurfingFileCliTransport();
+                const result = await transport.publish({ content: makeContent(fx.coverSrc) });
+                expect(result.ok).toBe(false);
+                expect(result.error).toContain('bun run sd check digest');
+                expect(result.error).toContain('filler sentence detected');
+                expect(result.error).toContain('failing post: content/posts/articles/zh/20261024-test/index.md');
+
+                const pushed = await new Response(
+                    Bun.spawn(['git', '--git-dir', fx.origin, 'log', '-1', '--format=%s', 'main']).stdout,
+                ).text();
+                expect(pushed.trim()).toBe('seed');
+            } finally {
+                restoreFetch();
+                delete process.env.TEST_SD_CHECK_DIGEST_FAIL;
+                delete process.env.POSTSURFING_BIN;
+                delete process.env.SURFDASH_ROOT;
+                process.env.SURFDASH_AUTO_PUSH = '0';
+                await rm(fx.base, { recursive: true, force: true });
+            }
+        });
+
+        test('check:content fails -> no commit/push and error text contains output', async () => {
+            const fx = await setupGateFixture('test-content-fail');
+            const restoreFetch = mockLiveFetch();
+
+            process.env.POSTSURFING_BIN = join(fx.work, 'postsurfing');
+            process.env.SURFDASH_ROOT = fx.work;
+            process.env.SURFDASH_AUTO_PUSH = '1';
+            process.env.TEST_CHECK_CONTENT_FAIL = '1';
+            try {
+                const transport = new PostsurfingFileCliTransport();
+                const result = await transport.publish({ content: makeContent(fx.coverSrc) });
+                expect(result.ok).toBe(false);
+                expect(result.error).toContain('bun run check:content');
+                expect(result.error).toContain('label mismatch');
+                expect(result.error).toContain('failing post: content/posts/articles/zh/20261024-test/index.md');
+
+                const pushed = await new Response(
+                    Bun.spawn(['git', '--git-dir', fx.origin, 'log', '-1', '--format=%s', 'main']).stdout,
+                ).text();
+                expect(pushed.trim()).toBe('seed');
+            } finally {
+                restoreFetch();
+                delete process.env.TEST_CHECK_CONTENT_FAIL;
+                delete process.env.POSTSURFING_BIN;
+                delete process.env.SURFDASH_ROOT;
+                process.env.SURFDASH_AUTO_PUSH = '0';
+                await rm(fx.base, { recursive: true, force: true });
+            }
+        });
+
+        test('warn mode -> push happens and warning echoed', async () => {
+            const fx = await setupGateFixture('test-gate-warn');
+            const restoreFetch = mockLiveFetch();
+
+            process.env.POSTSURFING_BIN = join(fx.work, 'postsurfing');
+            process.env.SURFDASH_ROOT = fx.work;
+            process.env.SURFDASH_AUTO_PUSH = '1';
+            process.env.TEST_SD_CHECK_DIGEST_FAIL = '1';
+            process.env.SURFDASH_DIGEST_CHECK = 'warn';
+
+            const errTarget = createBufferTarget();
+            const restore = setDefaultOutputTargets({ stderr: errTarget });
+            try {
+                const transport = new PostsurfingFileCliTransport();
+                const result = await transport.publish({ content: makeContent(fx.coverSrc) });
+                expect(result.ok).toBe(true);
+                expect(errTarget.text()).toContain('site gate (warn):');
+                expect(errTarget.text()).toContain('filler sentence detected');
+
+                const pushed = await new Response(
+                    Bun.spawn(['git', '--git-dir', fx.origin, 'log', '-1', '--format=%s', 'main']).stdout,
+                ).text();
+                expect(pushed).toContain('daily AI news 20261024');
+            } finally {
+                restore();
+                restoreFetch();
+                delete process.env.TEST_SD_CHECK_DIGEST_FAIL;
+                delete process.env.SURFDASH_DIGEST_CHECK;
+                delete process.env.POSTSURFING_BIN;
+                delete process.env.SURFDASH_ROOT;
+                process.env.SURFDASH_AUTO_PUSH = '0';
+                await rm(fx.base, { recursive: true, force: true });
+            }
+        });
+
+        test('runSiteGate supports off mode and extractFailingPostHint helper', async () => {
+            process.env.SURFDASH_DIGEST_CHECK = 'off';
+            try {
+                const outcome = await runSiteGate('/nonexistent');
+                expect(outcome.ok).toBe(true);
+            } finally {
+                delete process.env.SURFDASH_DIGEST_CHECK;
+            }
+
+            expect(extractFailingPostHint('Error in content/posts/articles/zh/slug/index.md: bad')).toBe(
+                'content/posts/articles/zh/slug/index.md',
+            );
+            expect(extractFailingPostHint('Error in posts/articles/en/slug.')).toBe('posts/articles/en/slug');
+            expect(extractFailingPostHint('no post path here')).toBeUndefined();
+        });
+
+        test('patchPost respects site gate when auto push is enabled', async () => {
+            const fx = await setupGateFixture('test-patch-gate');
+            process.env.TEST_CHECK_CONTENT_FAIL = '1';
+            process.env.SURFDASH_ROOT = fx.work;
+            process.env.SURFDASH_AUTO_PUSH = '1';
+
+            const zhPostPath = join(fx.work, 'content', 'posts', 'articles', 'zh', '20261024-post', 'index.md');
+            await mkdir(dirname(zhPostPath), { recursive: true });
+            await writeFile(
+                zhPostPath,
+                `---\ntitle: ZH\npublishDate: '2026-10-24'\nimage: ./assets/cover.png\n---\n\nBody\n`,
+            );
+
+            await writeFile(join(fx.work, 'scripts', 'publish-orchestrator.ts'), 'process.exit(0);\n');
+
+            const gitRun = async (cmd: string[], cwd: string): Promise<void> => {
+                const proc = Bun.spawn(cmd, { cwd, stdout: 'pipe', stderr: 'pipe' });
+                await proc.exited;
+            };
+            await gitRun(['git', 'add', '-A'], fx.work);
+            await gitRun(['git', 'commit', '-m', 'add-post'], fx.work);
+            await gitRun(['git', 'push', 'origin', 'main'], fx.work);
+
+            try {
+                const transport = new PostsurfingFileCliTransport();
+                const result = await transport.publish({
+                    content: { title: 'unused', body: 'unused', format: 'markdown' },
+                    options: {
+                        operation: 'patch',
+                        postPath: zhPostPath,
+                        coverUrl: 'https://cdn.example/cover.png',
+                        dateIso: '2026-10-24',
+                    },
+                });
+                expect(result.ok).toBe(false);
+                expect(result.error).toContain('bun run check:content');
+            } finally {
+                delete process.env.TEST_CHECK_CONTENT_FAIL;
+                delete process.env.SURFDASH_ROOT;
+                process.env.SURFDASH_AUTO_PUSH = '0';
+                await rm(fx.base, { recursive: true, force: true });
+            }
+        });
+
+        describe('surfdash listen-link backfill before site gate/commit', () => {
+            test('backfill invoked with exact argv and cwd', async () => {
+                const fx = await setupGateFixture('test-backfill-argv');
+                const recorderScript = `
+import { appendFileSync } from 'node:fs';
+const argv = process.argv.slice(2);
+if (argv[0] === 'seo' && argv[1] === 'listen-link') {
+    appendFileSync('${join(fx.work, 'backfill-invoked.json')}', JSON.stringify({ argv, cwd: process.cwd() }));
+    console.log('seo listen-link backfill — 0 linked (written), 0 not-live, 0 already-linked');
+    process.exit(0);
+}
+process.exit(0);
+`;
+                await writeFile(join(fx.work, 'scripts', 'sd.ts'), `${recorderScript.trim()}\n`, 'utf-8');
+
+                const backfilled = await runListenLinkBackfill(fx.work);
+                expect(backfilled).toEqual([]);
+
+                const raw = await readFile(join(fx.work, 'backfill-invoked.json'), 'utf-8');
+                const recorded = JSON.parse(raw);
+                expect(recorded.argv).toEqual(['seo', 'listen-link', '--backfill', '--write']);
+                expect(recorded.cwd).toBe(fx.work);
+
+                await rm(fx.base, { recursive: true, force: true });
+            });
+
+            test('off switch skips backfill completely (SURFDASH_LISTEN_BACKFILL=off)', async () => {
+                const fx = await setupGateFixture('test-backfill-off');
+                const recorderScript = `
+import { appendFileSync } from 'node:fs';
+appendFileSync('${join(fx.work, 'should-not-run.txt')}', 'ran');
+process.exit(0);
+`;
+                await writeFile(join(fx.work, 'scripts', 'sd.ts'), `${recorderScript.trim()}\n`, 'utf-8');
+
+                process.env.SURFDASH_LISTEN_BACKFILL = 'off';
+                try {
+                    const backfilled = await runListenLinkBackfill(fx.work);
+                    expect(backfilled).toEqual([]);
+                    expect(existsSync(join(fx.work, 'should-not-run.txt'))).toBe(false);
+                } finally {
+                    delete process.env.SURFDASH_LISTEN_BACKFILL;
+                    await rm(fx.base, { recursive: true, force: true });
+                }
+            });
+
+            test('backfill failure is non-fatal: reported via echoError and publish succeeds', async () => {
+                const fx = await setupGateFixture('test-backfill-fail-publish');
+                const restoreFetch = mockLiveFetch();
+
+                process.env.POSTSURFING_BIN = join(fx.work, 'postsurfing');
+                process.env.SURFDASH_ROOT = fx.work;
+                process.env.SURFDASH_AUTO_PUSH = '1';
+                process.env.TEST_SD_LISTEN_BACKFILL_FAIL = '1';
+
+                const errTarget = createBufferTarget();
+                const restore = setDefaultOutputTargets({ stderr: errTarget });
+                try {
+                    const transport = new PostsurfingFileCliTransport();
+                    const result = await transport.publish({ content: makeContent(fx.coverSrc) });
+                    expect(result.ok).toBe(true);
+                    expect(errTarget.text()).toContain('listen-link backfill:');
+                    expect(errTarget.text()).toContain('listen-link backfill failed: network error');
+
+                    const pushed = await new Response(
+                        Bun.spawn(['git', '--git-dir', fx.origin, 'log', '-1', '--format=%s', 'main']).stdout,
+                    ).text();
+                    expect(pushed).toContain('daily AI news 20261024');
+                } finally {
+                    restore();
+                    restoreFetch();
+                    delete process.env.TEST_SD_LISTEN_BACKFILL_FAIL;
+                    delete process.env.POSTSURFING_BIN;
+                    delete process.env.SURFDASH_ROOT;
+                    process.env.SURFDASH_AUTO_PUSH = '0';
+                    await rm(fx.base, { recursive: true, force: true });
+                }
+            });
+
+            test('backfill failure is non-fatal: reported via echoError and patch succeeds', async () => {
+                const fx = await setupGateFixture('test-backfill-fail-patch');
+                process.env.SURFDASH_ROOT = fx.work;
+                process.env.SURFDASH_AUTO_PUSH = '1';
+                process.env.TEST_SD_LISTEN_BACKFILL_FAIL = '1';
+
+                const zhPostPath = join(fx.work, 'content', 'posts', 'articles', 'zh', '20261024-post', 'index.md');
+                await mkdir(dirname(zhPostPath), { recursive: true });
+                await writeFile(
+                    zhPostPath,
+                    `---\ntitle: ZH\npublishDate: '2026-10-24'\nimage: ./assets/cover.png\n---\n\nBody\n`,
+                );
+                await writeFile(join(fx.work, 'scripts', 'publish-orchestrator.ts'), 'process.exit(0);\n');
+
+                const gitRun = async (cmd: string[], cwd: string): Promise<void> => {
+                    const proc = Bun.spawn(cmd, { cwd, stdout: 'pipe', stderr: 'pipe' });
+                    await proc.exited;
+                };
+                await gitRun(['git', 'add', '-A'], fx.work);
+                await gitRun(['git', 'commit', '-m', 'add-post'], fx.work);
+                await gitRun(['git', 'push', 'origin', 'main'], fx.work);
+
+                const errTarget = createBufferTarget();
+                const restore = setDefaultOutputTargets({ stderr: errTarget });
+                try {
+                    const transport = new PostsurfingFileCliTransport();
+                    const result = await transport.publish({
+                        content: { title: 'unused', body: 'unused', format: 'markdown' },
+                        options: {
+                            operation: 'patch',
+                            postPath: zhPostPath,
+                            coverUrl: 'https://cdn.example/cover.png',
+                            dateIso: '2026-10-24',
+                        },
+                    });
+                    expect(result.ok).toBe(true);
+                    expect(errTarget.text()).toContain('listen-link backfill:');
+                    expect(errTarget.text()).toContain('listen-link backfill failed: network error');
+                } finally {
+                    restore();
+                    delete process.env.TEST_SD_LISTEN_BACKFILL_FAIL;
+                    delete process.env.SURFDASH_ROOT;
+                    process.env.SURFDASH_AUTO_PUSH = '0';
+                    await rm(fx.base, { recursive: true, force: true });
+                }
+            });
+
+            test('backfilled paths end up in the commit pathspec on publish (unrelated staged files stay out)', async () => {
+                const fx = await setupGateFixture('test-backfill-paths-publish');
+                const restoreFetch = mockLiveFetch();
+
+                const oldPostRel = join('content', 'posts', 'articles', 'zh', '20261023-old', 'index.md');
+                const oldPostPath = join(fx.work, oldPostRel);
+                await mkdir(dirname(oldPostPath), { recursive: true });
+                await writeFile(oldPostPath, '---\ntitle: Old\n---\nOld body\n');
+
+                await run(['git', 'add', oldPostRel], fx.work);
+                await run(['git', 'commit', '-m', 'seed-old-post'], fx.work);
+                await run(['git', 'push', 'origin', 'main'], fx.work);
+
+                const unrelatedFile = join(fx.work, 'other.txt');
+                await writeFile(unrelatedFile, 'unrelated content\n');
+                await run(['git', 'add', 'other.txt'], fx.work);
+
+                const backfillScript = `
+import { writeFileSync } from 'node:fs';
+const argv = process.argv.slice(2);
+if (argv[0] === 'seo' && argv[1] === 'listen-link') {
+    writeFileSync(${JSON.stringify(oldPostPath)}, '---\\ntitle: Old\\n---\\nOld body backfilled with listen link\\n');
+    console.log('✎ 20261023-old [backfilled]');
+    console.log('seo listen-link backfill — 1 linked (written), 0 not-live, 0 already-linked');
+    process.exit(0);
+}
+if (argv[0] === 'check' && argv[1] === 'digest') {
+    process.exit(0);
+}
+process.exit(1);
+`;
+                await writeFile(join(fx.work, 'scripts', 'sd.ts'), `${backfillScript.trim()}\n`, 'utf-8');
+
+                process.env.POSTSURFING_BIN = join(fx.work, 'postsurfing');
+                process.env.SURFDASH_ROOT = fx.work;
+                process.env.SURFDASH_AUTO_PUSH = '1';
+
+                try {
+                    const transport = new PostsurfingFileCliTransport();
+                    const result = await transport.publish({ content: makeContent(fx.coverSrc) });
+                    expect(result.ok).toBe(true);
+
+                    const committedFilesRaw = await new Response(
+                        Bun.spawn(['git', '--git-dir', fx.origin, 'show', '--name-only', '--pretty=format:', 'main'])
+                            .stdout,
+                    ).text();
+                    const committedFiles = committedFilesRaw
+                        .split('\n')
+                        .map((l) => l.trim())
+                        .filter((l) => l.length > 0);
+
+                    expect(committedFiles).toContain(oldPostRel);
+                    expect(committedFiles.some((f) => f.includes('20261024-test'))).toBe(true);
+                    expect(committedFiles).not.toContain('other.txt');
+
+                    const stagedRaw = await new Response(
+                        Bun.spawn(['git', 'diff', '--cached', '--name-only'], { cwd: fx.work }).stdout,
+                    ).text();
+                    expect(stagedRaw).toContain('other.txt');
+                } finally {
+                    restoreFetch();
+                    delete process.env.POSTSURFING_BIN;
+                    delete process.env.SURFDASH_ROOT;
+                    process.env.SURFDASH_AUTO_PUSH = '0';
+                    await rm(fx.base, { recursive: true, force: true });
+                }
+            });
+
+            test('backfilled paths end up in the commit pathspec on patch (unrelated staged files stay out)', async () => {
+                const fx = await setupGateFixture('test-backfill-paths-patch');
+
+                const oldPostRel = join('content', 'posts', 'articles', 'zh', '20261023-old', 'index.md');
+                const oldPostPath = join(fx.work, oldPostRel);
+                await mkdir(dirname(oldPostPath), { recursive: true });
+                await writeFile(oldPostPath, '---\ntitle: Old\n---\nOld body\n');
+
+                const zhPostRel = join('content', 'posts', 'articles', 'zh', '20261024-post', 'index.md');
+                const zhPostPath = join(fx.work, zhPostRel);
+                await mkdir(dirname(zhPostPath), { recursive: true });
+                await writeFile(
+                    zhPostPath,
+                    `---\ntitle: ZH\npublishDate: '2026-10-24'\nimage: ./assets/cover.png\n---\n\nBody\n`,
+                );
+
+                await writeFile(join(fx.work, 'scripts', 'publish-orchestrator.ts'), 'process.exit(0);\n');
+
+                await run(['git', 'add', '-A'], fx.work);
+                await run(['git', 'commit', '-m', 'seed-posts'], fx.work);
+                await run(['git', 'push', 'origin', 'main'], fx.work);
+
+                await writeFile(join(fx.work, 'other.txt'), 'unrelated content\n');
+                await run(['git', 'add', 'other.txt'], fx.work);
+
+                const backfillScript = `
+import { writeFileSync } from 'node:fs';
+const argv = process.argv.slice(2);
+if (argv[0] === 'seo' && argv[1] === 'listen-link') {
+    writeFileSync(${JSON.stringify(oldPostPath)}, '---\\ntitle: Old\\n---\\nOld body backfilled\\n');
+    console.log('✎ 20261023-old [backfilled]');
+    process.exit(0);
+}
+if (argv[0] === 'check' && argv[1] === 'digest') {
+    process.exit(0);
+}
+process.exit(1);
+`;
+                await writeFile(join(fx.work, 'scripts', 'sd.ts'), `${backfillScript.trim()}\n`, 'utf-8');
+
+                process.env.SURFDASH_ROOT = fx.work;
+                process.env.SURFDASH_AUTO_PUSH = '1';
+
+                try {
+                    const transport = new PostsurfingFileCliTransport();
+                    const result = await transport.publish({
+                        content: { title: 'unused', body: 'unused', format: 'markdown' },
+                        options: {
+                            operation: 'patch',
+                            postPath: zhPostPath,
+                            coverUrl: 'https://cdn.example/cover.png',
+                            dateIso: '2026-10-24',
+                        },
+                    });
+                    expect(result.ok).toBe(true);
+
+                    const committedFilesRaw = await new Response(
+                        Bun.spawn(['git', '--git-dir', fx.origin, 'show', '--name-only', '--pretty=format:', 'main'])
+                            .stdout,
+                    ).text();
+                    const committedFiles = committedFilesRaw
+                        .split('\n')
+                        .map((l) => l.trim())
+                        .filter((l) => l.length > 0);
+
+                    expect(committedFiles).toContain(oldPostRel);
+                    expect(committedFiles).toContain(zhPostRel);
+                    expect(committedFiles).not.toContain('other.txt');
+
+                    const stagedRaw = await new Response(
+                        Bun.spawn(['git', 'diff', '--cached', '--name-only'], { cwd: fx.work }).stdout,
+                    ).text();
+                    expect(stagedRaw).toContain('other.txt');
+                } finally {
+                    delete process.env.SURFDASH_ROOT;
+                    process.env.SURFDASH_AUTO_PUSH = '0';
+                    await rm(fx.base, { recursive: true, force: true });
+                }
+            });
+
+            test('execution order is backfill -> site gate -> commit', async () => {
+                const fx = await setupGateFixture('test-backfill-order');
+                const restoreFetch = mockLiveFetch();
+
+                const orderLog = join(fx.work, 'order.log');
+
+                const sdScript = `
+import { appendFileSync } from 'node:fs';
+const argv = process.argv.slice(2);
+if (argv[0] === 'seo' && argv[1] === 'listen-link') {
+    appendFileSync('${orderLog}', 'backfill\\n');
+    process.exit(0);
+}
+if (argv[0] === 'check' && argv[1] === 'digest') {
+    appendFileSync('${orderLog}', 'site-gate:sd-check-digest\\n');
+    process.exit(0);
+}
+process.exit(1);
+`;
+                await writeFile(join(fx.work, 'scripts', 'sd.ts'), `${sdScript.trim()}\n`, 'utf-8');
+
+                const checkContentScript = `
+import { appendFileSync } from 'node:fs';
+appendFileSync('${orderLog}', 'site-gate:check-content\\n');
+process.exit(0);
+`;
+                await writeFile(
+                    join(fx.work, 'scripts', 'check-content.ts'),
+                    `${checkContentScript.trim()}\n`,
+                    'utf-8',
+                );
+
+                const hookPath = join(fx.work, '.git', 'hooks', 'pre-commit');
+                await writeFile(hookPath, `#!/bin/sh\nprintf "commit\\n" >> "${orderLog}"\nexit 0\n`);
+                await Bun.spawn(['chmod', '+x', hookPath]).exited;
+
+                process.env.POSTSURFING_BIN = join(fx.work, 'postsurfing');
+                process.env.SURFDASH_ROOT = fx.work;
+                process.env.SURFDASH_AUTO_PUSH = '1';
+
+                try {
+                    const transport = new PostsurfingFileCliTransport();
+                    const result = await transport.publish({ content: makeContent(fx.coverSrc) });
+                    expect(result.ok).toBe(true);
+
+                    const logLines = (await readFile(orderLog, 'utf-8'))
+                        .split('\n')
+                        .map((l) => l.trim())
+                        .filter((l) => l.length > 0);
+
+                    expect(logLines).toEqual([
+                        'backfill',
+                        'site-gate:sd-check-digest',
+                        'site-gate:check-content',
+                        'commit',
+                    ]);
+                } finally {
+                    restoreFetch();
+                    delete process.env.POSTSURFING_BIN;
+                    delete process.env.SURFDASH_ROOT;
+                    process.env.SURFDASH_AUTO_PUSH = '0';
+                    await rm(fx.base, { recursive: true, force: true });
+                }
+            });
+        });
     });
 });

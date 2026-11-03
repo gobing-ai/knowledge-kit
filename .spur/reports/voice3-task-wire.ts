@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 const root = '.spur/reports/voice3-task-plan';
 const specs = JSON.parse(readFileSync(`${root}/specs.json`, 'utf8'));
