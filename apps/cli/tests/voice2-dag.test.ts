@@ -1190,9 +1190,9 @@ describe('kk-daily-ai-voice2 — agent.run recovery siblings (0238 AC1–AC4)', 
         expect(nodes[2]?.action?.options?.command).toContain('OMNIVOICE_SPEED=1.06');
         expect(nodes[1]?.dependsOn).toContain('generate');
         expect(nodes[2]?.dependsOn).toContain('generate-fallback');
-        expect(nodes[0]?.action?.options?.onError).toBe('continue');
-        expect(nodes[1]?.action?.options?.onError).toBe('continue');
-        expect(nodes[2]?.action?.options?.onError).toBeUndefined();
+        expect(nodes[0]?.action?.onError).toBe('continue');
+        expect(nodes[1]?.action?.onError).toBe('continue');
+        expect(nodes[2]?.action?.onError).toBeUndefined();
         expect(nodes[1]?.condition?.options?.command).toContain('kk:voxcpm-tts');
         expect(nodes[1]?.condition?.options?.command).toContain('kk:gemini-tts');
         expect(nodes[1]?.condition?.options?.command).not.toContain('kk:omni-voice-gen');

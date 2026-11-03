@@ -475,7 +475,7 @@ nodes:
     # 0238 R3: reads 21-plan/<date>_03_plan_plan.json, so it must not start before the plan
     # producers settle. `script-style` stays first in the list: a done dependency in the mix keeps
     # this node runnable when the plan-authoring nodes are disabled (all-skipped deps skip a node).
-    dependsOn: [script-style, plan-translate, plan-translate-retry]
+    dependsOn: [script-style, plan-translate, plan-translate-retry, article]
     condition:
       kind: shell
       options:
@@ -582,8 +582,8 @@ nodes:
         command: 'test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS'
     action:
       kind: shell
+      onError: continue
       options:
-        onError: continue
         command: >-
           OMNIVOICE_SPEED=1.06 kk stage daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "${vars.vdriver}" "1" "${vars.episode_max_minutes}" "${vars.episode_min_minutes}"
 
@@ -605,8 +605,8 @@ nodes:
           && ! jq -e '(.metadata.generator == "kk:voxcpm-tts" or .metadata.generator == "kk:gemini-tts") and .metadata.qc.passed == true' "${vars.work_dir}/30-audio/${vars.run_date}_11_generate_content.json"
     action:
       kind: shell
+      onError: continue
       options:
-        onError: continue
         command: >-
           kk stage daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "gemini" "1" "${vars.episode_max_minutes}" "${vars.episode_min_minutes}"
 
