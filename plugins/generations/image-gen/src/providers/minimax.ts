@@ -1,5 +1,8 @@
 import { Buffer } from 'node:buffer';
+import { setTimeout as delay } from 'node:timers/promises';
+import { echoError } from '@gobing-ai/ts-utils';
 import { readBytes } from '../bytes';
+import { classifyProviderError } from './errors';
 import { mimeForPath } from './refs';
 import { PROVIDER_REQUEST_TIMEOUT_MS } from './timeouts';
 import type { ImageProvider, ImageRequest, ImageResult, ProviderFactory, ProviderOptions } from './types';
@@ -39,6 +42,13 @@ interface MinimaxResponse {
         status_code?: number;
         status_msg?: string;
     };
+}
+
+function responseError(result: MinimaxResponse): Error | null {
+    const code = result?.base_resp?.status_code;
+    return code !== undefined && code !== 0
+        ? new Error(`MiniMax API error (status_code=${code}): ${result.base_resp?.status_msg ?? 'unknown error'}`)
+        : null;
 }
 
 export function parsePixelSize(size: string): { width: number; height: number } | null {
@@ -126,10 +136,8 @@ export async function extractImageFromResponse(
     fetchFn: typeof fetch = fetch,
     timeoutMs: number = PROVIDER_REQUEST_TIMEOUT_MS,
 ): Promise<Uint8Array> {
-    const baseResp = result.base_resp;
-    if (baseResp?.status_code !== undefined && baseResp.status_code !== 0) {
-        throw new Error(baseResp.status_msg ?? `MiniMax API returned status_code=${baseResp.status_code}`);
-    }
+    const error = responseError(result);
+    if (error !== null) throw error;
     const base64Image = result.data?.image_base64?.[0];
     if (base64Image !== undefined) return Uint8Array.from(Buffer.from(base64Image, 'base64'));
     const url = result.data?.image_urls?.[0];
@@ -167,20 +175,41 @@ export const createMinimax: ProviderFactory = (options?: ProviderOptions): Image
 
             const base = (readEnv('MINIMAX_BASE_URL') || 'https://api.minimaxi.com').replace(/\/+$/g, '');
             const url = base.endsWith('/v1') ? `${base}/image_generation` : `${base}/v1/image_generation`;
-            const response = await fetchFn(url, {
-                method: 'POST',
-                headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
-                body: JSON.stringify(body),
-                signal: AbortSignal.timeout(timeoutMs),
-            });
-            if (!response.ok) {
-                throw new Error(`MiniMax API error (${response.status}): ${await response.text()}`);
+            // One deadline covers all attempts and backoff. Retry only explicit failed responses:
+            // transport errors leave generation outcome ambiguous and must not silently rebill it.
+            const signal = AbortSignal.timeout(timeoutMs);
+            let result: MinimaxResponse;
+            for (let attempt = 1; ; attempt += 1) {
+                signal.throwIfAborted();
+                const response = await fetchFn(url, {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+                    body: JSON.stringify(body),
+                    signal,
+                });
+                let error: Error | null;
+                if (response.ok) {
+                    result = (await response.json()) as MinimaxResponse;
+                    error = responseError(result);
+                    if (error === null) break;
+                } else {
+                    const detail = await response.text();
+                    let businessError: Error | null = null;
+                    try {
+                        businessError = responseError(JSON.parse(detail) as MinimaxResponse);
+                    } catch {
+                        // A non-JSON gateway response still carries its HTTP failure class.
+                    }
+                    // Business codes own policy/auth semantics even on a generic HTTP 5xx.
+                    error = businessError ?? new Error(`MiniMax API error (${response.status}): ${detail}`);
+                }
+                if (attempt >= 3 || classifyProviderError(error) !== 'transient') throw error;
+                const delayMs = attempt * 1000;
+                echoError(`WARN image-gen: ${error.message}; retrying MiniMax (${attempt + 1}/3) after ${delayMs}ms`);
+                await delay(delayMs, undefined, { signal });
             }
-            const bytes = await extractImageFromResponse(
-                (await response.json()) as MinimaxResponse,
-                fetchFn,
-                timeoutMs,
-            );
+            // Download errors are outside the POST retry loop: the image already exists.
+            const bytes = await extractImageFromResponse(result, fetchFn, timeoutMs);
             return { bytes, extension: 'jpg', provider: 'minimax', model: req.model };
         },
     };

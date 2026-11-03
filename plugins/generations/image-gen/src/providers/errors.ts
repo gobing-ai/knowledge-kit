@@ -24,6 +24,16 @@
 /** The retry decision classes the D6 fallback loop (0166) acts on. */
 export type ProviderErrorClass = 'auth' | 'quota' | 'transient' | 'policy' | 'unknown';
 
+/** MiniMax business codes are not HTTP statuses; messages may be only "system error". */
+export function minimaxErrorClass(code: number): ProviderErrorClass {
+    // https://platform.minimax.io/docs/api-reference/errorcode
+    if ([1026, 1027, 1040, 1046].includes(code)) return 'policy';
+    if ([1004, 2049].includes(code)) return 'auth';
+    if ([1002, 1008, 1039, 1045, 2056].includes(code)) return 'quota';
+    if ([1000, 1001, 1024, 1033].includes(code)) return 'transient';
+    return 'unknown';
+}
+
 /** Content-policy / safety / moderation rejections — checked first, they often arrive as 400/403. */
 const POLICY_RE = /content[_ -]?policy|moderation|safety|sensitive|inappropriate|violat|blocked/i;
 /** Credential wording; 401/403 statuses are checked separately. */
@@ -69,7 +79,12 @@ function partsOf(err: unknown): { readonly name: string; readonly message: strin
 export function classifyProviderError(err: unknown): ProviderErrorClass {
     const parts = partsOf(err);
     const statuses = statusesIn(parts.message);
-    if (POLICY_RE.test(parts.message)) return 'policy';
+    const miniCode = /^MiniMax API error \(status_code=(\d+)\):/.exec(parts.message)?.[1];
+    const miniClass = miniCode === undefined ? 'unknown' : minimaxErrorClass(Number(miniCode));
+    if (miniClass === 'policy' || POLICY_RE.test(parts.message)) return 'policy';
+    // An explicit business code owns retry semantics; e.g. invalid params (2013) must not
+    // become transient merely because its description contains the word "timeout".
+    if (miniCode !== undefined) return miniClass;
     if (statuses.some((status) => status === 401 || status === 403) || AUTH_RE.test(parts.message)) return 'auth';
     if (statuses.some((status) => status === 402 || status === 429) || QUOTA_RE.test(parts.message)) return 'quota';
     if (
