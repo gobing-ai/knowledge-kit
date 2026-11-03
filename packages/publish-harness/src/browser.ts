@@ -27,6 +27,9 @@ import {
     resolveBotProfileDir,
 } from './bot';
 import { chmod, lstat } from './bot-fs';
+
+export { chmod, createExclusiveFile, mkdirExclusive, rmdir } from './bot-fs';
+
 import { type BotTransaction, beginBotTransaction } from './bot-transaction';
 import { resolveBrowserProfileDir, trySelectors } from './index';
 import { ensureProfileDir } from './profile-dir';

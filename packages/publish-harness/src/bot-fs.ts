@@ -1,8 +1,10 @@
 import {
     chmodSync,
+    closeSync,
     copyFileSync,
     lstatSync,
     mkdirSync,
+    openSync,
     readdirSync,
     realpathSync,
     rmdirSync,
@@ -66,6 +68,11 @@ export function rmdir(path: string): boolean {
 /** Set permissions (`0o700` directories, `0o600` metadata/state files). */
 export function chmod(path: string, mode: number): void {
     chmodSync(path, mode);
+}
+
+/** Reserve one owner-only file without following or replacing an existing path. */
+export function createExclusiveFile(path: string): void {
+    closeSync(openSync(path, 'wx', 0o600));
 }
 
 /** Options for {@link copyProfileEntry}. */
