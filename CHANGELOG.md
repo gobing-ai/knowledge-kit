@@ -1,3 +1,33 @@
+## [0.1.11] - 2026-11-02
+
+### Added
+
+- feat(kk): run the scheduled daily job under a supervised launcher (bfb733b)
+<!-- src: plugins/kk/scripts/daily-scheduled-run.ts:50 -->
+
+### Fixed
+
+- fix(daily): release no-content reservations only without a send (abb9838)
+<!-- src: plugins/kk/scripts/daily-scheduled-run.ts:143 -->
+- fix(podcast-pub): make create idempotent with a deterministic key (5d2d87a)
+<!-- src: plugins/publishings/podcast-pub/src/index.ts:311 -->
+- fix(surfdash-pub): parse folded yaml lists, journal send intent (f454b54)
+<!-- src: plugins/publishings/surfdash-pub/src/digest-check.ts:82 -->
+- fix(publish-matrix): keep dummy links off real rows, escape urls (2387b89)
+<!-- src: apps/cli/src/publish-matrix.ts:114 -->
+- fix(kk): guard daily safety retries with artifact contracts (9fba11e)
+<!-- src: plugins/kk/scripts/safety-artifact-check.ts:7 -->
+- fix(daily): fail closed on publish receipts and key planning caches (d70ed10)
+<!-- src: plugins/kk/scripts/daily-stages.ts:1631 -->
+
+### Other
+
+- docs(tasks): record the 0338 activation approval and review evidence (411717b)
+- docs: record the 0338 recovery evidence and sync derived docs (b14215a)
+- docs(tasks): file voice3 corrective batch 0329-0335 from the audit (ca47ee9)
+- docs(tasks): update task files after verification (11c6977)
+- docs(tasks): update task files after verification (abbacde)
+
 ## [0.1.10] - 2026-10-24
 
 ### Added
