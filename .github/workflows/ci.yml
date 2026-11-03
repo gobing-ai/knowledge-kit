@@ -9,7 +9,10 @@ on:
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    # ubuntu-latest rotated to ubuntu-26.04 (early Nov 2026); the workspace-pinned
+    # playwright 1.55.0 (build 1187) ships no chromium for ubuntu26.04-x64
+    # (run 41669313930). Pin the runner to the last image that works.
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v6
