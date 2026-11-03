@@ -63,11 +63,19 @@ jobs:
           set -euo pipefail
           (cd apps/cli && bun run build:bundle)
           cd apps/cli
-          PACK_LIST=$(npm pack --dry-run 2>&1)
-          echo "$PACK_LIST" | grep -q 'plugins/kk/plugin.json'
-          echo "$PACK_LIST" | grep -q '.claude-plugin/marketplace.json'
-          echo "$PACK_LIST" | grep -q 'dist/index.js'
-          ! echo "$PACK_LIST" | grep -q '/tests/'
+          # Grep a file, not a pipe: on v0.1.11 (run 41682996962) the pack listing
+          # crossed the 64KB pipe buffer and the early-match `grep -q` on
+          # .claude-plugin/marketplace.json (near the top of the listing) closed the
+          # pipe while `echo` was mid-write — EPIPE, then pipefail + `set -e` fail the
+          # step. `plugins/kk/plugin.json` sits near the end, so only the second probe
+          # hit it. A temp file has no early-exit pipe consumer.
+          PACK_FILE="$(mktemp)"
+          npm pack --dry-run > "$PACK_FILE" 2>&1
+          grep -q 'plugins/kk/plugin.json' "$PACK_FILE"
+          grep -q '.claude-plugin/marketplace.json' "$PACK_FILE"
+          grep -q 'dist/index.js' "$PACK_FILE"
+          ! grep -q '/tests/' "$PACK_FILE"
+          rm -f "$PACK_FILE"
           echo "Release assets OK (kk plugin + marketplace + dist in pack)"
 
       # scripts/publish.ts strips private workspace:* deps (kk-core, utils are
