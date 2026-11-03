@@ -47,6 +47,32 @@ const run = (scenario: string): Facts => {
 };
 
 describe('wechatmp DOM fixtures (real Chromium, offline)', () => {
+    test('audio cover library that never finishes loading refuses without uploading a duplicate cover', () => {
+        const { ops } = run('audio-cover-loading-refused');
+        expect(ops?.audioResult).toContain('封面素材库加载未完成');
+        expect(ops?.uploads).toEqual(['audio-input']);
+    }, 90_000);
+    test('cover chooser ignores hidden templates and verifies the selected image on its own background preview', () => {
+        const { warnings } = run('cover-hidden-templates');
+        expect(warnings).toEqual([]);
+    }, 90_000);
+
+    test('cover chooser finds its bound asset on a later library page', () => {
+        const { warnings } = run('cover-second-page');
+        expect(warnings).toEqual([]);
+    }, 90_000);
+
+    test('cover filename matching rejects a unique substring near-match', () => {
+        const { warnings } = run('cover-near-match');
+        expect(warnings?.some((warning) => warning.includes('未标出与请求文件同名的素材'))).toBe(true);
+    }, 90_000);
+
+    test('cover accepts a cropped derivative only after observing the selected source in the crop dialog', () => {
+        expect(run('cover-derived').warnings).toEqual([]);
+        expect(run('cover-wrong-crop-source').warnings?.length).toBeGreaterThan(0);
+        expect(run('cover-stale-commit').warnings?.length).toBeGreaterThan(0);
+    }, 90_000);
+
     test('0318: URL commits from its popover and reads the row after the field disappears', () => {
         const { warnings, ops } = run('0318-url-commit');
         expect(warnings).toEqual([]);
@@ -157,6 +183,13 @@ describe('wechatmp DOM fixtures (real Chromium, offline)', () => {
         expect(ops?.audioResult).toBe('');
         expect(ops?.uploads).toEqual(['audio-input', 'cover-input']);
         expect(ops?.tickedRows).toEqual(['media-7']);
+        expect(ops?.insertedMediaId).toBe('media-7');
+    }, 90_000);
+
+    test('an interrupted cover upload reuses its uniquely bound library asset without another upload', () => {
+        const { ops } = run('audio-upload-reuse-cover');
+        expect(ops?.audioResult).toBe('');
+        expect(ops?.uploads).toEqual(['audio-input']);
         expect(ops?.insertedMediaId).toBe('media-7');
     }, 90_000);
 

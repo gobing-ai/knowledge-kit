@@ -78,6 +78,14 @@ interface ConsoleState {
     rewardBlocked?: boolean;
     /** 0272: the editor exposes no 一键排版 control (measured 2026-10-13). */
     layoutMissing?: boolean;
+    /** November 2 console opens a full-page preview rather than the old format menu. */
+    layoutPreview?: boolean;
+    layoutNewTab?: boolean;
+    layoutCommitRefused?: boolean;
+    /** The current UEditor menu exposes the native target as nested `.edui-default` nodes. */
+    layoutNativeMenu?: boolean;
+    /** Native layout selection completes through auto-save after this delay. */
+    layoutAckDelayMs?: number;
     /** The entry page's URL; `token-in-url` decides whether the token comes from there or a link. */
     entryUrl: string;
     /** What the page-side console-link scan returns (the token's second recorded source). */
@@ -104,7 +112,53 @@ interface ConsoleState {
     /** A save click refreshes that stamp — the observed draft signal. */
     saveMovesStamp: boolean;
     /** What the platform answers after 发表. */
-    publish: 'sent' | 'refused' | 'silent';
+    publish: 'sent' | 'refused' | 'missing-cover' | 'silent';
+    /** Public-path save/reopen controls; absent keeps the draft-only fixture behavior unchanged. */
+    publicSaveUrl?: string;
+    publicInitialUrl?: string;
+    publicSaveRefusal?: string;
+    /** The first mass-send click can be refused as a known stale editor before confirmation opens. */
+    publicPreconfirmationRefusal?: string;
+    /** A second mass-send click after 查看新草稿 may be refused again; recovery must not loop. */
+    publicPreconfirmationSecondRefusal?: string;
+    /** The first mass-send click can leave neither the final dialog nor a known refusal. */
+    publicPreconfirmationUnknown?: boolean;
+    /** The measured stale dialog's unique 查看新草稿 action may be absent or ambiguous. */
+    publicLatestViewMissing?: boolean;
+    publicLatestViewAmbiguous?: boolean;
+    /** The stale dialog action can click without switching the editor; recovery must reject that state. */
+    publicLatestViewNoEffect?: boolean;
+    /** Same-page 查看新草稿 route evidence and its persisted identity/snapshot. */
+    publicLatestUrl?: string;
+    publicLatestAppmsgId?: string;
+    publicLatestSnapshot?: { title?: string; body?: string; media?: string[]; cover?: string; originalUrl?: string };
+    /** A pre-existing canonical editor can acknowledge the explicit save later than the URL. */
+    publicSaveAckDelayMs?: number;
+    /** The native save acknowledgement can fail after the save control was clicked. */
+    publicSaveAckFailure?: boolean;
+    /** Native editor autosave state after reopening the canonical saved editor. */
+    publicPostReloadSavingPolls?: number;
+    /** The canonical editor uses the measured legacy manual-save rail instead of the v2 autosave rail. */
+    publicLegacyEditor?: boolean;
+    /** Number of legacy readiness probes that remain unrecognized before the measured markers appear. */
+    publicPostReloadLegacyReadyPolls?: number;
+    publicPendingReloadSnapshot?: {
+        title?: string;
+        body?: string;
+        media?: string[];
+        cover?: string;
+        originalUrl?: string;
+    };
+    /** Optional remote identities used by the saved-editor media lineage fixture. */
+    publicComposedMedia?: string[];
+    publicReloadSnapshot?: { title?: string; body?: string; media?: string[]; cover?: string; originalUrl?: string };
+    publicReloadSnapshots?: Array<
+        { title?: string; body?: string; media?: string[]; cover?: string; originalUrl?: string } | undefined
+    >;
+    /** The mass-send confirmation's 群发通知 switch; false-policy tests must turn it off. */
+    publicNotifySubscribers?: boolean;
+    /** The live dialog's subscriber switch may be unavailable or ambiguous. */
+    publicNotifyToggle?: 'available' | 'missing' | 'ambiguous';
     /** A console modal is laid out: it covers the save bar until a close control clears it (2026-10-12). */
     dialogOpen?: boolean;
     /** The open modal offers no close control (`false` models the 插入音频 picker, which leaked). */
@@ -113,6 +167,8 @@ interface ConsoleState {
     saveClickThrows?: boolean;
     /** The cover panel offers no 从图片库选择 entry (the 2026-10-12 console). */
     coverLibraryMissing?: boolean;
+    coverDirectEntryTrap?: boolean;
+    coverOpensLibraryDirectly?: boolean;
 }
 
 const STALE_STAMP = '更新于 13:00';
@@ -133,6 +189,10 @@ function happyState(over: Partial<ConsoleState> = {}): ConsoleState {
         publish: 'sent',
         ...over,
     };
+}
+
+function publicState(over: Partial<ConsoleState> = {}): ConsoleState {
+    return happyState({ publicSaveUrl: savedEditorUrlFor(0), ...over });
 }
 
 interface RecordedCall {
@@ -179,15 +239,32 @@ const isCoverOpener = (selector: string) =>
 const isCoverItem = (selector: string) => selector.includes('cover') && selector.includes(' li');
 const isConfirm = (selector: string) =>
     selector.includes('确定') || selector.includes('确认') || selector.includes('完成');
+const isPublishDialogHeading = (selector: string) =>
+    selector.includes('weui-desktop-dialog:visible') && selector.includes('h3') && selector.includes('发表');
+const isPublishNotifyToggle = (selector: string) =>
+    selector.includes('weui-desktop-dialog:visible') &&
+    selector.includes('mass_send__notify') &&
+    selector.includes('weui-desktop-switch__input');
+const isPublishFinal = (selector: string) =>
+    selector.includes('weui-desktop-dialog:visible') &&
+    selector.includes('mass-send__footer') &&
+    selector.includes('weui-desktop-btn_primary') &&
+    selector.includes('发表');
+const isViewLatest = (selector: string) =>
+    selector.includes('version_fail_dialog:visible') && selector.includes('查看新草稿');
 const isVideoUpload = (selector: string) => selector.includes('本地上传');
 const isPodcastUpload = (selector: string) => selector.includes('上传音频');
 const isPodcastInsert = (selector: string) => selector.includes('插入');
 // Not a publish *control*: the toast labels 发表成功 / …无法发表 also carry the word.
 const isPublishControl = (selector: string) =>
-    !selector.includes(':text(') && (selector.includes('mass_send') || selector.includes('发表'));
+    !isPublishDialogHeading(selector) &&
+    !isPublishNotifyToggle(selector) &&
+    !isPublishFinal(selector) &&
+    !selector.includes(':text(') &&
+    (selector.includes('mass_send') || selector.includes('发表'));
 const successProbe = (selector: string) => /:text\("(发表成功|已发表)"\)/.exec(selector)?.[1];
 const refusalProbe = (selector: string) =>
-    /:text\("(内容不完整，无法发表|请补充封面图|未设置头像与名称|未设置头像和名称|公众号尚未实名)"\)/.exec(
+    /:text\("(内容不完整，无法发表|请补充封面图|必须插入一张图片|未设置头像与名称|未设置头像和名称|公众号尚未实名|当前编辑的草稿不是最新版本)"\)/.exec(
         selector,
     )?.[1];
 
@@ -197,14 +274,18 @@ function makeConsole(initial: ConsoleState) {
     const calls: Record<'entry' | 'editor', RecordedCall[]> = { entry: [], editor: [] };
     const closed: number[] = [];
     let editorPage: ReturnType<typeof makePage> | null = null;
+    let layoutPage: ReturnType<typeof makePage> | null = null;
     let mirrorValue = '';
     let pastedHtml = '';
     let pickerOpen = false;
     let coverPanelOpen = false;
+    let wrongCoverPanel = false;
     // The mass-send confirm dialog appears once the 发表 control is clicked, until confirmed.
     let publishConfirmPending = false;
     let dialogOpen = initial.dialogOpen === true;
     let layoutOpen = false;
+    let layoutCommitStartedAt = 0;
+    let layoutApplied = false;
     let uploads: string[] = [];
     // 0260: the settings rail's committed state (a confirmed dialog commits its setting), the
     // pending dialog kind, the chosen 创作来源 label, and the committed cover asset src.
@@ -213,6 +294,16 @@ function makeConsole(initial: ConsoleState) {
     let chosenClaim = '';
     let urlValue = '';
     let coverCommittedSrc = '';
+    let publicSaveClicked = false;
+    let publicSaveAcknowledged = false;
+    let publicCanonicalGotos = 0;
+    let latestViewed = false;
+    let publicPostReloadSaveStatePolls = 0;
+    let publicLegacyReadinessPolls = 0;
+    let notifySubscribers = state.publicNotifySubscribers ?? true;
+
+    const activePreconfirmationRefusal = (): string | undefined =>
+        latestViewed ? state.publicPreconfirmationSecondRefusal : state.publicPreconfirmationRefusal;
 
     const entryAttached = (selector: string): boolean => {
         const label = menuItemLabel(selector);
@@ -224,11 +315,40 @@ function makeConsole(initial: ConsoleState) {
     };
 
     const editorAttached = (selector: string): boolean => {
+        if (selector.includes('选择图片')) return state.coverOpensLibraryDirectly === true && coverPanelOpen;
         if (isStampProbe(selector)) return false; // the editor carries no 草稿箱 container
         const success = successProbe(selector);
         if (success !== undefined) return state.publish === 'sent';
         const refusal = refusalProbe(selector);
-        if (refusal !== undefined) return state.publish === 'refused';
+        if (refusal !== undefined) {
+            if (refusal === '当前编辑的草稿不是最新版本')
+                return (
+                    selector.includes('version_fail_dialog:visible') &&
+                    (state.publicSaveRefusal !== undefined ||
+                        (publishConfirmPending && activePreconfirmationRefusal() !== undefined))
+                );
+            return refusal === '必须插入一张图片' ? state.publish === 'missing-cover' : state.publish === 'refused';
+        }
+        if (isViewLatest(selector))
+            return (
+                publishConfirmPending &&
+                activePreconfirmationRefusal() !== undefined &&
+                state.publicLatestViewMissing !== true
+            );
+        if (isPublishNotifyToggle(selector))
+            return publishConfirmPending && (state.publicNotifyToggle ?? 'available') !== 'missing';
+        if (isPublishDialogHeading(selector))
+            return (
+                publishConfirmPending &&
+                activePreconfirmationRefusal() === undefined &&
+                state.publicPreconfirmationUnknown !== true
+            );
+        if (isPublishFinal(selector))
+            return (
+                publishConfirmPending &&
+                activePreconfirmationRefusal() === undefined &&
+                state.publicPreconfirmationUnknown !== true
+            );
         if (isTitleBlock(selector) || isMirror(selector) || isDigest(selector) || isAuthor(selector)) return true;
         if (isBodyBlock(selector)) return true;
         if (isImageInput(selector))
@@ -240,15 +360,28 @@ function makeConsole(initial: ConsoleState) {
         if (selector.includes('上传音频') || selector.includes('上传封面'))
             return state.mode === '文章' || state.mode === '播客';
         if (isSaveBar(selector)) return state.mode === '文章' || state.mode === '贴图' || state.mediaSatisfied;
-        if (isLayoutControl(selector) || isLayoutTarget(selector))
+        if (selector.includes('使用此排版')) return state.layoutPreview === true && layoutOpen;
+        if (isLayoutTarget(selector)) {
+            if (state.layoutNativeMenu === true) return selector.includes('edui-popup') && layoutOpen;
+            if (state.layoutPreview === true) return false;
             return state.mode === '文章' && state.layoutMissing !== true;
+        }
+        if (isLayoutControl(selector)) return state.mode === '文章' && state.layoutMissing !== true;
         // 0272 measured 2026-10-13: the 原文链接 row is absent on some accounts, and a 赏-blocked
         // dialog carries the 前往开通 prerequisite instead of the account field.
         if (selector.includes('js_article_url_allow_click') && state.urlRowMissing === true) return false;
         if (selector.includes('前往开通') || selector.includes('无法开启')) return state.rewardBlocked === true;
+        if (
+            pendingDialog === 'url' &&
+            (selector.includes('popover_inner') ||
+                selector.includes('input.js_url') ||
+                selector.includes('jsPopoverBt'))
+        )
+            return true;
         if (isSettingsRow(selector)) return state.mode === '文章';
         if (isCoverOpener(selector) || isCoverFromContent(selector)) return true;
-        if (isCoverFromLibrary(selector)) return state.coverLibraryMissing !== true;
+        if (isCoverFromLibrary(selector))
+            return state.coverLibraryMissing !== true && !wrongCoverPanel && state.coverOpensLibraryDirectly !== true;
         if (isCoverItem(selector)) return coverPanelOpen;
         if (isVideoUpload(selector)) return state.mode === '视频';
         if (isPodcastUpload(selector) || isPodcastInsert(selector)) return state.mode === '播客';
@@ -269,26 +402,54 @@ function makeConsole(initial: ConsoleState) {
 
     function makePage(role: 'entry' | 'editor') {
         const log = calls[role];
-        let url = role === 'entry' ? state.entryUrl : editorUrlFor(modeCreateType());
+        let url = role === 'entry' ? state.entryUrl : (state.publicInitialUrl ?? editorUrlFor(modeCreateType()));
         const attached = (selector: string): boolean => {
             if (role === 'entry') return entryAttached(selector);
+            if (selector.includes('使用此排版') && state.layoutNewTab === true && page !== layoutPage) return false;
             // A toast surface is only "visible" for the recorded outcome; the body never satisfies it.
             if (isToastProbe(selector) || isStampProbe(selector)) return editorAttached(selector);
             if (isFileInput(selector)) return editorAttached(selector);
             return editorAttached(selector);
         };
         const page: WechatPage = {
+            saveDraftAndWait: async (selector, timeoutMs) => {
+                log.push({ op: 'saveDraftAndWait', args: [selector, timeoutMs] });
+                if (role !== 'editor') throw new Error('native article save requires the editor page');
+                const save = page.locator(selector).first();
+                await save.click();
+                const delay = state.publicSaveAckDelayMs ?? 0;
+                if (delay > timeoutMs) {
+                    await new Promise((resolve) => setTimeout(resolve, timeoutMs));
+                    throw new Error('native article save acknowledgement timed out');
+                }
+                if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+                if (state.publicSaveAckFailure === true) throw new Error('native article save acknowledgement failed');
+                publicSaveAcknowledged = true;
+                log.push({ op: 'saveDraftAck', args: [selector] });
+            },
             goto: async (target) => {
                 log.push({ op: 'goto', args: [target] });
                 url = target;
+                if (target.includes('appmsgid=') && !target.includes('isNew=1')) publicCanonicalGotos += 1;
             },
             url: () => url,
             locator: (selector) => {
                 log.push({ op: 'locator', args: [selector] });
+                const count = async () => {
+                    if (role === 'editor' && isPublishNotifyToggle(selector)) {
+                        if (!editorAttached(selector)) return 0;
+                        return state.publicNotifyToggle === 'ambiguous' ? 2 : 1;
+                    }
+                    if (role === 'editor' && isViewLatest(selector)) {
+                        if (!editorAttached(selector)) return 0;
+                        return state.publicLatestViewAmbiguous === true ? 2 : 1;
+                    }
+                    return attached(selector) ? 1 : 0;
+                };
                 return {
-                    count: async () => (attached(selector) ? 1 : 0),
+                    count,
                     first: () => ({
-                        count: async () => (attached(selector) ? 1 : 0),
+                        count,
                         // Upload inputs hide behind styled controls; everything else is "visible".
                         isVisible: async () => attached(selector) && !isFileInput(selector),
                         fill: async (text) => {
@@ -331,6 +492,80 @@ function makeConsole(initial: ConsoleState) {
             },
             evaluate: async (expression) => {
                 log.push({ op: 'evaluate', args: [expression] });
+                if (expression.includes('img.crop-img')) return '[]';
+                if (expression.includes('__KK_WECHAT_PUBLISH_SNAPSHOT__')) {
+                    const composedSnapshot = {
+                        title: mirrorValue,
+                        body: pastedHtml,
+                        media: state.publicComposedMedia ?? uploads,
+                        cover: coverCommittedSrc,
+                        originalUrl: urlValue,
+                    };
+                    const persistedSnapshots = state.publicReloadSnapshots;
+                    const persistedSnapshot =
+                        publicCanonicalGotos > 0 &&
+                        url.includes('appmsgid=') &&
+                        !url.includes('isNew=1') &&
+                        persistedSnapshots !== undefined
+                            ? persistedSnapshots[Math.min(publicCanonicalGotos - 1, persistedSnapshots.length - 1)]
+                            : undefined;
+                    const latestSnapshot =
+                        latestViewed && state.publicLatestSnapshot !== undefined
+                            ? { ...composedSnapshot, ...state.publicLatestSnapshot }
+                            : undefined;
+                    const saveAcked = publicSaveAcknowledged;
+                    const pendingSnapshot =
+                        publicSaveClicked && !saveAcked && state.publicPendingReloadSnapshot !== undefined
+                            ? { ...composedSnapshot, ...state.publicPendingReloadSnapshot }
+                            : undefined;
+                    const snapshot =
+                        pendingSnapshot !== undefined
+                            ? pendingSnapshot
+                            : latestSnapshot !== undefined
+                              ? latestSnapshot
+                              : persistedSnapshot !== undefined
+                                ? persistedSnapshot
+                                : publicSaveClicked &&
+                                    state.publicReloadSnapshot !== undefined &&
+                                    url.includes('appmsgid=') &&
+                                    !url.includes('isNew=1')
+                                  ? state.publicReloadSnapshot
+                                  : composedSnapshot;
+                    return JSON.stringify(
+                        snapshot === state.publicReloadSnapshot ? { ...composedSnapshot, ...snapshot } : snapshot,
+                    );
+                }
+                if (expression.includes('__KK_WECHAT_LAYOUT_SAVE_STATE__')) {
+                    if (publicCanonicalGotos > 0) {
+                        if (state.publicLegacyEditor === true) return 'unknown';
+                        const savingPolls = state.publicPostReloadSavingPolls ?? 1;
+                        const saveState = publicPostReloadSaveStatePolls < savingPolls ? 'saving' : 'saved';
+                        publicPostReloadSaveStatePolls += 1;
+                        return saveState;
+                    }
+                    if (layoutCommitStartedAt === 0) return 'saved';
+                    const ready =
+                        state.layoutAckDelayMs === undefined ||
+                        Date.now() - layoutCommitStartedAt >= state.layoutAckDelayMs;
+                    if (ready) layoutApplied = true;
+                    return ready ? 'saved' : 'saving';
+                }
+                if (expression.includes('__KK_WECHAT_LEGACY_EDITOR_READY__')) {
+                    if (publicCanonicalGotos > 0 && state.publicLegacyEditor === true) {
+                        const unrecognizedPolls = state.publicPostReloadLegacyReadyPolls ?? 0;
+                        const recognized = publicLegacyReadinessPolls >= unrecognizedPolls;
+                        publicLegacyReadinessPolls += 1;
+                        return recognized ? 'ready' : 'unknown';
+                    }
+                    return 'unknown';
+                }
+                if (expression.includes('__KK_WECHAT_LAYOUT_TARGET__')) {
+                    if (state.layoutNativeMenu !== true || !layoutOpen) return JSON.stringify({ state: 'missing' });
+                    layoutCommitStartedAt = Date.now();
+                    return JSON.stringify({ state: 'clicked' });
+                }
+                if (expression.includes('mass_send__notify') && expression.includes('HTMLInputElement'))
+                    return notifySubscribers;
                 if (expression.includes('ClipboardEvent')) {
                     pastedHtml = /setData\('text\/html',\s*(".*?")\);/.exec(expression)?.[1] ?? '';
                     return true;
@@ -404,16 +639,33 @@ function makeConsole(initial: ConsoleState) {
                 return;
             }
             if (isSaveBar(selector)) {
+                publicSaveClicked = true;
                 if (state.saveMovesStamp) state.draftStamp = FRESH_STAMP;
+                if (state.publicSaveUrl !== undefined) url = state.publicSaveUrl;
                 return;
             }
             if (isLayoutControl(selector)) {
                 layoutOpen = true;
+                if (state.layoutNewTab === true) layoutPage = makePage('editor');
                 return;
             }
             if (isLayoutTarget(selector)) return;
+            if (selector.includes('使用此排版')) {
+                if (state.layoutCommitRefused !== true) layoutOpen = false;
+                return;
+            }
+            if (isViewLatest(selector)) {
+                if (state.publicLatestViewNoEffect === true) return;
+                latestViewed = true;
+                publishConfirmPending = false;
+                if (state.publicLatestUrl !== undefined) url = state.publicLatestUrl;
+                else if (state.publicLatestAppmsgId !== undefined)
+                    url = savedEditorUrlFor(0).replace('appmsgid=100001161', `appmsgid=${state.publicLatestAppmsgId}`);
+                return;
+            }
             if (isSettingsRow(selector)) return;
             if (isCoverOpener(selector) || isCoverFromContent(selector) || isCoverFromLibrary(selector)) {
+                if (state.coverDirectEntryTrap && isCoverFromContent(selector)) wrongCoverPanel = true;
                 coverPanelOpen = true;
                 return;
             }
@@ -427,6 +679,14 @@ function makeConsole(initial: ConsoleState) {
             }
             if (isPublishControl(selector)) {
                 publishConfirmPending = true;
+                return;
+            }
+            if (isPublishNotifyToggle(selector)) {
+                notifySubscribers = false;
+                return;
+            }
+            if (isPublishFinal(selector)) {
+                publishConfirmPending = false;
                 return;
             }
             if (isConfirm(selector)) {
@@ -465,7 +725,7 @@ function makeConsole(initial: ConsoleState) {
     const entry = makePage('entry');
     const opened = {
         page: entry,
-        pages: () => (editorPage === null ? [entry] : [entry, editorPage]),
+        pages: () => [...(editorPage === null ? [entry] : [entry, editorPage]), ...(layoutPage ? [layoutPage] : [])],
         newPage: async () => {
             openEditor();
             const openedEditor = editorPage;
@@ -484,12 +744,20 @@ function makeConsole(initial: ConsoleState) {
         entryPage: entry,
         editorPage: () => editorPage,
         layoutOpened: () => layoutOpen,
+        layoutApplied: () => layoutApplied,
     };
 }
 
 function editorUrlFor(createType: number | null): string {
     const base = `https://mp.weixin.qq.com/cgi-bin/appmsg?t=media/appmsg_edit_v2&action=edit&isNew=1&type=77&token=${TOKEN}&lang=zh_CN&timestamp=1`;
     return createType === null ? base : `${base}&createType=${createType}`;
+}
+
+function savedEditorUrlFor(createType: number | null): string {
+    const url = editorUrlFor(createType)
+        .replace('t=media/appmsg_edit_v2&', 't=media/appmsg_edit&')
+        .replace('&isNew=1', '');
+    return `${url}&appmsgid=100001161`;
 }
 
 /** A transport wired to the fake console, with the browser seams scripted. */
@@ -574,7 +842,7 @@ describe('wechatmp-pub dispatch and validation (no browser opens)', () => {
         expect(invalid.error).toContain('publishStatus');
         expect(console.closed).toHaveLength(0);
 
-        const live = makeConsole(happyState());
+        const live = makeConsole(publicState());
         const publicRun = await makeTransport(live).publish({
             content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
         });
@@ -763,6 +1031,109 @@ describe('wechatmp-pub dispatch and validation (no browser opens)', () => {
 // ---------------------------------------------------------------------------
 
 describe('wechatmp-pub per-mode draft flows (fake console)', () => {
+    test('draft receipt redacts the console session token', async () => {
+        await seedMedia();
+        const result = await makeTransport(makeConsole(happyState())).publish({ content: ARTICLE });
+        expect(result.ok).toBe(true);
+        expect(JSON.stringify(result)).not.toContain(TOKEN);
+    });
+
+    test('session failure evidence redacts query credentials', async () => {
+        await seedMedia();
+        const result = await makeTransport(makeConsole(happyState()), {
+            checkSession: async () => {
+                throw new Error('https://mp.weixin.qq.com/?token=SENTINEL-SESSION-SECRET&lang=zh_CN');
+            },
+        }).publish({ content: ARTICLE });
+        expect(result.ok).toBe(false);
+        expect(JSON.stringify(result)).not.toContain('SENTINEL-SESSION-SECRET');
+    });
+
+    test('library cover opens the chooser menu before selecting its library source', async () => {
+        await seedMedia();
+        const console = makeConsole(happyState({ coverDirectEntryTrap: true }));
+        const result = await makeTransport(console).publish({ content: ARTICLE });
+        expect(result.ok).toBe(true);
+        expect(result.metadata?.warnings).toBeUndefined();
+    });
+
+    test('library cover continues when the opener directly shows the image chooser', async () => {
+        await seedMedia();
+        const console = makeConsole(happyState({ coverOpensLibraryDirectly: true }));
+        const result = await makeTransport(console).publish({ content: ARTICLE });
+        expect(result.ok).toBe(true);
+        expect(result.metadata?.warnings).toBeUndefined();
+    });
+    test('文章 commits the measured full-page layout preview before continuing composition', async () => {
+        await seedMedia();
+        const console = makeConsole(happyState({ layoutPreview: true }));
+        const result = await makeTransport(console).publish({ content: ARTICLE });
+        expect(result.ok).toBe(true);
+        expect(console.layoutOpened()).toBe(false);
+        expect(selectorsOf(console.calls.editor, 'click').some((selector) => selector.includes('使用此排版'))).toBe(
+            true,
+        );
+        expect(result.metadata?.warnings).toBeUndefined();
+    }, 10000);
+
+    test('文章 follows the separate layout preview tab and commits it before returning to the editor', async () => {
+        await seedMedia();
+        const console = makeConsole(happyState({ layoutPreview: true, layoutNewTab: true }));
+        const result = await makeTransport(console).publish({ content: ARTICLE });
+        expect(result.ok).toBe(true);
+        expect(console.layoutOpened()).toBe(false);
+        expect(result.metadata?.warnings).toBeUndefined();
+    }, 10000);
+
+    test('文章 uses the native layout menu, waits for its delayed auto-save, and runs it after 原文链接', async () => {
+        await seedMedia();
+        const originalUrl = 'https://surfing.salty.vip/zh/posts/layout-readiness';
+        const console = makeConsole(
+            happyState({
+                layoutNativeMenu: true,
+                layoutAckDelayMs: 100,
+            }),
+        );
+        const result = await makeTransport(console, {
+            stepTimeoutMs: 1_000,
+            draftTimeoutMs: 500,
+            pollMs: 5,
+        }).publish({
+            content: {
+                ...ARTICLE,
+                metadata: { ...ARTICLE.metadata, wechatmp: { coverPath: bodyImage, originalUrl } },
+            },
+        });
+
+        expect(result.ok, result.error).toBe(true);
+        expect(console.layoutApplied()).toBe(true);
+        const targetIndex = console.calls.editor.findIndex(
+            (call) => call.op === 'evaluate' && String(call.args[0]).includes('__KK_WECHAT_LAYOUT_TARGET__'),
+        );
+        const layoutStateIndex = console.calls.editor.findIndex(
+            (call) => call.op === 'evaluate' && String(call.args[0]).includes('__KK_WECHAT_LAYOUT_SAVE_STATE__'),
+        );
+        const saveIndex = console.calls.editor.findIndex(
+            (call) => call.op === 'click' && isSaveBar(String(call.args[0])),
+        );
+        const originalUrlIndex = console.calls.editor.findIndex(
+            (call) => call.op === 'fill' && String(call.args[1]) === originalUrl,
+        );
+        expect(originalUrlIndex).toBeGreaterThan(-1);
+        expect(targetIndex).toBeGreaterThan(originalUrlIndex);
+        expect(layoutStateIndex).toBeGreaterThan(targetIndex);
+        expect(saveIndex).toBeGreaterThan(layoutStateIndex);
+    }, 10000);
+
+    test('文章 refuses submission when the full-page layout preview remains open', async () => {
+        await seedMedia();
+        const console = makeConsole(happyState({ layoutPreview: true, layoutCommitRefused: true }));
+        const result = await makeTransport(console).publish({ content: ARTICLE });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('一键排版');
+        expect(selectorsOf(console.calls.editor, 'click').some(isSaveBar)).toBe(false);
+    }, 10000);
+
     test('文章: body images, title block, pasted body + 一键排版, 摘要, 作者, cover from body, observed save', async () => {
         await seedMedia();
         const console = makeConsole(happyState());
@@ -796,7 +1167,10 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
         // 一键排版 → 匹配目标格式 (discovery §5.3).
         const layoutIndex = editor.findIndex((call) => call.op === 'click' && isLayoutControl(String(call.args[0])));
         expect(layoutIndex).toBeGreaterThan(-1);
-        expect(String(editor[layoutIndex + 1]?.args[0])).toContain('匹配目标格式');
+        const layoutTargetIndex = editor.findIndex(
+            (call) => call.op === 'click' && isLayoutTarget(String(call.args[0])),
+        );
+        expect(layoutTargetIndex).toBeGreaterThan(layoutIndex);
         // A draft run never touches a publish control.
         expect(selectorsOf(editor, 'click').some(isPublishControl)).toBe(false);
     });
@@ -909,9 +1283,66 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
 
     // The public path is exercised ONLY against the fake console: `发表` is a recorded call on a
     // plain object, never a real click, and no verification/dogfood run activates it (ADR-022).
+    test('public: 贴图 keeps the direct publish flow and does not require the article save acknowledgement', async () => {
+        await seedMedia();
+        const console = makeConsole(
+            publicState({ mode: '贴图', createType: 8, publicSaveAckFailure: true, publish: 'sent' }),
+        );
+        const result = await makeTransport(console).publish({
+            content: mediaContent(
+                { operation: '贴图', images: [{ path: bodyImage }], publishStatus: 'public' },
+                { title: '公开贴图', body: '正文' },
+            ),
+        });
+
+        expect(result.ok, result.error).toBe(true);
+        expect(console.calls.editor.some((call) => call.op === 'saveDraftAndWait')).toBe(false);
+        expect(selectorsOf(console.calls.editor, 'click').filter(isSaveBar)).toHaveLength(0);
+        expect(selectorsOf(console.calls.editor, 'click').filter(isPublishControl)).toHaveLength(1);
+        expect(selectorsOf(console.calls.editor, 'click').filter(isPublishFinal)).toHaveLength(1);
+    });
+
+    test('public: 视频 keeps the direct publish flow and does not require the article save acknowledgement', async () => {
+        await seedMedia();
+        const console = makeConsole(
+            publicState({ mode: '视频', createType: 5, publicSaveAckFailure: true, publish: 'sent' }),
+        );
+        const result = await makeTransport(console).publish({
+            content: mediaContent(
+                { operation: '视频', video, publishStatus: 'public' },
+                { title: '公开视频', body: '正文' },
+            ),
+        });
+
+        expect(result.ok, result.error).toBe(true);
+        expect(console.calls.editor.some((call) => call.op === 'saveDraftAndWait')).toBe(false);
+        expect(selectorsOf(console.calls.editor, 'click').filter(isSaveBar)).toHaveLength(0);
+        expect(selectorsOf(console.calls.editor, 'click').filter(isPublishControl)).toHaveLength(1);
+        expect(selectorsOf(console.calls.editor, 'click').filter(isPublishFinal)).toHaveLength(1);
+    });
+
+    test('public: 播客 keeps the direct publish flow and does not require the article save acknowledgement', async () => {
+        await seedMedia();
+        const console = makeConsole(
+            publicState({ mode: '播客', createType: 7, publicSaveAckFailure: true, publish: 'sent' }),
+        );
+        const result = await makeTransport(console).publish({
+            content: mediaContent(
+                { operation: '播客', audio, coverImage: cover, publishStatus: 'public' },
+                { title: '公开播客', body: '正文' },
+            ),
+        });
+
+        expect(result.ok, result.error).toBe(true);
+        expect(console.calls.editor.some((call) => call.op === 'saveDraftAndWait')).toBe(false);
+        expect(selectorsOf(console.calls.editor, 'click').filter(isSaveBar)).toHaveLength(0);
+        expect(selectorsOf(console.calls.editor, 'click').filter(isPublishControl)).toHaveLength(1);
+        expect(selectorsOf(console.calls.editor, 'click').filter(isPublishFinal)).toHaveLength(1);
+    });
+
     test('public: only an explicit publishStatus reaches 发表, and the platform refusal is relayed', async () => {
         await seedMedia();
-        const console = makeConsole(happyState({ publish: 'refused' }));
+        const console = makeConsole(publicState({ publish: 'refused' }));
         const result = await makeTransport(console).publish({
             content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
         });
@@ -920,12 +1351,12 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
         expect(result.error).toContain('内容不完整，无法发表');
         const clicks = selectorsOf(console.calls.editor, 'click');
         expect(clicks.some(isPublishControl)).toBe(true);
-        expect(clicks.some(isSaveBar)).toBe(false);
+        expect(clicks.some(isSaveBar)).toBe(true);
     });
 
     test('public: an observed success marker reports the live signal', async () => {
         await seedMedia();
-        const console = makeConsole(happyState({ publish: 'sent' }));
+        const console = makeConsole(publicState({ publish: 'sent' }));
         const result = await makeTransport(console).publish({
             content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
         });
@@ -933,17 +1364,609 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
         expect(result.metadata?.publishStatus).toBe('public');
         expect(result.metadata?.publishSignal).toContain('sent:');
         expect(result.metadata?.publishControl).toContain('mass_send');
+        const editor = console.calls.editor;
+        const saveIndex = editor.findIndex((call) => call.op === 'click' && isSaveBar(String(call.args[0])));
+        const reopenIndex = editor.findIndex(
+            (call) => call.op === 'goto' && String(call.args[0]).includes('appmsgid=100001161'),
+        );
+        const publishIndex = editor.findIndex((call) => call.op === 'click' && isPublishControl(String(call.args[0])));
+        expect(saveIndex).toBeGreaterThan(-1);
+        expect(reopenIndex).toBeGreaterThan(saveIndex);
+        expect(publishIndex).toBeGreaterThan(reopenIndex);
+        expect(result.metadata?.savedEditorUrl).toContain('appmsgid=100001161');
+        expect(result.metadata?.savedEditorUrl).not.toContain(`token=${TOKEN}`);
+    });
+
+    test('public: canonical saved-editor receipts redact every known session query credential', async () => {
+        await seedMedia();
+        const console = makeConsole(
+            publicState({
+                publish: 'sent',
+                publicSaveUrl: `${savedEditorUrlFor(0).replace(`token=${TOKEN}`, 'token=SENTINEL-TOKEN')}&ticket=SENTINEL-TICKET&authkey=SENTINEL-AUTHKEY`,
+            }),
+        );
+        const result = await makeTransport(console).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+
+        expect(result.ok, result.error).toBe(true);
+        expect(JSON.stringify(result)).not.toContain('SENTINEL-TOKEN');
+        expect(JSON.stringify(result)).not.toContain('SENTINEL-TICKET');
+        expect(JSON.stringify(result)).not.toContain('SENTINEL-AUTHKEY');
+    });
+
+    test('public: default confirmation keeps 群发通知 unchanged and clicks the scoped final 发表 once', async () => {
+        await seedMedia();
+        const console = makeConsole(publicState({ publish: 'sent' }));
+        const result = await makeTransport(console).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+
+        expect(result.ok, result.error).toBe(true);
+        const clicks = selectorsOf(console.calls.editor, 'click');
+        expect(clicks.filter(isPublishControl)).toHaveLength(1);
+        expect(clicks.filter(isPublishNotifyToggle)).toHaveLength(0);
+        expect(clicks.filter(isPublishFinal)).toHaveLength(1);
+    });
+
+    test('public: default confirmation preserves an already-off switch and records the observed state separately', async () => {
+        await seedMedia();
+        const console = makeConsole(publicState({ publish: 'sent', publicNotifySubscribers: false }));
+        const result = await makeTransport(console).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+
+        expect(result.ok, result.error).toBe(true);
+        expect(result.metadata?.notifySubscribers).toBe(false);
+        expect(result.metadata?.notifySubscribersPolicy).toBe('preserve');
+        const clicks = selectorsOf(console.calls.editor, 'click');
+        expect(clicks.filter(isPublishNotifyToggle)).toHaveLength(0);
+        expect(clicks.filter(isPublishFinal)).toHaveLength(1);
+    });
+
+    test('public: explicit notifySubscribers false turns 群发通知 off before the final 发表 click', async () => {
+        await seedMedia();
+        const console = makeConsole(publicState({ publish: 'sent' }));
+        const result = await makeTransport(console).publish({
+            content: {
+                ...ARTICLE,
+                metadata: {
+                    ...ARTICLE.metadata,
+                    publishStatus: 'public',
+                    wechatmp: { coverPath: bodyImage, notifySubscribers: false },
+                },
+            },
+        });
+
+        expect(result.ok, result.error).toBe(true);
+        expect(result.metadata?.notifySubscribers).toBe(false);
+        expect(result.metadata?.notifySubscribersPolicy).toBe('disabled');
+        const clicks = selectorsOf(console.calls.editor, 'click');
+        const toggleIndex = clicks.findIndex(isPublishNotifyToggle);
+        const finalIndex = clicks.findIndex(isPublishFinal);
+        expect(clicks.filter(isPublishNotifyToggle)).toHaveLength(1);
+        expect(finalIndex).toBeGreaterThan(toggleIndex);
+        expect(clicks.filter(isPublishFinal)).toHaveLength(1);
+    });
+
+    test('public: explicit notifySubscribers false accepts an already-off uniquely observed switch without reclicking it', async () => {
+        await seedMedia();
+        const console = makeConsole(publicState({ publish: 'sent', publicNotifySubscribers: false }));
+        const result = await makeTransport(console).publish({
+            content: {
+                ...ARTICLE,
+                metadata: {
+                    ...ARTICLE.metadata,
+                    publishStatus: 'public',
+                    wechatmp: { coverPath: bodyImage, notifySubscribers: false },
+                },
+            },
+        });
+
+        expect(result.ok, result.error).toBe(true);
+        const clicks = selectorsOf(console.calls.editor, 'click');
+        expect(clicks.filter(isPublishNotifyToggle)).toHaveLength(0);
+        expect(clicks.filter(isPublishFinal)).toHaveLength(1);
+    });
+
+    test.each([
+        ['missing', 'unavailable'],
+        ['ambiguous', 'ambiguous'],
+    ] as const)(
+        'public: explicit notifySubscribers false fails closed when the 群发通知 switch is %s',
+        async (toggle, reason) => {
+            await seedMedia();
+            const console = makeConsole(publicState({ publish: 'sent', publicNotifyToggle: toggle }));
+            const result = await makeTransport(console).publish({
+                content: {
+                    ...ARTICLE,
+                    metadata: {
+                        ...ARTICLE.metadata,
+                        publishStatus: 'public',
+                        wechatmp: { coverPath: bodyImage, notifySubscribers: false },
+                    },
+                },
+            });
+
+            expect(result.ok).toBe(false);
+            expect(result.error).toContain('群发通知');
+            expect(result.error).toContain(reason);
+            const clicks = selectorsOf(console.calls.editor, 'click');
+            expect(clicks.filter(isPublishFinal)).toHaveLength(0);
+        },
+    );
+
+    test('public: a pre-existing canonical URL waits through partial reload hydration before publication', async () => {
+        await seedMedia();
+        const console = makeConsole(
+            publicState({
+                publicInitialUrl: savedEditorUrlFor(0),
+                publicReloadSnapshots: [
+                    { title: '', body: '', media: [], cover: '' },
+                    { title: '', body: '', media: [], cover: '' },
+                    undefined,
+                ],
+            }),
+        );
+        const result = await makeTransport(console, { draftTimeoutMs: 500 }).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+        expect(result.ok, result.error).toBe(true);
+        expect(result.metadata?.draftSaveSignal).toBe('persisted-snapshot');
+        const reloads = console.calls.editor.filter(
+            (call) => call.op === 'goto' && String(call.args[0]).includes('appmsgid=100001161'),
+        );
+        const snapshots = console.calls.editor.filter(
+            (call) => call.op === 'evaluate' && String(call.args[0]).includes('__KK_WECHAT_PUBLISH_SNAPSHOT__'),
+        );
+        expect(snapshots.length).toBeGreaterThanOrEqual(2);
+        expect(reloads.length).toBeGreaterThanOrEqual(2);
+        expect(selectorsOf(console.calls.editor, 'click').filter(isPublishControl)).toHaveLength(1);
+    });
+
+    test('public: a pre-existing canonical URL waits for the native save acknowledgement before reloading', async () => {
+        await seedMedia();
+        const savedUrl = savedEditorUrlFor(0);
+        const console = makeConsole(
+            publicState({
+                publicInitialUrl: savedUrl,
+                // Keep the explicit response comfortably beyond the flow's post-ack settle
+                // window so an old auto-save completion cannot accidentally make the fixture green.
+                publicSaveAckDelayMs: 100,
+                publicPostReloadSavingPolls: 2,
+                publicPendingReloadSnapshot: { media: ['old-image'], cover: 'url("")' },
+            }),
+        );
+        const result = await makeTransport(console, { draftTimeoutMs: 500, pollMs: 5 }).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+
+        expect(result.ok, result.error).toBe(true);
+        const ackStartIndex = console.calls.editor.findIndex((call) => call.op === 'saveDraftAndWait');
+        const ackCompleteIndex = console.calls.editor.findIndex((call) => call.op === 'saveDraftAck');
+        const reloadIndex = console.calls.editor.findIndex((call) => call.op === 'goto' && call.args[0] === savedUrl);
+        expect(ackStartIndex).toBeGreaterThan(-1);
+        expect(ackCompleteIndex).toBeGreaterThan(ackStartIndex);
+        expect(reloadIndex).toBeGreaterThan(ackCompleteIndex);
+        const autoSaveStateIndices = console.calls.editor
+            .map((call, index) => ({ call, index }))
+            .filter(
+                ({ call }) =>
+                    call.op === 'evaluate' && String(call.args[0]).includes('__KK_WECHAT_LAYOUT_SAVE_STATE__'),
+            )
+            .map(({ index }) => index);
+        const publishIndex = console.calls.editor.findIndex(
+            (call) => call.op === 'click' && isPublishControl(String(call.args[0])),
+        );
+        expect(autoSaveStateIndices.length).toBeGreaterThanOrEqual(3);
+        expect(publishIndex).toBeGreaterThan(autoSaveStateIndices[autoSaveStateIndices.length - 1] ?? -1);
+        expect(selectorsOf(console.calls.editor, 'click').filter(isPublishFinal)).toHaveLength(1);
+    });
+
+    test('public: a matching canonical snapshot does not publish while native autosave is still saving', async () => {
+        await seedMedia();
+        const console = makeConsole(
+            publicState({
+                publicInitialUrl: savedEditorUrlFor(0),
+                publicPostReloadSavingPolls: 99,
+            }),
+        );
+        const result = await makeTransport(console, { stepTimeoutMs: 30, pollMs: 5 }).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('native 保存状态');
+        expect(selectorsOf(console.calls.editor, 'click').filter(isPublishControl)).toHaveLength(0);
+        expect(selectorsOf(console.calls.editor, 'click').filter(isPublishFinal)).toHaveLength(0);
+    });
+
+    test('public: an already-idle canonical snapshot needs two quiet saved probes before publication', async () => {
+        await seedMedia();
+        const console = makeConsole(
+            publicState({
+                publicInitialUrl: savedEditorUrlFor(0),
+                publicPostReloadSavingPolls: 0,
+            }),
+        );
+        const result = await makeTransport(console, { pollMs: 5 }).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+
+        expect(result.ok, result.error).toBe(true);
+        const autoSaveStateIndices = console.calls.editor
+            .map((call, index) => ({ call, index }))
+            .filter(
+                ({ call }) =>
+                    call.op === 'evaluate' && String(call.args[0]).includes('__KK_WECHAT_LAYOUT_SAVE_STATE__'),
+            )
+            .map(({ index }) => index);
+        const publishIndex = console.calls.editor.findIndex(
+            (call) => call.op === 'click' && isPublishControl(String(call.args[0])),
+        );
+        expect(autoSaveStateIndices.length).toBeGreaterThanOrEqual(2);
+        expect(publishIndex).toBeGreaterThan(autoSaveStateIndices[autoSaveStateIndices.length - 1] ?? -1);
+        expect(selectorsOf(console.calls.editor, 'click').filter(isPublishFinal)).toHaveLength(1);
+    });
+
+    test('public: a recognized legacy editor readiness rail needs two manual-save probes before publication', async () => {
+        await seedMedia();
+        const console = makeConsole(
+            publicState({
+                publicInitialUrl: savedEditorUrlFor(0),
+                publicLegacyEditor: true,
+                publicPostReloadSavingPolls: 99,
+                publicPostReloadLegacyReadyPolls: 1,
+            }),
+        );
+        const result = await makeTransport(console, { pollMs: 5 }).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+
+        expect(result.ok, result.error).toBe(true);
+        const legacyReadyIndices = console.calls.editor
+            .map((call, index) => ({ call, index }))
+            .filter(
+                ({ call }) =>
+                    call.op === 'evaluate' && String(call.args[0]).includes('__KK_WECHAT_LEGACY_EDITOR_READY__'),
+            )
+            .map(({ index }) => index);
+        const publishIndex = console.calls.editor.findIndex(
+            (call) => call.op === 'click' && isPublishControl(String(call.args[0])),
+        );
+        expect(legacyReadyIndices.length).toBeGreaterThanOrEqual(3);
+        expect(publishIndex).toBeGreaterThan(legacyReadyIndices[legacyReadyIndices.length - 1] ?? -1);
+        expect(selectorsOf(console.calls.editor, 'click').filter(isPublishFinal)).toHaveLength(1);
+    });
+
+    test('public: an unrecognized legacy-editor readiness state never counts as saved', async () => {
+        await seedMedia();
+        const console = makeConsole(
+            publicState({
+                publicInitialUrl: savedEditorUrlFor(0),
+                publicLegacyEditor: true,
+                publicPostReloadSavingPolls: 99,
+                publicPostReloadLegacyReadyPolls: 99,
+            }),
+        );
+        const result = await makeTransport(console, { stepTimeoutMs: 30, pollMs: 5 }).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('native 保存状态');
+        expect(selectorsOf(console.calls.editor, 'click').filter(isPublishControl)).toHaveLength(0);
+        expect(selectorsOf(console.calls.editor, 'click').filter(isPublishFinal)).toHaveLength(0);
+    });
+
+    test('public: a native save acknowledgement failure stops before canonical reload and publication', async () => {
+        await seedMedia();
+        const savedUrl = savedEditorUrlFor(0);
+        const console = makeConsole(
+            publicState({
+                publicInitialUrl: savedUrl,
+                publicSaveAckFailure: true,
+            }),
+        );
+        const result = await makeTransport(console, { draftTimeoutMs: 100, pollMs: 5 }).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('native 保存为草稿 was not acknowledged successfully');
+        expect(console.calls.editor.some((call) => call.op === 'saveDraftAck')).toBe(false);
+        expect(console.calls.editor.some((call) => call.op === 'goto' && call.args[0] === savedUrl)).toBe(false);
+        expect(selectorsOf(console.calls.editor, 'click').filter(isPublishControl)).toHaveLength(0);
+    });
+
+    test('public: canonical reloads remain read-only until a longer media hydration gap resolves', async () => {
+        await seedMedia();
+        const partial = { title: '', body: '', media: [], cover: '' };
+        const console = makeConsole(
+            publicState({
+                publicInitialUrl: savedEditorUrlFor(0),
+                publicReloadSnapshots: [partial, partial, partial, partial, undefined],
+            }),
+        );
+        const result = await makeTransport(console, { draftTimeoutMs: 1_000 }).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+
+        expect(result.ok, result.error).toBe(true);
+        const reloads = console.calls.editor.filter(
+            (call) => call.op === 'goto' && String(call.args[0]).includes('appmsgid=100001161'),
+        );
+        expect(reloads.length).toBeGreaterThanOrEqual(4);
+        expect(selectorsOf(console.calls.editor, 'click').filter(isPublishFinal)).toHaveLength(1);
+    });
+
+    test('public: accepts WeChat CDN size re-encoding while preserving layout, original URL, and one publish click', async () => {
+        await seedMedia();
+        const cdnAsset = 'https://mmbiz.qpic.cn/sz_mmbiz_png/media-lineage/0?wx_fmt=png&from=appmsg';
+        const resizedCdnAsset = cdnAsset.replace('/0?', '/640?');
+        const originalUrl = 'https://surfing.salty.vip/zh/posts/20261102-ai-2026-11-02';
+        const console = makeConsole(
+            publicState({
+                layoutPreview: true,
+                publicComposedMedia: [cdnAsset],
+                publicReloadSnapshot: { media: [resizedCdnAsset] },
+            }),
+        );
+        const result = await makeTransport(console).publish({
+            content: {
+                ...ARTICLE,
+                metadata: {
+                    ...ARTICLE.metadata,
+                    publishStatus: 'public',
+                    wechatmp: { coverPath: bodyImage, originalUrl },
+                },
+            },
+        });
+
+        expect(result.ok, result.error).toBe(true);
+        expect(console.layoutOpened()).toBe(false);
+        expect(
+            console.calls.editor.some(
+                (call) =>
+                    call.op === 'fill' && String(call.args[0]).includes('input.js_url') && call.args[1] === originalUrl,
+            ),
+        ).toBe(true);
+        expect(selectorsOf(console.calls.editor, 'click').filter(isSaveBar)).toHaveLength(1);
+        expect(selectorsOf(console.calls.editor, 'click').filter(isPublishFinal)).toHaveLength(1);
+    });
+
+    test('public: a changed original URL on the canonical reload refuses before publication', async () => {
+        await seedMedia();
+        const originalUrl = 'https://surfing.salty.vip/zh/posts/20261102-ai-2026-11-02';
+        const console = makeConsole(
+            publicState({
+                publicReloadSnapshot: { originalUrl: '' },
+            }),
+        );
+        const result = await makeTransport(console).publish({
+            content: {
+                ...ARTICLE,
+                metadata: {
+                    ...ARTICLE.metadata,
+                    publishStatus: 'public',
+                    wechatmp: { coverPath: bodyImage, originalUrl },
+                },
+            },
+        });
+
+        expect(result.ok).toBe(false);
+        expect(selectorsOf(console.calls.editor, 'click').filter(isPublishControl)).toHaveLength(0);
+        expect(selectorsOf(console.calls.editor, 'click').filter(isPublishFinal)).toHaveLength(0);
+    });
+
+    test('public: stale-version refusal after save is known and never reaches the publish control', async () => {
+        await seedMedia();
+        const console = makeConsole(
+            publicState({
+                draftStamp: STALE_STAMP,
+                publicSaveUrl: undefined,
+                publicSaveRefusal: '当前编辑的草稿不是最新版本',
+            }),
+        );
+        const result = await makeTransport(console).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('当前编辑的草稿不是最新版本');
+        const clicks = selectorsOf(console.calls.editor, 'click');
+        expect(clicks.some(isSaveBar)).toBe(true);
+        expect(clicks.some(isPublishControl)).toBe(false);
+    });
+
+    test('public: known preconfirmation stale refusal views the latest editor once and re-enters publish once', async () => {
+        await seedMedia();
+        const latestUrl = `${savedEditorUrlFor(0)}&data_seq=2`;
+        const console = makeConsole(
+            publicState({
+                publicPreconfirmationRefusal: '当前编辑的草稿不是最新版本',
+                publicLatestUrl: latestUrl,
+            }),
+        );
+        const result = await makeTransport(console).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+
+        expect(result.ok, result.error).toBe(true);
+        expect(result.metadata?.staleVersionRecoveryCount).toBe(1);
+        expect(result.metadata?.savedEditorUrl).toContain('data_seq=2');
+        const clicks = selectorsOf(console.calls.editor, 'click');
+        expect(clicks.filter(isPublishControl)).toHaveLength(2);
+        expect(clicks.filter(isViewLatest)).toHaveLength(1);
+        expect(clicks.filter(isPublishFinal)).toHaveLength(1);
+    });
+
+    test('public: changed latest editor content stops stale recovery before the final publish click', async () => {
+        await seedMedia();
+        const console = makeConsole(
+            publicState({
+                publicPreconfirmationRefusal: '当前编辑的草稿不是最新版本',
+                publicLatestSnapshot: { body: 'latest changed body' },
+            }),
+        );
+        const result = await makeTransport(console).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('latest editor content mismatch');
+        const clicks = selectorsOf(console.calls.editor, 'click');
+        expect(clicks.filter(isPublishControl)).toHaveLength(1);
+        expect(clicks.filter(isViewLatest)).toHaveLength(1);
+        expect(clicks.filter(isPublishFinal)).toHaveLength(0);
+    });
+
+    test('public: changed latest appmsg identity stops stale recovery before the final publish click', async () => {
+        await seedMedia();
+        const console = makeConsole(
+            publicState({
+                publicPreconfirmationRefusal: '当前编辑的草稿不是最新版本',
+                publicLatestAppmsgId: '100009999',
+            }),
+        );
+        const result = await makeTransport(console).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('expected appmsgid=100001161');
+        const clicks = selectorsOf(console.calls.editor, 'click');
+        expect(clicks.filter(isPublishControl)).toHaveLength(1);
+        expect(clicks.filter(isViewLatest)).toHaveLength(1);
+        expect(clicks.filter(isPublishFinal)).toHaveLength(0);
+    });
+
+    test('public: a second known stale refusal stops bounded recovery without a final click', async () => {
+        await seedMedia();
+        const console = makeConsole(
+            publicState({
+                publicPreconfirmationRefusal: '当前编辑的草稿不是最新版本',
+                publicPreconfirmationSecondRefusal: '当前编辑的草稿不是最新版本',
+            }),
+        );
+        const result = await makeTransport(console).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('当前编辑的草稿不是最新版本');
+        const clicks = selectorsOf(console.calls.editor, 'click');
+        expect(clicks.filter(isPublishControl)).toHaveLength(2);
+        expect(clicks.filter(isViewLatest)).toHaveLength(1);
+        expect(clicks.filter(isPublishFinal)).toHaveLength(0);
+    });
+
+    test('public: a 查看新草稿 click that leaves the stale refusal visible never retries the initial publish control', async () => {
+        await seedMedia();
+        const console = makeConsole(
+            publicState({
+                publicPreconfirmationRefusal: '当前编辑的草稿不是最新版本',
+                publicLatestViewNoEffect: true,
+            }),
+        );
+        const result = await makeTransport(console).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('canonical saved editor route');
+        const clicks = selectorsOf(console.calls.editor, 'click');
+        expect(clicks.filter(isPublishControl)).toHaveLength(1);
+        expect(clicks.filter(isViewLatest)).toHaveLength(1);
+        expect(clicks.filter(isPublishFinal)).toHaveLength(0);
+    });
+
+    test('public: an unknown preconfirmation outcome never retries or opens 查看新草稿', async () => {
+        await seedMedia();
+        const console = makeConsole(publicState({ publicPreconfirmationUnknown: true }));
+        const result = await makeTransport(console).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('no final publish click attempted');
+        const clicks = selectorsOf(console.calls.editor, 'click');
+        expect(clicks.filter(isPublishControl)).toHaveLength(1);
+        expect(clicks.filter(isViewLatest)).toHaveLength(0);
+        expect(clicks.filter(isPublishFinal)).toHaveLength(0);
+    });
+
+    test('public: a save without the native canonical URL signal stops before publication', async () => {
+        await seedMedia();
+        const console = makeConsole(publicState({ publicSaveUrl: undefined }));
+        const result = await makeTransport(console, {
+            draftTimeoutMs: 10,
+            pollMs: 1,
+            submitSettleMs: 0,
+            stepTimeoutMs: 100,
+        }).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('action=edit with appmsgid');
+        const clicks = selectorsOf(console.calls.editor, 'click');
+        expect(clicks.some(isSaveBar)).toBe(true);
+        expect(clicks.some(isPublishControl)).toBe(false);
+    });
+
+    test('public: a changed persisted snapshot refuses before publication', async () => {
+        await seedMedia();
+        const console = makeConsole(
+            publicState({
+                publicReloadSnapshot: {
+                    title: 'changed after save',
+                    body: 'different persisted body',
+                    media: ['different-media'],
+                    cover: 'different-cover',
+                },
+            }),
+        );
+        const result = await makeTransport(console).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('saved editor content mismatch');
+        const clicks = selectorsOf(console.calls.editor, 'click');
+        expect(clicks.some(isSaveBar)).toBe(true);
+        expect(clicks.some(isPublishControl)).toBe(false);
     });
 
     test('public: an unobserved outcome fails loud with the duplicate-publish warning', async () => {
         await seedMedia();
-        const console = makeConsole(happyState({ publish: 'silent' }));
+        const console = makeConsole(publicState({ publish: 'silent' }));
         const result = await makeTransport(console).publish({
             content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
         });
         expect(result.ok).toBe(false);
         expect(result.error).toContain('state unknown');
         expect(result.error).toContain('could publish twice');
+        expect(selectorsOf(console.calls.editor, 'click').filter(isPublishControl)).toHaveLength(1);
+    });
+
+    test('public: failed submission retains cover composition diagnostics', async () => {
+        await seedMedia();
+        const console = makeConsole(publicState({ publish: 'silent', coverLibraryMissing: true }));
+        const result = await makeTransport(console).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('compose diagnostics:');
+        expect(result.error).toContain('cover:');
+    });
+
+    test('public: measured missing-image validation is a known refusal, never unknown delivery', async () => {
+        await seedMedia();
+        const console = makeConsole(publicState({ publish: 'missing-cover' }));
+        const result = await makeTransport(console).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('publish refused by wechatmp: 必须插入一张图片');
+        expect(result.error).not.toContain('state unknown');
     });
 });
 
@@ -1124,6 +2147,7 @@ function recordingPage(ops: string[], evalReturns: unknown[] = [], opts: Recordi
     let urlCommitted = false;
     const broken = (selector: string) => opts.failOn !== undefined && selector.includes(opts.failOn);
     const missing = (selector: string) =>
+        selector.includes('选择图片') ||
         (Array.isArray(opts.missingOn) ? opts.missingOn : [opts.missingOn ?? '']).some(
             (fragment) => fragment !== '' && selector.includes(fragment),
         );

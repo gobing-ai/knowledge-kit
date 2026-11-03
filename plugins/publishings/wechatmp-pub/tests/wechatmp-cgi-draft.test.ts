@@ -540,6 +540,7 @@ const parseOk = (sources: string[]) => JSON.stringify({ kind: 'ok', sources, htm
 const APPLY_OK = JSON.stringify({ kind: 'ok', html: '<p>正文</p>' });
 const APP_MSG_ID = '123456';
 const LIST_OK = verdictOk({ app_msg_list: [{ app_id: APP_MSG_ID, title: CREATE_TITLE }] });
+const SAVED_EDITOR_URL = `${MP_ORIGIN}/cgi-bin/appmsg?t=media/appmsg_edit_v2&action=edit&isNew=0&type=77&appmsgid=${APP_MSG_ID}`;
 
 /** The media verdict chain of one eligible plain run: parse → cover transfer → crop → apply. */
 // Local body images reuse the filetransfer upload (readLocalImageBytes → uploadCoverImage): the
@@ -731,13 +732,14 @@ describe('runMode CGI integration (offline fake pages)', () => {
             validation.input,
             makeDeps(console.entryPage, content, { ...console.deps, publishStatus: 'public' }),
         );
-        expect(result.ok).toBe(true);
+        expect(result.ok, result.error).toBe(true);
         expect(result.message).toContain('published');
         expect(result.metadata?.publishControl).toBe('button.mass_send');
         expect(result.metadata?.stage).toBeUndefined();
         expect(console.editorOpened()).toBe(true);
         expect(console.anySeen('URLSearchParams(location.search)')).toBe(false);
         expect(console.anySeen('/cgi-bin/operate_appmsg')).toBe(false);
+        expect(console.publishFinalClicks()).toBe(1);
     });
 });
 
@@ -753,6 +755,7 @@ interface MiniConsole {
     editorOpened: () => boolean;
     typed: () => string[];
     anySeen: (needle: string) => boolean;
+    publishFinalClicks: () => number;
 }
 
 /** The menu item click opens the editor in a NEW tab whose createType matches 文章. */
@@ -762,9 +765,12 @@ function makeMiniConsole(): MiniConsole {
     let draftStamp: string | null = null;
     let mirrorValue = '';
     let pastedHtml = '';
+    let uploadedMedia: string[] = [];
     let coverPanelOpen = false;
     let publishConfirmPending = false;
+    let publishFinalClickCount = 0;
     let coverCommittedSrc = '';
+    let originalUrl = '';
     const typed: string[] = [];
     let editor: (WechatPage & { seen: string[] }) | null = null;
 
@@ -775,6 +781,14 @@ function makeMiniConsole(): MiniConsole {
     };
 
     const editorAttached = (selector: string): boolean => {
+        const publishDialog = selector.includes(
+            'div.weui-desktop-dialog:visible:has(h3.weui-desktop-dialog__title:text-is("发表"))',
+        );
+        const publishFinal = selector.includes('.mass-send__footer button.weui-desktop-btn_primary:text-is("发表")');
+        const publishLauncher =
+            selector.includes('button.mass_send') ||
+            selector === '.mass_send' ||
+            (selector.includes('button:has-text("发表")') && !selector.includes('weui-desktop-dialog'));
         if (selector.includes(':text("更新于")')) return false;
         if (/:text\("(发表成功|已发表)"\)/.test(selector)) return true;
         if (selector.includes('type="file"')) return true;
@@ -795,10 +809,9 @@ function makeMiniConsole(): MiniConsole {
         }
         if (selector.includes('js_imagedialog') || selector.includes('从图片库选择')) return true;
         if (selector.includes('cover') && selector.includes(' li')) return coverPanelOpen;
-        if (selector.includes('mass_send') || (selector.includes('发表') && !selector.includes('成功'))) return true;
-        if (selector.includes('确定') || selector.includes('确认') || selector.includes('完成')) {
-            return coverPanelOpen || publishConfirmPending;
-        }
+        if (publishLauncher) return true;
+        if (publishDialog || publishFinal) return publishConfirmPending;
+        if (selector.includes('确定') || selector.includes('确认') || selector.includes('完成')) return coverPanelOpen;
         return false;
     };
 
@@ -807,7 +820,16 @@ function makeMiniConsole(): MiniConsole {
             draftStamp = FRESH_STAMP;
             return;
         }
-        if (selector.includes('mass_send') || (selector.includes('发表') && !selector.includes('成功'))) {
+        if (selector.includes('.mass-send__footer button.weui-desktop-btn_primary:text-is("发表")')) {
+            publishFinalClickCount += 1;
+            publishConfirmPending = false;
+            return;
+        }
+        if (
+            selector.includes('button.mass_send') ||
+            selector === '.mass_send' ||
+            (selector.includes('button:has-text("发表")') && !selector.includes('weui-desktop-dialog'))
+        ) {
             publishConfirmPending = true;
             return;
         }
@@ -833,7 +855,16 @@ function makeMiniConsole(): MiniConsole {
         let url =
             role === 'entry' ? `${MP_ORIGIN}/cgi-bin/home?t=home/index&lang=zh_CN&token=${SESSION.token}` : editorUrl;
         const attached = role === 'entry' ? entryAttached : editorAttached;
-        return {
+        const page: WechatPage & { seen: string[] } = {
+            saveDraftAndWait: async (selector, timeoutMs) => {
+                if (role !== 'editor') throw new Error('native article save requires the editor page');
+                pageSeen.push(`saveDraftAndWait:start:${selector}:${timeoutMs}`);
+                // Keep the fixture on the same seam as production: the native acknowledgement arms
+                // its request observer before invoking the existing visible save control.
+                await page.locator(selector).first().click();
+                url = SAVED_EDITOR_URL;
+                pageSeen.push('saveDraftAndWait:ack');
+            },
             url: () => url,
             goto: async (target) => {
                 url = target;
@@ -844,10 +875,17 @@ function makeMiniConsole(): MiniConsole {
                     count: async () => (attached(selector) ? 1 : 0),
                     // File inputs hide behind styled controls; everything else reads as visible.
                     isVisible: async () => attached(selector) && !selector.includes('type="file"'),
-                    fill: async () => undefined,
+                    fill: async (text: string) => {
+                        if (selector.includes('input.js_url')) originalUrl = text;
+                    },
                     click: async () => {
                         if (role === 'entry') editor = makePage('editor');
-                        else applyEditorClick(selector);
+                        else {
+                            applyEditorClick(selector);
+                            if (selector.includes('保存为草稿')) {
+                                url = SAVED_EDITOR_URL;
+                            }
+                        }
                     },
                     type: async (text: string) => {
                         if (role === 'editor' && selector.includes('data-placeholder') && selector.includes('标题')) {
@@ -863,10 +901,24 @@ function makeMiniConsole(): MiniConsole {
                     inputValue: async () => mirrorValue,
                 }),
             }),
-            setInputFiles: async () => undefined,
+            setInputFiles: async (_selector, paths) => {
+                if (role === 'editor') uploadedMedia = [...uploadedMedia, ...(Array.isArray(paths) ? paths : [paths])];
+            },
             evaluate: async (expression: string) => {
                 pageSeen.push(expression);
                 if (role === 'editor') {
+                    if (expression.includes('__KK_WECHAT_LAYOUT_SAVE_STATE__')) return 'saved';
+                    if (expression.includes('__KK_WECHAT_LEGACY_EDITOR_READY__')) return 'unknown';
+                    if (expression.includes('__KK_WECHAT_PUBLISH_SNAPSHOT__')) {
+                        const snapshot = {
+                            title: mirrorValue,
+                            body: pastedHtml,
+                            media: uploadedMedia,
+                            cover: coverCommittedSrc,
+                            originalUrl,
+                        };
+                        return JSON.stringify(snapshot);
+                    }
                     if (expression.includes('ClipboardEvent')) {
                         pastedHtml = /setData\('text\/html',\s*(".*?")\);/.exec(expression)?.[1] ?? '';
                         return true;
@@ -879,6 +931,7 @@ function makeMiniConsole(): MiniConsole {
                         return JSON.stringify({ picked: true, src: coverCommittedSrc });
                     }
                     if (expression.includes('#js_cover_area')) return coverCommittedSrc;
+                    if (expression.includes('.article_url_setting')) return originalUrl;
                     if (expression.includes('weui-desktop-dialog__wrp, .weui-desktop-dialog')) return false;
                     if (expression.includes('textContent')) return pastedHtml.length > 0 ? '正文' : '';
                     return '';
@@ -890,6 +943,7 @@ function makeMiniConsole(): MiniConsole {
             press: async () => undefined,
             seen: pageSeen,
         };
+        return page;
     };
 
     const entryPage = makePage('entry');
@@ -907,5 +961,6 @@ function makeMiniConsole(): MiniConsole {
         anySeen: (needle: string) =>
             entryPage.seen.some((expression) => expression.includes(needle)) ||
             (editor?.seen.some((expression) => expression.includes(needle)) ?? false),
+        publishFinalClicks: () => publishFinalClickCount,
     };
 }

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import {
@@ -6,7 +7,7 @@ import {
     type PublishTransportPayload,
     resolveBrowserProfileDir,
 } from '@gobing-ai/publish-harness';
-import { kkBrowserLauncher, waitUntil } from '@gobing-ai/publish-harness/browser';
+import { chmod, createExclusiveFile, kkBrowserLauncher, waitUntil } from '@gobing-ai/publish-harness/browser';
 import { BrowserProfileMissingError, openPersistentBrowser } from '@gobing-ai/ts-browser-automation';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
@@ -21,7 +22,14 @@ import {
     validateModeInput,
     WECHATMP_OPERATIONS,
 } from './modes';
-import { type OpenConsole, type OpenedConsole, POLL_MS, STEP_TIMEOUT_MS, wrapPlaywrightContext } from './page';
+import {
+    type OpenConsole,
+    type OpenedConsole,
+    POLL_MS,
+    STEP_TIMEOUT_MS,
+    sanitizeSessionEvidence,
+    wrapPlaywrightContext,
+} from './page';
 
 /**
  * The wechatmp publish CHANNEL (ADR-029, ADR-026): one plugin, four mode `operations`.
@@ -49,7 +57,7 @@ const DRAFT_SIGNAL_TIMEOUT_MS = 15_000;
 const SUBMIT_ATTEMPTS = 2;
 
 function fail(error: string): Result {
-    return ResultSchema.parse({ ok: false, target: TARGET, error });
+    return ResultSchema.parse({ ok: false, target: TARGET, error: sanitizeSessionEvidence(error) });
 }
 
 /** Console home readiness: an authenticated route carries the session token (discovery §1/§9-W9). */
@@ -72,6 +80,35 @@ export type SessionCheck = (profileDir: string) => Promise<void>;
  * (the store drops them despite 4-day expiries), but the server session does, so we re-inject. */
 export function storageStatePath(profileDir: string): string {
     return `${profileDir}/storage-state.json`;
+}
+
+/**
+ * Persist a positively authenticated browser state without exposing a partially-written state
+ * file to the next launch. The temporary file stays beside the target so the final rename is
+ * atomic on the profile filesystem; cleanup is deliberately best-effort and never masks the
+ * storageState/rename error.
+ */
+export async function persistWechatSessionState(
+    context: { storageState(options: { path: string }): Promise<unknown> },
+    profileDir: string,
+): Promise<void> {
+    const target = storageStatePath(profileDir);
+    const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`;
+    const fs = createNodeFileSystem();
+    let reserved = false;
+    try {
+        createExclusiveFile(temporary);
+        reserved = true;
+        await context.storageState({ path: temporary });
+        chmod(temporary, 0o600);
+        await fs.rename(temporary, target);
+    } finally {
+        if (reserved) {
+            await Promise.resolve()
+                .then(() => fs.deleteFile(temporary))
+                .catch(() => undefined);
+        }
+    }
 }
 
 /** Headless session preflight: throws (incl. BrowserProfileMissingError) when the profile cannot drive the console.
@@ -110,6 +147,8 @@ export async function openWechatLogin(opts: { profileDir: string; timeoutMs?: nu
         headless: false,
         launcher: kkBrowserLauncher,
     });
+    let failed = false;
+    let failure: unknown;
     try {
         const page = context.pages()[0] ?? (await context.newPage());
         await page.goto(CONSOLE_URL);
@@ -120,10 +159,29 @@ export async function openWechatLogin(opts: { profileDir: string; timeoutMs?: nu
         );
         if (!ready) throw new Error(`QR scan not completed within ${timeoutMs / 1000}s`);
         await page.waitForTimeout(10_000); // settle: let the console finish its post-auth Set-Cookies
-        await context.storageState({ path: storageStatePath(opts.profileDir) });
-    } finally {
-        await context.close();
+        try {
+            await persistWechatSessionState(context, opts.profileDir);
+        } catch {
+            // Storage-state errors can contain cookie values. Keep the profile-check surface
+            // actionable without relaying an exception that may include session material.
+            throw new Error('wechatmp authenticated session snapshot failed');
+        }
+    } catch (error: unknown) {
+        failed = true;
+        failure = error;
     }
+    try {
+        await context.close();
+    } catch {
+        // A successful atomic snapshot is already durable; a close failure must not turn it into
+        // a retryable login. Keep the diagnostic generic because browser errors may contain session
+        // material, and never replace an authentication or snapshot failure with shutdown noise.
+        if (!failed)
+            echoError(
+                'wechatmp browser context close failed after authenticated session snapshot; saved state preserved',
+            );
+    }
+    if (failed) throw failure;
 }
 
 /**
@@ -201,7 +259,10 @@ async function openWithState(
  */
 async function defaultOpenConsole(profileDir: string): Promise<OpenedConsole> {
     const { page, context } = await openWithState(profileDir, true);
-    return wrapPlaywrightContext(context, page);
+    return {
+        ...wrapPlaywrightContext(context, page),
+        persistSession: () => persistWechatSessionState(context, profileDir),
+    };
 }
 
 type BrowserDriverName = 'script' | 'agent';
@@ -291,42 +352,63 @@ export class WechatmpBrowserTransport implements PublishTransport {
         } catch (error: unknown) {
             return fail(error instanceof Error ? error.message : String(error));
         }
+        let result: Result;
         try {
             const ready = await waitUntil(
                 () => Promise.resolve(isConsoleReady(opened.page)),
                 this.consoleReadyTimeoutMs,
             );
             if (!ready) {
-                return fail(
+                result = fail(
                     `no authenticated ${TARGET} console within ${this.consoleReadyTimeoutMs}ms — the preflight passed but the console did not report a session route (profile ${profileDir})`,
                 );
-            }
-            // The 草稿箱 baseline is read before the editor opens: MP auto-saves continuously, so a
-            // row that already carried a stamp says nothing about this run's save (discovery §5.1).
-            const title = typeof content.title === 'string' ? content.title.trim() : '';
-            const draftBaseline =
-                publishStatus === 'draft' ? await readDraftBaseline(opened.page, title) : { stamp: null };
+            } else {
+                // The 草稿箱 baseline is read before the editor opens: MP auto-saves continuously, so a
+                // row that already carried a stamp says nothing about this run's save (discovery §5.1).
+                const title = typeof content.title === 'string' ? content.title.trim() : '';
+                const draftBaseline =
+                    publishStatus === 'draft' ? await readDraftBaseline(opened.page, title) : { stamp: null };
 
-            return await runMode(validation.input, {
-                entry: opened.page,
-                pages: opened.pages,
-                newPage: opened.newPage,
-                content,
-                publishStatus,
-                profileDir,
-                driver: this.driver,
-                stepTimeoutMs: this.stepTimeoutMs,
-                pollMs: this.pollMs,
-                submitSettleMs: this.submitSettleMs,
-                draftTimeoutMs: this.draftTimeoutMs,
-                submitAttempts: this.submitAttempts,
-                draftBaseline,
-            });
+                result = await runMode(validation.input, {
+                    entry: opened.page,
+                    pages: opened.pages,
+                    newPage: opened.newPage,
+                    content,
+                    publishStatus,
+                    profileDir,
+                    driver: this.driver,
+                    stepTimeoutMs: this.stepTimeoutMs,
+                    pollMs: this.pollMs,
+                    submitSettleMs: this.submitSettleMs,
+                    draftTimeoutMs: this.draftTimeoutMs,
+                    submitAttempts: this.submitAttempts,
+                    draftBaseline,
+                });
+            }
         } catch (error: unknown) {
-            return fail(error instanceof Error ? error.message : String(error));
+            result = fail(error instanceof Error ? error.message : String(error));
         } finally {
-            await opened.close();
+            if (opened.persistSession !== undefined) {
+                try {
+                    // A positive authenticated route is the only evidence that rotating state is
+                    // safe to persist. Read-only preflight uses openWithState directly and never
+                    // receives this callback.
+                    if (isConsoleReady(opened.page)) await opened.persistSession();
+                } catch {
+                    // Storage-state errors can contain cookie values; the publication result is
+                    // already determined and must survive this best-effort session refresh.
+                    echoError('wechatmp-pub: authenticated session snapshot failed; publication result preserved');
+                }
+            }
+            try {
+                await opened.close();
+            } catch {
+                // Context shutdown is not publication evidence. Never turn an already determined
+                // Result into a retryable throw, and never relay browser diagnostics verbatim.
+                echoError('wechatmp-pub: browser context close failed; publication result preserved');
+            }
         }
+        return result;
     }
 }
 

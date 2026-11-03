@@ -1,5 +1,6 @@
 import { trySelectors } from '@gobing-ai/publish-harness';
 import { waitUntil } from '@gobing-ai/publish-harness/browser';
+import type { Page, Request } from 'playwright';
 
 /**
  * The console's page seam (ADR-029) and the probes every wechatmp operation shares.
@@ -16,6 +17,11 @@ import { waitUntil } from '@gobing-ai/publish-harness/browser';
 
 export const POLL_MS = 500;
 export const STEP_TIMEOUT_MS = 30_000;
+
+/** Browser evidence may retain navigation context, but never its session query credentials. */
+export function sanitizeSessionEvidence(value: string): string {
+    return value.replace(/([?&](?:token|ticket|authkey)=)[^&\s"'<>)]*/gi, '$1[REDACTED]');
+}
 
 /** The playwright-shaped locator surface the flows and the shared helpers read. */
 export interface WechatLocator {
@@ -36,6 +42,8 @@ export interface WechatLocator {
 }
 
 export interface WechatPage {
+    /** Click the native article save and await its successful, fully received acknowledgement. */
+    saveDraftAndWait?(selector: string, timeoutMs: number): Promise<void>;
     goto(url: string, options?: { timeout?: number }): Promise<void>;
     locator(selector: string): { first(): WechatLocator; count(): Promise<number> };
     setInputFiles(selector: string, paths: readonly string[] | string): Promise<void>;
@@ -63,6 +71,8 @@ export interface OpenedConsole {
     pages(): WechatPage[];
     /** Opens an extra tab; the token-derived editor fallback uses it so the home stays readable. */
     newPage(): Promise<WechatPage>;
+    /** Best-effort authenticated state snapshot owned by the launcher; absent for read-only seams. */
+    persistSession?: () => Promise<void>;
     close(): Promise<void>;
 }
 
@@ -213,9 +223,104 @@ interface RawFrame {
     locator(selector: string): { count(): Promise<number> };
 }
 
+/** Match a new full-article save, excluding reads and other operations at the shared endpoint. */
+function isArticleSave(request: Request, origin: string): boolean {
+    if (request.method() !== 'POST') return false;
+    const url = new URL(request.url());
+    if (url.origin !== origin || url.pathname !== '/cgi-bin/operate_appmsg') return false;
+    if (!['create', 'update', 'edit'].includes(url.searchParams.get('sub') ?? '')) return false;
+    const data = request.postData() ?? '';
+    const form = new URLSearchParams(data);
+    return (
+        (form.has('content0') && form.has('title0')) ||
+        (data.includes('name="content0"') && data.includes('name="title0"'))
+    );
+}
+
+function saveResponseSucceeded(value: unknown): boolean {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+    const body = value as Record<string, unknown>;
+    const base =
+        body.base_resp !== null && typeof body.base_resp === 'object'
+            ? (body.base_resp as Record<string, unknown>)
+            : {};
+    const codes = [body.ret, body.errcode, base.ret].filter((code) => code !== undefined);
+    // The live editor returns top-level ret as "0" alongside numeric base_resp.ret.
+    if (codes.some((code) => code !== 0 && code !== '0')) return false;
+    if (codes.length > 0) return true;
+    const info =
+        body.appMsgInfo !== null && typeof body.appMsgInfo === 'object'
+            ? (body.appMsgInfo as Record<string, unknown>)
+            : body;
+    return typeof info.appMsgId === 'string' || typeof info.appMsgId === 'number'
+        ? /^\d{1,12}$/.test(String(info.appMsgId))
+        : false;
+}
+
+/** Observe the native request before clicking; neither response headers nor a URL change is completion. */
+async function saveNativeDraft(raw: Page, selector: string, timeoutMs: number): Promise<void> {
+    const origin = new URL(raw.url()).origin;
+    const marker = `__kkNativeSave_${crypto.randomUUID()}`;
+    const button = raw.locator(selector).first();
+    await button.evaluate((element, key) => {
+        const state = { clickedAt: 0 };
+        const handler = () => {
+            state.clickedAt = Date.now();
+        };
+        (globalThis as unknown as Record<string, unknown>)[key] = { state, element, handler };
+        element.addEventListener('click', handler, { capture: true, once: true });
+    }, marker);
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    const responseComplete = raw
+        .waitForRequest(
+            async (request) => {
+                if (!isArticleSave(request, origin)) return false;
+                const clickedAt = await raw
+                    .evaluate(`globalThis[${JSON.stringify(marker)}]?.state?.clickedAt ?? 0`)
+                    .catch(() => 0);
+                if (typeof clickedAt !== 'number' || clickedAt <= 0) return false;
+                // Playwright populates request timing when response headers arrive; before that
+                // the live Chrome request reports startTime=0. Keep the click stamp across navigation.
+                if (!(await request.response())) return false;
+                return request.timing().startTime >= clickedAt;
+            },
+            { timeout: timeoutMs },
+        )
+        .then(async (request) => {
+            const response = await request.response();
+            if (response === null || response.status() < 200 || response.status() >= 300)
+                throw new Error('HTTP refusal');
+            if (await response.finished()) throw new Error('Incomplete response');
+            if (!saveResponseSucceeded(await response.json())) throw new Error('Save refused');
+        });
+    try {
+        await Promise.race([
+            Promise.all([responseComplete, button.click({ timeout: timeoutMs })]),
+            new Promise<never>((_resolve, reject) => {
+                deadline = setTimeout(() => reject(new Error('Save timeout')), timeoutMs);
+            }),
+        ]);
+    } catch {
+        // Playwright errors and server bodies may contain session URLs; retain no vendor payload.
+        throw new Error('Native article save was not acknowledged successfully before the deadline');
+    } finally {
+        if (deadline !== undefined) clearTimeout(deadline);
+        await raw
+            .evaluate(`(() => {
+                const key = ${JSON.stringify(marker)};
+                const records = globalThis;
+                const value = records[key];
+                if (value?.element && value.handler) value.element.removeEventListener('click', value.handler, true);
+                delete records[key];
+            })()`)
+            .catch(() => undefined);
+    }
+}
+
 export function wrapPlaywrightPage(raw: unknown): WechatPage {
     const pw = raw as PlaywrightLike;
     return {
+        saveDraftAndWait: (selector, timeoutMs) => saveNativeDraft(raw as Page, selector, timeoutMs),
         goto: (url, options) => pw.goto(url, { waitUntil: 'domcontentloaded', ...options }).then(() => undefined),
         locator: (selector) => ({
             count: () => pw.locator(selector).count(),

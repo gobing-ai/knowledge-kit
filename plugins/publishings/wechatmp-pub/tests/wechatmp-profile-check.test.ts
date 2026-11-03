@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, spyOn, test } from 'bun:test';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import * as tsBrowserAutomation from '@gobing-ai/ts-browser-automation';
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { main as profileCheckMain } from '../src/profile-check';
@@ -27,13 +27,19 @@ interface FakeContext {
     storageState?: (opts: { path: string }) => Promise<void>;
 }
 
-function fakeContext(page: unknown, closed: string[] = []): FakeContext {
+function fakeContext(page: unknown, closed: string[] = [], closeError?: string): FakeContext {
     return {
         pages: () => [],
         newPage: async () => page,
-        close: async () => void closed.push('closed'),
+        close: async () => {
+            closed.push('closed');
+            if (closeError !== undefined) throw new Error(closeError);
+        },
         addCookies: async () => {},
-        storageState: async () => {},
+        storageState: async ({ path }: { path: string }) => {
+            await mkdir(dirname(path), { recursive: true });
+            await writeFile(path, '{}');
+        },
     };
 }
 
@@ -280,6 +286,7 @@ describe('wechatmp-pub profile-check login verdict (0277 R3)', () => {
     test('login in bot mode emits the canonical defaultUrl verdict as the LAST stdout line', async () => {
         // `kk bot login` persists a default URL ONLY from this line; without it a completed QR
         // sign-in is discarded ("exited 0 but returned no usable defaultUrl verdict").
+        await mkdir(loginProfileDir, { recursive: true });
         const spy = spyOn(tsBrowserAutomation, 'openPersistentBrowser').mockImplementation(
             async () => fakeContext(consoleHomePage()) as never,
         );
@@ -306,6 +313,7 @@ describe('wechatmp-pub profile-check login verdict (0277 R3)', () => {
     });
 
     test('login without --url keeps the operator-mode output (no verdict line)', async () => {
+        await mkdir(loginProfileDir, { recursive: true });
         const spy = spyOn(tsBrowserAutomation, 'openPersistentBrowser').mockImplementation(
             async () => fakeContext(consoleHomePage()) as never,
         );
@@ -314,6 +322,23 @@ describe('wechatmp-pub profile-check login verdict (0277 R3)', () => {
             expect(code).toBe(0);
             expect(out).toContain('login verified');
             expect(out).not.toContain('defaultUrl');
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
+    test('successful login stays verified when context close fails after the atomic snapshot', async () => {
+        await mkdir(loginProfileDir, { recursive: true });
+        const sentinel = 'COOKIE-SENTINEL-DO-NOT-ECHO';
+        const spy = spyOn(tsBrowserAutomation, 'openPersistentBrowser').mockImplementation(
+            async () => fakeContext(consoleHomePage(), [], sentinel) as never,
+        );
+        try {
+            const { code, out, err } = await run(['login', '--profile', loginProfileDir, '--timeout', '50']);
+            expect(code).toBe(0);
+            expect(out).toContain('login verified');
+            expect(err).toContain('browser context close failed');
+            expect(err).not.toContain(sentinel);
         } finally {
             spy.mockRestore();
         }

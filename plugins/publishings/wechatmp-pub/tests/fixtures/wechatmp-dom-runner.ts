@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { enrichArticle } from '../../src/enrich';
+import * as coverFlow from '../../src/flow';
 import { insertAudioMaterial } from '../../src/flow';
 import { wrapPlaywrightPage } from '../../src/page';
 
@@ -25,17 +26,25 @@ interface ScenarioConfig {
     audio?: {
         rows?: Array<{ title: string; mediaId: string }>;
         uploadForm?: boolean;
+        existingCoverName?: string;
+        modern?: boolean;
         /** 插入 clicked but the body node is silently dropped — VERIFY must fail. */
         silentDrop?: boolean;
         /** Row appears only after the upload 保存 (delayed commit). */
         delayRowMs?: number;
+        coverLoadingForever?: boolean;
     };
-    run: 'enrich' | 'audio';
+    run: 'enrich' | 'audio' | 'cover';
     meta?: Record<string, unknown>;
     title?: string;
+    coverSecondPage?: boolean;
+    coverNearMatch?: boolean;
+    coverDerived?: boolean;
+    coverWrongCropSource?: boolean;
+    coverStaleCommit?: boolean;
 }
 
-interface Facts {
+export interface Facts {
     scenario: string;
     warnings?: string[];
     error?: string;
@@ -78,7 +87,7 @@ const SETTINGS_HTML = `
 <div class="popover_inner" id="url-popover" style="display:none"><div class="popover-article-setting__content"><input class="js_url" name="source_url" placeholder="输入或粘贴原文链接"></div><div class="popover_bar"><a class="jsPopoverBt btn_primary">确定</a><a class="jsPopoverBt btn_default">取消</a></div></div>
 <div id="audio_music_plugin_btn" style="width:40px;height:20px">音频</div>
 <ul><li class="js_insertaudio" style="display:none;width:40px;height:20px">音频</li></ul>
-<div class="ProseMirror" contenteditable="true"><p><br></p></div>
+<div class="ProseMirror" contenteditable="true"><div contenteditable="false" class="node-image"><img alt="cover"></div><p><br></p></div>
 <div class="weui-desktop-dialog__wrp" id="dlg-wrp" style="display:none"><div class="weui-desktop-dialog" id="dlg"></div></div>
 <div class="weui-desktop-dialog__wrp" id="dlg2-wrp" style="display:none"><div class="weui-desktop-dialog" id="dlg2"></div></div>
 <div class="weui-desktop-dialog__wrp" id="audio-wrp" style="display:none"><div class="weui-desktop-dialog audio_dialog" id="audio-dlg"></div></div>
@@ -90,6 +99,50 @@ const WIRE = `
 (cfg) => {
   window.__ops = { clicks: {}, uploads: [], insertClicked: false };
   window.__op = (k) => { window.__ops.clicks[k] = (window.__ops.clicks[k] ?? 0) + 1; };
+  if (cfg.run === 'cover') {
+    document.body.insertAdjacentHTML('beforeend', '<div hidden><div class="weui-desktop-dialog"><h3>选择图片</h3><button>下一步</button><button>完成</button></div></div>');
+    document.body.insertAdjacentHTML('beforeend', '<div hidden><a class="js_imagedialog">从图片库选择</a></div><div hidden><a class="js_imagedialog">从图片库选择</a></div><div id="js_cover_area"><button class="js_cover_btn_area">拖拽或选择封面</button><i class="icon20_common add_cover"></i><div class="js_cover_preview_new" style="display:none"></div><div id="cover-menu" hidden><a class="js_imagedialog">从图片库选择</a></div></div>');
+    document.querySelector('.js_cover_btn_area').onclick = () => document.getElementById('cover-menu').hidden = false;
+    document.querySelector('#js_cover_area .add_cover').style.cssText = 'display:inline-block;width:16px;height:16px';
+    if (cfg.coverStaleCommit) {
+      const preview = document.querySelector('.js_cover_preview_new');
+      preview.style.cssText = 'display:block;width:120px;height:80px;background-image:url(https://mmbiz.qpic.cn/mmbiz_jpg/old-cover/0)';
+    }
+    document.querySelector('#cover-menu a').onclick = () => {
+      const chooser = document.createElement('div');
+      chooser.className = 'weui-desktop-dialog';
+      chooser.innerHTML = '<h3>选择图片</h3><div class="weui-desktop-img-picker__item"><i title="图片描述" style="background-image:url(https://mmbiz.qpic.cn/mmbiz_png/fixture-cover/300?from=appmsg)"></i><strong class="weui-desktop-img-picker__img-title">cover.png</strong></div><button class="next">下一步</button><button class="finish" hidden>完成</button><button class="cancel">取消</button>';
+      document.body.appendChild(chooser);
+      const coverTitle = chooser.querySelector('.weui-desktop-img-picker__img-title');
+      coverTitle.textContent = 'loading.png';
+      if (cfg.coverSecondPage) {
+        chooser.insertAdjacentHTML('beforeend', '<label class="weui-desktop-pagination__num">1</label><label class="weui-desktop-pagination__num">2</label><a class="page-next">下一页</a>');
+        chooser.querySelector('.page-next').onclick = () => {
+          chooser.querySelector('.weui-desktop-pagination__num').textContent = '2';
+          coverTitle.textContent = 'cover.png';
+        };
+      } else setTimeout(() => coverTitle.textContent = cfg.coverNearMatch ? 'my-cover.png' : 'cover.png', 600);
+      chooser.querySelector('.weui-desktop-img-picker__item').onclick = event => event.currentTarget.classList.add('selected');
+      chooser.querySelector('.next').onclick = () => {
+        chooser.querySelector('h3').textContent = '编辑封面';
+        chooser.querySelector('.finish').hidden = false;
+        chooser.querySelector('.finish').textContent = '确认';
+        chooser.insertAdjacentHTML('beforeend', '<img class="crop-img" style="width:120px;height:80px" src="https://mmbiz.qpic.cn/mmbiz_png/' + (cfg.coverWrongCropSource ? 'wrong-cover' : 'fixture-cover') + '/0?wx_fmt=png">');
+      };
+      chooser.querySelector('.finish').onclick = () => {
+        chooser.remove();
+        if (cfg.coverStaleCommit) return;
+        setTimeout(() => {
+        const preview = document.querySelector('.js_cover_preview_new');
+        preview.style.display = 'block';
+        preview.style.width = '120px';
+        preview.style.height = '80px';
+        preview.style.backgroundImage = cfg.coverDerived ? 'url(https://mmbiz.qpic.cn/mmbiz_jpg/derived-cover/0?wx_fmt=jpeg)' : 'url(https://mmbiz.qpic.cn/mmbiz_png/fixture-cover/0?wx_fmt=png)';
+        }, 600);
+      };
+      chooser.querySelector('.cancel').onclick = () => chooser.remove();
+    };
+  }
   const dialog = (wrpId, cfg2, onConfirm) => {
     const wrp = document.getElementById(wrpId);
     const dlg = wrp.querySelector('.weui-desktop-dialog');
@@ -173,20 +226,28 @@ const WIRE = `
     const addRow = (row) => {
       const li = document.createElement('li');
       li.className = 'audio_item_wrp';
-      li.setAttribute('data-mediaid', row.mediaId);
+      li.setAttribute(cfg.audio.modern ? 'data-fixture-id' : 'data-mediaid', row.mediaId);
       li.innerHTML = '<label class="frm_checkbox_label audio_item" style="width:160px;height:20px">' +
         '<span class="audio_title">' + row.title + '</span><input type="checkbox"></label>' +
         '<div class="audio_item_thumb" style="background-image:url(&quot;https://mmbiz.example/' + row.mediaId + '.png&quot;)"></div>';
       document.getElementById('audio-dlg').querySelector('.audio-list').appendChild(li);
     };
     const dlg = document.getElementById('audio-dlg');
+    let caretReady = false;
+    document.addEventListener('selectionchange', () => {
+      const pm = document.querySelector('.ProseMirror');
+      const selection = window.getSelection();
+      const anchor = selection?.anchorNode?.nodeType === 1 ? selection.anchorNode : selection?.anchorNode?.parentElement;
+      if (anchor?.closest('[contenteditable="false"]')) return;
+      if (document.activeElement === pm && selection?.anchorOffset === 0 && pm.contains(selection.anchorNode)) caretReady = true;
+    });
     dlg.innerHTML = '<button class="weui-desktop-dialog__close-btn">×</button><div class="audio-list"></div>' +
       (cfg.audio.uploadForm
         ? '<div class="upload-form"><button class="js-open-upload">上传音频</button>' +
           '<div class="form-body" style="display:none"><button class="js-cover-btn">上传封面</button>' +
           '<input type="file" accept="audio/mpeg" data-name="audio-input"><input type="file" accept="image/png" data-name="cover-input">' +
-          '<input class="frm_input" placeholder="标题"><label><input type="checkbox" class="agree-box"><span>我已阅读并同意《服务规则》</span></label>' +
-          '<button class="js-save-btn">保存</button></div></div>'
+          '<input class="frm_input" placeholder="标题"><label><input type="checkbox" class="agree-box"><span>我已阅读并同意<a href="#rules">《公众平台音频上传服务规则》</a></span></label>' +
+          '<button class="js-save-btn weui-desktop-btn_disabled">保存</button></div></div>'
         : '') +
       '<div><button class="weui-cancel">取消</button><button class="js-insert-btn">插入</button></div>';
     document.getElementById('audio_music_plugin_btn').addEventListener('click', () => {
@@ -203,21 +264,61 @@ const WIRE = `
       window.__ops.insertClicked = true;
       const ticked = dlg.querySelector('.audio_item input:checked');
       if (cfg.audio.silentDrop !== true && ticked) {
-        const mediaId = ticked.closest('li').getAttribute('data-mediaid');
+        const mediaId = ticked.closest('li').getAttribute(cfg.audio.modern ? 'data-fixture-id' : 'data-mediaid');
         const pm = document.querySelector('.ProseMirror');
-        const node = document.createElement('mpvoice');
-        node.setAttribute('data-mediaid', mediaId);
-        pm.insertBefore(node, pm.firstChild);
+        const node = document.createElement(cfg.audio.modern ? 'section' : 'mpvoice');
+        if (cfg.audio.modern) {
+          node.innerHTML = '<mp-common-mpaudio voice_encode_fileid="' + mediaId + '" cover="https://mmbiz.example/' + mediaId + '.png"></mp-common-mpaudio>';
+        } else node.setAttribute('data-mediaid', mediaId);
+        if (caretReady) pm.insertBefore(node, pm.firstChild); else pm.appendChild(node);
       }
       document.getElementById('audio-wrp').style.display = 'none';
     });
     if (cfg.audio.uploadForm) {
+      const unrelatedSave = document.createElement('button');
+      unrelatedSave.textContent = '保存为草稿';
+      document.body.prepend(unrelatedSave);
+      // November 2 image chooser portals its file input outside the audio dialog.
+      const coverInput = dlg.querySelector('[data-name="cover-input"]');
+      coverInput.setAttribute('accept', 'image/bmp, image/png, image/jpeg, image/jpg, image/gif, image/webp');
+      coverInput.style.display = 'none';
+      document.body.appendChild(coverInput);
       dlg.querySelector('.js-open-upload').addEventListener('click', () => {
         dlg.querySelector('.upload-form').style.display = 'block';
         dlg.querySelector('.form-body').style.display = 'block';
       });
-      dlg.querySelector('.js-cover-btn').addEventListener('click', () => {});
+      dlg.querySelector('.js-cover-btn').addEventListener('click', () => {
+        const picker = document.createElement('div');
+        picker.id = 'cover-picker';
+        picker.className = 'weui-desktop-dialog';
+        picker.style.cssText = 'position:fixed;inset:0;background:white;z-index:9999';
+        picker.innerHTML = '<h3>选择图片</h3><div class="weui-desktop-img-picker__list"></div><button class="next">下一步</button>';
+        document.body.appendChild(picker);
+        if (cfg.audio.coverLoadingForever) picker.insertAdjacentHTML('beforeend', '<div id="js_image_dialog_list_wrp"><div class="weui-desktop-loading"></div></div>');
+        if (cfg.audio.existingCoverName) {
+          picker.querySelector('.weui-desktop-img-picker__list').innerHTML = '<div class="weui-desktop-img-picker__item selected"><strong class="weui-desktop-img-picker__img-title">' + cfg.audio.existingCoverName + '</strong></div>';
+        }
+        coverInput.addEventListener('change', async () => {
+          // Chromium reads an assigned file asynchronously; deleting its source early breaks upload.
+          await new Promise(resolve => setTimeout(resolve, 300));
+          try { await coverInput.files[0].arrayBuffer(); } catch { return; }
+          picker.querySelector('.weui-desktop-img-picker__list').innerHTML = '<div class="weui-desktop-img-picker__item selected"><strong class="weui-desktop-img-picker__img-title">remote_import.png</strong></div><div class="weui-desktop-img-picker__item"><i title="图片描述"></i><strong class="weui-desktop-img-picker__img-title">' + coverInput.files[0].name + '</strong></div>';
+          picker.querySelectorAll('.weui-desktop-img-picker__item').forEach(row => row.addEventListener('click', () => {
+            picker.querySelectorAll('.selected').forEach(el => el.classList.remove('selected'));
+            row.classList.add('selected');
+          }));
+        }, {once:true});
+        picker.querySelector('.next').addEventListener('click', () => {
+          picker.querySelector('.next').outerHTML = '<button class="finish">完成</button>';
+          picker.querySelector('.finish').addEventListener('click', () => {
+            window.__ops.coverCommitted = true;
+            setTimeout(() => dlg.querySelector('.js-save-btn').classList.remove('weui-desktop-btn_disabled'), 600);
+            picker.remove();
+          });
+        });
+      });
       dlg.querySelector('.js-save-btn').addEventListener('click', () => {
+        if (!window.__ops.coverCommitted || dlg.querySelector('.js-save-btn').classList.contains('weui-desktop-btn_disabled')) return;
         const appear = () => addRow({ title: ' 上传的新音频 ', mediaId: 'media-7' });
         if (cfg.audio.delayRowMs) setTimeout(appear, cfg.audio.delayRowMs); else appear();
       });
@@ -246,16 +347,22 @@ const COLLECT = `
     accountValue: document.querySelector('#dlg input.frm_input')?.value ?? null,
     urlValue: document.querySelector('.article_url_setting')?.textContent ?? null,
     urlPopoverOpen: document.getElementById('url-popover').style.display !== 'none',
-    insertedMediaId: document.querySelector('.ProseMirror mpvoice, .ProseMirror [data-mediaid]')?.getAttribute('data-mediaid') ?? null,
-    tickedRows: [...document.querySelectorAll('.audio_item input:checked')].map((el) => el.closest('li').getAttribute('data-mediaid')),
+    insertedMediaId: document.querySelector('.ProseMirror mpvoice, .ProseMirror [data-mediaid]')?.getAttribute('data-mediaid') ?? document.querySelector('.ProseMirror mp-common-mpaudio')?.getAttribute('voice_encode_fileid') ?? null,
+    tickedRows: [...document.querySelectorAll('.audio_item input:checked')].map((el) => el.closest('li').getAttribute('data-mediaid') ?? el.closest('li').getAttribute('data-fixture-id')),
     dialogsOpen: [...document.querySelectorAll('.weui-desktop-dialog__wrp')]
       .filter((w) => w.style.display !== 'none')
       .map((w) => w.id),
   };
 })()`;
 
-async function runScenario(scenario: string): Promise<Facts> {
+export async function runScenario(scenario: string): Promise<Facts> {
     const configs: Record<string, ScenarioConfig> = {
+        'cover-hidden-templates': { run: 'cover' },
+        'cover-second-page': { run: 'cover', coverSecondPage: true },
+        'cover-near-match': { run: 'cover', coverNearMatch: true },
+        'cover-derived': { run: 'cover', coverDerived: true },
+        'cover-wrong-crop-source': { run: 'cover', coverDerived: true, coverWrongCropSource: true },
+        'cover-stale-commit': { run: 'cover', coverDerived: true, coverStaleCommit: true },
         '0318-url-commit': {
             run: 'enrich',
             url: { delayCommitMs: 350 },
@@ -316,7 +423,7 @@ async function runScenario(scenario: string): Promise<Facts> {
         // AC3+: an exact (whitespace/NBSP-normalized) material is reused — ticked, never re-uploaded.
         'audio-exact-reuse': {
             run: 'audio',
-            audio: { rows: [{ title: ' 每日 AI 资讯 ', mediaId: 'media-9' }] },
+            audio: { rows: [{ title: ' 每日 AI 资讯 ', mediaId: 'media-9' }], modern: true },
             title: '每日  AI 资讯',
         },
         // AC3−: only a prefix match exists → named warning, no arbitrary selection, no upload.
@@ -342,6 +449,16 @@ async function runScenario(scenario: string): Promise<Facts> {
             run: 'audio',
             audio: { uploadForm: true, delayRowMs: 600 },
             title: '上传的新音频',
+        },
+        'audio-upload-reuse-cover': {
+            run: 'audio',
+            audio: { uploadForm: true, delayRowMs: 600, existingCoverName: 'pending' },
+            title: '上传的新音频',
+        },
+        'audio-cover-loading-refused': {
+            run: 'audio',
+            audio: { uploadForm: true, coverLoadingForever: true },
+            title: '每日 AI 资讯',
         },
         // AC2−: 插入 succeeds but the body node never appears → VERIFY fails the step (never success).
         'audio-verify-unknown': {
@@ -373,6 +490,12 @@ async function runScenario(scenario: string): Promise<Facts> {
         const coverPath = join(tmp, 'cover.png');
         await writeFile(audioPath, Buffer.from('ID3 fake mp3'));
         await writeFile(coverPath, Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex'));
+        if (cfg.audio?.existingCoverName) {
+            const hash = new Bun.CryptoHasher('sha256')
+                .update(new Uint8Array(await Bun.file(coverPath).arrayBuffer()))
+                .digest('hex');
+            cfg.audio.existingCoverName = `kk-cover-${hash.slice(0, 32)}.png`;
+        }
 
         const browser = await chromium.launch({ headless: true });
         try {
@@ -405,6 +528,19 @@ async function runScenario(scenario: string): Promise<Facts> {
             let audioResult: string | undefined;
             if (cfg.run === 'enrich') {
                 warnings = await enrichArticle(wrapped, cfg.meta ?? {});
+            } else if (cfg.run === 'cover') {
+                const runCover = (
+                    coverFlow as unknown as {
+                        setCover: (
+                            page: unknown,
+                            source: string,
+                            deps: unknown,
+                            identity: unknown,
+                        ) => Promise<string | null>;
+                    }
+                ).setCover;
+                const warning = await runCover(wrapped, 'library', { stepTimeoutMs: 1000 }, { requested: coverPath });
+                warnings = warning === null ? [] : [warning];
             } else {
                 audioResult = await insertAudioMaterial(wrapped, {
                     title: cfg.title ?? '',
@@ -416,20 +552,23 @@ async function runScenario(scenario: string): Promise<Facts> {
             await browser.close();
             return { scenario, warnings, ops: { ...ops, audioResult } };
         } finally {
-            await browser.close().catch(() => {});
+            try {
+                await browser.close();
+            } catch {}
         }
     } finally {
         await rm(tmp, { recursive: true, force: true });
     }
 }
 
-const scenario = process.argv[2] ?? '';
-runScenario(scenario)
-    .then((facts) => {
+if (import.meta.main) {
+    const scenario = process.argv[2] ?? '';
+    try {
+        const facts = await runScenario(scenario);
         // Last line of stdout is the machine contract for the bun:test driver.
         console.log(JSON.stringify(facts));
-    })
-    .catch((error: unknown) => {
+    } catch (error: unknown) {
         console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
         process.exit(1);
-    });
+    }
+}

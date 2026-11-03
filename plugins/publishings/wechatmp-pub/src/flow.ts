@@ -1,7 +1,20 @@
+import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { extname, join } from 'node:path';
 import type { Content, Result } from '@gobing-ai/kk-core';
 import { ResultSchema } from '@gobing-ai/kk-core';
 import { trySelectors } from '@gobing-ai/publish-harness';
-import { expectOutcome, pasteHtml, readScopedSignal, uploadFile } from '@gobing-ai/publish-harness/browser';
+import {
+    DEFAULT_SIGNAL_CONTAINERS,
+    expectOutcome,
+    mkdirExclusive,
+    pasteHtml,
+    readScopedSignal,
+    rmdir,
+    uploadFile,
+    waitUntil,
+} from '@gobing-ai/publish-harness/browser';
+import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import type { Page } from 'playwright';
 import { readLocalImageBytes } from './cgi';
 import {
@@ -30,6 +43,7 @@ import {
     findSelector,
     followNewPage,
     modalState,
+    sanitizeSessionEvidence,
     tryFindSelector,
     type WechatPage,
     waitForVisible,
@@ -69,9 +83,18 @@ const AUTHOR_INPUT = ['input#author', 'input.js_author'];
 /** The editor's own image input (§3: `accept="image/gif,image/jpeg,image/jpg,image/png,image/svg,image/webp"`). */
 const IMAGE_FILE_INPUT = ['input[type="file"][accept*="image/"]', 'input[type="file"][accept*=".png"]'];
 
-/** `一键排版` (the format hint's trio is a LABEL, not a menu — see applyLayout). */
+/** `一键排版` and its measured UEditor menu (see applyLayout). */
 const LAYOUT_CONTROL = ['button:has-text("一键排版")', 'div.ailayout-btn_wrp', 'div.ailayout-btn_label'];
-const LAYOUT_TARGET = ['div[role="menuitem"]:has-text("匹配目标格式")', 'li:has-text("匹配目标格式")'];
+const LAYOUT_TARGET = [
+    'div.edui-popup:visible .edui-pastecontainer > .edui-button > div.edui-default:nth-child(2)',
+    'div[role="menuitem"]:has-text("匹配目标格式")',
+    'li:has-text("匹配目标格式")',
+];
+/** November 2 live console: the layout control opens a full-page preview with this commit action. */
+const LAYOUT_PREVIEW_APPLY = ['button:has-text("使用此排版")', 'a:has-text("使用此排版")', 'text=使用此排版'];
+const LAYOUT_TARGET_MARKER = '__KK_WECHAT_LAYOUT_TARGET__';
+const LAYOUT_SAVE_STATE_MARKER = '__KK_WECHAT_LAYOUT_SAVE_STATE__';
+const LEGACY_EDITOR_READY_MARKER = '__KK_WECHAT_LEGACY_EDITOR_READY__';
 
 /**
  * 封面 has NO file input (§5.2): the panel offers `修改` / `换一张` / `从正文选择`
@@ -80,17 +103,34 @@ const LAYOUT_TARGET = ['div[role="menuitem"]:has-text("匹配目标格式")', 'l
  * material's cover, so the library holds exactly the image the operator wants (2026-10-10);
  * `从正文选择` remains selectable via `metadata.wechatmp.coverSource`.
  */
-const COVER_PANEL_OPEN = ['a.js_selectCoverFromContent', '.js_cover_btn_area', 'text=换一张', 'text=修改'];
-const COVER_FROM_CONTENT = ['a.js_selectCoverFromContent', 'text=从正文选择'];
-const COVER_FROM_LIBRARY = ['a.js_imagedialog', 'text=从图片库选择'];
+const COVER_PANEL_OPEN = [
+    '.js_cover_btn_area:visible',
+    'text=换一张',
+    'text=修改',
+    'a.js_selectCoverFromContent:visible',
+];
+const COVER_FROM_CONTENT = [
+    '#js_cover_area a.js_selectCoverFromContent:visible',
+    'a.js_selectCoverFromContent:visible',
+];
+const COVER_FROM_LIBRARY = ['#js_cover_area a.js_imagedialog:visible', 'a.js_imagedialog:visible'];
 /** The library picker is two-stage: pick the image, then 下一步, then the dialog's 确认. */
-const COVER_LIBRARY_NEXT = ['button:has-text("下一步")'];
+const COVER_LIBRARY_NEXT = [
+    '.weui-desktop-dialog:visible:has(h3:has-text("选择图片")) button:has-text("下一步")',
+    'button:has-text("下一步")',
+];
 /**
  * The panel's own image list is NOT `<img>`-based (measured `panels: 5, imgs: 0`), so the item and
  * confirm selectors below are candidate shapes and **not** re-measured (§6 still lists the widget as
  * to do). A miss is recorded as a warning, never as a false cover claim.
  */
-const COVER_CONFIRM = ['button:has-text("确定")', 'button:has-text("确认")', 'button:has-text("完成")'];
+const COVER_CONFIRM = [
+    '.weui-desktop-dialog:visible:has(h3:has-text("编辑封面")) button:text-is("确认")',
+    '.weui-desktop-dialog:visible:has(h3:has-text("选择图片")) button:has-text("完成"):not(.weui-desktop-btn_disabled)',
+    'button:has-text("确定")',
+    'button:has-text("确认")',
+    'button:has-text("完成")',
+];
 
 /** The controls that close whatever modal the cover step left open, most specific first. */
 const DIALOG_DISMISS = [
@@ -229,25 +269,68 @@ const AUDIO_COVER_INPUT = [
     // skipped on every run and the draft shipped with no cover.
     '.weui-desktop-dialog input[type="file"][accept*="image"]',
     '.audio_dialog input[type="file"][accept*="image"]',
+    // The image chooser portals this input outside its dialog; the toolbar input excludes BMP.
+    'input[type="file"][accept*="image/bmp"]',
 ];
 const AUDIO_TITLE_INPUT = [
     '.weui-desktop-dialog input[placeholder*="标题"]',
     '.audio_dialog input[placeholder*="标题"]',
     '.audio_dialog input.frm_input',
 ];
-const UPLOAD_SAVE = ['.weui-desktop-dialog button:has-text("保存")', 'button:has-text("保存")'];
+const UPLOAD_SAVE = ['.audio-upload-dialog button:text-is("保存")', '.weui-desktop-dialog button:text-is("保存")'];
 
 /** The recorded save control. `发表` is never clicked on a draft run (ADR-022/ADR-026). */
 const SAVE_DRAFT = ['button:has-text("保存为草稿")', 'text=保存为草稿'];
 const PUBLISH_SEND = ['button.mass_send', '.mass_send', 'button:has-text("发表")'];
-const PUBLISH_CONFIRM = ['div.weui-desktop-dialog button:has-text("确定")', 'button:has-text("确定")'];
+/** Live 2026-11-02 mass-send dialog: the final action is the green 发表 button, not 确定. */
+const PUBLISH_DIALOG = ['div.weui-desktop-dialog:visible:has(h3.weui-desktop-dialog__title:text-is("发表"))'];
+const PUBLISH_NOTIFY_TOGGLE = [
+    'div.weui-desktop-dialog:visible:has(h3.weui-desktop-dialog__title:text-is("发表")) .mass_send__notify .weui-desktop-switch__input:visible',
+];
+const PUBLISH_NOTIFY_STATE_SCRIPT = `(() => {
+    const dialog = [...document.querySelectorAll('.weui-desktop-dialog')].find((candidate) => {
+        const title = candidate.querySelector('h3.weui-desktop-dialog__title')?.textContent?.trim();
+        const rect = candidate.getBoundingClientRect();
+        return title === '发表' && rect.width > 0 && rect.height > 0;
+    });
+    const input = dialog?.querySelector('.mass_send__notify input.weui-desktop-switch__input');
+    return input instanceof HTMLInputElement ? input.checked : null;
+})()`;
+const PUBLISH_FINAL = [
+    'div.weui-desktop-dialog:visible:has(h3.weui-desktop-dialog__title:text-is("发表")) .mass-send__footer button.weui-desktop-btn_primary:text-is("发表")',
+];
+/** Known pre-confirmation stale-version dialog action; it is never a generic retry control. */
+const PUBLISH_VIEW_LATEST = [
+    'div.version_fail_dialog:visible a.btn_primary.js_btn:text-is("查看新草稿"):visible',
+    'div.weui-desktop-dialog:visible button:text-is("查看新草稿")',
+    'div.weui-desktop-dialog:visible a:text-is("查看新草稿")',
+    'div.weui-desktop-dialog:visible [role="button"]:text-is("查看新草稿")',
+    'div.weui-desktop-dialog:visible button:has-text("查看新草稿")',
+];
 const PUBLISH_SUCCESS = ['发表成功', '已发表'];
+const PUBLIC_SAVE_REFUSAL = ['当前编辑的草稿不是最新版本'];
+const PUBLIC_SAVE_REFUSAL_CONTAINERS = [
+    ...DEFAULT_SIGNAL_CONTAINERS,
+    'div.version_fail_dialog:visible',
+    'div.weui-desktop-dialog:visible',
+];
+
+async function readStaleVersionRefusal(page: Page): Promise<string | null> {
+    return readScopedSignal(page, PUBLIC_SAVE_REFUSAL, PUBLIC_SAVE_REFUSAL_CONTAINERS);
+}
 /**
  * The platform's own refusal/hint lines (§5, §5.3) — relayed as the Result's actionable message
  * instead of a generic failure. `系统繁忙，请稍后再试` is deliberately absent: it appears routinely
  * and is NOT a failure indicator (§5.1).
  */
-const PLATFORM_REFUSAL = ['内容不完整，无法发表', '请补充封面图', '未设置头像和名称', '公众号尚未实名'];
+const PLATFORM_REFUSAL = [
+    '内容不完整，无法发表',
+    '请补充封面图',
+    '必须插入一张图片',
+    '未设置头像和名称',
+    '公众号尚未实名',
+    '当前编辑的草稿不是最新版本',
+];
 
 /** The 草稿箱 row's own update label (§5.1: `kk-discovery-文章 请忽略 … 更新于 13:12`). */
 const DRAFT_STAMP = '更新于';
@@ -301,7 +384,7 @@ interface ModeEntry {
 }
 
 function fail(error: string): Result {
-    return ResultSchema.parse({ ok: false, target: TARGET, error });
+    return ResultSchema.parse({ ok: false, target: TARGET, error: sanitizeSessionEvidence(error) });
 }
 
 function sleep(ms: number): Promise<void> {
@@ -578,34 +661,200 @@ async function insertBody(page: WechatPage, deps: ModeRunDeps): Promise<void> {
 }
 
 /**
+ * The current UEditor build keeps the layout choices as nested, unlabelled divs rather than
+ * role/menuitem nodes. Playwright's visibility probe rejects those descendants even while the
+ * popup is visibly open, so the measured DOM click is kept in a page-side seam and requires one
+ * uniquely named target. No arbitrary first-match click is safe here.
+ */
+function nativeLayoutTargetScript(): string {
+    return `/* ${LAYOUT_TARGET_MARKER} */ (() => {
+        const popups = [...document.querySelectorAll('.edui-popup')].filter((popup) => {
+            const rect = popup.getBoundingClientRect();
+            const style = getComputedStyle(popup);
+            return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+        });
+        const targets = popups
+            .flatMap((popup) => [...popup.querySelectorAll('.edui-pastecontainer > .edui-button > div')])
+            .filter((candidate) => candidate.textContent?.trim() === '匹配目标格式');
+        if (targets.length !== 1) return JSON.stringify({ state: targets.length === 0 ? 'missing' : 'ambiguous' });
+        const target = targets[0];
+        if (!(target instanceof HTMLElement)) return JSON.stringify({ state: 'missing' });
+        target.click();
+        return JSON.stringify({ state: 'clicked' });
+    })()`;
+}
+
+/** The measured editor autosave rail: it is the native completion acknowledgement for layout. */
+function nativeLayoutSaveStateScript(): string {
+    return `/* ${LAYOUT_SAVE_STATE_MARKER} */ (() => {
+        const container = document.querySelector('#auto_save_container');
+        if (!container) return 'unknown';
+        if (container.textContent?.includes('自动保存中')) return 'saving';
+        if (container.querySelector('.save_done')?.textContent?.includes('已保存')) return 'saved';
+        return 'unknown';
+    })()`;
+}
+
+/**
+ * The legacy `media/appmsg_edit` editor has no active v2 autosave rail. Its measured manual-save
+ * readiness is narrower: the canonical route is explicit, the v2 container is empty, the legacy
+ * autosave and save-success markers exist but are hidden, and exactly one visible 保存为草稿 control
+ * remains. Unknown DOM shapes stay unknown; they are never treated as idle.
+ */
+function nativeLegacyEditorReadyScript(): string {
+    return `/* ${LEGACY_EDITOR_READY_MARKER} */ (() => {
+        const current = new URL(window.location.href);
+        const canonicalLegacyRoute =
+            current.origin === 'https://mp.weixin.qq.com' &&
+            current.pathname === '/cgi-bin/appmsg' &&
+            current.searchParams.get('t') === 'media/appmsg_edit' &&
+            current.searchParams.get('action') === 'edit' &&
+            (current.searchParams.get('appmsgid') ?? '').trim() !== '' &&
+            current.searchParams.get('isNew') !== '1';
+        if (!canonicalLegacyRoute) return 'unknown';
+        const autoSaveContainer = document.querySelector('#auto_save_container');
+        const legacyAutoSave = document.querySelector('#js_autosave');
+        const saveSuccessMarkers = [...document.querySelectorAll(
+            '#js_save_success, #js_save_success_with_ad, #js_save_success_with_ad_op',
+        )];
+        if (!autoSaveContainer || !legacyAutoSave || saveSuccessMarkers.length === 0) return 'unknown';
+        const hidden = (node) => {
+            const style = window.getComputedStyle(node);
+            const rect = node.getBoundingClientRect();
+            return style.display === 'none' || style.visibility === 'hidden' || rect.width === 0 || rect.height === 0;
+        };
+        const visibleSaveControls = [...document.querySelectorAll('button, a')].filter((node) => {
+            const text = (node.textContent ?? '').replace(/[\\s\\u00a0]+/g, '').trim();
+            if (text !== '保存为草稿') return false;
+            const style = window.getComputedStyle(node);
+            const rect = node.getBoundingClientRect();
+            return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+        });
+        return autoSaveContainer.textContent?.trim() === '' &&
+            hidden(legacyAutoSave) &&
+            saveSuccessMarkers.every(hidden) &&
+            visibleSaveControls.length === 1
+            ? 'ready'
+            : 'unknown';
+    })()`;
+}
+
+async function clickNativeLayoutTarget(page: WechatPage, deps: ModeRunDeps): Promise<boolean> {
+    let state: string = 'missing';
+    const observed = await waitUntil(
+        async () => {
+            const raw = await page.evaluate(nativeLayoutTargetScript()).catch(() => null);
+            if (typeof raw !== 'string') return false;
+            try {
+                const parsed = JSON.parse(raw) as { state?: string };
+                if (parsed.state === 'ambiguous') {
+                    state = 'ambiguous';
+                    return true;
+                }
+                if (parsed.state === 'clicked') {
+                    state = 'clicked';
+                    return true;
+                }
+            } catch {
+                state = 'missing';
+            }
+            return false;
+        },
+        Math.min(deps.stepTimeoutMs, 5_000),
+        deps.pollMs,
+    );
+    if (!observed) return false;
+    if (state === 'ambiguous')
+        throw new Error(
+            '一键排版: 匹配目标格式 was ambiguous in the visible native menu — composition stopped before submission',
+        );
+    return state === 'clicked';
+}
+
+async function waitForNativeLayoutSave(page: WechatPage, deps: ModeRunDeps): Promise<void> {
+    let sawSaving = false;
+    const saved = await waitUntil(
+        async () => {
+            const state = await page.evaluate(nativeLayoutSaveStateScript()).catch(() => 'unknown');
+            if (state === 'saving') sawSaving = true;
+            return sawSaving && state === 'saved';
+        },
+        Math.min(deps.stepTimeoutMs, 15_000),
+        deps.pollMs,
+    );
+    if (!saved)
+        throw new Error(
+            '一键排版: native auto-save did not transition from 自动保存中... to 已保存 within the layout deadline — composition stopped before submission',
+        );
+}
+
+/**
  * `一键排版` applies the platform's own layout to the pasted body. The operator walk of 2026-10-10 shows
- * the control is present and expected to be applied, so a click that leads nowhere is now REPORTED
+ * the control is present and expected to be applied, so a click that leads nowhere is now rejected
  * rather than swallowed (the earlier version failed silently, which is why 正文 came out unformatted).
  *
  * The format set (`保留源格式` / `匹配目标格式` / `仅保留文本`) is what we want when it renders as a menu;
  * `匹配目标格式` is the correct choice for markdown-derived content. A build where the trio is only a
- * label (the 2026-10-05 dogfood reading) still gets the bare control click, and says so.
+ * label (the 2026-10-05 dogfood reading) is accepted only when its own measured commit signal is
+ * available; an unrecognized control fails closed before submission.
  */
 async function applyLayout(page: WechatPage, deps: ModeRunDeps): Promise<string | null> {
     // Measured 2026-10-13: the current editor build exposes no 一键排版 control at all. An absent
     // control is the platform's layout — silently skip; only a found-but-failing control warns.
     const control = await tryFindSelector(page, LAYOUT_CONTROL, Math.min(deps.stepTimeoutMs, 5_000));
     if (control === undefined) return null;
+    const before = deps.pages().length;
     try {
         await clickSelector(page, control, deps.stepTimeoutMs);
     } catch (error) {
         return `一键排版: click failed — ${error instanceof Error ? error.message : String(error)}`;
     }
-    const option = await tryFindSelector(page, LAYOUT_TARGET, 5_000);
+    if (await clickNativeLayoutTarget(page, deps)) {
+        await waitForNativeLayoutSave(page, deps);
+        return null;
+    }
+    let layoutPage = page;
+    let option: string | undefined;
+    await waitUntil(
+        async () => {
+            for (const candidate of [...deps.pages().slice(before), page]) {
+                const found = await trySelectors(candidate, [...LAYOUT_PREVIEW_APPLY, ...LAYOUT_TARGET]);
+                if (found.found && found.selector) {
+                    layoutPage = candidate;
+                    option = found.selector;
+                    return true;
+                }
+            }
+            return false;
+        },
+        Math.min(deps.stepTimeoutMs, 15_000),
+    );
+    if (option !== undefined && LAYOUT_PREVIEW_APPLY.includes(option)) {
+        const selected = option;
+        await clickSelector(layoutPage, selected, deps.stepTimeoutMs);
+        const closed = await waitUntil(
+            async () => {
+                if (!deps.pages().includes(layoutPage)) return true;
+                const control = layoutPage.locator(selected).first();
+                return !(await control.isVisible());
+            },
+            Math.min(deps.stepTimeoutMs, 5_000),
+        );
+        if (!closed)
+            throw new Error('一键排版: 使用此排版 did not close the preview — composition stopped before submission');
+        return null;
+    }
     if (option === undefined) {
-        // Measured 2026-10-21 with a body in the editor: `div#ai_layout_container > div.ailayout-btn_wrp`
-        // is present and clickable, and no option set ever renders (only a hidden `ailayout-edu_tips`
-        // onboarding block). Nothing programmable is left to click, so name the finding instead of
-        // guessing at the body's formatting.
-        return '一键排版: the control exists but this build renders no 匹配目标格式 option (measured 2026-10-21 with a body in place) — layout skipped, apply 一键排版 by hand before publishing';
+        if (deps.pages().length > before)
+            throw new Error(
+                '一键排版: a new preview tab opened without a recognized commit action — composition stopped before submission',
+            );
+        throw new Error(
+            '一键排版: the visible control exposed no recognized commit action — composition stopped before submission',
+        );
     }
     try {
-        await clickSelector(page, option, 5_000);
+        await clickSelector(layoutPage, option, 5_000);
         return null;
     } catch (error) {
         return `一键排版: 匹配目标格式 not applied — ${error instanceof Error ? error.message : String(error)}`;
@@ -637,6 +886,26 @@ function baseName(path: string): string {
     return path.split(/[\\/]/).pop() ?? path;
 }
 
+/** A stable name binds the library choice to these cover bytes across interrupted retries. */
+async function coverLibraryName(path: string): Promise<string> {
+    if (!(await Bun.file(path).exists())) return baseName(path);
+    const hash = new Bun.CryptoHasher('sha256')
+        .update(new Uint8Array(await Bun.file(path).arrayBuffer()))
+        .digest('hex');
+    return `kk-cover-${hash.slice(0, 32)}${extname(path).toLowerCase()}`;
+}
+
+function coverAssetIdentity(value: string): string {
+    try {
+        const url = new URL(value);
+        return url.hostname === 'mmbiz.qpic.cn'
+            ? `${url.hostname}${url.pathname.replace(/\/(?:0|300|640|1080)$/, '')}`
+            : value;
+    } catch {
+        return value;
+    }
+}
+
 /** The identities `setCover` can accept for a candidate: the requested article image and/or the
  *  upload binding actually observed going into the audio form. Either is optional; at least one
  *  must produce a UNIQUE exposed match before anything is clicked (task 0260 R1). */
@@ -655,7 +924,7 @@ interface CoverIdentity {
  * `#js_cover_area` is read back: the empty state (`add_cover` icon still visible) or an unreadable
  * preview is a named warning, never a success claim (task 0260 R1).
  */
-async function setCover(
+export async function setCover(
     page: WechatPage,
     source: 'library' | 'body',
     deps: Pick<ModeRunDeps, 'stepTimeoutMs'>,
@@ -672,8 +941,9 @@ async function setCover(
     // A cover miss is a warning, never a gate — so the panel must not outlive the step that opened
     // it (see {@link dismissOpenDialog} for what its footer blocked on 2026-10-12).
     const warn = async (message: string): Promise<string> => {
+        const inventory = await openDialogInventory(page);
         await dismissOpenDialog(page);
-        return message;
+        return inventory ? `${message} (dialogs: ${inventory})` : message;
     };
     try {
         const open = await tryFindSelector(page, COVER_PANEL_OPEN, Math.min(deps.stepTimeoutMs, 5_000));
@@ -682,9 +952,18 @@ async function setCover(
                 'cover: the panel offers none of 从正文选择 / 从图片库选择 — the platform default (默认首图为封面) is all this run has',
             );
         await clickSelector(page, open, deps.stepTimeoutMs);
-        const pick = await tryFindSelector(page, picker, Math.min(deps.stepTimeoutMs, 8_000));
-        if (pick === undefined) return await warn(`cover: ${what} was not offered by the open cover panel`);
-        await clickSelector(page, pick, deps.stepTimeoutMs);
+        const alreadyOpen =
+            source === 'library' &&
+            (await tryFindSelector(
+                page,
+                ['.weui-desktop-dialog:visible:has(h3:has-text("选择图片"))'],
+                Math.min(deps.stepTimeoutMs, 1_000),
+            )) !== undefined;
+        if (!alreadyOpen) {
+            const pick = await tryFindSelector(page, picker, Math.min(deps.stepTimeoutMs, 8_000));
+            if (pick === undefined) return await warn(`cover: ${what} was not offered by the open cover panel`);
+            await clickSelector(page, pick, deps.stepTimeoutMs);
+        }
         if (wanted.length === 0)
             return await warn(`cover: no requested cover file identity to match against — ${what} not driven`);
         // Identify before clicking: the item list is not <img>-based (§5.2) and never sorted the way
@@ -697,19 +976,59 @@ async function setCover(
                 const el = row.querySelector('[title], [data-name], [data-file_name]') ?? row;
                 const attrs = [el.getAttribute?.('title'), el.getAttribute?.('data-name'), el.getAttribute?.('data-file_name')];
                 const text = [...row.querySelectorAll('[class*="name" i], [class*="title" i]')].map((n) => n.textContent ?? '');
-                return [...attrs, ...text].map((v) => (v ?? '').trim()).find((v) => v.length > 0) ?? '';
+                return [...attrs, ...text].map((v) => (v ?? '').trim()).filter((v) => v.length > 0);
             };
-            const hits = rows.filter((row) => wanted.some((w) => nameOf(row) === w));
+            const hits = rows.filter((row) => wanted.some((w) => nameOf(row).includes(w)));
             if (hits.length === 0) return 'missing';
             if (hits.length > 1) return 'ambiguous';
             const row = hits[0];
-            row.querySelector('input[type=checkbox], [role=checkbox]')?.click();
-            row.click();
+            if (!row.classList.contains('selected')) row.click();
             const checked = row.querySelector('input[type=checkbox], [role=checkbox]');
-            const src = row.querySelector('img')?.src ?? (row.querySelector('[style*="background-image"]')?.style.backgroundImage.match(/url("?([^")]+)"?)/)?.[1] ?? '');
+            const css = row.querySelector('[style*="background-image"]')?.style.backgroundImage ?? '';
+            const backgroundUrl = css.startsWith('url("') || css.startsWith("url('") ? css.slice(5, -2) : css.startsWith('url(') ? css.slice(4, -1) : '';
+            const src = row.querySelector('img')?.src || backgroundUrl;
             return JSON.stringify({ picked: true, src });
         })()`;
-        const rawIdentify = String(await page.evaluate(IDENTIFY));
+        let rawIdentify = 'missing';
+        await waitUntil(
+            async () => {
+                rawIdentify = String(await page.evaluate(IDENTIFY));
+                return rawIdentify !== 'missing';
+            },
+            Math.min(deps.stepTimeoutMs, 8_000),
+        );
+        const paginationScript = `(() => {
+            const dialog = [...document.querySelectorAll('.weui-desktop-dialog')].find(d => d.offsetWidth > 0 && d.querySelector('h3')?.textContent?.includes('选择图片'));
+            const labels = dialog?.querySelectorAll('.weui-desktop-pagination__num');
+            return JSON.stringify({ page: Number(labels?.[0]?.textContent ?? 0), total: Number(labels?.[1]?.textContent ?? 0) });
+        })()`;
+        for (let scanned = 0; source === 'library' && rawIdentify === 'missing' && scanned < 50; scanned += 1) {
+            const pagination = JSON.parse(String(await page.evaluate(paginationScript))) as {
+                page?: number;
+                total?: number;
+            } | null;
+            if (!(Number(pagination?.page) > 0 && Number(pagination?.page) < Number(pagination?.total))) break;
+            const nextPage = await tryFindSelector(
+                page,
+                [
+                    '.weui-desktop-dialog:visible:has(h3:has-text("选择图片")) a:has-text("下一页"):visible:not(.weui-desktop-btn_disabled)',
+                ],
+                1_000,
+            );
+            if (nextPage === undefined) break;
+            await clickSelector(page, nextPage, deps.stepTimeoutMs);
+            await page.waitForTimeout?.(500);
+            await waitUntil(
+                async () =>
+                    Boolean(
+                        await page.evaluate(
+                            `![...document.querySelectorAll('.weui-desktop-dialog .weui-desktop-loading')].some(node => node.offsetWidth > 0)`,
+                        ),
+                    ),
+                Math.min(deps.stepTimeoutMs, 8_000),
+            );
+            rawIdentify = String(await page.evaluate(IDENTIFY));
+        }
         if (rawIdentify === 'missing')
             return await warn(`cover: ${what} 未标出与请求文件同名的素材，未选择（不按首图猜测）`);
         if (rawIdentify === 'ambiguous') return await warn(`cover: ${what} 匹配到多个同名素材，身份不唯一，未选择`);
@@ -724,37 +1043,85 @@ async function setCover(
         if (next !== undefined) await clickSelector(page, next, deps.stepTimeoutMs);
         const confirm = await tryFindSelector(page, COVER_CONFIRM, Math.min(deps.stepTimeoutMs, 8_000));
         if (confirm === undefined) return await warn('cover: the choice panel offered no confirm control');
+        const selectedSrc = (selected.src ?? '').trim();
+        const cropSources: unknown = JSON.parse(
+            String(
+                await page.evaluate(`(() => {
+            const dialog = [...document.querySelectorAll('.weui-desktop-dialog')].find(d => d.offsetWidth > 0 && d.querySelector('h3')?.textContent?.trim() === '编辑封面');
+            return JSON.stringify([...(dialog?.querySelectorAll('img.crop-img') ?? [])]
+                .filter(img => img.offsetWidth > 0 && getComputedStyle(img).visibility !== 'hidden').map(img => img.src));
+        })()`),
+            ),
+        );
+        const cropBound =
+            selectedSrc !== '' &&
+            Array.isArray(cropSources) &&
+            cropSources.some(
+                (src) => typeof src === 'string' && coverAssetIdentity(src) === coverAssetIdentity(selectedSrc),
+            );
+        const beforeCommit = String(
+            await page.evaluate(`(() => {
+            const css = document.querySelector('#js_cover_area .js_cover_preview_new')?.style.backgroundImage ?? '';
+            return css.startsWith('url("') || css.startsWith("url('") ? css.slice(5, -2) : css.startsWith('url(') ? css.slice(4, -1) : '';
+        })()`),
+        );
         await clickSelector(page, confirm, deps.stepTimeoutMs);
         // Committed readback (observed capture: the preview lives under #js_cover_area; the empty
         // state keeps the `add_cover` icon visible). Poll briefly — the preview renders late.
         const READBACK = `(() => {
             const area = document.querySelector('#js_cover_area');
             if (!area) return 'noarea';
-            if (area.querySelector('.icon20_common.add_cover') && area.querySelector('.icon20_common.add_cover').offsetWidth > 0) return 'empty';
             const preview = area.querySelector('.js_cover_preview_new');
-            if (!preview || preview.offsetWidth === 0) return 'nopreview';
-            const src = preview.querySelector('img')?.src ??
-                (preview.querySelector('[style*="background-image"]')?.style.backgroundImage.match(/url("?([^")]+)"?)/)?.[1] ?? '') ||
-                (preview.querySelector('input[type=hidden]')?.value ?? '');
+            if (!preview || preview.offsetWidth === 0) {
+                return area.querySelector('.icon20_common.add_cover')?.offsetWidth > 0 ? 'empty' : 'nopreview';
+            }
+            const css = preview.style.backgroundImage || preview.querySelector('[style*="background-image"]')?.style.backgroundImage || '';
+            const backgroundUrl = css.startsWith('url("') || css.startsWith("url('") ? css.slice(5, -2) : css.startsWith('url(') ? css.slice(4, -1) : '';
+            const src = preview.querySelector('img')?.src || backgroundUrl || preview.querySelector('input[type=hidden]')?.value || '';
             return src ? src : 'unknown';
         })()`;
         let committed = '';
-        for (let read = 0; read < 5 && committed === ''; read += 1) {
-            const raw = String(await page.evaluate(READBACK).catch(() => 'error'));
-            if (raw !== '' && raw !== 'nopreview' && raw !== 'noarea') {
-                committed = raw;
-                break;
-            }
-            await page.waitForTimeout?.(600);
-        }
-        if (committed === 'empty') return await warn('cover: 确认后面板仍显示未设置封面，提交未生效');
-        if (committed === '' || committed === 'noarea' || committed === 'error')
-            return await warn('cover: 已确认但无法读取已提交封面，请手动核对');
+        let lastRead = '';
+        const observed = await waitUntil(
+            async () => {
+                lastRead = String(await page.evaluate(READBACK).catch(() => 'error'));
+                if (['', 'nopreview', 'noarea', 'empty', 'unknown', 'error'].includes(lastRead)) return false;
+                if (
+                    cropBound &&
+                    lastRead === beforeCommit &&
+                    coverAssetIdentity(lastRead) !== coverAssetIdentity(selectedSrc)
+                )
+                    return false;
+                committed = lastRead;
+                return true;
+            },
+            Math.min(deps.stepTimeoutMs, 15_000),
+            200,
+        );
+        if (!observed)
+            return await warn(
+                lastRead === 'empty'
+                    ? 'cover: 确认后面板仍显示未设置封面，提交未生效'
+                    : 'cover: 已确认但无法读取已提交封面，请手动核对',
+            );
         // Identity comparison: both sides are remote asset references from the same widget. Only an
         // exact match proves the requested asset committed; an unreadable/edited preview warns
         // rather than inventing equivalence (local paths are never compared to asset URLs).
-        const selectedSrc = (selected.src ?? '').trim();
-        if (selectedSrc === '' || (committed !== selectedSrc && !committed.includes(selectedSrc)))
+        let derivedFromBoundCrop = false;
+        try {
+            const url = new URL(committed);
+            derivedFromBoundCrop =
+                cropBound &&
+                committed !== beforeCommit &&
+                url.hostname === 'mmbiz.qpic.cn' &&
+                ['http:', 'https:'].includes(url.protocol);
+        } catch {
+            /* Unknown preview references stay unverifiable. */
+        }
+        if (
+            selectedSrc === '' ||
+            (coverAssetIdentity(committed) !== coverAssetIdentity(selectedSrc) && !derivedFromBoundCrop)
+        )
             return await warn(
                 `cover: 已提交封面的素材身份与所选不一致（selected=${selectedSrc || '未读到'} committed=${committed.slice(0, 80)}）`,
             );
@@ -795,6 +1162,7 @@ function audioBlockOf(content: Content): { title: string; audioPath: string; cov
 async function enrichArticleDraft(
     page: WechatPage,
     content: Content,
+    stepTimeoutMs: number,
 ): Promise<{ enrichWarnings: string[]; coverWarnings: string[] }> {
     const enrichMeta = content.metadata?.wechatmp;
     if (enrichMeta === undefined || typeof enrichMeta !== 'object' || Array.isArray(enrichMeta))
@@ -821,10 +1189,10 @@ async function enrichArticleDraft(
             const cover = await setCover(
                 page,
                 'library',
-                { stepTimeoutMs: 8_000 },
+                { stepTimeoutMs: Math.min(stepTimeoutMs, 8_000) },
                 // The upload binding is the image the audio form just bound (the episode cover
                 // file); `coverPath(input)` is the article's own first body image, not this.
-                { binding: audio.coverPath === '' ? undefined : audio.coverPath },
+                { binding: audio.coverPath === '' ? undefined : await coverLibraryName(audio.coverPath) },
             );
             if (cover !== null) coverWarnings.push(cover);
         }
@@ -843,8 +1211,6 @@ async function composeArticle(
     await attachImages(page, input.images, deps);
     const titlePath = await typeTitle(page, deps);
     await insertBody(page, deps);
-    const layout = await applyLayout(page, deps);
-    if (layout !== null) warnings.push(layout);
     for (const warning of [
         await fillOptional(page, DIGEST_INPUT, input.digest ?? '', '摘要', deps),
         await fillOptional(page, AUTHOR_INPUT, authorOf(deps.content), '作者', deps),
@@ -862,8 +1228,13 @@ async function composeArticle(
         });
         if (cover !== null) warnings.push(cover);
     }
-    const { enrichWarnings, coverWarnings } = await enrichArticleDraft(page, deps.content);
+    const { enrichWarnings, coverWarnings } = await enrichArticleDraft(page, deps.content, deps.stepTimeoutMs);
     warnings.push(...coverWarnings);
+    // Layout is deliberately last: 原文链接, media insertion, and cover commitment must be part of
+    // the body the platform formats, and the native auto-save acknowledgement must settle before
+    // 保存为草稿 or the public saved-editor readback begins.
+    const layout = await applyLayout(page, deps);
+    if (layout !== null) warnings.push(layout);
     return { warnings, titlePath, enrichWarnings };
 }
 
@@ -986,7 +1357,7 @@ function baseMetadata(input: ModeInput, deps: ModeRunDeps, entry: ModeEntry): Re
         artifactPaths: artifactPaths(input),
         entryPath: entry.path,
         editorCreateType: entry.createType,
-        editorUrl: entry.editor.url(),
+        editorUrl: sanitizeSessionEvidence(entry.editor.url()),
         ...(cover === undefined ? {} : { coverPath: cover }),
     };
 }
@@ -1079,6 +1450,410 @@ async function saveDraft(
     });
 }
 
+interface PublicDraftSnapshot {
+    title: string;
+    body: string;
+    media: string[];
+    cover: string;
+    originalUrl: string;
+}
+
+interface PublicSaveEvidence {
+    saveControl: string;
+    canonicalUrl: string;
+    canonicalUrlForMetadata: string;
+    saveSignal: 'canonical-url-transition+snapshot' | 'persisted-snapshot';
+    snapshot: PublicDraftSnapshot;
+}
+
+/**
+ * The public rail's only native saved-editor readiness signal is the URL the console assigns after
+ * `保存为草稿`: an existing appmsg with a concrete `appmsgid` and the editor action. The live
+ * console's saved URL omits `isNew` (the CGI draft route may include `isNew=0`), while `isNew=1`
+ * is still the unsaved editor and must be rejected. The old home 草稿箱 card is deliberately not
+ * used here — the live console has rendered that card on a different surface from the editor, and a
+ * row cannot prove that this editor is the latest version.
+ */
+function canonicalSavedEditorUrl(value: string): string | null {
+    try {
+        const url = new URL(value);
+        if (url.origin !== 'https://mp.weixin.qq.com' || url.pathname !== '/cgi-bin/appmsg') return null;
+        if (url.searchParams.get('action') !== 'edit' || url.searchParams.get('isNew') === '1') return null;
+        if ((url.searchParams.get('appmsgid') ?? '').trim() === '') return null;
+        return url.toString();
+    } catch {
+        return null;
+    }
+}
+
+/** Keep the navigation URL private while retaining a useful, credential-free receipt value. */
+function savedEditorUrlForMetadata(value: string): string {
+    return sanitizeSessionEvidence(value);
+}
+
+/** A read-only DOM snapshot used to prove the saved editor still contains the composed payload. */
+const PUBLIC_DRAFT_SNAPSHOT_SCRIPT = `/* __KK_WECHAT_PUBLISH_SNAPSHOT__ */ (() => {
+    const norm = (value) => (value ?? '').replace(/[\\s\\u00a0]+/g, ' ').trim();
+    const titleNode = document.querySelector('textarea#title, textarea.js_title');
+    const title = titleNode?.value ?? [...document.querySelectorAll('.ProseMirror[data-placeholder*="标题"]')]
+        .map((node) => node.textContent ?? '').join(' ');
+    const body = [...document.querySelectorAll('.ProseMirror:not([data-placeholder])')]
+        .map((node) => norm(node.textContent)).join('\\n');
+    const media = [
+        ...document.querySelectorAll(
+            '.ProseMirror mp-common-mpaudio, .ProseMirror mpvoice, .ProseMirror [data-mediaid], .ProseMirror audio, .ProseMirror video, .ProseMirror img',
+        ),
+    ]
+        .map((node) => node.getAttribute('data-mediaid') ?? node.getAttribute('data-id') ??
+            node.getAttribute('voice_encode_fileid') ?? node.getAttribute('data-src') ?? node.getAttribute('src') ??
+            norm(node.textContent))
+        .map(norm).filter((value) => value.length > 0);
+    const area = document.querySelector('#js_cover_area');
+    const coverNode = area?.querySelector('.js_cover_preview_new img, img, [style*="background-image"], input[type="hidden"]');
+    const cover = coverNode?.getAttribute('src') ?? coverNode?.getAttribute('value') ??
+        coverNode?.style.backgroundImage ?? '';
+    const urlArea = document.querySelector('#js_article_url_area');
+    const originalUrl = urlArea?.querySelector('input.js_url_checkbox')?.checked === true
+        ? norm(urlArea.querySelector('.article_url_setting')?.textContent) : '';
+    return JSON.stringify({ title: norm(title), body, media, cover: norm(cover), originalUrl });
+})()`;
+
+function normalizeSnapshotText(value: string): string {
+    return value.replace(/[\s\u00a0]+/g, ' ').trim();
+}
+
+/** Read only the known title/body/media/cover surfaces; unreadable evidence is never treated as equal. */
+async function readPublicDraftSnapshot(page: WechatPage): Promise<PublicDraftSnapshot | null> {
+    try {
+        const raw = await page.evaluate(PUBLIC_DRAFT_SNAPSHOT_SCRIPT);
+        const parsed = typeof raw === 'string' ? (JSON.parse(raw) as unknown) : raw;
+        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+        const value = parsed as Record<string, unknown>;
+        if (
+            typeof value.title !== 'string' ||
+            typeof value.body !== 'string' ||
+            !Array.isArray(value.media) ||
+            value.media.some((item) => typeof item !== 'string') ||
+            typeof value.cover !== 'string'
+        )
+            return null;
+        return {
+            title: normalizeSnapshotText(value.title),
+            body: normalizeSnapshotText(value.body),
+            media: value.media.map((item) => normalizeSnapshotText(item)),
+            cover: normalizeSnapshotText(value.cover),
+            originalUrl: typeof value.originalUrl === 'string' ? normalizeSnapshotText(value.originalUrl) : '',
+        };
+    } catch {
+        return null;
+    }
+}
+
+function publicSnapshotDifferences(before: PublicDraftSnapshot, after: PublicDraftSnapshot): string[] {
+    const differences: string[] = [];
+    if (before.title !== after.title) differences.push('title');
+    if (before.body !== after.body) differences.push('body');
+    // WeChat re-encodes/resizes uploaded body images on save. Its CDN preserves the opaque asset
+    // path but may switch the terminal size variant (`/0` → `/640`), so compare that stable asset
+    // identity rather than a transport URL that the platform is expected to rewrite. Audio IDs,
+    // local paths, different opaque keys, order, and cardinality remain strict mismatches.
+    const beforeMedia = before.media.map(snapshotMediaIdentity);
+    const afterMedia = after.media.map(snapshotMediaIdentity);
+    if (JSON.stringify(beforeMedia) !== JSON.stringify(afterMedia)) differences.push('media');
+    if (before.cover !== after.cover) differences.push('cover');
+    if (before.originalUrl !== after.originalUrl) differences.push('originalUrl');
+    return differences;
+}
+
+/**
+ * Preserve every media identity component except WeChat's known CDN size suffix. In particular,
+ * query parameters remain part of the comparison so a different format/transform cannot pass as a
+ * resize merely because it shares a path prefix.
+ */
+function snapshotMediaIdentity(value: string): string {
+    try {
+        const url = new URL(value);
+        if (url.hostname !== 'mmbiz.qpic.cn') return value;
+        const path = url.pathname.replace(/\/(?:0|300|640|1080)$/, '');
+        return `${url.origin}${path}${url.search}${url.hash}`;
+    } catch {
+        return value;
+    }
+}
+
+function snapshotValueIsEmpty(value: string): boolean {
+    const normalized = normalizeSnapshotText(value).toLowerCase();
+    return normalized === '' || normalized === 'url("")' || normalized === "url('')" || normalized === 'url()';
+}
+
+/** Partial Vue/Tiptap hydration is retryable; a non-empty changed identity is not. */
+function publicSnapshotIsIncomplete(expected: PublicDraftSnapshot, actual: PublicDraftSnapshot): boolean {
+    if (!snapshotValueIsEmpty(expected.title) && snapshotValueIsEmpty(actual.title)) return true;
+    if (!snapshotValueIsEmpty(expected.body) && snapshotValueIsEmpty(actual.body)) return true;
+    if (expected.media.length > actual.media.length) return true;
+    if (!snapshotValueIsEmpty(expected.cover) && snapshotValueIsEmpty(actual.cover)) return true;
+    if (expected.originalUrl !== '' && actual.originalUrl === '') return true;
+    return false;
+}
+
+/**
+ * The live console can acknowledge 保存为草稿 before media/cover hydration reaches the canonical
+ * editor (measured 2026-11-03: five partial reads before the two-media snapshot returned). Reloads
+ * are read-only; publication remains impossible until the coherent snapshot matches.
+ */
+const PUBLIC_SAVED_EDITOR_RELOAD_LIMIT = 6;
+
+function appmsgIdFromCanonical(value: string): string | null {
+    const canonical = canonicalSavedEditorUrl(value);
+    if (canonical === null) return null;
+    try {
+        const appmsgId = new URL(canonical).searchParams.get('appmsgid')?.trim();
+        return appmsgId && appmsgId.length > 0 ? appmsgId : null;
+    } catch {
+        return null;
+    }
+}
+
+/** Require two consecutive native readiness observations after any editor-version transition. */
+async function waitForPublicEditorReadiness(page: WechatPage, deps: ModeRunDeps): Promise<boolean> {
+    let consecutiveSaved = 0;
+    return waitUntil(
+        async () => {
+            const state = await page.evaluate(nativeLayoutSaveStateScript()).catch(() => 'unknown');
+            const legacyState =
+                state === 'saved'
+                    ? 'not-needed'
+                    : await page.evaluate(nativeLegacyEditorReadyScript()).catch(() => 'unknown');
+            if (state === 'saved' || legacyState === 'ready') {
+                consecutiveSaved += 1;
+                return consecutiveSaved >= 2;
+            }
+            // A fresh save transition resets the quiet window; an unreadable state is never idle
+            // evidence and must not be allowed to carry a prior saved probe across the gap.
+            consecutiveSaved = 0;
+            return false;
+        },
+        Math.min(deps.stepTimeoutMs, 15_000),
+        deps.pollMs,
+    );
+}
+
+/**
+ * Save the composed editor once, require its canonical persisted URL, reopen that URL, and compare
+ * the persisted surfaces before the one and only public click. A refusal or missing native signal
+ * stops before `发表`; no draft-box lookup or blind save retry is safe for the public rail.
+ */
+async function savePublicDraft(deps: ModeRunDeps, entry: ModeEntry): Promise<Result | PublicSaveEvidence> {
+    const composed = await readPublicDraftSnapshot(entry.editor);
+    if (composed === null)
+        return fail(
+            'public save readiness: the composed editor snapshot (title/body/media/cover) was unreadable; no publish click attempted',
+        );
+
+    const platformMetadata = deps.content.metadata?.wechatmp;
+    const requestedUrl =
+        platformMetadata !== null && typeof platformMetadata === 'object' && 'originalUrl' in platformMetadata
+            ? platformMetadata.originalUrl
+            : undefined;
+    if (typeof requestedUrl === 'string' && normalizeSnapshotText(requestedUrl) !== composed.originalUrl)
+        return fail('public save readiness: requested 原文链接 was not committed; no publish click attempted');
+
+    const canonicalUrlBeforeSave = canonicalSavedEditorUrl(entry.editor.url());
+    await sleep(deps.submitSettleMs);
+    if ((await closeOpenDialogs(entry.editor)) !== 'closed')
+        return fail('public save readiness: a residual editor dialog blocked 保存为草稿; no publish click attempted');
+    const saveControl = await findSelector(entry.editor, SAVE_DRAFT, '保存为草稿 control', deps.stepTimeoutMs);
+    if (!entry.editor.saveDraftAndWait)
+        return fail(
+            'public save readiness: the native 保存为草稿 acknowledgement probe was unavailable; no publish click attempted',
+        );
+    try {
+        await entry.editor.saveDraftAndWait(saveControl, deps.draftTimeoutMs);
+    } catch {
+        return fail(
+            'public save readiness: native 保存为草稿 was not acknowledged successfully; no publish click attempted',
+        );
+    }
+
+    let canonicalUrl: string | null = null;
+    let refusal: string | null = null;
+    const saved = await waitUntil(
+        async () => {
+            refusal = await readStaleVersionRefusal(asPlaywrightPage(entry.editor)).catch(() => null);
+            if (refusal !== null) return true;
+            canonicalUrl = canonicalSavedEditorUrl(entry.editor.url());
+            return canonicalUrl !== null;
+        },
+        deps.draftTimeoutMs,
+        deps.pollMs,
+    );
+    if (refusal !== null) return fail(`public save refused by ${TARGET}: ${refusal}; no publish click attempted`);
+    if (!saved || canonicalUrl === null) {
+        return fail(
+            `public save readiness: 保存为草稿 did not expose a canonical saved editor URL (action=edit with appmsgid, not isNew=1) within ${deps.draftTimeoutMs}ms; no publish click attempted`,
+        );
+    }
+    const savedCanonicalUrl = canonicalUrl;
+
+    // A saved editor can already be on an existing canonical URL. That URL is navigation evidence,
+    // not proof that this click completed; the persisted snapshot below is the independent save proof.
+    await sleep(Math.min(Math.max(deps.pollMs, 25), 500));
+    await entry.editor.goto(savedCanonicalUrl, { timeout: deps.stepTimeoutMs });
+    let reloaded: PublicDraftSnapshot | null = null;
+    let reloadRefusal: string | null = null;
+    let reloads = 0;
+    let lastReloadAt = Date.now();
+    const reloadIntervalMs = Math.min(Math.max(deps.pollMs * 4, 50), 2_000);
+    const canonicalUrlWasPreexisting = canonicalUrlBeforeSave === savedCanonicalUrl;
+    await waitUntil(
+        async () => {
+            reloadRefusal = await readStaleVersionRefusal(asPlaywrightPage(entry.editor)).catch(() => null);
+            if (reloadRefusal !== null) return true;
+            if (canonicalSavedEditorUrl(entry.editor.url()) === null) return false;
+            reloaded = await readPublicDraftSnapshot(entry.editor);
+            if (reloaded === null) return false;
+            const differences = publicSnapshotDifferences(composed, reloaded);
+            if (differences.length === 0) return true;
+            if (!publicSnapshotIsIncomplete(composed, reloaded)) return true;
+            if (reloads >= PUBLIC_SAVED_EDITOR_RELOAD_LIMIT) return true;
+            if (Date.now() - lastReloadAt < reloadIntervalMs) return false;
+            reloads += 1;
+            lastReloadAt = Date.now();
+            await entry.editor.goto(savedCanonicalUrl, { timeout: deps.stepTimeoutMs });
+            return false;
+        },
+        deps.draftTimeoutMs,
+        deps.pollMs,
+    );
+    if (reloadRefusal !== null)
+        return fail(`public saved-editor refusal by ${TARGET}: ${reloadRefusal}; no publish click attempted`);
+    if (reloaded === null)
+        return fail(
+            `public saved-editor readiness: the canonical editor reopened but its title/body/media/cover snapshot was unreadable within ${deps.draftTimeoutMs}ms; no publish click attempted`,
+        );
+    const differences = publicSnapshotDifferences(composed, reloaded);
+    if (differences.length > 0)
+        return fail(
+            `public saved editor content mismatch before publication (${differences.join(', ')}); no publish click attempted`,
+        );
+
+    // The canonical snapshot can become readable before the editor's own autosave finishes. A
+    // mass-send click in that interval is rejected by WeChat as a stale draft even though every
+    // persisted field already matches; require two consecutive native readiness probes before handing
+    // control to publishContent. The v2 rail accepts 已保存; the measured legacy editor has its own
+    // explicit manual-save markers. A saving → saved transition and an already-idle editor are accepted;
+    // this is a readiness guard, not a publish retry.
+    const autoSaveSettled = await waitForPublicEditorReadiness(entry.editor, deps);
+    if (!autoSaveSettled)
+        return fail(
+            `public saved-editor readiness: native 保存状态 did not provide two consecutive recognized readiness probes within ${Math.min(deps.stepTimeoutMs, 15_000)}ms; no publish click attempted`,
+        );
+    return {
+        saveControl,
+        canonicalUrl: savedCanonicalUrl,
+        canonicalUrlForMetadata: savedEditorUrlForMetadata(savedCanonicalUrl),
+        saveSignal: canonicalUrlWasPreexisting ? 'persisted-snapshot' : 'canonical-url-transition+snapshot',
+        snapshot: composed,
+    };
+}
+
+interface StaleVersionRecovery {
+    editor: WechatPage;
+    canonicalUrl: string;
+    canonicalUrlForMetadata: string;
+}
+
+/**
+ * Follow only the platform's known pre-confirmation stale-version escape hatch. This performs no
+ * save and never retries an unknown outcome: 查看新草稿 is the one measured action that switches the
+ * editor to the platform's latest persisted version before a second initial 发表 click.
+ */
+async function recoverStaleVersion(
+    deps: ModeRunDeps,
+    entry: ModeEntry,
+    saved: PublicSaveEvidence,
+): Promise<Result | StaleVersionRecovery> {
+    const expectedAppmsgId = appmsgIdFromCanonical(saved.canonicalUrl);
+    if (expectedAppmsgId === null)
+        return fail('public stale-version recovery: the saved editor identity was not canonical; no retry attempted');
+
+    const latest = await findUniqueVisibleSelector(
+        entry.editor,
+        PUBLISH_VIEW_LATEST,
+        Math.min(CONFIRM_TIMEOUT_MS, deps.stepTimeoutMs),
+        deps.pollMs,
+    );
+    if (latest.selector === undefined)
+        return fail(`public stale-version recovery: 查看新草稿 was ${latest.reason}; no second 发表 click attempted`);
+
+    const before = deps.pages().length;
+    try {
+        await clickSelector(entry.editor, latest.selector, deps.stepTimeoutMs);
+    } catch {
+        return fail('public stale-version recovery: 查看新草稿 could not be clicked; no second 发表 click attempted');
+    }
+    const latestEditor =
+        (await followNewPage(deps.pages, before, Math.min(deps.stepTimeoutMs, CONFIRM_TIMEOUT_MS))) ?? entry.editor;
+
+    let latestCanonicalUrl: string | null = null;
+    const canonicalReady = await waitUntil(
+        async () => {
+            latestCanonicalUrl = canonicalSavedEditorUrl(latestEditor.url());
+            if (latestCanonicalUrl === null) return false;
+            // A click that leaves the original stale dialog visible is not a version transition. Do
+            // not accept the unchanged editor's matching snapshot as latest-version evidence.
+            const refusal = await readStaleVersionRefusal(asPlaywrightPage(latestEditor)).catch(() => '__unreadable__');
+            return refusal === null;
+        },
+        deps.draftTimeoutMs,
+        deps.pollMs,
+    );
+    if (!canonicalReady || latestCanonicalUrl === null)
+        return fail(
+            'public stale-version recovery: 查看新草稿 did not expose a canonical saved editor route; no second 发表 click attempted',
+        );
+
+    const actualAppmsgId = appmsgIdFromCanonical(latestCanonicalUrl);
+    if (actualAppmsgId !== expectedAppmsgId)
+        return fail(
+            `public stale-version recovery: 查看新草稿 opened appmsgid=${actualAppmsgId ?? 'unknown'}, expected appmsgid=${expectedAppmsgId}; no second 发表 click attempted`,
+        );
+
+    let latestSnapshot: PublicDraftSnapshot | null = null;
+    let differences: string[] = [];
+    const snapshotSettled = await waitUntil(
+        async () => {
+            latestSnapshot = await readPublicDraftSnapshot(latestEditor);
+            if (latestSnapshot === null) return false;
+            differences = publicSnapshotDifferences(saved.snapshot, latestSnapshot);
+            // Partial hydration may still fill empty media/body/cover fields. A non-empty changed
+            // identity is final evidence of a different latest version and must stop immediately.
+            return differences.length === 0 || !publicSnapshotIsIncomplete(saved.snapshot, latestSnapshot);
+        },
+        deps.draftTimeoutMs,
+        deps.pollMs,
+    );
+    if (!snapshotSettled || latestSnapshot === null)
+        return fail(
+            'public stale-version recovery: latest editor snapshot was unreadable; no second 发表 click attempted',
+        );
+    if (differences.length > 0)
+        return fail(
+            `public stale-version recovery: latest editor content mismatch (${differences.join(', ')}); no second 发表 click attempted`,
+        );
+
+    if (!(await waitForPublicEditorReadiness(latestEditor, deps)))
+        return fail(
+            'public stale-version recovery: latest editor did not provide two consecutive recognized readiness probes; no second 发表 click attempted',
+        );
+
+    return {
+        editor: latestEditor,
+        canonicalUrl: latestCanonicalUrl,
+        canonicalUrlForMetadata: savedEditorUrlForMetadata(latestCanonicalUrl),
+    };
+}
+
 /**
  * The platform's own answer after 发表: its success marker, or one of the recorded refusal/hint lines
  * (§5, §5.3) which are relayed as the actionable message the operator needs.
@@ -1091,11 +1866,139 @@ async function publishOutcome(page: WechatPage): Promise<string | null> {
     return null;
 }
 
+interface VisibleSelectorProbe {
+    selector?: string;
+    reason: 'missing' | 'ambiguous';
+}
+
+interface PublicConfirmation {
+    finalSelector: string;
+    notifySubscribers: boolean | null;
+    notifySubscribersPolicy: 'preserve' | 'disabled';
+}
+
+interface PreconfirmationStaleVersion {
+    kind: 'stale-version';
+    refusal: string;
+}
+
+/**
+ * Resolve one visible control without allowing a hidden/duplicate match to become a click target.
+ * The live console can leave old dialog nodes mounted, so a first-match helper is unsafe here.
+ */
+async function findUniqueVisibleSelector(
+    page: WechatPage,
+    selectors: readonly string[],
+    timeoutMs: number,
+    pollMs: number,
+): Promise<VisibleSelectorProbe> {
+    let reason: VisibleSelectorProbe['reason'] = 'missing';
+    let selector: string | undefined;
+    const found = await waitUntil(
+        async () => {
+            for (const candidate of selectors) {
+                const locator = page.locator(candidate);
+                const count = await locator.count().catch(() => 0);
+                if (count > 1) {
+                    reason = 'ambiguous';
+                    return true;
+                }
+                if (count !== 1) continue;
+                const visible = await locator
+                    .first()
+                    .isVisible()
+                    .catch(() => false);
+                if (!visible) continue;
+                selector = candidate;
+                return true;
+            }
+            return false;
+        },
+        timeoutMs,
+        pollMs,
+    );
+    return found && selector !== undefined ? { selector, reason } : { reason };
+}
+
+async function readPublishNotifySubscribers(page: WechatPage): Promise<boolean | null> {
+    try {
+        const value = await page.evaluate(PUBLISH_NOTIFY_STATE_SCRIPT);
+        return typeof value === 'boolean' ? value : null;
+    } catch {
+        return null;
+    }
+}
+
+function shouldNotifySubscribers(content: Content): boolean {
+    const wechatmp = content.metadata?.wechatmp;
+    if (wechatmp === null || typeof wechatmp !== 'object' || Array.isArray(wechatmp)) return true;
+    return (wechatmp as Record<string, unknown>).notifySubscribers !== false;
+}
+
+/**
+ * Complete the measured mass-send dialog exactly once. The opt-out is deliberately stricter than
+ * the default policy: if 群发通知 cannot be uniquely observed as ON and then OFF, stop before the
+ * final 发表 click so a daily run cannot silently consume the next notification quota. The returned
+ * state is the platform's actual pre-click switch value; the policy is recorded separately because
+ * the default preserves an already-OFF platform setting rather than enabling notifications.
+ */
+async function confirmPublicPublish(
+    page: WechatPage,
+    notifySubscribers: boolean,
+    stepTimeoutMs: number,
+    pollMs: number,
+): Promise<Result | PublicConfirmation | PreconfirmationStaleVersion> {
+    const confirmationTimeoutMs = Math.min(CONFIRM_TIMEOUT_MS, stepTimeoutMs);
+    const dialog = await findUniqueVisibleSelector(page, PUBLISH_DIALOG, confirmationTimeoutMs, pollMs);
+    if (dialog.selector === undefined) {
+        if (dialog.reason === 'missing') {
+            const refusal = await readStaleVersionRefusal(asPlaywrightPage(page)).catch(() => null);
+            if (refusal !== null) return { kind: 'stale-version', refusal };
+        }
+        return fail(`public confirmation: the 发表 dialog was ${dialog.reason}; no final publish click attempted`);
+    }
+
+    let observedNotifySubscribers: boolean | null = null;
+    if (!notifySubscribers) {
+        const toggle = await findUniqueVisibleSelector(page, PUBLISH_NOTIFY_TOGGLE, confirmationTimeoutMs, pollMs);
+        if (toggle.selector === undefined)
+            return fail(
+                `public confirmation: 群发通知 switch was ${toggle.reason === 'missing' ? 'unavailable' : 'ambiguous'}; no final publish click attempted`,
+            );
+        const before = await readPublishNotifySubscribers(page);
+        if (before === null)
+            return fail('public confirmation: 群发通知 switch state was unreadable; no final publish click attempted');
+        if (before) await clickSelector(page, toggle.selector, stepTimeoutMs);
+        const off = await waitUntil(
+            async () => (await readPublishNotifySubscribers(page)) === false,
+            confirmationTimeoutMs,
+            pollMs,
+        );
+        if (!off)
+            return fail('public confirmation: 群发通知 switch did not verify OFF; no final publish click attempted');
+    }
+
+    const final = await findUniqueVisibleSelector(page, PUBLISH_FINAL, confirmationTimeoutMs, pollMs);
+    if (final.selector === undefined)
+        return fail(`public confirmation: final 发表 button was ${final.reason}; no final publish click attempted`);
+    observedNotifySubscribers = await readPublishNotifySubscribers(page);
+    if (!notifySubscribers && observedNotifySubscribers !== false)
+        return fail(
+            'public confirmation: 群发通知 switch did not remain verifiably OFF; no final publish click attempted',
+        );
+    await clickSelector(page, final.selector, stepTimeoutMs);
+    return {
+        finalSelector: final.selector,
+        notifySubscribers: observedNotifySubscribers,
+        notifySubscribersPolicy: notifySubscribers ? 'preserve' : 'disabled',
+    };
+}
+
 /**
  * Publish. Reached only for an explicit `publishStatus: 'public'` — the transport refuses every
- * other value before a browser opens, so no other path can click a publish control. ONE click, no
- * retry: an unobserved publish must never be repeated (the platform's own completeness gate is the
- * last line of defence, and a second click could duplicate the message).
+ * other value before a browser opens. The final confirmation is irreversible and is clicked once;
+ * the only pre-confirmation recovery is the bounded, native 查看新草稿 transition handled below.
+ * An unobserved final send is never repeated because a second click could duplicate the message.
  */
 async function publishContent(
     input: ModeInput,
@@ -1103,12 +2006,44 @@ async function publishContent(
     entry: ModeEntry,
     composed: ComposeReport,
 ): Promise<Result> {
+    // The persisted editor snapshot is an article-only readiness contract. The other console
+    // operations historically publish directly after composition; routing them through the article
+    // save probe would reject valid media posts when that probe is unavailable or intentionally fails.
+    const saved = input.operation === '文章' ? await savePublicDraft(deps, entry) : undefined;
+    if (saved !== undefined && 'ok' in saved) return saved;
+    const notifySubscribers = shouldNotifySubscribers(deps.content);
+    let staleVersionRecoveryCount = 0;
+    let finalSavedEditorUrl = saved?.canonicalUrlForMetadata;
     await sleep(deps.submitSettleMs);
     const control = await findSelector(entry.editor, PUBLISH_SEND, '发表 control', deps.stepTimeoutMs);
     const urlBefore = entry.editor.url();
     await clickSelector(entry.editor, control, deps.stepTimeoutMs);
-    const confirm = await tryFindSelector(entry.editor, PUBLISH_CONFIRM, CONFIRM_TIMEOUT_MS);
-    if (confirm !== undefined) await clickSelector(entry.editor, confirm, deps.stepTimeoutMs);
+    let confirmation = await confirmPublicPublish(entry.editor, notifySubscribers, deps.stepTimeoutMs, deps.pollMs);
+    if ('ok' in confirmation) return confirmation;
+    if ('kind' in confirmation) {
+        if (saved === undefined)
+            return fail(
+                `public confirmation: ${confirmation.refusal}; no canonical saved-editor evidence was available for recovery; no second 发表 click attempted`,
+            );
+        const recovered = await recoverStaleVersion(deps, entry, saved);
+        if ('ok' in recovered) return recovered;
+        entry.editor = recovered.editor;
+        finalSavedEditorUrl = recovered.canonicalUrlForMetadata;
+        staleVersionRecoveryCount = 1;
+        const retryControl = await findSelector(
+            entry.editor,
+            PUBLISH_SEND,
+            '发表 control after 查看新草稿',
+            deps.stepTimeoutMs,
+        );
+        await clickSelector(entry.editor, retryControl, deps.stepTimeoutMs);
+        confirmation = await confirmPublicPublish(entry.editor, notifySubscribers, deps.stepTimeoutMs, deps.pollMs);
+        if ('ok' in confirmation) return confirmation;
+        if ('kind' in confirmation)
+            return fail(
+                `public confirmation: ${confirmation.refusal} after bounded 查看新草稿 recovery; no final publish click attempted`,
+            );
+    }
 
     const outcome = await expectOutcome(() => publishOutcome(entry.editor), {
         timeoutMs: deps.stepTimeoutMs,
@@ -1129,7 +2064,18 @@ async function publishContent(
         message: `${TARGET} ${input.operation} published`,
         metadata: {
             ...baseMetadata(input, deps, entry),
+            ...(saved === undefined
+                ? {}
+                : {
+                      draftSaveControl: saved.saveControl,
+                      savedEditorUrl: finalSavedEditorUrl ?? saved.canonicalUrlForMetadata,
+                      draftSaveSignal: saved.saveSignal,
+                      staleVersionRecoveryCount,
+                  }),
             publishControl: control,
+            finalPublishControl: confirmation.finalSelector,
+            notifySubscribers: confirmation.notifySubscribers,
+            notifySubscribersPolicy: confirmation.notifySubscribersPolicy,
             publishSignal: outcome.evidence,
             titlePath: composed.titlePath,
             ...(composed.warnings.length > 0 ? { warnings: composed.warnings } : {}),
@@ -1263,9 +2209,14 @@ export async function runMode(input: ModeInput, deps: ModeRunDeps): Promise<Resu
     // the Playwright timeout, so the stuck step had to be rediscovered by hand. Ride them on the error.
     const diagnostics = [...composed.warnings, ...composed.enrichWarnings];
     try {
-        return deps.publishStatus === 'public'
-            ? await publishContent(input, deps, entry, composed)
-            : await saveDraft(input, deps, entry, composed);
+        const result =
+            deps.publishStatus === 'public'
+                ? await publishContent(input, deps, entry, composed)
+                : await saveDraft(input, deps, entry, composed);
+        if (!result.ok && diagnostics.length > 0) {
+            return { ...result, error: `${result.error} — compose diagnostics: ${diagnostics.join(' | ')}` };
+        }
+        return result;
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const blocked = await openDialogInventory(entry.editor);
@@ -1386,15 +2337,20 @@ export async function insertAudioMaterial(
     input: { title: string; audioPath: string; coverPath: string },
 ): Promise<string> {
     const { title, audioPath, coverPath } = input;
-    const CARET = `(() => {
+    const CARET = `(async () => {
             const pm = [...document.querySelectorAll('.ProseMirror')].find((e) => !(e.getAttribute('data-placeholder') ?? '').includes('标题'));
             if (!pm || !pm.firstChild) return;
+            pm.focus();
             const r = document.createRange();
-            r.setStart(pm.firstChild, 0);
+            // The first child can be a non-editable image atom. Select the boundary before it,
+            // not a position inside that atom which ProseMirror discards on toolbar focus.
+            r.setStart(pm, 0);
             r.collapse(true);
             const sel = window.getSelection();
             sel?.removeAllRanges();
             sel?.addRange(r);
+            document.dispatchEvent(new Event('selectionchange'));
+            await new Promise(resolve => setTimeout(resolve, 100));
         })()`;
     /** Trim + collapse whitespace/NBSP — MP titles carry `&nbsp;` entities (0272 capture). */
     const norm = (value: unknown): string =>
@@ -1421,8 +2377,8 @@ export async function insertAudioMaterial(
         })()`;
     /** Tick the service-rules acknowledgement, found by its own label text rather than a class. */
     const AGREE = `(() => {
-            const node = [...document.querySelectorAll('label, span, div')]
-                .find((e) => (e.textContent ?? '').includes('我已阅读并同意') && e.children.length === 0);
+            const node = [...document.querySelectorAll('.weui-desktop-dialog label, .audio_dialog label')]
+                .find((e) => (e.textContent ?? '').includes('我已阅读并同意') && e.querySelector('input[type=checkbox]'));
             if (!node) return 'no-label';
             const scope = node.closest('label') ?? node.parentElement;
             const cb = scope?.querySelector('input[type=checkbox]') ?? document.querySelector('input[type=checkbox].js_agree');
@@ -1445,9 +2401,10 @@ export async function insertAudioMaterial(
             if (!pm) return JSON.stringify({ state: 'noeditor' });
             const first = pm.firstElementChild;
             if (!first) return JSON.stringify({ state: 'absent' });
-            const node = first.matches('mpvoice, [data-mediaid]') ? first : first.querySelector('mpvoice, [data-mediaid]');
-            if (!node) return JSON.stringify({ state: 'absent' });
-            const identity = node.getAttribute('data-mediaid') ?? node.getAttribute('data-appid') ??
+            const selector = 'mp-common-mpaudio, mpvoice, [data-mediaid]';
+            const node = first.matches(selector) ? first : first.querySelector(selector);
+            if (!node) return JSON.stringify({ state: pm.querySelector(selector) ? 'not-top' : 'absent' });
+            const identity = node.getAttribute('data-mediaid') ?? node.getAttribute('cover') ?? node.getAttribute('voice_encode_fileid') ?? node.getAttribute('data-appid') ??
                 node.getAttribute('data-src') ?? node.getAttribute('src') ?? '';
             return JSON.stringify({ state: 'top', identity });
         })()`;
@@ -1459,7 +2416,7 @@ export async function insertAudioMaterial(
         // Click the winner, never a joined union: `text=…, css…` mixes selector engines and
         // Playwright parses the whole string as CSS — zero matches (DOM fixture 0260).
         await clickSelector(page, uploadControl.selector ?? UPLOAD_AUDIO[0] ?? 'text=上传音频', 8_000);
-        const audioInput = await trySelectors(page, AUDIO_UPLOAD_INPUT);
+        const audioInput = await trySelectors(page, AUDIO_UPLOAD_INPUT, { visible: false });
         if (!audioInput.found) return '音频: no audio file input appeared';
         await uploadFile(asPlaywrightPage(page), audioInput.selector ?? AUDIO_UPLOAD_INPUT.join(', '), audioPath, {
             timeoutMs: 60_000,
@@ -1468,24 +2425,105 @@ export async function insertAudioMaterial(
         const coverControl = await trySelectors(page, UPLOAD_COVER);
         if (coverControl.found) {
             await clickSelector(page, coverControl.selector ?? UPLOAD_COVER[0] ?? 'text=上传封面', 8_000);
-            const coverInput = await trySelectors(page, AUDIO_COVER_INPUT);
-            if (coverInput.found)
-                await uploadFile(
-                    asPlaywrightPage(page),
-                    coverInput.selector ?? AUDIO_COVER_INPUT.join(', '),
-                    coverPath,
-                    {
-                        timeoutMs: 60_000,
-                    },
-                );
+            const coverInput = await trySelectors(page, AUDIO_COVER_INPUT, { visible: false });
+            if (coverInput.found) {
+                const chooser = '.weui-desktop-dialog:visible:has(h3:has-text("选择图片"))';
+                const hasChooser = (await page.locator(chooser).count()) > 0;
+                const coverName = hasChooser ? await coverLibraryName(coverPath) : baseName(coverPath);
+                let existing = 0;
+                if (hasChooser) {
+                    const libraryReady = await waitUntil(
+                        async () =>
+                            Boolean(
+                                await page.evaluate(
+                                    `!document.querySelector('#js_image_dialog_list_wrp .weui-desktop-loading')`,
+                                ),
+                            ),
+                        5_000,
+                    );
+                    if (!libraryReady) return '音频: 封面素材库加载未完成，未上传重复封面';
+                    existing = Number(
+                        await page.evaluate(
+                            `([...document.querySelectorAll('.weui-desktop-img-picker__item')].filter(row => row.offsetWidth > 0 && row.querySelector('.weui-desktop-img-picker__img-title')?.textContent?.trim() === ${JSON.stringify(coverName)})).length`,
+                        ),
+                    );
+                    if (existing > 1) return '音频: 内容绑定封面存在多个同名素材，未猜测选择';
+                }
+                let uploadPath = coverPath;
+                let temporaryDir: string | undefined;
+                if (hasChooser && existing === 0) {
+                    temporaryDir = join(tmpdir(), `kk-wechat-cover-${randomUUID()}`);
+                    if (!mkdirExclusive(temporaryDir)) throw new Error('Private cover upload directory already exists');
+                    uploadPath = join(temporaryDir, coverName);
+                }
+                try {
+                    if (temporaryDir !== undefined) await createNodeFileSystem().copy(coverPath, uploadPath);
+                    if (existing === 0) {
+                        await uploadFile(
+                            asPlaywrightPage(page),
+                            coverInput.selector ?? AUDIO_COVER_INPUT.join(', '),
+                            uploadPath,
+                            {
+                                timeoutMs: 60_000,
+                            },
+                        );
+                    }
+                    if (hasChooser) {
+                        const selectedName = JSON.stringify(coverName);
+                        const selected = await waitUntil(
+                            async () =>
+                                Boolean(
+                                    await page.evaluate(`(() => {
+                            const rows = [...document.querySelectorAll('.weui-desktop-img-picker__item')]
+                                .filter(row => row.offsetWidth > 0 && row.querySelector('.weui-desktop-img-picker__img-title')?.textContent?.trim() === ${selectedName});
+                            if (rows.length !== 1) return false;
+                            const row = rows[0];
+                            if (!row.classList.contains('selected')) row.click();
+                            return row.classList.contains('selected');
+                        })()`),
+                                ),
+                            30_000,
+                        );
+                        if (!selected) return '音频: 上传封面未出现唯一已选中的同名图片，未提交封面';
+                        const next = await findSelector(
+                            page,
+                            [`${chooser} button:has-text("下一步"):not(.weui-desktop-btn_disabled)`],
+                            '音频封面 下一步',
+                            30_000,
+                        );
+                        await clickSelector(page, next, 8_000);
+                        const finish = await findSelector(
+                            page,
+                            [`${chooser} button:has-text("完成"):not(.weui-desktop-btn_disabled)`],
+                            '音频封面 完成',
+                            30_000,
+                        );
+                        await clickSelector(page, finish, 8_000);
+                        const closed = await waitUntil(
+                            async () => !(await page.locator(chooser).first().isVisible()),
+                            8_000,
+                        );
+                        if (!closed) return '音频: 封面选择器完成后未关闭，未保存音频';
+                    }
+                } finally {
+                    if (temporaryDir !== undefined) {
+                        await createNodeFileSystem().deleteFile(uploadPath);
+                        rmdir(temporaryDir);
+                    }
+                }
+            }
         }
         const titleInput = await trySelectors(page, AUDIO_TITLE_INPUT);
         if (titleInput.found) await fillSelector(page, titleInput.selector ?? AUDIO_TITLE_INPUT.join(', '), title);
         const agreed = String(await page.evaluate(AGREE));
         if (agreed !== 'checked') return `音频: 服务规则勾选失败 (${agreed})`;
-        const save = await trySelectors(page, UPLOAD_SAVE);
-        if (!save.found) return '音频: 上传表单的保存按钮未找到';
-        await clickSelector(page, UPLOAD_SAVE.join(', '), 8_000);
+        const save = await findSelector(
+            page,
+            UPLOAD_SAVE.map((selector) => `${selector}:not(.weui-desktop-btn_disabled):not([disabled])`),
+            '音频上传完成且封面已提交后的保存按钮',
+            90_000,
+        );
+        await clickSelector(page, save, 8_000);
         return null;
     };
 
@@ -1508,6 +2546,8 @@ export async function insertAudioMaterial(
     };
     try {
         await page.evaluate(CARET);
+        // Native navigation updates ProseMirror's selection bookmark, which toolbar dialogs restore.
+        await page.press?.(process.platform === 'darwin' ? 'Meta+ArrowUp' : 'Control+Home');
         // Open the toolbar dropdown first (measured 2026-10-13): the menu item is hidden until its
         // trigger is clicked, so the old direct `js_insertaudio` click timed out.
         await page.evaluate(`document.querySelector(${JSON.stringify(AUDIO_TOOLBAR_TRIGGER)})?.click()`);
