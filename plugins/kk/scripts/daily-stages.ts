@@ -65,7 +65,7 @@ import {
     unlinkSync,
     writeFileSync,
 } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import {
     ADMISSION_CRITERIA,
     applyTopicBoundary,
@@ -2024,19 +2024,38 @@ export function readKeyPointItems(filePath: string): string[] | undefined {
     }
     const block = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw)?.[1];
     if (!block) return undefined;
-    // Slice from `key_points` to the first top-level key (or block end), then take the item lines
-    // (`- `), so folded (`>-`) and quoted single-line items both read once.
+    // Slice from `key_points` to the first top-level key (or block end), then read the item lines
+    // (`- `). Folded (`>-`) YAML items need their indented continuation lines joined before the
+    // strict scheduled validator can check the `Label — sentence` contract.
     const head = /^key_points:\n/m.exec(block);
     if (!head) return undefined;
     const body = block.slice(head.index + head[0].length);
     const endMatch = /^\S/m.exec(body);
     const list = endMatch ? body.slice(0, endMatch.index) : body;
-    // A quoted scalar's quotes are YAML syntax, not text — strip them so label lengths are real.
-    return list
-        .split('\n')
-        .filter((line) => /^[ \t]+- /.test(line))
-        .map((line) => line.replace(/^[ \t]+- /, '').trim())
-        .map((item) => item.replace(/^(["'])(.*)\1$/, '$2'));
+    const items: string[] = [];
+    let current: string | undefined;
+    let folded = false;
+    const flush = (): void => {
+        if (current === undefined) return;
+        // A quoted scalar's quotes are YAML syntax, not text — strip them so label lengths are real.
+        items.push(current.replace(/^(['"])(.*)\1$/, '$2').trim());
+        current = undefined;
+        folded = false;
+    };
+    for (const line of list.split('\n')) {
+        const item = /^[ \t]+- (.*)$/.exec(line);
+        if (item !== null) {
+            flush();
+            current = item[1].trim();
+            folded = current === '>' || current === '>-' || current === '|-' || current === '|';
+            continue;
+        }
+        if (current === undefined || !folded) continue;
+        const continuation = line.trim();
+        if (continuation !== '') current = `${current} ${continuation}`;
+    }
+    flush();
+    return items;
 }
 
 /** Count `key_points` list items in a Surfing post's frontmatter; undefined when absent/unreadable. */
@@ -2237,6 +2256,26 @@ function surfdashPayloadSha256(path: string): string {
     return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
+function surfdashNotSentReceipt(resultPath: string, intentPath: string, runDate: string, reason: string): void {
+    const error = `surfdash publish was not sent: ${reason}`;
+    sted('write', resultPath, () =>
+        writeJsonText(resultPath, {
+            ok: false,
+            summary: { total: 1, succeeded: 0, failed: 1, skipped: 0 },
+            targets: [
+                {
+                    target: 'surfdash-pub',
+                    ok: false,
+                    status: 'failed',
+                    error,
+                    metadata: { deliveryState: 'not-sent', runDate, intentPath },
+                },
+            ],
+        }),
+    );
+    console.error(error);
+}
+
 function readSurfdashSendIntent(
     path: string,
 ): { kind: 'missing' } | { kind: 'valid'; value: SurfdashSendIntent } | { kind: 'invalid'; reason: string } {
@@ -2278,6 +2317,9 @@ function surfdashFailureMayHaveRemoteEffect(entry: Record<string, unknown>): boo
 function surfdashTargetState(result: Record<string, unknown> | null): SurfdashDeliveryState {
     const matches = surfdashTargetEntries(result);
     if (matches.length === 0) return 'missing';
+    // More than one receipt for the same target is ambiguous even when every row says success:
+    // retrying could duplicate a remote post. Preserve the uncertainty until reconciliation.
+    if (matches.length > 1) return 'uncertain';
     if (
         matches.some(
             (entry) =>
@@ -2287,7 +2329,6 @@ function surfdashTargetState(result: Record<string, unknown> | null): SurfdashDe
     ) {
         return 'uncertain';
     }
-    if (matches.length !== 1) return 'missing';
     const target = matches[0];
     if (target.ok === true && target.status === 'published') return 'success';
     if (target.ok === false && target.status === 'failed') return 'failure';
@@ -2301,6 +2342,7 @@ function writeSurfdashUncertainReceipt(
     payloadSha256: string | undefined,
     currentPayloadSha256: string | undefined,
     reason: string,
+    identity: { postPath?: string; localeFingerprint?: string } = {},
 ): void {
     const metadata: Record<string, unknown> = {
         deliveryState: 'uncertain',
@@ -2308,6 +2350,8 @@ function writeSurfdashUncertainReceipt(
         intentPath,
         ...(payloadSha256 ? { payloadSha256 } : {}),
         ...(currentPayloadSha256 ? { currentPayloadSha256 } : {}),
+        ...(identity.postPath ? { postPath: identity.postPath } : {}),
+        ...(identity.localeFingerprint ? { localeFingerprint: identity.localeFingerprint } : {}),
     };
     const error = `surfdash delivery is uncertain: ${reason}; reconcile the dated remote post/commit before clearing this uncertainty and retrying`;
     sted('write', resultPath, () =>
@@ -2328,15 +2372,164 @@ function writeSurfdashUncertainReceipt(
     console.error(error);
 }
 
+const SURFDASH_LOCALES = ['zh', 'en', 'ja'] as const;
+type SurfdashLocale = (typeof SURFDASH_LOCALES)[number];
+
+interface SurfdashLocaleValidationEvidence {
+    runDate: string;
+    postPath: string;
+    localePaths: Record<SurfdashLocale, string>;
+    localeDigests: Record<SurfdashLocale, string>;
+    fingerprint: string;
+}
+
+interface SurfdashPublishIdentity {
+    postPath: string;
+    payloadSha256: string;
+    localeFingerprint: string;
+}
+
+function surfdashPublishIdentity(entry: Record<string, unknown> | undefined): SurfdashPublishIdentity | undefined {
+    if (entry === undefined) return undefined;
+    const metadata = metadataOf(entry);
+    if (
+        typeof metadata.postPath !== 'string' ||
+        typeof metadata.payloadSha256 !== 'string' ||
+        !/^[0-9a-f]{64}$/.test(metadata.payloadSha256) ||
+        typeof metadata.localeFingerprint !== 'string' ||
+        !/^[0-9a-f]{64}$/.test(metadata.localeFingerprint)
+    ) {
+        return undefined;
+    }
+    return {
+        postPath: metadata.postPath,
+        payloadSha256: metadata.payloadSha256,
+        localeFingerprint: metadata.localeFingerprint,
+    };
+}
+
+function localeSiblingPaths(zhPostPath: string): Record<SurfdashLocale, string> | undefined {
+    if (!zhPostPath.includes('/zh/')) return undefined;
+    const en = zhPostPath.replace('/zh/', '/en/');
+    const ja = zhPostPath.replace('/zh/', '/ja/');
+    if (en === zhPostPath || ja === zhPostPath) return undefined;
+    return { zh: zhPostPath, en, ja };
+}
+
+function validateLocaleMarkers(workDir: string, runDate: string, zhPostPath: string, step: string): void {
+    const localePaths = localeSiblingPaths(zhPostPath);
+    if (localePaths === undefined) {
+        failWith(1, `${step}: zh post path does not contain a /zh/ locale segment: ${zhPostPath}`);
+    }
+    for (const locale of ['en', 'ja'] as const) {
+        const marker = join(workDir, '31-publish', `${runDate}_20_translate-localize_${locale}-post-path.txt`);
+        const markerPath = isFile(marker) ? readFileSync(marker, 'utf-8').trim() : '';
+        const expectedPath = localePaths[locale];
+        if (markerPath === '' || !isAbsolute(markerPath) || markerPath !== expectedPath || !isFile(expectedPath)) {
+            failWith(1, `${step}: ${locale} marker must name the absolute derived sibling ${expectedPath}: ${marker}`);
+        }
+    }
+}
+
+function surfdashLocaleValidationEvidence(
+    zhPostPath: string,
+    runDate: string,
+): { ok: true; evidence: SurfdashLocaleValidationEvidence } | { ok: false; reason: string } {
+    const localePaths = localeSiblingPaths(zhPostPath);
+    if (localePaths === undefined) {
+        return { ok: false, reason: `zh post path does not contain a /zh/ locale segment: ${zhPostPath}` };
+    }
+    const localeDigests = {} as Record<SurfdashLocale, string>;
+    for (const locale of SURFDASH_LOCALES) {
+        const path = localePaths[locale];
+        if (!isFile(path)) return { ok: false, reason: `${locale} locale file is missing: ${path}` };
+        try {
+            localeDigests[locale] = createHash('sha256').update(readFileSync(path)).digest('hex');
+        } catch (error: unknown) {
+            return {
+                ok: false,
+                reason: `${locale} locale file cannot be fingerprinted: ${error instanceof Error ? error.message : String(error)}`,
+            };
+        }
+    }
+    const identity = { runDate, postPath: zhPostPath, localePaths, localeDigests };
+    return {
+        ok: true,
+        evidence: {
+            ...identity,
+            fingerprint: createHash('sha256').update(JSON.stringify(identity)).digest('hex'),
+        },
+    };
+}
+
+function validateSurfdashLocaleGate(
+    validationPath: string,
+    prepareResultPath: string,
+    runDate: string,
+): { ok: true; evidence: SurfdashLocaleValidationEvidence } | { ok: false; reason: string } {
+    const validation = isFile(validationPath) ? readJson(validationPath) : null;
+    if (validation?.ok !== true || validation.target !== 'surfdash-pub' || validation.status !== 'validated') {
+        return { ok: false, reason: `missing or invalid validation receipt: ${validationPath}` };
+    }
+    const metadata = metadataOf(validation);
+    if (metadata.runDate !== runDate || typeof metadata.postPath !== 'string') {
+        return { ok: false, reason: `validation receipt date/path does not match run ${runDate}` };
+    }
+    const prepared = isFile(prepareResultPath) ? readJson(prepareResultPath) : null;
+    const preparedTargets = Array.isArray(prepared?.targets)
+        ? prepared.targets.filter(
+              (entry): entry is Record<string, unknown> =>
+                  entry !== null &&
+                  typeof entry === 'object' &&
+                  (entry as Record<string, unknown>).target === 'surfdash-pub',
+          )
+        : [];
+    if (
+        preparedTargets.length !== 1 ||
+        preparedTargets[0].ok !== true ||
+        preparedTargets[0].status !== 'prepared' ||
+        metadataOf(preparedTargets[0]).postPath !== metadata.postPath
+    ) {
+        return { ok: false, reason: `current Surfdash prepare receipt is missing or does not match ${validationPath}` };
+    }
+    const current = surfdashLocaleValidationEvidence(metadata.postPath, runDate);
+    if (!current.ok) return current;
+    const recordedPaths = metadata.localePaths;
+    const recordedDigests = metadata.localeDigests;
+    if (
+        recordedPaths === null ||
+        typeof recordedPaths !== 'object' ||
+        recordedDigests === null ||
+        typeof recordedDigests !== 'object' ||
+        typeof metadata.fingerprint !== 'string'
+    ) {
+        return { ok: false, reason: `validation receipt fingerprint is missing or malformed: ${validationPath}` };
+    }
+    if (
+        JSON.stringify(recordedPaths) !== JSON.stringify(current.evidence.localePaths) ||
+        JSON.stringify(recordedDigests) !== JSON.stringify(current.evidence.localeDigests) ||
+        metadata.fingerprint !== current.evidence.fingerprint
+    ) {
+        return { ok: false, reason: `locale files changed after validation; refresh ${validationPath}` };
+    }
+    return current;
+}
+
 export function dailyPublishSurfdash(args: string[]): void {
-    const [workDir = '', runDate = '', pluginsPath = ''] = args;
+    const [workDir = '', runDate = '', pluginsPath = '', requireLocaleValidation = 'false'] = args;
     const prep = join(workDir, '31-publish', `${runDate}_13_publish-prep_content.json`);
     const result = join(workDir, '31-publish', `${runDate}_14_publish-surfdash_result.json`);
     const intentPath = join(workDir, '31-publish', `${runDate}_14_publish-surfdash_intent.json`);
+    const prepareResult = join(workDir, '31-publish', `${runDate}_14_publish-surfdash-prepare_result.json`);
+    const validationPath = join(workDir, '31-publish', `${runDate}_24_translate-validate_result.json`);
+    const preparedInput = join(workDir, '31-publish', `${runDate}_14_publish-surfdash_prepared_content.json`);
+    const transportResult = join(workDir, '31-publish', `${runDate}_14_publish-surfdash_transport_result.json`);
     timed(workDir, 'publish-surfdash', () => {
-        const priorState = surfdashTargetState(readJson(result));
+        const priorResult = readJson(result);
+        const priorTargets = surfdashTargetEntries(priorResult);
+        const priorState = surfdashTargetState(priorResult);
         if (priorState === 'uncertain') {
-            const priorTarget = surfdashTargetEntries(readJson(result))[0];
+            const priorTarget = priorTargets[0];
             if (
                 priorTarget !== undefined &&
                 (priorTarget.metadata as Record<string, unknown> | undefined)?.deliveryState !== 'uncertain'
@@ -2350,7 +2543,75 @@ export function dailyPublishSurfdash(args: string[]): void {
             console.log(`publish-surfdash blocked: uncertain delivery is sticky in ${result}`);
             return;
         }
+
+        // The two-phase voice2 workflow explicitly requires a successful local locale gate before
+        // the publisher can invoke refine/CMS/git. Legacy voice1/manual callers omit the fourth
+        // argument and retain their historical publish behavior.
+        let currentIdentity: SurfdashPublishIdentity | undefined;
+        let currentLocaleEvidence: SurfdashLocaleValidationEvidence | undefined;
+        if (requireLocaleValidation === 'true') {
+            const validation = validateSurfdashLocaleGate(validationPath, prepareResult, runDate);
+            if (!validation.ok) {
+                const detail = validation.reason;
+                if (priorState === 'success') {
+                    writeSurfdashUncertainReceipt(
+                        result,
+                        intentPath,
+                        runDate,
+                        undefined,
+                        undefined,
+                        `current locale validation is not the one used for the cached success: ${detail}`,
+                    );
+                } else {
+                    surfdashNotSentReceipt(result, intentPath, runDate, `blocked by locale validation: ${detail}`);
+                }
+                return;
+            }
+            currentLocaleEvidence = validation.evidence;
+            if (!isFile(prep)) {
+                const detail = `prepared payload is missing: ${prep}`;
+                if (priorState === 'success') {
+                    writeSurfdashUncertainReceipt(result, intentPath, runDate, undefined, undefined, detail);
+                } else {
+                    surfdashNotSentReceipt(result, intentPath, runDate, detail);
+                }
+                return;
+            }
+            currentIdentity = {
+                postPath: validation.evidence.postPath,
+                payloadSha256: surfdashPayloadSha256(prep),
+                localeFingerprint: validation.evidence.fingerprint,
+            };
+        }
+
         if (priorState === 'success') {
+            // Voice1 and manual callers omit the locale-validation argument and historically
+            // treated a recorded success as a resume-safe cache hit. Voice2 supplies `true` and
+            // must keep the exact identity binding below; do not make the legacy surface depend
+            // on the new locale fingerprint receipt.
+            if (requireLocaleValidation !== 'true') {
+                console.log(`publish-surfdash cached: surfdash target ok in ${result}`);
+                return;
+            }
+            const cachedIdentity = surfdashPublishIdentity(priorTargets[0]);
+            if (
+                currentIdentity === undefined ||
+                cachedIdentity === undefined ||
+                cachedIdentity.postPath !== currentIdentity.postPath ||
+                cachedIdentity.payloadSha256 !== currentIdentity.payloadSha256 ||
+                cachedIdentity.localeFingerprint !== currentIdentity.localeFingerprint
+            ) {
+                writeSurfdashUncertainReceipt(
+                    result,
+                    intentPath,
+                    runDate,
+                    cachedIdentity?.payloadSha256,
+                    currentIdentity?.payloadSha256,
+                    'cached success has no exact postPath/payloadSha256/localeFingerprint identity for the current material',
+                    currentIdentity,
+                );
+                return;
+            }
             console.log(`publish-surfdash cached: surfdash target ok in ${result}`);
             return;
         }
@@ -2361,7 +2622,7 @@ export function dailyPublishSurfdash(args: string[]): void {
             return;
         }
 
-        let payloadSha256: string | undefined;
+        let payloadSha256: string | undefined = currentIdentity?.payloadSha256;
         if (intent.kind === 'valid') {
             if (intent.value.runDate !== runDate) {
                 writeSurfdashUncertainReceipt(
@@ -2424,23 +2685,120 @@ export function dailyPublishSurfdash(args: string[]): void {
             sted('write', intentPath, () => writeJsonText(intentPath, sendIntent));
         }
 
-        kk(
-            [
-                'executor',
-                'fan-out',
-                '--content',
-                prep,
-                '--target',
-                'surfdash-pub',
-                '--out',
-                result,
-                ...pluginsArgs(pluginsPath),
-            ],
-            {
-                unset: NESTED_SPUR_UNSET,
-                soft: true,
-            },
-        );
+        if (requireLocaleValidation === 'true' && currentIdentity !== undefined) {
+            const prepared = requireJson(prep, 'publish-surfdash');
+            sted('write', preparedInput, () =>
+                writeJqText(preparedInput, {
+                    ...prepared,
+                    options: {
+                        operation: 'publish-prepared',
+                        postPath: currentIdentity.postPath,
+                        runDate,
+                        expectedPostSha256: currentLocaleEvidence.localeDigests.zh,
+                        expectedLocaleFingerprint: currentIdentity.localeFingerprint,
+                    },
+                }),
+            );
+            // `kk executor run` normally clears --out itself, but a discovery failure can return
+            // before the executor owns that path. Remove any previous transport receipt here so a
+            // stale success can never be promoted into this invocation's publish result.
+            rmSync(transportResult, { force: true });
+            kk(
+                [
+                    'executor',
+                    'run',
+                    'surfdash-pub',
+                    '--in',
+                    preparedInput,
+                    '--out',
+                    transportResult,
+                    ...pluginsArgs(pluginsPath),
+                ],
+                {
+                    unset: NESTED_SPUR_UNSET,
+                    env: { SURFDASH_LOCALE: 'zh' },
+                    soft: true,
+                },
+            );
+            const transported = readJson(transportResult);
+            const identityMetadata = {
+                postPath: currentIdentity.postPath,
+                payloadSha256: currentIdentity.payloadSha256,
+                localeFingerprint: currentIdentity.localeFingerprint,
+                runDate,
+            };
+            if (transported?.ok === true) {
+                sted('write', result, () =>
+                    writeJsonText(result, {
+                        ok: true,
+                        summary: { total: 1, succeeded: 1, failed: 0, skipped: 0 },
+                        targets: [
+                            {
+                                target: 'surfdash-pub',
+                                ok: true,
+                                status: 'published',
+                                ...(typeof transported.url === 'string' ? { url: transported.url } : {}),
+                                metadata: { ...metadataOf(transported), ...identityMetadata },
+                            },
+                        ],
+                    }),
+                );
+            } else if (transported?.ok === false && metadataOf(transported).deliveryState === 'not-sent') {
+                sted('write', result, () =>
+                    writeJsonText(result, {
+                        ok: false,
+                        summary: { total: 1, succeeded: 0, failed: 1, skipped: 0 },
+                        targets: [
+                            {
+                                target: 'surfdash-pub',
+                                ok: false,
+                                status: 'failed',
+                                error:
+                                    typeof transported.error === 'string'
+                                        ? transported.error
+                                        : 'publisher rejected the prepared post',
+                                metadata: {
+                                    ...metadataOf(transported),
+                                    ...identityMetadata,
+                                    deliveryState: 'not-sent',
+                                },
+                            },
+                        ],
+                    }),
+                );
+            } else {
+                writeSurfdashUncertainReceipt(
+                    result,
+                    intentPath,
+                    runDate,
+                    payloadSha256,
+                    payloadSha256,
+                    typeof transported?.error === 'string'
+                        ? `publisher reported an ambiguous delivery failure: ${transported.error}`
+                        : 'no publish result was recorded after prepared dispatch',
+                    currentIdentity,
+                );
+            }
+        } else {
+            kk(
+                [
+                    'executor',
+                    'fan-out',
+                    '--content',
+                    prep,
+                    '--target',
+                    'surfdash-pub',
+                    '--out',
+                    result,
+                    ...pluginsArgs(pluginsPath),
+                ],
+                {
+                    unset: NESTED_SPUR_UNSET,
+                    env: { SURFDASH_LOCALE: 'zh' },
+                    soft: true,
+                },
+            );
+        }
 
         // A killed or unusable child can leave a real remote commit with no aggregate receipt. The
         // intent now makes that state explicit; the next invocation will refuse to dispatch again.
@@ -2451,9 +2809,91 @@ export function dailyPublishSurfdash(args: string[]): void {
                 afterState === 'uncertain' && afterTarget !== undefined && typeof afterTarget.error === 'string'
                     ? `publisher reported an ambiguous delivery failure: ${afterTarget.error}`
                     : 'no publish result was recorded after dispatch';
-            writeSurfdashUncertainReceipt(result, intentPath, runDate, payloadSha256, payloadSha256, afterError);
+            writeSurfdashUncertainReceipt(
+                result,
+                intentPath,
+                runDate,
+                payloadSha256,
+                payloadSha256,
+                afterError,
+                currentIdentity,
+            );
         }
         console.log('publish-surfdash: surfdash target dispatched; classification happens after podcast publish');
+    });
+}
+
+/**
+ * Prepare the local zh post before locale scaffolding/translation. This stage deliberately stops
+ * at the publisher's file-materialization seam; the normal `publish-surfdash` stage remains the
+ * only operation allowed to invoke Surfdash's refine/CMS/git publishing path.
+ */
+export function dailyPrepareSurfdash(args: string[]): void {
+    const [workDir = '', runDate = '', pluginsPath = ''] = args;
+    const prep = join(workDir, '31-publish', `${runDate}_13_publish-prep_content.json`);
+    const input = join(workDir, '31-publish', `${runDate}_14_publish-surfdash-prepare_content.json`);
+    const result = join(workDir, '31-publish', `${runDate}_14_publish-surfdash-prepare_result.json`);
+    const transportResult = join(workDir, '31-publish', `${runDate}_14_publish-surfdash-prepare-transport_result.json`);
+    timed(workDir, 'prepare-surfdash', () => {
+        try {
+            if (!isFile(prep)) failWith(1, `prepare-surfdash: required input not found: ${prep}`);
+            const content = requireJson(prep, 'prepare-surfdash');
+            sted('write', input, () => writeJqText(input, { ...content, options: { operation: 'prepare' } }));
+            kk(
+                [
+                    'executor',
+                    'run',
+                    'surfdash-pub',
+                    '--in',
+                    input,
+                    '--out',
+                    transportResult,
+                    ...pluginsArgs(pluginsPath),
+                ],
+                {
+                    unset: NESTED_SPUR_UNSET,
+                    // The scheduled source post is always zh. Do not let a caller's inherited
+                    // locale select an en/ja materialization and then make the sibling gate
+                    // compare the wrong source tree.
+                    env: { SURFDASH_LOCALE: 'zh' },
+                },
+            );
+            const prepared = readJson(transportResult);
+            const postPath = metadataOf(prepared).postPath;
+            if (prepared?.ok !== true || typeof postPath !== 'string') {
+                failWith(1, `prepare-surfdash: publisher did not return a prepared zh post path: ${transportResult}`);
+            }
+            if (postPath === '' || !isFile(postPath)) {
+                failWith(1, `prepare-surfdash: publisher did not return a prepared zh post path: ${result}`);
+            }
+            sted('write', result, () =>
+                writeJqText(result, {
+                    ok: true,
+                    summary: { total: 1, succeeded: 1, failed: 0, skipped: 0 },
+                    targets: [
+                        {
+                            target: 'surfdash-pub',
+                            ok: true,
+                            status: 'prepared',
+                            ...(typeof prepared?.url === 'string' ? { url: prepared.url } : {}),
+                            metadata: metadataOf(prepared),
+                        },
+                    ],
+                }),
+            );
+            console.log(`prepare-surfdash: prepared zh post ${postPath}`);
+        } catch (error: unknown) {
+            if (error instanceof StageFailure && error.status === 127) throw error;
+            const message = error instanceof Error ? error.message : String(error);
+            sted('write', result, () =>
+                writeJqText(result, {
+                    ok: false,
+                    summary: { total: 1, succeeded: 0, failed: 1, skipped: 0 },
+                    targets: [{ target: 'surfdash-pub', ok: false, status: 'failed', error: message }],
+                }),
+            );
+            console.error(message);
+        }
     });
 }
 
@@ -3377,22 +3817,29 @@ export function dailyShowNotes(args: string[]): void {
  * deterministic mechanics — `scaffold-locale` for both target locales — while the
  * workflow `translate` state's agent step owns the LLM translation of the drafts.
  * Writes one marker file per locale (zh post path + en/ja draft paths); empty
- * marker = locale absent (callers skip). Reuses an existing on-disk draft as the
- * cache across run retries — re-scaffolding would erase the agent's translation.
+ * marker = locale absent (callers skip). Reuses an existing on-disk draft only when its
+ * source-hash sidecar matches the current zh post — a changed source must invalidate the
+ * translation cache before the next unattended run.
  */
 export function dailyTranslateLocalize(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = ''] = args;
-    // Same seam as show-notes (task 0137): `_17_publish_result.json` is written later by
-    // publish-classify, which depends on translate-sync. Reading it here always saw no zh
-    // path, so en/ja were never scaffolded (2026-10-08 dogfood).
+    // The prepare result is available before translation; the final publish result is retained as
+    // a compatibility fallback for manual recovery of pre-two-phase workspaces.
+    const prepareResult = join(workDir, '31-publish', `${runDate}_14_publish-surfdash-prepare_result.json`);
     const result = join(workDir, '31-publish', `${runDate}_14_publish-surfdash_result.json`);
     const zhFile = join(workDir, '31-publish', `${runDate}_20_translate-localize_zh-post-path.txt`);
     timed(workDir, 'translate-localize', () => {
-        const postPath = firstPostPath(readJson(result), 'surfdash-pub');
+        const postPath =
+            firstPostPath(readJson(prepareResult), 'surfdash-pub') || firstPostPath(readJson(result), 'surfdash-pub');
         const zh = postPath.endsWith('index.md') ? postPath : '';
         sted('write', zhFile, () => writeRaw(zhFile, zh));
         if (zh === '') {
             for (const target of ['en', 'ja'] as const) {
+                const sourceHashFile = join(
+                    workDir,
+                    '31-publish',
+                    `${runDate}_20_translate-localize_${target}-source-sha256.txt`,
+                );
                 sted(
                     'write',
                     join(workDir, '31-publish', `${runDate}_20_translate-localize_${target}-post-path.txt`),
@@ -3402,17 +3849,36 @@ export function dailyTranslateLocalize(args: string[]): void {
                             '',
                         ),
                 );
+                sted('remove', sourceHashFile, () => rmSync(sourceHashFile, { force: true }));
             }
             console.log('no zh post path — skip localize');
             return;
         }
+        let sourceHash: string;
+        try {
+            sourceHash = createHash('sha256').update(readFileSync(zh)).digest('hex');
+        } catch (error: unknown) {
+            failWith(
+                1,
+                `translate-localize: cannot fingerprint zh source ${zh}: ${error instanceof Error ? error.message : String(error)}`,
+            );
+        }
         for (const target of ['en', 'ja'] as const) {
             const markerFile = join(workDir, '31-publish', `${runDate}_20_translate-localize_${target}-post-path.txt`);
             const existing = zh.replace('/zh/', `/${target}/`);
-            if (isFile(existing)) {
+            const sourceHashFile = join(
+                workDir,
+                '31-publish',
+                `${runDate}_20_translate-localize_${target}-source-sha256.txt`,
+            );
+            const cachedSourceHash = isFile(sourceHashFile) ? readFileSync(sourceHashFile, 'utf-8').trim() : '';
+            if (isFile(existing) && cachedSourceHash === sourceHash) {
                 sted('write', markerFile, () => writeRaw(markerFile, existing));
                 console.log(`${target} draft cached: ${existing}`);
                 continue;
+            }
+            if (isFile(existing)) {
+                console.log(`${target} draft invalidated: zh source fingerprint changed or is missing`);
             }
             const scaffold = join(workDir, '31-publish', `${runDate}_20_translate-localize_scaffold-${target}.json`);
             const scaffoldResult = join(
@@ -3421,20 +3887,236 @@ export function dailyTranslateLocalize(args: string[]): void {
                 `${runDate}_20_translate-localize_scaffold-${target}-result.json`,
             );
             sted('write', scaffold, () =>
-                writeJqText(scaffold, { body: '', options: { operation: 'scaffold-locale', postPath: zh, target } }),
+                writeJqText(scaffold, {
+                    body: '',
+                    options: {
+                        operation: 'scaffold-locale',
+                        postPath: zh,
+                        target,
+                        ...(isFile(existing) ? { force: true } : {}),
+                    },
+                }),
             );
-            kk([
-                'executor',
-                'run',
-                'surfdash-pub',
-                '--in',
-                scaffold,
-                '--out',
-                scaffoldResult,
-                ...pluginsArgs(pluginsPath),
-            ]);
-            const draftPath = metadataOf(readJson(scaffoldResult)).draftPath;
-            sted('write', markerFile, () => writeRaw(markerFile, typeof draftPath === 'string' ? draftPath : ''));
+            try {
+                kk([
+                    'executor',
+                    'run',
+                    'surfdash-pub',
+                    '--in',
+                    scaffold,
+                    '--out',
+                    scaffoldResult,
+                    ...pluginsArgs(pluginsPath),
+                ]);
+                const draftPath = metadataOf(readJson(scaffoldResult)).draftPath;
+                const draft = typeof draftPath === 'string' ? draftPath : '';
+                sted('write', markerFile, () => writeRaw(markerFile, draft));
+                if (draft !== '') {
+                    sted('write', sourceHashFile, () => writeRaw(sourceHashFile, sourceHash));
+                } else {
+                    sted('remove', sourceHashFile, () => rmSync(sourceHashFile, { force: true }));
+                }
+            } catch (error: unknown) {
+                if (error instanceof StageFailure && error.status === 127) throw error;
+                const message = error instanceof Error ? error.message : String(error);
+                sted('write', markerFile, () => writeRaw(markerFile, ''));
+                sted('remove', sourceHashFile, () => rmSync(sourceHashFile, { force: true }));
+                console.error(`translate-localize: ${target} scaffold failed: ${message}`);
+            }
+        }
+    });
+}
+
+/**
+ * Run Surfdash's own refine command over the complete locale set before the validation fingerprint
+ * is written. This is deliberately a separate local-only phase: the final publish FSM also runs
+ * refine, but it must be idempotent by the time any CMS/git side effect is reachable.
+ */
+function normalizeTranslatedLocales(zhPostPath: string, failUnsafe = true): void {
+    for (const locale of ['zh', 'en', 'ja'] as const) {
+        const sibling = locale === 'zh' ? zhPostPath : zhPostPath.replace('/zh/', `/${locale}/`);
+        if (!isFile(sibling)) continue;
+        const raw = readFileSync(sibling, 'utf-8');
+        const { markdown, remaining } = normalizeSeriesNames(raw, locale);
+        if (failUnsafe && remaining.length > 0) {
+            failWith(1, `series-name normalization left unsafe names in ${locale}: ${remaining.join(' / ')}`);
+        }
+        if (markdown !== raw) sted('write', sibling, () => writeRaw(sibling, markdown));
+    }
+}
+
+export function dailySurfdashRefine(args: string[]): void {
+    const [workDir = '', runDate = '', pluginsPath = ''] = args;
+    const marker = join(workDir, '31-publish', `${runDate}_20_translate-localize_zh-post-path.txt`);
+    const input = join(workDir, '31-publish', `${runDate}_24_surfdash-refine_content.json`);
+    const result = join(workDir, '31-publish', `${runDate}_24_surfdash-refine_result.json`);
+    timed(workDir, 'surfdash-refine', () => {
+        try {
+            const zhPostPath = isFile(marker) ? readFileSync(marker, 'utf-8').trim() : '';
+            if (zhPostPath === '' || !zhPostPath.startsWith('/') || !isFile(zhPostPath)) {
+                failWith(1, `surfdash-refine: zh marker must name an existing post: ${marker}`);
+            }
+            validateLocaleMarkers(workDir, runDate, zhPostPath, 'surfdash-refine');
+            // The validator is intentionally read-only. Repair known series spellings before
+            // site-owned refine computes managed fields, otherwise the final publisher would
+            // rewrite the refined bytes after the locale fingerprint was admitted.
+            normalizeTranslatedLocales(zhPostPath);
+            sted('write', input, () =>
+                writeJqText(input, {
+                    body: '',
+                    format: 'markdown',
+                    options: { operation: 'refine-prepared', postPath: zhPostPath, runDate },
+                }),
+            );
+            rmSync(result, { force: true });
+            kk(['executor', 'run', 'surfdash-pub', '--in', input, '--out', result, ...pluginsArgs(pluginsPath)], {
+                unset: NESTED_SPUR_UNSET,
+                env: { SURFDASH_LOCALE: 'zh' },
+            });
+            const refined = readJson(result);
+            if (refined?.ok !== true) {
+                failWith(1, `surfdash-refine: publisher did not return a successful refine receipt: ${result}`);
+            }
+            sted('write', result, () =>
+                writeJqText(result, {
+                    ok: true,
+                    summary: { total: 1, succeeded: 1, failed: 0, skipped: 0 },
+                    targets: [
+                        {
+                            target: 'surfdash-pub',
+                            ok: true,
+                            status: 'refined',
+                            metadata: metadataOf(refined),
+                        },
+                    ],
+                }),
+            );
+            console.log(`surfdash-refine: site-owned refine completed for ${zhPostPath}`);
+        } catch (error: unknown) {
+            if (error instanceof StageFailure && error.status === 127) throw error;
+            const message = error instanceof Error ? error.message : String(error);
+            sted('write', result, () =>
+                writeJqText(result, {
+                    ok: false,
+                    summary: { total: 1, succeeded: 0, failed: 1, skipped: 0 },
+                    targets: [{ target: 'surfdash-pub', ok: false, status: 'failed', error: message }],
+                }),
+            );
+            console.error(`surfdash-refine: ${message}`);
+        }
+    });
+}
+
+/** Validates locale siblings without contacting Surfdash or mutating their bytes. */
+function validateTranslatedLocales(zhPostPath: string, step: 'translate-validate' | 'translate-sync'): void {
+    const zhPoints = countKeyPoints(zhPostPath);
+    for (const locale of ['zh', 'en', 'ja'] as const) {
+        const sibling = locale === 'zh' ? zhPostPath : zhPostPath.replace('/zh/', `/${locale}/`);
+        if (!isFile(sibling)) {
+            if (locale !== 'zh' && step === 'translate-validate') {
+                failWith(1, `${step}: ${locale} draft is missing: ${sibling}`);
+            }
+            continue;
+        }
+        const problems: string[] = [];
+        const raw = readFileSync(sibling, 'utf-8');
+        const { markdown, remaining } = normalizeSeriesNames(raw, locale);
+        if (markdown !== raw) problems.push('series-name normalization is pending; run the refine preparation first');
+        if (remaining.length > 0) {
+            problems.push(`retired series names left after rewrite: ${remaining.join(' / ')}`);
+        }
+        const items = readKeyPointItems(sibling);
+        if (step === 'translate-validate') {
+            if (readFrontmatterScalar(sibling, 'refined') !== 'true') {
+                problems.push('site-owned refine has not completed (refined: true is required)');
+            }
+            if (items === undefined || items.length === 0) {
+                problems.push('key_points missing or malformed');
+            } else {
+                const malformed = items.filter((item) => {
+                    const separator = item.indexOf(' — ');
+                    return separator <= 0 || item.slice(separator + 3).trim() === '';
+                });
+                if (malformed.length > 0) problems.push('key_points missing or malformed');
+            }
+        }
+        if (locale !== 'zh') {
+            if (readFrontmatterScalar(sibling, 'description') === undefined) {
+                problems.push('description missing/empty');
+            }
+            const points = countKeyPoints(sibling);
+            if (zhPoints !== undefined && points !== undefined && points !== zhPoints) {
+                problems.push(`key_points count ${points} != zh ${zhPoints} (spliced or merged items)`);
+            }
+            // The scheduled path must not let an untranslated scaffold reach the strict CMS sync.
+            if (step === 'translate-validate' && readFrontmatterScalar(sibling, 'draft') !== 'false') {
+                problems.push('draft is still true — locale was scaffolded but not translated');
+            }
+            // Label discipline (same 2026-10-23 audit): a key_points item is `Label — sentence`
+            // and the label is a short phrase — ≤14 chars for ja, ≤28 for en — never a
+            // sentence and never an ellipsis-truncated fragment.
+            if (items !== undefined) {
+                const cap = locale === 'en' ? 28 : 14;
+                const overLimit = items.filter((item) => {
+                    const separator = item.indexOf(' — ');
+                    if (separator < 0) return false;
+                    const label = item.slice(0, separator);
+                    return label.includes('…') || Array.from(label).length > cap;
+                });
+                if (overLimit.length > 0) {
+                    problems.push(
+                        `key_points label over ${cap} chars or …-truncated: ${overLimit.length} of ${items.length} items`,
+                    );
+                }
+            }
+        }
+        if (problems.length > 0) {
+            failWith(
+                1,
+                `${step}: ${locale} draft failed the pre-sync structural check (${problems.join('; ')}) — repair ${sibling} per the translate stage contract before syncing`,
+            );
+        }
+    }
+}
+
+/** Local pre-CMS gate for the scheduled two-phase Surfdash flow. */
+export function dailyTranslateValidate(args: string[]): void {
+    const [workDir = '', runDate = '', _pluginsPath = '', zhPathFile = ''] = args;
+    const validationResult = join(workDir, '31-publish', `${runDate}_24_translate-validate_result.json`);
+    timed(workDir, 'translate-validate', () => {
+        const zhPostPath = isFile(zhPathFile) ? readFileSync(zhPathFile, 'utf-8').trim() : '';
+        try {
+            if (zhPathFile.endsWith('.md') || zhPostPath === '' || !zhPostPath.startsWith('/') || !isFile(zhPostPath)) {
+                failWith(
+                    1,
+                    `translate-validate: 4th argument must name an existing zh marker file (${runDate}_20_translate-localize_zh-post-path.txt)`,
+                );
+            }
+            validateLocaleMarkers(workDir, runDate, zhPostPath, 'translate-validate');
+            validateTranslatedLocales(zhPostPath, 'translate-validate');
+            const evidence = surfdashLocaleValidationEvidence(zhPostPath, runDate);
+            if (!evidence.ok) failWith(1, `translate-validate: ${evidence.reason}`);
+            sted('write', validationResult, () =>
+                writeJqText(validationResult, {
+                    ok: true,
+                    target: 'surfdash-pub',
+                    status: 'validated',
+                    metadata: evidence.evidence,
+                }),
+            );
+            console.log(`translate-validate: locale files ready for final Surfdash publish (${zhPostPath})`);
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            sted('write', validationResult, () =>
+                writeJqText(validationResult, {
+                    ok: false,
+                    target: 'surfdash-pub',
+                    status: 'rejected',
+                    error: message,
+                    metadata: { postPath: zhPostPath },
+                }),
+            );
+            console.error(`translate-validate: ${message}`);
         }
     });
 }
@@ -3460,58 +4142,11 @@ export function dailyTranslateSync(args: string[]): void {
                 `translate-sync: 4th argument must be the zh marker file (${runDate}_20_translate-localize_zh-post-path.txt), not the post itself — '${zhPathFile}' holds ${zhPostPath.includes('\n') ? 'a multi-line document' : `'${zhPostPath}'`}`,
             );
         }
-        // The 2026-10-23 translate run published spliced en/ja description/key_points; the locale
-        // channel has no judge, so gate the structural minimum here before the CMS sync:
-        // a summary must exist and the key_points count must match the zh post (splices merge items).
-        // The same run also invented retired series names (毎日AIブレンド, "Daily AI Medley",
-        // zh-name listen links inside en/ja): normalizeSeriesNames rewrites the known bad set per
-        // locale deterministically (URLs untouched) and any leftover it cannot make safe fails the
-        // sync. The zh post rides the same sync, so it gets the same series-name pass.
-        const zhPoints = countKeyPoints(zhPostPath);
-        for (const locale of ['zh', 'en', 'ja'] as const) {
-            const sibling = locale === 'zh' ? zhPostPath : zhPostPath.replace('/zh/', `/${locale}/`);
-            if (!isFile(sibling)) continue;
-            const problems: string[] = [];
-            const raw = readFileSync(sibling, 'utf-8');
-            const { markdown, remaining } = normalizeSeriesNames(raw, locale);
-            if (markdown !== raw) sted('write', sibling, () => writeRaw(sibling, markdown));
-            if (remaining.length > 0) {
-                problems.push(`retired series names left after rewrite: ${remaining.join(' / ')}`);
-            }
-            if (locale !== 'zh') {
-                if (readFrontmatterScalar(sibling, 'description') === undefined) {
-                    problems.push('description missing/empty');
-                }
-                const points = countKeyPoints(sibling);
-                if (zhPoints !== undefined && points !== undefined && points !== zhPoints) {
-                    problems.push(`key_points count ${points} != zh ${zhPoints} (spliced or merged items)`);
-                }
-                // Label discipline (same 2026-10-23 audit): a key_points item is `Label — sentence`
-                // and the label is a short phrase — ≤14 chars for ja, ≤28 for en — never a
-                // sentence and never an ellipsis-truncated fragment.
-                const items = readKeyPointItems(sibling);
-                if (items !== undefined) {
-                    const cap = locale === 'en' ? 28 : 14;
-                    const overLimit = items.filter((item) => {
-                        const sep = item.indexOf(' — ');
-                        if (sep < 0) return false;
-                        const label = item.slice(0, sep);
-                        return label.includes('…') || Array.from(label).length > cap;
-                    });
-                    if (overLimit.length > 0) {
-                        problems.push(
-                            `key_points label over ${cap} chars or …-truncated: ${overLimit.length} of ${items.length} items`,
-                        );
-                    }
-                }
-            }
-            if (problems.length > 0) {
-                failWith(
-                    1,
-                    `translate-sync: ${locale} draft failed the pre-sync structural check (${problems.join('; ')}) — repair ${sibling} per the translate stage contract before syncing`,
-                );
-            }
-        }
+        // Preserve the legacy explicit sync repair behavior before the shared read-only gate.
+        normalizeTranslatedLocales(zhPostPath, false);
+        // The 2026-10-23 locale structural gate is shared with the scheduled two-phase validator.
+        // This explicit recovery command still performs the real CMS sync after validation.
+        validateTranslatedLocales(zhPostPath, 'translate-sync');
         sted('write', sync, () =>
             writeJqText(sync, { body: '', options: { operation: 'sync', postPath: zhPostPath } }),
         );

@@ -264,14 +264,14 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         // The 2026-10-23 run: the agent "helpfully" translated description/seo_description/key_points
         // beyond its title+body contract and spliced unrelated stories together; the sync published
         // them and the en/ja frontmatter needed hand repair. The prompt now names the fields and the
-        // no-splice rule, and daily-translate-sync gates the structural minimum (count + presence).
+        // no-splice rule, and daily-translate-validate gates the structural minimum (count + presence).
         // Read the ACTIVE daily workflow (voice2); legacy voice/voice3 prompts drift by design and
         // are protected by the deterministic stage gate, not by their prose.
         const yaml2 = readFileSync(
             join(import.meta.dir, '../../../plugins/kk/workflows/kk-daily-ai-voice2.yaml'),
             'utf-8',
         );
-        const block = yaml2.match(/- id: translate\n[\s\S]*?(?=\n {2}- id: translate-sync)/)?.[0] ?? '';
+        const block = yaml2.match(/- id: translate\n[\s\S]*?(?=\n {2}- id: translate-retry)/)?.[0] ?? '';
         expect(block).not.toBe('');
         for (const marker of [
             'description, seo_title, seo_description, and each key_points item',
@@ -286,13 +286,13 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         // The 2026-10-23 run: the agent invented the en/ja series names (ja 毎日AIブレンド, en
         // "Daily AI Medley"/hodgepodge phrasing) and left the zh name in en/ja listen links. The
         // prompt now names the fixed identity per locale; retired names may appear only inside the
-        // never-emit list, and the deterministic rewrite lives in daily-stages translate-sync
+        // never-emit list, and the deterministic rewrite lives in daily-stages translate-validate
         // (asserted by apps/cli/tests/kk-workflow-stages.test.ts).
         const yaml2 = readFileSync(
             join(import.meta.dir, '../../../plugins/kk/workflows/kk-daily-ai-voice2.yaml'),
             'utf-8',
         );
-        const block = yaml2.match(/- id: translate\n[\s\S]*?(?=\n {2}- id: translate-sync)/)?.[0] ?? '';
+        const block = yaml2.match(/- id: translate\n[\s\S]*?(?=\n {2}- id: translate-retry)/)?.[0] ?? '';
         expect(block).not.toBe('');
         for (const marker of [
             '"Daily AI Stew"',

@@ -1263,7 +1263,7 @@ function dailyPublishCompleteness(args: string[]): void {
                 .join('; ');
             console.error(
                 `WARNING: publish completeness — ${completeness.missing.join(', ')} did not complete: ${details}. ` +
-                    'Independent channels never enter publish_status; re-run their stages for this work dir (see ' +
+                    'Side-channel and locale rows never enter publish_status; re-run the relevant stages for this work dir (see ' +
                     `${completenessFile})`,
             );
         }
@@ -1278,9 +1278,10 @@ function targetsOf(path: string): Record<string, unknown>[] {
 }
 
 /**
- * The publish tail's independent channels (locales, XHS, WeChat) and the surfdash CMS re-sync never
- * enter `publish_status` — they are non-blocking by design (ADR-022/025/026). That is also why a
- * tail driven by hand can skip every one of them and still leave a `full` status file behind:
+ * The publish tail's auxiliary channels (locales, XHS, WeChat) and the surfdash CMS re-sync never
+ * enter `publish_status` — only the primary Surfdash + podcast pair does. Locales now validate
+ * before the primary Surfdash publish; XHS/WeChat remain non-blocking by design. A
+ * tail driven by hand can still skip auxiliary channels and leave a `full` status file behind:
  * 20261002 shipped zh-only surfdash with no XHS and no WeChat draft, and nothing in the run's own
  * artifacts said so. Record each channel's state beside the status file so the gap is visible.
  */
@@ -1301,9 +1302,44 @@ function publishCompleteness(
             detail: 'translate markers absent (en/ja never scaffolded)',
         });
     } else {
-        const syncResultFile = at('24_translate-sync_sync-result.json');
-        const syncResult = isFile(syncResultFile) ? readJson(syncResultFile) : null;
-        if (syncResult === null) {
+        const validationResultFile = at('24_translate-validate_result.json');
+        const legacySyncResultFile = at('24_translate-sync_sync-result.json');
+        const hasValidationResult = isFile(validationResultFile);
+        const validationResult = hasValidationResult ? readJson(validationResultFile) : null;
+        const syncResult = isFile(legacySyncResultFile) ? readJson(legacySyncResultFile) : null;
+        if (hasValidationResult) {
+            const primaryPublished = targetsOf(at('14_publish-surfdash_result.json')).some(
+                (entry) => entry.target === 'surfdash-pub' && entry.ok === true && entry.status === 'published',
+            );
+            if (validationResult?.ok !== true) {
+                rows.push({
+                    channel: 'locales',
+                    state: 'failed',
+                    detail: String(validationResult?.error ?? 'translate-validate receipt is missing or malformed'),
+                });
+            } else if (!primaryPublished) {
+                rows.push({
+                    channel: 'locales',
+                    state: 'failed',
+                    detail: 'local validation passed, but final Surfdash publish did not complete',
+                });
+            } else {
+                const untranslated = ['en', 'ja'].filter((locale) => {
+                    const marker = readFileSync(at(`20_translate-localize_${locale}-post-path.txt`), 'utf-8').trim();
+                    if (!isFile(marker)) return true;
+                    const head = readFileSync(marker, 'utf-8').split('---')[1] ?? '';
+                    return /^draft:\s*true\s*$/m.test(head);
+                });
+                rows.push({
+                    channel: 'locales',
+                    state: untranslated.length === 0 ? 'done' : 'failed',
+                    detail:
+                        untranslated.length === 0
+                            ? 'en/ja drafts validated and published with the primary Surfdash sync'
+                            : `${untranslated.join(', ')} draft is still a scaffold (draft: true) — not translated, so it stays unpublished`,
+                });
+            }
+        } else if (syncResult === null) {
             rows.push({
                 channel: 'locales',
                 state: 'not-run',
@@ -1415,8 +1451,24 @@ function dailyPatchSurfdash(args: string[]): void {
     timed(workDir, 'patch-surfdash', () => {
         const sdResult = join(workDir, '31-publish', `${runDate}_14_publish-surfdash_result.json`);
         const podcastResult = join(workDir, '31-publish', `${runDate}_16_publish-podcast_result.json`);
-        if (!isFile(sdResult) || !isFile(podcastResult)) {
-            failWith(1, 'patch-surfdash: missing surfdash/podcast publish results — run the publish states first');
+        const resultPath = join(workDir, '31-publish', `${runDate}_23_patch-surfdash_sync-result.json`);
+        const invalidReceipt = (path: string): boolean => {
+            const parsed = readJson(path);
+            return (
+                !isFile(path) ||
+                parsed === null ||
+                !Array.isArray(parsed.targets) ||
+                parsed.targets.length === 0 ||
+                !parsed.targets.every(
+                    (target) => target !== null && typeof target === 'object' && !Array.isArray(target),
+                )
+            );
+        };
+        if (invalidReceipt(sdResult) || invalidReceipt(podcastResult)) {
+            const error = 'patch-surfdash: malformed surfdash/podcast publish receipt — nothing to patch';
+            sted('write', resultPath, () => writeJqText(resultPath, { ok: false, target: 'surfdash-pub', error }));
+            console.error(error);
+            return;
         }
         const targetOf = (path: string): Record<string, unknown> => {
             const parsed = readJson(path) as { targets?: Array<Record<string, unknown>> };
@@ -1433,7 +1485,6 @@ function dailyPatchSurfdash(args: string[]): void {
             console.error('patch-surfdash: surfdash result carries no postPath — nothing to patch, skip');
             return;
         }
-        const resultPath = join(workDir, '31-publish', `${runDate}_23_patch-surfdash_sync-result.json`);
         if (process.env.KK_SURFDASH_PATCH_OFFLINE === '1') {
             // The marker keeps the completeness report's cms-resync row honest in offline runs.
             const skipMarker = join(workDir, '31-publish', `${runDate}_23_patch-surfdash_emdash-resync.txt`);
@@ -1727,6 +1778,11 @@ if (import.meta.main)
             dailyPublishSurfdash(rest);
             break;
         }
+        case 'daily-prepare-surfdash': {
+            const { dailyPrepareSurfdash } = await loadDailyStages();
+            dailyPrepareSurfdash(rest);
+            break;
+        }
         case 'daily-show-notes': {
             const { dailyShowNotes } = await loadDailyStages();
             dailyShowNotes(rest);
@@ -1772,9 +1828,19 @@ if (import.meta.main)
             dailyTranslateLocalize(rest);
             break;
         }
+        case 'daily-surfdash-refine': {
+            const { dailySurfdashRefine } = await loadDailyStages();
+            dailySurfdashRefine(rest);
+            break;
+        }
         case 'daily-translate-sync': {
             const { dailyTranslateSync } = await loadDailyStages();
             dailyTranslateSync(rest);
+            break;
+        }
+        case 'daily-translate-validate': {
+            const { dailyTranslateValidate } = await loadDailyStages();
+            dailyTranslateValidate(rest);
             break;
         }
         case 'itc-outline-pick': {

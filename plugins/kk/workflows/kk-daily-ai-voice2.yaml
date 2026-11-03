@@ -10,7 +10,7 @@ description: >-
   set at QC so it never re-enters a later pool — whether or not the run publishes. The daily work is
   unchanged after that — plan → content QC → article/cover/script →
   content safety (nested state machine, kk-daily-safety.yaml) → operator review → audio → publish
-  (surfdash + podcast) → independent soft channels (xhs, wechat, locales) → classify → ledger. It
+  (surfdash + podcast) → soft side channels (xhs, wechat) plus the required local-locale gate → classify → ledger. It
   supersedes kk-daily-ai-voice.yaml, which stays untouched until cut-over §8.
 vars:
   # Composed by the `prepare` node (`kk daily prepare`), then read back into vars through the
@@ -721,6 +721,21 @@ nodes:
         command: >-
           kk stage daily-publish-prep "${vars.work_dir}" "${vars.run_date}" "${vars.podcast_artist}" "${vars.podcast_album}"
 
+  # Surfdash's CMS sync now requires all locale files. Materialize zh first so the locale branch
+  # can scaffold and translate en/ja before the final publish invokes refine/sync.
+  - id: publish-surfdash-prepare
+    description: "Materialize the local zh Surfdash post without invoking CMS sync; locale translation runs from this path"
+    dependsOn: [publish-prep]
+    condition:
+      kind: shell
+      options:
+        command: 'test "${vars.publish_enabled}" = "true"'
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-prepare-surfdash "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
+
   # ---- audio QC: fans in the audio branch and the publish seam ----
   - id: quality
     description: >-
@@ -734,9 +749,74 @@ nodes:
         command: >-
           kk stage daily-quality-report "${vars.work_dir}" "${vars.run_date}"
 
-  - id: publish-surfdash
-    description: "Publish the merged Content to surfdash (single target); its result.json is what show-notes links and what patch-surfdash (folded into publish-classify) patches"
-    dependsOn: [publish-prep]
+  # ---- soft side channels + local-locale gate (exit 0 on channel failure; final Surfdash remains fail-closed) ----
+  - id: xhs-write
+    description: "Plan the XHS card series across the episode's plan items via agent.run; onError: continue — a failed plan skips the XHS target, never the run"
+    dependsOn: [script, review]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
+          && test "${vars.xhs_enabled}" = "true"
+    action:
+      kind: agent.run
+      onError: continue
+      options:
+        role: scribe
+        agent: ${vars.agent}
+        timeoutMs: 600000
+        # ADR-115 error tier: keep this prompt <= 1000 chars.
+        input: |
+          Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of news docs; don't edit it.
+          Plan the whole episode, not the lead item alone. Card 1 is the episode hook.
+          Write an XHS note: "title" (≤20 chars) and "body" (Chinese lead paragraph + 3-5 hashtags) — the stage appends one numbered line per image below it. 选题边界：公共事务主线不写入，只写技术内容。
+          Write exactly ${vars.xhs_cards} cards in plan order: card 1 "cover"; one "content" card per plan item, up to ${vars.xhs_cards} - 2 of them; the last "closing". Each card carries "role", "copy" (Chinese headline ≤12 chars), "points" (2-4 short Chinese bullets), "layout", "subject" (one concrete English visual scene), "sourcePoint" (that item's fact) and "itemId" (its "id").
+          Ground every field in that item — no invented facts. No writing, letters, numbers, logos or people; screens stay blank.
+          Output strictly valid JSON {"title": "...", "body": "...", "cards": [...]} to ${vars.work_dir}/25-xhs/${vars.run_date}_18_xhs_plan.json.
+        expectFile: ${vars.work_dir}/25-xhs/${vars.run_date}_18_xhs_plan.json
+        allowAppend: false
+
+  - id: xhs-render
+    description: "Render the card series through the pinned xhs-card/xhs-knowledge presets, attach the episode cover last and pair every image with its numbered line (0235 note_scope=episode); onError: continue — the publish node names the missing series and stays soft"
+    dependsOn: [xhs-write]
+    # A skipped xhs-write still admits its dependents, so each XHS node carries its own gate:
+    # without it a run with xhs_enabled=false would re-package a stale same-day 25-xhs/ series.
+    # The pool-count half (0266) stops the same stale re-package after a duration refusal emptied
+    # the candidates — xhs-write runs before duration, so its plan/cards are already on disk.
+    condition:
+      kind: shell
+      options:
+        command: >-
+          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
+          && test "${vars.xhs_enabled}" = "true"
+    action:
+      kind: shell
+      onError: continue
+      options:
+        command: >-
+          kk stage daily-xhs-render "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.xhs_cards}" "${vars.xhs_style}" "${vars.xhs_provider}" "${vars.xhs_model}" "${vars.xhs_fallback}" "episode"
+
+  - id: xhs-publish
+    description: "Publish the packaged card series to XHS, plus the episode's 发播客 note as a follow-up in the same console visit (0236, one cap entry) — draft, or live only when xhs_live=true (ADR-022); independent and non-blocking: its outcome never enters publish_status, and xhs-pub's own headless preflight + publish cap make a sessionless run fail soft (exit 0)"
+    # publish-prep is a data dependency, not a sibling: daily-publish-xhs reads its
+    # _13_publish-prep_content.json as the 发播客 note, so without this edge the two nodes race and the
+    # note is dropped silently (the stage logs and still exits 0). A skipped publish-prep — a
+    # non-publishing run — still admits this node, so the edge cannot deadlock the DAG.
+    dependsOn: [xhs-render, publish-prep]
+    condition:
+      kind: shell
+      options:
+        command: 'test "${vars.xhs_enabled}" = "true"'
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-publish-xhs "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.xhs_live}" "true"
+
+  - id: translate-localize
+    description: "Locales — surfdash-pub scaffolds the en/ja drafts (deterministic, plugin-owned) and writes one marker file per locale naming the draft to translate"
+    dependsOn: [publish-surfdash-prepare]
     condition:
       kind: shell
       options:
@@ -745,7 +825,119 @@ nodes:
       kind: shell
       options:
         command: >-
-          kk stage daily-publish-surfdash "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
+          kk stage daily-translate-localize "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
+
+  - id: translate
+    description: >-
+      Agent translates both scaffolded locale drafts in place. The two draft paths are read from the
+      marker files at their fixed paths (no var projection after the fan-out: concurrent setVars is
+      last-writer-wins, design §6), and an empty marker means that locale is absent. The local
+      validation node gates final Surfdash publish so its strict all-locale CMS policy is met.
+    dependsOn: [translate-localize]
+    action:
+      kind: agent.run
+      options:
+        # 20261012 hardening: this is the LAST agent step and a translation failure must not abort
+        # the overall report/podcast close, yet the step carried no tolerance and no retry sibling — a stochastic
+        # executor failure here aborted the DAG *after* surfdash and podcast had published, so
+        # publish-classify, mark-published, run-report and ledger never ran for an otherwise complete
+        # day. Tolerating the failure is safe because a scaffold is an unpublished draft: the prompt
+        # below is what flips `draft: true` → `draft: false`, so an untranslated locale stays off the
+        # site, and `daily-publish-completeness` now reads that flag and reports the locale as failed
+        # instead of calling a scaffold `done`.
+        onError: continue
+        role: scribe
+        agent: ${vars.agent}
+        timeoutMs: 600000
+        # 2026-10-24: `onError: continue` keeps a failed primary eligible for the capable retry
+        # sibling below. The local validation node refuses final publish while either locale remains
+        # an untranslated scaffold.
+        input: &translate-input |
+          Translate the en/ja draft posts of the zh article. Read the two marker files at these fixed paths — each holds one draft path, or is empty when that locale was not scaffolded:
+          English: ${vars.work_dir}/31-publish/${vars.run_date}_20_translate-localize_en-post-path.txt
+          Japanese: ${vars.work_dir}/31-publish/${vars.run_date}_20_translate-localize_ja-post-path.txt
+          For each: if the marker is empty or unreadable, skip that locale. Otherwise edit the named file in place — translate the frontmatter title and the whole markdown body to natural English/Japanese respectively. Keep frontmatter keys, dates, URLs, code, and the assets/ image reference untouched. Set draft: false (the translated post publishes to the site) and remove any canonical: frontmatter line pointing at a different locale's URL.
+          Also translate these frontmatter values into the target locale, keeping all other keys untouched: description, seo_title, seo_description, and each key_points item. Each stays one coherent standalone sentence that summarizes the same story as the zh source — never splice fragments from different items or stories into one, and key_points must keep exactly the same number of items as the zh post. The 2026-10-23 run failed this: spliced description/key_points had to be hand-repaired before sync.
+          Series names are fixed product identity, never invented or freely translated: the en series name is "Daily AI Stew" (show "Salty Talk"); the ja series name is "デイリーAIシチュー" (show "咸話咸説"). Never emit 毎日AIブレンド, ごった煮, "Daily AI Medley", "hodgepodge", "Daily AI Briefing", or the zh name 每日AI乱炖 in en/ja prose or link text (a URL keeps whatever it contains). Openers: en "Your Daily AI Stew from Robin, on Salty Talk."; ja "咸話咸説のデイリーAIシチュー、Robin がお届けします。" Listen links: en "[listen to Daily AI Stew · <date>](<url>)", ja "[デイリーAIシチュー · <date> を聴く](<url>)". In each key_points item keep the "Label — sentence" shape: the label before " — " stays a short phrase of at most 14 characters (ja) / 28 (en), never truncated with "…". The local translate-validate stage rewrites known retired names deterministically and fails the publish gate on leftovers.
+          Keep frontmatter valid YAML: double-quote any value containing ': '. Read the surfdash translator glossary if present at the surfdash checkout root under .agents/skills/surfdash-translator/glossary.md and apply its terminology.
+          Do not wait for operator confirmation. Each edited file must end fully in its target language.
+
+  # 2026-10-24: the locale translation carried `onError: continue` with NO retry sibling, so a
+  # failed executor left the en/ja drafts untranslated and the old sync stage could not distinguish
+  # a scaffold from a publishable locale. The primary tolerates, this sibling is loud-tolerant and
+  # runs only when a scaffolded draft is still untranslated; translate-validate is the final gate.
+  - id: translate-retry
+    description: "Retry the en/ja locale translation on the capable tier when the primary left a scaffolded draft untranslated (2026-10-24)"
+    dependsOn: [translate]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          test "$(cat "${vars.work_dir}/31-publish/${vars.run_date}_20_translate-localize_zh-post-path.txt" 2>/dev/null)" != ""
+          && { for L in en ja; do M="${vars.work_dir}/31-publish/${vars.run_date}_20_translate-localize_$L-post-path.txt"; P="$(cat "$M" 2>/dev/null)"; [ -z "$P" ] && continue; grep -q '^draft: *false' "$P" || { echo "untranslated: $L ($P)"; exit 0; }; done; exit 1; }
+    action:
+      kind: agent.run
+      options:
+        onError: continue
+        role: reviewer
+        agent: ${vars.agent_retry}
+        timeoutMs: 600000
+        input: *translate-input
+
+  - id: translate-refine
+    description: "Run the Surfdash-owned refine pass over zh/en/ja locally before the locale fingerprint is admitted; no CMS, git, or remote side effect"
+    dependsOn: [translate, translate-retry]
+    condition:
+      kind: shell
+      options:
+        command: 'test "${vars.publish_enabled}" = "true"'
+    action:
+      kind: shell
+      onError: continue
+      options:
+        command: >-
+          kk stage daily-surfdash-refine "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
+
+  - id: translate-validate
+    description: "Validate and fingerprint the refined translated locale files locally before the final Surfdash publish; no CMS side effect"
+    dependsOn: [translate-refine]
+    condition:
+      kind: shell
+      options:
+        command: 'test "${vars.publish_enabled}" = "true"'
+    action:
+      kind: shell
+      onError: continue
+      options:
+        command: >-
+          kk stage daily-translate-validate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.work_dir}/31-publish/${vars.run_date}_20_translate-localize_zh-post-path.txt"
+
+  - id: publish-surfdash
+    description: "Publish the validated merged Content to surfdash (single target); its result.json is what show-notes links and what patch-surfdash (folded into publish-classify) patches"
+    dependsOn: [publish-prep, translate-validate]
+    condition:
+      kind: shell
+      options:
+        command: 'test "${vars.publish_enabled}" = "true"'
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-publish-surfdash "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "true"
+
+  - id: wechat-publish
+    description: "Publish the daily article via wechatmp-pub after Surfdash settles so its observed public URL fills 原文链接; draft by default, live only when wechat_live=true; failures remain non-blocking"
+    dependsOn: [publish-prep, publish-surfdash]
+    dependencyPolicy: all
+    condition:
+      kind: shell
+      options:
+        command: 'test "${vars.publish_enabled}" = "true" && test "${vars.wechat_enabled}" = "true"'
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-publish-wechat "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.wechat_live}" "${vars.wechat_collection}"
 
   - id: show-notes
     description: "Render timeline show notes from the episode plan (podcast-pub show-notes op; article URL from the surfdash result postPath — a surfdash failure degrades to the legacy full-body layout)"
@@ -818,175 +1010,15 @@ nodes:
           PODCAST_PUB_ROUND_DURATION="${vars.podcast_round_duration}"
           kk stage daily-publish-podcast "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
 
-  # ---- independent soft channels: xhs, wechat, locales (exit 0 on soft failure; fail-fast DAG) ----
-  - id: xhs-write
-    description: "Plan the XHS card series across the episode's plan items via agent.run; onError: continue — a failed plan skips the XHS target, never the run"
-    dependsOn: [script, review]
-    condition:
-      kind: shell
-      options:
-        command: >-
-          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
-          && test "${vars.xhs_enabled}" = "true"
-    action:
-      kind: agent.run
-      onError: continue
-      options:
-        role: scribe
-        agent: ${vars.agent}
-        timeoutMs: 600000
-        # ADR-115 error tier: keep this prompt <= 1000 chars.
-        input: |
-          Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of news docs; don't edit it.
-          Plan the whole episode, not the lead item alone. Card 1 is the episode hook.
-          Write an XHS note: "title" (≤20 chars) and "body" (Chinese lead paragraph + 3-5 hashtags) — the stage appends one numbered line per image below it. 选题边界：公共事务主线不写入，只写技术内容。
-          Write exactly ${vars.xhs_cards} cards in plan order: card 1 "cover"; one "content" card per plan item, up to ${vars.xhs_cards} - 2 of them; the last "closing". Each card carries "role", "copy" (Chinese headline ≤12 chars), "points" (2-4 short Chinese bullets), "layout", "subject" (one concrete English visual scene), "sourcePoint" (that item's fact) and "itemId" (its "id").
-          Ground every field in that item — no invented facts. No writing, letters, numbers, logos or people; screens stay blank.
-          Output strictly valid JSON {"title": "...", "body": "...", "cards": [...]} to ${vars.work_dir}/25-xhs/${vars.run_date}_18_xhs_plan.json.
-        expectFile: ${vars.work_dir}/25-xhs/${vars.run_date}_18_xhs_plan.json
-        allowAppend: false
-
-  - id: xhs-render
-    description: "Render the card series through the pinned xhs-card/xhs-knowledge presets, attach the episode cover last and pair every image with its numbered line (0235 note_scope=episode); onError: continue — the publish node names the missing series and stays soft"
-    dependsOn: [xhs-write]
-    # A skipped xhs-write still admits its dependents, so each XHS node carries its own gate:
-    # without it a run with xhs_enabled=false would re-package a stale same-day 25-xhs/ series.
-    # The pool-count half (0266) stops the same stale re-package after a duration refusal emptied
-    # the candidates — xhs-write runs before duration, so its plan/cards are already on disk.
-    condition:
-      kind: shell
-      options:
-        command: >-
-          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
-          && test "${vars.xhs_enabled}" = "true"
-    action:
-      kind: shell
-      onError: continue
-      options:
-        command: >-
-          kk stage daily-xhs-render "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.xhs_cards}" "${vars.xhs_style}" "${vars.xhs_provider}" "${vars.xhs_model}" "${vars.xhs_fallback}" "episode"
-
-  - id: xhs-publish
-    description: "Publish the packaged card series to XHS, plus the episode's 发播客 note as a follow-up in the same console visit (0236, one cap entry) — draft, or live only when xhs_live=true (ADR-022); independent and non-blocking: its outcome never enters publish_status, and xhs-pub's own headless preflight + publish cap make a sessionless run fail soft (exit 0)"
-    # publish-prep is a data dependency, not a sibling: daily-publish-xhs reads its
-    # _13_publish-prep_content.json as the 发播客 note, so without this edge the two nodes race and the
-    # note is dropped silently (the stage logs and still exits 0). A skipped publish-prep — a
-    # non-publishing run — still admits this node, so the edge cannot deadlock the DAG.
-    dependsOn: [xhs-render, publish-prep]
-    condition:
-      kind: shell
-      options:
-        command: 'test "${vars.xhs_enabled}" = "true"'
-    action:
-      kind: shell
-      options:
-        command: >-
-          kk stage daily-publish-xhs "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.xhs_live}" "true"
-
-  - id: wechat-publish
-    description: "Publish the daily article to the WeChat MP draft box via wechatmp-pub — draft, or live only when wechat_live=true; independent and non-blocking (a sessionless profile refuses fast, exit 0)"
-    dependsOn: [publish-prep]
-    condition:
-      kind: shell
-      options:
-        command: 'test "${vars.publish_enabled}" = "true" && test "${vars.wechat_enabled}" = "true"'
-    action:
-      kind: shell
-      options:
-        command: >-
-          kk stage daily-publish-wechat "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.wechat_live}" "${vars.wechat_collection}"
-
-  - id: translate-localize
-    description: "Locales — surfdash-pub scaffolds the en/ja drafts (deterministic, plugin-owned) and writes one marker file per locale naming the draft to translate"
-    dependsOn: [publish-surfdash]
-    condition:
-      kind: shell
-      options:
-        command: 'test "${vars.publish_enabled}" = "true"'
-    action:
-      kind: shell
-      options:
-        command: >-
-          kk stage daily-translate-localize "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
-
-  - id: translate
-    description: >-
-      Agent translates both scaffolded locale drafts in place. The two draft paths are read from the
-      marker files at their fixed paths (no var projection after the fan-out: concurrent setVars is
-      last-writer-wins, design §6), and an empty marker means that locale is absent. Non-blocking:
-      the sync node and publish-classify treat the locales as an independent channel.
-    dependsOn: [translate-localize]
-    action:
-      kind: agent.run
-      options:
-        # 20261012 hardening: this is the LAST agent step and the locales are documented as an
-        # independent channel, yet the step carried no tolerance and no retry sibling — a stochastic
-        # executor failure here aborted the DAG *after* surfdash and podcast had published, so
-        # publish-classify, mark-published, run-report and ledger never ran for an otherwise complete
-        # day. Tolerating the failure is safe because a scaffold is an unpublished draft: the prompt
-        # below is what flips `draft: true` → `draft: false`, so an untranslated locale stays off the
-        # site, and `daily-publish-completeness` now reads that flag and reports the locale as failed
-        # instead of calling a scaffold `done`.
-        onError: continue
-        role: scribe
-        agent: ${vars.agent}
-        timeoutMs: 600000
-        # 2026-10-24: `onError: continue` documents the locales as non-blocking, but a failure here
-        # landed AFTER surfdash/podcast and left `translate-sync` to sync nothing while
-        # `publish-classify` still reported the day `full` — the en/ja posts never existed. The
-        # retry sibling below carries the capable tier; `daily-publish-completeness` is what makes
-        # the residue visible instead of a silent skip.
-        input: &translate-input |
-          Translate the en/ja draft posts of the zh article. Read the two marker files at these fixed paths — each holds one draft path, or is empty when that locale was not scaffolded:
-          English: ${vars.work_dir}/31-publish/${vars.run_date}_20_translate-localize_en-post-path.txt
-          Japanese: ${vars.work_dir}/31-publish/${vars.run_date}_20_translate-localize_ja-post-path.txt
-          For each: if the marker is empty or unreadable, skip that locale. Otherwise edit the named file in place — translate the frontmatter title and the whole markdown body to natural English/Japanese respectively. Keep frontmatter keys, dates, URLs, code, and the assets/ image reference untouched. Set draft: false (the translated post publishes to the site) and remove any canonical: frontmatter line pointing at a different locale's URL.
-          Also translate these frontmatter values into the target locale, keeping all other keys untouched: description, seo_title, seo_description, and each key_points item. Each stays one coherent standalone sentence that summarizes the same story as the zh source — never splice fragments from different items or stories into one, and key_points must keep exactly the same number of items as the zh post. The 2026-10-23 run failed this: spliced description/key_points had to be hand-repaired before sync.
-          Series names are fixed product identity, never invented or freely translated: the en series name is "Daily AI Stew" (show "Salty Talk"); the ja series name is "デイリーAIシチュー" (show "咸話咸説"). Never emit 毎日AIブレンド, ごった煮, "Daily AI Medley", "hodgepodge", "Daily AI Briefing", or the zh name 每日AI乱炖 in en/ja prose or link text (a URL keeps whatever it contains). Openers: en "Your Daily AI Stew from Robin, on Salty Talk."; ja "咸話咸説のデイリーAIシチュー、Robin がお届けします。" Listen links: en "[listen to Daily AI Stew · <date>](<url>)", ja "[デイリーAIシチュー · <date> を聴く](<url>)". In each key_points item keep the "Label — sentence" shape: the label before " — " stays a short phrase of at most 14 characters (ja) / 28 (en), never truncated with "…". daily-translate-sync rewrites known retired names deterministically and fails the sync on leftovers.
-          Keep frontmatter valid YAML: double-quote any value containing ': '. Read the surfdash translator glossary if present at the surfdash checkout root under .agents/skills/surfdash-translator/glossary.md and apply its terminology.
-          Do not wait for operator confirmation. Each edited file must end fully in its target language.
-
-  # 2026-10-24: the locale translation carried `onError: continue` with NO retry sibling, so a
-  # failed executor left the en/ja drafts untranslated and `translate-sync` synced nothing while the
-  # day still classified `full`. Same shape as the two hard-fail producers above: the primary
-  # tolerates, this sibling is loud-tolerant (a locale is an independent channel, so it continues
-  # rather than failing the DAG) and runs only when a scaffolded draft is still untranslated.
-  - id: translate-retry
-    description: "Retry the en/ja locale translation on the capable tier when the primary left a scaffolded draft untranslated (2026-10-24)"
-    dependsOn: [translate]
-    condition:
-      kind: shell
-      options:
-        command: >-
-          test "$(cat "${vars.work_dir}/31-publish/${vars.run_date}_20_translate-localize_zh-post-path.txt" 2>/dev/null)" != ""
-          && { for L in en ja; do M="${vars.work_dir}/31-publish/${vars.run_date}_20_translate-localize_$L-post-path.txt"; P="$(cat "$M" 2>/dev/null)"; [ -z "$P" ] && continue; grep -q '^draft: *false' "$P" || { echo "untranslated: $L ($P)"; exit 0; }; done; exit 1; }
-    action:
-      kind: agent.run
-      options:
-        onError: continue
-        role: reviewer
-        agent: ${vars.agent_retry}
-        timeoutMs: 600000
-        input: *translate-input
-
-  - id: translate-sync
-    description: "Sync the translated en/ja drafts into the surfdash CMS (the zh post path rides the marker file)"
-    dependsOn: [translate, translate-retry]
-    action:
-      kind: shell
-      options:
-        command: >-
-          kk stage daily-translate-sync "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.work_dir}/31-publish/${vars.run_date}_20_translate-localize_zh-post-path.txt"
-
   # ---- fan-in: classify the publish outcome, then close the run ----
   - id: publish-classify
     description: >-
-      Fan-in of every publish leaf (surfdash, podcast, xhs, wechat, locales) with policy `all`:
+      Fan-in of every publish leaf (surfdash, podcast, xhs, wechat, locale validation) with policy `all`:
       classifies the sequenced surfdash → podcast outcomes into publish-status.txt full|partial|none
-      (exit 0 in all three), records the independent channels' completeness, and folds in the
+      (exit 0 in all three), records side-channel/locale completeness, and folds in the
       surfdash post-patching + the partial-publish marker that voice1 ran as separate states (a
       classify is the only node that knows the status). Non-publishing runs skip the whole subtree.
-    dependsOn: [publish-podcast, publish-surfdash, xhs-publish, wechat-publish, translate-sync]
+    dependsOn: [publish-podcast, publish-surfdash, xhs-publish, wechat-publish, translate-validate]
     dependencyPolicy: all
     condition:
       kind: shell

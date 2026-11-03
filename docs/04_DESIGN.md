@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.54.0
+version: 2.55.0
 created_at: 2026-07-22
-updated_at: 2026-11-01
+updated_at: 2026-11-02
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -1041,8 +1041,8 @@ future ones — gets authoritative timing and token figures without kk-owned tim
 
 **Daily supervision (task 0338).** `bun plugins/kk/scripts/daily-scheduled-run.ts --repo <checkout>
 --works-dir <works-root> --agent <executor> --retry-agent <executor>` launches the existing voice2
-workflow with explicit `publish_enabled=true` and `skip_review=true`. It preserves channel draft/live
-settings. The optional `--run-id`, `--receipt`, and positive `--timeout-ms` (default 13,500,000 ms,
+workflow with explicit `publish_enabled=true` and `skip_review=true`. WeChat defaults to draft;
+the explicit `--wechat-live` boolean opts into public publication. The optional `--run-id`, `--receipt`, and positive `--timeout-ms` (default 13,500,000 ms,
 below the scheduler's four-hour limit) support repeatable diagnostics and bounded execution. Owned
 process groups are stopped on timeout/signals; the parent and `<run-id>-safety` run records are
 cancelled by id, and the ledger is synced after termination. The default receipt is
@@ -1273,7 +1273,7 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `KK_IMAGE_DRY_RUN` | no (image-gen) | `1` composes every prompt and selects the provider but spends nothing (`metadata.dryRun: true`). The illustration anchor-plan check still runs on this branch (0169) |
 | `KK_IMAGE_PRESET_PATH` | no (image-gen) | `path.delimiter`-separated extra preset roots, lowest → highest after builtin → `~/.config/kk/image-presets` → `<KNOWLEDGE_KIT_PROJECT_ROOT>/.kk/image-presets` (ADR-012 root order); non-directory entries are skipped |
 | `SURFDASH_ROOT` | no (surfdash-pub) | Surfdash checkout root; default derives from `POSTSURFING_BIN` (`<root>/scripts/<cli>`). The article markdown must land at `content/posts/articles/<locale>/<slug>/index.md` |
-| `SURFDASH_LOCALE` | no (surfdash-pub) | Content locale directory for the published post (default `zh`) |
+| `SURFDASH_LOCALE` | no (surfdash-pub) | Content locale directory for the published post (default `zh`); the scheduled daily voice2 prepare/publish stages pin `zh` so an inherited caller locale cannot select the wrong source tree |
 | `SURFDASH_AUTO_PUSH` | no (surfdash-pub) | `0` disables the post-publish deploy seam (git commit/push of the post path + live-URL poll); any other value or unset auto-pushes. Production deploys run from surfdash's `deploy.yml` on every push to `main` — without the seam the article 404s until a manual commit (dogfood 2026-09-12). Before writing anything the seam fast-forwards the checkout onto `origin/main` when local carries no commit of its own (2026-10-22: three publish days died on `! [rejected] main -> main (fetch first)` after the article had been committed on a stale base and the episode had already published); a **diverged** checkout fails the publish naming both counts instead of rewriting history, and an unreachable remote is not fatal (the push then reports the real error) |
 | `SURFDASH_URL` | no (surfdash-pub) | Base URL for the live-URL poll and `url` in the Result (default `https://surfing.salty.vip`); article derived as `<base>/<locale>/posts/<slug>` |
 | `VOICEBOX_MAX_CHUNK_CHARS` | no (voice-gen) | Max chunk characters (default: `800`, range 100–5000) |
@@ -1391,6 +1391,7 @@ only need the package root (`src/index.ts`) never load this module or
 
 | Export | Kind | Notes |
 | -------- | ------ | ------- |
+| `createExclusiveFile(path)`, `chmod(path, mode)`, `mkdirExclusive(path, mode = 0o700)`, `rmdir(path)` | functions | Narrow browser filesystem primitives missing from the runtime seam, implemented by the existing private `bot-fs` adapter. Exclusive files use `wx` and `0o600`; exclusive directory creation returns false on an existing path; empty-directory removal returns false for absent/nonempty paths. Ordinary copy, rename and deletion continue through `createNodeFileSystem()` |
 | `ChannelBrowserConfig` | interface | `{ channel, homeUrl, isAuthenticated, loginTimeoutMs?, checkHeadedOnly?, readIdentity? }`; `isAuthenticated` is the site-owned readiness predicate, `loginTimeoutMs` defaults to `180000`; `checkHeadedOnly` (0216) makes `runProfileCli check` skip the headless pass for WAF-451 channels (infoq, juejin, x `article`); `readIdentity?(page) => Promise<string \| null>` (0305) is the opt-in account label read during bot-mode login |
 | `captureSessionFacts(context, url)` | function | `{ expiresAt? }` — earliest `expires` among persistent httpOnly cookies `context.cookies(url)` returns (0305); cookie names/values never leave it |
 | `execBot(name, request, options?)` | function | One `context.request.fetch` through the bot's persistent profile under the shared lease, headless (0306); body returned as a `Buffer`; Playwright errors wrapped so the URL never surfaces |
@@ -1439,10 +1440,18 @@ meaningful for `kind: 'browser'` transports.
 
 | Export | Kind | Notes |
 | -------- | ------ | ------- |
-| `PostsurfingFileCliTransport` | class | `file-cli` transport: `postsurfing` CLI child process; requires `POSTSURFING_BIN` (default: on PATH); routes `options.operation`: `publish` (default) / `scaffold-locale` (`sd translate` scaffold + assets copy → `metadata.draftPath`; targets `en`/`ja`) / `sync` (publish-orchestrator) — 0096. On publish success the transport commits + pushes only the post path to `main` (pathspec commit; deploy.yml builds the site) and polls the article URL until 2xx (`metadata.live`, `metadata.gitCommit`; push acceptance is authoritative — an unverified URL stays non-fatal). EmDash 401/`INVALID_TOKEN` errors surface with a regenerate-the-token hint. Path-derived metadata is validated before any filesystem effect (0156 R4): `metadata.runDate` must be `YYYYMMDD`, the resolved post dir must stay one segment under `content/posts/articles/<locale>`, and `metadata.coverImage` must carry a known image extension (`.png`/`.jpg`/`.jpeg`/`.webp`/`.gif`); a violation returns `ok:false` and writes nothing. Invalid `--in` Content yields the spec §2.5 `ok:false` Result plus a non-zero exit instead of an uncaught `SyntaxError` (0156 R7) |
+| `PostsurfingFileCliTransport` | class | `file-cli` transport: `postsurfing` CLI child process; requires `POSTSURFING_BIN` (default: on PATH); routes `options.operation`: `publish` (default) / `prepare` (materialize the local post and return `metadata.postPath` without invoking postsurfing/CMS/git, so locale scaffolding can precede the strict sync gate) / `scaffold-locale` (`sd translate` scaffold + assets copy → `metadata.draftPath`; targets `en`/`ja`; `options.force: true` adds the explicit `--force` source-refresh flag) / `sync` (publish-orchestrator) — 0096. On publish success the transport commits + pushes only the post path to `main` (pathspec commit; deploy.yml builds the site) and polls the article URL until 2xx (`metadata.live`, `metadata.gitCommit`; push acceptance is authoritative — an unverified URL stays non-fatal). EmDash 401/`INVALID_TOKEN` errors surface with a regenerate-the-token hint. Path-derived metadata is validated before any filesystem effect (0156 R4): `metadata.runDate` must be `YYYYMMDD`, the resolved post dir must stay one segment under `content/posts/articles/<locale>`, and `metadata.coverImage` must carry a known image extension (`.png`/`.jpg`/`.jpeg`/`.webp`/`.gif`); a violation returns `ok:false` and writes nothing. Invalid `--in` Content yields the spec §2.5 `ok:false` Result plus a non-zero exit instead of an uncaught `SyntaxError` (0156 R7) |
 | `mapContentToSurfingMarkdown(content)` | function | Renders Surfdash markdown + frontmatter (title, description, tags, date, canonical_url, published) |
 | `processPublishIO(inputPath, outputPath, transport?)` | function | `--in`/`--out` IO per the publish spec §1; forwards a top-level input `options` object to the transport (operation selection, 0096) |
 | `main()` | function | `--in`/`--out` arg parsing; exit 0 success / 1 failure |
+
+The daily locale gate also uses `options.operation: 'refine-prepared'` to run the site's owning
+refiner on the prepared zh/en/ja files before validation, then `'publish-prepared'` to publish
+without rematerializing the source. Both require `postPath` and `runDate`; final publication also
+requires `expectedPostSha256` and `expectedLocaleFingerprint`. The publisher checks the three
+locale identities before and after the remote orchestration, and scopes its content/asset commit
+to all three dated locale directories. Validation receipts and successful cache reuse bind the
+same paths, input bytes and locale fingerprint; a missing or changed identity blocks dispatch.
 
 ### `@gobing-ai/zenn-pub` (`plugins/publishings/zenn-pub`, kind `publish`)
 
@@ -1487,6 +1496,27 @@ accepting posts — the browser route fights Cloudflare, so it is not worth main
 | `buildCreateArticlePayload` / `createWechatArticleDraft` | function | CGI draft creation (task 0290, `src/cgi-draft.ts`): frozen `operate_appmsg?t=ajax-response&sub=create&type=77&token&lang=zh_CN` multipart baseline (`operate_from=Chrome`, `AppMsgId=''`, `count=1`, `data_seq=0`, `title0/author0/digest0/auto_gen_digest0/content0/sourceurl0`, cover `cdn_url0/cdn_235_1_url0/cdn_1_1_url0/cdn_url_back0` + `crop_list0` from the ACTUAL 0289 crop coordinates, `share_page_type0/share_imageinfo0/categories_list0/compose_info0` inactive defaults — no invented vendor scalars); receipt gate (`ret` 0/absent + safe numeric id) then id+title readback via `appmsg?action=list_ex` before returning `{appMsgId, editPath}`; single-shot — HTTP failure/timeout marks `metadata.ambiguousSubmission=true`, never retries, never DOM-falls-back; `editPath` carries no token |
 
 The 2026-09-29 refactor replaced the HTTP `draft/add` transport (which needed `WECHAT_APP_ID`/`WECHAT_APP_SECRET` and a `thumbMediaId`) with a console browser flow (xhs-pub pattern): the console's `新的创作` menu opens the editor for the requested **operation** — 文章 (`createType=0`), 贴图 (`8`), 视频 (`5`), 播客 (`7`) — on `/cgi-bin/appmsg?t=media/appmsg_edit_v2&action=edit&isNew=1&type=77&createType=<N>&token=<session>…`, **in a new tab**. Eligible plain-article DRAFT runs bypass this editor entirely (task 0290, ADR-026 amd 2026-10-15): `runMode` dispatches operation `文章` + draft + eligibility-passing content through the same-origin `operate_appmsg` CGI route (`runCgiDraft`) before any mode entry — ineligible content, no body images (`metadata.images[]` is mandatory for 文章 via `validateModeInput`), or an invalid required cover hands back to the DOM flow silently pre-dispatch. Body images are never dropped on the CGI route: they ride the 0289 media pipeline as `<img src>` prepended before the body HTML with `localImages` src→path mappings (cover = top-level `metadata.coverPath` when present, else the first body image, mirroring the DOM's 默认首图为封面); an unreadable cover hands back pre-dispatch, while a body image that exists but breaches the 0289 read bounds (≤10 MiB/mime/nonempty) fails loud as `ok:false` stage `media-preparation` (matching the DOM path's own hard failure). Once dispatched the route never retries and never falls back (ambiguous create = `ok:false` + `metadata.ambiguousSubmission`). Success carries the read-back draft `id` and the token-free canonical `appmsg_edit` URL. Everything below remains the DOM flow for advanced metadata, other modes and public operations. The body is the main-frame `div.ProseMirror` (the iframe UEditor is retired); the title is the ProseMirror block carrying `data-placeholder="请在这里输入标题"` — `textarea#title` is a hidden mirror, so filling it alone saves an empty title. Per-mode limits: title 文章 `0/64`, 视频/播客 `0/20`; author `input#author` `0/8` (原创-gated); digest `textarea#js_description` `0/120`. 视频/播客 start behind a modal media dialog that **covers the save bar**, so the artifact must be attached first and a missing artifact fails before any browser opens. Save is `保存为草稿`; `发表` is the publish control and is never clicked on a draft run. The draft signal is the `草稿箱` row's `更新于` timestamp (auto-save is continuous, the URL does not change, and `系统繁忙，请稍后再试` is not a failure). The cover comes from a body image (`从正文选择`; the panel states 默认首图为封面) because the editor exposes no cover file input, and `一键排版` → `匹配目标格式` applies the platform layout.
+
+For an explicit public run, the mass-send dialog is completed once using the measured visible `发表` button under `.mass-send__footer`; the legacy `确定` selector is not a publication acknowledgement. The default leaves the platform's 群发通知 setting untouched. A one-off opt-out is carried as `metadata.wechatmp.notifySubscribers: false`: the flow requires one uniquely visible `.mass_send__notify` switch, accepts an already-off state or turns an observed-on state off, verifies the resulting off state, and only then clicks the final button. Missing, ambiguous, or unreadable notification state fails closed before that final click; there is no public retry after an uncertain final click. If the initial mass-send click is refused before the final dialog with `当前编辑的草稿不是最新版本`, the measured one-time recovery action is the exact `查看新草稿` control: the flow follows the resulting same-page/new-tab editor, verifies the same canonical `appmsgid` plus full persisted snapshot/readiness, and re-enters the initial control once. Changed identity/content, a repeated stale refusal or an unknown outcome stops before the final click; no save/overwrite is attempted after `查看新草稿`.
+
+The daily voice2 WeChat node settles after the Surfdash publish attempt so a successful receipt's
+URL populates `metadata.wechatmp.originalUrl` (原文链接). The soft channel still runs on a failed
+Surfdash attempt, with no fabricated original URL. Public saves require a canonical saved-editor
+URL plus coherent persisted title/body/audio/cover identity before the first publication click;
+read-only hydration reloads are bounded, and cannot repeat a save or public send.
+
+The article public save contract (0338) is article-only: `WechatPage.saveDraftAndWait` arms the host
+request listener before the physical `保存为草稿` click, then accepts only same-origin
+`POST /cgi-bin/operate_appmsg` with `sub=create|update|edit` and full-article `title0` plus `content0`
+fields, a completed 2xx response, and semantic `ret` `0` or `'0'`. Requests started before the click
+are excluded. The canonical editor readback must preserve title/body/media/cover and the requested
+`originalUrl`; WeChat CDN size variants (`/0`, `/300`, `/640`, `/1080`) are the same asset identity
+when their stable path matches. After readback, two consecutive native `已保存` probes are required
+before the first public click. The composition order is original URL → audio/media → cover → native
+`一键排版` commit/save. `贴图`/`视频`/`播客` public operations retain their direct flow and do not
+require this article save acknowledgement. The current remote rehearsal remains fail-closed before
+the final public click on a platform stale-version/readiness refusal; remote success and unattended
+HITL-free completion are not yet verified (see the measured discovery satellite).
 
 | operation | `createType` | required artifact | title |
 | --------- | ------------ | ----------------- | ----- |

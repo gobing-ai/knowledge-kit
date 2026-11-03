@@ -711,6 +711,23 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             });
         });
 
+        it('marks locales done when validator and primary Surfdash receipts both succeed', () => {
+            withTempDir((dir) => {
+                const publish = seeded(dir);
+                for (const locale of ['en', 'ja']) localeDraft(publish, locale, false);
+                writeFileSync(
+                    join(publish, `${stamp}_24_translate-validate_result.json`),
+                    JSON.stringify({ ok: true, target: 'translate-validate' }),
+                );
+                const res = run(['daily-publish-completeness', dir, stamp]);
+                expect(res.status, res.stderr).toBe(0);
+                const completeness = completenessOf(publish);
+                const locales = completeness.rows.find((row) => row.channel === 'locales');
+                expect(locales?.state).toBe('done');
+                expect(completeness.missing).not.toContain('locales');
+            });
+        });
+
         it('reports a locale the translate agent never published, not a scaffolded one (20261012)', () => {
             // The marker is written by the SCAFFOLD step, so it cannot witness the translation. The
             // workflow tolerates a failed `translate` agent (the channel is documented as independent),
@@ -756,6 +773,15 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                 localesRow = completeness.rows.find((r) => r.channel === 'locales');
                 expect(localesRow?.state).toBe('failed');
                 expect(localesRow?.detail).toBe('connection reset');
+
+                // A present but malformed validator receipt is a failed locale gate, not a silent
+                // fallback to the legacy sync branch.
+                writeFileSync(join(publish, `${stamp}_24_translate-validate_result.json`), '{not-json');
+                res = run(['daily-publish-completeness', dir, stamp]);
+                expect(res.status).toBe(0);
+                localesRow = completenessOf(publish).rows.find((r) => r.channel === 'locales');
+                expect(localesRow?.state).toBe('failed');
+                expect(localesRow?.detail).toContain('missing or malformed');
             });
         });
     });
@@ -2604,14 +2630,14 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             expect(readFileSync(join(publish, `${stamp}_20_translate-localize_en-post-path.txt`), 'utf-8')).toBe('');
             expect(readFileSync(join(publish, `${stamp}_20_translate-localize_ja-post-path.txt`), 'utf-8')).toBe('');
 
-            // With a published zh path and no draft on disk, each locale scaffolds via surfdash-pub.
+            // With a prepared zh path and no draft on disk, each locale scaffolds via surfdash-pub.
             const zhPath = join(dir, 'posts/zh/index.md');
+            mkdirSync(dirname(zhPath), { recursive: true });
+            writeFileSync(zhPath, 'prepared zh source');
             writeFileSync(
-                join(publish, `${stamp}_14_publish-surfdash_result.json`),
+                join(publish, `${stamp}_14_publish-surfdash-prepare_result.json`),
                 JSON.stringify({
-                    targets: [
-                        { target: 'surfdash-pub', ok: true, status: 'published', metadata: { postPath: zhPath } },
-                    ],
+                    targets: [{ target: 'surfdash-pub', ok: true, status: 'prepared', metadata: { postPath: zhPath } }],
                 }),
             );
             const env = fakeKk(
@@ -2646,6 +2672,559 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             expect(readFileSync(join(publish, `${stamp}_20_translate-localize_en-post-path.txt`), 'utf-8')).toBe(
                 join(dir, 'posts/en/index.md'),
             );
+
+            // A transient scaffold failure must not abort the DAG before the local validator can
+            // emit its rejected receipt. The marker is deliberately empty, so final publish stays
+            // fail-closed instead of treating a partial locale set as ready.
+            rmSync(join(dir, 'posts/en/index.md'), { force: true });
+            const scaffoldFailed = run(['daily-translate-localize', dir, stamp, ''], fakeKk(dir, 'process.exit(7)'));
+            expect(scaffoldFailed.status).toBe(0);
+            expect(scaffoldFailed.stderr).toContain('translate-localize: en scaffold failed');
+            expect(scaffoldFailed.stderr).toContain('translate-localize: ja scaffold failed');
+            expect(readFileSync(join(publish, `${stamp}_20_translate-localize_en-post-path.txt`), 'utf-8')).toBe('');
+            expect(readFileSync(join(publish, `${stamp}_20_translate-localize_ja-post-path.txt`), 'utf-8')).toBe('');
+
+            // The failed scaffold leaves old publishable files on disk in real workspaces. Empty
+            // markers must bind both refine and validation to the current locale set, rather than
+            // deriving those stale siblings from the zh path and publishing them.
+            writeFileSync(zhPath, 'prepared zh source changed');
+            const staleEn = join(dir, 'posts/en/index.md');
+            const staleJa = join(dir, 'posts/ja/index.md');
+            mkdirSync(dirname(staleEn), { recursive: true });
+            mkdirSync(dirname(staleJa), { recursive: true });
+            writeFileSync(staleEn, '---\ndraft: false\n---\n\nstale en\n');
+            writeFileSync(staleJa, '---\ndraft: false\n---\n\nstale ja\n');
+            const refineCalled = join(dir, 'refine-called');
+            const noRefineDispatch = fakeKk(
+                dir,
+                `require('node:fs').writeFileSync(${JSON.stringify(refineCalled)}, 'called');`,
+            );
+            const blockedRefine = run(['daily-surfdash-refine', dir, stamp, ''], noRefineDispatch);
+            expect(blockedRefine.status).toBe(0);
+            expect(blockedRefine.stderr).toContain('surfdash-refine: en marker');
+            expect(existsSync(refineCalled)).toBe(false);
+            const blockedValidate = run([
+                'daily-translate-validate',
+                dir,
+                stamp,
+                '',
+                join(publish, `${stamp}_20_translate-localize_zh-post-path.txt`),
+            ]);
+            expect(blockedValidate.status).toBe(0);
+            expect(blockedValidate.stderr).toContain('translate-validate: en marker');
+            expect(readFileSync(staleEn, 'utf-8')).toContain('stale en');
+            expect(readFileSync(staleJa, 'utf-8')).toContain('stale ja');
+        });
+    });
+
+    it('daily-translate-localize invalidates cached locale drafts when the zh source hash changes', () => {
+        withTempDir((dir) => {
+            const publish = join(dir, '31-publish');
+            mkdirSync(publish, { recursive: true });
+            const stamp = '20261102';
+            const zhPath = join(dir, 'posts/zh/index.md');
+            const enPath = join(dir, 'posts/en/index.md');
+            const jaPath = join(dir, 'posts/ja/index.md');
+            mkdirSync(dirname(zhPath), { recursive: true });
+            mkdirSync(dirname(enPath), { recursive: true });
+            mkdirSync(dirname(jaPath), { recursive: true });
+            writeFileSync(zhPath, 'source-v1');
+            writeFileSync(enPath, 'translated-en-v1');
+            writeFileSync(jaPath, 'translated-ja-v1');
+            writeFileSync(
+                join(publish, `${stamp}_14_publish-surfdash-prepare_result.json`),
+                JSON.stringify({
+                    targets: [{ target: 'surfdash-pub', ok: true, status: 'prepared', metadata: { postPath: zhPath } }],
+                }),
+            );
+            const sourceHash = createHash('sha256').update('source-v1').digest('hex');
+            for (const locale of ['en', 'ja']) {
+                writeFileSync(join(publish, `${stamp}_20_translate-localize_${locale}-source-sha256.txt`), sourceHash);
+            }
+            const calls = join(dir, 'scaffold-calls.log');
+            const env = fakeKk(
+                dir,
+                [
+                    "const fs = require('node:fs');",
+                    'const args = process.argv.slice(2);',
+                    "const input = args[args.indexOf('--in') + 1];",
+                    "const out = args[args.indexOf('--out') + 1];",
+                    `const options = JSON.parse(fs.readFileSync(input, 'utf8')).options;`,
+                    `fs.appendFileSync(${JSON.stringify(calls)}, options.target + ':' + String(options.force === true) + '\\n');`,
+                    "fs.writeFileSync(out, JSON.stringify({ metadata: { draftPath: 'posts/' + JSON.parse(fs.readFileSync(input, 'utf8')).options.target + '/index.md' } }));",
+                ].join('\n'),
+            );
+
+            expect(run(['daily-translate-localize', dir, stamp, ''], env).status).toBe(0);
+            expect(existsSync(calls)).toBe(false);
+
+            writeFileSync(zhPath, 'source-v2');
+            expect(run(['daily-translate-localize', dir, stamp, ''], env).status).toBe(0);
+            expect(readFileSync(calls, 'utf-8').trim().split('\n').sort()).toEqual(['en:true', 'ja:true']);
+        });
+    });
+
+    it('daily-prepare-surfdash writes a prepare operation and requires a returned zh post path', () => {
+        withTempDir((dir) => {
+            const publish = join(dir, '31-publish');
+            mkdirSync(publish, { recursive: true });
+            const stamp = '20261102';
+            const prep = join(publish, `${stamp}_13_publish-prep_content.json`);
+            const postPath = join(dir, 'posts/zh/20261102-post/index.md');
+            mkdirSync(join(dir, 'posts/zh/20261102-post'), { recursive: true });
+            writeFileSync(prep, JSON.stringify({ title: '每日 AI 新闻', body: '今天的内容。', format: 'markdown' }));
+            const env = fakeKk(
+                dir,
+                [
+                    "const fs = require('node:fs');",
+                    "const path = require('node:path');",
+                    'const args = process.argv.slice(2);',
+                    "const input = args[args.indexOf('--in') + 1];",
+                    "const out = args[args.indexOf('--out') + 1];",
+                    `const postPath = ${JSON.stringify(postPath)};`,
+                    "fs.writeFileSync(path.join(path.dirname(out), 'locale.txt'), process.env.SURFDASH_LOCALE ?? 'missing');",
+                    "fs.writeFileSync(path.join(path.dirname(out), 'prepare-call.json'), JSON.stringify(JSON.parse(fs.readFileSync(input, 'utf8'))));",
+                    "fs.writeFileSync(postPath, '---\\ntitle: zh\\n---\\n\\nBody\\n');",
+                    "fs.writeFileSync(out, JSON.stringify({ ok: true, target: 'surfdash-pub', metadata: { postPath } }));",
+                ].join('\n'),
+            );
+            const result = run(['daily-prepare-surfdash', dir, stamp, ''], { ...env, SURFDASH_LOCALE: 'en' });
+            expect(result.status).toBe(0);
+            expect(readFileSync(join(publish, 'locale.txt'), 'utf-8')).toBe('zh');
+            const input = JSON.parse(
+                readFileSync(join(publish, `${stamp}_14_publish-surfdash-prepare_content.json`), 'utf-8'),
+            ) as { options?: { operation?: string } };
+            expect(input.options).toEqual({ operation: 'prepare' });
+            expect(readFileSync(join(publish, 'prepare-call.json'), 'utf-8')).toContain('"operation":"prepare"');
+            expect(
+                JSON.parse(readFileSync(join(publish, `${stamp}_14_publish-surfdash-prepare_result.json`), 'utf-8')),
+            ).toMatchObject({
+                targets: [{ target: 'surfdash-pub', status: 'prepared', metadata: { postPath } }],
+            });
+            expect(result.stdout).toContain(`prepared zh post ${postPath}`);
+
+            const failed = run(['daily-prepare-surfdash', dir, stamp, ''], fakeKk(dir, 'process.exit(7)'));
+            expect(failed.status).toBe(0);
+            expect(failed.stderr).toContain('status 7');
+            expect(
+                JSON.parse(readFileSync(join(publish, `${stamp}_14_publish-surfdash-prepare_result.json`), 'utf-8')),
+            ).toMatchObject({
+                ok: false,
+                targets: [{ target: 'surfdash-pub', ok: false, status: 'failed' }],
+            });
+        });
+    });
+
+    it('daily-translate-validate gates the final publish on complete translated locale files', () => {
+        withTempDir((dir) => {
+            const publish = join(dir, '31-publish');
+            const localeRoot = join(dir, 'content/posts/articles');
+            mkdirSync(publish, { recursive: true });
+            for (const locale of ['zh', 'en', 'ja'])
+                mkdirSync(join(localeRoot, locale, '20261102-post'), { recursive: true });
+            const stamp = '20261102';
+            const post = (locale: string, draft: boolean): string => {
+                const path = join(localeRoot, locale, '20261102-post/index.md');
+                writeFileSync(
+                    path,
+                    `---\ndescription: translated description\ndraft: ${draft}\nrefined: true\nkey_points:\n  - Label — one sentence\n---\n\nBody\n`,
+                );
+                return path;
+            };
+            const zhPath = post('zh', false);
+            const enPath = post('en', false);
+            const jaPath = post('ja', false);
+            const marker = join(publish, `${stamp}_20_translate-localize_zh-post-path.txt`);
+            writeFileSync(marker, zhPath);
+            for (const locale of ['en', 'ja'] as const) {
+                writeFileSync(
+                    join(publish, `${stamp}_20_translate-localize_${locale}-post-path.txt`),
+                    locale === 'en' ? enPath : jaPath,
+                );
+            }
+
+            const passed = run(['daily-translate-validate', dir, stamp, '', marker]);
+            expect(passed.status).toBe(0);
+            expect(
+                JSON.parse(readFileSync(join(publish, `${stamp}_24_translate-validate_result.json`), 'utf-8')),
+            ).toMatchObject({
+                ok: true,
+                status: 'validated',
+                metadata: { postPath: zhPath },
+            });
+
+            // The final validator is read-only: a retired series name must be repaired before
+            // site-owned refine/fingerprinting, never rewritten after the fingerprint is admitted.
+            const pendingNames = readFileSync(enPath, 'utf-8').replace(
+                'description: translated description',
+                'title: Daily AI Medley\ndescription: translated description',
+            );
+            writeFileSync(enPath, pendingNames);
+            rmSync(join(publish, `${stamp}_24_translate-validate_result.json`));
+            const pending = run(['daily-translate-validate', dir, stamp, '', marker]);
+            expect(pending.status).toBe(0);
+            expect(pending.stderr).toContain('series-name normalization is pending');
+            expect(readFileSync(enPath, 'utf-8')).toBe(pendingNames);
+            writeFileSync(enPath, pendingNames.replace('title: Daily AI Medley\n', ''));
+
+            // The local gate must not admit a fresh, unrefined locale set even when the structural
+            // translation checks pass; the site-owned refine phase is a prerequisite to fingerprinting.
+            writeFileSync(enPath, readFileSync(enPath, 'utf-8').replace('refined: true', 'refined: false'));
+            rmSync(join(publish, `${stamp}_24_translate-validate_result.json`));
+            const unrefined = run(['daily-translate-validate', dir, stamp, '', marker]);
+            expect(unrefined.status).toBe(0);
+            expect(unrefined.stderr).toContain('site-owned refine has not completed');
+            writeFileSync(enPath, readFileSync(enPath, 'utf-8').replace('refined: false', 'refined: true'));
+
+            writeFileSync(jaPath, readFileSync(jaPath, 'utf-8').replace('draft: false', 'draft: true'));
+            rmSync(join(publish, `${stamp}_24_translate-validate_result.json`));
+            const rejected = run(['daily-translate-validate', dir, stamp, '', marker]);
+            expect(rejected.status).toBe(0);
+            expect(rejected.stderr).toContain('draft is still true');
+            expect(
+                JSON.parse(readFileSync(join(publish, `${stamp}_24_translate-validate_result.json`), 'utf-8')),
+            ).toMatchObject({ ok: false, status: 'rejected' });
+
+            // A malformed or absent key_points list is not a translatable locale, even when the
+            // description and draft flag look valid.
+            post('ja', false);
+            writeFileSync(
+                enPath,
+                readFileSync(enPath, 'utf-8').replace('key_points:\n  - Label — one sentence', 'key_points: malformed'),
+            );
+            rmSync(join(publish, `${stamp}_24_translate-validate_result.json`));
+            const malformed = run(['daily-translate-validate', dir, stamp, '', marker]);
+            expect(malformed.status).toBe(0);
+            expect(malformed.stderr).toContain('key_points missing or malformed');
+            expect(
+                JSON.parse(readFileSync(join(publish, `${stamp}_24_translate-validate_result.json`), 'utf-8')),
+            ).toMatchObject({
+                ok: false,
+                status: 'rejected',
+            });
+
+            // Restore a valid tree and capture the validator's source-bound receipt for the final
+            // publisher checks below.
+            post('en', false);
+            post('ja', false);
+            rmSync(join(publish, `${stamp}_24_translate-validate_result.json`));
+            expect(run(['daily-translate-validate', dir, stamp, '', marker]).status).toBe(0);
+            const validation = JSON.parse(
+                readFileSync(join(publish, `${stamp}_24_translate-validate_result.json`), 'utf-8'),
+            ) as { metadata: Record<string, unknown> };
+            expect(validation.metadata).toMatchObject({ runDate: stamp, postPath: zhPath });
+            expect(validation.metadata.localePaths).toMatchObject({ zh: zhPath, en: enPath, ja: jaPath });
+            const localeDigests = validation.metadata.localeDigests as Record<string, string>;
+            for (const [locale, path] of Object.entries({ zh: zhPath, en: enPath, ja: jaPath })) {
+                expect(localeDigests[locale]).toBe(createHash('sha256').update(readFileSync(path)).digest('hex'));
+            }
+            expect(typeof validation.metadata.fingerprint).toBe('string');
+
+            const prepareResult = join(publish, `${stamp}_14_publish-surfdash-prepare_result.json`);
+            writeFileSync(
+                prepareResult,
+                JSON.stringify({
+                    targets: [{ target: 'surfdash-pub', ok: true, status: 'prepared', metadata: { postPath: zhPath } }],
+                }),
+            );
+            writeFileSync(join(publish, `${stamp}_13_publish-prep_content.json`), '{}');
+            const localeCapture = join(dir, 'surfdash-locale.txt');
+            const dispatch = fakeKk(
+                dir,
+                [
+                    "const fs = require('node:fs');",
+                    'const args = process.argv.slice(2);',
+                    "const out = args[args.indexOf('--out') + 1];",
+                    `fs.writeFileSync(${JSON.stringify(localeCapture)}, process.env.SURFDASH_LOCALE ?? 'missing');`,
+                    "fs.writeFileSync(out, JSON.stringify({ ok: true, target: 'surfdash', status: 'published' }));",
+                ].join('\n'),
+            );
+            const published = run(['daily-publish-surfdash', dir, stamp, '', 'true'], {
+                ...dispatch,
+                SURFDASH_LOCALE: 'ja',
+            });
+            expect(published.status).toBe(0);
+            expect(readFileSync(localeCapture, 'utf-8')).toBe('zh');
+
+            // Changing a locale after validation invalidates the receipt. A prior success must not
+            // turn that stale validation into a silent cache hit; dispatch is forbidden.
+            writeFileSync(enPath, `${readFileSync(enPath, 'utf-8')}\nchanged-after-validation`);
+            rmSync(localeCapture, { force: true });
+            const stale = run(['daily-publish-surfdash', dir, stamp, '', 'true'], {
+                ...dispatch,
+                SURFDASH_LOCALE: 'ja',
+            });
+            expect(stale.status).toBe(0);
+            expect(stale.stderr).toContain('locale validation');
+            expect(existsSync(localeCapture)).toBe(false);
+            expect(
+                JSON.parse(readFileSync(join(publish, `${stamp}_14_publish-surfdash_result.json`), 'utf-8')),
+            ).toMatchObject({
+                targets: [{ target: 'surfdash-pub', status: 'failed', metadata: { deliveryState: 'uncertain' } }],
+            });
+
+            // The workflow keeps the run's terminal classifier alive, but the final publisher writes
+            // an explicit failed receipt and never invokes kk/CMS when the local gate rejects.
+            rmSync(join(publish, `${stamp}_14_publish-surfdash_result.json`), { force: true });
+            const blocked = run(['daily-publish-surfdash', dir, stamp, '', 'true'], fakeKk(dir, 'process.exit(99)'));
+            expect(blocked.status).toBe(0);
+            expect(blocked.stderr).toContain('blocked by locale validation');
+            expect(
+                JSON.parse(readFileSync(join(publish, `${stamp}_14_publish-surfdash_result.json`), 'utf-8')),
+            ).toMatchObject({
+                ok: false,
+                targets: [{ target: 'surfdash-pub', ok: false, status: 'failed' }],
+            });
+            expect(
+                JSON.parse(readFileSync(join(publish, `${stamp}_14_publish-surfdash_result.json`), 'utf-8')),
+            ).toMatchObject({ targets: [{ metadata: { deliveryState: 'not-sent' } }] });
+        });
+    });
+
+    it('daily-surfdash-refine delegates site-owned refinement for every locale before the gate fingerprint', () => {
+        withTempDir((dir) => {
+            const stamp = '20261102';
+            const surfdash = join(dir, 'surfdash');
+            const workDir = join(dir, 'work');
+            const publish = join(workDir, '31-publish');
+            const slug = `${stamp}-fresh-refine`;
+            const paths = {
+                zh: join(surfdash, 'content/posts/articles/zh', slug, 'index.md'),
+                en: join(surfdash, 'content/posts/articles/en', slug, 'index.md'),
+                ja: join(surfdash, 'content/posts/articles/ja', slug, 'index.md'),
+            };
+            mkdirSync(publish, { recursive: true });
+            for (const path of Object.values(paths)) {
+                mkdirSync(dirname(path), { recursive: true });
+                const locale = path.includes('/en/') ? 'en' : path.includes('/ja/') ? 'ja' : 'zh';
+                const title = locale === 'en' ? 'Daily AI Medley' : locale === 'ja' ? '毎日AIブレンド' : '每日AI乱炖';
+                const body =
+                    locale === 'en'
+                        ? 'Your daily AI hodgepodge from Robin, on Salty Talk.'
+                        : locale === 'ja'
+                          ? '咸話咸説の毎日AIブレンド、Robin がお届けします。'
+                          : '咸话咸说之AI乱炖。';
+                writeFileSync(
+                    path,
+                    `---\ntitle: ${title}\npublishDate: "2026-11-02"\ndraft: false\nrefined: false\n---\n\n${body}\n`,
+                );
+            }
+            mkdirSync(join(surfdash, 'scripts'), { recursive: true });
+            writeFileSync(
+                join(surfdash, 'scripts/publish-orchestrator.ts'),
+                [
+                    "import { readFileSync, writeFileSync } from 'node:fs';",
+                    'const path = process.argv[3];',
+                    "if (process.argv[2] !== 'refine' || !path) process.exit(2);",
+                    "writeFileSync(path, readFileSync(path, 'utf-8').replace('refined: false', 'refined: true'));",
+                ].join('\n'),
+            );
+            const marker = join(publish, `${stamp}_20_translate-localize_zh-post-path.txt`);
+            writeFileSync(marker, paths.zh);
+            writeFileSync(join(publish, `${stamp}_20_translate-localize_en-post-path.txt`), paths.en);
+            writeFileSync(join(publish, `${stamp}_20_translate-localize_ja-post-path.txt`), paths.ja);
+            const pluginsRoot = join(import.meta.dir, '../../../plugins');
+            const refined = run(['daily-surfdash-refine', workDir, stamp, pluginsRoot], {
+                SURFDASH_ROOT: surfdash,
+            });
+            expect(refined.status).toBe(0);
+            for (const path of Object.values(paths)) {
+                const content = readFileSync(path, 'utf-8');
+                expect(content).toContain('refined: true');
+                expect(content).not.toContain('Daily AI Medley');
+                expect(content).not.toContain('毎日AIブレンド');
+                expect(content).not.toContain('咸话咸说之AI乱炖。');
+            }
+            const afterFirstRefine = Object.fromEntries(
+                Object.entries(paths).map(([locale, path]) => [locale, readFileSync(path, 'utf-8')]),
+            ) as Record<string, string>;
+            const repeated = run(['daily-surfdash-refine', workDir, stamp, pluginsRoot], {
+                SURFDASH_ROOT: surfdash,
+            });
+            expect(repeated.status).toBe(0);
+            for (const [locale, path] of Object.entries(paths)) {
+                const expected = afterFirstRefine[locale];
+                if (expected === undefined) throw new Error(`missing first-refine snapshot for ${locale}`);
+                expect(readFileSync(path as string, 'utf-8')).toBe(expected);
+            }
+            expect(
+                JSON.parse(readFileSync(join(publish, `${stamp}_24_surfdash-refine_result.json`), 'utf-8')),
+            ).toMatchObject({
+                ok: true,
+                targets: [{ target: 'surfdash-pub', status: 'refined' }],
+            });
+        });
+    });
+
+    it('daily-publish-surfdash treats duplicate target receipts as uncertain and never retries', () => {
+        withTempDir((dir) => {
+            const publish = join(dir, '31-publish');
+            mkdirSync(publish, { recursive: true });
+            const stamp = '20261102';
+            const resultPath = join(publish, `${stamp}_14_publish-surfdash_result.json`);
+            writeFileSync(
+                resultPath,
+                JSON.stringify({
+                    targets: [
+                        { target: 'surfdash-pub', ok: true, status: 'published' },
+                        { target: 'surfdash-pub', ok: true, status: 'published' },
+                    ],
+                }),
+            );
+            const called = join(dir, 'called');
+            const blocked = run(
+                ['daily-publish-surfdash', dir, stamp, ''],
+                fakeKk(dir, `require('node:fs').writeFileSync(${JSON.stringify(called)}, 'called')`),
+            );
+            expect(blocked.status).toBe(0);
+            expect(blocked.stdout).toContain('uncertain delivery');
+            expect(existsSync(called)).toBe(false);
+            expect(JSON.parse(readFileSync(resultPath, 'utf-8'))).toMatchObject({
+                targets: [{ metadata: { deliveryState: 'uncertain' } }],
+            });
+        });
+    });
+
+    it('daily-publish-surfdash never caches a legacy success or a changed slug identity', () => {
+        withTempDir((dir) => {
+            const publish = join(dir, '31-publish');
+            const articles = join(dir, 'content/posts/articles');
+            const stamp = '20261102';
+            mkdirSync(publish, { recursive: true });
+            const writeLocaleSet = (slug: string): { zh: string; en: string; ja: string } => {
+                const paths = {
+                    zh: join(articles, 'zh', slug, 'index.md'),
+                    en: join(articles, 'en', slug, 'index.md'),
+                    ja: join(articles, 'ja', slug, 'index.md'),
+                };
+                for (const [locale, path] of Object.entries(paths)) {
+                    mkdirSync(dirname(path), { recursive: true });
+                    writeFileSync(
+                        path,
+                        `---\ndescription: valid ${locale}\ndraft: false\nrefined: true\nkey_points:\n  - Label — one sentence\n---\n\nBody\n`,
+                    );
+                }
+                return paths;
+            };
+            const oldPaths = writeLocaleSet('20261102-original');
+            const marker = join(publish, `${stamp}_20_translate-localize_zh-post-path.txt`);
+            writeFileSync(marker, oldPaths.zh);
+            writeFileSync(join(publish, `${stamp}_20_translate-localize_en-post-path.txt`), oldPaths.en);
+            writeFileSync(join(publish, `${stamp}_20_translate-localize_ja-post-path.txt`), oldPaths.ja);
+            writeFileSync(
+                join(publish, `${stamp}_13_publish-prep_content.json`),
+                JSON.stringify({ title: 'prepared' }),
+            );
+            writeFileSync(
+                join(publish, `${stamp}_14_publish-surfdash-prepare_result.json`),
+                JSON.stringify({
+                    targets: [
+                        { target: 'surfdash-pub', ok: true, status: 'prepared', metadata: { postPath: oldPaths.zh } },
+                    ],
+                }),
+            );
+            expect(run(['daily-translate-validate', dir, stamp, '', marker]).status).toBe(0);
+            const dispatch = fakeKk(
+                dir,
+                [
+                    "const fs = require('node:fs');",
+                    'const args = process.argv.slice(2);',
+                    "const out = args[args.indexOf('--out') + 1];",
+                    `fs.writeFileSync(${JSON.stringify(join(dir, 'called'))}, 'called');`,
+                    "fs.writeFileSync(out, JSON.stringify({ ok: true, target: 'surfdash' }));",
+                ].join('\n'),
+            );
+            const first = run(['daily-publish-surfdash', dir, stamp, '', 'true'], dispatch);
+            expect(first.status).toBe(0);
+            const resultPath = join(publish, `${stamp}_14_publish-surfdash_result.json`);
+            const firstResult = JSON.parse(readFileSync(resultPath, 'utf-8')) as Record<string, unknown>;
+            expect(firstResult.targets).toBeDefined();
+
+            // A failed executor discovery can return before it owns/clears --out. A stale
+            // transport success must not be promoted into this invocation's publish receipt.
+            const intentPath = join(publish, `${stamp}_14_publish-surfdash_intent.json`);
+            const transportPath = join(publish, `${stamp}_14_publish-surfdash_transport_result.json`);
+            const savedIntent = readFileSync(intentPath, 'utf-8');
+            rmSync(resultPath, { force: true });
+            rmSync(intentPath, { force: true });
+            writeFileSync(transportPath, JSON.stringify({ ok: true, target: 'surfdash' }));
+            const failedDispatch = fakeKk(dir, 'process.exit(7);');
+            const staleTransport = run(['daily-publish-surfdash', dir, stamp, '', 'true'], failedDispatch);
+            expect(staleTransport.status).toBe(0);
+            expect(staleTransport.stderr).toContain('delivery is uncertain');
+            expect(JSON.parse(readFileSync(resultPath, 'utf-8'))).toMatchObject({
+                targets: [{ metadata: { deliveryState: 'uncertain' } }],
+            });
+            writeFileSync(resultPath, JSON.stringify(firstResult));
+            writeFileSync(intentPath, savedIntent);
+
+            // A pre-existing success from the old fan-out path has no exact identity and may not
+            // satisfy a same-day rerun, even though the local validation receipt is still current.
+            writeFileSync(
+                resultPath,
+                JSON.stringify({
+                    ok: true,
+                    targets: [
+                        { target: 'surfdash-pub', ok: true, status: 'published', metadata: { postPath: oldPaths.zh } },
+                    ],
+                }),
+            );
+            rmSync(join(dir, 'called'), { force: true });
+            const legacy = run(['daily-publish-surfdash', dir, stamp, '', 'true'], dispatch);
+            expect(legacy.status).toBe(0);
+            expect(legacy.stderr).toContain('exact postPath/payloadSha256/localeFingerprint identity');
+            expect(existsSync(join(dir, 'called'))).toBe(false);
+
+            // A fully-bound success for the old slug must not cache after the validated path moves
+            // to a different same-day slug. The dispatch must remain untouched.
+            writeFileSync(resultPath, JSON.stringify(firstResult));
+            const newPaths = writeLocaleSet('20261102-regenerated');
+            writeFileSync(marker, newPaths.zh);
+            writeFileSync(join(publish, `${stamp}_20_translate-localize_en-post-path.txt`), newPaths.en);
+            writeFileSync(join(publish, `${stamp}_20_translate-localize_ja-post-path.txt`), newPaths.ja);
+            writeFileSync(
+                join(publish, `${stamp}_14_publish-surfdash-prepare_result.json`),
+                JSON.stringify({
+                    targets: [
+                        { target: 'surfdash-pub', ok: true, status: 'prepared', metadata: { postPath: newPaths.zh } },
+                    ],
+                }),
+            );
+            expect(run(['daily-translate-validate', dir, stamp, '', marker]).status).toBe(0);
+            const changed = run(['daily-publish-surfdash', dir, stamp, '', 'true'], dispatch);
+            expect(changed.status).toBe(0);
+            expect(changed.stderr).toContain('exact postPath/payloadSha256/localeFingerprint identity');
+            expect(existsSync(join(dir, 'called'))).toBe(false);
+            expect(JSON.parse(readFileSync(resultPath, 'utf-8'))).toMatchObject({
+                targets: [{ metadata: { deliveryState: 'uncertain', postPath: newPaths.zh } }],
+            });
+        });
+    });
+
+    it('daily-publish-surfdash preserves the legacy success cache when locale validation is omitted', () => {
+        withTempDir((dir) => {
+            const publish = join(dir, '31-publish');
+            const stamp = '20261102';
+            mkdirSync(publish, { recursive: true });
+            const resultPath = join(publish, `${stamp}_14_publish-surfdash_result.json`);
+            writeFileSync(
+                resultPath,
+                JSON.stringify({
+                    ok: true,
+                    targets: [{ target: 'surfdash-pub', ok: true, status: 'published' }],
+                }),
+            );
+            const called = join(dir, 'legacy-dispatch-called');
+            const cached = run(
+                ['daily-publish-surfdash', dir, stamp, ''],
+                fakeKk(dir, `require('node:fs').writeFileSync(${JSON.stringify(called)}, 'called');`),
+            );
+            expect(cached.status).toBe(0);
+            expect(cached.stdout).toContain('surfdash target ok');
+            expect(existsSync(called)).toBe(false);
+            expect(JSON.parse(readFileSync(resultPath, 'utf-8'))).toMatchObject({
+                targets: [{ status: 'published' }],
+            });
         });
     });
 
@@ -4028,6 +4607,33 @@ describe('daily-patch-surfdash git scoping and frontmatter (R6/R11)', () => {
             expect(res.stderr).toContain('carries no postPath');
             expect(existsSync(join(fx.workDir, '31-publish', `${RUN_DATE}_23_patch-surfdash_patch.json`))).toBe(false);
             // Nothing was committed for a post that does not exist.
+            expect(git(fx.root, 'rev-parse', 'HEAD').stdout.trim()).toBe(before);
+        });
+    });
+
+    it('writes a failed resync receipt and skips the remote patch when a publish receipt has no targets array', () => {
+        withTempDir((dir) => {
+            const fx = setupFixture(dir, 'https://cdn.example/c.png', 'Body.');
+            writeFileSync(
+                join(fx.workDir, '31-publish', `${RUN_DATE}_14_publish-surfdash_result.json`),
+                JSON.stringify({ ok: true }),
+                'utf-8',
+            );
+            const before = git(fx.root, 'rev-parse', 'HEAD').stdout.trim();
+
+            const res = run(['daily-patch-surfdash', fx.workDir, RUN_DATE, fx.root], { SURFDASH_AUTO_PUSH: '1' });
+
+            expect(res.status, res.stderr).toBe(0);
+            expect(res.stderr).toContain('malformed surfdash/podcast publish receipt');
+            expect(existsSync(join(fx.workDir, '31-publish', `${RUN_DATE}_23_patch-surfdash_patch.json`))).toBe(false);
+            expect(
+                JSON.parse(
+                    readFileSync(
+                        join(fx.workDir, '31-publish', `${RUN_DATE}_23_patch-surfdash_sync-result.json`),
+                        'utf-8',
+                    ),
+                ),
+            ).toMatchObject({ ok: false, target: 'surfdash-pub' });
             expect(git(fx.root, 'rev-parse', 'HEAD').stdout.trim()).toBe(before);
         });
     });

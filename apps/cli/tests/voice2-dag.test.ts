@@ -521,16 +521,19 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
     });
 
     it('fans in every publish leaf in publish-classify, and skips the publish subtree when disabled (R6)', () => {
-        const leaves = ['publish-podcast', 'publish-surfdash', 'xhs-publish', 'wechat-publish', 'translate-sync'];
+        const leaves = ['publish-podcast', 'publish-surfdash', 'xhs-publish', 'wechat-publish', 'translate-validate'];
         const classify = dag.nodes.find((node) => node.id === 'publish-classify');
         expect(classify?.dependsOn?.sort()).toEqual([...leaves].sort());
         expect(classify?.dependencyPolicy).toBe('all');
         expect(String(classify?.condition?.options?.command)).toBe(`test "\${vars.publish_enabled}" = "true"`);
         for (const id of [
             'publish-prep',
+            'publish-surfdash-prepare',
             'publish-surfdash',
             'publish-podcast',
             'translate-localize',
+            'translate-refine',
+            'translate-validate',
             'wechat-publish',
         ]) {
             const node = dag.nodes.find((candidate) => candidate.id === id);
@@ -543,6 +546,51 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
             const node = dag.nodes.find((candidate) => candidate.id === id);
             expect(node?.action?.kind).toBe('shell');
             expect(String(node?.action?.options?.command)).toContain('kk stage daily-publish-');
+        }
+    });
+
+    it('settles Surfdash before WeChat so the original link is available without blocking the soft channel on failure', () => {
+        const wechat = dag.nodes.find((node) => node.id === 'wechat-publish');
+        expect(wechat?.dependsOn).toContain('publish-surfdash');
+        expect(wechat?.dependencyPolicy).toBe('all');
+        expect(dag.nodes.findIndex((node) => node.id === 'wechat-publish')).toBeGreaterThan(
+            dag.nodes.findIndex((node) => node.id === 'publish-surfdash'),
+        );
+    });
+
+    it('prepares zh before locale translation and invokes final Surfdash publish only after local validation (two-phase locale gate)', () => {
+        const prepare = dag.nodes.find((node) => node.id === 'publish-surfdash-prepare');
+        const localize = dag.nodes.find((node) => node.id === 'translate-localize');
+        const refine = dag.nodes.find((node) => node.id === 'translate-refine');
+        const sync = dag.nodes.find((node) => node.id === 'translate-validate');
+        const publish = dag.nodes.find((node) => node.id === 'publish-surfdash');
+
+        expect(prepare?.dependsOn).toEqual(['publish-prep']);
+        expect(String(prepare?.action?.options?.command)).toContain('daily-prepare-surfdash');
+        expect(localize?.dependsOn).toEqual(['publish-surfdash-prepare']);
+        expect(refine?.dependsOn).toEqual(['translate', 'translate-retry']);
+        expect(refine?.action?.onError).toBe('continue');
+        expect(String(refine?.action?.options?.command)).toContain('daily-surfdash-refine');
+        expect(sync?.dependsOn).toEqual(['translate-refine']);
+        expect(sync?.action?.onError).toBe('continue');
+        expect(String(sync?.action?.options?.command)).toContain('daily-translate-validate');
+        expect(publish?.dependsOn).toEqual(['publish-prep', 'translate-validate']);
+        const publishCommand = String(publish?.action?.options?.command);
+        expect(publishCommand).toContain(`"\${vars.plugins_path}" "true"`);
+        expect(publishCommand).toContain('daily-publish-surfdash');
+    });
+
+    it('declares every DAG dependency before its dependent node (engine declaration-order contract)', () => {
+        const ids = dag.nodes.map((node) => node.id);
+        for (const [nodeIndex, node] of dag.nodes.entries()) {
+            for (const dependency of node.dependsOn ?? []) {
+                const dependencyIndex = ids.indexOf(dependency);
+                expect(
+                    dependencyIndex,
+                    `${node.id} references missing dependency ${dependency}`,
+                ).toBeGreaterThanOrEqual(0);
+                expect(dependencyIndex, `${node.id} must be declared after ${dependency}`).toBeLessThan(nodeIndex);
+            }
         }
     });
 

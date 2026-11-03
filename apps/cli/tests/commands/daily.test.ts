@@ -559,6 +559,79 @@ describe('kk daily publish-classify', () => {
         // The patch stage is plugin-owned and stays where it is: the fold only sequences it.
         expect(existsSync(join(REPO, 'plugins/kk/scripts/kk-workflow-stages.ts'))).toBe(true);
     });
+
+    it('fold-tail closes completeness when the Surfdash receipt is partial JSON', async () => {
+        const dir = tempDir();
+        const publish = publishFixtures(
+            dir,
+            { targets: [{ target: 'surfdash-pub', ok: true, status: 'published' }] },
+            { targets: [{ target: 'podcast-pub', ok: true, status: 'published' }] },
+        );
+        writeFileSync(join(publish, '20261007_14_publish-surfdash_result.json'), '{"targets": [', 'utf-8');
+        const surfdashRoot = join(dir, 'surfdash-root');
+        mkdirSync(surfdashRoot, { recursive: true });
+
+        const result = await inCwd(dir, () =>
+            run([
+                'daily',
+                'publish-classify',
+                '--work-dir',
+                dir,
+                '--run-date',
+                '20261007',
+                '--fold-tail',
+                '--surfdash-root',
+                surfdashRoot,
+            ]),
+        );
+
+        expect(result.code).toBe(0);
+        expect(JSON.parse(result.out).status).toBe('partial');
+        expect(existsSync(join(publish, '20261007_17_publish_completeness.json'))).toBe(true);
+        expect(existsSync(join(publish, '20261007_23_patch-surfdash_patch.json'))).toBe(false);
+        expect(
+            JSON.parse(readFileSync(join(publish, '20261007_23_patch-surfdash_sync-result.json'), 'utf-8')),
+        ).toMatchObject({
+            ok: false,
+            target: 'surfdash-pub',
+        });
+    });
+
+    it('fold-tail closes completeness when the podcast receipt is missing', async () => {
+        const dir = tempDir();
+        const publish = publishFixtures(
+            dir,
+            { targets: [{ target: 'surfdash-pub', ok: true, status: 'published' }] },
+            null,
+        );
+        const surfdashRoot = join(dir, 'surfdash-root');
+        mkdirSync(surfdashRoot, { recursive: true });
+
+        const result = await inCwd(dir, () =>
+            run([
+                'daily',
+                'publish-classify',
+                '--work-dir',
+                dir,
+                '--run-date',
+                '20261007',
+                '--fold-tail',
+                '--surfdash-root',
+                surfdashRoot,
+            ]),
+        );
+
+        expect(result.code).toBe(0);
+        expect(JSON.parse(result.out).status).toBe('partial');
+        expect(existsSync(join(publish, '20261007_17_publish_completeness.json'))).toBe(true);
+        expect(existsSync(join(publish, '20261007_23_patch-surfdash_patch.json'))).toBe(false);
+        expect(
+            JSON.parse(readFileSync(join(publish, '20261007_23_patch-surfdash_sync-result.json'), 'utf-8')),
+        ).toMatchObject({
+            ok: false,
+            target: 'surfdash-pub',
+        });
+    });
 });
 
 describe('kk daily works-dir resolution and report edges', () => {
