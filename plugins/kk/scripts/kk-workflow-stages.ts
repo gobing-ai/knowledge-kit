@@ -1768,6 +1768,11 @@ if (import.meta.main)
             dailyQualityReport(rest);
             break;
         }
+        case 'daily-quality-verdict': {
+            const { dailyQualityVerdict } = await loadDailyStages();
+            dailyQualityVerdict(rest);
+            break;
+        }
         case 'daily-publish-prep': {
             const { dailyPublishPrep } = await loadDailyStages();
             dailyPublishPrep(rest);

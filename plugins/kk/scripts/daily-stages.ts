@@ -716,13 +716,23 @@ function refuseScriptBelowFloor(
 }
 
 export function dailyEpisodeDuration(args: string[]): void {
-    const [workDir = '', runDate = '', minArg = '', maxArg = '', vdriver = ''] = args;
+    const [workDir = '', runDate = '', minArg = '', maxArg = '', vdriver = '', runId = ''] = args;
     if (!workDir) fail('missing work_dir');
     if (!runDate) fail('missing run_date');
     const minMinutes = Number(minArg);
     const maxMinutes = Number(maxArg);
     if (!Number.isFinite(minMinutes) || minMinutes <= 0) fail(`invalid min_minutes: ${minArg || '(empty)'}`);
     if (!Number.isFinite(maxMinutes) || maxMinutes < minMinutes) fail(`invalid max_minutes: ${maxArg || '(empty)'}`);
+    // 0329 F06: the publish path must not survive a refusal. The pool-gate token flips to EMPTY so
+    // this run's own remaining fan-out skips, and a stale bundle.json from an earlier run (whose
+    // runs[] a publish window could still consume) is dropped.
+    const invalidatePublishPath = (): void => {
+        if (runId !== '') {
+            const token = join('.spur', 'run', `${runId}-pool-gate.status`);
+            if (isFile(token)) sted('write', token, () => writeRaw(token, 'EMPTY\n'));
+        }
+        rmSync(join(workDir, 'bundle.json'), { force: true });
+    };
     const contentPath = join(workDir, '30-audio', `${runDate}_11_generate_content.json`);
     if (!isFile(contentPath)) failWith(1, `episode-duration: audio content not found: ${contentPath}`);
     let raw: unknown;
@@ -751,7 +761,8 @@ export function dailyEpisodeDuration(args: string[]): void {
         // let the pool-gated publish fan package a sub-floor episode — so finish the emptying here.
         if (isFile(refusal)) {
             if (docs.length > 0) emptyCandidates(workDir, runDate);
-            console.log(`episode-duration: duration refusal already recorded (${refusal}) — nothing to do`);
+            invalidatePublishPath();
+            console.error(`episode-duration: duration refusal already recorded (${refusal}) — nothing to do`);
             return;
         }
         const estimated = estimateSpokenMinutes(docs, vdriver);
@@ -767,6 +778,7 @@ export function dailyEpisodeDuration(args: string[]): void {
             }),
         );
         emptyCandidates(workDir, runDate);
+        invalidatePublishPath();
         console.error(
             `episode-duration: episode ran ${shown} min (estimate ${estimated.minutes} min), below the ${minMinutes}–${maxMinutes} min requirement — candidates emptied, the run closes as no-content (see ${refusal})`,
         );
@@ -1892,27 +1904,36 @@ function variantFileName(key: string): string {
 }
 
 /**
- * `daily-bundle-variants <workDir> <runDate> <pluginsPath>` — the generate-side payload builder
- * (task 0327 R2/R3).
+ * `daily-bundle-variants <workDir> <runDate> <pluginsPath> [cardsEnabled] [coverEnabled]` — the
+ * generate-side payload builder (task 0327 R2/R3).
  *
  * Everything the publish side used to assemble inline is produced here instead, once, as bundle
  * variants under `30-variants/`. Links are the `{{article_url}}` / `{{podcast_url}}` placeholders,
  * because at generate time nothing is published yet; `publish-matrix-send` resolves them from the
  * tier-0 receipts. A variant whose source artifact is absent (channel disabled, cards never
  * rendered, social copy not authored) is skipped with a log line, never invented.
+ *
+ * 0329 F16: the caller forwards the run's `cards_enabled` / `cover_enabled` switches — a disabled
+ * producer's variant is a skip, not a stale re-read of a previous run's file — and every stale
+ * variant file is wiped before writing, so `30-variants/` after this stage contains only what
+ * THIS pass produced.
  */
 export function dailyBundleVariants(args: string[]): void {
-    const [workDir = '', runDate = '', _pluginsPath = ''] = args;
+    const [workDir = '', runDate = '', _pluginsPath = '', cardsEnabledArg = '', coverEnabledArg = ''] = args;
     timed(workDir, 'bundle-variants', () => {
         const outDir = join(workDir, '30-variants');
         sted('mkdir', outDir, () => mkdirSync(outDir, { recursive: true }));
+        // 0329 F16: a rerun after a thinner day must not leave yesterday's variants behind.
+        for (const entry of readdirSync(outDir)) {
+            if (entry.endsWith('.content.json')) rmSync(join(outDir, entry), { force: true });
+        }
         const articlePath = join(workDir, '22-article', `${runDate}_06_article_content.json`);
         const prepPath = join(workDir, '31-publish', `${runDate}_13_publish-prep_content.json`);
         const notesPath = join(workDir, '31-publish', `${runDate}_15_show-notes_show-notes.md`);
         const cardsPath = join(workDir, '25-xhs', 'content.json');
         const coverPath = join(workDir, '23-cover', `${runDate}_07_cover_cover.png`);
         const socialDir = join(workDir, '26-social');
-        const cover = isFile(coverPath) ? coverPath : undefined;
+        const cover = coverEnabledArg !== 'false' && isFile(coverPath) ? coverPath : undefined;
         const links = PLACEHOLDER_LINKS;
         const written: string[] = [];
         const skipped: string[] = [];
@@ -1966,9 +1987,12 @@ export function dailyBundleVariants(args: string[]): void {
             );
         }
 
-        const cards = readJson(cardsPath);
-        if (cards === null) skipped.push('cards (no rendered card series)');
-        else write('cards@xhs-pub', buildXhsCardsContent(cards, { publishStatus: 'draft' }));
+        if (cardsEnabledArg === 'false') skipped.push('cards (cards_enabled=false)');
+        else {
+            const cards = readJson(cardsPath);
+            if (cards === null) skipped.push('cards (no rendered card series)');
+            else write('cards@xhs-pub', buildXhsCardsContent(cards, { publishStatus: 'draft' }));
+        }
 
         for (const platform of Object.keys(SOCIAL_LIMITS)) {
             const copyPath = join(socialDir, `${platform}.md`);
@@ -3082,6 +3106,30 @@ export function dailyQualityReport(args: string[]): void {
 }
 
 /**
+ * 0329 F23 — the verdict half of `quality`. The report only printed, so a failed audio qc sailed
+ * on into show-notes, the bundle and the publish windows (2026-10-25: an episode at 41/100 was
+ * packaged and queued for tier-0 sends). Reads the same `metadata.qc` as `daily-quality-report`
+ * and fails loud when the verdict is missing or `passed` is false.
+ */
+export function dailyQualityVerdict(args: string[]): void {
+    const [workDir = '', runDate = ''] = args;
+    const content = join(workDir, '30-audio', `${runDate}_11_generate_content.json`);
+    timed(workDir, 'quality-verdict', () => {
+        if (!isFile(content)) failWith(1, `quality-verdict: no audio content: ${content}`);
+        const qc = metadataOf(readJson(content)).qc as Record<string, unknown> | undefined;
+        if (qc === undefined) failWith(1, `quality-verdict: no qc verdict in ${content}`);
+        if (qc.passed !== true) {
+            const issues = Array.isArray(qc.criticalIssues) ? qc.criticalIssues : [];
+            failWith(
+                1,
+                `quality-verdict: audio qc failed (overallScore ${String(qc.overallScore ?? '?')}) — ${issues.map(String).join('; ') || 'no issue detail on the verdict'}`,
+            );
+        }
+        console.log(`quality-verdict: audio qc passed (overallScore ${String(qc.overallScore ?? '?')})`);
+    });
+}
+
+/**
  * 0171 R3: Apple Podcasts reads the enclosure's ID3 tags, so the published MP3 carries
  * title/artist/album/date. `-c copy` moves the audio frames without a re-encode, and the temp
  * file + rename keeps a failed ffmpeg from truncating the episode in place. An empty value
@@ -3291,10 +3339,25 @@ export function dailyPreflight(args: string[]): void {
                 String(match[1]),
             ),
         );
+        // 0329 F21: the `publish-matrix-*` stages never appear in kk-workflow-stages' switch —
+        // `kk stage` routes them through apps/cli's publish-matrix-stage.ts — so without this
+        // roster every workflow invoking them died as runner-stale.
+        const PUBLISH_MATRIX_STAGES = [
+            'publish-matrix-plan',
+            'publish-matrix-check',
+            'publish-matrix-send',
+            'publish-matrix-classify',
+            'publish-matrix-bundle',
+            'publish-matrix-rss-gate',
+            'publish-matrix-wait-until',
+        ] as const;
+        for (const name of PUBLISH_MATRIX_STAGES) known.add(name);
         const missing: string[] = [];
         for (const file of files) {
             if (!isFile(file)) failWith(1, `daily-preflight.workflow-missing: ${file}`);
-            for (const match of readFileSync(file, 'utf-8').matchAll(/\bkk stage ([a-z][a-z0-9-]*)/g)) {
+            // 0329 F21: accept both spellings — `kk stage <name>` and the ADR-037 canonical
+            // `kk stage run <name>`.
+            for (const match of readFileSync(file, 'utf-8').matchAll(/\bkk stage (?:run )?([a-z][a-z0-9-]*)/g)) {
                 const name = String(match[1]);
                 if (!known.has(name)) missing.push(`${name} (needed by ${basename(file)})`);
             }

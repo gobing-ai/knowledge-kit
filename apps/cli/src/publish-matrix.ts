@@ -10,7 +10,13 @@ import {
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import { z } from 'zod';
 import { resolveItcConfigPath } from './itc-config';
-import { loadPublishPreset, type PublishPresetTarget, type PublishWindow, PublishWindowSchema } from './itc-plan';
+import {
+    loadPublishPreset,
+    type PublishPreset,
+    type PublishPresetTarget,
+    type PublishWindow,
+    PublishWindowSchema,
+} from './itc-plan';
 import { type ItcReceipt, probePlugin, type SendRow, sendRows } from './itc-publish';
 
 /** One frozen asset a bundle ships: a `Content` JSON path plus its sha256. */
@@ -175,6 +181,8 @@ export interface PublishMatrixDeps {
     plugins?: readonly PluginRecord[];
     dispatch?: (argv: string[]) => Promise<number>;
     executor?: ProcessExecutor;
+    /** Injected preset (tests); a live call resolves it from the `--preset` slug instead. */
+    preset?: PublishPreset;
 }
 
 /**
@@ -1196,8 +1204,11 @@ export async function runPublishMatrixBundle(args: string[], deps: PublishMatrix
     const [workDir = ''] = args;
     const runDate = flagValue(args, '--run-date');
     const parentRunId = flagValue(args, '--run-id');
+    const presetSlug = flagValue(args, '--preset');
     if (!workDir || runDate === undefined || parentRunId === undefined) {
-        echoError('usage: publish-matrix-bundle <work_dir> --run-date <YYYY-MM-DD> --run-id <voice3 run id>');
+        echoError(
+            'usage: publish-matrix-bundle <work_dir> --run-date <YYYY-MM-DD> --run-id <voice3 run id> [--preset <slug>]',
+        );
         return 1;
     }
     const variantsDir = join(workDir, '30-variants');
@@ -1235,6 +1246,27 @@ export async function runPublishMatrixBundle(args: string[], deps: PublishMatrix
             return 1;
         }
 
+        // 0329 F02: a preset-required variant that the run never produced must fail the freeze —
+        // before any bundle write — instead of freezing a bundle whose tier-0 send dies later with
+        // "variant not found" after the publish window opened.
+        const preset =
+            deps.preset ??
+            (presetSlug !== undefined
+                ? (await loadPublishPreset(presetSlug, { projectRoot: deps.projectRoot }, fs)).preset
+                : undefined);
+        if (preset !== undefined) {
+            const missing = preset.targets
+                .filter((target: PublishPresetTarget) => target.required === true && target.variant !== undefined)
+                .filter((target: PublishPresetTarget) => variants[target.variant as string] === undefined)
+                .map((target: PublishPresetTarget) => target.variant as string);
+            if (missing.length > 0) {
+                echoError(
+                    `publish-matrix-bundle: preset '${preset.name}' requires variant(s) the run never produced: ${missing.join(', ')}`,
+                );
+                return 1;
+            }
+        }
+
         const articleTitle = await readVariantTitle(fs, workDir, variants);
         const bundle: Bundle = {
             schemaVersion: 1,
@@ -1247,16 +1279,20 @@ export async function runPublishMatrixBundle(args: string[], deps: PublishMatrix
         };
         const validated = BundleSchema.parse(bundle);
         const bundlePath = join(workDir, 'bundle.json');
-        // An existing bundle keeps its `runs[]`: a re-freeze must not forget which windows already
-        // published against it.
+        // A re-freeze keeps the windows already recorded (deduped — a double append must not
+        // multiply) and appends its own generate run id last, so the bundle always names the run
+        // that produced it (0329 R2).
         if (await fs.exists(bundlePath)) {
             try {
                 const prior = BundleSchema.parse(JSON.parse(await fs.readFile(bundlePath)));
-                if (prior.runs.length > 0) validated.runs = prior.runs;
+                const deduped = [...new Set(prior.runs)];
+                if (!deduped.includes(parentRunId)) deduped.push(parentRunId);
+                validated.runs = deduped;
             } catch {
                 // an unreadable prior bundle is replaced by this validated one
             }
         }
+        if (!validated.runs.includes(parentRunId)) validated.runs.push(parentRunId);
         await fs.writeFile(bundlePath, `${JSON.stringify(validated, null, 2)}\n`);
         echo(`bundle frozen: ${Object.keys(variants).length} variant(s) -> ${bundlePath}`);
         return 0;

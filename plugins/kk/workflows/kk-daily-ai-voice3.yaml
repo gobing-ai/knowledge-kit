@@ -140,6 +140,7 @@ nodes:
         command: >-
           kk stage daily-preflight plugins/kk/workflows/kk-daily-ai-voice2.yaml
           plugins/kk/workflows/kk-daily-safety.yaml
+          plugins/kk/workflows/kk-daily-publish3.yaml
           && kk daily prepare --workflow kk-daily-ai-voice2 --run-date "${vars.run_date}" --ledger-sync
           --run "${vars.__runId}" --definition-digest "${vars.__definitionDigest}"
           --setting window="${vars.window}" --setting language="${vars.language}" --setting vdriver="${vars.vdriver}"
@@ -243,6 +244,31 @@ nodes:
         command: >-
           kk stage daily-qc-content "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.qc_categories}" "${vars.qc_min_quality}" "${vars.qc_min_importance}" "${vars.qc_min_urgency}" "${vars.qc_min_impact}" "${vars.qc_min_episode_items}" "${vars.episode_min_minutes}" "${vars.vdriver}"
 
+  # One guard for the whole pool (0324 R3; 0329 F01/F15): it sits right after `qc-content`, in
+  # front of every token reader, and NEVER exits non-zero — in this engine a failed dependency
+  # never releases its dependents, so a failing gate on an empty pool wedges the graph into
+  # dag-unreachable and turns a thin day into a failed run. The token carries the verdict
+  # instead: PASS opens the content fan-out, EMPTY makes every token-gated node skip, and the
+  # run still closes `done` with a no-content run report.
+  - id: pool-gate
+    description: >-
+      The single pool guard (0324 R3, 0329): `kk store pool-count --min 1` over the candidates
+      file that `qc-content` wrote, recorded once as a token at
+      `.spur/run/<runId>-pool-gate.status`. A token, not a bare dependency, because the engine
+      skips a node only when ALL its dependencies were skipped — so a failed gate beside a done
+      dependency would still admit the node. The gate itself always exits 0 (0329: an empty pool
+      is a no-content day, not a failed run).
+    dependsOn: [qc-content]
+    action:
+      kind: shell
+      options:
+        command: >-
+          OUT=".spur/run/${vars.__runId}-pool-gate.status";
+          mkdir -p "$(dirname "$OUT")";
+          if kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1;
+          then echo PASS > "$OUT";
+          else echo EMPTY > "$OUT"; rm -f "${vars.work_dir}/bundle.json"; fi
+
   - id: select
     description: >-
       Record today's planned set in the store's topic-scoped `selections` ledger (0228). It runs at
@@ -250,7 +276,7 @@ nodes:
       depends on the DAG reaching its tail: a run that fails, pauses at review or skips publish still
       excludes what it planned. Guarded on the QC candidates — a pool that filtered to zero items
       selects nothing.
-    dependsOn: [qc-content]
+    dependsOn: [qc-content, pool-gate]
     condition:
       kind: shell
       options:
@@ -275,7 +301,7 @@ nodes:
 
   - id: plan-translate
     description: "Translate the needsTranslation plan items into the output plan.json via agent.run; onError: continue — plan-translate-retry below is the loud gate (0238 R2)"
-    dependsOn: [qc-content]
+    dependsOn: [qc-content, pool-gate]
     condition:
       kind: shell
       options:
@@ -315,7 +341,7 @@ nodes:
       VALID expectFile (missing or contract-violating JSON), retries the same input on a different
       tier, and carries NO onError — a second miss fails the run loudly instead of letting an
       untranslated or truncated plan flow downstream.
-    dependsOn: [plan-translate]
+    dependsOn: [plan-translate, pool-gate]
     condition:
       kind: shell
       options:
@@ -335,7 +361,7 @@ nodes:
 
   - id: article-write
     description: "Write the tech-sharing prose article from the translated plan via agent.run (3-format split: surfdash gets prose, not a news list); onError: continue — article-write-retry below is the loud gate (0238 R2)"
-    dependsOn: [qc-content, plan-translate, plan-translate-retry]
+    dependsOn: [qc-content, plan-translate, plan-translate-retry, pool-gate]
     condition:
       kind: shell
       options:
@@ -369,7 +395,7 @@ nodes:
       Bounded recovery for article-write (0238 R2): runs only when the primary settled without its
       expectFile, retries the same input on a different tier, and carries NO onError — a second miss
       fails the run loudly instead of publishing an article nobody wrote.
-    dependsOn: [article-write]
+    dependsOn: [article-write, pool-gate]
     condition:
       kind: shell
       options:
@@ -394,7 +420,7 @@ nodes:
       this node: a done dependency in the mix keeps it runnable) as well as on both authoring nodes
       AND their retry siblings, and it carries the same candidates guard — a pool that filtered to
       zero items must not build an empty article.
-    dependsOn: [qc-content, plan-translate, plan-translate-retry, article-write, article-write-retry]
+    dependsOn: [qc-content, plan-translate, plan-translate-retry, article-write, article-write-retry, pool-gate]
     condition:
       kind: shell
       options:
@@ -411,7 +437,7 @@ nodes:
     # 0238 R3: reads 21-plan/<date>_03_plan_plan.json, so it must not start before the plan
     # producers settle. `qc-content` stays in the list: a done dependency in the mix keeps this node
     # runnable when the plan-authoring nodes are disabled (all-skipped deps skip a node).
-    dependsOn: [qc-content, plan-translate, plan-translate-retry]
+    dependsOn: [qc-content, plan-translate, plan-translate-retry, pool-gate]
     condition:
       kind: shell
       options:
@@ -458,7 +484,7 @@ nodes:
 
   - id: script-style
     description: "Snapshot the shipped zh style contract into the work dir (separate node: it is also an audit input for the revision loop)"
-    dependsOn: [qc-content]
+    dependsOn: [qc-content, pool-gate]
     condition:
       kind: shell
       options:
@@ -475,7 +501,7 @@ nodes:
     # 0238 R3: reads 21-plan/<date>_03_plan_plan.json, so it must not start before the plan
     # producers settle. `script-style` stays first in the list: a done dependency in the mix keeps
     # this node runnable when the plan-authoring nodes are disabled (all-skipped deps skip a node).
-    dependsOn: [script-style, plan-translate, plan-translate-retry]
+    dependsOn: [script-style, plan-translate, plan-translate-retry, pool-gate]
     condition:
       kind: shell
       options:
@@ -505,7 +531,7 @@ nodes:
       Compile the episode plan Doc[] into structured broadcast VoiceScript YAML Content. Depends on
       `article` so the node still runs when the plan-authoring nodes were disabled or skipped (the
       builder falls back to templates) — but not when the whole content branch is skipped.
-    dependsOn: [article, script-style, script-write]
+    dependsOn: [article, script-style, script-write, pool-gate]
     condition:
       kind: shell
       options:
@@ -558,7 +584,7 @@ nodes:
 
   - id: wrap-docs
     description: "Wrap VoiceScript into Doc[] input for the voice generator plugin (the generate-side variant input)"
-    dependsOn: [script, review]
+    dependsOn: [script, review, pool-gate]
     condition:
       kind: shell
       options:
@@ -574,7 +600,7 @@ nodes:
     description: "Voice tier, primary driver (vars.vdriver — voxcpm; its 40 ms lattice is known and monitored, see the vdriver comment). onError: continue — the fallback siblings below are the loud chain (same pattern as 0238 R2)."
     # wrap-docs is a data dependency, not a sibling: daily-generate reads its _10_wrap-docs_docs.json
     # as the TTS input. Without this edge the two nodes race in the same wave (0212 dogfood finding).
-    dependsOn: [script, safety, review, wrap-docs]
+    dependsOn: [script, safety, review, wrap-docs, pool-gate]
     condition:
       kind: shell
       options:
@@ -595,7 +621,7 @@ nodes:
 
   - id: generate-fallback
     description: "Voice tier fallback 1: gemini (gemini-tts) when the primary driver left no valid Content — the measured-dry escape hatch from voxcpm's lattice"
-    dependsOn: [generate]
+    dependsOn: [generate, pool-gate]
     condition:
       kind: shell
       options:
@@ -612,7 +638,7 @@ nodes:
 
   - id: generate-fallback2
     description: "Voice tier fallback 2 (last, loud): omni-voice-gen when neither voxcpm nor gemini delivered"
-    dependsOn: [generate-fallback]
+    dependsOn: [generate-fallback, pool-gate]
     condition:
       kind: shell
       options:
@@ -626,9 +652,17 @@ nodes:
         command: >-
           OMNIVOICE_SPEED=1.06 kk stage daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "ominivoice" "1" "${vars.episode_max_minutes}" "${vars.episode_min_minutes}"
 
+  # 0329 F15: a script-gate refusal produces no audio, but the sting must not fail the day —
+  # the refusal artifact admits intro (and duration closes the run as no-content on it).
   - id: intro
     description: "Prepend the 8s intro sting (intro_music var; empty = skip), update duration/audioPath"
     dependsOn: [generate, generate-fallback, generate-fallback2]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          test -f "${vars.work_dir}/30-audio/${vars.run_date}_11_generate_content.json"
+          -o -f "${vars.work_dir}/30-audio/${vars.run_date}_11_generate_content_duration-refusal.json"
     action:
       kind: shell
       options:
@@ -658,32 +692,39 @@ nodes:
         onError: continue
 
   - id: duration
-    description: "Measured duration gate: under episode_min_minutes the run refuses and closes as no-content (refusal artifact + emptied candidates, exit 0 — 0266); above episode_max_minutes it still fails loud. Duration is authoritative."
+    description: "Measured duration gate: under episode_min_minutes the run refuses and closes as no-content (refusal artifact + emptied candidates + publish-path invalidation, exit 0 — 0266/0329); above episode_max_minutes it still fails loud. Duration is authoritative."
     dependsOn: [intro]
     action:
       kind: shell
       options:
         command: >-
-          kk stage daily-episode-duration "${vars.work_dir}" "${vars.run_date}" "${vars.episode_min_minutes}" "${vars.episode_max_minutes}" "${vars.vdriver}"
+          kk stage daily-episode-duration "${vars.work_dir}" "${vars.run_date}" "${vars.episode_min_minutes}" "${vars.episode_max_minutes}" "${vars.vdriver}" "${vars.__runId}"
 
   - id: quality
     description: >-
-      Verify audio quality, speech rate, and silence/repetition QC metrics over the assembled
-      episode. Depends on the audio tail and wrap-docs: voice3 no longer packages a publish-prep
-      Content, so the audited bytes are the generated episode itself.
-    dependsOn: [duration, wrap-docs]
+      Print the daily QC table (daily-quality-report) and then gate on it (0329 F23): the print
+      alone never gated anything — a 41/100 episode sailed into show-notes, the bundle and the
+      publish windows. The verdict stage fails loud when the generator's audio qc verdict is
+      missing or `passed` is false, so a bad episode dies here instead of at a tier-0 send.
+    dependsOn: [duration, wrap-docs, pool-gate]
+    condition:
+      kind: shell
+      options:
+        # 0324 R3: the pool verdict is `pool-gate`'s token, never a repeated `kk store pool-count`.
+        command: 'test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS'
     action:
       kind: shell
       options:
         command: >-
           kk stage daily-quality-report "${vars.work_dir}" "${vars.run_date}"
+          && kk stage run daily-quality-verdict "${vars.work_dir}" "${vars.run_date}"
 
   - id: show-notes
     description: >-
       Render timeline show notes from the episode plan — content, not publishing: the publish half
       ships them as the episode variant's `metadata.showNotes`, and the link placeholders stay
       unresolved until a send resolves them."
-    dependsOn: [quality]
+    dependsOn: [quality, pool-gate]
     condition:
       kind: shell
       options:
@@ -694,13 +735,36 @@ nodes:
       options:
         command: >-
           kk stage daily-show-notes "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.title}"
+
+  # 0329 F02: voice3 lost daily-publish-prep in the migration (voice2 keeps it at its :704), so
+  # `31-publish/<date>_13_publish-prep_content.json` — the episode variant's source — was never
+  # written by this workflow, and a freeze only succeeded against a stale same-day voice2 prep
+  # file. Rebuilt per the voice2 template: after duration (it reads the generate content's
+  # mp3Path, and ID3 stamps must land on the final post-intro MP3), pool-gated so a refused
+  # episode packages nothing.
+  - id: publish-prep
+    description: >-
+      Package the publish-ready episode Content (ID3 tags on the final post-intro MP3, cover
+      path, article link) into 31-publish/<date>_13_publish-prep_content.json — the episode
+      variant's source for bundle-variants.
+    dependsOn: [duration, article, safety, pool-gate]
+    condition:
+      kind: shell
+      options:
+        # 0324 R3: the pool verdict is `pool-gate`'s token, never a repeated `kk store pool-count`.
+        command: 'test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS'
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-publish-prep "${vars.work_dir}" "${vars.run_date}" "${vars.podcast_artist}" "${vars.podcast_album}"
   - id: cards-write
     description: "Plan the card series across the episode's plan items via agent.run; onError: continue — a failed plan skips the card series, never the run"
     dependsOn: [script, review, pool-gate]
     condition:
       kind: shell
       options:
-        command: 'test "${vars.cards_enabled}" = "true"'
+        command: 'test "${vars.cards_enabled}" = "true" && test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS'
     action:
       kind: agent.run
       onError: continue
@@ -720,14 +784,14 @@ nodes:
 
   - id: cards-render
     description: "Render the card series through the pinned xhs-card/xhs-knowledge presets, attach the episode cover last and pair every image with its numbered line (0235 note_scope=episode); onError: continue — the publish node names the missing series and stays soft"
-    dependsOn: [cards-write]
+    dependsOn: [cards-write, pool-gate]
     # A skipped cards-write still admits its dependents, so each card node keeps its own switch:
     # without it a run with cards_enabled=false would re-package a stale same-day 25-xhs/ series.
     # The pool guard is `pool-gate`'s alone in voice3 (0324 R3).
     condition:
       kind: shell
       options:
-        command: 'test "${vars.cards_enabled}" = "true"'
+        command: 'test "${vars.cards_enabled}" = "true" && test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS'
     action:
       kind: shell
       onError: continue
@@ -736,26 +800,6 @@ nodes:
           kk stage daily-xhs-render "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.cards}" "${vars.xhs_style}" "${vars.xhs_provider}" "${vars.xhs_model}" "${vars.xhs_fallback}" "episode"
 
   # ---- generate-side payloads and the frozen bundle (0324 R2/R3) ----
-
-  # One guard for the whole pool (0324 R3): every node that used to repeat `kk store pool-count`
-  # depends on this one, so a refused pool empties the candidates file once and the rest of the
-  # graph skips through the engine's all-deps-skipped rule.
-  - id: pool-gate
-    description: >-
-      The single pool guard (0324 R3): `kk store pool-count --min 1` over the candidates file that
-      `qc-content` wrote, recorded once as a token at `.spur/run/<runId>-pool-gate.status`. voice2
-      repeated the same guard on twenty-one conditions. A token, not a bare dependency, because the
-      engine skips a node only when ALL its dependencies were skipped — so a failed gate beside a
-      done dependency would still admit the node. Everything downstream reads the token.
-    dependsOn: [qc-content]
-    action:
-      kind: shell
-      options:
-        command: >-
-          OUT=".spur/run/${vars.__runId}-pool-gate.status";
-          if kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1;
-          then echo PASS > "$OUT";
-          else echo EMPTY > "$OUT"; exit 1; fi
 
   - id: social-write
     description: >-
@@ -784,35 +828,56 @@ nodes:
     description: >-
       Build the channel payloads from the run's own artifacts (0327 builders): `30-variants/<key>`
       for article / episode / cards plus the channel-specific keys and the social posts, all with
-      `{{article_url}}` / `{{podcast_url}}` placeholders because nothing is published yet.
-    dependsOn: [quality, social-write]
+      `{{article_url}}` / `{{podcast_url}}` placeholders because nothing is published yet. 0329
+      F16: depends on every producer it reads (the 0324 file order alone was not a guarantee),
+      wipes stale variants first, and follows the cards/cover switches so a disabled producer's
+      variant is a skip, not a stale re-read.
+    dependsOn: [quality, social-write, publish-prep, cover-normalize, cards-render, pool-gate]
+    condition:
+      kind: shell
+      options:
+        # 0324 R3: the pool verdict is `pool-gate`'s token, never a repeated `kk store pool-count`.
+        command: 'test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS'
     action:
       kind: shell
       options:
         command: >-
           kk stage run daily-bundle-variants "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
+          "${vars.cards_enabled}" "${vars.cover_enabled}"
 
   - id: bundle-freeze
     description: >-
       Freeze `bundle.json` (0321 `BundleSchema`): every `30-variants/*` file with its sha256 plus the
       episode title, so the publish half can run later, or three times a day, against exactly these
       bytes. Fails when the article or episode variant is missing — a bundle never advertises what
-      generate did not produce.
-    dependsOn: [bundle-variants]
+      generate did not produce. 0329 F15: token-gated, so a refused episode never freezes — the
+      duration gate also drops this run's bundle.json on a refusal.
+    dependsOn: [bundle-variants, pool-gate]
+    condition:
+      kind: shell
+      options:
+        # 0324 R3: the pool verdict is `pool-gate`'s token, never a repeated `kk store pool-count`.
+        command: 'test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS'
     action:
       kind: shell
       options:
         command: >-
-          kk stage run publish-matrix-bundle "${vars.work_dir}" --run-date "${vars.run_date}" --run-id "${vars.__runId}"
+          case "${vars.publish_preset}" in '') ARGS='' ;; *) ARGS="--preset ${vars.publish_preset}" ;; esac;
+          kk stage run publish-matrix-bundle "${vars.work_dir}" --run-date "${vars.run_date}" --run-id "${vars.__runId}" $ARGS
 
   - id: generation-report
-    description: "The generate half's report (the publish half writes its own, per window)."
-    dependsOn: [bundle-freeze]
+    description: "The generate half's report (the publish half writes its own, per window). 0329 F15: real run-report flags — the phantom skip flag made every invocation exit 1; the pool/candidates/qc inputs are what let the report record a no-content close. Depends on pool-gate beside bundle-freeze: pool-gate always completes, so the report (and the ledger after it) also land on a no-content close — the design requires the report reachable from extract/QC/no-content, not only bundle-freeze."
+    dependsOn: [bundle-freeze, pool-gate]
     action:
       kind: shell
       options:
         command: >-
-          kk daily run-report --work-dir "${vars.work_dir}" --run-date "${vars.run_date}" --skip-store
+          kk daily run-report --work-dir "${vars.work_dir}" --run-date "${vars.run_date}"
+          --pool "${vars.work_dir}/10-collect/pool.json"
+          --candidates "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json"
+          --plugins-path "${vars.plugins_path}"
+          --qc-min-quality "${vars.qc_min_quality}" --qc-min-importance "${vars.qc_min_importance}"
+          --qc-min-urgency "${vars.qc_min_urgency}" --qc-min-impact "${vars.qc_min_impact}"
 
   - id: publish
     description: >-
@@ -820,11 +885,11 @@ nodes:
       window against the bundle this run just froze. The launcher vars are stripped at the nested
       boundary (the same two voice2 strips for the safety machine), and the nested run's exit code is
       surfaced — a failed publish window is a failed generate run's last step, never a silent one.
-    dependsOn: [generation-report]
+    dependsOn: [generation-report, pool-gate]
     condition:
       kind: shell
       options:
-        command: 'test "${vars.auto_publish}" = "true"'
+        command: 'test "${vars.auto_publish}" = "true" && test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS'
     action:
       kind: shell
       options:

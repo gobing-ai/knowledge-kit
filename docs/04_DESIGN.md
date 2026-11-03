@@ -2214,17 +2214,23 @@ bridge is the documented legacy seam and disappears with voice2. `kk daily publi
 **`kk-daily-ai-voice3` — the generate half (task 0324).** `plugins/kk/workflows/kk-daily-ai-voice3.yaml`
 (`kind: dag`) carries voice2's generation graph — `prepare` → read chain → `extract` → `plan` →
 `qc-content` → `select` → translate → article/cover/script drafts → nested `safety` → `review` pause →
-audio (split/generate/fallbacks/intro/audit/duration) → `quality` → `show-notes` → card
-`cards-write`/`cards-render` — and then the generate-side tail this feature adds:
+audio (split/generate/fallbacks/intro/audit/duration) → `pool-gate` → `quality` → `show-notes` →
+`publish-prep` → card `cards-write`/`cards-render` — and then the generate-side tail this feature
+adds. `pool-gate` sits **after `duration`, before `select`** (task 0329 F01/F06): the graph's one
+supply verdict runs once the episode's real length is known, so a duration refusal can flip the
+token to `EMPTY` and close the day before any consumer (publish3's `select` is the first reader and
+depends on the gate).
 
 | Node | What it does |
 | --- | --- |
-| `pool-gate` | the ONE `kk store pool-count --min 1` over the candidates file; records `PASS`/`EMPTY` at `.spur/run/<runId>-pool-gate.status` |
+| `pool-gate` | the ONE `kk store pool-count --min 1` over the candidates file; records `PASS`/`EMPTY` at `.spur/run/<runId>-pool-gate.status`, never exits non-zero (an empty pool is a reported outcome, not a failure) |
+| `quality` | verdict gate: `daily-quality-report` then `kk stage run daily-quality-verdict` — explicit failed QC, critical issues or a missing verdict exit 1 (voice3-only; voice2 stays report-only) |
+| `publish-prep` | `kk stage run daily-publish-prep <workDir> <runDate> <artist> <album>` — the generation-owned episode assembly (MP3/ID3/cover/metadata), never reads voice2 dirs |
 | `social-write` | `agent.run` (`onError: continue`) writing zh short posts to `26-social/{x,weibo,threads}.md` inside each platform's cap |
-| `bundle-variants` | `kk stage run daily-bundle-variants …` → `30-variants/<key>.content.json` with `{{article_url}}`/`{{podcast_url}}` |
-| `bundle-freeze` | `kk stage run publish-matrix-bundle <workDir> --run-date <d> --run-id <id>` → `bundle.json` |
-| `generation-report` | `kk daily run-report` (no store writes) |
-| `publish` | nested `kk-daily-publish3` when `auto_publish=true`, launcher vars stripped |
+| `bundle-variants` | `kk stage run daily-bundle-variants … "${vars.cards_enabled}" "${vars.cover_enabled}"` → `30-variants/<key>.content.json`; wipes stale `*.content.json` first, and depends on every producer (`quality`, `social-write`, `publish-prep`, `cover-normalize`, `cards-render`, `pool-gate`) |
+| `bundle-freeze` | `kk stage run publish-matrix-bundle <workDir> --run-date <d> --run-id <id> [--preset <publish_preset>]` → `bundle.json`; a set selector is forwarded so a preset-required variant missing at freeze refuses before any write |
+| `generation-report` | `kk daily run-report --work-dir … --run-date … --pool … --candidates … --plugins-path … --qc-min-quality …` (real flags, no store writes) |
+| `publish` | nested `kk-daily-publish3` when `auto_publish=true`, launcher vars stripped, gated on the pool token beside `generation-report` |
 | `ledger` | `kk ledger append`, `onError: continue` |
 
 **No channel enablement.** `xhs_enabled`, `wechat_enabled`, `xhs_live`, `wechat_live`, `xhs_cards` and
@@ -2238,16 +2244,27 @@ carries is that channel's preset `options`, not a var.
 
 **One pool guard, recorded as a token.** voice2 repeated `kk store pool-count --min 1` on twenty-one
 conditions. `pool-gate` runs it once and writes `.spur/run/<runId>-pool-gate.status`; every node that
-used to carry the guard checks that token instead. A token rather than a bare `dependsOn`, because the
-engine skips a node only when **all** its dependencies were skipped — a failed gate beside a done
-dependency would still admit the node, which is exactly the bug the second copy of the guard used to
-prevent.
+used to carry the guard checks that token instead — and since 0329, every consumer also *depends on*
+the gate node, so the token is the graph result, not an ambient file. A token rather than a bare
+`dependsOn`, because the engine skips a node only when **all** its dependencies were skipped — a
+failed gate beside a done dependency would still admit the node, which is exactly the bug the second
+copy of the guard used to prevent. The gate never exits non-zero: an empty pool records `EMPTY`, drops
+a stale same-day `bundle.json`, and every downstream node skips on the token.
+
+**No-content closes the whole publish path (0329 F06/F15).** A below-floor episode
+(`dailyEpisodeDuration` refusal) writes the refusal artifact, empties the candidates, overwrites the
+pool token to `EMPTY` and deletes any same-day `bundle.json` — a rerun stays exit 0 and idempotent
+(`already recorded`). `daily-quality-verdict` rejects failed/missing QC by exit 1; `intro` admits the
+refusal artifact so the audio chain still closes; `publish` fires only on the `PASS` token with
+`auto_publish=true`.
 
 **`publish-matrix-bundle` (the only `bundle.json` producer).** It lists `30-variants/`, validates each
 file as kk-core `Content`, records `{path, sha256}` per key (the file name's `_` maps back to `:`), and
 fills `episode.title` from the episode/article variant, else `每日AI乱炖 · <runDate>`. It refuses to
-freeze when the article or episode variant is missing, and a re-freeze preserves an existing
-`runs[]` — a publish window's record must survive the next generate run.
+freeze when the article or episode variant is missing, and (0329 F02) when the resolved preset marks a
+variant `required` that the run never produced — before any bundle write. A re-freeze **dedups**
+`runs[]` (a double append must not multiply) and appends its own run id **last**, so the bundle always
+names the run that produced the frozen bytes; an unreadable prior bundle is replaced, not merged.
 
 **`kk-daily-publish3` — the publish half (task 0323).** `plugins/kk/workflows/kk-daily-publish3.yaml`
 (`kind: dag`) runs one **window** per launch; the channel matrix is never in the YAML. Vars:
