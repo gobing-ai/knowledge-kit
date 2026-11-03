@@ -7,6 +7,68 @@ const runner = join(repo, 'plugins/kk/scripts/daily-scheduled-run.ts');
 const evidence = join(repo, '.works/tmp/test-daily-recovery/scheduler');
 
 describe('scheduled daily run supervision (0338)', () => {
+    it('defaults wechat_live to false and forwards an explicit --wechat-live flag to the child workflow', async () => {
+        for (const policy of [
+            { name: 'default', args: [], expected: 'false' },
+            { name: 'live', args: ['--wechat-live'], expected: 'true' },
+        ]) {
+            const dir = join(evidence, String(process.pid), 'wechat-live-policy', policy.name);
+            rmSync(dir, { recursive: true, force: true });
+            mkdirSync(join(dir, 'bin'), { recursive: true });
+            const fake = join(dir, 'bin/spur');
+            writeFileSync(
+                fake,
+                `#!${process.execPath}
+import { writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+if (args.includes('run')) {
+    writeFileSync(process.env.PROBE_VARS, args[args.indexOf('--vars') + 1]);
+}
+process.exit(0);
+`,
+            );
+            chmodSync(fake, 0o755);
+            const kk = join(dir, 'bin/kk');
+            writeFileSync(kk, readFileSync(fake));
+            chmodSync(kk, 0o755);
+            const receipt = join(dir, 'receipt.json');
+            const proc = Bun.spawn(
+                [
+                    process.execPath,
+                    runner,
+                    '--repo',
+                    repo,
+                    '--works-dir',
+                    join(dir, 'works'),
+                    '--run-id',
+                    `wechat-live-policy-${policy.name}`,
+                    '--timeout-ms',
+                    '5000',
+                    '--receipt',
+                    receipt,
+                    ...policy.args,
+                ],
+                {
+                    env: {
+                        ...process.env,
+                        PATH: `${join(dir, 'bin')}:${process.env.PATH ?? ''}`,
+                        PROBE_VARS: join(dir, 'vars.json'),
+                    },
+                    stdout: 'pipe',
+                    stderr: 'pipe',
+                },
+            );
+            const [exitCode, stdout, stderr] = await Promise.all([
+                proc.exited,
+                new Response(proc.stdout).text(),
+                new Response(proc.stderr).text(),
+            ]);
+            expect({ policy: policy.name, exitCode, stdout, stderr }).toMatchObject({ exitCode: 4 });
+            const vars = JSON.parse(readFileSync(join(dir, 'vars.json'), 'utf-8')) as Record<string, unknown>;
+            expect(vars.wechat_live).toBe(policy.expected);
+        }
+    }, 20000);
+
     it('records success, closes failures, and reaps a timed-out workflow before finalizing its ledger', async () => {
         const results: Record<string, unknown>[] = [];
         for (const scenario of [
