@@ -1,0 +1,653 @@
+diff --git a/scripts/lib/seo-digest.ts b/scripts/lib/seo-digest.ts
+index 8b8b83e..168be9e 100644
+--- a/scripts/lib/seo-digest.ts
++++ b/scripts/lib/seo-digest.ts
+@@ -5392,8 +5392,15 @@ function fallbackDescription(options: {
+ 	topics: readonly string[];
+ 	stories: readonly Story[];
+ 	ledeSentences: readonly string[];
++	requireTopicCoverage?: boolean;
+ }): string {
+-	const { lang, topics, stories, ledeSentences } = options;
++	const {
++		lang,
++		topics,
++		stories,
++		ledeSentences,
++		requireTopicCoverage = false,
++	} = options;
+ 	const limits = LIMITS[lang];
+ 	const separator = lang === "en" ? " " : "";
+ 	// Whole sentences, boilerplate-free, lede first (it was written as the
+@@ -5430,31 +5437,49 @@ function fallbackDescription(options: {
+ 		.join(separator)
+ 		.replace(/[;:,]$/, lang === "en" ? "." : "。")
+ 		.replace(/[；，]$/, "。");
++	const count = stories.length;
++	const topicList = topics.join(LIST_SEP[lang]);
++	const templates: Record<Lang, string[]> = {
++		en: topicList
++			? [
++					`Today's digest covers ${topicList}, plus ${count} stories in total from the AI world.`,
++					`Today's digest covers ${topicList} and ${count} stories in total.`,
++					`Today's digest: ${topicList}, and ${count} stories.`,
++				]
++			: [
++					`Today's digest covers ${count} AI stories from the day's reporting and practical experiments.`,
++					`Today's digest includes ${count} AI stories in total.`,
++					`Today's digest: ${count} AI stories.`,
++				],
++		zh: topicList
++			? [
++					`本期内容涵盖${topicList}等话题，共 ${count} 条消息，逐条展开。`,
++					`本期共 ${count} 条消息，涵盖${topicList}。`,
++					`本期 ${count} 条：${topicList}。`,
++				]
++			: [
++					`本期聚焦AI领域的最新进展与实践消息，共 ${count} 条内容，逐条梳理背景、验证结果和实际取舍。`,
++					`本期共 ${count} 条AI消息，逐条展开背景、验证结果和实际取舍。`,
++					`本期 ${count} 条AI消息，逐条展开。`,
++				],
++		ja: topicList
++			? [
++					`本号は${topicList}など、全${count}本の話題を順に取り上げる。`,
++					`本号は${topicList}を含む全${count}本。`,
++					`本号は全${count}本：${topicList}。`,
++				]
++			: [
++					`本号はAI分野の最新動向と実践を扱い、全${count}本の背景、検証結果、実用上の取捨を順に整理する。`,
++					`本号は全${count}本のAIニュースを背景と検証結果とともに紹介する。`,
++					`本号は全${count}本のAIニュース。`,
++				],
++	};
+ 
+ 	// Floor unmet: pad with a complete template sentence that names the day's
+ 	// topics and story count. Variants are tried longest-first so the result
+ 	// lands inside [floor, cap] whenever a variant fits; the shortest variant
+ 	// is the unconditional floor.
+ 	if (description.length < limits.descriptionFloor) {
+-		const count = stories.length;
+-		const topicList = topics.join(LIST_SEP[lang]);
+-		const templates: Record<Lang, string[]> = {
+-			en: [
+-				`Today's digest covers ${topicList}, plus ${count} stories in total from the AI world.`,
+-				`Today's digest covers ${topicList} and ${count} stories in total.`,
+-				`Today's digest: ${topicList}, and ${count} stories.`,
+-			],
+-			zh: [
+-				`本期内容涵盖${topicList}等话题，共 ${count} 条消息，逐条展开。`,
+-				`本期共 ${count} 条消息，涵盖${topicList}。`,
+-				`本期 ${count} 条：${topicList}。`,
+-			],
+-			ja: [
+-				`本号は${topicList}など、全${count}本の話題を順に取り上げる。`,
+-				`本号は${topicList}を含む全${count}本。`,
+-				`本号は全${count}本：${topicList}。`,
+-			],
+-		};
+ 		const joiner = description ? (lang === "en" ? " " : "") : "";
+ 		for (const template of templates[lang]) {
+ 			const candidate = description
+@@ -5481,7 +5506,107 @@ function fallbackDescription(options: {
+ 					: cutAtBoundary(candidate, limits.description, lang);
+ 		}
+ 	}
+-	return description;
++	// A strict digest title always carries two headlines. When the source lede
++	// names only the first one, add a complete compact sentence for the missing
++	// headline(s) while there is room. This keeps generated unmapped metadata
++	// internally consistent without inventing a claim or weakening the gate.
++	const missingTopics = topics.filter(
++		(topic) => !textNamesHeadline(topic, description, lang),
++	);
++	if (missingTopics.length > 0) {
++		const topicList = missingTopics.join(LIST_SEP[lang]);
++		const sentence: Record<Lang, string> = {
++			en: `The digest also covers ${topicList}.`,
++			zh: `本期也关注${topicList}。`,
++			ja: `さらに${topicList}も取り上げる。`,
++		};
++		const separator = description ? (lang === "en" ? " " : "") : "";
++		const candidate = `${description}${separator}${sentence[lang]}`;
++		if (candidate.length <= limits.description) {
++			description = candidate;
++		} else {
++			const allTopics = topics.join(LIST_SEP[lang]);
++			const compact: Record<Lang, string> = {
++				en: `This digest covers ${allTopics} across ${stories.length} AI stories, separating reported facts, self-tests, and practical trade-offs.`,
++				zh: `本期聚焦${allTopics}等${stories.length}条AI消息，梳理技术背景、实测结果与实际取舍，并区分报道、自测结果与可复现结论，帮助读者作出判断。`,
++				ja: `本号は${allTopics}など全${stories.length}本のAIニュースを扱い、技術の背景、実測結果、実用上のトレードオフを整理し、報告と再現可能な結論を区別します。`,
++			};
++			if (
++				requireTopicCoverage &&
++				compact[lang].length >= limits.descriptionFloor &&
++				compact[lang].length <= limits.description
++			) {
++				description = compact[lang];
++			}
++		}
++	}
++	let compacted = compactLatinEntityRuns(description, lang);
++	if (compacted.length >= limits.descriptionFloor) return compacted;
++
++	// Entity compaction can remove a particle after the floor check above. Add
++	// another complete source sentence when possible, then re-compact so the
++	// returned description stays within the same cross-locale entity contract.
++	for (const sentence of pool) {
++		const compactedSentence = compactLatinEntityRuns(sentence, lang);
++		if (!compactedSentence || compacted.includes(compactedSentence)) continue;
++		const candidate = compactLatinEntityRuns(
++			`${compacted}${compacted ? separator : ""}${compactedSentence}`,
++			lang,
++		);
++		if (candidate.length > limits.description) continue;
++		compacted = candidate;
++		if (compacted.length >= limits.descriptionFloor) return compacted;
++	}
++
++	// No additional source sentence fit. Try the existing complete templates
++	// again after compaction; unlike the old final return, this path guarantees
++	// that a near-floor description is padded back into the configured window.
++	for (const template of templates[lang]) {
++		const candidate = compactLatinEntityRuns(
++			`${compacted}${compacted ? separator : ""}${template}`,
++			lang,
++		);
++		if (
++			candidate.length >= limits.descriptionFloor &&
++			candidate.length <= limits.description
++		) {
++			return candidate;
++		}
++	}
++
++	// If the source text already consumes the cap, use complete templates from
++	// an empty base rather than returning a description below the floor. This is
++	// a bounded fallback for sparse unmapped posts; it still names the derived
++	// topics and never reintroduces a compacted particle form.
++	let templateFallback = "";
++	for (let index = 0; index < templates[lang].length * 8; index++) {
++		const template = templates[lang][index % templates[lang].length];
++		const candidate = compactLatinEntityRuns(
++			`${templateFallback}${templateFallback ? separator : ""}${template}`,
++			lang,
++		);
++		if (candidate.length > limits.description) continue;
++		templateFallback = candidate;
++		if (candidate.length >= limits.descriptionFloor) return candidate;
++	}
++
++	return compacted;
++}
++
++/**
++ * Keep a Latin product/entity run contiguous in CJK fallback prose. The
++ * cross-locale digest gate compares multi-word names verbatim; translating
++ * the connector in `ChatGPT 的 HTML` / `ChatGPTのHTML` would otherwise make
++ * the generated zh/ja metadata disagree with the en description. This only
++ * removes a CJK possessive particle between two Latin name tokens and leaves
++ * authored or mapped editorial descriptions untouched.
++ */
++function compactLatinEntityRuns(text: string, lang: Lang): string {
++	if (lang === "en") return text;
++	return text.replace(
++		/([A-Z][A-Za-z0-9]*(?:\s+\d+(?:\.\d+)*)?)\s*(?:的|の)\s*([A-Z][A-Za-z0-9]*(?:\.[A-Za-z0-9]+)*)/gu,
++		"$1 $2",
++	);
+ }
+ 
+ /** Build the new metadata for one post. Pure: same body in, same values out. */
+@@ -5634,7 +5759,7 @@ export function truncateHeadingLabel(
+ 	return "";
+ }
+ 
+-function headingLabel(
++export function headingLabel(
+ 	story: Story,
+ 	sentence: string,
+ 	lang: Lang,
+@@ -5664,6 +5789,27 @@ function headingLabel(
+ 		if (!hasLabelAnchor(label, sentence, lang)) continue;
+ 		return label;
+ 	}
++	// Long English headlines often lead with a sentence-like frame before the
++	// named product ("A message slipped past ChatGPT's preview sandbox"). If no
++	// grammatical phrase fits the label budget, retain a named token that the
++	// chosen sentence actually states instead of dropping the story entirely.
++	if (lang === "en") {
++		const names = [
++			...raw.matchAll(
++				/(?<![\p{L}\p{N}])[A-Z][A-Za-z0-9]*(?:\.[A-Za-z0-9]+)*/gu,
++			),
++		];
++		for (const [index, match] of names.entries()) {
++			const name = match[0];
++			if (
++				name.length <= limit &&
++				isEnNameWord(name, index) &&
++				tokenInText(name, sentence)
++			) {
++				return name;
++			}
++		}
++	}
+ 	return "";
+ }
+ 
+@@ -6021,7 +6167,24 @@ export function buildRewrite(options: {
+ 	// first clause, or is dropped.
+ 	const rawCandidates = mapped?.headlines
+ 		? [...mapped.headlines]
+-		: stories.map((story) => story.topic);
++		: stories.map((story) => {
++				const storyIndex = allStories.indexOf(story);
++				const pointIndex = keyPointStories.indexOf(storyIndex);
++				const pointLabel =
++					pointIndex >= 0
++						? (keyPoints[pointIndex]?.split(" — ", 1)[0] ?? "")
++						: "";
++				return (
++					story.topic ||
++					pointLabel ||
++					story.sentences
++						.map((sentence) =>
++							headingLabel(story, sentence, lang, limits.topic),
++						)
++						.find(Boolean) ||
++					""
++				);
++			});
+ 	const coveredHeadlineSlots: number[] = [];
+ 	for (let i = 0; i < rawCandidates.length; i++) {
+ 		const raw = rawCandidates[i];
+@@ -6052,7 +6215,6 @@ export function buildRewrite(options: {
+ 		topics.push(cand);
+ 		if (topics.length === 2) break;
+ 	}
+-	const title = digestTitle(lang, date, topics);
+ 
+ 	// Description: the hand-written map summary when present; otherwise a
+ 	// composed template of complete sentences from the post itself.
+@@ -6110,6 +6272,15 @@ export function buildRewrite(options: {
+ 		composed = best?.text ?? null;
+ 	}
+ 	const authored = composed ?? mapped?.description;
++	const description =
++		authored ??
++		fallbackDescription({
++			lang,
++			topics,
++			stories,
++			ledeSentences,
++			requireTopicCoverage: !mapped,
++		});
+ 	if (authored) {
+ 		const mismatched = descriptionHeadlineIssues({
+ 			description: authored,
+@@ -6120,8 +6291,7 @@ export function buildRewrite(options: {
+ 			trace({ slot: -1, label: "", text: authored, reason });
+ 		}
+ 	}
+-	const description =
+-		authored ?? fallbackDescription({ lang, topics, stories, ledeSentences });
++	const title = digestTitle(lang, date, topics);
+ 
+ 	const siteName = (options.siteName ?? "Surfing").trim();
+ 	return {
+diff --git a/scripts/lib/seo-keypoint-plan.ts b/scripts/lib/seo-keypoint-plan.ts
+index e7da26a..2b7afbd 100644
+--- a/scripts/lib/seo-keypoint-plan.ts
++++ b/scripts/lib/seo-keypoint-plan.ts
+@@ -35,11 +35,13 @@ import {
+ 	buildRewrite,
+ 	chooseDescriptionSlots,
+ 	clausePrefixes,
++	descriptionHeadlineIssues,
+ 	digestTitle,
+ 	droppedTailIsTrivial,
+ 	escapeRegExp,
+ 	exceptionLends,
+ 	extractStories,
++	headingLabel,
+ 	headlineIssues,
+ 	headlinesShareAnchoredSlot,
+ 	isOwnerFrame,
+@@ -530,6 +532,8 @@ export function alignedPoint(args: {
+ 	span: SentenceSpan | null | undefined;
+ 	targetSentences: readonly string[];
+ 	target: PlanPost;
++	/** Target story used to derive a bounded label when the topic map has no entry. */
++	story?: Story;
+ 	/** Names a documented owner exception lets the label carry. */
+ 	labelLends?: readonly string[];
+ }): TargetResult {
+@@ -542,11 +546,12 @@ export function alignedPoint(args: {
+ 		span,
+ 		targetSentences,
+ 		target,
++		story,
+ 		labelLends,
+ 	} = args;
+ 	const lang = target.lang;
+ 	if (!span) return { reason: "no confident aligned sentence" };
+-	if (!label) return { reason: "no label in this locale" };
++	if (!label && !story) return { reason: "no label in this locale" };
+ 	const joiner = lang === "en" ? " " : "";
+ 	const spanSentences = targetSentences.slice(span.start, span.end);
+ 	const whole = spanSentences.join(joiner);
+@@ -595,7 +600,6 @@ export function alignedPoint(args: {
+ 			? targetSentences.slice(span.core.start, span.core.end).join(joiner)
+ 			: whole,
+ 	);
+-	wholeLength = `${label} — ${wholeText}`.length;
+ 	if (sourceCut) {
+ 		const want = tidy(whole).length * share;
+ 		// The source point is what follows a colon in its sentence: the target's
+@@ -620,9 +624,19 @@ export function alignedPoint(args: {
+ 			)
+ 			.map((entry) => entry.text);
+ 	}
+-	overBudget = !sourceCut && wholeLength > limit;
+ 	for (const [index, text] of candidates.entries()) {
+-		const combined = `${label} — ${text}`;
++		const pointLabel =
++			label ||
++			(story ? headingLabel(story, text, lang, LIMITS[lang].pointLabel) : "");
++		if (!pointLabel) {
++			if (index === 0) lastReason = "no label in this locale";
++			continue;
++		}
++		if (wholeLength === 0) {
++			wholeLength = `${pointLabel} — ${wholeText}`.length;
++			overBudget = !sourceCut && wholeLength > limit;
++		}
++		const combined = `${pointLabel} — ${text}`;
+ 		const reject = (reason: string) => {
+ 			if (index === 0) lastReason = reason;
+ 		};
+@@ -647,7 +661,7 @@ export function alignedPoint(args: {
+ 			continue;
+ 		}
+ 		const gap =
+-			parityGap(sourceSentence, text, label) ??
++			parityGap(sourceSentence, text, pointLabel) ??
+ 			evaluativeTailGap(
+ 				{ text: sourceSentence, lang: sourceLang },
+ 				{ text, lang },
+@@ -719,32 +733,69 @@ function sharedHeadlineSlots(args: {
+ 	const { posts, slug, topics, points } = args;
+ 	const stories = new Map<Lang, Story[]>();
+ 	for (const post of posts)
+-		stories.set(post.lang, extractStories(post.body, post.lang));
+-	const covered = posts.map(
+-		(post) =>
+-			buildRewrite({
+-				body: post.body,
+-				lang: post.lang,
+-				date: post.date,
+-				slug,
+-				topics,
+-				alignedKeyPoints: points[post.lang],
+-			}).coveredHeadlineSlots ?? [],
++		stories.set(
++			post.lang,
++			extractStories(post.body, post.lang).filter(
++				(story) => story.topic || story.sentence,
++			),
++		);
++	const rewrites = posts.map((post) =>
++		buildRewrite({
++			body: post.body,
++			lang: post.lang,
++			date: post.date,
++			slug,
++			topics,
++			alignedKeyPoints: points[post.lang],
++		}),
+ 	);
++	const covered = rewrites.map((rewrite) => rewrite.coveredHeadlineSlots ?? []);
+ 	const candidates = (covered[0] ?? []).filter((slot) =>
+ 		covered.every((list) => list.includes(slot)),
+ 	);
+ 	const out: number[] = [];
+ 	const titleTopics = new Map<Lang, string[]>();
+ 	for (const slot of candidates) {
+-		const cands = posts.map((post) => {
++		const cands = posts.map((post, postIndex) => {
+ 			const raw = topics[slug]?.[post.lang]?.headlines?.[slot];
+-			if (!raw) return undefined;
+-			return headlineIssues(raw).length === 0
+-				? raw
+-				: stories.get(post.lang)?.[slot]?.topic;
++			if (raw && headlineIssues(raw).length === 0) return raw;
++			const story = stories.get(post.lang)?.[slot];
++			if (!story) return undefined;
++			if (story.topic && headlineIssues(story.topic).length === 0)
++				return story.topic;
++			const planned = points[post.lang];
++			const pointIndex = planned?.slots.indexOf(slot) ?? -1;
++			const point =
++				pointIndex >= 0 ? (planned?.keyPoints[pointIndex] ?? "") : "";
++			const pointLabel = point.split(" — ", 1)[0] ?? "";
++			return pointLabel && headlineIssues(pointLabel).length === 0
++				? pointLabel
++				: undefined;
+ 		});
+ 		if (cands.some((cand) => !cand)) continue;
++		const headlineSlots = [...out, slot];
++		const descriptionReady = posts.every((post, i) => {
++			const rewrite = buildRewrite({
++				body: post.body,
++				lang: post.lang,
++				date: post.date,
++				slug,
++				topics,
++				alignedKeyPoints: points[post.lang],
++				headlineSlots,
++			});
++			return (
++				descriptionHeadlineIssues({
++					description: rewrite.description,
++					headlines: [
++						...(titleTopics.get(post.lang) ?? []),
++						cands[i] as string,
++					],
++					lang: post.lang,
++				}).length === 0
++			);
++		});
++		if (!descriptionReady) continue;
+ 		const shares = headlinesShareAnchoredSlot(
+ 			posts.map((post, i) => ({
+ 				lang: post.lang,
+@@ -913,6 +964,7 @@ export function planAlignedKeyPoints(
+ 						targetStories.get(target.lang)?.[storyIndex]?.sentences ?? []
+ 					).map(tidy),
+ 					target,
++					story: targetStories.get(target.lang)?.[storyIndex],
+ 					labelLends: exceptionLends(
+ 						exempt(target.lang),
+ 						targetStories.get(target.lang)?.[storyIndex],
+diff --git a/tests/seo/key-point-plan.test.ts b/tests/seo/key-point-plan.test.ts
+index 9cb1991..06ea370 100644
+--- a/tests/seo/key-point-plan.test.ts
++++ b/tests/seo/key-point-plan.test.ts
+@@ -5,7 +5,11 @@ import {
+ 	alignedKeyPointPlan,
+ 	loadTopicMap,
+ } from "../../scripts/commands/seo/retitle";
+-import { type Lang, splitFrontmatter } from "../../scripts/lib/seo-digest";
++import {
++	buildRewrite,
++	type Lang,
++	splitFrontmatter,
++} from "../../scripts/lib/seo-digest";
+ import {
+ 	crossLocaleKeyPointIssues,
+ 	type PlanPost,
+@@ -170,6 +174,71 @@ describe("crossLocaleKeyPointIssues", () => {
+ });
+ 
+ describe("planAlignedKeyPoints — corpus digests", () => {
++	it("derives labels and a shared headline when an unmapped digest has long translated headings", () => {
++		const slug = "20261102-ai-2026-11-02";
++		const posts: PlanPost[] = [
++			{
++				lang: "zh",
++				date: "2026-11-02",
++				body: `
++## ChatGPT 的预览沙箱，被一条消息绕了过去
++
++ChatGPT 的预览沙箱已经通过 OpenAI 的安全修复得到加固。
++
++## Prospero 把小模型装进大模型
++
++Prospero 把一个小模型装进大模型，展示了新的推理实验。
++`,
++			},
++			{
++				lang: "en",
++				date: "2026-11-02",
++				body: `
++## A message slipped past ChatGPT's preview sandbox
++
++ChatGPT's preview sandbox was hardened by an OpenAI security fix.
++
++## Prospero packs a small model into a large one
++
++Prospero packed a small model into a large one for a new reasoning experiment.
++`,
++			},
++			{
++				lang: "ja",
++				date: "2026-11-02",
++				body: `
++## ChatGPTのプレビューサンドボックスを、1通のメッセージがすり抜けた
++
++ChatGPTのプレビューサンドボックスはOpenAIの修正で強化された。
++
++## Prosperoが小さなモデルを大きなモデルに組み込む
++
++Prosperoは小さなモデルを大きなモデルに組み込み、新しい推論実験を示した。
++`,
++			},
++		];
++		const plan = planAlignedKeyPoints(posts, slug, {});
++
++		expect(plan?.points.zh?.slots.length).toBeGreaterThan(0);
++		expect(plan?.points.en?.slots).toEqual(plan?.points.zh?.slots);
++		expect(plan?.points.ja?.slots).toEqual(plan?.points.zh?.slots);
++		expect(plan?.headlineSlots).toEqual([0, 1]);
++
++		for (const post of posts) {
++			const rewrite = buildRewrite({
++				...post,
++				slug,
++				alignedKeyPoints: plan?.points[post.lang],
++				headlineSlots: plan?.headlineSlots,
++			});
++			expect(rewrite.title).not.toBe(
++				`${post.lang === "zh" ? "每日AI乱炖" : post.lang === "ja" ? "デイリーAIシチュー" : "Daily AI Stew"} · 2026-11-02`,
++			);
++			expect(rewrite.title).toContain("Prospero");
++			expect(rewrite.description).toContain("Prospero");
++		}
++	});
++
+ 	it("gives every locale the same slots and the same facts", () => {
+ 		const slug = "20260924-ai-2026-09-24";
+ 		const plan = planAlignedKeyPoints(
+@@ -281,3 +350,65 @@ describe("planAlignedKeyPoints — corpus digests", () => {
+ 		).toBeUndefined();
+ 	});
+ });
++
++describe("buildRewrite — unmapped locale metadata", () => {
++	it("keeps Latin entity runs contiguous across Chinese fallback descriptions", () => {
++		const rewrite = buildRewrite({
++			lang: "zh",
++			date: "2026-11-02",
++			slug: "unmapped-chatgpt-html",
++			body: `
++## ChatGPT 的预览沙箱
++
++ChatGPT 的 HTML 预览漏洞暴露了消息边界问题；开发者需要检查 iframe 通信和内容安全策略。
++
++## Prospero 小模型实验
++
++Prospero 把一个小模型装进大模型，展示新的推理实验。
++
++## QwenPU
++
++QwenPU 把计算搬进模型内部。
++`,
++		});
++
++		expect(rewrite.description).toContain("ChatGPT HTML");
++		expect(rewrite.description).not.toContain("ChatGPT 的 HTML");
++	});
++
++	it("re-pads a compacted near-floor Chinese fallback", () => {
++		const rewrite = buildRewrite({
++			lang: "zh",
++			date: "2026-11-02",
++			slug: "unmapped-chatgpt-html-floor",
++			body: `
++## ChatGPT 的 预览沙箱
++
++ChatGPT 的 HTML 预览漏洞暴露了消息边界问题，开发者需要检查 iframe 通信和内容安全策略并同步后续验证记录与相关说明文本内容
++`,
++		});
++
++		expect(rewrite.description).toContain("ChatGPT HTML");
++		expect(rewrite.description).not.toContain("ChatGPT 的 HTML");
++		expect(rewrite.description.length).toBeGreaterThanOrEqual(70);
++		expect(rewrite.description.length).toBeLessThanOrEqual(100);
++	});
++
++	it("keeps an unmapped Japanese fallback within the floor and entity parity", () => {
++		const rewrite = buildRewrite({
++			lang: "ja",
++			date: "2026-11-02",
++			slug: "unmapped-chatgpt-html-ja-floor",
++			body: `
++## ChatGPTのプレビューサンドボックス
++
++ChatGPTのHTMLプレビュー脆弱性はメッセージ境界の問題を示し、開発者はiframe通信と安全策を確認して後続の検証記録と関連説明を残す
++`,
++		});
++
++		expect(rewrite.description).toContain("ChatGPT HTML");
++		expect(rewrite.description).not.toContain("ChatGPTのHTML");
++		expect(rewrite.description.length).toBeGreaterThanOrEqual(70);
++		expect(rewrite.description.length).toBeLessThanOrEqual(100);
++	});
++});
+diff --git a/tests/seo/uat18-parity-lastmod.test.ts b/tests/seo/uat18-parity-lastmod.test.ts
+index bba5271..3647378 100644
+--- a/tests/seo/uat18-parity-lastmod.test.ts
++++ b/tests/seo/uat18-parity-lastmod.test.ts
+@@ -95,10 +95,19 @@ describe("item 1: the description gate runs per locale and lends nothing", () =>
+ 
+ 	it("holds on every published digest post in all three locales", () => {
+ 		const posts = digestPosts().filter((p) => !p.frontmatter.draft);
+-		expect(posts).toHaveLength(78);
+-		expect(new Set(posts.map((p) => p.locale))).toEqual(
+-			new Set(["en", "zh", "ja"]),
+-		);
++		const expectedLocales = new Set(["en", "zh", "ja"]);
++		const localesBySlug = new Map<string, Set<string>>();
++		for (const post of posts) {
++			const slug = post.file.split("/").slice(-2)[0] ?? post.file;
++			const locales = localesBySlug.get(slug) ?? new Set<string>();
++			locales.add(post.locale);
++			localesBySlug.set(slug, locales);
++		}
++		expect(localesBySlug.size).toBeGreaterThan(0);
++		expect(posts).toHaveLength(localesBySlug.size * expectedLocales.size);
++		for (const [slug, locales] of localesBySlug) {
++			expect(locales, `${slug} locale siblings`).toEqual(expectedLocales);
++		}
+ 		for (const p of posts) {
+ 			expect(descriptionBackingPostIssues(p, topics)).toEqual([]);
+ 		}

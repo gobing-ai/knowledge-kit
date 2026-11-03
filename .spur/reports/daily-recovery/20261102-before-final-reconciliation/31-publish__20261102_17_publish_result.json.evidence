@@ -1,0 +1,32 @@
+{
+  "ok": false,
+  "targets": [
+    {
+      "target": "surfdash-pub",
+      "ok": false,
+      "status": "failed",
+      "error": "surfdash delivery is uncertain: publisher reported an ambiguous delivery failure: surfdash delivery is uncertain: publisher reported an ambiguous delivery failure: surfdash git add failed: fatal: Unable to create '/Users/robin/xprojects/surfdash/.git/index.lock': File exists.\n\nAnother git process seems to be running in this repository, or the lock file may be stale; reconcile the dated remote post/commit before clearing this uncertainty and retrying; reconcile the dated remote post/commit before clearing this uncertainty and retrying",
+      "metadata": {
+        "deliveryState": "uncertain",
+        "runDate": "20261102",
+        "intentPath": "/Users/robin/xprojects/knowledge-kit/.works/kk-daily-ai-voice2/20261102/31-publish/20261102_14_publish-surfdash_intent.json",
+        "payloadSha256": "bb934a409612484ef968b90fc23f1247bb85619669823bd9b612e2a87591a718",
+        "currentPayloadSha256": "bb934a409612484ef968b90fc23f1247bb85619669823bd9b612e2a87591a718",
+        "postPath": "/Users/robin/xprojects/surfdash/content/posts/articles/zh/20261102-ai-2026-11-02/index.md",
+        "localeFingerprint": "830ecfdfea662cfade454ef955d6601f543823cf99cdc33ce3ec66c6a4679f2b"
+      }
+    },
+    {
+      "target": "podcast-pub",
+      "ok": true,
+      "status": "published",
+      "url": "https://podcast.salty.vip/i/daily-ai-2026-11-02/",
+      "id": "rI1DB00LN0s",
+      "metadata": {
+        "itemId": "rI1DB00LN0s",
+        "imageUrl": "https://podcast-media.salty.vip/production/images/item-c1a71d770e2eec1230ab8a4b370208d8.png"
+      },
+      "durationMs": 9340
+    }
+  ]
+}

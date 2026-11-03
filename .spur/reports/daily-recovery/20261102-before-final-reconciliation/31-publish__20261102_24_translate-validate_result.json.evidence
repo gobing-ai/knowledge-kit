@@ -1,0 +1,20 @@
+{
+  "ok": true,
+  "target": "surfdash-pub",
+  "status": "validated",
+  "metadata": {
+    "runDate": "20261102",
+    "postPath": "/Users/robin/xprojects/surfdash/content/posts/articles/zh/20261102-ai-2026-11-02/index.md",
+    "localePaths": {
+      "zh": "/Users/robin/xprojects/surfdash/content/posts/articles/zh/20261102-ai-2026-11-02/index.md",
+      "en": "/Users/robin/xprojects/surfdash/content/posts/articles/en/20261102-ai-2026-11-02/index.md",
+      "ja": "/Users/robin/xprojects/surfdash/content/posts/articles/ja/20261102-ai-2026-11-02/index.md"
+    },
+    "localeDigests": {
+      "zh": "f51f66e886805e241936e1c1b5b85da71b5058e7522c2e3959769834936b04d9",
+      "en": "51441562f437fdc4edfefd4bc302d99c65f37cb3c11300a200d9f5b9df09ceea",
+      "ja": "40b60648120242549c99fb6c107dd7e1411df4e4f0634a622b422624e23a07b6"
+    },
+    "fingerprint": "7933ed738fc1a146f71baa821f348863574c3036e680326885a00d103397578b"
+  }
+}

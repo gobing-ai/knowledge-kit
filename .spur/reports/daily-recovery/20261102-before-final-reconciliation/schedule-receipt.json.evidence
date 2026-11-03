@@ -1,0 +1,51 @@
+{
+  "runId": "daily-ai-voice-20261102-1793622601037",
+  "startedAt": "2026-11-02T12:30:01.037Z",
+  "completedAt": "2026-11-02T15:34:57.824Z",
+  "status": "incomplete",
+  "exitCode": 4,
+  "workDir": "/Users/robin/xprojects/knowledge-kit/.works/kk-daily-ai-voice2/20261102",
+  "timeoutMs": 13500000,
+  "agent": "codex-sol",
+  "retryAgent": "codex-sol",
+  "error": null,
+  "primaryPublishStatus": "partial",
+  "channelCompleteness": [
+    {
+      "channel": "locales",
+      "state": "not-run",
+      "detail": "translate markers absent (en/ja never scaffolded)"
+    },
+    {
+      "channel": "xhs",
+      "state": "not-run",
+      "detail": "no result artifact"
+    },
+    {
+      "channel": "wechat",
+      "state": "failed",
+      "detail": "wechatmp-pub: console session preflight failed (Authentication was not confirmed within 30000ms — the saved session state has likely expired: re-run `bun src/profile-check.ts login` to sign in again.)"
+    },
+    {
+      "channel": "cms-resync",
+      "state": "not-run",
+      "detail": "no result artifact"
+    }
+  ],
+  "missingRequiredChannels": [
+    "wechat",
+    "locales",
+    "cms-resync"
+  ],
+  "runSummary": "7 items planned",
+  "reservationRecovery": {
+    "status": "retained",
+    "reason": "workflow completed; publication settlement owns its reservations"
+  },
+  "cleanup": [
+    {
+      "command": "kk ledger sync",
+      "exitCode": 0
+    }
+  ]
+}

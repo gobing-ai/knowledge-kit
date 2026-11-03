@@ -1,0 +1,29 @@
+{
+  "runDate": "20261102",
+  "rows": [
+    {
+      "channel": "locales",
+      "state": "failed",
+      "detail": "local validation passed, but final Surfdash publish did not complete"
+    },
+    {
+      "channel": "xhs",
+      "state": "not-run",
+      "detail": "no result artifact"
+    },
+    {
+      "channel": "wechat",
+      "state": "done",
+      "detail": "public"
+    },
+    {
+      "channel": "cms-resync",
+      "state": "done",
+      "detail": "ok"
+    }
+  ],
+  "missing": [
+    "locales",
+    "xhs"
+  ]
+}
