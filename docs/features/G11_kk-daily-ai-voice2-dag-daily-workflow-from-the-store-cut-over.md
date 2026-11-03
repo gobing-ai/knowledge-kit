@@ -127,6 +127,7 @@ Scenario: R9 — Safety sub-workflow judge verdicts carry a HIGH, MEDIUM, or LOW
 | 0280 | Fix voice2-dag AC1: retry sibling never fires after primary exit-0 without expectFile | cancelled |
 | 0336 | Fix sticky no-content: QC candidates cache ignores changed floor vars | cancelled |
 | 0338 | Restore unattended scheduled daily AI news generation and delivery after October 26 outage | done |
+| 0339 | Recover daily cover generation from transient MiniMax failures without changing providers | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes

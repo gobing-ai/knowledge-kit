@@ -1270,6 +1270,7 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `QC_MIN_EPISODE_ITEMS` | no (episode-plan-gen `--mode filter`) | Episode floor (20261002, default `8`): when fewer docs survive the filter, rejects that failed ONLY the importance minimum (source-tier base — the softest dimension on a thin news day; quality/urgency/impact/category stay hard) backfill strongest-first (importance desc → planScore desc → plan order), each stamped `metadata.backfilled: true` and removed from the `.rejected.json` audit; best-effort when the eligible pool is short. Floor exceeds the spoken target because the prompt-layer 选题边界 drops policy items after this gate. Positive integer, non-integer or `0` → exit 1. Workflow pin: `qc_min_episode_items` (kk-daily-ai-voice) |
 | `CONTENT_LANGUAGE` | no (content-gen) | Writing language directive for STORM outline/article/polish (`zh` = Simplified Chinese incl. title); the daily workflow passes `language` through |
 | `KK_IMAGE_MAX_IMAGES` | no (image-gen) | Per-run image budget cap (compiled default `4`). Precedence `spec.maxImages` → this → default; non-integer or `< 1` → exit 1 naming the value |
+| MiniMax image retry | adapter behavior (0339) | Explicit generation failures with business code `1000`, `1001`, `1024`, `1033`, or transient HTTP status receive at most three same-provider/model attempts with 1s/2s backoff, sharing the existing 300s request deadline. Backoff aborts at that deadline. Numeric policy/auth/quota/parameter errors remain terminal even with vague messages or HTTP 5xx; diagnostics preserve `status_code`. Ambiguous transport errors and image-download failures do not regenerate. Cross-provider fallback remains opt-in. [Provider code reference](https://platform.minimax.io/docs/api-reference/errorcode). |
 | `KK_IMAGE_DRY_RUN` | no (image-gen) | `1` composes every prompt and selects the provider but spends nothing (`metadata.dryRun: true`). The illustration anchor-plan check still runs on this branch (0169) |
 | `KK_IMAGE_PRESET_PATH` | no (image-gen) | `path.delimiter`-separated extra preset roots, lowest → highest after builtin → `~/.config/kk/image-presets` → `<KNOWLEDGE_KIT_PROJECT_ROOT>/.kk/image-presets` (ADR-012 root order); non-directory entries are skipped |
 | `SURFDASH_ROOT` | no (surfdash-pub) | Surfdash checkout root; default derives from `POSTSURFING_BIN` (`<root>/scripts/<cli>`). The article markdown must land at `content/posts/articles/<locale>/<slug>/index.md` |
@@ -1950,6 +1951,10 @@ Workspaces default to `$works_dir/<workflow-name>/<run-id>` per profile (`--dir`
 
 **`kk-daily-ai-voice2` duration gates (2026-10-22).** Three places decide whether a day is long
 enough, and each now leaves a trace:
+
+Voice2 and voice3 order `script-write` after `article` so the author reads completed editorial exclusions (0339).
+Their non-final voice attempts (`generate`, `generate-fallback`) use action-level `onError: continue`;
+putting it inside shell options does not dispatch the fallback after failure. The final voice attempt remains loud.
 
 1. `daily-qc-content` runs the pre-spend pool estimate **after** topic admission and title dedup —
    `applyFloorGate` is the stage's last step. It used to run before them, so on 2026-10-22 it cleared
