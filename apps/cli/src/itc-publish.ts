@@ -31,7 +31,8 @@ export const ItcReceiptSchema = z
         schemaVersion: z.literal(1).default(1),
         parentRunId: z.string().min(1),
         planDigest: z.string().min(1),
-        payloadDigest: z.string().min(1),
+        /** Absent on plan-omitted receipts (0332 R6): no payload was ever prepared. */
+        payloadDigest: z.string().min(1).optional(),
         plugin: z.string().min(1),
         profile: z.string().min(1),
         mode: z.enum(['draft', 'live']),
@@ -47,6 +48,8 @@ export const ItcReceiptSchema = z
         target: z.string().min(1).optional(),
         window: z.string().min(1).optional(),
         dummy: z.boolean().optional(),
+        /** Stable episode identity persisted from the plugin result (0332 R5); podcast rows only. */
+        guid: z.string().min(1).optional(),
         error: z.string().optional(),
         startedAt: z.string().optional(),
         finishedAt: z.string().optional(),
@@ -430,6 +433,8 @@ export interface SendRow {
 export interface SendRowsOutcome {
     sent: string[];
     skipped: string[];
+    /** Rows whose succeeded receipt does not match what this pass would deliver (0332 R3). */
+    reconciliationRequired: string[];
     receipts: ItcReceipt[];
 }
 
@@ -473,12 +478,32 @@ export async function sendRows(options: SendRowsOptions): Promise<SendRowsOutcom
     const fs = options.fs ?? createNodeFileSystem();
     const dispatch = options.dispatch ?? runFanout;
     const { rows, publishDir, receiptsDir, parentRunId, planDigest, retry, label } = options;
-    const result: SendRowsOutcome = { sent: [], skipped: [], receipts: [] };
+    const result: SendRowsOutcome = { sent: [], skipped: [], reconciliationRequired: [], receipts: [] };
+
+    /** Identity helper: a receipt without a digest never matches (0332 R2 fail-closed). */
+    const sameDigest = (priorDigest: string | undefined, digest: string | undefined): boolean =>
+        priorDigest !== undefined && digest !== undefined && priorDigest === digest;
 
     for (const row of rows) {
         const startedAt = new Date().toISOString();
         const targetReceiptPath = join(receiptsDir, `${row.key}.json`);
         let reattempt = false;
+
+        // Payload preparation and its digest come FIRST: the receipt identity (0332 R2) is defined
+        // over the payload this pass would actually deliver, which is only known after resolution.
+        let payloadPath = row.payloadPath;
+        let preparedError: string | undefined;
+        if (options.preparePayload) {
+            const prepared = await options.preparePayload(row);
+            if ('error' in prepared) {
+                preparedError = prepared.error;
+            } else {
+                payloadPath = prepared.payloadPath;
+            }
+        }
+        const payloadRaw = (await fs.exists(payloadPath)) ? await fs.readFile(payloadPath) : '{}';
+        const payloadDigest = createHash('sha256').update(payloadRaw).digest('hex');
+
         if (retry) {
             // In retry mode, only retry effect: none failures
             if (!(await fs.exists(targetReceiptPath))) continue;
@@ -490,16 +515,64 @@ export async function sendRows(options: SendRowsOptions): Promise<SendRowsOutcom
             }
             reattempt = true;
         } else if (await fs.exists(targetReceiptPath)) {
-            // Never resend a target the store already accepted, and never resend one whose previous
-            // attempt is `uncertain` (effect unknown — it may already be live): a lost response must
-            // not publish twice on re-entry. An uncertain target is surfaced, not retried; resolving
-            // it is an operator decision (0314 / review finding f6815433).
+            // Receipt identity decides reuse (0332 R2/R3): a succeeded receipt is evidence for ONE
+            // parent bundle revision, one target/operation, one mode and one delivered payload. It
+            // is reused only when all four match what this pass would deliver now; anything else
+            // (older revision, edited content, draft-vs-live) is a reconciliation failure, not a
+            // resend — resending could post twice or publish content nobody reviewed.
+            const priorRaw = (await fs.exists(targetReceiptPath)) ? await fs.readFile(targetReceiptPath) : undefined;
+            let prior: ItcReceipt | undefined;
             try {
-                const prior = JSON.parse(await fs.readFile(targetReceiptPath)) as ItcReceipt;
+                prior = priorRaw === undefined ? undefined : (JSON.parse(priorRaw) as ItcReceipt);
+            } catch {
+                prior = undefined;
+            }
+            if (prior === undefined) {
+                // Unreadable evidence never authorizes a live send (0332 R3); a draft row is safe
+                // to re-attempt, which is what the stale-aggregate fix needs (0314 f6815433).
+                if (row.mode === 'live') {
+                    echoError(
+                        `${label}: ${row.key} has an unreadable receipt and this pass would send live — reconcile it by hand before resending; skipped`,
+                    );
+                    result.reconciliationRequired.push(row.key);
+                    continue;
+                }
+                reattempt = true;
+            } else if (prior.status === 'succeeded' && prior.dummy !== true) {
+                const payloadForIdentity = preparedError === undefined ? payloadDigest : undefined;
+                // A receipt without a payloadDigest predates 0332: its 0310 identity
+                // (parentRunId + planDigest) stays authoritative; digests gate newer receipts only.
+                const samePayload =
+                    payloadForIdentity !== undefined &&
+                    (prior.payloadDigest === undefined || prior.payloadDigest === payloadForIdentity);
+                if (
+                    prior.parentRunId === parentRunId &&
+                    // A receipt without a mode predates the mode field (0330): legacy evidence stays
+                    // reusable; from 0330 on the mode is part of the identity (0332 R2).
+                    (prior.mode === undefined || prior.mode === (row.mode === 'live' ? 'live' : 'draft')) &&
+                    samePayload
+                ) {
+                    result.skipped.push(row.key);
+                    continue;
+                }
+                echoError(
+                    `${label}: ${row.key} has a succeeded receipt from ${samePayload ? `mode '${prior.mode}' of this bundle` : `another bundle revision or payload`} — same target/content/mode required to reuse; reconcile or delete the receipt by hand; skipped without resending`,
+                );
+                result.reconciliationRequired.push(row.key);
+                continue;
+            } else if (prior.status === 'succeeded' && prior.dummy === true && row.mode !== 'dummy') {
                 // A dummy receipt records that a rehearsal ran, not that the channel published
                 // (task 0322 R2): flipping the target to draft must send it for real.
-                const dummyOnly = prior.dummy === true && row.mode !== 'dummy';
-                if (prior.status === 'succeeded' && !dummyOnly) continue;
+                reattempt = true;
+            } else if (prior.status === 'succeeded' && prior.dummy === true) {
+                // Rehearsal rerun: reuse only the same revision and payload (0332 R2).
+                const payloadForIdentity = preparedError === undefined ? payloadDigest : undefined;
+                if (prior.parentRunId === parentRunId && sameDigest(prior.payloadDigest, payloadForIdentity)) {
+                    result.skipped.push(row.key);
+                    continue;
+                }
+                reattempt = true;
+            } else {
                 // A LIVE target whose previous attempt left its effect unknown may already be
                 // published: resending it could post twice. Skip it and say so — resolving it is an
                 // operator decision. A draft (or any non-live mode) is safe to re-attempt, which is
@@ -514,24 +587,9 @@ export async function sendRows(options: SendRowsOptions): Promise<SendRowsOutcom
                     result.skipped.push(row.key);
                     continue;
                 }
-            } catch {
-                // unreadable receipt: re-attempt, as before
-            }
-            reattempt = true;
-        }
-
-        let payloadPath = row.payloadPath;
-        let preparedError: string | undefined;
-        if (options.preparePayload) {
-            const prepared = await options.preparePayload(row);
-            if ('error' in prepared) {
-                preparedError = prepared.error;
-            } else {
-                payloadPath = prepared.payloadPath;
+                reattempt = true;
             }
         }
-        const payloadRaw = (await fs.exists(payloadPath)) ? await fs.readFile(payloadPath) : '{}';
-        const payloadDigest = createHash('sha256').update(payloadRaw).digest('hex');
 
         if (preparedError !== undefined) {
             const receipt: ItcReceipt = {
@@ -655,6 +713,11 @@ export async function sendRows(options: SendRowsOptions): Promise<SendRowsOutcom
             effect,
             publicUrlVerified,
             ...(outcome.url ? { url: outcome.url } : {}),
+            // Episode identity from the plugin result (0332 R5): the RSS gate binds its verdict to
+            // this guid, so the writer must persist it, not let the receipt forget which episode.
+            ...(typeof outcome.metadata?.guid === 'string' && outcome.metadata.guid !== ''
+                ? { guid: outcome.metadata.guid }
+                : {}),
             ...(outcome.error ? { error: outcome.error } : {}),
             ...(outcome.durationMs !== undefined ? { durationMs: outcome.durationMs } : {}),
             aggregatePath: outPath,
@@ -710,7 +773,7 @@ export async function itcSendTargets(
         transport: target.transport,
     }));
 
-    await sendRows({
+    const outcome = await sendRows({
         rows,
         publishDir,
         receiptsDir,
@@ -721,6 +784,7 @@ export async function itcSendTargets(
         fs,
         dispatch,
     });
+    if (outcome.reconciliationRequired.length > 0) return 1;
     return 0;
 }
 

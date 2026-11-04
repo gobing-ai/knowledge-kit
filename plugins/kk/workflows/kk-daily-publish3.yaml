@@ -99,6 +99,18 @@ nodes:
       options:
         command: 'kk stage run publish-matrix-check "${vars.work_dir}" --window "${vars.window}" || true'
 
+  - id: validate
+    description: >-
+      Bind the bundle's calendar day before any side effect (0332 R1): normalize the run date
+      (compact `YYYYMMDD` and ISO `YYYY-MM-DD` both accepted), refuse a garbage one, and write the
+      canonical `4-publish/run-date.txt` every later stage derives its day from.
+    dependsOn: []
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage run publish-matrix-validate "${vars.work_dir}" --run-date "${vars.run_date}"
+
   - id: send-confirm
     description: >-
       Operator approval of a LIVE send: `pause: true` stops the run and RESUME is the approval;
@@ -129,13 +141,14 @@ nodes:
   - id: classify
     description: >-
       Turn the window's receipts into `full|partial|none|dummy` (`4-publish/outcome.<window>.json`),
-      always exit 0 — routing is this graph's job, not the classifier's.
+      always exit 0 — routing is this graph's job, not the classifier's. The run date comes from the
+      plans/`run-date.txt` (0332 R1), so a late `run_date` guard is gone; a provided one must match
+      the bundle's own day and the stage refuses a mismatch.
     dependsOn: [send]
     action:
       kind: shell
       options:
         command: >-
-          test -n "${vars.run_date}" || { echo "publish3: classify needs run_date" >&2; exit 1; };
           kk stage run publish-matrix-classify "${vars.work_dir}" --window "${vars.window}" --run-date "${vars.run_date}"
 
   # ── after-generate only: the voice2-era tail stages keep working on the bridged names ─────

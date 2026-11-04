@@ -98,6 +98,7 @@ export const PublishPlanSchema = z
         parentRunId: z.string().min(1),
         presetName: z.string().min(1),
         presetDigest: z.string().min(1),
+        runDate: z.string().min(1).optional(),
         rows: z.array(PublishPlanRowSchema),
     })
     .strict();
@@ -165,7 +166,14 @@ export function classifyPublishMatrix(
         };
     });
 
-    const real = rows.filter((row) => !row.dummy);
+    // "Real" is plan-owned (0330 R3), not receipt-owned: a dummy window whose send never ran has
+    // no dummy receipts yet, so missing receipts only count as dummy evidence when a dummy pass
+    // actually left receipts behind (0326 'none' vs 0332 R6 failed-dummy-prep accounting).
+    const anyDummyReceipt = receipts.some((receipt) => receipt.dummy === true);
+    const planModeById = new Map(plan.rows.map((row) => [row.id, row.mode] as const));
+    const real = rows.filter(
+        (row) => !row.dummy && !(planModeById.get(row.id) === 'dummy' && row.status === 'missing' && anyDummyReceipt),
+    );
     const succeeded = real.filter((row) => row.status === 'succeeded');
     const status: PublishOutcome['status'] =
         real.length === 0
@@ -251,6 +259,81 @@ async function appendEvent(fs: FileSystem, publishDir: string, event: Record<str
 }
 
 /**
+ * Normalizes a run date to its `YYYY-MM-DD` calendar day (0332 R1).
+ *
+ * Accepts ISO (`2026-10-22`) and compact (`20261022`) forms so a scheduler, an operator and a
+ * legacy caller all land on the same day; anything else — including impossible calendar days like
+ * `2026-02-30` — is rejected, because a wrong date must not slip through into receipts or the RSS
+ * gate. Returns undefined for invalid input.
+ */
+export function normalizeRunDate(raw: string): string | undefined {
+    const m = /^(\d{4})-?(\d{2})-?(\d{2})$/.exec(raw.trim());
+    if (m === null) return undefined;
+    const iso = `${m[1]}-${m[2]}-${m[3]}`;
+    const parsed = new Date(`${iso}T00:00:00Z`);
+    if (
+        Number.isNaN(parsed.getTime()) ||
+        parsed.getUTCFullYear() !== Number(m[1]) ||
+        parsed.getUTCMonth() + 1 !== Number(m[2]) ||
+        parsed.getUTCDate() !== Number(m[3])
+    ) {
+        return undefined;
+    }
+    return iso;
+}
+
+/**
+ * `publish-matrix-validate <work_dir> [--run-date <stamp>]` — the pre-flight date gate (0332 R1,
+ * F13).
+ *
+ * Runs before any planning or dispatch: an omitted run date derives from the bundle's own
+ * `runDate`, a provided compact/ISO date must normalize to a valid calendar day, and the canonical
+ * result lands in `4-publish/run-date.txt` for the window stages to fall back to. Exit 1 with an
+ * actionable message on refusal — a missing or malformed date must be rejected BEFORE a send, not
+ * by the classifier after one.
+ */
+export async function runPublishMatrixValidate(args: string[], deps: PublishMatrixDeps = {}): Promise<number> {
+    const fs = deps.fs ?? createNodeFileSystem();
+    const [workDir = ''] = args;
+    const raw = flagValue(args, '--run-date');
+    if (!workDir) {
+        echoError('usage: publish-matrix-validate <work_dir> [--run-date <YYYY-MM-DD|YYYYMMDD>]');
+        return 1;
+    }
+    let source = '--run-date';
+    let candidate = raw === undefined || raw.trim() === '' ? undefined : raw;
+    if (candidate === undefined) {
+        source = 'bundle.json';
+        const bundlePath = join(workDir, 'bundle.json');
+        if (!(await fs.exists(bundlePath))) {
+            echoError(`publish-matrix-validate: no --run-date and no bundle at ${bundlePath} to derive one from`);
+            return 1;
+        }
+        try {
+            const bundle = JSON.parse(await fs.readFile(bundlePath)) as { runDate?: unknown };
+            candidate = typeof bundle.runDate === 'string' ? bundle.runDate : undefined;
+        } catch {
+            candidate = undefined;
+        }
+        if (candidate === undefined) {
+            echoError(`publish-matrix-validate: bundle.json has no usable runDate; pass --run-date`);
+            return 1;
+        }
+    }
+    const normalized = normalizeRunDate(candidate);
+    if (normalized === undefined) {
+        echoError(
+            `publish-matrix-validate: run date '${candidate}' (from ${source}) is not a valid calendar day (YYYY-MM-DD or YYYYMMDD)`,
+        );
+        return 1;
+    }
+    await fs.ensureDir(join(workDir, '4-publish'));
+    await fs.writeFile(join(workDir, '4-publish', 'run-date.txt'), `${normalized}\n`);
+    echo(`run date ${normalized} (from ${source})`);
+    return 0;
+}
+
+/**
  * Tier-0 targets whose published URL fills a link placeholder (design §5).
  *
  * This is the publication contract, not a channel table: the owned surfaces are what every
@@ -290,7 +373,7 @@ async function composePlan(
         dummy: boolean;
         projectRoot?: string;
     },
-): Promise<PublishPlan> {
+): Promise<{ plan: PublishPlan; omitted: OmittedTarget[] }> {
     const bundleAbs = resolve(input.bundlePath);
     if (!(await fs.exists(bundleAbs))) throw new Error(`bundle not found: ${bundleAbs}`);
     const bundleParsed = BundleSchema.safeParse(JSON.parse(await fs.readFile(bundleAbs)));
@@ -298,6 +381,14 @@ async function composePlan(
         throw new Error(`malformed bundle at ${bundleAbs}: ${bundleParsed.error.message}`);
     }
     const bundle = bundleParsed.data;
+    // Every receipt this bundle produces must carry its calendar day (0332 R1): a bundle without a
+    // usable runDate cannot bind evidence, so planning refuses before any payload is written.
+    const runDate = normalizeRunDate(bundle.runDate ?? '');
+    if (runDate === undefined) {
+        throw new Error(
+            `bundle runDate '${String(bundle.runDate)}' is not a valid calendar day (YYYY-MM-DD or YYYYMMDD)`,
+        );
+    }
     const bundleDir = dirname(bundleAbs);
 
     const { preset, digest } = await loadPublishPreset(
@@ -364,6 +455,7 @@ async function composePlan(
               );
 
     const rows: PublishPlanRow[] = [];
+    const omitted: OmittedTarget[] = [];
     const seen = new Set<string>();
     for (const target of selected) {
         const id = targetId(target);
@@ -399,7 +491,20 @@ async function composePlan(
         // without a preset change.
         const entry = bundle.variants[`${target.variant}@${target.plugin}`] ?? bundle.variants[target.variant];
         if (entry === undefined) {
-            throw new Error(`bundle has no variant '${target.variant}' for target '${id}'`);
+            // A missing REQUIRED variant aborts the plan (unchanged). A missing OPTIONAL variant must
+            // not cancel the whole window (0332 R6): the row is dropped from the plan and an
+            // explicit failed effect-none receipt records the omission (written in planPublishMatrix).
+            if (target.required === true) {
+                throw new Error(`bundle has no variant '${target.variant}' for target '${id}'`);
+            }
+            omitted.push({
+                id,
+                plugin: target.plugin,
+                profile: target.profile ?? 'article',
+                mode,
+                reason: `bundle has no variant '${target.variant}' for target '${id}'`,
+            });
+            continue;
         }
         const variantPath = resolve(bundleDir, entry.path);
         if (!(await fs.exists(variantPath))) throw new Error(`variant file not found: ${variantPath}`);
@@ -486,14 +591,30 @@ async function composePlan(
     }
 
     return {
-        schemaVersion: 1,
-        window: input.window,
-        bundleRunId: bundle.runId,
-        parentRunId: bundle.parentRunId ?? bundle.runId,
-        presetName: preset.name,
-        presetDigest: digest,
-        rows,
+        plan: {
+            schemaVersion: 1,
+            window: input.window,
+            bundleRunId: bundle.runId,
+            parentRunId: bundle.parentRunId ?? bundle.runId,
+            presetName: preset.name,
+            presetDigest: digest,
+            runDate,
+            rows,
+        },
+        omitted,
     };
+}
+
+/**
+ * A preset target dropped from the plan because its variant is missing (0332 R6). Only targets that
+ * are not `required` can be omitted; planPublishMatrix writes each one a failed effect-none receipt.
+ */
+interface OmittedTarget {
+    id: string;
+    plugin: string;
+    profile: string;
+    mode: PublishPlanRow['mode'];
+    reason: string;
 }
 
 /**
@@ -533,7 +654,7 @@ export async function planPublishMatrix(args: string[], deps: PublishMatrixDeps 
         // `--preset` wins; otherwise the operator's config selector decides (task 0323 R2), so the
         // workflow YAML never names a preset file.
         const preset = presetFlag ?? (await readPublishPresetSelector(process.env, fs));
-        const plan = await composePlan(fs, {
+        const { plan, omitted } = await composePlan(fs, {
             workDir,
             bundlePath,
             preset,
@@ -545,7 +666,41 @@ export async function planPublishMatrix(args: string[], deps: PublishMatrixDeps 
         });
         const publishDir = join(workDir, '4-publish');
         await fs.ensureDir(publishDir);
-        await fs.writeFile(join(publishDir, `plan.${plan.window}.json`), `${JSON.stringify(plan, null, 2)}\n`);
+        const planText = `${JSON.stringify(plan, null, 2)}\n`;
+        await fs.writeFile(join(publishDir, `plan.${plan.window}.json`), planText);
+        // The plan digest the omitted receipts carry (0332 R6) must equal what sendRows computes
+        // from the same file, so it is hashed from the exact bytes written above.
+        const planDigest = createHash('sha256').update(planText).digest('hex');
+        for (const target of omitted) {
+            const receipt: ItcReceipt = {
+                schemaVersion: 1,
+                parentRunId: plan.parentRunId,
+                planDigest,
+                plugin: target.plugin,
+                profile: target.profile,
+                // `dummy` never reaches a plugin, so a receipt only ever states draft or live.
+                mode: target.mode === 'live' ? 'live' : 'draft',
+                attemptId: 'plan-1',
+                status: 'failed',
+                effect: 'none',
+                error: target.reason,
+                target: target.id,
+                window: plan.window,
+                ...(target.mode === 'dummy' ? { dummy: true } : {}),
+            };
+            await fs.ensureDir(join(publishDir, 'receipts'));
+            await fs.writeFile(
+                join(publishDir, 'receipts', `${target.id}.json`),
+                `${JSON.stringify(receipt, null, 2)}\n`,
+            );
+            await appendEvent(fs, publishDir, {
+                event: 'omitted',
+                window: plan.window,
+                id: target.id,
+                plugin: target.plugin,
+                reason: target.reason,
+            });
+        }
         for (const row of plan.rows) {
             await appendEvent(fs, publishDir, {
                 event: 'planned',
@@ -674,9 +829,17 @@ export async function runPublishMatrixClassify(args: string[], deps: PublishMatr
     const fs = deps.fs ?? createNodeFileSystem();
     const [workDir = ''] = args;
     const windowArg = flagValue(args, '--window');
-    const runDate = flagValue(args, '--run-date');
-    if (!workDir || windowArg === undefined || runDate === undefined) {
-        echoError('usage: publish-matrix-classify <work_dir> --window <w> --run-date <stamp>');
+    const runDateRaw = flagValue(args, '--run-date');
+    if (!workDir || windowArg === undefined) {
+        echoError('usage: publish-matrix-classify <work_dir> --window <w> [--run-date <stamp>]');
+        return 1;
+    }
+    // The outcome must carry the bundle's own calendar day (0332 R1): a provided stamp normalizes
+    // (compact and ISO land on the same day) and may not disagree with the plan; an omitted one
+    // derives from the plan, then the validate stage's canonical output.
+    let runDate = runDateRaw !== undefined && runDateRaw.trim() !== '' ? normalizeRunDate(runDateRaw) : undefined;
+    if (runDateRaw !== undefined && runDateRaw.trim() !== '' && runDate === undefined) {
+        echoError(`publish-matrix-classify: '${runDateRaw}' is not a valid calendar day (YYYY-MM-DD or YYYYMMDD)`);
         return 1;
     }
     const parsedWindow = PublishWindowSchema.safeParse(windowArg);
@@ -689,14 +852,32 @@ export async function runPublishMatrixClassify(args: string[], deps: PublishMatr
     let plan: PublishPlan;
     try {
         plan = await readPlan(fs, workDir, parsedWindow.data);
+        if (plan.runDate !== undefined) {
+            if (runDate !== undefined && runDate !== plan.runDate) {
+                echoError(
+                    `publish-matrix-classify: run date ${runDate} disagrees with the bundle's own day ${plan.runDate}; refusing to label this window's outcome`,
+                );
+                return 1;
+            }
+            runDate = plan.runDate;
+        }
     } catch (err: unknown) {
         // No plan means nothing was dispatched for this window: `none`, reported, never fatal.
         echoError(`publish-matrix-classify: ${err instanceof Error ? err.message : String(err)}`);
         await fs.ensureDir(publishDir);
+        const noneDate =
+            runDate ??
+            (await (async () => {
+                const stampPath = join(publishDir, 'run-date.txt');
+                if (!(await fs.exists(stampPath))) return undefined;
+                return normalizeRunDate((await fs.readFile(stampPath)).trim());
+            })()) ??
+            runDateRaw?.trim() ??
+            '';
         const none: PublishOutcome = {
             schemaVersion: 1,
             window: parsedWindow.data,
-            runDate,
+            runDate: noneDate,
             status: 'none',
             published: 0,
             targets: 0,
@@ -712,16 +893,33 @@ export async function runPublishMatrixClassify(args: string[], deps: PublishMatr
         );
         return 0;
     }
+    if (runDate === undefined) {
+        // Legacy plan without a runDate: fall back to the validate stage's canonical output.
+        const stampPath = join(publishDir, 'run-date.txt');
+        const stamp = (await fs.exists(stampPath))
+            ? normalizeRunDate((await fs.readFile(stampPath)).trim())
+            : undefined;
+        if (stamp === undefined) {
+            echoError(
+                'publish-matrix-classify: plan has no runDate and no usable --run-date/run-date.txt was provided',
+            );
+            return 1;
+        }
+        runDate = stamp;
+    }
 
     const receiptsDir = join(publishDir, 'receipts');
     const receipts: ItcReceipt[] = [];
-    for (const row of plan.rows) {
-        const path = join(receiptsDir, `${row.id}.json`);
-        if (!(await fs.exists(path))) continue;
-        try {
-            receipts.push(JSON.parse(await fs.readFile(path)) as ItcReceipt);
-        } catch {
-            // an unreadable receipt is a row with no evidence: it stays `missing`
+    // Every receipt in the dir is evidence (0332 R6): omitted variants' failed-effect-none receipts
+    // carry the dummy accounting even though no plan row references them.
+    if (await fs.exists(receiptsDir)) {
+        for (const name of await fs.readDir(receiptsDir)) {
+            if (!name.endsWith('.json')) continue;
+            try {
+                receipts.push(JSON.parse(await fs.readFile(join(receiptsDir, name))) as ItcReceipt);
+            } catch {
+                // an unreadable receipt is a row with no evidence: it stays `missing`
+            }
         }
     }
 
@@ -748,7 +946,11 @@ export async function runPublishMatrixClassify(args: string[], deps: PublishMatr
             const aggregate = receipt.aggregatePath;
             if (!(await fs.exists(aggregate))) continue;
             await fs.ensureDir(legacyDir);
-            await fs.writeFile(join(legacyDir, `${runDate}${source.file}`), await fs.readFile(aggregate));
+            // Legacy names use the compact stamp (20261022_...); runDate is ISO by 0332 R1.
+            await fs.writeFile(
+                join(legacyDir, `${runDate.replaceAll('-', '')}${source.file}`),
+                await fs.readFile(aggregate),
+            );
         }
     }
 
@@ -828,26 +1030,50 @@ async function readSucceeded(fs: FileSystem, receiptsDir: string, id: string): P
  */
 async function readLinkMap(
     fs: FileSystem,
-    receiptsDir: string,
-    rows: readonly PublishPlanRow[],
-): Promise<{ real: LinkMap; all: LinkMap }> {
+    publishDir: string,
+    plan: PublishPlan,
+): Promise<{ real: LinkMap; live: LinkMap; all: LinkMap }> {
     const real: LinkMap = {};
+    const live: LinkMap = {};
     const all: LinkMap = {};
+    // Tier-0 receipts from EVERY window of this bundle revision (0332 R4): the after-generate
+    // article feeds the cn-peak podcast and social rows. Only plans sharing the plan's parentRunId
+    // are scanned — a receipt an older bundle revision wrote never resolves a link.
+    const tierZero: Array<{ plugin: string; rowId: string }> = [];
+    const planPaths = ((await fs.exists(publishDir)) ? await fs.readDir(publishDir) : []).filter((name) =>
+        /^plan\..*\.json$/.test(name),
+    );
+    for (const name of planPaths) {
+        try {
+            const candidate = JSON.parse(await fs.readFile(join(publishDir, name))) as PublishPlan;
+            if (candidate.parentRunId !== plan.parentRunId) continue;
+            for (const row of candidate.rows) {
+                if (row.tier === 0) tierZero.push({ plugin: row.plugin, rowId: row.id });
+            }
+        } catch {
+            // an unreadable sibling plan simply contributes no tier-0 rows
+        }
+    }
     for (const source of LINK_SOURCES) {
-        const row = rows.find((candidate) => candidate.plugin === source.plugin && candidate.tier === 0);
-        if (row === undefined) continue;
-        const path = join(receiptsDir, `${row.id}.json`);
+        const entry = tierZero.find((candidate) => candidate.plugin === source.plugin);
+        if (entry === undefined) continue;
+        const path = join(publishDir, 'receipts', `${entry.rowId}.json`);
         if (!(await fs.exists(path))) continue;
         try {
-            const receipt = JSON.parse(await fs.readFile(path)) as ItcReceipt;
+            const receipt = JSON.parse(await fs.readFile(path)) as ItcReceipt & { guid?: string };
             if (receipt.status !== 'succeeded' || !receipt.url) continue;
+            if (receipt.parentRunId !== plan.parentRunId) continue;
             all[source.receipt] = receipt.url;
+            // Draft/public proof levels are separate (0332 R4): a non-dummy tier-0 URL feeds draft
+            // rows, but only a receipt whose row actually went out in live mode may fill a live
+            // row's placeholder — a draft or rehearsal URL is not a public link.
             if (receipt.dummy !== true) real[source.receipt] = receipt.url;
+            if (receipt.dummy !== true && receipt.mode === 'live') live[source.receipt] = receipt.url;
         } catch {
             // an unreadable tier-0 receipt simply leaves the placeholder unresolved
         }
     }
-    return { real, all };
+    return { real, live, all };
 }
 
 /**
@@ -946,7 +1172,7 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
                 continue;
             }
 
-            const linkMaps = tier === 0 ? { real: {}, all: {} } : await readLinkMap(fs, receiptsDir, plan.rows);
+            const linkMaps = tier === 0 ? { real: {}, live: {}, all: {} } : await readLinkMap(fs, publishDir, plan);
             const sendRowsInput: SendRow[] = rows.map((row) => ({
                 key: row.id,
                 plugin: row.plugin,
@@ -957,7 +1183,7 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
                 receiptExtras: { target: row.id, window: plan.window },
             }));
 
-            await sendRows({
+            const sendOutcome = await sendRows({
                 rows: sendRowsInput,
                 publishDir,
                 receiptsDir,
@@ -973,7 +1199,8 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
                 preparePayload: async (row) => {
                     if (tier === 0) return { payloadPath: row.payloadPath };
                     const raw = (await fs.exists(row.payloadPath)) ? await fs.readFile(row.payloadPath) : '';
-                    const links: LinkMap = row.mode === 'dummy' ? linkMaps.all : linkMaps.real;
+                    const links: LinkMap =
+                        row.mode === 'dummy' ? linkMaps.all : row.mode === 'live' ? linkMaps.live : linkMaps.real;
                     let resolved = raw;
                     for (const source of LINK_SOURCES) {
                         const url = links[source.receipt];
@@ -1001,6 +1228,12 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
                     });
                 },
             });
+
+            if (sendOutcome.reconciliationRequired.length > 0) {
+                throw new Error(
+                    `receipt reconciliation required for: ${sendOutcome.reconciliationRequired.join(', ')}`,
+                );
+            }
 
             if (tier === 0) {
                 // The publication contract: a required tier-0 row that did not succeed skips every
@@ -1064,15 +1297,17 @@ export function feedItems(xml: string): FeedItem[] {
 }
 
 /**
- * Decide whether the feed carries the gated episode (task 0323 R3).
+ * Decide whether the feed carries the gated episode (task 0323 R3, tightened by 0332 R5).
  *
- * A guid match is authoritative — it is the receipt's own identity for the episode. A title match is
- * the fallback for a run whose tier-0 receipt is absent (the gate also runs before publish). A feed
- * that could not be fetched is a **miss**, never a hit: an outage must not let an unpublished
- * episode through, and `reason` keeps the two distinguishable in the incident.
+ * A known guid is authoritative in BOTH directions: the receipt names the episode this bundle
+ * produced, so a feed that carries a different episode — even one with a matching title-date — is a
+ * miss, never a hit. The title-date fallback remains only for receipts that recorded no guid (or
+ * runs with no tier-0 receipt yet). A feed that could not be fetched is a **miss**, never a hit: an
+ * outage must not let an unpublished episode through, and `reason` keeps the classes distinguishable
+ * in the incident.
  */
 export function matchRssGate(items: readonly FeedItem[], date: string, guid: string): RssGateResult['reason'] {
-    if (guid !== '' && items.some((item) => item.guid === guid)) return 'guid';
+    if (guid !== '') return items.some((item) => item.guid === guid) ? 'guid' : 'missing';
     if (items.some((item) => item.title.includes(date))) return 'title';
     return 'missing';
 }
@@ -1094,31 +1329,60 @@ export interface RssGateDeps extends PublishMatrixDeps {
 export async function runPublishMatrixRssGate(args: string[], deps: RssGateDeps = {}): Promise<number> {
     const fs = deps.fs ?? createNodeFileSystem();
     const [workDir = ''] = args;
-    const date = flagValue(args, '--date');
+    const dateRaw = flagValue(args, '--date');
     const feedUrl = flagValue(args, '--feed') ?? 'https://podcast.salty.vip/rss/';
-    if (!workDir || date === undefined) {
-        echoError('usage: publish-matrix-rss-gate <work_dir> --date <YYYY-MM-DD> [--feed <url>]');
+    if (!workDir) {
+        echoError('usage: publish-matrix-rss-gate <work_dir> [--date <YYYY-MM-DD|YYYYMMDD>] [--feed <url>]');
         return 1;
     }
     const publishDir = join(workDir, '4-publish');
 
+    // The gate's day is the bundle's own calendar day (0332 R1/R5): a provided date must normalize
+    // and must not disagree with the plans it is gating — a wrong date never authorizes a send.
+    let date = dateRaw !== undefined && dateRaw.trim() !== '' ? normalizeRunDate(dateRaw) : undefined;
+    if (dateRaw !== undefined && dateRaw.trim() !== '' && date === undefined) {
+        echoError(`publish-matrix-rss-gate: '${dateRaw}' is not a valid calendar day (YYYY-MM-DD or YYYYMMDD)`);
+        return 1;
+    }
+
     // A tier-0 podcast receipt carries the guid the feed must contain; a receipt that records none
-    // leaves the title-date match as the only evidence.
+    // leaves the title-date match as the only evidence. Plans bind the date even when no receipt
+    // exists yet — a gate before any send must still refuse a date that disagrees with the bundle.
     let guid = '';
     const receiptsDir = join(publishDir, 'receipts');
-    if (await fs.exists(receiptsDir)) {
-        for (const planWindow of ['after-generate', 'cn-peak'] as const) {
-            const planPath = join(publishDir, `plan.${planWindow}.json`);
-            if (!(await fs.exists(planPath))) continue;
-            const plan = JSON.parse(await fs.readFile(planPath)) as PublishPlan;
-            for (const row of plan.rows) {
-                if (row.plugin !== 'podcast-pub') continue;
-                const receiptPath = join(receiptsDir, `${row.id}.json`);
-                if (!(await fs.exists(receiptPath))) continue;
-                const receipt = JSON.parse(await fs.readFile(receiptPath)) as ItcReceipt & { guid?: string };
-                if (typeof receipt.guid === 'string') guid = receipt.guid;
+    for (const planWindow of ['after-generate', 'cn-peak'] as const) {
+        const planPath = join(publishDir, `plan.${planWindow}.json`);
+        if (!(await fs.exists(planPath))) continue;
+        const plan = JSON.parse(await fs.readFile(planPath)) as PublishPlan;
+        if (plan.runDate !== undefined) {
+            if (date !== undefined && date !== plan.runDate) {
+                echoError(
+                    `publish-matrix-rss-gate: date ${date} disagrees with the bundle's own day ${plan.runDate}; refusing to authorize an overseas send`,
+                );
+                return 1;
             }
+            date = plan.runDate;
         }
+        if (!(await fs.exists(receiptsDir))) continue;
+        for (const row of plan.rows) {
+            if (row.plugin !== 'podcast-pub') continue;
+            const receiptPath = join(receiptsDir, `${row.id}.json`);
+            if (!(await fs.exists(receiptPath))) continue;
+            const receipt = JSON.parse(await fs.readFile(receiptPath)) as ItcReceipt & { guid?: string };
+            if (typeof receipt.guid === 'string') guid = receipt.guid;
+        }
+    }
+    if (date === undefined) {
+        // Omitted --date derives from the validate stage's canonical output, then the plan.
+        const stampPath = join(publishDir, 'run-date.txt');
+        const stamp = (await fs.exists(stampPath))
+            ? normalizeRunDate((await fs.readFile(stampPath)).trim())
+            : undefined;
+        if (stamp === undefined) {
+            echoError('publish-matrix-rss-gate: no usable --date and no run-date.txt/plan.runDate to derive one from');
+            return 1;
+        }
+        date = stamp;
     }
 
     const write = async (result: RssGateResult): Promise<number> => {

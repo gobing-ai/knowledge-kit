@@ -95,10 +95,16 @@ interface RunOutcome {
     calls: string[];
 }
 
-function runWindow(cwd: string, workDir: string, window: string, extraVars: Record<string, string> = {}): RunOutcome {
+function runWindow(
+    cwd: string,
+    workDir: string,
+    window: string,
+    extraVars: Record<string, string> = {},
+    feedText: string = FEED,
+): RunOutcome {
     const binDir = tempDir(`publish3-bin-${window}-`);
     const feedPath = join(binDir, 'feed.xml');
-    writeFileSync(feedPath, FEED);
+    writeFileSync(feedPath, feedText);
     const logPath = join(cwd, `kk-calls-${window}.log`);
     writeFileSync(logPath, '');
     writeKkShim(binDir, logPath, feedPath);
@@ -310,8 +316,16 @@ describe('kk-daily-publish3 (0323 R1, R4, R6, R7)', () => {
         // Nothing reached a plugin on a gated miss either.
         expect(run.calls.some((call) => call.includes('executor'))).toBe(false);
 
-        // A hit lets the same window plan its own (disjoint) set.
-        const hitRun = runWindow(cwd, workDir, 'overseas-rss', { run_date: '2026-10-21' });
+        // A hit lets the same window plan its own (disjoint) set. 0332 R1/R5 bind every stage to the
+        // bundle's own day, so the hit needs the bundle's run_date AND the feed carrying the
+        // bundle-day episode; a stale date (or stale feed day) is a refuse, not a hit.
+        const hitRun = runWindow(
+            cwd,
+            workDir,
+            'overseas-rss',
+            { run_date: '2026-10-22' },
+            `<?xml version="1.0"?><rss><channel>\n  <item><title>每日AI乱炖 · 2026-10-21</title><guid>ep-10-21</guid></item>\n  <item><title>每日AI乱炖 · 2026-10-22</title><guid>ep-10-22</guid></item>\n</channel></rss>`,
+        );
         expect(hitRun.code).toBe(0);
         expect(planRows(workDir, 'overseas-rss').map((row) => row.id)).toEqual(['x-pub.post']);
     }, 180_000);

@@ -438,12 +438,13 @@ describe('publish-matrix send revalidation (0331 R5)', () => {
             } finally {
                 out.restore();
             }
-            // tier-0 success receipt provides the article link
+            // tier-0 success receipt provides the article link; 0332 R4 binds link evidence to the
+            // current bundle revision, so the receipt must carry the plan's parentRunId.
             const receiptsDir = join(fx.workDir, '4-publish', 'receipts');
             mkdirSync(receiptsDir, { recursive: true });
             writeFileSync(
                 join(receiptsDir, 'surfdash-pub.post.json'),
-                `${JSON.stringify({ status: 'succeeded', url: 'https://surfdash.test/abc' })}\n`,
+                `${JSON.stringify({ status: 'succeeded', url: 'https://surfdash.test/abc', parentRunId: 'gen-run-1' })}\n`,
             );
             const sentPayloads: string[] = [];
             const out2 = captureOutput();

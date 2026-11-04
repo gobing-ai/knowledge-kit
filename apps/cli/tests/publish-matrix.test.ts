@@ -357,7 +357,11 @@ describe('publish-matrix-plan (0321 R1, R2)', () => {
             }
         }, unknown);
 
-        const missing = makeFixture([{ plugin: 'podcast-pub', variant: 'cards', tier: 0, mode: 'draft' }]);
+        // 0332 R6: only a REQUIRED missing variant aborts the plan; an optional one is omitted
+        // with a failed effect-none receipt instead.
+        const missing = makeFixture([
+            { plugin: 'podcast-pub', variant: 'cards', tier: 0, mode: 'draft', required: true },
+        ]);
         await withCleanup(async (fx) => {
             const out = captureOutput();
             try {

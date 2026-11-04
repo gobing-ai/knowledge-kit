@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Bind matrix receipts, links and RSS proof to the current bundle revision
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-26T00:11:53.723Z
-updated_at: "2026-10-26T00:13:42.740Z"
+updated_at: "2026-11-04T05:08:27.412Z"
 feature_id: G15
 priority: P1
 tags:
@@ -14,6 +14,8 @@ estimate_hours: 10
 
 dependencies: ["0331"]
 ac_numbering: task-local
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0332-verdict.json
 ---
 
 ## 0332. Bind matrix receipts, links and RSS proof to the current bundle revision
@@ -38,17 +40,17 @@ Environment/concurrency: Bun 1.4.3; pinned Biome via bun run lint/format; instal
 
 ### Requirements
 
-- [ ] R1. Validate work_dir, valid window, bundle identity and run_date before side effects; omitted run_date derives from bundle, provided compact/ISO dates must normalize to the same valid calendar day.
-- [ ] R2. Reuse a successful receipt only for the same parent bundle revision, target/operation, requested mode and delivered payload; preserve unchanged-row idempotence if only unrelated plan rows changed. Dummy-to-real dispatches once; draft-to-live must not be silently satisfied.
-- [ ] R3. Fail a stale/different real receipt closed with an actionable reconciliation error, without overwrite/resend. Never automatically resend an unknown-effect live receipt, including malformed or unreadable evidence that may hide a live attempt.
-- [ ] R4. Resolve article/podcast links using current-bundle tier-0 receipts across all windows, excluding dummy/draft URLs from real public links. Resolve article links before podcast notes dispatch and retain reviewed payload provenance.
-- [ ] R5. Persist a stable podcast episode guid in the receipt from the plugin result and bind RSS hit/miss to bundle date and episode identity. Wrong dates, wrong episodes, timeout/HTTP failure and malformed XML do not authorize overseas sends.
-- [ ] R6. Missing required variants refuse planning; missing optional variants yield explicit per-target failed effect-none receipts without cancelling unrelated targets. Failed dummy payload preparation remains dummy in all outcome accounting.
-- [ ] R7. Exercise unchanged replay, draft promotion, dummy promotion, changed content/parent, corrupt receipts, cross-window links, date normalization/mismatch, feed errors and optional missing variants through the shared send path and ITC regression fixtures.
+- [x] R1. Validate work_dir, valid window, bundle identity and run_date before side effects; omitted run_date derives from bundle, provided compact/ISO dates must normalize to the same valid calendar day.
+- [x] R2. Reuse a successful receipt only for the same parent bundle revision, target/operation, requested mode and delivered payload; preserve unchanged-row idempotence if only unrelated plan rows changed. Dummy-to-real dispatches once; draft-to-live must not be silently satisfied.
+- [x] R3. Fail a stale/different real receipt closed with an actionable reconciliation error, without overwrite/resend. Never automatically resend an unknown-effect live receipt, including malformed or unreadable evidence that may hide a live attempt.
+- [x] R4. Resolve article/podcast links using current-bundle tier-0 receipts across all windows, excluding dummy/draft URLs from real public links. Resolve article links before podcast notes dispatch and retain reviewed payload provenance.
+- [x] R5. Persist a stable podcast episode guid in the receipt from the plugin result and bind RSS hit/miss to bundle date and episode identity. Wrong dates, wrong episodes, timeout/HTTP failure and malformed XML do not authorize overseas sends.
+- [x] R6. Missing required variants refuse planning; missing optional variants yield explicit per-target failed effect-none receipts without cancelling unrelated targets. Failed dummy payload preparation remains dummy in all outcome accounting.
+- [x] R7. Exercise unchanged replay, draft promotion, dummy promotion, changed content/parent, corrupt receipts, cross-window links, date normalization/mismatch, feed errors and optional missing variants through the shared send path and ITC regression fixtures.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Window sends bind receipts and RSS proof to one bundle revision (req: R1, R2, R3, R4, R5, R6, R7)
+- [x] AC1 — Window sends bind receipts and RSS proof to one bundle revision (req: R1, R2, R3, R4, R5, R6, R7)
 
 Given the current checkout and the isolated fixture conditions in Design, when the listed success/failure/replay cases run through the actual owned seam, then every R-item is observed through receipts, store state, artifact bytes and process/run status. Verification owner: this task's implementer; final cross-task rehearsal belongs to the rehearsal task. Concrete cases: Old successful draft versus live request; same row but unrelated plan change; different parent/date/payload; corrupted prior live receipt; dummy then real; after-generate links consumed by cn/overseas; podcast notes use article URL; compact date hit ISO feed; wrong-date bundle; guid proof; fetch timeout/503; missing optional Weibo with X valid; failed dummy prepare; kk-itc unaffected.
 
@@ -85,23 +87,59 @@ Verification contract: enumerate failure cases and create behavior/E2E regressio
 
 ### Plan
 
-- [ ] Step 0 — Inspect worktree/status and owning task dependencies; read cited current code and ADR-022/031; preserve concurrent edits and identify checkout-bound CLI runner.
-- [ ] Step 1 — Before production edits, add failing E2E/behavior cases for R1-R7: Old successful draft versus live request; same row but unrelated plan change; different parent/date/payload; corrupted prior live receipt; dummy then real; after-generate links consumed by cn/overseas; podcast notes use article URL; compact date hit ISO feed; wrong-date bundle; guid proof; fetch timeout/503; missing optional Weibo with X valid; failed dummy prepare; kk-itc unaffected.
-- [ ] Step 2 — Implement R1-R7 within the listed ownership and frozen design; keep upstream contracts and legacy voice2/kk-itc compatibility.
-- [ ] Step 3 — Run the focused real-dispatcher cases; inspect receipts and measured artifacts for failures, no-content and resume, not only process exit.
-- [ ] Step 4 — Update owning surface docs, run required project checks, review the diff against every R-item, and record exact verification evidence and remaining limitations through Spur.
+- [x] Step 0 — Inspect worktree/status and owning task dependencies; read cited current code and ADR-022/031; preserve concurrent edits and identify checkout-bound CLI runner.
+- [x] Step 1 — Before production edits, add failing E2E/behavior cases for R1-R7: Old successful draft versus live request; same row but unrelated plan change; different parent/date/payload; corrupted prior live receipt; dummy then real; after-generate links consumed by cn/overseas; podcast notes use article URL; compact date hit ISO feed; wrong-date bundle; guid proof; fetch timeout/503; missing optional Weibo with X valid; failed dummy prepare; kk-itc unaffected.
+- [x] Step 2 — Implement R1-R7 within the listed ownership and frozen design; keep upstream contracts and legacy voice2/kk-itc compatibility.
+- [x] Step 3 — Run the focused real-dispatcher cases; inspect receipts and measured artifacts for failures, no-content and resume, not only process exit.
+- [x] Step 4 — Update owning surface docs, run required project checks, review the diff against every R-item, and record exact verification evidence and remaining limitations through Spur.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change map (0332 R1–R7):
+- `apps/cli/src/publish-matrix.ts:269` `normalizeRunDate` — compact/ISO date normalization used by every stage (R1).
+- `apps/cli/src/publish-matrix.ts:295` `runPublishMatrixValidate` — work_dir/window/bundle/run_date validated before any side effect; canonical `4-publish/run-date.txt` written here (R1); routed in `apps/cli/src/publish-matrix-stage.ts:27` and wired as the first `kk-daily-publish3` node (`plugins/kk/workflows/kk-daily-publish3.yaml:112`).
+- `apps/cli/src/publish-matrix.ts:364` `composePlan` returns `{plan, omitted}`; bundle runDate must normalize (R1) and missing variants split into required-refusal vs omitted-target (`:458`, `:497`) (R6).
+- `apps/cli/src/publish-matrix.ts:1087` `sendPublishMatrix` — receipt identity decided over the payload this pass would deliver (`preparePayload` before policy); mismatch yields `reconciliation required for: <keys>` throw (`:1234`) — fail-closed, no overwrite/resend (R2/R3). Omitted targets get failed effect-none receipts with the plan digest of the written plan bytes (R6).
+- `apps/cli/src/itc-publish.ts:477` `sendRows` — shared path: payload digest computed before the receipt policy (`:505`); identity = parentRunId + mode + payloadDigest (R2); unreadable live receipt → reconciliation, draft → safe re-attempt (R3, `:539`); dummy→real dispatches once (R2); legacy receipts without mode/payloadDigest keep 0310 identity (compat).
+- `apps/cli/src/itc-publish.ts:717` receipt persists the plugin result `guid` (R5); `ItcReceiptSchema.guid` optional (`:52`).
+- `apps/cli/src/publish-matrix.ts:1031` `readLinkMap` scans ALL plans sharing parentRunId across windows; tiers dummy→all/live→live/else real; draft/dummy URLs never enter real links (R4).
+- `apps/cli/src/publish-matrix.ts:1309` `matchRssGate` — guid authoritative both directions, title-date fallback only for guid-less receipts (R5); `:1329` `runPublishMatrixRssGate` binds the gate day to the bundle's own plan day and refuses a disagreeing `--date` (R1/R5).
+- `apps/cli/src/publish-matrix.ts:828` `runPublishMatrixClassify` — run_date optional + mismatch refuse; compact stamp legacy bridge names; whole-receipts-dir scan keeps failed dummy accounting dummy (R6).
+- `apps/cli/tests/publish-matrix-0332.test.ts` — 20 failure-first cases covering R1–R7 (see Testing).
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | test: apps/cli/tests/publish-matrix-0332.test.ts:723 (compact/ISO accepted, derived from bundle, garbage refused), :825 (validate-before-send, after-send guard dropped); static-ref: apps/cli/src/publish-matrix.ts:269 (normalizeRunDate), :295 (runPublishMatrixValidate writes 4-publish/run-date.txt), :386 (plan refuses non-normalizable bundle runDate); static-ref: plugins/kk/workflows/kk-daily-publish3.yaml:112 (validate is the first node) |
+| R2 | MET | test: apps/cli/tests/publish-matrix-0332.test.ts:215 (unchanged replay re-dispatches nothing), :237 (different bundle revision fails closed), :280 (different payload digest fails closed), :322 (draft→live is reconciliation, not resend), :357 (dummy→real dispatches exactly once); static-ref: apps/cli/src/itc-publish.ts:505 (payload digest before policy), :523 (identity = parentRunId + mode + payloadDigest) |
+| R3 | MET | test: apps/cli/tests/publish-matrix-0332.test.ts:394 (unreadable live receipt never auto-resends), :423 (draft unreadable → safe re-attempt); static-ref: apps/cli/src/itc-publish.ts:539 (reconciliation on unreadable + live), apps/cli/src/publish-matrix.ts:1234 (`receipt reconciliation required for:` throw); command: bun test apps/cli/tests/itc-publish.test.ts 43/0 (0314 uncertain no-resend, 0310 re-entry preserved) |
+| R4 | MET | test: apps/cli/tests/publish-matrix-0332.test.ts:450 (after-generate tier-0 link consumed by cn-peak podcast), :477 (foreign-bundle tier-0 link rejected), :521 (draft URLs excluded from real links, dummy rows may use them); static-ref: apps/cli/src/publish-matrix.ts:1031 (readLinkMap scans all parentRunId plans, tiers dummy→all/live→live/else real) |
+| R5 | MET | test: apps/cli/tests/publish-matrix-0332.test.ts:588 (guid persisted from plugin result), :613 (known guid absent → miss even with same-date title), :640 (title-date fallback only for guid-less legacy receipts), :664 (gate date disagreeing with bundle refuses); static-ref: apps/cli/src/itc-publish.ts:717 (receipt guid persistence), apps/cli/src/publish-matrix.ts:1309 (matchRssGate guid-authoritative), :1329 (gate binds day to bundle plan day) |
+| R6 | MET | test: apps/cli/tests/publish-matrix-0332.test.ts:744 (missing optional variant → failed effect-none receipt, unrelated targets still plan), :774 (missing required variant refuses planning), :789 (failed dummy prepare stays dummy in accounting); static-ref: apps/cli/src/publish-matrix.ts:497 (required refusal vs omitted), :828 (classify scans whole receipts dir; plan-mode-aware dummy/none accounting) |
+| R7 | MET | test: apps/cli/tests/publish-matrix-0332.test.ts (20 cases over replay/promotion/corrupt/link/date/feed/omission); command: bun test apps/cli/tests/kk-daily-publish3.test.ts 6/0 (e2e miss→incident rss-lag, hit→disjoint plan on bundle day); command: bun test apps/cli/tests/itc-publish.test.ts 43/0 (kk-itc unchanged incl. 0310 legacy re-entry); command: bun run test 4502 pass / 0 fail |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — Window sends bind receipts and RSS proof to one bundle revision (req: R1, R2, R3, R4, R5, R6, R7) | MET | test | apps/cli/tests/publish-matrix-0332.test.ts:215,237,280,322,357,394,423,450,477,521,588,613,640,664,685,723,744,774,789,825 cover the declared concrete cases (draft-vs-live, unrelated plan change, changed parent/payload, corrupt live receipt, dummy→real, cross-window links, compact-vs-ISO date, wrong-date bundle, guid proof, fetch failure, missing optional variant, failed dummy prepare, kk-itc regression) through the real seam |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+| Priority | Finding | Disposition |
+| -------- | ------- | ----------- |
+| P4 | Legacy receipts without mode/payloadDigest reuse on parentRunId+planDigest alone (apps/cli/src/itc-publish.ts:551) — a pre-0332 edited payload under the same parent could skip | accepted-limitation: 0310 re-entry contract requires it; new receipts (0330+) always carry both identity fields |
+| P4 | RSS gate title-date fallback remains for guid-less receipts (apps/cli/src/publish-matrix.ts:1309) — a re-published same-day title could double-hit | accepted-limitation: matches task text (`same-date title fallback only for the current bundle`); guid path is authoritative once receipts persist guid (0332 onward) |
+
+Residual risk: review-lane remediation rekeyed the AC evidence row to the feature scenario title (`R15 — Window sends bind receipts and RSS proof to one bundle revision`) so `spur task verdict` resolves it; no code touched. Full traceability table lives in the review answer (.spur/run/c6a546d4-6c40-4e9e-921a-c7c33d431c08-review-answer.txt).
+
+Confidence: HIGH
+
+Verdict: PASS
 
 ### References
 
@@ -113,3 +151,8 @@ Verification contract: enumerate failure cases and create behavior/E2E regressio
 - Code/test targets and observable failure matrix: Design.
 
 ### History
+
+- 2026-11-04T04:30:33.975Z todo → wip (system)
+- 2026-11-04T05:08:25.401Z wip → testing (system)
+- 2026-11-04T05:08:27.399Z testing → done (system)
+
