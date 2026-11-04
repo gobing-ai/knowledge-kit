@@ -25,7 +25,7 @@
     },
     "apps/cli": {
       "name": "@gobing-ai/knowledge-kit",
-      "version": "0.1.4",
+      "version": "0.1.11",
       "bin": {
         "kk": "./dist/index.js",
         "knowledge-kit": "./dist/index.js",
@@ -363,6 +363,20 @@
         "@types/bun": "1.4.3",
       },
     },
+    "plugins/publishings/linkedin-pub": {
+      "name": "@gobing-ai/linkedin-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-browser-automation": "catalog:",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+        "playwright": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.3",
+      },
+    },
     "plugins/publishings/medium-pub": {
       "name": "@gobing-ai/medium-pub",
       "dependencies": {
@@ -619,6 +633,8 @@
     "@gobing-ai/knowledge-kit": ["@gobing-ai/knowledge-kit@workspace:apps/cli"],
 
     "@gobing-ai/last30days-ingest": ["@gobing-ai/last30days-ingest@workspace:plugins/ingestions/last30days-ingest"],
+
+    "@gobing-ai/linkedin-pub": ["@gobing-ai/linkedin-pub@workspace:plugins/publishings/linkedin-pub"],
 
     "@gobing-ai/medium-pub": ["@gobing-ai/medium-pub@workspace:plugins/publishings/medium-pub"],
 

@@ -1,0 +1,12 @@
+{
+    "name": "linkedin-pub",
+    "kind": "publish",
+    "entry": "./src/index.ts",
+    "check": "./src/profile-check.ts",
+    "version": "1.0.0",
+    "description": "LinkedIn feed post (text plus one image) via a script browser transport (ts-browser-automation), live-only (publishStatus: public required; LinkedIn drafts are not addressable)",
+    "browserSession": {
+        "profileName": "linkedin",
+        "homeUrl": "https://www.linkedin.com/feed/"
+    }
+}

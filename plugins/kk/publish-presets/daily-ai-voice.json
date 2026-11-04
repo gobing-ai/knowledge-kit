@@ -104,6 +104,14 @@
             "mode": "draft"
         },
         {
+            "plugin": "linkedin-pub",
+            "operation": "post",
+            "variant": "social:linkedin",
+            "tier": 3,
+            "window": "overseas-rss",
+            "mode": "dummy"
+        },
+        {
             "plugin": "shipinhao-pub",
             "operation": "图文",
             "variant": "cards",

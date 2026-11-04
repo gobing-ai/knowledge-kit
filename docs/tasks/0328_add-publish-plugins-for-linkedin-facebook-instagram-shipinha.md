@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Add publish plugins for LinkedIn, Facebook, Instagram, shipinhao 图文 and threads images
-status: todo
+status: wip
 template: feature-impl
 created_at: 2026-10-22T18:41:33.871Z
-updated_at: "2026-10-22T19:09:53.125Z"
+updated_at: "2026-11-04T07:45:04.360Z"
 
 feature_id: E9
 ac_altitude: task-local
@@ -72,7 +72,14 @@ The voice3 preset lists LinkedIn, Facebook, Instagram, 视频号图文 and Threa
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Implemented LinkedIn publishing (0328, LinkedIn-only scope). New plugin `plugins/publishings/linkedin-pub/`, scaffolded from **jike-pub** — browser + text + image + live-only shape (the plan's threads-pub note was unusable: threads-pub is API-only, no browser/image; deviation documented in the run report).
+
+- **R1 failure list first, post operation**: `plugins/publishings/linkedin-pub/src/index.ts:262` refuses pre-browser, in order — unknown `operation` (`options.operation ?? content.metadata.operation`, declared `post` only), non-script driver, absent or `draft` `publishStatus` (`plugins/publishings/linkedin-pub/src/index.ts:272` — "LinkedIn drafts are not addressable — set publishStatus: public"), unknown publishStatus, empty body, over-length body (>3000 code points, `plugins/publishings/linkedin-pub/src/index.ts:61` — refused, never truncated), image violations (not array / blank entry / wrong ext / missing file / >1 image). Browser stages fail loud with typed Result metadata `stage`: `share-trigger`, `composer`, `text-readback`, `image-upload`, `send-enabled`, `confirmation`, `failure-toast` (`plugins/publishings/linkedin-pub/src/index.ts:79` selector table) — a drifted selector can never silently skip or post text-only. Text + one image (cap 1); success only from an observed signal (fresh post link whose card read back the body excerpt, or a fresh success toast); editor-cleared/modal-closed alone never reports `ok: true`.
+- **R2 readiness probe**: `plugins/publishings/linkedin-pub/plugin.json` declares `check: ./src/profile-check.ts` (shared `runProfileCli`: login|check|open, exit 0/1/2, `plugins/publishings/linkedin-pub/src/profile-check.ts:16`) + `browserSession { profileName: linkedin, homeUrl: https://www.linkedin.com/feed/ }`. Verified: `kk plugin check linkedin-pub` → refused "no linkedin browser profile at ~/.config/kk/browser-profiles/linkedin — run the login command first", exit 1, zero browser launches, no posting.
+- **R3 social variant**: `plugins/kk/scripts/daily-stages.ts:1887` (`SOCIAL_LIMITS.linkedin { max: 3000 }`, code points, not weighted); `plugins/kk/workflows/kk-daily-ai-voice3.yaml:779` authoring prompt + :762 description now four platforms (x, weibo, threads, linkedin). Fixture-verified: 3005-char `26-social/linkedin.md` → `30-variants/social_linkedin.content.json` truncated to 3000 with `truncatedFrom: 3005, truncatedUnit: code_units`.
+- **R4 preset row**: `{ plugin: linkedin-pub, operation: post, variant: social:linkedin, tier: 3, window: overseas-rss, mode: dummy }` at `plugins/kk/publish-presets/daily-ai-voice.json:106`. Fixture-verified end-to-end via `kk stage run` (bundle-variants → publish-matrix-bundle → publish-matrix-plan → publish-matrix-send on `.works/tmp/test-linkedin-matrix/20260328`): plan emits `linkedin-pub.post` planned; send writes the synthetic receipt `dummy://linkedin-pub.post` with `dummy: true, effect: none` — the plugin is never invoked; `publish-matrix-check --all-windows` correctly excludes dummy rows from preflight probes.
+- No new dependency; no credentials in any file. Selectors are **provisional** (never measured against a live logged-in session) — the operator live gate (login + one manual post) must re-measure them before any live flip.
+- Tests: `plugins/publishings/linkedin-pub/tests/linkedin-pub.test.ts` (36 pass) — offline fake pages only, layered mapping/refusals/preflight/flow per the jike-pub precedent.
 
 ### Testing
 
@@ -89,4 +96,5 @@ The voice3 preset lists LinkedIn, Facebook, Instagram, 视频号图文 and Threa
 ### History
 
 - 2026-10-22T19:09:53.125Z backlog → todo (system)
+- 2026-11-04T07:45:04.360Z todo → wip (system)
 

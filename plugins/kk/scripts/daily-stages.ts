@@ -1878,12 +1878,13 @@ export function buildSocialContent(
 
 /**
  * Length budgets the social authoring prompt targets, enforced here as a backstop (task 0327 R3).
- * X counts CJK at 2 (`weighted`); weibo and threads count characters.
+ * X counts CJK at 2 (`weighted`); weibo, threads and linkedin count characters.
  */
 const SOCIAL_LIMITS: Record<string, SocialLimit> = {
     x: { max: 280, weighted: true },
     weibo: { max: 2000 },
     threads: { max: 500 },
+    linkedin: { max: 3000 },
 };
 
 /** Variant key → file name: `social:x` becomes `social_x.content.json`. */
