@@ -2,11 +2,11 @@
 schema_version: 1
 id: "G3"
 name: "kk-collect"
-status: backlog
+status: active
 priority: P2
 tags: []
 created_at: "2026-10-07T04:52:25.525Z"
-updated_at: "2026-10-08T18:18:21.798Z"
+updated_at: "2026-11-04T05:28:26.887Z"
 ---
 
 # G3: kk-collect
@@ -45,3 +45,6 @@ Feature: kk-collect
 New in 2026-10 (first child G31).
 
 ## History
+
+- 2026-11-04T05:28:26.887Z backlog → active (system)
+
