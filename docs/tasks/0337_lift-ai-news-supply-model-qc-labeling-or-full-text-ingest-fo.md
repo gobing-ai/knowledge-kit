@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: "Lift ai-news supply: model QC labeling or full-text ingest for stub items"
-status: testing
+status: done
 template: standard
 created_at: 2026-10-26T01:00:07.141Z
-updated_at: "2026-11-04T03:54:10.170Z"
+updated_at: "2026-11-04T05:26:57.812Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
 feature_id: G3
 priority: P2
 estimate_hours: 8
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0337-verdict.json
 ---
 
 ## 0337. Lift ai-news supply: model QC labeling or full-text ingest for stub items
@@ -112,7 +114,7 @@ Concurrency audit on 2026-11-03: no wip tasks returned by Spur; worktrees were t
 - [x] Step 3 (R1–R3): Implement the frozen report flags and deterministic JSON, readonly transaction, shared current-label CTE, cumulative profile ladder, source/body and reservation breakdowns; reject unsupported profile shapes explicitly.
 - [x] Step 4 (R4): Run the subprocess checks; verify closed fixture DB bytes/schema unchanged, absent DB not created, nonzero failures, deterministic output and DAO item-id parity. Preserve the machine-readable result at `.spur/run/0337-supply-fixture.json` with the exact repeat command.
 - [x] Step 5 (R4–R5): Write the dated operator report and update docs/04 surface documentation. A read of the explicitly named live store/config is permitted only as a read-only audit; if unavailable, report fixture-only evidence, no inferred current shortage. Record 24h and 168h measurements separately and recommend or reject enrichment/model experiments from observed attrition, with no automatic follow-up implementation.
-- [ ] Step 6 (R1–R5): Run `bun run lint`, `bun run test`, `bun run build` and pre-/post-check rule presets via the project gate. Review the diff for unintended policy/runtime/corpus changes, then obtain a real task verify PASS through the harness. Keep pre-existing failures separate; do not weaken coverage or assertions.
+- [x] Step 6 (R1–R5): Run `bun run lint`, `bun run test`, `bun run build` and pre-/post-check rule presets via the project gate. Review the diff for unintended policy/runtime/corpus changes, then obtain a real task verify PASS through the harness. Keep pre-existing failures separate; do not weaken coverage or assertions.
 
 ### Root Cause
 
@@ -139,50 +141,50 @@ Original shortage diagnosis was incomplete: it conflated body quality, model rou
 
 **Pipeline verify results**
 
-- Verdict: PARTIAL (from verdict artifact)
+- Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
 | R1 | MET | `scripts/ai-news-supply-report.ts:447-471` uses native readonly access and closes the store; `scripts/tests/ai-news-supply-report.test.ts:295-311` verifies unchanged bytes/schema and missing-db behavior. |
 | R2 | MET | `scripts/ai-news-supply-report.ts:373-419` builds both cumulative windows; `scripts/tests/ai-news-supply-report.test.ts:312-367` checks gate counts, caps and DAO parity. |
 | R3 | MET | `scripts/ai-news-supply-report.ts:246-367` implements source/body, label-coverage and disjoint reservation evidence; `scripts/tests/ai-news-supply-report.test.ts:334-353` asserts distributions and counts. |
-| R4 | MET | `scripts/ai-news-supply-report.ts:128-140` rejects malformed/non-mapping config; `scripts/tests/ai-news-supply-report.test.ts:395-451` covers repeatable artifacts, malformed/missing inputs and schema failures. Full `spur self exec check`: 4423 pass / 0 fail. |
-| R5 | MET | `docs/04_DESIGN.md:969-992` and `docs/report/2026-11-04-ai-news-supply-readiness.md:1-51` document invocation, contract and limits; `git status --short` contains no production policy/runtime/install change. |
+| R4 | MET | `scripts/ai-news-supply-report.ts:128-140` rejects malformed/non-mapping config; `scripts/tests/ai-news-supply-report.test.ts:395-449` covers repeatable artifacts, malformed/missing inputs and schema failures. Full `spur self exec check`: 4423 pass / 0 fail. |
+| R5 | MET | `docs/04_DESIGN.md:969-992` and `docs/report/2026-11-04-ai-news-supply-readiness.md:1-51` document invocation, contract and limits; `git diff --name-only main...HEAD` lists only the diagnostic, tests, docs and task 0337. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
 | Scenario: AC1 — supply inspection preserves the store (req: R1) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:295-311` verifies parseable JSON and unchanged bytes/schema; `:395-415` verifies missing-db failure without creation. |
 | Scenario: AC2 — the gate ladder matches extraction semantics (req: R2) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:312-367` verifies deterministic cumulative gates and capped-id parity with `ItemsDao.selectByProfile`. |
 | Scenario: AC3 — current labels and reservations are diagnosed without double counting (req: R3) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:334-353` checks label coverage, source/body distributions, disjoint blocked stories and capped ids. |
-| Scenario: AC4 — diagnostic evidence is repeatable and failures are explicit (req: R4) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:395-451` verifies the repeatable artifact and nonzero failures; `:420-425` specifically rejects malformed YAML config with no stdout. Full `spur self exec check`: 4423 pass / 0 fail. |
-| Scenario: AC5 — the handoff preserves production policy (req: R5) | MET | command | `git status --short` lists only the diagnostic script, fixture tests, `docs/04_DESIGN.md:969`, `docs/report/2026-11-04-ai-news-supply-readiness.md:1`, and task 0337; no runtime/config/workflow/install change is present. |
+| Scenario: AC4 — diagnostic evidence is repeatable and failures are explicit (req: R4) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:395-449` verifies the artifact and nonzero failures; `:420-425` rejects malformed YAML with no stdout. Full `spur self exec check`: 4423 pass / 0 fail. |
+| Scenario: AC5 — the handoff preserves production policy (req: R5) | MET | command | `git diff --name-only main...HEAD` lists only the diagnostic script, fixture tests, `docs/04_DESIGN.md:969`, `docs/report/2026-11-04-ai-news-supply-readiness.md:1`, and task 0337; no runtime/config/workflow/install change is present. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
 | Priority | Dimension | Location | Finding |
 | --- | --- | --- | --- |
-| P2 | Correctness | `scripts/ai-news-supply-report.ts:425` | Malformed YAML config is accepted with defaults: the 2026-11-04 subprocess probe exited 0 and emitted 5,302 JSON bytes, violating R4/AC4's invalid-input contract. Add explicit config-syntax validation and a malformed-config subprocess regression. |
+| P4 | — | `scripts/ai-news-supply-report.ts:128-140` | No open findings; the malformed-config P2 is remediated and covered by `scripts/tests/ai-news-supply-report.test.ts:420-425`. |
 
-Confidence: LOW
+Confidence: HIGH
 
 | Req | Status | Evidence |
 | --- | --- | --- |
-| R1 | MET | `scripts/ai-news-supply-report.ts:434-459` uses native readonly access and closes the store; `scripts/tests/ai-news-supply-report.test.ts:295-311` verifies unchanged bytes/schema. |
-| R2 | MET | `scripts/ai-news-supply-report.ts:361-407` builds both cumulative windows; `scripts/tests/ai-news-supply-report.test.ts:312-367` checks gate counts, caps and `ItemsDao.selectByProfile` parity. |
-| R3 | MET | `scripts/ai-news-supply-report.ts:234-355` implements source/body, label-coverage and disjoint reservation evidence; `scripts/tests/ai-news-supply-report.test.ts:334-353` asserts the distributions and counts. |
-| R4 | PARTIAL | `scripts/tests/ai-news-supply-report.test.ts:395-445` covers repeatable artifacts and many failures, but the malformed-config probe exited 0 with JSON output instead of nonzero. |
-| R5 | MET | `docs/04_DESIGN.md:969-992` and `docs/report/2026-11-04-ai-news-supply-readiness.md:1-51` document the diagnostic and limits; `git status --short` shows only the diagnostic, tests, docs and task 0337. |
+| R1 | MET | `scripts/ai-news-supply-report.ts:447-471` uses native readonly access and closes the store; `scripts/tests/ai-news-supply-report.test.ts:295-311` verifies unchanged bytes/schema and missing-db behavior. |
+| R2 | MET | `scripts/ai-news-supply-report.ts:373-419` builds both cumulative windows; `scripts/tests/ai-news-supply-report.test.ts:312-367` checks gate counts, caps and DAO parity. |
+| R3 | MET | `scripts/ai-news-supply-report.ts:246-367` implements source/body, label-coverage and disjoint reservation evidence; `scripts/tests/ai-news-supply-report.test.ts:334-353` asserts distributions and counts. |
+| R4 | MET | `scripts/ai-news-supply-report.ts:128-140` rejects malformed/non-mapping config; `scripts/tests/ai-news-supply-report.test.ts:395-449` covers repeatable artifacts, malformed/missing inputs and schema failures. Full `spur self exec check`: 4423 pass / 0 fail. |
+| R5 | MET | `docs/04_DESIGN.md:969-992` and `docs/report/2026-11-04-ai-news-supply-readiness.md:1-51` document invocation, contract and limits; `git diff --name-only main...HEAD` lists only the diagnostic, tests, docs and task 0337. |
 
 | AC | Status | Evidence Type | Evidence |
 | --- | --- | --- | --- |
-| Scenario: AC1 — supply inspection preserves the store (req: R1) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:295-311` verifies parseable JSON, unchanged bytes/schema; `:395-415` verifies missing-db failure without creation. |
+| Scenario: AC1 — supply inspection preserves the store (req: R1) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:295-311` verifies parseable JSON and unchanged bytes/schema; `:395-415` verifies missing-db failure without creation. |
 | Scenario: AC2 — the gate ladder matches extraction semantics (req: R2) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:312-367` verifies deterministic cumulative gates and capped-id parity with `ItemsDao.selectByProfile`. |
 | Scenario: AC3 — current labels and reservations are diagnosed without double counting (req: R3) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:334-353` checks label coverage, source/body distributions, disjoint blocked stories and capped ids. |
-| Scenario: AC4 — diagnostic evidence is repeatable and failures are explicit (req: R4) | PARTIAL | command | Repeatable fixture artifact exists at `.spur/run/0337-supply-fixture.json`; however `bun scripts/ai-news-supply-report.ts` with malformed `store: [` config exited 0 and emitted 5,302 stdout bytes on 2026-11-04. |
-| Scenario: AC5 — the handoff preserves production policy (req: R5) | MET | command+static-ref | `git status --short` lists only the diagnostic script, fixture tests, `docs/04_DESIGN.md:969`, `docs/report/2026-11-04-ai-news-supply-readiness.md:1`, and task 0337; no runtime/config/workflow/install change is present. |
+| Scenario: AC4 — diagnostic evidence is repeatable and failures are explicit (req: R4) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:395-449` verifies the artifact and nonzero failures; `:420-425` rejects malformed YAML with no stdout. Full `spur self exec check`: 4423 pass / 0 fail. |
+| Scenario: AC5 — the handoff preserves production policy (req: R5) | MET | command+static-ref | `git diff --name-only main...HEAD` lists only the diagnostic script, fixture tests, `docs/04_DESIGN.md:969`, `docs/report/2026-11-04-ai-news-supply-readiness.md:1`, and task 0337; no runtime/config/workflow/install change is present. |
 
-Verdict: PARTIAL
+Verdict: PASS
 
 ### References
 
@@ -199,6 +201,7 @@ Verdict: PARTIAL
 - 2026-11-03T18:06:29.472Z backlog → todo (system)
 - 2026-11-04T03:00:55.137Z todo → wip (system)
 - 2026-11-04T03:37:06.209Z wip → testing (system)
+- 2026-11-04T05:26:57.792Z testing → done (system)
 
 ### Notes
 
