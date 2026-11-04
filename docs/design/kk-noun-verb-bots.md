@@ -1,15 +1,15 @@
 ---
 name: Strict kk noun-verb CLI and named browser bots
 kind: design
-status: accepted-design
+status: shipped
 feature_id: A22
 created_at: 2026-10-13
-updated_at: 2026-10-13
+updated_at: 2026-11-04
 ---
 
 # Strict CLI operations and named browser sessions
 
-This is the accepted design for A22, not a claim that commands have shipped. ADR-037/038 own the decisions.
+This is the design for A22, shipped by tasks 0275–0278 (surface: `docs/04_DESIGN.md` §1.8/§1.12). ADR-037/038 own the decisions.
 **Shipped so far:** task 0275 landed ADR-037's two normalization seams — canonical `kk stage run`
 (with `kk stage <stage>` normalized in `main()` before Commander parses) and the top-level
 `kk lock acquire|release` (with `kk store lock …` retained as a hidden route over the same

@@ -55,9 +55,12 @@ Prefer these entry surfaces over ad-hoc process unless the operator overrides fo
 ```
 apps/
   cli/            # @gobing-ai/knowledge-kit — Commander binary (executor, plugin)
+  board/          # @gobing-ai/kk-board — native Spur Board modules (G8, ADR-035)
 packages/
   kk-core/        # @gobing-ai/kk-core — Doc/Brief/Content/Result contracts + kindContract
+  kk-store/       # @gobing-ai/kk-store — SQLite store (items/labels/stories, ADR-030)
   publish-harness/  # @gobing-ai/publish-harness — publish transport abstraction + fake transports
+scripts/          # repo build/publish/hook scripts (bundle-plugins, build-board, publish)
 tooling/
   typescript/     # shared tsconfig presets
 plugins/
@@ -70,7 +73,7 @@ docs/design/      # per-kind authoring specs (ingestion, generator, publish, fan
 .spur/            # Spur config, rules, workflows, templates
 ```
 
-`*` = specified under ADR-007, not yet implemented. See `docs/04_DESIGN.md` §1.
+Command surface: `docs/04_DESIGN.md` §1.
 
 - **Runtime / package manager / test runner:** Bun `1.4.3`. Prefer `bun:*` APIs over `node:*`
   unless Bun lacks the API.
@@ -328,6 +331,6 @@ Project context under `.spur/context/`, tracked in git except `token-ledger.json
 If `.spur/context/` is absent, continue; do not block.
 
 
-### Planned CLI/session follow-up
+### CLI noun/verb and named browser bots (A22 — shipped)
 
-A22 / ADR-037/038 specify canonical `stage run`, top-level `lock acquire|release`, and `bot list|login|logout|open`, retaining shipped spellings as hidden compatible routes. This is accepted design, not a shipped surface. See `docs/design/kk-noun-verb-bots.md`; keep site readiness and special authentication-state handling in channel plugins.
+A22 / ADR-037/038 shipped canonical `stage run`, top-level `lock acquire|release`, and `bot list|login|logout|open|exec`; the older spellings stay hidden compatible routes. Surface: `docs/04_DESIGN.md` §1.8/§1.12; design: `docs/design/kk-noun-verb-bots.md`. Keep site readiness and special authentication-state handling in channel plugins.

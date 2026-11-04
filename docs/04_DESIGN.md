@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.56.0
+version: 2.57.0
 created_at: 2026-07-22
-updated_at: 2026-11-03
+updated_at: 2026-11-04
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -22,9 +22,9 @@ sync: [T3]
 | ----------- | ------ | -------- |
 | [kk-itc-refactor.md](design/kk-itc-refactor.md) | DAG/child authoring, config/workspaces, publication presets, recovery and SEO handoffs | shipped (G21, ADR-040; tasks 0298–0303) |
 | [kk-smart-seo.md](design/kk-smart-seo.md) | SEO/GEO audit workflow, decision catalogs, stages and one skill | partially shipped (G9, ADR-039; 0281-0284 collection, assessments, typed catalogs and enrichment shipped, 0285 the `kk-smart-seo` workflow + validated narrative + terminal status, 0286 the one `smart-seo` skill + its installed acceptance and documented consumer setup; a live-site audit and feature-level verification remain) |
-| [kk-noun-verb-bots.md](design/kk-noun-verb-bots.md) | Strict noun/verb operations + named browser sessions | accepted design; not implemented (A22, ADR-037/038) |
+| [kk-noun-verb-bots.md](design/kk-noun-verb-bots.md) | Strict noun/verb operations + named browser sessions | shipped (A22, ADR-037/038; tasks 0275–0278; surface §1.8/§1.12) |
 | [kk-cli-surface.md](design/kk-cli-surface.md) | Operator `kk` binary + two-noun tree | shipped (A2/A21) |
-| [kk-plugin-check.md](design/kk-plugin-check.md) | `kk plugin check` / `login` live readiness probe (ADR-032) | shipped verbs + all fourteen channels (E93, 0215+0216; E94 adds `weibo-pub`, 0291 adds `jike-pub`, 0292 adds `csdn-pub`, 0293 adds `cnblogs-pub`, 0294 adds `sspai-pub`, 0295 adds `xiaoyuzhou-pub`, 0296 adds `shipinhao-pub`, 0297 adds `bilibili-pub`) |
+| [kk-plugin-check.md](design/kk-plugin-check.md) | `kk plugin check` / `login` live readiness probe (ADR-032) | shipped verbs + all fifteen channels (E93, 0215+0216; E94 adds `weibo-pub`, 0291 adds `jike-pub`, 0292 adds `csdn-pub`, 0293 adds `cnblogs-pub`, 0294 adds `sspai-pub`, 0295 adds `xiaoyuzhou-pub`, 0296 adds `shipinhao-pub`, 0297 adds `bilibili-pub`, 0328 adds `linkedin-pub`) |
 | [fan-in-and-fan-out-specification.md](design/fan-in-and-fan-out-specification.md) | `executor fan-in` merge and concurrent `executor fan-out` | shipped (B6) |
 | [ingestion-plugin-specification.md](design/ingestion-plugin-specification.md) | Ingestion kind contract | shipped (C1) |
 | [generator-plugin-specification.md](design/generator-plugin-specification.md) | Generator kind contract | shipped (D3) |
@@ -90,12 +90,14 @@ kk store label --replay <topic:t|run:id|since:24h> --maker <name> [--decisions <
 kk store extract --topic <t> [--window 24h] [--limit <n>] [--include-selected]
                  --out <Doc[].json> [--db <path>]
 kk store stats [--days <n>] [--json] [--db <path>]
+kk store pool-count <file> --min <n>
 kk store select --topic <t> --workflow <w> --run <id> --in <Doc[].json|metadata.docs> [--db <path>]
 kk store mark-published --topic <t> --run <id> [--in <Doc[].json|metadata.docs>] [--db <path>]
 kk store release --run <id> [--topic <t>] [--db <path>]
 kk schedule render <schedule> --platform launchd|cron [--repo <dir>]
 kk ledger append --workflow <name> --run <run-id> [--works-dir <dir>] [--work-dir <dir>]
 kk ledger sync --workflow <name> [--works-dir <dir>] [--work-dir <dir>]
+kk ledger cutover-check --candidate <name> --baseline <name> --runs <n> [--works-dir <dir>]
 kk board capture --workflow <name> --run <id> --work-dir <dir> --stamp <stamp>
                  [--definition-digest <sha256:digest>] [--setting <key=value> …]
 kk board serve --board-origin <origin> [--port <n>]
@@ -117,11 +119,13 @@ kk board serve --board-origin <origin> [--port <n>]
 | `store backfill-facts` | Recompute the typed item facts and the causal `story_id` clustering for every item (idempotent); prints `{updated}` (§1.9) | shipped (task 0227) |
 | `store label` | Label the ids `ingest` filed — one raw observation per (decision, maker) through the kk decision catalog (the `LABEL_DECISIONS` table: the heuristic's five + the three judgment decisions the heuristic cannot signal), heuristic-first for those five and in-process through `@gobing-ai/ts-ai-decision`; the four graded dimensions are consulted only in `--mode decision`; a china-politics keyword hit writes a maker `keyword` floor and the model is still consulted; `--replay` re-labels a historical pool under a `replay-<epoch>` run id. Prints `{verdict, confidence, labeled, model, fallback, consults, consultMs, refused}`, or `{replayed, labeled, consults, consultMs, refused, run}` (§1.9) | shipped (task 0209; raw observations + replay 0226; judgment decisions + china-politics gate 0229; score positions + refusals 0240; in-process hub + graded-dimension pruning 0317) |
 | `store extract` | Compile a topic profile into one store query and write the pool as `Doc[]` (labels inlined), excluding the topic's already-selected stories and gating on the profile's `where` keys (the shipped ai-news profile's `kk-item-china-politics: { lte: 1 }` excludes an unjudged item, fail-closed); prints `{count}` (§1.9) | shipped (task 0210; topic-scoped exclusion 0228; china-politics gate 0229) |
+| `store pool-count <file> --min <n>` | Guard predicate over a pool artifact (`Doc[]` or an object carrying `metadata.docs`): exit 0 when it holds at least `--min` items, else nonzero; prints `{count, min}` | shipped |
 | `store select` | Record a run's planned set as `selected` stories for one topic (idempotent); prints `{selected}` (§1.9) | shipped (task 0228) |
 | `store mark-published` | Promote a run's `selected` rows to `published`; prints `{published}` (§1.9) | shipped (task 0228) |
 | `store release` | Drop a run's `selected` rows so its items re-enter the pool; prints `{released}` (§1.9) | shipped (task 0228) |
 | `schedule render` | Print the launchd plist / crontab line for a shipped workflow (§1.11); installing it is an operator action | shipped (task 0208) |
 | `ledger append` | Append one workflow run section to `<works-dir>/<name>/ledger.md` from `spur workflow trace`; prints `{workflow, ledger, appended}` (§1.10) | shipped (task 0207) |
+| `ledger cutover-check --candidate <name> --baseline <name> --runs <n> [--works-dir <dir>]` | Read-only cutover readiness probe: the newest `--runs` candidate runs are all done and each matches the same-day baseline target set; prints `{ready, streak, required, reasons}`, exit 0 always (`ready` is the signal) | shipped (task 0212) |
 | `ledger sync` | Append every finished run of the workflow missing from its ledger, oldest first (same printed shape) (§1.10) | shipped (task 0207) |
 
 > **Surface status.** Rows marked *shipped* are live in `apps/cli` (transcribed from the code
@@ -566,8 +570,6 @@ Revision counts are derived from the recorded `draft-revise`/`draft-autorevise` 
 mutable `.revise-count` files; missing evidence is `unavailable`/`unknown`, never a zero. The
 per-target derivation, the judge-confidence validation and the trusted-root binding are frozen in
 `docs/design/workflow-board-modules.md` §9.
-
-## 1.7 `plugin.json` manifest surface
 
 #### API/library claim sources and confidence
 
@@ -1673,6 +1675,28 @@ Route and limits are measured: `docs/design/weibo-ui-discovery.md` §2b (mobile 
 
 `bilibili-pub` (2026-10-15, task 0297) publishes videos and dynamic posts to Bilibili (哔哩哔哩, member.bilibili.com / t.bilibili.com) as a script browser flow — every run writes to the real site. Operation `shortVideo` defaults to **draft** (`保存草稿`), with explicit `'public'` (`投稿`) resulting in a pending-review receipt with aid/bvid. The flow attaches the local video via `setInputFiles` and waits for post-upload form appearance (stages `video-upload` / `media-processing`), fills the title natively (≤80 chars, stage `title-fill`), selects the exact requested partition (stage `partition-select`), commits up to 10 tags with Enter key events (stage `tags-fill`), commits an optional cover card through the dialog ladder with " 完成 " confirmation and slot preview verification (stage `cover-attach`), selects 自制 when requested, fills the description editor (stage `description-fill`), then activates the save control (stage `draft-save`) and requires a *fresh* id-bearing draft receipt URL (stage `draft-receipt`) — a toast or an unchanged URL is a typed failure, never a claimed save; the explicit public rail submits via 投稿 and requires a fresh receipt with `status: 'pending-review'`, never a fabricated public URL. Operation `dynamic` publishes text and up to 9 images to Bilibili dynamic (`t.bilibili.com`) with explicit `'public'` status only (drafts refused pre-browser), pasting sanitized text (stage `text-fill`), attaching images via `setInputFiles` (stage `images-upload`), clicking the launch button (stage `publish-click`), and confirming only on a signal absent from the pre-click baseline — a fresh receipt URL, a newly visible toast, or a link not present before the click (stage `publish-receipt`). Profile tiers: `options.profileDir` → `BILIBILI_PROFILE_DIR` → `KK_BROWSER_PROFILE_DIR` → `~/.config/kk/browser-profiles/bilibili`; login is operator-owned via `bun plugins/publishings/bilibili-pub/src/profile-check.ts login` (ADR-032).
 
+### `@gobing-ai/linkedin-pub` (`plugins/publishings/linkedin-pub`, kind `publish`)
+
+| Export | Kind | Notes |
+| ------ | ------ | ------- |
+| `LinkedinBrowserTransport` | class | `browser` / `driver: script`; headless session preflight, then one headed flow. Refusal order, all pre-browser: driver ≠ `script` → `metadata.publishStatus` absent/`draft` (live-only, LinkedIn drafts are not addressable) or not `public` → empty body → body over `MAX_TEXT_CHARS` code points (never truncated) → more than one image or an invalid image (non-`.png .jpg .jpeg .webp .gif`, missing file) → session preflight |
+| `LINKEDIN_OPERATIONS` / `resolveOperation` | const / function | `['post']` only; an unknown operation is refused before any transport (ADR-029) |
+| `MAX_TEXT_CHARS` | const | `3000` — LinkedIn's per-post cap |
+| `LINKEDIN_POST_SELECTORS` | const | Share trigger, modal composer, dialog-scoped file input, Post control — **all provisional** (not measured live); a drifted selector is a typed stage refusal |
+| `LINKEDIN_HOME_URL` / `LINKEDIN_LOGIN_URL_RE` / `LINKEDIN_LOGIN_INSTRUCTION` | const | `https://www.linkedin.com/feed/`; `/authwall\|/login\|/checkpoint` (provisional); `bun plugins/publishings/linkedin-pub/src/profile-check.ts login` |
+| `isLinkedinAuthenticated` / `LINKEDIN_CONFIG` | predicate / const | Shared `checkChannelSession` seam config |
+| `getPublishTransport` / `processPublishIO` / `main()` | function | `--in`/`--out` entry; validates Content and operation before resolving a transport |
+
+`linkedin-pub` (2026-11-04, task 0328, feature E9) posts one LinkedIn feed post (text plus at most one image)
+through the web share box. Manifest: `check: ./src/profile-check.ts` (ADR-032 probe) and
+`browserSession: { profileName: "linkedin", homeUrl: "https://www.linkedin.com/feed/" }` (A22). Success
+is only an observed signal — a fresh `/feed/update/` or `/posts/` link whose card reads back the body, or a
+fresh success toast; weak signals alone never report success. Profile directory: `options.profileDir`
+override, else the shared `resolveChannelProfileDir('linkedin')` tiers under
+`~/.config/kk/browser-profiles/linkedin` (ADR-042). Login is operator-owned (`kk bot login` or the probe's
+`login` mode). The daily-voice preset row ships `dummy`; live delivery is opt-in through `live_channels`
+after an operator live check.
+
 ### Leftover CMS browser plugins (`juejin-pub`, `infoq-pub`, `substack-pub`, `xhs-pub`)
 
 Each is `kind: publish`, `PublishTransport.kind: 'browser'`. Offline tests use `FakeBrowserTransport`. Profile dir `~/.config/kk/browser-profiles/<channel>`. A missing or expired session is `Result.ok false` in one line naming the operator login command and the profile dir path — never a stack, cookie, or page HTML (ADR-027 channels; the shared `checkChannelSession` refusal).
@@ -2051,8 +2075,8 @@ card as `<stem>-illustration<N>.<ext>`). Consumers (daily XHS stages, `xhs-pub`)
 `.path`. Pre-spend: font cmap coverage fails loud naming field + code point;
 `KK_IMAGE_DRY_RUN=1` runs the full pre-spend path (cmap check + text-only compose) without
 provider spend. E2E evidence: `bun plugins/generations/image-gen/scripts/compose-e2e-artifact.ts`
-(1080x1440 + SHA-256 determinism per variant); the bun-test E2E case skips under `bun test` with
-a printed reason (Bun 1.3.14 event-loop block during Chromium launch).
+(1080x1440 + SHA-256 determinism per variant); the bun-test E2E case runs in-suite on Bun 1.4.3
+and skips only when Playwright's Chromium is absent.
 
 Task 0181 (F616 R1) — text-free prompt contract: for compose formats the composed provider prompt
 must stay text-free. `assertTextFreePrompt` (in `@gobing-ai/image-gen`'s compose module) refuses
