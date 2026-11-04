@@ -2536,3 +2536,69 @@ task's Refine corrections / Solution / Review sections, not from memory.
   a `kk schedule render` table missing both new schedules).
 
 Skipped/risk: I did not run the full `bun run gate` test suite (docs-only change; `bun run lint` + all 58 constraint rules passed). `docs/features/*` shows as modified in `git status` from before this session — preserved, not mine.
+Wrap complete. Drift repaired in 7 files, all inside `docs/`; artifact written to `.spur/run/` (gitignored, no tracked change).
+
+**What the audit found against reality**
+
+| Doc | Drift | Receipt |
+|---|---|---|
+| `docs/04_DESIGN.md` | `updated_at: 2026-11-02` while 556feb9 edited it 2026-11-03; version unbumped (§4.3 r3) | `git log -1 -- docs/04_DESIGN.md` |
+| `docs/00_ADR.md` | ADR-030 amd, 032, 036, 039, 040 all still `Accepted (design)` after shipping | G32 done; `apps/cli/src/commands/plugin.ts:213,311`; G14 done; tasks 0281–0286, 0298–0303 done |
+| `docs/03_ARCHITECTURE.md` | VoxCPM in future tense ("will supply") + omitted from tree | `plugins/generations/voxcpm-tts/` exists |
+| `docs/03_ARCHITECTURE.md` | Tree missing 9 real dirs: `kk-store`, `voxcpm-tts`, 7 channel plugins | dir-loop over `plugins/*/*/` |
+| `docs/design/*` (4 files) | "accepted design — not yet built" on shipped features | D5/A3/G14/G21 all shipped |
+
+**Left deliberately:** ADR-029 and ADR-034 `Accepted (design)` (no crisp receipt — refusing to assert unverified shipment); A22 `kk-noun-verb-bots`, `collect-store-views` (G81 active), `Brief`/`GeneratorInputSchema` specified-not-implemented (confirmed absent from the tree). No row added to the §0 satellite table — the 13 absent rows stay absent.
+
+**Flagged, not fixed:** `AGENTS.md` calls `Brief` a first-class pipeline input while `docs/04_DESIGN.md:1356,1358` and `docs/03_ARCHITECTURE.md:233` say it is unimplemented and no `Brief` type exists in `packages/`. §2 makes the numbered doc right, so `AGENTS.md` needs the fix — outside this wrap's `docs/`-only scope.
+
+`bun run lint` → exit 0, 681 files. Tests/build not run: Markdown-only diff, no code path touched.
+
+Skipped: full `bun run test`/`build` (docs-only diff), and ADR-029/034 status flips pending evidence. Risk: ADR-039 is recorded "shipped in part" while feature G9 is still `active` — if the remaining live-site audit later changes the design, amend ADR-039 rather than assuming the shipped surface is final.
+
+# Wrapup learnings — batch 51a7edda-ad8e-4f78-a5d4-c806bbf68c62
+
+Batch tasks (normalized capture): 0337 — `Lift ai-news supply: model QC labeling or full-text ingest for stub items` (feature G3, status done). Doc-evolve `wrapup` run: drift repair across `docs/00_ADR.md`, `docs/03_ARCHITECTURE.md`, `docs/04_DESIGN.md`, `docs/design/*`.
+
+## 2026-11-03 — 0337 (G3): read-only supply diagnostic
+
+Conventions that worked
+
+- Repository operator scripts that must not mutate a store follow the existing precedent in `scripts/decision-signal-report.ts:203`: open the explicit DB path with native `bun:sqlite` in readonly mode, read inside one transaction, close in `finally`. Do not open a writer, migrator or migrator-backed helper, and do not fall back to a live default path or clock.
+- Every flag required, no defaults: `--db`, `--config`, `--profile`, `--at` (ISO-8601 with offset). Unknown or duplicate flags fail. Topic is fixed and a different topic is rejected. JSON only on stdout, diagnostics on stderr, nonzero exit with no partial JSON — that triple is what the subprocess fixtures assert.
+- Reuse the exported seam instead of copying logic: `compileProfile`, `labelsCurrentSql`, `readStoreConfig`, `parseProfile` from `@gobing-ai/kk-store`. Gate ladders then match extraction semantics by construction, and the capped item ids can be asserted equal to `ItemsDao.selectByProfile` on the same fixture inputs.
+- Assert read-only behavior by bytes, not by intent: hash-and-compare the closed fixture database file and its schema before and after, and assert a missing database fails without being created.
+- Pin `now = Date.parse(at)` exactly once and reuse it for both windows, so 24h and 168h are measured at one explicit clock. Keep the production predicate shape — lower-bound-only `first_seen_at >= now - windowMs` — instead of inventing an upper bound that production does not apply.
+
+Errors fixed
+
+- Malformed or non-mapping YAML reached the shared config reader, which then applied its normal-operation defaults and produced a plausible-looking but meaningless report. Fix: validate the YAML shape and fail closed before calling the shared reader. This was the AC4 remediation and is the general pattern — a shared reader's convenience defaults turn a diagnostic into a false green.
+- The uncapped eligible set was being conflated with the capped extraction result. Fix: count the eligible set without applying the profile limit, apply the limit only at the final ordered stage, and report item count as `COUNT DISTINCT id` with distinct-story count excluding null `story_id` separately. Never infer one count from the other.
+- Double counting through reservations: fix by making `blockedStories` disjoint — published wins when both exist, `selectedOnly` means selected and no published, and dropped or other-topic rows must not exclude AI-news items.
+
+Gotchas
+
+- `bun test <single file>` exits 1 because Bun enforces per-file coverage on the store modules the script loads, not because assertions failed. Judge a single-file run by its pass/fail counts and read the exit code only for the full suite.
+- Historical pool counts do not prove a current-window shortage. A 168h pool that grew from 22 to 67 eligible stories says nothing about whether a 24h episode has enough supply; measure both windows at the pinned clock and report them separately.
+- `git diff --name-only main...HEAD` is the cheap, checkable receipt for "no production policy, config, workflow or runtime change". Put it in the task's Solution so the preservation AC is verifiable after the fact.
+- Spur rejects new task links to a completed feature. Use the existing parent feature whose Scope owns the work rather than reopening a completed feature or inventing a Board-only one.
+- The CLI has no rename surface, so a task whose true deliverable drifted away from its title keeps the original title. Put the real deliverable in Requirements/AC so the mismatch is explicit rather than silent.
+- A non-standard section heading that Spur warns about (here `Root Cause`) cannot be removed: there is no section-delete verb, and direct-writing the corpus file to hide the advisory is forbidden. Leave the advisory visible.
+- Refinement corrections are per-premise with a file:line receipt. The filing for 0337 asserted heuristic-only labeling, an automatic model pass, a body-length-equals-quality-1 rule, persistent ingest starvation and uniformly absent full text; each was falsified against `apps/cli/src/commands/store.ts:721`, `:728`, `plugins/generations/episode-plan-gen/src/index.ts:398`, `docs/report/2026-11-01-daily-ai-news-recovery.md:90` and `plugins/ingestions/aihot-ingest/src/rss.ts:101` before any implementation was authorized.
+
+## 2026-11-03 — doc-evolve wrapup: drift repaired
+
+- Satellite status flags lag shipment even when `docs/04_DESIGN.md` §0 is correct. Four satellites said "accepted design — not yet built" while the §0 row already said shipped: `docs/design/ts-libs-logging-foundation.md` (A3 shipped, tasks 0065–0067), `docs/design/voice-gen.md` (D5, plugin present), `docs/design/voxcpm-daily-voice-driver.md` (G14 done), `docs/design/kk-itc-refactor.md` frontmatter (G21 tasks 0298–0303 done). Repair direction: derive satellite status from the §0 row plus feature/task state, never from the satellite's own header.
+- ADR status is the last place shipment lands. Four stale `Accepted (design)` flags were flipped with receipts: ADR-030 amendment → `shipped — G32; tasks 0225–0230` (feature G32 done, `packages/kk-store` present); ADR-032 → `shipped — E93` (`apps/cli/src/commands/plugin.ts:213` registers `check`, `:311` registers `login`); ADR-036 → `shipped — G14`; ADR-039 → `shipped in part — G9; tasks 0281–0286` (stages, catalogs and skill shipped, live-site audit open, so "shipped" alone would overclaim); ADR-040 → `shipped — G21; tasks 0298–0303` (`apps/cli/src/itc-plan.ts`, `itc-config.ts`, `tests/itc-presets.test.ts` present).
+- `docs/03_ARCHITECTURE.md` future tense survives shipment: "Planned VoxCPM adapter (G14, ADR-036)" with "`voxcpm-tts` will supply…" and a disclaimer that the tree "remains the shipped layout" — the tree simply omitted the package. Fixed to present tense and the package is now listed.
+- The module tree lost nine real directories. Deterministic check that finds this in one pass: loop `apps/*/ packages/*/ plugins/*/*/` and grep each basename against the tree text. Missing were `packages/kk-store`, `plugins/generations/voxcpm-tts`, and seven channel plugins (`jike-`, `csdn-`, `cnblogs-`, `sspai-`, `xiaoyuzhou-`, `shipinhao-`, `bilibili-pub`, tasks 0291–0297).
+- `docs/04_DESIGN.md` did not bump its own bookkeeping when 556feb9 added the supply-diagnostic section: the file was edited 2026-11-03 while frontmatter still read `updated_at: 2026-11-02` with an unbumped `version: 2.55.0`. §4.3 rule 3 requires version bump plus `updated_at` refresh in the same edit, so the T3 obligation is not satisfied by writing the section alone.
+- Do not "complete" the `docs/04_DESIGN.md` §0 satellite table. Thirteen files under `docs/design/` have no §0 row on purpose — seven `*-ui-discovery.md` evidence docs, the superseded voice iterations (`kk-collect-and-daily-voice2.md`, `kk-daily-ai-voice3.md`), and non-satellite working briefs. Absence is the intended state; adding rows is drift.
+- Two `Accepted (design)` flags were deliberately left alone because no crisp receipt existed at wrap time (ADR-029 publish-channel operations, ADR-034 segmented episode speech). Leaving a flag is cheaper than a wrong "shipped" claim; record the gap instead of guessing.
+- Cross-doc conflict outside this run's write scope: `AGENTS.md` presents `Brief` as a first-class pipeline input, while `docs/04_DESIGN.md:1356,1358` and `docs/03_ARCHITECTURE.md:233` say `BriefSchema`/`Brief`/`GeneratorInputSchema` are specified but not implemented, and no `Brief` type exists anywhere in `packages/`. Per §2 the numbered doc wins, so `AGENTS.md` is the file to fix — it was not edited here because the wrap scope is `docs/` only. Needs operator routing.
+
+Verification of this wrap
+
+- Scope: `git status --porcelain` lists only `docs/` paths (7 files); `.spur/run/` is gitignored, so this artifact adds no tracked change.
+- `bun run lint` → exit 0, 681 files checked, no fixes applied.
+- Not run: `bun run test`, `bun run build` — the diff is Markdown only and touches no code path. Recorded as not-run rather than claimed green.

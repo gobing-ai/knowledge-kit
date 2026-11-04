@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.41.0
+version: 2.42.0
 created_at: 2026-07-22
-updated_at: 2026-10-22
+updated_at: 2026-11-03
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -15,19 +15,18 @@ sync: [T1]
 
 > Derived. Decisions live in `00_ADR`; this file holds mechanism, boundaries, and data flow.
 
-## Smart SEO (accepted design — ADR-039; not yet built)
+## Smart SEO (G9 — ADR-039; tasks 0281–0286 shipped collection stages, decision catalogs and the skill; a live-site audit remains)
 
 G9 adds native KK audit stages, typed Spur decision catalogs and one `smart-seo` skill. Observed facts, assessments, semantic judgments and report claims remain separate run-bound artifacts; `spur workflow` owns sequencing and KK owns bounded deterministic work. The [design satellite](design/kk-smart-seo.md) owns collection limits, network policy, evidence contracts, fallback semantics and distribution. `vendors/jev-seo` remains reference-only.
 
 ## System shape
 
-**Planned VoxCPM adapter (G14, ADR-036).** `voxcpm-tts` will supply a `VoiceboxClient` to the
-existing voice-gen pipeline and own one private Python worker per generator invocation. Its
+**VoxCPM adapter (G14, ADR-036 — shipped).** `voxcpm-tts` supplies a `VoiceboxClient` to the
+existing voice-gen pipeline and owns one private Python worker per generator invocation. Its
 model, package, profile and worker assets resolve independently of the reference-only `vendors/`
 tree. Both daily workflows opt in through the existing `vdriver` variable; defaults stay as shipped.
-Driver-aware one-shot cache validation is part of this delivery. The current tree below remains
-the shipped layout; [the design satellite](design/voxcpm-daily-voice-driver.md) owns the planned
-worker protocol, profile behavior, distribution checks and comparison procedure.
+Driver-aware one-shot cache validation ships with it. [The design satellite](design/voxcpm-daily-voice-driver.md)
+owns the worker protocol, profile behavior, distribution checks and comparison procedure.
 
 ```
 apps/
@@ -35,6 +34,7 @@ apps/
   board/            # @gobing-ai/kk-board — native Spur Board browser contributions (G8, ADR-035)
 packages/
   kk-core/          # @gobing-ai/kk-core — Doc/Content/Result Zod contracts + kindContract
+  kk-store/         # @gobing-ai/kk-store — SQLite store: items/labels/stories DAOs, profiles, current-label resolution, config reader
   publish-harness/  # @gobing-ai/publish-harness — publish transport abstraction + fake transports (E2); shared `./browser` command library (E91, ADR-027)
 plugins/
   ingestions/
@@ -49,6 +49,7 @@ plugins/
     voice-gen/        # @gobing-ai/voice-gen — generator plugin: Voicebox TTS audio output (D5)
     omni-voice-gen/   # Python (uv) generator plugin: OmniVoice TTS, drop-in for voice-gen (F611, ADR-020 — the only non-TypeScript plugin)
     gemini-tts/       # @gobing-ai/gemini-tts — generator plugin: hosted Gemini 3.8 TTS over voice-gen's pipeline (F612, ADR-023)
+    voxcpm-tts/       # @gobing-ai/voxcpm-tts — generator plugin: VoxCPM over voice-gen's pipeline + private uv Python worker (G14, ADR-036)
     core-facts-gen/   # @gobing-ai/core-facts-gen — merged Doc[] → dated core-facts markdown (mechanical, no LLM; F61)
     daily-article-gen/ # @gobing-ai/daily-article-gen — merged Doc[] → daily AI-news article with per-item links (mechanical, no LLM)
     episode-plan-gen/ # @gobing-ai/episode-plan-gen — scores/dedups/selects blended Doc[] into the episode plan (mechanical, no LLM; F61)
@@ -69,6 +70,13 @@ plugins/
     xhs-pub/          # @gobing-ai/xhs-pub — publish channel, browser/script (Xiaohongshu) (E7/E8, ADR-024)
     threads-pub/      # @gobing-ai/threads-pub — publish channel, file-cli (Threads Graph: container → threads_publish, text only) (E94)
     weibo-pub/        # @gobing-ai/weibo-pub — publish channel, browser/script (Weibo home composer + 头条文章, draft by default) (E94)
+    jike-pub/         # @gobing-ai/jike-pub — publish channel, browser/script (即刻 dynamic post) (0291)
+    csdn-pub/         # @gobing-ai/csdn-pub — publish channel, browser/script (CSDN Markdown article) (0292)
+    cnblogs-pub/      # @gobing-ai/cnblogs-pub — publish channel, browser/script (博客园 Markdown article) (0293)
+    sspai-pub/        # @gobing-ai/sspai-pub — publish channel, browser/script (少数派 Matrix column drafts) (0294)
+    xiaoyuzhou-pub/   # @gobing-ai/xiaoyuzhou-pub — publish channel, browser/script (小宇宙 podcast episode drafts) (0295)
+    shipinhao-pub/    # @gobing-ai/shipinhao-pub — publish channel, browser/script (微信视频号 short video) (0296)
+    bilibili-pub/     # @gobing-ai/bilibili-pub — publish channel, browser/script (B站 video upload + dynamic) (0297)
   kk/                 # Claude Code plugin: skills, commands, agents, hooks, rules, workflows, scripts
                       # (capability names omit kk- — superskill install prefixes kk:)
 tooling/
@@ -617,6 +625,6 @@ legacy callers (ADR-009 amendment 2026-10-11).
 ADR-037/038 are accepted design only. CLI owns command parsing; publish-harness owns local profile lifecycle and shared launcher ownership; plugins keep site readiness and special state capture/restoration. An optional browserSession {profileName, homeUrl?} descriptor extends the existing manifest check-script seam, with publication-scoped URL resolution and scoped parent/child profile-lease ownership without importing publisher code into the CLI. The design and full canonical/alias map are in [kk-noun-verb-bots.md](design/kk-noun-verb-bots.md). Existing plugin status/check/login contracts remain unchanged.
 
 
-### ITC extensibility (accepted design — not implemented, G21)
+### ITC extensibility (G21 — sponsored by ADR-040; tasks 0298–0303 shipped)
 
 ADR-040 as amended selects a top-level DAG with a child authoring FSM and the existing executor, while moving channel planning contracts into discovered publish plugins. Config-driven workspace allocation and versioned SEO evidence handoffs share the run envelope; G9 remains independently deployable. Collected-topic mode reads the existing store; decisions recommend within validated choices; topic presets express editorial targets. Plans and per-target receipts bind recovery to input identity. Mechanism and migration: [kk-itc-refactor.md](design/kk-itc-refactor.md).

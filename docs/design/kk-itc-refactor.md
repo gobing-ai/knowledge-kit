@@ -1,10 +1,10 @@
 ---
 title: kk-itc reliable workflow and publishing boundaries
-status: accepted design — not implemented
+status: shipped — tasks 0298–0303 (G21)
 feature: G21
 adr: ADR-040
 created_at: 2026-10-15
-updated_at: 2026-10-15
+updated_at: 2026-11-03
 ---
 
 # kk-itc refactor

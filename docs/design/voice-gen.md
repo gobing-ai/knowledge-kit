@@ -1,6 +1,6 @@
 # Voice generator (Voicebox)
 
-Feature **D5** (accepted design — not yet built). Generator plugin instance
+Feature **D5** (shipped). Generator plugin instance
 `plugins/generations/voice-gen` that turns `Doc[]` (plain text or kk VoiceScript)
 into `Content` whose payload is TTS audio produced by a local Voicebox runtime.
 

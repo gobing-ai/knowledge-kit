@@ -1,7 +1,7 @@
 # VoxCPM daily voice driver
 
-Status: accepted design, not implemented. Feature G14; ADR-036; refined 2026-10-11.
-Implementation specifications: tasks 0256 → 0257 → 0258. Their Design, Requirements and Plan
+Status: shipped (G14; tasks 0256 → 0257 → 0258). Feature G14; ADR-036; refined 2026-10-11.
+Implementation specifications: their Design, Requirements and Plan
 sections freeze the detailed contracts; the refinement report is
 [2026-10-11-g14-ready-recheck.md](../plans/2026-10-11-g14-ready-recheck.md).
 

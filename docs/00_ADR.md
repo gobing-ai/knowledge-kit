@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.41.0
+version: 1.42.0
 created_at: 2026-05-28
-updated_at: 2026-10-22
+updated_at: 2026-11-03
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -1204,7 +1204,7 @@ illustration across failures is deferred until observed.
 
 ### Amendment — 2026-10-09 (G32 store v2: observation identity, item facts, topic-scoped selections, frozen DDL, atomic rebuilds)
 
-**Status:** Accepted (design) · **Date:** 2026-10-09 · **Amends:** ADR-030 · **Work:** feature G32, tasks 0225–0230
+**Status:** Accepted (shipped — G32; tasks 0225–0230) · **Date:** 2026-10-09 · **Amends:** ADR-030 · **Work:** feature G32, tasks 0225–0230
 
 **Decision.**
 
@@ -1234,7 +1234,7 @@ illustration across failures is deferred until observed.
 
 ## ADR-032: `kk plugin check` / `kk plugin login` probe a channel's live readiness; `status` stays static
 
-**Status:** Accepted (design) · **Date:** 2026-10-07 · **Amends:** ADR-011 R3 (`status` is no longer the only `plugin` verb)
+**Status:** Accepted (shipped — E93; tasks 0215+0216, channels 0291–0297) · **Date:** 2026-10-07 · **Amends:** ADR-011 R3 (`status` is no longer the only `plugin` verb)
 
 **Decision.**
 
@@ -1381,7 +1381,7 @@ artifact-backed), and IT Content stays artifacts-only without exception. Detail:
 
 ## ADR-036: VoxCPM reuses the TypeScript voice pipeline with an isolated Python worker
 
-**Status:** Accepted (design) · **Date:** 2026-10-11 · **Supersedes:** ADR-020's restriction to one Python-bearing product plugin, only to admit the private VoxCPM worker below.
+**Status:** Accepted (shipped — G14) · **Date:** 2026-10-11 · **Supersedes:** ADR-020's restriction to one Python-bearing product plugin, only to admit the private VoxCPM worker below.
 
 **Decision.** Add an opt-in `voxcpm` alias backed by `plugins/generations/voxcpm-tts`, a TypeScript generator reusing voice-gen's processing pipeline and owning a private uv-managed Python inference worker. Install VoxCPM independently from a pinned external distribution; `vendors/` remains reference-only and is never a product dependency, runtime path or packaging input. Keep both daily workflows' current defaults.
 
@@ -1509,7 +1509,7 @@ Login records optional `bot.json` facts — `lastLoginAt`, an estimated `expires
 
 ## ADR-039: Smart SEO uses native KK audit stages and Spur semantic decisions
 
-**Status:** Accepted (design) · **Date:** 2026-10-14
+**Status:** Accepted (shipped in part — G9; tasks 0281–0286; a live-site audit and feature-level verification remain) · **Date:** 2026-10-14
 
 **Decision.** Deliver a read-only SEO/GEO audit workflow through native KK stages, typed `spur decision` catalogs and one fat `smart-seo` skill. Keep `vendors/jev-seo` reference-only; preserve observed facts, unknown assessments and model provenance separately. The first delivery produces JSON/Markdown and introduces no runtime, dependency or product plugin kind.
 
@@ -1522,7 +1522,7 @@ Login records optional `bot.json` facts — `lastLoginAt`, an estimated `expires
 
 ## ADR-040: ITC plans use plugin publication capabilities and explicit topic channel presets
 
-**Status:** Accepted (design — G21; not implemented) · **Date:** 2026-10-15 · **Complements:** ADR-007/018/021/029/032/038.
+**Status:** Accepted (shipped — G21; tasks 0298–0303) · **Date:** 2026-10-15 · **Complements:** ADR-007/018/021/029/032/038.
 
 **Decision.** Retain the kk-itc state machine and existing executor fan-in/fan-out. Publish plugins own optional operation-specific planning capabilities and mode bindings; topic presets own editorial target selection. Optional topic discovery consumes kk-collect/store evidence, and Spur catalog decisions recommend only validated choices. Freeze send intent and reconcile per-target receipts before recovery; uncertain remote effects require reconciliation. Bot lifecycle stays in the harness and channel readiness/auth state stays in plugins.
 

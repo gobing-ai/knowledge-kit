@@ -1,6 +1,6 @@
 # ts-libs logging foundation
 
-Feature **A3** (accepted design; not yet built). Authority: ADR-014 and ADR-015. Architecture and
+Feature **A3** (shipped; ADR-014 and ADR-015; tasks 0065–0067). Authority: ADR-014 and ADR-015. Architecture and
 tradeoffs: `docs/03_ARCHITECTURE.md` (Output and diagnostics foundation).
 
 ## 1. Dependency surface
