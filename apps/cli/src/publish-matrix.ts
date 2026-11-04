@@ -28,6 +28,21 @@ export const BundleVariantSchema = z
     .strict();
 
 /**
+ * Additive final-variant safety evidence (0331 R2/R3): the nested safety machine's verdict over the
+ * bundle's final publish variants. `variants` maps bundle variant keys to the reviewed sha256, so a
+ * variant edited after review no longer matches. `block` is deliberately unrepresentable — a blocked
+ * variants review never freezes into a real-capable bundle (the freeze refuses such evidence files).
+ */
+export const BundleSafetySchema = z
+    .object({
+        status: z.enum(['pass', 'escalate', 'exclude']),
+        digest: z.string().min(1),
+        excludedPlatforms: z.array(z.string()).default([]),
+        variants: z.record(z.string(), z.string()),
+    })
+    .strict();
+
+/**
  * The frozen handover between the generate workflow and every publish run (design §2).
  *
  * `path` values resolve against the bundle file's own directory, so a bundle and its variants move
@@ -42,6 +57,7 @@ export const BundleSchema = z
         runs: z.array(z.string()).default([]),
         episode: z.object({ title: z.string().min(1), guid: z.string().optional() }).strict(),
         variants: z.record(z.string(), BundleVariantSchema),
+        safety: BundleSafetySchema.optional(),
     })
     .strict();
 
@@ -64,6 +80,9 @@ export const PublishPlanRowSchema = z
         profile: z.string().min(1).optional(),
         payloadPath: z.string().min(1),
         payloadDigest: z.string().min(1),
+        /** Source variant path (bundle-relative) and digest, frozen so send can revalidate (0331 R5). */
+        variantPath: z.string().min(1).optional(),
+        variantDigest: z.string().min(1).optional(),
     })
     .strict();
 
@@ -291,6 +310,37 @@ async function composePlan(
         (target) => (target.window ?? 'after-generate') === input.window && (target.mode ?? 'draft') !== 'off',
     );
 
+    // Reviewed platform exclusions (0331 R4) drop every row of the excluded destination before any
+    // mode/payload work. Identifiers are content-safety platform names or preset plugin ids; an
+    // unknown identifier is a typo in the safety verdict, so it fails instead of silently planning.
+    const PLATFORM_EXCLUSIONS: Readonly<Record<string, readonly string[]>> = {
+        xiaoyuzhou: ['podcast-pub'],
+        'apple-podcasts': ['podcast-pub'],
+        wechatmp: ['wechatmp-pub'],
+        surfdash: ['surfdash-pub'],
+        x: ['x-pub'],
+        weibo: ['weibo-pub'],
+        threads: ['threads-pub'],
+        xhs: ['xhs-pub'],
+        xiaohongshu: ['xhs-pub'],
+        shipinhao: ['shipinhao-pub'],
+    };
+    const safety = bundle.safety;
+    const excludedPlugins = new Set<string>();
+    for (const identifier of safety?.excludedPlatforms ?? []) {
+        const mapped = PLATFORM_EXCLUSIONS[identifier];
+        if (mapped !== undefined) {
+            for (const plugin of mapped) excludedPlugins.add(plugin);
+        } else if (preset.targets.some((target) => target.plugin === identifier)) {
+            excludedPlugins.add(identifier);
+        } else {
+            throw new Error(
+                `bundle safety excludedPlatforms has unknown identifier '${identifier}': use a known platform (${Object.keys(PLATFORM_EXCLUSIONS).join(', ')}) or a preset plugin id`,
+            );
+        }
+    }
+    const notExcluded = (target: PublishPresetTarget): boolean => !excludedPlugins.has(target.plugin);
+
     // Launch vars may only narrow or promote what the preset already lists. A token that matches no
     // preset target at all is a typo, so it fails instead of silently planning nothing.
     const matches = (target: PublishPresetTarget, token: string): boolean =>
@@ -308,8 +358,10 @@ async function composePlan(
 
     const selected =
         input.channels.length === 0
-            ? inWindow
-            : inWindow.filter((target) => input.channels.some((token) => matches(target, token)));
+            ? inWindow.filter(notExcluded)
+            : inWindow.filter(
+                  (target) => input.channels.some((token) => matches(target, token)) && notExcluded(target),
+              );
 
     const rows: PublishPlanRow[] = [];
     const seen = new Set<string>();
@@ -330,6 +382,16 @@ async function composePlan(
                 ? 'dummy'
                 : 'draft';
 
+        // Real rows bind to reviewed bytes (0331 R3). With evidence present, EVERY non-dummy row's
+        // variant must match its reviewed digest — a variant edited after the variants review
+        // (social copy, card text) cannot ride an article-only review. With no evidence at all,
+        // only live rows are gated, so legacy bundles keep planning dummy/draft rows unchanged.
+        if (mode === 'live' && safety === undefined) {
+            throw new Error(
+                `bundle has no final-variant safety evidence; run the variants safety gate (kk-daily-safety scope=variants) before a live launch`,
+            );
+        }
+
         if (target.variant === undefined) {
             throw new Error(`target '${id}' has no variant; a publish-matrix target must name one`);
         }
@@ -349,6 +411,23 @@ async function composePlan(
         const parsedContent = ContentSchema.safeParse(JSON.parse(variantRaw));
         if (!parsedContent.success) {
             throw new Error(`variant '${target.variant}' is not valid Content: ${parsedContent.error.message}`);
+        }
+        const variantKey =
+            bundle.variants[`${target.variant}@${target.plugin}`] !== undefined
+                ? `${target.variant}@${target.plugin}`
+                : target.variant;
+        if (mode !== 'dummy') {
+            const reviewed = safety?.variants[variantKey];
+            if (safety !== undefined && reviewed === undefined) {
+                throw new Error(
+                    `variant '${variantKey}' is not covered by bundle.safety.variants; the variants safety gate must review every real row's variant`,
+                );
+            }
+            if (reviewed !== undefined && reviewed !== actual) {
+                throw new Error(
+                    `variant '${variantKey}' changed after review: reviewed ${reviewed}, frozen ${actual}; re-run the variants safety gate`,
+                );
+            }
         }
 
         // Mode keys are plan-owned (0330 R3): a preset `options` entry that could flip a row's
@@ -399,6 +478,8 @@ async function composePlan(
             ...(target.profile !== undefined ? { profile: target.profile } : {}),
             payloadPath: payloadRelative,
             payloadDigest: createHash('sha256').update(payloadText).digest('hex'),
+            variantPath: entry.path,
+            variantDigest: entry.sha256,
         });
         await fs.ensureDir(join(input.workDir, '4-publish', 'payloads'));
         await fs.writeFile(join(input.workDir, payloadRelative), payloadText);
@@ -813,6 +894,40 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
         const succeededAlready = (id: string): Promise<boolean> => readSucceeded(fs, receiptsDir, id);
         const tiers = [...new Set(plan.rows.map((row) => row.tier))].sort((a, b) => a - b);
         const pending = onlyTier === undefined ? plan.rows : plan.rows.filter((row) => row.tier === onlyTier);
+
+        // Edit-while-paused revalidation (0331 R5): before any dispatch, every dispatched row's
+        // payload must still match the digest the plan froze, and every real row's source variant
+        // must still match the frozen (reviewed) bytes. Rows dispatched as dummy are a rehearsal and
+        // are not gated. Old plans without variantDigest keep working (additive field).
+        for (const row of pending) {
+            if (row.mode === 'dummy') continue;
+            const payloadPath = join(workDir, row.payloadPath);
+            const payloadRaw = (await fs.exists(payloadPath)) ? await fs.readFile(payloadPath) : null;
+            if (payloadRaw === null) {
+                throw new Error(`payload missing for '${row.id}': ${payloadPath}; re-run publish-matrix-plan`);
+            }
+            const payloadActual = createHash('sha256').update(payloadRaw).digest('hex');
+            if (payloadActual !== row.payloadDigest) {
+                throw new Error(
+                    `payload for '${row.id}' changed after the plan was frozen (reviewed ${row.payloadDigest}, on disk ${payloadActual}); re-run publish-matrix-plan`,
+                );
+            }
+            if (row.variantPath !== undefined && row.variantDigest !== undefined) {
+                const variantPath = join(workDir, row.variantPath);
+                const variantRaw = (await fs.exists(variantPath)) ? await fs.readFile(variantPath) : null;
+                if (variantRaw === null) {
+                    throw new Error(
+                        `variant source missing for '${row.id}': ${variantPath}; re-run publish-matrix-plan`,
+                    );
+                }
+                const variantActual = createHash('sha256').update(variantRaw).digest('hex');
+                if (variantActual !== row.variantDigest) {
+                    throw new Error(
+                        `variant source for '${row.id}' changed after the freeze; re-run the variants safety gate and publish-matrix-plan`,
+                    );
+                }
+            }
+        }
 
         let tierZeroBroken = false;
         for (const tier of tiers) {
@@ -1286,6 +1401,25 @@ export async function runPublishMatrixBundle(args: string[], deps: PublishMatrix
         }
 
         const articleTitle = await readVariantTitle(fs, workDir, variants);
+
+        // Freeze admission (0331 R2/R3): final-variant safety evidence, when the variants gate ran,
+        // is attached verbatim; a 'block' verdict refuses the freeze entirely. A missing evidence
+        // file still freezes (dummy-capable bundle) — real planning is gated at plan time instead.
+        const safetyPath = join(workDir, '4-safety-variants', 'safety.json');
+        let safety: z.infer<typeof BundleSafetySchema> | undefined;
+        if (await fs.exists(safetyPath)) {
+            const safetyParsed = BundleSafetySchema.safeParse(JSON.parse(await fs.readFile(safetyPath)));
+            if (!safetyParsed.success) {
+                echoError(
+                    `publish-matrix-bundle: malformed final-variant safety evidence at ${safetyPath}: ${safetyParsed.error.message}`,
+                );
+                return 1;
+            }
+            // 'block' is unrepresentable in BundleSafetySchema: a raw block verdict fails the parse
+            // above and refuses the freeze with the malformed-evidence error (0331 R2/R3).
+            safety = safetyParsed.data;
+        }
+
         const bundle: Bundle = {
             schemaVersion: 1,
             runId: `${runDate}-${parentRunId}`,
@@ -1294,6 +1428,7 @@ export async function runPublishMatrixBundle(args: string[], deps: PublishMatrix
             runs: [],
             episode: { title: articleTitle === '' ? `每日AI乱炖 · ${runDate}` : articleTitle },
             variants,
+            ...(safety !== undefined ? { safety } : {}),
         };
         const validated = BundleSchema.parse(bundle);
         const bundlePath = join(workDir, 'bundle.json');

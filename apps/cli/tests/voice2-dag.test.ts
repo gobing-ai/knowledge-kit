@@ -1001,6 +1001,10 @@ describe('kk-daily-safety — decision-bound publish verdict (AC6, 0317 R6)', ()
                 varRef('run_date'),
                 '" "',
                 varRef('unattended'),
+                '" "',
+                // 0331: the guard reads the scope-tagged artifacts; voice2 passes no scope var so
+                // the default keeps the pre-0331 drafts paths.
+                varRef('safety_scope_dir'),
                 '"',
             ].join(''),
         );

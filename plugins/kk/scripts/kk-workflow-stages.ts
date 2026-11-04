@@ -1718,6 +1718,11 @@ if (import.meta.main)
             dailyPreflight(rest);
             break;
         }
+        case 'daily-safety-manifest': {
+            const { dailySafetyManifest } = await loadDailyStages();
+            dailySafetyManifest(rest);
+            break;
+        }
         case 'daily-safety-prep': {
             const { dailySafetyPrep } = await loadDailyStages();
             dailySafetyPrep(rest);

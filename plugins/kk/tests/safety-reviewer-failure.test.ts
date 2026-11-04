@@ -122,7 +122,9 @@ describe('kk-daily-safety reviewer steps — a failed reviewer reaches the gate,
         expect(review.onError, 'a failed reviewer must reach the gate, not abort the nested run').toBe('continue');
         const expectFile = String(review.options?.expectFile);
         expect(expectFile).toContain(varRef('work_dir'));
-        expect(expectFile).toContain('/24-script/');
+        // 0331: the machine is scope-driven — the pin now follows the scope var, whose default
+        // (24-script) keeps the drafts paths byte-identical (pinned in safety-variants-scope.test.ts).
+        expect(expectFile).toContain(varRef('safety_scope_dir'));
         expect(expectFile).toContain('_09_safety-review_report.json');
         const outbound = machine.transitions.filter((transition) => transition.from === 'review');
         if (SPLIT_MACHINE) {

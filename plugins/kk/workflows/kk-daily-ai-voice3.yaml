@@ -845,14 +845,41 @@ nodes:
           kk stage run daily-bundle-variants "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
           "${vars.cards_enabled}" "${vars.cover_enabled}"
 
+  - id: safety-variants
+    description: >-
+      Final-variant safety review through the same nested kk-daily-safety machine (0331): the
+      manifest stage registers every `30-variants/*.content.json` first, then the machine runs in
+      the variants scope (`safety_scope_dir=4-safety-variants` re-roots its stages, guards and
+      prompts; the drafts review above is untouched). On an admitted outcome the machine leaves
+      `4-safety-variants/safety.json` — status, exclusion record and the sha256 of every reviewed
+      variant's current bytes — which publish-matrix-bundle freezes into the bundle so live
+      launches and social edits are gated on exactly the reviewed bytes. Fails closed: a block or
+      an integrity failure fails this node (the drafts scope's non-zero = never publish contract).
+    dependsOn: [bundle-variants, pool-gate]
+    condition:
+      kind: shell
+      options:
+        # 0324 R3: the pool verdict is `pool-gate`'s token, never a repeated `kk store pool-count`.
+        command: 'test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS'
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage run daily-safety-manifest "${vars.work_dir}" "${vars.run_date}" &&
+          env -u SPUR_WORKFLOW_RUN_ACTIVE -u SPUR_EXPECTED_DEFINITION_DIGEST
+          spur workflow run plugins/kk/workflows/kk-daily-safety.yaml
+          --vars "{\"work_dir\":\"${vars.work_dir}\",\"run_date\":\"${vars.run_date}\",\"safety_max_revise\":\"${vars.safety_max_revise}\",\"safety_platforms\":\"${vars.safety_platforms}\",\"agent\":\"${vars.agent}\",\"safety_scope_dir\":\"4-safety-variants\"}"
+          --quiet --no-plan
+
   - id: bundle-freeze
     description: >-
       Freeze `bundle.json` (0321 `BundleSchema`): every `30-variants/*` file with its sha256 plus the
       episode title, so the publish half can run later, or three times a day, against exactly these
       bytes. Fails when the article or episode variant is missing — a bundle never advertises what
       generate did not produce. 0329 F15: token-gated, so a refused episode never freezes — the
-      duration gate also drops this run's bundle.json on a refusal.
-    dependsOn: [bundle-variants, pool-gate]
+      duration gate also drops this run's bundle.json on a refusal. 0331: after safety-variants, so
+      the freeze reads the review's evidence (or the bundle stays without it, on a skipped run).
+    dependsOn: [bundle-variants, safety-variants, pool-gate]
     condition:
       kind: shell
       options:

@@ -83,6 +83,14 @@ function makeFixture(
         runs: [],
         episode: { title: '每日AI乱炖 · 2026-10-22' },
         variants: variantEntries,
+        // 0331: live launches require reviewed-variant evidence; these tests exercise mode mapping,
+        // so the fixture attaches evidence matching the frozen bytes by default.
+        safety: {
+            status: 'pass',
+            digest: '0'.repeat(64),
+            excludedPlatforms: [],
+            variants: Object.fromEntries(Object.entries(variantEntries).map(([name, entry]) => [name, entry.sha256])),
+        },
     };
     const bundlePath = join(workDir, 'bundle.json');
     writeFileSync(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);

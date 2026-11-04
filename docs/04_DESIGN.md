@@ -2120,7 +2120,9 @@ entry carrying `publishStatus`, `published`, `status`, `skip_review` or `auto_pu
 row cannot inherit a variant's live-looking frontmatter. Native fields per plugin: `surfdash-pub`
 gets `metadata.published` false/true, `podcast-pub` gets `metadata.status` `unpublished`/`published`
 (matching its mapper and its legacy published default for direct calls); every other plugin keeps
-reading `publishStatus`. Draftless API short-post transports (`x-pub` post, `threads-pub` post) fail
+reading `publishStatus`. Every planned row also carries additive `variantPath`/`variantDigest`
+(0331 R1): the resolved source variant and its sha256 at plan time, so the reviewed-bytes binding
+survives from bundle to plan to send. Draftless API short-post transports (`x-pub` post, `threads-pub` post) fail
 on an explicit `publishStatus: draft` before the credential lookup and fail closed on any unknown
 value; absent keeps the legacy live-only direct-call behavior (weibo-pub post already refuses
 without `public`). `approval` is `required` for a live row — recorded, not enforced (the
@@ -2131,7 +2133,16 @@ carrying `mode: live`, a `--channels`/`--live-channels` token the preset never l
 promotion the window does not list or that lands on a `dummy` target, `--dummy` combined with
 `--live-channels`, a missing or digest-mismatched variant, a variant that is not valid Content, a
 preset target with no `variant`, a preset target whose `options` carry a mode key, and two rows
-resolving to the same id. The shipped migration preset keeps draftless short-post rows
+resolving to the same id. Reviewed platform exclusions (0331 R4) drop every row of an excluded
+destination before any mode/payload work: `bundle.safety.excludedPlatforms` identifiers map through
+a `PLATFORM_EXCLUSIONS` table (content-safety platform names → preset plugin ids, e.g.
+`xiaoyuzhou`/`apple-podcasts` → `podcast-pub`, `wechatmp` → `wechatmp-pub`) or match a preset plugin
+id directly; an unknown identifier is a typo in the safety verdict and fails instead of silently
+planning nothing. Evidence binding at plan time (0331 R1/R3): when the bundle carries `safety`,
+every non-dummy row's variant key must be listed in `safety.variants` and must still hash to its
+reviewed sha256 — an uncovered or edited variant refuses the plan; with no `safety` at all only the
+dummy-capable bundles plan as before (live rows of an old bundle without evidence still refuse at
+the evidence gate). The shipped migration preset keeps draftless short-post rows
 (`x-pub post`, `weibo-pub post`, `threads-pub post`) `dummy` — launching them live requires an
 explicit preset edit plus a `--live-channels` token, never an implicit promotion.
 
@@ -2140,11 +2151,16 @@ explicit preset edit plus a `--live-channels` token, never an implicit promotion
 ```jsonc
 { "schemaVersion": 1, "runId": "…", "runDate": "YYYY-MM-DD", "parentRunId": "…", "runs": [],
   "episode": { "title": "…", "guid": "…" },
-  "variants": { "article": { "path": "variants/article.json", "sha256": "<sha256>" } } }
+  "variants": { "article": { "path": "variants/article.json", "sha256": "<sha256>" } },
+  "safety": { "status": "pass", "digest": "…", "excludedPlatforms": [],
+              "variants": { "article@x-pub": "<sha256>" } } }
 ```
 
 `path` resolves against the bundle file's own directory and must match `sha256`; each entry parses
-as kk-core `ContentSchema`.
+as kk-core `ContentSchema`. `safety` is additive (0331 R2/R3): the nested safety machine's
+final-variant verdict, attached verbatim by the freeze; `variants` maps bundle variant keys to the
+reviewed sha256, so a variant edited after review no longer matches, and `block` is deliberately
+unrepresentable in the schema — a blocked variants review never freezes into a real-capable bundle.
 
 **`publish-matrix-check <workDir> --window <w>` | `--preset <slug> --all-windows`** probes each
 plugin's `check` entry (the shared `probePlugin` seam, same env injection and redaction as
@@ -2159,7 +2175,11 @@ installed — that is invalid preset data, not a runtime refusal. This replaces 
 `wechatmp-pub xhs-pub` probe list (feature G15 T-c); voice2's own node is unchanged.
 
 **`publish-matrix-send <workDir> --window <w> [--retry] [--tier <n>]`** dispatches in tier order.
-Tier 0 is the publication contract: serial, and a failed `required` tier-0 row records a `skipped`
+Before any dispatch (0331 R5) it revalidates every pending non-dummy row: the payload must still
+hash to the plan's `payloadDigest` and the row's source variant to its `variantDigest` — a payload
+or variant edited while the run sat at the `send-confirm` pause throws before any transport spawn
+("changed after the plan was frozen" / "changed after the freeze"), naming the row and the re-run to
+do. Tier 0 is the publication contract: serial, and a failed `required` tier-0 row records a `skipped`
 event for every later tier and sends none of them. Rows at tier ≥ 1 get their payload's
 `{{article_url}}` / `{{podcast_url}}` placeholders resolved from the tier-0 receipts
 (`surfdash-pub` → article, `podcast-pub` → podcast, each url inserted JSON-string-escaped) into
@@ -2241,7 +2261,8 @@ depends on the gate).
 | `publish-prep` | `kk stage run daily-publish-prep <workDir> <runDate> <artist> <album>` — the generation-owned episode assembly (MP3/ID3/cover/metadata), never reads voice2 dirs |
 | `social-write` | `agent.run` (`onError: continue`) writing zh short posts to `26-social/{x,weibo,threads}.md` inside each platform's cap |
 | `bundle-variants` | `kk stage run daily-bundle-variants … "${vars.cards_enabled}" "${vars.cover_enabled}"` → `30-variants/<key>.content.json`; wipes stale `*.content.json` first, and depends on every producer (`quality`, `social-write`, `publish-prep`, `cover-normalize`, `cards-render`, `pool-gate`) |
-| `bundle-freeze` | `kk stage run publish-matrix-bundle <workDir> --run-date <d> --run-id <id> [--preset <publish_preset>]` → `bundle.json`; a set selector is forwarded so a preset-required variant missing at freeze refuses before any write |
+| `safety-variants` | (0331) when `pool-gate` says `PASS`: `kk stage run daily-safety-manifest` registers the sorted `30-variants/*.content.json` into `4-safety-variants/manifest.json` (`{schemaVersion, runDate, variants:[{key,path,sha256}]}`), then launches the nested `kk-daily-safety` machine with `safety_scope_dir=4-safety-variants`; skipped on `EMPTY` (the bundle freezes without evidence, like a never-run gate) |
+| `bundle-freeze` | `kk stage run publish-matrix-bundle <workDir> --run-date <d> --run-id <id> [--preset <publish_preset>]` → `bundle.json`; a set selector is forwarded so a preset-required variant missing at freeze refuses before any write; depends on `safety-variants` so freeze admission sees the evidence |
 | `generation-report` | `kk daily run-report --work-dir … --run-date … --pool … --candidates … --plugins-path … --qc-min-quality …` (real flags, no store writes) |
 | `publish` | nested `kk-daily-publish3` when `auto_publish=true`, launcher vars stripped, gated on the pool token beside `generation-report` |
 | `ledger` | `kk ledger append`, `onError: continue` |
@@ -2271,11 +2292,32 @@ pool token to `EMPTY` and deletes any same-day `bundle.json` — a rerun stays e
 refusal artifact so the audio chain still closes; `publish` fires only on the `PASS` token with
 `auto_publish=true`.
 
+**The variants safety scope (0331 R1/R2).** The nested `kk-daily-safety` machine gains one trailing
+arg / var, `safety_scope_dir` (default `24-script`). The default keeps every drafts path byte-identical
+to the pre-0331 machine (voice2 passes no scope); any other value re-roots the artifact set to
+`<workDir>/4-safety-variants/`: `daily-safety-manifest` (new stage) registers the bundle's final
+Content variants into `manifest.json`, `daily-safety-prep` writes a request whose `content` array is
+the manifest-listed `{key,path,sha256}` entries (digest = sha256 over the sorted key/bytes pairs),
+reviewers read what the request names, and `daily-safety-verdict` recomputes the CURRENT per-variant
+sha256 at the last instant — a stamp mismatch refuses (`kk-daily-safety.judge.verdict-refused: variant
+bytes changed after the review`) instead of silently re-binding evidence, writing `safety.json`
+`{status, digest, excludedPlatforms[], variants:{key: sha256}}` only on admission. Remediation gets
+its own budget (`.safety-revise-count-4-safety-variants` — a variants review never inherits the
+drafts pass count), `revision-valid` refuses unchanged bytes, and the variants scope never
+quarantines (the bundle is regenerated, not hand-repaired — a `block` there refuses the freeze via
+the unrepresentable-status rule above). The scope-aware `safety-artifact-check` keeps `publish-valid`'s
+historical argv (scope dir is the 5th slot there, 4th for the other kinds), so voice2's guards are
+untouched.
+
 **`publish-matrix-bundle` (the only `bundle.json` producer).** It lists `30-variants/`, validates each
 file as kk-core `Content`, records `{path, sha256}` per key (the file name's `_` maps back to `:`), and
 fills `episode.title` from the episode/article variant, else `每日AI乱炖 · <runDate>`. It refuses to
 freeze when the article or episode variant is missing, and (0329 F02) when the resolved preset marks a
-variant `required` that the run never produced — before any bundle write. A re-freeze **dedups**
+variant `required` that the run never produced — before any bundle write. Freeze admission (0331
+R2/R3): it reads `<workDir>/4-safety-variants/safety.json` when present — malformed evidence refuses
+the freeze outright, a valid record is attached verbatim as `bundle.safety`, its absence still
+freezes (a dummy-capable bundle) because real planning is gated at plan time instead.
+A re-freeze **dedups**
 `runs[]` (a double append must not multiply) and appends its own run id **last**, so the bundle always
 names the run that produced the frozen bytes; an unreadable prior bundle is replaced, not merged.
 
