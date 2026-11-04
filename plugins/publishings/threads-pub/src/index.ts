@@ -146,6 +146,18 @@ export class ThreadsPostApiTransport implements PublishTransport {
         const unsupported = refuseUnsupportedOptions(payload.options, payload.content);
         if (unsupported !== undefined) return fail(unsupported);
 
+        // 0330 R2: the post API publishes immediately — there is no draft. Intercept before the
+        // credential lookup so a planned draft never reaches Threads, and fail closed on unknown modes.
+        const requestedStatus = payload.content.metadata?.publishStatus;
+        if (requestedStatus === 'draft') {
+            return fail(
+                'threads post has no draft: the Threads API publishes immediately — plan this target dummy/off or launch it live',
+            );
+        }
+        if (requestedStatus !== undefined && requestedStatus !== 'public') {
+            return fail(`unknown publishStatus '${String(requestedStatus)}' (expected absent, 'draft' or 'public')`);
+        }
+
         const missing = TOKEN_ENVS.filter((key) => {
             const value = process.env[key];
             return !value || value.trim().length === 0;

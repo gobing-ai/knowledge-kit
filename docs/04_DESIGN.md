@@ -2111,16 +2111,29 @@ with `mode != off`:
 
 Plan-level fields: `schemaVersion`, `window`, `bundleRunId`, `parentRunId` (bundle
 `parentRunId`, else its `runId` — receipts bind to a run either way), `presetName`, `presetDigest`.
-Payload build: variant `Content` + `metadata.operation` + `metadata.publishStatus`
-(`live` → `public`, else `draft`) with the row's `options` merged underneath, so an option can never
-flip the row's mode. `approval` is `required` for a live row — recorded, not enforced (the
+Payload build (task 0330): variant `Content` + `metadata.operation` + the operation-native mode
+fields + `metadata.publishStatus` (`live` → `public`, else `draft`) with the row's `options` merged
+underneath, so an option can never flip the row's mode. Mode keys are plan-owned: a preset `options`
+entry carrying `publishStatus`, `published`, `status`, `skip_review` or `auto_publish` is refused
+(exit 1) rather than overridden, and contradictory inherited keys (`publishStatus`, `published`,
+`status`) are deleted from the merged metadata before the plan's own fields are written — a draft
+row cannot inherit a variant's live-looking frontmatter. Native fields per plugin: `surfdash-pub`
+gets `metadata.published` false/true, `podcast-pub` gets `metadata.status` `unpublished`/`published`
+(matching its mapper and its legacy published default for direct calls); every other plugin keeps
+reading `publishStatus`. Draftless API short-post transports (`x-pub` post, `threads-pub` post) fail
+on an explicit `publishStatus: draft` before the credential lookup and fail closed on any unknown
+value; absent keeps the legacy live-only direct-call behavior (weibo-pub post already refuses
+without `public`). `approval` is `required` for a live row — recorded, not enforced (the
 workflow's pause node and the future console own that). Payload variant lookup is
 `${variant}@${plugin}` then `${variant}`, so generate can ship channel-specific copy without a
 preset change. The plan fails (exit 1, naming the target) on: an unknown preset slug, a preset row
 carrying `mode: live`, a `--channels`/`--live-channels` token the preset never lists, a live
 promotion the window does not list or that lands on a `dummy` target, `--dummy` combined with
 `--live-channels`, a missing or digest-mismatched variant, a variant that is not valid Content, a
-preset target with no `variant`, and two rows resolving to the same id.
+preset target with no `variant`, a preset target whose `options` carry a mode key, and two rows
+resolving to the same id. The shipped migration preset keeps draftless short-post rows
+(`x-pub post`, `weibo-pub post`, `threads-pub post`) `dummy` — launching them live requires an
+explicit preset edit plus a `--live-channels` token, never an implicit promotion.
 
 **Bundle contract (consumed here, produced by 0324):**
 

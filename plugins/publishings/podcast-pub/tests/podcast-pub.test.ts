@@ -1748,3 +1748,27 @@ describe('cover-image validation (R4)', () => {
         });
     });
 });
+
+describe('task 0330 R1 — matrix mode fields map to episode status', () => {
+    const base = {
+        title: '每日AI乱炖',
+        body: 'Episode body',
+        format: 'markdown' as const,
+        metadata: { audioUrl: 'https://example.test/e.mp3' },
+    };
+
+    test('a matrix draft payload (status unpublished) maps to an unpublished episode', () => {
+        const episode = mapContentToEpisode({ ...base, metadata: { ...base.metadata, status: 'unpublished' } });
+        expect(episode.status).toBe('unpublished');
+    });
+
+    test('a matrix live payload (status published) maps to a published episode', () => {
+        const episode = mapContentToEpisode({ ...base, metadata: { ...base.metadata, status: 'published' } });
+        expect(episode.status).toBe('published');
+    });
+
+    test('a direct-plugin payload without status keeps the legacy published default', () => {
+        const episode = mapContentToEpisode({ ...base });
+        expect(episode.status).toBe('published');
+    });
+});

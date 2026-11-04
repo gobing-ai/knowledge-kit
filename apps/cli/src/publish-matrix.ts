@@ -351,14 +351,32 @@ async function composePlan(
             throw new Error(`variant '${target.variant}' is not valid Content: ${parsedContent.error.message}`);
         }
 
+        // Mode keys are plan-owned (0330 R3): a preset `options` entry that could flip a row's
+        // mode behind the plan's back is a live-promotion attempt, so it is refused, not overridden.
+        for (const key of ['publishStatus', 'published', 'status', 'skip_review', 'auto_publish'] as const) {
+            if (target.options?.[key] !== undefined) {
+                throw new Error(
+                    `preset target '${id}' may not set options.${key}: the row's mode is owned by the plan (mode '${mode}')`,
+                );
+            }
+        }
+        const inherited = { ...(parsedContent.data.metadata ?? {}), ...(target.options ?? {}) };
+        delete inherited.publishStatus;
+        delete inherited.published;
+        delete inherited.status;
+        // Operation-native mode fields (0330 R1): the matrix writes the field each plugin's mapper
+        // reads, so a draft can never inherit live-looking keys from a variant. Plugins without a
+        // native field keep reading publishStatus.
+        const nativeMode: Record<string, Record<string, unknown>> = mode === 'live'
+            ? { 'surfdash-pub': { published: true }, 'podcast-pub': { status: 'published' } }
+            : { 'surfdash-pub': { published: false }, 'podcast-pub': { status: 'unpublished' } };
+
         const payload: Content = {
             ...parsedContent.data,
             metadata: {
-                ...(parsedContent.data.metadata ?? {}),
-                ...(target.options ?? {}),
-                // Operation and publish status are last so a stray `options` key cannot flip a row's
-                // mode behind the plan's back.
+                ...inherited,
                 ...(target.operation !== undefined ? { operation: target.operation } : {}),
+                ...(nativeMode[target.plugin] ?? {}),
                 publishStatus: mode === 'live' ? 'public' : 'draft',
             },
         };
