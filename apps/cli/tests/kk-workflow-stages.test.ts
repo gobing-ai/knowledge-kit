@@ -2316,6 +2316,22 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             };
             expect(variant.body).toHaveLength(280);
             expect(variant.metadata.truncatedFrom).toBe(400);
+
+            // LinkedIn (0328): a plain 3000-character cap — CJK is not weighted, so 3000 汉字 stay whole.
+            const linkedin = (body: string) => {
+                writeFileSync(join(dir, '26-social', 'linkedin.md'), body);
+                expect(run(['daily-bundle-variants', dir, '20260101', ''], {}).status).toBe(0);
+                return JSON.parse(readFileSync(join(dir, '30-variants', 'social_linkedin.content.json'), 'utf-8')) as {
+                    body: string;
+                    metadata: { truncatedFrom?: number };
+                };
+            };
+            const whole = linkedin('字'.repeat(3000));
+            expect([...whole.body]).toHaveLength(3000);
+            expect(whole.metadata.truncatedFrom).toBeUndefined();
+            const cut = linkedin('字'.repeat(3500));
+            expect([...cut.body]).toHaveLength(3000);
+            expect(cut.metadata.truncatedFrom).toBe(3500);
         });
     });
 

@@ -772,7 +772,7 @@ nodes:
         agent: ${vars.agent}
         input: |
           Read the approved episode plan at ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json.
-          Write three short zh posts, one per file:
+          Write four short zh posts, one per file:
           - ${vars.work_dir}/26-social/x.md — at most 280 weighted characters (this feed counts CJK as 2, so ~140 汉字 or 280 Latin letters)
           - ${vars.work_dir}/26-social/weibo.md — at most 2000 characters
           - ${vars.work_dir}/26-social/threads.md — at most 500 characters

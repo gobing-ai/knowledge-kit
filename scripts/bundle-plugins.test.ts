@@ -31,7 +31,7 @@ const FIXTURE_SHELL_CHECK = '#!/bin/sh\necho \'{"status":"error","detail":"fixtu
 const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));
 const STAGING_SCRIPT = fileURLToPath(new URL('./bundle-plugins.ts', import.meta.url));
 
-/** Real plugins whose manifest declares a TypeScript readiness check (0249 review F2; `weibo-pub` added 0245, `jike-pub` added 0291, `csdn-pub` added 0292, `cnblogs-pub` added 0293, `sspai-pub` added 0294, `xiaoyuzhou-pub` added 0295, `shipinhao-pub` added 0296, `bilibili-pub` added 0297). */
+/** Real plugins whose manifest declares a TypeScript readiness check (0249 review F2; `weibo-pub` added 0245, `jike-pub` added 0291, `csdn-pub` added 0292, `cnblogs-pub` added 0293, `sspai-pub` added 0294, `xiaoyuzhou-pub` added 0295, `shipinhao-pub` added 0296, `bilibili-pub` added 0297, `linkedin-pub` added 0328). */
 const CHECK_DECLARING_PLUGINS = [
     'bilibili-pub',
     'cnblogs-pub',
@@ -39,6 +39,7 @@ const CHECK_DECLARING_PLUGINS = [
     'infoq-pub',
     'jike-pub',
     'juejin-pub',
+    'linkedin-pub',
     'shipinhao-pub',
     'sspai-pub',
     'substack-pub',
@@ -392,6 +393,20 @@ describe('bundle-plugins declared check staging (0249 — real staged tree)', ()
         } finally {
             rmSync(probeCwd, { recursive: true, force: true });
         }
+    });
+
+    // The list above is hand-kept; 0328 shipped linkedin-pub without it, so derive the truth here.
+    it('lists every publish plugin whose source manifest declares a check', () => {
+        const publishings = join(REPO_ROOT, 'plugins', 'publishings');
+        const declaring = readdirSync(publishings)
+            .filter((name) => existsSync(join(publishings, name, 'plugin.json')))
+            .filter(
+                (name) =>
+                    (JSON.parse(readFileSync(join(publishings, name, 'plugin.json'), 'utf-8')) as { check?: string })
+                        .check !== undefined,
+            )
+            .sort();
+        expect([...CHECK_DECLARING_PLUGINS].sort()).toEqual(declaring);
     });
 
     it('leaves the source manifests byte-unchanged', () => {
