@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: Add publish plugins for LinkedIn, Facebook, Instagram, shipinhao 图文 and threads images
-status: wip
+status: done
 template: feature-impl
 created_at: 2026-10-22T18:41:33.871Z
-updated_at: "2026-11-04T09:09:44.055Z"
+updated_at: "2026-11-04T09:21:55.915Z"
 
 feature_id: E9
 ac_altitude: task-local
 dependencies: ["0323", "0327"]
 priority: P3
 estimate_hours: 8
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0328-verdict.json
 ---
 
 ## 0328. Add publish plugins for LinkedIn, Facebook, Instagram, shipinhao 图文 and threads images
@@ -26,10 +28,10 @@ The voice3 preset lists LinkedIn, Facebook, Instagram, 视频号图文 and Threa
 
 ### Requirements
 
-- [ ] R1. `plugins/publishings/linkedin-pub/` (`plugin.json` `kind: publish`, ADR-009) follows the existing browser publisher shape (`threads-pub`, `x-pub`). It has operation `post` (text plus one image), selected through `options.operation ?? content.metadata.operation`. There is no draft mode: `metadata.publishStatus: 'draft'` is refused with a clear error, because LinkedIn's drafts are not addressable.
-- [ ] R2. A readiness probe (`check`) that reports login state without posting, consumed by `kk plugin check linkedin-pub`.
-- [ ] R3. The `daily-ai-voice` preset row `{plugin: linkedin-pub, operation: post, variant: social:linkedin, tier: 3, window: overseas-rss, mode: dummy}`, with a `social:linkedin` variant added to the 0327 `social-write` output (zh, ≤ 3000 chars).
-- [ ] R4. Tests:
+- [x] R1. `plugins/publishings/linkedin-pub/` (`plugin.json` `kind: publish`, ADR-009) follows the existing browser publisher shape (`threads-pub`, `x-pub`). It has operation `post` (text plus one image), selected through `options.operation ?? content.metadata.operation`. There is no draft mode: `metadata.publishStatus: 'draft'` is refused with a clear error, because LinkedIn's drafts are not addressable.
+- [x] R2. A readiness probe (`check`) that reports login state without posting, consumed by `kk plugin check linkedin-pub`.
+- [x] R3. The `daily-ai-voice` preset row `{plugin: linkedin-pub, operation: post, variant: social:linkedin, tier: 3, window: overseas-rss, mode: dummy}`, with a `social:linkedin` variant added to the 0327 `social-write` output (zh, ≤ 3000 chars).
+- [x] R4. Tests:
   - unit tests on payload validation and operation selection with a fake transport (`@gobing-ai/publish-harness`);
   - a dummy-mode send through publish3.
 - Out of scope:
@@ -38,7 +40,7 @@ The voice3 preset lists LinkedIn, Facebook, Instagram, 视频号图文 and Threa
 
 ### Acceptance Criteria
 
-- [ ] AC1 — linkedin-pub passes kk plugin check and a dummy send in the daily-ai-voice preset (req: R1, R2, R3, R4)
+- [x] AC1 — linkedin-pub passes kk plugin check and a dummy send in the daily-ai-voice preset (req: R1, R2, R3, R4)
 
 ### Q&A
 
@@ -83,7 +85,21 @@ Implemented LinkedIn publishing (0328, LinkedIn-only scope). New plugin `plugins
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | manifest kind/entry at plugins/publishings/linkedin-pub/plugin.json:3-4; operation selection options.operation ?? metadata.operation, declared post only, at plugins/publishings/linkedin-pub/src/index.ts:150-165; draft/absent publishStatus refused before any browser at src/index.ts:269-274; over-length refused never truncated at src/index.ts:283-286 (cap at src/index.ts:61); image violations at src/index.ts:204-238; provisional selector table and typed stage flow at src/index.ts:79 and src/index.ts:344; refusal+flow tests at plugins/publishings/linkedin-pub/tests/linkedin-pub.test.ts:291-474 (36 pass / 0 fail; src/index.ts at 100% line and function coverage) |
+| R2 | MET | check entry declared at plugin.json:5; shared runProfileCli gate at plugins/publishings/linkedin-pub/src/profile-check.ts:16 over the shared predicate at src/index.ts:182-190; fresh kk plugin check linkedin-pub → correct refusal naming the login command, exit 1, zero browser launches, no posting; preflight paths tested at plugins/publishings/linkedin-pub/tests/linkedin-pub.test.ts:423-474 |
+| R3 | MET | SOCIAL_LIMITS.linkedin { max: 3000 } at plugins/kk/scripts/daily-stages.ts:1887; four-platform description and the 26-social/linkedin.md — at most 3000 characters bullet at plugins/kk/workflows/kk-daily-ai-voice3.yaml:762 and :779; fresh reproduction: kk stage run daily-bundle-variants on a 3005-char zh fixture → 30-variants/social_linkedin.content.json truncated to 3000, truncatedFrom: 3005, truncatedUnit: code_units |
+| R4 | MET | unit tests on payload validation and operation selection with the publish-harness fake transport: plugins/publishings/linkedin-pub/tests/linkedin-pub.test.ts (36 pass / 0 fail, offline fake pages only); dummy-mode send through publish3 reproduced fresh: publish-matrix-plan → linkedin-pub.post mode dummy tier 3 planned; publish-matrix-send → receipt dummy://linkedin-pub.post with dummy: true, effect: none (plugin never invoked); preset row at plugins/kk/publish-presets/daily-ai-voice.json:106-113 |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — linkedin-pub passes kk plugin check and a dummy send in the daily-ai-voice preset (req: R1, R2, R3, R4) | MET | test | command: kk plugin check linkedin-pub → correct profile-missing refusal, exit 1, no posting; command: fresh kk stage run chain (daily-bundle-variants → publish-matrix-bundle → publish-matrix-plan → publish-matrix-check --all-windows → publish-matrix-send on .works/tmp/review-0328-matrix/20260328) → linkedin-pub.post dummy receipt dummy://linkedin-pub.post, effect none, and check recorded 7 probes with linkedin excluded (dummy rows excluded at apps/cli/src/publish-matrix.ts:511,524); test: plugins/publishings/linkedin-pub/tests/linkedin-pub.test.ts 36 pass / 0 fail |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
@@ -144,4 +160,6 @@ Approve (PASS). No blocker or major findings; both P3s are dispositioned DEFER w
 
 - 2026-10-22T19:09:53.125Z backlog → todo (system)
 - 2026-11-04T07:45:04.360Z todo → wip (system)
+- 2026-11-04T09:15:28.760Z wip → testing (system)
+- 2026-11-04T09:21:55.904Z testing → done (system)
 
