@@ -4,7 +4,7 @@ name: "Lift ai-news supply: model QC labeling or full-text ingest for stub items
 status: done
 template: standard
 created_at: 2026-10-26T01:00:07.141Z
-updated_at: "2026-11-04T05:26:57.812Z"
+updated_at: "2026-11-04T06:49:52.396Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -41,6 +41,7 @@ The October 25 run and SQL counts are historical filing evidence, not rerun meas
 - [x] R3. Expose source-level and body-depth evidence plus reservation counts without confusing diagnosis with a fix: body-length buckets, missing/stale/current label distinctions, effective quality-label makers, and distinct blocked stories partitioned as published versus selected-only. Never count multiple observations/selections as multiple items or promise that all eligible items survive downstream QC or duration checks.
 - [x] R4. Add subprocess fixture verification before implementation, covering policy priority/confidence/hash/replay rules, gate attrition, story reservations, both windows, extraction caps, malformed/missing inputs and read-only behavior. Produce a repeatable JSON artifact and a dated operator report stating measured findings, limitations and whether a separately scoped enrichment or labeling experiment is supported.
 - [x] R5. Document exact invocation, JSON contract and interpretation. Keep runtime collection, extraction thresholds, labeling defaults, episode floor, schedules and installed package untouched. No new dependencies, database schema or public kk verb; this task implements the diagnostic only.
+- [x] R6. The work is homed by feature G3 (parent feature rule R1 "Work on kk-collect has a home node"): the task's `feature_id` is `G3`, and `apps/cli/tests/g-feature-tree.test.ts` asserts `kk-collect.yaml` resolves to exactly one direct child of G (G3, by name). Added 2026-11-03 by the 0337 re-verify, which found G3's only scenario uncovered.
 
 ### Acceptance Criteria
 
@@ -81,6 +82,12 @@ Scenario: AC5 — the handoff preserves production policy (req: R5)
   Then only the diagnostic script, its fixture checks and documentation implement the task
   And no workflow, production config, gate threshold, label default or installed runtime is changed
   And any proposed enrichment experiment has measured rationale and requires a separate task
+
+Scenario: R1 — Work on kk-collect has a home node (req: R6)
+  Given task 0337 changes the kk-collect store diagnostic
+  When the feature tree is checked
+  Then kk-collect.yaml resolves to exactly one direct G child, G3
+  And task 0337 is linked to feature G3
 ```
 
 ### Q&A
@@ -145,19 +152,21 @@ Original shortage diagnosis was incomplete: it conflated body quality, model rou
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `scripts/ai-news-supply-report.ts:447-471` uses native readonly access and closes the store; `scripts/tests/ai-news-supply-report.test.ts:295-311` verifies unchanged bytes/schema and missing-db behavior. |
-| R2 | MET | `scripts/ai-news-supply-report.ts:373-419` builds both cumulative windows; `scripts/tests/ai-news-supply-report.test.ts:312-367` checks gate counts, caps and DAO parity. |
-| R3 | MET | `scripts/ai-news-supply-report.ts:246-367` implements source/body, label-coverage and disjoint reservation evidence; `scripts/tests/ai-news-supply-report.test.ts:334-353` asserts distributions and counts. |
-| R4 | MET | `scripts/ai-news-supply-report.ts:128-140` rejects malformed/non-mapping config; `scripts/tests/ai-news-supply-report.test.ts:395-449` covers repeatable artifacts, malformed/missing inputs and schema failures. Full `spur self exec check`: 4423 pass / 0 fail. |
-| R5 | MET | `docs/04_DESIGN.md:969-992` and `docs/report/2026-11-04-ai-news-supply-readiness.md:1-51` document invocation, contract and limits; `git diff --name-only main...HEAD` lists only the diagnostic, tests, docs and task 0337. |
+| R1 | MET | `scripts/ai-news-supply-report.ts:453-478` opens `bun:sqlite` readonly, one BEGIN/ROLLBACK read transaction, closes in finally; `scripts/tests/ai-news-supply-report.test.ts:295-311` asserts unchanged bytes/schema; `scripts/tests/ai-news-supply-report.test.ts:395-415` asserts a missing db is not created. |
+| R2 | MET | `scripts/ai-news-supply-report.ts:373-420` builds 24h/168h cumulative gates in pinned decision order (re-verify fix at `scripts/ai-news-supply-report.ts:385-390`); `scripts/tests/ai-news-supply-report.test.ts:312-367` checks counts, distinct stories, cap and DAO parity; `scripts/tests/ai-news-supply-report.test.ts:449-458` proves gate names survive profile key reordering. |
+| R3 | MET | `scripts/ai-news-supply-report.ts:246-371` implements source/body buckets, label coverage and disjoint published/selectedOnly stories; `scripts/tests/ai-news-supply-report.test.ts:336-353` asserts distributions, coverage and blocked-story counts. |
+| R4 | MET | `scripts/tests/ai-news-supply-report.test.ts:1-11` enumerates failures first; `scripts/tests/ai-news-supply-report.test.ts:372-392` writes `.spur/run/0337-supply-fixture.json`; `scripts/tests/ai-news-supply-report.test.ts:395-447` covers invalid flags/at/config/profile/schema. `bun test scripts/tests/ai-news-supply-report.test.ts` 3 pass / 0 fail / 77 expect calls. |
+| R5 | MET | `docs/04_DESIGN.md:969-992` and `docs/report/2026-11-04-ai-news-supply-readiness.md:1-12` document invocation, contract and fixture-only limits; `git show --stat 556feb9` lists only the script, test, docs/04, dated report and task 0337. |
+| R6 | MET | `apps/cli/tests/g-feature-tree.test.ts:110-112` asserts kk-collect homes only in G3 (mutation to G31 turns it red); `docs/tasks/0337_lift-ai-news-supply-model-qc-labeling-or-full-text-ingest-fo.md:11` sets `feature_id: G3`. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Scenario: AC1 — supply inspection preserves the store (req: R1) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:295-311` verifies parseable JSON and unchanged bytes/schema; `:395-415` verifies missing-db failure without creation. |
-| Scenario: AC2 — the gate ladder matches extraction semantics (req: R2) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:312-367` verifies deterministic cumulative gates and capped-id parity with `ItemsDao.selectByProfile`. |
-| Scenario: AC3 — current labels and reservations are diagnosed without double counting (req: R3) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:334-353` checks label coverage, source/body distributions, disjoint blocked stories and capped ids. |
-| Scenario: AC4 — diagnostic evidence is repeatable and failures are explicit (req: R4) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:395-449` verifies the artifact and nonzero failures; `:420-425` rejects malformed YAML with no stdout. Full `spur self exec check`: 4423 pass / 0 fail. |
-| Scenario: AC5 — the handoff preserves production policy (req: R5) | MET | command | `git diff --name-only main...HEAD` lists only the diagnostic script, fixture tests, `docs/04_DESIGN.md:969`, `docs/report/2026-11-04-ai-news-supply-readiness.md:1`, and task 0337; no runtime/config/workflow/install change is present. |
+| Scenario: AC1 — supply inspection preserves the store (req: R1) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:295-311` parseable JSON + unchanged bytes/schema; `scripts/tests/ai-news-supply-report.test.ts:395-415` missing db not created. |
+| Scenario: AC2 — the gate ladder matches extraction semantics (req: R2) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:312-367` deterministic gates and capped ids equal `ItemsDao.selectByProfile` (`packages/kk-store/src/dao/items.ts:451`); `scripts/tests/ai-news-supply-report.test.ts:449-458` order-invariant gate naming. |
+| Scenario: AC3 — current labels and reservations are diagnosed without double counting (req: R3) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:255-281` fixtures competing makers/stale/replay/shared stories/dropped and other-topic selections; `scripts/tests/ai-news-supply-report.test.ts:336-353` asserts the outcomes. |
+| Scenario: AC4 — diagnostic evidence is repeatable and failures are explicit (req: R4) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:372-392` artifact with named checks; `scripts/tests/ai-news-supply-report.test.ts:395-447` nonzero exits with empty stdout and actionable stderr. |
+| Scenario: AC5 — the handoff preserves production policy (req: R5) | MET | command | `git show --stat 556feb9` touches only `scripts/ai-news-supply-report.ts:1`, `scripts/tests/ai-news-supply-report.test.ts:1`, `docs/04_DESIGN.md:969`, `docs/report/2026-11-04-ai-news-supply-readiness.md:1` and task 0337; re-verify adds only `scripts/ai-news-supply-report.ts:385-390`, `scripts/tests/ai-news-supply-report.test.ts:449-458` and `apps/cli/tests/g-feature-tree.test.ts:110-112`. |
+| Scenario: R1 — Work on kk-collect has a home node (req: R6) | MET | test | `apps/cli/tests/g-feature-tree.test.ts:110-112` passes (`bun test apps/cli/tests/g-feature-tree.test.ts` 3 pass / 0 fail); task `feature_id: G3` at `docs/tasks/0337_lift-ai-news-supply-model-qc-labeling-or-full-text-ingest-fo.md:11`. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

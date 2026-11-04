@@ -445,4 +445,15 @@ describe('ai-news supply report (0337)', () => {
         expect(missingSchema.stderr.toLowerCase()).toContain('schema');
         expect(runReport(validArgs({ dbPath: fixture.dir })).status).not.toBe(0);
     });
+
+    it('names each gate by its decision, not by the profile key order', () => {
+        const reordered = join(fixture.dir, 'reordered-profile.yaml');
+        const lines = PROFILE_YAML.split('\n');
+        // Swap category (removes 1) with quality (removes 4); the ladder must still run category first.
+        [lines[2], lines[3]] = [lines[3] as string, lines[2] as string];
+        writeFileSync(reordered, lines.join('\n'));
+        const base = parseSuccess();
+        const swapped = parseSuccess(validArgs({ profilePath: reordered }));
+        expect(swapped.windows.map((window) => window.gates)).toEqual(base.windows.map((window) => window.gates));
+    });
 });

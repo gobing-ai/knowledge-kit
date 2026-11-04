@@ -107,6 +107,10 @@ describe('feature G — the kk workflow tree', () => {
         }
     });
 
+    it('R1 — kk-collect is homed by G3 (task 0337)', () => {
+        expect([...homes('kk-collect')]).toEqual(['G3']);
+    });
+
     it('R2 — each shared workflow capability is claimed by exactly one child, its own or its owner', () => {
         const usedBy = new Map<string, string[]>();
         for (const [stem, text] of workflows) {

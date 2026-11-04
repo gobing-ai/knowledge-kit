@@ -382,6 +382,12 @@ function buildWindow(
         windowMs: hours * 3_600_000,
         excludeTopic: TOPIC,
     }) as ProfileQuery;
+    // STAGE_NAMES are positional; profile `where` keeps YAML key order, so pin the ladder order.
+    query.where = [...query.where].sort(
+        (a, b) =>
+            REQUIRED_PREDICATES.indexOf(a.decisionId as (typeof REQUIRED_PREDICATES)[number]) -
+            REQUIRED_PREDICATES.indexOf(b.decisionId as (typeof REQUIRED_PREDICATES)[number]),
+    );
     const gates: GateReport[] = [];
     let previous = 0;
     for (let index = 0; index < STAGE_NAMES.length; index += 1) {
