@@ -1,5 +1,7 @@
 # Publishing the recovered 2026-11-03 episode
 
+Publication was subsequently authorized and executed with scope narrowed to established paths. See [the final publication outcome](2026-11-03-daily-ai-news-publication.md): Surfdash and podcast/RSS published; WeChat stopped before final publication; incomplete/dummy paths skipped. The investigation below is the pre-publication readiness snapshot.
+
 ## Recommendation
 
 Publish the recovered six-story episode through the existing voice2 publishing tail first: Surfdash article (zh/en/ja), podcast host/RSS, then the WeChat article draft with embedded audio. Reuse the restored artifacts; do not restart extraction or TTS. Expand to X/Weibo articles after their channel checks. Treat publish3 as the intended multi-platform orchestration route, with the contract gaps below resolved before real dispatch. Do not launch its default matrix merely because its rows say `draft`.
