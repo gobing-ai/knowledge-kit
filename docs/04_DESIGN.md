@@ -2338,7 +2338,9 @@ Nodes and their gating rule:
 | `send-confirm` | `pause: true`, condition = the plan has a live row | resume = approval; skipped for a draft window |
 | `send` | depends on `check` **and** `send-confirm` | tier order, dummy-aware, receipt-keyed |
 | `classify` | every sent window | `publish-matrix-classify --window … --run-date …` |
-| `surfdash-patch`, `partial-marker`, `mark-published` | after-generate only | the voice2-era tails on the bridged `31-publish` names |
+| `send-retry` | non-overseas, one bounded hop after `send` | `publish-matrix-send --window … --retry`: only live/draft **failures with `effect: none`** are resent — succeeded rows are skipped, an uncertain effect is never replayed, dummy rows never spawn a plugin. No unbounded back-edge; the outcome assertion rules after it |
+| `patch-surfdash`, `partial-marker`, `settle` | `patch-surfdash` after-generate only; `settle` non-overseas; `partial-marker` on a `partial\|none` outcome | the tail nodes on the bridged stage names (see below) |
+| `outcome-assert` | after `ledger`, whenever an outcome file exists | `jq` every `required` real row must be `succeeded` — a partial window with failed required targets **fails the run** after report/ledger are written, preserving the outcome, receipts and incident evidence; a gated-miss day (no outcome file) stays done |
 | `diagnose` | overseas + gate miss | `agent.run` (`role: scribe`, `onError: continue`) refining `4-publish/incident.{json,md}` |
 | `repair` | after `diagnose` | `publish-matrix-send --window after-generate --retry --tier 0` — the one safe automatic repair |
 | `bundle-runs` | after `classify` | appends this run id to `bundle.runs[]`, idempotently |
@@ -2356,6 +2358,25 @@ records its verdict, instead of failing and cascade-skipping the incident path.
 itself writes the deterministic incident floor (`class: rss-lag`, the feed URL, the miss reason)
 before `diagnose` refines it from the bundle and receipts. `repair` may only resend tier-0 rows whose
 receipt is `effect: none`; regenerating content stays an operator action (design §5a).
+
+**Outcomes, retries and settlement (task 0333).** `classify` emits `full\|partial\|none\|dummy` and
+keeps policy drops **visible**: plan and outcome carry an `excluded[]` (reasons
+`excluded by bundle safety`, `mode off`, `not in --channels list`) beside the variant-missing
+`omitted` rows. The retry rules live in `sendPublishMatrix` itself, so the workflow's single
+`send-retry` hop and the operator's targeted rerun share one contract. `partial-marker` names the
+exact failed target ids and points at `kk stage run publish-matrix-send <work_dir> --window <w>
+--retry`; a later full window deletes the stale marker.
+`patch-surfdash` derives its payload from the real surfdash receipt's
+`aggregatePath` → `metadata.postPath` (never from legacy aggregates or a site-root argument); a
+dummy or missing episode yields explicit empty links, and with no real tier-0 post evidence the
+stage records an explicit skip and exits 0 — the graph cannot name channels, so the stage is its
+own gate. `settle` (`publish-matrix-settle`) promotes the store selection only on receipt-proven
+completion: every required real row must carry a CURRENT-bundle receipt
+(`parentRunId` == the bundle's own run, `status: succeeded`, `effect: confirmed`, `mode: live`) —
+drafted owned success and dummy rehearsals HOLD the selection (`marked: false`, exit 0, per-row
+`unresolved[]` reasons), while a live-confirmed set marks published keyed to the bundle's
+`parentRunId`. Artifacts: `4-publish/settlement.<window>.json`,
+`4-publish/patch-surfdash.{result,payload}.json`, `4-publish/partial-marker.<window>.txt`.
 
 **Shipped preset.** `plugins/kk/publish-presets/daily-ai-voice.json` carries design §3's matrix,
 each row assigned to exactly one window: T0 owned + draft-capable domestic on `after-generate`

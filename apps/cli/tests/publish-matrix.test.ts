@@ -784,6 +784,7 @@ describe('publish-matrix receipt classification (0326 R1, R2)', () => {
         parentRunId: 'gen-run-1',
         presetName: 'daily-ai-voice',
         presetDigest: 'd1',
+        excluded: [] as Array<{ id: string; plugin: string; reason: string }>,
         rows: [
             {
                 id: 'surfdash-pub.post',

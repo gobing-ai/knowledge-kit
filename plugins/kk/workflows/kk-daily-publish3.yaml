@@ -131,12 +131,32 @@ nodes:
       Receipts key every target, so a rerun never resends what was delivered, and a dummy row never
       spawns a plugin. `check` is listed beside `send-confirm` on purpose: the engine skips a node only
       when ALL its dependencies were skipped, so a draft window (no live row → `send-confirm` skipped)
-      still sends, while a gated/blocked plan (both ancestors skipped) still stops here.
+      still sends, while a gated/blocked plan (both ancestors skipped) still stops here. A failing
+      target does NOT end the run here — `onError: continue` lets the bounded retry and the outcome
+      assertion decide, so the evidence (report, ledger, outcome) always survives to the operator.
     dependsOn: [check, send-confirm]
     action:
       kind: shell
+      onError: continue
       options:
         command: 'kk stage run publish-matrix-send "${vars.work_dir}" --window "${vars.window}"'
+
+  - id: send-retry
+    description: >-
+      The ONE bounded retry (0333): `--retry` resends only rows whose receipt is a live/draft failure
+      with `effect: none` — a succeeded row is skipped, a live row with an unknown effect is never
+      resent, and a dummy row never spawns a plugin. No unbounded back-edge: one retry node, then the
+      outcome assertion rules. A targeted operator rerun of this node is the recovery path for a
+      window that still ends non-full.
+    dependsOn: [send]
+    condition:
+      kind: shell
+      options:
+        command: 'test "${vars.window}" != "overseas-rss"'
+    action:
+      kind: shell
+      options:
+        command: 'kk stage run publish-matrix-send "${vars.work_dir}" --window "${vars.window}" --retry'
 
   - id: classify
     description: >-
@@ -144,7 +164,7 @@ nodes:
       always exit 0 — routing is this graph's job, not the classifier's. The run date comes from the
       plans/`run-date.txt` (0332 R1), so a late `run_date` guard is gone; a provided one must match
       the bundle's own day and the stage refuses a mismatch.
-    dependsOn: [send]
+    dependsOn: [send-retry, send]
     action:
       kind: shell
       options:
@@ -152,59 +172,80 @@ nodes:
           kk stage run publish-matrix-classify "${vars.work_dir}" --window "${vars.window}" --run-date "${vars.run_date}"
 
   # ── after-generate only: the voice2-era tail stages keep working on the bridged names ─────
-  - id: surfdash-patch
+  - id: patch-surfdash
     description: >-
-      after-generate only: cover and podcast cross-link patching plus the CMS re-sync, whenever tier 0
-      published something. Reads the legacy `31-publish` names the classifier bridged, so voice2's own
-      stage body is reused unchanged.
+      after-generate only: cover and podcast cross-link patching plus the CMS re-sync, and only when
+      a real surfdash receipt exists. The payload is derived from that receipt's aggregate
+      `metadata.postPath` — never from legacy aggregate files or any site-root argument: the plugin
+      resolves its own checkout. A dummy or missing podcast episode yields
+      explicit empty links; there is nothing to patch without a real post. The stage is its own gate:
+      with no real tier-0 post evidence it records an explicit skip and exits 0 (the channel matrix
+      lives in the preset, so the graph cannot name channels here).
     dependsOn: [classify]
     condition:
       kind: shell
       options:
-        command: >-
-          test "${vars.window}" = "after-generate"
-          && grep -qxE 'full|partial' "${vars.work_dir}/4-publish/publish-status.after-generate.txt" 2>/dev/null
+        command: 'test "${vars.window}" = "after-generate"'
 
     action:
       kind: shell
       options:
-        command: >-
-          kk stage run daily-patch-surfdash "${vars.work_dir}" "${vars.run_date}" "$KK_SURFDASH_ROOT" ""
+        command: 'kk stage run publish-matrix-patch-surfdash "${vars.work_dir}" --window "${vars.window}"'
 
   - id: partial-marker
-    description: "after-generate only: record the partial-publish marker when the classifier said partial."
-    dependsOn: [classify]
-    condition:
-      kind: shell
-      options:
-        command: >-
-          test "${vars.window}" = "after-generate"
-          && grep -qx 'partial' "${vars.work_dir}/4-publish/publish-status.after-generate.txt" 2>/dev/null
-
-    action:
-      kind: shell
-      options:
-        command: 'kk stage run daily-publish-partial "${vars.work_dir}" "${vars.run_date}"'
-
-  - id: mark-published
     description: >-
-      after-generate only: mark the run's items published in the store once the owned platforms
-      delivered. Keyed by the voice3 run id the bundle records, never by this publish run.
+      Record the partial/none recovery marker when the classifier said so: names the exact failed
+      target ids from the receipt-derived outcome and points at the receipt-scoped rerun (`--retry`).
+      A full window deletes any stale marker, so the report never re-flags recovered targets.
     dependsOn: [classify]
     condition:
       kind: shell
       options:
         command: >-
-          test "${vars.window}" = "after-generate"
-          && grep -qxE 'full|partial' "${vars.work_dir}/4-publish/publish-status.after-generate.txt" 2>/dev/null
+          grep -qx 'partial' "${vars.work_dir}/4-publish/outcome.${vars.window}.json" 2>/dev/null ||
+          grep -qx 'none' "${vars.work_dir}/4-publish/outcome.${vars.window}.json" 2>/dev/null
+
+    action:
+      kind: shell
+      options:
+        command: 'kk stage run publish-matrix-partial "${vars.work_dir}" --window "${vars.window}"'
+
+  - id: settle
+    description: >-
+      Promote the store selection only on receipt-proven completion (0333): every required real row
+      must carry a CURRENT-bundle receipt that is succeeded/confirmed/live — draft preparation and
+      dummy rehearsals HOLD the selection (no store call), never claim a publication. Writes
+      `4-publish/settlement.<window>.json` naming each unresolved row. Keyed to the bundle's
+      parentRunId, never to this publish run. Exit 0 while holding: the outcome assertion owns the
+      run's exit code, so this evidence file always survives.
+    dependsOn: [classify]
+    condition:
+      kind: shell
+      options:
+        command: 'test "${vars.window}" != "overseas-rss"'
+    action:
+      kind: shell
+      options:
+        command: 'kk stage run publish-matrix-settle "${vars.work_dir}" --window "${vars.window}" --topic ai-news'
+
+  - id: outcome-assert
+    description: >-
+      The run's honest exit (0333): when an outcome exists, every required real row must be
+      succeeded — a partial window with failed required targets fails the run AFTER report and ledger
+      are written, with the outcome, receipts and incident evidence preserved. Gated-miss windows
+      (no outcome file) stay done: the diagnose/repair path already classified them.
+    dependsOn: [ledger]
+    condition:
+      kind: shell
+      options:
+        command: 'test -f "${vars.work_dir}/4-publish/outcome.${vars.window}.json"'
 
     action:
       kind: shell
       options:
         command: >-
-          PARENT="$(jq -r '.parentRunId // .runId' "${vars.work_dir}/bundle.json" 2>/dev/null)";
-          test -n "$PARENT" || { echo "publish3: bundle has no run id" >&2; exit 1; };
-          kk store mark-published --topic ai-news --run "$PARENT"
+          jq -e 'all(.rows[]; .required != true or .dummy == true or .status == "succeeded")' "${vars.work_dir}/4-publish/outcome.${vars.window}.json" >/dev/null
+          || { echo "publish3: required targets failed — see outcome.${vars.window}.json and 5-report" >&2; exit 1; }
 
   # ── the incident path: a gated miss is diagnosed, never silently dropped ─────────────────
   - id: diagnose
@@ -283,6 +324,8 @@ nodes:
           printf '# Publish report — %s — %s\n\n- status: %s\n\n| target | tier | status | effect | dummy |\n| --- | --- | --- | --- | --- |\n'
           "${vars.window}" "${vars.run_date}" "$STATUS" > "$OUT";
           jq -r '.rows[] | "| \(.id) | \(.tier) | \(.status) | \(.effect // "-") | \(.dummy) |"'
+          "${vars.work_dir}/4-publish/outcome.${vars.window}.json" >> "$OUT" 2>/dev/null || true;
+          jq -r '.excluded[]? | "- excluded: \(.id) (\(.plugin)) — \(.reason)"'
           "${vars.work_dir}/4-publish/outcome.${vars.window}.json" >> "$OUT" 2>/dev/null || true
 
   - id: ledger

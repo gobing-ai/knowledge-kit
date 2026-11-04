@@ -1442,6 +1442,180 @@ function dailyPublishPartial(args: string[]): void {
  * `KK_SURFDASH_PATCH_OFFLINE=1` keeps fixture tests hermetic — the plugin would otherwise write to,
  * commit and push a real checkout.
  */
+/**
+ * `publish-matrix-partial` (0333): a partial/none window leaves an explicit recovery marker.
+ *
+ * Reads the window's receipt-derived outcome (written by `publish-matrix-classify`) — the legacy
+ * `_17_publish_result.json` aggregate is never an input — names the exact failed target ids, and
+ * points at the matrix rerun contract (`kk stage run publish-matrix-send <work_dir> --window <w>
+ * --retry`). The rerun is receipt-scoped: `--retry` resends only effect-none failures, never a
+ * succeeded or live-uncertain row, so there is no `--retry-from`/`_17` style file replay. A full
+ * window deletes any stale marker from a previous attempt, so the report never re-flags recovered
+ * targets.
+ */
+function publishMatrixPartial(args: string[]): void {
+    const flag = (name: string): string | undefined => {
+        const i = args.indexOf(name);
+        return i >= 0 ? args[i + 1] : undefined;
+    };
+    const workDir = args[0] ?? '';
+    const window = flag('--window');
+    if (workDir === '' || window === undefined || window === '') {
+        failWith(1, 'usage: publish-matrix-partial <work_dir> --window <w>');
+    }
+    const outcomePath = join(workDir, '4-publish', `outcome.${window}.json`);
+    const outcome = requireJson(outcomePath, 'publish-matrix-partial') as {
+        status?: string;
+        rows?: Array<{ id?: string; status?: string; dummy?: boolean }>;
+    };
+    const marker = join(workDir, '4-publish', `partial-marker.${window}.txt`);
+    timed(workDir, 'publish-matrix-partial', () => {
+        if (outcome.status === 'full') {
+            if (isFile(marker)) sted('rm', marker, () => unlinkSync(marker));
+            return;
+        }
+        const failed = (outcome.rows ?? [])
+            .filter((row) => row.dummy !== true && row.status !== 'succeeded')
+            .map((row) => row.id ?? '(unknown)')
+            .join(',');
+        sted('mkdir', dirname(marker), () => mkdirSync(dirname(marker), { recursive: true }));
+        sted('write', marker, () =>
+            writeRaw(
+                marker,
+                `window ${window} ended ${outcome.status ?? 'unknown'}: failed targets: ${failed === '' ? '(unparsed)' : failed}\n` +
+                    `recovery: kk stage run publish-matrix-send ${workDir} --window ${window} --retry (resends effect-none failures only; receipts scope the retry)\n`,
+            ),
+        );
+        console.error(`WARNING: partial publish — failed targets: ${failed === '' ? '(unparsed)' : failed}`);
+    });
+}
+
+/**
+ * `publish-matrix-patch-surfdash` (0333): patch podcast links into a real surfdash post.
+ *
+ * The patch payload is derived from the window's own receipts, not from legacy aggregate files and
+ * not from a `KK_SURFDASH_ROOT` argument — the plugin resolves its checkout itself. Evidence rules:
+ * the surfdash row must have a real (non-dummy) succeeded receipt whose aggregate metadata carries
+ * an absolute `postPath`; without that there is nothing to patch and the stage records an explicit
+ * skip result instead of fabricating one. Podcast links ride along only when the podcast row is
+ * real too — a dummy or missing episode yields explicit empty `coverUrl`/`showNotesUrl`, never a
+ * fabricated link. `KK_SURFDASH_PATCH_OFFLINE=1` keeps rehearsal runs hermetic the same way the
+ * legacy voice2 stage does.
+ */
+function publishMatrixPatchSurfdash(args: string[]): void {
+    const flag = (name: string): string | undefined => {
+        const i = args.indexOf(name);
+        return i >= 0 ? args[i + 1] : undefined;
+    };
+    const workDir = args[0] ?? '';
+    const window = flag('--window');
+    if (workDir === '' || window === undefined || window === '') {
+        failWith(1, 'usage: publish-matrix-patch-surfdash <work_dir> --window <w>');
+    }
+    const publishDir = join(workDir, '4-publish');
+    const resultPath = join(publishDir, 'patch-surfdash.result.json');
+    const writeResult = (value: Record<string, unknown>): void => {
+        sted('write', resultPath, () => writeJqText(resultPath, value));
+    };
+    const receipt = (id: string): Record<string, unknown> | null =>
+        readJson(join(publishDir, 'receipts', `${id}.json`));
+    const aggregateTarget = (receiptPath: string | undefined): Record<string, unknown> => {
+        const aggregate = receiptPath === undefined ? null : readJson(receiptPath);
+        const targets = aggregate?.targets;
+        if (!Array.isArray(targets) || targets.length === 0 || targets[0] === null || typeof targets[0] !== 'object') {
+            return {};
+        }
+        return targets[0] as Record<string, unknown>;
+    };
+    timed(workDir, 'publish-matrix-patch-surfdash', () => {
+        const outcome = readJson(join(publishDir, `outcome.${window}.json`)) as {
+            rows?: Array<{ id?: string }>;
+        } | null;
+        const rowId = (prefix: string): string | undefined =>
+            (outcome?.rows ?? []).map((row) => row.id ?? '').find((id) => id.startsWith(prefix));
+        const sdId = rowId('surfdash-pub');
+        const podId = rowId('podcast-pub');
+        if (sdId === undefined) {
+            const error = 'skipped: no surfdash target in this window — nothing to patch';
+            writeResult({ ok: false, target: 'surfdash-pub', error });
+            console.error(`patch-surfdash: ${error}`);
+            return;
+        }
+        const sdReceipt = receipt(sdId);
+        const sdReal = sdReceipt !== null && sdReceipt?.dummy !== true && sdReceipt?.status === 'succeeded';
+        const sdTarget = aggregateTarget(
+            typeof sdReceipt?.aggregatePath === 'string' ? sdReceipt.aggregatePath : undefined,
+        );
+        const postPath = (sdTarget.metadata as Record<string, unknown> | undefined)?.postPath;
+        if (!sdReal || typeof postPath !== 'string' || postPath === '') {
+            const error =
+                sdReceipt === null
+                    ? 'skipped: no surfdash publish receipt — nothing to patch'
+                    : typeof postPath !== 'string' || postPath === ''
+                      ? 'skipped: surfdash receipt carries no real postPath — nothing to patch'
+                      : 'skipped: surfdash receipt is dummy — nothing to patch';
+            writeResult({ ok: false, target: 'surfdash-pub', error });
+            console.error(`patch-surfdash: ${error}`);
+            return;
+        }
+        // Links ride along only from real podcast evidence; dummy/missing episodes patch as
+        // explicit empty strings — the patch must never fabricate a link.
+        const podReceipt = podId === undefined ? null : receipt(podId);
+        const podReal = podReceipt !== null && podReceipt?.dummy !== true && podReceipt?.status === 'succeeded';
+        const podTarget = aggregateTarget(
+            typeof podReceipt?.aggregatePath === 'string' ? podReceipt.aggregatePath : undefined,
+        );
+        const podMeta = (podTarget.metadata ?? {}) as Record<string, unknown>;
+        const runDate = String(readJson(join(publishDir, `outcome.${window}.json`))?.runDate ?? '');
+        const payload = join(publishDir, 'patch-surfdash.payload.json');
+        sted('write', payload, () =>
+            writeJqText(payload, {
+                body: '',
+                options: {
+                    operation: 'patch',
+                    postPath,
+                    coverUrl: podReal && typeof podMeta.imageUrl === 'string' ? podMeta.imageUrl : '',
+                    showNotesUrl: podReal && typeof podTarget.url === 'string' ? podTarget.url : '',
+                    ...(runDate.length === 8
+                        ? { dateIso: `${runDate.slice(0, 4)}-${runDate.slice(4, 6)}-${runDate.slice(6, 8)}` }
+                        : runDate.length === 10
+                          ? { dateIso: runDate }
+                          : {}),
+                },
+            }),
+        );
+        if (process.env.KK_SURFDASH_PATCH_OFFLINE === '1') {
+            // Offline rehearsals still derive the payload (evidence), but never invoke the plugin.
+            writeResult({ ok: false, target: 'surfdash-pub', error: 'skipped: offline (KK_SURFDASH_PATCH_OFFLINE=1)' });
+            console.error(
+                'patch-surfdash: offline — payload derived, plugin patch skipped (KK_SURFDASH_PATCH_OFFLINE=1)',
+            );
+            return;
+        }
+        const status = kk(['executor', 'run', 'surfdash-pub', '--in', payload, '--out', resultPath], {
+            unset: NESTED_SPUR_UNSET,
+            soft: true,
+        });
+        const result = readJson(resultPath);
+        if (result?.ok === true) {
+            const meta = (result.metadata ?? {}) as Record<string, unknown>;
+            console.error(
+                `patch-surfdash: ${String(result.message ?? 'patched')} — cms-resync ${String(meta.cmsResync ?? 'ok')}`,
+            );
+            return;
+        }
+        const meta = (result?.metadata ?? {}) as Record<string, unknown>;
+        if (meta.cmsResync === 'failed') {
+            // The posts are patched and committed; only the CMS re-sync (a soft channel) failed.
+            console.error(
+                `patch-surfdash: WARNING: cms re-sync failed — ${String(result?.error ?? `exit ${status}`)}; fix: kk executor run surfdash-pub --in ${payload} --out ${resultPath}`,
+            );
+            return;
+        }
+        failWith(1, `patch-surfdash: ${String(result?.error ?? `surfdash-pub patch exited ${status}`)}`);
+    });
+}
+
 function dailyPatchSurfdash(args: string[]): void {
     const [workDir = '', runDate = '', surfdashRoot = '', pluginsPath = ''] = args;
     if (!surfdashRoot || !existsSync(surfdashRoot)) {
@@ -1829,6 +2003,12 @@ if (import.meta.main)
             break;
         case 'daily-publish-partial':
             dailyPublishPartial(rest);
+            break;
+        case 'publish-matrix-partial':
+            publishMatrixPartial(rest);
+            break;
+        case 'publish-matrix-patch-surfdash':
+            publishMatrixPatchSurfdash(rest);
             break;
         case 'daily-run-report':
             dailyRunReport(rest);

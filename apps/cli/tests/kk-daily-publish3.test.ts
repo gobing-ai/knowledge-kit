@@ -343,7 +343,9 @@ describe('kk-daily-publish3 (0323 R1, R4, R6, R7)', () => {
             expect(yaml).toContain(windowName);
         }
         expect(yaml).toContain('pause: true');
-        // Every node the task's R1 lists.
+        // Every node the task's R1 lists. 0333 renamed the tail nodes to their bridged stage names
+        // (`surfdash-patch`→`patch-surfdash`, `mark-published`→`settle`) and added the bounded
+        // `send-retry` hop and the `outcome-assert` gate.
         for (const node of [
             'wait-until',
             'rss-gate',
@@ -351,10 +353,12 @@ describe('kk-daily-publish3 (0323 R1, R4, R6, R7)', () => {
             'check',
             'send-confirm',
             'send',
+            'send-retry',
             'classify',
-            'surfdash-patch',
+            'patch-surfdash',
             'partial-marker',
-            'mark-published',
+            'settle',
+            'outcome-assert',
             'bundle-runs',
             'report',
             'ledger',

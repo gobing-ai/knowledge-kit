@@ -89,6 +89,22 @@ export const PublishPlanRowSchema = z
 /** Parsed plan row. */
 export type PublishPlanRow = z.infer<typeof PublishPlanRowSchema>;
 
+/**
+ * One preset target dropped from the plan for a policy reason (0333): safety exclusion, `mode: off`,
+ * or dropped by a narrowing `--channels` list. Recorded so an off/excluded target stays visible in
+ * the outcome and the report instead of silently vanishing from the audit trail.
+ */
+export const PublishPlanExcludedSchema = z
+    .object({
+        id: z.string().min(1),
+        plugin: z.string().min(1),
+        reason: z.string().min(1),
+    })
+    .strict();
+
+/** A policy-dropped in-window preset target kept visible in the plan/outcome (0333). */
+export type PublishPlanExcluded = z.infer<typeof PublishPlanExcludedSchema>;
+
 /** One window's publish plan (`4-publish/plan.<window>.json`). */
 export const PublishPlanSchema = z
     .object({
@@ -99,6 +115,7 @@ export const PublishPlanSchema = z
         presetName: z.string().min(1),
         presetDigest: z.string().min(1),
         runDate: z.string().min(1).optional(),
+        excluded: z.array(PublishPlanExcludedSchema).default([]),
         rows: z.array(PublishPlanRowSchema),
     })
     .strict();
@@ -127,6 +144,7 @@ export const PublishOutcomeSchema = z
         status: z.enum(['full', 'partial', 'none', 'dummy']),
         published: z.number().int().min(0),
         targets: z.number().int().min(0),
+        excluded: z.array(PublishPlanExcludedSchema).default([]),
         rows: z.array(PublishOutcomeRowSchema),
     })
     .strict();
@@ -191,6 +209,7 @@ export function classifyPublishMatrix(
         status,
         published: succeeded.length,
         targets: real.length,
+        excluded: plan.excluded,
         rows,
     };
 }
@@ -454,6 +473,22 @@ async function composePlan(
                   (target) => input.channels.some((token) => matches(target, token)) && notExcluded(target),
               );
 
+    // Every in-window preset target the plan drops for a POLICY reason stays visible (0333):
+    // safety exclusion, `mode: off`, or a narrowing `--channels` list. (Variant-missing drops are
+    // `omitted` above, not here — they carry failed receipts instead.)
+    const excluded: PublishPlanExcluded[] = [];
+    for (const target of preset.targets) {
+        if ((target.window ?? 'after-generate') !== input.window) continue;
+        const id = targetId(target);
+        if (excludedPlugins.has(target.plugin)) {
+            excluded.push({ id, plugin: target.plugin, reason: 'excluded by bundle safety' });
+        } else if ((target.mode ?? 'draft') === 'off') {
+            excluded.push({ id, plugin: target.plugin, reason: 'mode off' });
+        } else if (input.channels.length > 0 && !input.channels.some((token) => matches(target, token))) {
+            excluded.push({ id, plugin: target.plugin, reason: 'not in --channels list' });
+        }
+    }
+
     const rows: PublishPlanRow[] = [];
     const omitted: OmittedTarget[] = [];
     const seen = new Set<string>();
@@ -599,6 +634,7 @@ async function composePlan(
             presetName: preset.name,
             presetDigest: digest,
             runDate,
+            excluded,
             rows,
         },
         omitted,
@@ -881,6 +917,7 @@ export async function runPublishMatrixClassify(args: string[], deps: PublishMatr
             status: 'none',
             published: 0,
             targets: 0,
+            excluded: [],
             rows: [],
         };
         await fs.writeFile(join(publishDir, `outcome.${parsedWindow.data}.json`), `${JSON.stringify(none, null, 2)}\n`);
@@ -955,6 +992,130 @@ export async function runPublishMatrixClassify(args: string[], deps: PublishMatr
     }
 
     echo(outcome.status);
+    return 0;
+}
+
+/**
+ * `publish-matrix-settle` (0333): promote the store selection only on receipt-proven completion.
+ *
+ * Settlement is keyed to `plan.parentRunId` — the bundle identity — never to a per-window publish
+ * run id, so a rerun across windows cannot double-promote. Every `required` row whose plan mode is
+ * real (`draft`/`live`) must carry a CURRENT-bundle receipt (`parentRunId` match) with
+ * `status: succeeded`, `effect: confirmed` and `mode: live`; draft preparation and dummy rehearsals
+ * HOLD the selection without claiming a live publication. Each blocking row is listed in
+ * `4-publish/settlement.<window>.json` with its reason — a partial failure names the exact target
+ * ids. Holding exits 0: the workflow's outcome assertion decides the run's exit code, so the
+ * evidence file always survives for the report.
+ */
+export async function runPublishMatrixSettle(args: string[], deps: PublishMatrixDeps = {}): Promise<number> {
+    const fs = deps.fs ?? createNodeFileSystem();
+    const executor = deps.executor ?? new NodeProcessExecutor();
+    const [workDir = ''] = args;
+    const windowArg = flagValue(args, '--window');
+    const topic = flagValue(args, '--topic') ?? 'ai-news';
+    const dbArg = flagValue(args, '--db');
+    if (!workDir || windowArg === undefined) {
+        echoError('usage: publish-matrix-settle <work_dir> --window <w> [--topic <t>] [--db <path>]');
+        return 1;
+    }
+    const parsedWindow = PublishWindowSchema.safeParse(windowArg);
+    if (!parsedWindow.success) {
+        echoError(`publish-matrix-settle: unknown window '${windowArg}'`);
+        return 1;
+    }
+    const publishDir = join(workDir, '4-publish');
+    let plan: PublishPlan;
+    try {
+        plan = await readPlan(fs, workDir, parsedWindow.data);
+    } catch (err: unknown) {
+        echoError(`publish-matrix-settle: ${err instanceof Error ? err.message : String(err)}`);
+        return 1;
+    }
+    const parentRunId = plan.parentRunId;
+    const receiptsDir = join(publishDir, 'receipts');
+    const receiptFor = async (id: string): Promise<ItcReceipt | undefined> => {
+        const path = join(receiptsDir, `${id}.json`);
+        if (!(await fs.exists(path))) return undefined;
+        try {
+            return JSON.parse(await fs.readFile(path)) as ItcReceipt;
+        } catch {
+            return undefined;
+        }
+    };
+    const requiredReal = plan.rows.filter((row) => row.required && row.mode !== 'dummy');
+    const unresolved: Array<{ id: string; reason: string }> = [];
+    if (requiredReal.length === 0) {
+        // A dummy rehearsal (or a window with no required tier-0 rows) has nothing owned to settle:
+        // the selection holds and no store call is made at all.
+        unresolved.push({ id: '*', reason: 'no required real owned rows in this window' });
+    }
+    for (const row of requiredReal) {
+        const receipt = await receiptFor(row.id);
+        if (receipt === undefined) {
+            unresolved.push({ id: row.id, reason: 'no receipt' });
+            continue;
+        }
+        if (receipt.parentRunId !== parentRunId) {
+            unresolved.push({
+                id: row.id,
+                reason: `receipt belongs to bundle ${receipt.parentRunId ?? 'unknown'}, not ${parentRunId}`,
+            });
+            continue;
+        }
+        if (receipt.dummy === true) {
+            unresolved.push({ id: row.id, reason: 'dummy receipt' });
+            continue;
+        }
+        if (receipt.status !== 'succeeded') {
+            unresolved.push({ id: row.id, reason: `status ${receipt.status}` });
+            continue;
+        }
+        if (receipt.effect !== 'confirmed') {
+            unresolved.push({ id: row.id, reason: `effect ${receipt.effect ?? 'unknown'}` });
+            continue;
+        }
+        if (receipt.mode !== 'live') {
+            // Draft preparation keeps the selection: prepared is not published (0333, binding).
+            unresolved.push({ id: row.id, reason: `prepared as ${receipt.mode ?? 'unknown'}, not published live` });
+        }
+    }
+    const settlement = {
+        schemaVersion: 1,
+        window: parsedWindow.data,
+        runDate: plan.runDate ?? '',
+        parentRunId,
+        marked: unresolved.length === 0,
+        unresolved,
+    };
+    await fs.ensureDir(publishDir);
+    const settlementPath = join(publishDir, `settlement.${parsedWindow.data}.json`);
+    if (unresolved.length > 0) {
+        await fs.writeFile(settlementPath, `${JSON.stringify(settlement, null, 2)}\n`);
+        echo(`settle: held ${parsedWindow.data} — ${unresolved.length} unresolved (selection kept)`);
+        return 0;
+    }
+    const markArgs = ['store', 'mark-published', '--topic', topic, '--run', parentRunId];
+    if (dbArg !== undefined) markArgs.push('--db', dbArg);
+    const result = await executor.run({ command: 'kk', args: markArgs });
+    if (result.exitCode !== 0) {
+        const detail = result.stderr?.trim() || result.stdout?.trim() || `exit ${result.exitCode}`;
+        await fs.writeFile(
+            settlementPath,
+            `${JSON.stringify(
+                {
+                    ...settlement,
+                    marked: false,
+                    unresolved: [{ id: '*', reason: `store mark-published failed: ${detail}` }],
+                },
+                null,
+                2,
+            )}\n`,
+        );
+        echoError(`publish-matrix-settle: store mark-published failed — ${detail}`);
+        return 1;
+    }
+    await fs.writeFile(settlementPath, `${JSON.stringify({ ...settlement, marked: true }, null, 2)}\n`);
+    echo(`settle: marked ${topic}/${parentRunId} published`);
     return 0;
 }
 
