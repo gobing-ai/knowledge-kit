@@ -4,7 +4,7 @@ name: "wechatmp 文章 settings rail: measure and repair 原创/创作来源/原
 status: done
 template: issue
 created_at: 2026-10-22T03:08:10.155Z
-updated_at: "2026-10-23T03:44:50.088Z"
+updated_at: "2026-11-04T06:27:25.652Z"
 
 priority: P2
 estimate_hours: 4
@@ -16,156 +16,86 @@ done_reason: unforced close
 
 ### Background
 
-The 2026-10-21 daily draft (`appmsgid=100001043`) shipped with three settings rows unset, and the same
-was true on 10-19/10-20: `原创声明未生效`, `创作来源未生效`, `原文链接: no URL field in the 原文链接
-dialog`. Because 原创 is unchecked the platform also disables 赞赏 and 付费 ("声明原创后才可开启"), so the
-draft loses its reward block on top of the three rows.
+Historical incident: the October 19–21 daily drafts reported uncommitted 原创/创作来源 and a missing 原文链接 field. Task 0318 subsequently repaired the settings rail and was closed with recorded verify PASS. It is already `done`; the checked R/AC items below describe delivered acceptance, not a new implementation assignment.
 
-The committed-state probes are fine: `#js_original`, `.js_ori_setting_checkbox`,
-`#js_reward_setting_area`, `#js_claim_source_area`, `.js_claim_source_selected`, `#author`,
-`textarea#title` all still exist in the live editor (measured 2026-10-21, evidence
-`.spur/memory/evidence/20261021-wechatmp/wechatmp-probe{,2,3,4}-20261021.json`). What changed is the
-ENTRY path into each dialog and the dialog's own control set:
+Current source of truth: `plugins/publishings/wechatmp-pub/src/enrich.ts`, its production Chromium fixtures in `plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts`, and the dated repair entry in `docs/design/wechatmp-ui-discovery.md`. Historical live screenshots, probe JSON and verify receipts were lost in the October 22 cleanup, as recorded in References. Current source/fixture inspection cannot recreate that live evidence or the pre-fix red run.
 
-- 原创: entry is `#js_original i.read-more__icon__more-inactive`; the dialog now carries
-  `声明类型 (文字原创 | 无需声明)`, `作者 0/8`, `白名单`, `快捷转载`, and a required
-  `我已阅读并同意《微信公众平台原创声明及相关功能使用协议》` checkbox whose real `input[type=checkbox]`
-  is HIDDEN behind a styled label; commit with `确定`.
-- 创作来源: entry is `#js_claim_source_area .allow_click_opr`; the dialog's 声明类型 radios are
-  `内容由AI生成` / `素材来源官方媒体/网络新闻` / `内容剧情演绎，仅供娱乐` / `个人观点，仅供参考` (the
-  daily stage's stance) / `健康医疗分享，仅供参考` / `投资观点，仅供参考` / `无需声明`, committed with
-  **`确认`** (the 原创 dialog uses `确定` — the two differ).
-- 原文链接: `#js_article_url_area input.frm_checkbox.js_url_checkbox` is visible in the DOM but
-  Playwright `check()` times out on it, and clicking `.allow_click_opr` ("未添加") in an empty editor
-  does nothing — the field's real entry is still unmeasured.
+**Refine corrections (2026-11-03)**
 
-The audio-material and cover-input selectors were already repaired on 2026-10-21
-(`flow.ts` `AUDIO_UPLOAD_INPUT` / `AUDIO_COVER_INPUT`: the form's inputs carry `accept=''` and
-`image/bmp, image/png, …` respectively); this task covers the settings rail only.
+- Entry-only diagnosis → the original switch also has hidden undeclared/declared twins → require the switch whose parent belongs to the visible row branch.
+- Original icon opener and assumed default radio → shipped content-info/title opener and explicit 文字原创 label selection → freeze the implemented controls and preserve an already checked agreement.
+- 原文链接 still unmeasured → discovery documents the row expander and separate URL popover → replace speculative measurement work with the implemented field/anchor/readback contract.
+- 赞赏 awaiting a future daily run → production reward step and Chromium sequence already exist → retain completed acceptance and remove the implementation handoff.
+- Ambiguous fixture path and AC-to-plan mapping → full plugin paths and R1–R5 mappings → specify observable revalidation checks.
+- Old live receipts treated as available proof → References explicitly marks them LOST → distinguish historical acceptance from current reproducible offline evidence.
+- Open repair handoff → all five issues are already-fixed in a done task → preserve completed R/AC history, status, priority P2 and historical estimate 4h; do not cancel, reopen or delegate duplicate work.
+- Missing feature link → E92 is a relevant umbrella by its Scope, not an assigned parent → report the orphan warning without changing feature_id or any feature lifecycle.
+
+Root Cause, Solution, Testing, Review and older References below remain historical implementation/verification records; their old future-tense wording and line numbers are not a new work queue.
 
 ### Requirements
 
-- [x] R1. 原创 commits: open the row from its measured entry (`#js_original
-  .setting-group__content-info`), satisfy the agreement control (label click; the real input is
-  hidden), keep the default-checked 文字原创 radio, click `确定`, and verify
-  `#js_original input.weui-desktop-switch__input` checked AFTER the dialog closes. A row whose switch
-  is still unchecked is the named warning this task exists to remove.
-- [x] R2. 创作来源 commits: open the row from `.allow_click_opr`, select the requested stance from the
-  声明类型 radios (`个人观点，仅供参考` is present), click **`确认`** (the 创作来源 dialog's label, not
-  原创's `确定`), and verify `.js_claim_source_selected` carries the requested text. A stance the
-  platform does not offer is a named skip.
-- [x] R3. 原文链接 commits: measure the row's real entry first (label click vs `allow_click_opr`,
-  then where the URL field appears), set the URL, and verify the committed readback equals the
-  requested value. The unmeasured entry is named in the evidence doc before the rail changes.
-- [x] R4. 赞赏 unblocks: with the 原创 committed probe scoped to the row (fixed 2026-10-21,
-  `45ba558`), the 赞赏 row is no longer disabled by a false uncommitted read ("声明原创后才可开启"); the
-  remaining work is to confirm the existing 赞赏 step reaches its own switch and verifies it on the next
-  daily draft, or name why the platform kept it disabled.
-- [x] R5. fixture-DOM regression: the measured shapes run against synthetic DOM in
-  `tests/fixtures/wechatmp-dom-runner.ts` (real Chromium), so the offline suite fails on the pre-fix
-  entries and passes after.
+- [x] R1. 原创: open the row's measured content-info/title entry, explicitly select 文字原创, click the hidden agreement's label only when unchecked, commit with 确定, and after close read the checked switch in the visible row branch under #js_original. A failed readback produces a named warning; an already committed setting is not reopened.
+- [x] R2. 创作来源: open #js_claim_source_area .allow_click_opr, select the exact requested nested radio text, commit with 确认, and verify both the enabled checkbox and exact normalized .js_claim_source_selected text. An unavailable stance is a named skip with cleanup.
+- [x] R3. 原文链接: open #js_article_url_area .js_article_url_allow_click, fill the visible URL popover's input.js_url[name="source_url"], commit its 确定 anchor, wait for popover closure, then verify the row checkbox and exact requested URL. Exact existing values skip entry; refused commits or moved fields warn and release the popover.
+- [x] R4. 赞赏: after 原创 commits, use the reward row and its own committed checkbox probe to verify enabled reward, or name the platform capability refusal. Preserve already committed reward and fill an empty author-account field only when requested.
+- [x] R5. Regression: plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts drives production enrichArticle through wrapPlaywrightPage and tests/fixtures/wechatmp-dom-runner.ts in real isolated Chromium. Cover hidden twin switches, hidden/prechecked agreement, exact/unavailable claim, delayed/refused/moved URL field, committed skips and reward readback. Historical pre-fix failures remain recorded in Testing; their deleted logs are not fresh evidence.
 
-Out of scope: the audio-material and cover-input selectors (repaired 2026-10-21, `6868ac0`); the
-inert 一键排版 control (behaviour unchanged, message corrected in the same commit); the content-safety
-loop and item-count seam (handled elsewhere); any live publish — every acceptance draft is draft-only.
+All five items are already-fixed, retained as completed acceptance history. No remaining implementation is delegated by this refinement. Out of scope: audio/cover, collection behavior, payment, workflow/news recovery, other publishing channels, live editor mutation and publishing. No new API, dependency, schema or configuration.
 
 ### Acceptance Criteria
 
-```gherkin
 - [x] AC1 — 原创 commits and re-reads as checked (req: R1)
-  Scenario: AC1 — 原创 commits and re-reads as checked (req: R1)
-  Given a fresh 文章 draft and the operator's 原创 request, when the rail runs, then the dialog is
-  entered from `#js_original .setting-group__content-info`, the agreement label is clicked, and after
-  the dialog closes the row's `#js_original input.weui-desktop-switch__input` reads checked.
+  Given a requested original declaration and hidden twin row templates, when production enrichment runs in the real-Chromium fixture, then it selects 文字原创, satisfies only an unchecked agreement through its label, commits with 确定 and reads the checked switch in the visible row branch after close. A prechecked agreement remains checked.
 - [x] AC2 — 创作来源 commits with its own confirm (req: R2)
-  Scenario: AC2 — 创作来源 commits with its own confirm (req: R2)
-  Given a fresh draft and `claimSource: "个人观点，仅供参考"`, when the rail runs, then the 声明类型
-  radio `个人观点，仅供参考` is selected, the dialog is committed with `确认`, and after close
-  `.js_claim_source_selected` reads the same text.
+  Given claimSource 个人观点，仅供参考, when the fixture rail runs, then the exact nested radio text is selected and committed with 确认, and the row checkbox and normalized text match after close. An unavailable stance warns once and leaves no dialog.
 - [x] AC3 — 原文链接 entry is measured, then committed (req: R3)
-  Scenario: AC3 — 原文链接 entry is measured, then committed (req: R3)
-  Given a fresh draft and `originalUrl`, when the rail runs, then the measured entry opens the field,
-  the URL is filled, and the committed readback equals the requested URL; a build whose entry moved
-  names the failure instead of claiming success.
+  Given originalUrl and the documented row expander/popover shape, when the fixture rail runs, then the URL is filled, its 确定 anchor commits, the popover disappears and the row checkbox/value match exactly. Delayed commit succeeds; refusal or missing field warns and closes the popover; an exact committed URL is not reopened.
 - [x] AC4 — a committed 原创 unblocks 赞赏 (req: R4)
-  Scenario: AC4 — a committed 原创 unblocks 赞赏 (req: R4)
-  Given a fresh draft, when 原创 commits, then the 赞赏 row is no longer "声明原创后才可开启" and the
-  赞赏 step reaches its switch or names why the platform kept it disabled.
+  Given original and reward requests in the fixture, when original commits, then reward commits and its own checkbox reads checked. An already committed row is not toggled, and inability to commit produces a named warning rather than success.
 - [x] AC5 — the fixture regression fails on the pre-fix entries (req: R5)
-  Scenario: AC5 — the fixture regression fails on the pre-fix entries (req: R5)
-  Given `tests/fixtures/wechatmp-dom-runner.ts`, when `bun test plugins/publishings/wechatmp-pub/tests/`
-  runs, then the rail's committed-skip and dialog steps exercise the measured shapes and pass.
-```
+  Given plugins/publishings/wechatmp-pub/tests/fixtures/wechatmp-dom-runner.ts and the production rail, when the existing 0318 and AC4 tests run, then their assertions observe real Chromium control actions, committed state and overlay cleanup. Historical pre-fix failures were recorded in Testing; their deleted receipts are unavailable for a fresh red-baseline claim. This audit revalidates only the current passing implementation.
+
+All scenarios use plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts. Checked status is retained historical acceptance; this documentation audit does not record a new live verification verdict.
 
 ### Q&A
 
 <!-- Clarifications and triage decisions. Keep empty if none. -->
 
+#### Q&A entry — 2026-11-04T06:26:46.742Z
+
+Closed decisions (2026-11-03): the explicit inline ready audit applies to an already done task. All R1–R5 are already-fixed, so retain completed acceptance history and status; the backlog/todo cancellation rule does not apply. No implementation handoff, metadata estimate change, feature assignment or live editor mutation is authorized by this refine. E92 is contextual only. Historical live/red-baseline receipt loss is acknowledged, not reconstructed from offline fixtures. No open design decision remains for this scope.
+
 ### Design
 
-WHAT — the settings rail stops reading a dialog's template and enters each row from its measured
-control, with the committed-value contract kept (0260/0272) and the dialog vocabulary pinned by name.
+WHAT / WHY — Preserve the delivered settings-rail contract: measured entries, distinct confirmation vocabulary and committed values after close prevent false success and duplicate toggles. This is a completed-task audit; no new API or product change is proposed.
 
-WHY — the 2026-10-21 draft re-opened a dialog whose committed probe read the dialog itself, so a
-row the rail had just clicked 确定 on still read as uncommitted; 创作来源 and 原文链接 warn every day
-because the rail enters those rows from controls that no longer open their dialogs; 赞赏 is disabled
-as a side effect of the false uncommitted read. Unmeasured selector surgery produced exactly these
-warnings (0272), so every entry this design lands is named from the live measurement, not inferred.
+WHERE — `plugins/publishings/wechatmp-pub/src/enrich.ts` exports `enrichArticle(page: WechatPage, meta: Record<string, unknown>): Promise<string[]>`. The production caller is `enrichArticleDraft` in `src/flow.ts`; it merges enrichment warnings into the draft flow. Fixtures execute the same implementation through `wrapPlaywrightPage`, rather than mocking the controls under test.
 
-WHERE — `plugins/publishings/wechatmp-pub/src/enrich.ts` (the rail: row entries, dialog actions,
-committed probes) and `plugins/publishings/wechatmp-pub/tests/fixtures/wechatmp-dom-runner.ts`
-(the synthetic DOM). Evidence: `.spur/memory/evidence/20261021-wechatmp/wechatmp-probe{,2,3,4,5,6}-20261021.json`.
+Frozen implemented names and order:
 
-Frozen names (all measured live 2026-10-21):
+1. Only requested metadata fields activate steps. Each step reads the committed state first; matching state skips interaction. Original precedes reward; URL and claim use their own controls and readback.
+2. `ROW_ORIGINAL`: `#js_original .setting-group__content-info` / `.setting-group__title`. Select `label:has(.js_original_type_radio):has-text("文字原创")`; click `label.original_agreement` only with an unchecked checkbox; `ORIGINAL_CONFIRM` is visible-dialog 确定. `COMMITTED.original` finds the row switch whose parent has client rectangles, excluding hidden twin branches.
+3. `ROW_REWARD` retains the implemented row fallback list. `COMMITTED.reward` reads the reward setting's checkbox, not the original switch. Capability refusals are named, not treated as success.
+4. `ROW_URL`: `#js_article_url_area .js_article_url_allow_click`; `URL_POPOVER`: `.popover_inner:has(.popover-article-setting__content):visible`; `URL_INPUT`: its `input.js_url[name="source_url"]`; `URL_CONFIRM`/`URL_CANCEL`: its `a.jsPopoverBt` anchors with exact 确定/取消 text. Wait for hidden before reading the row's `.js_url_checkbox` and `.article_url_setting`.
+5. `ROW_CLAIM`: `#js_claim_source_area .allow_click_opr`; select the exact nested requested radio text; `CLAIM_CONFIRM`: visible-dialog 确认. `CLAIM_COMMITTED` requires enabled checkbox plus requested normalized text.
+6. Reuse `step`'s one bounded retry with cleanup and committed-state reread; capability failures warn once. Residual overlays/readback failures remain named diagnostics. Do not substitute speculative selectors, hidden input check(), unscoped first-match probes or click-only success.
 
-- 原创 entry — the row's visible `#js_original .setting-group__content-info` / `.setting-group__title`
-  (measured opener of the dialog), never the old `.js_edit_ori`; the dialog's radio is the
-  `label:has(.js_original_type_radio):has-text("文字原创")` (default-checked in this build), the
-  agreement is `label.original_agreement` whose real `input[type=checkbox]` is HIDDEN behind a styled
-  label (click the label, never `.check()` the hidden input), commit `确定`.
-- 原创 committed probe — `#js_original input.weui-desktop-switch__input` (the row's own switch),
-  never the unscoped `#js_original, .js_ori_setting_checkbox` union (committed 45ba558).
-- 创作来源 entry — `#js_claim_source_area .allow_click_opr` (the label `#js_claim_source_area
-  .frm_checkbox_label` resolved but opened nothing); the 声明类型 radios include
-  `个人观点，仅供参考`; commit this dialog with **`确认`**, never the 原创 dialog's `确定`.
-- 原文链接 entry — still UNMEASURED (the row's `input.frm_checkbox.js_url_checkbox` times out on
-  Playwright `check()`; `.allow_click_opr` opened nothing in an empty editor): measure the label
-  click and read where the URL field appears before touching the rail. Outcome is a warning when the
-  readback does not match the requested URL, never a silent success.
-- 赞赏 — unchanged except that the original probe fix removes its disable precondition; its own
-  `COMMITTED.reward` / `ROW_REWARD` stay as-is until a live pass proves otherwise.
+Dependencies: no new prerequisite task or metadata dependency. 0260/0272 are historical context, not unfinished prerequisites for this delivered repair. E92's channel UI fidelity Scope is relevant context; 0318 has no feature_id and this audit does not assign one. All five issue findings are already-fixed; any newly reproduced defect needs its own scoped follow-up.
 
-Anti-patterns: no re-opening an already committed row (the committed probe answers first); no
-`document.querySelector` against a class that the dialog also carries; no `input.check()` on a hidden
-input (drive its label); no hard-coded dialog vocabulary — the confirm label and the stance radios are
-read from the opened dialog, and an absent stance is a named skip; no production change to 原文链接
-without the measured entry.
-
-HANDOFF — the repair lands in this task; the next daily run (or an explicit re-draft) is the
-acceptance pass, and the attended walk (`probe6` shape) is the evidence AC1 records.
+Environment/concurrency: audit uses checkout source and isolated Chromium, not the globally installed kk bundle or an authenticated editor. The G15 worktree and pre-existing main-tree edits remain outside this audit. No installed runner synchronization or live acceptance is required for this documentation-only correction; historical live acceptance is not rerun.
 
 ### Plan
 
-1. Verify against the live editor (already measured 2026-10-21; re-run the probe6 shape if the build
-   moved): 原创 dialog from `#js_original .setting-group__content-info`, radio +
-   `label.original_agreement` label click + `确定`; 创作来源 from `.allow_click_opr` + `确认`; the
-   原文链接 entry measurement (label click, then where the URL field appears).
-2. Land the rail changes in `enrich.ts`: `ROW_ORIGINAL` → the measured row-content entries;
-   `ROW_CLAIM` → `#js_claim_source_area .allow_click_opr`; the 创作来源 dialog confirms with `确认`
-   (separate `CLAIM_CONFIRM` from the 原创 `确定`); `ROW_URL` only after the entry is measured;
-   原创 agreement driven by its label; keep the committed probe scoped (`45ba558`).
-3. Extend `tests/fixtures/wechatmp-dom-runner.ts` to the measured shapes (row content opener, hidden
-   agreement input behind `label.original_agreement`, the 创作来源 `确认` dialog, the 原文链接 entry),
-   so the offline regression runs the production expressions against synthetic DOM and fails on the
-   pre-fix entries.
-4. `bun test plugins/publishings/wechatmp-pub/tests/` green; `bun run lint` clean.
-5. Verification: one attended E2E draft (draft-only, no 发表) shows 原创/创作来源/原文链接 committed
-   and re-read after the dialogs close, and the run's warnings carry no `未生效` for those rows
-   (AC1); the fixture regression is the AC2 evidence; the discovery doc carries the measured shapes
-   (AC3).
+Completed-scope revalidation, not an implementation queue:
 
-Ordered: measurement first (原文链接 entry), rail second, fixture third, gates fourth, the attended
-E2E last. The next daily run is the acceptance pass, so nothing here re-drafts today's article.
+1. [x] R1/R2: inspect measured original/claim entries, distinct confirm labels, visible-branch original readback and exact claim readback in src/enrich.ts; trace src/flow.ts caller.
+2. [x] R3: compare URL expander/popover/anchor/readback with the dated 0318 repair in docs/design/wechatmp-ui-discovery.md; remove the obsolete unmeasured-entry premise.
+3. [x] R4: inspect original-before-reward ordering and the reward-specific checkbox/account readback; preserve already-committed skips and named refusals.
+4. R1–R5: run existing real-Chromium tests in plugins/publishings/wechatmp-pub/tests/wechatmp-dom.test.ts matching `0318:|AC4:`. Persist the outcome in the dated readiness report; distinguish fixture proof from deleted historical live/red-baseline evidence. Do not alter tests to force a pass.
+5. Run `spur task check 0318 --as todo --json` and review the task-only diff. Keep status done, existing metadata and checked acceptance history. Record the orphan feature warning without assigning a parent.
+
+No production implementation, new tests, full repository gate, live browser action or publication is part of this refine. If the focused checks expose a regression, report it with evidence rather than silently handing off the old repair as new work.
 
 ### Root Cause
 
