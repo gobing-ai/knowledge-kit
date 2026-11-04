@@ -47,8 +47,8 @@ export interface FakeCallLogEntry {
  * Shared body for the fake transports (0155 R3): the in-memory call log, the sticky result
  * override, and the publish/log/reset surface live here once. Not exported — the public API
  * stays the two fakes. Composition instead of an abstract base class: subclassing here
- * deterministically trips a Bun 1.3.14 test-runner bug (full suite exits 1 with zero
- * failures); composition keeps the single implementation site without inheritance.
+ * deterministically tripped a Bun 1.3.14 test-runner bug (full suite exits 1 with zero
+ * failures; not re-tested on 1.4.3); composition keeps the single implementation site without inheritance.
  */
 class FakeTransportCore {
     private callLogs: FakeCallLogEntry[] = [];

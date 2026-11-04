@@ -11,9 +11,8 @@
  * Playwright's pipe under Bun 1.3.14 stalls intermittently (fulfill never
  * returns, `document.fonts.ready` never settles — 0212 dogfood, ~1 in 3 runs).
  *
- * The E2E test still skips under `bun test` (Playwright's launch blocks that
- * runner's event loop); the evidence script runs each variant pair in its own
- * subprocess. `compose` carries a deadline as the backstop for any other stall.
+ * The E2E test runs inside `bun test` on Bun 1.4.3 (the 1.3.14 launch block is
+ * gone). `compose` carries a deadline as the backstop for any other stall.
  *
  * Missing Playwright or Chromium surfaces as an actionable error naming the
  * install command.

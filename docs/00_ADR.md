@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.42.0
+version: 1.43.0
 created_at: 2026-05-28
-updated_at: 2026-11-03
+updated_at: 2026-11-04
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -44,6 +44,13 @@ isolation and reusable if a second app appears.
 
 **Consequences.** The root pins `packageManager: bun@1.3.14`. New shared code becomes a new
 `packages/*` workspace, not a folder inside `apps/cli`.
+
+### Amendment (2026-11-04)
+
+The pin is now `packageManager: bun@1.4.3` (commit `ca7fe0d` aligned the tool pins to the 1.4.3
+baseline). The 1.3.14 runner workarounds were re-measured on 1.4.3. The Playwright launch block and
+the third-compose hang are gone. Two behaviors remain: `Bun.which` ignores a mutated
+`process.env.PATH` unless it is passed explicitly, and `Bun.markdown.html` passes raw HTML through.
 
 ---
 

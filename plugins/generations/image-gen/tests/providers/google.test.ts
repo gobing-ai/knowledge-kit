@@ -273,11 +273,10 @@ describe('google provider generate', () => {
  * key as `-x <proxy>` / `-H 'x-goog-api-key: …'` leaked both into logs. They now travel via a
  * curl config file on stdin (`-K -`).
  *
- * The AC's prescribed probe (a fake `curl` earlier on `PATH`) cannot intercept this call: Bun's
- * `node:child_process.execFileSync` resolves the executable without honouring a mutated
- * `process.env.PATH` (verified on Bun 1.3.14 — a fake `curl` on a prepended PATH is ignored and the
- * real curl runs). So the property is asserted through the observable leak channel instead: the
- * thrown message, which is where argv used to surface, and the temp-file lifecycle.
+ * The AC's prescribed probe (a fake `curl` earlier on `PATH`) could not intercept this call on
+ * Bun 1.3.14: `node:child_process.execFileSync` ignored a mutated `process.env.PATH`. Bun 1.4.3
+ * honours it (re-measured 2026-11-04). The property is still asserted through the observable leak
+ * channel: the thrown message, which is where argv used to surface, and the temp-file lifecycle.
  */
 describe('google proxy secret handling (R1)', () => {
     const KEY = 'SEKRET-KEY-123';

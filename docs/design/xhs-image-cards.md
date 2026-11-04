@@ -151,7 +151,7 @@ Boundary and guarantees:
   `.illustration = {path, width?, height?, bytes}` holding the raw provider delivery (e.g. 864x1152
   on MiniMax `image-01` before canvas forwarding or on fallback); downstream (`xhs-pub`,
   daily stages) reads only `.path`.
-- **Environment:** the E2E bun test skips under `bun test` (Bun 1.3.14 blocks the event loop
-  during Playwright's Chromium launch) with a printed reason; real E2E evidence is the artifact
-  script above. Clean `browser.close()` does not leak processes; a hung launch cycle can — the
-  script bounds each variant with a subprocess timeout + retry.
+- **Environment:** the E2E case runs inside `bun test` on Bun 1.4.3 and skips only when
+  Playwright's Chromium is absent. The 1.3.14 launch block is gone (re-measured 2026-11-04). The
+  artifact script runs all variants in one process. Clean `browser.close()` does not leak
+  processes. `compose`'s deadline bounds a hung cycle.

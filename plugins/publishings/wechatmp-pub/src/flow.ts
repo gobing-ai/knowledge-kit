@@ -2234,7 +2234,7 @@ export async function runMode(input: ModeInput, deps: ModeRunDeps): Promise<Resu
  * TypeScript only — no Python, no theme CLI.
  *
  * Kept instead of the shared `markdownToHtml` because the two differ on safety, measured on Bun
- * 1.3.14: `Bun.markdown.html` passes raw HTML straight through (`<script>` included) and renders
+ * 1.3.14 and again on 1.4.3: `Bun.markdown.html` passes raw HTML straight through (`<script>` included) and renders
  * `javascript:` link destinations, while this renderer escapes text and refuses non-http(s) link
  * schemes (R9). The *insertion* is the shared `pasteHtml` either way, so the ADR-029 rail holds.
  */

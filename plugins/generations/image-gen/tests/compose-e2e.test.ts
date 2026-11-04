@@ -9,10 +9,9 @@
  * - Identical SHA-256 across two runs (R3 determinism)
  * - All [data-field] boxes inside the safe area at ≥ the floor sizes (E2E layout check)
  *
- * NOTE: Bun 1.3.14's test runner has a known issue with child_process.spawn and
- * certain stdio pipe configurations required by Playwright. If Chromium is installed
- * but the skip check times out, this test self-skips and reports the issue.
- * Run standalone to verify: `bun scripts/compose-e2e-artifact.ts`
+ * Runs inside `bun test`: the Bun 1.3.14 Playwright launch block that forced a skip here is
+ * gone on Bun 1.4.3 (re-measured 2026-11-04, 5/5 in-runner passes). A stalled compose now
+ * fails on the test timeout instead of passing silently.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -40,12 +39,6 @@ const COMPOSE_CFG = {
 const WIDTH = 1080;
 const HEIGHT = 1440;
 
-/**
- * Decided BEFORE any launch: under `bun test`, Playwright's Chromium launch
- * blocks the Bun 1.3.14 event loop synchronously (no timer, no race can fire),
- * so a runtime watchdog cannot rescue the test. The identical compose is
- * verified E2E by the standalone script, which is the repeatable artifact.
- */
 function chromiumMissing(): boolean {
     try {
         // Lazy require so a missing Playwright package does not break collection.
@@ -57,55 +50,18 @@ function chromiumMissing(): boolean {
     }
 }
 
-const isBunTest = process.env.NODE_ENV === 'test';
-// Registered as skipped (not logged): bun reports the skip in the summary; the reason
-// lives in the comment above and docs/design/xhs-image-cards.md. chromiumMissing() is
-// lazy-evaluated only outside bun test (short-circuit), same as the old SKIP_REASON.
-const e2e = test.skipIf(isBunTest || chromiumMissing());
+// Registered as skipped (not logged): bun reports the skip in the summary.
+const e2e = test.skipIf(chromiumMissing());
 
 function sha256(bytes: Uint8Array): string {
     return createHash('sha256').update(bytes).digest('hex');
 }
 
-/**
- * Race a compose call against a timeout. Returns the bytes on success, or
- * throws with a descriptive message on timeout or error.
- * Timeout is needed because Bun 1.3.14's child_process.spawn can hang
- * indefinitely when Playwright tries to pipe to a child process under bun test.
- */
-async function composeWithTimeout(
-    composer: ChromiumComposer,
-    input: Parameters<ChromiumComposer['compose']>[0],
-    timeoutMs: number,
-): Promise<Uint8Array | 'timeout'> {
-    return Promise.race([
-        composer.compose(input),
-        new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), timeoutMs)),
-    ]);
-}
-
-const PROBE_INPUT = {
-    headline: '测',
-    points: [] as string[],
-    role: 'cover',
-    compose: COMPOSE_CFG,
-    width: WIDTH,
-    height: HEIGHT,
-};
-
 describe('E2E — real Chromium compose (0180 Plan item 9)', () => {
     e2e(
         'compose a fixed Chinese card without illustration: 1080x1440, deterministic SHA-256',
         async () => {
-            // Probe Chromium with a short timeout. If it times out, skip (Bun spawn issue) and explain.
             const composer = new ChromiumComposer();
-            const probeResult = await composeWithTimeout(composer, PROBE_INPUT, 15_000);
-
-            if (probeResult === 'timeout') {
-                console.log('SKIP: Chromium probe timed out — Bun 1.3.14 has a known spawn/pipe issue under bun test');
-                console.log('Verify manually: bun scripts/compose-e2e-artifact.ts');
-                return;
-            }
 
             // Load font coverage for assertCoverage.
             const boldBytes = await readBytes(join(FONTS_DIR, 'NotoSansSC-Bold.otf'));
@@ -168,12 +124,6 @@ describe('E2E — real Chromium compose (0180 Plan item 9)', () => {
         'compose a fixed Chinese card with fixture illustration: 1080x1440, deterministic SHA-256',
         async () => {
             const composer = new ChromiumComposer();
-            const probeResult = await composeWithTimeout(composer, PROBE_INPUT, 15_000);
-
-            if (probeResult === 'timeout') {
-                console.log('SKIP: Chromium probe timed out (Bun 1.3.14 spawn/pipe issue under bun test)');
-                return;
-            }
 
             // Build a minimal valid 1x1 PNG as a fixture illustration.
             const fixtureIllustration = new Uint8Array([

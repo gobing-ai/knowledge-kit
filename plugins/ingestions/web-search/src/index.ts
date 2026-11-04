@@ -392,7 +392,7 @@ export async function main(depsOverride?: Partial<SearchDeps>): Promise<number> 
                 ...depsOverride,
             };
             // Bun.which with an explicit PATH — without the option it can ignore runtime
-            // process.env.PATH changes (observed on Bun 1.3.14).
+            // process.env.PATH changes (observed on Bun 1.3.14, still true on 1.4.3).
             if (!deps.markitdown && !Bun.which('markitdown', { PATH: deps.env.PATH })) {
                 // R6 — live mode requires the normalizer; fail before any network call.
                 throw new Error('markitdown is not on PATH');

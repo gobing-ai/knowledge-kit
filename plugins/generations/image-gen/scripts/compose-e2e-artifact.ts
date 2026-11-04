@@ -10,11 +10,8 @@
  *   bun scripts/compose-e2e-artifact.ts with       # one variant (fixture illustration)
  *   bun scripts/compose-e2e-artifact.ts r2         # 0181 R2: good card + overflow refusal
  *
- * Each variant runs in its own subprocess (the wrapper spawns `bun <self>
- * <variant>`): under Bun 1.3.14 a third Chromium compose cycle within one
- * process can hang the Playwright driver, while a two-compose pair is stable.
- * Production composes one card per image-gen invocation, so the per-process
- * pair matches the real spend path.
+ * All variants run in one process: the Bun 1.3.14 third-compose-cycle hang that
+ * forced a subprocess per variant is gone on Bun 1.4.3 (re-measured 2026-11-04).
  */
 import { join } from 'node:path';
 import { imageDimensions } from '../src/bytes';
@@ -110,22 +107,9 @@ if (variant === 'without' || variant === 'with') {
 } else if (variant === 'r2') {
     await runR2();
 } else if (variant === undefined) {
-    // Bounded: a Chromium cycle can occasionally hang under Bun 1.3.14 (driver
-    // contention right after a sibling subprocess); timeout + one clean retry.
-    for (const v of ['without', 'with', 'r2'] as const) {
-        let proc = Bun.spawnSync(['bun', import.meta.path, v], { stdout: 'pipe', stderr: 'pipe', timeout: 120_000 });
-        if (proc.exitCode !== 0) {
-            console.log(`[${v}] attempt 1 failed (exit ${proc.exitCode}); retrying once...`);
-            proc = Bun.spawnSync(['bun', import.meta.path, v], { stdout: 'pipe', stderr: 'pipe', timeout: 120_000 });
-        }
-        const out = new TextDecoder().decode(proc.stdout);
-        const err = new TextDecoder().decode(proc.stderr);
-        if (out) process.stdout.write(out);
-        if (proc.exitCode !== 0) {
-            process.stderr.write(err);
-            process.exit(proc.exitCode ?? 1);
-        }
-    }
+    await runPair('without');
+    await runPair('with');
+    await runR2();
     console.log(
         'E2E compose artifacts written (.spur/run/0180 both variants, .spur/run/0181 R2) — SHA-256 deterministic.',
     );
