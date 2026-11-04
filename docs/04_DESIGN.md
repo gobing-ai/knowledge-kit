@@ -1119,14 +1119,16 @@ value is XML-escaped (`&`/`<`/`>`), because one raw `&` makes `launchctl bootstr
 | `kk-collect` | `launchd` | plist for `ai.gobing.kk-collect` (`launchd.plist.tmpl`): `StartCalendarInterval` 04:00/10:00/16:00/22:00 local (6 h; sleep coalesces missed fires to one run at wake), `ProgramArguments` = `spur workflow run plugins/kk/workflows/kk-collect.yaml`, `WorkingDirectory` = `--repo`, `EnvironmentVariables` = `PATH` + `TYPESAFE_API_KEY`, stdout+stderr = `<repo>/.works/kk-collect/launchd.log` |
 | `kk-collect` | `cron` | `0 4,10,16,22 * * * cd <repo> && TYPESAFE_API_KEY='<key>' spur workflow run plugins/kk/workflows/kk-collect.yaml >> <repo>/.works/kk-collect/launchd.log 2>&1` |
 | `kk-serve` | `launchd` | plist for `ai.gobing.spur-serve` (`kk-serve.launchd.plist.tmpl`): `RunAtLoad` + `KeepAlive` true, `ThrottleInterval` 10, `ProgramArguments` = `spur serve --cwd <repo> --host 127.0.0.1 --port 3003 --no-open`, `WorkingDirectory` = `--repo`, `EnvironmentVariables` = `PATH` + `TYPESAFE_API_KEY`, stdout+stderr = `<repo>/.works/spur-serve/serve.log` |
-| `kk-daily-publish3-cn-peak` | `cron` | `0 17 * * *` local (`kk-daily-publish3-cn-peak.cron.tmpl`): `spur workflow run plugins/kk/workflows/kk-daily-publish3.yaml --vars '{work_dir, run_date, window: cn-peak, live_channels: wechatmp-pub,xhs-pub,weibo-pub,x-pub}'`, `PATH` + `TZ=America/Los_Angeles`, log `<repo>/.works/kk-daily-publish3/cn-peak.log`. The baked `live_channels` **is** the ADR-022 consent for this window |
-| `kk-daily-publish3-overseas` | `cron` | `0 7 * * *` America/Los_Angeles (`kk-daily-publish3-overseas.cron.tmpl`): same workflow with `window: overseas-rss` and a **yesterday** `work_dir`/`run_date`, no `live_channels`, log `<repo>/.works/kk-daily-publish3/overseas.log` |
+| `kk-daily-publish3-cn-peak` | `cron` | `0 17 * * *` local (`kk-daily-publish3-cn-peak.cron.tmpl`, task 0334/F09+): `bun {{repo}}/plugins/kk/scripts/voice3-publish-window.ts --window cn-peak --preset daily-ai-voice --live-channels weibo-pub,x-pub`, `PATH` + `TZ=America/Los_Angeles`, log `<repo>/.works/kk-daily-publish3/cn-peak.log`. The launcher (below) derives `work_dir`/`run_date` from the window date and validates the live tokens against the pinned preset's `cn-peak` rows before spawning the workflow — the baked `--live-channels` list **is** the ADR-022 consent for this window, and every entry line stays free of cron's `%` grammar |
+| `kk-daily-publish3-overseas` | `cron` | `0 7 * * *` America/Los_Angeles (`kk-daily-publish3-overseas.cron.tmpl`): `bun {{repo}}/plugins/kk/scripts/voice3-publish-window.ts --window overseas-rss` — **yesterday** `run_date`, no live consent (draft/dummy rows only), log `<repo>/.works/kk-daily-publish3/overseas.log` |
+| `kk-daily-ai-voice3` | `cron` | `30 4 * * *` local, task 0334 R1/R6 (`kk-daily-ai-voice3.cron.tmpl`): `spur workflow run plugins/kk/workflows/kk-daily-ai-voice3.yaml --vars '{auto_publish: "false"}'`, `PATH` + `TZ=America/Los_Angeles`, log `<repo>/.works/kk-daily-ai-voice3/generation.log`. The shadow-generation tick: cron only (the DAG has its own review pause, so launchd's fire-and-forget adds nothing), publish-inert by default because `auto_publish` is `false` |
 
 `kk-serve` is **launchd only**: cron has no keepalive semantics, so `--platform cron` for it exits 1
 with `schedule 'kk-serve' has no cron template (expected launchd)` and prints nothing (task 0265 R3);
-`kk-collect` keeps both platforms. The two `kk-daily-publish3-*` windows are **cron only**: cn-peak's
-`wait-until` node absorbs the hosted-zone offset and the overseas tick is a plain daily fire, so
-neither needs launchd's calendar-interval or keepalive semantics. `kk-serve` freezes host/port as
+`kk-collect` keeps both platforms. The two `kk-daily-publish3-*` windows and `kk-daily-ai-voice3` are
+**cron only**: cn-peak's `wait-until` node absorbs the hosted-zone offset, the overseas tick and the
+04:30 generation tick are plain daily fires, and the generation DAG pauses on its own `review` node,
+so none of them needs launchd's calendar-interval or keepalive semantics. `kk-serve` freezes host/port as
 template constants and keeps the hand plist's `Label`, so re-rendering replaces the installed agent in
 place.
 
@@ -2272,9 +2274,28 @@ depends on the gate).
 nothing except through the nested window. What remains is generation switches — `cards_enabled` /
 `cards` (billed card rendering, off by default because the preset's cards row is `off`),
 `plan_translate_enabled`, `article_write_enabled`, `script_write_enabled`, `cover_enabled`,
-`transcode_mp3`, `skip_review` — plus the four publish hand-off vars
-(`auto_publish`, `publish_window`, `publish_preset`, `publish_dummy`). The 合集 tag a channel payload
-carries is that channel's preset `options`, not a var.
+`transcode_mp3`, `skip_review` — plus the five publish hand-off vars (`auto_publish`,
+`publish_window`, `publish_preset`, `publish_dummy`, `publish_live_channels`). The 合集 tag a channel payload
+carries is that channel's preset `options`, not a var. `publish_live_channels` (0334 R7) forwards
+verbatim to the nested window's `live_channels`: empty by default — the var alone can never produce a
+live send, only an operator launch that sets it, with tokens the plan stage validates against the
+window, promotes rows — and `publish_dummy=true` plus a non-empty list refuse each other at plan time.
+
+**Migration rehearsal surface (0334).** Three artifacts, all shipped but none installed:
+`plugins/kk/scripts/voice3-publish-window.ts` — the publish-window launcher the cron entries call;
+`plugins/kk/publish-presets/daily-ai-voice-migration.json` — the shipped matrix with explicit stable
+row ids so rehearsal receipts and plan rows diff cleanly against preset edits; and the
+`kk-daily-ai-voice3` schedule above. The launcher resolves `work_dir`/`run_date` in
+America/Los_Angeles (today for `cn-peak`, yesterday for `overseas-rss`), reads the GENERATION bundle
+at `<works>/kk-daily-ai-voice2/<digits>/bundle.json` (never the publish3 output directory), refuses a
+missing or differently-dated bundle naming the expected path, refuses `--dummy` with `--live-channels`,
+validates every token against the pinned preset's window rows (the legacy
+`wechatmp-pub,xhs-pub,weibo-pub,x-pub` cn-peak list is refused by name — out-of-window tokens never
+reach spur), and only then execs `spur workflow run plugins/kk/workflows/kk-daily-publish3.yaml`.
+Rehearsal launch (generation + after-generate publish in one throwaway run, nothing installed, no
+live tokens): `--vars '{"auto_publish":"true","publish_preset":"daily-ai-voice-migration","publish_dummy":"true"}'`.
+The rehearsal surface is preparation only — installing any schedule, or promoting rows to
+`live`, needs the operator's explicit cutover action (§ Rollout in the design doc).
 
 **One pool guard, recorded as a token.** voice2 repeated `kk store pool-count --min 1` on twenty-one
 conditions. `pool-gate` runs it once and writes `.spur/run/<runId>-pool-gate.status`; every node that

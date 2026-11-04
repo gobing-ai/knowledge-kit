@@ -1,4 +1,4 @@
-# kk-daily-publish3-cn-peak — domestic live window (task 0323 R5).
+# kk-daily-publish3-cn-peak — domestic live window (tasks 0323 R5, 0334 R1-R3).
 #
 # Fires at 17:00 local because the audience window is 09:00 Asia/Shanghai and launchd/cron
 # intervals follow the MACHINE's zone; the first node (`publish-matrix-wait-until 09:00
@@ -6,7 +6,17 @@
 # so the entry never needs editing twice a year.
 #
 # `live_channels` is baked in: this installed line IS the operator's ADR-022 consent for a live
-# send. Nothing in the workflow or the preset can produce `live` on its own.
+# send. Nothing in the workflow or the preset can produce `live` on its own. The window is
+# consent-scoped to tokens with a cn-peak row (weibo-pub, x-pub — both draft). Every live launch
+# stops at the `send-confirm` gate and waits for the operator's manual resume; the entry never
+# delivers unattended.
+#
+# The launch goes through plugins/kk/scripts/voice3-publish-window.ts (task 0334): a crontab
+# command ends at the first UNESCAPED percent sign, so inline `date +%F` shell silently truncates
+# the entry — the launcher owns the LA date math, resolves the GENERATION bundle from the
+# effective works root (never the publish3 output directory), refuses a missing/mismatched
+# bundle, validates the token list against the preset's cn-peak rows, and only then execs spur.
+# The rehearsal pins the shipped default preset; change it at cutover.
 #
 # Rendered by `kk schedule render kk-daily-publish3-cn-peak --platform cron --repo <checkout>`;
 # kk never edits the operator's crontab. MERGE, never replace:
@@ -15,6 +25,6 @@
 #     kk schedule render kk-daily-publish3-cn-peak --platform cron --repo "$PWD" >> /tmp/kk-cn-peak.cron
 #     crontab /tmp/kk-cn-peak.cron
 #
-# `run_date` is computed at tick time in America/Los_Angeles: a run that starts at 17:00 PDT is
-# still "today" for the day dir the 04:30 generation wrote.
-0 17 * * * cd {{repo}} && mkdir -p .works/kk-daily-publish3 && PATH="{{home}}/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" TZ=America/Los_Angeles spur workflow run plugins/kk/workflows/kk-daily-publish3.yaml --vars "{\"work_dir\":\"{{repo}}/.works/kk-daily-publish3/$(TZ=America/Los_Angeles date +%Y%m%d)\",\"run_date\":\"$(TZ=America/Los_Angeles date +%F)\",\"window\":\"cn-peak\",\"live_channels\":\"wechatmp-pub,xhs-pub,weibo-pub,x-pub\"}" >> {{repo}}/.works/kk-daily-publish3/cn-peak.log 2>&1
+# `run_date` is computed at tick time in America/Los_Angeles by the launcher: a run that starts
+# at 17:00 PDT is still "today" for the day dir the 04:30 generation wrote.
+0 17 * * * cd {{repo}} && mkdir -p .works/kk-daily-publish3 && PATH="{{home}}/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" TZ=America/Los_Angeles bun {{repo}}/plugins/kk/scripts/voice3-publish-window.ts --window cn-peak --preset daily-ai-voice --live-channels weibo-pub,x-pub >> {{repo}}/.works/kk-daily-publish3/cn-peak.log 2>&1

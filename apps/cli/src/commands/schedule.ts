@@ -34,6 +34,9 @@ const SCHEDULE_TEMPLATES: Record<string, Partial<Record<SchedulePlatform, string
     // launchd's keepalive or calendar-interval semantics.
     'kk-daily-publish3-cn-peak': { cron: 'kk-daily-publish3-cn-peak.cron.tmpl' },
     'kk-daily-publish3-overseas': { cron: 'kk-daily-publish3-overseas.cron.tmpl' },
+    // The voice3 shadow generation run (task 0334 R1/R6): cron-only like the publish windows —
+    // a plain daily tick whose auto_publish=false default keeps it publish-inert.
+    'kk-daily-ai-voice3': { cron: 'kk-daily-ai-voice3.cron.tmpl' },
 };
 
 /** Options accepted by `kk schedule render`. */

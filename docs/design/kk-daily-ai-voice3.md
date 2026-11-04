@@ -252,3 +252,55 @@ Tracked as feature **G15** (under G1): T-a → 0321, T-b → 0322, T-c → 0325,
 - **T-f** `shipinhao-pub` 图文 operation; `threads-pub` image support via a public asset host;
   new `linkedin-pub`, `facebook-pub`, `instagram-pub`.
 - **T-g** agent.run retry in spur, then delete every `-retry` sibling.
+
+## 11. Migration rehearsal (task 0334) — prepared surface, nothing installed
+
+The voice2→voice3 cutover keeps voice2's production scheduling untouched (D1: voice2 stays
+scheduled until §8 step 3's parity bar). 0334 ships the REHEARSAL surface so an operator can prove
+the new pipeline end-to-end in throwaway runs before deciding anything. Every artifact below is
+shipped but none is installed; installing any schedule, or promoting any row to `live`, is the
+operator's separate cutover action.
+
+**What ships:**
+
+- **`plugins/kk/scripts/voice3-publish-window.ts`** — the launcher both publish-window cron entries
+  call. Owns the problems the old inline entries had (F08/F09/F10): the LA date math lives in
+  TypeScript because a crontab command ends at the first unescaped `%` (`date +%F` silently
+  truncated the old entry); the bundle is the GENERATION artifact at
+  `<works>/kk-daily-ai-voice2/<digits>/bundle.json`, never the publish3 output dir; and live tokens
+  are validated against the pinned preset's window rows before spur is exec'd — the legacy baked
+  `wechatmp-pub,xhs-pub,weibo-pub,x-pub` cn-peak list is refused by name. Flags: `--window
+  cn-peak|overseas-rss`, optional `--run-date`, `--preset` (pinned in the entry), `--live-channels`
+  (cn-peak consent, in-window tokens only), `--dummy` (mutually exclusive with live tokens),
+  `--dry-run` (print forwarded vars, exec nothing). `KK_SPUR_BIN` pins spur (same convention as
+  board/capture.ts).
+- **`plugins/kk/publish-presets/daily-ai-voice-migration.json`** — the shipped `daily-ai-voice`
+  inventory with an explicit stable `id` per row (`surfdash.article`, `podcast.episode`,
+  `wechatmp.podcast`, `xhs.podcast`, `wechatmp.article`, `xhs.article`, `xhs.cards`,
+  `weibo.article`, `x.article`, `x.post`, `weibo.post`, `threads.post`, `shipinhao.cards`,
+  `threads.images`), modes draft/dummy/off only (never live — live still needs launch tokens), so
+  rehearsal receipts and plan rows address rows by id and diff cleanly across preset edits.
+- **`kk-daily-ai-voice3` schedule + `publish_live_channels` var (R7)** — the shadow-generation
+  cron entry (04:30, `auto_publish:false`) and the launch var that forwards operator consent to the
+  nested window's `live_channels`. Empty by default: the var alone can never produce a live send.
+
+**Rehearsal run:**
+
+```bash
+# generation + after-generate publish in one throwaway run — dummy receipts, nothing live,
+# nothing installed; workspace stays under the kk-daily-ai-voice2 namespace (F08 admission)
+spur workflow run plugins/kk/workflows/kk-daily-ai-voice3.yaml \
+  --vars '{"auto_publish":"true","publish_preset":"daily-ai-voice-migration","publish_dummy":"true"}'
+# window rehearsal without a generation run — point --run-date at a recorded day dir
+bun plugins/kk/scripts/voice3-publish-window.ts --window cn-peak --run-date <YYYYMMDD> \
+  --preset daily-ai-voice-migration --dry-run
+```
+
+**Scope and locale loss (D3 reaffirmed).** The accepted scope stays zh-only: the audio is zh, so
+every channel — overseas included — receives the zh variants. What the rehearsal does NOT cover,
+and what voice2 did not produce either: no en/ja audio or article variants (daily publishing has no
+`kk-article-adapt` leg — that stays an explicit authoring path, not a scheduled one), no LinkedIn or
+other T-f channels, and no per-platform asset transformations beyond what the preset rows carry. If
+another-language audio ships later, the preset's `variant` field takes a locale suffix
+(`article:ja`) — no schema change. Rollback: voice2's yaml and schedules are untouched by this
+surface; deleting the merged voice3 cron lines restores the pre-rehearsal machine byte-for-byte.

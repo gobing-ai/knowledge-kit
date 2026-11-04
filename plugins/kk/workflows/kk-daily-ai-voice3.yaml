@@ -24,6 +24,12 @@ vars:
   publish_window: "after-generate"
   publish_preset: ""
   publish_dummy: "false"
+  # 0334 R7: opt-in live consent channel, forwarded verbatim to the nested publish3
+  # `live_channels`. Empty by default — this variable alone can never produce a live send
+  # (ADR-022: only an operator launch that sets it, with tokens the plan stage validates
+  # against the window, promotes rows; `publish_dummy=true` and a non-empty token list
+  # refuse each other at plan time).
+  publish_live_channels: ""
   # Composed by the `prepare` node (`kk daily prepare`), then read back into vars through the
   # single-node read chain below — shell actions cannot set vars, and a concurrent `setVars` merge
   # is last-writer-wins, so the DAG exchanges data by fixed paths under work_dir, never by vars.
@@ -923,7 +929,7 @@ nodes:
         command: >-
           env -u SPUR_WORKFLOW_RUN_ACTIVE -u SPUR_EXPECTED_DEFINITION_DIGEST
           spur workflow run plugins/kk/workflows/kk-daily-publish3.yaml
-          --vars "{\"work_dir\":\"${vars.work_dir}\",\"run_date\":\"${vars.run_date}\",\"window\":\"${vars.publish_window}\",\"preset\":\"${vars.publish_preset}\",\"dummy\":\"${vars.publish_dummy}\"}"
+          --vars "{\"work_dir\":\"${vars.work_dir}\",\"run_date\":\"${vars.run_date}\",\"window\":\"${vars.publish_window}\",\"preset\":\"${vars.publish_preset}\",\"dummy\":\"${vars.publish_dummy}\",\"live_channels\":\"${vars.publish_live_channels}\"}"
 
   - id: ledger
     description: "Append this run to the workflow ledger; bookkeeping never fails a generation."

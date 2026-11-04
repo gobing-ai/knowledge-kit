@@ -1,0 +1,18 @@
+# kk-daily-ai-voice3 — shadow generation run (task 0334 R1/R6).
+#
+# 04:30 America/Los_Angeles, the same cadence as the voice2 daily run it shadows. The entry is
+# defined in the zone the machine already runs in, so it needs no DST adjustment.
+#
+# Shadow posture is baked into the launch: `auto_publish` stays false, so this entry only
+# prepares, researches and generates — it publishes NOTHING on its own. The nested publish3
+# window runs only when an operator launch flips `publish_window` away from `after-generate`
+# (rehearsal flags in docs/design/kk-daily-ai-voice3.md). The workspace namespace stays
+# kk-daily-ai-voice2 (voice3 prepares under it) until the operator's cutover changes it.
+#
+# Rendered by `kk schedule render kk-daily-ai-voice3 --platform cron --repo <checkout>`;
+# kk never edits the operator's crontab. MERGE, never replace:
+#
+#     crontab -l > /tmp/kk-voice3.cron 2>/dev/null || :
+#     kk schedule render kk-daily-ai-voice3 --platform cron --repo "$PWD" >> /tmp/kk-voice3.cron
+#     crontab /tmp/kk-voice3.cron
+30 4 * * * cd {{repo}} && mkdir -p .works/kk-daily-ai-voice3 && PATH="{{home}}/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" TZ=America/Los_Angeles spur workflow run plugins/kk/workflows/kk-daily-ai-voice3.yaml --vars '{"auto_publish":"false"}' >> {{repo}}/.works/kk-daily-ai-voice3/generation.log 2>&1

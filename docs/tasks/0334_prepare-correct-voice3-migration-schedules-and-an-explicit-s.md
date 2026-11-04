@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Prepare correct voice3 migration schedules and an explicit safe channel preset
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-26T00:11:53.725Z
-updated_at: "2026-10-26T00:15:38.524Z"
+updated_at: "2026-11-04T15:20:25.505Z"
 feature_id: G15
 priority: P1
 tags:
@@ -14,6 +14,8 @@ estimate_hours: 6
 
 dependencies: ["0329", "0330", "0332"]
 ac_numbering: task-local
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0334-verdict.json
 ---
 
 ## 0334. Prepare correct voice3 migration schedules and an explicit safe channel preset
@@ -38,17 +40,17 @@ Environment/concurrency: Bun 1.4.3; pinned Biome via bun run lint/format; instal
 
 ### Requirements
 
-- [ ] R1. Render generation and all publish-window launchers that resolve the canonical voice3 bundle from effective works_dir and the correct local run date, including configured root and DST boundaries; never infer a publish3 output directory as a generation source.
-- [ ] R2. Remove cron percent parsing hazards by moving date/JSON calculation into the checkout launcher or correctly escaping it; test actual command parsing/execution with a recording spur double.
-- [ ] R3. CN launch tokens must be a subset of the selected window and explicit operator intent; preserve manual send-confirm resume. Rendered schedules must clearly disclose a live launch pauses and must not claim unattended live delivery.
-- [ ] R4. Provide daily-ai-voice-migration preset covering the existing matrix operation inventory with real draft owned/draft-capable operations, dummy draftless/unfinished operations and explicitly off unavailable media. No preset may encode live. Do not add nonexistent new plugins.
-- [ ] R5. Document exact generation flags auto_publish=true, publish_preset=daily-ai-voice-migration and publish_dummy=true for rehearsal, plus the deliberate operator changes for a later real launch. Preserve accepted zh-only scope and list locale loss.
-- [ ] R6. Produce reviewable schedule/runbook artifacts only; do not edit .spur/config.yaml scheduled jobs, install crontab/launchd, sync installed package code or run a real publication. Provide rollback instructions retaining voice2.
-- [ ] R7. Declare voice3 launch var publish_live_channels with empty default and forward it only to nested publish3 live_channels. Explicit live launches preserve send-confirm pause/resume; defaults and preset/config values never imply live consent.
+- [x] R1. Render generation and all publish-window launchers that resolve the canonical voice3 bundle from effective works_dir and the correct local run date, including configured root and DST boundaries; never infer a publish3 output directory as a generation source.
+- [x] R2. Remove cron percent parsing hazards by moving date/JSON calculation into the checkout launcher or correctly escaping it; test actual command parsing/execution with a recording spur double.
+- [x] R3. CN launch tokens must be a subset of the selected window and explicit operator intent; preserve manual send-confirm resume. Rendered schedules must clearly disclose a live launch pauses and must not claim unattended live delivery.
+- [x] R4. Provide daily-ai-voice-migration preset covering the existing matrix operation inventory with real draft owned/draft-capable operations, dummy draftless/unfinished operations and explicitly off unavailable media. No preset may encode live. Do not add nonexistent new plugins.
+- [x] R5. Document exact generation flags auto_publish=true, publish_preset=daily-ai-voice-migration and publish_dummy=true for rehearsal, plus the deliberate operator changes for a later real launch. Preserve accepted zh-only scope and list locale loss.
+- [x] R6. Produce reviewable schedule/runbook artifacts only; do not edit .spur/config.yaml scheduled jobs, install crontab/launchd, sync installed package code or run a real publication. Provide rollback instructions retaining voice2.
+- [x] R7. Declare voice3 launch var publish_live_channels with empty default and forward it only to nested publish3 live_channels. Explicit live launches preserve send-confirm pause/resume; defaults and preset/config values never imply live consent.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Rendered migration schedules resolve the correct bundle and approval model (req: R1, R2, R3, R4, R5, R6, R7)
+- [x] AC1 — Rendered migration schedules resolve the correct bundle and approval model (req: R1, R2, R3, R4, R5, R6, R7)
 
 Given the current checkout and the isolated fixture conditions in Design, when the listed success/failure/replay cases run through the actual owned seam, then every R-item is observed through receipts, store state, artifact bytes and process/run status. Verification owner: this task's implementer; final cross-task rehearsal belongs to the rehearsal task. Concrete cases: Rendered commands through cron-percent parser; configured works root with spaces; today/yesterday date; PDT/PST CN target; missing bundle; mismatched date; exact CN token set; live launch stops for resume; auto_publish rehearsal path; migration preset operation inventory; no actual scheduler mutation.
 
@@ -87,23 +89,75 @@ Verification contract: enumerate failure cases and create behavior/E2E regressio
 
 ### Plan
 
-- [ ] Step 0 — Inspect worktree/status and owning task dependencies; read cited current code and ADR-022/031; preserve concurrent edits and identify checkout-bound CLI runner.
-- [ ] Step 1 — Before production edits, add failing E2E/behavior cases for R1-R7: Rendered commands through cron-percent parser; configured works root with spaces; today/yesterday date; PDT/PST CN target; missing bundle; mismatched date; exact CN token set; live launch stops for resume; auto_publish rehearsal path; migration preset operation inventory; no actual scheduler mutation.
-- [ ] Step 2 — Implement R1-R7 within the listed ownership and frozen design; keep upstream contracts and legacy voice2/kk-itc compatibility.
-- [ ] Step 3 — Run the focused real-dispatcher cases; inspect receipts and measured artifacts for failures, no-content and resume, not only process exit.
-- [ ] Step 4 — Update owning surface docs, run required project checks, review the diff against every R-item, and record exact verification evidence and remaining limitations through Spur.
+- [x] Step 0 — Inspect worktree/status and owning task dependencies; read cited current code and ADR-022/031; preserve concurrent edits and identify checkout-bound CLI runner.
+- [x] Step 1 — Before production edits, add failing E2E/behavior cases for R1-R7: Rendered commands through cron-percent parser; configured works root with spaces; today/yesterday date; PDT/PST CN target; missing bundle; mismatched date; exact CN token set; live launch stops for resume; auto_publish rehearsal path; migration preset operation inventory; no actual scheduler mutation.
+- [x] Step 2 — Implement R1-R7 within the listed ownership and frozen design; keep upstream contracts and legacy voice2/kk-itc compatibility.
+- [x] Step 3 — Run the focused real-dispatcher cases; inspect receipts and measured artifacts for failures, no-content and resume, not only process exit.
+- [x] Step 4 — Update owning surface docs, run required project checks, review the diff against every R-item, and record exact verification evidence and remaining limitations through Spur.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/src/commands/schedule.ts:37` |
+| `docs/04_DESIGN.md:1122` |
+| `docs/04_DESIGN.md:1128` |
+| `docs/04_DESIGN.md:2277` |
+| `docs/design/kk-daily-ai-voice3.md:255` |
+| `plugins/kk/schedules/kk-daily-publish3-cn-peak.cron.tmpl:1` |
+| `plugins/kk/schedules/kk-daily-publish3-cn-peak.cron.tmpl:28` |
+| `plugins/kk/schedules/kk-daily-publish3-cn-peak.cron.tmpl:9` |
+| `plugins/kk/schedules/kk-daily-publish3-overseas.cron.tmpl:1` |
+| `plugins/kk/schedules/kk-daily-publish3-overseas.cron.tmpl:11` |
+| `plugins/kk/schedules/kk-daily-publish3-overseas.cron.tmpl:22` |
+| `plugins/kk/schedules/kk-daily-publish3-overseas.cron.tmpl:5` |
+| `plugins/kk/schedules/kk-daily-publish3-overseas.cron.tmpl:8` |
+| `plugins/kk/workflows/kk-daily-ai-voice3.yaml:27` |
+| `plugins/kk/workflows/kk-daily-ai-voice3.yaml:932` |
+| `apps/.works/tmp/test-voice3-migration/0333/summary.json:1` |
+| `apps/cli/.works/kk.db:1` |
+| `apps/cli/.works/kk.db-shm:1` |
+| `apps/cli/.works/kk.db-wal:1` |
+| `apps/cli/tests/voice3-migration-0334.test.ts:1` |
+| `plugins/kk/publish-presets/daily-ai-voice-migration.json:1` |
+| `plugins/kk/schedules/kk-daily-ai-voice3.cron.tmpl:1` |
+| `plugins/kk/scripts/voice3-publish-window.ts:1` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | test: apps/cli/tests/voice3-migration-0334.test.ts:190 (launcher resolves the GENERATION bundle from the effective works root — a path with spaces — and forwards work_dir/run_date/window/preset/live_channels), :220 (today for cn-peak, yesterday for overseas), :243 (missing bundle refuses before spawning spur), :252 (differently-dated bundle refuses); static-ref: plugins/kk/scripts/voice3-publish-window.ts (resolveWorksDir mirrors kk-workflow-stages.ts precedence; bundle admission under <works>/kk-daily-ai-voice2/<digits>/bundle.json, never a publish3 output dir — F08); command: bun test apps/cli/tests/voice3-migration-0334.test.ts 13/0 |
+| R2 | MET | test: apps/cli/tests/voice3-migration-0334.test.ts:147 (every cron entry of all three schedules free of unescaped percent signs), :190,:307 (actual command parsing/execution through a recording spur double via KK_SPUR_BIN, argv asserted); static-ref: plugins/kk/schedules/kk-daily-publish3-cn-peak.cron.tmpl:30, plugins/kk/schedules/kk-daily-publish3-overseas.cron.tmpl:32, plugins/kk/schedules/kk-daily-ai-voice3.cron.tmpl:29 |
+| R3 | MET | test: apps/cli/tests/voice3-migration-0334.test.ts:157 (rendered cn-peak discloses the send-confirm pause and bakes only in-window CN tokens weibo-pub,x-pub), :263 (legacy baked wechatmp-pub,xhs-pub,weibo-pub,x-pub list refused by name — out-of-window tokens never reach spur), :285 (dummy + live refuse each other), :307 (in-window subset forwards verbatim); static-ref: plugins/kk/schedules/kk-daily-publish3-cn-peak.cron.tmpl:11-13 (installed line IS the ADR-022 consent; send-confirm pause disclosed) |
+| R4 | MET | test: apps/cli/tests/voice3-migration-0334.test.ts:330 (migration preset parses under PublishPresetSchema, stable ids, covers the shipped daily-ai-voice operation inventory 1:1, names only real plugins); static-ref: plugins/kk/publish-presets/daily-ai-voice-migration.json (15 rows, modes draft/dummy/off only — no live in any row or schema) |
+| R5 | MET | docs: docs/design/kk-daily-ai-voice3.md §11 (exact rehearsal `--vars` launch auto_publish=true publish_preset=daily-ai-voice-migration publish_dummy=true, operator cutover list, D3 zh-only reaffirmed with explicit locale-loss list, preset `variant` locale suffix as future hook), docs/04_DESIGN.md migration rehearsal surface paragraph |
+| R6 | MET | artifacts-only: 3 cron templates + launcher + migration preset + apps/cli/src/commands/schedule.ts:39 registration; no .spur/config.yaml edit, no crontab/launchd installation, no installed-package sync, no real publication; rollback = delete merged voice3 cron lines (voice2 untouched); test: apps/cli/tests/voice3-migration-0334.test.ts:177 (generation entry shadow defaults) |
+| R7 | MET | test: apps/cli/tests/voice3-migration-0334.test.ts:352 (publish_live_channels declared empty, forwarded only to the nested publish window's live_channels key); static-ref: plugins/kk/workflows/kk-daily-ai-voice3.yaml vars block (ADR-022 comment) + publish node forwarding; empty default + dummy+live mutual refusal → no default/preset/config value can imply live consent |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — Rendered migration schedules resolve the correct bundle and approval model (req: R1, R2, R3, R4, R5, R6, R7) | MET | test | apps/cli/tests/voice3-migration-0334.test.ts:147,157,177,190,220,243,252,263,285,307,330,352 cover the declared concrete cases (cron-percent parsing, configured works root with spaces, today/yesterday dates, missing bundle, mismatched date, exact CN token set, live launch stops for resume, auto_publish rehearsal path, migration preset operation inventory, no scheduler mutation) through real seams (checkout `kk schedule render`, launcher process with recording spur double, real PublishPresetSchema); command: bun test neighbors commands/schedule.test.ts + kk-daily-publish3.test.ts + voice3-dag.test.ts 34/0; command: bun run lint + build + bun run test 4536/0 (gate.status=PASS run 3af5338c) |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+| Severity | Finding | Resolution |
+| --- | --- | --- |
+| P3 | The run sequence initially routed two remediate hops: the review-gate residual scanner reads this task doc's `### Review` section, which was still an empty placeholder (no `Confidence:` line) | Section filled with the certified contract (findings table + `Confidence: HIGH — Verdict: PASS`); the two earlier runs (3af5338c, e020c411) failed on run-sequencing/answer-shape, not on product defects — no code change resulted |
+| P4 | Schedules are not installed anywhere — installation is the operator's separate cutover action (task Non-goals; R6) | accepted-limitation: rollback documented (delete the merged voice3 cron lines; voice2 untouched) |
+| P4 | The launcher's real `spur workflow run` exec is rehearsed only through the recording spur double + the 0324 nested-publish path | accepted-limitation: first live-window run should be observed once by the operator |
+
+**Residual risk:** low — the surface is preparation-only: empty `publish_live_channels` default plus dummy+live mutual refusal keeps every default value non-live; token admission runs against the pinned preset's window rows before any spawn; rollback is a plain cron-line deletion.
+
+Confidence: HIGH — Verdict: PASS
 
 ### References
 
@@ -115,3 +169,8 @@ Verification contract: enumerate failure cases and create behavior/E2E regressio
 - Code/test targets and observable failure matrix: Design.
 
 ### History
+
+- 2026-11-04T10:06:01.094Z todo → wip (system)
+- 2026-11-04T15:19:38.539Z wip → testing (system)
+- 2026-11-04T15:20:25.484Z testing → done (system)
+
