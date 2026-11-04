@@ -67,6 +67,7 @@
             └── [active] **F618**: image-gen preset canvas: declared width/height never reach the provider ([F618_image-gen-preset-canvas-declared-width-height-never-reach-the-provider.md](./F618_image-gen-preset-canvas-declared-width-height-never-reach-the-provider.md))
     ├── [done] **F7**: Audio-authoring skill extraction (wayfinder map) ([F7_audio-authoring-skill-extraction-wayfinder-map.md](./F7_audio-authoring-skill-extraction-wayfinder-map.md))
     ├── [active] **F8**: Run-anywhere workflow and script resolution ([F8_run-anywhere-workflow-and-script-resolution.md](./F8_run-anywhere-workflow-and-script-resolution.md))
+        └── [backlog] **F81**: Grok Bot cloud routines for knowledge-kit ([F81_grok-bot-cloud-routines-for-knowledge-kit.md](./F81_grok-bot-cloud-routines-for-knowledge-kit.md))
     └── [done] **F9**: Explain-things skill and tell-me command ([F9_explain-things-skill-and-tell-me-command.md](./F9_explain-things-skill-and-tell-me-command.md))
 [backlog] **G**: kk workflows ([G_kk-workflows.md](./G_kk-workflows.md))
     ├── [verifying] **G1**: kk-daily-ai-voice ([G1_kk-daily-ai-voice.md](./G1_kk-daily-ai-voice.md))
