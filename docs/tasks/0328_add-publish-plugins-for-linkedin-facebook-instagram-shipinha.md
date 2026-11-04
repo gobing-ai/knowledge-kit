@@ -4,7 +4,7 @@ name: Add publish plugins for LinkedIn, Facebook, Instagram, shipinhao 图文 an
 status: wip
 template: feature-impl
 created_at: 2026-10-22T18:41:33.871Z
-updated_at: "2026-11-04T07:45:04.360Z"
+updated_at: "2026-11-04T08:09:46.862Z"
 
 feature_id: E9
 ac_altitude: task-local
