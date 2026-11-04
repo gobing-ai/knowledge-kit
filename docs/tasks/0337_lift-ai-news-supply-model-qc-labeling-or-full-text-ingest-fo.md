@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "Lift ai-news supply: model QC labeling or full-text ingest for stub items"
-status: todo
+status: testing
 template: standard
 created_at: 2026-10-26T01:00:07.141Z
-updated_at: "2026-11-03T18:07:17.344Z"
+updated_at: "2026-11-04T03:54:10.170Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -34,11 +34,11 @@ The October 25 run and SQL counts are historical filing evidence, not rerun meas
 
 ### Requirements
 
-- [ ] R1. Provide a repository operator script `scripts/ai-news-supply-report.ts` that reads an explicitly selected existing SQLite store in readonly mode and prints one versioned JSON supply report. It must not migrate, relabel, collect, reserve/release stories or call a model/network service.
-- [ ] R2. At one explicit evaluation timestamp, report cumulative AI-news extraction gates for both 24h and 168h using the current profile and effective label policy: seen, category, quality, importance, moderation, reservation exclusion and extraction cap. Report item counts and distinct non-null story counts separately; missing required labels fail closed exactly as extraction does.
-- [ ] R3. Expose source-level and body-depth evidence plus reservation counts without confusing diagnosis with a fix: body-length buckets, missing/stale/current label distinctions, effective quality-label makers, and distinct blocked stories partitioned as published versus selected-only. Never count multiple observations/selections as multiple items or promise that all eligible items survive downstream QC or duration checks.
-- [ ] R4. Add subprocess fixture verification before implementation, covering policy priority/confidence/hash/replay rules, gate attrition, story reservations, both windows, extraction caps, malformed/missing inputs and read-only behavior. Produce a repeatable JSON artifact and a dated operator report stating measured findings, limitations and whether a separately scoped enrichment or labeling experiment is supported.
-- [ ] R5. Document exact invocation, JSON contract and interpretation. Keep runtime collection, extraction thresholds, labeling defaults, episode floor, schedules and installed package untouched. No new dependencies, database schema or public kk verb; this task implements the diagnostic only.
+- [x] R1. Provide a repository operator script `scripts/ai-news-supply-report.ts` that reads an explicitly selected existing SQLite store in readonly mode and prints one versioned JSON supply report. It must not migrate, relabel, collect, reserve/release stories or call a model/network service.
+- [x] R2. At one explicit evaluation timestamp, report cumulative AI-news extraction gates for both 24h and 168h using the current profile and effective label policy: seen, category, quality, importance, moderation, reservation exclusion and extraction cap. Report item counts and distinct non-null story counts separately; missing required labels fail closed exactly as extraction does.
+- [x] R3. Expose source-level and body-depth evidence plus reservation counts without confusing diagnosis with a fix: body-length buckets, missing/stale/current label distinctions, effective quality-label makers, and distinct blocked stories partitioned as published versus selected-only. Never count multiple observations/selections as multiple items or promise that all eligible items survive downstream QC or duration checks.
+- [x] R4. Add subprocess fixture verification before implementation, covering policy priority/confidence/hash/replay rules, gate attrition, story reservations, both windows, extraction caps, malformed/missing inputs and read-only behavior. Produce a repeatable JSON artifact and a dated operator report stating measured findings, limitations and whether a separately scoped enrichment or labeling experiment is supported.
+- [x] R5. Document exact invocation, JSON contract and interpretation. Keep runtime collection, extraction thresholds, labeling defaults, episode floor, schedules and installed package untouched. No new dependencies, database schema or public kk verb; this task implements the diagnostic only.
 
 ### Acceptance Criteria
 
@@ -107,11 +107,11 @@ Concurrency audit on 2026-11-03: no wip tasks returned by Spur; worktrees were t
 
 ### Plan
 
-- [ ] Step 1 (R1–R5): Recheck task ownership, Git changes and concurrent work; read the named store exports/DAO and 0317/0338 evidence. Confirm no live policy or activation changes are needed.
-- [ ] Step 2 (R4): Before writing implementation, enumerate failures and build subprocess fixtures for gate rejection, current-label maker/confidence/hash/replay semantics, multiple observations, shared stories, cross-topic/dropped reservations, exact window boundaries, null stories, cap/order, invalid inputs and missing schema. Use a disposable real SQLite database and fixture config/profile; no live network/models. Fixtures assert parity with the exported DAO using identical inputs.
-- [ ] Step 3 (R1–R3): Implement the frozen report flags and deterministic JSON, readonly transaction, shared current-label CTE, cumulative profile ladder, source/body and reservation breakdowns; reject unsupported profile shapes explicitly.
-- [ ] Step 4 (R4): Run the subprocess checks; verify closed fixture DB bytes/schema unchanged, absent DB not created, nonzero failures, deterministic output and DAO item-id parity. Preserve the machine-readable result at `.spur/run/0337-supply-fixture.json` with the exact repeat command.
-- [ ] Step 5 (R4–R5): Write the dated operator report and update docs/04 surface documentation. A read of the explicitly named live store/config is permitted only as a read-only audit; if unavailable, report fixture-only evidence, no inferred current shortage. Record 24h and 168h measurements separately and recommend or reject enrichment/model experiments from observed attrition, with no automatic follow-up implementation.
+- [x] Step 1 (R1–R5): Recheck task ownership, Git changes and concurrent work; read the named store exports/DAO and 0317/0338 evidence. Confirm no live policy or activation changes are needed.
+- [x] Step 2 (R4): Before writing implementation, enumerate failures and build subprocess fixtures for gate rejection, current-label maker/confidence/hash/replay semantics, multiple observations, shared stories, cross-topic/dropped reservations, exact window boundaries, null stories, cap/order, invalid inputs and missing schema. Use a disposable real SQLite database and fixture config/profile; no live network/models. Fixtures assert parity with the exported DAO using identical inputs.
+- [x] Step 3 (R1–R3): Implement the frozen report flags and deterministic JSON, readonly transaction, shared current-label CTE, cumulative profile ladder, source/body and reservation breakdowns; reject unsupported profile shapes explicitly.
+- [x] Step 4 (R4): Run the subprocess checks; verify closed fixture DB bytes/schema unchanged, absent DB not created, nonzero failures, deterministic output and DAO item-id parity. Preserve the machine-readable result at `.spur/run/0337-supply-fixture.json` with the exact repeat command.
+- [x] Step 5 (R4–R5): Write the dated operator report and update docs/04 surface documentation. A read of the explicitly named live store/config is permitted only as a read-only audit; if unavailable, report fixture-only evidence, no inferred current shortage. Record 24h and 168h measurements separately and recommend or reject enrichment/model experiments from observed attrition, with no automatic follow-up implementation.
 - [ ] Step 6 (R1–R5): Run `bun run lint`, `bun run test`, `bun run build` and pre-/post-check rule presets via the project gate. Review the diff for unintended policy/runtime/corpus changes, then obtain a real task verify PASS through the harness. Keep pre-existing failures separate; do not weaken coverage or assertions.
 
 ### Root Cause
@@ -120,15 +120,69 @@ Original shortage diagnosis was incomplete: it conflated body quality, model rou
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+| File | What changed and why |
+| --- | --- |
+| `scripts/ai-news-supply-report.ts:426-468` | Add the frozen four-flag, JSON-only, native-readonly supply report with one rolled-back read transaction. |
+| `scripts/ai-news-supply-report.ts:128-140` | Fail closed on malformed/non-mapping YAML before the shared config reader can apply its normal-operation defaults; this is the AC4 remediation. |
+| `scripts/ai-news-supply-report.ts:216-404` | Reuse the shared labelsCurrent CTE and profile compiler for cumulative 24h/168h gates, capped ordering, source/body, label-coverage and reservation evidence. |
+| `scripts/tests/ai-news-supply-report.test.ts:294-449` | Add failure-first subprocess fixtures for store preservation, deterministic gate counts, label/replay policy, reservations, boundaries, DAO parity and actionable failures, including malformed YAML; emit `.spur/run/0337-supply-fixture.json`. |
+| `docs/04_DESIGN.md:969-992` | Document the diagnostic invocation, version-1 JSON contract and non-interpretations without adding a public kk verb. |
+| `docs/report/2026-11-04-ai-news-supply-readiness.md:27` | Record measured fixture attrition separately for 24h/168h, state fixture-only limits and reject an unsupported live remedy experiment. |
+
+**Focused evidence**
+
+- `bun test scripts/tests/ai-news-supply-report.test.ts` → `2 pass`, `0 fail`, `70 expect() calls`; the single-file command exits 1 only because Bun enforces per-file coverage on loaded store modules.
+- `spur task gate 0337 light` → changed-file format/lint PASS and all 58 pre-check rules PASS; post-check reports only the partial coverage tracefile produced by that single-file run. The pipeline's full gate remains authoritative.
+- Public-surface probe: both tests spawn `bun scripts/ai-news-supply-report.ts` against disposable fixture roots and assert exact stdout/stderr/exit behavior. No live store read or production policy/runtime change was made.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PARTIAL (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `scripts/ai-news-supply-report.ts:447-471` uses native readonly access and closes the store; `scripts/tests/ai-news-supply-report.test.ts:295-311` verifies unchanged bytes/schema and missing-db behavior. |
+| R2 | MET | `scripts/ai-news-supply-report.ts:373-419` builds both cumulative windows; `scripts/tests/ai-news-supply-report.test.ts:312-367` checks gate counts, caps and DAO parity. |
+| R3 | MET | `scripts/ai-news-supply-report.ts:246-367` implements source/body, label-coverage and disjoint reservation evidence; `scripts/tests/ai-news-supply-report.test.ts:334-353` asserts distributions and counts. |
+| R4 | MET | `scripts/ai-news-supply-report.ts:128-140` rejects malformed/non-mapping config; `scripts/tests/ai-news-supply-report.test.ts:395-451` covers repeatable artifacts, malformed/missing inputs and schema failures. Full `spur self exec check`: 4423 pass / 0 fail. |
+| R5 | MET | `docs/04_DESIGN.md:969-992` and `docs/report/2026-11-04-ai-news-supply-readiness.md:1-51` document invocation, contract and limits; `git status --short` contains no production policy/runtime/install change. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Scenario: AC1 — supply inspection preserves the store (req: R1) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:295-311` verifies parseable JSON and unchanged bytes/schema; `:395-415` verifies missing-db failure without creation. |
+| Scenario: AC2 — the gate ladder matches extraction semantics (req: R2) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:312-367` verifies deterministic cumulative gates and capped-id parity with `ItemsDao.selectByProfile`. |
+| Scenario: AC3 — current labels and reservations are diagnosed without double counting (req: R3) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:334-353` checks label coverage, source/body distributions, disjoint blocked stories and capped ids. |
+| Scenario: AC4 — diagnostic evidence is repeatable and failures are explicit (req: R4) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:395-451` verifies the repeatable artifact and nonzero failures; `:420-425` specifically rejects malformed YAML config with no stdout. Full `spur self exec check`: 4423 pass / 0 fail. |
+| Scenario: AC5 — the handoff preserves production policy (req: R5) | MET | command | `git status --short` lists only the diagnostic script, fixture tests, `docs/04_DESIGN.md:969`, `docs/report/2026-11-04-ai-news-supply-readiness.md:1`, and task 0337; no runtime/config/workflow/install change is present. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+| Priority | Dimension | Location | Finding |
+| --- | --- | --- | --- |
+| P2 | Correctness | `scripts/ai-news-supply-report.ts:425` | Malformed YAML config is accepted with defaults: the 2026-11-04 subprocess probe exited 0 and emitted 5,302 JSON bytes, violating R4/AC4's invalid-input contract. Add explicit config-syntax validation and a malformed-config subprocess regression. |
+
+Confidence: LOW
+
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 | MET | `scripts/ai-news-supply-report.ts:434-459` uses native readonly access and closes the store; `scripts/tests/ai-news-supply-report.test.ts:295-311` verifies unchanged bytes/schema. |
+| R2 | MET | `scripts/ai-news-supply-report.ts:361-407` builds both cumulative windows; `scripts/tests/ai-news-supply-report.test.ts:312-367` checks gate counts, caps and `ItemsDao.selectByProfile` parity. |
+| R3 | MET | `scripts/ai-news-supply-report.ts:234-355` implements source/body, label-coverage and disjoint reservation evidence; `scripts/tests/ai-news-supply-report.test.ts:334-353` asserts the distributions and counts. |
+| R4 | PARTIAL | `scripts/tests/ai-news-supply-report.test.ts:395-445` covers repeatable artifacts and many failures, but the malformed-config probe exited 0 with JSON output instead of nonzero. |
+| R5 | MET | `docs/04_DESIGN.md:969-992` and `docs/report/2026-11-04-ai-news-supply-readiness.md:1-51` document the diagnostic and limits; `git status --short` shows only the diagnostic, tests, docs and task 0337. |
+
+| AC | Status | Evidence Type | Evidence |
+| --- | --- | --- | --- |
+| Scenario: AC1 — supply inspection preserves the store (req: R1) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:295-311` verifies parseable JSON, unchanged bytes/schema; `:395-415` verifies missing-db failure without creation. |
+| Scenario: AC2 — the gate ladder matches extraction semantics (req: R2) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:312-367` verifies deterministic cumulative gates and capped-id parity with `ItemsDao.selectByProfile`. |
+| Scenario: AC3 — current labels and reservations are diagnosed without double counting (req: R3) | MET | test | `scripts/tests/ai-news-supply-report.test.ts:334-353` checks label coverage, source/body distributions, disjoint blocked stories and capped ids. |
+| Scenario: AC4 — diagnostic evidence is repeatable and failures are explicit (req: R4) | PARTIAL | command | Repeatable fixture artifact exists at `.spur/run/0337-supply-fixture.json`; however `bun scripts/ai-news-supply-report.ts` with malformed `store: [` config exited 0 and emitted 5,302 stdout bytes on 2026-11-04. |
+| Scenario: AC5 — the handoff preserves production policy (req: R5) | MET | command+static-ref | `git status --short` lists only the diagnostic script, fixture tests, `docs/04_DESIGN.md:969`, `docs/report/2026-11-04-ai-news-supply-readiness.md:1`, and task 0337; no runtime/config/workflow/install change is present. |
+
+Verdict: PARTIAL
 
 ### References
 
@@ -143,6 +197,8 @@ Original shortage diagnosis was incomplete: it conflated body quality, model rou
 ### History
 
 - 2026-11-03T18:06:29.472Z backlog → todo (system)
+- 2026-11-04T03:00:55.137Z todo → wip (system)
+- 2026-11-04T03:37:06.209Z wip → testing (system)
 
 ### Notes
 

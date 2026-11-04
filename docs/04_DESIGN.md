@@ -966,6 +966,28 @@ exit code. `--window` must be `'<n>s|m|h|d'` and `--limit` a positive integer; e
 (an unknown topic, a bad window or limit, an unreadable database) exits 1 with
 `kk.store.extract.failed: <cause>`.
 
+**AI-news supply diagnostic (task 0337).** `bun scripts/ai-news-supply-report.ts --db
+<existing-path> --config <existing-kk-config> --profile
+plugins/kk/decisions/extract/ai-news.yaml --at <ISO-8601-with-offset>` is a repository operator
+script, not a `kk` verb. All four flags are required; unknown or duplicate flags fail. It opens the
+explicit SQLite path with native `bun:sqlite` readonly access, reads both windows in one rolled-back
+read transaction, and never migrates, labels, collects, reserves/releases, or calls a model/network.
+Missing inputs, an invalid timestamp/config/profile, a non-`ai-news` or expanded predicate contract,
+and unavailable required schema exit nonzero with no partial JSON.
+
+stdout is one version-1 JSON document: `version`, `at`, `dbPath`, `profilePath`, the parsed
+`profile`, the effective label `labelPolicy` (never the full config), `windows`, and `limitations`.
+Each 24h/168h window carries cumulative `seen → category → quality → importance → moderation →
+reservationExclusion → cap` gates with item, distinct non-null-story, null-story-item and removed
+counts; `cappedItemIds` matches `ItemsDao.selectByProfile` for the same inputs. `sources` partitions
+items once by stored source, trimmed UTF-16 body bucket (`<300`, `300..1499`, `>=1500`) and effective
+quality-label maker. `labelCoverage` distinguishes `current` (the shared `labels_current` answer),
+`staleOnly` (observations exist but none has the item's current hash) and `missing` (every other
+no-current case, including policy-rejected current-hash rows). `blockedStories` counts distinct
+fully profile-eligible stories before reservation exclusion: `published` wins over `selectedOnly`;
+dropped and other-topic selections do not block AI news. The cap is not total eligible supply, body
+length is not a quality judgment, and downstream QC/duration survival is outside this report.
+
 **The topic-scoped selection ledger (task 0228).** The dedup ledger is the `selections` table —
 `(topic, item_id, run_id)` identity plus `story_id`, `workflow`, `rank`, `reason`, `status`
 (`selected` → `published` | `dropped`), `selected_at`, `published_at` — replacing `episode_usage`
