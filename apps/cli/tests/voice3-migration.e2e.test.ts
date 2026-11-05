@@ -417,6 +417,13 @@ function runEnv(fx: Fixture, extra: Record<string, string> = {}): Record<string,
     env.KK_FAKE_GUID = GUID_FULL;
     env.KK_FAKE_LOG = join(fx.root, 'transports.log');
     env.KK_FAKE_STATE_DIR = join(fx.root, 'fake-state');
+    // The live podcast row must stay offline: the ambient kk config (~/.config/kk/config.yaml)
+    // injects real MICROFEED_* credentials into the spawned plugin, so without this pin the
+    // "real transport" ride actually creates/dedupes items on production podcast.salty.vip
+    // (2026-11-05: server-side idempotency dedupe on the fixture MP3's stable sha started 404-ing
+    // after that item was deleted — C01/C02/C16/C17 went red on BOTH trees). FakeFileCliTransport
+    // keeps the live-mode receipt + itemId shape the RSS title-fallback binds to, with no network.
+    env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT = 'fake';
     delete env.SPUR_WORKFLOW_RUN_ACTIVE;
     delete env.SPUR_EXPECTED_DEFINITION_DIGEST;
     return env;
@@ -562,39 +569,6 @@ function dispatchCount(fx: Fixture, needle: string): number {
 
 function expectDone(outcome: RunOutcome, what: string): void {
     if (outcome.finalState !== 'done') {
-        const cwd = process.env.REHEARSAL_DEBUG_CWD;
-        if (cwd) {
-            const { execSync } = require('node:child_process');
-            try {
-                const rows = execSync(
-                    `find "${cwd}" -name 'outcome.*.json' -newer /tmp -o -name 'outcome.*.json' | tail -1 | xargs cat 2>/dev/null`,
-                ).toString();
-                const parsed = JSON.parse(rows) as { rows?: Array<Record<string, unknown>> };
-                const bad = (parsed.rows ?? []).filter(
-                    (r) => !(r.required !== true || r.dummy === true || r.status === 'succeeded'),
-                );
-                console.log('DEBUG-VIOLATING-ROWS', JSON.stringify(bad, null, 2));
-                const tlog = execSync(
-                    `tail -8 "${join(cwd, '..', '..', '..', 'transports.log')}" 2>/dev/null || echo no-transports`,
-                ).toString();
-                console.log('DEBUG-TRANSPORTS-TAIL', tlog);
-                const klog = execSync(
-                    `tail -12 "${join(cwd, '..', '..', '..', 'kk-calls.log')}" 2>/dev/null || echo no-kkcalls`,
-                ).toString();
-                console.log('DEBUG-KKCALLS-TAIL', klog);
-                const outcomeFile = execSync(`ls "${cwd}/4-publish"/outcome.*.json 2>/dev/null | tail -1`)
-                    .toString()
-                    .trim();
-                if (outcomeFile)
-                    console.log('DEBUG-FULL-OUTCOME', execSync(`cat "${outcomeFile}"`).toString().slice(0, 3500));
-                const ev = execSync(
-                    `tail -25 "${join(cwd, '4-publish', 'events.jsonl')}" 2>/dev/null || echo no-events`,
-                ).toString();
-                console.log('DEBUG-EVENTS-TAIL', ev);
-            } catch (e) {
-                console.log('DEBUG-dump-failed', String(e));
-            }
-        }
         throw new Error(
             `${what}: finalState=${outcome.finalState} (exit ${outcome.exitCode})\nstdout: ${outcome.stdout.slice(-1500)}\nstderr: ${outcome.stderr.slice(-1500)}`,
         );
@@ -612,7 +586,6 @@ async function rehearsalFlow(
     caseName: string,
     opts: { overseas: boolean } = { overseas: true },
 ): Promise<void> {
-    process.env.REHEARSAL_DEBUG_CWD = fx.dayDir;
     const gen = runWorkflow(fx, caseName, VOICE3, 'gen', voice3Vars(), { KK_STUB_DURATION_MS: '1620000' });
     expectDone(gen, 'generation run');
     const afterGen = runWorkflow(
@@ -716,8 +689,9 @@ describe('0335 R1: fresh offline multi-window migration rehearsal', () => {
             expect(receipt).toBeDefined();
             expect(receipt?.status).toBe('succeeded');
         }
-        // The live send rides the REAL podcast-pub transport, whose result carries itemId (no
-        // guid), so the overseas gate binds via the designed title-date fallback, not a receipt guid.
+        // The live send rides podcast-pub's offline FakeFileCliTransport (pinned in runEnv): the
+        // result carries itemId (no guid), so the overseas gate binds via the designed title-date
+        // fallback, not a receipt guid.
         expect((byKey.get('podcast.episode') as { mode?: string }).mode).toBe('live');
         expect((byKey.get('x.post') as { dummy: boolean }).dummy).toBe(true);
         // Deliberate offline scoping: only the podcast row went live (comment above); the rest,
