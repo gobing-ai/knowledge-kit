@@ -1590,6 +1590,9 @@ function snapshotValueIsEmpty(value: string): boolean {
 function publicSnapshotIsIncomplete(expected: PublicDraftSnapshot, actual: PublicDraftSnapshot): boolean {
     if (!snapshotValueIsEmpty(expected.title) && snapshotValueIsEmpty(actual.title)) return true;
     if (!snapshotValueIsEmpty(expected.body) && snapshotValueIsEmpty(actual.body)) return true;
+    // The editor renders a long body progressively; a strict prefix is still hydrating, not a
+    // different version (20261104: 查看新草稿 failed on its first non-empty read).
+    if (actual.body.length < expected.body.length && expected.body.startsWith(actual.body)) return true;
     if (expected.media.length > actual.media.length) return true;
     if (!snapshotValueIsEmpty(expected.cover) && snapshotValueIsEmpty(actual.cover)) return true;
     if (expected.originalUrl !== '' && actual.originalUrl === '') return true;
@@ -1837,9 +1840,11 @@ async function recoverStaleVersion(
         return fail(
             'public stale-version recovery: latest editor snapshot was unreadable; no second 发表 click attempted',
         );
+    // TS narrows the closure-assigned `let` to never after the null guard; re-read it through a cast.
+    const latestBody = (latestSnapshot as PublicDraftSnapshot).body;
     if (differences.length > 0)
         return fail(
-            `public stale-version recovery: latest editor content mismatch (${differences.join(', ')}); no second 发表 click attempted`,
+            `public stale-version recovery: latest editor content mismatch (${differences.join(', ')}; body ${latestBody.length}/${saved.snapshot.body.length} chars); no second 发表 click attempted`,
         );
 
     if (!(await waitForPublicEditorReadiness(latestEditor, deps)))

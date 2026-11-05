@@ -134,6 +134,8 @@ interface ConsoleState {
     publicLatestUrl?: string;
     publicLatestAppmsgId?: string;
     publicLatestSnapshot?: { title?: string; body?: string; media?: string[]; cover?: string; originalUrl?: string };
+    /** 查看新草稿 hydrates progressively: the first N latest-editor reads expose only a body prefix (20261104). */
+    publicLatestBodyPrefixReads?: number;
     /** A pre-existing canonical editor can acknowledge the explicit save later than the URL. */
     publicSaveAckDelayMs?: number;
     /** The native save acknowledgement can fail after the save control was clicked. */
@@ -301,6 +303,7 @@ function makeConsole(initial: ConsoleState) {
     let publicSaveAcknowledged = false;
     let publicCanonicalGotos = 0;
     let latestViewed = false;
+    let latestPrefixReads = 0;
     let publicPostReloadSaveStatePolls = 0;
     let publicLegacyReadinessPolls = 0;
     let notifySubscribers = state.publicNotifySubscribers ?? true;
@@ -513,10 +516,13 @@ function makeConsole(initial: ConsoleState) {
                         persistedSnapshots !== undefined
                             ? persistedSnapshots[Math.min(publicCanonicalGotos - 1, persistedSnapshots.length - 1)]
                             : undefined;
-                    const latestSnapshot =
-                        latestViewed && state.publicLatestSnapshot !== undefined
-                            ? { ...composedSnapshot, ...state.publicLatestSnapshot }
-                            : undefined;
+                    const hydrating = latestViewed && latestPrefixReads < (state.publicLatestBodyPrefixReads ?? 0);
+                    if (hydrating) latestPrefixReads += 1;
+                    const latestSnapshot = hydrating
+                        ? { ...composedSnapshot, body: pastedHtml.slice(0, Math.ceil(pastedHtml.length / 2)) }
+                        : latestViewed && state.publicLatestSnapshot !== undefined
+                          ? { ...composedSnapshot, ...state.publicLatestSnapshot }
+                          : undefined;
                     const saveAcked = publicSaveAcknowledged;
                     const pendingSnapshot =
                         publicSaveClicked && !saveAcked && state.publicPendingReloadSnapshot !== undefined
@@ -1803,6 +1809,24 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
         expect(clicks.filter(isPublishControl)).toHaveLength(2);
         expect(clicks.filter(isViewLatest)).toHaveLength(1);
         expect(clicks.filter(isPublishFinal)).toHaveLength(1);
+    });
+
+    test('public: stale recovery waits while the latest editor body is still a hydrating prefix (20261104)', async () => {
+        await seedMedia();
+        const console = makeConsole(
+            publicState({
+                publicPreconfirmationRefusal: '当前编辑的草稿不是最新版本',
+                publicLatestUrl: `${savedEditorUrlFor(0)}&data_seq=2`,
+                publicLatestBodyPrefixReads: 3,
+            }),
+        );
+        const result = await makeTransport(console).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+
+        expect(result.ok, result.error).toBe(true);
+        expect(result.metadata?.staleVersionRecoveryCount).toBe(1);
+        expect(selectorsOf(console.calls.editor, 'click').filter(isPublishFinal)).toHaveLength(1);
     });
 
     test('public: changed latest editor content stops stale recovery before the final publish click', async () => {
