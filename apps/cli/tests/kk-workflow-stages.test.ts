@@ -3452,6 +3452,18 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                 };
                 const clean = localeTree(dir, stamp, { en: good, ja: jaAtCap });
                 expect(run(['daily-translate-sync', dir, stamp, '', clean.marker], okKk(dir)).status).toBe(0);
+                // Nor does a folded scalar's `>-` indicator: refine writes long items that way
+                // (2026-11-04 rejected "trnrtの推論最適化", 11 chars, as ">- trnrtの推論最適化").
+                const jaFolded = {
+                    ...jaAtCap,
+                    items: ['>-\n    Character.AI買収 — Character.AI は今週\n    正式に破産を申請した。'],
+                };
+                withTempDir((inner) => {
+                    const tree = localeTree(inner, stamp, { en: good, ja: jaFolded });
+                    const synced = run(['daily-translate-sync', inner, stamp, '', tree.marker], okKk(inner));
+                    expect(synced.stderr).not.toContain('pre-sync structural check');
+                    expect(synced.status).toBe(0);
+                });
             });
         });
     });

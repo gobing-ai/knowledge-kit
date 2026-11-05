@@ -2049,6 +2049,8 @@ export function readKeyPointItems(filePath: string): string[] | undefined {
             flush();
             current = item[1].trim();
             folded = current === '>' || current === '>-' || current === '|-' || current === '|';
+            // The block indicator is YAML syntax, not text: the item starts on the next line.
+            if (folded) current = '';
             continue;
         }
         if (current === undefined || !folded) continue;
