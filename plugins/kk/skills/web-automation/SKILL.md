@@ -9,6 +9,7 @@ description: >-
   web-automation skill. Owns method and evidence; transport stays in kk
   plugins; orchestration is a @gobing-ai/ts-dual-workflow-engine
   transition-flow (see docs/design/web-automation-engine.md).
+requires: [cli:spur, local-fs]
 ---
 
 # web-automation — discover, enhance, automate with a real browser

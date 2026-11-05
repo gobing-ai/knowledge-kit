@@ -7,6 +7,7 @@ description: >-
   creates the config with defaults if missing; computes the workspace; shells
   spur workflow run against the resolved YAML.
 argument-hint: "[name] <topic|--in file> [--dir <path>] [--playbook generic|english|wechat] [--research] [--judge] [--outline <a|b|c>] [--writer itc-generating|topic] [--duration <min>] [--language <code>] [--script-approved] [--fixture] [--force]"
+requires: [cli:kk, cli:spur, local-fs]
 ---
 
 Thin runner around the **storm-research**, **itc-generating** / **topic**, and **kk-solo-podcast**

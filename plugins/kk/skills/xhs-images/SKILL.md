@@ -7,6 +7,7 @@ description: >-
   closing) grounded in the source, renders them through the image-gen executor
   with the xhs-card/xhs-knowledge presets, packages a publishable Content, and
   hands off to kk:publish channel xhs. Never publishes directly.
+requires: [cli:kk, local-fs]
 ---
 
 # xhs-images — source-grounded XHS card series (plan → render → package → handoff)

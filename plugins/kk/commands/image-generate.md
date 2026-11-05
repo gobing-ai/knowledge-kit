@@ -3,6 +3,7 @@ name: image-generate
 description: Generate images from a prompt or an article — covers, illustrations, or free-form — using named format and style presets.
 argument-hint: "[prompt] [--format free|cover|illustration] [--style vibrant|minimalist|photorealistic|technical-diagram|editorial|fresh|warm|cute|sketch|clean-webapp-ui|<custom>] [--content <file>] [--ref <img>…] [--var K=V] [--dry-run] [--list-presets]"
 allowed-tools: ["Skill"]
+requires: [cli:kk, cli:spur, local-fs]
 ---
 
 # image-generate

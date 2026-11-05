@@ -7,6 +7,7 @@ description: >-
   writing method", "generate an IT technical draft on X", "create a technical
   article for WeChat/English platforms". Orchestrates topic (outline + draft),
   optional storm-research, and optional content-judge without enlarging those skills.
+requires: [cli:kk, local-fs]
 ---
 
 # itc-generating — IT technical draft generation (method + orchestration)

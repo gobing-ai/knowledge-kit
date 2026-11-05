@@ -6,6 +6,7 @@ description: >-
   `kk executor run` / `kk fanout` for file-cli and script channels; sequences
   agent-default CMS channels as workflow `agent.run` steps. Does not own
   transport.
+requires: [cli:kk, local-fs]
 ---
 
 # publish — leftover channel operator surface

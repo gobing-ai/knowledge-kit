@@ -28,6 +28,17 @@ Capability files **omit a leading `kk-`**. `superskill install` prefixes the plu
 `storm-research`, `itc-generating`, `explain-things` (via `/tell-me`), and `/workflow-run`. Product workflow YAML (`kk-storm-research.yaml`)
 keeps its existing name — that is a workflow stem, not an installable agent capability.
 
+### Grok Bot
+
+Install: `superskill install kk --targets grok-bot --bot-provides cli:kk --bot-provides local-fs`.
+Add `--bot-provides cli:spur` when the Bot ran the spur bootstrap.
+
+Each skill and command declares a `requires:` list (`hooks`, `subagents`, `local-fs`, `cli:<name>`)
+so the install ships only entries the Bot can run; the guard test is
+`plugins/kk/tests/runtime-requires.test.ts`. Which kk work may actually run in the cloud is decided
+by ADR-044 (`docs/00_ADR.md`): cloud Grok Bot routines are store-free and browser-free —
+anything touching `kk.db` or a browser profile stays Mac-side.
+
 ## Schedule
 
 `spur serve` **hosts the scheduler**: the `.spur/config.yaml` `bootstrap.scheduler` jobs (the daily
@@ -59,6 +70,13 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.gobing.kk-collect.pli
 crontab -l > /tmp/kk-collect.cron 2>/dev/null || :
 kk schedule render kk-collect --platform cron --repo "$PWD" >> /tmp/kk-collect.cron
 crontab /tmp/kk-collect.cron
+
+# Grok Bot cloud routine (ADR-044): prints a routine definition for the store-free kk-collect
+# prefix — the Bot owns preparation, the Mac owns the kk store. Paste the printed text into the
+# Bot's routine editor (creating the routine there is the operator action; kk never calls an API).
+# kk-serve and the publish3 windows are refused on grok-bot: they are store- or browser-bound.
+kk schedule render kk-collect --platform grok-bot --bot kk-cloud --tz "$TZ" \
+  | pbcopy   # then paste into the Bot's routine editor
 ```
 
 Both rendered artifacts set `PATH` themselves (`{{home}}/.bun/bin`, `/opt/homebrew/bin`,

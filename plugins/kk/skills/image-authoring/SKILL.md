@@ -7,6 +7,7 @@ description: >-
   "list the image formats and styles". Three operations — generate,
   extract-style, list-presets — over named format and style presets, with a
   confirmation gate before any paid generation.
+requires: [cli:kk, cli:spur, local-fs]
 ---
 
 # image-authoring — image generation agent surface (generate | extract-style | list-presets)

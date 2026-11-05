@@ -3,6 +3,7 @@ name: tell-me
 description: Explain the supplied or current topic with the smallest useful view; use ELI5 only when requested.
 argument-hint: "[topic] [--eli5]"
 allowed-tools: ["Skill"]
+requires: [local-fs]
 ---
 
 # tell-me
