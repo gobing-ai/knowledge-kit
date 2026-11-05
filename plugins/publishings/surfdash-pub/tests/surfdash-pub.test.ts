@@ -1319,6 +1319,15 @@ describe('normalizeLocaleFrontmatter (R3)', () => {
         expect(normalizeLocaleFrontmatter(input)).toBe(expected);
     });
 
+    test("keeps a sibling's own canonical, so a refined sibling is returned byte-identical", () => {
+        // 2026-11-04: dropping refine's correct en/ja canonical made the orchestrator re-dump the
+        // frontmatter, and the site gate's byte-exact drift check failed the patch for both siblings.
+        const en = "---\ntitle: T\ndraft: false\ncanonical: 'https://surfing.salty.vip/posts/s'\n---\n\nBody.\n";
+        const ja = "---\ntitle: T\ndraft: false\ncanonical: 'https://surfing.salty.vip/ja/posts/s'\n---\n\nBody.\n";
+        expect(normalizeLocaleFrontmatter(en)).toBe(en);
+        expect(normalizeLocaleFrontmatter(ja)).toBe(ja);
+    });
+
     test('returns text without leading frontmatter unchanged', () => {
         const input = 'No frontmatter here.\n\nSecond para.\n';
         expect(normalizeLocaleFrontmatter(input)).toBe(input);

@@ -735,7 +735,9 @@ export function normalizeLocaleFrontmatter(markdown: string): string {
     if (close < 0) return markdown;
     const head = lines
         .slice(1, close)
-        .filter((l) => !/^canonical\s*:/.test(l))
+        // Only the zh scaffold's canonical is stale; a sibling's own (refined) canonical must survive,
+        // or the orchestrator re-dumps the frontmatter and the byte-exact drift gate fails.
+        .filter((l) => !/^canonical\s*:.*\/zh\//.test(l))
         .map((l) => (/^draft\s*:/.test(l) ? 'draft: false' : l));
     return [lines[0], ...head, ...lines.slice(close)].join('\n');
 }
