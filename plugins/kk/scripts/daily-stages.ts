@@ -3351,6 +3351,8 @@ export function dailyPreflight(args: string[]): void {
             'publish-matrix-bundle',
             'publish-matrix-rss-gate',
             'publish-matrix-wait-until',
+            'publish-matrix-validate',
+            'publish-matrix-settle',
         ] as const;
         for (const name of PUBLISH_MATRIX_STAGES) known.add(name);
         const missing: string[] = [];

@@ -138,15 +138,15 @@ states:
           decision: kk-safety-verdict
           params:
             report: >-
-              Safety report ${vars.work_dir}/24-script/${vars.run_date}_09_safety-review_report.json,
-              judge verdict ${vars.work_dir}/24-script/${vars.run_date}_09_safety-judge_verdict.json,
+              Safety report ${vars.work_dir}/${vars.safety_scope_dir}/${vars.run_date}_09_safety-review_report.json,
+              judge verdict ${vars.work_dir}/${vars.safety_scope_dir}/${vars.run_date}_09_safety-judge_verdict.json,
               and the gate's own classification in
-              ${vars.work_dir}/24-script/${vars.run_date}_09_safety-judge_status.txt.
+              ${vars.work_dir}/${vars.safety_scope_dir}/${vars.run_date}_09_safety-judge_status.txt.
           evidence:
-            - ${vars.work_dir}/24-script/${vars.run_date}_09_safety-review_report.json
-            - ${vars.work_dir}/24-script/${vars.run_date}_09_safety-judge_verdict.json
-            - ${vars.work_dir}/24-script/${vars.run_date}_09_safety-judge_status.txt
-          resultFile: ${vars.work_dir}/24-script/${vars.run_date}_09_safety-verdict.decision
+            - ${vars.work_dir}/${vars.safety_scope_dir}/${vars.run_date}_09_safety-review_report.json
+            - ${vars.work_dir}/${vars.safety_scope_dir}/${vars.run_date}_09_safety-judge_verdict.json
+            - ${vars.work_dir}/${vars.safety_scope_dir}/${vars.run_date}_09_safety-judge_status.txt
+          resultFile: ${vars.work_dir}/${vars.safety_scope_dir}/${vars.run_date}_09_safety-verdict.decision
       # Fold gate status + stamp + decision into the single accept token the accept guard reads.
       - kind: shell
         options:

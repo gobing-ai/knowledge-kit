@@ -942,7 +942,7 @@ describe('kk-daily-safety — decision-bound publish verdict (AC6, 0317 R6)', ()
         expect(decide?.options?.decision).toBe('kk-safety-verdict');
         expect(decide?.options?.evidence).toEqual(
             expect.arrayContaining([
-                `${varRef('work_dir')}/24-script/${varRef('run_date')}_09_safety-review_report.json`,
+                `${varRef('work_dir')}/${varRef('safety_scope_dir')}/${varRef('run_date')}_09_safety-review_report.json`,
             ]),
         );
         // A tolerated decide failure must never fail the run; the guard reads a missing row as a refusal.
