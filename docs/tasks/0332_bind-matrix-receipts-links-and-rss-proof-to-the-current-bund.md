@@ -4,7 +4,7 @@ name: Bind matrix receipts, links and RSS proof to the current bundle revision
 status: done
 template: feature-impl
 created_at: 2026-10-26T00:11:53.723Z
-updated_at: "2026-11-04T05:08:27.412Z"
+updated_at: "2026-11-05T05:10:41.298Z"
 feature_id: G15
 priority: P1
 tags:
@@ -135,7 +135,7 @@ Change map (0332 R1–R7):
 | P4 | Legacy receipts without mode/payloadDigest reuse on parentRunId+planDigest alone (apps/cli/src/itc-publish.ts:551) — a pre-0332 edited payload under the same parent could skip | accepted-limitation: 0310 re-entry contract requires it; new receipts (0330+) always carry both identity fields |
 | P4 | RSS gate title-date fallback remains for guid-less receipts (apps/cli/src/publish-matrix.ts:1309) — a re-published same-day title could double-hit | accepted-limitation: matches task text (`same-date title fallback only for the current bundle`); guid path is authoritative once receipts persist guid (0332 onward) |
 
-Residual risk: review-lane remediation rekeyed the AC evidence row to the feature scenario title (`R15 — Window sends bind receipts and RSS proof to one bundle revision`) so `spur task verdict` resolves it; no code touched. Full traceability table lives in the review answer (.spur/run/c6a546d4-6c40-4e9e-921a-c7c33d431c08-review-answer.txt).
+Residual risk: review-lane remediation rekeyed the AC evidence row to the feature scenario title (`R15 — Window sends bind receipts and RSS proof to one bundle revision`) so `spur task verdict` resolves it; no code touched. Full traceability table lives in the review answer (.spur/memory/evidence/0332-verdict.json).
 
 Confidence: HIGH
 

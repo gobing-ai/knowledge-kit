@@ -4,7 +4,7 @@ name: Enforce operation-specific draft and live boundaries for matrix publishing
 status: done
 template: feature-impl
 created_at: 2026-10-26T00:11:53.720Z
-updated_at: "2026-11-04T00:04:36.837Z"
+updated_at: "2026-11-05T05:10:41.701Z"
 feature_id: G15
 priority: P1
 tags:
@@ -140,7 +140,7 @@ Review performed inline against R1-R5/AC1 with failure-first ordering honored (5
 | P4 | podcast-pub legacy absent-status default stays `published` for direct plugin callers | By design — the task mandates preserving direct-plugin legacy behavior; the matrix always writes an explicit `status`, so the default is unreachable from planned rows | plugins/publishings/podcast-pub/src/map.ts:115 |
 | P4 | `nativeMode` table is closed over surfdash-pub/podcast-pub; a future plugin with its own native mode field needs a table row | Accepted — intentional closed table keeps platform-native interpretation in plugins; publishStatus remains the universal fallback | apps/cli/src/publish-matrix.ts:370 |
 | P4 | Draftless short-post refusal message says "plan dummy/off or launch live"; live additionally requires a preset edit plus a `--live-channels` token | Accepted — message is accurate at the plugin boundary; the preset edit requirement is documented at the matrix surface | plugins/publishings/x-pub/src/index.ts:113 |
-| P4 | Gate receipt keyed by the full git tree: task-file section edits after a gate launch force a full re-check | Process note — complete all docs/tasks edits before launching the gate; recorded for 0331+ execution | .spur/run/0330-check-receipt.json |
+| P4 | Gate receipt keyed by the full git tree: task-file section edits after a gate launch force a full re-check | Process note — complete all docs/tasks edits before launching the gate; recorded for 0331+ execution | .spur/memory/evidence/0330-verdict.json |
 
 Residual risk: none blocking. Live engine rehearsal of the migrated voice3 publish path belongs to 0335 per AC1's scoping clause. All gates green with exact exit codes recorded in Testing.
 
