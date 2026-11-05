@@ -123,6 +123,8 @@ interface ConsoleState {
     publicPreconfirmationSecondRefusal?: string;
     /** The first mass-send click can leave neither the final dialog nor a known refusal. */
     publicPreconfirmationUnknown?: boolean;
+    /** The mass-send dialog mounts this long after the 发表 click (measured 3.6s live on 2026-11-04). */
+    publicDialogDelayMs?: number;
     /** The measured stale dialog's unique 查看新草稿 action may be absent or ambiguous. */
     publicLatestViewMissing?: boolean;
     publicLatestViewAmbiguous?: boolean;
@@ -282,6 +284,7 @@ function makeConsole(initial: ConsoleState) {
     let wrongCoverPanel = false;
     // The mass-send confirm dialog appears once the 发表 control is clicked, until confirmed.
     let publishConfirmPending = false;
+    let publishClickedAt = 0;
     let dialogOpen = initial.dialogOpen === true;
     let layoutOpen = false;
     let layoutCommitStartedAt = 0;
@@ -340,6 +343,7 @@ function makeConsole(initial: ConsoleState) {
         if (isPublishDialogHeading(selector))
             return (
                 publishConfirmPending &&
+                Date.now() - publishClickedAt >= (state.publicDialogDelayMs ?? 0) &&
                 activePreconfirmationRefusal() === undefined &&
                 state.publicPreconfirmationUnknown !== true
             );
@@ -679,6 +683,7 @@ function makeConsole(initial: ConsoleState) {
             }
             if (isPublishControl(selector)) {
                 publishConfirmPending = true;
+                publishClickedAt = Date.now();
                 return;
             }
             if (isPublishNotifyToggle(selector)) {
@@ -1879,6 +1884,18 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
         expect(clicks.filter(isViewLatest)).toHaveLength(1);
         expect(clicks.filter(isPublishFinal)).toHaveLength(0);
     });
+
+    test('public: a mass-send dialog that mounts after 5s is still confirmed, not reported missing', async () => {
+        await seedMedia();
+        const console = makeConsole(publicState({ publicDialogDelayMs: 5_200 }));
+        const result = await makeTransport(console, { stepTimeoutMs: 30_000 }).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
+        });
+
+        expect(result.error ?? '').not.toContain('发表 dialog was missing');
+        expect(result.ok).toBe(true);
+        expect(selectorsOf(console.calls.editor, 'click').filter(isPublishFinal)).toHaveLength(1);
+    }, 20_000);
 
     test('public: an unknown preconfirmation outcome never retries or opens 查看新草稿', async () => {
         await seedMedia();

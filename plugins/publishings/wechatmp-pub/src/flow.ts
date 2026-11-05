@@ -1948,7 +1948,10 @@ async function confirmPublicPublish(
     stepTimeoutMs: number,
     pollMs: number,
 ): Promise<Result | PublicConfirmation | PreconfirmationStaleVersion> {
-    const confirmationTimeoutMs = Math.min(CONFIRM_TIMEOUT_MS, stepTimeoutMs);
+    // Not CONFIRM_TIMEOUT_MS: this dialog runs a server-side check before it mounts (3.6s on an idle
+    // editor, 2026-11-04), so a 5s cap reported it missing on 2026-11-03/04. Waiting costs nothing
+    // irreversible — no click happens until the dialog is uniquely observed.
+    const confirmationTimeoutMs = stepTimeoutMs;
     const dialog = await findUniqueVisibleSelector(page, PUBLISH_DIALOG, confirmationTimeoutMs, pollMs);
     if (dialog.selector === undefined) {
         if (dialog.reason === 'missing') {
