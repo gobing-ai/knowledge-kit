@@ -223,12 +223,17 @@ stays `false` unless `--live` is passed explicitly (ADR-022). `--playbook wechat
 `cover_enabled` / `inline_images` (`false` unless passed); `--max-revisions` binds
 `max_revisions` (default `2`). Each lands in `itc-options.json` under its camelCase key.
 
+Two var-only child options skip the options snapshot: `outline_bullets_only=true` keeps the
+outline stage to heading-plus-bullets options (no prose paragraphs), and `plan_only=true`
+stops the parent DAG after the confirmed publish plan (no `send-confirm` pause, no fanout-send,
+no recovery, no settle) — a plan preview, not a send.
+
 **Collected topic (`--from-collect <profile>`, 0299).** `itc-prepare` without `--chosen` returns
 an *intake* snapshot (`status: intake`, `workDir: null`). Choose the topic in a run-scoped intake
 dir, then finalize:
 
 1. `kk stage run itc-topic-extract --request` `{parentRunId, intakeDir, topicProfile}` → the pool.
-2. The agent writes `$intakeDir/topic-candidates.json` (≤3 candidates `a|b|c` with
+2. The agent (or `kk itc candidates`) writes `$intakeDir/topic-candidates.json` (≤5 candidates `a|b|c` up to `d|e` with
    `title`/`reason`/`itemIds` from the pool); `kk stage run itc-topic-validate --request`
    `{parentRunId, intakeDir}` must pass.
 3. `kk stage run itc-decision --topic "$intakeDir" "$RUN_ID"` prints the chosen id or `defer`.

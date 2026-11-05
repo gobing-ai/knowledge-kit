@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'bun:test';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    chmodSync,
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -127,7 +136,14 @@ describe('kk-itc child launch (0301 R2 / 0302 R6)', () => {
 
     // A stub `spur` whose child run status is a file: `run`/`continue` log their argv and move
     // the status to what the scenario says the child reaches next.
-    function launch(before: string, after: string): { exitCode: number; calls: string[]; stderr: string } {
+    // `cwdLine` defaults to the checkout so the child definition hits the same-tree branch; pass
+    // a temp dir to exercise the installed-package fallback instead.
+    function launch(
+        before: string,
+        after: string,
+        cwd = REPO,
+        prependPath?: string,
+    ): { exitCode: number; calls: string[]; stderr: string } {
         const dir = mkdtempSync(join(tmpdir(), 'kk-itc-child-'));
         try {
             const status = join(dir, 'status');
@@ -146,7 +162,11 @@ describe('kk-itc child launch (0301 R2 / 0302 R6)', () => {
             chmodSync(join(dir, 'spur'), 0o755);
             seedOptions(dir);
             const result = Bun.spawnSync(['sh', '-c', commandFor(dir)], {
-                env: { ...process.env, PATH: `${dir}:${process.env.PATH ?? ''}` },
+                cwd,
+                env: {
+                    ...process.env,
+                    PATH: `${prependPath ? `${prependPath}:` : ''}${dir}:${process.env.PATH ?? ''}`,
+                },
                 stderr: 'pipe',
             });
             const calls = readFileSync(join(dir, 'calls'), 'utf-8')
@@ -163,7 +183,8 @@ describe('kk-itc child launch (0301 R2 / 0302 R6)', () => {
         const { exitCode, calls } = launch('', 'done');
         expect(exitCode).toBe(0);
         expect(calls).toHaveLength(1);
-        expect(calls[0]).toContain('workflow run plugins/kk/workflows/kk-itc-author.yaml --run-id parent-1-author');
+        // From the checkout cwd the tree branch resolves the relative definition.
+        expect(calls[0]?.split(' ')[2]).toBe('plugins/kk/workflows/kk-itc-author.yaml');
         // Child vars come from the frozen snapshot, stringified for the FSM's string vars.
         expect(calls[0]).toContain('"writer":"itc-generating"');
         expect(calls[0]).toContain('"auto":"true"');
@@ -224,6 +245,48 @@ describe('kk-itc child launch (0301 R2 / 0302 R6)', () => {
         const { exitCode, stderr } = launch('paused', 'paused');
         expect(exitCode).toBe(1);
         expect(stderr).toContain('child parent-1-author paused');
+    });
+
+    it('resolves the child definition from the kk package root when the cwd has no checkout (item 6)', () => {
+        // Fake install the resolution snippet walks up through: `<pkg>/bin/kk` with a shipped
+        // workflow tree, exposed on PATH via a symlink whose realpath resolves back into the pkg.
+        // The run cwd has no kk tree at all, so the kk-binary branch must produce the path.
+        const pkg = mkdtempSync(join(tmpdir(), 'kk-itc-pkg-'));
+        const emptyDir = mkdtempSync(join(tmpdir(), 'kk-itc-noworktree-'));
+        try {
+            mkdirSync(join(pkg, 'bin'), { recursive: true });
+            mkdirSync(join(pkg, 'plugins/kk/workflows'), { recursive: true });
+            writeFileSync(join(pkg, 'bin/kk'), '#!/bin/sh\necho kk-stub\n');
+            chmodSync(join(pkg, 'bin/kk'), 0o755);
+            symlinkSync(join(pkg, 'bin/kk'), join(pkg, 'kk'));
+            writeFileSync(join(pkg, 'plugins/kk/workflows/kk-itc-author.yaml'), 'placeholder\n');
+            const { exitCode, calls } = launch('', 'done', emptyDir, pkg);
+            expect(exitCode).toBe(0);
+            expect(calls[0]).toContain(
+                `workflow run ${join(pkg, 'plugins/kk/workflows/kk-itc-author.yaml')} --run-id parent-1-author`,
+            );
+        } finally {
+            rmSync(pkg, { recursive: true, force: true });
+            rmSync(emptyDir, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses to launch when no kk tree resolves from the cwd and no kk binary exists', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-itc-nokk-'));
+        try {
+            seedOptions(dir);
+            const result = Bun.spawnSync(['sh', '-c', commandFor(dir)], {
+                cwd: dir,
+                // The system tool dirs keep sh/jq; neither carries a kk binary, so both
+                // resolution branches fail and the node must fail loud instead of guessing.
+                env: { ...process.env, PATH: '/usr/bin:/bin' },
+                stderr: 'pipe',
+            });
+            expect(result.exitCode).toBe(1);
+            expect(result.stderr.toString()).toContain('kk-itc-author.yaml');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
     });
 
     it('never relaunches a completed or failed child', () => {

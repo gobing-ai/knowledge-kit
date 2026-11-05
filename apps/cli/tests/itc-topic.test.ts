@@ -193,7 +193,7 @@ describe('itcTopicExtract (0299 / G21 R1, R2)', () => {
 });
 
 describe('itcTopicValidate (0299 / G21 R1)', () => {
-    it('validates 1–3 candidate slots citing valid item IDs and source URLs', async () => {
+    it('validates 1–5 candidate slots (ids a–e) citing valid item IDs and source URLs', async () => {
         await withTempDir(async (dir) => {
             const dbPath = join(dir, 'store.db');
             const { store, itemIds } = await seedTestStore(dbPath);
@@ -247,6 +247,97 @@ describe('itcTopicValidate (0299 / G21 R1)', () => {
             });
             expect(res.valid).toBe(true);
             expect(existsSync(join(intakeDir, '.topic-candidates-valid'))).toBe(true);
+        });
+    });
+
+    it('accepts five candidate slots a–e and refuses a sixth', async () => {
+        await withTempDir(async (dir) => {
+            const dbPath = join(dir, 'store.db');
+            const { store, itemIds } = await seedTestStore(dbPath);
+            await store.close();
+            const profilePath = join(dir, 'test-topic.yaml');
+            writeSampleProfile(profilePath);
+            const intakeDir = join(dir, 'intake');
+            const { poolDigest } = await itcTopicExtract({
+                schemaVersion: 1,
+                parentRunId: 'run-val-five',
+                intakeDir,
+                topicProfile: 'test-topic',
+                profilePath,
+                dbPath,
+            });
+            // One item per slot repeated across ids: enough for five valid candidates.
+            const slot = (id: 'a' | 'b' | 'c' | 'd' | 'e', poolIdx: number) => ({
+                id,
+                title: `Candidate ${id}`,
+                reason: `Rationale for slot ${id}.`,
+                itemIds: [itemIds[poolIdx]],
+                sourceUrls: [`https://example.com/item-${poolIdx + 1}`],
+            });
+            const five = [slot('a', 0), slot('b', 1), slot('c', 2), slot('d', 1), slot('e', 2)];
+            const write = (candidates: object[]): void =>
+                writeFileSync(
+                    join(intakeDir, 'topic-candidates.json'),
+                    JSON.stringify({ schemaVersion: 1, parentRunId: 'run-val-five', poolDigest, candidates }),
+                );
+            write(five);
+            await expect(
+                itcTopicValidate({ schemaVersion: 1, intakeDir, parentRunId: 'run-val-five' }),
+            ).resolves.toMatchObject({ valid: true });
+
+            // A sixth slot exceeds the widened cap of five.
+            write([
+                ...five,
+                {
+                    id: 'b',
+                    title: 'Sixth',
+                    reason: 'Over the cap.',
+                    itemIds: [itemIds[0]],
+                    sourceUrls: ['https://example.com/item-1'],
+                },
+            ]);
+            await expect(
+                itcTopicValidate({ schemaVersion: 1, intakeDir, parentRunId: 'run-val-five' }),
+            ).rejects.toThrow('invalid topic candidates artifact');
+        });
+    });
+
+    it('rejects an out-of-slot candidate id beyond e', async () => {
+        await withTempDir(async (dir) => {
+            const dbPath = join(dir, 'store.db');
+            const { store, itemIds } = await seedTestStore(dbPath);
+            await store.close();
+            const profilePath = join(dir, 'test-topic.yaml');
+            writeSampleProfile(profilePath);
+            const intakeDir = join(dir, 'intake');
+            const { poolDigest } = await itcTopicExtract({
+                schemaVersion: 1,
+                parentRunId: 'run-val-f',
+                intakeDir,
+                topicProfile: 'test-topic',
+                profilePath,
+                dbPath,
+            });
+            writeFileSync(
+                join(intakeDir, 'topic-candidates.json'),
+                JSON.stringify({
+                    schemaVersion: 1,
+                    parentRunId: 'run-val-f',
+                    poolDigest,
+                    candidates: [
+                        {
+                            id: 'f',
+                            title: 'Model Breakthrough',
+                            reason: 'Slot f does not exist.',
+                            itemIds: [itemIds[0]],
+                            sourceUrls: ['https://example.com/item-1'],
+                        },
+                    ],
+                }),
+            );
+            await expect(itcTopicValidate({ schemaVersion: 1, intakeDir, parentRunId: 'run-val-f' })).rejects.toThrow(
+                'invalid topic candidates artifact',
+            );
         });
     });
 
@@ -649,6 +740,31 @@ describe('itc-topic-* request boundary and validation guards (0299 R1)', () => {
                 expect(await stage(dir, name, '{nope'), name).toBe(1);
                 expect(await stage(dir, name, { schemaVersion: 1 }), name).toBe(1);
             }
+        });
+    });
+
+    it('resolves a shipped topic profile from the package root even from a foreign cwd (item 6)', async () => {
+        await withTempDir(async (dir) => {
+            const dbPath = join(dir, 'store.db');
+            const { store } = await seedTestStore(dbPath);
+            await store.close();
+
+            const intakeDir = join(dir, 'intake');
+            const cwd = process.cwd();
+            process.chdir(dir); // no profile anywhere up from here, and no custom path
+            try {
+                const res = await itcTopicExtract({
+                    schemaVersion: 1,
+                    parentRunId: 'run-shipped',
+                    intakeDir,
+                    topicProfile: 'it-topics',
+                    dbPath,
+                });
+                expect(res.count).toBeGreaterThanOrEqual(3);
+            } finally {
+                process.chdir(cwd);
+            }
+            expect(existsSync(join(intakeDir, 'topic-pool.json'))).toBe(true);
         });
     });
 
