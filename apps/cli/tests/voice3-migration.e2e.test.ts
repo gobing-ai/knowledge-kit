@@ -562,6 +562,39 @@ function dispatchCount(fx: Fixture, needle: string): number {
 
 function expectDone(outcome: RunOutcome, what: string): void {
     if (outcome.finalState !== 'done') {
+        const cwd = process.env.REHEARSAL_DEBUG_CWD;
+        if (cwd) {
+            const { execSync } = require('node:child_process');
+            try {
+                const rows = execSync(
+                    `find "${cwd}" -name 'outcome.*.json' -newer /tmp -o -name 'outcome.*.json' | tail -1 | xargs cat 2>/dev/null`,
+                ).toString();
+                const parsed = JSON.parse(rows) as { rows?: Array<Record<string, unknown>> };
+                const bad = (parsed.rows ?? []).filter(
+                    (r) => !(r.required !== true || r.dummy === true || r.status === 'succeeded'),
+                );
+                console.log('DEBUG-VIOLATING-ROWS', JSON.stringify(bad, null, 2));
+                const tlog = execSync(
+                    `tail -8 "${join(cwd, '..', '..', '..', 'transports.log')}" 2>/dev/null || echo no-transports`,
+                ).toString();
+                console.log('DEBUG-TRANSPORTS-TAIL', tlog);
+                const klog = execSync(
+                    `tail -12 "${join(cwd, '..', '..', '..', 'kk-calls.log')}" 2>/dev/null || echo no-kkcalls`,
+                ).toString();
+                console.log('DEBUG-KKCALLS-TAIL', klog);
+                const outcomeFile = execSync(`ls "${cwd}/4-publish"/outcome.*.json 2>/dev/null | tail -1`)
+                    .toString()
+                    .trim();
+                if (outcomeFile)
+                    console.log('DEBUG-FULL-OUTCOME', execSync(`cat "${outcomeFile}"`).toString().slice(0, 3500));
+                const ev = execSync(
+                    `tail -25 "${join(cwd, '4-publish', 'events.jsonl')}" 2>/dev/null || echo no-events`,
+                ).toString();
+                console.log('DEBUG-EVENTS-TAIL', ev);
+            } catch (e) {
+                console.log('DEBUG-dump-failed', String(e));
+            }
+        }
         throw new Error(
             `${what}: finalState=${outcome.finalState} (exit ${outcome.exitCode})\nstdout: ${outcome.stdout.slice(-1500)}\nstderr: ${outcome.stderr.slice(-1500)}`,
         );
@@ -579,6 +612,7 @@ async function rehearsalFlow(
     caseName: string,
     opts: { overseas: boolean } = { overseas: true },
 ): Promise<void> {
+    process.env.REHEARSAL_DEBUG_CWD = fx.dayDir;
     const gen = runWorkflow(fx, caseName, VOICE3, 'gen', voice3Vars(), { KK_STUB_DURATION_MS: '1620000' });
     expectDone(gen, 'generation run');
     const afterGen = runWorkflow(
