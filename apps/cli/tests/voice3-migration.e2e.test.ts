@@ -338,6 +338,8 @@ interface Fixture {
     works: string;
     binDir: string;
     dayDir: string;
+    /** Pin podcast-pub's offline transport for this fixture only (live-podcast flows). */
+    podFake?: boolean;
 }
 
 interface RunOutcome {
@@ -417,13 +419,13 @@ function runEnv(fx: Fixture, extra: Record<string, string> = {}): Record<string,
     env.KK_FAKE_GUID = GUID_FULL;
     env.KK_FAKE_LOG = join(fx.root, 'transports.log');
     env.KK_FAKE_STATE_DIR = join(fx.root, 'fake-state');
-    // The live podcast row must stay offline: the ambient kk config (~/.config/kk/config.yaml)
-    // injects real MICROFEED_* credentials into the spawned plugin, so without this pin the
-    // "real transport" ride actually creates/dedupes items on production podcast.salty.vip
-    // (2026-11-05: server-side idempotency dedupe on the fixture MP3's stable sha started 404-ing
-    // after that item was deleted — C01/C02/C16/C17 went red on BOTH trees). FakeFileCliTransport
-    // keeps the live-mode receipt + itemId shape the RSS title-fallback binds to, with no network.
-    env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT = 'fake';
+    // Live podcast rows must stay offline: the ambient kk config (~/.config/kk/config.yaml) injects
+    // real MICROFEED_* credentials into the spawned plugin, so an unpinned live ride actually
+    // creates/dedupes items on production podcast.salty.vip (2026-11-05: its server-side
+    // idempotency dedupe on the fixture MP3's stable sha started 404-ing after that item was
+    // deleted — C01/C02/C16/C17 went red on BOTH trees). Pin is per-fixture: flows that assert a
+    // REAL plugin's offline uncertain outcome (C14 xhs draft, C15 weibo live refusal) must not get it.
+    if (fx.podFake) env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT = 'fake';
     delete env.SPUR_WORKFLOW_RUN_ACTIVE;
     delete env.SPUR_EXPECTED_DEFINITION_DIGEST;
     return env;
@@ -586,6 +588,7 @@ async function rehearsalFlow(
     caseName: string,
     opts: { overseas: boolean } = { overseas: true },
 ): Promise<void> {
+    fx.podFake = true;
     const gen = runWorkflow(fx, caseName, VOICE3, 'gen', voice3Vars(), { KK_STUB_DURATION_MS: '1620000' });
     expectDone(gen, 'generation run');
     const afterGen = runWorkflow(
@@ -1030,6 +1033,7 @@ describe('0335 R4/R5/R6: overseas gate, migration report, launcher artifacts', (
         const gen = runWorkflow(fx, '16-rss-gate', VOICE3, 'gen', voice3Vars(), { KK_STUB_DURATION_MS: '1620000' });
         expectDone(gen, 'generation');
         // Real pass writes the live podcast receipt; the overseas window then proves the episode.
+        fx.podFake = true;
         const realPass = runWorkflow(
             fx,
             '16-rss-gate',
