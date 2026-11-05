@@ -5,6 +5,7 @@ import {
     mkdirSync,
     mkdtempSync,
     readFileSync,
+    realpathSync,
     rmSync,
     symlinkSync,
     writeFileSync,
@@ -251,7 +252,8 @@ describe('kk-itc child launch (0301 R2 / 0302 R6)', () => {
         // Fake install the resolution snippet walks up through: `<pkg>/bin/kk` with a shipped
         // workflow tree, exposed on PATH via a symlink whose realpath resolves back into the pkg.
         // The run cwd has no kk tree at all, so the kk-binary branch must produce the path.
-        const pkg = mkdtempSync(join(tmpdir(), 'kk-itc-pkg-'));
+        // Canonical path: the snippet realpaths the kk binary (/private/var on macOS, not tmpdir()'s /var).
+        const pkg = realpathSync(mkdtempSync(join(tmpdir(), 'kk-itc-pkg-')));
         const emptyDir = mkdtempSync(join(tmpdir(), 'kk-itc-noworktree-'));
         try {
             mkdirSync(join(pkg, 'bin'), { recursive: true });

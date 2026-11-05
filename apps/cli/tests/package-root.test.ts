@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
@@ -8,7 +8,8 @@ import { findPackageRoot, resolvePackageRoot } from '../src/package-root';
 const REPO = resolve(import.meta.dir, '../../..');
 
 async function withTempTree(fn: (dir: string) => Promise<void> | void): Promise<void> {
-    const dir = mkdtempSync(join(tmpdir(), 'kk-pkgroot-test-'));
+    // Canonical path: process.cwd() after chdir reports /private/var on macOS, not tmpdir()'s /var.
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'kk-pkgroot-test-')));
     try {
         await fn(dir);
     } finally {
