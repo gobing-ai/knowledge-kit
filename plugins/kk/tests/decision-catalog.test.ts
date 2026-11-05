@@ -200,7 +200,15 @@ describe('kk-itc decision catalog (0301 / G21 R1)', () => {
 
         const topic = catalog.decisions['kk-itc-topic-choice'];
         expect(topic?.type).toBe('choice');
-        expect(Object.keys(topic.criteria as Record<string, string>).sort()).toEqual(['a', 'b', 'c', 'defer']);
+        // Widened to five slots (a-e) for the it-topics pool (itc-ux).
+        expect(Object.keys(topic.criteria as Record<string, string>).sort()).toEqual([
+            'a',
+            'b',
+            'c',
+            'd',
+            'defer',
+            'e',
+        ]);
         expect(topic.fallback).toBe('defer');
 
         const outline = catalog.decisions['kk-itc-outline-choice'];

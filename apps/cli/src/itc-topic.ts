@@ -17,6 +17,7 @@ import {
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import { z } from 'zod';
+import { resolvePackageRoot } from './package-root';
 
 const WINDOW_UNITS: Record<string, number> = {
     s: 1000,
@@ -59,18 +60,15 @@ async function resolveTopicProfilePath(fs: FileSystem, topic: string, customPath
     if (customPath !== undefined && (await fs.exists(customPath))) {
         return customPath;
     }
-    // Walk up from the cwd for the shipped profile. Never `__dirname`: Bun inlines it as an
-    // absolute source path, which would make the packed CLI reference its build checkout (0255 AC7).
-    const rel = join('plugins/kk/decisions/extract', `${topic}.yaml`);
-    let dir = resolve(process.cwd());
-    for (;;) {
-        const candidate = join(dir, rel);
-        if (await fs.exists(candidate)) return candidate;
-        const parent = resolve(dir, '..');
-        if (parent === dir) break;
-        dir = parent;
-    }
-    throw new Error(`no profile for topic '${topic}': expected ${rel} under the cwd or one of its ancestors`);
+    // Shipped profile via the package-root resolver (cwd tree first — the project shadows the
+    // install — then the runtime script's tree, so a run outside any checkout still resolves it).
+    // Never `__dirname`: Bun inlines it as an absolute source path, which would make the packed
+    // CLI reference its build checkout (0255 AC7).
+    const candidate = join(await resolvePackageRoot(fs), 'plugins/kk/decisions/extract', `${topic}.yaml`);
+    if (await fs.exists(candidate)) return candidate;
+    throw new Error(
+        `no profile for topic '${topic}': expected plugins/kk/decisions/extract/${topic}.yaml under the package root (cwd or script tree)`,
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -172,7 +170,7 @@ export async function itcTopicExtract(
 // ---------------------------------------------------------------------------
 
 export const ItcTopicCandidateSchema = z.object({
-    id: z.enum(['a', 'b', 'c']),
+    id: z.enum(['a', 'b', 'c', 'd', 'e']),
     title: z.string().min(1).max(200),
     reason: z.string().min(1).max(1000),
     itemIds: z.array(z.string().min(1)).min(1),
@@ -182,12 +180,12 @@ export const ItcTopicCandidateSchema = z.object({
 /** Parsed topic candidate. */
 export type ItcTopicCandidate = z.infer<typeof ItcTopicCandidateSchema>;
 
-/** Schema of `topic-candidates.json`: up to three candidates bound to the pool digest. */
+/** Schema of `topic-candidates.json`: up to five candidates bound to the pool digest. */
 export const ItcTopicCandidatesArtifactSchema = z.object({
     schemaVersion: z.literal(1).default(1),
     parentRunId: z.string().min(1),
     poolDigest: z.string().min(1),
-    candidates: z.array(ItcTopicCandidateSchema).min(1).max(3),
+    candidates: z.array(ItcTopicCandidateSchema).min(1).max(5),
 });
 
 /** Parsed topic candidates artifact. */
@@ -285,7 +283,7 @@ export const ItcTopicSelectRequestSchema = z.object({
     schemaVersion: z.literal(1).default(1),
     intakeDir: z.string().min(1),
     parentRunId: z.string().min(1),
-    selectedCandidateId: z.enum(['a', 'b', 'c']),
+    selectedCandidateId: z.enum(['a', 'b', 'c', 'd', 'e']),
     dbPath: z.string().optional(),
 });
 

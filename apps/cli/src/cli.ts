@@ -3,6 +3,7 @@ import { registerBoardCommand } from './commands/board';
 import { registerBotCommand } from './commands/bot';
 import { registerDailyCommand } from './commands/daily';
 import { registerExecutorCommand } from './commands/executor';
+import { registerItcCommand } from './commands/itc';
 import { registerLedgerCommand } from './commands/ledger';
 import { registerLockCommand } from './commands/lock';
 import { registerPluginCommand } from './commands/plugin';
@@ -29,6 +30,7 @@ export function createProgram(): Command {
     registerBotCommand(program);
     registerDailyCommand(program);
     registerExecutorCommand(program);
+    registerItcCommand(program);
     registerLedgerCommand(program);
     registerLockCommand(program);
     registerPluginCommand(program);
