@@ -4,7 +4,7 @@ name: Annotate kk plugin entities with runtime requires
 status: todo
 template: feature-impl
 created_at: 2026-11-04T23:00:27.843Z
-updated_at: "2026-11-04T23:41:42.059Z"
+updated_at: "2026-11-05T00:02:19.126Z"
 feature_id: F81
 
 ac_altitude: task-local
@@ -90,6 +90,11 @@ Scenario: AC4 — README documents the Bot install and gates pass (req: R4, R5)
   Given plugins/kk/README.md
   When it is read and the gates run
   Then the Grok Bot subsection carries the install line and ADR-044 pointer, and lint, spur-check and the guard test pass
+
+Scenario: R1 — kk entities declare runtime requirements (R1)
+  Given the annotated kk skills and commands with their derived `requires:` lists
+  When `superskill install kk --targets grok-bot` runs
+  Then it installs only entities the Grok Bot can actually run, skipping command-only or Mac-fs-only entries per the frozen `requires` groups
 ```
 
 ### Q&A

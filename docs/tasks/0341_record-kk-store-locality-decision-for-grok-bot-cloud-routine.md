@@ -4,7 +4,7 @@ name: Record kk store-locality decision for Grok Bot cloud routines
 status: todo
 template: feature-impl
 created_at: 2026-11-04T23:00:27.340Z
-updated_at: "2026-11-04T23:41:01.778Z"
+updated_at: "2026-11-05T00:02:18.754Z"
 feature_id: F81
 
 ac_altitude: task-local
@@ -83,6 +83,11 @@ Scenario: AC4 — Gates pass (req: R5)
   Given the doc change
   When lint and spur-check run
   Then both pass
+
+Scenario: R3 — Store locality decision precedes cloud execution (R3)
+  Given ADR-044, the design's Grok Bot subsection, and the pending `kk schedule render grok-bot` platform (0343)
+  When the recorded store-locality decision, its rejected alternative, and the no-content/staleness policy are reviewed side by side with 0343's rendered routine
+  Then the decision precedes cloud execution: the rendered routine never assumes a reachable Mac-side store, once-only import and consent gates come from the recorded policy, and no cloud execution code ships before ADR-044 exists
 ```
 
 ### Q&A

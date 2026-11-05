@@ -4,7 +4,7 @@ name: kk schedule render grok-bot platform for cloud routines
 status: todo
 template: feature-impl
 created_at: 2026-11-04T23:00:28.338Z
-updated_at: "2026-11-04T23:44:25.245Z"
+updated_at: "2026-11-05T00:02:19.497Z"
 feature_id: F81
 
 dependencies: ["0341", "0342"]
@@ -93,6 +93,11 @@ Scenario: AC5 — Surface docs updated and gates green (req: R6, R7)
   Given the change set
   When `docs/04_DESIGN.md`, `plugins/kk/README.md` §Schedule are read and `bun run lint` + `bun run spur-check` run
   Then both docs show `--platform launchd|cron|grok-bot` with `--bot/--tz/--cron`, the README carries the paste-into-routine step, and both gates pass
+
+Scenario: R2 — Routine render is complete and consent-preserving (R2)
+  Given a shipped kk schedule in the schedule store
+  When `kk schedule render --platform grok-bot` prints the routine
+  Then the printed routine is complete (schedule, run script, Mac import recipe, required operator inputs) and consent-preserving: kk only prints, creating the routine in the Grok Bot stays an explicit operator action
 ```
 
 ### Q&A
