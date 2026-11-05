@@ -4,7 +4,7 @@ name: Annotate kk plugin entities with runtime requires
 status: done
 template: feature-impl
 created_at: 2026-11-04T23:00:27.843Z
-updated_at: "2026-11-05T05:59:37.997Z"
+updated_at: "2026-11-05T15:48:45.243Z"
 feature_id: F81
 
 ac_altitude: task-local
@@ -182,19 +182,19 @@ Ordering: guard test written and confirmed RED on the unannotated tree (41 missi
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `requires:` frontmatter present on all 18 kk entities with exactly the frozen table's values (groups 8/4/1/5 verified by `bun run /tmp/derive-check.ts` scan against the frozen table — identical); no other frontmatter key or body touched (diff vs 6e43795d494f: annotations only, e.g. plugins/kk/skills/topic/SKILL.md:10, plugins/kk/commands/image-extract.md:6) |
-| R2 | MET | plugins/kk/tests/runtime-requires.test.ts:26-32 declares TRACKED_CLIS, CLI_INVOCATION_RE, SKILL_DISPATCH_RE, REQUIRES_TOKEN_RE; deriveRequires at :96, checkRequires at :130; imports only bun:test/node:fs/node:path; rules mirror `/Users/robin/xprojects/spur/plugins/sp/tests/runtime-requires.test.ts` (1291) |
-| R3 | MET | plugins/kk/tests/runtime-requires.test.ts:180-195 asserts exported-key snapshot `cli:kk,cli:spur,local-fs=8; cli:kk,local-fs=4; cli:spur,local-fs=1; local-fs=5` and rejects any declared hooks/subagents token; `bun test plugins/kk/tests/runtime-requires.test.ts` → 4 pass/0 fail |
-| R4 | MET | plugins/kk/README.md:31-39 documents the install line `superskill install kk --targets grok-bot --bot-provides cli:kk --bot-provides local-fs`, the `--bot-provides cli:spur` bootstrap addendum, and the ADR-044 store-free/browser-free pointer |
-| R5 | MET | `bun run lint` exit 0; `bun run spur-check` exit 0 (4472 tests, 0 fail); `bun test plugins/kk/tests/runtime-requires.test.ts` 4 pass/0 fail; `qualityGateCmd="spur self exec check" spur task gate 0342 run` → PASS (.spur/run/0342-check-receipt.json — LOST with the runall worktree; verdict PASS in the record) |
+| R1 | MET | 18 entities carry `requires:` (`grep -rl '^requires:' plugins/kk/skills plugins/kk/commands` counts 18), e.g. `plugins/kk/skills/topic/SKILL.md:10` and `plugins/kk/commands/image-extract.md:6`; declared equals derived closure per the AC1 test at `plugins/kk/tests/runtime-requires.test.ts:171` |
+| R2 | MET | `plugins/kk/tests/runtime-requires.test.ts:26-32` declares TRACKED_CLIS, CLI_INVOCATION_RE, SKILL_DISPATCH_RE, REQUIRES_TOKEN_RE; deriveRequires at `plugins/kk/tests/runtime-requires.test.ts:96`; checkRequires closure scope at `plugins/kk/tests/runtime-requires.test.ts:128-132`; named-diff failure asserted at `plugins/kk/tests/runtime-requires.test.ts:221-222` |
+| R3 | MET | `plugins/kk/tests/runtime-requires.test.ts:179-196` asserts the 8/4/1/5 group snapshot and rejects declared hooks or subagents tokens |
+| R4 | MET | `plugins/kk/README.md:31-39` Grok Bot subsection: install line with `--bot-provides cli:kk --bot-provides local-fs`, the `cli:spur` bootstrap addendum, and the ADR-044 pointer |
+| R5 | MET | 2026-11-05: `bun test plugins/kk/tests/runtime-requires.test.ts apps/cli/tests/commands/schedule.test.ts` 20 pass / 0 fail / 292 expects; `bun run lint` exit 0; `bun run build` exit 0 |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Every kk entity declares the derived requires (req: R1, R2) | MET | test | `runtime-requires.test.ts > AC1` — declared equals derived closure for all 18 entities (48→52 expect calls, 4 pass/0 fail) |
-| AC2 — Undeclared use fails with a named diff (req: R2) | MET | test | `runtime-requires.test.ts > AC2` — mutated in-memory fixture (direct `spur` use + inherited use through `Skill(skill="kk:ac2-fixture-skill")` dispatch) yields `${fixturePath}: missing cli:spur` (executed at plugins/kk/tests/runtime-requires.test.ts:216-217) and the command's identical missing token |
-| AC3 — Snapshot and forbidden tokens hold (req: R3) | MET | test | `runtime-requires.test.ts > AC3` — group snapshot 8/4/1/5 matches the 2026-11-04 frozen scan; hooks/subagents absent |
-| R1 — kk entities declare runtime requirements (R1) | MET | command | `bun test plugins/kk/tests/runtime-requires.test.ts` → 4 pass/0 fail: every entity needing the kk or spur CLI declares it (derived closure vs annotation across all 18 entities); no hooks/subagents declared |
-| AC4 — README documents the Bot install and gates pass (req: R4, R5) | MET | command | plugins/kk/README.md:31-39 carries install line + ADR-044 pointer; `bun run lint` && `bun run spur-check` exit 0; gate receipt PASS |
+| AC1 — Every kk entity declares the derived requires (req: R1, R2) | MET | test | AC1 test at `plugins/kk/tests/runtime-requires.test.ts:171` passes 2026-11-05 (20 pass / 0 fail with the schedule suite) |
+| AC2 — Undeclared use fails with a named diff (req: R2) | MET | test | AC2 test at `plugins/kk/tests/runtime-requires.test.ts:199` builds in-memory fixtures (direct spur use plus inherited dispatch, fixture at `plugins/kk/tests/runtime-requires.test.ts:214-218`) and asserts `missing cli:spur` diffs at `plugins/kk/tests/runtime-requires.test.ts:221-222`; passes 2026-11-05 |
+| AC3 — Snapshot and forbidden tokens hold (req: R3) | MET | test | AC3 test at `plugins/kk/tests/runtime-requires.test.ts:179-196` passes 2026-11-05 |
+| AC4 — README documents the Bot install and gates pass (req: R4, R5) | MET | command | `plugins/kk/README.md:31-39` re-read this run; `bun run lint` exit 0, `bun run build` exit 0, `bun run test` exit 0 (4613 pass / 0 fail, 4616 tests across 236 files) |
+| R1 — kk entities declare runtime requirements (R1) | MET | test | `bun test plugins/kk/tests/runtime-requires.test.ts` passes: every entity using the kk or spur CLI declares it, derived closure equals annotation across 18 entities (`plugins/kk/tests/runtime-requires.test.ts:171`); no hooks or subagents declared (`plugins/kk/tests/runtime-requires.test.ts:191-195`) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

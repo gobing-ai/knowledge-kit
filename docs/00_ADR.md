@@ -1607,7 +1607,7 @@ publish-matrix-*`, so ADR-037's noun inventory is unchanged.
 
 1. **`kk.db` never moves.** The store does not sync to, copy to, or open from a Bot computer — not via git, iCloud, smb, or any future channel. The Mac owns the store; the Bot owns preparation.
 2. **Cloud routines run store-free and browser-free.** A Bot routine may execute only collection-input work that touches no database and no browser profile. Its output is a file artifact pushed by the Bot's GitHub connector to the frozen branch `kk-cloud-sync` at the path `sync/<schedule>/<stamp>.json` (`<stamp>` is `YYYYMMDDTHHMMZ`, the kk-collect stamp format).
-3. **The Mac imports through existing verbs.** The Mac-side import is `kk store ingest --run cloud-<stamp> --in <file>` after a `git fetch` of `kk-cloud-sync` — typically an operator cron. No new sync verb is added; the collect fan-in seam (`kk executor fan-in --out <Doc[].json>` → `kk store ingest --in`) already splits storage-free collection from the store (`plugins/kk/workflows/kk-collect.yaml:96-102`).
+3. **The Mac imports through existing verbs.** The Mac-side import is `kk store ingest --run cloud-<stamp> --in <file>` after a `git fetch` of `kk-cloud-sync` — typically an operator cron. No new sync verb is added; the collect fan-in seam (`kk executor fan-in --out <Doc[].json>` → `kk store ingest --in`) already splits storage-free collection from the store (`plugins/kk/workflows/kk-collect.yaml:115-121`).
 4. **Publishing stays Mac-local.** Anything reading the store, the frozen bundle (ADR-043), or browser profiles (`~/.config/kk/browser-profiles/`, Keychain-bound per ADR-042) runs on the Mac only. ADR-022's live-publish consent gate is unchanged and applies to the Mac exactly as before.
 
 **Missing/stale-input policy (every cloud render must carry it verbatim).**
@@ -1615,7 +1615,7 @@ publish-matrix-*`, so ADR-037's noun inventory is unchanged.
 | Situation | Behavior |
 | --- | --- |
 | Inputs or credentials missing at run time | Routine prints `no-content: <reason>` and exits with no side effects |
-| Artifact older than 26 h when the Mac imports | `kk store ingest` ignores it (logged), matching the 26 h horizon digest fallback in `kk-collect.yaml:110` |
+| Artifact older than 26 h when the Mac imports | `kk store ingest` ignores it (logged), matching the 26 h horizon digest fallback in `kk-collect.yaml:113-114` |
 | Same artifact seen again | Imported at most once — idempotency by the `--run cloud-<stamp>` run id (`<stamp>` differs per routine run) |
 
 **Rejected.** Running the store on the Bot:

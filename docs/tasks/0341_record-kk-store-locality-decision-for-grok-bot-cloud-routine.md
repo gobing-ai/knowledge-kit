@@ -4,7 +4,7 @@ name: Record kk store-locality decision for Grok Bot cloud routines
 status: done
 template: feature-impl
 created_at: 2026-11-04T23:00:27.340Z
-updated_at: "2026-11-05T05:59:38.347Z"
+updated_at: "2026-11-05T15:48:43.538Z"
 feature_id: F81
 
 ac_altitude: task-local
@@ -164,19 +164,19 @@ Rationale: documentation-only decision (mutationPolicy: none). The seam reuses t
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | docs/00_ADR.md:1602 ADR-044 heading; :1606-1613 decision points 1-4 incl. branch `kk-cloud-sync` and `sync/<schedule>/<stamp>.json`; :1613 ADR-022 unchanged |
-| R2 | MET | docs/00_ADR.md:1615-1619 policy table: `no-content: <reason>` no-side-effect exit; >26 h ignored matching kk-collect.yaml:110; once-only import by `--run cloud-<stamp>` |
-| R3 | MET | docs/00_ADR.md:1621-1628 Rejected store-on-Bot (SQLite over network, Keychain-bound profiles, ephemeral member packages, shared 300/h cap) plus kk.db sync via git/iCloud; :1629 Revisit-when condition |
-| R4 | MET | docs/design/kk-collect-and-daily-voice2.md:359 design section 10 with seam diagram + policy table; docs/03_ARCHITECTURE.md:147 Pipeline-model pointer to ADR-044 and design section 10 |
-| R5 | MET | command: `bun run lint` exit 0; `spur task gate 0341 run` quality gate PASS receipt .spur/run/0341-check-receipt.json (LOST with the runall worktree; tree 736ebb9563f0c3ac3e8a536defa5b12e0a614cc6); `spur task gate 0341 status` → {"reuse":true,"reason":"ok"} |
+| R1 | MET | `docs/00_ADR.md:1602` ADR-044 heading; `docs/00_ADR.md:1606-1613` decision points 1-4 (kk.db never moves; store-free browser-free routine pushing to `kk-cloud-sync`; Mac import via `kk store ingest --run cloud-<stamp>`; publishing Mac-local, ADR-022 unchanged); point 3 now cites the live fan-in seam `plugins/kk/workflows/kk-collect.yaml:115-121` (re-anchored this run from the stale :96-102, which is `kk board capture`) |
+| R2 | MET | `docs/00_ADR.md:1615-1619` policy table: `no-content: <reason>` no-side-effect exit; artifacts older than 26 h ignored, matching the horizon digest fallback at `plugins/kk/workflows/kk-collect.yaml:113-114` (re-anchored this run from the stale :110, which is the 45m leash comment); once-only import by `--run cloud-<stamp>` |
+| R3 | MET | `docs/00_ADR.md:1621-1629` Rejected store-on-Bot (SQLite over network storage, Keychain-bound profiles, member packages removed on recreate, shared rate cap) plus kk.db sync via git/iCloud, and Revisit-when; the 200 per routine and 300 total hourly caps re-confirmed verbatim 2026-11-05 at https://docs.x.ai/grok-bot/skills-routines-and-automations and package removal on recreate at https://docs.x.ai/grok-bot/computers |
+| R4 | MET | `docs/design/kk-collect-and-daily-voice2.md:359` section 10 with seam diagram and policy table (`docs/design/kk-collect-and-daily-voice2.md:381-383`, 26 h row re-anchored to `plugins/kk/workflows/kk-collect.yaml:113-114`); `docs/03_ARCHITECTURE.md:147` pointer to ADR-044 and design section 10 |
+| R5 | MET | 2026-11-05 run: `bun run lint` exit 0; `bun run build` exit 0; `bun run test` exit 0, 4613 pass / 0 fail |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — ADR-044 records the decision completely (req: R1, R3) | MET | command | command `grep -n "kk-cloud-sync" docs/00_ADR.md` → hits at docs/00_ADR.md:1609 (branch + path + stamp format) and :1621-1629 (Rejected + Revisit-when present; see also :1602 heading) |
-| AC2 — Missing/stale policy is explicit (req: R2) | MET | command | command `grep -nE "no-content: <reason>" docs/00_ADR.md` → docs/00_ADR.md:1617; `grep -n "26 h"` → :1618 (26 h bound); `grep -nE "cloud-<stamp>"` → :1619 (once-only import) |
-| AC3 — Design and architecture point to the decision (req: R4) | MET | command | command `grep -n "ADR-044" docs/03_ARCHITECTURE.md` → docs/03_ARCHITECTURE.md:147; `grep -n "^## 10\. Grok Bot cloud routines" docs/design/kk-collect-and-daily-voice2.md` → docs/design/kk-collect-and-daily-voice2.md:359 |
-| AC4 — Gates pass (req: R5) | MET | command | `spur task gate 0341 run` PASS at tree 736ebb95 (receipt reuse confirmed via status) |
-| R3 — Store locality decision precedes cloud execution (R3) | MET | command | ADR dated 2026-11-04 accepted before task 0343; command `grep -n "0343" docs/00_ADR.md` → docs/00_ADR.md:1631 Detail render-refusal contract; design section 10 refusal clause (docs/design/kk-collect-and-daily-voice2.md:388) |
+| AC1 — ADR-044 records the decision completely (req: R1, R3) | MET | command | `grep -n "kk-cloud-sync" docs/00_ADR.md` hits `docs/00_ADR.md:1608-1610`; Rejected and Revisit-when present at `docs/00_ADR.md:1621-1629` |
+| AC2 — Missing/stale policy is explicit (req: R2) | MET | command | `grep -n "no-content: <reason>" docs/00_ADR.md` hits `docs/00_ADR.md:1617`; the 26 h row at `docs/00_ADR.md:1618`; once-only `cloud-<stamp>` row at `docs/00_ADR.md:1619` |
+| AC3 — Design and architecture point to the decision (req: R4) | MET | command | `grep -n "ADR-044" docs/03_ARCHITECTURE.md` hits `docs/03_ARCHITECTURE.md:147`; `grep -n "^## 10. Grok Bot cloud routines" docs/design/kk-collect-and-daily-voice2.md` hits `docs/design/kk-collect-and-daily-voice2.md:359` |
+| AC4 — Gates pass (req: R5) | MET | command | 2026-11-05: `bun run lint` exit 0, `bun run build` exit 0, `bun run test` exit 0 (4613 pass / 0 fail, 4616 tests across 236 files) |
+| R3 — Store locality decision precedes cloud execution (R3) | MET | command | ADR-044 accepted 2026-11-04 before 0343; `grep -n "0343" docs/00_ADR.md` hits the Detail render-refusal contract at `docs/00_ADR.md:1631`; design refusal clause at `docs/design/kk-collect-and-daily-voice2.md:386-388` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
