@@ -4,7 +4,7 @@ name: kk schedule render grok-bot platform for cloud routines
 status: done
 template: feature-impl
 created_at: 2026-11-04T23:00:28.338Z
-updated_at: "2026-11-05T05:09:25.375Z"
+updated_at: "2026-11-05T05:59:37.642Z"
 feature_id: F81
 
 dependencies: ["0341", "0342"]
@@ -189,7 +189,7 @@ Out of scope (task Design): routine-creation API/webhook, cloud publish, Mac aut
 | R4 | MET | AC3 test: kk-serve and both publish3 windows refused on grok-bot with the exact ADR-044 sentence (apps/cli/tests/commands/schedule.test.ts:364-384; refusal at apps/cli/src/commands/schedule.ts:179-186); launchd/cron render texts byte-identical (same test) |
 | R5 | MET | AC4 test with `TYPESAFE_API_KEY=apikey_test_leak` exported: stdout contains neither the secret nor `{{` (apps/cli/tests/commands/schedule.test.ts:385-395); grok-bot substitution branch binds no credential var (apps/cli/src/commands/schedule.ts:192-199) |
 | R6 | MET | docs/04_DESIGN.md:97 command line now carries `--platform launchd |
-| R7 | MET | `bun run lint` exit 0; `bun run spur-check` exit 0 — 4477 pass / 0 fail + rule run 2/2 PASS (.spur/run/run-0343-spur-check.log); receipt .spur/run/0343-check-receipt.json (full tier, `spur self exec check`) |
+| R7 | MET | `bun run lint` exit 0; `bun run spur-check` exit 0 — 4477 pass / 0 fail + rule run 2/2 PASS (.spur/run/run-0343-spur-check.log); receipt .spur/run/0343-check-receipt.json (full tier, `spur self exec check` — LOST with the runall worktree) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
@@ -197,14 +197,14 @@ Out of scope (task Design): routine-creation API/webhook, cloud publish, Mac aut
 | AC2 — Invalid grok-bot inputs fail loud (req: R3) | MET | test | split tests assert exit 1 + `kk.schedule.render.failed:` naming the bad input, empty stdout: no `--bot` (apps/cli/tests/commands/schedule.test.ts:311-327), `*/2 * * * *` sub-5-minutes (:328-337), 4-field cron (:338-346), `--bot` with `--platform cron` (:347-363); validation lives at apps/cli/src/commands/schedule.ts:220-235 and :173-175 |
 | AC3 — Store- or browser-bound schedules are refused on grok-bot (req: R4) | MET | test | refusal test hits kk-daily-publish3-cn-peak, kk-daily-publish3-overseas, kk-serve with the verbatim ADR-044 sentence and confirms kk-collect's launchd/cron renders are byte-identical to before the change (apps/cli/tests/commands/schedule.test.ts:364-384) |
 | AC4 — No credential leaks into the routine text (req: R5) | MET | test | env-leak test above (apps/cli/tests/commands/schedule.test.ts:385-395) — secret never reaches stdout |
-| AC5 — Surface docs updated and gates green (req: R6, R7) | MET | command | docs/04_DESIGN.md:97 + 1120-1131 + README §Schedule carry the new platform/flags; `bun run lint` && `bun run spur-check` exit 0 (4477 pass / 0 fail); gate receipt PASS (.spur/run/0343-check-receipt.json) |
+| AC5 — Surface docs updated and gates green (req: R6, R7) | MET | command | docs/04_DESIGN.md:97 + 1120-1131 + README §Schedule carry the new platform/flags; `bun run lint` && `bun run spur-check` exit 0 (4477 pass / 0 fail); gate receipt PASS (.spur/run/0343-check-receipt.json — LOST with the runall worktree) |
 | R2 — Routine render is complete and consent-preserving (R2) | MET | command | feature scenario satisfied by the printed routine: owning Bot, schedule+timezone, inputs (source plugins + Bot secrets + push access), steps, expected result, approval boundary, missing/stale policy all present in the rendered text; creation stays an operator action (template preamble + no API call in the command; the command only writes stdout) |
 | R3 — Store locality decision precedes cloud execution (R3) | MET | command | rendered routine is store-free on the Bot (no `kk store` step; `## Mac import` binds publication/import to the Mac) and sub-5-minute cadences are rejected — the ADR-044 locality rule is enforced, not assumed |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-All seven requirements MET with per-AC traceability in the review answer (`.spur/run/ed0f5b34-71ed-46de-9c35-09f47c63d06d-review-answer.txt`), cert at `.spur/run/ed0f5b34-71ed-46de-9c35-09f47c63d06d-review-cert.md`. Full working-tree diff vs base 2054d7e reviewed: 5 modified files + the new grok-bot template; no unrelated drift (`git status --short` shows only the six intended files). Verdict linted: `spur task verdict 0343 --from-answer` → **PASS (7 requirements, 2 checks)** on first capture. No open P1–P3 findings — two P4 advisories (minute-field-only gap validation; template fan-in source-list drift hazard, documented in the template).
+All seven requirements MET with per-AC traceability in the review answer (`.spur/run/ed0f5b34-71ed-46de-9c35-09f47c63d06d-review-answer.txt`), cert at `.spur/run/ed0f5b34-71ed-46de-9c35-09f47c63d06d-review-cert.md` — both LOST with the runall worktree; verdict durably PASS in the record. Full working-tree diff vs base 2054d7e reviewed: 5 modified files + the new grok-bot template; no unrelated drift (`git status --short` shows only the six intended files). Verdict linted: `spur task verdict 0343 --from-answer` → **PASS (7 requirements, 2 checks)** on first capture. No open P1–P3 findings — two P4 advisories (minute-field-only gap validation; template fan-in source-list drift hazard, documented in the template).
 
 Confidence: HIGH
 

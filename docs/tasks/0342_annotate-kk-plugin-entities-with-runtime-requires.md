@@ -4,7 +4,7 @@ name: Annotate kk plugin entities with runtime requires
 status: done
 template: feature-impl
 created_at: 2026-11-04T23:00:27.843Z
-updated_at: "2026-11-05T04:13:13.703Z"
+updated_at: "2026-11-05T05:59:37.997Z"
 feature_id: F81
 
 ac_altitude: task-local
@@ -186,7 +186,7 @@ Ordering: guard test written and confirmed RED on the unannotated tree (41 missi
 | R2 | MET | plugins/kk/tests/runtime-requires.test.ts:26-32 declares TRACKED_CLIS, CLI_INVOCATION_RE, SKILL_DISPATCH_RE, REQUIRES_TOKEN_RE; deriveRequires at :96, checkRequires at :130; imports only bun:test/node:fs/node:path; rules mirror `/Users/robin/xprojects/spur/plugins/sp/tests/runtime-requires.test.ts` (1291) |
 | R3 | MET | plugins/kk/tests/runtime-requires.test.ts:180-195 asserts exported-key snapshot `cli:kk,cli:spur,local-fs=8; cli:kk,local-fs=4; cli:spur,local-fs=1; local-fs=5` and rejects any declared hooks/subagents token; `bun test plugins/kk/tests/runtime-requires.test.ts` → 4 pass/0 fail |
 | R4 | MET | plugins/kk/README.md:31-39 documents the install line `superskill install kk --targets grok-bot --bot-provides cli:kk --bot-provides local-fs`, the `--bot-provides cli:spur` bootstrap addendum, and the ADR-044 store-free/browser-free pointer |
-| R5 | MET | `bun run lint` exit 0; `bun run spur-check` exit 0 (4472 tests, 0 fail); `bun test plugins/kk/tests/runtime-requires.test.ts` 4 pass/0 fail; `qualityGateCmd="spur self exec check" spur task gate 0342 run` → PASS (.spur/run/0342-check-receipt.json) |
+| R5 | MET | `bun run lint` exit 0; `bun run spur-check` exit 0 (4472 tests, 0 fail); `bun test plugins/kk/tests/runtime-requires.test.ts` 4 pass/0 fail; `qualityGateCmd="spur self exec check" spur task gate 0342 run` → PASS (.spur/run/0342-check-receipt.json — LOST with the runall worktree; verdict PASS in the record) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|

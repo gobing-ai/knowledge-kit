@@ -4,7 +4,7 @@ name: Record kk store-locality decision for Grok Bot cloud routines
 status: done
 template: feature-impl
 created_at: 2026-11-04T23:00:27.340Z
-updated_at: "2026-11-05T03:29:36.298Z"
+updated_at: "2026-11-05T05:59:38.347Z"
 feature_id: F81
 
 ac_altitude: task-local
@@ -168,7 +168,7 @@ Rationale: documentation-only decision (mutationPolicy: none). The seam reuses t
 | R2 | MET | docs/00_ADR.md:1615-1619 policy table: `no-content: <reason>` no-side-effect exit; >26 h ignored matching kk-collect.yaml:110; once-only import by `--run cloud-<stamp>` |
 | R3 | MET | docs/00_ADR.md:1621-1628 Rejected store-on-Bot (SQLite over network, Keychain-bound profiles, ephemeral member packages, shared 300/h cap) plus kk.db sync via git/iCloud; :1629 Revisit-when condition |
 | R4 | MET | docs/design/kk-collect-and-daily-voice2.md:359 design section 10 with seam diagram + policy table; docs/03_ARCHITECTURE.md:147 Pipeline-model pointer to ADR-044 and design section 10 |
-| R5 | MET | command: `bun run lint` exit 0; `spur task gate 0341 run` quality gate PASS receipt .spur/run/0341-check-receipt.json tree 736ebb9563f0c3ac3e8a536defa5b12e0a614cc6; `spur task gate 0341 status` → {"reuse":true,"reason":"ok"} |
+| R5 | MET | command: `bun run lint` exit 0; `spur task gate 0341 run` quality gate PASS receipt .spur/run/0341-check-receipt.json (LOST with the runall worktree; tree 736ebb9563f0c3ac3e8a536defa5b12e0a614cc6); `spur task gate 0341 status` → {"reuse":true,"reason":"ok"} |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
