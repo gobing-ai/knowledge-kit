@@ -274,13 +274,7 @@ describe('itcTopicValidate (0299 / G21 R1)', () => {
                 itemIds: [itemIds[poolIdx]],
                 sourceUrls: [`https://example.com/item-${poolIdx + 1}`],
             });
-            const five = [
-                slot('a', 0),
-                slot('b', 1),
-                slot('c', 2),
-                slot('d', 1),
-                slot('e', 2),
-            ];
+            const five = [slot('a', 0), slot('b', 1), slot('c', 2), slot('d', 1), slot('e', 2)];
             const write = (candidates: object[]): void =>
                 writeFileSync(
                     join(intakeDir, 'topic-candidates.json'),
@@ -294,7 +288,13 @@ describe('itcTopicValidate (0299 / G21 R1)', () => {
             // A sixth slot exceeds the widened cap of five.
             write([
                 ...five,
-                { id: 'b', title: 'Sixth', reason: 'Over the cap.', itemIds: [itemIds[0]], sourceUrls: ['https://example.com/item-1'] },
+                {
+                    id: 'b',
+                    title: 'Sixth',
+                    reason: 'Over the cap.',
+                    itemIds: [itemIds[0]],
+                    sourceUrls: ['https://example.com/item-1'],
+                },
             ]);
             await expect(
                 itcTopicValidate({ schemaVersion: 1, intakeDir, parentRunId: 'run-val-five' }),
@@ -335,9 +335,9 @@ describe('itcTopicValidate (0299 / G21 R1)', () => {
                     ],
                 }),
             );
-            await expect(
-                itcTopicValidate({ schemaVersion: 1, intakeDir, parentRunId: 'run-val-f' }),
-            ).rejects.toThrow('invalid topic candidates artifact');
+            await expect(itcTopicValidate({ schemaVersion: 1, intakeDir, parentRunId: 'run-val-f' })).rejects.toThrow(
+                'invalid topic candidates artifact',
+            );
         });
     });
 
@@ -740,6 +740,31 @@ describe('itc-topic-* request boundary and validation guards (0299 R1)', () => {
                 expect(await stage(dir, name, '{nope'), name).toBe(1);
                 expect(await stage(dir, name, { schemaVersion: 1 }), name).toBe(1);
             }
+        });
+    });
+
+    it('resolves a shipped topic profile from the package root even from a foreign cwd (item 6)', async () => {
+        await withTempDir(async (dir) => {
+            const dbPath = join(dir, 'store.db');
+            const { store } = await seedTestStore(dbPath);
+            await store.close();
+
+            const intakeDir = join(dir, 'intake');
+            const cwd = process.cwd();
+            process.chdir(dir); // no profile anywhere up from here, and no custom path
+            try {
+                const res = await itcTopicExtract({
+                    schemaVersion: 1,
+                    parentRunId: 'run-shipped',
+                    intakeDir,
+                    topicProfile: 'it-topics',
+                    dbPath,
+                });
+                expect(res.count).toBeGreaterThanOrEqual(3);
+            } finally {
+                process.chdir(cwd);
+            }
+            expect(existsSync(join(intakeDir, 'topic-pool.json'))).toBe(true);
         });
     });
 

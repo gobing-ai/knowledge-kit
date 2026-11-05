@@ -17,6 +17,7 @@ import {
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import { z } from 'zod';
+import { resolvePackageRoot } from './package-root';
 
 const WINDOW_UNITS: Record<string, number> = {
     s: 1000,
@@ -59,18 +60,15 @@ async function resolveTopicProfilePath(fs: FileSystem, topic: string, customPath
     if (customPath !== undefined && (await fs.exists(customPath))) {
         return customPath;
     }
-    // Walk up from the cwd for the shipped profile. Never `__dirname`: Bun inlines it as an
-    // absolute source path, which would make the packed CLI reference its build checkout (0255 AC7).
-    const rel = join('plugins/kk/decisions/extract', `${topic}.yaml`);
-    let dir = resolve(process.cwd());
-    for (;;) {
-        const candidate = join(dir, rel);
-        if (await fs.exists(candidate)) return candidate;
-        const parent = resolve(dir, '..');
-        if (parent === dir) break;
-        dir = parent;
-    }
-    throw new Error(`no profile for topic '${topic}': expected ${rel} under the cwd or one of its ancestors`);
+    // Shipped profile via the package-root resolver (cwd tree first — the project shadows the
+    // install — then the runtime script's tree, so a run outside any checkout still resolves it).
+    // Never `__dirname`: Bun inlines it as an absolute source path, which would make the packed
+    // CLI reference its build checkout (0255 AC7).
+    const candidate = join(await resolvePackageRoot(fs), 'plugins/kk/decisions/extract', `${topic}.yaml`);
+    if (await fs.exists(candidate)) return candidate;
+    throw new Error(
+        `no profile for topic '${topic}': expected plugins/kk/decisions/extract/${topic}.yaml under the package root (cwd or script tree)`,
+    );
 }
 
 // ---------------------------------------------------------------------------
