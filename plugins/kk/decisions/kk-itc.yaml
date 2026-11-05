@@ -13,12 +13,12 @@ decisions:
                 type: string
                 description: Formatted candidate options with title, rationale, item IDs and source URLs
         criteria:
-            a: Candidate slot a is the strongest and most cohesive technical article topic.
-            b: Candidate slot b is the strongest and most cohesive technical article topic.
-            c: Candidate slot c is the strongest and most cohesive technical article topic.
-            d: Candidate slot d is the strongest and most cohesive technical article topic.
-            e: Candidate slot e is the strongest and most cohesive technical article topic.
-            defer: Candidates are insufficient, contradictory, or need explicit operator review.
+            a: "Slot a is the strongest and most cohesive general IT topic for a technical article — infrastructure, languages, tooling, systems, developer practice or industry signal."
+            b: "Slot b is the strongest and most cohesive general IT topic for a technical article — infrastructure, languages, tooling, systems, developer practice or industry signal."
+            c: "Slot c is the strongest and most cohesive general IT topic for a technical article — infrastructure, languages, tooling, systems, developer practice or industry signal."
+            d: "Slot d is the strongest and most cohesive general IT topic for a technical article — infrastructure, languages, tooling, systems, developer practice or industry signal."
+            e: "Slot e is the strongest and most cohesive general IT topic for a technical article — infrastructure, languages, tooling, systems, developer practice or industry signal."
+            defer: Candidates are insufficient, contradictory, overlap, or need explicit operator review.
         fallback: defer
 
     kk-itc-outline-choice:
