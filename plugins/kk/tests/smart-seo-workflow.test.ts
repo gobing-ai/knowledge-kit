@@ -814,7 +814,9 @@ describe('cancellation (R2)', () => {
         try {
             expect(await waitForFile(pidFile)).not.toBeNull();
             process.kill(-(child.pid as number), 'SIGTERM');
-            const deadline = Date.now() + 20_000;
+            // 60s: the stage closes in ~1s when idle; a 20s deadline tripped under full-suite
+            // gate load (bun boot of the grandchild outlived the window) — 0331 gate failure.
+            const deadline = Date.now() + 60_000;
             while (!closed && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
             // `closed` and `signal` tell a default-action kill (code null, signal SIGTERM) apart from a
             // hung stage (closed false) when this intermittently fails under full-suite load.

@@ -89,7 +89,6 @@ import {
     PII_FINDING_CATEGORY,
     pluginsArgs,
     readJson,
-    readSafetyReviseCount,
     readTopicBoundary,
     requireJson,
     requireSidecar,
@@ -716,13 +715,23 @@ function refuseScriptBelowFloor(
 }
 
 export function dailyEpisodeDuration(args: string[]): void {
-    const [workDir = '', runDate = '', minArg = '', maxArg = '', vdriver = ''] = args;
+    const [workDir = '', runDate = '', minArg = '', maxArg = '', vdriver = '', runId = ''] = args;
     if (!workDir) fail('missing work_dir');
     if (!runDate) fail('missing run_date');
     const minMinutes = Number(minArg);
     const maxMinutes = Number(maxArg);
     if (!Number.isFinite(minMinutes) || minMinutes <= 0) fail(`invalid min_minutes: ${minArg || '(empty)'}`);
     if (!Number.isFinite(maxMinutes) || maxMinutes < minMinutes) fail(`invalid max_minutes: ${maxArg || '(empty)'}`);
+    // 0329 F06: the publish path must not survive a refusal. The pool-gate token flips to EMPTY so
+    // this run's own remaining fan-out skips, and a stale bundle.json from an earlier run (whose
+    // runs[] a publish window could still consume) is dropped.
+    const invalidatePublishPath = (): void => {
+        if (runId !== '') {
+            const token = join('.spur', 'run', `${runId}-pool-gate.status`);
+            if (isFile(token)) sted('write', token, () => writeRaw(token, 'EMPTY\n'));
+        }
+        rmSync(join(workDir, 'bundle.json'), { force: true });
+    };
     const contentPath = join(workDir, '30-audio', `${runDate}_11_generate_content.json`);
     if (!isFile(contentPath)) failWith(1, `episode-duration: audio content not found: ${contentPath}`);
     let raw: unknown;
@@ -751,7 +760,8 @@ export function dailyEpisodeDuration(args: string[]): void {
         // let the pool-gated publish fan package a sub-floor episode — so finish the emptying here.
         if (isFile(refusal)) {
             if (docs.length > 0) emptyCandidates(workDir, runDate);
-            console.log(`episode-duration: duration refusal already recorded (${refusal}) — nothing to do`);
+            invalidatePublishPath();
+            console.error(`episode-duration: duration refusal already recorded (${refusal}) — nothing to do`);
             return;
         }
         const estimated = estimateSpokenMinutes(docs, vdriver);
@@ -767,6 +777,7 @@ export function dailyEpisodeDuration(args: string[]): void {
             }),
         );
         emptyCandidates(workDir, runDate);
+        invalidatePublishPath();
         console.error(
             `episode-duration: episode ran ${shown} min (estimate ${estimated.minutes} min), below the ${minMinutes}–${maxMinutes} min requirement — candidates emptied, the run closes as no-content (see ${refusal})`,
         );
@@ -1893,27 +1904,36 @@ function variantFileName(key: string): string {
 }
 
 /**
- * `daily-bundle-variants <workDir> <runDate> <pluginsPath>` — the generate-side payload builder
- * (task 0327 R2/R3).
+ * `daily-bundle-variants <workDir> <runDate> <pluginsPath> [cardsEnabled] [coverEnabled]` — the
+ * generate-side payload builder (task 0327 R2/R3).
  *
  * Everything the publish side used to assemble inline is produced here instead, once, as bundle
  * variants under `30-variants/`. Links are the `{{article_url}}` / `{{podcast_url}}` placeholders,
  * because at generate time nothing is published yet; `publish-matrix-send` resolves them from the
  * tier-0 receipts. A variant whose source artifact is absent (channel disabled, cards never
  * rendered, social copy not authored) is skipped with a log line, never invented.
+ *
+ * 0329 F16: the caller forwards the run's `cards_enabled` / `cover_enabled` switches — a disabled
+ * producer's variant is a skip, not a stale re-read of a previous run's file — and every stale
+ * variant file is wiped before writing, so `30-variants/` after this stage contains only what
+ * THIS pass produced.
  */
 export function dailyBundleVariants(args: string[]): void {
-    const [workDir = '', runDate = '', _pluginsPath = ''] = args;
+    const [workDir = '', runDate = '', _pluginsPath = '', cardsEnabledArg = '', coverEnabledArg = ''] = args;
     timed(workDir, 'bundle-variants', () => {
         const outDir = join(workDir, '30-variants');
         sted('mkdir', outDir, () => mkdirSync(outDir, { recursive: true }));
+        // 0329 F16: a rerun after a thinner day must not leave yesterday's variants behind.
+        for (const entry of readdirSync(outDir)) {
+            if (entry.endsWith('.content.json')) rmSync(join(outDir, entry), { force: true });
+        }
         const articlePath = join(workDir, '22-article', `${runDate}_06_article_content.json`);
         const prepPath = join(workDir, '31-publish', `${runDate}_13_publish-prep_content.json`);
         const notesPath = join(workDir, '31-publish', `${runDate}_15_show-notes_show-notes.md`);
         const cardsPath = join(workDir, '25-xhs', 'content.json');
         const coverPath = join(workDir, '23-cover', `${runDate}_07_cover_cover.png`);
         const socialDir = join(workDir, '26-social');
-        const cover = isFile(coverPath) ? coverPath : undefined;
+        const cover = coverEnabledArg !== 'false' && isFile(coverPath) ? coverPath : undefined;
         const links = PLACEHOLDER_LINKS;
         const written: string[] = [];
         const skipped: string[] = [];
@@ -1967,9 +1987,12 @@ export function dailyBundleVariants(args: string[]): void {
             );
         }
 
-        const cards = readJson(cardsPath);
-        if (cards === null) skipped.push('cards (no rendered card series)');
-        else write('cards@xhs-pub', buildXhsCardsContent(cards, { publishStatus: 'draft' }));
+        if (cardsEnabledArg === 'false') skipped.push('cards (cards_enabled=false)');
+        else {
+            const cards = readJson(cardsPath);
+            if (cards === null) skipped.push('cards (no rendered card series)');
+            else write('cards@xhs-pub', buildXhsCardsContent(cards, { publishStatus: 'draft' }));
+        }
 
         for (const platform of Object.keys(SOCIAL_LIMITS)) {
             const copyPath = join(socialDir, `${platform}.md`);
@@ -3085,6 +3108,30 @@ export function dailyQualityReport(args: string[]): void {
 }
 
 /**
+ * 0329 F23 — the verdict half of `quality`. The report only printed, so a failed audio qc sailed
+ * on into show-notes, the bundle and the publish windows (2026-10-25: an episode at 41/100 was
+ * packaged and queued for tier-0 sends). Reads the same `metadata.qc` as `daily-quality-report`
+ * and fails loud when the verdict is missing or `passed` is false.
+ */
+export function dailyQualityVerdict(args: string[]): void {
+    const [workDir = '', runDate = ''] = args;
+    const content = join(workDir, '30-audio', `${runDate}_11_generate_content.json`);
+    timed(workDir, 'quality-verdict', () => {
+        if (!isFile(content)) failWith(1, `quality-verdict: no audio content: ${content}`);
+        const qc = metadataOf(readJson(content)).qc as Record<string, unknown> | undefined;
+        if (qc === undefined) failWith(1, `quality-verdict: no qc verdict in ${content}`);
+        if (qc.passed !== true) {
+            const issues = Array.isArray(qc.criticalIssues) ? qc.criticalIssues : [];
+            failWith(
+                1,
+                `quality-verdict: audio qc failed (overallScore ${String(qc.overallScore ?? '?')}) — ${issues.map(String).join('; ') || 'no issue detail on the verdict'}`,
+            );
+        }
+        console.log(`quality-verdict: audio qc passed (overallScore ${String(qc.overallScore ?? '?')})`);
+    });
+}
+
+/**
  * 0171 R3: Apple Podcasts reads the enclosure's ID3 tags, so the published MP3 carries
  * title/artist/album/date. `-c copy` moves the audio frames without a re-encode, and the temp
  * file + rename keeps a failed ffmpeg from truncating the episode in place. An empty value
@@ -3114,18 +3161,19 @@ export function dailyQualityReport(args: string[]): void {
  * Fail-closed where it matters: a missing report, verdict or confidence still blocks.
  */
 export function dailySafetyGate(args: string[]): void {
-    const [workDir = '', runDate = '', maxReviseArg = '0'] = args;
+    const [workDir = '', runDate = '', maxReviseArg = '0', scopeDir = ''] = args;
+    const drafts = isDraftsScope(scopeDir);
     const maxRevise = Number.parseInt(maxReviseArg, 10);
-    const statusFile = safetyPath(workDir, runDate, 'safety-judge_status.txt');
-    const stampFile = safetyPath(workDir, runDate, 'safety-judge_stamp.json');
+    const statusFile = scopeArtifact(workDir, scopeDir, runDate, 'safety-judge_status.txt');
+    const stampFile = scopeArtifact(workDir, scopeDir, runDate, 'safety-judge_stamp.json');
     timed(workDir, 'safety-judge', () => {
-        const request = readJson(safetyPath(workDir, runDate, 'safety-review_request.json'));
-        const report = readJson(safetyPath(workDir, runDate, 'safety-review_report.json'));
-        const verdict = readJson(safetyPath(workDir, runDate, 'safety-judge_verdict.json'));
+        const request = readJson(scopeArtifact(workDir, scopeDir, runDate, 'safety-review_request.json'));
+        const report = readJson(scopeArtifact(workDir, scopeDir, runDate, 'safety-review_report.json'));
+        const verdict = readJson(scopeArtifact(workDir, scopeDir, runDate, 'safety-judge_verdict.json'));
         const platforms = Array.isArray(report?.platforms) ? (report.platforms as Record<string, unknown>[]) : [];
         const decisions = platforms.map((platform) => platform?.decision);
-        const digest = safetyDigest(workDir, runDate);
-        const revisions = readSafetyReviseCount(workDir);
+        const digest = scopeDigest(workDir, scopeDir, runDate);
+        const revisions = readScopeCounter(workDir, scopeDir);
         const platformFindings = (platform: Record<string, unknown>): Record<string, unknown>[] =>
             Array.isArray(platform?.findings) ? (platform.findings as Record<string, unknown>[]) : [];
         // 20261007 narrowing (operator decision): on a clean pass, only a finding the reviewer
@@ -3252,11 +3300,12 @@ export function dailySafetyGate(args: string[]): void {
         if (status === 'pass' || status === 'escalate' || status === 'exclude') {
             sted('write', stampFile, () => writeJsonText(stampFile, { digest, status, excludedPlatforms }));
         }
-        if (status === 'block' && !edited) {
+        if (status === 'block' && drafts && !edited) {
             // A quality block poisons the isFile() draft cache: every same-day retry would
             // re-fail on unchanged bytes (20261002 dogfood — two judge-fail runs replayed until
             // the drafts were moved by hand). Quarantine (mv, never rm) so the next run
             // regenerates from scratch; the 09_* verdict artifacts stay in 24-script for audit.
+            // Variants scope never quarantines: the bundle is regenerated, not hand-repaired.
             const q = join(workDir, '24-script', `.quarantine-${runDate}-judge-block`);
             mkdirSync(q, { recursive: true });
             for (const path of safetyDraftPaths(workDir, runDate)) {
@@ -3297,10 +3346,27 @@ export function dailyPreflight(args: string[]): void {
                 String(match[1]),
             ),
         );
+        // 0329 F21: the `publish-matrix-*` stages never appear in kk-workflow-stages' switch —
+        // `kk stage` routes them through apps/cli's publish-matrix-stage.ts — so without this
+        // roster every workflow invoking them died as runner-stale.
+        const PUBLISH_MATRIX_STAGES = [
+            'publish-matrix-plan',
+            'publish-matrix-check',
+            'publish-matrix-send',
+            'publish-matrix-classify',
+            'publish-matrix-bundle',
+            'publish-matrix-rss-gate',
+            'publish-matrix-wait-until',
+            'publish-matrix-validate',
+            'publish-matrix-settle',
+        ] as const;
+        for (const name of PUBLISH_MATRIX_STAGES) known.add(name);
         const missing: string[] = [];
         for (const file of files) {
             if (!isFile(file)) failWith(1, `daily-preflight.workflow-missing: ${file}`);
-            for (const match of readFileSync(file, 'utf-8').matchAll(/\bkk stage ([a-z][a-z0-9-]*)/g)) {
+            // 0329 F21: accept both spellings — `kk stage <name>` and the ADR-037 canonical
+            // `kk stage run <name>`.
+            for (const match of readFileSync(file, 'utf-8').matchAll(/\bkk stage (?:run )?([a-z][a-z0-9-]*)/g)) {
                 const name = String(match[1]);
                 if (!known.has(name)) missing.push(`${name} (needed by ${basename(file)})`);
             }
@@ -3331,11 +3397,12 @@ export function dailyPreflight(args: string[]): void {
  * offending value on stderr. Never exits non-zero: routing belongs to the transitions.
  */
 export function dailySafetyVerdict(args: string[]): void {
-    const [workDir = '', runDate = ''] = args;
-    const statusFile = safetyPath(workDir, runDate, 'safety-judge_status.txt');
-    const stampFile = safetyPath(workDir, runDate, 'safety-judge_stamp.json');
-    const decisionFile = safetyPath(workDir, runDate, 'safety-verdict.decision');
-    const token = safetyPath(workDir, runDate, 'safety-verdict.status');
+    const [workDir = '', runDate = '', scopeDir = ''] = args;
+    const drafts = isDraftsScope(scopeDir);
+    const statusFile = scopeArtifact(workDir, scopeDir, runDate, 'safety-judge_status.txt');
+    const stampFile = scopeArtifact(workDir, scopeDir, runDate, 'safety-judge_stamp.json');
+    const decisionFile = scopeArtifact(workDir, scopeDir, runDate, 'safety-verdict.decision');
+    const token = scopeArtifact(workDir, scopeDir, runDate, 'safety-verdict.status');
     const ADMITTED = new Set(['pass', 'escalate', 'exclude']);
     timed(workDir, 'safety-verdict-check', () => {
         const status = isFile(statusFile) ? readFileSync(statusFile, 'utf-8').trim() : '';
@@ -3355,8 +3422,51 @@ export function dailySafetyVerdict(args: string[]): void {
         } else if (!ADMITTED.has(verdict)) {
             refusal = `kk-daily-safety.judge.decision-refused: kk-safety-verdict [${verdict}] must admit pass|escalate|exclude, so these drafts must not publish`;
         }
+        // 0331 variants scope: an admitted outcome also writes the evidence the publish matrix
+        // freezes into the bundle — status, the exclusion record and the sha256 of every reviewed
+        // variant's CURRENT bytes. Recomputed here (not copied from the stamp) so bytes edited
+        // after the gate's verdict are caught at the last instant; a mismatch is a refusal, never
+        // silently re-bound evidence.
+        let evidence: Record<string, unknown> | null = null;
+        if (refusal === '' && !drafts) {
+            const stampJson = readJson(stampFile) as {
+                digest?: unknown;
+                status?: unknown;
+                excludedPlatforms?: unknown;
+            } | null;
+            const manifest = readManifest(workDir);
+            const hash = createHash('sha256');
+            const variants: Record<string, string> = {};
+            for (const key of Object.keys(manifest.variants).sort()) {
+                const path = join(workDir, manifest.variants[key].path);
+                if (!isFile(path)) {
+                    refusal = `kk-daily-safety.judge.verdict-refused: registered variant file is missing: ${path} — re-run the review on a fresh manifest`;
+                    break;
+                }
+                const sha = createHash('sha256').update(readFileSync(path)).digest('hex');
+                variants[key] = sha;
+                hash.update(key).update('\0').update(readFileSync(path)).update('\0');
+            }
+            const digest = hash.digest('hex');
+            if (refusal === '' && stampJson?.digest !== digest) {
+                refusal = `kk-daily-safety.judge.verdict-refused: variant bytes changed after the review (reviewed ${String(stampJson?.digest ?? 'missing')}, on disk ${digest}) — re-run the variants safety review`;
+            }
+            if (refusal === '') {
+                evidence = {
+                    status: stampJson?.status,
+                    digest,
+                    excludedPlatforms: Array.isArray(stampJson?.excludedPlatforms) ? stampJson.excludedPlatforms : [],
+                    variants,
+                };
+            }
+        }
         if (refusal !== '') console.error(refusal);
         sted('write', token, () => writeRaw(token, refusal === '' ? 'accept' : 'refuse'));
+        if (evidence !== null) {
+            const evidencePath = join(scopeDirOf(workDir, scopeDir), 'safety.json');
+            sted('write', evidencePath, () => writeJsonText(evidencePath, evidence));
+            console.log(`safety-verdict: evidence written to ${evidencePath}`);
+        }
     });
 }
 
@@ -3367,41 +3477,183 @@ export function dailySafetyVerdict(args: string[]): void {
  * here fails inside the loop instead of at `wrap-docs`, after the run has moved on. A broken
  * revision spends the budget too: an unparsable draft must not be retried forever.
  */
+// ---- 0331 scope machinery -------------------------------------------------
+// The nested kk-daily-safety machine serves two review surfaces: the classic drafts scope
+// (article + VoiceScript under 24-script) and the variants scope (final publish variants under
+// 30-variants, registered by daily-safety-manifest, artifacts under 4-safety-variants). The scope
+// is ONE trailing `scope_dir` argument: `24-script` (or empty) keeps every path byte-identical to
+// the pre-0331 behavior, any other value re-roots the artifact set and switches the digest to the
+// manifest-listed variant bytes.
+
+export const SAFETY_VARIANTS_DIR = '4-safety-variants';
+
+function isDraftsScope(scopeDir: string): boolean {
+    const dir = scopeDir.trim();
+    return dir === '' || dir === '24-script';
+}
+
+function scopeDirOf(workDir: string, scopeDir: string): string {
+    return isDraftsScope(scopeDir) ? join(workDir, '24-script') : join(workDir, scopeDir.trim());
+}
+
+function scopeArtifact(workDir: string, scopeDir: string, runDate: string, name: string): string {
+    return join(scopeDirOf(workDir, scopeDir), `${runDate}_09_${name}`);
+}
+
+/** The remediation budget is per scope: a variants review never inherits the drafts pass count. */
+function scopeCounter(workDir: string, scopeDir: string): string {
+    return isDraftsScope(scopeDir)
+        ? join(workDir, SAFETY_REVISE_COUNT)
+        : join(workDir, `${SAFETY_REVISE_COUNT}-${scopeDir.trim().replace(/[^\w-]/g, '_')}`);
+}
+
+function readScopeCounter(workDir: string, scopeDir: string): number {
+    const path = scopeCounter(workDir, scopeDir);
+    if (!isFile(path)) return 0;
+    const value = Number.parseInt(readFileSync(path, 'utf-8'), 10);
+    return Number.isNaN(value) ? 0 : value;
+}
+
+interface SafetyManifest {
+    schemaVersion: number;
+    runDate: string;
+    variants: Record<string, { path: string; sha256: string }>;
+}
+
+function readManifest(workDir: string): SafetyManifest {
+    const path = join(workDir, SAFETY_VARIANTS_DIR, 'manifest.json');
+    const manifest = readJson(path) as SafetyManifest | null;
+    if (manifest === null || !manifest.variants || typeof manifest.variants !== 'object') {
+        failWith(
+            1,
+            `safety-variants: ${path} is missing or malformed — run "kk stage run daily-safety-manifest <work_dir> <run_date>" first`,
+        );
+    }
+    return manifest;
+}
+
+/** Digest over the exact bytes under review: drafts = safetyDigest; variants = sorted manifest keys + current bytes. */
+function scopeDigest(workDir: string, scopeDir: string, runDate: string): string {
+    if (isDraftsScope(scopeDir)) return safetyDigest(workDir, runDate);
+    const manifest = readManifest(workDir);
+    const hash = createHash('sha256');
+    for (const key of Object.keys(manifest.variants).sort()) {
+        const path = join(workDir, manifest.variants[key].path);
+        if (!isFile(path)) {
+            failWith(
+                1,
+                `safety-variants: registered variant file is missing: ${path} — re-run daily-bundle-variants and the manifest`,
+            );
+        }
+        hash.update(key).update('\0').update(readFileSync(path)).update('\0');
+    }
+    return hash.digest('hex');
+}
+
+/** The `content` array the review request hands the agents: what to read, per scope. */
+function scopeContent(workDir: string, scopeDir: string, runDate: string): unknown[] {
+    if (isDraftsScope(scopeDir)) return safetyDraftPaths(workDir, runDate);
+    return Object.entries(readManifest(workDir).variants)
+        .sort(([a], [b]) => (a < b ? -1 : 1))
+        .map(([key, entry]) => ({ key, path: entry.path, sha256: entry.sha256 }));
+}
+
+/**
+ * Register the run's final publish variants for the variants-scope safety review (0331): every
+ * `30-variants/*.content.json` becomes one manifest entry keyed by its file name with `_` read as
+ * the plugin.operation separator. The manifest is the review contract — the request digest, the
+ * gate's edit check and the bundle's frozen evidence all resolve through it, so an empty or
+ * missing variants directory fails here, before any reviewer spends tokens.
+ */
+export function dailySafetyManifest(args: string[]): void {
+    const [workDir = '', runDate = ''] = args;
+    timed(workDir, 'safety-manifest', () => {
+        const dir = join(workDir, '30-variants');
+        if (!existsSync(dir)) {
+            failWith(1, `safety-manifest: ${dir} does not exist — run the bundle-variants stage first`);
+        }
+        const files = readdirSync(dir)
+            .filter((file) => file.endsWith('.content.json'))
+            .sort();
+        if (files.length === 0) {
+            failWith(1, `safety-manifest: no *.content.json under ${dir} — nothing to review; was the bundle built?`);
+        }
+        const variants: Record<string, { path: string; sha256: string }> = {};
+        for (const file of files) {
+            const text = readFileSync(join(dir, file), 'utf-8');
+            variants[file.replace(/\.content\.json$/, '').replace(/_/g, ':')] = {
+                path: `30-variants/${file}`,
+                sha256: createHash('sha256').update(text).digest('hex'),
+            };
+        }
+        mkdirSync(join(workDir, SAFETY_VARIANTS_DIR), { recursive: true });
+        const manifestPath = join(workDir, SAFETY_VARIANTS_DIR, 'manifest.json');
+        sted('write', manifestPath, () => writeJsonText(manifestPath, { schemaVersion: 1, runDate, variants }));
+        console.log(`safety-manifest: ${files.length} variant(s) registered for review`);
+    });
+}
+
 /**
  * Open a content-safety review of the current drafts: drop every artifact of an earlier review
  * (a retry must be re-reviewed on its final version) and write the request the two agent.run
  * steps read. The program passes context only — platform policy lives in the kk:content-safety
- * skill's reference files, never here.
+ * skill's reference files, never here. 0331: an optional trailing scope_dir re-roots the whole
+ * artifact set for the variants review (see the scope machinery above).
  */
 export function dailySafetyPrep(args: string[]): void {
-    const [workDir = '', runDate = '', platforms = ''] = args;
+    const [workDir = '', runDate = '', platforms = '', scopeDir = ''] = args;
+    const drafts = isDraftsScope(scopeDir);
     timed(workDir, 'safety-review', () => {
-        const digest = safetyDigest(workDir, runDate);
-        // Structural snapshot of the VoiceScript BEFORE any remediation edit. `daily-safety-revise`
-        // restores it when the remediation pass changes the item-section structure without a recorded
-        // exclusion: the agent is allowed to drop a 播报形态 line, not an item the article kept,
-        // because `daily-wrap-docs` derives the spoken item sections from `gap_ms: 1200` and fails the
-        // run when they no longer match the episode's included items (2026-10-21 04:30 run: 3
-        // segments removed → 5 sections vs a 6-item plan → `generate` refused at 05:03 and the whole
-        // day published nothing).
-        const [, scriptPath] = safetyDraftPaths(workDir, runDate);
-        const snapshot = safetyPath(workDir, runDate, 'safety-prep_script-snapshot.yaml');
-        if (isFile(scriptPath)) sted('write', snapshot, () => writeRaw(snapshot, readFileSync(scriptPath, 'utf-8')));
+        const digest = scopeDigest(workDir, scopeDir, runDate);
+        if (drafts) {
+            // Structural snapshot of the VoiceScript BEFORE any remediation edit. `daily-safety-revise`
+            // restores it when the remediation pass changes the item-section structure without a recorded
+            // exclusion: the agent is allowed to drop a 播报形态 line, not an item the article kept,
+            // because `daily-wrap-docs` derives the spoken item sections from `gap_ms: 1200` and fails the
+            // run when they no longer match the episode's included items (2026-10-21 04:30 run: 3
+            // segments removed → 5 sections vs a 6-item plan → `generate` refused at 05:03 and the whole
+            // day published nothing).
+            const [, scriptPath] = safetyDraftPaths(workDir, runDate);
+            const snapshot = safetyPath(workDir, runDate, 'safety-prep_script-snapshot.yaml');
+            if (isFile(scriptPath))
+                sted('write', snapshot, () => writeRaw(snapshot, readFileSync(scriptPath, 'utf-8')));
+        } else {
+            // The remediation budget belongs to this scope's attempt, not to the day.
+            const counter = scopeCounter(workDir, scopeDir);
+            sted('write', counter, () => writeFileSync(counter, '0\n'));
+        }
         for (const name of [
             'safety-review_report.json',
             'safety-judge_verdict.json',
             'safety-judge_status.txt',
             'safety-judge_stamp.json',
+            'safety-verdict.decision',
+            'safety-verdict.status',
+            // A previous review's evidence must never survive into a new request: the bundle
+            // freezes exactly what the current request's verdict admits. Evidence is the one
+            // unprefixed artifact, so the runDate-prefixed sweep would miss it.
+            'safety.json',
         ]) {
-            const stale = safetyPath(workDir, runDate, name);
+            const stale =
+                name === 'safety.json' && !drafts
+                    ? join(scopeDirOf(workDir, scopeDir), name)
+                    : scopeArtifact(workDir, scopeDir, runDate, name);
             if (isFile(stale)) unlinkSync(stale);
         }
-        const request = safetyPath(workDir, runDate, 'safety-review_request.json');
+        const request = scopeArtifact(workDir, scopeDir, runDate, 'safety-review_request.json');
         const targets = platforms
             .split(',')
             .map((platform) => platform.trim())
             .filter(Boolean);
-        sted('write', request, () => writeJsonText(request, { digest, platforms: targets, mode: 'detect-only' }));
+        sted('write', request, () =>
+            writeJsonText(request, {
+                digest,
+                platforms: targets,
+                mode: 'detect-only',
+                scope: drafts ? 'drafts' : 'variants',
+                content: scopeContent(workDir, scopeDir, runDate),
+            }),
+        );
     });
 }
 
@@ -3435,8 +3687,30 @@ export function dailySafetyPrep(args: string[]): void {
  * revision spends the budget too: an unparsable draft must not be retried forever.
  */
 export function dailySafetyRevise(args: string[]): void {
-    const [workDir = '', runDate = ''] = args;
+    const [workDir = '', runDate = '', scopeDir = ''] = args;
+    const drafts = isDraftsScope(scopeDir);
     timed(workDir, 'safety-revise', () => {
+        if (!drafts) {
+            // Variants scope: every manifest-listed file must stay parseable Content with the
+            // fields the publish half reads; the structural VoiceScript machinery does not apply.
+            for (const entry of Object.values(readManifest(workDir).variants)) {
+                const path = join(workDir, entry.path);
+                const value = requireJson(path, 'safety-revise') as {
+                    title?: unknown;
+                    body?: unknown;
+                };
+                for (const field of ['title', 'body'] as const) {
+                    if (typeof value[field] !== 'string' || String(value[field]).trim() === '') {
+                        failWith(1, `safety-revise: variant ${path} ${field} must be a non-empty string`);
+                    }
+                }
+            }
+            const counter = scopeCounter(workDir, scopeDir);
+            const next = readScopeCounter(workDir, scopeDir) + 1;
+            sted('write', counter, () => writeFileSync(counter, `${next}\n`));
+            console.log(`safety-revise: remediation pass ${next} applied to manifest variants; re-validated`);
+            return;
+        }
         const [articlePath, scriptPath] = safetyDraftPaths(workDir, runDate);
         const article = requireJson(articlePath, 'safety-revise');
         for (const field of ['title', 'body'] as const) {
@@ -3448,7 +3722,7 @@ export function dailySafetyRevise(args: string[]): void {
         assertScriptContent(scriptPath);
         restoreStructureIfBroken(workDir, runDate, scriptPath);
         const path = join(workDir, SAFETY_REVISE_COUNT);
-        const next = readSafetyReviseCount(workDir) + 1;
+        const next = readScopeCounter(workDir, scopeDir) + 1;
         sted('write', path, () => writeFileSync(path, `${next}\n`));
         console.log(`safety-revise: remediation pass ${next} applied; drafts re-validated`);
     });

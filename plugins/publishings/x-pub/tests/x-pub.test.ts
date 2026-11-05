@@ -733,3 +733,75 @@ describe('task 0205 R2 — declared modes refuse unknown operations pre-browser'
         expect(resolveOperation(undefined, undefined)).toEqual({ operation: 'post' });
     });
 });
+
+describe('task 0330 R2 — x post refuses draft requests before credentials or HTTP', () => {
+    function noFetch(): { calls: number[]; restore: () => void } {
+        const calls: number[] = [];
+        const spy = spyOn(globalThis, 'fetch').mockImplementation((async () => {
+            calls.push(1);
+            throw new Error('unexpected fetch call');
+        }) as unknown as typeof fetch);
+        return { calls, restore: () => spy.mockRestore() };
+    }
+
+    test('an explicit draft publishStatus is refused before credential lookup and no request is made', async () => {
+        const fetchStub = noFetch();
+        try {
+            await withEnv(
+                {
+                    X_API_KEY: undefined,
+                    X_API_SECRET: undefined,
+                    X_ACCESS_TOKEN: undefined,
+                    X_ACCESS_TOKEN_SECRET: undefined,
+                },
+                async () => {
+                    const result = await new XPostApiTransport().publish({
+                        content: { body: 'Hello X', format: 'markdown', metadata: { publishStatus: 'draft' } },
+                    });
+                    expect(result.ok).toBe(false);
+                    expect(result.error).toContain('draft');
+                    expect(result.error).not.toContain('X_API_KEY');
+                },
+            );
+            expect(fetchStub.calls).toHaveLength(0);
+        } finally {
+            fetchStub.restore();
+        }
+    });
+
+    test('an unknown publishStatus fails closed before credential lookup', async () => {
+        const fetchStub = noFetch();
+        try {
+            await withEnv(TOKENS, async () => {
+                const result = await new XPostApiTransport().publish({
+                    content: { body: 'Hello X', format: 'markdown', metadata: { publishStatus: 'schedule' } },
+                });
+                expect(result.ok).toBe(false);
+                expect(result.error).toContain('unknown publishStatus');
+            });
+            expect(fetchStub.calls).toHaveLength(0);
+        } finally {
+            fetchStub.restore();
+        }
+    });
+
+    test('publishStatus public proceeds to the API exactly like the legacy absent mode', async () => {
+        const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation((async (
+            input: Parameters<typeof fetch>[0],
+        ): Promise<Response> => {
+            expect(String(input)).toBe('https://api.twitter.com/2/tweets');
+            return new Response(JSON.stringify({ data: { id: 'pub-1', text: 'Hello X' } }), { status: 201 });
+        }) as typeof fetch);
+        try {
+            await withEnv(TOKENS, async () => {
+                const result = await new XPostApiTransport().publish({
+                    content: { body: 'Hello X', format: 'markdown', metadata: { publishStatus: 'public' } },
+                });
+                expect(result.ok).toBe(true);
+                expect(result.id).toBe('pub-1');
+            });
+        } finally {
+            fetchSpy.mockRestore();
+        }
+    });
+});

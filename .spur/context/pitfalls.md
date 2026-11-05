@@ -319,3 +319,5 @@
   `Expected identifier but found "<<"` at `scripts/lib/seo-digest.ts`, which surfaced only as
   "surfdash-pub exited 1". `surfdash` publishes with `git merge --ff-only origin/main` and refuses a
   diverged checkout, so keep that tree clean rather than stashing its unrelated edits.
+- **Don't key pipeline verdict Req rows with `(covers: R<n>)` refs** — `spur task verdict` demands the Req-row ID equal a task requirement ID exactly; feature-scenario crediting belongs on AC-table rows keyed by the feature scenario title. Also: a hand-authored review answer needs its `Verdict:`/`Confidence:` lines INSIDE the task doc's Review section too, or the residual gate blocks with `review-contract:*`.
+- **Don't assume a gate receipt survives doc edits**: receipts bind to the git tree, but via `git write-tree` — unstaged edits don't change it (receipt reuses), staged/committed ones do (gate re-runs). Archive FAIL receipts (`.bak`) before recheck, or the no-progress guard auto-skips at the same tree.

@@ -5,6 +5,8 @@ import {
     runPublishMatrixBundle,
     runPublishMatrixClassify,
     runPublishMatrixRssGate,
+    runPublishMatrixSettle,
+    runPublishMatrixValidate,
     runPublishMatrixWaitUntil,
     sendPublishMatrix,
 } from './publish-matrix';
@@ -23,6 +25,8 @@ export async function runPublishMatrixStage(
     switch (stageName) {
         case 'publish-matrix-plan':
             return planPublishMatrix(rest, { fs });
+        case 'publish-matrix-validate':
+            return runPublishMatrixValidate(rest, { fs });
         case 'publish-matrix-check':
             return checkPublishMatrix(rest, { fs });
         case 'publish-matrix-send':
@@ -35,6 +39,8 @@ export async function runPublishMatrixStage(
             return runPublishMatrixRssGate(rest, { fs });
         case 'publish-matrix-wait-until':
             return runPublishMatrixWaitUntil(rest);
+        case 'publish-matrix-settle':
+            return runPublishMatrixSettle(rest, { fs });
         default:
             return undefined;
     }

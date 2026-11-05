@@ -41,8 +41,10 @@ function readJson(path: string): JsonObject | null {
     }
 }
 
-function safetyPath(workDir: string, runDate: string, name: string): string {
-    return join(workDir, '24-script', `${runDate}_09_${name}`);
+/** 0331: scope-aware artifact root — `24-script` (or empty) keeps the drafts paths byte-identical. */
+function safetyPath(workDir: string, scopeDir: string, runDate: string, name: string): string {
+    const dir = scopeDir.trim() === '' || scopeDir.trim() === '24-script' ? '24-script' : scopeDir.trim();
+    return join(workDir, dir, `${runDate}_09_${name}`);
 }
 
 function nonEmptyString(value: unknown): value is string {
@@ -59,9 +61,9 @@ function sortedUnique(values: string[]): string[] | null {
     return unique.length === values.length ? unique.sort() : null;
 }
 
-function reportValid(workDir: string, runDate: string): string | null {
-    const request = readJson(safetyPath(workDir, runDate, 'safety-review_request.json'));
-    const report = readJson(safetyPath(workDir, runDate, 'safety-review_report.json'));
+function reportValid(workDir: string, scopeDir: string, runDate: string): string | null {
+    const request = readJson(safetyPath(workDir, scopeDir, runDate, 'safety-review_request.json'));
+    const report = readJson(safetyPath(workDir, scopeDir, runDate, 'safety-review_report.json'));
     if (request === null || report === null) return 'review request or report is missing/invalid JSON';
 
     const requested = stringList(request.platforms);
@@ -100,8 +102,8 @@ function reportValid(workDir: string, runDate: string): string | null {
     return null;
 }
 
-function judgeValid(workDir: string, runDate: string): string | null {
-    const verdict = readJson(safetyPath(workDir, runDate, 'safety-judge_verdict.json'));
+function judgeValid(workDir: string, scopeDir: string, runDate: string): string | null {
+    const verdict = readJson(safetyPath(workDir, scopeDir, runDate, 'safety-judge_verdict.json'));
     if (verdict === null) return 'judge verdict is missing/invalid JSON';
     if (!VERDICTS.has(String(verdict.verdict))) return 'judge verdict value is invalid';
     if (!CONFIDENCE.has(String(verdict.confidence))) return 'judge confidence is missing/invalid';
@@ -149,10 +151,10 @@ function judgeValid(workDir: string, runDate: string): string | null {
  * Only the gate's persisted status represents a real content-safety escalation, so unattended mode
  * rejects that status while attended mode leaves it for the caller's pause node.
  */
-function publishValid(workDir: string, runDate: string, unattendedArg: string): string | null {
+function publishValid(workDir: string, scopeDir: string, runDate: string, unattendedArg: string): string | null {
     if (unattendedArg !== 'true' && unattendedArg !== 'false') return 'unattended must be true or false';
-    const verdictToken = safetyPath(workDir, runDate, 'safety-verdict.status');
-    const gateStatusPath = safetyPath(workDir, runDate, 'safety-judge_status.txt');
+    const verdictToken = safetyPath(workDir, scopeDir, runDate, 'safety-verdict.status');
+    const gateStatusPath = safetyPath(workDir, scopeDir, runDate, 'safety-judge_status.txt');
     let token = '';
     let gateStatus = '';
     try {
@@ -171,27 +173,62 @@ function publishValid(workDir: string, runDate: string, unattendedArg: string): 
     return null;
 }
 
-function draftDigest(workDir: string, runDate: string): string | null {
-    const article = join(workDir, '22-article', `${runDate}_06_article_content.json`);
-    const script = join(workDir, '24-script', `${runDate}_08_script_voicescript.yaml`);
+function draftDigest(workDir: string, scopeDir: string, runDate: string): string | null {
+    const hash = createHash('sha256');
+    if (scopeDir.trim() === '' || scopeDir.trim() === '24-script') {
+        const article = join(workDir, '22-article', `${runDate}_06_article_content.json`);
+        const script = join(workDir, '24-script', `${runDate}_08_script_voicescript.yaml`);
+        try {
+            hash.update(readFileSync(article)).update('\0');
+            hash.update(readFileSync(script)).update('\0');
+            return hash.digest('hex');
+        } catch {
+            return null;
+        }
+    }
+    // Variants scope: digest over the manifest's sorted keys + current bytes (mirrors the
+    // daily-stages scopeDigest algorithm, so request/guard/verdict all bind the same bytes).
     try {
-        const hash = createHash('sha256');
-        hash.update(readFileSync(article)).update('\0');
-        hash.update(readFileSync(script)).update('\0');
+        const manifest = readJson(join(workDir, '4-safety-variants', 'manifest.json')) as {
+            variants?: Record<string, { path?: unknown }>;
+        } | null;
+        if (manifest === null || !isObject(manifest.variants)) return null;
+        for (const key of Object.keys(manifest.variants).sort()) {
+            const path = join(workDir, String(manifest.variants[key].path));
+            hash.update(key).update('\0').update(readFileSync(path)).update('\0');
+        }
         return hash.digest('hex');
     } catch {
         return null;
     }
 }
 
-function revisionValid(workDir: string, runDate: string): string | null {
-    const request = readJson(safetyPath(workDir, runDate, 'safety-review_request.json'));
+function revisionValid(workDir: string, scopeDir: string, runDate: string): string | null {
+    const request = readJson(safetyPath(workDir, scopeDir, runDate, 'safety-review_request.json'));
+    if (request === null || !nonEmptyString(request.digest)) return 'review request digest is missing';
+    const isVariants = scopeDir.trim() !== '' && scopeDir.trim() !== '24-script';
+    const digest = draftDigest(workDir, scopeDir, runDate);
+    if (digest === null) {
+        return isVariants
+            ? 'a manifest-listed variant is missing/unreadable'
+            : 'revised article or VoiceScript is missing/unreadable';
+    }
+    if (digest === request.digest) return isVariants ? 'variant digest is unchanged' : 'draft digest is unchanged';
+    if (isVariants) {
+        const manifest = readJson(join(workDir, '4-safety-variants', 'manifest.json')) as {
+            variants?: Record<string, { path?: unknown }>;
+        } | null;
+        if (manifest === null || !isObject(manifest.variants)) return 'variants manifest is missing/malformed';
+        for (const entry of Object.values(manifest.variants)) {
+            const value = readJson(join(workDir, String(entry.path)));
+            if (value === null || !nonEmptyString(value.title) || !nonEmptyString(value.body)) {
+                return 'revised variant title/body is missing';
+            }
+        }
+        return null;
+    }
     const articlePath = join(workDir, '22-article', `${runDate}_06_article_content.json`);
     const scriptPath = join(workDir, '24-script', `${runDate}_08_script_voicescript.yaml`);
-    if (request === null || !nonEmptyString(request.digest)) return 'review request digest is missing';
-    if (draftDigest(workDir, runDate) === null) return 'revised article or VoiceScript is missing/unreadable';
-    if (draftDigest(workDir, runDate) === request.digest) return 'draft digest is unchanged';
-
     const article = readJson(articlePath);
     if (article === null || !nonEmptyString(article.title) || !nonEmptyString(article.body)) {
         return 'revised article title/body is missing';
@@ -207,22 +244,27 @@ function revisionValid(workDir: string, runDate: string): string | null {
 }
 
 function main(): number {
-    const [kind = '', workDir = '', runDate = '', unattended = 'false'] = process.argv.slice(2);
+    // 0331: an optional trailing scope dir re-roots every artifact path (variants review reads
+    // 4-safety-variants); publish-valid keeps `unattended` in the 4th slot it has always had.
+    const [kind = '', workDir = '', runDate = '', fourth = '', fifth = ''] = process.argv.slice(2);
+    const isPublish = kind === 'publish-valid';
+    const unattended = isPublish ? fourth : 'false';
+    const scopeDir = isPublish ? fifth : fourth;
     if (!kind || !workDir || !runDate) {
         console.error(
-            'usage: safety-artifact-check.ts <report-valid|judge-valid|revision-valid|publish-valid> <work_dir> <run_date> [unattended]',
+            'usage: safety-artifact-check.ts <report-valid|judge-valid|revision-valid|publish-valid> <work_dir> <run_date> [unattended] [scope_dir]',
         );
         return 2;
     }
     const reason =
         kind === 'report-valid'
-            ? reportValid(workDir, runDate)
+            ? reportValid(workDir, scopeDir, runDate)
             : kind === 'judge-valid'
-              ? judgeValid(workDir, runDate)
+              ? judgeValid(workDir, scopeDir, runDate)
               : kind === 'revision-valid'
-                ? revisionValid(workDir, runDate)
+                ? revisionValid(workDir, scopeDir, runDate)
                 : kind === 'publish-valid'
-                  ? publishValid(workDir, runDate, unattended)
+                  ? publishValid(workDir, scopeDir, runDate, unattended)
                   : 'unknown predicate';
     if (reason !== null) {
         console.error(`safety-artifact-check: ${kind}: ${reason}`);

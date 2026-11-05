@@ -854,12 +854,16 @@ describe('publish tail re-entry binding (0310 R5)', () => {
                 targets: ['pub-sent', 'pub-pending'].map((plugin) => ({ plugin, profile: 'article', mode: 'draft' })),
             });
             writeFileSync(join(publishDir, 'publish-plan.json'), planRaw);
-            // The failed run got this far: its receipt is current for the frozen plan.
+            // The failed run got this far: its receipt is current for the frozen plan. 0310-era
+            // receipts predate the 0332 identity fields (mode, payloadDigest), so the seed leaves
+            // them out — a legacy receipt stays reusable on parentRunId + planDigest alone.
             seedReceipt(receiptsDir, 'pub-sent', {
                 parentRunId: failedRun,
                 planDigest: createHash('sha256').update(planRaw).digest('hex'),
                 status: 'succeeded',
                 effect: 'confirmed',
+                payloadDigest: undefined,
+                mode: undefined,
             });
             seedRun(workDir, failedRun);
 

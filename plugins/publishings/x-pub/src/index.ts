@@ -105,6 +105,17 @@ export class XPostApiTransport implements PublishTransport {
     public readonly kind = 'file-cli';
 
     public async publish(payload: PublishTransportPayload): Promise<Result> {
+        // 0330 R2: the post API publishes immediately — there is no draft. Intercept before the
+        // credential lookup so a planned draft never touches X, and fail closed on unknown modes.
+        const requestedStatus = payload.content.metadata?.publishStatus;
+        if (requestedStatus === 'draft') {
+            return fail(
+                'x post has no draft: the post API publishes immediately — plan this target dummy/off or launch it live',
+            );
+        }
+        if (requestedStatus !== undefined && requestedStatus !== 'public') {
+            return fail(`unknown publishStatus '${String(requestedStatus)}' (expected absent, 'draft' or 'public')`);
+        }
         const missing = TOKEN_ENVS.filter((key) => {
             const value = process.env[key];
             return !value || value.trim().length === 0;

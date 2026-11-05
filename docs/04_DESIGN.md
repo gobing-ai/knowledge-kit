@@ -1143,14 +1143,16 @@ value is XML-escaped (`&`/`<`/`>`), because one raw `&` makes `launchctl bootstr
 | `kk-collect` | `launchd` | plist for `ai.gobing.kk-collect` (`launchd.plist.tmpl`): `StartCalendarInterval` 04:00/10:00/16:00/22:00 local (6 h; sleep coalesces missed fires to one run at wake), `ProgramArguments` = `spur workflow run plugins/kk/workflows/kk-collect.yaml`, `WorkingDirectory` = `--repo`, `EnvironmentVariables` = `PATH` + `TYPESAFE_API_KEY`, stdout+stderr = `<repo>/.works/kk-collect/launchd.log` |
 | `kk-collect` | `cron` | `0 4,10,16,22 * * * cd <repo> && TYPESAFE_API_KEY='<key>' spur workflow run plugins/kk/workflows/kk-collect.yaml >> <repo>/.works/kk-collect/launchd.log 2>&1` |
 | `kk-serve` | `launchd` | plist for `ai.gobing.spur-serve` (`kk-serve.launchd.plist.tmpl`): `RunAtLoad` + `KeepAlive` true, `ThrottleInterval` 10, `ProgramArguments` = `spur serve --cwd <repo> --host 127.0.0.1 --port 3003 --no-open`, `WorkingDirectory` = `--repo`, `EnvironmentVariables` = `PATH` + `TYPESAFE_API_KEY`, stdout+stderr = `<repo>/.works/spur-serve/serve.log` |
-| `kk-daily-publish3-cn-peak` | `cron` | `0 17 * * *` local (`kk-daily-publish3-cn-peak.cron.tmpl`): `spur workflow run plugins/kk/workflows/kk-daily-publish3.yaml --vars '{work_dir, run_date, window: cn-peak, live_channels: wechatmp-pub,xhs-pub,weibo-pub,x-pub}'`, `PATH` + `TZ=America/Los_Angeles`, log `<repo>/.works/kk-daily-publish3/cn-peak.log`. The baked `live_channels` **is** the ADR-022 consent for this window |
-| `kk-daily-publish3-overseas` | `cron` | `0 7 * * *` America/Los_Angeles (`kk-daily-publish3-overseas.cron.tmpl`): same workflow with `window: overseas-rss` and a **yesterday** `work_dir`/`run_date`, no `live_channels`, log `<repo>/.works/kk-daily-publish3/overseas.log` |
+| `kk-daily-publish3-cn-peak` | `cron` | `0 17 * * *` local (`kk-daily-publish3-cn-peak.cron.tmpl`, task 0334/F09+): `bun {{repo}}/plugins/kk/scripts/voice3-publish-window.ts --window cn-peak --preset daily-ai-voice --live-channels weibo-pub,x-pub`, `PATH` + `TZ=America/Los_Angeles`, log `<repo>/.works/kk-daily-publish3/cn-peak.log`. The launcher (below) derives `work_dir`/`run_date` from the window date and validates the live tokens against the pinned preset's `cn-peak` rows before spawning the workflow — the baked `--live-channels` list **is** the ADR-022 consent for this window, and every entry line stays free of cron's `%` grammar |
+| `kk-daily-publish3-overseas` | `cron` | `0 7 * * *` America/Los_Angeles (`kk-daily-publish3-overseas.cron.tmpl`): `bun {{repo}}/plugins/kk/scripts/voice3-publish-window.ts --window overseas-rss` — **yesterday** `run_date`, no live consent (draft/dummy rows only), log `<repo>/.works/kk-daily-publish3/overseas.log` |
+| `kk-daily-ai-voice3` | `cron` | `30 4 * * *` local, task 0334 R1/R6 (`kk-daily-ai-voice3.cron.tmpl`): `spur workflow run plugins/kk/workflows/kk-daily-ai-voice3.yaml --vars '{auto_publish: "false"}'`, `PATH` + `TZ=America/Los_Angeles`, log `<repo>/.works/kk-daily-ai-voice3/generation.log`. The shadow-generation tick: cron only (the DAG has its own review pause, so launchd's fire-and-forget adds nothing), publish-inert by default because `auto_publish` is `false` |
 
 `kk-serve` is **launchd only**: cron has no keepalive semantics, so `--platform cron` for it exits 1
 with `schedule 'kk-serve' has no cron template (expected launchd)` and prints nothing (task 0265 R3);
-`kk-collect` keeps both platforms. The two `kk-daily-publish3-*` windows are **cron only**: cn-peak's
-`wait-until` node absorbs the hosted-zone offset and the overseas tick is a plain daily fire, so
-neither needs launchd's calendar-interval or keepalive semantics. `kk-serve` freezes host/port as
+`kk-collect` keeps both platforms. The two `kk-daily-publish3-*` windows and `kk-daily-ai-voice3` are
+**cron only**: cn-peak's `wait-until` node absorbs the hosted-zone offset, the overseas tick and the
+04:30 generation tick are plain daily fires, and the generation DAG pauses on its own `review` node,
+so none of them needs launchd's calendar-interval or keepalive semantics. `kk-serve` freezes host/port as
 template constants and keeps the hand plist's `Label`, so re-rendering replaces the installed agent in
 place.
 
@@ -2162,27 +2164,56 @@ with `mode != off`:
 
 Plan-level fields: `schemaVersion`, `window`, `bundleRunId`, `parentRunId` (bundle
 `parentRunId`, else its `runId` — receipts bind to a run either way), `presetName`, `presetDigest`.
-Payload build: variant `Content` + `metadata.operation` + `metadata.publishStatus`
-(`live` → `public`, else `draft`) with the row's `options` merged underneath, so an option can never
-flip the row's mode. `approval` is `required` for a live row — recorded, not enforced (the
+Payload build (task 0330): variant `Content` + `metadata.operation` + the operation-native mode
+fields + `metadata.publishStatus` (`live` → `public`, else `draft`) with the row's `options` merged
+underneath, so an option can never flip the row's mode. Mode keys are plan-owned: a preset `options`
+entry carrying `publishStatus`, `published`, `status`, `skip_review` or `auto_publish` is refused
+(exit 1) rather than overridden, and contradictory inherited keys (`publishStatus`, `published`,
+`status`) are deleted from the merged metadata before the plan's own fields are written — a draft
+row cannot inherit a variant's live-looking frontmatter. Native fields per plugin: `surfdash-pub`
+gets `metadata.published` false/true, `podcast-pub` gets `metadata.status` `unpublished`/`published`
+(matching its mapper and its legacy published default for direct calls); every other plugin keeps
+reading `publishStatus`. Every planned row also carries additive `variantPath`/`variantDigest`
+(0331 R1): the resolved source variant and its sha256 at plan time, so the reviewed-bytes binding
+survives from bundle to plan to send. Draftless API short-post transports (`x-pub` post, `threads-pub` post) fail
+on an explicit `publishStatus: draft` before the credential lookup and fail closed on any unknown
+value; absent keeps the legacy live-only direct-call behavior (weibo-pub post already refuses
+without `public`). `approval` is `required` for a live row — recorded, not enforced (the
 workflow's pause node and the future console own that). Payload variant lookup is
 `${variant}@${plugin}` then `${variant}`, so generate can ship channel-specific copy without a
 preset change. The plan fails (exit 1, naming the target) on: an unknown preset slug, a preset row
 carrying `mode: live`, a `--channels`/`--live-channels` token the preset never lists, a live
 promotion the window does not list or that lands on a `dummy` target, `--dummy` combined with
 `--live-channels`, a missing or digest-mismatched variant, a variant that is not valid Content, a
-preset target with no `variant`, and two rows resolving to the same id.
+preset target with no `variant`, a preset target whose `options` carry a mode key, and two rows
+resolving to the same id. Reviewed platform exclusions (0331 R4) drop every row of an excluded
+destination before any mode/payload work: `bundle.safety.excludedPlatforms` identifiers map through
+a `PLATFORM_EXCLUSIONS` table (content-safety platform names → preset plugin ids, e.g.
+`xiaoyuzhou`/`apple-podcasts` → `podcast-pub`, `wechatmp` → `wechatmp-pub`) or match a preset plugin
+id directly; an unknown identifier is a typo in the safety verdict and fails instead of silently
+planning nothing. Evidence binding at plan time (0331 R1/R3): when the bundle carries `safety`,
+every non-dummy row's variant key must be listed in `safety.variants` and must still hash to its
+reviewed sha256 — an uncovered or edited variant refuses the plan; with no `safety` at all only the
+dummy-capable bundles plan as before (live rows of an old bundle without evidence still refuse at
+the evidence gate). The shipped migration preset keeps draftless short-post rows
+(`x-pub post`, `weibo-pub post`, `threads-pub post`) `dummy` — launching them live requires an
+explicit preset edit plus a `--live-channels` token, never an implicit promotion.
 
 **Bundle contract (consumed here, produced by 0324):**
 
 ```jsonc
 { "schemaVersion": 1, "runId": "…", "runDate": "YYYY-MM-DD", "parentRunId": "…", "runs": [],
   "episode": { "title": "…", "guid": "…" },
-  "variants": { "article": { "path": "variants/article.json", "sha256": "<sha256>" } } }
+  "variants": { "article": { "path": "variants/article.json", "sha256": "<sha256>" } },
+  "safety": { "status": "pass", "digest": "…", "excludedPlatforms": [],
+              "variants": { "article@x-pub": "<sha256>" } } }
 ```
 
 `path` resolves against the bundle file's own directory and must match `sha256`; each entry parses
-as kk-core `ContentSchema`.
+as kk-core `ContentSchema`. `safety` is additive (0331 R2/R3): the nested safety machine's
+final-variant verdict, attached verbatim by the freeze; `variants` maps bundle variant keys to the
+reviewed sha256, so a variant edited after review no longer matches, and `block` is deliberately
+unrepresentable in the schema — a blocked variants review never freezes into a real-capable bundle.
 
 **`publish-matrix-check <workDir> --window <w>` | `--preset <slug> --all-windows`** probes each
 plugin's `check` entry (the shared `probePlugin` seam, same env injection and redaction as
@@ -2197,7 +2228,11 @@ installed — that is invalid preset data, not a runtime refusal. This replaces 
 `wechatmp-pub xhs-pub` probe list (feature G15 T-c); voice2's own node is unchanged.
 
 **`publish-matrix-send <workDir> --window <w> [--retry] [--tier <n>]`** dispatches in tier order.
-Tier 0 is the publication contract: serial, and a failed `required` tier-0 row records a `skipped`
+Before any dispatch (0331 R5) it revalidates every pending non-dummy row: the payload must still
+hash to the plan's `payloadDigest` and the row's source variant to its `variantDigest` — a payload
+or variant edited while the run sat at the `send-confirm` pause throws before any transport spawn
+("changed after the plan was frozen" / "changed after the freeze"), naming the row and the re-run to
+do. Tier 0 is the publication contract: serial, and a failed `required` tier-0 row records a `skipped`
 event for every later tier and sends none of them. Rows at tier ≥ 1 get their payload's
 `{{article_url}}` / `{{podcast_url}}` placeholders resolved from the tier-0 receipts
 (`surfdash-pub` → article, `podcast-pub` → podcast, each url inserted JSON-string-escaped) into
@@ -2265,17 +2300,24 @@ bridge is the documented legacy seam and disappears with voice2. `kk daily publi
 **`kk-daily-ai-voice3` — the generate half (task 0324).** `plugins/kk/workflows/kk-daily-ai-voice3.yaml`
 (`kind: dag`) carries voice2's generation graph — `prepare` → read chain → `extract` → `plan` →
 `qc-content` → `select` → translate → article/cover/script drafts → nested `safety` → `review` pause →
-audio (split/generate/fallbacks/intro/audit/duration) → `quality` → `show-notes` → card
-`cards-write`/`cards-render` — and then the generate-side tail this feature adds:
+audio (split/generate/fallbacks/intro/audit/duration) → `pool-gate` → `quality` → `show-notes` →
+`publish-prep` → card `cards-write`/`cards-render` — and then the generate-side tail this feature
+adds. `pool-gate` sits **after `duration`, before `select`** (task 0329 F01/F06): the graph's one
+supply verdict runs once the episode's real length is known, so a duration refusal can flip the
+token to `EMPTY` and close the day before any consumer (publish3's `select` is the first reader and
+depends on the gate).
 
 | Node | What it does |
 | --- | --- |
-| `pool-gate` | the ONE `kk store pool-count --min 1` over the candidates file; records `PASS`/`EMPTY` at `.spur/run/<runId>-pool-gate.status` |
+| `pool-gate` | the ONE `kk store pool-count --min 1` over the candidates file; records `PASS`/`EMPTY` at `.spur/run/<runId>-pool-gate.status`, never exits non-zero (an empty pool is a reported outcome, not a failure) |
+| `quality` | verdict gate: `daily-quality-report` then `kk stage run daily-quality-verdict` — explicit failed QC, critical issues or a missing verdict exit 1 (voice3-only; voice2 stays report-only) |
+| `publish-prep` | `kk stage run daily-publish-prep <workDir> <runDate> <artist> <album>` — the generation-owned episode assembly (MP3/ID3/cover/metadata), never reads voice2 dirs |
 | `social-write` | `agent.run` (`onError: continue`) writing zh short posts to `26-social/{x,weibo,threads}.md` inside each platform's cap |
-| `bundle-variants` | `kk stage run daily-bundle-variants …` → `30-variants/<key>.content.json` with `{{article_url}}`/`{{podcast_url}}` |
-| `bundle-freeze` | `kk stage run publish-matrix-bundle <workDir> --run-date <d> --run-id <id>` → `bundle.json` |
-| `generation-report` | `kk daily run-report` (no store writes) |
-| `publish` | nested `kk-daily-publish3` when `auto_publish=true`, launcher vars stripped |
+| `bundle-variants` | `kk stage run daily-bundle-variants … "${vars.cards_enabled}" "${vars.cover_enabled}"` → `30-variants/<key>.content.json`; wipes stale `*.content.json` first, and depends on every producer (`quality`, `social-write`, `publish-prep`, `cover-normalize`, `cards-render`, `pool-gate`) |
+| `safety-variants` | (0331) when `pool-gate` says `PASS`: `kk stage run daily-safety-manifest` registers the sorted `30-variants/*.content.json` into `4-safety-variants/manifest.json` (`{schemaVersion, runDate, variants:[{key,path,sha256}]}`), then launches the nested `kk-daily-safety` machine with `safety_scope_dir=4-safety-variants`; skipped on `EMPTY` (the bundle freezes without evidence, like a never-run gate) |
+| `bundle-freeze` | `kk stage run publish-matrix-bundle <workDir> --run-date <d> --run-id <id> [--preset <publish_preset>]` → `bundle.json`; a set selector is forwarded so a preset-required variant missing at freeze refuses before any write; depends on `safety-variants` so freeze admission sees the evidence |
+| `generation-report` | `kk daily run-report --work-dir … --run-date … --pool … --candidates … --plugins-path … --qc-min-quality …` (real flags, no store writes) |
+| `publish` | nested `kk-daily-publish3` when `auto_publish=true`, launcher vars stripped, gated on the pool token beside `generation-report` |
 | `ledger` | `kk ledger append`, `onError: continue` |
 
 **No channel enablement.** `xhs_enabled`, `wechat_enabled`, `xhs_live`, `wechat_live`, `xhs_cards` and
@@ -2283,22 +2325,73 @@ audio (split/generate/fallbacks/intro/audit/duration) → `quality` → `show-no
 nothing except through the nested window. What remains is generation switches — `cards_enabled` /
 `cards` (billed card rendering, off by default because the preset's cards row is `off`),
 `plan_translate_enabled`, `article_write_enabled`, `script_write_enabled`, `cover_enabled`,
-`transcode_mp3`, `skip_review` — plus the four publish hand-off vars
-(`auto_publish`, `publish_window`, `publish_preset`, `publish_dummy`). The 合集 tag a channel payload
-carries is that channel's preset `options`, not a var.
+`transcode_mp3`, `skip_review` — plus the five publish hand-off vars (`auto_publish`,
+`publish_window`, `publish_preset`, `publish_dummy`, `publish_live_channels`). The 合集 tag a channel payload
+carries is that channel's preset `options`, not a var. `publish_live_channels` (0334 R7) forwards
+verbatim to the nested window's `live_channels`: empty by default — the var alone can never produce a
+live send, only an operator launch that sets it, with tokens the plan stage validates against the
+window, promotes rows — and `publish_dummy=true` plus a non-empty list refuse each other at plan time.
+
+**Migration rehearsal surface (0334).** Three artifacts, all shipped but none installed:
+`plugins/kk/scripts/voice3-publish-window.ts` — the publish-window launcher the cron entries call;
+`plugins/kk/publish-presets/daily-ai-voice-migration.json` — the shipped matrix with explicit stable
+row ids so rehearsal receipts and plan rows diff cleanly against preset edits; and the
+`kk-daily-ai-voice3` schedule above. The launcher resolves `work_dir`/`run_date` in
+America/Los_Angeles (today for `cn-peak`, yesterday for `overseas-rss`), reads the GENERATION bundle
+at `<works>/kk-daily-ai-voice2/<digits>/bundle.json` (never the publish3 output directory), refuses a
+missing or differently-dated bundle naming the expected path, refuses `--dummy` with `--live-channels`,
+validates every token against the pinned preset's window rows (the legacy
+`wechatmp-pub,xhs-pub,weibo-pub,x-pub` cn-peak list is refused by name — out-of-window tokens never
+reach spur), and only then execs `spur workflow run plugins/kk/workflows/kk-daily-publish3.yaml`.
+Rehearsal launch (generation + after-generate publish in one throwaway run, nothing installed, no
+live tokens): `--vars '{"auto_publish":"true","publish_preset":"daily-ai-voice-migration","publish_dummy":"true"}'`.
+The rehearsal surface is preparation only — installing any schedule, or promoting rows to
+`live`, needs the operator's explicit cutover action (§ Rollout in the design doc).
 
 **One pool guard, recorded as a token.** voice2 repeated `kk store pool-count --min 1` on twenty-one
 conditions. `pool-gate` runs it once and writes `.spur/run/<runId>-pool-gate.status`; every node that
-used to carry the guard checks that token instead. A token rather than a bare `dependsOn`, because the
-engine skips a node only when **all** its dependencies were skipped — a failed gate beside a done
-dependency would still admit the node, which is exactly the bug the second copy of the guard used to
-prevent.
+used to carry the guard checks that token instead — and since 0329, every consumer also *depends on*
+the gate node, so the token is the graph result, not an ambient file. A token rather than a bare
+`dependsOn`, because the engine skips a node only when **all** its dependencies were skipped — a
+failed gate beside a done dependency would still admit the node, which is exactly the bug the second
+copy of the guard used to prevent. The gate never exits non-zero: an empty pool records `EMPTY`, drops
+a stale same-day `bundle.json`, and every downstream node skips on the token.
+
+**No-content closes the whole publish path (0329 F06/F15).** A below-floor episode
+(`dailyEpisodeDuration` refusal) writes the refusal artifact, empties the candidates, overwrites the
+pool token to `EMPTY` and deletes any same-day `bundle.json` — a rerun stays exit 0 and idempotent
+(`already recorded`). `daily-quality-verdict` rejects failed/missing QC by exit 1; `intro` admits the
+refusal artifact so the audio chain still closes; `publish` fires only on the `PASS` token with
+`auto_publish=true`.
+
+**The variants safety scope (0331 R1/R2).** The nested `kk-daily-safety` machine gains one trailing
+arg / var, `safety_scope_dir` (default `24-script`). The default keeps every drafts path byte-identical
+to the pre-0331 machine (voice2 passes no scope); any other value re-roots the artifact set to
+`<workDir>/4-safety-variants/`: `daily-safety-manifest` (new stage) registers the bundle's final
+Content variants into `manifest.json`, `daily-safety-prep` writes a request whose `content` array is
+the manifest-listed `{key,path,sha256}` entries (digest = sha256 over the sorted key/bytes pairs),
+reviewers read what the request names, and `daily-safety-verdict` recomputes the CURRENT per-variant
+sha256 at the last instant — a stamp mismatch refuses (`kk-daily-safety.judge.verdict-refused: variant
+bytes changed after the review`) instead of silently re-binding evidence, writing `safety.json`
+`{status, digest, excludedPlatforms[], variants:{key: sha256}}` only on admission. Remediation gets
+its own budget (`.safety-revise-count-4-safety-variants` — a variants review never inherits the
+drafts pass count), `revision-valid` refuses unchanged bytes, and the variants scope never
+quarantines (the bundle is regenerated, not hand-repaired — a `block` there refuses the freeze via
+the unrepresentable-status rule above). The scope-aware `safety-artifact-check` keeps `publish-valid`'s
+historical argv (scope dir is the 5th slot there, 4th for the other kinds), so voice2's guards are
+untouched.
 
 **`publish-matrix-bundle` (the only `bundle.json` producer).** It lists `30-variants/`, validates each
 file as kk-core `Content`, records `{path, sha256}` per key (the file name's `_` maps back to `:`), and
 fills `episode.title` from the episode/article variant, else `每日AI乱炖 · <runDate>`. It refuses to
-freeze when the article or episode variant is missing, and a re-freeze preserves an existing
-`runs[]` — a publish window's record must survive the next generate run.
+freeze when the article or episode variant is missing, and (0329 F02) when the resolved preset marks a
+variant `required` that the run never produced — before any bundle write. Freeze admission (0331
+R2/R3): it reads `<workDir>/4-safety-variants/safety.json` when present — malformed evidence refuses
+the freeze outright, a valid record is attached verbatim as `bundle.safety`, its absence still
+freezes (a dummy-capable bundle) because real planning is gated at plan time instead.
+A re-freeze **dedups**
+`runs[]` (a double append must not multiply) and appends its own run id **last**, so the bundle always
+names the run that produced the frozen bytes; an unreadable prior bundle is replaced, not merged.
 
 **`kk-daily-publish3` — the publish half (task 0323).** `plugins/kk/workflows/kk-daily-publish3.yaml`
 (`kind: dag`) runs one **window** per launch; the channel matrix is never in the YAML. Vars:
@@ -2317,7 +2410,9 @@ Nodes and their gating rule:
 | `send-confirm` | `pause: true`, condition = the plan has a live row | resume = approval; skipped for a draft window |
 | `send` | depends on `check` **and** `send-confirm` | tier order, dummy-aware, receipt-keyed |
 | `classify` | every sent window | `publish-matrix-classify --window … --run-date …` |
-| `surfdash-patch`, `partial-marker`, `mark-published` | after-generate only | the voice2-era tails on the bridged `31-publish` names |
+| `send-retry` | non-overseas, one bounded hop after `send` | `publish-matrix-send --window … --retry`: only live/draft **failures with `effect: none`** are resent — succeeded rows are skipped, an uncertain effect is never replayed, dummy rows never spawn a plugin. No unbounded back-edge; the outcome assertion rules after it |
+| `patch-surfdash`, `partial-marker`, `settle` | `patch-surfdash` after-generate only; `settle` non-overseas; `partial-marker` on a `partial\|none` outcome | the tail nodes on the bridged stage names (see below) |
+| `outcome-assert` | after `ledger`, whenever an outcome file exists | `jq` every `required` real row must be `succeeded` — a partial window with failed required targets **fails the run** after report/ledger are written, preserving the outcome, receipts and incident evidence; a gated-miss day (no outcome file) stays done |
 | `diagnose` | overseas + gate miss | `agent.run` (`role: scribe`, `onError: continue`) refining `4-publish/incident.{json,md}` |
 | `repair` | after `diagnose` | `publish-matrix-send --window after-generate --retry --tier 0` — the one safe automatic repair |
 | `bundle-runs` | after `classify` | appends this run id to `bundle.runs[]`, idempotently |
@@ -2335,6 +2430,25 @@ records its verdict, instead of failing and cascade-skipping the incident path.
 itself writes the deterministic incident floor (`class: rss-lag`, the feed URL, the miss reason)
 before `diagnose` refines it from the bundle and receipts. `repair` may only resend tier-0 rows whose
 receipt is `effect: none`; regenerating content stays an operator action (design §5a).
+
+**Outcomes, retries and settlement (task 0333).** `classify` emits `full\|partial\|none\|dummy` and
+keeps policy drops **visible**: plan and outcome carry an `excluded[]` (reasons
+`excluded by bundle safety`, `mode off`, `not in --channels list`) beside the variant-missing
+`omitted` rows. The retry rules live in `sendPublishMatrix` itself, so the workflow's single
+`send-retry` hop and the operator's targeted rerun share one contract. `partial-marker` names the
+exact failed target ids and points at `kk stage run publish-matrix-send <work_dir> --window <w>
+--retry`; a later full window deletes the stale marker.
+`patch-surfdash` derives its payload from the real surfdash receipt's
+`aggregatePath` → `metadata.postPath` (never from legacy aggregates or a site-root argument); a
+dummy or missing episode yields explicit empty links, and with no real tier-0 post evidence the
+stage records an explicit skip and exits 0 — the graph cannot name channels, so the stage is its
+own gate. `settle` (`publish-matrix-settle`) promotes the store selection only on receipt-proven
+completion: every required real row must carry a CURRENT-bundle receipt
+(`parentRunId` == the bundle's own run, `status: succeeded`, `effect: confirmed`, `mode: live`) —
+drafted owned success and dummy rehearsals HOLD the selection (`marked: false`, exit 0, per-row
+`unresolved[]` reasons), while a live-confirmed set marks published keyed to the bundle's
+`parentRunId`. Artifacts: `4-publish/settlement.<window>.json`,
+`4-publish/patch-surfdash.{result,payload}.json`, `4-publish/partial-marker.<window>.txt`.
 
 **Shipped preset.** `plugins/kk/publish-presets/daily-ai-voice.json` carries design §3's matrix,
 each row assigned to exactly one window: T0 owned + draft-capable domestic on `after-generate`

@@ -85,7 +85,7 @@
             "variant": "social:x",
             "tier": 3,
             "window": "overseas-rss",
-            "mode": "draft"
+            "mode": "dummy"
         },
         {
             "plugin": "weibo-pub",
@@ -93,7 +93,7 @@
             "variant": "social:weibo",
             "tier": 3,
             "window": "overseas-rss",
-            "mode": "draft"
+            "mode": "dummy"
         },
         {
             "plugin": "threads-pub",
@@ -101,7 +101,7 @@
             "variant": "social:threads",
             "tier": 3,
             "window": "overseas-rss",
-            "mode": "draft"
+            "mode": "dummy"
         },
         {
             "plugin": "linkedin-pub",

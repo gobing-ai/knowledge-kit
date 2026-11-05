@@ -83,6 +83,14 @@ function makeFixture(
         runs: [],
         episode: { title: '每日AI乱炖 · 2026-10-22' },
         variants: variantEntries,
+        // 0331: live launches require reviewed-variant evidence; these tests exercise mode mapping,
+        // so the fixture attaches evidence matching the frozen bytes by default.
+        safety: {
+            status: 'pass',
+            digest: '0'.repeat(64),
+            excludedPlatforms: [],
+            variants: Object.fromEntries(Object.entries(variantEntries).map(([name, entry]) => [name, entry.sha256])),
+        },
     };
     const bundlePath = join(workDir, 'bundle.json');
     writeFileSync(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
@@ -349,7 +357,11 @@ describe('publish-matrix-plan (0321 R1, R2)', () => {
             }
         }, unknown);
 
-        const missing = makeFixture([{ plugin: 'podcast-pub', variant: 'cards', tier: 0, mode: 'draft' }]);
+        // 0332 R6: only a REQUIRED missing variant aborts the plan; an optional one is omitted
+        // with a failed effect-none receipt instead.
+        const missing = makeFixture([
+            { plugin: 'podcast-pub', variant: 'cards', tier: 0, mode: 'draft', required: true },
+        ]);
         await withCleanup(async (fx) => {
             const out = captureOutput();
             try {
@@ -772,6 +784,7 @@ describe('publish-matrix receipt classification (0326 R1, R2)', () => {
         parentRunId: 'gen-run-1',
         presetName: 'daily-ai-voice',
         presetDigest: 'd1',
+        excluded: [] as Array<{ id: string; plugin: string; reason: string }>,
         rows: [
             {
                 id: 'surfdash-pub.post',

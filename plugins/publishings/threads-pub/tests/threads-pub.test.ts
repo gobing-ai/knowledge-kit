@@ -498,3 +498,42 @@ describe('threads-pub fake transport and IO (R6)', () => {
         }
     });
 });
+
+describe('task 0330 R2 — threads post refuses draft requests before credentials or HTTP', () => {
+    test('an explicit draft publishStatus is refused before credential lookup and no request is made', async () => {
+        const calls = stubFetch([]);
+        await withEnv({ ...credentials, THREADS_ACCESS_TOKEN: undefined, THREADS_USER_ID: undefined }, async () => {
+            const result = await new ThreadsPostApiTransport().publish({
+                content: { ...content, metadata: { ...content.metadata, publishStatus: 'draft' } },
+            });
+            expect(result.ok).toBe(false);
+            expect(result.error).toContain('draft');
+            expect(result.error).not.toContain('THREADS_ACCESS_TOKEN');
+        });
+        expect(calls).toHaveLength(0);
+    });
+
+    test('an unknown publishStatus fails closed before credential lookup', async () => {
+        const calls = stubFetch([]);
+        await withEnv(credentials, async () => {
+            const result = await new ThreadsPostApiTransport().publish({
+                content: { ...content, metadata: { ...content.metadata, publishStatus: 'queue' } },
+            });
+            expect(result.ok).toBe(false);
+            expect(result.error).toContain('unknown publishStatus');
+        });
+        expect(calls).toHaveLength(0);
+    });
+
+    test('publishStatus public proceeds to the credential check like the legacy absent mode', async () => {
+        const calls = stubFetch([]);
+        await withEnv({ ...credentials, THREADS_ACCESS_TOKEN: undefined }, async () => {
+            const result = await new ThreadsPostApiTransport().publish({
+                content: { ...content, metadata: { ...content.metadata, publishStatus: 'public' } },
+            });
+            expect(result.ok).toBe(false);
+            expect(result.error).toContain('THREADS_ACCESS_TOKEN');
+        });
+        expect(calls).toHaveLength(0);
+    });
+});

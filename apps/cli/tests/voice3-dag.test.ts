@@ -16,9 +16,10 @@
  */
 
 import { afterAll, describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import type { PublishPreset } from '../src/itc-plan';
 import { BundleSchema, runPublishMatrixBundle } from '../src/publish-matrix';
 import { captureOutput } from './capture';
 
@@ -105,6 +106,86 @@ describe('publish-matrix-bundle (0324 R2)', () => {
         }
     });
 
+    it('refuses a freeze when the preset requires a variant the run never produced (0329 F02)', async () => {
+        const preset: PublishPreset = {
+            schemaVersion: 1,
+            name: 'strict-test-preset',
+            targets: [
+                { plugin: 'surfdash-pub', tier: 0, required: true, variant: 'article' },
+                { plugin: 'podcast-pub', tier: 0, required: true, variant: 'episode' },
+                { plugin: 'needs-extra-pub', tier: 1, required: true, variant: 'episode@needs-extra-pub' },
+            ],
+        };
+        const thin = seedVariants({ article: ARTICLE, episode: EPISODE });
+        const failOut = captureOutput();
+        try {
+            expect(
+                await runPublishMatrixBundle([thin, '--run-date', '2026-10-22', '--run-id', 'r'], {
+                    preset,
+                }),
+            ).toBe(1);
+        } finally {
+            failOut.restore();
+        }
+        expect(failOut.readErr()).toContain('strict-test-preset');
+        expect(failOut.readErr()).toContain('episode@needs-extra-pub');
+        expect(existsSync(join(thin, 'bundle.json'))).toBe(false);
+
+        // Producing the missing variant lets the same freeze through.
+        writeFileSync(
+            join(thin, '30-variants', 'episode@needs-extra-pub.content.json'),
+            `${JSON.stringify({ title: 'ep', format: 'audio', body: '播客' })}\n`,
+        );
+        const okOut = captureOutput();
+        try {
+            expect(await runPublishMatrixBundle([thin, '--run-date', '2026-10-22', '--run-id', 'r'], { preset })).toBe(
+                0,
+            );
+        } finally {
+            okOut.restore();
+        }
+        expect(existsSync(join(thin, 'bundle.json'))).toBe(true);
+    });
+
+    it('dedups a re-freeze runs[] and appends its own generate run id last (0329 R2)', async () => {
+        const workDir = seedVariants({ article: ARTICLE, episode: EPISODE });
+        const out = captureOutput();
+        try {
+            expect(await runPublishMatrixBundle([workDir, '--run-date', '2026-10-22', '--run-id', 'run-abc'])).toBe(0);
+        } finally {
+            out.restore();
+        }
+        const bundlePath = join(workDir, 'bundle.json');
+        const bundle = BundleSchema.parse(JSON.parse(readFileSync(bundlePath, 'utf-8')));
+        // A publish window appended run-abc twice (double-append bug) plus its own id.
+        bundle.runs = ['pub-1', 'run-abc', 'run-abc', 'pub-1'];
+        writeFileSync(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+
+        const again = captureOutput();
+        try {
+            expect(await runPublishMatrixBundle([workDir, '--run-date', '2026-10-22', '--run-id', 'run-abc'])).toBe(0);
+        } finally {
+            again.restore();
+        }
+        const refrozen = BundleSchema.parse(JSON.parse(readFileSync(bundlePath, 'utf-8')));
+        expect(refrozen.runs).toEqual(['pub-1', 'run-abc']);
+    });
+
+    it('writes bundle.json atomically — no temp file survives, no torn write is readable (0329 R2)', async () => {
+        const workDir = seedVariants({ article: ARTICLE, episode: EPISODE });
+        const out = captureOutput();
+        try {
+            expect(await runPublishMatrixBundle([workDir, '--run-date', '2026-10-22', '--run-id', 'run-abc'])).toBe(0);
+        } finally {
+            out.restore();
+        }
+        const leftovers = readdirSync(join(workDir)).filter(
+            (file) => file !== 'bundle.json' && file.startsWith('bundle'),
+        );
+        expect(leftovers).toEqual([]);
+        expect(() => BundleSchema.parse(JSON.parse(readFileSync(join(workDir, 'bundle.json'), 'utf-8')))).not.toThrow();
+    });
+
     it('keeps the runs[] a publish window already appended on a re-freeze', async () => {
         const workDir = seedVariants({ article: ARTICLE, episode: EPISODE });
         const out = captureOutput();
@@ -125,7 +206,7 @@ describe('publish-matrix-bundle (0324 R2)', () => {
             again.restore();
         }
         const refrozen = BundleSchema.parse(JSON.parse(readFileSync(bundlePath, 'utf-8')));
-        expect(refrozen.runs).toEqual(['publish-run-1']);
+        expect(refrozen.runs).toEqual(['publish-run-1', 'run-abc']);
         // A fresh variant set still re-hashes every entry.
         expect(refrozen.variants.article?.sha256).toBe(
             new Bun.CryptoHasher('sha256')
@@ -138,12 +219,15 @@ describe('publish-matrix-bundle (0324 R2)', () => {
 describe('kk-daily-ai-voice3 shape (0324 R1, R3, R4)', () => {
     const yaml = readFileSync(WORKFLOW, 'utf-8');
 
+    /** Literal `${vars.<name>}` as the YAML text spells it, without tripping the template-curly lint. */
+    const varsLit = (name: string): string => `\${vars.${name}}`;
+
     it('carries no channel enablement switch and no publish plugin', () => {
         // Comments may NAME the removed switches (the graph explains why they are gone); what must not
         // exist is a declared var or a templated reference to one.
         for (const token of ['xhs_enabled', 'wechat_enabled', 'xhs_live', 'wechat_live', 'publish_enabled']) {
             expect({ token, declared: new RegExp(`^  ${token}:`, 'm').test(yaml) }).toEqual({ token, declared: false });
-            expect({ token, referenced: yaml.includes(`\${vars.${token}}`) }).toEqual({ token, referenced: false });
+            expect({ token, referenced: yaml.includes(varsLit(token)) }).toEqual({ token, referenced: false });
         }
         for (const plugin of ['surfdash-pub', 'podcast-pub', 'wechatmp-pub', 'xhs-pub', 'weibo-pub', 'threads-pub']) {
             expect({ plugin, present: yaml.includes(plugin) }).toEqual({ plugin, present: false });
@@ -174,9 +258,176 @@ describe('kk-daily-ai-voice3 shape (0324 R1, R3, R4)', () => {
         }
         // The nested launch strips the two launcher vars (voice2's precedent) and is auto_publish-gated.
         expect(yaml).toContain('env -u SPUR_WORKFLOW_RUN_ACTIVE -u SPUR_EXPECTED_DEFINITION_DIGEST');
-        expect(yaml).toContain(`test "${'$'}{vars.auto_publish}" = "true"`);
+        expect(yaml).toContain(`test "${varsLit('auto_publish')}" = "true"`);
         expect(yaml).toContain('kk stage run publish-matrix-bundle');
         expect(yaml).toContain('kk stage run daily-bundle-variants');
+    });
+
+    // ------------------------------------------------------------------
+    // Task 0329 repairs. Failure-first list (source audit
+    // .spur/reports/voice3-migration-review-2026-10-25.md):
+    //   F01 — token readers without a pool-gate dependency: a condition can read the token before
+    //         the gate settled (the real repro: the run finished `done` and never executed select);
+    //   F15 — a refused/thin day must still end `done` with a no-content run report: pool-gate may
+    //         never exit 1 (a failed dep wedges its dependents into dag-unreachable), the publish
+    //         tail must be token-gated, and generation-report must pass real run-report flags;
+    //   F21 — prepare's preflight must cover the stages this graph can invoke;
+    //   F23 — the daily QC print must be turned into a verdict gate after wrap-docs;
+    //   F16 — bundle-variants must depend on its producers and wipe stale variant files.
+    // ------------------------------------------------------------------
+    describe('0329 repairs', () => {
+        /** One node's YAML block: from `- id: X` to the next sibling `- id:` (id is token-exact). */
+        function nodeBlock(id: string): string {
+            const start = yaml.indexOf(`- id: ${id}\n`);
+            expect({ id, found: start > -1 }).toEqual({ id, found: true });
+            const rest = yaml.slice(start);
+            const next = rest.indexOf('\n  - id:');
+            return next === -1 ? rest : rest.slice(0, next);
+        }
+
+        function dependsOn(id: string): string[] {
+            const match = /dependsOn:\s*\[([^\]]*)\]/.exec(nodeBlock(id));
+            if (!match) return [];
+            return (match[1] ?? '')
+                .split(',')
+                .map((part) => part.trim())
+                .filter((part) => part !== '');
+        }
+
+        it('every pool-gate token reader depends on pool-gate (F01)', () => {
+            const gateIndex = yaml.indexOf('- id: pool-gate');
+            expect(gateIndex).toBeGreaterThan(-1);
+            const readers = yaml
+                .split('\n  - id: ')
+                .slice(1)
+                .map((block) => block.split('\n')[0]?.trim())
+                .filter(
+                    (id): id is string =>
+                        id !== undefined && id !== 'pool-gate' && nodeBlock(id).includes('-pool-gate.status'),
+                );
+            expect(readers.length).toBeGreaterThanOrEqual(20);
+            for (const id of readers) {
+                expect({ id, dependsOn: dependsOn(id), includesGate: dependsOn(id).includes('pool-gate') }).toEqual({
+                    id,
+                    dependsOn: expect.any(Array),
+                    includesGate: true,
+                });
+            }
+            // Topological declaration order: the gate precedes its first reader (select).
+            expect(gateIndex).toBeLessThan(yaml.indexOf('- id: select'));
+        });
+
+        it('pool-gate never exits non-zero — an empty pool completes the node and skips the graph (F15)', () => {
+            const gate = nodeBlock('pool-gate');
+            expect(gate).toContain('EMPTY');
+            expect(gate).toContain('PASS');
+            expect(gate).not.toContain('exit 1');
+            expect(dependsOn('pool-gate')).toEqual(['qc-content']);
+            // An empty pool must also invalidate a stale bundle a publish window could consume.
+            expect(gate).toContain('bundle.json');
+        });
+
+        it('quality is a verdict gate and the publish tail is token-gated (F15/F23)', () => {
+            const quality = nodeBlock('quality');
+            expect(dependsOn('quality')).toEqual(['duration', 'wrap-docs', 'pool-gate']);
+            expect(quality).toContain('-pool-gate.status');
+            expect(quality).toContain('daily-quality-verdict');
+            expect(quality).toContain('daily-quality-report');
+
+            const publishPrep = nodeBlock('publish-prep');
+            expect(dependsOn('publish-prep')).toEqual(['duration', 'article', 'safety', 'pool-gate']);
+            expect(publishPrep).toContain('daily-publish-prep');
+            expect(publishPrep).toContain(varsLit('podcast_artist'));
+
+            for (const id of [
+                'show-notes',
+                'cards-write',
+                'cards-render',
+                'bundle-variants',
+                'bundle-freeze',
+                'publish',
+            ]) {
+                expect({ id, gated: nodeBlock(id).includes('-pool-gate.status') }).toEqual({ id, gated: true });
+            }
+            // The nested publish additionally keeps its auto_publish switch.
+            expect(nodeBlock('publish')).toContain(`test "${varsLit('auto_publish')}" = "true"`);
+            // 0329 F02: the freeze loads the operator preset so a required variant missing at
+            // freeze time refuses before any bundle write.
+            expect(nodeBlock('bundle-freeze')).toContain(`--preset ${varsLit('publish_preset')}`);
+        });
+
+        it('generation-report passes real run-report flags — no phantom --skip-store (F15)', () => {
+            const report = nodeBlock('generation-report');
+            expect(report).not.toContain('--skip-store');
+            expect(report).toContain('kk daily run-report');
+            expect(report).toContain(`--pool "${varsLit('work_dir')}/10-collect/pool.json"`);
+            expect(report).toContain(
+                `--candidates "${varsLit('work_dir')}/21-plan/${varsLit('run_date')}_04_quality-control-content_candidates.json"`,
+            );
+            expect(report).toContain(`--plugins-path "${varsLit('plugins_path')}"`);
+            expect(report).toContain(`--qc-min-quality "${varsLit('qc_min_quality')}"`);
+        });
+
+        it('generation-report and ledger stay reachable on a no-content close (R2)', () => {
+            // pool-gate always completes (never skips), so a node listing it beside a skipped
+            // dependency still runs — the engine skips only when ALL dependencies were skipped.
+            const deps = (id: string): string[] =>
+                yaml
+                    .split('\n  - id: ')
+                    .find((block) => block.startsWith(`${id}\n`))
+                    ?.split('\n')
+                    .find((line) => line.includes('dependsOn:'))
+                    ?.match(/\[([^\]]*)\]/)?.[1]
+                    ?.split(',')
+                    .map((d) => d.trim()) ?? [];
+            expect(deps('generation-report')).toEqual(expect.arrayContaining(['bundle-freeze', 'pool-gate']));
+            expect(deps('ledger')).toEqual(expect.arrayContaining(['generation-report', 'publish']));
+        });
+
+        it('duration forwards the run id so a refusal invalidates the publish path (F06/F15)', () => {
+            const duration = nodeBlock('duration');
+            expect(duration).toContain('daily-episode-duration');
+            expect(duration).toContain(`"${varsLit('__runId')}"`);
+        });
+
+        it('bundle-variants builds from its own producers and the run switches (F16)', () => {
+            const variants = dependsOn('bundle-variants');
+            for (const producer of [
+                'quality',
+                'social-write',
+                'publish-prep',
+                'cover-normalize',
+                'cards-render',
+                'pool-gate',
+            ]) {
+                expect({ producer, inDeps: variants.includes(producer) }).toEqual({ producer, inDeps: true });
+            }
+            const block = nodeBlock('bundle-variants');
+            expect(block).toContain(`"${varsLit('cards_enabled')}"`);
+            expect(block).toContain(`"${varsLit('cover_enabled')}"`);
+        });
+
+        it('intro admits a refused day — the sting must not fail a no-content close (F15)', () => {
+            const intro = nodeBlock('intro');
+            expect(intro).toContain('_duration-refusal.json');
+        });
+
+        it('prepare preflights every runner this graph can invoke (F21)', () => {
+            const prepare = nodeBlock('prepare');
+            expect(prepare).toContain('kk-daily-ai-voice2.yaml');
+            expect(prepare).toContain('kk-daily-safety.yaml');
+            expect(prepare).toContain('kk-daily-publish3.yaml');
+        });
+
+        it('the runner dispatches the new stage and the preflight knows the publish-matrix roster (F21/F23)', () => {
+            const runnerSource =
+                readFileSync(join(REPO, 'plugins/kk/scripts/kk-workflow-stages.ts'), 'utf-8') +
+                readFileSync(join(REPO, 'plugins/kk/scripts/daily-stages.ts'), 'utf-8');
+            expect(runnerSource).toContain("case 'daily-quality-verdict'");
+            expect(runnerSource).toContain('PUBLISH_MATRIX_STAGES');
+            // Legacy `kk stage <name>` spellings stay recognized by the preflight (A22 R2).
+            expect(runnerSource).toMatch(/\bkk stage (?:run )?/);
+        });
     });
 
     it('leaves voice2 untouched: the generate nodes it copies still exist there', () => {
