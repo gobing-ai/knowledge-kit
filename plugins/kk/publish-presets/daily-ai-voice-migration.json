@@ -116,6 +116,15 @@
             "mode": "dummy"
         },
         {
+            "id": "linkedin.post",
+            "plugin": "linkedin-pub",
+            "operation": "post",
+            "variant": "social:linkedin",
+            "tier": 3,
+            "window": "overseas-rss",
+            "mode": "dummy"
+        },
+        {
             "id": "shipinhao.cards",
             "plugin": "shipinhao-pub",
             "operation": "图文",
