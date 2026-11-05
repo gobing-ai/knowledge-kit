@@ -104,7 +104,13 @@ describe('registerScheduleCommand', () => {
         expect(schedule?.commands.map((command) => command.name())).toEqual(['render']);
 
         const render = schedule?.commands.find((command) => command.name() === 'render');
-        expect(render?.options.map((option) => option.long)).toEqual(['--platform', '--repo']);
+        expect(render?.options.map((option) => option.long)).toEqual([
+            '--platform',
+            '--repo',
+            '--bot',
+            '--tz',
+            '--cron',
+        ]);
         expect(render?.registeredArguments.map((argument) => argument.name())).toEqual(['schedule']);
     });
 });
@@ -247,5 +253,155 @@ describe('kk schedule render', () => {
         expect(result.out).toBe('');
         expect(result.err).toContain('kk.schedule.render.failed');
         expect(result.err).toContain('kk-unknown');
+    });
+});
+
+describe('kk schedule render — grok-bot cloud routine (task 0343)', () => {
+    const GROK_GREET = [
+        'schedule',
+        'render',
+        'kk-collect',
+        '--platform',
+        'grok-bot',
+        '--bot',
+        'kk-cloud',
+        '--tz',
+        'America/Los_Angeles',
+    ];
+
+    /** The eight fixed routine headings R2 freezes. */
+    const HEADINGS = [
+        'Owner Bot',
+        'Schedule',
+        'Inputs',
+        'Steps',
+        'Expected result',
+        'Approval boundary',
+        'Missing / stale',
+        'Mac import',
+    ];
+
+    it('AC1 — kk-collect renders the complete consent-preserving routine', async () => {
+        const result = await run(GROK_GREET);
+
+        expect(result.code).toBe(0);
+        expect(result.err).toBe('');
+        // Every frozen heading is present, in order (the routine is read top-down in the Bot editor).
+        const positions = HEADINGS.map((heading) => result.out.indexOf(heading));
+        for (const position of positions) expect(position).toBeGreaterThanOrEqual(0);
+        expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+        expect(result.out).toContain('## Owner Bot\n\nkk-cloud');
+        expect(result.out).toContain('0 4,10,16,22 * * *');
+        expect(result.out).toContain('America/Los_Angeles');
+        // The run script is the store-free kk-collect prefix and its push lands on the sync branch.
+        expect(result.out).toContain('kk stage collect-prepare');
+        expect(result.out).toContain('kk executor fan-in');
+        expect(result.out).toContain('sync/kk-collect/$stamp.json');
+        expect(result.out).toContain('kk-cloud-sync');
+        expect(result.out).toContain('kk store ingest --run cloud-');
+        expect(result.out).toContain('no-content');
+        // Consent-preserving: kk only prints; creating the routine is an operator action.
+        expect(result.out).toContain('routine');
+        // No placeholder survived, and no placeholder the launchd/cron render carries is present.
+        expect(result.out).not.toContain('{{');
+        expect(result.out).not.toContain('{{repo}}');
+        expect(result.out).not.toContain('{{home}}');
+    });
+
+    it('AC2a — a grok-bot render without --bot fails loud naming the flag', async () => {
+        const result = await run([
+            'schedule',
+            'render',
+            'kk-collect',
+            '--platform',
+            'grok-bot',
+            '--tz',
+            'America/Los_Angeles',
+        ]);
+
+        expect(result.code).toBe(1);
+        expect(result.out).toBe('');
+        expect(result.err).toContain('kk.schedule.render.failed');
+        expect(result.err).toContain('--bot');
+    });
+
+    it('AC2b — a sub-5-minute --cron expression is rejected', async () => {
+        const result = await run([...GROK_GREET, '--cron', '*/2 * * * *']);
+
+        expect(result.code).toBe(1);
+        expect(result.out).toBe('');
+        expect(result.err).toContain('kk.schedule.render.failed');
+        expect(result.err).toContain('*/2 * * * *');
+        expect(result.err).toContain('5');
+    });
+
+    it('AC2c — a 4-field --cron expression is rejected', async () => {
+        const result = await run([...GROK_GREET, '--cron', '0 4,10,16,22 *']);
+
+        expect(result.code).toBe(1);
+        expect(result.out).toBe('');
+        expect(result.err).toContain('kk.schedule.render.failed');
+        expect(result.err).toContain('0 4,10,16,22 *');
+    });
+
+    it('AC2d — grok-bot-only flags on launchd/cron fail naming all three', async () => {
+        for (const platform of ['launchd', 'cron']) {
+            const result = await run(['schedule', 'render', 'kk-collect', '--platform', platform, '--bot', 'b']);
+            expect(result.code).toBe(1);
+            expect(result.out).toBe('');
+            expect(result.err).toContain('--bot/--tz/--cron are only valid with --platform grok-bot');
+
+            const tz = await run(['schedule', 'render', 'kk-collect', '--platform', platform, '--tz', 'UTC']);
+            expect(tz.code).toBe(1);
+            expect(tz.err).toContain('--bot/--tz/--cron are only valid with --platform grok-bot');
+
+            const cron = await run(['schedule', 'render', 'kk-collect', '--platform', platform, '--cron', '0 4 * * *']);
+            expect(cron.code).toBe(1);
+            expect(cron.err).toContain('--bot/--tz/--cron are only valid with --platform grok-bot');
+        }
+    });
+
+    it('AC3 — store- or browser-bound schedules are refused on grok-bot with the ADR-044 sentence', async () => {
+        const ADR_SENTENCE = 'cloud routines run store-free, browser-free work only (ADR-044)';
+        for (const schedule of ['kk-daily-publish3-cn-peak', 'kk-daily-publish3-overseas', 'kk-serve']) {
+            const result = await run(['schedule', 'render', schedule, '--platform', 'grok-bot', '--bot', 'b']);
+            expect(result.code).toBe(1);
+            expect(result.out).toBe('');
+            expect(result.err).toContain('kk.schedule.render.failed');
+            expect(result.err).toContain(ADR_SENTENCE);
+        }
+        // The launchd/cron refusals stay byte-identical: kk-serve has no cron template, and the
+        // existing render paths are untouched.
+        const serveCron = await run(['schedule', 'render', 'kk-serve', '--platform', 'cron', '--repo', REPO]);
+        expect(serveCron.code).toBe(1);
+        expect(serveCron.err).toContain("schedule 'kk-serve' has no cron template (expected launchd)");
+        expect(serveCron.err).not.toContain('store-free');
+        const collectCron = await run(['schedule', 'render', 'kk-collect', '--platform', 'cron', '--repo', REPO]);
+        expect(collectCron.code).toBe(0);
+        const collectLaunchd = await run(['schedule', 'render', 'kk-collect', '--platform', 'launchd', '--repo', REPO]);
+        expect(collectLaunchd.code).toBe(0);
+    });
+
+    it('AC4 — no credential leaks into the routine text', async () => {
+        const previous = process.env.TYPESAFE_API_KEY;
+        try {
+            process.env.TYPESAFE_API_KEY = 'apikey_test_leak';
+            const result = await run(GROK_GREET);
+            expect(result.code).toBe(0);
+            expect(result.out).not.toContain('apikey_test_leak');
+            expect(result.out).not.toContain('{{');
+        } finally {
+            if (previous === undefined) delete process.env.TYPESAFE_API_KEY;
+            else process.env.TYPESAFE_API_KEY = previous;
+        }
+    });
+
+    it('R3 — the grok-bot cadence default and host zone fill in', async () => {
+        const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const result = await run(['schedule', 'render', 'kk-collect', '--platform', 'grok-bot', '--bot', 'kk-cloud']);
+
+        expect(result.code).toBe(0);
+        expect(result.out).toContain(zone);
+        expect(result.out).toContain('0 4,10,16,22 * * *');
     });
 });

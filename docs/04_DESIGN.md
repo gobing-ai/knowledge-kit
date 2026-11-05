@@ -94,7 +94,7 @@ kk store pool-count <file> --min <n>
 kk store select --topic <t> --workflow <w> --run <id> --in <Doc[].json|metadata.docs> [--db <path>]
 kk store mark-published --topic <t> --run <id> [--in <Doc[].json|metadata.docs>] [--db <path>]
 kk store release --run <id> [--topic <t>] [--db <path>]
-kk schedule render <schedule> --platform launchd|cron [--repo <dir>]
+kk schedule render <schedule> --platform launchd|cron|grok-bot [--repo <dir>] [--bot <name>] [--tz <iana>] [--cron <expr>]
 kk ledger append --workflow <name> --run <run-id> [--works-dir <dir>] [--work-dir <dir>]
 kk ledger sync --workflow <name> [--works-dir <dir>] [--work-dir <dir>]
 kk ledger cutover-check --candidate <name> --baseline <name> --runs <n> [--works-dir <dir>]
@@ -123,7 +123,7 @@ kk board serve --board-origin <origin> [--port <n>]
 | `store select` | Record a run's planned set as `selected` stories for one topic (idempotent); prints `{selected}` (§1.9) | shipped (task 0228) |
 | `store mark-published` | Promote a run's `selected` rows to `published`; prints `{published}` (§1.9) | shipped (task 0228) |
 | `store release` | Drop a run's `selected` rows so its items re-enter the pool; prints `{released}` (§1.9) | shipped (task 0228) |
-| `schedule render` | Print the launchd plist / crontab line for a shipped workflow (§1.11); installing it is an operator action | shipped (task 0208) |
+| `schedule render` | Print the launchd plist / crontab line / Grok Bot routine definition for a shipped workflow (§1.11); installing or creating it is an operator action | shipped (task 0208; grok-bot platform 0343) |
 | `ledger append` | Append one workflow run section to `<works-dir>/<name>/ledger.md` from `spur workflow trace`; prints `{workflow, ledger, appended}` (§1.10) | shipped (task 0207) |
 | `ledger cutover-check --candidate <name> --baseline <name> --runs <n> [--works-dir <dir>]` | Read-only cutover readiness probe: the newest `--runs` candidate runs are all done and each matches the same-day baseline target set; prints `{ready, streak, required, reasons}`, exit 0 always (`ready` is the signal) | shipped (task 0212) |
 | `ledger sync` | Append every finished run of the workflow missing from its ledger, oldest first (same printed shape) (§1.10) | shipped (task 0207) |
@@ -1117,12 +1117,17 @@ decision-backend fallback cannot override an otherwise admitted gate. Remediatio
 requirement on ignored run artifacts. Unchanged remediation still spends the existing bounded
 budget before admission-only exclusions are classified.
 
-`kk schedule render <schedule> --platform launchd|cron [--repo <dir>]` prints the scheduling
+`kk schedule render <schedule> --platform launchd|cron|grok-bot [--repo <dir>]` prints the scheduling
 artifact for a shipped schedule from `plugins/kk/schedules/`, with `{{repo}}` bound to the `--repo`
-checkout (default: cwd) and `{{home}}` to the operator's home.
-**Installing it is an operator action** — kk never writes a crontab or a `LaunchAgents` plist, so the
-command's only side effect is the text it prints (`plugins/kk/README.md` §Schedule documents the
-install lines).
+checkout (default: cwd) and `{{home}}` to the operator's home. `grok-bot` prints a Grok Bot routine
+definition instead (task 0343), with `--bot <name>` (required for grok-bot), `--tz <iana>` (default:
+the rendering host's zone) and `--cron <expr>` (default `0 4,10,16,22 * * *`; must be 5 fields and
+never fire twice within 5 minutes — Grok Bot routines accept >=5-minute intervals). It substitutes
+only `{{bot}}`/`{{cron}}`/`{{tz}}` — no credential is bound into routine text; schedules without a
+grok-bot template (kk-serve, the publish3 windows) are refused with the ADR-044 sentence.
+**Installing it is an operator action** — kk never writes a crontab or a `LaunchAgents` plist, and
+never creates the Bot routine; the command's only side effect is the text it prints
+(`plugins/kk/README.md` §Schedule documents the install lines and the paste-into-routine step).
 
 `spur serve` **hosts the scheduler**: the `.spur/config.yaml` `bootstrap.scheduler` jobs (the daily
 `kk-daily-ai-voice` tick) are enqueued by the job worker that lives inside the server, so the server
@@ -1142,6 +1147,8 @@ value is XML-escaped (`&`/`<`/`>`), because one raw `&` makes `launchctl bootstr
 | ---------- | ---------- | ------------------ |
 | `kk-collect` | `launchd` | plist for `ai.gobing.kk-collect` (`launchd.plist.tmpl`): `StartCalendarInterval` 04:00/10:00/16:00/22:00 local (6 h; sleep coalesces missed fires to one run at wake), `ProgramArguments` = `spur workflow run plugins/kk/workflows/kk-collect.yaml`, `WorkingDirectory` = `--repo`, `EnvironmentVariables` = `PATH` + `TYPESAFE_API_KEY`, stdout+stderr = `<repo>/.works/kk-collect/launchd.log` |
 | `kk-collect` | `cron` | `0 4,10,16,22 * * * cd <repo> && TYPESAFE_API_KEY='<key>' spur workflow run plugins/kk/workflows/kk-collect.yaml >> <repo>/.works/kk-collect/launchd.log 2>&1` |
+| `kk-serve` | `grok-bot` | refused: `schedule 'kk-serve' has no grok-bot template — cloud routines run store-free, browser-free work only (ADR-044)` — a keepalive server is Mac-local by definition (task 0343 R4) |
+| `kk-collect` | `grok-bot` | routine definition (`kk-collect.grok-bot.md.tmpl`): Owner Bot `{{bot}}`, Schedule `{{cron}}` in `{{tz}}`, store-free collect-prepare + fan-in steps pushing `sync/<stamp>.json` to branch `kk-cloud-sync`, ADR-044 missing/stale policy and the `kk store ingest --run cloud-<stamp>` Mac import (task 0343) |
 | `kk-serve` | `launchd` | plist for `ai.gobing.spur-serve` (`kk-serve.launchd.plist.tmpl`): `RunAtLoad` + `KeepAlive` true, `ThrottleInterval` 10, `ProgramArguments` = `spur serve --cwd <repo> --host 127.0.0.1 --port 3003 --no-open`, `WorkingDirectory` = `--repo`, `EnvironmentVariables` = `PATH` + `TYPESAFE_API_KEY`, stdout+stderr = `<repo>/.works/spur-serve/serve.log` |
 | `kk-daily-publish3-cn-peak` | `cron` | `0 17 * * *` local (`kk-daily-publish3-cn-peak.cron.tmpl`): `spur workflow run plugins/kk/workflows/kk-daily-publish3.yaml --vars '{work_dir, run_date, window: cn-peak, live_channels: wechatmp-pub,xhs-pub,weibo-pub,x-pub}'`, `PATH` + `TZ=America/Los_Angeles`, log `<repo>/.works/kk-daily-publish3/cn-peak.log`. The baked `live_channels` **is** the ADR-022 consent for this window |
 | `kk-daily-publish3-overseas` | `cron` | `0 7 * * *` America/Los_Angeles (`kk-daily-publish3-overseas.cron.tmpl`): same workflow with `window: overseas-rss` and a **yesterday** `work_dir`/`run_date`, no `live_channels`, log `<repo>/.works/kk-daily-publish3/overseas.log` |

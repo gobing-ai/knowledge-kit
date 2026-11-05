@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: kk schedule render grok-bot platform for cloud routines
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-04T23:00:28.338Z
-updated_at: "2026-11-05T00:02:19.497Z"
+updated_at: "2026-11-05T05:09:25.375Z"
 feature_id: F81
 
 dependencies: ["0341", "0342"]
@@ -12,6 +12,8 @@ ac_altitude: task-local
 ac_numbering: task-local
 priority: P2
 estimate_hours: 5
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0343-verdict.json
 ---
 
 ## 0343. kk schedule render grok-bot platform for cloud routines
@@ -44,8 +46,8 @@ Grok Bot limits: routine intervals are ≥5 min, with 200 runs/hour/routine (sam
 
 ### Requirements
 
-- [ ] R1. Extend `SchedulePlatform` to `'launchd' | 'cron' | 'grok-bot'`. Validate against one `SCHEDULE_PLATFORMS` array, and use the same array in the `unknown platform` message and the `--platform` help text. Add `'grok-bot': 'kk-collect.grok-bot.md.tmpl'` to kk-collect only.
-- [ ] R2. Add `plugins/kk/schedules/kk-collect.grok-bot.md.tmpl`, a Markdown routine definition the operator pastes into the Bot. Its fixed headings are:
+- [x] R1. Extend `SchedulePlatform` to `'launchd' | 'cron' | 'grok-bot'`. Validate against one `SCHEDULE_PLATFORMS` array, and use the same array in the `unknown platform` message and the `--platform` help text. Add `'grok-bot': 'kk-collect.grok-bot.md.tmpl'` to kk-collect only.
+- [x] R2. Add `plugins/kk/schedules/kk-collect.grok-bot.md.tmpl`, a Markdown routine definition the operator pastes into the Bot. Its fixed headings are:
   - `Owner Bot`: `{{bot}}`
   - `Schedule`: `{{cron}}` in `{{tz}}`
   - `Inputs`: the Bot needs `kk`/`spur` (sp-bot-bootstrap), the three source plugins' credentials as Bot secrets, and push access to `kk-cloud-sync`
@@ -54,11 +56,11 @@ Grok Bot limits: routine intervals are ≥5 min, with 200 runs/hour/routine (sam
   - `Approval boundary`: collect only; never store, label, generate or publish
   - `Missing / stale`: the ADR-044 policy
   - `Mac import`: `kk store ingest --run cloud-<stamp> --in <file>`
-- [ ] R3. Add grok-bot-only flags `--bot <name>` (required for grok-bot), `--tz <iana>` (default: the rendering host's `Intl.DateTimeFormat().resolvedOptions().timeZone`) and `--cron <expr>` (default `0 4,10,16,22 * * *`, kk-collect's cadence). `--cron` must have 5 fields. Reject it when the minimum circular gap of its minute-field set is under 5 minutes, which rejects `*` and `*/2`. Supply `--bot`/`--tz`/`--cron` with launchd/cron and the render fails with `--bot/--tz/--cron are only valid with --platform grok-bot`.
-- [ ] R4. A grok-bot render of a schedule without a grok-bot template fails with exit 1 and appends: `cloud routines run store-free, browser-free work only (ADR-044)`. This covers both publish3 schedules and kk-serve. The existing launchd/cron messages stay byte-identical.
-- [ ] R5. The grok-bot render substitutes no credential: the template carries no `{{typesafe_api_key}}`, and even with `TYPESAFE_API_KEY` set the output never contains its value. No placeholder `{{` survives a render.
-- [ ] R6. Update `docs/04_DESIGN.md:97,126` and §1.11 (`:1120`) to show `--platform launchd|cron|grok-bot` and the three flags. Add a Grok Bot block to `plugins/kk/README.md` §Schedule with the render line and the "paste into the Bot's routine editor" operator step.
-- [ ] R7. Add tests to `apps/cli/tests/commands/schedule.test.ts` covering AC1–AC4, and run `bun run lint` and `bun run spur-check` green.
+- [x] R3. Add grok-bot-only flags `--bot <name>` (required for grok-bot), `--tz <iana>` (default: the rendering host's `Intl.DateTimeFormat().resolvedOptions().timeZone`) and `--cron <expr>` (default `0 4,10,16,22 * * *`, kk-collect's cadence). `--cron` must have 5 fields. Reject it when the minimum circular gap of its minute-field set is under 5 minutes, which rejects `*` and `*/2`. Supply `--bot`/`--tz`/`--cron` with launchd/cron and the render fails with `--bot/--tz/--cron are only valid with --platform grok-bot`.
+- [x] R4. A grok-bot render of a schedule without a grok-bot template fails with exit 1 and appends: `cloud routines run store-free, browser-free work only (ADR-044)`. This covers both publish3 schedules and kk-serve. The existing launchd/cron messages stay byte-identical.
+- [x] R5. The grok-bot render substitutes no credential: the template carries no `{{typesafe_api_key}}`, and even with `TYPESAFE_API_KEY` set the output never contains its value. No placeholder `{{` survives a render.
+- [x] R6. Update `docs/04_DESIGN.md:97,126` and §1.11 (`:1120`) to show `--platform launchd|cron|grok-bot` and the three flags. Add a Grok Bot block to `plugins/kk/README.md` §Schedule with the render line and the "paste into the Bot's routine editor" operator step.
+- [x] R7. Add tests to `apps/cli/tests/commands/schedule.test.ts` covering AC1–AC4, and run `bun run lint` and `bun run spur-check` green.
 
 Out of scope:
 - creating routines via an API;
@@ -148,24 +150,95 @@ Scenario: R2 — Routine render is complete and consent-preserving (R2)
 
 ### Plan
 
-- [ ] 1. Add failing tests for AC1–AC4 to `schedule.test.ts` (R7).
-- [ ] 2. Add the platform array, template entry, flags and validation in `schedule.ts` (R1, R3, R4, R5).
-- [ ] 3. Write `kk-collect.grok-bot.md.tmpl` (R2).
-- [ ] 4. Iterate to green, then confirm the existing launchd/cron tests pass unchanged.
-- [ ] 5. Update `docs/04_DESIGN.md` and the README §Schedule block (R6).
-- [ ] 6. Run `bun run lint` and `bun run spur-check`; check `git status --short` (R7).
+- [x] 1. Add failing tests for AC1–AC4 to `schedule.test.ts` (R7).
+- [x] 2. Add the platform array, template entry, flags and validation in `schedule.ts` (R1, R3, R4, R5).
+- [x] 3. Write `kk-collect.grok-bot.md.tmpl` (R2).
+- [x] 4. Iterate to green, then confirm the existing launchd/cron tests pass unchanged.
+- [x] 5. Update `docs/04_DESIGN.md` and the README §Schedule block (R6).
+- [x] 6. Run `bun run lint` and `bun run spur-check`; check `git status --short` (R7).
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+New `grok-bot` render platform, tests-first (red→green), print-only like launchd/cron.
+
+- **Platform + template plumbing** — `apps/cli/src/commands/schedule.ts:8-9` (`SCHEDULE_PLATFORMS = ['launchd','cron','grok-bot']` with derived `SchedulePlatform`); `apps/cli/src/commands/schedule.ts:31` adds `kk-collect`'s `'grok-bot'` entry (only schedule with a cloud-safe store-free prefix); `apps/cli/src/commands/schedule.ts:55-58` frozen grok constants (`GROK_MIN_INTERVAL_MINUTES = 5`, `DEFAULT_GROK_CRON = '0 4,10,16,22 * * *'`); `apps/cli/src/commands/schedule.ts:100-127` `minuteGap()` (minute-field-only circular gap; wrap-around fix `58,4` → 6); schedule.ts:52-58 constants; platform help text single source for the platform help text.
+- **RenderAction** — `apps/cli/src/commands/schedule.ts:165-190` grok-body vs artifact branch; `apps/cli/src/commands/schedule.ts:173-175` `--bot/--tz/--cron are only valid with --platform grok-bot` (AC2d); `apps/cli/src/commands/schedule.ts:179-186` unknown-template refusal carrying the ADR-044 sentence (`schedule 'kk-serve' has no grok-bot template — cloud routines run store-free, browser-free work only (ADR-044)', AC3) while launchd/cron refusals stay byte-identical; `apps/cli/src/commands/schedule.ts:192-207` substitution split — grok-bot binds ONLY `{{bot}}`/`{{cron}}`/`{{tz}}` (no TYPESAFE_API_KEY substitution — AC4) with the `{{typesafe_api_key}}` plist binding untouched for launchd/cron; leftover-`{{` fail-loud guard `apps/cli/src/commands/schedule.ts:201-203`.
+- **Grok body validation** — `apps/cli/src/commands/schedule.ts:216-240` `renderGrokBody()`: `--bot` required (AC2a), 5-field cron syntax check (AC2c), <5-min gaps rejected via `minuteGap` (AC2b), host-zone tz default `apps/cli/src/commands/schedule.ts:197`.
+- **Commander options** — `apps/cli/src/commands/schedule.ts:250-256` `--platform` from the array, plus `--bot/--tz/--cron` (R3).
+- **Template** — `plugins/kk/schedules/kk-collect.grok-bot.md.tmpl:1-69` (new): ADR-044 preamble, 8 fixed headings (Owner Bot, Schedule, Inputs, Steps, Expected result, Approval boundary, Missing / stale, Mac import), ADR-044 policy table verbatim (`no-content: <reason>` / 26 h staleness / import-once by `cloud-<stamp>` id), `kk store ingest --run cloud-<stamp>` Mac import, operator-paste consent note. Only `{{bot}}`/`{{cron}}`/`{{tz}}` placeholders — R2.
+- **Tests** — `apps/cli/tests/commands/schedule.test.ts:259-407` new describe `kk schedule render — grok-bot cloud routine (task 0343)`: AC1 (8 headings + ADR-044 sentences + env-leak check), AC2a–AC2d, AC3 (kk-serve + both publish3 windows refused with the ADR sentence; launchd/cron texts byte-identical), AC4 credential-leak, R3 default cron+tz; R6 registration test extended to 5 options (`apps/cli/tests/commands/schedule.test.ts:112-121`).
+- **Docs (R6)** — `docs/04_DESIGN.md:97` command line + §1.9 `schedule render` row (:127), `docs/04_DESIGN.md:1120-1131` §1.11 grok-bot text + policy-table rows for `kk-collect`/`grok-bot` and `kk-serve`/`grok-bot` refusal; `plugins/kk/README.md:51-59` §Schedule Grok Bot block (`--bot kk-cloud`, `pbcopy` paste workflow, refusal note).
+
+Out of scope (task Design): routine-creation API/webhook, cloud publish, Mac auto-import. Grok interval citation: https://docs.x.ai/grok-bot/skills-routines-and-automations.
+
+#
+
+#
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | Printed render verified on host: `bun src/index.ts schedule render kk-collect --platform grok-bot --bot kk-cloud` emits all eight fixed headings in order (`## Owner Bot` … `## Mac import`, template plugins/kk/schedules/kk-collect.grok-bot.md.tmpl:11-69), zero `{{` left; complete definition carries schedule, steps, `--out sync/kk-collect/$stamp.json` fan-in, ADR-044 missing/stale table and the `kk store ingest --run cloud-<stamp>` Mac import; consent preserved — kk only prints (`apps/cli/src/commands/schedule.ts:163-207`, `consoleOutput.write` is the sole side effect), template's operator-paste preamble is the consent note |
+| R2 | MET | Scenario rows below — routine complete (AC1 test asserts heading order + placeholder-free body, apps/cli/tests/commands/schedule.test.ts:284-310) and consent-preserving (template layout + no creation step; `{{bot}}`/`{{cron}}`/`{{tz}}` substitution only) |
+| R3 | MET | ADR-044 store-locality followed, not re-decided: template routes all store work to the Mac (`## Mac import` block) and the Steps section forbids `kk store` in the Bot; the 5-minute floor is validated in code (render refuses `--cron '*/2 * * * *'` naming the floor, apps/cli/src/commands/schedule.ts:229-235) |
+| R4 | MET | AC3 test: kk-serve and both publish3 windows refused on grok-bot with the exact ADR-044 sentence (apps/cli/tests/commands/schedule.test.ts:364-384; refusal at apps/cli/src/commands/schedule.ts:179-186); launchd/cron render texts byte-identical (same test) |
+| R5 | MET | AC4 test with `TYPESAFE_API_KEY=apikey_test_leak` exported: stdout contains neither the secret nor `{{` (apps/cli/tests/commands/schedule.test.ts:385-395); grok-bot substitution branch binds no credential var (apps/cli/src/commands/schedule.ts:192-199) |
+| R6 | MET | docs/04_DESIGN.md:97 command line now carries `--platform launchd |
+| R7 | MET | `bun run lint` exit 0; `bun run spur-check` exit 0 — 4477 pass / 0 fail + rule run 2/2 PASS (.spur/run/run-0343-spur-check.log); receipt .spur/run/0343-check-receipt.json (full tier, `spur self exec check`) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — kk-collect renders a complete grok-bot routine (req: R1, R2, R3) | MET | test | `bun test apps/cli/tests/commands/schedule.test.ts` → 16 pass / 0 fail / 240 expects; AC1 test asserts exit 0, the eight headings in order, Owner Bot `kk-cloud`, default cron+tz, fan-in `--out sync/kk-collect/$stamp.json`, `kk store ingest --run cloud-<stamp>`, and no `{{` (apps/cli/tests/commands/schedule.test.ts:284-310) |
+| AC2 — Invalid grok-bot inputs fail loud (req: R3) | MET | test | split tests assert exit 1 + `kk.schedule.render.failed:` naming the bad input, empty stdout: no `--bot` (apps/cli/tests/commands/schedule.test.ts:311-327), `*/2 * * * *` sub-5-minutes (:328-337), 4-field cron (:338-346), `--bot` with `--platform cron` (:347-363); validation lives at apps/cli/src/commands/schedule.ts:220-235 and :173-175 |
+| AC3 — Store- or browser-bound schedules are refused on grok-bot (req: R4) | MET | test | refusal test hits kk-daily-publish3-cn-peak, kk-daily-publish3-overseas, kk-serve with the verbatim ADR-044 sentence and confirms kk-collect's launchd/cron renders are byte-identical to before the change (apps/cli/tests/commands/schedule.test.ts:364-384) |
+| AC4 — No credential leaks into the routine text (req: R5) | MET | test | env-leak test above (apps/cli/tests/commands/schedule.test.ts:385-395) — secret never reaches stdout |
+| AC5 — Surface docs updated and gates green (req: R6, R7) | MET | command | docs/04_DESIGN.md:97 + 1120-1131 + README §Schedule carry the new platform/flags; `bun run lint` && `bun run spur-check` exit 0 (4477 pass / 0 fail); gate receipt PASS (.spur/run/0343-check-receipt.json) |
+| R2 — Routine render is complete and consent-preserving (R2) | MET | command | feature scenario satisfied by the printed routine: owning Bot, schedule+timezone, inputs (source plugins + Bot secrets + push access), steps, expected result, approval boundary, missing/stale policy all present in the rendered text; creation stays an operator action (template preamble + no API call in the command; the command only writes stdout) |
+| R3 — Store locality decision precedes cloud execution (R3) | MET | command | rendered routine is store-free on the Bot (no `kk store` step; `## Mac import` binds publication/import to the Mac) and sub-5-minute cadences are rejected — the ADR-044 locality rule is enforced, not assumed |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+All seven requirements MET with per-AC traceability in the review answer (`.spur/run/ed0f5b34-71ed-46de-9c35-09f47c63d06d-review-answer.txt`), cert at `.spur/run/ed0f5b34-71ed-46de-9c35-09f47c63d06d-review-cert.md`. Full working-tree diff vs base 2054d7e reviewed: 5 modified files + the new grok-bot template; no unrelated drift (`git status --short` shows only the six intended files). Verdict linted: `spur task verdict 0343 --from-answer` → **PASS (7 requirements, 2 checks)** on first capture. No open P1–P3 findings — two P4 advisories (minute-field-only gap validation; template fan-in source-list drift hazard, documented in the template).
+
+Confidence: HIGH
+
+## Sparse Review
+
+#### Coverage — dims: coverage, quality, consistency, security, risk
+
+| Priority | Finding | Disposition |
+| -------- | ------- | ----------- |
+| P4 | `minuteGap` validates the cron MINUTE field only — hour/day overlap cases are not surfaced; conservative by task Design | accepted: conservative circular-gap floor, stricter than a full cron parser |
+| P4 | the template copies the fan-in source list from `plugins/kk/workflows/kk-collect.yaml:116-121` — a workflow source change without re-render drifts the routine | accepted: drift hazard documented in the template's Inputs section |
+
+No open P1–P3 findings (auto-repairs file has no entries; quality gate passed attempts=1). AC1–AC5 all trace to executed tests or verified gate artifacts; the print-only consent contract holds in code (apps/cli/src/commands/schedule.ts:163-207), refusals fail loud with no stdout (existing launchd/cron tests pass unchanged), and no store/ring/credential path is touched. Residual risk: the group snapshot says nothing — feature scenario R3/F81 is covered by the enforced locality rule in the rendered routine.
+**Conclusion:** Implementation is complete, tests are meaningful (red-first guard suite covering every refusal branch plus the full-artifact render), consistency with existing launchd/cron surfaces is verified byte-identical where required, and no security or consent regressions were found.
+
+| Req | Status | Evidence | Evidence Type |
+| --- | ------ | -------- | ------------- |
+| R1 | MET | rendered routine print verified (see review answer R1; apps/cli/src/commands/schedule.ts:163-207) | command |
+| R2 | MET | AC1 test + scenario rows in the review answer (apps/cli/tests/commands/schedule.test.ts:284-310) | command |
+| R3 | MET | store-free template bodies + 5-minute floor validation (apps/cli/src/commands/schedule.ts:229-235) | command |
+| R4 | MET | AC3 refusal test (apps/cli/tests/commands/schedule.test.ts:364-384) | test |
+| R5 | MET | AC4 env-leak test (apps/cli/tests/commands/schedule.test.ts:385-395) | test |
+| R6 | MET | docs/04_DESIGN.md:97,1120-1131; plugins/kk/README.md:72-79 | static-ref |
+| R7 | MET | `bun run lint` exit 0; `bun run spur-check` exit 0 (4477 pass / 0 fail); gate receipt PASS | command |
+| AC | Status | Evidence Type | Evidence |
+| AC1 | MET | schedule.test.ts AC1 — 16 pass / 0 fail suite (schedule.test.ts:284-310) | test |
+| AC2 | MET | AC2a-2d fail-loud tests (schedule.test.ts:311-363) | test |
+| AC3 | MET | AC3 refusal + byte-identical test (schedule.test.ts:364-384) | test |
+| AC4 | MET | AC4 env-leak test (schedule.test.ts:385-395) | test |
+| AC5 | MET | docs + lint/spur-check/gate artifacts (receipt 0343-check-receipt.json) | command |
+| R2 — Routine render is complete and consent-preserving (R2) | MET | feature scenario row in the review answer | command |
+| R3 — Store locality decision precedes cloud execution (R3) | MET | feature scenario row in the review answer | command |
+
+Verdict: PASS
 
 ### References
 
@@ -179,4 +252,7 @@ Scenario: R2 — Routine render is complete and consent-preserving (R2)
 
 - 2026-11-04T23:03:30.711Z feature_id Q → F81 (system)
 - 2026-11-04T23:44:25.245Z backlog → todo (system)
+- 2026-11-05T04:38:23.862Z todo → wip (system)
+- 2026-11-05T05:03:41.742Z wip → testing (system)
+- 2026-11-05T05:09:25.362Z testing → done (system)
 

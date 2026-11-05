@@ -4,8 +4,9 @@ import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { type Command, CommanderError } from 'commander';
 import { consoleOutput } from '../output';
 
-/** Scheduling platforms kk ships a template for. */
-type SchedulePlatform = 'launchd' | 'cron';
+/** Scheduling platforms kk ships a template for; one array drives validation, help text and errors. */
+const SCHEDULE_PLATFORMS = ['launchd', 'cron', 'grok-bot'] as const;
+type SchedulePlatform = (typeof SCHEDULE_PLATFORMS)[number];
 
 /** Checkout/package-relative location of the schedule templates. */
 const SCHEDULES_REL = 'plugins/kk/schedules';
@@ -27,7 +28,7 @@ const CHECKOUT_ROOT = resolve(import.meta.dir, '../../../..');
  * than rendered into a line that cannot do the job.
  */
 const SCHEDULE_TEMPLATES: Record<string, Partial<Record<SchedulePlatform, string>>> = {
-    'kk-collect': { launchd: 'launchd.plist.tmpl', cron: 'cron.tmpl' },
+    'kk-collect': { launchd: 'launchd.plist.tmpl', cron: 'cron.tmpl', 'grok-bot': 'kk-collect.grok-bot.md.tmpl' },
     'kk-serve': { launchd: 'kk-serve.launchd.plist.tmpl' },
     // The two publish3 windows (task 0323 R5). Cron-only by design: the overseas window is a plain
     // daily tick, and cn-peak's `wait-until` node absorbs the hosted-zone offset, so neither needs
@@ -40,7 +41,21 @@ const SCHEDULE_TEMPLATES: Record<string, Partial<Record<SchedulePlatform, string
 interface RenderOptions {
     platform: string;
     repo: string;
+    bot?: string;
+    tz?: string;
+    cron?: string;
 }
+
+/**
+ * A Grok Bot routine's smallest schedule: routines accept intervals of >=5 minutes only
+ * (https://docs.x.ai/grok-bot/skills-routines-and-automations), so a cron expression whose minute
+ * field can fire twice within five minutes must be refused instead of rendering a routine the
+ * Bot silently cannot create.
+ */
+const GROK_MIN_INTERVAL_MINUTES = 5;
+
+/** kk-collect's cadence — the platform's frozen default for grok-bot renders. */
+const DEFAULT_GROK_CRON = '0 4,10,16,22 * * *';
 
 /** The `{{repo}}` template placeholder bound to the `--repo` checkout. */
 const REPO_PLACEHOLDER = '{{repo}}';
@@ -72,6 +87,45 @@ const HOME_PLACEHOLDER = '{{home}}';
 const TYPESAFE_API_KEY_PLACEHOLDER = '{{typesafe_api_key}}';
 
 /**
+ * The minimum circular gap (minutes) between two firings of a cron expression's MINUTE field.
+ *
+ * Local to the grok-bot platform's >=5-minute floor: hour/field-only expressions (no explicit
+ * minute list) fire hourly or rarer and are trivially safe, and every sub-hour risk lives in the
+ * minute field — so only that field is expanded: wildcard, step lists (n per step), ranges (a-b),
+ * stepped ranges, and comma lists over 0-59.
+ * A single minute fires once an hour (gap 60); a value under 5 here — a wildcard, a sub-minute
+ * step like n=2, or a tight pair like 0,2 — rejects the expression. Legal-but-odd parts of the OTHER fields are not validated; a conservative
+ * minute-field floor is deliberately stricter than a full cron parser.
+ */
+function minuteGap(cronExpr: string): number | undefined {
+    const minutes = new Set<number>();
+    for (const part of (cronExpr.trim().split(/\s+/)[0] ?? '').split(',')) {
+        const [range, stepRaw] = part.split('/');
+        if (range === undefined) return undefined; // empty minute field
+        const step = stepRaw === undefined ? 1 : Number(stepRaw);
+        if (!Number.isInteger(step) || step < 1) return undefined; // unparsable minute field
+        let lo = 0;
+        let hi = 59;
+        if (range !== '*') {
+            const [a, b] = range.split('-');
+            lo = Number(a);
+            hi = b === undefined ? lo : Number(b);
+            if (!Number.isInteger(lo) || !Number.isInteger(hi) || lo < 0 || hi > 59) return undefined;
+        }
+        for (let m = lo; m <= hi; m += step) minutes.add(m);
+    }
+    if (minutes.size === 0) return undefined;
+    if (minutes.size === 1) return 60; // one minute per hour — trivially above the floor
+    const sorted = [...minutes].sort((x, y) => x - y);
+    // Wrap around the hour for the last entry: `58,4` fires every 6 minutes, not every 46+58.
+    const gaps = sorted.map((m, i) => {
+        if (i + 1 < sorted.length) return (sorted[i + 1] ?? 0) - m;
+        return 60 - m + (sorted[0] ?? 0);
+    });
+    return Math.min(...gaps);
+}
+
+/**
  * Escape one value interpolated into a rendered plist. A plist is XML, so an unescaped `&` (or a
  * stray `<`) in an environment value makes the whole artifact unparsable and `launchctl bootstrap`
  * refuses it — silently, from the operator's point of view, since the render itself succeeded.
@@ -96,13 +150,15 @@ async function readTemplate(fs: FileSystem, repo: string, file: string): Promise
 }
 
 /**
- * `kk schedule render <schedule> --platform launchd|cron [--repo <dir>]` — print the schedule
- * artifact for the named workflow, with the checkout it runs from bound as `{{repo}}`.
+ * `kk schedule render <schedule> --platform launchd|cron|grok-bot [--repo <dir>]` — print the
+ * schedule artifact for the named workflow, with the checkout it runs from bound as `{{repo}}`.
  *
  * The rendered text is the whole contract: kk never installs it, the operator does (README
- * §Schedule). An unknown schedule or platform fails loud — a typo must never render a partial
- * schedule — as does a known schedule on a platform it has no template for (`kk-serve` on cron).
- * Nothing is ever written or installed.
+ * §Schedule). For `grok-bot` the artifact is a Grok Bot routine definition the operator pastes
+ * into the Bot's routine editor — the same print-only contract, bound by ADR-044: only schedules
+ * that carry a grok-bot template (store-free, browser-free cloud work) render at all, and a
+ * schedule without one names the ADR in the refusal. An unknown schedule or platform fails loud —
+ * a typo must never render a partial schedule. Nothing is ever written or installed.
  */
 async function renderAction(schedule: string, options: RenderOptions): Promise<void> {
     try {
@@ -110,29 +166,74 @@ async function renderAction(schedule: string, options: RenderOptions): Promise<v
         if (templates === undefined) {
             throw new Error(`unknown schedule '${schedule}' (expected ${Object.keys(SCHEDULE_TEMPLATES).join('|')})`);
         }
-        if (options.platform !== 'launchd' && options.platform !== 'cron') {
-            throw new Error(`unknown platform '${options.platform}' (expected launchd|cron)`);
+        const isGrok = options.platform === 'grok-bot';
+        const isKnown = (SCHEDULE_PLATFORMS as readonly string[]).includes(options.platform);
+        if (!isKnown) {
+            throw new Error(`unknown platform '${options.platform}' (expected ${SCHEDULE_PLATFORMS.join('|')})`);
         }
-        const template = templates[options.platform];
+        if (!isGrok && (options.bot !== undefined || options.tz !== undefined || options.cron !== undefined)) {
+            throw new Error('--bot/--tz/--cron are only valid with --platform grok-bot');
+        }
+        const template = templates[options.platform as SchedulePlatform];
         if (template === undefined) {
+            if (isGrok) {
+                throw new Error(
+                    `schedule '${schedule}' has no grok-bot template — cloud routines run store-free, browser-free work only (ADR-044)`,
+                );
+            }
             throw new Error(
                 `schedule '${schedule}' has no ${options.platform} template (expected ${Object.keys(templates).join('|')})`,
             );
         }
         const repo = resolve(options.repo);
-        const rendered = await readTemplate(createNodeFileSystem(), repo, template);
-        consoleOutput.write(
-            rendered
-                .replaceAll(REPO_PLACEHOLDER, repo)
-                .replaceAll(HOME_PLACEHOLDER, homedir())
-                .replaceAll(TYPESAFE_API_KEY_PLACEHOLDER, xmlEscape(process.env.TYPESAFE_API_KEY ?? '')),
-        );
+        const rendered = isGrok
+            ? await renderGrokBody(options, template)
+            : await readTemplate(createNodeFileSystem(), repo, template);
+        const substitution = isGrok
+            ? rendered
+                  .replaceAll('{{bot}}', options.bot ?? '')
+                  .replaceAll('{{cron}}', options.cron ?? DEFAULT_GROK_CRON)
+                  .replaceAll('{{tz}}', options.tz || Intl.DateTimeFormat().resolvedOptions().timeZone)
+            : rendered
+                  .replaceAll(REPO_PLACEHOLDER, repo)
+                  .replaceAll(HOME_PLACEHOLDER, homedir())
+                  .replaceAll(TYPESAFE_API_KEY_PLACEHOLDER, xmlEscape(process.env.TYPESAFE_API_KEY ?? ''));
+        if (isGrok && substitution.includes('{{')) {
+            throw new Error(
+                'grok-bot routine left an unsubstituted placeholder — grok-bot templates may carry only {{bot}}, {{cron}}, {{tz}}',
+            );
+        }
+        consoleOutput.write(substitution);
     } catch (error) {
         const cause = error instanceof Error ? error.message : String(error);
         const message = `kk.schedule.render.failed: ${cause}`;
         consoleOutput.error(message);
         throw new CommanderError(1, 'kk.schedule.render.failed', message);
     }
+}
+
+/**
+ * Render the grok-bot body: `--bot` is required, and `--cron` must be 5 fields whose minute field
+ * never fires twice within 5 minutes (Grok Bot's routine interval floor).
+ */
+async function renderGrokBody(options: RenderOptions, template: string): Promise<string> {
+    if (!options.bot) {
+        throw new Error('--bot <name> is required for --platform grok-bot');
+    }
+    if (options.cron !== undefined) {
+        const fields = options.cron.trim().split(/\s+/);
+        const malformed = fields.length !== 5 || fields.some((field) => !/^[\d*,/-]+$/.test(field));
+        if (malformed) {
+            throw new Error(`--cron '${options.cron}' must be a 5-field cron expression`);
+        }
+        const gap = minuteGap(options.cron);
+        if (gap === undefined || gap < GROK_MIN_INTERVAL_MINUTES) {
+            throw new Error(
+                `--cron '${options.cron}' fires under ${GROK_MIN_INTERVAL_MINUTES} minutes apart — Grok Bot routines need a ${GROK_MIN_INTERVAL_MINUTES}-minute minimum gap`,
+            );
+        }
+    }
+    return await readTemplate(createNodeFileSystem(), resolve(options.repo), template);
 }
 
 /**
@@ -148,7 +249,10 @@ export function registerScheduleCommand(program: Command): void {
         .command('render')
         .description('Print the schedule artifact for a workflow (installing it is an operator action)')
         .argument('<schedule>', `Schedule name (${Object.keys(SCHEDULE_TEMPLATES).join('|')})`)
-        .requiredOption('--platform <platform>', 'Scheduling platform (launchd|cron)')
+        .requiredOption('--platform <platform>', `Scheduling platform (${SCHEDULE_PLATFORMS.join('|')})`)
         .option('--repo <dir>', 'Checkout the schedule runs from (absolute path in the artifact)', process.cwd())
+        .option('--bot <name>', 'Grok-bot only: the owning Bot (required for grok-bot)')
+        .option('--tz <iana>', 'Grok-bot only: the routine timezone (default: the rendering host zone)')
+        .option('--cron <expr>', `Grok-bot only: the routine cron expression (default '${DEFAULT_GROK_CRON}')`)
         .action(renderAction);
 }

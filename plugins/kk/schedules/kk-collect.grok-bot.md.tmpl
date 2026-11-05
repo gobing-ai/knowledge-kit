@@ -1,0 +1,69 @@
+# kk-collect — Grok Bot cloud routine
+
+Rendered by `kk schedule render kk-collect --platform grok-bot --bot {{bot}} [--tz {{tz}}] [--cron {{cron}}]`;
+kk never creates the routine. **Operator action:** paste this definition into the Grok Bot's routine
+editor (https://docs.x.ai/grok-bot/skills-routines-and-automations) and create it there.
+
+The cloud boundary is ADR-044 (`docs/00_ADR.md`): `kk.db` never leaves the Mac — this routine runs
+store-free, browser-free work only, and pushes its output to the `kk-cloud-sync` branch for the Mac
+to import.
+
+## Owner Bot
+
+{{bot}}
+
+## Schedule
+
+`{{cron}}` in `{{tz}}` (the routine's schedule must match this expression and timezone).
+
+## Inputs
+
+- The Bot needs `kk` and `spur` (sp-bot-bootstrap) in its checkout, plus the three source plugins'
+  credentials (`aihot`, `last30days`, `horizon`) provided as Bot secrets.
+- Push access to the `kk-cloud-sync` branch (the Bot's GitHub connector).
+- The fan-in source list below is copied from `plugins/kk/workflows/kk-collect.yaml:116-121` —
+  update the rendered routine whenever that file's source list changes (drift hazard).
+
+## Steps
+
+1. `stamp="$(date -u +%Y%m%dT%H%MZ)"` (UTC, `YYYYMMDDTHHMMZ` — the kk-collect stamp format).
+2. `kk stage collect-prepare "$stamp" 10 "AI news" 6` — the store-free prefix: writes only
+   `.works/kk-collect/<stamp>` and `.spur/runs/kk-collect/*`, touching no database.
+3. Fan-in the three sources (no `kk store` — the output file IS the artifact):
+   ```bash
+   work_dir="$(cat .spur/runs/kk-collect/work-dir.txt)"
+   kk executor fan-in \
+     --source "aihot-ingest:${work_dir}/10-ingest/source.json" \
+     --source "last30days-ingest:${work_dir}/10-ingest/last30days.json" \
+     --source "horizon-ingest:${work_dir}/10-ingest/horizon.json" \
+     --source-timeout-override "horizon-ingest:2700000" \
+     --out "sync/kk-collect/$stamp.json"
+   ```
+4. Commit `sync/kk-collect/$stamp.json` and push it to the `kk-cloud-sync` branch.
+
+## Expected result
+
+`sync/kk-collect/<stamp>.json` on `kk-cloud-sync`, a blended `Doc[]` from the three sources, with
+`<stamp>` equal to the run's UTC minute stamp.
+
+## Approval boundary
+
+Collect only — the routine never runs `kk store`, `kk store label`, a generator or a publisher, and
+it never installs anything itself; creating the routine in the Grok Bot is an explicit operator
+action. Publishing stays Mac-local under ADR-022's live-publish consent gate.
+
+## Missing / stale (ADR-044)
+
+| Situation | Behavior |
+| --------- | -------- |
+| Inputs or credentials missing at run time | print `no-content: <reason>` and exit with no side effects — in particular, no empty artifact is committed |
+| Artifact older than 26 h when the Mac imports | the Mac's `kk store ingest` ignores it (logged) |
+| Same artifact seen again | imported at most once — idempotent by the `cloud-<stamp>` run id |
+
+## Mac import
+
+```bash
+git fetch origin kk-cloud-sync
+git show origin/kk-cloud-sync:sync/kk-collect/<stamp>.json > /tmp/kk-collect-cloud.json
+kk store ingest --run cloud-<stamp> --in /tmp/kk-collect-cloud.json
+```

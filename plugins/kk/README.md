@@ -70,6 +70,13 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.gobing.kk-collect.pli
 crontab -l > /tmp/kk-collect.cron 2>/dev/null || :
 kk schedule render kk-collect --platform cron --repo "$PWD" >> /tmp/kk-collect.cron
 crontab /tmp/kk-collect.cron
+
+# Grok Bot cloud routine (ADR-044): prints a routine definition for the store-free kk-collect
+# prefix — the Bot owns preparation, the Mac owns the kk store. Paste the printed text into the
+# Bot's routine editor (creating the routine there is the operator action; kk never calls an API).
+# kk-serve and the publish3 windows are refused on grok-bot: they are store- or browser-bound.
+kk schedule render kk-collect --platform grok-bot --bot kk-cloud --tz "$TZ" \
+  | pbcopy   # then paste into the Bot's routine editor
 ```
 
 Both rendered artifacts set `PATH` themselves (`{{home}}/.bun/bin`, `/opt/homebrew/bin`,
