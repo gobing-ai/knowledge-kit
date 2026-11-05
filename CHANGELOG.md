@@ -82,6 +82,7 @@
 - docs(tasks): retarget 0330/0332 evidence citations at the durable verdict plane (aa300dd)
 - chore: merge 3b331a5 into main (4009dc9)
 - chore(deps): align bun.lock with the 0.1.11 package version released in 6badc5eb (e5d94f9)
+<!-- src: bun.lock:28 -->
 - chore(itc): satisfy the structure and lint gates for the new itc files (2c17480)
 - chore(itc): clear the biome warnings the new files introduced (02f4252)
 - docs(wrap): close out G15 runall batch 0329-0335 and record harness learnings (3b331a5)
