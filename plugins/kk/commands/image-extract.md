@@ -3,6 +3,7 @@ name: image-extract
 description: Extract a reusable style preset (and optionally draft a format preset) from 1-5 reference images, saved to ~/.config/kk/image-presets/ after confirmation.
 argument-hint: "--name <style-name> --ref <img> [--ref <img>…] [--emit-format <name> --job free|cover|illustration]  (max 5 refs)"
 allowed-tools: ["Skill"]
+requires: [cli:kk, cli:spur, local-fs]
 ---
 
 # image-extract

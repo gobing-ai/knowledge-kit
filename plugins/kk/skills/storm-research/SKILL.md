@@ -8,6 +8,7 @@ description: >-
   (prepare → ingest → generate → render) over the 0056 works layout. Research is separate from
   authoring: topic owns init→outline→draft and this skill never merges into topic.
 version: 0.1.0
+requires: [cli:kk, local-fs]
 ---
 
 # storm-research — STORM daily research (topic sentence XOR markdown file → content.md)

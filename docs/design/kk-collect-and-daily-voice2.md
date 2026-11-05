@@ -355,3 +355,33 @@ Retiring `kk-daily-ai-voice.yaml` is a separate follow-up change after P5 report
 
 Backfill of `.works/kk-daily-ai-voice/<date>/` JSON (I23); retention/pruning (I24); in-tool
 scheduler; engine critical-path scheduling.
+
+## 10. Grok Bot cloud routines (ADR-044, design — F81)
+
+The store stays on the Mac; Bot computers only prepare collection inputs. A routine runs the
+storage-free tail of collect (`kk executor fan-in --out`) with no `kk.db` access and no browser
+profile access, pushes the `Doc[].json` artifact to the frozen branch `kk-cloud-sync` at
+`sync/<schedule>/<stamp>.json` (`<stamp>` = `YYYYMMDDTHHMMZ`), and the Mac imports it on an
+operator cron.
+
+**Seam.**
+
+```
+Bot routine                      GitHub (kk-cloud-sync)              Mac (operator cron)
+kk executor fan-in               sync/kk-collect/<stamp>.json        git fetch
+  --out sync/kk-collect/…      →                                   →  kk store ingest
+                                      (Bot pushes via                          --run cloud-<stamp>
+                                       its connector)                           --in <file>
+```
+
+**Policy table (every rendered routine and the Mac cron carry this verbatim — ADR-044).**
+
+| Situation | Behavior |
+| --- | --- |
+| Inputs or credentials missing at run time | Routine prints `no-content: <reason>`, exits with no side effects |
+| Artifact older than 26 h at import | `kk store ingest` ignores it (logged) — the 26 h horizon digest fallback window (`kk-collect.yaml:110`) |
+| Same artifact seen again | Imported at most once, idempotent by `--run cloud-<stamp>` |
+
+Routine creation is chat-only (no documented Bot API): the rendered text handed to the operator by
+0343 (`kk schedule render --platform grok-bot`) is the paste-into-routine contract. Store-bound or
+browser-bound schedules refuse the grok-bot platform at render time, citing ADR-044.

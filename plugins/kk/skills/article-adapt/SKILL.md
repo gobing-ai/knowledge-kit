@@ -3,6 +3,7 @@ name: article-adapt
 # Description rules: front-load the leading identity phrase; one trigger per genuine
 # branch (collapse synonym triggers into one); never restate the body's identity line.
 description: This skill should be used when a kk-itc publish plan contains variants with adapt=true and per-variant Content files must be written — "adapt the article", "translate for the target profile", "write content.zh-article.json", or when a spur workflow agent.run step invokes kk:article-adapt. Translates title and body to the variant locale, applies the plan limits, and preserves code blocks, URLs and references; it holds no platform table.
+requires: [cli:kk, cli:spur, local-fs]
 ---
 
 # article-adapt

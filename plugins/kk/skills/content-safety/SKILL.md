@@ -1,6 +1,7 @@
 ---
 name: content-safety
 description: This skill should be used when a knowledge-kit pipeline or operator needs a content-safety / platform-admission review before publishing — "check this before publishing", "小宇宙/公众号/网易云/苹果播客 审核风险", "desensitize personal info", "verify disclosure and sourcing before publish". Detects admission risk per distribution platform, proposes honest revisions or exclusion, and escalates what it cannot verify. Quality scoring is content-judge's job.
+requires: [local-fs]
 ---
 
 # content-safety — pre-publication content-safety review

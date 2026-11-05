@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: Record kk store-locality decision for Grok Bot cloud routines
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-04T23:00:27.340Z
-updated_at: "2026-11-05T00:02:18.754Z"
+updated_at: "2026-11-05T03:29:36.298Z"
 feature_id: F81
 
 ac_altitude: task-local
 ac_numbering: task-local
 priority: P2
 estimate_hours: 2
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0341-verdict.json
 ---
 
 ## 0341. Record kk store-locality decision for Grok Bot cloud routines
@@ -35,24 +37,24 @@ Facts (verified 2026-11-04):
 
 ### Requirements
 
-- [ ] R1. Append `## ADR-044: Grok Bot cloud routines prepare inputs; the Mac owns the kk store` to `docs/00_ADR.md`, with Status (Accepted · 2026-11-04 · feature F81 · task 0341), Decision, Why, Rejected, Revisit-when and Detail. The decision has four points:
+- [x] R1. Append `## ADR-044: Grok Bot cloud routines prepare inputs; the Mac owns the kk store` to `docs/00_ADR.md`, with Status (Accepted · 2026-11-04 · feature F81 · task 0341), Decision, Why, Rejected, Revisit-when and Detail. The decision has four points:
   - (1) `kk.db` never moves to, syncs to, or is opened from a Bot computer.
   - (2) A cloud routine may run only store-free, browser-free work. Its output is a file artifact delivered through a git branch the Bot pushes via its GitHub connector. The frozen branch is `kk-cloud-sync` and the path is `sync/<schedule>/<stamp>.json`.
   - (3) The Mac imports that artifact with existing verbs: `kk store ingest --run cloud-<stamp> --in <file>` for collect output.
   - (4) Publishing and anything reading the store, the frozen bundle or browser profiles stays Mac-local, and ADR-022 is unchanged.
 
-- [ ] R2. The ADR names a missing/stale-input policy that every cloud render must carry:
+- [x] R2. The ADR names a missing/stale-input policy that every cloud render must carry:
   - The routine reports `no-content: <reason>` and exits without side effects when its inputs or credentials are missing.
   - The Mac import ignores (and logs) artifacts older than 26 h, matching the horizon digest fallback in `kk-collect.yaml:110`.
   - An artifact is imported at most once (idempotent by `--run cloud-<stamp>`).
 
-- [ ] R3. "Rejected" records the store-on-Bot option with its reasons: SQLite over sync/network storage, browser profiles being Keychain-bound, member packages being removed on recreate, and the 300 runs/hour shared cap. It also records sync of `kk.db` via git/iCloud.
+- [x] R3. "Rejected" records the store-on-Bot option with its reasons: SQLite over sync/network storage, browser profiles being Keychain-bound, member packages being removed on recreate, and the 300 runs/hour shared cap. It also records sync of `kk.db` via git/iCloud.
 
   "Revisit-when" is either a documented Grok Bot storage/API that guarantees single-writer POSIX locking, or kk adopting a server store.
 
-- [ ] R4. Add a "Grok Bot cloud routines" subsection to the owning design doc. To find the owner, run `rg -l "kk-collect" docs/design`; the expected owner is `docs/design/kk-collect-and-daily-voice2.md`. Pick the doc that owns collect/schedule and do not create a new one. The subsection holds the seam diagram (Bot `kk executor fan-in` → `kk-cloud-sync` → Mac `kk store ingest`) and the policy table from R2. Also add one line to `docs/03_ARCHITECTURE.md` at the schedule/collect mechanism pointing to ADR-044.
+- [x] R4. Add a "Grok Bot cloud routines" subsection to the owning design doc. To find the owner, run `rg -l "kk-collect" docs/design`; the expected owner is `docs/design/kk-collect-and-daily-voice2.md`. Pick the doc that owns collect/schedule and do not create a new one. The subsection holds the seam diagram (Bot `kk executor fan-in` → `kk-cloud-sync` → Mac `kk store ingest`) and the policy table from R2. Also add one line to `docs/03_ARCHITECTURE.md` at the schedule/collect mechanism pointing to ADR-044.
 
-- [ ] R5. Gates: `bun run lint` and `bun run spur-check` pass (doc-only; the link-check and rule gates cover the docs).
+- [x] R5. Gates: `bun run lint` and `bun run spur-check` pass (doc-only; the link-check and rule gates cover the docs).
 
 Out of scope:
 - any code;
@@ -141,22 +143,55 @@ Scenario: R3 — Store locality decision precedes cloud execution (R3)
 
 ### Plan
 
-- [ ] 1. Confirm the owning design doc and the ADR numbering (`grep -n "^## ADR-04" docs/00_ADR.md`).
-- [ ] 2. Write ADR-044 per R1–R3 (R1, R2, R3).
-- [ ] 3. Add the design subsection and the 03 pointer (R4).
-- [ ] 4. Run `bun run lint` and `bun run spur-check`; check `git status --short` (R5).
+- [x] 1. Confirm the owning design doc and the ADR numbering (`grep -n "^## ADR-04" docs/00_ADR.md`).
+- [x] 2. Write ADR-044 per R1–R3 (R1, R2, R3).
+- [x] 3. Add the design subsection and the 03 pointer (R4).
+- [x] 4. Run `bun run lint` and `bun run spur-check`; check `git status --short` (R5).
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+- `docs/00_ADR.md` — appended `## ADR-044: Grok Bot cloud routines prepare inputs; the Mac owns the kk store` after ADR-043: Status (Accepted · 2026-11-04 · F81 · task 0341), four decision points, the missing/stale-input policy table (`no-content: <reason>` / 26 h staleness / once-only import by `cloud-<stamp>`), Rejected (store-on-Bot: SQLite-over-network, Keychain-bound browser profiles, ephemeral member packages, shared 300/h cap; and store sync via git/iCloud), Revisit-when, and the Detail cross-references.
+- `docs/design/kk-collect-and-daily-voice2.md` — new `## 10. Grok Bot cloud routines (ADR-044, design — F81)`: seam diagram (Bot `kk executor fan-in` → `kk-cloud-sync` → Mac `kk store ingest`), the policy table, the chat-only routine-creation note and the render-refusal contract for 0343.
+- `docs/03_ARCHITECTURE.md` — one pointer (three lines) at the Pipeline model DAG paragraph: store handoff follows the file-seam pattern, everything store/browser-bound stays Mac-side, cross-references ADR-044 and design §10.
+
+Rationale: documentation-only decision (mutationPolicy: none). The seam reuses the existing fan-in/ingest file contract at `plugins/kk/workflows/kk-collect.yaml:96-102` — zero new verbs, per the task's frozen Design.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | docs/00_ADR.md:1602 ADR-044 heading; :1606-1613 decision points 1-4 incl. branch `kk-cloud-sync` and `sync/<schedule>/<stamp>.json`; :1613 ADR-022 unchanged |
+| R2 | MET | docs/00_ADR.md:1615-1619 policy table: `no-content: <reason>` no-side-effect exit; >26 h ignored matching kk-collect.yaml:110; once-only import by `--run cloud-<stamp>` |
+| R3 | MET | docs/00_ADR.md:1621-1628 Rejected store-on-Bot (SQLite over network, Keychain-bound profiles, ephemeral member packages, shared 300/h cap) plus kk.db sync via git/iCloud; :1629 Revisit-when condition |
+| R4 | MET | docs/design/kk-collect-and-daily-voice2.md:359 design section 10 with seam diagram + policy table; docs/03_ARCHITECTURE.md:147 Pipeline-model pointer to ADR-044 and design section 10 |
+| R5 | MET | command: `bun run lint` exit 0; `spur task gate 0341 run` quality gate PASS receipt .spur/run/0341-check-receipt.json tree 736ebb9563f0c3ac3e8a536defa5b12e0a614cc6; `spur task gate 0341 status` → {"reuse":true,"reason":"ok"} |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — ADR-044 records the decision completely (req: R1, R3) | MET | command | command `grep -n "kk-cloud-sync" docs/00_ADR.md` → hits at docs/00_ADR.md:1609 (branch + path + stamp format) and :1621-1629 (Rejected + Revisit-when present; see also :1602 heading) |
+| AC2 — Missing/stale policy is explicit (req: R2) | MET | command | command `grep -nE "no-content: <reason>" docs/00_ADR.md` → docs/00_ADR.md:1617; `grep -n "26 h"` → :1618 (26 h bound); `grep -nE "cloud-<stamp>"` → :1619 (once-only import) |
+| AC3 — Design and architecture point to the decision (req: R4) | MET | command | command `grep -n "ADR-044" docs/03_ARCHITECTURE.md` → docs/03_ARCHITECTURE.md:147; `grep -n "^## 10\. Grok Bot cloud routines" docs/design/kk-collect-and-daily-voice2.md` → docs/design/kk-collect-and-daily-voice2.md:359 |
+| AC4 — Gates pass (req: R5) | MET | command | `spur task gate 0341 run` PASS at tree 736ebb95 (receipt reuse confirmed via status) |
+| R3 — Store locality decision precedes cloud execution (R3) | MET | command | ADR dated 2026-11-04 accepted before task 0343; command `grep -n "0343" docs/00_ADR.md` → docs/00_ADR.md:1631 Detail render-refusal contract; design section 10 refusal clause (docs/design/kk-collect-and-daily-voice2.md:388) |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- Review of run 22ff1d8f (host driver, review lane): full diff review + `spur task verdict 0341 --from-answer`. -->
+
+Confidence: HIGH
+
+| Priority | Finding | Disposition |
+| -------- | ------- | ----------- |
+| P4 | Policy-table numbers (26 h horizon, 300/h cap) rest on task Background facts verified 2026-11-04 — re-verify verbatim text when 0343 encodes them into `kk schedule render` | closed: covered by task 0343 Detail render-refusal contract |
+
+No open P1–P3 findings (docs-only change: ADR-044 at docs/00_ADR.md:1602-1631, design §10 at docs/design/kk-collect-and-daily-voice2.md:359, architecture pointer at docs/03_ARCHITECTURE.md:147). Residual risk: none — no source, runtime, or config behavior touched.
+
+Verdict: PASS
 
 ### References
 
@@ -171,4 +206,7 @@ Scenario: R3 — Store locality decision precedes cloud execution (R3)
 
 - 2026-11-04T23:03:30.711Z feature_id Q → F81 (system)
 - 2026-11-04T23:41:01.778Z backlog → todo (system)
+- 2026-11-05T00:57:42.306Z todo → wip (system)
+- 2026-11-05T03:29:28.635Z wip → testing (system)
+- 2026-11-05T03:29:36.288Z testing → done (system)
 

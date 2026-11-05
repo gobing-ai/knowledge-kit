@@ -143,6 +143,9 @@ kk designs around: one action per node, no back-edges (loops → nested state-ma
 `spur workflow run`), fail-fast on any node failure, wave-level waiting (a successor waits for
 its wave's slowest node), and last-writer-wins `setVars` — DAG nodes pass data by files under
 `work_dir`. First user: `kk-daily-ai-voice2` (`docs/design/kk-collect-and-daily-voice2.md`).
+Store handoff for Grok Bot cloud routines follows the same file-seam pattern and stays
+Mac-side for everything store- or browser-bound — see ADR-044; seam and policy:
+`docs/design/kk-collect-and-daily-voice2.md` §10.
 
 **Voice2 episode speech (ADR-034, design).** `dailyGenerate` today sends the whole wrap-docs document to one voice-driver job and skips when `metadata.qc.passed` is true (`plugins/kk/scripts/daily-stages.ts`). Voice2 will instead group the already-written VoiceScript into an opening, one section per spoken item, and a closing, synthesize one request per section, and join those files before the existing intro step. The intro sting, the 15–20 minute duration check, and publish-prep's read of `mp3Path ?? audioPath` stay where they are. Concurrency above 1 is not a DAG wave: ADR-019 and ADR-031 keep fan-out inside `kk`, and this delivery runs one section at a time. The five-argument generate command stays the one-shot path, so voice1's workflow file and its one-request behavior stay put. Shapes: `docs/design/segmented-episode-speech.md`.
 

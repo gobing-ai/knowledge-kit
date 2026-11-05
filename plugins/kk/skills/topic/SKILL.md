@@ -7,6 +7,7 @@ description: >-
   Runs the topic-core authoring loop (init → outline → draft) through four
   operations with explicit operator gates and safe resume. knowledge-kit's
   cohesive topic-authoring core, harvested from the WT 7-stage wrappers.
+requires: [cli:kk, cli:spur, local-fs]
 ---
 
 # topic — topic-core authoring (create | init | outline | draft)

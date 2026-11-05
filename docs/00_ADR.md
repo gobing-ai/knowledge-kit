@@ -1596,3 +1596,36 @@ channel must be a preset edit instead of a four-place workflow edit.
 §publish-matrix stages; `docs/design/kk-daily-ai-voice3.md` §2, §5a, §8. Extends ADR-021/ADR-022 to the
 daily pipeline and generalizes ADR-040's preset idea beyond ITC; surface stays `kk stage run
 publish-matrix-*`, so ADR-037's noun inventory is unchanged.
+
+---
+
+## ADR-044: Grok Bot cloud routines prepare inputs; the Mac owns the kk store
+
+**Status:** Accepted · **Date:** 2026-11-04 · **Feature:** F81 · **Task:** 0341 (decided before task 0343 ships any cloud execution code)
+
+**Decision.** Four points, frozen for every Grok Bot routine rendered or run:
+
+1. **`kk.db` never moves.** The store does not sync to, copy to, or open from a Bot computer — not via git, iCloud, smb, or any future channel. The Mac owns the store; the Bot owns preparation.
+2. **Cloud routines run store-free and browser-free.** A Bot routine may execute only collection-input work that touches no database and no browser profile. Its output is a file artifact pushed by the Bot's GitHub connector to the frozen branch `kk-cloud-sync` at the path `sync/<schedule>/<stamp>.json` (`<stamp>` is `YYYYMMDDTHHMMZ`, the kk-collect stamp format).
+3. **The Mac imports through existing verbs.** The Mac-side import is `kk store ingest --run cloud-<stamp> --in <file>` after a `git fetch` of `kk-cloud-sync` — typically an operator cron. No new sync verb is added; the collect fan-in seam (`kk executor fan-in --out <Doc[].json>` → `kk store ingest --in`) already splits storage-free collection from the store (`plugins/kk/workflows/kk-collect.yaml:96-102`).
+4. **Publishing stays Mac-local.** Anything reading the store, the frozen bundle (ADR-043), or browser profiles (`~/.config/kk/browser-profiles/`, Keychain-bound per ADR-042) runs on the Mac only. ADR-022's live-publish consent gate is unchanged and applies to the Mac exactly as before.
+
+**Missing/stale-input policy (every cloud render must carry it verbatim).**
+
+| Situation | Behavior |
+| --- | --- |
+| Inputs or credentials missing at run time | Routine prints `no-content: <reason>` and exits with no side effects |
+| Artifact older than 26 h when the Mac imports | `kk store ingest` ignores it (logged), matching the 26 h horizon digest fallback in `kk-collect.yaml:110` |
+| Same artifact seen again | Imported at most once — idempotency by the `--run cloud-<stamp>` run id (`<stamp>` differs per routine run) |
+
+**Rejected.** Running the store on the Bot:
+
+- **SQLite over sync/network storage is unsafe.** SQLite's own guidance: locking is unreliable on network filesystems, and copying a live WAL database risks corruption (https://www.sqlite.org/useovernet.html, https://www.sqlite.org/howtocorrupt.html §1.2). Syncing `kk.db` (WAL) via git/iCloud is this same failure, at the file's pace.
+- **Browser profiles cannot move.** Chromium cookie encryption is Keychain-bound and "do not survive a machine move reliably" (ADR-042 migration note) — publish channels are Mac-bound regardless of storage.
+- **Bot computers are ephemeral-by-configuration.** Member-installed packages are removed on recreate (https://docs.x.ai/grok-bot/computers) — a durable disk does not mean durable tooling.
+- **Rate budget is shared.** Routines share 200 runs/hour/routine and 300/hour across the account (https://docs.x.ai/grok-bot/skills-routines-and-automations) — a schedule wall that store-bound Mac work does not currently face.
+- **Syncing `kk.db` via git/iCloud** is rejected by the same means and reasons as point (1).
+
+**Revisit-when.** Either a documented Grok Bot storage surface with single-writer POSIX locking guarantees (a documented API, not marketing copy), or kk adopting a server-side store — whichever arrives first reopens this decision; until then the Bot stays store-free.
+
+**Detail:** `docs/03_ARCHITECTURE.md` §Pipeline model (DAG workflows paragraph points here); seam and policy table: `docs/design/kk-collect-and-daily-voice2.md` §10. Downstream render contract: task 0343 (`kk schedule render --platform grok-bot` encodes this policy verbatim and refuses store- or browser-bound schedules, citing this ADR).

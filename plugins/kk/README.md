@@ -28,6 +28,17 @@ Capability files **omit a leading `kk-`**. `superskill install` prefixes the plu
 `storm-research`, `itc-generating`, `explain-things` (via `/tell-me`), and `/workflow-run`. Product workflow YAML (`kk-storm-research.yaml`)
 keeps its existing name — that is a workflow stem, not an installable agent capability.
 
+### Grok Bot
+
+Install: `superskill install kk --targets grok-bot --bot-provides cli:kk --bot-provides local-fs`.
+Add `--bot-provides cli:spur` when the Bot ran the spur bootstrap.
+
+Each skill and command declares a `requires:` list (`hooks`, `subagents`, `local-fs`, `cli:<name>`)
+so the install ships only entries the Bot can run; the guard test is
+`plugins/kk/tests/runtime-requires.test.ts`. Which kk work may actually run in the cloud is decided
+by ADR-044 (`docs/00_ADR.md`): cloud Grok Bot routines are store-free and browser-free —
+anything touching `kk.db` or a browser profile stays Mac-side.
+
 ## Schedule
 
 `spur serve` **hosts the scheduler**: the `.spur/config.yaml` `bootstrap.scheduler` jobs (the daily

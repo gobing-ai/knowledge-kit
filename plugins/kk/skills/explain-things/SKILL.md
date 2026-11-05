@@ -7,6 +7,7 @@ description: >-
   "how does X work", "ELI5", "like I'm 5", or "show me". Normal explanations are
   concise inline views; the ELI5 register is opt-in. This is not for content authoring,
   research, judging, publishing, or package/code review workflows.
+requires: [local-fs]
 ---
 
 # explain-things

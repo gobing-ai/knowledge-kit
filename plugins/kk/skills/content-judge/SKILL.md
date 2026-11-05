@@ -2,6 +2,7 @@
 name: content-judge
 description: This skill should be used when an LLM evaluation gate is needed in a knowledge-kit pipeline — "judge this content", "evaluate against rubric", "quality gate before publish", "check technical accuracy", "review brand tone", "compliance check", or when a spur workflow step of type `agent.run` targets the content-judge skill to emit a PASS/FAIL/NEEDS_REVISION verdict. Centralizes evaluation rubrics, prompt templates, and structured verdict emission for generated Content.
 version: 0.1.0
+requires: [cli:kk, cli:spur, local-fs]
 ---
 
 # content-judge — LLM-as-judge evaluation skill

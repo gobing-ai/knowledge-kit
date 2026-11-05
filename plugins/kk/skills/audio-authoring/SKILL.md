@@ -6,6 +6,7 @@ description: >-
   "outline options for audio", "author a VoiceScript", "revise the script".
   Runs briefing → outline → script with explicit operator gates; solo mode
   ships first, dialogue/interview/narration are named extension points.
+requires: [local-fs]
 ---
 
 # audio-authoring — spoken-audio authoring (create | briefing | outline | script)

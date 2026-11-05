@@ -6,6 +6,7 @@ description: >-
   this saved audit", "explain these SEO findings", or "check GEO readiness". Read-only results: no
   site mutation, no ranking and no citation promises.
 version: 0.1.0
+requires: [cli:kk, cli:spur, local-fs]
 ---
 
 # smart-seo — evidence-grounded SEO/GEO audits

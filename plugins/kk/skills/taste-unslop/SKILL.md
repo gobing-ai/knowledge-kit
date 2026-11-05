@@ -5,6 +5,7 @@ description: >-
   voice and substance — "make this sound human", "remove the AI tells", "audit this
   copy for canned patterns", "restore my voice after AI editing". Not for code,
   translation-only work, or proofreading that must preserve style.
+requires: [local-fs]
 ---
 
 # taste-unslop
