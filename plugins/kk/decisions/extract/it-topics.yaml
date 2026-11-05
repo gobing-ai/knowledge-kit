@@ -1,0 +1,24 @@
+# it-topics topic profile — general IT article pool for kk-itc collected topics.
+#
+# Modeled on ai-news.yaml (task 0210 R1): the pool for `kk itc candidates --profile it-topics`
+# is every labelled item with a substantive body, most time-sensitive first — not AI-scoped,
+# so category is NOT gated and the pool admits the whole `kk-item-category` taxonomy
+# (ai-* and non-ai alike: general IT/tech articles draw from both).
+#
+# Keys are decision ids from the sibling catalog (plugins/kk/decisions/kk-items.yaml);
+# an unknown key or decision id fails loud with `kk.store.profile.invalid`.
+# `limit` is omitted: the compiler's episode-cap default (20) applies unless
+# `kk itc candidates --limit` overrides it.
+topic: it-topics
+where:
+  # quality/importance 2, not 3: real ingest bodies (last30days/aihot summaries) are stub-length,
+  # so the heuristic labeler tops out at 1-2 and a gte-3 gate empties real pools (task 0212
+  # dogfood finding). Pool selection stays lenient here; any stricter cutoff belongs downstream.
+  kk-item-quality: { gte: 2 }
+  # importance stays in as its own gate with the same 2 floor: an unjudged item stays excluded
+  # (fail-closed INNER join on `labels_current`).
+  kk-item-importance: { gte: 2 }
+  # Same conservative moderation gate as ai-news (task 0229 R5): political-system items never
+  # become article topics without explicit operator review.
+  kk-item-china-politics: { lte: 1 }
+order: [kk-item-urgency desc, kk-item-impact desc, first_seen_at desc]

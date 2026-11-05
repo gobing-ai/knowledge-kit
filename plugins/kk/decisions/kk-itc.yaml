@@ -16,6 +16,8 @@ decisions:
             a: Candidate slot a is the strongest and most cohesive technical article topic.
             b: Candidate slot b is the strongest and most cohesive technical article topic.
             c: Candidate slot c is the strongest and most cohesive technical article topic.
+            d: Candidate slot d is the strongest and most cohesive technical article topic.
+            e: Candidate slot e is the strongest and most cohesive technical article topic.
             defer: Candidates are insufficient, contradictory, or need explicit operator review.
         fallback: defer
 

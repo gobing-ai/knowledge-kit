@@ -228,7 +228,7 @@ an *intake* snapshot (`status: intake`, `workDir: null`). Choose the topic in a 
 dir, then finalize:
 
 1. `kk stage run itc-topic-extract --request` `{parentRunId, intakeDir, topicProfile}` → the pool.
-2. The agent writes `$intakeDir/topic-candidates.json` (≤3 candidates `a|b|c` with
+2. The agent (or `kk itc candidates`) writes `$intakeDir/topic-candidates.json` (≤5 candidates `a|b|c` up to `d|e` with
    `title`/`reason`/`itemIds` from the pool); `kk stage run itc-topic-validate --request`
    `{parentRunId, intakeDir}` must pass.
 3. `kk stage run itc-decision --topic "$intakeDir" "$RUN_ID"` prints the chosen id or `defer`.

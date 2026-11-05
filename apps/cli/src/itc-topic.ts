@@ -172,7 +172,7 @@ export async function itcTopicExtract(
 // ---------------------------------------------------------------------------
 
 export const ItcTopicCandidateSchema = z.object({
-    id: z.enum(['a', 'b', 'c']),
+    id: z.enum(['a', 'b', 'c', 'd', 'e']),
     title: z.string().min(1).max(200),
     reason: z.string().min(1).max(1000),
     itemIds: z.array(z.string().min(1)).min(1),
@@ -182,12 +182,12 @@ export const ItcTopicCandidateSchema = z.object({
 /** Parsed topic candidate. */
 export type ItcTopicCandidate = z.infer<typeof ItcTopicCandidateSchema>;
 
-/** Schema of `topic-candidates.json`: up to three candidates bound to the pool digest. */
+/** Schema of `topic-candidates.json`: up to five candidates bound to the pool digest. */
 export const ItcTopicCandidatesArtifactSchema = z.object({
     schemaVersion: z.literal(1).default(1),
     parentRunId: z.string().min(1),
     poolDigest: z.string().min(1),
-    candidates: z.array(ItcTopicCandidateSchema).min(1).max(3),
+    candidates: z.array(ItcTopicCandidateSchema).min(1).max(5),
 });
 
 /** Parsed topic candidates artifact. */
@@ -285,7 +285,7 @@ export const ItcTopicSelectRequestSchema = z.object({
     schemaVersion: z.literal(1).default(1),
     intakeDir: z.string().min(1),
     parentRunId: z.string().min(1),
-    selectedCandidateId: z.enum(['a', 'b', 'c']),
+    selectedCandidateId: z.enum(['a', 'b', 'c', 'd', 'e']),
     dbPath: z.string().optional(),
 });
 
