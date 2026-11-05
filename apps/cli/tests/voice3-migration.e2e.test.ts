@@ -368,9 +368,31 @@ function makeFixture(caseName: string): Fixture {
     symlinkSync(MIGRATION_PRESET, join(presetDir, 'daily-ai-voice-migration.json'));
     // Decision catalog: absolute path, because the fixture root is not the repo root.
     mkdirSync(join(root, '.spur'), { recursive: true });
+    // agent.executors must live HERE, not in the machine's ~/.config/spur: `agent: inline` +
+    // `role:` agent.run nodes resolve role → tier → executor roster, and on a headless CI box
+    // no global config layer exists — without this block the primary dispatch fails silently
+    // (onError: continue) and its reviewer-tier retry fails the run loudly. The executor
+    // agents are the PATH stubs written below, so resolution dispatches to them on any host.
     writeFileSync(
         join(root, '.spur', 'config.yaml'),
-        `decisions:\n  paths:\n    - ${join(REPO, 'plugins/kk/decisions')}\n`,
+        [
+            'agent:',
+            '  roles:',
+            '    scribe: { tier: cheap, stages: [changelog] }',
+            '    coder: { tier: standard, stages: [implement, test, wrap] }',
+            '    reviewer: { tier: capable-1, stages: [verify, review, dogfood] }',
+            '    planner: { tier: capable-2, stages: [plan, refine, brainstorm] }',
+            '  executors:',
+            '    - name: stub-scribe',
+            '      agent: pi',
+            '      model: stub/model-1',
+            '      tier: cheap',
+            '    - name: stub-reviewer',
+            '      agent: claude',
+            '      model: stub/model-1',
+            '      tier: capable-1',
+            `decisions:\n  paths:\n    - ${join(REPO, 'plugins/kk/decisions')}\n`,
+        ].join('\n'),
     );
     writeRssFeed(fx_feedPath(root), GUID_FULL);
     writeFileSync(join(root, 'agents.log'), '');
