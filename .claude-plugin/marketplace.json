@@ -6,7 +6,7 @@
     },
     "plugins": [
         {
-            "version": "0.1.11",
+            "version": "0.1.12",
             "name": "kk",
             "source": "./plugins/kk",
             "description": "knowledge-kit — a set of toolkit for knowledge management"
