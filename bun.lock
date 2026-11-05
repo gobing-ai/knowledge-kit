@@ -25,7 +25,7 @@
     },
     "apps/cli": {
       "name": "@gobing-ai/knowledge-kit",
-      "version": "0.1.4",
+      "version": "0.1.11",
       "bin": {
         "kk": "./dist/index.js",
         "knowledge-kit": "./dist/index.js",
