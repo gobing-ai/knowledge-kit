@@ -58,6 +58,7 @@ describe('kk main exit seam', () => {
             expect(out).toContain('bot');
             expect(out).toContain('daily');
             expect(out).toContain('executor');
+            expect(out).toContain('itc');
             expect(out).toContain('plugin');
             expect(out).toContain('stage');
             expect(out).toContain('store');
@@ -73,6 +74,7 @@ describe('kk main exit seam', () => {
                 'daily',
                 'executor',
                 'help',
+                'itc',
                 'ledger',
                 'lock',
                 'plugin',
@@ -209,6 +211,7 @@ describe('kk command tree shape (0275 AC1 — A22 R1)', () => {
             'executor fan-in',
             'executor fan-out',
             'executor run',
+            'itc candidates',
             'ledger append',
             'ledger cutover-check',
             'ledger sync',
