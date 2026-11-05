@@ -1,4 +1,3 @@
-import { realpath } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 
@@ -17,17 +16,15 @@ export async function findPackageRoot(fs: FileSystem, start: string): Promise<st
 }
 
 /**
- * The runtime script's directory through its real path (the packed CLI's `dist/index.js` sits
- * inside the installed package; under bun test it is the test file inside this checkout). Falls
- * back to the cwd when argv[1] is absent or unrealpathable (embedded callers may pass a bare
- * `['node', 'kk', …]` argv).
+ * The runtime script's directory (the packed CLI's `dist/index.js` sits inside the installed
+ * package; under bun test it is the test file inside this checkout). No filesystem call needed:
+ * Bun already resolves a symlinked `bin` entry to its real script path in `argv[1]`. Falls back
+ * to the cwd when argv[1] is absent (embedded callers may pass a bare `['node', 'kk', …]` argv).
  */
-async function scriptDir(): Promise<string> {
-    try {
-        return dirname(await realpath(process.argv[1] ?? ''));
-    } catch {
-        return process.cwd();
-    }
+function scriptDir(): string {
+    const entry = process.argv[1];
+    if (entry === undefined || entry.trim() === '') return process.cwd();
+    return dirname(resolve(entry));
 }
 
 /**
@@ -46,7 +43,7 @@ export async function resolvePackageRoot(
 ): Promise<string> {
     return (
         (await findPackageRoot(fs, process.cwd())) ??
-        (await findPackageRoot(fs, scriptRoot ?? (await scriptDir()))) ??
+        (await findPackageRoot(fs, scriptRoot ?? scriptDir())) ??
         process.cwd()
     );
 }

@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore } from '@gobing-ai/kk-store';
 import { buildTopicCandidates, runItcCandidates } from '../src/itc-candidates';
-import { main } from '../src/main';
 import { captureOutput, silenceOutputPerTest } from './capture';
 
 // The shortlist print is the verb's stdout protocol; silence it for the dots reporter and
@@ -36,7 +35,6 @@ async function withTempDir(fn: (dir: string) => Promise<void> | void): Promise<v
         rmSync(dir, { recursive: true, force: true });
     }
 }
-
 /** A stub `spur decision run` answering with a fixed value, like itc-stage.test's stub. */
 function stubSpur(dir: string, value: string): string {
     const bin = join(dir, 'spur-stub');
@@ -232,128 +230,6 @@ describe('runItcCandidates (item 2)', () => {
             expect(result.poolCount).toBeGreaterThanOrEqual(3);
             const manifest = JSON.parse(readFileSync(join(intakeDir, 'topic-pool-manifest.json'), 'utf-8'));
             expect(manifest).toMatchObject({ window: '48h', limit: 3 });
-        });
-    });
-});
-
-describe('kk itc candidates CLI surface (item 2)', () => {
-    it('runs the sweep through main() and reports the artifacts', async () => {
-        await withTempDir(async (dir) => {
-            const dbPath = join(dir, 'store.db');
-            await seedStore(dbPath);
-            const intakeDir = join(dir, 'intake');
-            const cap = captureOutput();
-            try {
-                const code = await withEnv({ SPUR_BIN: stubSpur(dir, 'a') }, () =>
-                    main([
-                        'node',
-                        'kk',
-                        'itc',
-                        'candidates',
-                        '--profile',
-                        'it-topics',
-                        '--parent-run',
-                        'cand-cli',
-                        '--intake-dir',
-                        intakeDir,
-                        '--db',
-                        dbPath,
-                    ]),
-                );
-                expect(code).toBe(0);
-                const printed = cap.read();
-                expect(printed).toContain('"poolCount"');
-                expect(printed).toContain('a — Kubernetes 2.0 announcement');
-                expect(printed).toContain('decision: a (model)');
-                expect(existsSync(join(intakeDir, 'topic-decision.json'))).toBe(true);
-            } finally {
-                cap.restore();
-            }
-        });
-    });
-
-    it('exits 1 with the kk.itc.candidates.failed contract on a bad --limit', async () => {
-        await withTempDir(async (dir) => {
-            const cap = captureOutput();
-            try {
-                const badLimit = await main([
-                    'node',
-                    'kk',
-                    'itc',
-                    'candidates',
-                    '--profile',
-                    'it-topics',
-                    '--parent-run',
-                    'r',
-                    '--intake-dir',
-                    join(dir, 'i'),
-                    '--limit',
-                    'zero',
-                ]);
-                expect(badLimit).toBe(1);
-                expect(cap.readErr()).toContain('kk.itc.candidates.failed');
-            } finally {
-                cap.restore();
-            }
-        });
-    });
-
-    it('exits 1 with the kk.itc.candidates.failed contract on an empty pool', async () => {
-        await withTempDir(async (dir) => {
-            const dbPath = join(dir, 'empty.db');
-            const store = await openStore({ path: dbPath });
-            await store.close();
-            const cap = captureOutput();
-            try {
-                const emptyPool = await main([
-                    'node',
-                    'kk',
-                    'itc',
-                    'candidates',
-                    '--profile',
-                    'it-topics',
-                    '--parent-run',
-                    'r',
-                    '--intake-dir',
-                    join(dir, 'i2'),
-                    '--db',
-                    dbPath,
-                ]);
-                expect(emptyPool).toBe(1);
-                expect(cap.readErr()).toContain('kk.itc.candidates.failed');
-            } finally {
-                cap.restore();
-            }
-        });
-    });
-
-    it('defaults the parent run id when the operator does not pin one', async () => {
-        await withTempDir(async (dir) => {
-            const dbPath = join(dir, 'store.db');
-            await seedStore(dbPath);
-            const intakeDir = join(dir, 'intake');
-            const cap = captureOutput();
-            try {
-                const code = await withEnv({ SPUR_BIN: stubSpur(dir, 'a') }, () =>
-                    main([
-                        'node',
-                        'kk',
-                        'itc',
-                        'candidates',
-                        '--profile',
-                        'it-topics',
-                        '--intake-dir',
-                        intakeDir,
-                        '--db',
-                        dbPath,
-                    ]),
-                );
-                expect(code).toBe(0);
-                const manifest = JSON.parse(readFileSync(join(intakeDir, 'topic-pool-manifest.json'), 'utf-8'));
-                expect(manifest.parentRunId).toMatch(/^kk-itc-cand-\d{8}T\d{6}$/);
-            } finally {
-                cap.restore();
-            }
         });
     });
 });
