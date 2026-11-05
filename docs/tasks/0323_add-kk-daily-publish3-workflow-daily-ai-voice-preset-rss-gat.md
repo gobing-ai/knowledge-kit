@@ -4,7 +4,7 @@ name: Add kk-daily-publish3 workflow, daily-ai-voice preset, RSS gate, diagnose 
 status: done
 template: feature-impl
 created_at: 2026-10-22T18:41:31.940Z
-updated_at: "2026-10-25T04:35:35.996Z"
+updated_at: "2026-11-05T08:24:05.511Z"
 feature_id: G15
 
 dependencies: ["0321", "0322", "0325", "0326"]
@@ -152,10 +152,10 @@ publish3 is the publish half of voice3 (design `docs/design/kk-daily-ai-voice3.m
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Dummy mode exercises the full publish path without spawning plugins (req: R1, R7) | MET | test | `apps/cli/tests/kk-daily-publish3.test.ts:244` |
-| AC2 — Windows select disjoint target sets and never resend (req: R1, R2, R6) | MET | test | `apps/cli/tests/kk-daily-publish3.test.ts:276`, `apps/cli/tests/kk-daily-publish3.test.ts:244` |
-| AC3 — The overseas window is gated on the podcast RSS feed (req: R3, R4) | MET | test | `apps/cli/tests/kk-daily-publish3.test.ts:296`, `apps/cli/tests/publish-matrix.test.ts:583`, `apps/cli/tests/publish-matrix.test.ts:639` |
-| AC4 — Live publishing remains launch-only (req: R1, R5) | MET | test | `apps/cli/tests/kk-daily-publish3.test.ts:319` no live mode in YAML; `plugins/kk/workflows/kk-daily-publish3.yaml:102` send-confirm pause; `plugins/kk/schedules/kk-daily-publish3-cn-peak.cron.tmpl:1` |
+| AC1 — Dummy mode exercises the full publish path without spawning plugins (req: R1, R7) | MET | test | `apps/cli/tests/kk-daily-publish3.test.ts:244`; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
+| AC2 — Windows select disjoint target sets and never resend (req: R1, R2, R6) | MET | test | `apps/cli/tests/kk-daily-publish3.test.ts:276`, `apps/cli/tests/kk-daily-publish3.test.ts:244`; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
+| AC3 — The overseas window is gated on the podcast RSS feed (req: R3, R4) | MET | test | `apps/cli/tests/kk-daily-publish3.test.ts:296`, `apps/cli/tests/publish-matrix.test.ts:583`, `apps/cli/tests/publish-matrix.test.ts:639`; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
+| AC4 — Live publishing remains launch-only (req: R1, R5) | MET | test | `apps/cli/tests/kk-daily-publish3.test.ts:319` no live mode in YAML; `plugins/kk/workflows/kk-daily-publish3.yaml:102` send-confirm pause; `plugins/kk/schedules/kk-daily-publish3-cn-peak.cron.tmpl:1`; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

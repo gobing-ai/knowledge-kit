@@ -2,11 +2,11 @@
 schema_version: 1
 id: "G15"
 name: "Daily AI Voice v3: split generate and publish, preset-driven channel matrix"
-status: active
+status: done
 priority: P2
 tags: []
 created_at: "2026-10-22T18:40:58.202Z"
-updated_at: "2026-10-26T00:11:49.574Z"
+updated_at: "2026-11-05T08:27:21.806Z"
 ---
 
 # G15: Daily AI Voice v3: split generate and publish, preset-driven channel matrix
@@ -165,13 +165,13 @@ Feature: Daily AI Voice v3: split generate and publish, preset-driven channel ma
 | 0325 | Derive session-preflight probes from the enabled publish targets | done |
 | 0326 | Split publish-classify --fold-tail into classify, mark-published and report nodes | done |
 | 0327 | Move daily channel copy shaping out of daily-stages.ts into a generate-side social-write stage | done |
-| 0329 | Repair voice3 generation closure, pool routing and complete episode bundles | todo |
-| 0330 | Enforce operation-specific draft and live boundaries for matrix publishing | todo |
-| 0331 | Carry reviewed variant safety and platform exclusions through the voice3 bundle | todo |
-| 0332 | Bind matrix receipts, links and RSS proof to the current bundle revision | todo |
-| 0333 | Make publish3 outcomes, retries and store settlement receipt-aware | todo |
-| 0334 | Prepare correct voice3 migration schedules and an explicit safe channel preset | todo |
-| 0335 | Prove voice3 replacement with a fresh offline multi-window migration rehearsal | todo |
+| 0329 | Repair voice3 generation closure, pool routing and complete episode bundles | done |
+| 0330 | Enforce operation-specific draft and live boundaries for matrix publishing | done |
+| 0331 | Carry reviewed variant safety and platform exclusions through the voice3 bundle | done |
+| 0332 | Bind matrix receipts, links and RSS proof to the current bundle revision | done |
+| 0333 | Make publish3 outcomes, retries and store settlement receipt-aware | done |
+| 0334 | Prepare correct voice3 migration schedules and an explicit safe channel preset | done |
+| 0335 | Prove voice3 replacement with a fresh offline multi-window migration rehearsal | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
@@ -187,4 +187,6 @@ Planning is executed autonomously under the operator request to file implementat
 - 2026-10-23T03:03:40.320Z active → verifying (system)
 - 2026-10-23T03:03:42.110Z verifying → done (system)
 - 2026-10-26T00:07:21.835Z done → active (system)
+- 2026-11-05T08:27:19.901Z active → verifying (system)
+- 2026-11-05T08:27:21.806Z verifying → done (system)
 

@@ -4,7 +4,7 @@ name: Prove voice3 replacement with a fresh offline multi-window migration rehea
 status: done
 template: feature-impl
 created_at: 2026-10-26T00:11:53.727Z
-updated_at: "2026-11-05T03:04:03.350Z"
+updated_at: "2026-11-05T08:24:23.215Z"
 feature_id: G15
 priority: P2
 tags:
@@ -149,13 +149,14 @@ with no bundle after the incident evidence survives — a lost generation stays 
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | test | spur task gate 0335 PASS 2026-11-05T02:34:05Z (4549 tests, 230 files); voice3-migration.e2e.test.ts 13/13; voice2-dag.test.ts 48/48; safety regressions 25/25 |
-| R1 — The channel matrix comes from a config-selected publish preset | MET | test | apps/cli/tests/voice3-migration.e2e.test.ts C01 windows derive rows from the migration preset; preset-driven matrix covered by apps/cli/tests/publish-matrix.test.ts |
-| R2 — Dummy mode exercises the full publish path without spawning plugins | MET | test | apps/cli/tests/voice3-migration.e2e.test.ts all-dummy case: every target receipt ok/effect none/dummy true, no plugin process spawned |
-| R3 — Windows select disjoint target sets and never resend | MET | test | apps/cli/tests/voice3-migration.e2e.test.ts C01 three disjoint windows + unchanged replay case (no duplicate delivery); window selection in apps/cli/tests/publish-matrix-0331.test.ts |
-| R4 — The overseas window is gated on the podcast RSS feed | MET | test | apps/cli/tests/voice3-migration.e2e.test.ts RSS miss/hit/date-mismatch cases; overseas gate in plugins/kk/scripts/voice3-publish-window.ts |
-| R5 — Live publishing remains launch-only | MET | test | apps/cli/tests/voice3-migration.e2e.test.ts unknown-live + manual-confirmation cases; rehearsal never activates a live channel; schedule templates keep live confirmation manual (plugins/kk/schedules/kk-daily-publish3-overseas.cron.tmpl) |
-| R6 — voice3 generate freezes a bundle publish3 can consume | MET | test | apps/cli/tests/voice3-migration.e2e.test.ts C01 fresh generation (no preseed) produces the bundle publish3 consumes; freeze contract in apps/cli/tests/voice3-dag.test.ts |
+| AC1 | MET | test | spur task gate 0335 PASS 2026-11-05T02:34:05Z (4549 tests, 230 files); voice3-migration.e2e.test.ts 13/13; voice2-dag.test.ts 48/48; safety regressions 25/25; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
+| R1 — The channel matrix comes from a config-selected publish preset | MET | test | apps/cli/tests/voice3-migration.e2e.test.ts C01 windows derive rows from the migration preset; preset-driven matrix covered by apps/cli/tests/publish-matrix.test.ts; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
+| R2 — Dummy mode exercises the full publish path without spawning plugins | MET | test | apps/cli/tests/voice3-migration.e2e.test.ts all-dummy case: every target receipt ok/effect none/dummy true, no plugin process spawned; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
+| R3 — Windows select disjoint target sets and never resend | MET | test | apps/cli/tests/voice3-migration.e2e.test.ts C01 three disjoint windows + unchanged replay case (no duplicate delivery); window selection in apps/cli/tests/publish-matrix-0331.test.ts; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
+| R4 — The overseas window is gated on the podcast RSS feed | MET | test | apps/cli/tests/voice3-migration.e2e.test.ts RSS miss/hit/date-mismatch cases; overseas gate in plugins/kk/scripts/voice3-publish-window.ts; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
+| R5 — Live publishing remains launch-only | MET | test | apps/cli/tests/voice3-migration.e2e.test.ts unknown-live + manual-confirmation cases; rehearsal never activates a live channel; schedule templates keep live confirmation manual (plugins/kk/schedules/kk-daily-publish3-overseas.cron.tmpl); re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
+| R6 — voice3 generate freezes a bundle publish3 can consume | MET | test | apps/cli/tests/voice3-migration.e2e.test.ts C01 fresh generation (no preseed) produces the bundle publish3 consumes; freeze contract in apps/cli/tests/voice3-dag.test.ts; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
+| R18 — Offline migration rehearsal proves the complete voice3 replacement contract | MET | test | `apps/cli/tests/voice3-migration.e2e.test.ts:634-1094` — 13 offline rehearsal cases C01–C17 (multi-window chain, safety gate, receipt identity, RSS gate, migration report, launcher artifacts); re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

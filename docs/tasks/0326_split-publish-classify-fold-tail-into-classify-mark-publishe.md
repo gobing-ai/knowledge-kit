@@ -4,7 +4,7 @@ name: Split publish-classify --fold-tail into classify, mark-published and repor
 status: done
 template: feature-impl
 created_at: 2026-10-22T18:41:33.110Z
-updated_at: "2026-10-25T04:35:38.661Z"
+updated_at: "2026-11-05T08:24:10.344Z"
 feature_id: G15
 
 dependencies: ["0321"]
@@ -113,8 +113,8 @@ publish3 needs its publish outcome (`full|partial|none`) computed from the 0321 
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Dummy mode exercises the full publish path without spawning plugins (req: R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:820`, `apps/cli/tests/publish-matrix.test.ts:922` |
-| AC2 — Receipt-based classification feeds the existing tail stages unchanged (req: R1, R3, R4) | MET | test | `apps/cli/tests/publish-matrix.test.ts:860` |
+| AC1 — Dummy mode exercises the full publish path without spawning plugins (req: R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:820`, `apps/cli/tests/publish-matrix.test.ts:922`; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
+| AC2 — Receipt-based classification feeds the existing tail stages unchanged (req: R1, R3, R4) | MET | test | `apps/cli/tests/publish-matrix.test.ts:860`; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

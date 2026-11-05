@@ -4,7 +4,7 @@ name: Add kk-daily-ai-voice3 generate workflow that freezes bundle.json
 status: done
 template: feature-impl
 created_at: 2026-10-22T18:41:32.327Z
-updated_at: "2026-10-25T04:35:36.884Z"
+updated_at: "2026-11-05T08:24:07.131Z"
 feature_id: G15
 
 dependencies: ["0323", "0327"]
@@ -113,8 +113,8 @@ This is the generate half of the voice3 split (design §4). voice2 stays untouch
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — voice3 generate freezes a bundle publish3 can consume (req: R2, R4, R5) | MET | test | `apps/cli/tests/voice3-dag.test.ts:54`, `apps/cli/tests/kk-daily-publish3.test.ts:244` |
-| AC2 — Channel enablement no longer lives in the generate workflow (req: R1, R3) | MET | test | `apps/cli/tests/voice3-dag.test.ts:141`, `apps/cli/tests/voice3-dag.test.ts:153` |
+| AC1 — voice3 generate freezes a bundle publish3 can consume (req: R2, R4, R5) | MET | test | `apps/cli/tests/voice3-dag.test.ts:54`, `apps/cli/tests/kk-daily-publish3.test.ts:244`; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
+| AC2 — Channel enablement no longer lives in the generate workflow (req: R1, R3) | MET | test | `apps/cli/tests/voice3-dag.test.ts:141`, `apps/cli/tests/voice3-dag.test.ts:153`; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

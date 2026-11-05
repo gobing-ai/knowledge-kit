@@ -4,7 +4,7 @@ name: Generalize itc plan/check/send into kk publish plan|check|send with window
 status: done
 template: feature-impl
 created_at: 2026-10-22T18:41:31.104Z
-updated_at: "2026-10-25T04:36:12.748Z"
+updated_at: "2026-11-05T08:24:02.252Z"
 feature_id: G15
 
 priority: P1
@@ -154,10 +154,10 @@ kk-itc already splits generate/publish (`apps/cli/src/itc-publish.ts` — `itcMa
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — The channel matrix comes from a config-selected publish preset (req: R1, R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:162`, `apps/cli/tests/publish-matrix.test.ts:244`, `apps/cli/tests/publish-matrix.test.ts:287` |
-| AC2 — Windows select disjoint target sets and never resend (req: R1, R4) | MET | test | `apps/cli/tests/publish-matrix.test.ts:222`, `apps/cli/tests/publish-matrix.test.ts:441`, `apps/cli/tests/publish-matrix.test.ts:502` |
-| AC3 — Live publishing remains launch-only (req: R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:315` preset live rejected; `apps/cli/tests/publish-matrix.test.ts:265`, `apps/cli/tests/publish-matrix.test.ts:287` promotion only via launch var |
-| AC4 — kk-itc publish behaviour is unchanged by the shared send core (req: R6) | MET | command | `bun test apps/cli/tests/itc-publish.test.ts apps/cli/tests/itc-plan.test.ts apps/cli/tests/itc-presets.test.ts apps/cli/tests/itc-stages.test.ts apps/cli/tests/itc-stage.test.ts` → 113 pass, 0 fail this run |
+| AC1 — The channel matrix comes from a config-selected publish preset (req: R1, R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:162`, `apps/cli/tests/publish-matrix.test.ts:244`, `apps/cli/tests/publish-matrix.test.ts:287`; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
+| AC2 — Windows select disjoint target sets and never resend (req: R1, R4) | MET | test | `apps/cli/tests/publish-matrix.test.ts:222`, `apps/cli/tests/publish-matrix.test.ts:441`, `apps/cli/tests/publish-matrix.test.ts:502`; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
+| AC3 — Live publishing remains launch-only (req: R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:315` preset live rejected; `apps/cli/tests/publish-matrix.test.ts:265`, `apps/cli/tests/publish-matrix.test.ts:287` promotion only via launch var; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
+| AC4 — kk-itc publish behaviour is unchanged by the shared send core (req: R6) | MET | command | `bun test apps/cli/tests/itc-publish.test.ts apps/cli/tests/itc-plan.test.ts apps/cli/tests/itc-presets.test.ts apps/cli/tests/itc-stages.test.ts apps/cli/tests/itc-stage.test.ts` → 113 pass, 0 fail this run; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

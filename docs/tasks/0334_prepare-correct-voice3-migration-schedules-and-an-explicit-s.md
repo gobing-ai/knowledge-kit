@@ -4,7 +4,7 @@ name: Prepare correct voice3 migration schedules and an explicit safe channel pr
 status: done
 template: feature-impl
 created_at: 2026-10-26T00:11:53.725Z
-updated_at: "2026-11-04T15:20:25.505Z"
+updated_at: "2026-11-05T08:24:21.603Z"
 feature_id: G15
 priority: P1
 tags:
@@ -144,7 +144,7 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Rendered migration schedules resolve the correct bundle and approval model (req: R1, R2, R3, R4, R5, R6, R7) | MET | test | apps/cli/tests/voice3-migration-0334.test.ts:147,157,177,190,220,243,252,263,285,307,330,352 cover the declared concrete cases (cron-percent parsing, configured works root with spaces, today/yesterday dates, missing bundle, mismatched date, exact CN token set, live launch stops for resume, auto_publish rehearsal path, migration preset operation inventory, no scheduler mutation) through real seams (checkout `kk schedule render`, launcher process with recording spur double, real PublishPresetSchema); command: bun test neighbors commands/schedule.test.ts + kk-daily-publish3.test.ts + voice3-dag.test.ts 34/0; command: bun run lint + build + bun run test 4536/0 (gate.status=PASS run 3af5338c) |
+| AC1 — Rendered migration schedules resolve the correct bundle and approval model (req: R1, R2, R3, R4, R5, R6, R7) | MET | test | apps/cli/tests/voice3-migration-0334.test.ts:147,157,177,190,220,243,252,263,285,307,330,352 cover the declared concrete cases (cron-percent parsing, configured works root with spaces, today/yesterday dates, missing bundle, mismatched date, exact CN token set, live launch stops for resume, auto_publish rehearsal path, migration preset operation inventory, no scheduler mutation) through real seams (checkout `kk schedule render`, launcher process with recording spur double, real PublishPresetSchema); command: bun test neighbors commands/schedule.test.ts + kk-daily-publish3.test.ts + voice3-dag.test.ts 34/0; command: bun run lint + build + bun run test 4536/0 (gate.status=PASS run 3af5338c); re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

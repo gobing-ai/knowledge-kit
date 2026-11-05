@@ -4,7 +4,7 @@ name: Make publish3 outcomes, retries and store settlement receipt-aware
 status: done
 template: feature-impl
 created_at: 2026-10-26T00:11:53.724Z
-updated_at: "2026-11-04T09:12:56.679Z"
+updated_at: "2026-11-05T08:24:19.992Z"
 feature_id: G15
 priority: P1
 tags:
@@ -128,7 +128,7 @@ Verification contract: enumerate failure cases and create behavior/E2E regressio
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Receipt outcomes drive safe retries settlement and mixed dummy tails (req: R1, R2, R3, R4, R5, R6) | MET | test | apps/cli/tests/publish-matrix-0333.test.ts:249,287,355,392,421,450,465,512,564,621,650,689,739,897,934,962,977 cover the declared concrete cases (real+dummy and reverse, missing site root, partial failure, optional-only success, drafted results, effect-none retry, second failure, uncertain live, surviving reports, excluded visibility, exact failed-target marker) through the real seam (real spur workflow DAG, intercepted transports, isolated store) |
+| AC1 — Receipt outcomes drive safe retries settlement and mixed dummy tails (req: R1, R2, R3, R4, R5, R6) | MET | test | apps/cli/tests/publish-matrix-0333.test.ts:249,287,355,392,421,450,465,512,564,621,650,689,739,897,934,962,977 cover the declared concrete cases (real+dummy and reverse, missing site root, partial failure, optional-only success, drafted results, effect-none retry, second failure, uncertain live, surviving reports, excluded visibility, exact failed-target marker) through the real seam (real spur workflow DAG, intercepted transports, isolated store); re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

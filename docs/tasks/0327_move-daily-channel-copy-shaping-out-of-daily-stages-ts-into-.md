@@ -4,7 +4,7 @@ name: Move daily channel copy shaping out of daily-stages.ts into a generate-sid
 status: done
 template: feature-impl
 created_at: 2026-10-22T18:41:33.500Z
-updated_at: "2026-10-25T04:35:39.547Z"
+updated_at: "2026-11-05T08:24:11.951Z"
 feature_id: G15
 
 dependencies: ["0321"]
@@ -121,8 +121,8 @@ So publishing re-assembles content (boundary violation, design §6). voice3 need
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — voice3 generate freezes a bundle publish3 can consume (req: R2, R3) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:2197`, `apps/cli/tests/kk-workflow-stages.test.ts:2254` |
-| AC2 — voice2 publish payloads are unchanged by the builder extraction (req: R1, R4) | MET | command | `bun test apps/cli/tests/voice2-dag.test.ts apps/cli/tests/commands/daily.test.ts apps/cli/tests/kk-workflow-stages.test.ts` → 208 pass, 0 fail this run; `plugins/kk/scripts/daily-stages.ts:1608` appendOutro default keeps voice2 body (bundle opts out at `plugins/kk/scripts/daily-stages.ts:1851`) |
+| AC1 — voice3 generate freezes a bundle publish3 can consume (req: R2, R3) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:2197`, `apps/cli/tests/kk-workflow-stages.test.ts:2254`; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
+| AC2 — voice2 publish payloads are unchanged by the builder extraction (req: R1, R4) | MET | command | `bun test apps/cli/tests/voice2-dag.test.ts apps/cli/tests/commands/daily.test.ts apps/cli/tests/kk-workflow-stages.test.ts` → 208 pass, 0 fail this run; `plugins/kk/scripts/daily-stages.ts:1608` appendOutro default keeps voice2 body (bundle opts out at `plugins/kk/scripts/daily-stages.ts:1851`); re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

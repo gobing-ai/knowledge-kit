@@ -4,7 +4,7 @@ name: Bind matrix receipts, links and RSS proof to the current bundle revision
 status: done
 template: feature-impl
 created_at: 2026-10-26T00:11:53.723Z
-updated_at: "2026-11-05T05:10:41.298Z"
+updated_at: "2026-11-05T08:24:18.397Z"
 feature_id: G15
 priority: P1
 tags:
@@ -125,7 +125,7 @@ Change map (0332 R1–R7):
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Window sends bind receipts and RSS proof to one bundle revision (req: R1, R2, R3, R4, R5, R6, R7) | MET | test | apps/cli/tests/publish-matrix-0332.test.ts:215,237,280,322,357,394,423,450,477,521,588,613,640,664,685,723,744,774,789,825 cover the declared concrete cases (draft-vs-live, unrelated plan change, changed parent/payload, corrupt live receipt, dummy→real, cross-window links, compact-vs-ISO date, wrong-date bundle, guid proof, fetch failure, missing optional variant, failed dummy prepare, kk-itc regression) through the real seam |
+| AC1 — Window sends bind receipts and RSS proof to one bundle revision (req: R1, R2, R3, R4, R5, R6, R7) | MET | test | apps/cli/tests/publish-matrix-0332.test.ts:215,237,280,322,357,394,423,450,477,521,588,613,640,664,685,723,744,774,789,825 cover the declared concrete cases (draft-vs-live, unrelated plan change, changed parent/payload, corrupt live receipt, dummy→real, cross-window links, compact-vs-ISO date, wrong-date bundle, guid proof, fetch failure, missing optional variant, failed dummy prepare, kk-itc regression) through the real seam; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

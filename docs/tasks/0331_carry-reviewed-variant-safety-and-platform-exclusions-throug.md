@@ -4,7 +4,7 @@ name: Carry reviewed variant safety and platform exclusions through the voice3 b
 status: done
 template: feature-impl
 created_at: 2026-10-26T00:11:53.722Z
-updated_at: "2026-11-04T03:09:07.011Z"
+updated_at: "2026-11-05T08:24:16.796Z"
 feature_id: G15
 priority: P1
 tags:
@@ -128,7 +128,7 @@ Workflow wiring: `plugins/kk/workflows/kk-daily-safety.yaml` gains `safety_scope
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Every real publish variant carries current platform-aware safety evidence (req: R1, R2, R3, R4, R5, R6) | MET | test | Every listed case covered by apps/cli/tests/publish-matrix-0331.test.ts (13 cases: exclusion map known/unknown/dual-drop; live row refused without evidence while dummy plans; social and cards variants edited after review refused at plan; legacy bundle compat; payload and variant rehash refusals at send; URL-slot resolution dispatches; freeze refuses block evidence, attaches valid evidence) plus plugins/kk/tests/safety-variants-scope.test.ts (9 out-of-process stage cases: scope default/pins, manifest registration, scoped prep request + budget reset, admitted verdict binds CURRENT bytes, byte-edit refusal with refuse token and no evidence, block never quarantines drafts, revise re-validation + scoped counter, drafts default unchanged) and DAG pins plugins/kk/tests/safety-variants-scope.test.ts:147,:161 (voice3 wiring), :117 (kk-daily-safety scope default), with regression DAG suites apps/cli/tests/voice3-dag.test.ts (20 pass) / apps/cli/tests/voice2-dag.test.ts (48 pass); failure-first ordering honored; consolidated evidence .works/tmp/test-voice3-migration/0331/summary.json |
+| AC1 — Every real publish variant carries current platform-aware safety evidence (req: R1, R2, R3, R4, R5, R6) | MET | test | Every listed case covered by apps/cli/tests/publish-matrix-0331.test.ts (13 cases: exclusion map known/unknown/dual-drop; live row refused without evidence while dummy plans; social and cards variants edited after review refused at plan; legacy bundle compat; payload and variant rehash refusals at send; URL-slot resolution dispatches; freeze refuses block evidence, attaches valid evidence) plus plugins/kk/tests/safety-variants-scope.test.ts (9 out-of-process stage cases: scope default/pins, manifest registration, scoped prep request + budget reset, admitted verdict binds CURRENT bytes, byte-edit refusal with refuse token and no evidence, block never quarantines drafts, revise re-validation + scoped counter, drafts default unchanged) and DAG pins plugins/kk/tests/safety-variants-scope.test.ts:147,:161 (voice3 wiring), :117 (kk-daily-safety scope default), with regression DAG suites apps/cli/tests/voice3-dag.test.ts (20 pass) / apps/cli/tests/voice2-dag.test.ts (48 pass); failure-first ordering honored; consolidated evidence .works/tmp/test-voice3-migration/0331/summary.json; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

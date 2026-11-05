@@ -4,7 +4,7 @@ name: Enforce operation-specific draft and live boundaries for matrix publishing
 status: done
 template: feature-impl
 created_at: 2026-10-26T00:11:53.720Z
-updated_at: "2026-11-05T05:10:41.701Z"
+updated_at: "2026-11-05T08:24:15.186Z"
 feature_id: G15
 priority: P1
 tags:
@@ -125,7 +125,7 @@ Rejected alternatives honored: no new CLI flags or preset enum values; no remote
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Draft and dummy launches never publish live on any selected operation (req: R1, R2, R3, R4, R5) | MET | test | Every listed case covered by apps/cli/tests/publish-matrix-0330.test.ts (10 cases: source-public-variant-claims-published → draft payload; surfdash draft true; podcast status unpublished; x/threads draft intercepted before HTTP; unknown mode fail-closed; real explicit live under fake transport; global dummy no transport; dummy+live token refusal; shipped preset regression; kk-itc fixture untouched) plus plugins/publishings/x-pub/tests/x-pub.test.ts and plugins/publishings/threads-pub/tests/threads-pub.test.ts (6 cases) and plugins/publishings/podcast-pub/tests/podcast-pub.test.ts (3 new cases); failure-first ordering honored; consolidated evidence .works/tmp/test-voice3-migration/0330/summary.json |
+| AC1 — Draft and dummy launches never publish live on any selected operation (req: R1, R2, R3, R4, R5) | MET | test | Every listed case covered by apps/cli/tests/publish-matrix-0330.test.ts (10 cases: source-public-variant-claims-published → draft payload; surfdash draft true; podcast status unpublished; x/threads draft intercepted before HTTP; unknown mode fail-closed; real explicit live under fake transport; global dummy no transport; dummy+live token refusal; shipped preset regression; kk-itc fixture untouched) plus plugins/publishings/x-pub/tests/x-pub.test.ts and plugins/publishings/threads-pub/tests/threads-pub.test.ts (6 cases) and plugins/publishings/podcast-pub/tests/podcast-pub.test.ts (3 new cases); failure-first ordering honored; consolidated evidence .works/tmp/test-voice3-migration/0330/summary.json; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

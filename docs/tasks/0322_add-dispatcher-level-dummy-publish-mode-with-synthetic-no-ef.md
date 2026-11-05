@@ -4,7 +4,7 @@ name: Add dispatcher-level dummy publish mode with synthetic no-effect receipts
 status: done
 template: feature-impl
 created_at: 2026-10-22T18:41:31.549Z
-updated_at: "2026-10-25T04:35:35.104Z"
+updated_at: "2026-11-05T08:24:03.874Z"
 feature_id: G15
 
 dependencies: ["0321"]
@@ -104,8 +104,8 @@ No publish plugin has a dry-run mode, so the whole publish3 flow can only be reh
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Dummy mode exercises the full publish path without spawning plugins (req: R1, R3) | MET | test | `apps/cli/tests/publish-matrix.test.ts:1110`, `apps/cli/tests/publish-matrix.test.ts:1259` |
-| AC2 — A dummy receipt never blocks a later real send of the same target (req: R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:1212` |
+| AC1 — Dummy mode exercises the full publish path without spawning plugins (req: R1, R3) | MET | test | `apps/cli/tests/publish-matrix.test.ts:1110`, `apps/cli/tests/publish-matrix.test.ts:1259`; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
+| AC2 — A dummy receipt never blocks a later real send of the same target (req: R2) | MET | test | `apps/cli/tests/publish-matrix.test.ts:1212`; re-verified 2026-11-05 (bun run lint exit 0; bun run build exit 0; bun run test exit 0, 4613 pass / 3 skip / 0 fail across 236 files) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
