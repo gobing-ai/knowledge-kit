@@ -418,20 +418,20 @@ describe('kk-itc author outline loop + bullets-only (item 3)', () => {
             expect.arrayContaining(['outline-review', 'outline-revise']),
         );
         // Interactive commit routes into the review gate; auto commits straight to drafting.
-        expect(guardOf('outline-commit', 'outline-review')).toContain('test "${vars.auto}" != "true"');
-        expect(guardOf('outline-commit', 'draft-write')).toContain('test "${vars.auto}" = "true"');
+        expect(guardOf('outline-commit', 'outline-review')).toContain(`test "${varRef('auto')}" != "true"`);
+        expect(guardOf('outline-commit', 'draft-write')).toContain(`test "${varRef('auto')}" = "true"`);
         expect(stateBlock('outline-review')).toContain('kind: hitl.confirm');
         expect(stateBlock('outline-review')).toContain('pause: true');
         expect(stateBlock('outline-review')).toContain('outline-approved.md');
         expect(stateBlock('outline-revise')).toContain('kind: hitl.input');
         expect(stateBlock('outline-revise')).toContain('pause: true');
-        expect(guardOf('outline-review', 'draft-write')).toContain('test "${vars.__hitlAnswer}"');
+        expect(guardOf('outline-review', 'draft-write')).toContain(`test "${varRef('__hitlAnswer')}"`);
     });
 
     it('the revise loop is capped at 3 like draft-revise, and the exhausted budget fails the child', () => {
         // Same counting scheme as draft-revise (the .revise-count file, incremented per round).
         expect(stateBlock('outline-revise')).toContain('.outline-revise-count');
-        expect(guardOf('outline-review', 'outline-revise')).toContain('"${vars.__hitlAnswer}" != "true"');
+        expect(guardOf('outline-review', 'outline-revise')).toContain(`"${varRef('__hitlAnswer')}" != "true"`);
         expect(guardOf('outline-review', 'outline-revise')).toContain('-lt 3');
         expect(guardOf('outline-review', 'failed')).toContain('-ge 3');
         expect(guardOf('outline-review', 'failed')).toContain('terminalReason');
@@ -448,7 +448,7 @@ describe('kk-itc author outline loop + bullets-only (item 3)', () => {
         expect(yaml).toContain('outline_bullets_only: "false"');
         expect(dag).toContain('outline_bullets_only: ""');
         expect(dag).toContain('outline_bullets_only:(if $ob == "true" then "true" else "false" end)');
-        expect(dag).toContain('--arg ob "${vars.outline_bullets_only}"');
+        expect(dag).toContain(`--arg ob "${varRef('outline_bullets_only')}"`);
     });
 
     it('auto mode still bypasses the outline loop entirely', () => {
@@ -469,6 +469,7 @@ describe('kk-itc plan_only stop + the draft send gate (items 4-5)', () => {
         pause?: boolean;
         condition?: { options?: { command?: string } };
     }
+    const varRef = (name: string): string => ['$' + '{vars.', name, '}'].join('');
     const nodes = (Bun.YAML.parse(yaml) as { nodes: DagNode[] }).nodes;
     const byId = new Map(nodes.map((n) => [n.id, n]));
     const condition = (id: string): string => byId.get(id)?.condition?.options?.command ?? '';
@@ -476,13 +477,13 @@ describe('kk-itc plan_only stop + the draft send gate (items 4-5)', () => {
     it('plan_only defaults off and every send-side node carries the stop condition', () => {
         expect(yaml).toContain('plan_only: "false"');
         for (const id of ['fanout-send', 'fanout-recovery', 'reconcile-settle'] as const) {
-            expect(condition(id), id).toContain('test "${vars.plan_only}" != "true"');
+            expect(condition(id), id).toContain(`test "${varRef('plan_only')}" != "true"`);
         }
     });
 
     it('plan_only also stops send-confirm before it can pause an already-checked plan', () => {
         expect(byId.get('send-confirm')?.pause).toBe(true);
-        expect(condition('send-confirm')).toContain('test "${vars.plan_only}" != "true"');
+        expect(condition('send-confirm')).toContain(`test "${varRef('plan_only')}" != "true"`);
         expect(condition('send-confirm')).toContain('publish-plan.json');
     });
 

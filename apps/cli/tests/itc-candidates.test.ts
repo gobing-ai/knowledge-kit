@@ -116,7 +116,8 @@ describe('buildTopicCandidates (item 2)', () => {
             },
         ]);
         expect(candidates).toHaveLength(1);
-        const first = candidates[0]!;
+        const first = candidates[0];
+        if (first === undefined) throw new Error('shortlist empty');
         expect(first.id).toBe('a');
         expect(first.itemIds).toEqual(['d1']);
         expect(first.sourceUrls).toEqual(['https://example.com/a']);
@@ -137,7 +138,8 @@ describe('buildTopicCandidates (item 2)', () => {
             },
         ]);
         expect(candidates.map((c) => c.id)).toEqual(['a']);
-        const skipped = candidates[0]!;
+        const skipped = candidates[0];
+        if (skipped === undefined) throw new Error('shortlist empty');
         expect(skipped.itemIds).toEqual(['d2']);
         expect(skipped.sourceUrls).toEqual(['https://example.com/c']);
     });

@@ -45,9 +45,10 @@ export function buildTopicCandidates(pool: readonly Doc[]): CandidateSlot[] {
     for (const doc of pool) {
         if (candidates.length >= CANDIDATE_SLOTS.length) break;
         if (!doc.sourceUri) continue; // sourceUrls must match a cited item's sourceUri
+        const slot = CANDIDATE_SLOTS[candidates.length];
+        if (slot === undefined) break; // unreachable: the length check keeps the index in range
         candidates.push({
-            // The break above guarantees candidates.length < 5, so the slot is defined.
-            id: CANDIDATE_SLOTS[candidates.length]!,
+            id: slot,
             title: (doc.title ?? doc.id).slice(0, 200),
             reason: `${doc.title ?? doc.id}. Evidence: ${doc.body.slice(0, 300)}`.slice(0, 1000),
             itemIds: [doc.id],

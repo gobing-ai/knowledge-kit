@@ -280,7 +280,7 @@ describe('kk-itc publish tail definition (0310 R1-R3)', () => {
         const guard = (byId.get('send-confirm')?.condition as { options?: { command?: string } } | undefined)?.options
             ?.command;
         expect(guard).toContain('(.targets // []) | length) > 0');
-        expect(guard).toContain('test "${vars.plan_only}" != "true"');
+        expect(guard).toContain(['test "$' + '{vars.plan_only}" != "true"'].join(''));
         expect(guard).toContain('publish-plan.json');
         // The only way into fanout-send: a re-entered tail cannot reach a send without the pause.
         const senders = nodes.filter((n) => (n.dependsOn ?? []).includes('fanout-send')).map((n) => n.id);
