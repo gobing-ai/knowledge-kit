@@ -30,10 +30,14 @@ import { dirname, join, resolve } from 'node:path';
 import { openStore } from '@gobing-ai/kk-store';
 import { runPublishMatrixSettle } from '../src/publish-matrix';
 import { runPublishMatrixStage } from '../src/publish-matrix-stage';
+import { silenceOutputPerTest } from './capture';
 
 const REPO = resolve(import.meta.dir, '../../..');
 const STAGES = join(REPO, 'plugins/kk/scripts/kk-workflow-stages.ts');
 const WORKFLOW = join(REPO, 'plugins/kk/workflows/kk-daily-publish3.yaml');
+
+// The settle verb echoes its decision; the suite asserts the persisted state, not the stream.
+silenceOutputPerTest();
 
 const created: string[] = [];
 function tempDir(prefix: string): string {
@@ -802,6 +806,8 @@ interface RunOutcome {
     code: number;
     runId: string;
     calls: string[];
+    /** The engine's own account of the run, as the assertion message for an unexpected rc. */
+    detail: string;
 }
 
 /** `kk` shim: real `publish-matrix-*` stages, recorded tails, no wait-until sleep. */
@@ -880,15 +886,12 @@ function runWindow(
     );
     const stdout = result.stdout?.toString() ?? '';
     const match = /"runId":\s*"([^"]+)"/.exec(stdout);
-    // Surface the engine's own account of a failing window instead of an opaque rc.
-    if ((result.exitCode ?? 1) !== 0) {
-        process.stderr.write(
-            `runWindow(${window}) rc=${result.exitCode}\n${result.stderr?.toString() ?? ''}\n${stdout.slice(-2000)}\n`,
-        );
-    }
+    // Returned, not written: E3 expects a nonzero rc, so dumping it here leaked into every run.
+    const detail = `runWindow(${window}) rc=${result.exitCode}\n${result.stderr?.toString() ?? ''}\n${stdout.slice(-2000)}\n`;
     return {
         code: result.exitCode ?? 1,
         runId: match?.[1] ?? '',
+        detail,
         calls: readFileSync(logPath, 'utf-8').split('\n').filter(Boolean),
     };
 }
@@ -921,7 +924,7 @@ if (existsSync(state)) {
             KK_SURFDASH_PATCH_OFFLINE: '1',
             FLIP_STATE: state,
         });
-        expect(run.code).toBe(0);
+        expect(run.code, run.detail).toBe(0);
         const receipt = readJson(join(fx.workDir, '4-publish', 'receipts', 'flip-pub.post.json'));
         expect(receipt.attemptId).toBe('retry-1');
         expect(receipt.status).toBe('succeeded');
@@ -963,7 +966,7 @@ writeFileSync(out, JSON.stringify({ ok: false, target: 'stub-pub', error: 'alway
         const fx = makeFixture();
         const run = runWindow(fx.root, fx.workDir, 'after-generate', {}, { dummy: 'true' });
         // dummy rehearsal: no dispatch at all; the run must be a clean success.
-        expect(run.code).toBe(0);
+        expect(run.code, run.detail).toBe(0);
         expect(run.calls.some((call) => call.includes('store mark-published'))).toBe(false);
         const settlement = readJson(join(fx.workDir, '4-publish', 'settlement.after-generate.json'));
         expect(settlement.marked).toBe(false);
