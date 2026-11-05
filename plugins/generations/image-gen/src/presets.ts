@@ -187,7 +187,9 @@ function matchPlaceholder(template: string, start: number): { expr: string; end:
 
 /**
  * Resolve one expression against the merged vars. An empty value (including
- * a caller-passed '') resolves to the fallback; an unknown placeholder with
+ * a caller-passed '') resolves to the fallback, except a wrapper fallback
+ * (one embedding its own `{{name}}`), which drops out entirely so its literal
+ * slot never reaches the provider; an unknown placeholder with
  * no fallback throws, naming the placeholder and the format — wt silently
  * left it in place, and a literal `{{title}}` must not reach a paid provider.
  * Leading trim on the fallback skips the `| ` separator; its trailing space
@@ -200,13 +202,14 @@ function resolvePlaceholder(expr: string, vars: Record<string, string>, formatNa
         const name = expr.slice(0, pipe).trim();
         const fallback = expr.slice(pipe + 1).trimStart();
         const value = vars[name];
+        const slot = `{{${name}}}`;
         if (!value) {
-            return fallback;
+            return fallback.includes(slot) ? '' : fallback;
         }
         // A fallback that embeds its own '{{name}}' slot is a mini-template
         // wrapping the value (the R6 golden's ', subtitled "…"' form); a
         // plain-text fallback is just the default, so the value wins.
-        return fallback.includes(`{{${name}}}`) ? fallback.split(`{{${name}}}`).join(value) : value;
+        return fallback.includes(slot) ? fallback.split(slot).join(value) : value;
     }
     const name = expr.trim();
     const value = vars[name];

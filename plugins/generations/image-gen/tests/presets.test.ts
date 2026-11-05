@@ -170,13 +170,28 @@ describe('R2 — the frozen composition rule', () => {
         expect(() => composePrompt(format, testStyle(), {})).toThrow(/cover/);
     });
 
-    test('the fallback form is used when the variable resolves empty', () => {
+    test('a wrapper fallback drops out entirely when its variable resolves empty', () => {
         const format = testFormat({
             keywords: [],
-            template: '{{subtitle | , subtitled "{{subtitle}}"}}',
+            template: 'for "T"{{subtitle | , subtitled "{{subtitle}}"}}.',
             variables: { subtitle: { description: 'Subtitle', default: '' } },
         });
-        expect(composePrompt(format, testStyle(), { subtitle: '' })).toContain(', subtitled "{{subtitle}}"');
+        const prompt = composePrompt(format, testStyle(), { subtitle: '' });
+        expect(prompt).toStartWith('for "T".');
+        expect(prompt).not.toContain('{{');
+        expect(prompt).not.toContain('subtitled');
+    });
+
+    test('the shipped cover preset sends no placeholder when subtitle is omitted', () => {
+        const { formats, styles } = loadPresets({ cwd: tmpdir(), home: tmpdir(), env: {} });
+        const cover = formats.get('cover');
+        const style = styles.get('vibrant');
+        if (cover === undefined || style === undefined) {
+            throw new Error('shipped cover/vibrant presets missing');
+        }
+        const prompt = composePrompt(cover, style, { title: 'Microservices Guide' });
+        expect(prompt).toStartWith('Cinematic wide-format cover illustration for "Microservices Guide".');
+        expect(prompt).not.toContain('{{');
     });
 });
 
