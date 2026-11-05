@@ -282,6 +282,22 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         }
     });
 
+    it('translate writes under the work dir, not into the Surfdash checkout (20261104 sandbox regression)', () => {
+        // Both executors run sandboxed to this repo; an in-place edit of the Surfdash scaffold is
+        // refused and the step still exits 0. daily-surfdash-refine installs the work-dir copies.
+        const yaml2 = readFileSync(
+            join(import.meta.dir, '../../../plugins/kk/workflows/kk-daily-ai-voice2.yaml'),
+            'utf-8',
+        );
+        const block = yaml2.match(/- id: translate\n[\s\S]*?(?=\n {2}- id: translate-retry)/)?.[0] ?? '';
+        expect(block).not.toContain('edit the named file in place');
+        for (const locale of ['en', 'ja']) {
+            expect(block).toContain(`/31-publish/\${vars.run_date}_21_translate_${locale}.md`);
+        }
+        const retry = yaml2.match(/- id: translate-retry\n[\s\S]*?(?=\n {2}- id: )/)?.[0] ?? '';
+        expect(retry).toContain('_21_translate_$L.md');
+    });
+
     it('translate prompt pins the per-locale series names (20261023 retired-name regression)', () => {
         // The 2026-10-23 run: the agent invented the en/ja series names (ja 毎日AIブレンド, en
         // "Daily AI Medley"/hodgepodge phrasing) and left the zh name in en/ja listen links. The

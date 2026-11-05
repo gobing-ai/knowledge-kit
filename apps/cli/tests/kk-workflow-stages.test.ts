@@ -3072,6 +3072,57 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
+    it('daily-surfdash-refine installs the work-dir translations over the locale scaffolds (20261104 sandbox)', () => {
+        // 2026-11-04: codex (workspace-write) and claude (acceptEdits) both run with cwd = this repo,
+        // so neither could edit the scaffolds in the Surfdash checkout; both "succeeded" and left
+        // en/ja untranslated. The agents now write under the work dir and this stage installs them.
+        withTempDir((dir) => {
+            const stamp = '20261104';
+            const surfdash = join(dir, 'surfdash');
+            const publish = join(dir, 'work', '31-publish');
+            const slug = `${stamp}-sandbox`;
+            const path = (locale: string) => join(surfdash, 'content/posts/articles', locale, slug, 'index.md');
+            mkdirSync(publish, { recursive: true });
+            for (const locale of ['zh', 'en', 'ja']) {
+                mkdirSync(dirname(path(locale)), { recursive: true });
+                writeFileSync(
+                    path(locale),
+                    `---\ntitle: scaffold\ndraft: ${locale !== 'zh'}\nrefined: false\n---\n\n正文\n`,
+                );
+                writeFileSync(join(publish, `${stamp}_20_translate-localize_${locale}-post-path.txt`), path(locale));
+            }
+            const translated = (locale: string) => join(publish, `${stamp}_21_translate_${locale}.md`);
+            writeFileSync(translated('en'), '---\ntitle: Translated\ndraft: false\nrefined: false\n---\n\nBody\n');
+            writeFileSync(translated('ja'), '---\ntitle: 翻訳済み\ndraft: false\nrefined: false\n---\n\n本文\n');
+            mkdirSync(join(surfdash, 'scripts'), { recursive: true });
+            writeFileSync(
+                join(surfdash, 'scripts/publish-orchestrator.ts'),
+                [
+                    "import { readFileSync, writeFileSync } from 'node:fs';",
+                    'const path = process.argv[3];',
+                    "if (process.argv[2] !== 'refine' || !path) process.exit(2);",
+                    "writeFileSync(path, readFileSync(path, 'utf-8').replace('refined: false', 'refined: true'));",
+                ].join('\n'),
+            );
+            const pluginsRoot = join(import.meta.dir, '../../../plugins');
+            const refined = run(['daily-surfdash-refine', join(dir, 'work'), stamp, pluginsRoot], {
+                SURFDASH_ROOT: surfdash,
+            });
+            expect(refined.status).toBe(0);
+            expect(readFileSync(path('en'), 'utf-8')).toContain('title: Translated');
+            expect(readFileSync(path('ja'), 'utf-8')).toContain('title: 翻訳済み');
+            expect(readFileSync(path('en'), 'utf-8')).toContain('refined: true');
+            // Consumed once: a rerun must not clobber an operator's repair of the installed post.
+            expect(existsSync(translated('en'))).toBe(false);
+            writeFileSync(path('en'), readFileSync(path('en'), 'utf-8').replace('Body', 'Repaired'));
+            expect(
+                run(['daily-surfdash-refine', join(dir, 'work'), stamp, pluginsRoot], { SURFDASH_ROOT: surfdash })
+                    .status,
+            ).toBe(0);
+            expect(readFileSync(path('en'), 'utf-8')).toContain('Repaired');
+        });
+    });
+
     it('daily-publish-surfdash treats duplicate target receipts as uncertain and never retries', () => {
         withTempDir((dir) => {
             const publish = join(dir, '31-publish');

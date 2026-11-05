@@ -4225,6 +4225,23 @@ function normalizeTranslatedLocales(zhPostPath: string, failUnsafe = true): void
     }
 }
 
+/**
+ * The translate agents run with cwd = this repo, and both executor sandboxes (codex workspace-write,
+ * claude acceptEdits) refuse writes into the Surfdash checkout — on 2026-11-04 both exited 0 with
+ * en/ja untouched. So they write `<runDate>_21_translate_<locale>.md` under the work dir and this
+ * installs each over its scaffold. The output is consumed (renamed) so a rerun never clobbers an
+ * operator's later repair of the installed post.
+ */
+function installTranslatedLocales(workDir: string, runDate: string, zhPostPath: string): void {
+    for (const locale of ['en', 'ja'] as const) {
+        const translated = join(workDir, '31-publish', `${runDate}_21_translate_${locale}.md`);
+        if (!isFile(translated)) continue;
+        const target = zhPostPath.replace('/zh/', `/${locale}/`);
+        sted('write', target, () => writeRaw(target, readFileSync(translated, 'utf-8')));
+        renameSync(translated, `${translated}.installed`);
+    }
+}
+
 export function dailySurfdashRefine(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = ''] = args;
     const marker = join(workDir, '31-publish', `${runDate}_20_translate-localize_zh-post-path.txt`);
@@ -4237,6 +4254,7 @@ export function dailySurfdashRefine(args: string[]): void {
                 failWith(1, `surfdash-refine: zh marker must name an existing post: ${marker}`);
             }
             validateLocaleMarkers(workDir, runDate, zhPostPath, 'surfdash-refine');
+            installTranslatedLocales(workDir, runDate, zhPostPath);
             // The validator is intentionally read-only. Repair known series spellings before
             // site-owned refine computes managed fields, otherwise the final publisher would
             // rewrite the refined bytes after the locale fingerprint was admitted.
