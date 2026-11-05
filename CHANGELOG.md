@@ -1,3 +1,113 @@
+## [0.1.12] - 2026-11-05
+
+### Added
+
+- feat(voice3): add a linkedin.post dummy entry to the migration preset (ee77565)
+<!-- src: plugins/kk/publish-presets/daily-ai-voice-migration.json:119 -->
+- feat(kk): schedule render grok-bot platform for cloud routines (task 0343) (4e99b8b)
+<!-- src: apps/cli/src/commands/schedule.ts:172 -->
+- feat(kk): annotate kk plugin entities with runtime requires (task 0342) (2054d7e)
+<!-- src: plugins/kk/skills/topic/SKILL.md:10 -->
+- feat(itc): test the outline loop, plan_only stop and the draft send gate; mirror them in the publish tail (83bd342)
+<!-- src: plugins/kk/workflows/kk-itc-publish-tail.yaml:44 -->
+- feat(itc): widen the topic-choice criteria to general IT slots and cover the new DAG vars in tests (253b567)
+<!-- src: plugins/kk/decisions/kk-itc.yaml:16 -->
+- feat(itc-author): bounded outline review loop and a bullets-only outline var (a33ec57)
+<!-- src: plugins/kk/workflows/kk-itc-author.yaml:134 -->
+- feat(itc): add the canonical kk itc candidates verb for the collected-topic sweep (37bb4b4)
+<!-- src: apps/cli/src/commands/itc.ts:52 -->
+- feat(itc): widen topic candidates to five slots a-e and add the it-topics extraction profile (8f7fa88)
+<!-- src: plugins/kk/decisions/extract/it-topics.yaml:12 -->
+- feat(voice3): prove voice3 replacement with offline multi-window migration rehearsal (0335) (ef0acf5)
+<!-- src: apps/cli/tests/voice3-migration.e2e.test.ts:428 -->
+- feat(image-gen): add preset sample gallery and README index (6e43795)
+<!-- src: plugins/generations/image-gen/README.md:43 -->
+- feat(voice3): prepare migration schedules, safe preset and live-window launcher (0334) (99537e8)
+<!-- src: plugins/kk/scripts/voice3-publish-window.ts:3 -->
+- feat(publish3): receipt-aware outcomes, one bounded retry, and store settlement (a51aad5)
+<!-- src: apps/cli/src/publish-matrix.ts:97 -->
+- feat(publishings): add linkedin-pub plugin, probe, preset row and social:linkedin variant (dev-run 0328 batch writes) (3ab4e60)
+<!-- src: plugins/publishings/linkedin-pub/src/index.ts:520 -->
+- feat(store): add ai-news supply diagnostic (556feb9)
+<!-- src: scripts/ai-news-supply-report.ts:4 -->
+
+### Fixed
+
+- fix(tests): declare pool-gate in the script-ordering fixture DAG (e2934f8)
+<!-- src: apps/cli/tests/daily-script-ordering-e2e.test.ts:36 -->
+- fix(tests): pin voice3 live podcast row to the offline transport (62f131f)
+<!-- src: apps/cli/tests/voice3-migration.e2e.test.ts:428 -->
+- fix(voice3): pin migration rehearsal to fake transport to keep the live podcast row offline (e07e799)
+<!-- src: apps/cli/tests/voice3-migration.e2e.test.ts:428 -->
+- fix(tasks): mark run-scoped evidence pointers LOST with the runall worktree (2c966d2)
+- fix(wechatmp-pub): treat a hydrating body prefix as incomplete in stale recovery (da3770c)
+<!-- src: plugins/publishings/wechatmp-pub/src/flow.ts:1595 -->
+- fix(daily): translate via work-dir outputs installed by surfdash-refine (28075db)
+<!-- src: plugins/kk/scripts/daily-stages.ts:4235 -->
+- fix(wechatmp-pub): wait out the mass-send dialog mount before reporting missing (f137bcd)
+<!-- src: plugins/publishings/wechatmp-pub/src/flow.ts:1959 -->
+- fix(surfdash-pub): keep a sibling's own canonical in normalizeLocaleFrontmatter (d790ede)
+<!-- src: plugins/publishings/surfdash-pub/src/index.ts:740 -->
+- fix(daily): treat YAML block indicators as syntax in readKeyPointItems (5c4a165)
+<!-- src: plugins/kk/scripts/daily-stages.ts:2076 -->
+- fix(itc): resolve shipped profiles and the child author workflow from the package root (5609ffe)
+<!-- src: apps/cli/src/package-root.ts:8 -->
+- fix: stop counting category-3 PII notes as blocks in daily safety gate (d82cb3b)
+<!-- src: plugins/kk/scripts/daily-stages.ts:3210 -->
+- fix(image-gen): drop wrapper fallback when its variable is empty (4e7f895)
+<!-- src: plugins/generations/image-gen/src/presets.ts:207 -->
+- fix(store): harden ai-news supply verification (53a3901)
+<!-- src: scripts/ai-news-supply-report.ts:386 -->
+- fix(publish): bind matrix receipts, links and RSS proof to the current bundle revision (0332) (e28eaf5)
+<!-- src: apps/cli/src/publish-matrix.ts:1200 -->
+- fix(publish): carry reviewed variant safety and platform exclusions through publish (0331) (fb7968d)
+<!-- src: apps/cli/src/publish-matrix.ts:423 -->
+- fix(publish): enforce operation-specific draft and live boundaries (0330) (580bc3c)
+<!-- src: apps/cli/src/publish-matrix.ts:502 -->
+- fix(daily): order script authoring after the article and fix voice fallback (ebc1c48)
+<!-- src: plugins/kk/workflows/kk-daily-ai-voice2.yaml:512 -->
+- fix(image-gen): retry explicit transient minimax failures on the same provider (e6042c4)
+<!-- src: plugins/generations/image-gen/src/providers/minimax.ts:206 -->
+- fix(voice3): repair generation closure, pool routing and complete episode bundles (0329) (0e3a6f5)
+<!-- src: plugins/kk/scripts/daily-stages.ts:728 -->
+
+### Other
+
+- chore: merge 454e924 into main (30226e3)
+- merge pull request #5 from gobing-ai/pi/itc-ux — the itc candidates verb, package-root resolution and author/publish-tail workflow gates (454e924)
+- docs(tasks): re-anchor verification evidence for 0341-0343 and stale line citations (7fb71e7)
+- docs(G15): record feature verification pass and active->done sync (ce407aa)
+- test(voice3): dump violating rehearsal rows on expectDone failure behind REHEARSAL_DEBUG_CWD (8070614)
+- chore: merge sp/runall-f81-7837 into main (F81 tasks 0342-0343) (d92c320)
+- docs(tasks): retarget 0330/0332 evidence citations at the durable verdict plane (aa300dd)
+- chore: merge 3b331a5 into main (4009dc9)
+- chore(deps): align bun.lock with the 0.1.11 package version released in 6badc5eb (e5d94f9)
+- chore(itc): satisfy the structure and lint gates for the new itc files (2c17480)
+- chore(itc): clear the biome warnings the new files introduced (02f4252)
+- docs(wrap): close out G15 runall batch 0329-0335 and record harness learnings (3b331a5)
+- chore: retry daily run on claude instead of codex-sol (13812ff)
+<!-- src: .spur/config.yaml:148 -->
+- docs(tasks): bind tasks 0341-0343 AC scenarios to F81 R1-R3 for DD-09 coverage (b8c9413)
+- docs: file F81 feature and tasks 0341-0343 for grok-bot cloud routines (ee14cc6)
+- docs: synchronize shipped project records (00df253)
+- docs: file K1 feature and task 0340 for image-gen sample gallery (69f9a59)
+- test(image-gen): run compose e2e in-suite on bun 1.4.3 (6fcb310)
+<!-- src: bunfig.toml:14 -->
+- docs(tasks): drop residual follow-ups 0340/0341 (bdfb0c5)
+- test(publishings): add linkedin cap backstop and check registry guard (5fb340d)
+<!-- src: apps/cli/tests/kk-workflow-stages.test.ts:2320 -->
+- docs(tasks): close 0328 done with verdict evidence; file residual follow-ups 0340/0341 (dev-run 0328 close writes) (803b0c0)
+- docs(tasks): author review findings and traceability for 0328 (dev-run 0328 review writes) (74a168d)
+- test(publishings): register linkedin-pub in shipped-inventory expectations (dev-run 0328 remediate writes) (a41335b)
+<!-- src: packages/kk-core/tests/registry.test.ts:269 -->
+- docs: synchronize shipped project records (294be71)
+- docs: refine completed wechat settings repair (3111f95)
+- docs: sync kk-collect feature status (9313128)
+- docs: record ai-news diagnostic verification (658b7d9)
+- docs: record the 2026-11-03 publication outcome (7bd248d)
+- docs: record the 2026-11-03 daily recovery and publishing plan (9404c2d)
+- docs(tasks): refine 0337 and cancel 0336 as superseded by 0338 (5cbae22)
+
 ## [Unreleased]
 
 ### Added
