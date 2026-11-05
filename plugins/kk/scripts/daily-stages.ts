@@ -3154,9 +3154,12 @@ export function dailySafetyGate(args: string[]): void {
         // data-handling), which is where an independent reviewer can grade it.
         const blockedPlatforms = platforms.filter((platform) => platform?.decision === 'BLOCK');
         const excludedPlatforms = blockedPlatforms.map((platform) => String(platform?.platform ?? '')).filter(Boolean);
-        const piiBlock = blockedPlatforms.some((platform) =>
-            platformFindings(platform).some((finding) => Number(finding?.category) === PII_FINDING_CATEGORY),
-        );
+        // 20261104: a category-3 `note` is the reviewer recording that it checked and found NO PII —
+        // counting it turned an admission-only BLOCK into a whole-run block. Any other disposition,
+        // or none (legacy reports), still counts: fail-closed.
+        const isPiiFinding = (finding: Record<string, unknown>): boolean =>
+            Number(finding?.category) === PII_FINDING_CATEGORY && finding?.disposition !== 'note';
+        const piiBlock = blockedPlatforms.some((platform) => platformFindings(platform).some(isPiiFinding));
         // A BLOCK that names no finding is a contract violation, not a signal: there is nothing to
         // remediate and nothing to exclude, so it blocks (fail-closed).
         const unnamedBlock =
@@ -3220,7 +3223,7 @@ export function dailySafetyGate(args: string[]): void {
                 status = 'block';
                 const named = blockedPlatforms
                     .flatMap((platform) => platformFindings(platform))
-                    .filter((finding) => Number(finding?.category) === PII_FINDING_CATEGORY)
+                    .filter(isPiiFinding)
                     .map((finding) => `${String(finding?.item ?? '?')}(category ${String(finding?.category)})`)
                     .join(', ');
                 const criteria = verdictFails.map((finding) => String(finding?.criterion)).join(', ');

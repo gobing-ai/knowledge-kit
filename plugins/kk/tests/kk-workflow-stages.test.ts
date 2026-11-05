@@ -735,6 +735,41 @@ describe('content-safety verdict gate (task 0189 R10 / AC10)', () => {
         rmSync(dir, { recursive: true, force: true });
     });
 
+    it('a category-3 note ("no PII found") on an admission BLOCK is not draft integrity → exclude', () => {
+        // 2026-11-04 rerun: the reviewer filed generic/privacy-and-identity as category 3 with
+        // disposition "note" on every platform, stating no PII exists; wechatmp and apple-podcasts
+        // BLOCKed on admission items only (WX-02, AP-06). The gate read the note as a PII block and
+        // refused the whole run instead of dropping the two platforms.
+        const report = {
+            confidence: 'MEDIUM',
+            platforms: [
+                {
+                    platform: 'xiaoyuzhou',
+                    decision: 'RISK',
+                    findings: [{ category: 3, item: 'generic/privacy-and-identity', disposition: 'note' }],
+                },
+                {
+                    platform: 'wechatmp',
+                    decision: 'BLOCK',
+                    findings: [
+                        { category: 2, item: 'WX-02', disposition: 'escalate' },
+                        { category: 3, item: 'generic/privacy-and-identity', disposition: 'note' },
+                    ],
+                },
+            ],
+        };
+        const verdict = {
+            verdict: 'NEEDS_REVISION',
+            confidence: 'MEDIUM',
+            findings: [{ criterion: 'no-prohibited-claims', status: 'warn' }],
+        };
+        const dir = setup(report, verdict);
+        expect(gateWith(dir, '0')).toBe('exclude');
+        const stamp = readJson<{ excludedPlatforms: string[] }>(at(dir, 'safety-judge_stamp.json'));
+        expect(stamp.excludedPlatforms).toEqual(['wechatmp']);
+        rmSync(dir, { recursive: true, force: true });
+    });
+
     it('daily-safety-revise restores a VoiceScript whose item-section structure the edit broke', () => {
         // 2026-10-21 04:30: the remediation pass removed 3 segments (27 → 24, 6 → 5 item sections).
         // `daily-wrap-docs` derives the spoken sections from `gap_ms: 1200` and refuses a mismatch with
