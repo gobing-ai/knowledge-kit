@@ -416,6 +416,20 @@ function makeFixture(caseName: string): Fixture {
     return { root, works, binDir, dayDir };
 }
 
+/**
+ * The fixture has no decision maker, so kk-safety-verdict always records its catalog fallback
+ * (`escalate`). The gate's own status is the publish authority (safety-artifact-check.ts
+ * publishValid), so a clean gate must still fold that fallback into an accept token.
+ */
+function expectFallbackAdmits(planDir: string): void {
+    const decision = readJson<{ value: string; source: string }>(
+        join(planDir, `${RUN_DATE}_09_safety-verdict.decision`),
+    );
+    expect(decision).toMatchObject({ source: 'default', value: 'escalate' });
+    expect(readFileSync(join(planDir, `${RUN_DATE}_09_safety-judge_status.txt`), 'utf8').trim()).toBe('pass');
+    expect(readFileSync(join(planDir, `${RUN_DATE}_09_safety-verdict.status`), 'utf8').trim()).toBe('accept');
+}
+
 function fx_feedPath(root: string): string {
     return join(root, 'rss-feed.xml');
 }
@@ -430,6 +444,14 @@ function writeRssFeed(path: string, guid: string, title = `每日AI乱炖 · ${R
 function runEnv(fx: Fixture, extra: Record<string, string> = {}): Record<string, string> {
     const env: Record<string, string> = { ...(process.env as Record<string, string>), ...extra };
     env.PATH = `${fx.binDir}:${process.env.PATH ?? ''}`;
+    // Fixture-local HOME: spur MERGES ~/.config/spur executors with the fixture roster, so on a dev box
+    // `role/cheap` could resolve a real executor (minimax) instead of the PATH stub and C08 went red
+    // intermittently. Also keeps ~/.config/kk credentials out of every spawned plugin.
+    env.HOME = join(fx.root, 'home');
+    mkdirSync(env.HOME, { recursive: true });
+    // No decision maker either: an inherited TYPESAFE key would let a live model answer
+    // kk-safety-verdict, so the decision always takes its catalog fallback here.
+    for (const key of Object.keys(env)) if (key.startsWith('TYPESAFE_')) delete env[key];
     env.KK_PLUGIN_PATH = join(REPO, 'plugins/kk');
     env.KK_STUB_WORKS = fx.works;
     // file:// so the real rss-gate's fetch() can read the local stub feed (plain paths are invalid URLs).
@@ -682,13 +704,7 @@ describe('0335 R1: fresh offline multi-window migration rehearsal', () => {
         ]) {
             expect(existsSync(join(planDir, name))).toBe(true);
         }
-        expect(
-            (
-                JSON.parse(readFileSync(join(planDir, `${RUN_DATE}_09_safety-verdict.decision`), 'utf8')) as {
-                    value: string;
-                }
-            ).value,
-        ).toBe('pass');
+        expectFallbackAdmits(planDir);
         expect(readFileSync(join(planDir, `${RUN_DATE}_09_safety-verdict.status`), 'utf8').trim()).toBe('accept');
         // Two agent dispatches logged: the plan translation and the article body.
         const agentLog = readFileSync(join(fx.root, 'agents.log'), 'utf8');
@@ -836,13 +852,7 @@ describe('0335 R2: content-safety gate', () => {
         expectDone(gen, 'revise-budget generation');
         const planDir = join(fx.dayDir, '24-script');
         expect(existsSync(join(planDir, `${RUN_DATE}_09_safety-verdict.status`))).toBe(true);
-        expect(
-            (
-                JSON.parse(readFileSync(join(planDir, `${RUN_DATE}_09_safety-verdict.decision`), 'utf8')) as {
-                    value: string;
-                }
-            ).value,
-        ).toBe('pass');
+        expectFallbackAdmits(planDir);
         // The drafts the gate admitted are the drafts the bundle froze: the reviewed digests bind.
         const bundle = readJson<{ variants: Record<string, { path: string; sha256: string }> }>(
             join(fx.dayDir, 'bundle.json'),
