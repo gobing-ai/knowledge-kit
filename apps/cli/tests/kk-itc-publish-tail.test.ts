@@ -271,14 +271,16 @@ describe('kk-itc publish tail definition (0310 R1-R3)', () => {
         for (const node of nodesOf(TAIL)) expect(JSON.stringify(node.condition ?? '')).not.toMatch(/verdict/i);
     });
 
-    it('R2 — the live-send approval still sits between the probes and the fan-out', () => {
+    it('R2 — the send approval still sits between the probes and the fan-out, draft plans included', () => {
         const nodes = nodesOf(TAIL);
         const byId = new Map(nodes.map((n) => [n.id, n]));
         expect(byId.get('send-confirm')?.pause).toBe(true);
-        // Still the live-plan guard (the same bytes kk-itc.yaml carries, per the drift test above).
+        // Targets-count guard (the same bytes kk-itc.yaml carries, per the drift test above):
+        // draft plans create real remote drafts too, so they pause; plan_only runs stop earlier.
         const guard = (byId.get('send-confirm')?.condition as { options?: { command?: string } } | undefined)?.options
             ?.command;
-        expect(guard).toContain('.live == true');
+        expect(guard).toContain('(.targets // []) | length) > 0');
+        expect(guard).toContain('test "${vars.plan_only}" != "true"');
         expect(guard).toContain('publish-plan.json');
         // The only way into fanout-send: a re-entered tail cannot reach a send without the pause.
         const senders = nodes.filter((n) => (n.dependsOn ?? []).includes('fanout-send')).map((n) => n.id);
@@ -320,8 +322,8 @@ describe('kk-itc publish tail re-entry (0310 R4, R5)', () => {
         return workDir;
     }
 
-    it('R4 — one command re-enters at check-targets in a fresh run and invokes no authoring', () => {
-        const workDir = seedFailedWorkDir();
+    /** One re-entry dry-run against a work dir; returns the parsed summary plus exit code. */
+    function reentry(workDir: string, vars: Record<string, string>) {
         const env = { ...process.env, SPUR_WORKFLOW_RUN_ACTIVE: undefined, SPUR_EXPECTED_DEFINITION_DIGEST: undefined };
         const result = Bun.spawnSync(
             [
@@ -333,26 +335,54 @@ describe('kk-itc publish tail re-entry (0310 R4, R5)', () => {
                 '--no-log',
                 '--json',
                 '--vars',
-                JSON.stringify({ work_dir: workDir }),
+                JSON.stringify({ work_dir: workDir, ...vars }),
             ],
             // A temp cwd keeps the run row out of the repo's .spur/spur.db (0247 R3).
             { cwd: workDir, env, stdout: 'pipe', stderr: 'pipe' },
         );
-        expect(result.exitCode, `${result.stdout.toString()}\n${result.stderr.toString()}`).toBe(0);
-        const summary = JSON.parse(result.stdout.toString());
-        expect(summary.status).toBe('done');
-        // A fresh run of the tail itself: not the failed run, not the author DAG.
-        expect(summary.workflowName).toBe('kk-itc-publish-tail');
+        return {
+            exitCode: result.exitCode,
+            stdout: result.stdout.toString(),
+            stderr: result.stderr.toString(),
+            summary: JSON.parse(result.stdout.toString()) as {
+                status: string;
+                workflowName: string;
+                finalState?: string;
+            },
+            traceNames: (): string[] => {
+                const trace = Bun.spawnSync(['spur', 'workflow', 'trace', '--json'], {
+                    cwd: workDir,
+                    env,
+                    stdout: 'pipe',
+                    stderr: 'pipe',
+                });
+                const entries = (JSON.parse(trace.stdout.toString()) as { entries: { workflowName: string }[] })
+                    .entries;
+                return entries.map((e) => e.workflowName);
+            },
+        };
+    }
 
-        const trace = Bun.spawnSync(['spur', 'workflow', 'trace', '--json'], {
-            cwd: workDir,
-            env,
-            stdout: 'pipe',
-            stderr: 'pipe',
+    it('R4 (item 5) — a re-entry with a draft plan now pauses at send-confirm: draft saves are real remote effects', () => {
+        const workDir = seedFailedWorkDir();
+        const run = reentry(workDir, {});
+        expect(run.summary, `${run.stdout}\n${run.stderr}`).toMatchObject({
+            status: 'paused',
+            workflowName: 'kk-itc-publish-tail',
+            finalState: 'send-confirm',
         });
-        const entries = (JSON.parse(trace.stdout.toString()) as { entries: { workflowName: string }[] }).entries;
-        expect(entries.map((e) => e.workflowName)).toEqual(['kk-itc-publish-tail']);
+        // A fresh run of the tail itself: not the failed run, not the author DAG.
+        expect(run.traceNames()).toEqual(['kk-itc-publish-tail']);
+        // The freeze belongs to the failed run and stays untouched by the re-entry.
+        expect(JSON.parse(readFileSync(join(workDir, 'itc-options.json'), 'utf-8')).parentRunId).toBe(FAILED_RUN);
+    }, 30_000);
 
+    it('R4 (item 4) — a plan_only re-entry stops after check-targets without pausing or sending', () => {
+        const workDir = seedFailedWorkDir();
+        const run = reentry(workDir, { plan_only: 'true' });
+        expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
+        expect(run.summary).toMatchObject({ status: 'done', workflowName: 'kk-itc-publish-tail' });
+        expect(run.traceNames()).toEqual(['kk-itc-publish-tail']);
         // The freeze belongs to the failed run and stays untouched by the re-entry.
         expect(JSON.parse(readFileSync(join(workDir, 'itc-options.json'), 'utf-8')).parentRunId).toBe(FAILED_RUN);
     }, 30_000);

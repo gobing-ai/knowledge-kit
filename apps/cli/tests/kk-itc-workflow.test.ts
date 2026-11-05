@@ -392,3 +392,105 @@ describe('kk-itc illustrate + adapt (0152)', () => {
         // --no-log: the run-record write contends under concurrent spur use (refine measured 5-8x); nothing here reads the record. Measured: ~0.7-1.1s idle, ~2.2s with 8 concurrent walks — 30s is headroom, not a budget.
     }, 30_000);
 });
+
+// --- items 3-4-5 (itc-ux): outline review loop, bullets-only outline var, plan_only stop --------
+
+describe('kk-itc author outline loop + bullets-only (item 3)', () => {
+    const authorPath = join(import.meta.dir, '../../../plugins/kk/workflows/kk-itc-author.yaml');
+    const dagPath = join(import.meta.dir, '../../../plugins/kk/workflows/kk-itc.yaml');
+    const yaml = readFileSync(authorPath, 'utf-8');
+    const dag = readFileSync(dagPath, 'utf-8');
+
+    const varRef = (name: string): string => ['$' + '{vars.', name, '}'].join('');
+
+    const guardOf = (from: string, to: string): string => {
+        const transitions = yaml.slice(yaml.indexOf('\ntransitions:'));
+        const blocks = [...transitions.matchAll(/- from: ([\w-]+)\n\s+to: ([\w-]+)([\s\S]*?)(?=\n {2}- from:|$)/g)];
+        const block = blocks.find((m) => m[1] === from && m[2] === to);
+        expect(block, `transition ${from}->${to} exists`).toBeDefined();
+        return block?.[3] ?? '';
+    };
+    const stateBlock = (id: string): string =>
+        yaml.match(new RegExp(`- id: ${id}\\n[\\s\\S]*?(?=\\n {2}- id: )`))?.[0] ?? '';
+
+    it('the review gate and the revise input sit after outline-commit on the interactive path', () => {
+        expect([...yaml.matchAll(/^\s+- id: ([\w-]+)/gm)].map((m) => m[1])).toEqual(
+            expect.arrayContaining(['outline-review', 'outline-revise']),
+        );
+        // Interactive commit routes into the review gate; auto commits straight to drafting.
+        expect(guardOf('outline-commit', 'outline-review')).toContain('test "${vars.auto}" != "true"');
+        expect(guardOf('outline-commit', 'draft-write')).toContain('test "${vars.auto}" = "true"');
+        expect(stateBlock('outline-review')).toContain('kind: hitl.confirm');
+        expect(stateBlock('outline-review')).toContain('pause: true');
+        expect(stateBlock('outline-review')).toContain('outline-approved.md');
+        expect(stateBlock('outline-revise')).toContain('kind: hitl.input');
+        expect(stateBlock('outline-revise')).toContain('pause: true');
+        expect(guardOf('outline-review', 'draft-write')).toContain('test "${vars.__hitlAnswer}"');
+    });
+
+    it('the revise loop is capped at 3 like draft-revise, and the exhausted budget fails the child', () => {
+        // Same counting scheme as draft-revise (the .revise-count file, incremented per round).
+        expect(stateBlock('outline-revise')).toContain('.outline-revise-count');
+        expect(guardOf('outline-review', 'outline-revise')).toContain('"${vars.__hitlAnswer}" != "true"');
+        expect(guardOf('outline-review', 'outline-revise')).toContain('-lt 3');
+        expect(guardOf('outline-review', 'failed')).toContain('-ge 3');
+        expect(guardOf('outline-review', 'failed')).toContain('terminalReason');
+        // A rejection regenerates the options with the recorded feedback.
+        expect(guardOf('outline-revise', 'outline-write')).toContain('always');
+    });
+
+    it('outline-write regenerates with the outline feedback and honors outline_bullets_only', () => {
+        expect(stateBlock('outline-write')).toContain('Revision feedback');
+        expect(stateBlock('outline-write')).toContain(varRef('__hitlInput'));
+        expect(stateBlock('outline-write')).toContain('bullet points only');
+        expect(stateBlock('outline-write')).toContain(varRef('outline_bullets_only'));
+        // The var defaults off and the parent DAG packs it into the child vars.
+        expect(yaml).toContain('outline_bullets_only: "false"');
+        expect(dag).toContain('outline_bullets_only: ""');
+        expect(dag).toContain('outline_bullets_only:(if $ob == "true" then "true" else "false" end)');
+        expect(dag).toContain('--arg ob "${vars.outline_bullets_only}"');
+    });
+
+    it('auto mode still bypasses the outline loop entirely', () => {
+        expect(guardOf('outline-write', 'outline-autopick')).toContain(`test "${varRef('auto')}" = "true"`);
+        // Only outline-commit (interactive mode by guard) reaches outline-review; an autopick
+        // commit routes to draft-write without any operator outline review.
+        const reachesReview = [...yaml.matchAll(/- from: ([\w-]+)\n\s+to: outline-review/g)].map((m) => m[1]);
+        expect(reachesReview).toEqual(['outline-commit']);
+    });
+});
+
+describe('kk-itc plan_only stop + the draft send gate (items 4-5)', () => {
+    const dagPath = join(import.meta.dir, '../../../plugins/kk/workflows/kk-itc.yaml');
+    const yaml = readFileSync(dagPath, 'utf-8');
+
+    interface DagNode {
+        id: string;
+        pause?: boolean;
+        condition?: { options?: { command?: string } };
+    }
+    const nodes = (Bun.YAML.parse(yaml) as { nodes: DagNode[] }).nodes;
+    const byId = new Map(nodes.map((n) => [n.id, n]));
+    const condition = (id: string): string => byId.get(id)?.condition?.options?.command ?? '';
+
+    it('plan_only defaults off and every send-side node carries the stop condition', () => {
+        expect(yaml).toContain('plan_only: "false"');
+        for (const id of ['fanout-send', 'fanout-recovery', 'reconcile-settle'] as const) {
+            expect(condition(id), id).toContain('test "${vars.plan_only}" != "true"');
+        }
+    });
+
+    it('plan_only also stops send-confirm before it can pause an already-checked plan', () => {
+        expect(byId.get('send-confirm')?.pause).toBe(true);
+        expect(condition('send-confirm')).toContain('test "${vars.plan_only}" != "true"');
+        expect(condition('send-confirm')).toContain('publish-plan.json');
+    });
+
+    it('send-confirm gates draft-only plans too: the pause condition counts targets, not live (item 5)', () => {
+        // A draft save creates a real remote artifact, so the approval covers drafts as well.
+        expect(condition('send-confirm')).toContain('((.targets // []) | length) > 0');
+        expect(condition('send-confirm')).not.toContain('.live == true');
+        // The target rows keep their own mode; this node no longer reads live at all.
+        expect(condition('send-confirm')).not.toContain('"live"');
+    });
+});

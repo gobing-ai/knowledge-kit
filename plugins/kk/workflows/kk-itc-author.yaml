@@ -57,7 +57,7 @@ states:
           input: |
             Invoke the kk:${vars.writer} skill.
             Generate outline options (outline-option-a.md, outline-option-b.md, and optionally outline-option-c.md) in ${vars.work_dir}/2-outline/ from the brief at ${vars.work_dir}/brief.md using playbook ${vars.playbook}.
-            When outline_bullets_only is true, keep every option to a heading plus bullet points only — short bullets, no prose paragraphs, no section bodies.
+            When outline_bullets_only is true (${vars.outline_bullets_only}), keep every option to a heading plus bullet points only — short bullets, no prose paragraphs, no section bodies.
             Revision feedback: ${vars.__hitlInput}
             When auto mode is on (auto=true), also write 2-outline/outline-recommendation.json as {"pick": "a|b|c", "rationale": "<why this option is strongest>"} recommending the option you would commit.
             Do not wait for operator selection; write the option files.
