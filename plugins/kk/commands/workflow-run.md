@@ -223,6 +223,11 @@ stays `false` unless `--live` is passed explicitly (ADR-022). `--playbook wechat
 `cover_enabled` / `inline_images` (`false` unless passed); `--max-revisions` binds
 `max_revisions` (default `2`). Each lands in `itc-options.json` under its camelCase key.
 
+Two var-only child options skip the options snapshot: `outline_bullets_only=true` keeps the
+outline stage to heading-plus-bullets options (no prose paragraphs), and `plan_only=true`
+stops the parent DAG after the confirmed publish plan (no `send-confirm` pause, no fanout-send,
+no recovery, no settle) — a plan preview, not a send.
+
 **Collected topic (`--from-collect <profile>`, 0299).** `itc-prepare` without `--chosen` returns
 an *intake* snapshot (`status: intake`, `workDir: null`). Choose the topic in a run-scoped intake
 dir, then finalize:

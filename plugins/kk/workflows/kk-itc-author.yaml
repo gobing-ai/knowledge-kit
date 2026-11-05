@@ -22,6 +22,7 @@ vars:
   unslop: "false"
   judge: "true"
   outline: ""
+  outline_bullets_only: "false"
   max_revisions: "2"
   parent_run_id: ""
   child_run_id: ""
@@ -56,6 +57,8 @@ states:
           input: |
             Invoke the kk:${vars.writer} skill.
             Generate outline options (outline-option-a.md, outline-option-b.md, and optionally outline-option-c.md) in ${vars.work_dir}/2-outline/ from the brief at ${vars.work_dir}/brief.md using playbook ${vars.playbook}.
+            When outline_bullets_only is true, keep every option to a heading plus bullet points only — short bullets, no prose paragraphs, no section bodies.
+            Revision feedback: ${vars.__hitlInput}
             When auto mode is on (auto=true), also write 2-outline/outline-recommendation.json as {"pick": "a|b|c", "rationale": "<why this option is strongest>"} recommending the option you would commit.
             Do not wait for operator selection; write the option files.
           expectFile: ${vars.work_dir}/2-outline/outline-option-a.md
@@ -107,6 +110,32 @@ states:
               echo "selected outline file not found: $src" >&2; exit 1;
             fi;
             cp "$src" "${vars.work_dir}/2-outline/outline-approved.md";
+
+  - id: outline-review
+    description: "Operator reviews and approves or requests revision on outline-approved.md"
+    pause: true
+    onEnter:
+      - kind: hitl.confirm
+        options:
+          prompt: "Review the approved outline at ${vars.work_dir}/2-outline/outline-approved.md. Approve?"
+          var: __hitlAnswer
+          # The auto path bypasses this state by edge guard, so this gate always asks the operator.
+          decision:
+            mode: never
+
+  - id: outline-revise
+    description: "Collect outline revision feedback from operator (bounded by 3 rounds, same cap as draft-revise)"
+    pause: true
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            n=$(cat "${vars.work_dir}/.outline-revise-count" 2>/dev/null || echo 0);
+            echo $((n + 1)) > "${vars.work_dir}/.outline-revise-count";
+      - kind: hitl.input
+        options:
+          prompt: "Provide specific revision feedback for the outline at ${vars.work_dir}/2-outline/outline-approved.md:"
+          var: __hitlInput
 
   - id: draft-write
     description: "Author full technical draft from approved outline"
@@ -271,7 +300,53 @@ transitions:
         command: 'test ! -s "${vars.work_dir}/2-outline/.auto-pick"'
 
   - from: outline-commit
+    to: outline-review
+    description: "Interactive mode -> operator reviews the committed outline"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.auto}" != "true"'
+
+  - from: outline-commit
     to: draft-write
+    description: "Auto mode: the outline pick is bound by itc-outline-pick, no operator outline review"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.auto}" = "true"'
+
+  - from: outline-review
+    to: draft-write
+    description: "Operator approved the outline"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.__hitlAnswer}" = "true" -o "${vars.__hitlAnswer}" = "yes"'
+
+  - from: outline-review
+    to: outline-revise
+    description: "Operator requested outline revision and budget remains"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.__hitlAnswer}" != "true" -a "${vars.__hitlAnswer}" != "yes" &&
+          test "$(cat "${vars.work_dir}/.outline-revise-count" 2>/dev/null || echo 0)" -lt 3
+
+  - from: outline-review
+    to: failed
+    terminalReason: failed-guard
+    description: "Operator rejected the outline and revision budget exhausted"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.__hitlAnswer}" != "true" -a "${vars.__hitlAnswer}" != "yes" &&
+          test "$(cat "${vars.work_dir}/.outline-revise-count" 2>/dev/null || echo 0)" -ge 3
+
+  - from: outline-revise
+    to: outline-write
+    description: "Regenerate outline options with the collected feedback"
     guard:
       kind: always
 
