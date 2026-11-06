@@ -71,6 +71,15 @@ const TITLE_BLOCK = [
 ];
 /** `textarea#title` is the HIDDEN form mirror — filling it alone saves an EMPTY title (§5.2 trap 1). */
 const TITLE_MIRROR = ['textarea#title', 'textarea.js_title'];
+/** The 播客 editor (createType 7) has NO ProseMirror title block — `js_title_main` holds a plain
+ * visible `textarea.js_title` where filling IS the input (2026-11-06 measured). */
+const PODCAST_TITLE = ['textarea.js_title'];
+/** The 播客 body is the same single ProseMirror, but only `ProseMirror-focused` appears after a
+ * click; without `data-placeholder` the article variant double-matches, so the plain node wins. */
+const PODCAST_BODY = [
+    'div.ProseMirror.ProseMirror-focused:not([data-placeholder])',
+    'div.ProseMirror:not([data-placeholder])',
+];
 /** The body is the second ProseMirror instance: `ProseMirror-focused`, no `data-placeholder` (§5.2). */
 const BODY_BLOCK = [
     'div.ProseMirror.ProseMirror-focused:not([data-placeholder])',
@@ -213,21 +222,28 @@ const VIDEO_CONFIRM = ['div.weui-desktop-dialog button:has-text("确定")', 'but
 
 /** 播客's media modal (§5.2): 从素材库选择 + 搜索音频 + 上传音频 + 插入/取消. */
 const PODCAST_UPLOAD = ['text=上传音频', 'button:has-text("上传音频")'];
+/** The library migrated its rows from `li.audio_item_wrp` to `div.audio_item_wrp` mid-run
+ * (2026-11-06 measured): a `li`-only selector matched nothing and made the reuse path look empty.
+ * The union covers both renders; clicking the LABEL inside is what toggles the row's checkbox. */
+const PODCAST_ROW = (title: string): string =>
+    `li.audio_item_wrp:has-text("${JSON.stringify(title).slice(1, -1)}"), div.audio_item_wrp:has-text("${JSON.stringify(title).slice(1, -1)}")`;
+// 2026-11-06 measured: the upload dialog's audio input (`name=audio_id`) carries NO accept
+// attribute, so every accept-qualified selector missed and the attach timed out. The generic
+// dialog input[type=file] stay scoped from the editor: the editor's own image input lives
+// outside `.weui-desktop-dialog`.
 const PODCAST_AUDIO_INPUT = [
+    'div.weui-desktop-dialog input.weui-desktop-upload-input',
+    'div.weui-desktop-dialog input[name="audio_id"]',
+    // Legacy accept-qualified fallbacks for older MP builds whose input carried an accept list.
     'div.weui-desktop-dialog input[type="file"][accept*="audio"]',
     'div.weui-desktop-dialog input[type="file"][accept*=".mp3"]',
-    'input[type="file"][accept*="audio"]',
-    'input[type="file"][accept*=".mp3"]',
 ];
-/**
- * The 播客 cover stays scoped to the modal: the editor's own image input carries an `image/…`
- * accept list too, and picking that one would attach the cover as *body* content instead.
- */
 const PODCAST_COVER_INPUT = [
+    'input[type="file"][accept*="image/bmp"]',
     'div.weui-desktop-dialog input[type="file"][accept*="image/"]',
-    'div.weui-desktop-dialog input[type="file"][accept*=".png"]',
-    'div.weui-desktop-dialog input[type="file"][accept*=".jpg"]',
 ];
+const PODCAST_TITLE_INPUT = '.weui-desktop-dialog .title_form_wrp input.weui-desktop-form__input';
+const PODCAST_COVER_CHOOSER = '.weui-desktop-dialog:visible:has(h3:has-text("选择图片"))';
 const PODCAST_INSERT = ['div.weui-desktop-dialog button:has-text("插入")', 'button:has-text("插入")'];
 
 /** 音频 material dialog: the toolbar menu opens it, then the 素材库 list or the upload form. */
@@ -653,11 +669,24 @@ async function readTitleMirror(page: WechatPage): Promise<{ observed: boolean; v
  * helper (ADR-029 rail). The retired iframe UEditor and its `setInnerHtml` were the drift this
  * replaces (W1): the body only registers on a real paste, which is what `pasteHtml` sends.
  */
-async function insertBody(page: WechatPage, deps: ModeRunDeps): Promise<void> {
+async function insertBody(page: WechatPage, deps: ModeRunDeps, selectors: string[] = BODY_BLOCK): Promise<void> {
     const body = bodyOf(deps.content);
     if (body.trim().length === 0) return;
-    const selector = await findSelector(page, BODY_BLOCK, 'article body', deps.stepTimeoutMs);
+    const selector = await findSelector(page, selectors, 'article body', deps.stepTimeoutMs);
     await pasteHtml(asPlaywrightPage(page), selector, markdownToWechatHtml(body), { timeoutMs: deps.stepTimeoutMs });
+}
+
+/** 播客 titles type into the visible `textarea.js_title` directly; fill + read-back is the proof. */
+async function typePodcastTitle(page: WechatPage, deps: ModeRunDeps): Promise<void> {
+    const title = titleOf(deps.content);
+    if (title.length === 0) return;
+    const sel = await findSelector(page, PODCAST_TITLE, 'podcast title', deps.stepTimeoutMs);
+    await fillSelector(page, sel, title);
+    const locator = page.locator(sel).first();
+    const mirror = typeof locator.inputValue === 'function' ? await locator.inputValue() : '';
+
+    if (mirror !== title)
+        throw new Error(`podcast title: textarea.js_title reads '${mirror}' but the flow typed '${title}'`);
 }
 
 /**
@@ -1269,14 +1298,17 @@ async function composeVideo(
     const confirm = await findSelector(page, VIDEO_CONFIRM, 'video media confirm', deps.stepTimeoutMs);
     await clickSelector(page, confirm, deps.stepTimeoutMs);
     await awaitSaveBar(page, deps);
-    const titlePath = await typeTitle(page, deps);
-    await insertBody(page, deps);
-    return { warnings: [], titlePath, enrichWarnings: [] };
+    await typePodcastTitle(page, deps);
+    await insertBody(page, deps, PODCAST_BODY);
+    return { warnings: [], titlePath: 'mirror-agreed' as const, enrichWarnings: [] };
 }
 
 /**
- * Compose 播客 (createType 7). The modal needs audio AND a cover (§5.2), and it covers the save bar,
- * so `插入` + the bar's appearance gate every later step.
+ * Compose 播客 (createType 7). 2026-11-06 walk of the live modal: `上传音频` opens the shared
+ * audio-upload dialog (音频 file + 封面 via the 选择图片 chooser + 素材标题 + 服务规则 + 保存);
+ * 保存 closes it and the material lands in the library while it is still 转码中 — the row is
+ * clickable and `插入` is enabled once 转码/审核 markers clear. A partial upload never reaches this
+ * function (it fails before the browser opens).
  */
 async function composePodcast(
     input: { operation: '播客'; audio: string; cover: string },
@@ -1284,18 +1316,266 @@ async function composePodcast(
     entry: ModeEntry,
 ): Promise<ComposeReport> {
     const page = entry.editor;
+    // Reuse fast path: a prior run that already saved this exact material leaves it ready in the
+    // library — skip the whole upload/cover/title/save cycle (it would re-upload as a duplicate).
+    const materialTitle = titleOf(deps.content);
+    // The library list loads by XHR after the dialog mounts — poll briefly instead of a one-shot read.
+    const reuseProbe = `(() => {
+        const rows = [...document.querySelectorAll('.weui-desktop-dialog li.audio_item_wrp, .weui-desktop-dialog div.audio_item_wrp')].filter((r) => r.offsetWidth > 0);
+        if (rows.length === 0) return 'LOADING';
+        const row = rows.find((r) => ((r.textContent ?? '').replace(/[s\u00a0]/g, '')).includes(${JSON.stringify(materialTitle).replace(/[\s\u00a0]/g, '')}));
+        return row ? (row.textContent ?? '') : 'NONE';
+    })()`;
+    // Lonng decision 2026-11-06: prioritize the row over the dialog. If a ready row appears within
+    // 25s, reuse it; only when that window closes empty (or all rows still busy) run the upload path.
+    let reuseRowText = '';
+    const reuseHistory: string[] = [];
+    {
+        const probe = async () => String(((await page.evaluate(reuseProbe).catch(() => 'ERR')) as string) ?? '');
+        for (let i = 0; i < 10; i++) {
+            const text = await probe();
+            reuseHistory.push(text === 'LOADING' || text === 'ERR' ? text : text.slice(0, 25));
+            if (text === 'LOADING' || text === 'ERR') {
+                await page.waitForTimeout?.(2_500);
+                continue;
+            }
+            if (text === 'NONE') break;
+            if (!/转码中|审核中|处理中/.test(text)) {
+                reuseRowText = text;
+                break;
+            }
+            // Rows exist but the title is missing or the: only the matching row counts.
+        }
+    }
+    if (reuseRowText) {
+        // Reuse means skipping the duplicate upload entirely — wait out 转码/审核 on the existing row.
+        const reuseReady = await waitUntil(async () => {
+            const text = String(((await page.evaluate(reuseProbe).catch(() => 'ERR')) as string) ?? '');
+            return text !== 'ERR' && text !== 'LOADING' && text !== 'NONE' && !/转码中|审核中|处理中/.test(text);
+        }, 40 * 60_000);
+        if (!reuseReady) throw new Error(`播客: 复用素材列表在 40min 内未见「${materialTitle}」完成转码/审核`);
+        await clickSelector(
+            page,
+            await findSelector(
+                page,
+                [`${PODCAST_ROW(materialTitle)} label.audio_item`, PODCAST_ROW(materialTitle)],
+                '播客素材 row',
+                deps.stepTimeoutMs,
+            ),
+            deps.stepTimeoutMs,
+        );
+        await clickSelector(
+            page,
+            await findSelector(page, PODCAST_INSERT, '插入 control', deps.stepTimeoutMs),
+            deps.stepTimeoutMs,
+        );
+        await awaitSaveBar(page, deps);
+        await typePodcastTitle(page, deps);
+        await insertBody(page, deps, PODCAST_BODY);
+        return { warnings: [], titlePath: 'mirror-agreed' as const, enrichWarnings: [] };
+    }
     const upload = await findSelector(page, PODCAST_UPLOAD, '上传音频 control', deps.stepTimeoutMs);
     await clickSelector(page, upload, deps.stepTimeoutMs);
     const audioInput = await findAttachedSelector(page, PODCAST_AUDIO_INPUT, 'audio file input', deps.stepTimeoutMs);
-    await uploadFile(asPlaywrightPage(page), audioInput, input.audio, { timeoutMs: deps.stepTimeoutMs });
-    const coverInput = await findAttachedSelector(page, PODCAST_COVER_INPUT, 'cover file input', deps.stepTimeoutMs);
+    // 9MB made Playwright's internal set-file timeout flake — give it a explicit 120s.
+    await uploadFile(asPlaywrightPage(page), audioInput, input.audio, { timeoutMs: 120_000 });
+
+    // The shared upload form (measured 2026-11-06, same DOM the 音频-material flow walks):
+    // audio file → 封面 through the 选择图片 chooser → 素材标题 → 服务规则 → 保存. 保存 stays
+    // disabled until all four are provided, so finding it enabled is the gate, not an assumption.
+    const uploadDialog = '.weui-desktop-dialog:visible:has(h3.weui-desktop-dialog__title:text-is("上传音频"))';
+    await waitUntil(
+        async () =>
+            (await page
+                .locator(`${uploadDialog} button:has-text("重新上传")`)
+                .count()
+                .catch(() => 0)) > 0 &&
+            /100%/.test(
+                (await page.evaluate(
+                    `(() => {\n            const d = [...document.querySelectorAll(".weui-desktop-dialog")].find((el) => el.offsetWidth > 0 && el.querySelector("input[name=audio_id]"));\n            return d ? (d.textContent ?? "") : "";\n        })()`,
+                )) as string,
+            ),
+        120_000,
+    );
+    const coverTrigger = await findSelector(
+        page,
+        [`${uploadDialog} .select_audio_cover .upload_cover_text`, '.select_audio_cover .upload_cover_text'],
+        '上传封面 control (audio upload form)',
+        deps.stepTimeoutMs,
+    );
+    await clickSelector(page, coverTrigger, deps.stepTimeoutMs);
+    const coverInput = await findAttachedSelector(
+        page,
+        PODCAST_COVER_INPUT,
+        'cover file input (选择图片 chooser)',
+        deps.stepTimeoutMs,
+    );
     await uploadFile(asPlaywrightPage(page), coverInput, input.cover, { timeoutMs: deps.stepTimeoutMs });
-    const insert = await findSelector(page, PODCAST_INSERT, '插入 control', deps.stepTimeoutMs);
-    await clickSelector(page, insert, deps.stepTimeoutMs);
+    // The chooser advances through the same 下一步 → 完成 crop pages the 音频 cover flow recorded.
+    const chooser = PODCAST_COVER_CHOOSER;
+    const next = await findSelector(
+        page,
+        [`${chooser} button:has-text("下一步"):not(.weui-desktop-btn_disabled):not([disabled])`],
+        '播客封面 chooser 下一步',
+        30_000,
+    );
+    await clickSelector(page, next, deps.stepTimeoutMs);
+    // The crop page is 上一步+完成; clicking 完成 before it fully renders bounces the picker back
+    // to its 确定/取消 page (measured with the real 865KB cover; settle it first).
+    const cropSettled = await waitUntil(
+        async () =>
+            (await page
+                .locator(`${chooser} button:has-text("上一步")`)
+                .count()
+                .catch(() => 0)) > 0,
+        15_000,
+    );
+    if (!cropSettled) throw new Error('播客: 封面裁剪页未出现（下一步后无上一步按钮）');
+    await page.waitForTimeout?.(4_000);
+    const finish = await findSelector(
+        page,
+        [`${chooser} button:has-text("完成"):not(.weui-desktop-btn_disabled):not([disabled])`],
+        '播客封面 chooser 完成',
+        30_000,
+    );
+    await clickSelector(page, finish, deps.stepTimeoutMs);
+    // A required crop bounces the picker back to its 确定/取消 page after 完成 applies (measured:
+    // the throwaway tile skipped crop, the daily cover didn't); the explicit 确定 closes it.
+    let chooserClosed = await waitUntil(
+        async () =>
+            (await page
+                .locator(chooser)
+                .count()
+                .catch(() => 0)) === 0,
+        25_000,
+    );
+    if (!chooserClosed) {
+        const confirm = await tryFindSelector(page, [`${chooser} button:has-text("确定")`], 5_000);
+        if (confirm) {
+            await clickSelector(page, confirm, deps.stepTimeoutMs);
+            chooserClosed = await waitUntil(
+                async () =>
+                    (await page
+                        .locator(chooser)
+                        .count()
+                        .catch(() => 0)) === 0,
+                10_000,
+            );
+        }
+    }
+    if (!chooserClosed) {
+        const residue = String(
+            await page
+                .evaluate(
+                    '(() => JSON.stringify([...document.querySelectorAll(".weui-desktop-dialog")]\n        .filter((d) => d.offsetWidth > 0).map((d) => (d.querySelector("h3")?.textContent ?? "") + ":" + (d.textContent ?? "").replace(/\\s+/g, " ").slice(0, 120)) + " toast:" + (document.querySelector(".weui-desktop-toast")?.textContent ?? "")))()',
+                )
+                .catch(() => null),
+        ).slice(0, 900);
+        throw new Error(`播客: 封面选择器完成后未关闭，未保存音频素材 — 现场残留 ${residue ?? '(probe 失败)'}`);
+    }
+
+    await fillSelector(
+        page,
+        await findSelector(page, [PODCAST_TITLE_INPUT], '素材标题 input', deps.stepTimeoutMs),
+        materialTitle,
+    );
+    const agreed = String(
+        await page.evaluate(`(() => {
+            const dialog = [...document.querySelectorAll('.weui-desktop-dialog')].find((d) => d.querySelector('.title_form_wrp'));
+            if (!dialog) return 'no-dialog';
+            const cb = dialog.querySelector('.audio-upload-dialog_agreement input[type=checkbox]');
+            if (!cb) return 'no-box';
+            if (!cb.checked) cb.click();
+            return cb.checked ? 'checked' : 'unchecked';
+        })()`),
+    );
+    if (agreed !== 'checked') throw new Error(`播客: 服务规则勾选失败 (${agreed})`);
+    const save = await findSelector(
+        page,
+        [
+            `${uploadDialog} button.weui-desktop-btn_primary:text-is("保存"):not(.weui-desktop-btn_disabled):not([disabled])`,
+        ],
+        '音频素材保存 (enabled after cover + title + agreement)',
+        90_000,
+    );
+    // WeChat's failure toasts auto-dismiss in seconds; watch them live around the save click.
+    await page.evaluate(
+        '(() => {\n  window.__kkToasts = [];\n  new MutationObserver(() => {\n    const t = document.querySelector(".weui-desktop-toast");\n    if (t && t.textContent) window.__kkToasts.push(t.textContent.trim().slice(0, 200));\n  }).observe(document.body, { subtree: true, childList: true, characterData: true });\n})()',
+    );
+    const saveDiagnostics = `(() => {
+    const form = [...document.querySelectorAll(".weui-desktop-dialog")].find((d) => d.querySelector(".title_form_wrp"));
+    if (!form) return { form: "gone" };
+    const btn = [...form.querySelectorAll("button")].find((b) => (b.textContent ?? "").trim() === "保存");
+    return {
+        btn: btn ? { html: btn.outerHTML.slice(0, 120), disabled: btn.disabled, offW: btn.offsetWidth } : null,
+        fields: [...form.querySelectorAll("input, textarea")].map((f) => ({ cls: String(f.className ?? "").slice(0, 40), v: String(f.value ?? "").slice(0, 30), offW: f.offsetWidth, cb: f.type === "checkbox" ? f.checked : undefined })),
+        toasts: (window.__kkToasts ?? []).slice(-3),
+    };
+})()`;
+    const saveBefore = String(await page.evaluate(saveDiagnostics).catch(() => null)).slice(0, 450);
+    await clickSelector(page, save, deps.stepTimeoutMs);
+    // 保存 closes the upload form; if it stays open the save failed silently — dump the residue
+    // (toast/h3s) as evidence instead of waiting on the library row forever.
+    const formClosed = await waitUntil(
+        async () =>
+            (await page
+                .locator(uploadDialog)
+                .count()
+                .catch(() => 0)) === 0,
+        30_000,
+    );
+    if (!formClosed) {
+        // React may ignore the synthetic-only activation — JS-dispatch a click once more.
+        const dispatched = String(
+            await page
+                .evaluate(
+                    '(() => {\n  const form = [...document.querySelectorAll(".weui-desktop-dialog")].find((d) => d.querySelector(".title_form_wrp"));\n  const btn = form && [...form.querySelectorAll("button")].find((b) => (b.textContent ?? "").trim() === "保存");\n  if (!btn) return "no-btn";\n  btn.click();\n  return btn.disabled ? "was-disabled" : "clicked";\n})()',
+                )
+                .catch(() => null),
+        );
+        const dispatchClosed = await waitUntil(
+            async () =>
+                (await page
+                    .locator(uploadDialog)
+                    .count()
+                    .catch(() => 0)) === 0,
+            10_000,
+        );
+        if (!dispatchClosed) {
+            const after = String(await page.evaluate(saveDiagnostics).catch(() => null)).slice(0, 600);
+            throw new Error(`播客: 保存失败 — dispatch=${dispatched} before=${saveBefore} after=${after}`);
+        }
+    }
+    const rowSelector = PODCAST_ROW(materialTitle);
+    const rowProbe = `(() => {
+        const row = [...document.querySelectorAll('.weui-desktop-dialog li.audio_item_wrp, .weui-desktop-dialog div.audio_item_wrp')].find((r) => (r.textContent ?? '').includes(${JSON.stringify(materialTitle)}));
+        return row ? (row.textContent ?? '') : null;
+    })()`;
+    const materialReady = await waitUntil(async () => {
+        const rowText = (await page.evaluate(rowProbe).catch(() => null)) as string | null;
+        return rowText !== null && !/转码中|审核中|处理中/.test(rowText);
+    }, 15 * 60_000);
+    if (!materialReady) {
+        const probeNow = String(((await page.evaluate(reuseProbe).catch(() => 'ERR')) as string | undefined) ?? 'ERR');
+        throw new Error(
+            `播客: 音频素材 '${materialTitle}' 未在 15min 内完成转码/审核，插入未执行（可重跑）` +
+                ` — reuse 窗口 [${reuseHistory.join(',')}] 最近读=${probeNow.slice(0, 30)}`,
+        );
+    }
+    await clickSelector(
+        page,
+        await findSelector(page, [`${rowSelector} label.audio_item`, rowSelector], '播客素材 row', deps.stepTimeoutMs),
+        deps.stepTimeoutMs,
+    );
+    await clickSelector(
+        page,
+        await findSelector(page, PODCAST_INSERT, '插入 control', deps.stepTimeoutMs),
+        deps.stepTimeoutMs,
+    );
     await awaitSaveBar(page, deps);
-    const titlePath = await typeTitle(page, deps);
-    await insertBody(page, deps);
-    return { warnings: [], titlePath, enrichWarnings: [] };
+    await typePodcastTitle(page, deps);
+    await insertBody(page, deps, PODCAST_BODY);
+    return { warnings: [], titlePath: 'mirror-agreed' as const, enrichWarnings: [] };
 }
 
 /**
