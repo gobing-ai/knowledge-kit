@@ -152,6 +152,37 @@ bootstrap:
           --agent codex-sol --retry-agent claude
           --workflow kk-daily-ai-voice3 --window 72h
 
+      # 07:00 daily: the publish3 `overseas-rss` window (design kk-daily-ai-voice3 §5a) — X/Threads
+      # overseas targets behind the podcast RSS gate, the first of the two scheduled windows to ship
+      # (after-generate is nested in the 04:30 voice3 run; cn-peak at 09:00 Asia/Shanghai is
+      # deliberately NOT here — firing it at 07:00 would make its wait-until node sleep ~10h inside
+      # this job; it gets its own ~17:00-local entry when its rows go live). The window launcher is
+      # plugins/kk/scripts/voice3-publish-window.ts (cron-safe LA date math: overseas reads YESTERDAY's
+      # generation bundle, per R1). Unattended-safe because every overseas row is dummy/off in the
+      # pinned daily-ai-voice preset — no live row means the send-confirm pause never fires.
+      #
+      # Second trigger (operator request 2026-11-05): if today's voice3 receipt is missing or a hard
+      # failure (failed/timed-out/interrupted — NOT 'running', the 04:30 job can legally still be
+      # executing until ~08:30, and a duplicate run would fight it for the store lock), re-run voice3
+      # first with the same flags as the 04:30 job, then publish either way — receipts make the
+      # window a no-op for what is already delivered, and a gated miss is diagnosed, not silently
+      # dropped. 6h timeout = one 3h45m retrigger budget plus the window.
+      - name: kk-daily-publish3
+        cron: "0 7 * * *"
+        timeoutMs: 21600000
+        command: >-
+          STAMP=$(TZ=America/Los_Angeles date +%Y%m%d);
+          RC=".works/kk-daily-ai-voice2/$STAMP/schedule-receipt.json";
+          STATUS=$(jq -r '.status // "missing"' "$RC" 2>/dev/null || echo missing);
+          echo "kk-daily-publish3: voice3 receipt status=$STATUS";
+          case "$STATUS" in done|no-content|incomplete|running) ;; *)
+          KK_BROWSER_CHANNEL=chrome bun plugins/kk/scripts/daily-scheduled-run.ts
+          --repo /Users/robin/xprojects/knowledge-kit
+          --works-dir /Users/robin/xprojects/knowledge-kit/.works
+          --agent codex-sol --retry-agent claude
+          --workflow kk-daily-ai-voice3 --window 72h;; esac;
+          bun plugins/kk/scripts/voice3-publish-window.ts --window overseas-rss
+
       # 04:05, 10:05, 16:05, 22:05 daily: kk-collect standalone 6-hourly collection
       # into the kk store (aihot + last30days + horizon -> store ingest -> label).
       # :05 and not :35 (2026-10-18): the 04:30 kk-daily-ai-voice run reads the pool this job
