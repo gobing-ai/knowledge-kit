@@ -225,6 +225,14 @@ Two things the proposed list assumes that do not hold:
 3. Flip T0 to `draft`, then tier by tier; voice2 stays scheduled until T0+T1+T2 match voice2's
    channels for 3 consecutive days, then the schedule moves to voice3 and voice2 is frozen.
 
+**Rollout note (2026-11-05):** the operator cut over early — supervised dogfood run of voice3 +
+nested publish3 (after-generate draft matrix) succeeded, so `.spur/config.yaml`'s
+`kk-daily-ai-voice` job now runs `kk-daily-ai-voice3 --window 72h` (was voice2 + `--wechat-live`);
+voice2 stays shipped but unscheduled. 72h pinned in place of the default 24h: heuristic-labeled
+store bodies keep the fresh pool thin (24h → 3 items → an 8.4-min script the duration gate refuses;
+72h reliably clears the 15-min floor). Tiers remain dummy/draft as configured in the `daily-ai-voice`
+preset — publish3's live windows (cn-peak, overseas-rss) are NOT yet scheduled (§5a).
+
 ## 9. Decisions (operator, 2026-10-22)
 
 - **D1 — accepted:** split generate (voice3) / publish (publish3), joined by `bundle.json`.
