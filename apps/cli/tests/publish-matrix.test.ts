@@ -707,6 +707,19 @@ describe('publish3 stage surface (0323 R2, R3, R5)', () => {
                 }),
             ).toBe(0);
             expect(slept).toHaveLength(0);
+
+            // Wrapped past midnight in target zone (e.g. 02:30 Shanghai = 10:30 PDT on the same US day,
+            // 17.5h after 09:00 Shanghai and outside the <=180min DST pre-tick cushion): no sleep.
+            slept.length = 0;
+            expect(
+                await runPublishMatrixWaitUntil(['09:00', 'Asia/Shanghai'], {
+                    now: () => Date.UTC(2026, 9, 23, 18, 30, 0), // 02:30 Shanghai (+1d)
+                    sleep: async (ms) => {
+                        slept.push(ms);
+                    },
+                }),
+            ).toBe(0);
+            expect(slept).toHaveLength(0);
         } finally {
             out.restore();
         }

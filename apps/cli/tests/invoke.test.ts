@@ -794,6 +794,9 @@ setInterval(() => {}, 1000);
                     '        VOICEBOX_TIMEOUT_MS: 600000',
                     '        VOICEBOX_SKIP: ""',
                     '  publishings:',
+                    '    wechatmp-pub:',
+                    '      env:',
+                    '        KK_BROWSER_CHANNEL: "chrome"',
                     '    qiita-pub:',
                     '      env:',
                     '        QIITA_TOKEN: "tok"',
@@ -806,7 +809,13 @@ setInterval(() => {}, 1000);
                 VOICEBOX_DEFAULT_PROFILE: 'Robin',
                 VOICEBOX_TIMEOUT_MS: '600000',
             });
-            expect(pluginEnvFromConfig('publish', 'qiita-pub', configPath)).toEqual({ QIITA_TOKEN: 'tok' });
+            expect(pluginEnvFromConfig('publish', 'qiita-pub', configPath)).toEqual({
+                KK_BROWSER_CHANNEL: 'chrome',
+                QIITA_TOKEN: 'tok',
+            });
+            expect(pluginEnvFromConfig('publish', 'weibo-pub', configPath)).toEqual({
+                KK_BROWSER_CHANNEL: 'chrome',
+            });
             expect(pluginEnvFromConfig('generator', 'missing', configPath)).toEqual({});
             expect(pluginEnvFromConfig('generator', 'voice-gen', join(root, 'no-such.yaml'))).toEqual({});
         });

@@ -1678,12 +1678,15 @@ export async function runPublishMatrixWaitUntil(
     const localHour = part('hour') % 24;
     const localMinute = part('minute');
     const already = localHour * 60 + localMinute;
-    if (already >= hours * 60 + minutes) {
+    const targetMinutes = hours * 60 + minutes;
+    // A clock that wrapped past midnight in `zone` (more than the <=180min DST cushion before
+    // `target`) is 15-24h AFTER the previous day's `target`, not hours ahead of today's.
+    if (already >= targetMinutes || targetMinutes - already > 180) {
         echo(`publish-matrix-wait-until: ${zone} is already past ${target}`);
         return 0;
     }
 
-    let wait = (hours * 60 + minutes - already) * 60_000;
+    let wait = (targetMinutes - already) * 60_000;
     // A DST transition inside the wait window shifts the target by the offset delta; one correction
     // is enough for a wait under 24 h, and a zero/negative result means the target already passed.
     const delta = offsetAt(now() + wait) - offsetAt(now());

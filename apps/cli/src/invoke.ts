@@ -96,11 +96,21 @@ export function pluginEnvFromConfig(
     if (!isPlainObject(collectionNode)) {
         return {};
     }
+    const out: Record<string, string> = {};
+    if (kind === 'publish') {
+        for (const sibling of Object.values(collectionNode)) {
+            if (!isPlainObject(sibling) || !isPlainObject(sibling.env)) continue;
+            const ch = stringifyEnvValue(sibling.env.KK_BROWSER_CHANNEL);
+            if (ch !== undefined && ch !== '') {
+                out.KK_BROWSER_CHANNEL = ch;
+                break;
+            }
+        }
+    }
     const pluginNode = collectionNode[name];
     if (!isPlainObject(pluginNode) || !isPlainObject(pluginNode.env)) {
-        return {};
+        return out;
     }
-    const out: Record<string, string> = {};
     for (const [key, value] of Object.entries(pluginNode.env)) {
         const str = stringifyEnvValue(value);
         if (str === undefined || str === '') {
