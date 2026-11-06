@@ -29,7 +29,7 @@
             "variant": "episode",
             "tier": 1,
             "window": "after-generate",
-            "mode": "draft"
+            "mode": "off"
         },
         {
             "id": "xhs.podcast",
@@ -59,7 +59,7 @@
             "variant": "article",
             "tier": 2,
             "window": "after-generate",
-            "mode": "dummy"
+            "mode": "draft"
         },
         {
             "id": "xhs.cards",
@@ -68,7 +68,7 @@
             "variant": "cards",
             "tier": 3,
             "window": "after-generate",
-            "mode": "off"
+            "mode": "draft"
         },
         {
             "id": "weibo.article",
@@ -86,7 +86,7 @@
             "variant": "article",
             "tier": 2,
             "window": "cn-peak",
-            "mode": "draft"
+            "mode": "off"
         },
         {
             "id": "x.post",

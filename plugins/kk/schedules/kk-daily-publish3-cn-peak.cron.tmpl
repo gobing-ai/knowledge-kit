@@ -7,7 +7,7 @@
 #
 # `live_channels` is baked in: this installed line IS the operator's ADR-022 consent for a live
 # send. Nothing in the workflow or the preset can produce `live` on its own. The window is
-# consent-scoped to tokens with a cn-peak row (weibo-pub, x-pub — both draft). Every live launch
+# consent-scoped to tokens with a cn-peak row (weibo-pub). Every live launch
 # stops at the `send-confirm` gate and waits for the operator's manual resume; the entry never
 # delivers unattended.
 #
@@ -27,4 +27,4 @@
 #
 # `run_date` is computed at tick time in America/Los_Angeles by the launcher: a run that starts
 # at 17:00 PDT is still "today" for the day dir the 04:30 generation wrote.
-0 17 * * * cd {{repo}} && mkdir -p .works/kk-daily-publish3 && PATH="{{home}}/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" TZ=America/Los_Angeles bun {{repo}}/plugins/kk/scripts/voice3-publish-window.ts --window cn-peak --preset daily-ai-voice --live-channels weibo-pub,x-pub >> {{repo}}/.works/kk-daily-publish3/cn-peak.log 2>&1
+0 17 * * * cd {{repo}} && mkdir -p .works/kk-daily-publish3 && PATH="{{home}}/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" TZ=America/Los_Angeles bun {{repo}}/plugins/kk/scripts/voice3-publish-window.ts --window cn-peak --preset daily-ai-voice --live-channels weibo-pub >> {{repo}}/.works/kk-daily-publish3/cn-peak.log 2>&1

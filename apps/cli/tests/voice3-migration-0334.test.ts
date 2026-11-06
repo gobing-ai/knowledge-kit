@@ -200,7 +200,7 @@ describe('0334 voice3-publish-window launcher (R1/F08)', () => {
                 '--preset',
                 'daily-ai-voice',
                 '--live-channels',
-                'weibo-pub,x-pub',
+                'weibo-pub',
             ],
             { KK_WORKS_DIR: root },
         );
@@ -213,7 +213,7 @@ describe('0334 voice3-publish-window launcher (R1/F08)', () => {
         expect(vars.run_date).toBe('20261103');
         expect(vars.window).toBe('cn-peak');
         expect(vars.preset).toBe('daily-ai-voice');
-        expect(vars.live_channels).toBe('weibo-pub,x-pub');
+        expect(vars.live_channels).toBe('weibo-pub');
         rmSync(root, { recursive: true, force: true });
     });
 
@@ -316,12 +316,12 @@ describe('0334 live token admission (R3/F10)', () => {
                 '--preset',
                 'daily-ai-voice',
                 '--live-channels',
-                'weibo-pub,x-pub',
+                'weibo-pub',
             ],
             { KK_WORKS_DIR: root },
         );
         expect(run.code).toBe(0);
-        expect(varsFromArgv(run.argv).live_channels).toBe('weibo-pub,x-pub');
+        expect(varsFromArgv(run.argv).live_channels).toBe('weibo-pub');
         rmSync(root, { recursive: true, force: true });
     });
 });

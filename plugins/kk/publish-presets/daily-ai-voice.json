@@ -26,7 +26,7 @@
             "variant": "episode",
             "tier": 1,
             "window": "after-generate",
-            "mode": "draft"
+            "mode": "off"
         },
         {
             "plugin": "xhs-pub",
@@ -53,7 +53,7 @@
             "variant": "article",
             "tier": 2,
             "window": "after-generate",
-            "mode": "dummy"
+            "mode": "draft"
         },
         {
             "plugin": "xhs-pub",
@@ -61,7 +61,7 @@
             "variant": "cards",
             "tier": 3,
             "window": "after-generate",
-            "mode": "off"
+            "mode": "draft"
         },
         {
             "plugin": "weibo-pub",
@@ -77,7 +77,7 @@
             "variant": "article",
             "tier": 2,
             "window": "cn-peak",
-            "mode": "draft"
+            "mode": "off"
         },
         {
             "plugin": "x-pub",
