@@ -1143,6 +1143,7 @@ describe('xhs-pub seam without a typing capability (task 0174 R2)', () => {
                         count: first.count,
                         isVisible: first.isVisible,
                         click: first.click,
+                        boundingBox: first.boundingBox,
                         fill: async (text) => {
                             if (selector.includes('tiptap')) filled.push(String(text));
                             await first.fill?.(text);
@@ -1215,6 +1216,9 @@ describe('xhs-pub resilient probes (task 0174)', () => {
                             throw new Error('element detached');
                         },
                         first: (): XhsLocator => ({
+                            boundingBox: async () => {
+                                throw new Error('element detached');
+                            },
                             count: async () => {
                                 throw new Error('element detached');
                             },
@@ -2519,6 +2523,7 @@ describe('xhs-pub mode entry and signal scoping (0199 evidence)', () => {
             locator: () => ({
                 count: async () => 0,
                 first: () => ({
+                    boundingBox: async () => null,
                     count: async () => 0,
                     isVisible: async () => false,
                     fill: async () => {},
@@ -2557,6 +2562,7 @@ describe('xhs-pub mode entry and signal scoping (0199 evidence)', () => {
                     throw new Error('element detached');
                 },
                 first: () => ({
+                    boundingBox: async () => null,
                     count: async () => 0,
                     isVisible: async () => false,
                     fill: async () => {},

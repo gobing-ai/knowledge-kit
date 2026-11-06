@@ -58,6 +58,8 @@ export interface XhsLocator {
      */
     type?(text: string, options?: { timeout?: number; delay?: number }): Promise<void>;
     textContent?(): Promise<string>;
+    /** The card's click box — the native-chooser path clicks at its centre. */
+    boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null>;
 }
 
 /** Structural subset of the Playwright page the script driver uses. */
@@ -158,6 +160,7 @@ export function wrapPlaywrightPage(raw: unknown, shadow?: ShadowProbe): XhsPage 
         viewportSize?(): { width: number; height: number } | null;
         evaluate(expression: string): Promise<unknown>;
         mouse: { click(x: number, y: number): Promise<void> };
+        waitForEvent?: (event: string, options?: Record<string, unknown>) => Promise<unknown>;
     };
 
     /**
@@ -206,12 +209,19 @@ export function wrapPlaywrightPage(raw: unknown, shadow?: ShadowProbe): XhsPage 
                     isVisible(o?: Record<string, unknown>): Promise<boolean>;
                     fill(t: string, o?: Record<string, unknown>): Promise<void>;
                     click(o?: Record<string, unknown>): Promise<void>;
+                    boundingBox?(): Promise<{
+                        x: number;
+                        y: number;
+                        width: number;
+                        height: number;
+                    } | null>;
                 };
                 return {
                     count: () => loc.count(),
                     isVisible: (options) => loc.isVisible(options),
                     fill: (text, options) => loc.fill(text, options),
                     click: (options) => loc.click(options),
+                    boundingBox: () => loc.boundingBox?.() ?? Promise.resolve(null),
                     type: (text, options) =>
                         (
                             loc as unknown as {
@@ -236,6 +246,15 @@ export function wrapPlaywrightPage(raw: unknown, shadow?: ShadowProbe): XhsPage 
         },
         findShadowControl: async (labels) => (shadow ? shadow.findControl(labels) : null),
         clickAt: (x, y) => pw.mouse.click(x, y),
+        waitForEvent: (event, options) => {
+            if (typeof pw.waitForEvent !== 'function') {
+                return Promise.reject(new Error(`the page seam does not expose a '${event}' event source`));
+            }
+            return pw.waitForEvent(event, options) as Promise<unknown>;
+        },
+        mouse: {
+            click: (x, y) => pw.mouse.click(x, y),
+        },
     };
 }
 

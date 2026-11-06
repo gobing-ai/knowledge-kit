@@ -467,21 +467,23 @@ async function composePodcast(
 }
 
 async function uploadPodcastCover(deps: ModeRunDeps, cover: string): Promise<void> {
-    const pw = asPlaywrightPage(deps.page);
-    const zone = pw.locator(PODCAST_COVER_ZONE).first();
+    const zone = deps.page.locator(PODCAST_COVER_ZONE).first();
     const box = await zone.boundingBox().catch(() => null);
     if (!box) {
         throw new Error(`podcast modal: the cover card ('${PODCAST_COVER_ZONE}') has no bounding box to click`);
     }
-    const chooser = asPlaywrightPage(deps.page)
-        .waitForEvent('filechooser', { timeout: 8_000 })
-        .catch(() => null);
-    await pw.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    if (!deps.page.mouse) {
+        throw new Error('podcast modal: the page seam does not expose a raw mouse for the cover-card coordinate click');
+    }
+    const chooser = deps.page.waitForEvent?.('filechooser', { timeout: 8_000 }).catch(() => null) as Promise<
+        unknown | null
+    >;
+    await deps.page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     const opened = await chooser;
     if (!opened) {
         throw new Error('podcast modal: clicking the cover card did not open a native file chooser within 8000ms');
     }
-    await opened.setFiles(cover);
+    await (opened as { setFiles(path: string): Promise<void> }).setFiles(cover);
 }
 
 /** Wait until the advance control is enabled — `去发布` stays `disabled` until BOTH cards took. */
