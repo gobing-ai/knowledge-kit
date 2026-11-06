@@ -143,7 +143,7 @@ function normalizeText(value: string): string {
 }
 
 function excerpt(text: string): string {
-    return normalizeText(text).slice(0, EXCERPT_CHARS);
+    return normalizeText(text.replace(/^[#>*`\-\s]+/gm, '')).slice(0, EXCERPT_CHARS);
 }
 
 /**
@@ -368,6 +368,10 @@ export class WeiboBrowserTransport implements PublishTransport {
         const metadata = { operation: 'article', driver: this.driver, publishStatus, profileDir };
         const title = content.title ?? 'Untitled';
 
+        await page.evaluate(ensureArticleDraftScript());
+        const editorUrl = page.url();
+        const toastsBefore = await this.readToasts(page);
+
         const titleSelector = await resolveSelector(page, WEIBO_ARTICLE_SELECTORS.title, {
             timeoutMs: this.stepTimeoutMs,
             label: 'article title input',
@@ -382,12 +386,19 @@ export class WeiboBrowserTransport implements PublishTransport {
         await pasteHtml(page, bodySelector, markdownToHtml(content.body), { timeoutMs: this.stepTimeoutMs });
 
         if (coverPath !== undefined) {
+            const baseline = await this.countImages(page, bodySelector);
+            const preAttached = (await trySelectors(page, WEIBO_ARTICLE_SELECTORS.fileInput, { visible: false })).found;
+            if (!preAttached) {
+                await page.evaluate(openCoverLibraryScript());
+            }
             const fileInputSelector = await resolveSelector(page, WEIBO_ARTICLE_SELECTORS.fileInput, {
                 timeoutMs: this.stepTimeoutMs,
                 label: 'article cover file input',
             });
-            const baseline = await this.countImages(page, bodySelector);
             await uploadFile(page, fileInputSelector, coverPath, { timeoutMs: this.stepTimeoutMs });
+            if (!preAttached) {
+                await page.evaluate(confirmCoverModalScript());
+            }
             // A requested cover needs a fresh observed attachment, not a successful upload call.
             const attached = await expectOutcome(() => this.probeCoverAttached(page, bodySelector, baseline), {
                 timeoutMs: this.stepTimeoutMs,
@@ -402,9 +413,6 @@ export class WeiboBrowserTransport implements PublishTransport {
         if (!titleReadback.ok) return fail(titleReadback.error);
         const bodyReadback = await this.requireReadback(page, bodySelector, content.body, 'article body readback');
         if (!bodyReadback.ok) return fail(bodyReadback.error);
-
-        const editorUrl = page.url();
-        const toastsBefore = await this.readToasts(page);
 
         if (publishStatus === 'draft') {
             const saveSelector = await resolveSelector(page, WEIBO_ARTICLE_SELECTORS.saveDraft, {
@@ -590,11 +598,15 @@ export class WeiboBrowserTransport implements PublishTransport {
         return parts.join('; ');
     }
 
-    /** A toast carrying a save/success word that was not already on screen before the click. */
+    /** A toast or v5 draft-list item carrying a save/success/timestamp signal not on screen before the flow. */
     private async probeFreshToast(page: Page, toastsBefore: readonly string[]): Promise<string | null> {
         const before = new Set(toastsBefore);
         const now = await this.readToasts(page);
-        return now.find((text) => !before.has(text) && /保存|草稿|成功/.test(text)) ?? null;
+        const hit = now.find(
+            (text) => !before.has(text) && /保存|草稿|成功|\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(text),
+        );
+        if (hit === undefined) return null;
+        return /#\/draft\/\d+/.test(page.url()) ? page.url() : hit;
     }
 
     /** Live article evidence: the browser left the editor for a published article URL. */
@@ -751,19 +763,107 @@ function readbackScript(selector: string): string {
 })()`;
 }
 
-/** Counts rendered images in the editor's nearest container, for the cover baseline. */
+/** Counts rendered images in the editor's nearest container (excluding modal portals), for the cover baseline. */
 function coverCountScript(selector: string): string {
     return `(() => { // kk-weibo-cover
     const anchor = document.querySelector(${JSON.stringify(selector)});
     const scope = anchor === null ? document.body : anchor.closest('form, section, article, main') || document.body;
-    return String(scope.querySelectorAll('img[src]').length);
+    return String(Array.from(scope.querySelectorAll('img[src]')).filter((el) => !el.closest('.n-modal')).length);
 })()`;
 }
 
-/** Visible toast texts, used as the pre-save baseline and as the fresh-signal read. */
+/** Ensures the v5 article editor has an active, blank draft pane before filling title/body. */
+function ensureArticleDraftScript(): string {
+    return `(async () => { // kk-weibo-draft-init
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const spin = () => document.querySelectorAll('.wb-editor-spin').length > 0;
+    const titleEl = document.querySelector('input[placeholder*="标题"], textarea[placeholder*="标题"]');
+    const titleVal = titleEl && titleEl.value ? String(titleEl.value).trim() : '';
+    const hasCover = document.querySelectorAll('.cover-preview, img.cover-img').length > 0;
+    if (spin() || titleVal.length > 0 || hasCover) {
+        for (const btn of document.querySelectorAll('button')) {
+            const t = (btn.textContent || '').trim();
+            if (t === '写文章' || t.includes('创作一篇新文章')) {
+                btn.click();
+                break;
+            }
+        }
+        await sleep(600);
+        for (let i = 0; i < 15 && spin(); i += 1) await sleep(200);
+    }
+    return true;
+})()`;
+}
+
+/** Opens the v5 cover modal (`div.cover-empty`) and switches to the `图片库` tab so `input[type="file"]` mounts. */
+function openCoverLibraryScript(): string {
+    return `(async () => { // kk-weibo-open-cover
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    let coverEmpty = null;
+    for (let i = 0; i < 15; i += 1) {
+        coverEmpty = document.querySelector('div.cover-empty, [class*="cover-empty"]');
+        if (coverEmpty) break;
+        await sleep(200);
+    }
+    if (coverEmpty instanceof HTMLElement) coverEmpty.click();
+    for (let i = 0; i < 15 && !document.querySelector('.n-modal'); i += 1) await sleep(200);
+    for (const tab of document.querySelectorAll('.n-modal .n-tabs-tab')) {
+        if ((tab.textContent || '').trim() === '图片库' && tab instanceof HTMLElement) {
+            tab.click();
+        }
+    }
+    for (let i = 0; i < 15 && !document.querySelector('input[type="file"]'); i += 1) await sleep(200);
+    return true;
+})()`;
+}
+
+/** Selects the uploaded image in the v5 `.n-modal` library, advances through crop (`下一步` → `确定`), and waits for the modal to close. */
+function confirmCoverModalScript(): string {
+    return `(async () => { // kk-weibo-confirm-cover
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    if (!document.querySelector('.n-modal')) return true;
+    await sleep(1500);
+    let item = null;
+    for (let i = 0; i < 25; i += 1) {
+        item = document.querySelector('.n-modal .image-item, .n-modal img[src]');
+        if (item) break;
+        await sleep(200);
+    }
+    if (item instanceof HTMLElement && !item.classList.contains('is-selected')) {
+        item.click();
+    }
+    for (let i = 0; i < 15; i += 1) {
+        const nextBtn = Array.from(document.querySelectorAll('.n-modal button')).find(
+            (b) => (b.textContent || '').trim() === '下一步' && !b.disabled,
+        );
+        if (nextBtn) {
+            nextBtn.click();
+            break;
+        }
+        await sleep(200);
+    }
+    await sleep(1800);
+    for (let i = 0; i < 15; i += 1) {
+        const okBtn = Array.from(document.querySelectorAll('.n-modal button')).find(
+            (b) => (b.textContent || '').trim() === '确定' && !b.disabled,
+        );
+        if (okBtn) {
+            okBtn.click();
+            break;
+        }
+        await sleep(200);
+    }
+    for (let i = 0; i < 25 && document.querySelector('.n-modal'); i += 1) {
+        await sleep(200);
+    }
+    return true;
+})()`;
+}
+
+/** Visible toast texts and v5 draft sidebar items, used as the pre-save baseline and as the fresh-signal read. */
 function toastTextsScript(): string {
     return `(() => { // kk-weibo-toasts
-    const nodes = document.querySelectorAll('[class*="toast" i], [class*="Toast"], [class*="message" i], [role="alert"]');
+    const nodes = document.querySelectorAll('[class*="toast" i], [class*="Toast"], [class*="message" i], [role="alert"], .list-item');
     const texts = [];
     for (const node of nodes) {
         const text = (node.textContent || '').trim();

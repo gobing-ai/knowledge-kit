@@ -61,8 +61,10 @@ interface FakePageOptions {
     emptyReadback?: boolean;
     /** The cover never renders, so the attachment signal must fail. */
     coverAttached?: boolean;
+    /** Simulate v5 editor where cover file input mounts only after opening the cover modal. */
+    v5CoverModal?: boolean;
     /** What clicking 保存草稿 emits. */
-    onSaveDraft?: 'url' | 'toast' | 'none';
+    onSaveDraft?: 'url' | 'toast' | 'v5ListItem' | 'none';
     /** What clicking the article publish control emits. */
     onPublish?: 'article' | 'none';
     /** What clicking 发送 emits: a feed card, the mobile composer's own navigation, or nothing. */
@@ -101,6 +103,7 @@ function makeFakePage(options: FakePageOptions, calls: string[]): Page {
     let url = 'about:blank';
     let editorText = 'Body text';
     let images = 0;
+    let coverModalOpened = false;
     const values = new Map<string, string>();
     const toasts = [...(options.existingToasts ?? [])];
     const cards: Array<{ href: string; text: string }> = (options.existingFeed ?? []).map((href) => ({
@@ -115,6 +118,9 @@ function makeFakePage(options: FakePageOptions, calls: string[]): Page {
         if (post.composer?.includes(selector)) return options.missingComposer === true ? 0 : 1;
         if (article.title?.includes(selector)) return options.missingTitle === true ? 0 : 1;
         if (article.body?.includes(selector)) return options.missingBody === true ? 0 : 1;
+        if (options.v5CoverModal === true && article.fileInput?.includes(selector)) {
+            return coverModalOpened ? 1 : 0;
+        }
         return 1;
     };
 
@@ -130,6 +136,7 @@ function makeFakePage(options: FakePageOptions, calls: string[]): Page {
             if (article.saveDraft?.includes(selector)) {
                 if (options.onSaveDraft === 'url') url = DRAFT_URL;
                 if (options.onSaveDraft === 'toast') toasts.push('保存成功');
+                if (options.onSaveDraft === 'v5ListItem') toasts.push('V5 Article2026-11-06 11:20');
             }
             if (article.publish?.includes(selector) && options.onPublish === 'article') url = ARTICLE_LIVE_URL;
             if (post.send?.includes(selector) && options.onSend === 'feedCard') {
@@ -161,12 +168,25 @@ function makeFakePage(options: FakePageOptions, calls: string[]): Page {
         },
         async setInputFiles(selector: string, filePath: string) {
             calls.push(`setInputFiles:${selector}|${filePath}`);
-            if (options.coverAttached !== false) images += 1;
+            if (options.coverAttached !== false && options.v5CoverModal !== true) images += 1;
         },
         async evaluate(expression: string) {
             calls.push(`evaluate:${expression.slice(0, 40)}`);
+            if (expression.includes('kk-weibo-open-cover')) {
+                coverModalOpened = true;
+                return true;
+            }
+            if (expression.includes('kk-weibo-confirm-cover')) {
+                if (options.coverAttached !== false) images += 1;
+                return true;
+            }
             if (expression.includes('ClipboardEvent')) {
-                editorText = options.emptyPaste === true ? '' : 'Body text';
+                editorText =
+                    options.emptyPaste === true
+                        ? ''
+                        : options.v5CoverModal === true
+                          ? 'Heading Body text'
+                          : 'Body text';
                 return true;
             }
             if (expression.includes('kk-weibo-readback')) {
@@ -491,6 +511,27 @@ describe('weibo-pub article flow (R2, R4)', () => {
         });
         expect(result.ok).toBe(false);
         expect(result.error).toContain('cover attachment');
+    });
+
+    test('v5 article editor opens cover modal when fileInput is hidden, strips markdown heading on readback, and confirms draft via sidebar list-item', async () => {
+        const v5Url = 'https://card.weibo.com/article/v5/editor#/draft/4072307';
+        const fake = makeFakeLauncher({
+            landedUrl: v5Url,
+            v5CoverModal: true,
+            onSaveDraft: 'v5ListItem',
+            existingToasts: ['旧草稿2026-11-06 11:00'],
+        });
+        const v5Content: Content = {
+            title: 'V5 Article',
+            body: '# Heading\n\nBody text',
+            format: 'markdown',
+            metadata: { coverImage: COVER_PATH },
+        };
+        const result = await transport(fake).publish({ content: v5Content });
+        expect(result.ok).toBe(true);
+        expect(result.url).toBe(v5Url);
+        expect(fake.calls.some((call) => call.includes('kk-weibo-open-cover'))).toBe(true);
+        expect(fake.calls.some((call) => call.includes('kk-weibo-confirm-cover'))).toBe(true);
     });
 });
 
