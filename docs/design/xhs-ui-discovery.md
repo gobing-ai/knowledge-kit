@@ -69,11 +69,18 @@ fix walk must capture them before changing those flows. `PUBLISH_URL` published-
   `creator-modal-sty` upload modal, `xhs-podcast-dialog.json`). The plugin refuses a missing artifact
   before any browser opens (`validateModeInput`, `plugins/publishings/xhs-pub/src/index.ts:238`).
 
-**发播客 post-attach save path — still unmeasured as of 2026-10-10 (task 0236 R3, operator-deferred).**
-The plugin attaches the episode's mp3 and cover through the modal, but nothing on file says what the
-modal offers *after* both files are set. `leavePodcastModal` (`plugins/publishings/xhs-pub/src/flow.ts:403-431`)
-therefore keeps refusing the publish-adjacent `去发布` on a draft and **names the gap** instead of
-guessing a selector — that operation's Result is `ok: false` with `… its post-attach save path has
-never been measured (task 0236 R3 …)`, non-blocking for the visit, so the 图文 note still stands. The
-owed evidence is one attended walk saving `.spur/run/discovery/xhs-podcast-postfile.json` plus a
-screenshot; if a draft save path exists, wire it here and claim the draft only from the console signal.
+**发播客 post-attach save path — MEASURED 2026-11-06 (task 0236 R3, headless probe; replaces the
+2026-10-10 unmeasured stance).** The modal (`div.d-modal`) carries the two cards (`点击上传` audio,
+`设置封面` cover) with `accept`-distinct hidden inputs and exactly two buttons: `取消` and the
+light-DOM `去发布`. Measured mechanics:
+
+- A raw `input.files` assignment registers the **audio only** (card prints `上传成功`). The cover
+  card never registers that way and `去发布` stays `disabled` — the cover only takes through the
+  **native file chooser** the site opens from the card's click (`waitForEvent('filechooser')` +
+  `setFiles`). Their CDP `DOM.setFileInputFiles` silently no-ops (in-page `files.length` reads 0).
+- The modal requires a **≥10-min** audio (`时长最短10分钟`); tiny probe files are rejected.
+- `去发布` is NOT publish-adjacent: it advances to the full podcast editor (音频文件/重新上传, 图片
+  编辑 1/18, 智能标题, 话题, 加入播客合集, 原创声明…) whose bottom bar is the same closed-shadow
+  `XHS-PUBLISH-BTN` pair all other modes use: `暂存离开` (@556,675) + `发布` (@700,675). So the
+  plugin now advances with `去发布` for both publish statuses (`leavePodcastModal`) and the common
+  draft/publish rails take over (`MODE_ACTION_PATHS['发播客'] = ['shadow']`).

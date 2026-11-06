@@ -74,6 +74,10 @@ export interface XhsPage {
     countOnScreen(selector: string): Promise<number>;
     /** Click the first on-screen match — the console renders the tabs 3×. */
     clickInViewport?(selector: string): Promise<boolean>;
+    /** The 发播客 cover card resolves its file through the site's native file chooser. */
+    waitForEvent?(event: string, options?: { timeout?: number }): Promise<unknown | null>;
+    /** Raw mouse press (the tab-bar clone debris needs coordinate clicks). */
+    mouse?: { click(x: number, y: number): Promise<void> };
     /** Resolve a labelled control inside a closed shadow root. */
     findShadowControl?(labels: readonly string[]): Promise<ShadowControl | null>;
     /** Click at viewport coordinates. */

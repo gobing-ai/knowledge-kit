@@ -57,8 +57,15 @@ const ARTICLE_LAYOUT = ['button:has-text("一键排版")', 'div.ailayout-btn_wrp
 const PODCAST_OPEN = ['text=上传音频', 'button:has-text("上传音频")'];
 const PODCAST_MODAL = ['div.creator-modal-sty', '.d-modal.d-modal-centered', '.d-modal'];
 const PODCAST_AUDIO_INPUT = ['input[type="file"][accept*=".mp3"]', 'input[type="file"][accept*=".wav"]'];
-const PODCAST_COVER_INPUT = ['input[type="file"][accept*=".jpg"]', 'input[type="file"][accept*=".png"]'];
 const PODCAST_MODAL_ADVANCE = ['去发布'];
+/* Measured post-attach flow (2026-11-06 headless probe, 10-min mp3 + 1:1 png): a raw
+ * input.files assignment registers the AUDIO (`上传成功` appears) but the COVER card never
+ * advances and `去发布` stays `disabled` — only clicking the cover card and handing the file to
+ * the native file chooser the site opens takes both. `去发布` is then just the ADVANCE control: the
+ * next page is the full podcast editor carrying the closed-shadow bar (`暂存离开`@left, `发布`@right),
+ * so a draft run may click it too — it does not publish on its own. */
+const PODCAST_COVER_ZONE = '.d-modal div:has-text("设置封面")';
+const PODCAST_UPLOAD_ACK = '上传成功';
 
 /**
  * The `暂存离开` labels, newest first: XHS renamed the control, and the older labels stay as
@@ -402,31 +409,26 @@ async function isPodcastModalOpen(page: XhsPage): Promise<boolean> {
 }
 
 /**
- * Leave the 发播客 modal. The recorded advance control is `去发布`, which is publish-adjacent, so a
-draft run never clicks it: it waits for the platform to move on by itself and fails loud naming the
-control it refused to click. Only an explicit `publishStatus: 'public'` may click it.
- *
- * 0236 R3 (deferred, operator decision 2026-10-09): whether the modal offers a save path OTHER than
- * `去发布` once both files are attached was never measured (`.spur/run/discovery/` holds only the
- * modal open), and an attended walk under ADR-025 is what would measure it. So no draft-save selector
- * is invented here: the run stops before the publish-adjacent control and says so, which is the
- * failure the 0236 result carries (a `ok:false` entry that never fails the visit).
+ * Leave the 发播客 modal. 0236 R3 is now measured (2026-11-06 headless probe): the modal's only
+ * controls are `取消` and the light-DOM `去发布`, and `去发布` does not publish — it opens the full
+ * podcast editor whose action bar is the same closed-shadow `暂存离开`/`发布` pair every other mode
+ * uses, so BOTH publish statuses take the same advance click and the draft decision moves to the
+ * editor's action bar (MODE_ACTION_PATHS['发播客'] already routes `shadow`). Draft saving
+ * waits for the modal to close by itself first — only that timed-dead path names what it saw.
  */
 async function leavePodcastModal(deps: ModeRunDeps): Promise<void> {
     const closed = () => isPodcastModalOpen(deps.page).then((open) => !open);
     if (await waitUntil(closed, deps.stepTimeoutMs)) return;
-    if (deps.publishStatus === 'public') {
-        const advance = await clickLightControl(
-            deps.page,
-            PODCAST_MODAL_ADVANCE,
-            deps.stepTimeoutMs,
-            'podcast modal advance',
-        );
-        if (!advance.ok) throw new Error(advance.error);
-        if (await waitUntil(closed, deps.stepTimeoutMs)) return;
-    }
+    const advance = await clickLightControl(
+        deps.page,
+        PODCAST_MODAL_ADVANCE,
+        deps.stepTimeoutMs,
+        'podcast modal advance',
+    );
+    if (!advance.ok) throw new Error(advance.error);
+    if (await waitUntil(closed, deps.stepTimeoutMs)) return;
     throw new Error(
-        `podcast modal: the 发播客 modal was still open ${deps.stepTimeoutMs}ms after the audio and cover were attached; its post-attach save path has never been measured (task 0236 R3 — the attended walk is still pending) and the only recorded advance control is '${PODCAST_MODAL_ADVANCE[0]}', which a draft run does not click (it is publish-adjacent)`,
+        `podcast modal: the 发播客 modal stayed open ${deps.stepTimeoutMs}ms after the advance click; the measured 2026-11-06 flow moves to the podcast editor page with the closed-shadow '${DRAFT_LABELS[0]}' bar, so a fast re-measure with a fresh probe is the next step, not a retry`,
     );
 }
 
@@ -445,14 +447,64 @@ async function composePodcast(
         deps.stepTimeoutMs,
     );
     await uploadFile(asPlaywrightPage(deps.page), audioInput, input.audio, { timeoutMs: deps.stepTimeoutMs });
-    const coverInput = await findAttachedSelector(
-        deps.page,
-        PODCAST_COVER_INPUT,
-        'podcast cover input',
-        deps.stepTimeoutMs,
-    );
-    await uploadFile(asPlaywrightPage(deps.page), coverInput, input.cover, { timeoutMs: deps.stepTimeoutMs });
+    // The audio card's acknowledgement is the registration signal: no ack in the window means the
+    // assignment did not take, and the cover chooser would then find `去发布` disabled and stall.
+    const ack = await waitUntil(async () => {
+        try {
+            return (await deps.page.locator(`text=${PODCAST_UPLOAD_ACK}`).count()) > 0;
+        } catch {
+            return false;
+        }
+    }, deps.stepTimeoutMs);
+    if (!ack) {
+        throw new Error(
+            `podcast modal: the audio card never showed '${PODCAST_UPLOAD_ACK}' within ${deps.stepTimeoutMs}ms of the file assignment; mimic-file upload of ${input.audio.split('/').pop()} did not register`,
+        );
+    }
+    await uploadPodcastCover(deps, input.cover);
+    await podcastAdvanceReady(deps);
     await leavePodcastModal(deps);
+}
+
+async function uploadPodcastCover(deps: ModeRunDeps, cover: string): Promise<void> {
+    const pw = asPlaywrightPage(deps.page);
+    const zone = pw.locator(PODCAST_COVER_ZONE).first();
+    const box = await zone.boundingBox().catch(() => null);
+    if (!box) {
+        throw new Error(`podcast modal: the cover card ('${PODCAST_COVER_ZONE}') has no bounding box to click`);
+    }
+    const chooser = asPlaywrightPage(deps.page)
+        .waitForEvent('filechooser', { timeout: 8_000 })
+        .catch(() => null);
+    await pw.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    const opened = await chooser;
+    if (!opened) {
+        throw new Error('podcast modal: clicking the cover card did not open a native file chooser within 8000ms');
+    }
+    await opened.setFiles(cover);
+}
+
+/** Wait until the advance control is enabled — `去发布` stays `disabled` until BOTH cards took. */
+async function podcastAdvanceReady(deps: ModeRunDeps): Promise<void> {
+    if (deps.publishStatus !== 'draft') {
+        return;
+    }
+    const enabled = await waitUntil(async () => {
+        try {
+            if ((await deps.page.locator('button:has-text("去发布")').count()) === 0) return false;
+            const disabled = await deps.page
+                .locator('button:has-text("去发布")[disabled], button:has-text("去发布")[aria-disabled="true"]')
+                .count();
+            return disabled === 0;
+        } catch {
+            return false;
+        }
+    }, deps.stepTimeoutMs);
+    if (!enabled) {
+        throw new Error(
+            `podcast modal: '${PODCAST_MODAL_ADVANCE[0]}' stayed disabled — the cards were not both accepted; check the audio ack '${PODCAST_UPLOAD_ACK}' and retry with the cover chooser path`,
+        );
+    }
 }
 
 /** Compose the requested mode's post. Exhaustive over {@link ModeInput}. */

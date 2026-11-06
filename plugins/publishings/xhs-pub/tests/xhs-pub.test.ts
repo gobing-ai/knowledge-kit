@@ -114,8 +114,8 @@ interface FakeState {
     articlePasted: boolean;
     /** The 发播客 modal is open and covers the action bar. */
     podcastModal: boolean;
-    /** The modal keeps covering the bar until `去发布` is clicked (the draft-refusal case). */
-    podcastNeedsAdvance: boolean;
+    /** The cover card's click never opens the native file chooser (the measured failure case). */
+    podcastCoverChooserSilent: boolean;
     podcastAudioAttached: boolean;
     podcastCoverAttached: boolean;
 }
@@ -132,6 +132,7 @@ const TOAST_LABELS = ['保存成功', '发布成功', '已发布'];
  * clone — which is why the flows consult `countOnScreen` before clicking.
  */
 const isModal = (selector: string) => selector.includes('creator-modal-sty') || selector.includes('d-modal');
+const isDisabledProbe = (selector: string) => selector.includes('[disabled]') || selector.includes('aria-disabled');
 const isTextProbe = (selector: string) => selector.includes(':text(');
 const isPodcastAudioInput = (selector: string) =>
     selector.includes('accept*=".mp3"') || selector.includes('accept*=".wav"');
@@ -184,6 +185,9 @@ function makeFakePage(initial: FakeState) {
         if (isDraftBox(selector)) return counterAttached();
         if (isTextProbe(selector)) return toastFound(selector);
         if (isModal(selector)) return state.podcastModal;
+        // `去发布` enables only once both cards register; the disabled-state probe matches nothing
+        // while the cards settle, and the enabled button itself is attached throughout.
+        if (isDisabledProbe(selector)) return false;
         return true;
     };
     /** The upload inputs sit behind styled drop zones: attached but never "visible". */
@@ -222,6 +226,10 @@ function makeFakePage(initial: FakeState) {
                 first: () => ({
                     count: async () => (attached(selector) ? 1 : 0),
                     isVisible: async () => isVisible(selector),
+                    boundingBox: async () =>
+                        attached(selector) && !isFileInput(selector)
+                            ? { x: 410, y: 149, width: 460, height: 478 }
+                            : null,
                     fill: async (text) => {
                         calls.push({ op: 'fill', args: [selector, text] });
                     },
@@ -254,11 +262,25 @@ function makeFakePage(initial: FakeState) {
             state.inEditor = true;
             if (state.podcastModal && isPodcastAudioInput(selector)) state.podcastAudioAttached = true;
             if (state.podcastModal && isPodcastCoverInput(selector)) state.podcastCoverAttached = true;
-            // The modal is a picker: with both artifacts attached the platform moves on by itself,
-            // unless this console only advances on `去发布` (see `podcastNeedsAdvance`).
-            if (state.podcastModal && state.podcastAudioAttached && state.podcastCoverAttached) {
-                if (!state.podcastNeedsAdvance) state.podcastModal = false;
-            }
+        },
+        waitForEvent: async (event, opts) => {
+            calls.push({ op: 'waitForEvent', args: [event, opts?.timeout ?? null] });
+            if (event !== 'filechooser') return null;
+            if (state.podcastCoverChooserSilent) return null;
+            return {
+                setFiles: async (paths: readonly string[] | string) => {
+                    const chooserFiles = Array.isArray(paths) ? [...paths] : [paths];
+                    calls.push({ op: 'setInputFiles', args: ['filechooser', chooserFiles] });
+                    // The chooser resolves a FILE, not a selector — a cover delivery through the
+                    // chooser registers the card exactly like the audio's input assignment does.
+                    if (state.podcastModal) state.podcastCoverAttached = true;
+                },
+            };
+        },
+        mouse: {
+            click: async (x, y) => {
+                calls.push({ op: 'mouse', args: [x, y] });
+            },
         },
         evaluate: async (expression) => {
             calls.push({ op: 'evaluate', args: [] });
@@ -363,7 +385,7 @@ const happy: FakeState = {
     articleOpen: false,
     articlePasted: false,
     podcastModal: false,
-    podcastNeedsAdvance: false,
+    podcastCoverChooserSilent: false,
     podcastAudioAttached: false,
     podcastCoverAttached: false,
 };
@@ -2187,39 +2209,46 @@ describe('xhs-pub operations (ADR-029 mode dispatch)', () => {
         expect(imageText.result.metadata?.draftClick).toBe('606,855');
     });
 
-    test('发播客: the modal takes audio AND cover, then the draft saves once the platform advances', async () => {
+    test('发播客: the modal takes audio (ack) and cover (native chooser), then 去发布 advances and the bar saves', async () => {
         const { result, log } = await run(PODCAST_CASE);
         expect(result.ok).toBe(true);
         expect(result.metadata?.artifactPaths).toEqual([audio, cover]);
         const uploads = log.filter((entry) => entry.op === 'setInputFiles').map((entry) => String(entry.args[0]));
         expect(uploads).toHaveLength(2);
         expect(uploads[0]).toContain('.mp3');
-        expect(uploads[1]).toContain('.jpg');
+        // Measured 2026-11-06: only the audio registers through a raw input assignment; the cover
+        // needs the native file chooser the site opens, so it rides `waitForEvent('filechooser')`.
+        expect(uploads[1]).toBe('filechooser');
+        const coverDelivery = log.filter((entry) => entry.op === 'setInputFiles')[1];
+        expect(String(coverDelivery?.args[1])).toContain('cover.png');
         // The RSS path is excluded by decision: no audio-card upload, no feed subscription.
         expect(log.some((entry) => entry.op === 'click' && String(entry.args[0]).includes('添加RSS订阅'))).toBe(false);
+        // The advance click is now part of the draft path (it opens the editor, not a publish).
+        const clicked = log.filter((entry) => entry.op === 'click').map((entry) => String(entry.args[0]));
+        expect(clicked.some((selector) => selector.includes('去发布'))).toBe(true);
         expect(publishTouches(log)).toEqual([]);
     });
 
-    test('发播客: a draft run refuses the publish-adjacent 去发布 advance and fails naming it', async () => {
+    test('发播客: a silent cover chooser fails naming the native file chooser', async () => {
         const { result, log } = await run(PODCAST_CASE, {
-            state: { podcastNeedsAdvance: true },
+            state: { podcastCoverChooserSilent: true },
         });
         expect(result.ok).toBe(false);
-        expect(result.error).toContain('去发布');
-        expect(result.error).toContain('publish-adjacent');
-        // The rail held: the modal's advance control was never clicked on a draft run.
+        expect(result.error).toContain('native file chooser');
+        // The rail held: the advance control was never reached behind a failed attach.
         const clicked = log.filter((entry) => entry.op === 'click').map((entry) => String(entry.args[0]));
         expect(clicked.some((selector) => selector.includes('去发布'))).toBe(false);
         expect(publishTouches(log)).toEqual([]);
     });
 
     test('发播客: an explicit public request may use the modal advance before publishing', async () => {
-        const { result } = await run(PODCAST_CASE, {
-            state: { podcastNeedsAdvance: true },
+        const { result, log } = await run(PODCAST_CASE, {
             content: modeContent({ audio: { path: audio }, coverImage: cover, publishStatus: 'public' }),
         });
         expect(result.ok).toBe(true);
         expect(result.metadata?.publishStatus).toBe('public');
+        const clicked = log.filter((entry) => entry.op === 'click').map((entry) => String(entry.args[0]));
+        expect(clicked.some((selector) => selector.includes('去发布'))).toBe(true);
     });
 });
 
@@ -2298,9 +2327,10 @@ describe('xhs-pub visit follow-ups (0236 R0/R1/R2 — one visit, two notes)', ()
         // R1/R2: that episode's mp3 and that episode's cover, after the 图文 batch, as one episode.
         expect(uploads(visitedPage(calls))).toEqual([[img(0), img(1)], [episodeMp3], [episodeCover]]);
         expect(followUps[0]?.metadata?.artifactPaths).toEqual([episodeMp3, episodeCover]);
-        // R4: a draft run never clicks the publish-adjacent 去发布, and the RSS path stays excluded.
-        expect(clicked(visitedPage(calls)).some((selector) => selector.includes('去发布'))).toBe(false);
-        expect(clicked(visitedPage(calls)).some((selector) => selector.includes('添加RSS订阅'))).toBe(false);
+        // The measured rail: on a draft run the advance opens the editor, and the shadow
+        // `暂存离开` saves — no publish touch ever happens before the save decision.
+        expect(clicked(visitedPage(calls)).some((selector) => selector.includes('去发布'))).toBe(true);
+        expect(clicked(visitedPage(calls)).some((selector) => selector === 'button:has-text("发布")')).toBe(false);
     });
 
     test('0236 R0: the visit spends ONE publish record, whatever the number of notes', async () => {
@@ -2336,23 +2366,22 @@ describe('xhs-pub visit follow-ups (0236 R0/R1/R2 — one visit, two notes)', ()
         expect(second.error).toContain('automation cap');
     });
 
-    test('0236 R3 (deferred): the unmeasured modal save path fails the 发播客 entry only', async () => {
+    test('0236 R3 (measured 2026-11-06): the modal walk advances the 发播客 follow-up to its own draft save', async () => {
         await seedImages();
         await seedEpisode();
-        const { open, calls } = makeOpenPage({ ...happy, podcastNeedsAdvance: true });
+        const { open, calls } = makeOpenPage({ ...happy, podcastCoverChooserSilent: true });
         const result = await visitTransport(open).publish({ content: cardContent({ followUps: [podcastNote()] }) });
 
-        // Non-blocking: the 图文 draft the visit was opened for still stands.
+        // A failed 发播客 entry stays non-blocking: the 图文 draft the visit was opened for stands.
         expect(result.ok).toBe(true);
         expect(result.metadata?.draftSignal).toBe('draft-row');
         const followUps = result.metadata?.followUps as Result[];
         expect(followUps[0]?.ok).toBe(false);
-        // The refusal names the rail AND the gap: the modal's post-attach save path is not measured.
-        expect(followUps[0]?.error).toContain('去发布');
-        expect(followUps[0]?.error).toContain('never been measured');
+        // The failure names the measured mechanism: the cover card never opened its chooser.
+        expect(followUps[0]?.error).toContain('native file chooser');
         // A failed entry still names its operation, so the caller can tell which note fell.
         expect(followUps[0]?.metadata?.operation).toBe('发播客');
-        // The rail held: the publish-adjacent advance was never clicked on a draft run.
+        // The rail held: the advance was never reached behind a failed attach.
         expect(clicked(visitedPage(calls)).some((selector) => selector.includes('去发布'))).toBe(false);
     });
 
