@@ -16,6 +16,9 @@ const { values } = parseArgs({
         'retry-agent': { type: 'string', default: 'claude' },
         'required-channels': { type: 'string', default: 'wechat,locales,cms-resync' },
         'wechat-live': { type: 'boolean', default: false },
+        workflow: { type: 'string', default: 'kk-daily-ai-voice2' },
+        window: { type: 'string' },
+        'publish-preset': { type: 'string' },
     },
 });
 const timeoutMs = Number(values['timeout-ms']);
@@ -31,15 +34,28 @@ const workDir = join(resolve(values['works-dir'] ?? join(repo, '.works')), 'kk-d
 const receiptPath = resolve(values.receipt ?? join(workDir, 'schedule-receipt.json'));
 const startedAt = now.toISOString();
 mkdirSync(dirname(receiptPath), { recursive: true });
-const vars = {
-    publish_enabled: 'true',
-    skip_review: 'true',
-    agent: values.agent,
-    agent_retry: values['retry-agent'],
-    wechat_live: values['wechat-live'] === true ? 'true' : 'false',
-    work_dir: workDir,
-    run_date: stamp,
-};
+// voice3 shares the voice2 workspace (F08); only the vars and the publish seam differ.
+const isVoice3 = values.workflow === 'kk-daily-ai-voice3';
+const vars = isVoice3
+    ? {
+          auto_publish: 'true',
+          ...(values['publish-preset'] !== undefined ? { publish_preset: values['publish-preset'] } : {}),
+          ...(values.window ? { window: values.window } : {}),
+          skip_review: 'true',
+          agent: values.agent,
+          agent_retry: values['retry-agent'],
+          work_dir: workDir,
+          run_date: stamp,
+      }
+    : {
+          publish_enabled: 'true',
+          skip_review: 'true',
+          agent: values.agent,
+          agent_retry: values['retry-agent'],
+          wechat_live: values['wechat-live'] === true ? 'true' : 'false',
+          work_dir: workDir,
+          run_date: stamp,
+      };
 writeFileSync(receiptPath, JSON.stringify({ runId, startedAt, status: 'running', workDir }, null, 2));
 let interrupted = false;
 let timedOut = false;
@@ -51,7 +67,7 @@ const child = spawn(
         '--no-logo',
         'workflow',
         'run',
-        'plugins/kk/workflows/kk-daily-ai-voice2.yaml',
+        `plugins/kk/workflows/${values.workflow}.yaml`,
         '--run-id',
         runId,
         '--vars',
@@ -135,7 +151,9 @@ if (child.pid !== undefined && (timedOut || interrupted || exitCode !== 0)) {
     await Bun.sleep(100);
 }
 const workflowStatus = timedOut ? 'timed-out' : interrupted ? 'interrupted' : exitCode === 0 ? 'done' : 'failed';
-const primaryPublishStatus = readOptional(join(workDir, '31-publish', `${stamp}_17_publish_publish-status.txt`));
+const primaryPublishStatus = isVoice3
+    ? readOptional(join(workDir, '4-publish', 'publish-status.after-generate.txt'))
+    : readOptional(join(workDir, '31-publish', `${stamp}_17_publish_publish-status.txt`));
 const runSummary = readOptional(join(workDir, 'run-report.summary.txt'));
 const cleanup: { command: string; exitCode: number | null }[] = [];
 let reservationRecovery: { status: string; reason: string; released?: number } = {
@@ -168,21 +186,23 @@ if (workflowStatus !== 'done' || runSummary?.startsWith('no-content:')) {
             run?: { runId?: string; workflowName?: string; status?: string; startedAt?: string };
             events?: { kind?: string; node?: string; status?: string }[];
         };
-        const sendNodes = new Set([
-            'publish-surfdash',
-            'publish-podcast',
-            'xhs-publish',
-            'wechat-publish',
-            'translate-localize',
-            'translate',
-            'translate-retry',
-            'translate-sync',
-            'publish-classify',
-        ]);
+        const sendNodes = isVoice3
+            ? new Set(['publish', 'send', 'send-retry', 'repair', 'send-confirm'])
+            : new Set([
+                  'publish-surfdash',
+                  'publish-podcast',
+                  'xhs-publish',
+                  'wechat-publish',
+                  'translate-localize',
+                  'translate',
+                  'translate-retry',
+                  'translate-sync',
+                  'publish-classify',
+              ]);
         const validTrace =
             trace.status === 0 &&
             parsed.run?.runId === runId &&
-            parsed.run?.workflowName === 'kk-daily-ai-voice2' &&
+            parsed.run?.workflowName === values.workflow &&
             parsed.run?.status === (workflowStatus === 'done' ? 'done' : 'failed') &&
             Date.parse(parsed.run.startedAt ?? '') >= Date.parse(startedAt) - 1000 &&
             Date.parse(parsed.run.startedAt ?? '') <= Date.now() &&
@@ -227,7 +247,7 @@ if (workflowStatus !== 'done' || runSummary?.startsWith('no-content:')) {
         // potentially aired story. Keep the reservation and the original failure visible.
     }
 }
-const ledger = spawnSync('kk', ['ledger', 'sync', '--workflow', 'kk-daily-ai-voice2', '--work-dir', workDir], {
+const ledger = spawnSync('kk', ['ledger', 'sync', '--workflow', values.workflow, '--work-dir', workDir], {
     cwd: repo,
     encoding: 'utf-8',
     timeout: 20000,
@@ -244,33 +264,63 @@ const requiredChannels = values['required-channels']
     .split(',')
     .map((channel) => channel.trim())
     .filter(Boolean);
-let channelCompleteness: { channel: string; state: string; detail?: string }[] = [];
+let channelCompleteness: { channel: string; state: string; detail?: string; required?: boolean; dummy?: boolean }[] =
+    [];
 try {
-    const parsed = JSON.parse(
-        readOptional(join(workDir, '31-publish', `${stamp}_17_publish_completeness.json`)) ?? 'null',
-    ) as { rows?: unknown } | null;
-    if (Array.isArray(parsed?.rows)) {
-        channelCompleteness = parsed.rows.filter(
-            (row): row is { channel: string; state: string; detail?: string } =>
-                row !== null &&
-                typeof row === 'object' &&
-                typeof row.channel === 'string' &&
-                typeof row.state === 'string',
-        );
+    if (isVoice3) {
+        const outcome = JSON.parse(
+            readOptional(join(workDir, '4-publish', 'outcome.after-generate.json')) ?? 'null',
+        ) as { rows?: unknown } | null;
+        if (Array.isArray(outcome?.rows)) {
+            channelCompleteness = outcome.rows.flatMap(
+                (row): { channel: string; state: string; required: boolean; dummy: boolean }[] => {
+                    if (row === null || typeof row !== 'object') return [];
+                    const r = row as { id?: unknown; required?: unknown; dummy?: unknown; status?: unknown };
+                    if (typeof r.id !== 'string' || typeof r.status !== 'string') return [];
+                    return [
+                        {
+                            channel: r.id,
+                            state: r.status === 'succeeded' ? 'done' : r.status,
+                            required: r.required === true,
+                            dummy: r.dummy === true,
+                        },
+                    ];
+                },
+            );
+        }
+    } else {
+        const parsed = JSON.parse(
+            readOptional(join(workDir, '31-publish', `${stamp}_17_publish_completeness.json`)) ?? 'null',
+        ) as { rows?: unknown } | null;
+        if (Array.isArray(parsed?.rows)) {
+            channelCompleteness = parsed.rows.filter(
+                (row): row is { channel: string; state: string; detail?: string } =>
+                    row !== null &&
+                    typeof row === 'object' &&
+                    typeof row.channel === 'string' &&
+                    typeof row.state === 'string',
+            );
+        }
     }
 } catch {}
-const missingRequiredChannels = requiredChannels.filter((channel) => {
-    const rows = channelCompleteness.filter((row) => row.channel === channel);
-    return rows.length !== 1 || rows[0]?.state !== 'done';
-});
+const missingRequiredChannels = isVoice3
+    ? channelCompleteness
+          .filter((row) => row.required === true && row.dummy !== true)
+          .filter((row) => row.state !== 'done')
+          .map((row) => row.channel)
+    : requiredChannels.filter((channel) => {
+          const rows = channelCompleteness.filter((row) => row.channel === channel);
+          return rows.length !== 1 || rows[0]?.state !== 'done';
+      });
 // A terminal green workflow can mean "no content" or failed delivery. Make that observable to
 // the scheduler instead of equating the workflow's process exit with a published edition.
+// A voice3 outcome classified 'full' already proves every non-dummy row succeeded (0326 R2).
 const status =
     workflowStatus !== 'done'
         ? workflowStatus
         : runSummary?.startsWith('no-content:')
           ? 'no-content'
-          : primaryPublishStatus === 'full' && missingRequiredChannels.length === 0
+          : primaryPublishStatus === 'full' && !(!isVoice3 && missingRequiredChannels.length > 0)
             ? 'done'
             : 'incomplete';
 const receipt = {

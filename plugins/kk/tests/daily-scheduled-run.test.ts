@@ -248,4 +248,107 @@ if (args.includes('run')) {
             JSON.stringify({ checkedAt: new Date().toISOString(), results }, null, 2),
         );
     }, 20000);
+
+    it('launches voice3 vars, judges the after-generate outcome, and syncs the voice3 ledger (0432)', async () => {
+        const dir = join(evidence, String(process.pid), 'voice3');
+        rmSync(dir, { recursive: true, force: true });
+        mkdirSync(join(dir, 'bin'), { recursive: true });
+        const fake = join(dir, 'bin/spur');
+        writeFileSync(
+            fake,
+            `#!${process.execPath}
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const args = process.argv.slice(2);
+appendFileSync(process.env.PROBE_ACTIONS, JSON.stringify(args) + '\\n');
+if (args.includes('trace')) {
+    const startedAt = new Date(Number(readFileSync(process.env.PROBE_STARTTIME, 'utf8'))).toISOString();
+    console.log(JSON.stringify({run:{runId:args[args.indexOf('trace')+1],workflowName:'kk-daily-ai-voice3',startedAt,status:'failed'},events:[{kind:'action',node:'publish',status:'failed'}]}));
+}
+if (args.includes('run')) {
+    writeFileSync(process.env.PROBE_STARTED, String(process.pid));
+    writeFileSync(process.env.PROBE_STARTTIME, String(Date.now()));
+    const vars = JSON.parse(args[args.indexOf('--vars') + 1]);
+    mkdirSync(join(vars.work_dir, '4-publish'), { recursive: true });
+    writeFileSync(join(vars.work_dir, '4-publish', 'publish-status.after-generate.txt'), 'full\\n');
+    writeFileSync(join(vars.work_dir, '4-publish', 'outcome.after-generate.json'), JSON.stringify({rows:[
+        {id:'surfdash-pub-post', required:true, status:'succeeded', dummy:false},
+        {id:'xhs-pub-longform', required:false, status:'failed', dummy:true},
+    ]}));
+    process.exit(0);
+}
+`,
+        );
+        chmodSync(fake, 0o755);
+        writeFileSync(join(dir, 'bin/kk'), readFileSync(fake));
+        chmodSync(join(dir, 'bin/kk'), 0o755);
+        const actionsFile = join(dir, 'actions.jsonl');
+        const receipt = join(dir, 'receipt.json');
+        const proc = Bun.spawn(
+            [
+                process.execPath,
+                runner,
+                '--repo',
+                repo,
+                '--works-dir',
+                join(dir, 'works'),
+                '--run-id',
+                'voice3-test',
+                '--timeout-ms',
+                '5000',
+                '--receipt',
+                receipt,
+                '--workflow',
+                'kk-daily-ai-voice3',
+                '--window',
+                '72h',
+                '--agent',
+                'fixture',
+                '--retry-agent',
+                'fixture-retry',
+            ],
+            {
+                env: {
+                    ...process.env,
+                    PATH: `${join(dir, 'bin')}:${process.env.PATH ?? ''}`,
+                    PROBE_ACTIONS: actionsFile,
+                    PROBE_STARTED: join(dir, 'started'),
+                    PROBE_STARTTIME: join(dir, 'start-time'),
+                },
+                stdout: 'pipe',
+                stderr: 'pipe',
+            },
+        );
+        const [exitCode, stdout, stderr] = await Promise.all([
+            proc.exited,
+            new Response(proc.stdout).text(),
+            new Response(proc.stderr).text(),
+        ]);
+        expect({ exitCode, stdout, stderr }).toMatchObject({ exitCode: 0 });
+        const row = JSON.parse(readFileSync(receipt, 'utf-8')) as Record<string, unknown>;
+        expect(row.status).toBe('done');
+        expect(row.primaryPublishStatus).toBe('full');
+        expect(row.missingRequiredChannels).toEqual([]);
+        const actions = readFileSync(actionsFile, 'utf-8')
+            .trim()
+            .split('\n')
+            .map((line) => JSON.parse(line) as string[]);
+        const launch = actions.find((args) => args.includes('run'));
+        const yaml = launch?.[launch.indexOf('run') + 1] ?? '';
+        expect(yaml).toContain('kk-daily-ai-voice3.yaml');
+        const vars = JSON.parse(launch?.[(launch.indexOf('--vars') ?? -1) + 1] ?? '{}');
+        expect(vars).toMatchObject({
+            auto_publish: 'true',
+            window: '72h',
+            skip_review: 'true',
+            agent: 'fixture',
+            agent_retry: 'fixture-retry',
+        });
+        expect(vars.wechat_live).toBeUndefined();
+        expect(vars.publish_enabled).toBeUndefined();
+        expect(actions.some((args) => args.includes('release'))).toBe(false);
+        const sync = actions.find((args) => args.includes('sync'));
+        expect(sync).toContain('--workflow');
+        expect(sync?.[sync.indexOf('--workflow') + 1]).toBe('kk-daily-ai-voice3');
+    }, 20000);
 });

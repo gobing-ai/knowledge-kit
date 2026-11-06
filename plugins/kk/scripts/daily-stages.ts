@@ -1726,7 +1726,15 @@ export function buildWechatArticleContent(
     return {
         ...article,
         body: options.appendOutro === false ? body : `${body}${WECHAT_OUTRO}`,
-        metadata: { ...metadataOf(article), publishStatus: options.publishStatus, wechatmp },
+        metadata: {
+            ...metadataOf(article),
+            // wechatmp-pub's 播客 operation resolves the episode mp3 through the generic media key
+            // `metadata.audio` (`modes.ts` resolveMediaPath), while the 文章 audio-embed rail keeps
+            // reading `wechatmp.audioPath` — carry both spellings so one variant serves both rows.
+            ...(options.audioPath === undefined ? {} : { audio: options.audioPath }),
+            publishStatus: options.publishStatus,
+            wechatmp,
+        },
     };
 }
 
@@ -1800,9 +1808,24 @@ export function buildPodcastContent(
  *
  * surfdash is the article's own publisher, so it consumes what `22-article` already composed — the
  * builder exists so the variant set is uniform, not because it reshapes anything.
+ *
+ * surfdash-pub's `post` operation refuses a digest post without `metadata.coverImage`
+ * (surfdash-pub/src/index.ts), so the run's cover rides along exactly as the episode/wechat
+ * builders stamp it. voice2's prepare mode never exercised this gate; the frozen-bundle matrix
+ * send surfaced it on 2026-11-05 (empty run → 'digest post has no cover image').
  */
-export function buildSurfdashContent(article: Record<string, unknown>, _links: PublishLinks): Record<string, unknown> {
-    return { ...article };
+export function buildSurfdashContent(
+    article: Record<string, unknown>,
+    _links: PublishLinks,
+    options: { coverPath?: string } = {},
+): Record<string, unknown> {
+    return {
+        ...article,
+        metadata: {
+            ...metadataOf(article),
+            ...(options.coverPath === undefined ? {} : { coverImage: options.coverPath }),
+        },
+    };
 }
 
 /**
@@ -1933,7 +1956,7 @@ export function dailyBundleVariants(args: string[]): void {
         const cardsPath = join(workDir, '25-xhs', 'content.json');
         const coverPath = join(workDir, '23-cover', `${runDate}_07_cover_cover.png`);
         const socialDir = join(workDir, '26-social');
-        const cover = coverEnabledArg !== 'false' && isFile(coverPath) ? coverPath : undefined;
+        const cover = coverEnabledArg !== 'false' && isFile(coverPath) ? resolve(coverPath) : undefined;
         const links = PLACEHOLDER_LINKS;
         const written: string[] = [];
         const skipped: string[] = [];
@@ -1950,8 +1973,8 @@ export function dailyBundleVariants(args: string[]): void {
         // shared copy must exist for the channels the preset does not specialise.
         if (article === null) skipped.push('article (no 22-article content)');
         else {
-            write('article', buildSurfdashContent(article, links));
-            write('article@surfdash-pub', buildSurfdashContent(article, links));
+            write('article', buildSurfdashContent(article, links, { coverPath: cover }));
+            write('article@surfdash-pub', buildSurfdashContent(article, links, { coverPath: cover }));
             write('article@xhs-pub', buildXhsArticleContent(article, { publishStatus: 'draft' }));
             write(
                 'article@wechatmp-pub',
@@ -3618,9 +3641,13 @@ export function dailySafetyPrep(args: string[]): void {
             if (isFile(scriptPath))
                 sted('write', snapshot, () => writeRaw(snapshot, readFileSync(scriptPath, 'utf-8')));
         } else {
-            // The remediation budget belongs to this scope's attempt, not to the day.
+            // The remediation budget belongs to this scope's attempt, not to the day. The machine
+            // re-enters this state once per remediation loop, so initializing unconditionally
+            // reset the budget every cycle and the loop could never classify its residue
+            // (20261105 dogfood: the nested variants review revised forever). Like the drafts
+            // scope, only the FIRST entry initializes.
             const counter = scopeCounter(workDir, scopeDir);
-            sted('write', counter, () => writeFileSync(counter, '0\n'));
+            if (!isFile(counter)) sted('write', counter, () => writeFileSync(counter, '0\n'));
         }
         for (const name of [
             'safety-review_report.json',
@@ -3693,7 +3720,14 @@ export function dailySafetyRevise(args: string[]): void {
         if (!drafts) {
             // Variants scope: every manifest-listed file must stay parseable Content with the
             // fields the publish half reads; the structural VoiceScript machinery does not apply.
-            for (const entry of Object.values(readManifest(workDir).variants)) {
+            // Refresh each entry's sha256 to the post-remediation bytes: the manifest is the
+            // contract the request/digest/stamp resolve through, so leaving the pre-remediation
+            // digests in place made every re-review report a request-integrity mismatch and the
+            // loop spin (20261105 dogfood). Structural drift above the hash level stays owned by
+            // daily-bundle-variants (never run here).
+            const manifestPath = join(workDir, SAFETY_VARIANTS_DIR, 'manifest.json');
+            const manifest = readManifest(workDir);
+            for (const [key, entry] of Object.entries(manifest.variants)) {
                 const path = join(workDir, entry.path);
                 const value = requireJson(path, 'safety-revise') as {
                     title?: unknown;
@@ -3704,7 +3738,16 @@ export function dailySafetyRevise(args: string[]): void {
                         failWith(1, `safety-revise: variant ${path} ${field} must be a non-empty string`);
                     }
                 }
+                entry.sha256 = createHash('sha256').update(readFileSync(path)).digest('hex');
+                manifest.variants[key] = entry;
             }
+            sted('write', manifestPath, () =>
+                writeJsonText(manifestPath, {
+                    schemaVersion: manifest.schemaVersion,
+                    runDate: manifest.runDate,
+                    variants: manifest.variants,
+                }),
+            );
             const counter = scopeCounter(workDir, scopeDir);
             const next = readScopeCounter(workDir, scopeDir) + 1;
             sted('write', counter, () => writeFileSync(counter, `${next}\n`));
