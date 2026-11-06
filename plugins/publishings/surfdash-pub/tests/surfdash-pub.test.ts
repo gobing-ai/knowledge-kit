@@ -2412,6 +2412,69 @@ process.exit(0);
             }
         });
 
+        test('patchPost and runSiteGate warn and continue when site gate fails only on an unrelated date post', async () => {
+            const fx = await setupGateFixture('test-patch-unrelated-date-gate');
+            process.env.SURFDASH_ROOT = fx.work;
+            process.env.SURFDASH_AUTO_PUSH = '1';
+
+            const zhPostPath = join(
+                fx.work,
+                'content',
+                'posts',
+                'articles',
+                'zh',
+                '20261105-ai-2026-11-05',
+                'index.md',
+            );
+            await mkdir(dirname(zhPostPath), { recursive: true });
+            await writeFile(
+                zhPostPath,
+                `---\ntitle: ZH\npublishDate: '2026-11-05'\nimage: ./assets/cover.png\n---\n\nBody\n`,
+            );
+            await writeFile(join(fx.work, 'scripts', 'publish-orchestrator.ts'), 'process.exit(0);\n');
+
+            const sdScript = `
+const argv = process.argv.slice(2);
+if (argv[0] === 'check' && argv[1] === 'digest') {
+    console.error('✗ ${fx.work}/content/posts/articles/zh/20261106-ai-2026-11-06/index.md: title has no topic list after the date (date-only title)');
+    process.exit(1);
+}
+process.exit(0);
+`;
+            await writeFile(join(fx.work, 'scripts', 'sd.ts'), `${sdScript.trim()}\n`, 'utf-8');
+
+            const gitRun = async (cmd: string[], cwd: string): Promise<void> => {
+                const proc = Bun.spawn(cmd, { cwd, stdout: 'pipe', stderr: 'pipe' });
+                await proc.exited;
+            };
+            await gitRun(['git', 'add', '-A'], fx.work);
+            await gitRun(['git', 'commit', '-m', 'add-20261105-post'], fx.work);
+            await gitRun(['git', 'push', 'origin', 'main'], fx.work);
+
+            const errTarget = createBufferTarget();
+            const restore = setDefaultOutputTargets({ stderr: errTarget });
+            try {
+                const transport = new PostsurfingFileCliTransport();
+                const result = await transport.publish({
+                    content: { title: 'unused', body: 'unused', format: 'markdown' },
+                    options: {
+                        operation: 'patch',
+                        postPath: zhPostPath,
+                        coverUrl: 'https://cdn.example/cover.png',
+                        dateIso: '2026-11-05',
+                    },
+                });
+                expect(result.ok).toBe(true);
+                expect(errTarget.text()).toContain('site gate (warn):');
+                expect(errTarget.text()).toContain('20261106-ai-2026-11-06');
+            } finally {
+                restore();
+                delete process.env.SURFDASH_ROOT;
+                process.env.SURFDASH_AUTO_PUSH = '0';
+                await rm(fx.base, { recursive: true, force: true });
+            }
+        });
+
         describe('surfdash listen-link backfill before site gate/commit', () => {
             test('backfill invoked with exact argv and cwd', async () => {
                 const fx = await setupGateFixture('test-backfill-argv');

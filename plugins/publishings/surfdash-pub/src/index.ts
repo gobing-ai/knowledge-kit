@@ -476,17 +476,41 @@ export function extractFailingPostHint(text: string): string | undefined {
     return match[0].replace(/[.,;]+$/, '');
 }
 
+function extractPostDates(paths: readonly string[]): Set<string> {
+    const dates = new Set<string>();
+    for (const p of paths) {
+        const m = p.replaceAll('\\', '/').match(/(?:^|\/)posts\/articles\/(?:zh|en|ja)\/(\d{8})-/);
+        if (m?.[1]) dates.add(m[1]);
+    }
+    return dates;
+}
+
+function isUnrelatedDatePostFailure(output: string, ownedPaths: readonly string[]): boolean {
+    const ownedDates = extractPostDates(ownedPaths);
+    if (ownedDates.size === 0) return false;
+    const failingHints = [...output.matchAll(/(?:content[\\/])?posts[\\/][^\s:)]+/g)].map((m) =>
+        m[0].replace(/[.,;]+$/, ''),
+    );
+    if (failingHints.length === 0) return false;
+    for (const hint of failingHints) {
+        const m = hint.replaceAll('\\', '/').match(/(?:^|\/)posts\/articles\/(?:zh|en|ja)\/(\d{8})-/);
+        if (!m?.[1] || ownedDates.has(m[1])) return false;
+    }
+    return true;
+}
+
 /**
  * Runs the surfdash site gates (`bun run sd check digest` then `bun run check:content`)
  * with cwd = `surfdashRoot` via `spawnCli`.
  *
  * If either command exits non-zero:
- * - With `SURFDASH_DIGEST_CHECK=warn`: echoes each line of the failure via `echoError`
- *   prefixed with `site gate (warn):` and continues.
+ * - With `SURFDASH_DIGEST_CHECK=warn` (or when every failing post belongs to an unrelated date
+ *   outside `ownedPaths`): echoes each line of the failure via `echoError` prefixed with
+ *   `site gate (warn):` and continues.
  * - With `SURFDASH_DIGEST_CHECK=off`: skips the gate completely.
  * - Default (unset or any other value): fails loud with command, trimmed output, and post hint.
  */
-export async function runSiteGate(surfdashRoot: string): Promise<SiteGateOutcome> {
+export async function runSiteGate(surfdashRoot: string, ownedPaths: readonly string[] = []): Promise<SiteGateOutcome> {
     if (process.env.SURFDASH_DIGEST_CHECK === 'off') {
         return { ok: true };
     }
@@ -498,7 +522,7 @@ export async function runSiteGate(surfdashRoot: string): Promise<SiteGateOutcome
             const postHint = extractFailingPostHint(output);
             const hint = postHint ? ` [failing post: ${postHint}]` : '';
             const error = `site gate failed: ${cmd.join(' ')} (exit ${spawned.exitCode})${hint}: ${output}`;
-            if (process.env.SURFDASH_DIGEST_CHECK === 'warn') {
+            if (process.env.SURFDASH_DIGEST_CHECK === 'warn' || isUnrelatedDatePostFailure(output, ownedPaths)) {
                 for (const line of error.split('\n')) {
                     echoError(`site gate (warn): ${line}`);
                 }
@@ -851,7 +875,7 @@ async function patchPost(options: SurfdashPubOptions): Promise<Result> {
     if (process.env.SURFDASH_AUTO_PUSH !== '0') {
         const backfilled = await runListenLinkBackfill(surfdashRoot);
         for (const p of backfilled) commitPaths.add(p);
-        const gate = await runSiteGate(surfdashRoot);
+        const gate = await runSiteGate(surfdashRoot, [...commitPaths, relative(surfdashRoot, postPath.postPath)]);
         if (!gate.ok) return fail(gate.error);
     }
     const commit = await commitPostPaths(
@@ -1259,9 +1283,9 @@ async function publishPreparedFile(
             });
         }
         const backfilled = await runListenLinkBackfill(surfdashRoot);
-        const gate = await runSiteGate(surfdashRoot);
-        if (!gate.ok) return failUncertain(gate.error);
         const commitPaths = relPostDirs ?? [relPostDir];
+        const gate = await runSiteGate(surfdashRoot, [...commitPaths, ...backfilled]);
+        if (!gate.ok) return failUncertain(gate.error);
         const commitLocales: SupportedLocale[] = relPostDirs === undefined ? [locale] : ['zh', 'en', 'ja'];
         const pushed = await pushPostGit(
             surfdashRoot,
