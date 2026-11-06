@@ -221,7 +221,10 @@ export function wrapPlaywrightPage(raw: unknown, shadow?: ShadowProbe): XhsPage 
                     isVisible: (options) => loc.isVisible(options),
                     fill: (text, options) => loc.fill(text, options),
                     click: (options) => loc.click(options),
-                    boundingBox: () => loc.boundingBox?.() ?? Promise.resolve(null),
+                    // A `:has-text(...)` selector matches every ancestor `div` in pre-order before
+                    // the leaf card itself; the last on-screen match is the innermost element.
+                    boundingBox: async () =>
+                        (await onScreen(selector)).at(-1)?.box ?? (await loc.boundingBox?.()) ?? null,
                     type: (text, options) =>
                         (
                             loc as unknown as {

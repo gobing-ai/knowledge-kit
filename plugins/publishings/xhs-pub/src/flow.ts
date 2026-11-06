@@ -408,6 +408,42 @@ async function isPodcastModalOpen(page: XhsPage): Promise<boolean> {
         .catch(() => false);
 }
 
+async function clickPodcastModalDomFallback(page: XhsPage): Promise<string> {
+    const res = await page
+        .evaluate(
+            `(() => {
+                const modals = Array.from(document.querySelectorAll('.d-modal, div.creator-modal-sty'));
+                const buttons = Array.from(document.querySelectorAll('.d-modal button, div.creator-modal-sty button, .d-modal-mask button'));
+                const confirmLabels = ['确定', '完成', '确认', '保存'];
+                const cropBtn = buttons.find((b) => {
+                    const t = (b.textContent || '').trim();
+                    return confirmLabels.includes(t) && !b.classList.contains('cancel-btn') && !b.dataset.kkClicked;
+                }) || (modals.length > 1 ? Array.from(modals[modals.length - 1].querySelectorAll('button')).find((b) => !b.classList.contains('cancel-btn') && b.classList.contains('bg-red') && !(b.textContent || '').includes('去发布') && !b.dataset.kkClicked) : null);
+                if (cropBtn && typeof cropBtn.click === 'function') {
+                    cropBtn.dataset.kkClicked = '1';
+                    cropBtn.click();
+                    return JSON.stringify({ modals: modals.length, clickedCrop: true, clickedAdvance: false });
+                }
+                const advBtns = buttons.filter((b) => (b.textContent || '').includes('去发布') && !b.hasAttribute('disabled') && b.getAttribute('aria-disabled') !== 'true');
+                const adv = advBtns[advBtns.length - 1];
+                let clickedAdvance = false;
+                if (adv && !adv.dataset.kkClicked && typeof adv.click === 'function') {
+                    adv.dataset.kkClicked = '1';
+                    adv.click();
+                    clickedAdvance = true;
+                }
+                return JSON.stringify({
+                    modals: modals.length,
+                    clickedCrop: false,
+                    clickedAdvance,
+                    buttons: buttons.map((b) => ({ text: (b.textContent || '').trim(), cls: b.className, disabled: b.hasAttribute('disabled') })),
+                });
+            })()`,
+        )
+        .catch(() => '');
+    return typeof res === 'string' ? res : '';
+}
+
 /**
  * Leave the 发播客 modal. 0236 R3 is now measured (2026-11-06 headless probe): the modal's only
  * controls are `取消` and the light-DOM `去发布`, and `去发布` does not publish — it opens the full
@@ -418,17 +454,39 @@ async function isPodcastModalOpen(page: XhsPage): Promise<boolean> {
  */
 async function leavePodcastModal(deps: ModeRunDeps): Promise<void> {
     const closed = () => isPodcastModalOpen(deps.page).then((open) => !open);
-    if (await waitUntil(closed, deps.stepTimeoutMs)) return;
-    const advance = await clickLightControl(
-        deps.page,
-        PODCAST_MODAL_ADVANCE,
-        deps.stepTimeoutMs,
-        'podcast modal advance',
-    );
-    if (!advance.ok) throw new Error(advance.error);
-    if (await waitUntil(closed, deps.stepTimeoutMs)) return;
+    if (!(await isPodcastModalOpen(deps.page))) return;
+    let usedFallback = false;
+    let lastDiag = '';
+    try {
+        const advance = await clickLightControl(
+            deps.page,
+            PODCAST_MODAL_ADVANCE,
+            Math.min(deps.stepTimeoutMs, 2_500),
+            'podcast modal advance',
+        );
+        if (!advance.ok) {
+            lastDiag = await clickPodcastModalDomFallback(deps.page);
+            if (!lastDiag.startsWith('{')) throw new Error(advance.error);
+            usedFallback = true;
+        }
+    } catch {
+        lastDiag = await clickPodcastModalDomFallback(deps.page);
+        usedFallback = true;
+    }
+    if (
+        await waitUntil(async () => {
+            if (await closed()) return true;
+            if (usedFallback) {
+                lastDiag = await clickPodcastModalDomFallback(deps.page);
+            }
+            return false;
+        }, deps.stepTimeoutMs)
+    ) {
+        return;
+    }
+    const diagSuffix = lastDiag ? ` [modal=${lastDiag}]` : '';
     throw new Error(
-        `podcast modal: the 发播客 modal stayed open ${deps.stepTimeoutMs}ms after the advance click; the measured 2026-11-06 flow moves to the podcast editor page with the closed-shadow '${DRAFT_LABELS[0]}' bar, so a fast re-measure with a fresh probe is the next step, not a retry`,
+        `podcast modal: the 发播客 modal stayed open ${deps.stepTimeoutMs}ms after the advance click; the measured 2026-11-06 flow moves to the podcast editor page with the closed-shadow '${DRAFT_LABELS[0]}' bar, so a fast re-measure with a fresh probe is the next step, not a retry${diagSuffix}`,
     );
 }
 
@@ -479,9 +537,68 @@ async function uploadPodcastCover(deps: ModeRunDeps, cover: string): Promise<voi
         unknown | null
     >;
     await deps.page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-    const opened = await chooser;
+    const pending = Symbol('pending');
+    const quick = await Promise.race([
+        chooser,
+        new Promise<typeof pending>((resolve) => setTimeout(() => resolve(pending), 400)),
+    ]);
+    let diag = '';
+    if (quick === pending) {
+        const fallback = await deps.page
+            .evaluate(
+                `(() => {
+                    const modal = document.querySelector('.d-modal') || document.body;
+                    const inputs = Array.from(modal.querySelectorAll('input[type="file"]'));
+                    const coverInput = inputs.find((i) => !String(i.getAttribute('accept') || '').includes('.mp3'));
+                    const all = Array.from(modal.querySelectorAll('*')).filter((el) => (el.textContent || '').includes('设置封面'));
+                    const leaf = all[all.length - 1];
+                    let card = leaf;
+                    while (card && card.parentElement && card.parentElement !== modal) {
+                        const pt = card.parentElement.textContent || '';
+                        if (pt.includes('上传成功') || pt.includes('点击上传') || pt.includes('去发布')) break;
+                        card = card.parentElement;
+                    }
+                    let clickedInput = false;
+                    if (coverInput && typeof coverInput.click === 'function') {
+                        coverInput.click();
+                        clickedInput = true;
+                    } else {
+                        if (card && typeof card.click === 'function') card.click();
+                        if (leaf && typeof leaf.click === 'function') leaf.click();
+                    }
+                    const rect = card ? card.getBoundingClientRect() : null;
+                    return JSON.stringify({
+                        clickedInput,
+                        x: rect ? Math.round(rect.left + rect.width / 2) : null,
+                        y: rect ? Math.round(rect.top + rect.height * 0.35) : null,
+                        inputs: inputs.map((i) => ({ accept: i.getAttribute('accept'), cls: i.className })),
+                        cardTag: card ? card.tagName + '.' + String(card.className) : null,
+                        cardRect: rect ? [Math.round(rect.left), Math.round(rect.top), Math.round(rect.width), Math.round(rect.height)] : null,
+                    });
+                })()`,
+            )
+            .catch(() => '');
+        if (typeof fallback === 'string' && fallback.startsWith('{')) {
+            diag = ` [modal=${fallback}]`;
+            try {
+                const parsed = JSON.parse(fallback) as {
+                    clickedInput?: boolean;
+                    x?: number | null;
+                    y?: number | null;
+                };
+                if (!parsed.clickedInput && typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+                    await deps.page.mouse.click(parsed.x, parsed.y);
+                }
+            } catch {
+                // ignore parse errors on diagnostic payload
+            }
+        }
+    }
+    const opened = quick === pending ? await chooser : quick;
     if (!opened) {
-        throw new Error('podcast modal: clicking the cover card did not open a native file chooser within 8000ms');
+        throw new Error(
+            `podcast modal: clicking the cover card did not open a native file chooser within 8000ms${diag}`,
+        );
     }
     await (opened as { setFiles(path: string): Promise<void> }).setFiles(cover);
 }

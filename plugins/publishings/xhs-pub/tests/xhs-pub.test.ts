@@ -814,6 +814,42 @@ describe('xhs-pub playwright adapter', () => {
         );
         expect(attempts).toBe(1);
     });
+
+    test('boundingBox resolves the innermost on-screen match when a :has-text selector matches outer modal ancestors', async () => {
+        const boxes = [
+            { x: 100, y: 100, width: 600, height: 400 }, // outer .d-modal wrapper div
+            { x: 410, y: 149, width: 160, height: 160 }, // inner 设置封面 card div
+        ];
+        const stub = {
+            goto: async () => {},
+            locator: () => ({
+                count: async () => boxes.length,
+                nth: (index: number) => ({
+                    boundingBox: async () => boxes[index] ?? null,
+                    click: async () => {},
+                }),
+                first: () => ({
+                    count: async () => boxes.length,
+                    isVisible: async () => true,
+                    fill: async () => {},
+                    click: async () => {},
+                    boundingBox: async () => boxes[0] ?? null,
+                }),
+            }),
+            setInputFiles: async () => {},
+            waitForSelector: async () => null,
+            url: () => 'https://creator.xiaohongshu.com/publish/publish',
+            viewportSize: () => ({ width: 1280, height: 800 }),
+            mouse: { click: async () => {} },
+        };
+        const page = wrapPlaywrightPage(stub);
+        expect(await page.locator('.d-modal div:has-text("设置封面")').first().boundingBox()).toEqual({
+            x: 410,
+            y: 149,
+            width: 160,
+            height: 160,
+        });
+    });
 });
 
 /** Canned CDP session for the closed-shadow probe (no browser needed). */
@@ -2253,6 +2289,96 @@ describe('xhs-pub operations (ADR-029 mode dispatch)', () => {
         expect(result.metadata?.publishStatus).toBe('public');
         const clicked = log.filter((entry) => entry.op === 'click').map((entry) => String(entry.args[0]));
         expect(clicked.some((selector) => selector.includes('去发布'))).toBe(true);
+    });
+
+    test('发播客: falls back to triggering the cover card DOM click when the initial coordinate click leaves the chooser pending', async () => {
+        await PODCAST_CASE.seed();
+        const fake = makeFakePage({ ...happy });
+        let resolveChooser: ((val: unknown) => void) | null = null;
+        const page: XhsPage = {
+            ...fake.page,
+            waitForEvent: async (event) => {
+                if (event !== 'filechooser') return null;
+                return new Promise((resolve) => {
+                    resolveChooser = resolve;
+                });
+            },
+            mouse: {
+                click: async (x, y) => {
+                    await fake.page.mouse?.click(x, y);
+                    if (x === 450 && y === 200 && resolveChooser) {
+                        resolveChooser({
+                            setFiles: async (paths: readonly string[] | string) => {
+                                await fake.page.setInputFiles('input[accept*=".png"]', paths);
+                            },
+                        });
+                    }
+                },
+            },
+            evaluate: async (expression) => {
+                if (expression.includes('设置封面')) {
+                    return JSON.stringify({ x: 450, y: 200 });
+                }
+                return fake.page.evaluate(expression);
+            },
+        };
+        const t = makeTransport('script', {
+            openPage: async () => ({ page, close: async () => {} }),
+            stepTimeoutMs: 1000,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+        });
+        const result = await t.publish({
+            content: PODCAST_CASE.content(),
+            options: { operation: '发播客' },
+        });
+        expect(result.ok).toBe(true);
+    });
+
+    test('发播客: leavePodcastModal falls back to DOM click when a modal mask intercepts pointer events on 去发布', async () => {
+        await PODCAST_CASE.seed();
+        const state: FakeState = { ...happy };
+        const fake = makeFakePage(state);
+        const page: XhsPage = {
+            ...fake.page,
+            locator: (selector) => {
+                const inner = fake.page.locator(selector);
+                if (selector.includes('去发布') && !selector.includes('disabled')) {
+                    const first = inner.first();
+                    return {
+                        ...inner,
+                        first: () => ({
+                            ...first,
+                            click: async () => {
+                                throw new Error(
+                                    'click: Timeout 2500ms exceeded. <button class="cancel-btn"> from <div class="d-modal-mask"> subtree intercepts pointer events',
+                                );
+                            },
+                        }),
+                    };
+                }
+                return inner;
+            },
+            evaluate: async (expression) => {
+                if (expression.includes('去发布') && expression.includes('cancel-btn')) {
+                    // Simulate closing the podcast modal via the DOM fallback click on 去发布.
+                    await fake.page.locator('button:has-text("去发布")').first().click();
+                    return JSON.stringify({ clickedAdvance: true });
+                }
+                return fake.page.evaluate(expression);
+            },
+        };
+        const t = makeTransport('script', {
+            openPage: async () => ({ page, close: async () => {} }),
+            stepTimeoutMs: 400,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+        });
+        const result = await t.publish({
+            content: PODCAST_CASE.content(),
+            options: { operation: '发播客' },
+        });
+        expect(result.ok).toBe(true);
     });
 });
 
