@@ -1,3 +1,17 @@
+## [0.1.14] - 2026-11-07
+
+### Fixed
+
+- fix(weibo-pub): v5 article cover attach — lazy image library wait + crop-step poll + settings-panel preview probe (ed98304)
+<!-- src: plugins/publishings/weibo-pub/src/index.ts:813 -->
+
+### Other
+
+- chore(daily): format spawnSync options block in inspectGenerationOnly (8e0cd6c)
+<!-- src: plugins/kk/scripts/daily-scheduled-run.ts:328 -->
+- test(weibo): add then remove the publish DOM probe within the release (fcfabca, 799609c)
+<!-- src: plugins/publishings/weibo-pub/src/index.ts:841 -->
+
 ## [0.1.13] - 2026-11-06
 
 ### Added
