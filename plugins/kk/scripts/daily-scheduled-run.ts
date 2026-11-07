@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /** Supervise one scheduled daily run and persist its terminal outcome even after a deadline. */
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
@@ -17,6 +17,7 @@ const { values } = parseArgs({
         'required-channels': { type: 'string', default: 'wechat,locales,cms-resync' },
         'wechat-live': { type: 'boolean', default: false },
         workflow: { type: 'string', default: 'kk-daily-ai-voice2' },
+        'generate-only': { type: 'boolean', default: false },
         window: { type: 'string' },
         'publish-preset': { type: 'string' },
     },
@@ -36,9 +37,14 @@ const startedAt = now.toISOString();
 mkdirSync(dirname(receiptPath), { recursive: true });
 // voice3 shares the voice2 workspace (F08); only the vars and the publish seam differ.
 const isVoice3 = values.workflow === 'kk-daily-ai-voice3';
+const generateOnly = values['generate-only'] === true;
+if (generateOnly && !isVoice3) {
+    console.error('daily-scheduled-run: --generate-only requires --workflow kk-daily-ai-voice3');
+    process.exit(2);
+}
 const vars = isVoice3
     ? {
-          auto_publish: 'true',
+          auto_publish: generateOnly ? 'false' : 'true',
           ...(values['publish-preset'] !== undefined ? { publish_preset: values['publish-preset'] } : {}),
           ...(values.window ? { window: values.window } : {}),
           skip_review: 'true',
@@ -312,6 +318,36 @@ const missingRequiredChannels = isVoice3
           const rows = channelCompleteness.filter((row) => row.channel === channel);
           return rows.length !== 1 || rows[0]?.state !== 'done';
       });
+/** Generate-only receipts use the same fail-closed bundle admission as posting and validation. */
+function inspectGenerationOnly(): { status: string; reason: string } {
+    const inspector = join(repo, 'scripts/daily-ai-news.ts');
+    if (!existsSync(inspector)) return { status: 'incomplete', reason: `bundle inspector not found: ${inspector}` };
+    // The child is terminal, but our initial receipt still says running. Mark the inspection phase so
+    // the shared admission check does not mistake this supervisor for a concurrent active run.
+    writeFileSync(receiptPath, JSON.stringify({ runId, startedAt, status: 'inspecting', workDir }, null, 2));
+    const probe = spawnSync(
+        process.execPath,
+        [inspector, 'inspect', '--work-dir', workDir, '--run-date', stamp],
+        { cwd: repo, encoding: 'utf-8', timeout: 30000, maxBuffer: 1024 * 1024 },
+    );
+    try {
+        const parsed = JSON.parse(probe.stdout) as { status?: unknown; reason?: unknown };
+        if (typeof parsed.status === 'string') {
+            return {
+                status: probe.status === 0 && parsed.status === 'complete' ? 'complete' : 'incomplete',
+                reason: typeof parsed.reason === 'string' ? parsed.reason : `inspector exited ${probe.status ?? 1}`,
+            };
+        }
+    } catch {}
+    return {
+        status: 'incomplete',
+        reason: probe.stderr.trim() || probe.error?.message || `bundle inspector exited ${probe.status ?? 1}`,
+    };
+}
+const generationInspection =
+    generateOnly && workflowStatus === 'done' && !runSummary?.startsWith('no-content:')
+        ? inspectGenerationOnly()
+        : null;
 // A terminal green workflow can mean "no content" or failed delivery. Make that observable to
 // the scheduler instead of equating the workflow's process exit with a published edition.
 // A voice3 outcome classified 'full' already proves every non-dummy row succeeded (0326 R2).
@@ -320,14 +356,20 @@ const status =
         ? workflowStatus
         : runSummary?.startsWith('no-content:')
           ? 'no-content'
-          : primaryPublishStatus === 'full' && !(!isVoice3 && missingRequiredChannels.length > 0)
-            ? 'done'
-            : 'incomplete';
+          : generateOnly
+            ? generationInspection?.status === 'complete'
+                ? 'done'
+                : 'incomplete'
+            : primaryPublishStatus === 'full' && !(!isVoice3 && missingRequiredChannels.length > 0)
+              ? 'done'
+              : 'incomplete';
 const receipt = {
     runId,
     startedAt,
     completedAt: new Date().toISOString(),
     status,
+    generateOnly,
+    generationInspection,
     exitCode: timedOut ? 124 : interrupted ? 143 : exitCode !== 0 ? exitCode : status === 'done' ? 0 : 4,
     workDir,
     timeoutMs,

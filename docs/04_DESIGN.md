@@ -1086,6 +1086,38 @@ workflow exit codes are retained. The receipt includes `channelCompleteness` and
 Installing this launcher requires operator approval. It was activated on November 1 following
 Robin's approval; evidence is in `docs/report/2026-11-01-daily-ai-news-recovery.md`.
 
+**Daily AI-news operator entries (0344).** Three root package scripts wrap the active voice3 path:
+
+```bash
+bun run daily-news:generate                 # supervised generation only; auto_publish=false, 72h pool
+bun run daily-news:publish                  # valid today's bundle -> after-generate
+bun run daily-news:validate                 # live read-only diagnosis + offline voice3 dogfood
+bun run daily-news:validate -- --skip-dogfood  # fast diagnosis only
+```
+
+`generate` adds the supervisor's voice3-only `--generate-only` mode: a terminal run with a bundle is
+`done`, the existing summary can close as `no-content`, and a green DAG with no bundle is
+`incomplete` (exit 4); it never launches publish3. `publish` validates bundle schema/date, variant
+hashes and final-variant safety before invoking `voice3-publish-window.ts`; empty-variant bundles and
+`--dummy` do not bypass that admission. If generation is missing,
+a TTY asks before running the generate entry (`--yes` is the explicit non-interactive consent); a
+non-TTY without `--yes` refuses with the exact command. Invalid existing bundles, running or
+no-content runs, and historical/foreign-day gaps never trigger automatic generation. The default
+window is `after-generate`; `--window cn-peak|overseas-rss` and the launcher's preset/live/dummy flags
+pass through without bypassing its RSS or send-confirm gates. `--work-dir` is refused so generation
+and publishing cannot silently use different roots; use `KK_WORKS_DIR` or `KK_CONFIG` consistently.
+
+`validate` checks tools/required files, the **installed** `kk stage daily-preflight`, the read-only
+AI-news supply report, scheduler wiring, the dated receipt/bundle/draft-safety state, and all three
+publish outcomes. It writes `validation.json`, `stage-preflight.log`, `supply-report.{json,log}` and
+(when enabled) `dogfood.log` under `<works>/tmp/test-daily-ai-news/<timestamp>-<pid>/`; dogfood is the
+existing offline `apps/cli/tests/voice3-migration.e2e.test.ts`, not a real generation or publication.
+A nonzero dogfood exit always fails, even when its summary contains passes and zero failures; summary
+counts are read from both output streams and its coverage is isolated from the project's `.coverage/`.
+Live failures stay separate from dogfood and produce exit 1; warnings for
+pending/not-applicable artifacts do not. Validation never migrates the store, changes schedules,
+syncs the installed package, calls a paid generator, or publishes.
+
 **Planning caches (task 0338).** `daily-plan` and `daily-qc-content` write adjacent SHA-256 cache
 fingerprints over decisive input bytes and settings. A changed pool, item cap, QC threshold,
 duration floor or driver invalidates the relevant cache. A successful reevaluation removes an old

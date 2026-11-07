@@ -312,3 +312,30 @@ other T-f channels, and no per-platform asset transformations beyond what the pr
 another-language audio ships later, the preset's `variant` field takes a locale suffix
 (`article:ja`) — no schema change. Rollback: voice2's yaml and schedules are untouched by this
 surface; deleting the merged voice3 cron lines restores the pre-rehearsal machine byte-for-byte.
+
+## 12. Daily operator shortcuts (task 0344)
+
+Use the root package entries instead of reassembling the supervisor, date and publish-window flags:
+
+```bash
+bun run daily-news:generate
+bun run daily-news:publish
+bun run daily-news:validate
+```
+
+Generation is always publish-inert (`auto_publish=false`, 72h extract, supervised receipt). Posting
+defaults to today's `after-generate` window and requires a current, schema-valid frozen bundle whose
+variant bytes and safety hashes still match; empty variants and `--dummy` never bypass that admission. A missing bundle prompts on a TTY before generation;
+`--yes` explicitly accepts that dependency, while a non-TTY without it stops and prints the generate
+command. An invalid existing bundle is never regenerated automatically. Select another existing
+window with `--window cn-peak` or `--window overseas-rss`; their date, RSS and live-confirmation
+rules remain in `voice3-publish-window.ts` and publish3. Historical gaps never cause today's content
+to be substituted.
+
+Validation is read-only against live state and covers PATH tools, required files, installed-stage
+compatibility, store supply, scheduler configuration, dated generation/safety/receipt state and all
+three publish outcomes. Its default dogfood is the offline 17-case voice3 migration rehearsal; use
+`bun run daily-news:validate -- --skip-dogfood` for the fast diagnostic. Evidence lands under
+`<works>/tmp/test-daily-ai-news/<timestamp>-<pid>/validation.json` with captured preflight/supply and
+dogfood logs. A live failure exits 1 independently of dogfood. No entry installs schedules or syncs
+the installed package, and validation never generates or posts.
