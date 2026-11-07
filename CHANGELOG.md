@@ -1,3 +1,53 @@
+## [0.1.13] - 2026-11-06
+
+### Added
+
+- feat(scheduler): add kk-daily-publish3 overseas window with voice3 second trigger (8dc78ba)
+<!-- src: .spur/config.yaml:181 · confidence: HIGH -->
+- feat(publish): update daily-ai-voice preset channels and cn-peak schedule (9caa84b)
+<!-- src: plugins/kk/schedules/kk-daily-publish3-cn-peak.cron.tmpl:30 · confidence: HIGH -->
+
+### Fixed
+
+- fix(test): keep laDate TZ across the Linux date fallback (32326bc)
+<!-- src: apps/cli/tests/voice3-migration-0334.test.ts:139 · confidence: HIGH -->
+- fix(workflows): hoist action onError out of options and guard placement (7b943de)
+<!-- src: plugins/kk/workflows/kk-daily-ai-voice2.yaml:227 · confidence: HIGH -->
+- fix(surfdash-pub): replace console.log with echoError for rule compliance (4f30453)
+<!-- src: plugins/publishings/surfdash-pub/src/index.ts:1171 · confidence: HIGH -->
+- fix(scheduler): unblock history-daily-report budget cap and pin reviewer executor (487f643)
+<!-- src: .spur/config.yaml:96 · confidence: HIGH -->
+- fix(weibo-pub): support v5 article editor cover library and draft save (13e6a7c)
+<!-- src: plugins/publishings/weibo-pub/src/index.ts:798 · confidence: HIGH -->
+- fix(cli): inherit KK_BROWSER_CHANNEL and bound wait-until midnight wrap (5b7fc04)
+<!-- src: apps/cli/src/invoke.ts:103 · confidence: HIGH -->
+- fix(xhs-pub): resolve 发播客 cover modal selector and dismiss mask (aca4588)
+<!-- src: plugins/publishings/xhs-pub/src/flow.ts:411 · confidence: HIGH -->
+- fix(surfdash-pub): scope runSiteGate digest errors to owned date posts (7e5f6a5)
+<!-- src: plugins/publishings/surfdash-pub/src/index.ts:488 · confidence: HIGH -->
+- fix(xhs-pub): route the 发播客 chooser path through the page seam (e02bd16)
+<!-- src: plugins/publishings/xhs-pub/src/flow.ts:528 · confidence: HIGH -->
+- fix(xhs-pub): measure and walk the 发播客 post-attach modal path (0236 R3) (708a49e)
+<!-- src: plugins/publishings/xhs-pub/src/flow.ts:60 · confidence: HIGH -->
+- fix(wechatmp-pub): podcast library reuse + createType-7 editor DOM (0b149f3)
+<!-- src: plugins/publishings/wechatmp-pub/src/flow.ts:74 · confidence: HIGH -->
+- fix(daily): voice3 launch scaffold + surfdash cover ride-along and payload dateStamp (f839058)
+<!-- src: plugins/kk/scripts/daily-scheduled-run.ts:38 · confidence: HIGH -->
+- fix(safety): add surfdash and xhs platform references (2f662b4)
+<!-- src: plugins/kk/skills/content-safety/references/platforms/surfdash.md:27 · confidence: HIGH -->
+
+### Other
+
+- test(wechatmp-pub): add helper branch tests and clean up dead closures for >=90% function coverage (19a45b5)
+<!-- src: plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:132 · confidence: HIGH -->
+- test(cli): align voice3 migration assertions with updated active targets (edbac76)
+<!-- src: apps/cli/tests/voice3-migration.e2e.test.ts:772 · confidence: HIGH -->
+- chore(schedule): cut daily job over to voice3 + 72h window (d8d4197)
+<!-- src: .spur/config.yaml:164 · confidence: HIGH -->
+- docs(context): record dogfood publish recovery learnings and pitfalls (71afe9f)
+<!-- src: .spur/context/pitfalls.md:324 · confidence: HIGH -->
+- docs(tasks): record post-fix verification evidence and sync K1 to done (89288dd)
+
 ## [0.1.12] - 2026-11-05
 
 ### Added
