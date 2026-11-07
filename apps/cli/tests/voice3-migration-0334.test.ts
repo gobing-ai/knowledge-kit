@@ -136,8 +136,10 @@ function varsFromArgv(argv: string[]): Record<string, string> {
 
 /** Today/yesterday in America/Los_Angeles as seen by the same date binary the cron uses. */
 function laDate(offsetDays: number): string {
-    const fmt = offsetDays === 0 ? 'date +%F' : 'date -v-1d +%F 2>/dev/null || date -d yesterday +%F';
-    const proc = Bun.spawnSync(['bash', '-c', `TZ=America/Los_Angeles ${offsetDays === 0 ? 'date +%F' : fmt}`]);
+    const cmd = offsetDays === 0 ? 'date +%F' : 'date -v-1d +%F 2>/dev/null || date -d yesterday +%F';
+    // export, not an env prefix: `TZ=x a || b` binds TZ to `a` only, so on Linux (no -v) the
+    // fallback silently computed UTC-based yesterday and disagreed with the launcher (GHA 42347626295).
+    const proc = Bun.spawnSync(['bash', '-c', `export TZ=America/Los_Angeles; ${cmd}`]);
     return proc.stdout.toString().trim();
 }
 
