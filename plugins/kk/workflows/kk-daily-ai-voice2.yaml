@@ -221,10 +221,10 @@ nodes:
     action:
       kind: shell
       options:
-        onError: continue
         command: >-
           kk plugin check wechatmp-pub xhs-pub --timeout 60000
           || echo "session-preflight: a publish channel's saved session was refused — fix it before this run's publish step with: bun plugins/publishings/<channel>-pub/src/profile-check.ts login (wechatmp or xhs)"
+      onError: continue
 
   - id: extract
     description: >-
@@ -689,7 +689,7 @@ nodes:
       options:
         command: >-
           kk stage daily-voice-audit "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
-        onError: continue
+      onError: continue
 
   - id: duration
     description: "Measured duration gate: under episode_min_minutes the run refuses and closes as no-content (refusal artifact + emptied candidates, exit 0 — 0266); above episode_max_minutes it still fails loud. Duration is authoritative."
@@ -839,15 +839,6 @@ nodes:
     action:
       kind: agent.run
       options:
-        # 20261012 hardening: this is the LAST agent step and a translation failure must not abort
-        # the overall report/podcast close, yet the step carried no tolerance and no retry sibling — a stochastic
-        # executor failure here aborted the DAG *after* surfdash and podcast had published, so
-        # publish-classify, mark-published, run-report and ledger never ran for an otherwise complete
-        # day. Tolerating the failure is safe because a scaffold is an unpublished draft: the prompt
-        # below is what flips `draft: true` → `draft: false`, so an untranslated locale stays off the
-        # site, and `daily-publish-completeness` now reads that flag and reports the locale as failed
-        # instead of calling a scaffold `done`.
-        onError: continue
         role: scribe
         agent: ${vars.agent}
         timeoutMs: 600000
@@ -863,6 +854,15 @@ nodes:
           Series names are fixed product identity, never invented or freely translated: the en series name is "Daily AI Stew" (show "Salty Talk"); the ja series name is "デイリーAIシチュー" (show "咸話咸説"). Never emit 毎日AIブレンド, ごった煮, "Daily AI Medley", "hodgepodge", "Daily AI Briefing", or the zh name 每日AI乱炖 in en/ja prose or link text (a URL keeps whatever it contains). Openers: en "Your Daily AI Stew from Robin, on Salty Talk."; ja "咸話咸説のデイリーAIシチュー、Robin がお届けします。" Listen links: en "[listen to Daily AI Stew · <date>](<url>)", ja "[デイリーAIシチュー · <date> を聴く](<url>)". In each key_points item keep the "Label — sentence" shape: the label before " — " stays a short phrase of at most 14 characters (ja) / 28 (en), never truncated with "…". The local translate-validate stage rewrites known retired names deterministically and fails the publish gate on leftovers.
           Keep frontmatter valid YAML: double-quote any value containing ': '. Read the surfdash translator glossary if present at the surfdash checkout root under .agents/skills/surfdash-translator/glossary.md and apply its terminology.
           Do not wait for operator confirmation. Each written file must end fully in its target language.
+      # 20261012 hardening: this is the LAST agent step and a translation failure must not abort
+      # the overall report/podcast close, yet the step carried no tolerance and no retry sibling — a stochastic
+      # executor failure here aborted the DAG *after* surfdash and podcast had published, so
+      # publish-classify, mark-published, run-report and ledger never ran for an otherwise complete
+      # day. Tolerating the failure is safe because a scaffold is an unpublished draft: the prompt
+      # above is what flips `draft: true` → `draft: false`, so an untranslated locale stays off the
+      # site, and `daily-publish-completeness` now reads that flag and reports the locale as failed
+      # instead of calling a scaffold `done`.
+      onError: continue
 
   # 2026-10-24: the locale translation carried `onError: continue` with NO retry sibling, so a
   # failed executor left the en/ja drafts untranslated and the old sync stage could not distinguish
@@ -880,11 +880,11 @@ nodes:
     action:
       kind: agent.run
       options:
-        onError: continue
         role: reviewer
         agent: ${vars.agent_retry}
         timeoutMs: 600000
         input: *translate-input
+      onError: continue
 
   - id: translate-refine
     description: "Run the Surfdash-owned refine pass over zh/en/ja locally before the locale fingerprint is admitted; no CMS, git, or remote side effect"

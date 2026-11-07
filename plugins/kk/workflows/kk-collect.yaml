@@ -48,10 +48,10 @@ states:
     onEnter:
       - kind: shell
         options:
-          # Reporting only: a ledger failure must never abort a tick before the lock is even taken.
-          onError: continue
           command: >-
             kk ledger sync --workflow kk-collect
+        # Reporting only: a ledger failure must never abort a tick before the lock is even taken.
+        onError: continue
       - kind: shell
         options:
           # stamp: the pinned var, else the UTC minute (R4). work_dir: `.works/kk-collect/<stamp>` (R4),
@@ -92,13 +92,13 @@ states:
         # revocation warns (captured:false) and only disables Board previews.
         # onError: continue keeps the lock-releasing failure path intact instead of a hard abort.
         options:
-          onError: continue
           command: >-
             kk board capture --workflow kk-collect --run "${vars.__runId}"
             --work-dir "${vars.work_dir}" --stamp "${vars.stamp}"
             --definition-digest "${vars.__definitionDigest}"
             --setting "limit=${vars.limit}" --setting "horizon_hours=${vars.horizon_hours}"
             > "${vars.work_dir}/board-capture.json"
+        onError: continue
       - kind: shell
         # onError: continue on both ingestion actions, with the artifact guard below as the positive
         # success contract: a state-machine aborts the run on a failed action without taking a

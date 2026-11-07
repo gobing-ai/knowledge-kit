@@ -194,10 +194,10 @@ nodes:
     action:
       kind: shell
       options:
-        onError: continue
         command: >-
           kk stage run publish-matrix-check "${vars.work_dir}" --all-windows
           || echo "session-preflight: a publish channel's saved session was refused — fix it with: kk bot login <channel>"
+      onError: continue
 
   - id: extract
     description: >-
@@ -695,7 +695,7 @@ nodes:
       options:
         command: >-
           kk stage daily-voice-audit "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
-        onError: continue
+      onError: continue
 
   - id: duration
     description: "Measured duration gate: under episode_min_minutes the run refuses and closes as no-content (refusal artifact + emptied candidates + publish-path invalidation, exit 0 — 0266/0329); above episode_max_minutes it still fails loud. Duration is authoritative."

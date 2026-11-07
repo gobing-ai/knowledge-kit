@@ -458,7 +458,7 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
         // Warning-only: the probe exits non-zero on a refused session, and the channel's own publish
         // node stays the authority on whether it published (2026-10-12: a dead session failed soft at
         // the very end of a 40-minute run, so the probe names it at the start instead).
-        expect(node?.action?.options?.onError).toBe('continue');
+        expect(node?.action?.onError).toBe('continue');
         expect(String(node?.action?.options?.command)).toContain('kk plugin check wechatmp-pub');
         expect(String(node?.action?.options?.command)).toContain('profile-check.ts login');
     });
@@ -1217,7 +1217,7 @@ describe('kk-daily-ai-voice2 — agent.run recovery siblings (0238 AC1–AC4)', 
         expect(node.dependsOn).toContain('intro');
         expect(node.condition?.options?.command).toContain('_11_generate_content.json');
         expect(node.action?.options?.command).toContain('kk stage daily-voice-audit');
-        expect(node.action?.options?.onError).toBe('continue');
+        expect(node.action?.onError).toBe('continue');
     });
 });
 

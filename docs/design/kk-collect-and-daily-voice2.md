@@ -379,7 +379,7 @@ kk executor fan-in               sync/kk-collect/<stamp>.json        git fetch
 | Situation | Behavior |
 | --- | --- |
 | Inputs or credentials missing at run time | Routine prints `no-content: <reason>`, exits with no side effects |
-| Artifact older than 26 h at import | `kk store ingest` ignores it (logged) — the 26 h horizon digest fallback window (`kk-collect.yaml:113-114`) |
+| Artifact older than 26 h at import | `kk store ingest` ignores it (logged) — the 26 h horizon digest fallback window (`plugins/kk/workflows/kk-collect.yaml:113-114`) |
 | Same artifact seen again | Imported at most once, idempotent by `--run cloud-<stamp>` |
 
 Routine creation is chat-only (no documented Bot API): the rendered text handed to the operator by
