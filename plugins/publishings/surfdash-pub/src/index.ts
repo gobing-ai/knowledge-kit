@@ -1168,7 +1168,7 @@ async function preparePost(payload: PublishTransportPayload): Promise<PrepareOut
             });
             await createNodeFileSystem().writeFile(filePath, markdown);
         } else {
-            console.log(`surfdash-pub: keeping existing refined post at ${filePath} (not re-minting)`);
+            echoError(`surfdash-pub: keeping existing refined post at ${filePath} (not re-minting)`);
         }
     } catch (err: unknown) {
         return {
