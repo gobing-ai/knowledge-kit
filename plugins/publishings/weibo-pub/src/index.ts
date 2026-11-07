@@ -400,10 +400,16 @@ export class WeiboBrowserTransport implements PublishTransport {
                 await page.evaluate(confirmCoverModalScript());
             }
             // A requested cover needs a fresh observed attachment, not a successful upload call.
-            const attached = await expectOutcome(() => this.probeCoverAttached(page, bodySelector, baseline), {
-                timeoutMs: this.stepTimeoutMs,
-                label: 'weibo article cover attachment',
-            });
+            const attached = await expectOutcome(
+                () =>
+                    // Cover settles in the v5 publish-settings panel (.cover-preview) — outside the
+                    // body editor scope the body-image count probes, so accept the panel preview too.
+                    this.probeCoverAttached(page, bodySelector, baseline),
+                {
+                    timeoutMs: this.stepTimeoutMs,
+                    label: 'weibo article cover attachment',
+                },
+            );
             if (!attached.ok) return fail(attached.error);
         }
 
@@ -563,7 +569,15 @@ export class WeiboBrowserTransport implements PublishTransport {
 
     private async probeCoverAttached(page: Page, selector: string, baseline: number): Promise<string | null> {
         const count = await this.countImages(page, selector);
-        return count > baseline ? `cover-attached (${count} images)` : null;
+        if (count > baseline) return `cover-attached (${count} images)`;
+        // The v5 editor routes a modal-picked cover into the publish-settings panel
+        // (.cover-preview / img.cover-img) — outside the body scope, so the body count never moves.
+        const preview = Number(
+            await page.evaluate(
+                `() => document.querySelectorAll('section:not(:has(.n-modal)) .cover-preview, .cover-preview, img.cover-img').length`,
+            ),
+        );
+        return Number.isFinite(preview) && preview > 0 ? `cover-attached (cover-preview x${preview})` : null;
     }
 
     /** Visible toast texts before a save, so an already-visible toast cannot satisfy the draft rail. */
@@ -812,7 +826,13 @@ function openCoverLibraryScript(): string {
             tab.click();
         }
     }
-    for (let i = 0; i < 15 && !document.querySelector('input[type="file"]'); i += 1) await sleep(200);
+    for (let i = 0; i < 30 && !document.querySelector('input[type="file"]'); i += 1) await sleep(200);
+    // The 图片库 tab lazy-loads (upload button + items mount ~5-8s after the tab click; the fixed
+    // 3s window could race it, and a raced tab leaves fileInputs=0 → no cover attachment).
+    for (let i = 0; i < 40; i += 1) {
+        if (document.querySelector('.n-modal img, .n-modal input[type="file"]')) break;
+        await sleep(250);
+    }
     return true;
 })()`;
 }
@@ -842,7 +862,11 @@ function confirmCoverModalScript(): string {
         }
         await sleep(200);
     }
-    await sleep(1800);
+    // The 下一步 opens the 图片裁剪 crop modal (上一步/确定), which takes several seconds to
+    // render — poll for it before clicking, then wait for the whole modal chain to close.
+    for (let i = 0; i < 40 && !Array.from(document.querySelectorAll('.n-modal button')).find((b) => (b.textContent || '').trim() === '确定'); i += 1) {
+        await sleep(250);
+    }
     for (let i = 0; i < 15; i += 1) {
         const okBtn = Array.from(document.querySelectorAll('.n-modal button')).find(
             (b) => (b.textContent || '').trim() === '确定' && !b.disabled,
