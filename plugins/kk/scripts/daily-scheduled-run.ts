@@ -325,11 +325,12 @@ function inspectGenerationOnly(): { status: string; reason: string } {
     // The child is terminal, but our initial receipt still says running. Mark the inspection phase so
     // the shared admission check does not mistake this supervisor for a concurrent active run.
     writeFileSync(receiptPath, JSON.stringify({ runId, startedAt, status: 'inspecting', workDir }, null, 2));
-    const probe = spawnSync(
-        process.execPath,
-        [inspector, 'inspect', '--work-dir', workDir, '--run-date', stamp],
-        { cwd: repo, encoding: 'utf-8', timeout: 30000, maxBuffer: 1024 * 1024 },
-    );
+    const probe = spawnSync(process.execPath, [inspector, 'inspect', '--work-dir', workDir, '--run-date', stamp], {
+        cwd: repo,
+        encoding: 'utf-8',
+        timeout: 30000,
+        maxBuffer: 1024 * 1024,
+    });
     try {
         const parsed = JSON.parse(probe.stdout) as { status?: unknown; reason?: unknown };
         if (typeof parsed.status === 'string') {
