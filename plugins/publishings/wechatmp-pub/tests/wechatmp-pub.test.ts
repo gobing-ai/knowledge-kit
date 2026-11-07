@@ -1,5 +1,7 @@
 import { afterAll, describe, expect, mock, spyOn, test } from 'bun:test';
+import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Content, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeFileCliTransport } from '@gobing-ai/publish-harness';
@@ -9,7 +11,29 @@ import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils
 import type { BrowserContext, Page } from 'playwright';
 import { runInvoke } from '../../../../apps/cli/src/invoke';
 import { enrichArticle } from '../src/enrich';
-import { insertAudioMaterial } from '../src/flow';
+import {
+    applyLayout,
+    appmsgIdFromCanonical,
+    canonicalSavedEditorUrl,
+    confirmPublicPublish,
+    coverAssetIdentity,
+    draftRowContainers,
+    enrichArticleDraft,
+    fillOptional,
+    insertAudioMaterial,
+    type ModeRunDeps,
+    openDraftBox,
+    publishContent,
+    readDraftBaseline,
+    readPublicDraftSnapshot,
+    readPublishNotifySubscribers,
+    readTitleMirror,
+    recoverStaleVersion,
+    savePublicDraft,
+    setCover,
+    shouldNotifySubscribers,
+    waitForPublicEditorReadiness,
+} from '../src/flow';
 import {
     checkWechatSession,
     getPublishTransport,
@@ -58,7 +82,7 @@ const AUDIO_INPUT = { title: ARTICLE_TITLE, audioPath: '/tmp/episode.mp3', cover
 
 const ARTICLE: Content = {
     title: ARTICLE_TITLE,
-    body: '# 今日头条\n\n模型发布 **重点** 摘要。\n\n```ts\nconst x = 1;\n```',
+    body: '# 今日头条\n\n模型发布 **重点** 摘要。\n\n- 重点一\n- 重点二\n\n1. 第一步\n2. 第二步\n\n```ts\nconst x = 1;\n```',
     format: 'markdown',
     metadata: { wechatmp: { coverPath: bodyImage } },
 };
@@ -84,6 +108,8 @@ interface ConsoleState {
     layoutCommitRefused?: boolean;
     /** The current UEditor menu exposes the native target as nested `.edui-default` nodes. */
     layoutNativeMenu?: boolean;
+    layoutNativeAmbiguous?: boolean;
+    layoutNativeSaveNever?: boolean;
     /** Native layout selection completes through auto-save after this delay. */
     layoutAckDelayMs?: number;
     /** The entry page's URL; `token-in-url` decides whether the token comes from there or a link. */
@@ -103,6 +129,12 @@ interface ConsoleState {
     createType?: number | null;
     /** Which mode's editor body is open. */
     mode: '文章' | '贴图' | '视频' | '播客';
+    /** 播客: reuse existing audio material in library. */
+    podcastReuse?: boolean;
+    podcastChooserConfirmFallback?: boolean;
+    podcastChooserNeverCloses?: boolean;
+    podcastFormDispatchFallback?: boolean;
+    podcastTranscodeFails?: boolean;
     /** The 视频/播客 media modal is satisfied (the save bar exists only then, §5.1). */
     mediaSatisfied: boolean;
     /** The title block's typed text reaches the hidden `textarea#title` mirror (§5.2 trap 1). */
@@ -210,7 +242,9 @@ const isStampProbe = (selector: string) => selector.includes(':text("更新于")
 const isTitleBlock = (selector: string) =>
     selector.includes('data-placeholder^="请在这里输入标题"') || selector.includes('data-placeholder*="标题"');
 const isMirror = (selector: string) => selector.includes('textarea#title') || selector.includes('textarea.js_title');
-const isBodyBlock = (selector: string) => selector.includes('.ProseMirror') && !selector.includes('data-placeholder');
+const isBodyBlock = (selector: string) =>
+    selector.includes('.ProseMirror') &&
+    (!selector.includes('data-placeholder') || selector.includes(':not([data-placeholder])'));
 const isDigest = (selector: string) => selector.includes('js_description');
 const isAuthor = (selector: string) => selector.includes('input#author') || selector.includes('js_author');
 const isFileInput = (selector: string) => selector.includes('file') && selector.includes('type="file"');
@@ -218,7 +252,10 @@ const isModalScoped = (selector: string) =>
     selector.includes('weui-desktop-dialog') || selector.includes('.audio_dialog');
 const isImageInput = (selector: string) => isFileInput(selector) && selector.includes('image/');
 const isVideoInput = (selector: string) => isFileInput(selector) && selector.includes('accept*="video"');
-const isAudioInput = (selector: string) => isFileInput(selector) && selector.includes('audio');
+const isAudioInput = (selector: string) =>
+    selector.includes('upload-input') ||
+    selector.includes('audio_id') ||
+    (isFileInput(selector) && selector.includes('audio'));
 const isSaveBar = (selector: string) => selector.includes('保存为草稿');
 const isLayoutControl = (selector: string) => selector.includes('ailayout') || selector.includes('一键排版');
 const isLayoutTarget = (selector: string) => selector.includes('匹配目标格式');
@@ -257,7 +294,8 @@ const isPublishFinal = (selector: string) =>
 const isViewLatest = (selector: string) =>
     selector.includes('version_fail_dialog:visible') && selector.includes('查看新草稿');
 const isVideoUpload = (selector: string) => selector.includes('本地上传');
-const isPodcastUpload = (selector: string) => selector.includes('上传音频');
+const isPodcastUpload = (selector: string) =>
+    selector.includes('上传音频') && !selector.includes('weui-desktop-dialog');
 const isPodcastInsert = (selector: string) => selector.includes('插入');
 // Not a publish *control*: the toast labels 发表成功 / …无法发表 also carry the word.
 const isPublishControl = (selector: string) =>
@@ -282,6 +320,9 @@ function makeConsole(initial: ConsoleState) {
     let mirrorValue = '';
     let pastedHtml = '';
     let pickerOpen = false;
+    let podcastUploadOpen = false;
+    let podcastChooserOpen = false;
+    let podcastSaved = false;
     let coverPanelOpen = false;
     let wrongCoverPanel = false;
     // The mass-send confirm dialog appears once the 发表 control is clicked, until confirmed.
@@ -321,7 +362,10 @@ function makeConsole(initial: ConsoleState) {
     };
 
     const editorAttached = (selector: string): boolean => {
-        if (selector.includes('选择图片')) return state.coverOpensLibraryDirectly === true && coverPanelOpen;
+        if (selector.includes('选择图片'))
+            return state.mode === '播客'
+                ? podcastChooserOpen
+                : state.coverOpensLibraryDirectly === true && coverPanelOpen;
         if (isStampProbe(selector)) return false; // the editor carries no 草稿箱 container
         const success = successProbe(selector);
         if (success !== undefined) return state.publish === 'sent';
@@ -364,9 +408,13 @@ function makeConsole(initial: ConsoleState) {
         // 0272 measured: the 文章 audio dialog carries its own file inputs; only 播客 gates behind the picker.
         if (isAudioInput(selector)) return state.mode === '播客' ? pickerOpen : isModalScoped(selector);
         // The dialog's own form controls (upload buttons + title field) live in the same modal.
+        if (selector.includes('上传音频') && selector.includes('weui-desktop-dialog')) return podcastUploadOpen;
         if (selector.includes('上传音频') || selector.includes('上传封面'))
-            return state.mode === '文章' || state.mode === '播客';
-        if (isSaveBar(selector)) return state.mode === '文章' || state.mode === '贴图' || state.mediaSatisfied;
+            return state.mode === '文章' || (state.mode === '播客' && (podcastUploadOpen || !podcastSaved));
+        if (isSaveBar(selector))
+            return (
+                state.mode === '文章' || state.mode === '贴图' || state.mediaSatisfied || state.podcastReuse === true
+            );
         if (selector.includes('使用此排版')) return state.layoutPreview === true && layoutOpen;
         if (isLayoutTarget(selector)) {
             if (state.layoutNativeMenu === true) return selector.includes('edui-popup') && layoutOpen;
@@ -390,8 +438,13 @@ function makeConsole(initial: ConsoleState) {
         if (isCoverFromLibrary(selector))
             return state.coverLibraryMissing !== true && !wrongCoverPanel && state.coverOpensLibraryDirectly !== true;
         if (isCoverItem(selector)) return coverPanelOpen;
+        if (selector.includes('upload_cover_text') || selector.includes('select_audio_cover')) return podcastUploadOpen;
+        if (selector.includes('audio_item_wrp') || selector.includes('audio_item'))
+            return state.mode === '播客' && (podcastSaved || state.podcastReuse === true);
         if (isVideoUpload(selector)) return state.mode === '视频';
-        if (isPodcastUpload(selector) || isPodcastInsert(selector)) return state.mode === '播客';
+        if (isPodcastUpload(selector))
+            return state.mode === '播客' && !state.podcastReuse && (podcastUploadOpen || !podcastSaved);
+        if (isPodcastInsert(selector)) return state.mode === '播客';
         if (isConfirm(selector)) {
             if (state.mode === '视频') return pickerOpen;
             if (coverPanelOpen || publishConfirmPending) return true;
@@ -440,6 +493,20 @@ function makeConsole(initial: ConsoleState) {
                 if (target.includes('appmsgid=') && !target.includes('isNew=1')) publicCanonicalGotos += 1;
             },
             url: () => url,
+            frames: () => [
+                {
+                    url: () => 'https://mp.weixin.qq.com/frame1',
+                    locator: () => ({ count: async () => 0 }),
+                },
+                {
+                    url: () => 'https://mp.weixin.qq.com/frame2',
+                    locator: () => ({
+                        count: async () => {
+                            throw new Error('boom');
+                        },
+                    }),
+                },
+            ],
             locator: (selector) => {
                 log.push({ op: 'locator', args: [selector] });
                 const count = async () => {
@@ -463,6 +530,7 @@ function makeConsole(initial: ConsoleState) {
                             log.push({ op: 'fill', args: [selector, text] });
                             // 0260: the 原文链接 field's value is the committed-URL readback.
                             if (selector.includes('input.js_url')) urlValue = text;
+                            if (isMirror(selector)) mirrorValue = text;
                         },
                         click: async () => {
                             log.push({ op: 'click', args: [selector] });
@@ -500,6 +568,7 @@ function makeConsole(initial: ConsoleState) {
             evaluate: async (expression) => {
                 log.push({ op: 'evaluate', args: [expression] });
                 if (expression.includes('img.crop-img')) return '[]';
+                if (state.podcastReuse && expression.includes('audio_item_wrp')) return '播客标题';
                 if (expression.includes('__KK_WECHAT_PUBLISH_SNAPSHOT__')) {
                     const composedSnapshot = {
                         title: mirrorValue,
@@ -553,6 +622,7 @@ function makeConsole(initial: ConsoleState) {
                         publicPostReloadSaveStatePolls += 1;
                         return saveState;
                     }
+                    if (state.layoutNativeSaveNever === true) return 'saving';
                     if (layoutCommitStartedAt === 0) return 'saved';
                     const ready =
                         state.layoutAckDelayMs === undefined ||
@@ -571,6 +641,7 @@ function makeConsole(initial: ConsoleState) {
                 }
                 if (expression.includes('__KK_WECHAT_LAYOUT_TARGET__')) {
                     if (state.layoutNativeMenu !== true || !layoutOpen) return JSON.stringify({ state: 'missing' });
+                    if (state.layoutNativeAmbiguous === true) return JSON.stringify({ state: 'ambiguous' });
                     layoutCommitStartedAt = Date.now();
                     return JSON.stringify({ state: 'clicked' });
                 }
@@ -599,6 +670,26 @@ function makeConsole(initial: ConsoleState) {
                 if (expression.includes('.article_url_setting')) return urlValue;
                 if (expression.includes('#js_claim_source_area'))
                     return { enabled: enriched.claim, text: enriched.claim ? chosenClaim : '' };
+                if (expression.includes('audio_item_wrp')) {
+                    if (state.podcastTranscodeFails) return '转码中';
+                    return podcastSaved ? '模式标题' : 'NONE';
+                }
+                if (expression.includes('btn.click()')) {
+                    if (state.podcastFormDispatchFallback) {
+                        podcastUploadOpen = false;
+                        podcastSaved = true;
+                        return 'clicked';
+                    }
+                }
+                if (expression.includes('audio_id') || expression.includes('progress__text')) {
+                    return '100%';
+                }
+                if (expression.includes('audio-upload-dialog_agreement')) {
+                    return 'checked';
+                }
+                if (expression.includes('saveDiagnostics') || expression.includes('__kkToasts')) {
+                    return JSON.stringify({ btn: { disabled: false, offsetWidth: 100 }, fields: [], toasts: [] });
+                }
                 // 0272 measured audio-dialog probes: dedupe (missing → upload), the post-upload
                 // default row, the service-rules acknowledgement, and the 插入 button.
                 if (expression.includes("return 'norow'")) return 'checked';
@@ -679,8 +770,30 @@ function makeConsole(initial: ConsoleState) {
                 coverPanelOpen = true;
                 return;
             }
+            if (selector.includes('upload_cover_text') || selector.includes('select_audio_cover')) {
+                podcastChooserOpen = true;
+                return;
+            }
             if (isVideoUpload(selector) || isPodcastUpload(selector)) {
                 pickerOpen = true;
+                if (isPodcastUpload(selector)) podcastUploadOpen = true;
+                return;
+            }
+            if (podcastChooserOpen && selector.includes('确定')) {
+                if (state.podcastChooserNeverCloses !== true) podcastChooserOpen = false;
+                return;
+            }
+            if (podcastChooserOpen && selector.includes('完成')) {
+                if (state.podcastChooserNeverCloses !== true && state.podcastChooserConfirmFallback !== true) {
+                    podcastChooserOpen = false;
+                }
+                return;
+            }
+            if (podcastUploadOpen && selector.includes('保存')) {
+                if (state.podcastFormDispatchFallback !== true) {
+                    podcastUploadOpen = false;
+                    podcastSaved = true;
+                }
                 return;
             }
             if (isPodcastInsert(selector)) {
@@ -1116,7 +1229,7 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
             },
         });
 
-        expect(result.ok, result.error).toBe(true);
+        expect(result.ok).toBe(true);
         expect(console.layoutApplied()).toBe(true);
         const targetIndex = console.calls.editor.findIndex(
             (call) => call.op === 'evaluate' && String(call.args[0]).includes('__KK_WECHAT_LAYOUT_TARGET__'),
@@ -1135,6 +1248,22 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
         expect(layoutStateIndex).toBeGreaterThan(targetIndex);
         expect(saveIndex).toBeGreaterThan(layoutStateIndex);
     }, 10000);
+
+    test('文章: 一键排版 匹配目标格式 is ambiguous in native menu throws', async () => {
+        await seedMedia();
+        const console = makeConsole(happyState({ layoutNativeMenu: true, layoutNativeAmbiguous: true }));
+        const result = await makeTransport(console, { stepTimeoutMs: 100, pollMs: 5 }).publish({ content: ARTICLE });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('一键排版: 匹配目标格式 was ambiguous');
+    });
+
+    test('文章: 一键排版 native auto-save times out', async () => {
+        await seedMedia();
+        const console = makeConsole(happyState({ layoutNativeMenu: true, layoutNativeSaveNever: true }));
+        const result = await makeTransport(console, { stepTimeoutMs: 50, pollMs: 5 }).publish({ content: ARTICLE });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('native auto-save did not transition');
+    });
 
     test('文章 refuses submission when the full-page layout preview remains open', async () => {
         await seedMedia();
@@ -1246,6 +1375,25 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
         expect(selectorsOf(editor, 'click').some(isSaveBar)).toBe(true);
     });
 
+    test('播客: 复用已有素材库素材 → 插入', async () => {
+        await seedMedia();
+        const console = makeConsole(happyState({ mode: '播客', createType: 7, podcastReuse: true }));
+        const content = mediaContent(
+            { operation: '播客', audio, coverImage: cover },
+            { title: '播客标题', body: '正文' },
+        );
+        const result = await makeTransport(console).publish({ content });
+
+        expect(result.ok).toBe(true);
+        expect(result.metadata?.operation).toBe('播客');
+        expect(result.metadata?.editorCreateType).toBe(7);
+        const editor = console.calls.editor;
+        const files = editor.filter((call) => call.op === 'setInputFiles');
+        expect(files).toHaveLength(0);
+        expect(selectorsOf(editor, 'click').some(isPodcastInsert)).toBe(true);
+        expect(selectorsOf(editor, 'click').some(isSaveBar)).toBe(true);
+    });
+
     test('an unobserved draft signal is a loud ok:false naming the control and the signal', async () => {
         await seedMedia();
         const console = makeConsole(happyState({ saveMovesStamp: false }));
@@ -1306,7 +1454,7 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
             ),
         });
 
-        expect(result.ok, result.error).toBe(true);
+        expect(result.ok).toBe(true);
         expect(console.calls.editor.some((call) => call.op === 'saveDraftAndWait')).toBe(false);
         expect(selectorsOf(console.calls.editor, 'click').filter(isSaveBar)).toHaveLength(0);
         expect(selectorsOf(console.calls.editor, 'click').filter(isPublishControl)).toHaveLength(1);
@@ -1325,7 +1473,7 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
             ),
         });
 
-        expect(result.ok, result.error).toBe(true);
+        expect(result.ok).toBe(true);
         expect(console.calls.editor.some((call) => call.op === 'saveDraftAndWait')).toBe(false);
         expect(selectorsOf(console.calls.editor, 'click').filter(isSaveBar)).toHaveLength(0);
         expect(selectorsOf(console.calls.editor, 'click').filter(isPublishControl)).toHaveLength(1);
@@ -1344,7 +1492,7 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
             ),
         });
 
-        expect(result.ok, result.error).toBe(true);
+        expect(result.ok).toBe(true);
         expect(console.calls.editor.some((call) => call.op === 'saveDraftAndWait')).toBe(false);
         expect(selectorsOf(console.calls.editor, 'click').filter(isSaveBar)).toHaveLength(0);
         expect(selectorsOf(console.calls.editor, 'click').filter(isPublishControl)).toHaveLength(1);
@@ -1400,7 +1548,7 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
             content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
         });
 
-        expect(result.ok, result.error).toBe(true);
+        expect(result.ok).toBe(true);
         expect(JSON.stringify(result)).not.toContain('SENTINEL-TOKEN');
         expect(JSON.stringify(result)).not.toContain('SENTINEL-TICKET');
         expect(JSON.stringify(result)).not.toContain('SENTINEL-AUTHKEY');
@@ -1413,7 +1561,7 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
             content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
         });
 
-        expect(result.ok, result.error).toBe(true);
+        expect(result.ok).toBe(true);
         const clicks = selectorsOf(console.calls.editor, 'click');
         expect(clicks.filter(isPublishControl)).toHaveLength(1);
         expect(clicks.filter(isPublishNotifyToggle)).toHaveLength(0);
@@ -1427,7 +1575,7 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
             content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
         });
 
-        expect(result.ok, result.error).toBe(true);
+        expect(result.ok).toBe(true);
         expect(result.metadata?.notifySubscribers).toBe(false);
         expect(result.metadata?.notifySubscribersPolicy).toBe('preserve');
         const clicks = selectorsOf(console.calls.editor, 'click');
@@ -1449,7 +1597,7 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
             },
         });
 
-        expect(result.ok, result.error).toBe(true);
+        expect(result.ok).toBe(true);
         expect(result.metadata?.notifySubscribers).toBe(false);
         expect(result.metadata?.notifySubscribersPolicy).toBe('disabled');
         const clicks = selectorsOf(console.calls.editor, 'click');
@@ -1474,7 +1622,7 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
             },
         });
 
-        expect(result.ok, result.error).toBe(true);
+        expect(result.ok).toBe(true);
         const clicks = selectorsOf(console.calls.editor, 'click');
         expect(clicks.filter(isPublishNotifyToggle)).toHaveLength(0);
         expect(clicks.filter(isPublishFinal)).toHaveLength(1);
@@ -1522,7 +1670,7 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
         const result = await makeTransport(console, { draftTimeoutMs: 500 }).publish({
             content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
         });
-        expect(result.ok, result.error).toBe(true);
+        expect(result.ok).toBe(true);
         expect(result.metadata?.draftSaveSignal).toBe('persisted-snapshot');
         const reloads = console.calls.editor.filter(
             (call) => call.op === 'goto' && String(call.args[0]).includes('appmsgid=100001161'),
@@ -1552,7 +1700,7 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
             content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
         });
 
-        expect(result.ok, result.error).toBe(true);
+        expect(result.ok).toBe(true);
         const ackStartIndex = console.calls.editor.findIndex((call) => call.op === 'saveDraftAndWait');
         const ackCompleteIndex = console.calls.editor.findIndex((call) => call.op === 'saveDraftAck');
         const reloadIndex = console.calls.editor.findIndex((call) => call.op === 'goto' && call.args[0] === savedUrl);
@@ -1604,7 +1752,7 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
             content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
         });
 
-        expect(result.ok, result.error).toBe(true);
+        expect(result.ok).toBe(true);
         const autoSaveStateIndices = console.calls.editor
             .map((call, index) => ({ call, index }))
             .filter(
@@ -1634,7 +1782,7 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
             content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
         });
 
-        expect(result.ok, result.error).toBe(true);
+        expect(result.ok).toBe(true);
         const legacyReadyIndices = console.calls.editor
             .map((call, index) => ({ call, index }))
             .filter(
@@ -1703,7 +1851,7 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
             content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
         });
 
-        expect(result.ok, result.error).toBe(true);
+        expect(result.ok).toBe(true);
         const reloads = console.calls.editor.filter(
             (call) => call.op === 'goto' && String(call.args[0]).includes('appmsgid=100001161'),
         );
@@ -1734,7 +1882,7 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
             },
         });
 
-        expect(result.ok, result.error).toBe(true);
+        expect(result.ok).toBe(true);
         expect(console.layoutOpened()).toBe(false);
         expect(
             console.calls.editor.some(
@@ -1802,7 +1950,7 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
             content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
         });
 
-        expect(result.ok, result.error).toBe(true);
+        expect(result.ok).toBe(true);
         expect(result.metadata?.staleVersionRecoveryCount).toBe(1);
         expect(result.metadata?.savedEditorUrl).toContain('data_seq=2');
         const clicks = selectorsOf(console.calls.editor, 'click');
@@ -1824,7 +1972,7 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
             content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, publishStatus: 'public' } },
         });
 
-        expect(result.ok, result.error).toBe(true);
+        expect(result.ok).toBe(true);
         expect(result.metadata?.staleVersionRecoveryCount).toBe(1);
         expect(selectorsOf(console.calls.editor, 'click').filter(isPublishFinal)).toHaveLength(1);
     });
@@ -2274,7 +2422,7 @@ describe('wechatmp-pub modal recovery before the draft save (2026-10-12)', () =>
         const console = makeConsole(happyState({ dialogOpen: true }));
         const result = await makeTransport(console).publish({ content: ARTICLE });
 
-        expect(result.ok, result.error).toBe(true);
+        expect(result.ok).toBe(true);
         expect(result.metadata?.draftAttempts).toBe(1);
         // The close control ran before the save click, and the save click followed it.
         const clicks = selectorsOf(console.calls.editor, 'click');
@@ -2306,7 +2454,7 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
         const result = await makeTransport(console).publish({
             content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, wechatmp: { coverPath: bodyImage } } },
         });
-        expect(result.ok, result.error).toBe(true);
+        expect(result.ok).toBe(true);
         expect(result.metadata?.warnings).toEqual(['cover: 从图片库选择 was not offered by the open cover panel']);
         // The panel was dismissed on the way out, so the settings rail and the save still ran.
         const clicks = selectorsOf(console.calls.editor, 'click');
@@ -2513,7 +2661,7 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
                 metadata: { ...ARTICLE.metadata, wechatmp: { coverPath: bodyImage, reward: true } },
             },
         });
-        expect(result.ok, result.error).toBe(true);
+        expect(result.ok).toBe(true);
         expect(result.metadata?.enrichWarnings).toEqual([expect.stringContaining('需要赞赏账户')]);
         // No 赏-account fill attempt; the rail still finished (the rest of the metadata is unset).
         const fills = console.calls.editor.filter((call) => call.op === 'fill').map((call) => String(call.args[0]));
@@ -2532,7 +2680,7 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
                 },
             },
         });
-        expect(result.ok, result.error).toBe(true);
+        expect(result.ok).toBe(true);
         expect(result.metadata?.enrichWarnings).toEqual([expect.stringContaining('原文链接: 行不存在')]);
         const clicks = selectorsOf(console.calls.editor, 'click');
         expect(clicks.some((selector) => selector.includes('js_url_checkbox'))).toBe(false);
@@ -2543,7 +2691,7 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
         await seedMedia();
         const console = makeConsole(happyState({ layoutMissing: true }));
         const result = await makeTransport(console).publish({ content: ARTICLE });
-        expect(result.ok, result.error).toBe(true);
+        expect(result.ok).toBe(true);
         expect(result.metadata?.enrichWarnings).toBeUndefined();
     });
 
@@ -2565,7 +2713,7 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
                 },
             },
         });
-        expect(result.ok, result.error).toBe(true);
+        expect(result.ok).toBe(true);
         // AC5 (req R6): the audio material's upload attempt runs before the cover picker's
         // library path — the deferred cover only picks from the 图片库 after the audio block.
         const ops = console.calls.editor;
@@ -2686,6 +2834,20 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
             [
                 [undefined, '{"state":"checked","identity":"media-1"}', true, '{"state":"top","identity":"other"}'],
                 '无法核对素材身份',
+            ],
+            [[undefined, 'error'], '素材匹配探测失败'],
+            [[undefined, '{"state":"ambiguous"}'], '列表匹配到多个同名条目'],
+            [[undefined, '{"state":"nobox"}'], '行没有勾选框'],
+            [[undefined, 'not-json'], '返回未知结果'],
+            [[undefined, '{"state":"checked","identity":"media-1"}', true, 'not-json'], '无法读取正文状态'],
+            [
+                [
+                    undefined,
+                    '{"state":"checked","identity":"media-1"}',
+                    true,
+                    '{"state":"middle","identity":"media-1"}',
+                ],
+                '已插入但未在文首',
             ],
         ];
         for (const [returns, expected] of cases) {
@@ -3046,5 +3208,1354 @@ describe('wechatmp-pub CLI surface (unchanged contract)', () => {
             await rm(inPath, { force: true });
             await rm(outPath, { force: true });
         }
+    });
+
+    describe('flow.ts edge cases and branches', () => {
+        test('draftRowContainers returns title selectors and readDraftBaseline reads stamp', async () => {
+            const containers = draftRowContainers('Hello');
+            expect(containers.length).toBeGreaterThan(0);
+            const mockPage = {
+                locator: () => ({
+                    count: async () => 1,
+                    first: () => ({
+                        count: async () => 1,
+                        isVisible: async () => true,
+                        textContent: async () => '更新于 2026-11-06 12:00',
+                    }),
+                }),
+            } as unknown as WechatPage;
+            const baseline = await readDraftBaseline(mockPage, 'Hello');
+            expect(baseline.stamp).toBe('更新于 2026-11-06 12:00');
+        });
+
+        test('canonicalSavedEditorUrl and appmsgIdFromCanonical validate URLs', () => {
+            expect(canonicalSavedEditorUrl('not-a-valid-url')).toBeNull();
+            expect(canonicalSavedEditorUrl('http://example.com/other')).toBeNull();
+            expect(canonicalSavedEditorUrl('https://mp.weixin.qq.com/cgi-bin/other')).toBeNull();
+            expect(canonicalSavedEditorUrl('https://mp.weixin.qq.com/cgi-bin/appmsg?action=view')).toBeNull();
+            expect(canonicalSavedEditorUrl('https://mp.weixin.qq.com/cgi-bin/appmsg?action=edit&isNew=1')).toBeNull();
+            expect(
+                canonicalSavedEditorUrl('https://mp.weixin.qq.com/cgi-bin/appmsg?action=edit&isNew=0&appmsgid='),
+            ).toBeNull();
+            const valid = 'https://mp.weixin.qq.com/cgi-bin/appmsg?action=edit&isNew=0&appmsgid=1001';
+            expect(canonicalSavedEditorUrl(valid)).toBe(valid);
+
+            expect(appmsgIdFromCanonical('not-a-valid-url')).toBeNull();
+            expect(appmsgIdFromCanonical(valid)).toBe('1001');
+            expect(
+                appmsgIdFromCanonical('https://mp.weixin.qq.com/cgi-bin/appmsg?action=edit&isNew=0&appmsgid=%20'),
+            ).toBeNull();
+        });
+
+        test('readTitleMirror handles throwing selectors, missing locator, throwing value, and success', async () => {
+            const pageThrows = {
+                locator: () => {
+                    throw new Error('locator throws');
+                },
+            } as unknown as WechatPage;
+            const resThrows = await readTitleMirror(pageThrows);
+            expect(resThrows).toEqual({ observed: false, value: '' });
+
+            const pageNoFn = {
+                locator: () => ({
+                    count: async () => 1,
+                    first: () => ({
+                        count: async () => 1,
+                        isVisible: async () => true,
+                        inputValue: undefined,
+                    }),
+                }),
+            } as unknown as WechatPage;
+            const resNoFn = await readTitleMirror(pageNoFn);
+            expect(resNoFn).toEqual({ observed: false, value: '' });
+
+            const pageValThrows = {
+                locator: () => ({
+                    count: async () => 1,
+                    first: () => ({
+                        count: async () => 1,
+                        isVisible: async () => true,
+                        inputValue: async () => {
+                            throw new Error('read failed');
+                        },
+                    }),
+                }),
+            } as unknown as WechatPage;
+            const resValThrows = await readTitleMirror(pageValThrows);
+            expect(resValThrows).toEqual({ observed: false, value: '' });
+
+            const pageSuccess = {
+                locator: () => ({
+                    count: async () => 1,
+                    first: () => ({
+                        count: async () => 1,
+                        isVisible: async () => true,
+                        inputValue: async () => 'My Article Title',
+                    }),
+                }),
+            } as unknown as WechatPage;
+            const resSuccess = await readTitleMirror(pageSuccess);
+            expect(resSuccess).toEqual({ observed: true, value: 'My Article Title' });
+        });
+
+        test('fillOptional handles empty value, absent selector, throw on fill, and success', async () => {
+            const deps = { stepTimeoutMs: 10 } as unknown as ModeRunDeps;
+            const resEmpty = await fillOptional({} as unknown as WechatPage, ['#sel'], '', 'test-desc', deps);
+            expect(resEmpty).toBeNull();
+
+            const pageAbsent = {
+                locator: (sel: string) => {
+                    const isSaveDraft = sel.includes('保存为草稿');
+                    return {
+                        count: async () => (isSaveDraft ? 1 : 0),
+                        first: () => ({
+                            count: async () => (isSaveDraft ? 1 : 0),
+                            isVisible: async () => isSaveDraft,
+                            click: async () => undefined,
+                        }),
+                    };
+                },
+            } as unknown as WechatPage;
+            const resAbsent = await fillOptional(pageAbsent, ['#sel'], 'value', 'test-desc', deps);
+            expect(resAbsent).toContain('none of [#sel] visible');
+
+            const pageFillThrows = {
+                locator: () => ({
+                    count: async () => 1,
+                    first: () => ({
+                        count: async () => 1,
+                        isVisible: async () => true,
+                        fill: async () => {
+                            throw new Error('fill error');
+                        },
+                    }),
+                }),
+            } as unknown as WechatPage;
+            const resThrows = await fillOptional(pageFillThrows, ['#sel'], 'value', 'test-desc', deps);
+            expect(resThrows).toContain('fill error');
+
+            const pageOk = {
+                locator: () => ({
+                    count: async () => 1,
+                    first: () => ({
+                        count: async () => 1,
+                        isVisible: async () => true,
+                        fill: async () => undefined,
+                    }),
+                }),
+            } as unknown as WechatPage;
+            const resOk = await fillOptional(pageOk, ['#sel'], 'value', 'test-desc', deps);
+            expect(resOk).toBeNull();
+        });
+
+        test('applyLayout handles absent control and click failure', async () => {
+            const deps = {
+                stepTimeoutMs: 10,
+                pages: () => [],
+            } as unknown as ModeRunDeps;
+
+            const pageAbsent = {
+                locator: (sel: string) => {
+                    const isSaveDraft = sel.includes('保存为草稿');
+                    return {
+                        count: async () => (isSaveDraft ? 1 : 0),
+                        first: () => ({
+                            count: async () => (isSaveDraft ? 1 : 0),
+                            isVisible: async () => isSaveDraft,
+                            click: async () => undefined,
+                        }),
+                    };
+                },
+            } as unknown as WechatPage;
+            const resAbsent = await applyLayout(pageAbsent, deps);
+            expect(resAbsent).toBeNull();
+
+            const pageClickThrows = {
+                locator: (sel: string) => {
+                    const isControl = sel.includes('一键排版') || sel.includes('layout') || sel.includes('js_layout');
+                    return {
+                        count: async () => (isControl ? 1 : 0),
+                        first: () => ({
+                            count: async () => (isControl ? 1 : 0),
+                            isVisible: async () => isControl,
+                            click: async () => {
+                                throw new Error('click failed');
+                            },
+                        }),
+                    };
+                },
+            } as unknown as WechatPage;
+            const resClickThrows = await applyLayout(pageClickThrows, deps);
+            expect(resClickThrows).toContain('click failed');
+        });
+
+        test('openDraftBox handles missing token, throws on goto, and successful card found', async () => {
+            const pageNoToken = {
+                url: () => 'https://mp.weixin.qq.com/cgi-bin/home',
+            } as unknown as WechatPage;
+            const resNoToken = await openDraftBox(pageNoToken, 'Test Title', 10, 10);
+            expect(resNoToken).toBe(false);
+
+            const pageThrows = {
+                url: () => 'https://mp.weixin.qq.com/cgi-bin/home?token=123456&lang=zh_CN',
+                goto: async () => {
+                    throw new Error('goto timeout');
+                },
+            } as unknown as WechatPage;
+            const resThrows = await openDraftBox(pageThrows, 'Test Title', 10, 10);
+            expect(resThrows).toBe(false);
+
+            const pageSuccess = {
+                url: () => 'https://mp.weixin.qq.com/cgi-bin/home?token=123456&lang=zh_CN',
+                goto: async () => undefined,
+                locator: () => ({
+                    count: async () => 1,
+                }),
+            } as unknown as WechatPage;
+            const resSuccess = await openDraftBox(pageSuccess, 'Test Title', 100, 10);
+            expect(resSuccess).toBe(true);
+        });
+
+        test('setCover exercises coverLibraryName with existing file and coverAssetIdentity with non-url and qpic', async () => {
+            const tmpCover = join(tmpdir(), `kk-test-cover-${randomUUID()}.png`);
+            await writeFile(tmpCover, 'fake-png-bytes');
+            try {
+                const mockPage = {
+                    evaluate: async (script: string) => {
+                        if (script.includes('#js_cover_area')) return 'http://mmbiz.qpic.cn/mmbiz_png/abc/0';
+                        return JSON.stringify({ picked: true, src: 'http://mmbiz.qpic.cn/mmbiz_png/abc/640' });
+                    },
+                    locator: (sel: string) => {
+                        const match =
+                            sel.includes('.js_cover_btn_area') ||
+                            sel.includes('js_imagedialog') ||
+                            sel.includes('确定') ||
+                            sel.includes('取消') ||
+                            sel.includes('关闭');
+                        return {
+                            count: async () => (match ? 1 : 0),
+                            first: () => ({
+                                count: async () => (match ? 1 : 0),
+                                isVisible: async () => match,
+                                click: async () => undefined,
+                                fill: async () => undefined,
+                            }),
+                        };
+                    },
+                } as unknown as WechatPage;
+
+                const warn = await setCover(
+                    mockPage,
+                    'library',
+                    { stepTimeoutMs: 50 },
+                    { requested: tmpCover, binding: 'not-a-valid-url' },
+                );
+                expect(warn).toBeNull();
+            } finally {
+                await rm(tmpCover, { force: true });
+            }
+        });
+
+        test('setCover warns when panel offers none of the open controls', async () => {
+            const mockPage = {
+                evaluate: async () => '',
+                locator: (sel: string) => {
+                    const match = sel.includes('取消') || sel.includes('关闭');
+                    return {
+                        count: async () => (match ? 1 : 0),
+                        first: () => ({
+                            count: async () => (match ? 1 : 0),
+                            isVisible: async () => match,
+                            click: async () => undefined,
+                        }),
+                    };
+                },
+            } as unknown as WechatPage;
+            const warn = await setCover(mockPage, 'library', { stepTimeoutMs: 10 }, { requested: 'test.png' });
+            expect(warn).toContain('the panel offers none of');
+        });
+
+        test('setCover warns when wanted cover list is empty', async () => {
+            const mockPage = {
+                evaluate: async () => '',
+                locator: (sel: string) => {
+                    const match =
+                        sel.includes('.js_cover_btn_area') ||
+                        sel.includes('js_imagedialog') ||
+                        sel.includes('取消') ||
+                        sel.includes('关闭');
+                    return {
+                        count: async () => (match ? 1 : 0),
+                        first: () => ({
+                            count: async () => (match ? 1 : 0),
+                            isVisible: async () => match,
+                            click: async () => undefined,
+                        }),
+                    };
+                },
+            } as unknown as WechatPage;
+            const warn = await setCover(mockPage, 'library', { stepTimeoutMs: 10 }, { requested: '', binding: '' });
+            expect(warn).toContain('no requested cover file identity');
+        });
+
+        test('setCover warns when picker selector is not offered', async () => {
+            const mockPage = {
+                evaluate: async () => '',
+                locator: (sel: string) => {
+                    const match = sel.includes('.js_cover_btn_area') || sel.includes('取消') || sel.includes('关闭');
+                    return {
+                        count: async () => (match ? 1 : 0),
+                        first: () => ({
+                            count: async () => (match ? 1 : 0),
+                            isVisible: async () => match,
+                            click: async () => undefined,
+                        }),
+                    };
+                },
+            } as unknown as WechatPage;
+            const warn = await setCover(mockPage, 'body', { stepTimeoutMs: 10 }, { requested: 'test.png' });
+            expect(warn).toContain('was not offered by the open cover panel');
+        });
+
+        test('setCover handles pagination, ambiguity, and JSON parsing error', async () => {
+            let paginationCalls = 0;
+            const pageWithPagination = {
+                waitForTimeout: async () => undefined,
+                locator: (sel: string) => {
+                    const match =
+                        sel.includes('.js_cover_btn_area') ||
+                        sel.includes('js_imagedialog') ||
+                        sel.includes('下一页') ||
+                        sel.includes('取消') ||
+                        sel.includes('关闭');
+                    return {
+                        count: async () => (match ? 1 : 0),
+                        first: () => ({
+                            count: async () => (match ? 1 : 0),
+                            isVisible: async () => match,
+                            click: async () => undefined,
+                        }),
+                    };
+                },
+                evaluate: async (script: string) => {
+                    if (script.includes('weui-desktop-pagination__num')) {
+                        paginationCalls++;
+                        return JSON.stringify({ page: paginationCalls === 1 ? 1 : 2, total: 2 });
+                    }
+                    if (script.includes('weui-desktop-loading')) return true;
+                    return 'missing';
+                },
+            } as unknown as WechatPage;
+            const warnMissing = await setCover(
+                pageWithPagination,
+                'library',
+                { stepTimeoutMs: 50 },
+                { requested: 'test.png' },
+            );
+            expect(warnMissing).toContain('未标出与请求文件同名的素材');
+
+            const pageAmbiguous = {
+                locator: (sel: string) => {
+                    const match =
+                        sel.includes('.js_cover_btn_area') ||
+                        sel.includes('js_imagedialog') ||
+                        sel.includes('取消') ||
+                        sel.includes('关闭');
+                    return {
+                        count: async () => (match ? 1 : 0),
+                        first: () => ({
+                            count: async () => (match ? 1 : 0),
+                            isVisible: async () => match,
+                            click: async () => undefined,
+                        }),
+                    };
+                },
+                evaluate: async () => 'ambiguous',
+            } as unknown as WechatPage;
+            const warnAmbiguous = await setCover(
+                pageAmbiguous,
+                'library',
+                { stepTimeoutMs: 50 },
+                { requested: 'test.png' },
+            );
+            expect(warnAmbiguous).toContain('匹配到多个同名素材');
+
+            const pageInvalidJson = {
+                locator: (sel: string) => {
+                    const match =
+                        sel.includes('.js_cover_btn_area') ||
+                        sel.includes('js_imagedialog') ||
+                        sel.includes('取消') ||
+                        sel.includes('关闭');
+                    return {
+                        count: async () => (match ? 1 : 0),
+                        first: () => ({
+                            count: async () => (match ? 1 : 0),
+                            isVisible: async () => match,
+                            click: async () => undefined,
+                        }),
+                    };
+                },
+                evaluate: async () => 'not-a-valid-json',
+            } as unknown as WechatPage;
+            const warnInvalid = await setCover(
+                pageInvalidJson,
+                'library',
+                { stepTimeoutMs: 50 },
+                { requested: 'test.png' },
+            );
+            expect(warnInvalid).toContain('素材身份探测返回未知结果');
+
+            const pageThrows = {
+                evaluate: async () => '',
+                locator: (sel: string) => {
+                    if (sel.includes('.js_cover_btn_area')) {
+                        return {
+                            count: async () => 1,
+                            first: () => ({
+                                count: async () => 1,
+                                isVisible: async () => true,
+                                click: async () => {
+                                    throw new Error('click failed');
+                                },
+                            }),
+                        };
+                    }
+                    return {
+                        count: async () => 1,
+                        first: () => ({
+                            count: async () => 1,
+                            isVisible: async () => true,
+                            click: async () => undefined,
+                        }),
+                    };
+                },
+            } as unknown as WechatPage;
+            const warnThrows = await setCover(pageThrows, 'library', { stepTimeoutMs: 50 }, { requested: 'test.png' });
+            expect(warnThrows).toContain('click failed');
+        });
+
+        test('setCover handles unobserved committed cover and identity mismatch', async () => {
+            const pageUnobserved = {
+                locator: (sel: string) => {
+                    const match =
+                        sel.includes('.js_cover_btn_area') ||
+                        sel.includes('js_imagedialog') ||
+                        sel.includes('确定') ||
+                        sel.includes('取消') ||
+                        sel.includes('关闭');
+                    return {
+                        count: async () => (match ? 1 : 0),
+                        first: () => ({
+                            count: async () => (match ? 1 : 0),
+                            isVisible: async () => match,
+                            click: async () => undefined,
+                        }),
+                    };
+                },
+                evaluate: async (script: string) => {
+                    if (script.includes('#js_cover_area')) return 'empty';
+                    return JSON.stringify({ picked: true, src: 'http://example.com/test.png' });
+                },
+            } as unknown as WechatPage;
+            const warnUnobs = await setCover(
+                pageUnobserved,
+                'library',
+                { stepTimeoutMs: 50 },
+                { requested: 'test.png' },
+            );
+            expect(warnUnobs).toContain('确认后面板仍显示未设置封面');
+
+            const pageUnobservedNonEmpty = {
+                locator: (sel: string) => {
+                    const match =
+                        sel.includes('.js_cover_btn_area') ||
+                        sel.includes('js_imagedialog') ||
+                        sel.includes('确定') ||
+                        sel.includes('取消') ||
+                        sel.includes('关闭');
+                    return {
+                        count: async () => (match ? 1 : 0),
+                        first: () => ({
+                            count: async () => (match ? 1 : 0),
+                            isVisible: async () => match,
+                            click: async () => undefined,
+                        }),
+                    };
+                },
+                evaluate: async (script: string) => {
+                    if (script.includes('#js_cover_area')) return 'nopreview';
+                    return JSON.stringify({ picked: true, src: 'http://example.com/test.png' });
+                },
+            } as unknown as WechatPage;
+            const warnUnobsNonEmpty = await setCover(
+                pageUnobservedNonEmpty,
+                'library',
+                { stepTimeoutMs: 50 },
+                { requested: 'test.png' },
+            );
+            expect(warnUnobsNonEmpty).toContain('已确认但无法读取已提交封面');
+
+            const pageMismatch = {
+                locator: (sel: string) => {
+                    const match =
+                        sel.includes('.js_cover_btn_area') ||
+                        sel.includes('js_imagedialog') ||
+                        sel.includes('确定') ||
+                        sel.includes('取消') ||
+                        sel.includes('关闭');
+                    return {
+                        count: async () => (match ? 1 : 0),
+                        first: () => ({
+                            count: async () => (match ? 1 : 0),
+                            isVisible: async () => match,
+                            click: async () => undefined,
+                        }),
+                    };
+                },
+                evaluate: async (script: string) => {
+                    if (script.includes('#js_cover_area')) return 'http://example.com/different.png';
+                    return JSON.stringify({ picked: true, src: 'http://example.com/selected.png' });
+                },
+            } as unknown as WechatPage;
+            const warnMismatch = await setCover(
+                pageMismatch,
+                'library',
+                { stepTimeoutMs: 50 },
+                { requested: 'test.png' },
+            );
+            expect(warnMismatch).toContain('已提交封面的素材身份与所选不一致');
+        });
+
+        test('insertAudioMaterial handles success, match error, ambiguous, nobox, verify and throws', async () => {
+            const makeAudioPage = (options: {
+                matchResult?: string | (() => string);
+                insertResult?: boolean;
+                verifyResult?: string | (() => string);
+                throwsOnPress?: boolean;
+                noUploadControl?: boolean;
+                skipUploadCover?: boolean;
+            }) =>
+                ({
+                    evaluate: async (script: string) => {
+                        if (
+                            script.includes('insertaudio') ||
+                            script.includes('music_plugin') ||
+                            script.includes('focus')
+                        )
+                            return undefined;
+                        if (script.includes('我已阅读并同意') || script.includes('js_agree')) return 'checked';
+                        if (script.includes('audio_dialog') || script.includes('selectionchange')) return undefined;
+                        if (script.includes('audio_item')) {
+                            if (typeof options.matchResult === 'function') return options.matchResult();
+                            return options.matchResult ?? JSON.stringify({ state: 'checked', identity: 'audio-id-1' });
+                        }
+                        if (script.includes('插入') && script.includes('button')) {
+                            return options.insertResult ?? true;
+                        }
+                        if (script.includes('mp-common-mpaudio')) {
+                            if (typeof options.verifyResult === 'function') return options.verifyResult();
+                            return options.verifyResult ?? JSON.stringify({ state: 'top', identity: 'audio-id-1' });
+                        }
+                        return undefined;
+                    },
+                    press: async () => {
+                        if (options.throwsOnPress) throw new Error('press error');
+                    },
+                    setInputFiles: async () => undefined,
+                    waitForTimeout: async () => undefined,
+                    locator: (sel: string) => {
+                        if (options.noUploadControl && sel.includes('上传音频')) {
+                            return { count: async () => 0 };
+                        }
+                        if (options.skipUploadCover && sel.includes('上传封面')) {
+                            return { count: async () => 0 };
+                        }
+                        return {
+                            count: async () => 1,
+                            first: () => ({
+                                count: async () => 1,
+                                isVisible: async () => true,
+                                waitFor: async () => undefined,
+                                click: async () => undefined,
+                                fill: async () => undefined,
+                            }),
+                        };
+                    },
+                }) as unknown as WechatPage;
+
+            // 1. Success case
+            const pageOk = makeAudioPage({});
+            const resOk = await insertAudioMaterial(pageOk, {
+                title: 'Episode 1',
+                audioPath: 'a.mp3',
+                coverPath: 'c.png',
+            });
+            expect(resOk).toBe('');
+
+            // 2. Match throws
+            const pageMatchThrows = makeAudioPage({
+                matchResult: () => {
+                    throw new Error('match probe failed');
+                },
+            });
+            const resMatchThrows = await insertAudioMaterial(pageMatchThrows, {
+                title: 'Episode 1',
+                audioPath: 'a.mp3',
+                coverPath: 'c.png',
+            });
+            expect(resMatchThrows).toContain('素材匹配探测失败');
+
+            // 3. Ambiguous match
+            const pageAmbiguous = makeAudioPage({
+                matchResult: JSON.stringify({ state: 'ambiguous' }),
+            });
+            const resAmbiguous = await insertAudioMaterial(pageAmbiguous, {
+                title: 'Episode 1',
+                audioPath: 'a.mp3',
+                coverPath: 'c.png',
+            });
+            expect(resAmbiguous).toContain('列表匹配到多个同名条目');
+
+            // 4. Nobox match
+            const pageNobox = makeAudioPage({
+                matchResult: JSON.stringify({ state: 'nobox' }),
+            });
+            const resNobox = await insertAudioMaterial(pageNobox, {
+                title: 'Episode 1',
+                audioPath: 'a.mp3',
+                coverPath: 'c.png',
+            });
+            expect(resNobox).toContain('行没有勾选框');
+
+            // 5. Unchecked match
+            const pageUnchecked = makeAudioPage({
+                matchResult: JSON.stringify({ state: 'unchecked' }),
+            });
+            const resUnchecked = await insertAudioMaterial(pageUnchecked, {
+                title: 'Episode 1',
+                audioPath: 'a.mp3',
+                coverPath: 'c.png',
+            });
+            expect(resUnchecked).toContain('未选中');
+
+            // 6. Invalid JSON match
+            const pageInvalidJson = makeAudioPage({
+                matchResult: 'invalid-json',
+            });
+            const resInvalid = await insertAudioMaterial(pageInvalidJson, {
+                title: 'Episode 1',
+                audioPath: 'a.mp3',
+                coverPath: 'c.png',
+            });
+            expect(resInvalid).toContain('素材匹配探测返回未知结果');
+
+            // 7. Insert button not found
+            const pageInsertFail = makeAudioPage({
+                insertResult: false,
+            });
+            const resInsertFail = await insertAudioMaterial(pageInsertFail, {
+                title: 'Episode 1',
+                audioPath: 'a.mp3',
+                coverPath: 'c.png',
+            });
+            expect(resInsertFail).toContain('插入按钮未找到');
+
+            // 8. Verify invalid JSON
+            const pageVerifyInvalid = makeAudioPage({
+                verifyResult: 'invalid-json',
+            });
+            const resVerifyInvalid = await insertAudioMaterial(pageVerifyInvalid, {
+                title: 'Episode 1',
+                audioPath: 'a.mp3',
+                coverPath: 'c.png',
+            });
+            expect(resVerifyInvalid).toContain('已插入但无法读取正文状态');
+
+            // 9. Verify absent
+            const pageVerifyAbsent = makeAudioPage({
+                verifyResult: JSON.stringify({ state: 'absent' }),
+            });
+            const resVerifyAbsent = await insertAudioMaterial(pageVerifyAbsent, {
+                title: 'Episode 1',
+                audioPath: 'a.mp3',
+                coverPath: 'c.png',
+            });
+            expect(resVerifyAbsent).toContain('插入未生效');
+
+            // 10. Verify not top
+            const pageVerifyMiddle = makeAudioPage({
+                verifyResult: JSON.stringify({ state: 'middle' }),
+            });
+            const resVerifyMiddle = await insertAudioMaterial(pageVerifyMiddle, {
+                title: 'Episode 1',
+                audioPath: 'a.mp3',
+                coverPath: 'c.png',
+            });
+            expect(resVerifyMiddle).toContain('已插入但未在文首');
+
+            // 11. Verify identity mismatch
+            const pageVerifyMismatch = makeAudioPage({
+                verifyResult: JSON.stringify({ state: 'top', identity: 'different-id' }),
+            });
+            const resVerifyMismatch = await insertAudioMaterial(pageVerifyMismatch, {
+                title: 'Episode 1',
+                audioPath: 'a.mp3',
+                coverPath: 'c.png',
+            });
+            expect(resVerifyMismatch).toContain('无法核对素材身份');
+
+            // 12. Throws on press
+            const pageThrows = makeAudioPage({
+                throwsOnPress: true,
+            });
+            const resThrows = await insertAudioMaterial(pageThrows, {
+                title: 'Episode 1',
+                audioPath: 'a.mp3',
+                coverPath: 'c.png',
+            });
+            expect(resThrows).toContain('press error');
+
+            // 13. Match missing -> uploadControl not found
+            const pageMissingUploadNotFound = makeAudioPage({
+                matchResult: 'missing',
+                noUploadControl: true,
+            });
+            const resMissingUpload = await insertAudioMaterial(pageMissingUploadNotFound, {
+                title: 'Episode 1',
+                audioPath: 'a.mp3',
+                coverPath: 'c.png',
+            });
+            expect(resMissingUpload).toContain('上传音频 control not found');
+
+            // 14. Match missing -> upload succeeds -> match still missing
+            let missingCallCount = 0;
+            const pageMissingUploadSucceeds = makeAudioPage({
+                matchResult: () => {
+                    missingCallCount++;
+                    return 'missing';
+                },
+                skipUploadCover: true,
+            });
+            const resMissingUploadSucceeds = await insertAudioMaterial(pageMissingUploadSucceeds, {
+                title: 'Episode 1',
+                audioPath: 'a.mp3',
+                coverPath: 'c.png',
+            });
+            expect(resMissingUploadSucceeds).toContain('保存后素材列表未出现「Episode 1」');
+            expect(missingCallCount).toBeGreaterThan(0);
+
+            // 15. Match missing -> upload succeeds -> match probe throws
+            let errorCallCount = 0;
+            const pageMissingUploadProbeThrows = makeAudioPage({
+                matchResult: () => {
+                    errorCallCount++;
+                    if (errorCallCount > 3) throw new Error('probe throws on retry');
+                    return 'missing';
+                },
+                skipUploadCover: true,
+            });
+            const resMissingUploadProbeThrows = await insertAudioMaterial(pageMissingUploadProbeThrows, {
+                title: 'Episode 1',
+                audioPath: 'a.mp3',
+                coverPath: 'c.png',
+            });
+            expect(resMissingUploadProbeThrows).toContain('保存后素材匹配探测失败');
+        });
+
+        test('flow.ts additional helper functions and branches', async () => {
+            // 1. coverAssetIdentity: catch block for invalid URL and qpic stripping
+            expect(coverAssetIdentity('not-a-valid-url')).toBe('not-a-valid-url');
+            expect(coverAssetIdentity('https://mmbiz.qpic.cn/mmbiz_png/abc/640')).toBe('mmbiz.qpic.cn/mmbiz_png/abc');
+            expect(coverAssetIdentity('https://example.com/image.png')).toBe('https://example.com/image.png');
+
+            // 2. parsePublicDraftSnapshot: via readPublicDraftSnapshot
+            const mockPageSnapshotOk = {
+                evaluate: async () =>
+                    JSON.stringify({
+                        title: 'Test Title',
+                        body: 'Test Body',
+                        media: ['m1', 'm2'],
+                        cover: 'c1',
+                        originalUrl: 'https://example.com',
+                    }),
+            } as unknown as WechatPage;
+            const snapOk = await readPublicDraftSnapshot(mockPageSnapshotOk);
+            expect(snapOk?.title).toBe('Test Title');
+            expect(snapOk?.media).toEqual(['m1', 'm2']);
+
+            const mockPageSnapshotInvalid = {
+                evaluate: async () =>
+                    JSON.stringify({
+                        title: 'Test Title',
+                        body: 'Test Body',
+                        media: [123],
+                        cover: 'c1',
+                    }),
+            } as unknown as WechatPage;
+            expect(await readPublicDraftSnapshot(mockPageSnapshotInvalid)).toBeNull();
+
+            const mockPageSnapshotCatch = {
+                evaluate: async () => {
+                    throw new Error('eval error');
+                },
+            } as unknown as WechatPage;
+            expect(await readPublicDraftSnapshot(mockPageSnapshotCatch)).toBeNull();
+
+            // 3. readPublishNotifySubscribers
+            const mockPageNotifyTrue = {
+                evaluate: async () => true,
+            } as unknown as WechatPage;
+            expect(await readPublishNotifySubscribers(mockPageNotifyTrue)).toBe(true);
+
+            const mockPageNotifyFalse = {
+                evaluate: async () => false,
+            } as unknown as WechatPage;
+            expect(await readPublishNotifySubscribers(mockPageNotifyFalse)).toBe(false);
+
+            const mockPageNotifyNull = {
+                evaluate: async () => 'not-boolean',
+            } as unknown as WechatPage;
+            expect(await readPublishNotifySubscribers(mockPageNotifyNull)).toBeNull();
+
+            const mockPageNotifyCatch = {
+                evaluate: async () => {
+                    throw new Error('eval error');
+                },
+            } as unknown as WechatPage;
+            expect(await readPublishNotifySubscribers(mockPageNotifyCatch)).toBeNull();
+
+            // 4. shouldNotifySubscribers
+            expect(shouldNotifySubscribers({ title: 't', body: 'b', format: 'markdown' })).toBe(true);
+            expect(
+                shouldNotifySubscribers({
+                    title: 't',
+                    body: 'b',
+                    format: 'markdown',
+                    metadata: { wechatmp: null as unknown as Record<string, unknown> },
+                }),
+            ).toBe(true);
+            expect(
+                shouldNotifySubscribers({
+                    title: 't',
+                    body: 'b',
+                    format: 'markdown',
+                    metadata: { wechatmp: [] as unknown as Record<string, unknown> },
+                }),
+            ).toBe(true);
+            expect(
+                shouldNotifySubscribers({
+                    title: 't',
+                    body: 'b',
+                    format: 'markdown',
+                    metadata: { wechatmp: { notifySubscribers: false } },
+                }),
+            ).toBe(false);
+            expect(
+                shouldNotifySubscribers({
+                    title: 't',
+                    body: 'b',
+                    format: 'markdown',
+                    metadata: { wechatmp: { notifySubscribers: true } },
+                }),
+            ).toBe(true);
+
+            // 5. readTitleMirror catch closure (line 653)
+            const throwingMirrorPage = {
+                locator: () => {
+                    throw new Error('sync locator throw inside trySelectors');
+                },
+            } as unknown as WechatPage;
+            const mirrorRes = await readTitleMirror(throwingMirrorPage);
+            expect(mirrorRes).toEqual({ observed: false, value: '' });
+
+            // 6. enrichArticleDraft with failing audio & library cover
+            const audioFailPage = {
+                evaluate: async () => {
+                    throw new Error('fail evaluate');
+                },
+                locator: () => ({
+                    count: async () => 0,
+                    first: () => ({ isVisible: async () => false }),
+                }),
+            } as unknown as WechatPage;
+            const contentWithAudio: Content = {
+                title: 'Audio Title',
+                body: 'body',
+                format: 'markdown',
+                metadata: {
+                    wechatmp: {
+                        coverSource: 'library',
+                        audioTitle: 'Audio Ep',
+                        audioPath: 'ep.mp3',
+                        audioCoverPath: 'ep.png',
+                    },
+                },
+            };
+            const enrichRes = await enrichArticleDraft(audioFailPage, contentWithAudio, 100);
+            expect(enrichRes.enrichWarnings.length).toBeGreaterThan(0);
+            expect(enrichRes.coverWarnings).toContain(
+                'cover: 音频上传未成功，图片库不保证已有请求封面，已跳过图片库封面',
+            );
+
+            // 7. applyLayout branches
+            const mockPageLayout = {
+                locator: (sel: string) => {
+                    const isControl = sel.includes('一键排版');
+                    return {
+                        first: () => ({
+                            isVisible: async () => isControl,
+                            count: async () => (isControl ? 1 : 0),
+                            click: async () => undefined,
+                        }),
+                        count: async () => (isControl ? 1 : 0),
+                    };
+                },
+                click: async () => undefined,
+                evaluate: async () => 'invalid-json',
+            } as unknown as WechatPage;
+
+            const depsMorePages = {
+                stepTimeoutMs: 50,
+                pollMs: 10,
+                draftTimeoutMs: 50,
+                submitSettleMs: 10,
+                publishStatus: 'draft',
+                content: { title: 't', body: 'b', format: 'markdown' },
+                pages: () => [mockPageLayout, mockPageLayout],
+            } as unknown as ModeRunDeps;
+            await expect(applyLayout(mockPageLayout, depsMorePages)).rejects.toThrow(
+                'the visible control exposed no recognized commit action',
+            );
+
+            let pageCallCount = 0;
+            const depsOpenTab = {
+                stepTimeoutMs: 50,
+                pollMs: 10,
+                draftTimeoutMs: 50,
+                submitSettleMs: 10,
+                publishStatus: 'draft',
+                content: { title: 't', body: 'b', format: 'markdown' },
+                pages: () => {
+                    pageCallCount++;
+                    return pageCallCount <= 1 ? [mockPageLayout] : [mockPageLayout, mockPageLayout];
+                },
+            } as unknown as ModeRunDeps;
+            await expect(applyLayout(mockPageLayout, depsOpenTab)).rejects.toThrow(
+                'a new preview tab opened without a recognized commit action',
+            );
+
+            const mockPageLayoutOptionThrow = {
+                locator: (sel: string) => {
+                    const isControl = sel.includes('一键排版');
+                    const isOption = sel.includes('匹配目标格式');
+                    const active = isControl || isOption;
+                    return {
+                        first: () => ({
+                            isVisible: async () => active,
+                            count: async () => (active ? 1 : 0),
+                            click: async () => {
+                                if (isOption) throw new Error('option click failed');
+                            },
+                        }),
+                        count: async () => (active ? 1 : 0),
+                    };
+                },
+                click: async (sel: string) => {
+                    if (sel.includes('匹配目标格式')) throw new Error('option click failed');
+                },
+                evaluate: async () => 'invalid-json',
+            } as unknown as WechatPage;
+            const depsOptionThrow = {
+                stepTimeoutMs: 50,
+                pollMs: 10,
+                draftTimeoutMs: 50,
+                submitSettleMs: 10,
+                publishStatus: 'draft',
+                content: { title: 't', body: 'b', format: 'markdown' },
+                pages: () => [mockPageLayoutOptionThrow],
+            } as unknown as ModeRunDeps;
+            const applyRes = await applyLayout(mockPageLayoutOptionThrow, depsOptionThrow);
+            expect(applyRes).toContain('一键排版: 匹配目标格式 not applied');
+
+            // 8. savePublicDraft unreadable snapshot & missing saveDraftAndWait
+            const mockEntryNoSnapshot = {
+                editor: {
+                    evaluate: async () => null,
+                } as unknown as WechatPage,
+                operation: '文章',
+                path: 'menu' as const,
+                createType: 0,
+            };
+            const saveResNoSnapshot = await savePublicDraft(
+                {} as unknown as ModeRunDeps,
+                mockEntryNoSnapshot as unknown as Parameters<typeof savePublicDraft>[1],
+            );
+            expect('ok' in saveResNoSnapshot && saveResNoSnapshot.ok).toBe(false);
+            expect('error' in saveResNoSnapshot && (saveResNoSnapshot as { error: string }).error).toContain(
+                'the composed editor snapshot (title/body/media/cover) was unreadable',
+            );
+
+            const mockEntryNoSaveAndWait = {
+                editor: {
+                    evaluate: async (expr: string) => {
+                        if (expr.includes('weui-desktop-dialog')) return false;
+                        return JSON.stringify({
+                            title: 'T',
+                            body: 'B',
+                            media: [],
+                            cover: 'C',
+                        });
+                    },
+                    url: () => 'https://mp.weixin.qq.com/cgi-bin/appmsg?t=media/appmsg_edit&action=edit&appmsgid=100',
+                    locator: () => ({
+                        count: async () => 1,
+                        first: () => ({
+                            count: async () => 1,
+                            isVisible: async () => true,
+                        }),
+                    }),
+                } as unknown as WechatPage,
+                operation: '文章',
+                path: 'menu' as const,
+                createType: 0,
+            };
+            const depsNoSaveAndWait = {
+                content: { title: 'T', body: 'B', format: 'markdown' },
+                stepTimeoutMs: 50,
+                submitSettleMs: 10,
+            } as unknown as ModeRunDeps;
+            const saveResNoSaveAndWait = await savePublicDraft(
+                depsNoSaveAndWait,
+                mockEntryNoSaveAndWait as unknown as Parameters<typeof savePublicDraft>[1],
+            );
+            expect('ok' in saveResNoSaveAndWait && saveResNoSaveAndWait.ok).toBe(false);
+            expect('error' in saveResNoSaveAndWait && (saveResNoSaveAndWait as { error: string }).error).toContain(
+                'native 保存为草稿 acknowledgement probe was unavailable',
+            );
+
+            // 9. confirmPublicPublish: switch did not remain verifiably OFF
+            let notifyCallCount = 0;
+            const mockPageSwitchFails = {
+                evaluate: async () => {
+                    notifyCallCount++;
+                    return notifyCallCount > 1;
+                },
+                locator: () => ({
+                    count: async () => 1,
+                    first: () => ({
+                        count: async () => 1,
+                        isVisible: async () => true,
+                        click: async () => undefined,
+                    }),
+                }),
+                click: async () => undefined,
+            } as unknown as WechatPage;
+            const confirmRes = await confirmPublicPublish(mockPageSwitchFails, false, 50, 10);
+            expect('ok' in confirmRes && confirmRes.ok).toBe(false);
+            expect('error' in confirmRes && (confirmRes as { error: string }).error).toContain(
+                '群发通知 switch did not verify OFF',
+            );
+
+            // 10. publishContent without saved evidence and stale refusal
+            const mockPageStaleNoSaved = {
+                url: () => 'https://mp.weixin.qq.com',
+                evaluate: async () => '版本过期',
+                locator: (sel: string) => {
+                    if (sel.includes('当前编辑的草稿不是最新版本')) {
+                        return {
+                            count: async () => 1,
+                            first: () => ({
+                                count: async () => 1,
+                                isVisible: async () => true,
+                                click: async () => undefined,
+                                textContent: async () => '当前编辑的草稿不是最新版本',
+                            }),
+                        };
+                    }
+                    if (sel.includes('h3.weui-desktop-dialog__title') || sel.includes('weui-desktop-dialog')) {
+                        return {
+                            count: async () => 0,
+                            first: () => ({
+                                count: async () => 0,
+                                isVisible: async () => false,
+                                click: async () => undefined,
+                                textContent: async () => '',
+                            }),
+                        };
+                    }
+                    return {
+                        count: async () => 1,
+                        first: () => ({
+                            count: async () => 1,
+                            isVisible: async () => true,
+                            click: async () => undefined,
+                            textContent: async () => '',
+                        }),
+                    };
+                },
+                click: async () => undefined,
+            } as unknown as WechatPage;
+            const entryStaleNoSaved = {
+                editor: mockPageStaleNoSaved,
+                operation: '贴图',
+                path: 'menu',
+            };
+            const depsStaleNoSaved = {
+                content: { title: 'T', body: 'B', format: 'markdown' },
+                stepTimeoutMs: 50,
+                pollMs: 10,
+                submitSettleMs: 10,
+                pages: () => [mockPageStaleNoSaved],
+            } as unknown as ModeRunDeps;
+            const composedEmpty = {
+                warnings: [],
+                enrichWarnings: [],
+                titlePath: 'mirror-agreed' as const,
+            };
+            const pubResStale = await publishContent(
+                {
+                    operation: '贴图',
+                    content: { title: 'T', body: 'B', format: 'markdown' },
+                } as unknown as Parameters<typeof publishContent>[0],
+                depsStaleNoSaved,
+                entryStaleNoSaved as unknown as Parameters<typeof publishContent>[2],
+                composedEmpty,
+            );
+            expect(pubResStale.ok).toBe(false);
+            expect(pubResStale.error).toContain('no canonical saved-editor evidence was available for recovery');
+
+            // 11. waitForPublicEditorReadiness (success & evaluate throws)
+            const mockPageReadySuccess = {
+                evaluate: async () => 'saved',
+            } as unknown as WechatPage;
+            const readySuccess = await waitForPublicEditorReadiness(mockPageReadySuccess, {
+                stepTimeoutMs: 100,
+                pollMs: 10,
+            } as unknown as ModeRunDeps);
+            expect(readySuccess).toBe(true);
+
+            const mockPageReadyThrow = {
+                evaluate: async () => {
+                    throw new Error('evaluate failure');
+                },
+            } as unknown as WechatPage;
+            const readyFail = await waitForPublicEditorReadiness(mockPageReadyThrow, {
+                stepTimeoutMs: 50,
+                pollMs: 10,
+            } as unknown as ModeRunDeps);
+            expect(readyFail).toBe(false);
+
+            // 12. confirmPublicPublish when notify switch fails to verify OFF at final publish check
+            let notifyStateProbeCount = 0;
+            const mockPageNotifyFailsAtEnd = {
+                evaluate: async () => {
+                    notifyStateProbeCount += 1;
+                    // First before check: true. Off check: false. Final check: true (reverted!).
+                    return notifyStateProbeCount !== 2;
+                },
+                locator: () => ({
+                    count: async () => 1,
+                    first: () => ({
+                        count: async () => 1,
+                        isVisible: async () => true,
+                        click: async () => undefined,
+                    }),
+                }),
+                click: async () => undefined,
+            } as unknown as WechatPage;
+            const confirmRevertRes = await confirmPublicPublish(mockPageNotifyFailsAtEnd, false, 50, 10);
+            expect('ok' in confirmRevertRes && confirmRevertRes.ok).toBe(false);
+            expect('error' in confirmRevertRes && (confirmRevertRes as { error: string }).error).toContain(
+                '群发通知 switch did not remain verifiably OFF',
+            );
+
+            // 13. recoverStaleVersion branches
+            const validCanonicalUrl = 'https://mp.weixin.qq.com/cgi-bin/appmsg?action=edit&appmsgid=10001';
+            const savedEvidence = {
+                saveControl: 'button:has-text("保存为草稿")',
+                canonicalUrl: validCanonicalUrl,
+                canonicalUrlForMetadata: validCanonicalUrl,
+                saveSignal: 'persisted-snapshot' as const,
+                snapshot: {
+                    title: 'Title',
+                    body: 'Body',
+                    media: [],
+                    cover: 'https://mmbiz.qpic.cn/test/0',
+                    originalUrl: '',
+                },
+            };
+            const mockEntryForRecovery = {
+                editor: {
+                    url: () => validCanonicalUrl,
+                    locator: (sel: string) => ({
+                        count: async () => (sel.includes('查看新草稿') ? 1 : 0),
+                        first: () => ({
+                            count: async () => (sel.includes('查看新草稿') ? 1 : 0),
+                            isVisible: async () => sel.includes('查看新草稿'),
+                            click: async () => undefined,
+                        }),
+                    }),
+                    evaluate: async (script: string) => {
+                        if (script.includes('title')) {
+                            return {
+                                title: 'Title',
+                                body: 'Body',
+                                media: [],
+                                cover: 'https://mmbiz.qpic.cn/test/0',
+                                originalUrl: '',
+                            };
+                        }
+                        return 'saved';
+                    },
+                } as unknown as WechatPage,
+                operation: '文章',
+                path: 'menu' as const,
+                createType: 0,
+            };
+            const depsForRecovery = {
+                pages: () => [mockEntryForRecovery.editor],
+                stepTimeoutMs: 50,
+                pollMs: 10,
+                draftTimeoutMs: 100,
+            } as unknown as ModeRunDeps;
+
+            // Non-canonical saved url fails immediately
+            const invalidSaved = { ...savedEvidence, canonicalUrl: 'https://example.com' };
+            const recNonCanonical = await recoverStaleVersion(depsForRecovery, mockEntryForRecovery, invalidSaved);
+            expect('ok' in recNonCanonical && recNonCanonical.ok).toBe(false);
+
+            // Success path of recoverStaleVersion
+            const recSuccess = await recoverStaleVersion(depsForRecovery, mockEntryForRecovery, savedEvidence);
+            expect('editor' in recSuccess).toBe(true);
+
+            // recoverStaleVersion click throws
+            const mockEntryClickThrows = {
+                ...mockEntryForRecovery,
+                editor: {
+                    ...mockEntryForRecovery.editor,
+                    click: async () => {
+                        throw new Error('click failure');
+                    },
+                } as unknown as WechatPage,
+            };
+            const recClickFail = await recoverStaleVersion(depsForRecovery, mockEntryClickThrows, savedEvidence);
+            expect('ok' in recClickFail && recClickFail.ok).toBe(false);
+
+            // recoverStaleVersion differences in snapshot
+            const mockEntryDiff = {
+                ...mockEntryForRecovery,
+                editor: {
+                    ...mockEntryForRecovery.editor,
+                    evaluate: async (script: string) => {
+                        if (script.includes('title')) {
+                            return {
+                                title: 'Different Title',
+                                body: 'Body',
+                                media: [],
+                                cover: 'https://mmbiz.qpic.cn/test/0',
+                                originalUrl: '',
+                            };
+                        }
+                        return 'saved';
+                    },
+                } as unknown as WechatPage,
+            };
+            const recDiff = await recoverStaleVersion(depsForRecovery, mockEntryDiff, savedEvidence);
+            expect('ok' in recDiff && recDiff.ok).toBe(false);
+
+            // 14. savePublicDraft success path
+            const mockPageSaveSuccess = {
+                url: () => validCanonicalUrl,
+                saveDraftAndWait: async () => undefined,
+                goto: async () => undefined,
+                locator: (sel: string) => {
+                    const isSaveDraft = sel.includes('保存为草稿');
+                    return {
+                        count: async () => (isSaveDraft ? 1 : 0),
+                        first: () => ({
+                            count: async () => (isSaveDraft ? 1 : 0),
+                            isVisible: async () => isSaveDraft,
+                            click: async () => undefined,
+                        }),
+                    };
+                },
+                evaluate: async (script: string) => {
+                    if (script.includes('title')) {
+                        return {
+                            title: 'Title',
+                            body: 'Body',
+                            media: [],
+                            cover: 'https://mmbiz.qpic.cn/test/0',
+                            originalUrl: '',
+                        };
+                    }
+                    if (script.includes('weui-desktop-dialog')) return false;
+                    return 'saved';
+                },
+            } as unknown as WechatPage;
+            const entrySaveSuccess = {
+                editor: mockPageSaveSuccess,
+                operation: '文章',
+                path: 'menu' as const,
+                createType: 0,
+            };
+            const depsSaveSuccess = {
+                content: {
+                    title: 'Title',
+                    body: 'Body',
+                    format: 'markdown',
+                    metadata: { wechatmp: { cover: 'https://mmbiz.qpic.cn/test/0' } },
+                },
+                stepTimeoutMs: 50,
+                pollMs: 10,
+                draftTimeoutMs: 100,
+            } as unknown as ModeRunDeps;
+            const saveDraftRes = await savePublicDraft(depsSaveSuccess, entrySaveSuccess);
+            expect('canonicalUrl' in saveDraftRes).toBe(true);
+            if ('canonicalUrl' in saveDraftRes) {
+                expect(saveDraftRes.canonicalUrl).toBe(validCanonicalUrl);
+            }
+
+            // savePublicDraft with content mismatch
+            const mockPageSaveDiff = {
+                ...mockPageSaveSuccess,
+                evaluate: async (script: string) => {
+                    if (script.includes('title')) {
+                        return {
+                            title: 'Mismatched Title',
+                            body: 'Body',
+                            media: [],
+                            cover: 'https://mmbiz.qpic.cn/test/0',
+                            originalUrl: '',
+                        };
+                    }
+                    if (script.includes('weui-desktop-dialog')) return false;
+                    return 'saved';
+                },
+            } as unknown as WechatPage;
+            const saveDraftDiffRes = await savePublicDraft(depsSaveSuccess, {
+                ...entrySaveSuccess,
+                editor: mockPageSaveDiff,
+            });
+            expect('ok' in saveDraftDiffRes && saveDraftDiffRes.ok).toBe(false);
+
+            // 15. runMode error catch formats carried open dialogs on save failure
+            await seedMedia();
+            const consoleThrow = makeConsole(
+                happyState({
+                    mode: '贴图',
+                    createType: 8,
+                    dialogOpen: true,
+                    dialogCloseable: false,
+                    saveClickThrows: true,
+                }),
+            );
+            const contentSticker = mediaContent({ operation: '贴图', images: [bodyImage] });
+            const resThrow = await makeTransport(consoleThrow).publish({ content: contentSticker });
+            expect(resThrow.ok).toBe(false);
+            expect(resThrow.error).toContain('residual modal refused cleanup');
+            expect(resThrow.error).toContain('插入音频 上传音频');
+        });
     });
 });

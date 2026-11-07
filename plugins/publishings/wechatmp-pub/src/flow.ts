@@ -649,11 +649,8 @@ async function typeTitle(page: WechatPage, deps: ModeRunDeps): Promise<'absent' 
 }
 
 /** The hidden form mirror's value; `observed: false` when the console does not expose one. */
-async function readTitleMirror(page: WechatPage): Promise<{ observed: boolean; value: string }> {
-    const found = await trySelectors(page, TITLE_MIRROR, { visible: false }).catch(() => ({
-        found: false,
-        selector: null,
-    }));
+export async function readTitleMirror(page: WechatPage): Promise<{ observed: boolean; value: string }> {
+    const found = await trySelectors(page, TITLE_MIRROR, { visible: false });
     if (!found.found || !found.selector) return { observed: false, value: '' };
     const locator = page.locator(found.selector).first();
     if (typeof locator.inputValue !== 'function') return { observed: false, value: '' };
@@ -827,7 +824,7 @@ async function waitForNativeLayoutSave(page: WechatPage, deps: ModeRunDeps): Pro
  * label (the 2026-10-05 dogfood reading) is accepted only when its own measured commit signal is
  * available; an unrecognized control fails closed before submission.
  */
-async function applyLayout(page: WechatPage, deps: ModeRunDeps): Promise<string | null> {
+export async function applyLayout(page: WechatPage, deps: ModeRunDeps): Promise<string | null> {
     // Measured 2026-10-13: the current editor build exposes no 一键排版 control at all. An absent
     // control is the platform's layout — silently skip; only a found-but-failing control warns.
     const control = await tryFindSelector(page, LAYOUT_CONTROL, Math.min(deps.stepTimeoutMs, 5_000));
@@ -891,7 +888,7 @@ async function applyLayout(page: WechatPage, deps: ModeRunDeps): Promise<string 
 }
 
 /** Fill an optional field, recording a warning instead of failing the run. */
-async function fillOptional(
+export async function fillOptional(
     page: WechatPage,
     selectors: readonly string[],
     value: string,
@@ -924,7 +921,7 @@ async function coverLibraryName(path: string): Promise<string> {
     return `kk-cover-${hash.slice(0, 32)}${extname(path).toLowerCase()}`;
 }
 
-function coverAssetIdentity(value: string): string {
+export function coverAssetIdentity(value: string): string {
     try {
         const url = new URL(value);
         return url.hostname === 'mmbiz.qpic.cn'
@@ -1188,7 +1185,7 @@ function audioBlockOf(content: Content): { title: string; audioPath: string; cov
 }
 
 /** 文章's `metadata.wechatmp` enrichment rail, plus its opt-in audio embed (2026-09-29, ADR-026). */
-async function enrichArticleDraft(
+export async function enrichArticleDraft(
     page: WechatPage,
     content: Content,
     stepTimeoutMs: number,
@@ -1331,7 +1328,7 @@ async function composePodcast(
     let reuseRowText = '';
     const reuseHistory: string[] = [];
     {
-        const probe = async () => String(((await page.evaluate(reuseProbe).catch(() => 'ERR')) as string) ?? '');
+        const probe = async () => String(((await page.evaluate(reuseProbe)) as string) ?? '');
         for (let i = 0; i < 10; i++) {
             const text = await probe();
             reuseHistory.push(text === 'LOADING' || text === 'ERR' ? text : text.slice(0, 25));
@@ -1350,7 +1347,7 @@ async function composePodcast(
     if (reuseRowText) {
         // Reuse means skipping the duplicate upload entirely — wait out 转码/审核 on the existing row.
         const reuseReady = await waitUntil(async () => {
-            const text = String(((await page.evaluate(reuseProbe).catch(() => 'ERR')) as string) ?? '');
+            const text = String(((await page.evaluate(reuseProbe)) as string) ?? '');
             return text !== 'ERR' && text !== 'LOADING' && text !== 'NONE' && !/转码中|审核中|处理中/.test(text);
         }, 40 * 60_000);
         if (!reuseReady) throw new Error(`播客: 复用素材列表在 40min 内未见「${materialTitle}」完成转码/审核`);
@@ -1386,10 +1383,7 @@ async function composePodcast(
     const uploadDialog = '.weui-desktop-dialog:visible:has(h3.weui-desktop-dialog__title:text-is("上传音频"))';
     await waitUntil(
         async () =>
-            (await page
-                .locator(`${uploadDialog} button:has-text("重新上传")`)
-                .count()
-                .catch(() => 0)) > 0 &&
+            (await page.locator(`${uploadDialog} button:has-text("重新上传")`).count()) > 0 &&
             /100%/.test(
                 (await page.evaluate(
                     `(() => {\n            const d = [...document.querySelectorAll(".weui-desktop-dialog")].find((el) => el.offsetWidth > 0 && el.querySelector("input[name=audio_id]"));\n            return d ? (d.textContent ?? "") : "";\n        })()`,
@@ -1423,11 +1417,7 @@ async function composePodcast(
     // The crop page is 上一步+完成; clicking 完成 before it fully renders bounces the picker back
     // to its 确定/取消 page (measured with the real 865KB cover; settle it first).
     const cropSettled = await waitUntil(
-        async () =>
-            (await page
-                .locator(`${chooser} button:has-text("上一步")`)
-                .count()
-                .catch(() => 0)) > 0,
+        async () => (await page.locator(`${chooser} button:has-text("上一步")`).count()) > 0,
         15_000,
     );
     if (!cropSettled) throw new Error('播客: 封面裁剪页未出现（下一步后无上一步按钮）');
@@ -1441,26 +1431,12 @@ async function composePodcast(
     await clickSelector(page, finish, deps.stepTimeoutMs);
     // A required crop bounces the picker back to its 确定/取消 page after 完成 applies (measured:
     // the throwaway tile skipped crop, the daily cover didn't); the explicit 确定 closes it.
-    let chooserClosed = await waitUntil(
-        async () =>
-            (await page
-                .locator(chooser)
-                .count()
-                .catch(() => 0)) === 0,
-        25_000,
-    );
+    let chooserClosed = await waitUntil(async () => (await page.locator(chooser).count()) === 0, 25_000);
     if (!chooserClosed) {
         const confirm = await tryFindSelector(page, [`${chooser} button:has-text("确定")`], 5_000);
         if (confirm) {
             await clickSelector(page, confirm, deps.stepTimeoutMs);
-            chooserClosed = await waitUntil(
-                async () =>
-                    (await page
-                        .locator(chooser)
-                        .count()
-                        .catch(() => 0)) === 0,
-                10_000,
-            );
+            chooserClosed = await waitUntil(async () => (await page.locator(chooser).count()) === 0, 10_000);
         }
     }
     if (!chooserClosed) {
@@ -1516,14 +1492,7 @@ async function composePodcast(
     await clickSelector(page, save, deps.stepTimeoutMs);
     // 保存 closes the upload form; if it stays open the save failed silently — dump the residue
     // (toast/h3s) as evidence instead of waiting on the library row forever.
-    const formClosed = await waitUntil(
-        async () =>
-            (await page
-                .locator(uploadDialog)
-                .count()
-                .catch(() => 0)) === 0,
-        30_000,
-    );
+    const formClosed = await waitUntil(async () => (await page.locator(uploadDialog).count()) === 0, 30_000);
     if (!formClosed) {
         // React may ignore the synthetic-only activation — JS-dispatch a click once more.
         const dispatched = String(
@@ -1533,14 +1502,7 @@ async function composePodcast(
                 )
                 .catch(() => null),
         );
-        const dispatchClosed = await waitUntil(
-            async () =>
-                (await page
-                    .locator(uploadDialog)
-                    .count()
-                    .catch(() => 0)) === 0,
-            10_000,
-        );
+        const dispatchClosed = await waitUntil(async () => (await page.locator(uploadDialog).count()) === 0, 10_000);
         if (!dispatchClosed) {
             const after = String(await page.evaluate(saveDiagnostics).catch(() => null)).slice(0, 600);
             throw new Error(`播客: 保存失败 — dispatch=${dispatched} before=${saveBefore} after=${after}`);
@@ -1552,11 +1514,11 @@ async function composePodcast(
         return row ? (row.textContent ?? '') : null;
     })()`;
     const materialReady = await waitUntil(async () => {
-        const rowText = (await page.evaluate(rowProbe).catch(() => null)) as string | null;
+        const rowText = (await page.evaluate(rowProbe)) as string | null;
         return rowText !== null && !/转码中|审核中|处理中/.test(rowText);
     }, 15 * 60_000);
     if (!materialReady) {
-        const probeNow = String(((await page.evaluate(reuseProbe).catch(() => 'ERR')) as string | undefined) ?? 'ERR');
+        const probeNow = String(((await page.evaluate(reuseProbe)) as string | undefined) ?? 'ERR');
         throw new Error(
             `播客: 音频素材 '${materialTitle}' 未在 15min 内完成转码/审核，插入未执行（可重跑）` +
                 ` — reuse 窗口 [${reuseHistory.join(',')}] 最近读=${probeNow.slice(0, 30)}`,
@@ -1669,7 +1631,7 @@ async function saveDraft(
         await sleep(deps.submitSettleMs);
         if ((await closeOpenDialogs(entry.editor)) !== 'closed') {
             residuals += 1;
-            residualDialogs.push(await openDialogInventory(entry.editor).catch(() => 'unreadable'));
+            residualDialogs.push(await openDialogInventory(entry.editor));
             // Refuse to click through an unresolved overlay (0260 R3/AC5): the click would land on
             // the dialog footer again, not 保存为草稿. Retry the cleanup on the next attempt.
             if (attempts < deps.submitAttempts) continue;
@@ -1699,7 +1661,7 @@ async function saveDraft(
     if (signal === null || control === null) {
         if (control === null)
             return fail(
-                `draft confirmation: a residual modal refused cleanup after ${attempts} attempt(s), ${residuals} refused cleanup(s) (${residualDialogs.join(' | ') || 'no inventory'}) — '保存为草稿' was not clicked through an unresolved overlay (inventory: ${await openDialogInventory(entry.editor).catch(() => 'unreadable')})`,
+                `draft confirmation: a residual modal refused cleanup after ${attempts} attempt(s), ${residuals} refused cleanup(s) (${residualDialogs.join(' | ') || 'no inventory'}) — '保存为草稿' was not clicked through an unresolved overlay (inventory: ${await openDialogInventory(entry.editor)})`,
             );
         return fail(
             `draft confirmation: '${SAVE_DRAFT[0]}' was clicked ${attempts}× but no fresh 草稿箱 row for '${title}' (its ${DRAFT_STAMP} stamp) was observed within ${deps.draftTimeoutMs}ms (before=${deps.draftBaseline.stamp ?? 'none'}, after=${stampAfter ?? 'none'}, page=${deps.entry.url()}, frames=${await describeFrames(deps.entry, 5)})`,
@@ -1754,7 +1716,7 @@ interface PublicSaveEvidence {
  * used here — the live console has rendered that card on a different surface from the editor, and a
  * row cannot prove that this editor is the latest version.
  */
-function canonicalSavedEditorUrl(value: string): string | null {
+export function canonicalSavedEditorUrl(value: string): string | null {
     try {
         const url = new URL(value);
         if (url.origin !== 'https://mp.weixin.qq.com' || url.pathname !== '/cgi-bin/appmsg') return null;
@@ -1803,7 +1765,7 @@ function normalizeSnapshotText(value: string): string {
 }
 
 /** Read only the known title/body/media/cover surfaces; unreadable evidence is never treated as equal. */
-async function readPublicDraftSnapshot(page: WechatPage): Promise<PublicDraftSnapshot | null> {
+export async function readPublicDraftSnapshot(page: WechatPage): Promise<PublicDraftSnapshot | null> {
     try {
         const raw = await page.evaluate(PUBLIC_DRAFT_SNAPSHOT_SCRIPT);
         const parsed = typeof raw === 'string' ? (JSON.parse(raw) as unknown) : raw;
@@ -1886,19 +1848,15 @@ function publicSnapshotIsIncomplete(expected: PublicDraftSnapshot, actual: Publi
  */
 const PUBLIC_SAVED_EDITOR_RELOAD_LIMIT = 6;
 
-function appmsgIdFromCanonical(value: string): string | null {
+export function appmsgIdFromCanonical(value: string): string | null {
     const canonical = canonicalSavedEditorUrl(value);
     if (canonical === null) return null;
-    try {
-        const appmsgId = new URL(canonical).searchParams.get('appmsgid')?.trim();
-        return appmsgId && appmsgId.length > 0 ? appmsgId : null;
-    } catch {
-        return null;
-    }
+    const appmsgId = new URL(canonical).searchParams.get('appmsgid')?.trim();
+    return appmsgId && appmsgId.length > 0 ? appmsgId : null;
 }
 
 /** Require two consecutive native readiness observations after any editor-version transition. */
-async function waitForPublicEditorReadiness(page: WechatPage, deps: ModeRunDeps): Promise<boolean> {
+export async function waitForPublicEditorReadiness(page: WechatPage, deps: ModeRunDeps): Promise<boolean> {
     let consecutiveSaved = 0;
     return waitUntil(
         async () => {
@@ -1926,7 +1884,7 @@ async function waitForPublicEditorReadiness(page: WechatPage, deps: ModeRunDeps)
  * the persisted surfaces before the one and only public click. A refusal or missing native signal
  * stops before `发表`; no draft-box lookup or blind save retry is safe for the public rail.
  */
-async function savePublicDraft(deps: ModeRunDeps, entry: ModeEntry): Promise<Result | PublicSaveEvidence> {
+export async function savePublicDraft(deps: ModeRunDeps, entry: ModeEntry): Promise<Result | PublicSaveEvidence> {
     const composed = await readPublicDraftSnapshot(entry.editor);
     if (composed === null)
         return fail(
@@ -2051,7 +2009,7 @@ interface StaleVersionRecovery {
  * save and never retries an unknown outcome: 查看新草稿 is the one measured action that switches the
  * editor to the platform's latest persisted version before a second initial 发表 click.
  */
-async function recoverStaleVersion(
+export async function recoverStaleVersion(
     deps: ModeRunDeps,
     entry: ModeEntry,
     saved: PublicSaveEvidence,
@@ -2205,7 +2163,7 @@ async function findUniqueVisibleSelector(
     return found && selector !== undefined ? { selector, reason } : { reason };
 }
 
-async function readPublishNotifySubscribers(page: WechatPage): Promise<boolean | null> {
+export async function readPublishNotifySubscribers(page: WechatPage): Promise<boolean | null> {
     try {
         const value = await page.evaluate(PUBLISH_NOTIFY_STATE_SCRIPT);
         return typeof value === 'boolean' ? value : null;
@@ -2214,7 +2172,7 @@ async function readPublishNotifySubscribers(page: WechatPage): Promise<boolean |
     }
 }
 
-function shouldNotifySubscribers(content: Content): boolean {
+export function shouldNotifySubscribers(content: Content): boolean {
     const wechatmp = content.metadata?.wechatmp;
     if (wechatmp === null || typeof wechatmp !== 'object' || Array.isArray(wechatmp)) return true;
     return (wechatmp as Record<string, unknown>).notifySubscribers !== false;
@@ -2227,7 +2185,7 @@ function shouldNotifySubscribers(content: Content): boolean {
  * state is the platform's actual pre-click switch value; the policy is recorded separately because
  * the default preserves an already-OFF platform setting rather than enabling notifications.
  */
-async function confirmPublicPublish(
+export async function confirmPublicPublish(
     page: WechatPage,
     notifySubscribers: boolean,
     stepTimeoutMs: number,
@@ -2288,7 +2246,7 @@ async function confirmPublicPublish(
  * the only pre-confirmation recovery is the bounded, native 查看新草稿 transition handled below.
  * An unobserved final send is never repeated because a second click could duplicate the message.
  */
-async function publishContent(
+export async function publishContent(
     input: ModeInput,
     deps: ModeRunDeps,
     entry: ModeEntry,
