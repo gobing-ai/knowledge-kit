@@ -95,12 +95,23 @@ bootstrap:
       # Ends with database maintenance (PRAGMA optimize + wal_checkpoint).
       - name: history-daily-report
         cron: "3 5 * * *"
-        # 2h: every run since creation (33/33) died on the 600s default, because
+        # 3h: every run since creation (33/33) died on the 600s default, because
         # full-corpus import alone costs ~310s and the workflow adds agent stages.
-        timeoutMs: 7200000
+        # Raised 2h->3h 2026-11-06: worst-case import ~18m + wide analyze legs ~38m
+        # + two correct passes + validate ~20m risks clipping a 2h budget.
+        # stepTimeoutMs: enrich on pi-dsv4.1-flash-volc crossed the shipped 60m
+        # step cap from 10-24 onward (10 straight enrich deletions at exactly
+        # 3600.000s); 90m clears the actual 2026-11-07 measure (13m43s) with headroom.
+        # __executor.reviewer: reviewed stages (enrich/correct/validate, all role
+        # reviewer) were pinned from flash (standard) to agy-gemini (capable-1,
+        # gemini-3.8-flash-high) after the 2026-11-07 run f91131fa — enrich OK at
+        # 13m43s but validate FAIL -> correct x2 (19m34s + 9m49s) -> still FAIL ->
+        # retry-exhausted. Pin advertises in vars (parsed as {name}); no workflow edit.
+        timeoutMs: 10800000
         command: >-
           spur --no-logo history import --source all &&
-          spur --no-logo workflow run config/workflows/history-anatomy.yaml --quiet &&
+          spur --no-logo workflow run config/workflows/history-anatomy.yaml --quiet
+          --vars '{"stepTimeoutMs":"5400000","__executor.reviewer":"{\"name\":\"agy-gemini\"}"}' &&
           spur --no-logo self maintain
 
       # 04:30 daily: kk-daily-ai-voice2 end-to-end over the kk store (extract →
