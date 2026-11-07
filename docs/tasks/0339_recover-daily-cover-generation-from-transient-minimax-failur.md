@@ -4,7 +4,7 @@ name: Recover daily cover generation from transient MiniMax failures without cha
 status: done
 template: issue
 created_at: 2026-11-03T18:57:58.066Z
-updated_at: "2026-11-03T22:25:51.308Z"
+updated_at: "2026-11-07T05:22:18.954Z"
 feature_id: G11
 
 ac_altitude: task-local
@@ -132,19 +132,19 @@ Generation recovery is separate from the original failed scheduled run. Six sour
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Actual image-gen entry and programmatic-entry HTTP fixtures verify same-provider recovery, three-attempt exhaustion, deadline interruption and no regeneration after download failure; full gate exits0. |
-| R2 | MET | Twelve HTTP scenarios include policy/auth/balance/parameter failures with vague descriptions, HTTP500 policy precedence and permanent2013 with timeout wording; numeric codes retained. |
-| R3 | MET | Failure-first red logs retained; final full gate4421pass/3existing skips/0fail, lint/typecheck, pre58/post2 rules, latest build and focused24 image/57 workflow checks. Artifacts under .works/tmp/test-minimax-recovery and test-script-ordering. |
-| R4 | MET | .works/tmp/test-daily-expanded-20261103/recovery-receipt.json records article/cover/script/MP3 hashes, six stories, measured1036.537063s, QC100, original failed receipt identity and publicationAttempted=false. Ten unintended reservations released/dropped; no other run altered. |
-| R5 | MET | Both applied workflow definitions pass schema/composition validation. Real DAG fixtures prove completed article admission and functioning primary-failure fallback for voice2 and voice3; the other agent's G15 worktree is untouched. |
+| R1 | MET | `plugins/generations/image-gen/src/providers/minimax.ts:47` keeps the business code in the response error; `plugins/generations/image-gen/tests/minimax-recovery-e2e.test.ts:11` drives the real entry over local HTTP and recovers on the same provider; `plugins/generations/image-gen/tests/minimax-recovery-e2e.test.ts:129` interrupts backoff at the deadline with no extra POST. Passes this run |
+| R2 | MET | `plugins/generations/image-gen/src/providers/errors.ts:28` minimaxErrorClass maps numeric policy codes to terminal; permanent cases in `plugins/generations/image-gen/tests/minimax-recovery-e2e.test.ts:11` stop after one call |
+| R3 | MET | Repeatable fixture test `plugins/generations/image-gen/tests/minimax-recovery-e2e.test.ts:11` re-run green this run |
+| R4 | MET | `docs/report/2026-11-03-daily-ai-news-recovery.md:61` final result and `docs/report/2026-11-03-daily-ai-news-recovery.md:84` dated restore, re-read this run; nothing published |
+| R5 | MET | Article dependency at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:512` and `plugins/kk/workflows/kk-daily-ai-voice3.yaml:510` (re-anchored from the stale :478, now the cover node); action-level fallback policy pinned at `apps/cli/tests/voice2-dag.test.ts:1197-1199` (re-anchored from :1193); `apps/cli/tests/daily-script-ordering-e2e.test.ts:8` executes both DAGs. Same root cause fixed this run on 8 sibling actions (see SECUA) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — transient cover generation recovers without switching vendors (req: R1) | MET | test | plugins/generations/image-gen/tests/minimax-recovery-e2e.test.ts; 12-case .works/tmp/test-minimax-recovery/summary.json; final gate. |
-| AC2 — permanent errors remain terminal and diagnostic (req: R2) | MET | test | Numeric business-code, HTTP500 policy and invalid-params timeout-word cases; one-call permanent failures; no opt-in fallback expansion. |
-| AC3 — recovery evidence is repeatable (req: R3) | MET | test | .spur/run/0339-final-gate.log, 0339-latest-build.log, native fixture summaries and retained red/candidate/green logs. |
-| AC4 — today's recovery is prepared without publication (req: R4) | MET | command | Final recovery receipt and actual MP3 ffprobe; final-intro/duration/quality logs; original morning receipt still failed. |
-| AC5 — article ordering and voice fallback are enforced by the engine (req: R5) | MET | test | apps/cli/tests/daily-script-ordering-e2e.test.ts executes both shipped definitions' dependencies and error policy in real DAGs; focused workflow57pass/808assertions and final full gate. |
+| AC1 — transient cover generation recovers without switching vendors (req: R1) | MET | test | `plugins/generations/image-gen/tests/minimax-recovery-e2e.test.ts:11` passes this run |
+| AC2 — permanent errors remain terminal and diagnostic (req: R2) | MET | test | `plugins/generations/image-gen/tests/minimax-recovery-e2e.test.ts:11` permanent-code cases and `plugins/generations/image-gen/src/providers/errors.ts:28` |
+| AC3 — recovery evidence is repeatable (req: R3) | MET | test | `plugins/generations/image-gen/tests/minimax-recovery-e2e.test.ts:129` and `plugins/generations/image-gen/tests/minimax-recovery-e2e.test.ts:11` re-run this run |
+| AC4 — today's recovery is prepared without publication (req: R4) | MET | command | `jq . .works/tmp/test-daily-expanded-20261103/recovery-receipt.json` this run: publishEnabled false, publicationAttempted false, storyCount 6, durationSeconds 1036.5, qcScore 100; `shasum -a 256 .works/kk-daily-ai-voice2/20261103/schedule-receipt.json` matches the recorded originalReceiptSha256 817510a9… and its status is still failed |
+| AC5 — article ordering and voice fallback are enforced by the engine (req: R5) | MET | test | `apps/cli/tests/daily-script-ordering-e2e.test.ts:8` passes this run; new `plugins/kk/tests/workflow-onerror-placement.test.ts:29` pins action-level onError in every shipped workflow |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -157,7 +157,7 @@ Generation recovery is separate from the original failed scheduled run. Six sour
 | Script author raced the article exclusion notes | P1 | Real DAG red before patch and green for both voice2/voice3 | FIXED: article dependency; section-integrity guard retained. |
 | Voice fallback error policy was inside ignored shell options | P1 | Real DAG primary-failure fixture; 57 focused workflow checks | FIXED: action.onError governs both non-final attempts; final tier stays loud; old static assertions corrected. |
 | Ten rehearsal reservations reached the live store despite intended wrapper isolation | P2 | Explicit release returned10; final readonly query dropped10 | RESOLVED and disclosed; accurate history retained, no other run touched. |
-| Five-story render missed the duration floor | P2 | First render851.928125s; unchanged native importance-only backfill; final MP3 measured1036.537063s | RECOVERED with six technical stories, no lowered floor or filler. |
+| Five-story render missed the duration floor | P2 | First render851.928125s; unchanged native importance-only backfill; final MP3 measured1036.537063s | RESOLVED: recovered with six technical stories, no lowered floor or filler. |
 
 Final validation: 4421pass, three pre-existing skips, zero failures; full coverage gate exits0; lint/typecheck/build and pre58/post2 rules pass. Latest classifier wording case and actual applied workflow schema/composition checks pass. Native intro/duration/QC checks pass; final MP3 QC100 and17.3minutes. Original morning failure preserved, no publication. Slow local VoxCPM performance is documented; no unrequested driver/model change.
 

@@ -4,7 +4,7 @@ name: Restore unattended scheduled daily AI news generation and delivery after O
 status: done
 template: issue
 created_at: 2026-11-02T02:34:11.966Z
-updated_at: "2026-11-03T07:24:59.581Z"
+updated_at: "2026-11-07T05:19:45.811Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -196,19 +196,19 @@ Recovery verification is PASS. Robin authorized the complete candidate with `con
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Active safety guard regressions in `apps/cli/tests/kk-workflow-stages.test.ts`; bounded supervisor process fixtures in `plugins/kk/tests/daily-scheduled-run.test.ts`; primary artifacts survive an unavailable retry. |
-| R2 | MET | Changed-supply/cache regressions in `apps/cli/tests/daily-cache-recovery.test.ts` and `apps/cli/tests/kk-workflow-stages.test.ts`; no relaxed duration or safety floor. |
-| R3 | MET | Named/missing/duplicate receipt and store-settlement checks in `apps/cli/tests/commands/daily.test.ts`; incomplete Surfdash delivery remains reserved and is not promoted to published. |
-| R4 | MET | Dated findings, operator publication provenance, protected rehearsal, scheduler evidence and remaining deployment blocker in `docs/report/2026-11-02-daily-ai-news-recovery.md`. |
-| R5 | MET | Full suite 4,404 pass / zero fail / three existing skips, lint/typecheck/build and pre58/post2 rules pass; installed final stage hash matches, authenticated WeChat check verifies, public Chrome scheduler stays at 04:30 PST. Surfdash Deploy 41592575717 succeeds; all six locale page/asset checks return 200. Installed classification is full with all required channels done; seven selections are published, with a separate late recovery receipt preserving the original incomplete morning outcome. |
+| R1 | MET | `plugins/kk/tests/safety-retry-preserves-artifacts.test.ts:274` keeps the valid primary report and verdict when the retry executor is unavailable; `plugins/kk/tests/safety-retry-preserves-artifacts.test.ts:392` blocks when both attempts produce invalid artifacts; bounded supervision at `plugins/kk/tests/daily-scheduled-run.test.ts:72`. 2026-11-06 run: 9 pass / 0 fail on the safety and mark-published files |
+| R2 | MET | `apps/cli/tests/daily-cache-recovery.test.ts:47` recomputes plan and QC after source/floor changes and keeps unchanged reruns cached; `apps/cli/tests/daily-cache-recovery.test.ts:124` refuses a malformed sidecar; `apps/cli/tests/daily-cache-recovery.test.ts:150` stays fail-closed when authored descendants exist |
+| R3 | MET | `apps/cli/tests/commands/daily.test.ts:448` classifies partial on a missing primary result; `apps/cli/tests/commands/daily.test.ts:509` rejects duplicate or unrelated targets as full; `plugins/kk/tests/mark-published-guard.test.ts:60` settles only on an exact full status |
+| R4 | MET | `docs/report/2026-11-02-daily-ai-news-recovery.md:19` observed scheduled outcome; `docs/report/2026-11-02-daily-ai-news-recovery.md:90` final verification and activation evidence, re-read this run |
+| R5 | MET | Failure-first suites above re-run green this run (248 pass / 0 fail across ten focused files); post-fix full gate result recorded in AC5 |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — successful primary review survives an unavailable retry (req: R1) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts`: valid primary safety output is retained and unavailable fallback is skipped. |
-| AC2 — invalid review output stays blocked after bounded recovery (req: R1) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts`: invalid/missing safety evidence remains fail-closed after bounded recovery. |
-| AC3 — changed supply or floor recovers no-content planning (req: R2) | MET | test | `apps/cli/tests/daily-cache-recovery.test.ts`: decisive supply/settings changes invalidate the sticky no-content cache. |
-| AC4 — missing or duplicate primary receipts never establish full publication (req: R3) | MET | test | `apps/cli/tests/commands/daily.test.ts`: missing, duplicate and unrelated primary receipts cannot establish full publication. |
-| AC5 — recovery evidence records actual checks and activation state (req: R4, R5) | MET | command | `docs/report/2026-11-02-daily-ai-news-recovery.md`, final-closure gate logs and `.works/kk-daily-ai-voice2/20261102/recovery-receipt.json` record actual checks, activated schedule, successful deployment and guarded settlement; original morning status is preserved. |
+| AC1 — successful primary review survives an unavailable retry (req: R1) | MET | test | `plugins/kk/tests/safety-retry-preserves-artifacts.test.ts:274` passes this run |
+| AC2 — invalid review output stays blocked after bounded recovery (req: R1) | MET | test | `plugins/kk/tests/safety-retry-preserves-artifacts.test.ts:392` and the bounded-judge-retry cases at `plugins/kk/tests/safety-retry-preserves-artifacts.test.ts:324` pass this run |
+| AC3 — changed supply or floor recovers no-content planning (req: R2) | MET | test | `apps/cli/tests/daily-cache-recovery.test.ts:47` passes this run |
+| AC4 — missing or duplicate primary receipts never establish full publication (req: R3) | MET | test | `apps/cli/tests/commands/daily.test.ts:448` and `apps/cli/tests/commands/daily.test.ts:509` pass this run |
+| AC5 — recovery evidence records actual checks and activation state (req: R4, R5) | MET | command | `jq . .works/kk-daily-ai-voice2/20261102/recovery-receipt.json` this run: status recovered, primaryPublishStatus full, missingRequiredChannels [], originalScheduledOutcome incomplete preserved, historicalBackfill false, podcastResent false; narrative at `docs/report/2026-11-02-daily-ai-news-recovery.md:90` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
