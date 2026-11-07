@@ -716,12 +716,10 @@ describe('0335 R1: fresh offline multi-window migration rehearsal', () => {
         for (const key of [
             'surfdash.article',
             'podcast.episode',
-            'wechatmp.podcast',
             'xhs.podcast',
             'wechatmp.article',
             'xhs.article',
             'weibo.article',
-            'x.article',
             'x.post',
             'weibo.post',
             'threads.post',
@@ -739,6 +737,8 @@ describe('0335 R1: fresh offline multi-window migration rehearsal', () => {
         // tier-2 drafts included, record the rehearsal's dummy delivery.
         expect((byKey.get('surfdash.article') as { dummy?: boolean }).dummy).toBe(true);
         // Off targets never deliver.
+        expect(byKey.has('wechatmp.podcast')).toBe(false);
+        expect(byKey.has('x.article')).toBe(false);
         expect(byKey.has('xhs.cards')).toBe(false);
         expect(byKey.has('shipinhao.cards')).toBe(false);
         // The after-generate ledger's final state: the real podcast pass reclassified the window
@@ -769,8 +769,8 @@ describe('0335 R1: fresh offline multi-window migration rehearsal', () => {
         );
         expectDone(second, 'replayed after-generate');
         expect(dispatchCount(fx, 'surfdash-pub')).toBe(afterFirst);
-        // 8 tier0-2 receipts (surfdash+podcast, 2×podcast tier1, 4×article tier2); overseas skipped.
-        expect(receiptsOf(fx).length).toBe(8);
+        // 6 tier0-2 receipts (surfdash+podcast, 1×podcast tier1, 3×article tier2); overseas skipped.
+        expect(receiptsOf(fx).length).toBe(6);
     });
 });
 

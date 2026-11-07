@@ -68,7 +68,7 @@
             "variant": "cards",
             "tier": 3,
             "window": "after-generate",
-            "mode": "draft"
+            "mode": "off"
         },
         {
             "id": "weibo.article",
