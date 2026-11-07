@@ -3,49 +3,49 @@
 ### Added
 
 - feat(scheduler): add kk-daily-publish3 overseas window with voice3 second trigger (8dc78ba)
-<!-- src: .spur/config.yaml:181 · confidence: HIGH -->
+<!-- src: .spur/config.yaml:181 -->
 - feat(publish): update daily-ai-voice preset channels and cn-peak schedule (9caa84b)
-<!-- src: plugins/kk/schedules/kk-daily-publish3-cn-peak.cron.tmpl:30 · confidence: HIGH -->
+<!-- src: plugins/kk/schedules/kk-daily-publish3-cn-peak.cron.tmpl:30 -->
 
 ### Fixed
 
 - fix(test): keep laDate TZ across the Linux date fallback (32326bc)
-<!-- src: apps/cli/tests/voice3-migration-0334.test.ts:139 · confidence: HIGH -->
+<!-- src: apps/cli/tests/voice3-migration-0334.test.ts:139 -->
 - fix(workflows): hoist action onError out of options and guard placement (7b943de)
-<!-- src: plugins/kk/workflows/kk-daily-ai-voice2.yaml:227 · confidence: HIGH -->
+<!-- src: plugins/kk/workflows/kk-daily-ai-voice2.yaml:227 -->
 - fix(surfdash-pub): replace console.log with echoError for rule compliance (4f30453)
-<!-- src: plugins/publishings/surfdash-pub/src/index.ts:1171 · confidence: HIGH -->
+<!-- src: plugins/publishings/surfdash-pub/src/index.ts:1171 -->
 - fix(scheduler): unblock history-daily-report budget cap and pin reviewer executor (487f643)
-<!-- src: .spur/config.yaml:96 · confidence: HIGH -->
+<!-- src: .spur/config.yaml:96 -->
 - fix(weibo-pub): support v5 article editor cover library and draft save (13e6a7c)
-<!-- src: plugins/publishings/weibo-pub/src/index.ts:798 · confidence: HIGH -->
+<!-- src: plugins/publishings/weibo-pub/src/index.ts:798 -->
 - fix(cli): inherit KK_BROWSER_CHANNEL and bound wait-until midnight wrap (5b7fc04)
-<!-- src: apps/cli/src/invoke.ts:103 · confidence: HIGH -->
+<!-- src: apps/cli/src/invoke.ts:103 -->
 - fix(xhs-pub): resolve 发播客 cover modal selector and dismiss mask (aca4588)
-<!-- src: plugins/publishings/xhs-pub/src/flow.ts:411 · confidence: HIGH -->
+<!-- src: plugins/publishings/xhs-pub/src/flow.ts:411 -->
 - fix(surfdash-pub): scope runSiteGate digest errors to owned date posts (7e5f6a5)
-<!-- src: plugins/publishings/surfdash-pub/src/index.ts:488 · confidence: HIGH -->
+<!-- src: plugins/publishings/surfdash-pub/src/index.ts:488 -->
 - fix(xhs-pub): route the 发播客 chooser path through the page seam (e02bd16)
-<!-- src: plugins/publishings/xhs-pub/src/flow.ts:528 · confidence: HIGH -->
+<!-- src: plugins/publishings/xhs-pub/src/flow.ts:528 -->
 - fix(xhs-pub): measure and walk the 发播客 post-attach modal path (0236 R3) (708a49e)
-<!-- src: plugins/publishings/xhs-pub/src/flow.ts:60 · confidence: HIGH -->
+<!-- src: plugins/publishings/xhs-pub/src/flow.ts:60 -->
 - fix(wechatmp-pub): podcast library reuse + createType-7 editor DOM (0b149f3)
-<!-- src: plugins/publishings/wechatmp-pub/src/flow.ts:74 · confidence: HIGH -->
+<!-- src: plugins/publishings/wechatmp-pub/src/flow.ts:74 -->
 - fix(daily): voice3 launch scaffold + surfdash cover ride-along and payload dateStamp (f839058)
-<!-- src: plugins/kk/scripts/daily-scheduled-run.ts:38 · confidence: HIGH -->
+<!-- src: plugins/kk/scripts/daily-scheduled-run.ts:38 -->
 - fix(safety): add surfdash and xhs platform references (2f662b4)
-<!-- src: plugins/kk/skills/content-safety/references/platforms/surfdash.md:27 · confidence: HIGH -->
+<!-- src: plugins/kk/skills/content-safety/references/platforms/surfdash.md:27 -->
 
 ### Other
 
 - test(wechatmp-pub): add helper branch tests and clean up dead closures for >=90% function coverage (19a45b5)
-<!-- src: plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:132 · confidence: HIGH -->
+<!-- src: plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:132 -->
 - test(cli): align voice3 migration assertions with updated active targets (edbac76)
-<!-- src: apps/cli/tests/voice3-migration.e2e.test.ts:772 · confidence: HIGH -->
+<!-- src: apps/cli/tests/voice3-migration.e2e.test.ts:772 -->
 - chore(schedule): cut daily job over to voice3 + 72h window (d8d4197)
-<!-- src: .spur/config.yaml:164 · confidence: HIGH -->
+<!-- src: .spur/config.yaml:164 -->
 - docs(context): record dogfood publish recovery learnings and pitfalls (71afe9f)
-<!-- src: .spur/context/pitfalls.md:324 · confidence: HIGH -->
+<!-- src: .spur/context/pitfalls.md:324 -->
 - docs(tasks): record post-fix verification evidence and sync K1 to done (89288dd)
 
 ## [0.1.12] - 2026-11-05
