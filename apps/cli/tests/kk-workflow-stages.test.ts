@@ -4368,7 +4368,9 @@ describe('task 0250 — daily-script episode-budget fitting (voice2 dogfood R3/A
 });
 
 describe('F613 (0162) — script-write stage wiring', () => {
-    const STYLE_SIDECAR = join(import.meta.dir, '../../../plugins/kk/scripts/daily-voice-style.zh.md');
+    // ADR-045: the style contract ships inside the kk:news-editorial skill.
+    const SKILL_DIR = join(import.meta.dir, '../../../plugins/kk/skills/news-editorial');
+    const STYLE_CONTRACT = join(SKILL_DIR, 'references/style-contract.zh.md');
 
     /** Writes a `kk` stub that logs the selected plugin env vars as one JSON line, then echoes a body. */
     function fakeKkLoggingEnv(dir: string): Record<string, string> {
@@ -4395,13 +4397,22 @@ describe('F613 (0162) — script-write stage wiring', () => {
         return JSON.parse(lines[lines.length - 1] ?? '{}') as Record<string, string>;
     }
 
-    it('daily-script-style snapshots the shipped style sidecar and is idempotent (R1)', () => {
+    it('daily-script-style snapshots the news-editorial skill and its style contract, idempotently (R1, 0345 R3)', () => {
         withTempDir((dir) => {
             const stamp = '20260925';
             const snapshot = join(dir, `24-script/${stamp}_08_script-write_style.md`);
+            const skillSnapshot = join(dir, '20-editorial/news-editorial');
             expect(run(['daily-script-style', dir, stamp]).status).toBe(0);
             expect(existsSync(snapshot)).toBe(true);
-            expect(readFileSync(snapshot, 'utf-8')).toBe(readFileSync(STYLE_SIDECAR, 'utf-8'));
+            expect(readFileSync(snapshot, 'utf-8')).toBe(readFileSync(STYLE_CONTRACT, 'utf-8'));
+            // The writer reads the skill by path (kk skills are not installed for every executor),
+            // so SKILL.md and its references travel with the run.
+            expect(readFileSync(join(skillSnapshot, 'SKILL.md'), 'utf-8')).toBe(
+                readFileSync(join(SKILL_DIR, 'SKILL.md'), 'utf-8'),
+            );
+            expect(readFileSync(join(skillSnapshot, 'references/style-contract.zh.md'), 'utf-8')).toBe(
+                readFileSync(STYLE_CONTRACT, 'utf-8'),
+            );
             // Idempotent: the second run keeps whatever is on disk (an operator-edited snapshot
             // is the audit record for the plan already written against it).
             writeFileSync(snapshot, 'operator-edited');
@@ -4412,10 +4423,10 @@ describe('F613 (0162) — script-write stage wiring', () => {
         });
     });
 
-    it('daily-script-style fails loud naming the sidecar when no copy resolves (R1)', () => {
+    it('daily-script-style fails loud naming the skill when the package ships no news-editorial skill (R1)', () => {
         withTempDir((dir) => {
-            // Runner + sibling with no sidecar copies anywhere: the lazy daily-stage load
-            // succeeds, then the whole sidecar chain misses and `requireSidecar` names it.
+            // Runner + sibling with no ../skills beside them: the lazy daily-stage load succeeds,
+            // then the skill lookup misses and the stage names the skill and the remediation.
             const loneRunner = join(dir, 'kk-workflow-stages.ts');
             copyFileSync(runner, loneRunner);
             copyFileSync(dailyStages, join(dir, 'daily-stages.ts'));
@@ -4427,7 +4438,7 @@ describe('F613 (0162) — script-write stage wiring', () => {
                 loneRunner,
             );
             expect(result.status).toBe(1);
-            expect(result.stderr).toContain('daily-voice-style not found');
+            expect(result.stderr).toContain('news-editorial skill not found');
             expect(result.stderr).toContain('install or refresh the kk package');
         });
     });
@@ -4445,9 +4456,97 @@ describe('F613 (0162) — script-write stage wiring', () => {
             expect(result.status).toBe(0);
             const env = lastEnv(envLog);
             expect(env.DAILYNEWS_SCRIPT_PLAN).toBe(resolve(dir, '24-script', `${stamp}_08_script-write_plan.json`));
-            expect(env.DAILYNEWS_STYLE_FILE).toBe(resolve(STYLE_SIDECAR));
+            expect(env.DAILYNEWS_STYLE_FILE).toBe(resolve(STYLE_CONTRACT));
             // Task 0189: the broadcast greeting carries the run date (backfill/retry must not say today).
             expect(env.DAILYNEWS_DATE).toBe(stamp);
+        });
+    });
+
+    describe('daily-script-check (0345 R4: validator errors drive script-write-fix)', () => {
+        const stamp = '20260925';
+
+        /** A `kk` stub standing in for dailynews-gen: stamps KK_TEST_SCRIPT_META into Content.metadata. */
+        function fakeBuilder(dir: string): Record<string, string> {
+            const bin = join(dir, 'bin');
+            mkdirSync(bin, { recursive: true });
+            const path = join(bin, 'kk');
+            writeFileSync(
+                path,
+                [
+                    '#!/usr/bin/env bun',
+                    "const fs = require('node:fs');",
+                    "const out = process.argv[process.argv.indexOf('--out') + 1];",
+                    "fs.writeFileSync(out, JSON.stringify({ title: 'T', body: 'b', metadata: JSON.parse(process.env.KK_TEST_SCRIPT_META) }));",
+                    '',
+                ].join('\n'),
+            );
+            chmodSync(path, 0o755);
+            return { PATH: `${bin}:${process.env.PATH ?? ''}` };
+        }
+
+        function setup(dir: string, withPlan: boolean): { errorsOut: string } {
+            for (const sub of ['21-plan', '24-script']) mkdirSync(join(dir, sub), { recursive: true });
+            writeFileSync(join(dir, `21-plan/${stamp}_03_plan_plan.json`), JSON.stringify([{ id: 'a', body: 'b' }]));
+            if (withPlan) writeFileSync(join(dir, `24-script/${stamp}_08_script-write_plan.json`), '{}');
+            return { errorsOut: join(dir, `24-script/${stamp}_08_script-write_errors.json`) };
+        }
+
+        it('writes missing-plan when the writer produced no plan, without invoking the builder', () => {
+            withTempDir((dir) => {
+                const { errorsOut } = setup(dir, false);
+                const result = run(['daily-script-check', dir, stamp, ''], {
+                    ...fakeBuilder(dir),
+                    KK_TEST_SCRIPT_META: 'not json: builder must not run',
+                });
+                expect(result.status).toBe(0);
+                expect(JSON.parse(readFileSync(errorsOut, 'utf-8'))).toEqual([
+                    { itemId: 'episode', rule: 'missing-plan' },
+                ]);
+            });
+        });
+
+        it('writes the builder rejection errors and leaves no script artifacts that would poison `script`', () => {
+            withTempDir((dir) => {
+                const { errorsOut } = setup(dir, true);
+                const errors = [
+                    { itemId: 'a', rule: 'cap:insight' },
+                    { itemId: 'episode', rule: 'banned:首先' },
+                ];
+                const result = run(['daily-script-check', dir, stamp, ''], {
+                    ...fakeBuilder(dir),
+                    KK_TEST_SCRIPT_META: JSON.stringify({ scriptSource: 'template', scriptPlanErrors: errors }),
+                });
+                expect(result.status).toBe(0);
+                expect(JSON.parse(readFileSync(errorsOut, 'utf-8'))).toEqual(errors);
+                expect(existsSync(join(dir, `24-script/${stamp}_08_script_voicescript.yaml`))).toBe(false);
+                expect(existsSync(join(dir, `24-script/${stamp}_08_script_content.json`))).toBe(false);
+            });
+        });
+
+        it('clears a stale errors file when the builder accepts the plan', () => {
+            withTempDir((dir) => {
+                const { errorsOut } = setup(dir, true);
+                writeFileSync(errorsOut, '[{"itemId":"episode","rule":"schema"}]');
+                const result = run(['daily-script-check', dir, stamp, ''], {
+                    ...fakeBuilder(dir),
+                    KK_TEST_SCRIPT_META: JSON.stringify({ scriptSource: 'plan', scriptPlanErrors: [] }),
+                });
+                expect(result.status).toBe(0);
+                expect(existsSync(errorsOut)).toBe(false);
+                expect(result.stdout).toContain('accepted');
+            });
+        });
+
+        it('fails loud when the builder output carries no scriptSource stamp', () => {
+            withTempDir((dir) => {
+                setup(dir, true);
+                const result = run(['daily-script-check', dir, stamp, ''], {
+                    ...fakeBuilder(dir),
+                    KK_TEST_SCRIPT_META: '{}',
+                });
+                expect(result.status).toBe(1);
+                expect(result.stderr).toContain('scriptSource');
+            });
         });
     });
 

@@ -320,7 +320,8 @@ Use the root package entries instead of reassembling the supervisor, date and pu
 ```bash
 bun run daily-news:generate
 bun run daily-news:publish
-bun run daily-news:validate
+bun run daily-news:validate                      # quick file-readiness check (default)
+bun run daily-news:validate -- --mode full        # complete live diagnosis + dogfood
 ```
 
 Generation is always publish-inert (`auto_publish=false`, 72h extract, supervised receipt). Posting
@@ -332,10 +333,13 @@ window with `--window cn-peak` or `--window overseas-rss`; their date, RSS and l
 rules remain in `voice3-publish-window.ts` and publish3. Historical gaps never cause today's content
 to be substituted.
 
-Validation is read-only against live state and covers PATH tools, required files, installed-stage
+Validation defaults to quick mode: only the required workflow/config/launcher files, the dated
+`bundle.json`, and every variant path it declares must exist. Quick mode performs no schema/hash/
+safety quality validation and starts no tool, store, scheduler, preflight, or dogfood subprocess.
+Use `--mode full` for the complete read-only diagnosis: PATH tools, required files, installed-stage
 compatibility, store supply, scheduler configuration, dated generation/safety/receipt state and all
-three publish outcomes. Its default dogfood is the offline 17-case voice3 migration rehearsal; use
-`bun run daily-news:validate -- --skip-dogfood` for the fast diagnostic. Evidence lands under
+three publish outcomes. Full mode's default dogfood is the offline 17-case voice3 migration rehearsal;
+add `--skip-dogfood` to omit only that rehearsal. Evidence lands under
 `<works>/tmp/test-daily-ai-news/<timestamp>-<pid>/validation.json` with captured preflight/supply and
-dogfood logs. A live failure exits 1 independently of dogfood. No entry installs schedules or syncs
-the installed package, and validation never generates or posts.
+dogfood logs in full mode. A live failure exits 1 independently of dogfood. No entry installs schedules
+or syncs the installed package, and neither validation mode generates or posts.

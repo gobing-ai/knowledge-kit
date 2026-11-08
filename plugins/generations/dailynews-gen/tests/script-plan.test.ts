@@ -19,7 +19,17 @@ import {
 
 // F613: the shipped style contract and the runtime validator are kk sidecars; the tests read the
 // real files (not copies) so contract drift fails loud here first.
-const STYLE_SIDECAR = join(import.meta.dir, '..', '..', '..', 'kk', 'scripts', 'daily-voice-style.zh.md');
+const STYLE_SIDECAR = join(
+    import.meta.dir,
+    '..',
+    '..',
+    '..',
+    'kk',
+    'skills',
+    'news-editorial',
+    'references',
+    'style-contract.zh.md',
+);
 const VOICESCRIPT_VALIDATOR = join(import.meta.dir, '..', '..', '..', 'kk', 'scripts', 'validate-voicescript.ts');
 
 /**

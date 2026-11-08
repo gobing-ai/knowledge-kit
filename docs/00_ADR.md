@@ -1629,3 +1629,39 @@ publish-matrix-*`, so ADR-037's noun inventory is unchanged.
 **Revisit-when.** Either a documented Grok Bot storage surface with single-writer POSIX locking guarantees (a documented API, not marketing copy), or kk adopting a server-side store — whichever arrives first reopens this decision; until then the Bot stays store-free.
 
 **Detail:** `docs/03_ARCHITECTURE.md` §Pipeline model (DAG workflows paragraph points here); seam and policy table: `docs/design/kk-collect-and-daily-voice2.md` §10. Downstream render contract: task 0343 (`kk schedule render --platform grok-bot` encodes this policy verbatim and refuses store- or browser-bound schedules, citing this ADR).
+
+---
+
+## ADR-045: Daily-news editorial policy lives in the `kk:news-editorial` skill
+
+**Status:** Accepted · **Date:** 2026-11-08 · **Task:** 0345
+
+**Decision.** Every editorial judgement of a daily news episode lives in one agent skill,
+`plugins/kk/skills/news-editorial/`. It covers what to keep or drop (topic boundary and selection rubric), how to
+order and weight items, how to balance news, opinion and technical detail, and the style contract with its
+machine-readable caps/banned block. Workflow YAML prompts only name a skill mode plus input and output paths. Code
+keeps everything deterministic: store extraction and its thresholds (`decisions/extract/*.yaml`), the plan/QC
+stages, the dailynews-gen validator and builder (fixed opening and closing), duration/floor gates, safety and
+renderers. The style contract moves from `plugins/kk/scripts/daily-voice-style.zh.md` to
+`plugins/kk/skills/news-editorial/references/style-contract.zh.md`. The validator keeps reading the first fenced
+`json` block of that file, so prompt and validator still share one source.
+
+**How the skill reaches the writer.** kk skills are not installed for every executor (pi and codex have none), so
+a run never relies on skill discovery. `daily-script-style` snapshots `SKILL.md` and the style contract into the
+work dir, and prompts cite those snapshot paths. That also freezes the exact policy a run was written against.
+
+**Shape.** One editorial pass feeds many renders. `curate` keeps or drops items, orders them and writes the
+Chinese facts. `write` adds lead, insight, intro and outro, plus later card, social and cover lines. `write --fix`
+repairs a plan using the validator's error list instead of silently falling back to the template. The article,
+script, cards and cover render from that master. Judging stays in `content-judge` (a `news-balance` rubric), and
+platform admission stays in `content-safety`.
+
+**Why.** On 2026-11-02 a writer-model swap shifted the transcripts from news to opinion, because policy was spread
+across six ≤1000-char prompts, a sidecar and code comments that the new model read literally. One owner makes the
+policy reviewable in one place, lets a cheap standard-tier model follow short mode-scoped instructions, and stops
+each item's facts from being authored three times.
+
+**Rejected.** Reusing `kk:audio-authoring`, which turns a generic brief into a VoiceScript with operator gates and
+has no selection policy. Keeping policy in YAML prompts, which hit the prompt cap and drift per model.
+
+**Detail:** task 0345; `docs/design/kk-daily-ai-voice3.md`; `docs/04_DESIGN.md` §daily stages.

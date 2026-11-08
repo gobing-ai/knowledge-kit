@@ -55,6 +55,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
     copyFileSync,
+    cpSync,
     existsSync,
     mkdirSync,
     readdirSync,
@@ -75,6 +76,7 @@ import {
     coverBrief,
     coverNormalizeBody,
     dedupPlanByTitle,
+    EDITORIAL_SKILL_DIR,
     expandHome,
     fail,
     failWith,
@@ -96,7 +98,7 @@ import {
     resultPublishStatus,
     SAFETY_PLATFORM_DECISIONS,
     SAFETY_REVISE_COUNT,
-    STYLE_SIDECAR,
+    STYLE_CONTRACT,
     StageFailure,
     safetyDigest,
     safetyDraftPaths,
@@ -3999,7 +4001,7 @@ export function dailyScript(args: string[]): void {
                 // cwd = the plugin package dir, so a relative workDir would silently miss the
                 // plan; a plan file absent at build time reports missing-plan (template fallback).
                 DAILYNEWS_SCRIPT_PLAN: resolve(join(workDir, '24-script', `${runDate}_08_script-write_plan.json`)),
-                DAILYNEWS_STYLE_FILE: resolve(resolveSidecar('', STYLE_SIDECAR)),
+                DAILYNEWS_STYLE_FILE: resolve(STYLE_CONTRACT),
             },
         });
         const body = readJson(contentOut)?.body;
@@ -4021,23 +4023,83 @@ export function dailyScript(args: string[]): void {
 
 /** Task 0189 R10 artifacts of the content-safety verdict gate (24-script, step 09). */
 /**
- * F613 R1: snapshot the shipped style contract into the run's work dir. Spur workflows have no
- * workflow-dir var, so the script-write prompt reads this copy — and the snapshot freezes the
- * exact contract the run's plan was written against. Idempotent (an existing snapshot is kept);
- * a missing sidecar is a broken install, so `requireSidecar` fails loud.
+ * F613 R1 / ADR-045: snapshot the shipped kk:news-editorial skill into the run's work dir. Spur
+ * workflows have no workflow-dir var and kk skills are not installed for every executor, so the
+ * writer prompts read this copy by path — and the snapshot freezes the exact policy the run's plan
+ * was written against. `20-editorial/news-editorial/` holds SKILL.md + references; the
+ * `_08_script-write_style.md` copy of the style contract stays the run's audit record.
+ * Idempotent per artifact (an existing snapshot is kept); a missing skill is a broken install.
  */
 export function dailyScriptStyle(args: string[]): void {
     const [workDir = '', runDate = ''] = args;
+    if (!isFile(STYLE_CONTRACT)) {
+        failWith(
+            1,
+            `news-editorial skill not found — no ${STYLE_CONTRACT}; install or refresh the kk package (bun link in a checkout)`,
+        );
+    }
+    const skillSnapshot = join(workDir, '20-editorial', 'news-editorial');
+    if (isFile(join(skillSnapshot, 'SKILL.md'))) {
+        console.log(`editorial skill cached: ${skillSnapshot}`);
+    } else {
+        sted('cp', skillSnapshot, () => cpSync(EDITORIAL_SKILL_DIR, skillSnapshot, { recursive: true }));
+        console.log(`editorial skill snapshot: ${skillSnapshot}`);
+    }
     const snapshot = join(workDir, '24-script', `${runDate}_08_script-write_style.md`);
     if (isFile(snapshot)) {
         console.log(`script style cached: ${snapshot}`);
         return;
     }
-    const sidecar = requireSidecar('', STYLE_SIDECAR, 'daily-voice-style');
     const scriptDir = join(workDir, '24-script');
     sted('mkdir', scriptDir, () => mkdirSync(scriptDir, { recursive: true }));
-    sted('cp', snapshot, () => copyFileSync(sidecar, snapshot));
+    sted('cp', snapshot, () => copyFileSync(STYLE_CONTRACT, snapshot));
     console.log(`script style snapshot: ${snapshot}`);
+}
+
+/**
+ * 0345 R4: dry-run the dailynews-gen validator on the authored script plan so a rejected plan gets
+ * one targeted `script-write-fix` pass instead of silently shipping the template fallback. Writes
+ * `24-script/<date>_08_script-write_errors.json` ([{itemId, rule}]) when the plan is absent or
+ * rejected, and removes it when the plan is accepted. The trial build goes to a scratch path so the
+ * `script` stage's isFile cache is never primed by a check.
+ */
+export function dailyScriptCheck(args: string[]): void {
+    const [workDir = '', runDate = '', pluginsPath = ''] = args;
+    const planOut = join(workDir, '24-script', `${runDate}_08_script-write_plan.json`);
+    const errorsOut = join(workDir, '24-script', `${runDate}_08_script-write_errors.json`);
+    const writeErrors = (errors: unknown[]) => {
+        sted('write', errorsOut, () => writeJsonText(errorsOut, errors));
+        console.log(`script plan rejected (${errors.length} error(s)): ${errorsOut}`);
+    };
+    if (!isFile(planOut)) {
+        writeErrors([{ itemId: 'episode', rule: 'missing-plan' }]);
+        return;
+    }
+    const trialOut = join(workDir, '24-script', `.${runDate}_08_script-check_content.json`);
+    const planIn = join(workDir, '21-plan', `${runDate}_03_plan_plan.json`);
+    try {
+        kk(['executor', 'run', 'dailynews-gen', '--in', planIn, '--out', trialOut, ...pluginsArgs(pluginsPath)], {
+            env: {
+                DAILYNEWS_LANGUAGE: 'zh',
+                DAILYNEWS_DATE: runDate,
+                DAILYNEWS_SCRIPT_PLAN: resolve(planOut),
+                DAILYNEWS_STYLE_FILE: resolve(STYLE_CONTRACT),
+            },
+        });
+        const metadata = readJson(trialOut)?.metadata;
+        const source = metadata?.scriptSource;
+        if (source !== 'plan' && source !== 'template') {
+            failWith(1, `script-check: ${trialOut} carries no scriptSource stamp`);
+        }
+        if (source === 'plan') {
+            if (isFile(errorsOut)) unlinkSync(errorsOut);
+            console.log('script plan accepted by the validator');
+            return;
+        }
+        writeErrors(Array.isArray(metadata.scriptPlanErrors) ? metadata.scriptPlanErrors : []);
+    } finally {
+        if (isFile(trialOut)) unlinkSync(trialOut);
+    }
 }
 
 export function dailyShowNotes(args: string[]): void {

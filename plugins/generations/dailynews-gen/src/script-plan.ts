@@ -21,7 +21,7 @@ export interface ScriptPlan {
 }
 
 /**
- * Machine-readable part of the style sidecar `plugins/kk/scripts/daily-voice-style.zh.md` — the
+ * Machine-readable part of the style contract `plugins/kk/skills/news-editorial/references/style-contract.zh.md` (ADR-045) — the
  * same fenced `json` block the script-write prompt reads, so prompt and validator share one source.
  */
 export interface StyleContract {

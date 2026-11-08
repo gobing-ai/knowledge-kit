@@ -32,7 +32,7 @@ The LLM never writes YAML. This keeps the pacing invariants from tasks 0139 and 
 
 ### 1. Style contract (R1)
 
-The contract is the kk sidecar `plugins/kk/scripts/daily-voice-style.zh.md`, resolved by `resolveSidecar` like the other shipped sidecars. Spur workflows have no workflow-dir variable, so `kk stage daily-script-style` snapshots it to `24-script/<date>_08_script-write_style.md`, and the prompt reads that snapshot. It defines:
+The contract is `plugins/kk/skills/news-editorial/references/style-contract.zh.md`, owned by the `kk:news-editorial` skill (ADR-045) and shipped in the same package as the stage scripts. Spur workflows have no workflow-dir variable, so `kk stage daily-script-style` snapshots the whole skill to `20-editorial/news-editorial/` (the prompt reads `SKILL.md` there, mode `write`) and keeps the `24-script/<date>_08_script-write_style.md` copy of the contract as the audit record. `kk stage daily-script-check` dry-runs the validator and writes `24-script/<date>_08_script-write_errors.json` on rejection, which drives one `script-write-fix` pass (mode `write --fix`). It defines:
 
 - **Host persona and register:** spoken Mandarin, first person, calm and informed, no hype.
 - **Fixed greeting and sign-off:** the builder always emits these. The plan's intro and outro go *between* them, so the show's identity never drifts.

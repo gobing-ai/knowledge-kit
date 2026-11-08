@@ -192,7 +192,7 @@ function sha256(path: string): string {
 
 function latestValidationReport(fx: Fixture): {
     path: string;
-    report: { status: string; checks: { name: string; status: string; detail: string }[] };
+    report: { status: string; mode?: string; checks: { name: string; status: string; detail: string }[] };
 } {
     const root = join(fx.works, 'tmp/test-daily-ai-news');
     const dirs = readdirSync(root).sort();
@@ -459,6 +459,37 @@ describe('0344 publish dependency and bundle admission', () => {
 });
 
 describe('0344 validation evidence and dogfood', () => {
+    it('defaults to quick file-readiness checks without quality validation or subprocesses', () => {
+        const fx = fixture('validation-quick-default');
+        // Quick mode proves presence only: hash/safety/schema quality belongs to explicit full mode.
+        writeBundle(fx, { badHash: true, safety: false });
+        const result = runCli(fx, ['validate', '--run-date', RUN_DATE], {
+            PATH: `${fx.bin}:/usr/bin:/bin`,
+        });
+        expect({ status: result.status, stdout: result.stdout, stderr: result.stderr }).toMatchObject({ status: 0 });
+        const { report } = latestValidationReport(fx);
+        expect(report.mode).toBe('quick');
+        expect(report.checks.map((check) => check.name)).toEqual(['required-files', 'generation-files']);
+        expect(report.checks.every((check) => check.status === 'pass')).toBe(true);
+        expect(actions(fx)).toEqual([]);
+    });
+
+    it('fails quick mode when a declared generation file is absent', () => {
+        const fx = fixture('validation-quick-missing-variant');
+        writeBundle(fx);
+        rmSync(join(fx.dayDir, 'article.json'));
+        const result = runCli(fx, ['validate', '--run-date', RUN_DATE], {
+            PATH: `${fx.bin}:/usr/bin:/bin`,
+        });
+        expect(result.status).toBe(1);
+        const { report } = latestValidationReport(fx);
+        expect(report.mode).toBe('quick');
+        expect(report.checks.map((check) => check.name)).toEqual(['required-files', 'generation-files']);
+        expect(report.checks.find((check) => check.name === 'generation-files')?.status).toBe('fail');
+        expect(report.checks.find((check) => check.name === 'generation-files')?.detail).toContain('article.json');
+        expect(actions(fx)).toEqual([]);
+    });
+
     it('reports a live generation failure independently of skipped dogfood and preserves live inputs', async () => {
         const fx = fixture('validation-live-failure');
         validationTools(fx);
@@ -480,7 +511,7 @@ describe('0344 validation evidence and dogfood', () => {
         );
         const configHash = sha256(fx.config);
         const storeHash = sha256(join(fx.root, 'kk.db'));
-        const result = runCli(fx, ['validate', '--run-date', RUN_DATE, '--skip-dogfood'], {
+        const result = runCli(fx, ['validate', '--run-date', RUN_DATE, '--mode', 'full', '--skip-dogfood'], {
             PATH: `${fx.bin}:/usr/bin:/bin`,
         });
         expect({ status: result.status, stdout: result.stdout, stderr: result.stderr }).toMatchObject({ status: 1 });
@@ -520,7 +551,7 @@ describe('0344 validation evidence and dogfood', () => {
                 }),
             );
         }
-        const result = runCli(fx, ['validate', '--run-date', RUN_DATE], {
+        const result = runCli(fx, ['validate', '--run-date', RUN_DATE, '--mode', 'full'], {
             PATH: `${fx.bin}:/usr/bin:/bin`,
         });
         expect({ status: result.status, stdout: result.stdout, stderr: result.stderr }).toMatchObject({ status: 0 });
@@ -541,7 +572,7 @@ describe('0344 validation evidence and dogfood', () => {
         validationTools(fx, 0);
         await createStore(fx);
         writeFileSync(join(fx.dayDir, 'schedule-receipt.json'), JSON.stringify({ status: 'failed', exitCode: 1 }));
-        const result = runCli(fx, ['validate', '--run-date', RUN_DATE], {
+        const result = runCli(fx, ['validate', '--run-date', RUN_DATE, '--mode', 'full'], {
             PATH: `${fx.bin}:/usr/bin:/bin`,
         });
         expect(result.status).toBe(1);
@@ -557,7 +588,7 @@ describe('0344 validation evidence and dogfood', () => {
         validationTools(fx, 1);
         await createStore(fx);
         writeFileSync(join(fx.dayDir, 'schedule-receipt.json'), JSON.stringify({ status: 'failed', exitCode: 1 }));
-        const result = runCli(fx, ['validate', '--run-date', RUN_DATE], {
+        const result = runCli(fx, ['validate', '--run-date', RUN_DATE, '--mode', 'full'], {
             PATH: `${fx.bin}:/usr/bin:/bin`,
         });
         expect(result.status).toBe(1);

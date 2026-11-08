@@ -541,6 +541,13 @@ The RSS gate therefore always succeeds and records its verdict in `4-publish/rss
 failed node would cascade-skip the incident path), and every node depending on a conditional node
 lists a second, unconditional dependency.
 
+**Editorial boundary (ADR-045).** Editorial judgement for the episode (selection, ordering, the
+balance of news, opinion and technical detail, and the style contract) lives in the `kk:news-editorial`
+skill, not in stage code or prompts. Code keeps the deterministic parts: thresholds, the builder, the
+validator, duration gates. `daily-script-style` snapshots the skill into `20-editorial/` so every
+executor reads the same frozen policy by path. `daily-script-check` dry-runs the validator, so a
+rejected plan gets one `write --fix` pass before the template fallback.
+
 Full design and rollout: `docs/design/kk-daily-ai-voice3.md`; shapes: `docs/04_DESIGN.md`
 §publish-matrix stages.
 
