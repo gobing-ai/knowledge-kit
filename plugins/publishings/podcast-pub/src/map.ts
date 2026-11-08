@@ -1,6 +1,7 @@
 import { extname } from 'node:path';
 import type { Content } from '@gobing-ai/kk-core';
 import { renderShowNotesHtml } from './show-notes';
+import type { TranscriptReference } from './transcript';
 
 /** Local-cover extensions accepted from `metadata.coverImage` (R4); anything else is rejected. */
 const COVER_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
@@ -25,6 +26,8 @@ export interface EpisodeMapping {
     datePublishedMs?: number;
     /** Optional public link for the episode (`metadata.articleUrl` → microfeed `url`). */
     link?: string;
+    /** Transcript references (`PODCAST_PUB_TRANSCRIPT`, wired in index.ts; empty when disabled/unavailable). */
+    transcripts?: TranscriptReference[];
     /** Podcast-directory fields (`metadata.itunes`) passed through to `_microfeed`. */
     itunes?: {
         title?: string;
