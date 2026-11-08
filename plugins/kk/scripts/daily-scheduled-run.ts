@@ -34,6 +34,7 @@ const runId = values['run-id'] ?? `daily-ai-voice-${stamp}-${now.getTime()}`;
 const workDir = join(resolve(values['works-dir'] ?? join(repo, '.works')), 'kk-daily-ai-voice2', stamp);
 const receiptPath = resolve(values.receipt ?? join(workDir, 'schedule-receipt.json'));
 const startedAt = now.toISOString();
+mkdirSync(workDir, { recursive: true });
 mkdirSync(dirname(receiptPath), { recursive: true });
 // voice3 shares the voice2 workspace (F08); only the vars and the publish seam differ.
 const isVoice3 = values.workflow === 'kk-daily-ai-voice3';

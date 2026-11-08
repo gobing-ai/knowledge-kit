@@ -41,9 +41,8 @@ const RUN_DATE_ISO = laDate();
 const RUN_DATE = RUN_DATE_ISO.replaceAll('-', '');
 const PRIOR_DATE = laDate(-1).replaceAll('-', '');
 
-function localRunDate(): string {
-    const now = new Date();
-    return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+function supervisorRunDate(): string {
+    return new Date().toISOString().slice(0, 10).replaceAll('-', '');
 }
 
 interface Fixture {
@@ -213,7 +212,7 @@ describe('0344 package entries and supervised generation', () => {
 
     it('generate entry forwards the current voice3 defaults through the supervisor', () => {
         const fx = fixture('generate-entry');
-        const supervisorDate = localRunDate();
+        const supervisorDate = supervisorRunDate();
         const supervisorDir = join(fx.works, 'kk-daily-ai-voice2', supervisorDate);
         renameSync(
             writeBundle(fx, { runDate: supervisorDate }, supervisorDir),
@@ -233,6 +232,7 @@ if (args.includes('run')) {
         );
         executable(fx.bin, 'kk', recordBody());
         const result = runCli(fx, ['generate'], {
+            TZ: 'UTC',
             PATH: `${fx.bin}:${process.env.PATH ?? ''}`,
             READY_BUNDLE: join(supervisorDir, 'bundle.ready.json'),
         });
@@ -261,7 +261,7 @@ if (args.includes('run')) {
     it('generate-only sets auto_publish=false and distinguishes done, malformed, incomplete, and no-content', async () => {
         for (const scenario of ['done', 'malformed', 'incomplete', 'no-content'] as const) {
             const fx = fixture(`generate-${scenario}`);
-            const supervisorDate = localRunDate();
+            const supervisorDate = supervisorRunDate();
             const supervisorDir = join(fx.works, 'kk-daily-ai-voice2', supervisorDate);
             if (scenario === 'done') {
                 renameSync(
@@ -310,6 +310,7 @@ if (args.includes('trace')) console.log('{}');
                 {
                     env: {
                         ...process.env,
+                        TZ: 'UTC',
                         PATH: `${fx.bin}:${process.env.PATH ?? ''}`,
                         ACTIONS: fx.actions,
                         SCENARIO: scenario,
