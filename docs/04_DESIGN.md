@@ -970,16 +970,18 @@ exit code. `--window` must be `'<n>s|m|h|d'` and `--limit` a positive integer; e
 
 **AI-news supply diagnostic (task 0337).** `bun scripts/ai-news-supply-report.ts --db
 <existing-path> --config <existing-kk-config> --profile
-plugins/kk/decisions/extract/ai-news.yaml --at <ISO-8601-with-offset>` is a repository operator
-script, not a `kk` verb. All four flags are required; unknown or duplicate flags fail. It opens the
-explicit SQLite path with native `bun:sqlite` readonly access, reads both windows in one rolled-back
+plugins/kk/decisions/extract/ai-news.yaml --at <ISO-8601-with-offset> [--hours 24,72,168]` is a
+repository operator script, not a `kk` verb. The four path/time flags are required; `--hours` is an
+optional list of distinct positive integers (default `24,72,168` — 72h is production voice3's extract
+window); unknown or duplicate flags fail. It opens the
+explicit SQLite path with native `bun:sqlite` readonly access, reads every window in one rolled-back
 read transaction, and never migrates, labels, collects, reserves/releases, or calls a model/network.
 Missing inputs, an invalid timestamp/config/profile, a non-`ai-news` or expanded predicate contract,
 and unavailable required schema exit nonzero with no partial JSON.
 
 stdout is one version-1 JSON document: `version`, `at`, `dbPath`, `profilePath`, the parsed
 `profile`, the effective label `labelPolicy` (never the full config), `windows`, and `limitations`.
-Each 24h/168h window carries cumulative `seen → category → quality → importance → moderation →
+Each window carries cumulative `seen → category → quality → importance → moderation →
 reservationExclusion → cap` gates with item, distinct non-null-story, null-story-item and removed
 counts; `cappedItemIds` matches `ItemsDao.selectByProfile` for the same inputs. `sources` partitions
 items once by stored source, trimmed UTF-16 body bucket (`<300`, `300..1499`, `>=1500`) and effective
@@ -2452,13 +2454,13 @@ Nodes and their gating rule:
 | `send` | depends on `check` **and** `send-confirm` | tier order, dummy-aware, receipt-keyed |
 | `classify` | every sent window | `publish-matrix-classify --window … --run-date …` |
 | `send-retry` | non-overseas, one bounded hop after `send` | `publish-matrix-send --window … --retry`: only live/draft **failures with `effect: none`** are resent — succeeded rows are skipped, an uncertain effect is never replayed, dummy rows never spawn a plugin. No unbounded back-edge; the outcome assertion rules after it |
-| `patch-surfdash`, `partial-marker`, `settle` | `patch-surfdash` after-generate only; `settle` non-overseas; `partial-marker` on a `partial\|none` outcome | the tail nodes on the bridged stage names (see below) |
+| `patch-surfdash`, `partial-marker`, `settle` | `patch-surfdash` after-generate only (`onError: continue` — the sends already happened); `settle` non-overseas; `partial-marker` when `publish-status.<window>.txt` is `full\|partial\|none` (a `full` run deletes a stale marker; `dummy` skips) | the tail nodes on the bridged stage names (see below) |
 | `outcome-assert` | after `ledger`, whenever an outcome file exists | `jq` every `required` real row must be `succeeded` — a partial window with failed required targets **fails the run** after report/ledger are written, preserving the outcome, receipts and incident evidence; a gated-miss day (no outcome file) stays done |
 | `diagnose` | overseas + gate miss | `agent.run` (`role: scribe`, `onError: continue`) refining `4-publish/incident.{json,md}` |
 | `repair` | after `diagnose` | `publish-matrix-send --window after-generate --retry --tier 0` — the one safe automatic repair |
 | `bundle-runs` | after `classify` | appends this run id to `bundle.runs[]`, idempotently |
 | `report` | after `bundle-runs` and `diagnose` | `5-report/publish-<window>.md` |
-| `ledger` | after `report` | `kk ledger append`, `onError: continue` |
+| `ledger` | after `report` | `kk ledger sync --workflow kk-daily-publish3 \|\| true` — an in-run append of the running run always refuses (`kk.ledger.run.running`), so each window backfills the earlier finished runs |
 
 **Two engine facts the graph is shaped around.** A DAG node is skipped only when **all** its
 dependencies were skipped, so (a) `send` lists `check` beside the conditional `send-confirm` — a

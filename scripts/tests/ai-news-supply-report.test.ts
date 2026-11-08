@@ -405,6 +405,9 @@ describe('ai-news supply report (0337)', () => {
             { name: 'unknown-flag', args: [...validArgs(), '--topic', 'other'], error: 'unknown' },
             { name: 'duplicate-flag', args: [...validArgs(), '--at', AT], error: 'duplicate' },
             { name: 'missing-flag', args: validArgs().slice(2), error: 'missing' },
+            { name: 'zero-hours', args: [...validArgs(), '--hours', '0'], error: '--hours' },
+            { name: 'non-integer-hours', args: [...validArgs(), '--hours', '24,3d'], error: '--hours' },
+            { name: 'repeated-hours', args: [...validArgs(), '--hours', '72,72'], error: '--hours' },
         ];
         for (const testCase of cases) {
             const result = runReport(testCase.args);
@@ -444,6 +447,18 @@ describe('ai-news supply report (0337)', () => {
         expect(missingSchema.stdout).toBe('');
         expect(missingSchema.stderr.toLowerCase()).toContain('schema');
         expect(runReport(validArgs({ dbPath: fixture.dir })).status).not.toBe(0);
+    });
+
+    it('reports the production 72h extract window by default and honors an explicit --hours list', () => {
+        // voice3 is scheduled with `--window 72h` (design §8): a diagnostic without that window
+        // cannot explain a production no-content close.
+        expect(parseSuccess().windows.map((window) => window.hours)).toEqual([24, 72, 168]);
+        const only72 = parseSuccess([...validArgs(), '--hours', '72']);
+        expect(only72.windows.map((window) => window.hours)).toEqual([72]);
+        const all = parseSuccess();
+        expect(JSON.stringify(only72.windows[0])).toBe(
+            JSON.stringify(all.windows.find((window) => window.hours === 72)),
+        );
     });
 
     it('names each gate by its decision, not by the profile key order', () => {

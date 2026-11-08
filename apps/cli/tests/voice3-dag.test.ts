@@ -414,7 +414,9 @@ describe('kk-daily-ai-voice3 shape (0324 R1, R3, R4)', () => {
 
         it('prepare preflights every runner this graph can invoke (F21)', () => {
             const prepare = nodeBlock('prepare');
-            expect(prepare).toContain('kk-daily-ai-voice2.yaml');
+            // Its OWN file, not voice2's: preflighting voice2 demanded surfdash stages voice3 never runs
+            // (2026-11-07 18:07Z `daily-preflight.runner-stale`) and skipped voice3's own stages.
+            expect(prepare).toContain('daily-preflight plugins/kk/workflows/kk-daily-ai-voice3.yaml');
             expect(prepare).toContain('kk-daily-safety.yaml');
             expect(prepare).toContain('kk-daily-publish3.yaml');
         });

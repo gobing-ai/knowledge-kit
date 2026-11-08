@@ -429,13 +429,14 @@ async function validate(args: string[]): Promise<number> {
                 const report = JSON.parse(supply.stdout) as {
                     windows?: { hours?: number; gates?: { name?: string; stories?: number }[] }[];
                 };
-                const latest = report.windows?.at(-1);
+                // Production voice3 extracts 72h (design §8); the widest window is not what the run sees.
+                const latest = report.windows?.find((window) => window.hours === 72) ?? report.windows?.at(-1);
                 const eligible = latest?.gates?.find((gate) => gate.name === 'reservationExclusion')?.stories;
                 writeFileSync(join(evidence, 'supply-report.json'), supply.stdout);
                 add(
                     'store-supply',
                     'pass',
-                    `read-only supply gate report completed; latest window ${latest?.hours ?? '?'}h has ${eligible ?? '?'} eligible stories`,
+                    `read-only supply gate report completed; ${latest?.hours ?? '?'}h window has ${eligible ?? '?'} eligible stories`,
                 );
             }
         }

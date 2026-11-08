@@ -2,7 +2,9 @@
  * Read-only AI-news extraction-supply diagnostic (task 0337).
  *
  * bun scripts/ai-news-supply-report.ts --db <existing.db> --config <config.yaml> \
- *   --profile plugins/kk/decisions/extract/ai-news.yaml --at <ISO-8601-with-offset>
+ *   --profile plugins/kk/decisions/extract/ai-news.yaml --at <ISO-8601-with-offset> [--hours 24,72,168]
+ *
+ * The default windows include 72h because production voice3 extracts with `--window 72h`.
  *
  * The script never opens a store writer, migrates, labels, reserves or calls a model/network.
  */
@@ -24,6 +26,7 @@ const REQUIRED_PREDICATES = [
 ] as const;
 const STAGE_NAMES = ['seen', 'category', 'quality', 'importance', 'moderation', 'reservationExclusion'] as const;
 const BODY_BUCKETS = ['<300', '300..1499', '>=1500'] as const;
+const DEFAULT_HOURS = '24,72,168';
 
 interface LabelPolicy {
     priority: readonly string[];
@@ -103,7 +106,8 @@ interface QueryParts {
 }
 
 function parseArgs(args: readonly string[]): Record<string, string> {
-    const allowed = new Set(['--db', '--config', '--profile', '--at']);
+    const required = ['--db', '--config', '--profile', '--at'];
+    const allowed = new Set([...required, '--hours']);
     const values = new Map<string, string>();
     for (let index = 0; index < args.length; index += 2) {
         const flag = args[index];
@@ -113,10 +117,18 @@ function parseArgs(args: readonly string[]): Record<string, string> {
         if (value === undefined || value.startsWith('--')) throw new Error(`${flag} requires a value`);
         values.set(flag, value);
     }
-    for (const flag of allowed) {
+    for (const flag of required) {
         if (!values.has(flag)) throw new Error(`missing required flag ${flag}`);
     }
     return Object.fromEntries(values);
+}
+
+function parseHours(raw: string): number[] {
+    const hours = raw.split(',').map((part) => (/^\d+$/.test(part) ? Number(part) : Number.NaN));
+    if (hours.some((value) => !Number.isSafeInteger(value) || value <= 0) || new Set(hours).size !== hours.length) {
+        throw new Error(`--hours must be distinct positive integers, comma-separated, got '${raw}'`);
+    }
+    return hours;
 }
 
 function existingPath(raw: string, what: string): string {
@@ -431,6 +443,7 @@ function requireSchema(db: Database): void {
 
 async function main(): Promise<void> {
     const args = parseArgs(Bun.argv.slice(2));
+    const hours = parseHours(args['--hours'] ?? DEFAULT_HOURS);
     const dbPath = existingPath(args['--db'] as string, 'database');
     const configPath = existingPath(args['--config'] as string, 'config');
     const profilePath = existingPath(args['--profile'] as string, 'profile');
@@ -456,7 +469,7 @@ async function main(): Promise<void> {
         requireSchema(db);
         db.exec('BEGIN');
         transactionOpen = true;
-        const windows = [24, 168].map((hours) => buildWindow(db, profile, labelPolicy, now, hours));
+        const windows = hours.map((window) => buildWindow(db, profile, labelPolicy, now, window));
         const report = {
             version: 1,
             at: new Date(now).toISOString(),

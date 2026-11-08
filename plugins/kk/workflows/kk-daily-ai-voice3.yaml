@@ -7,8 +7,8 @@ description: >-
   generate-side channel payloads (`social-write` + `daily-bundle-variants`) and the frozen
   `bundle.json` that `kk-daily-publish3` consumes. It publishes nothing: every channel decision and
   every send lives in the publish preset and the publish workflow, which is why this graph carries
-  no `xhs_*` / `wechat_*` / `publish_enabled` switch. voice2 stays the production path until the
-  operator swaps the 04:30 schedule entry (§8).
+  no `xhs_*` / `wechat_*` / `publish_enabled` switch. Production since the 2026-11-05 cutover (§8);
+  it still runs in voice2's namespace (work dir, store selections, prepare ledger) by design (§11).
 
 vars:
 
@@ -67,11 +67,6 @@ vars:
   cover_fallback: ""
   # 0219 R3: image-gen vendor fallback for the XHS render; "" restores strict fail-fast.
   xhs_fallback: "true"
-  # 2026-10-21 operator decision: OFF for now (was on since 2026-09-29). The plugin reported today's
-  # draft as saved (`草稿箱` 12 -> 13 plus a scoped `保存成功` toast) while the console showed the
-  # operator no draft, so the channel's success evidence is not trustworthy until that is resolved.
-  # Card-image fallback to the aspect-only request when the exact canvas is refused.
-  # launch-time switch and nothing else in the run depends on this target.
   xhs_style: "xhs-knowledge"
   xhs_provider: "minimax"
   xhs_model: "image-01"
@@ -144,7 +139,7 @@ nodes:
       kind: shell
       options:
         command: >-
-          kk stage daily-preflight plugins/kk/workflows/kk-daily-ai-voice2.yaml
+          kk stage daily-preflight plugins/kk/workflows/kk-daily-ai-voice3.yaml
           plugins/kk/workflows/kk-daily-safety.yaml
           plugins/kk/workflows/kk-daily-publish3.yaml
           && kk daily prepare --workflow kk-daily-ai-voice2 --run-date "${vars.run_date}" --ledger-sync
@@ -323,6 +318,7 @@ nodes:
       options:
         role: scribe
         agent: ${vars.agent}
+        timeoutMs: 600000
         # ADR-115 error tier: keep this prompt <= 1000 chars (0133 R3; 0138 R4a copy discipline).
         # The anchor is shared with plan-translate-retry so the two attempts cannot drift apart.
         # 20261015 forensics: headless agy's terminal sandbox denies workspace writes for EVERY
@@ -361,6 +357,7 @@ nodes:
       options:
         role: reviewer
         agent: ${vars.agent_retry}
+        timeoutMs: 600000
         input: *plan-translate-input
         expectFile: ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json
         allowAppend: false
@@ -383,6 +380,7 @@ nodes:
       options:
         role: scribe
         agent: ${vars.agent}
+        timeoutMs: 600000
         # ADR-115 error tier: keep this prompt <= 1000 chars. No title line: the canonical episode
         # title is computed by daily-article-gen (0189 R4).
         # The anchor is shared with article-write-retry so the two attempts cannot drift apart.
@@ -415,6 +413,7 @@ nodes:
       options:
         role: reviewer
         agent: ${vars.agent_retry}
+        timeoutMs: 600000
         input: *article-write-input
         expectFile: ${vars.work_dir}/22-article/${vars.run_date}_06_article-write_body.md
         allowAppend: false
@@ -460,6 +459,7 @@ nodes:
       options:
         role: scribe
         agent: ${vars.agent}
+        timeoutMs: 600000
         # ADR-115 error tier: keep this prompt <= 1000 chars.
         input: |
           Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of plan docs; don't edit it.
@@ -523,6 +523,7 @@ nodes:
       options:
         role: scribe
         agent: ${vars.agent}
+        timeoutMs: 600000
         # ADR-115 error tier: keep this prompt <= 1000 chars.
         input: |
           Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of docs; don't edit it. Also read the style contract ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_style.md and obey its char caps, duration budget and banned phrases.
@@ -729,7 +730,7 @@ nodes:
     description: >-
       Render timeline show notes from the episode plan — content, not publishing: the publish half
       ships them as the episode variant's `metadata.showNotes`, and the link placeholders stay
-      unresolved until a send resolves them."
+      unresolved until a send resolves them.
     dependsOn: [quality, pool-gate]
     condition:
       kind: shell
@@ -777,6 +778,7 @@ nodes:
       options:
         role: scribe
         agent: ${vars.agent}
+        timeoutMs: 600000
         # ADR-115 error tier: keep this prompt <= 1000 chars.
         input: |
           Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of news docs; don't edit it.
@@ -820,6 +822,7 @@ nodes:
       options:
         role: scribe
         agent: ${vars.agent}
+        timeoutMs: 600000
         input: |
           Read the approved episode plan at ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json.
           Write four short zh posts, one per file:
@@ -934,9 +937,12 @@ nodes:
           --vars "{\"work_dir\":\"${vars.work_dir}\",\"run_date\":\"${vars.run_date}\",\"window\":\"${vars.publish_window}\",\"preset\":\"${vars.publish_preset}\",\"dummy\":\"${vars.publish_dummy}\",\"live_channels\":\"${vars.publish_live_channels}\"}"
 
   - id: ledger
-    description: "Append this run to the workflow ledger; bookkeeping never fails a generation."
+    description: >-
+      Backfill the voice3 ledger with every finished run it does not record yet (an in-run
+      `kk ledger append` of this run always refuses with `kk.ledger.run.running`; the scheduled
+      wrapper's post-run sync records this one). `|| true` — bookkeeping never fails a generation.
     dependsOn: [generation-report, publish]
     action:
       kind: shell
       options:
-        command: 'kk ledger append --workflow kk-daily-ai-voice3 --work-dir "${vars.work_dir}" --run "${vars.__runId}" || true'
+        command: 'kk ledger sync --workflow kk-daily-ai-voice3 || true'
