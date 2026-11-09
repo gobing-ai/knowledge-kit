@@ -114,7 +114,7 @@ kk board serve --board-origin <origin> [--port <n>]
 | `store migrate` | Apply pending `@gobing-ai/kk-store` migrations; prints `{db, applied}` (§1.9) | shipped (task 0206) |
 | `stage run <stage> [args…]` | Run one stage of the shared workflow stage runner with positional pass-through; the legacy `kk stage <stage>` spelling is normalized into this verb in `main()` before Commander parses (A22 R1/R2) | shipped (task 0275) |
 | `lock acquire\|release` | Single-flight lock over the store for the scheduled collector; prints `{acquired}` / `{skipped, holder}` / `{released}` (§1.9). Canonical spelling; `kk store lock …` remains a hidden compatibility route on the same engines | shipped (task 0208; lifted from `store lock` by 0275) |
-| `bot list\|login\|logout\|open\|exec` | Named local browser sessions over the fixed default profile root: tab-separated inventory (with login/expiry/identity facts recorded at login), operator-confirmed login/save through a staged transaction, idempotent containment-checked logout behind the shared lease, headed reopen with optional re-login, and one authenticated request through the cached cookie session with a curl option subset (§1.12) | shipped (task 0276; login-time session facts 0305; `exec` 0306) |
+| `bot list\|login\|logout\|open\|exec\|plan` | Named local browser sessions over the fixed default profile root: tab-separated inventory (with login/expiry/identity facts recorded at login), operator-confirmed login/save through a staged transaction, idempotent containment-checked logout behind the shared lease, headed reopen with optional re-login, one authenticated request through the cached cookie session with a curl option subset, and declarative headless collection execution via plan (§1.12) | shipped (task 0276; login-time session facts 0305; `exec` 0306; `plan` 0346/ADR-038 amdt) |
 | `store ingest` | Upsert one run's collected `Doc[]` into `items` + `collect_runs` (with per-plugin `source_counts` from `metadata.sources[].file`), write `--new-ids`; prints `{inserted, updated, unchanged}` (§1.9) | shipped (task 0208) |
 | `store backfill-facts` | Recompute the typed item facts and the causal `story_id` clustering for every item (idempotent); prints `{updated}` (§1.9) | shipped (task 0227) |
 | `store label` | Label the ids `ingest` filed — one raw observation per (decision, maker) through the kk decision catalog (the `LABEL_DECISIONS` table: the heuristic's five + the three judgment decisions the heuristic cannot signal), heuristic-first for those five and in-process through `@gobing-ai/ts-ai-decision`; the four graded dimensions are consulted only in `--mode decision`; a china-politics keyword hit writes a maker `keyword` floor and the model is still consulted; `--replay` re-labels a historical pool under a `replay-<epoch>` run id. Prints `{verdict, confidence, labeled, model, fallback, consults, consultMs, refused}`, or `{replayed, labeled, consults, consultMs, refused, run}` (§1.9) | shipped (task 0209; raw observations + replay 0226; judgment decisions + china-politics gate 0229; score positions + refusals 0240; in-process hub + graded-dimension pruning 0317) |
@@ -1227,6 +1227,7 @@ kk bot login <url> --save <bot>    # headed login; a matched channel adapter sav
 kk bot logout <bot>                # deletes that bot's contained profile; prints `<name>\tremoved|absent`
 kk bot open <bot> [--login]        # reopens the saved page headed; prints `<name>\tclosed` on close
 kk bot exec <bot> <url> [curl opts] # one request with the cached cookies; body bytes to stdout/`-o`
+kk bot plan <bot> <file> [-o <dir>] [-m <sec>] # runs declarative collection plan under shared lease
 ```
 
 - `list` enumerates direct, non-symlink profile directories, including legacy directories listed
@@ -1291,6 +1292,19 @@ kk bot exec <bot> <url> [curl opts] # one request with the cached cookies; body 
   URL-stripped detail (any http(s) URL, including a `-L` redirect target, prints as `<url>`) — the request URL (its query can carry a token), cookie values and bodies never
   print. Out of scope: `-F`, `-b/-c`, `-u`, `-x`, `--retry`, `-k`, `--compressed`, streaming,
   adapter special state.
+- `plan` executes a declarative collection plan through the bot's cached profile (0346, ADR-038 amdt):
+  `kk bot plan <bot> <file> [-o/--output <dir>] [-m/--max-time <seconds>]`. The name is validated,
+  the profile must exist (missing profile fails exit 1 with login guidance), and `<file>` must be a readable
+  JSON file declaring a valid `BotCollectionPlan` (missing, unreadable, or malformed JSON exits 2 as usage error).
+  It runs in a single headless persistent context under the shared profile lease (`runBotCollection`).
+  When `-o <dir>` is supplied, the directory is narrowed to `0700`, each artifact body is written as a `0600`
+  file `<NN>-<id>.txt` (`NN` = zero-padded artifact index, unsafe id characters → `-`), and the summary JSON
+  (`{ok, steps, artifacts[]}` with each artifact's `file` instead of its body) is written `0600` to
+  `<dir>/result.json` and echoed to stdout. When `-o` is omitted, the full JSON result including bodies is printed
+  to stdout. Failures write no file and print only the `kk.bot.failed:` contract line. `--max-time` bounds the
+  whole-run timeout in seconds (0 < s ≤ 600, fractions rounded to ms; zero, negative, non-numeric or above 600 exit 2).
+  Fail-closed exit mapping: exit 0 on success; exit 1 on operational failure (`authentication`, `empty`, or `browser`);
+  exit 2 on usage error (`usage`).
 - Exit contract: validation/usage failures print `kk.bot.failed: <detail>` to stderr and exit 2;
   operational failures exit 1 with the same contract line (`BotError.code === 'usage'` maps to 2).
   Profiles use owner-only 0700 directories and 0600 metadata (`bot.json`: schemaVersion,
@@ -1305,7 +1319,7 @@ migration review is task 0278.
 
 ### 1.13 Rendered collection runner — shipped (0346, ADR-038 amendment 2026-11-09)
 
-`@gobing-ai/publish-harness/bot-collection` exposes one deep library function, not a command:
+`@gobing-ai/publish-harness/bot-collection` exposes the collection substrate as both a typed TypeScript library function and the canonical `kk bot plan` CLI command:
 
 ```ts
 runBotCollection(profileName: string, plan: BotCollectionPlan, options?: BotCollectionOptions): Promise<BotCollectionResult>

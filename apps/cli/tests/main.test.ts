@@ -205,6 +205,7 @@ describe('kk command tree shape (0275 AC1 — A22 R1)', () => {
             'bot login',
             'bot logout',
             'bot open',
+            'bot plan',
             'daily prepare',
             'daily publish-classify',
             'daily run-report',

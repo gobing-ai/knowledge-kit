@@ -1,6 +1,9 @@
+import { join } from 'node:path';
 import { discoverAllPlugins } from '@gobing-ai/kk-core';
+import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { type Command, CommanderError } from 'commander';
 import { bindAdapterSession, selectBotAdapter } from '../bot-adapter';
+import { decodeBotPlan } from '../bot-plan';
 import { readFileBytes, writeBytes, writeFileBytes } from '../byte-output';
 import { consoleOutput } from '../output';
 
@@ -14,7 +17,10 @@ import { consoleOutput } from '../output';
  * `KK_BROWSER_PROFILE_DIR`/channel env can redirect what these verbs list, open or delete.
  */
 
-type BotHarness = typeof import('@gobing-ai/publish-harness/browser');
+// The collection runner is a sibling sub-path, not a `browser` re-export (0346: one-way import).
+type BotHarness = typeof import('@gobing-ai/publish-harness/browser') &
+    typeof import('@gobing-ai/publish-harness/bot-collection');
+type BotCollectionPlan = import('@gobing-ai/publish-harness/bot-collection').BotCollectionPlan;
 
 /**
  * Injectable seams for the registrar. `load` is the deterministic-test seam the design freezes
@@ -30,7 +36,10 @@ let botHarness: Promise<BotHarness> | undefined;
 
 /** Lazily import the browser-dependent half of the harness (help/list stay browser-free). */
 function loadBotHarness(): Promise<BotHarness> {
-    botHarness ??= import('@gobing-ai/publish-harness/browser');
+    botHarness ??= Promise.all([
+        import('@gobing-ai/publish-harness/browser'),
+        import('@gobing-ai/publish-harness/bot-collection'),
+    ]).then(([browser, collection]) => ({ ...browser, ...collection }));
     return botHarness;
 }
 
@@ -252,6 +261,92 @@ function execHeaderBlock(status: number, statusText: string, headers: Array<{ na
     return `${lines.join('\n')}\n\n`;
 }
 
+/** `kk bot plan` options as Commander hands them over. */
+interface BotPlanCliOptions {
+    output?: string;
+    maxTime?: string;
+}
+
+/** `-m` seconds → milliseconds (valid 1..600s); zero, negative, non-numeric and >600 are usage errors. */
+function parsePlanMaxTime(harness: BotHarness, value: string): number {
+    const seconds = Number(value);
+    if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 600) {
+        throw new harness.BotError('usage', '--max-time must be a positive number of seconds (up to 600)');
+    }
+    return Math.round(seconds * 1000);
+}
+
+/** Read and decode the plan JSON file. Unreadable paths and non-object JSON throw a usage BotError. */
+async function readPlanFile(harness: BotHarness, planPath: string): Promise<BotCollectionPlan> {
+    let raw: string;
+    try {
+        raw = await createNodeFileSystem().readFile(planPath);
+    } catch {
+        throw new harness.BotError('usage', `could not read plan file '${planPath}'`);
+    }
+    const decoded = decodeBotPlan(raw);
+    if (!decoded.ok) {
+        throw new harness.BotError(
+            'usage',
+            decoded.reason === 'not-object' ? 'plan must be a JSON object' : 'plan file is not valid JSON',
+        );
+    }
+    // Shape validation is the runner's (normalizePlan) — it rejects before any profile or lease work.
+    return decoded.plan as unknown as BotCollectionPlan;
+}
+
+/**
+ * `kk bot plan <name> <plan>` — execute a declarative collection plan under the shared profile lease.
+ * Outputs JSON result to stdout, or writes artifact bodies to `--output <dir>` with a result.json summary.
+ */
+async function botPlanAction(
+    load: () => Promise<BotHarness>,
+    name: string,
+    planPath: string,
+    options: BotPlanCliOptions,
+): Promise<void> {
+    await runBotAction(load, async (harness) => {
+        const plan = await readPlanFile(harness, planPath);
+        const timeoutMs = options.maxTime === undefined ? undefined : parsePlanMaxTime(harness, options.maxTime);
+        const result = await harness.runBotCollection(name, plan, {
+            ...(timeoutMs === undefined ? {} : { timeoutMs }),
+        });
+
+        if (options.output !== undefined) {
+            const fs = createNodeFileSystem();
+            // Lock the directory before any body lands in it; each file is then narrowed to 0600.
+            await fs.ensureDir(options.output);
+            harness.chmod(options.output, 0o700);
+            const sanitizedArtifacts: Array<Record<string, unknown>> = [];
+            for (const [index, artifact] of result.artifacts.entries()) {
+                const safeName = `${String(index).padStart(2, '0')}-${artifact.id.replace(/[^A-Za-z0-9_-]/g, '-')}.txt`;
+                const filePath = join(options.output, safeName);
+                await fs.writeFile(filePath, artifact.body);
+                harness.chmod(filePath, 0o600);
+                sanitizedArtifacts.push({
+                    id: artifact.id,
+                    kind: artifact.kind,
+                    file: safeName,
+                    ...(artifact.status !== undefined ? { status: artifact.status } : {}),
+                    ...(artifact.url !== undefined ? { url: artifact.url } : {}),
+                    ...(artifact.stepIndex !== undefined ? { stepIndex: artifact.stepIndex } : {}),
+                });
+            }
+            const summary = {
+                ok: true,
+                steps: result.steps,
+                artifacts: sanitizedArtifacts,
+            };
+            const resultPath = join(options.output, 'result.json');
+            await fs.writeFile(resultPath, JSON.stringify(summary, null, 2));
+            harness.chmod(resultPath, 0o600);
+            consoleOutput.write(JSON.stringify(summary, null, 2));
+        } else {
+            consoleOutput.write(JSON.stringify({ ok: true, ...result }, null, 2));
+        }
+    });
+}
+
 /**
  * Register the `bot` group under the current CLI factory. The group carries no action of its own:
  * `kk bot` alone prints Commander usage, exactly like every other noun. No flag beyond the
@@ -259,7 +354,9 @@ function execHeaderBlock(status: number, statusText: string, headers: Array<{ na
  */
 export function registerBotCommand(program: Command, deps: BotCommandDeps = {}): void {
     const load = deps.load ?? loadBotHarness;
-    const bot = program.command('bot').description('Named local browser sessions (list, login, logout, open, exec)');
+    const bot = program
+        .command('bot')
+        .description('Named local browser sessions (list, login, logout, open, exec, plan)');
 
     bot.command('list')
         .description('List cached local bot profiles: name, cached, default URL, identity, last login, expires')
@@ -296,12 +393,24 @@ export function registerBotCommand(program: Command, deps: BotCommandDeps = {}):
         .option('-f, --fail', 'Exit 1 without the body when the status is 400 or above')
         .option('-m, --max-time <seconds>', 'Whole-request timeout in seconds (default: Playwright 30s)')
         .action((name: string, url: string, options: BotExecCliOptions) => botExecAction(load, name, url, options));
+
+    const plan = bot
+        .command('plan')
+        .description('Execute a declarative collection plan with a named bot session')
+        .argument('<name>', 'Bot name')
+        .argument('<plan>', 'Path to plan JSON file')
+        .option('-o, --output <dir>', 'Directory to write captured artifact bodies (0600 mode)')
+        .option('-m, --max-time <seconds>', 'Whole-run timeout in seconds (default: 120s, max: 600s)')
+        .action((name: string, planPath: string, options: BotPlanCliOptions) =>
+            botPlanAction(load, name, planPath, options),
+        );
+
     // Commander reports every parse error (unknown option, missing/excess argument) as exit 1.
     // This leaf's contract makes them usage errors (exit 2), so the callback is installed from a
     // pre-subcommand hook: `main()` re-inherits the exit callback over its children after
     // registration, which would drop one set here. Help/version (exit 0) pass straight through.
     bot.hook('preSubcommand', (_parent, subcommand) => {
-        if (subcommand === exec) {
+        if (subcommand === exec || subcommand === plan) {
             subcommand.exitOverride((error) => {
                 throw error.exitCode === 1 ? new CommanderError(2, error.code, error.message) : error;
             });

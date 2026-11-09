@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Command, CommanderError } from 'commander';
@@ -45,6 +45,7 @@ interface Fakes {
     logout?: (name: string) => Promise<unknown>;
     open?: (name: string, options: { login?: boolean }) => Promise<unknown>;
     exec?: (name: string, request: ExecRequest) => Promise<unknown>;
+    plan?: (name: string, plan: unknown, options?: unknown) => Promise<unknown>;
     calls: string[];
 }
 
@@ -56,6 +57,7 @@ function fakeHarness(fakes: Fakes): BotHarness {
     };
     return {
         BotError: FakeBotError,
+        chmod: (path: string, mode: number) => chmodSync(path, mode),
         readBotSavedMetadata: () => Promise.resolve(null),
         listBots: () => record('list', fakes.list?.() ?? Promise.resolve([])),
         loginBot: (name: string, url: string) =>
@@ -76,6 +78,23 @@ function fakeHarness(fakes: Fakes): BotHarness {
                         statusText: 'OK',
                         headers: [],
                         body: Buffer.from('ok'),
+                    }),
+            ),
+        runBotCollection: (name: string, plan: unknown, options?: unknown) =>
+            record(
+                `plan:${name}`,
+                fakes.plan?.(name, plan, options) ??
+                    Promise.resolve({
+                        steps: [{ index: 0, id: 'nav', type: 'navigate', url: 'https://example.com' }],
+                        artifacts: [
+                            {
+                                id: 'nav',
+                                kind: 'request',
+                                body: 'sample-body',
+                                status: 200,
+                                url: 'https://example.com',
+                            },
+                        ],
                     }),
             ),
     } as unknown as BotHarness;
@@ -160,7 +179,14 @@ describe('kk bot registration and argv shape (A22 R1)', () => {
         const program = createProgram();
         const bot = program.commands.find((command) => command.name() === 'bot');
         expect(bot).toBeDefined();
-        expect(bot?.commands.map((command) => command.name())).toEqual(['list', 'login', 'logout', 'open', 'exec']);
+        expect(bot?.commands.map((command) => command.name())).toEqual([
+            'list',
+            'login',
+            'logout',
+            'open',
+            'exec',
+            'plan',
+        ]);
         expect(bot?.commands.every((command) => command.commands.length === 0)).toBe(true);
 
         const flags = Object.fromEntries(
@@ -176,6 +202,7 @@ describe('kk bot registration and argv shape (A22 R1)', () => {
             open: ['--login'],
             // 0306: the curl subset only — anything else stays a Commander usage error.
             exec: ['--data', '--fail', '--header', '--include', '--location', '--max-time', '--output', '--request'],
+            plan: ['--max-time', '--output'],
         });
         const login = bot?.commands.find((command) => command.name() === 'login');
         expect(login?.registeredArguments.map((argument) => argument.name())).toEqual(['url']);
@@ -183,12 +210,14 @@ describe('kk bot registration and argv shape (A22 R1)', () => {
         expect(open?.registeredArguments.map((argument) => argument.name())).toEqual(['name']);
         const exec = bot?.commands.find((command) => command.name() === 'exec');
         expect(exec?.registeredArguments.map((argument) => argument.name())).toEqual(['name', 'url']);
+        const plan = bot?.commands.find((command) => command.name() === 'plan');
+        expect(plan?.registeredArguments.map((argument) => argument.name())).toEqual(['name', 'plan']);
     });
 
     it('documents each verb and keeps `kk bot` itself a group with no action', async () => {
         const help = await run(['bot', '--help']);
         expect(help.code).toBe(0);
-        for (const verb of ['list', 'login', 'logout', 'open', 'exec']) {
+        for (const verb of ['list', 'login', 'logout', 'open', 'exec', 'plan']) {
             expect(help.out).toContain(verb);
         }
         const verbHelp = await run(['bot', 'login', '--help']);
@@ -596,6 +625,151 @@ describe('kk bot exec (0306 R1/R3/R4)', () => {
         );
         expect(failed.result.code).toBe(1);
         expect(existsSync(failFile)).toBe(false);
+    });
+});
+
+describe('kk bot plan', () => {
+    it('rejects missing arguments, unreadable files and invalid JSON with usage exit 2', async () => {
+        const noArgs = await runInjected(['bot', 'plan'], fakeHarness({ calls: [] }));
+        expect(noArgs.code).toBe(2);
+
+        const noPlan = await runInjected(['bot', 'plan', 'alice'], fakeHarness({ calls: [] }));
+        expect(noPlan.code).toBe(2);
+
+        const missingFile = await runInjected(
+            ['bot', 'plan', 'alice', join(tempHome(), 'missing.json')],
+            fakeHarness({ calls: [] }),
+        );
+        expect(missingFile.code).toBe(2);
+        expect(missingFile.err).toContain('could not read plan file');
+
+        const badJsonFile = join(tempHome(), 'bad.json');
+        writeFileSync(badJsonFile, 'not-json');
+        const badJson = await runInjected(['bot', 'plan', 'alice', badJsonFile], fakeHarness({ calls: [] }));
+        expect(badJson.code).toBe(2);
+        expect(badJson.err).toContain('plan file is not valid JSON');
+
+        const arrayJsonFile = join(tempHome(), 'array.json');
+        writeFileSync(arrayJsonFile, '["not", "an", "object"]');
+        const arrayJson = await runInjected(['bot', 'plan', 'alice', arrayJsonFile], fakeHarness({ calls: [] }));
+        expect(arrayJson.code).toBe(2);
+        expect(arrayJson.err).toContain('plan must be a JSON object');
+
+        const validPlanFile = join(tempHome(), 'plan.json');
+        writeFileSync(validPlanFile, JSON.stringify({ steps: [] }));
+
+        const badTimeoutZero = await runInjected(
+            ['bot', 'plan', 'alice', validPlanFile, '-m', '0'],
+            fakeHarness({ calls: [] }),
+        );
+        expect(badTimeoutZero.code).toBe(2);
+        expect(badTimeoutZero.err).toContain('--max-time must be a positive number of seconds');
+
+        const badTimeoutHigh = await runInjected(
+            ['bot', 'plan', 'alice', validPlanFile, '-m', '9999'],
+            fakeHarness({ calls: [] }),
+        );
+        expect(badTimeoutHigh.code).toBe(2);
+        expect(badTimeoutHigh.err).toContain('up to 600');
+    });
+
+    it('executes a plan and writes JSON result to stdout without --output', async () => {
+        const planFile = join(tempHome(), 'plan.json');
+        writeFileSync(
+            planFile,
+            JSON.stringify({ steps: [{ id: 'nav', type: 'navigate', url: 'https://example.com' }] }),
+        );
+
+        const harness = fakeHarness({
+            calls: [],
+            plan: () =>
+                Promise.resolve({
+                    steps: [{ index: 0, id: 'nav', type: 'navigate', url: 'https://example.com' }],
+                    artifacts: [
+                        { id: 'nav', kind: 'request', body: 'body-bytes', status: 200, url: 'https://example.com' },
+                    ],
+                }),
+        });
+
+        const run = await runInjected(['bot', 'plan', 'alice', planFile, '-m', '60'], harness);
+        expect(run.code).toBe(0);
+        const parsed = JSON.parse(run.out);
+        expect(parsed.ok).toBe(true);
+        expect(parsed.steps).toHaveLength(1);
+        expect(parsed.artifacts[0].body).toBe('body-bytes');
+    });
+
+    it('writes artifact bodies to files and emits result.json when --output is given', async () => {
+        const planFile = join(tempHome(), 'plan.json');
+        writeFileSync(
+            planFile,
+            JSON.stringify({ steps: [{ id: 'nav', type: 'navigate', url: 'https://example.com' }] }),
+        );
+        const outDir = join(tempHome(), 'out');
+
+        const harness = fakeHarness({
+            calls: [],
+            plan: () =>
+                Promise.resolve({
+                    steps: [{ index: 0, id: 'nav', type: 'navigate', url: 'https://example.com' }],
+                    artifacts: [
+                        {
+                            id: 'nav',
+                            kind: 'request',
+                            body: 'artifact-0-content',
+                            status: 200,
+                            url: 'https://example.com',
+                        },
+                        { id: 'extract', kind: 'text', body: 'artifact-1-content', status: 200 },
+                    ],
+                }),
+        });
+
+        const run = await runInjected(['bot', 'plan', 'alice', planFile, '-o', outDir], harness);
+        expect(run.code).toBe(0);
+        expect(existsSync(join(outDir, '00-nav.txt'))).toBe(true);
+        expect(readFileSync(join(outDir, '00-nav.txt'), 'utf8')).toBe('artifact-0-content');
+        expect(existsSync(join(outDir, '01-extract.txt'))).toBe(true);
+        expect(readFileSync(join(outDir, '01-extract.txt'), 'utf8')).toBe('artifact-1-content');
+        expect(statSync(outDir).mode & 0o777).toBe(0o700);
+        expect(statSync(join(outDir, '00-nav.txt')).mode & 0o777).toBe(0o600);
+        expect(statSync(join(outDir, 'result.json')).mode & 0o777).toBe(0o600);
+
+        expect(existsSync(join(outDir, 'result.json'))).toBe(true);
+        const resultMeta = JSON.parse(readFileSync(join(outDir, 'result.json'), 'utf8'));
+        expect(resultMeta.ok).toBe(true);
+        expect(resultMeta.artifacts[0].file).toBe('00-nav.txt');
+        expect(resultMeta.artifacts[0].body).toBeUndefined();
+
+        const parsedOut = JSON.parse(run.out);
+        expect(parsedOut.ok).toBe(true);
+        expect(parsedOut.artifacts[0].file).toBe('00-nav.txt');
+    });
+
+    it('maps operational errors (authentication, empty, browser) onto exit 1', async () => {
+        const planFile = join(tempHome(), 'plan.json');
+        writeFileSync(planFile, JSON.stringify({ steps: [] }));
+
+        const authFail = await runInjected(
+            ['bot', 'plan', 'alice', planFile],
+            fakeHarness({
+                calls: [],
+                plan: () =>
+                    Promise.reject(new FakeBotError('authentication', 'login required on https://example.com/login')),
+            }),
+        );
+        expect(authFail.code).toBe(1);
+        expect(authFail.err).toContain('login required');
+
+        const emptyFail = await runInjected(
+            ['bot', 'plan', 'alice', planFile],
+            fakeHarness({
+                calls: [],
+                plan: () => Promise.reject(new FakeBotError('empty', 'required capture matched nothing')),
+            }),
+        );
+        expect(emptyFail.code).toBe(1);
+        expect(emptyFail.err).toContain('required capture matched nothing');
     });
 });
 
