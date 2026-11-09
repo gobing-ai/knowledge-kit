@@ -2774,7 +2774,15 @@ export async function insertAudioMaterial(
                                 );
                             }
                         }
-                        if (!closed) return result('音频: 封面选择器完成后未关闭，未保存音频');
+                        if (!closed) {
+                            // Live 2026-11-09 this stall is real — capture WHAT is on screen (the
+                            // confirm dialog may not nest under the chooser selector, which would
+                            // explain the 确定 retry missing it) before giving up on the audio save.
+                            const inventory = await openDialogInventory(page);
+                            return result(
+                                `音频: 封面选择器完成后未关闭，未保存音频${inventory ? ` (dialogs: ${inventory})` : ''}`,
+                            );
+                        }
                     }
                 } finally {
                     if (temporaryDir !== undefined) {
