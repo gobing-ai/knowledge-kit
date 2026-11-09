@@ -4,7 +4,7 @@ name: Centralize daily-news editorial logic into the kk:news-editorial skill
 status: todo
 template: feature-impl
 created_at: 2026-11-08T20:47:50.836Z
-updated_at: "2026-11-09T00:10:17.091Z"
+updated_at: "2026-11-09T00:13:40.679Z"
 
 ---
 
@@ -22,7 +22,7 @@ editorial master rendered many ways (two-call variant).
 
 ### Requirements
 
-Steps 1–2 shipped in `0fd30f9`; evidence is under Testing. Remaining scope (R7–R11, ex-R5) is voice3-only:
+R1–R4 and R6 shipped in `0fd30f9` (skill centralization, style-contract move, `dailyScriptStyle` snapshot, `dailyScriptCheck`-driven retry); evidence is under Testing. Remaining scope (R7–R11, ex-R5) is voice3-only:
 `kk-daily-ai-voice.yaml` / `kk-daily-ai-voice2.yaml` are unscheduled and stay untouched, so every shared stage keeps
 its current input/output contract.
 
@@ -65,6 +65,20 @@ its current input/output contract.
   content-judge verdict schema. Advisory: `onError: continue`, nothing depends on its verdict for control flow.
 
 *(R5 row removed 2026-11-09: it was "Superseded by R7–R11 (split 2026-11-08 refinement)" and shipped nothing; removed to pass the fixed precheck-size gate. Renumbering avoided to keep AC/Q&A cross-refs stable.)*
+
+#### Acceptance Criteria
+
+- [x] AC1 — `kk stage daily-script-style` snapshots the skill and style contract from the skill path; validator reads caps/banned from it (tests).
+- [x] AC2 — A plan with validator errors triggers `script-write-fix` with the error list; a valid fix is used by `script` (scriptSource=plan).
+- [x] AC3 — `bun run gate` green (steps 1–2).
+- [x] AC4 — E2E: a `--generate-only` voice3 rehearsal with `pi-dsv4.1-flash-volc` produces scriptSource=plan; artifact kept under .works for comparison.
+- [ ] AC5 (R7, R8) — `daily-curate-check` unit tests, written before the stage: valid split → no errors file and a stale one removed; id in both files → `conflict-id`; candidate id in neither → `missing-item`; unknown id → `unknown-id`; Content envelope → unwrapped and accepted; near-duplicate titles → deduped; `--final` with an invalid plan → falls back to the candidates with `[]` exclusions, logs the reason, writes no errors file; missing plan → `missing-plan`.
+- [ ] AC6 (R7–R9) — `voice3-dag.test.ts`: `plan-translate`/`plan-translate-retry` are gone; `script-style → curate → curate-check → curate-fix → curate-final → script-write` ordering holds; no voice3 prompt contains `选题边界`; every voice3 agent.run prompt is ≤1000 chars.
+- [ ] AC7 (R10) — `script-plan.test.ts`: each new cap is rejected with its rule id and a plan without the new optional fields is still accepted. `daily-editorial-render` tests: a fixture master produces all five artifacts byte-stable across two runs; `xhs_plan.json` matches the shape `dailyXhsRender` reads (`kk-daily-ai-voice3.yaml` cards count `${vars.cards}`: cover + ≤cards-2 content + closing); no `cards_enabled` → no xhs file; a missing master field → that one artifact is skipped with a logged reason (downstream stage defaults apply), others still written.
+- [ ] AC8 (R10) — `voice3-dag.test.ts`: the five deleted node ids are absent; voice3 has ≤5 agent.run nodes (curate, curate-fix, script-write, script-write-fix, editorial-judge). `voice3-migration.e2e.test.ts` updated to the new artifact producers and green.
+- [ ] AC9 (R11) — `rubrics.md` has a `news-balance` section in the same structure as the existing four (criteria, weights, thresholds); the judge prompt is ≤1000 chars; a failing judge leaves the run green.
+- [ ] AC10 — E2E (repeatable artifact): a `--generate-only` voice3 run with `--agent pi-dsv4.1-flash-volc` on a copy of a recorded pool under `.works/tmp/test-0345-phase<A|B|C>/` produces scriptSource=plan, a non-empty curate exclusion file or explicit `[]`, all render artifacts, and (C) a verdict file. Record agent.run count, wall time, item count, average insight chars and insight share next to the 20261108 regen-2 baseline (5 items, 186 chars, 13%). No publish.
+- [ ] AC11 — `bun run gate` green after each phase; `docs/04_DESIGN.md` updated in the same commit as each surface change; installed package re-synced (AGENTS.md "Editing plugins/kk/scripts/").
 
 ### Acceptance Criteria
 
@@ -169,7 +183,14 @@ Tests first in every step (AGENTS.md testing rule). Each phase ends with `bun ru
 
 **Phase A — curate (R7–R9)**
 
-3. `plugins/kk/workflows/kk-daily-ai-voice3.yaml`:
+Tests first in every step (AGENTS.md testing rule); the phase-A slice starts at item 3 (the trimmed 2026-11-09 numbering kept here for cross-refs).
+
+3. Write the curate-check tests and the stage (the two original items folded here after the 2026-11-09 trim — they were listed as shipped but `dailyCurateCheck` never landed in `0fd30f9`, which shipped only `dailyScriptStyle`/`dailyScriptCheck`):
+   - the `daily-curate-check` failure-mode tests (AC5) in `apps/cli/tests/kk-workflow-stages.test.ts`, next to the `daily-script-check` block;
+   - the DAG assertions (AC6) in `apps/cli/tests/voice3-dag.test.ts`, updating its existing `plan-translate` list at about line 443;
+   - `dailyCurateCheck(args)` in `plugins/kk/scripts/daily-stages.ts` with `[workDir, runDate, '--final'?]`, moving the envelope-unwrap and `dedupPlanByTitle` out of `dailyArticle` (about lines 465–508, leaving it only the cache, generator and write steps) plus the `case 'daily-curate-check'` dispatch line in `plugins/kk/scripts/kk-workflow-stages.ts` next to `daily-script-check`.
+   Watch them fail before the wiring lands.
+3a. `plugins/kk/workflows/kk-daily-ai-voice3.yaml`:
    - move `script-style` to depend on `[qc-content, pool-gate]` (already true);
    - replace `plan-translate` and `plan-translate-retry` with `curate` (agent `${vars.agent}`, role scribe, `expectFile` the plan json), `curate-check`, `curate-fix` (agent `${vars.agent_retry}`, condition `test -s …_03_curate_errors.json`) and `curate-final`;
    - re-point every `dependsOn` that listed `plan-translate` or `plan-translate-retry` at `curate-final`;
@@ -203,7 +224,7 @@ Tests first in every step (AGENTS.md testing rule). Each phase ends with `bun ru
 16. Docs, then gate, sync, rehearse (AC10 phase C), and commit `feat(daily): advisory news-balance judge`.
 17. Record AC5–AC11 evidence under Testing via `spur task update 0345 --section Testing --append`, then run `spur task check 0345`.
 
-*(Plan steps 1–2 removed 2026-11-09: shipped in commit `0fd30f9`, evidence recorded under Testing. Removed to pass the fixed precheck-size gate; numbering kept stable for cross-refs.)*
+*(2026-11-11: Plan steps 1–2 were removed as shipped, then re-checked — `dailyCurateCheck` never landed in `0fd30f9` — and folded into item 3; kept out of the item count to respect the fixed precheck-size gate.)*
 
 ### Solution
 
