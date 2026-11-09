@@ -1373,7 +1373,7 @@ export async function execBot(
  * rules as `normalizeBotDefaultUrl`, but the query is KEPT because it is the request, not a saved
  * default. Failures never echo the input (a query can carry a token).
  */
-function validateExecUrl(input: string): string {
+export function validateExecUrl(input: string): string {
     const url = input.trim();
     let parsed: URL;
     try {
@@ -1395,7 +1395,7 @@ function validateExecUrl(input: string): string {
  * call log, and a query can carry a token. Keep the error class plus the first message line with
  * every spelling of the URL replaced.
  */
-function execFailureDetail(error: unknown, url: string): string {
+export function execFailureDetail(error: unknown, url: string): string {
     const label = error instanceof Error && error.name !== '' ? error.name : 'Error';
     let detail = (error instanceof Error ? error.message : String(error)).split('\n')[0] ?? '';
     const parsed = new URL(url);
@@ -1430,7 +1430,7 @@ export async function readBotSavedMetadata(
 }
 
 /** Actionable guidance for a bot that has no saved generic session to reopen. */
-function missingBotProfile(name: string, profileExists: boolean): BotError {
+export function missingBotProfile(name: string, profileExists: boolean): BotError {
     const guidance = `run \`kk bot login <url> --save ${name}\` to save one`;
     return profileExists
         ? new BotError(
@@ -1441,7 +1441,7 @@ function missingBotProfile(name: string, profileExists: boolean): BotError {
 }
 
 /** The page a persistent context opened with (upstream `openPage` shape). */
-async function openBotPage(context: BrowserContext): Promise<Page> {
+export async function openBotPage(context: BrowserContext): Promise<Page> {
     return context.pages()[0] ?? (await context.newPage());
 }
 
@@ -1470,7 +1470,7 @@ function redactNavigationError(error: unknown, url: string): string {
 }
 
 /** Close a context this invocation owns, ignoring a failure that would mask the real error. */
-async function closeBotContext(context: BrowserContext | undefined): Promise<void> {
+export async function closeBotContext(context: BrowserContext | undefined): Promise<void> {
     if (context === undefined) return;
     await context.close().catch(() => {});
 }

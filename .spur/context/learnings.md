@@ -564,4 +564,13 @@ the same text with one hedge adverb restored in the WeChat row → `{"ok":false,
   - `safety` node in `kk-daily-ai-voice3.yaml` must declare `dependsOn: [article, script]`. Because `editorial-render` runs after `script` and generates the article body markdown for `article`, declaring only `dependsOn: [script]` allows the DAG executor to start `safety` before `article` finishes, causing `safety-review: required draft not found: .../22-article/..._06_article_content.json`.
   - When moving filtering upstream to `curate`, excluded candidate IDs recorded in `_03_curate_excluded.json` must be wired via `DAILYNEWS_CURATE_EXCLUDED` into both `dailyScript` and `dailyScriptCheck` so the `dailynews-gen` validator accepts them as valid `preExcludedIds` instead of rejecting with `unknown-id`.
   - Plugins bundled to `apps/cli/plugins/` must be synchronized to the global install `$KK_PKG/plugins/` alongside `plugins/kk/scripts/` whenever testing with the global `kk` binary.
-
+- **0346 rendered collection substrate (2026-11-09)**: `packages/publish-harness/src/bot-collection.ts` is a
+  library, not a verb — one JSON plan (`request|navigate|wait|click|scroll|extract` + required
+  `responses[]` captures), one lease, one headless launch, plugin-owned selectors/pagination/politeness.
+  `browserSession` is now legal on `kind: ingestion` (still `check`-required) and adapter selection was
+  already kind-agnostic, so fan-in/invoke/CLI needed zero edits. Fail-closed classification is the point:
+  `authentication` (observed 401/403 or a login/signin/auth/sso final-URL path) and `empty` (a declared
+  capture or extract that yields nothing) exist so an SPA shell can never read as a quiet day; a stored
+  `expiresAt` is never evidence. Verification is loopback-only (`apps/cli/tests/e2e-bot-collection.ts`
+  drives the real `kk executor fan-in --source` child plus the probe script): live sites, anti-bot,
+  binary payloads and adapter special state stay documented limits, not claims.

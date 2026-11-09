@@ -4,7 +4,7 @@ name: Centralize daily-news editorial logic into the kk:news-editorial skill
 status: done
 template: feature-impl
 created_at: 2026-11-08T20:47:50.836Z
-updated_at: "2026-11-09T18:46:31.849Z"
+updated_at: "2026-11-09T19:19:18.002Z"
 
 done_forced: "true"
 done_reason: "all 11 ACs verified green, full e2e passes, live rehearsal against 20261108 data verified"
@@ -219,7 +219,7 @@ Tests first in every step (AGENTS.md testing rule); the phase-A slice starts at 
 Phase A (curate + daily-curate-check, R7–R9):
 - `plugins/kk/skills/news-editorial/SKILL.md:32`: Documented `curate`, `curate --fix`, and `write` modes; wired `--excluded` and master output fields.
 - `plugins/kk/skills/news-editorial/references/selection.md:30`: Fixed invariant to kept-only plan with editorial reordering.
-- `plugins/kk/scripts/daily-stages.ts:4113`: Added `dailyCurateCheck` to validate candidate partition into `plan_plan.json` (kept only) and `curate_excluded.json`, unwrap `Content` envelopes, deduplicate near-duplicate titles, write/clear `_03_curate_errors.json`, and handle `--final` fallback to untranslated candidates. Moved deduplication logic out of `dailyArticle`.
+- `plugins/kk/scripts/daily-stages.ts:4113`: Added `dailyCurateCheck` to validate candidate partition into `plan_plan.json` (kept only) and `curate_excluded.json`, unwrap `Content` envelopes, deduplicate near-duplicate titles, write/clear `_03_curate_errors.json`, and handle `--final` fallback to untranslated candidates. Documented deviation (Design "moves into this stage"): the envelope-unwrap and `dedupPlanByTitle` were **copied**, not moved — `dailyArticle` (`plugins/kk/scripts/daily-stages.ts:466-509`) is shared with the unscheduled voice/voice2 workflows, which still run `plan-translate` and rely on it; removing it would break the "shared stages keep their I/O" invariant. On voice3 the `dailyArticle` copy is an idempotent no-op once `curate-check` has normalized the plan (0345 re-verify 2026-11-09).
 - `plugins/kk/scripts/kk-workflow-stages.ts:1886`: Added dispatch for `daily-curate-check` and `daily-editorial-render`.
 - `plugins/kk/workflows/kk-daily-ai-voice3.yaml:307`: Replaced `plan-translate`/`plan-translate-retry` with `curate` -> `curate-check` -> `curate-fix` -> `curate-final`; removed 选题边界 prompt boilerplate across nodes.
 

@@ -85,18 +85,18 @@ describe('BrowserSessionDescriptorSchema (0277 R1)', () => {
         }
     });
 
-    it('requires kind publish and a check probe entry', () => {
+    it('accepts an ingestion descriptor with its probe entry (0346)', () => {
         const ingestion = PluginManifestSchema.safeParse({
             name: 'x',
             kind: 'ingestion',
             entry: 'e',
+            check: './src/profile-check.ts',
             browserSession: { profileName: 'x' },
         });
-        expect(ingestion.success).toBe(false);
-        if (!ingestion.success) {
-            expect(ingestion.error.issues.map((i) => i.path.join('.'))).toContain('browserSession');
-        }
+        expect(ingestion.success).toBe(true);
+    });
 
+    it('rejects a descriptor without a check probe entry', () => {
         const noCheck = PluginManifestSchema.safeParse({
             name: 'x',
             kind: 'publish',
@@ -104,6 +104,23 @@ describe('BrowserSessionDescriptorSchema (0277 R1)', () => {
             browserSession: { profileName: 'x' },
         });
         expect(noCheck.success).toBe(false);
+        if (!noCheck.success) {
+            expect(noCheck.error.issues.map((issue) => issue.message).join(' ')).toContain('check');
+        }
+    });
+
+    it('rejects a descriptor on a generator, naming its kind', () => {
+        const generator = PluginManifestSchema.safeParse({
+            name: 'x',
+            kind: 'generator',
+            entry: 'e',
+            check: './src/profile-check.ts',
+            browserSession: { profileName: 'x' },
+        });
+        expect(generator.success).toBe(false);
+        if (!generator.success) {
+            expect(generator.error.issues.map((issue) => issue.message).join(' ')).toContain('generator');
+        }
     });
 
     it('enforces the safe profile-name rule and credential-free http(s) homeUrl', () => {

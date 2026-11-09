@@ -516,7 +516,9 @@ export function dailyArticle(args: string[]): void {
         // ships last round's body to surfdash. Re-derive instead of returning.
         const proseBody = join(workDir, '22-article', `${runDate}_06_article-write_body.md`);
         const proseStale =
-            isFile(proseBody) && isFile(articleContent) && statSync(proseBody).mtimeMs > statSync(articleContent).mtimeMs;
+            isFile(proseBody) &&
+            isFile(articleContent) &&
+            statSync(proseBody).mtimeMs > statSync(articleContent).mtimeMs;
         if (isFile(articleMd) && isFile(articleContent) && !proseStale) {
             console.log(`article cached: ${articleMd}`);
             return;
