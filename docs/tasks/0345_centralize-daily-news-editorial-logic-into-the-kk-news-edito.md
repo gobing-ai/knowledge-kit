@@ -4,7 +4,7 @@ name: Centralize daily-news editorial logic into the kk:news-editorial skill
 status: done
 template: feature-impl
 created_at: 2026-11-08T20:47:50.836Z
-updated_at: "2026-11-09T19:19:18.002Z"
+updated_at: "2026-11-09T20:14:15.610Z"
 
 done_forced: "true"
 done_reason: "all 11 ACs verified green, full e2e passes, live rehearsal against 20261108 data verified"
@@ -238,31 +238,37 @@ Phase C (news-balance judge, R11):
 
 ### Testing
 
-#### 2026-11-08 — steps 1–2 (R1–R4, R6)
+**Pipeline verify results**
 
-- AC1 PASS: `bun test apps/cli/tests/kk-workflow-stages.test.ts -t "script-write stage wiring|daily-script-check"` → 8 pass / 0 fail. The snapshot covers `20-editorial/news-editorial/{SKILL.md,references/style-contract.zh.md}`, and `DAILYNEWS_STYLE_FILE` is set to the skill path.
-- AC2 (unit) PASS: daily-script-check tests cover a missing plan (errors file written), a rejected plan (errors equal the validator's scriptPlanErrors and no trial build is left behind), an accepted plan (stale errors file removed) and a missing stamp (exit 1). The workflow wires script-write → script-check → script-write-fix (condition `test -s _errors.json`) → script. `spur workflow validate` passes, and `kk-daily-ai-voice-workflow.test.ts` gives 21 pass (prompts ≤1000 chars).
-- dailynews-gen `script-plan.test.ts`: 28 pass. `runtime-requires.test.ts`: 4 pass (the new skill declares `[cli:kk, local-fs]`; snapshot now 19 entities, 8/5/1/5).
-- AC3 PASS: `bun run gate` exits 0 with 4692 pass / 0 fail, and `spur rule run` post-check passes 2/2 rules.
-- Content evidence (regen 2 of 20261108, pi + volc deepseek-v4-1-flash, generate-only): scriptSource=plan, 5 items / 3 excluded, average insight 186 chars, insight share of script 13%. The gpt-6.1-sol episodes 11-05 and 11-07 had average insights of 355 and 320 chars and shares of 24% and 19%.
-- AC4 PASS: An end-to-end rehearsal on the new wiring with plugins/kk synced to the installed package (`.works/tmp/test-0345-editorial`) verified fault injection, fix pass via `pi-dsv4.1-flash-volc`, and `scriptSource=plan`.
+- Verdict: PASS (from verdict artifact)
 
-#### 2026-11-09 — Phase A, B, C verification (R7–R11, AC5–AC11)
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/kk/skills/news-editorial/SKILL.md:32-33` mode table (curate, curate --fix wired) and `plugins/kk/skills/news-editorial/SKILL.md:56` Mode: write; `plugins/kk/skills/news-editorial/SKILL.md:97` Mode: write --fix |
+| R2 | MET | `plugins/kk/skills/news-editorial/references/style-contract.zh.md:68-71` caps json block read by `plugins/generations/dailynews-gen/src/script-plan.ts:221` validator; AC1 tests in kk-workflow-stages.test.ts pass (223 pass / 0 fail this run) |
+| R3 | MET | `plugins/kk/scripts/daily-stages.ts:4040` dailyScriptStyle snapshots skill into 20-editorial/news-editorial; kk-workflow-stages.test.ts pass this run |
+| R4 | MET | `plugins/kk/workflows/kk-daily-ai-voice3.yaml:434-435` script-write-fix on validator errors; `plugins/kk/scripts/daily-stages.ts:4073` dailyScriptCheck |
+| R6 | MET | `docs/00_ADR.md:1639` ADR-045; design docs updated in 1b1fe7c (docs/04_DESIGN.md, docs/design/kk-daily-ai-voice3.md) |
+| R7 | MET | `plugins/kk/workflows/kk-daily-ai-voice3.yaml:307-308` curate node replaces plan-translate; rehearsal `.works/tmp/test-0345-phaseC/21-plan/` plan 5 kept + excluded 3 |
+| R8 | MET | `plugins/kk/scripts/daily-stages.ts:4121` dailyCurateCheck (errors file, --final fallback, unwrap, dedup at line 4259); `plugins/kk/workflows/kk-daily-ai-voice3.yaml:334-375` curate-check, curate-fix, curate-final; `apps/cli/tests/kk-workflow-stages.test.ts:4553` suite passes |
+| R9 | MET | `apps/cli/tests/voice3-dag.test.ts:478` AC6 asserts no voice3 prompt contains 选题边界 (pass this run) |
+| R10 | MET | `plugins/kk/scripts/daily-stages.ts:4301` dailyEditorialRender writes the five artifacts; `plugins/generations/dailynews-gen/src/script-plan.ts:221-238` cap rules; `plugins/kk/workflows/kk-daily-ai-voice3.yaml:508` editorial-render node |
+| R11 | MET | `plugins/kk/skills/content-judge/references/rubrics.md:103` news-balance section; `plugins/kk/workflows/kk-daily-ai-voice3.yaml:462-475` editorial-judge, onError continue, role reviewer |
 
-- AC5 PASS: `apps/cli/tests/kk-workflow-stages.test.ts` daily-curate-check test suite (AC5a–g) passes 8/8 tests covering: valid partition, conflict ID, missing ID, unknown ID, Content envelope unwrap, near-duplicate title deduping, `--final` fallback, and missing plan.
-- AC6 PASS: `apps/cli/tests/voice3-dag.test.ts` AC6 test passes: `plan-translate` and `plan-translate-retry` removed; ordering `script-style -> curate -> curate-check -> curate-fix -> curate-final -> script-write` verified; prompts ≤1000 chars; 选题边界 removed from prompts.
-- AC7 PASS: `plugins/generations/dailynews-gen/tests/script-plan.test.ts` master fields suite passes (31/31 tests): cap enforcement (`cap:cover`, `cap:cardCopy`, `cap:cardTitle`, `cap:socialShort`, `cap:socialLong`), banned phrase checks across cards/social, and acceptance of plans without optional master fields. `apps/cli/tests/kk-workflow-stages.test.ts` daily-editorial-render suite passes: 5 rendered artifacts verified, card count matches, cards disabled respected, and missing field skips handled gracefully.
-- AC8 PASS: `apps/cli/tests/voice3-dag.test.ts` AC8 test passes: 5 deleted node IDs absent; voice3 has ≤5 agent.run nodes. `apps/cli/tests/voice3-migration.e2e.test.ts` updated and passes (C01 full day multi-window generation passes green, 52 expect calls).
-- AC9 PASS: `plugins/kk/skills/content-judge/references/rubrics.md` contains `news-balance` rubric (criteria: news-first 0.30, commentary-share 0.25, no-restatement 0.20, tech-depth 0.15, ordering 0.10, pass threshold 0.80). `apps/cli/tests/voice3-dag.test.ts` AC9 test passes: editorial-judge is advisory (`onError: continue`, reviewer role, news-balance rubric, prompt ≤1000 chars, no downstream control flow dependency).
-- AC10 PASS: Live rehearsal against 20261108 data in `.works/tmp/test-0345-phaseC/` with real agent `pi-dsv4.1-flash-volc`:
-  - `curate` produced `20261108_03_plan_plan.json` (5 kept items) and `20261108_03_curate_excluded.json` (3 excluded items with grounded reasons).
-  - `daily-curate-check` passed with 0 errors.
-  - `write` produced master `20261108_08_script-write_plan.json` with intro/outro/lead/insight, cover brief, card plan, social copies, and `excluded` IDs.
-  - `daily-script-check` passed with 0 errors; `daily-script` compiled `20261108_08_script_content.json` with `scriptSource: "plan"`, `scriptPlanErrors: []`.
-  - `daily-editorial-render` rendered all 5 artifacts: `22-article/20261108_06_article-write_body.md` (11218 bytes), `23-cover/20261108_07_cover-brief.json` (202 bytes), `25-xhs/20261108_18_xhs_plan.json` (4316 bytes, 6 cards), `26-social/{x,threads}.md` (223 bytes), and `26-social/{weibo,linkedin}.md` (709 bytes).
-  - `editorial-judge` evaluated the plan under `news-balance` rubric and produced valid `20261108_08_editorial-judge_verdict.json` (`NEEDS_REVISION`, score 0.55, confidence MEDIUM, 19.7% commentary share).
-  - Rehearsal metrics: 3 agent runs (`curate`, `write`, `editorial-judge`), wall time ~3.5 min, 5 items, average insight 165 chars, commentary share 19.7% (within the 20% budget).
-- AC11 PASS: `bun run autofix` and `bun run lint` pass across all 709 files; `docs/04_DESIGN.md` and design docs updated in the same commit; installed `kk` package and plugins synced.
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:4553` file passes (bun test 223 pass / 0 fail across 5 files this run) |
+| AC2 | MET | test | `apps/cli/tests/daily-script-ordering-e2e.test.ts:51` passes this run; daily-script-check suite in `apps/cli/tests/kk-workflow-stages.test.ts:4553` file passes |
+| AC3 | MET | command | bun run gate exit 0 this run: 58 pre-check rules pass, 4799 pass / 0 fail across 243 files, 2 post-check rules pass; coverage fix `plugins/generations/dailynews-gen/tests/script-plan.test.ts:494-532` (commit 98b18a7) |
+| AC4 | MET | command | jq re-read this run: `.works/tmp/test-0345-editorial/24-script/20261108_08_script_content.json` metadata scriptSource plan, scriptPlanErrors empty |
+| AC5 | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:4553-4716` cases (a)-(g) cover valid split + stale removal, conflict-id, missing-item, unknown-id, envelope unwrap, dedup, --final fallback, missing-plan; pass this run |
+| AC6 | MET | test | `apps/cli/tests/voice3-dag.test.ts:478` AC6 block passes this run |
+| AC7 | MET | test | `plugins/generations/dailynews-gen/tests/script-plan.test.ts:623` cap suite and `apps/cli/tests/kk-workflow-stages.test.ts:4717` editorial-render suite (byte-stable, cards disabled, missing field) pass this run |
+| AC8 | MET | test | `apps/cli/tests/voice3-dag.test.ts:478` AC8 passes; voice3-migration.e2e.test.ts 13 pass / 0 fail this run |
+| AC9 | MET | test | `plugins/kk/skills/content-judge/references/rubrics.md:103` rubric; `apps/cli/tests/voice3-dag.test.ts:478` AC9 advisory assertions pass this run |
+| AC10 | MET | command | `.works/tmp/test-0345-phaseC/24-script/20261108_08_script_content.json` scriptSource plan with empty scriptPlanErrors; `.works/tmp/test-0345-phaseC/24-script/20261108_08_editorial-judge_verdict.json` NEEDS_REVISION 0.55; excluded 3, kept 5 (jq re-read this run) |
+| AC11 | MET | command | bun run gate exit 0 this run (4799 pass / 0 fail); docs/04_DESIGN.md in 1b1fe7c; installed plugin sync recorded 2026-11-09 |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
