@@ -126,6 +126,7 @@ export interface BotCollectionOptions extends BotSessionOptions {
 /** A validated plan plus the normalized whole-run deadline. */
 interface NormalizedPlan {
     steps: BotCollectionStep[];
+    responses: BotResponseCapture[];
     timeoutMs: number;
 }
 
@@ -316,7 +317,7 @@ function normalizePlan(plan: unknown): NormalizedPlan {
         timeoutMs = requirePositiveInt(plan.timeoutMs, 'plan.timeoutMs');
         if (timeoutMs > MAX_RUN_TIMEOUT_MS) throw usage(`plan.timeoutMs must not exceed ${MAX_RUN_TIMEOUT_MS}`);
     }
-    return { steps, timeoutMs };
+    return { steps, responses, timeoutMs };
 }
 
 /**
@@ -635,7 +636,7 @@ export async function runBotCollection(
     const acquire = options.acquireLease ?? acquireProfileLease;
     const lease = await acquire(profileDir, { leaseRoot: options.leaseRoot, fileSystem });
 
-    const captures: CaptureState[] = (plan.responses ?? []).map((declaration) => ({
+    const captures: CaptureState[] = normalized.responses.map((declaration) => ({
         declaration,
         matches: [],
         pending: [],
