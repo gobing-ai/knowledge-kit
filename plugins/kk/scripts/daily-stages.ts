@@ -511,14 +511,22 @@ export function dailyArticle(args: string[]): void {
         // half-ran (or the json was pruned), and returning here starves every downstream stage
         // that reads content.json — publish-prep refuses to merge a draft it cannot read. Requiring
         // both artifacts makes the pair self-healing instead of permanently stuck.
-        if (isFile(articleMd) && isFile(articleContent)) {
+        // The prose body is the generator's INPUT: when it is newer than content.json the pair
+        // is stale (an operator or a retry edited the headings after the render), and serving it
+        // ships last round's body to surfdash. Re-derive instead of returning.
+        const proseBody = join(workDir, '22-article', `${runDate}_06_article-write_body.md`);
+        const proseStale =
+            isFile(proseBody) && isFile(articleContent) && statSync(proseBody).mtimeMs > statSync(articleContent).mtimeMs;
+        if (isFile(articleMd) && isFile(articleContent) && !proseStale) {
             console.log(`article cached: ${articleMd}`);
             return;
+        }
+        if (proseStale) {
+            console.error(`article: stale pair — ${proseBody} is newer than ${articleContent}, re-deriving`);
         }
         // Agent-written prose body (workflow `article-write` state) replaces the mechanical
         // per-item render when present — the 3-format split: surfdash gets an article,
         // not a news list (2026-09-16 feedback).
-        const proseBody = join(workDir, '22-article', `${runDate}_06_article-write_body.md`);
         kk(
             [
                 'executor',
