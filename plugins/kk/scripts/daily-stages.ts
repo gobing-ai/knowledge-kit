@@ -4289,6 +4289,9 @@ function sourceLabelForDoc(doc: Record<string, unknown>, sourceUri: string): str
     }
 }
 
+/** Fixed column opening line of the rendered article body: house copy, not editorial judgement (0345). */
+const EDITORIAL_ARTICLE_OPENING = '这里是由Robin为你带来的咸话咸说之每日AI乱炖。';
+
 /**
  * 0345 R10: deterministically render the five sibling editorial artifacts from the master script
  * plan (`24-script/<date>_08_script-write_plan.json`) and the curated plan
@@ -4361,7 +4364,7 @@ export function dailyEditorialRender(args: string[]): void {
         const articleDir = join(workDir, '22-article');
         sted('mkdir', articleDir, () => mkdirSync(articleDir, { recursive: true }));
         const articleOut = join(articleDir, `${runDate}_06_article-write_body.md`);
-        const articleText = `${['这里是由Robin为你带来的咸话咸说之每日AI乱炖。', ...articleSections, outro].join('\n\n')}\n`;
+        const articleText = `${[EDITORIAL_ARTICLE_OPENING, ...articleSections, outro].join('\n\n')}\n`;
         sted('write', articleOut, () => writeRaw(articleOut, articleText));
         console.log(`editorial-render: wrote article body (${articleSections.length} item(s)): ${articleOut}`);
     } else {
