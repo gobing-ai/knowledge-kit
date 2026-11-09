@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type Content, type Result, ResultSchema } from '@gobing-ai/kk-core';
@@ -82,9 +82,11 @@ async function runPublishFlow(input: {
         else process.env[key] = input.env[key];
     }
     const requests: CapturedRequest[] = [];
-    const originalFetch = globalThis.fetch;
     let count = 0;
-    globalThis.fetch = (async (fetchInput: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+    const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation((async (
+        fetchInput: Parameters<typeof fetch>[0],
+        init?: Parameters<typeof fetch>[1],
+    ) => {
         count += 1;
         const captured: CapturedRequest = {
             url: String(fetchInput),
@@ -106,7 +108,7 @@ async function runPublishFlow(input: {
             return json({ id: 'mf-item-1', url: 'https://feed.example.com/items/ep-1', status: 'published' });
         }
         throw new Error(`fake API has no route for ${init?.method ?? 'GET'} ${captured.url}`);
-    }) as unknown as typeof fetch;
+    }) as unknown as typeof fetch);
     try {
         const result = ResultSchema.parse(await new PodcastPubTransport().publish({ content: input.content }));
         input.countFetch?.(count);
@@ -116,7 +118,7 @@ async function runPublishFlow(input: {
             fetchCount: () => count,
         };
     } finally {
-        globalThis.fetch = originalFetch;
+        fetchSpy.mockRestore();
         for (const key of keys) {
             if (saved[key] === undefined) delete process.env[key];
             else process.env[key] = saved[key];
