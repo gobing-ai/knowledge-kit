@@ -61,10 +61,11 @@ export const SCRIPTS_DIR = import.meta.dir;
 export const VALIDATE_SIDECAR = 'validate-voicescript.ts';
 const WRAP_SIDECAR = 'wrap-voicescript-doc.ts';
 const RENDER_SIDECAR = 'render-md.ts';
-// F613: the zh style contract the script-write prompt reads (snapshot stage) and dailynews-gen
-// consumes (DAILYNEWS_STYLE_FILE); no workflow var carries an override, so the chain is
-// $KK_WORKFLOWS_DIR -> package copy -> $HOME.
-export const STYLE_SIDECAR = 'daily-voice-style.zh.md';
+// ADR-045: daily-news editorial policy lives in the kk:news-editorial skill, shipped beside this
+// scripts dir in the same package. Its style contract is what the `write` mode reads (via the run
+// snapshot) and dailynews-gen validates against (DAILYNEWS_STYLE_FILE).
+export const EDITORIAL_SKILL_DIR = join(SCRIPTS_DIR, '..', 'skills', 'news-editorial');
+export const STYLE_CONTRACT = join(EDITORIAL_SKILL_DIR, 'references', 'style-contract.zh.md');
 const REVISE_COUNT = '.revise-count';
 /** Bounded draft-remediation counter for the daily safety loop (20261005). */
 export const SAFETY_REVISE_COUNT = '.safety-revise-count';
@@ -1875,6 +1876,21 @@ if (import.meta.main)
         case 'daily-script-style': {
             const { dailyScriptStyle } = await loadDailyStages();
             dailyScriptStyle(rest);
+            break;
+        }
+        case 'daily-script-check': {
+            const { dailyScriptCheck } = await loadDailyStages();
+            dailyScriptCheck(rest);
+            break;
+        }
+        case 'daily-curate-check': {
+            const { dailyCurateCheck } = await loadDailyStages();
+            dailyCurateCheck(rest);
+            break;
+        }
+        case 'daily-editorial-render': {
+            const { dailyEditorialRender } = await loadDailyStages();
+            dailyEditorialRender(rest);
             break;
         }
         case 'daily-script': {

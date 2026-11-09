@@ -18,11 +18,12 @@ const WINDOWS = new Set(['after-generate', 'cn-peak', 'overseas-rss']);
 const USAGE = `usage:
   bun run daily-news:generate [-- <daily-scheduled-run options>]
   bun run daily-news:publish [-- --run-date <YYYY-MM-DD|YYYYMMDD>] [--window <window>] [--yes] [publisher flags]
-  bun run daily-news:validate [-- --run-date <YYYY-MM-DD|YYYYMMDD>] [--skip-dogfood]
+  bun run daily-news:validate [-- --run-date <YYYY-MM-DD|YYYYMMDD>] [--mode quick|full] [--skip-dogfood]
 
 publish defaults to today's after-generate window. Missing/incomplete generation asks on a TTY;
 --yes explicitly consents to generation. Non-TTY runs never generate implicitly.
-validate is read-only against live state; dogfood uses the offline voice3 migration rehearsal.`;
+validate defaults to quick file-readiness checks. --mode full runs live read-only diagnosis;
+dogfood uses the offline voice3 migration rehearsal.`;
 
 type CheckStatus = 'pass' | 'warn' | 'fail' | 'skipped';
 type GenerationStatus = 'complete' | 'missing' | 'incomplete' | 'invalid' | 'no-content' | 'running';
@@ -326,6 +327,44 @@ async function publish(args: string[]): Promise<number> {
     return runInherited('bun', [PUBLISH_LAUNCHER, '--window', window, '--run-date', runDate, ...forwarded]);
 }
 
+function generationFilesMissing(dayDir: string): string[] {
+    const bundlePath = join(dayDir, 'bundle.json');
+    if (!existsSync(bundlePath)) return [bundlePath];
+    try {
+        const raw = readJson(bundlePath);
+        const variants =
+            raw !== null && typeof raw === 'object' && !Array.isArray(raw)
+                ? (raw as { variants?: unknown }).variants
+                : undefined;
+        if (variants === null || typeof variants !== 'object' || Array.isArray(variants)) {
+            return [`${bundlePath}: no declared variant file map`];
+        }
+        const entries = Object.entries(variants as Record<string, unknown>);
+        if (entries.length === 0) return [`${bundlePath}: no declared variant files`];
+        const missing: string[] = [];
+        for (const [key, value] of entries) {
+            const path =
+                value !== null && typeof value === 'object' && !Array.isArray(value)
+                    ? (value as { path?: unknown }).path
+                    : undefined;
+            if (typeof path !== 'string' || path === '') {
+                missing.push(`${bundlePath}: variant '${key}' has no file path`);
+                continue;
+            }
+            const variantPath = resolve(dayDir, path);
+            const rel = relative(dayDir, variantPath);
+            if (rel.startsWith('..') || isAbsolute(rel)) {
+                missing.push(`${bundlePath}: variant '${key}' escapes the generation directory`);
+            } else if (!existsSync(variantPath)) {
+                missing.push(variantPath);
+            }
+        }
+        return missing;
+    } catch {
+        return [`${bundlePath}: unreadable JSON`];
+    }
+}
+
 function evidenceDirectory(worksDir: string): string {
     const stamp = new Date().toISOString().replaceAll(':', '').replaceAll('.', '-');
     const dir = join(worksDir, 'tmp/test-daily-ai-news', `${stamp}-${process.pid}`);
@@ -341,8 +380,15 @@ async function validate(args: string[]): Promise<number> {
     const rawDate = valueAfter(args, '--run-date') ?? losAngelesDate();
     const runDate = normalizeRunDate(rawDate);
     if (runDate === undefined) throw new Error(`'${rawDate}' is not a valid calendar day`);
+    const mode = valueAfter(args, '--mode') ?? 'quick';
+    if (mode !== 'quick' && mode !== 'full') throw new Error(`--mode must be quick or full, got '${mode}'`);
     const unknown = args.filter(
-        (arg, index) => arg !== '--skip-dogfood' && arg !== '--run-date' && args[index - 1] !== '--run-date',
+        (arg, index) =>
+            arg !== '--skip-dogfood' &&
+            arg !== '--run-date' &&
+            arg !== '--mode' &&
+            args[index - 1] !== '--run-date' &&
+            args[index - 1] !== '--mode',
     );
     if (unknown.length > 0) throw new Error(`unknown validation argument(s): ${unknown.join(', ')}`);
     const skipDogfood = args.includes('--skip-dogfood');
@@ -355,6 +401,65 @@ async function validate(args: string[]): Promise<number> {
         checks.push({ name, status, detail });
         console.log(`[${status.toUpperCase()}] ${name} — ${detail}`);
     };
+    const finish = (): number => {
+        const status = checks.some((check) => check.status === 'fail')
+            ? 'fail'
+            : checks.some((check) => check.status === 'warn')
+              ? 'warn'
+              : 'pass';
+        const reportPath = join(evidence, 'validation.json');
+        const report = {
+            schemaVersion: 1,
+            generatedAt: new Date().toISOString(),
+            mode,
+            runDate,
+            worksDir,
+            status,
+            checks,
+            evidence: {
+                directory: evidence,
+                ...(mode === 'full'
+                    ? { offlineRehearsalSummary: join(REPO, '.works/tmp/test-voice3-migration/0335/summary.json') }
+                    : {}),
+            },
+        };
+        writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+        console.log(
+            `daily-ai-news ${mode === 'quick' ? 'quick check' : 'validation'} ${status.toUpperCase()}: ${reportPath}`,
+        );
+        return status === 'fail' ? 1 : 0;
+    };
+
+    const requiredFiles = [
+        configPath(),
+        join(REPO, 'plugins/kk/workflows/kk-daily-ai-voice3.yaml'),
+        join(REPO, 'plugins/kk/workflows/kk-daily-safety.yaml'),
+        join(REPO, 'plugins/kk/workflows/kk-daily-publish3.yaml'),
+        join(REPO, 'plugins/kk/publish-presets/daily-ai-voice.json'),
+        EXTRACT_PROFILE,
+        SUPERVISOR,
+        PUBLISH_LAUNCHER,
+    ];
+    if (mode === 'quick') {
+        const missingFiles = requiredFiles.filter((path) => !existsSync(path));
+        add(
+            'required-files',
+            missingFiles.length === 0 ? 'pass' : 'fail',
+            missingFiles.length === 0
+                ? `${requiredFiles.length} workflow/config/launcher files exist`
+                : missingFiles.join(', '),
+        );
+        const missingGeneration = generationFilesMissing(dayDir);
+        add(
+            'generation-files',
+            missingGeneration.length === 0 ? 'pass' : 'fail',
+            missingGeneration.length === 0
+                ? `bundle and declared variant files are ready at ${dayDir}`
+                : missingGeneration.join(', '),
+        );
+        return finish();
+    }
+    requiredFiles.push(join(REPO, DOGFOOD_TEST));
 
     const requiredTools = ['spur', 'kk', 'jq', 'ffmpeg', 'ffprobe', 'python3'];
     const missingTools = requiredTools.filter((tool) => spawnSync('which', [tool], { stdio: 'ignore' }).status !== 0);
@@ -366,17 +471,6 @@ async function validate(args: string[]): Promise<number> {
             : `missing from PATH: ${missingTools.join(', ')}`,
     );
 
-    const requiredFiles = [
-        configPath(),
-        join(REPO, 'plugins/kk/workflows/kk-daily-ai-voice3.yaml'),
-        join(REPO, 'plugins/kk/workflows/kk-daily-safety.yaml'),
-        join(REPO, 'plugins/kk/workflows/kk-daily-publish3.yaml'),
-        join(REPO, 'plugins/kk/publish-presets/daily-ai-voice.json'),
-        EXTRACT_PROFILE,
-        SUPERVISOR,
-        PUBLISH_LAUNCHER,
-        join(REPO, DOGFOOD_TEST),
-    ];
     const missingFiles = requiredFiles.filter((path) => !existsSync(path));
     add(
         'required-files',
@@ -429,13 +523,14 @@ async function validate(args: string[]): Promise<number> {
                 const report = JSON.parse(supply.stdout) as {
                     windows?: { hours?: number; gates?: { name?: string; stories?: number }[] }[];
                 };
-                const latest = report.windows?.at(-1);
+                // Production voice3 extracts 72h (design §8); the widest window is not what the run sees.
+                const latest = report.windows?.find((window) => window.hours === 72) ?? report.windows?.at(-1);
                 const eligible = latest?.gates?.find((gate) => gate.name === 'reservationExclusion')?.stories;
                 writeFileSync(join(evidence, 'supply-report.json'), supply.stdout);
                 add(
                     'store-supply',
                     'pass',
-                    `read-only supply gate report completed; latest window ${latest?.hours ?? '?'}h has ${eligible ?? '?'} eligible stories`,
+                    `read-only supply gate report completed; ${latest?.hours ?? '?'}h window has ${eligible ?? '?'} eligible stories`,
                 );
             }
         }
@@ -579,27 +674,7 @@ async function validate(args: string[]): Promise<number> {
         );
     }
 
-    const status = checks.some((check) => check.status === 'fail')
-        ? 'fail'
-        : checks.some((check) => check.status === 'warn')
-          ? 'warn'
-          : 'pass';
-    const reportPath = join(evidence, 'validation.json');
-    const report = {
-        schemaVersion: 1,
-        generatedAt: new Date().toISOString(),
-        runDate,
-        worksDir,
-        status,
-        checks,
-        evidence: {
-            directory: evidence,
-            offlineRehearsalSummary: join(REPO, '.works/tmp/test-voice3-migration/0335/summary.json'),
-        },
-    };
-    writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
-    console.log(`daily-ai-news validation ${status.toUpperCase()}: ${reportPath}`);
-    return status === 'fail' ? 1 : 0;
+    return finish();
 }
 
 async function main(): Promise<number> {

@@ -101,8 +101,8 @@ Changes against the proposed flow are marked ▲.
 | --- | --- | --- |
 | 0 prepare | `preflight` (stages exist in the installed runner) · `prepare` · read work_dir/run_date | — |
 | 1 选题 | `extract` → `plan` → `qc-content` → `select` (ledger at QC, unchanged) | `plan.json` |
-| 2 品控+翻译 | `translate` (+ `-retry` sibling until spur has agent.run retry) | translated `plan.json` |
-| 3 初稿 (parallel) | `article-write` · `script-write` · `cover-brief` · `cards-write` ▲(channel-neutral cards, replaces `xhs-write`) · `social-write` ▲(one agent call → `{x, weibo, threads, xhs, …}` short copy, per-channel char caps from the preset) · `show-notes` ▲(template with `{{article_url}}` / `{{podcast_url}}` placeholders) | `drafts/*` |
+| 2 选题精选 (curate) ▲ | `script-style` (snapshot skill) → `curate` (editorial select + title dedup) → `curate-check` → `curate-fix` (if errors) → `curate-final` (final validation / fallback) | `21-plan/plan.json`, `curate_excluded.json` |
+| 3 初稿与渲染 ▲ | `script-write` (master plan with speech, cover brief, card plan, social) → `script-check` → `script-write-fix` (if errors) → `script` (dailynews-gen) → `editorial-render` (deterministic article body, cover brief, cards, social) · `show-notes` · advisory `editorial-judge` (news-balance rubric) | `24-script/script-write_plan.json`, `22-article/*`, `23-cover/*`, `25-xhs/*`, `26-social/*` |
 | 3b 润色 ▲ | **not a node per draft.** Polish rules (taste-unslop, copy discipline) go into each authoring prompt; the gate is the existing content-safety state machine, extended to read every draft, not only the script | `safety/verdict.json` |
 | 3c 审核 ▲ | `review` pause (content approval only — send approval moves to publish3) | — |
 | 4 语音 | `wrap-docs` (条目切分) → `generate` + fallback chain (分条录音, ADR-034 one request per section) → `intro` → `duration` → `voice-audit` (组装/校准) | `episode.mp3`, duration |
@@ -320,7 +320,8 @@ Use the root package entries instead of reassembling the supervisor, date and pu
 ```bash
 bun run daily-news:generate
 bun run daily-news:publish
-bun run daily-news:validate
+bun run daily-news:validate                      # quick file-readiness check (default)
+bun run daily-news:validate -- --mode full        # complete live diagnosis + dogfood
 ```
 
 Generation is always publish-inert (`auto_publish=false`, 72h extract, supervised receipt). Posting
@@ -332,10 +333,13 @@ window with `--window cn-peak` or `--window overseas-rss`; their date, RSS and l
 rules remain in `voice3-publish-window.ts` and publish3. Historical gaps never cause today's content
 to be substituted.
 
-Validation is read-only against live state and covers PATH tools, required files, installed-stage
+Validation defaults to quick mode: only the required workflow/config/launcher files, the dated
+`bundle.json`, and every variant path it declares must exist. Quick mode performs no schema/hash/
+safety quality validation and starts no tool, store, scheduler, preflight, or dogfood subprocess.
+Use `--mode full` for the complete read-only diagnosis: PATH tools, required files, installed-stage
 compatibility, store supply, scheduler configuration, dated generation/safety/receipt state and all
-three publish outcomes. Its default dogfood is the offline 17-case voice3 migration rehearsal; use
-`bun run daily-news:validate -- --skip-dogfood` for the fast diagnostic. Evidence lands under
+three publish outcomes. Full mode's default dogfood is the offline 17-case voice3 migration rehearsal;
+add `--skip-dogfood` to omit only that rehearsal. Evidence lands under
 `<works>/tmp/test-daily-ai-news/<timestamp>-<pid>/validation.json` with captured preflight/supply and
-dogfood logs. A live failure exits 1 independently of dogfood. No entry installs schedules or syncs
-the installed package, and validation never generates or posts.
+dogfood logs in full mode. A live failure exits 1 independently of dogfood. No entry installs schedules
+or syncs the installed package, and neither validation mode generates or posts.

@@ -20,7 +20,8 @@ DAILYNEWS_LANGUAGE=zh DAILYNEWS_TITLE='AI Today' VOICEBOX_DEFAULT_PROFILE=Robin 
 | `DAILYNEWS_DATE` | No | now | Broadcast date for the greeting (`YYYYMMDD` or `YYYY-MM-DD`, task 0189): a backfilled/retried run greets the episode's run date, not the render date; garbled/out-of-range values warn and fall back to now |
 | `VOICEBOX_DEFAULT_PROFILE` | No | `Robin` | Voice profile carried into the VoiceScript |
 | `DAILYNEWS_SCRIPT_PLAN` | No | unset | Absolute path to a `ScriptPlan` JSON (`version: 1`, intro/outro, per-item lead/insight, `docs/design/daily-voice-script-plan.md`). zh only; absent/unreadable/rejected plans fall back to templates |
-| `DAILYNEWS_STYLE_FILE` | No | unset | Absolute path to the style contract (kk sidecar `daily-voice-style.zh.md`); read only when `DAILYNEWS_SCRIPT_PLAN` is set |
+| `DAILYNEWS_STYLE_FILE` | No | unset | Absolute path to the style contract (`kk:news-editorial` skill's `references/style-contract.zh.md`, ADR-045); read only when `DAILYNEWS_SCRIPT_PLAN` is set |
+| `DAILYNEWS_CURATE_EXCLUDED` | No | unset | Absolute path to `_03_curate_excluded.json` (0345); pre-excluded IDs are passed to validator so `plan.excluded` items dropped during curate do not fail `unknown-id` |
 
 The directly executable plugin entry also accepts `--language`, `--title`, and `--voice-profile`;
 direct flags override environment values.

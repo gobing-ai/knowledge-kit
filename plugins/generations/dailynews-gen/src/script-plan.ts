@@ -7,25 +7,55 @@ import { z } from 'zod';
  * (`docs/design/daily-voice-script-plan.md` §3). `version` is pinned so a future shape change
  * fails loud as `schema` instead of mis-substituting.
  */
+export interface ScriptPlanItemCard {
+    copy: string;
+    points: string[];
+    subject: string;
+}
+
+export interface ScriptPlanCards {
+    title: string;
+    body: string;
+}
+
+export interface ScriptPlanSocial {
+    short: string;
+    long: string;
+}
+
 export interface ScriptPlan {
     version: 1;
     intro: string;
     outro: string;
-    items: { id: string; lead: string; insight: string }[];
+    items: { id: string; lead: string; insight: string; card?: ScriptPlanItemCard }[];
     /**
      * Docs deliberately not spoken (topic-boundary exclusions, task 0189). An id here is
      * exempt from `missing-item`; listing an id in both `items` and `excluded` is a
      * `conflict-id` error, and an unknown id is `unknown-id` like any plan item.
      */
     excluded?: { id: string; reason: string }[];
+    /** Optional master-artifact fields rendered deterministically by `daily-editorial-render` (0345 R10). */
+    cover?: string;
+    cards?: ScriptPlanCards;
+    social?: ScriptPlanSocial;
 }
 
 /**
- * Machine-readable part of the style sidecar `plugins/kk/scripts/daily-voice-style.zh.md` — the
+ * Machine-readable part of the style contract `plugins/kk/skills/news-editorial/references/style-contract.zh.md` (ADR-045) — the
  * same fenced `json` block the script-write prompt reads, so prompt and validator share one source.
  */
 export interface StyleContract {
-    caps: { intro: number; outro: number; lead: number; insight: number };
+    caps: {
+        intro: number;
+        outro: number;
+        lead: number;
+        insight: number;
+        cover?: number;
+        cardCopy?: number;
+        cardTitle?: number;
+        socialShort?: number;
+        socialLong?: number;
+    };
     banned: string[];
 }
 
@@ -37,6 +67,12 @@ export interface ScriptPlanError {
 
 export type ScriptPlanValidation = { ok: true; plan: ScriptPlan } | { ok: false; errors: ScriptPlanError[] };
 
+const ScriptPlanItemCardSchema = z.object({
+    copy: z.string().min(1),
+    points: z.array(z.string().min(1)).min(2).max(4),
+    subject: z.string().min(1),
+});
+
 /**
  * Empty spoken text is a shape error (`schema`), not a cap/banned case: an empty intro or insight
  * would normalize to a bare 「。」 segment, which no valid episode contains.
@@ -45,11 +81,22 @@ const ScriptPlanItemSchema = z.object({
     id: z.string().min(1),
     lead: z.string().min(1),
     insight: z.string().min(1),
+    card: ScriptPlanItemCardSchema.optional(),
 });
 
 const ScriptPlanExclusionSchema = z.object({
     id: z.string().min(1),
     reason: z.string().min(1),
+});
+
+const ScriptPlanCardsSchema = z.object({
+    title: z.string().min(1),
+    body: z.string().min(1),
+});
+
+const ScriptPlanSocialSchema = z.object({
+    short: z.string().min(1),
+    long: z.string().min(1),
 });
 
 const ScriptPlanSchema = z.object({
@@ -58,6 +105,9 @@ const ScriptPlanSchema = z.object({
     outro: z.string().min(1),
     items: z.array(ScriptPlanItemSchema),
     excluded: z.array(ScriptPlanExclusionSchema).optional(),
+    cover: z.string().min(1).optional(),
+    cards: ScriptPlanCardsSchema.optional(),
+    social: ScriptPlanSocialSchema.optional(),
 });
 
 const StyleContractSchema = z.object({
@@ -66,6 +116,11 @@ const StyleContractSchema = z.object({
         outro: z.number().int().positive(),
         lead: z.number().int().positive(),
         insight: z.number().int().positive(),
+        cover: z.number().int().positive().optional(),
+        cardCopy: z.number().int().positive().optional(),
+        cardTitle: z.number().int().positive().optional(),
+        socialShort: z.number().int().positive().optional(),
+        socialLong: z.number().int().positive().optional(),
     }),
     banned: z.array(z.string().min(1)),
 });
@@ -131,7 +186,12 @@ function redundantInsightClauses(insight: string, reference: string): number {
     }
     return count;
 }
-export function validateScriptPlan(plan: unknown, docs: Doc[], style: StyleContract): ScriptPlanValidation {
+export function validateScriptPlan(
+    plan: unknown,
+    docs: Doc[],
+    style: StyleContract,
+    preExcludedIds?: ReadonlySet<string>,
+): ScriptPlanValidation {
     const parsed = ScriptPlanSchema.safeParse(plan);
     if (!parsed.success) {
         return { ok: false, errors: [{ itemId: 'episode', rule: 'schema' }] };
@@ -146,7 +206,9 @@ export function validateScriptPlan(plan: unknown, docs: Doc[], style: StyleContr
     const plannedIds = new Set(valid.items.map((item) => item.id));
     const excludedIds = new Set((valid.excluded ?? []).map((ex) => ex.id));
     for (const ex of valid.excluded ?? []) {
-        if (!docIds.has(ex.id)) errors.push({ itemId: ex.id, rule: 'unknown-id' });
+        if (!docIds.has(ex.id) && !preExcludedIds?.has(ex.id)) {
+            errors.push({ itemId: ex.id, rule: 'unknown-id' });
+        }
         if (plannedIds.has(ex.id)) errors.push({ itemId: ex.id, rule: 'conflict-id' });
     }
     for (const doc of docs) {
@@ -155,9 +217,26 @@ export function validateScriptPlan(plan: unknown, docs: Doc[], style: StyleContr
 
     if (valid.intro.length > style.caps.intro) errors.push({ itemId: 'episode', rule: 'cap:intro' });
     if (valid.outro.length > style.caps.outro) errors.push({ itemId: 'episode', rule: 'cap:outro' });
+    if (valid.cover !== undefined && valid.cover.length > (style.caps.cover ?? 240)) {
+        errors.push({ itemId: 'episode', rule: 'cap:cover' });
+    }
+    if (valid.cards !== undefined && valid.cards.title.length > (style.caps.cardTitle ?? 20)) {
+        errors.push({ itemId: 'episode', rule: 'cap:cardTitle' });
+    }
+    if (valid.social !== undefined) {
+        if (valid.social.short.length > (style.caps.socialShort ?? 140)) {
+            errors.push({ itemId: 'episode', rule: 'cap:socialShort' });
+        }
+        if (valid.social.long.length > (style.caps.socialLong ?? 500)) {
+            errors.push({ itemId: 'episode', rule: 'cap:socialLong' });
+        }
+    }
     for (const item of valid.items) {
         if (item.lead.length > style.caps.lead) errors.push({ itemId: item.id, rule: 'cap:lead' });
         if (item.insight.length > style.caps.insight) errors.push({ itemId: item.id, rule: 'cap:insight' });
+        if (item.card !== undefined && item.card.copy.length > (style.caps.cardCopy ?? 12)) {
+            errors.push({ itemId: item.id, rule: 'cap:cardCopy' });
+        }
         const doc = docs.find((entry) => entry.id === item.id);
         // unknown-id is already reported above; skip the redundancy check rather than double-report.
         if (
@@ -171,9 +250,28 @@ export function validateScriptPlan(plan: unknown, docs: Doc[], style: StyleContr
     const fields: { itemId: string; text: string }[] = [
         { itemId: 'episode', text: valid.intro },
         { itemId: 'episode', text: valid.outro },
+        ...(valid.cover !== undefined ? [{ itemId: 'episode', text: valid.cover }] : []),
+        ...(valid.cards !== undefined
+            ? [
+                  { itemId: 'episode', text: valid.cards.title },
+                  { itemId: 'episode', text: valid.cards.body },
+              ]
+            : []),
+        ...(valid.social !== undefined
+            ? [
+                  { itemId: 'episode', text: valid.social.short },
+                  { itemId: 'episode', text: valid.social.long },
+              ]
+            : []),
         ...valid.items.flatMap((item) => [
             { itemId: item.id, text: item.lead },
             { itemId: item.id, text: item.insight },
+            ...(item.card !== undefined
+                ? [
+                      { itemId: item.id, text: item.card.copy },
+                      ...item.card.points.map((point) => ({ itemId: item.id, text: point })),
+                  ]
+                : []),
         ]),
     ];
     for (const field of fields) {

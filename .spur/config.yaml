@@ -149,6 +149,11 @@ bootstrap:
       # Retry stays on a DIFFERENT binary (2026-11-04): spur's readiness gate SIGTERMs
       # `<agent> --version` after a fixed 5s, and when the 04:30 codex probe stalled past it, the
       # codex-sol retry hit the same stalled probe 5s later — plan-translate never dispatched.
+      # 2026-11-08: primary moved to pi-dsv4.1-flash-volc (volc deepseek-v4-1-flash). The 11-02..11-07
+      # codex-sol (gpt-6.1-sol) episodes drifted toward commentary and technical detail, the 11-08
+      # rehearsal on this executor passed the script-plan validator, and it saves gpt/opus tokens.
+      # Retry stays on claude, a different binary from the primary (see the 11-04 note above).
+      # The kk-daily-publish3 re-run below must keep the same flags.
       # --window 72h (2026-11-05): the 24h pool produced 3 items / an 8.4-min script and the
       # 15-min floor refused before TTS (duration-refusal on 11-05); the extract ladder's
       # raw-pool estimate over-counts stub bodies, so pin the window to 72h until ingest bodies
@@ -160,7 +165,7 @@ bootstrap:
           KK_BROWSER_CHANNEL=chrome bun plugins/kk/scripts/daily-scheduled-run.ts
           --repo /Users/robin/xprojects/knowledge-kit
           --works-dir /Users/robin/xprojects/knowledge-kit/.works
-          --agent codex-sol --retry-agent claude
+          --agent pi-dsv4.1-flash-volc --retry-agent claude
           --workflow kk-daily-ai-voice3 --window 72h
 
       # 07:00 daily: the publish3 `overseas-rss` window (design kk-daily-ai-voice3 §5a) — X/Threads
@@ -190,7 +195,7 @@ bootstrap:
           KK_BROWSER_CHANNEL=chrome bun plugins/kk/scripts/daily-scheduled-run.ts
           --repo /Users/robin/xprojects/knowledge-kit
           --works-dir /Users/robin/xprojects/knowledge-kit/.works
-          --agent codex-sol --retry-agent claude
+          --agent pi-dsv4.1-flash-volc --retry-agent claude
           --workflow kk-daily-ai-voice3 --window 72h;; esac;
           bun plugins/kk/scripts/voice3-publish-window.ts --window overseas-rss
 

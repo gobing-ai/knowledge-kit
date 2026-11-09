@@ -100,6 +100,20 @@ Thresholds: `pass_threshold = 0.85`
 - `data-handling`: scan for PII that may have been carried through from input Docs (emails,
   phone numbers, national IDs). Leakage is a `fail`.
 
+## news-balance
+
+For daily news episode script plans (`kk-daily-ai-voice3` advisory `editorial-judge` sensor, task 0345 R11). Evaluates the balance of news reporting, commentary, and technical depth against `kk:news-editorial`.
+
+| Criterion | Weight | Must-pass |
+|-----------|--------|-----------|
+| `news-first` — `intro` and every `lead` name concrete actors and actions, not abstract essay themes | 0.30 | yes |
+| `commentary-share` — each `insight` is ≤⅓ of the item's spoken length and contains no generic methodology or shopping-list advice | 0.25 | yes |
+| `no-restatement` — `insight` adds judgement rather than repeating the body's facts or numbers | 0.20 | yes |
+| `tech-depth` — mechanisms are explained in 1–2 sentences without textbook primers | 0.15 | no |
+| `ordering` — items are ordered by news weight (urgency × impact), with the strongest concrete news item leading | 0.10 | no |
+
+Thresholds: `pass_threshold = 0.80`
+
 ## Adding a custom rubric
 
 1. Add a section to this file with a unique heading and a criteria table matching the schema

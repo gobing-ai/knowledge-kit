@@ -10,7 +10,7 @@
  *   AC1 — every declared list equals the derived closure, sorted and de-duplicated.
  *   AC2 — checkRequires is pure: mutated in-memory fixtures (direct + inherited)
  *         fail with the entity name and the missing/extra tokens.
- *   AC3 — the group snapshot matches the 2026-11-04 frozen table (8/4/1/5) and no
+ *   AC3 — the group snapshot matches the frozen table (8/5/1/5; 2026-11-08 adds news-editorial) and no
  *         entity declares hooks or subagents.
  *
  * Plugin standalone contract: only bun:* and node:* builtins plus relative imports.
@@ -163,9 +163,9 @@ function checkRequires(list: Entity[]): string[] {
 }
 
 describe('runtime-requires (task 0342 / feature F81 R1, R2, R3)', () => {
-    test('18 kk entities are collected (14 skills, 4 commands)', () => {
-        expect(entities.length).toBe(18);
-        expect(byPath.size).toBe(18);
+    test('19 kk entities are collected (15 skills, 4 commands)', () => {
+        expect(entities.length).toBe(19);
+        expect(byPath.size).toBe(19);
     });
 
     test('AC1: every entity declares a valid, sorted, de-duplicated requires list equal to the derived closure', () => {
@@ -176,7 +176,7 @@ describe('runtime-requires (task 0342 / feature F81 R1, R2, R3)', () => {
         }
     });
 
-    test('AC3: the group snapshot matches the 2026-11-04 frozen table (8/4/1/5)', () => {
+    test('AC3: the group snapshot matches the 2026-11-08 frozen table (8/5/1/5)', () => {
         const groups: Record<string, number> = {};
         for (const entity of entities) {
             const key = [...deriveRequires(entity.path)].sort().join(',');
@@ -184,7 +184,7 @@ describe('runtime-requires (task 0342 / feature F81 R1, R2, R3)', () => {
         }
         expect(groups).toEqual({
             'cli:kk,cli:spur,local-fs': 8,
-            'cli:kk,local-fs': 4,
+            'cli:kk,local-fs': 5,
             'cli:spur,local-fs': 1,
             'local-fs': 5,
         });

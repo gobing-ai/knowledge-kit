@@ -369,6 +369,37 @@ describe('kk-daily-publish3 (0323 R1, R4, R6, R7)', () => {
         }
     });
 
+    it('fires partial-marker on every real classified status and never on dummy', () => {
+        // The condition once grepped the pretty-printed outcome JSON for a bare `partial` line, so a
+        // partial window never left its recovery marker. Run the shipped condition for real.
+        const doc = Bun.YAML.parse(readFileSync(WORKFLOW, 'utf-8')) as {
+            nodes: Array<{ id: string; condition?: { options: { command: string } } }>;
+        };
+        const command = doc.nodes.find((node) => node.id === 'partial-marker')?.condition?.options.command ?? '';
+        const workDir = tempDir('publish3-marker-');
+        mkdirSync(join(workDir, '4-publish'));
+        const fires = (status: string | null): boolean => {
+            const file = join(workDir, '4-publish/publish-status.cn-peak.txt');
+            if (status === null) rmSync(file, { force: true });
+            else writeFileSync(file, `${status}\n`);
+            const shell = command.replaceAll(`\${vars.work_dir}`, workDir).replaceAll(`\${vars.window}`, 'cn-peak');
+            return Bun.spawnSync(['bash', '-c', shell]).exitCode === 0;
+        };
+        // `full` runs too: the stage deletes a stale marker once a retry recovers the window.
+        expect(['partial', 'none', 'full'].map(fires)).toEqual([true, true, true]);
+        expect(fires('dummy')).toBe(false);
+        expect(fires(null)).toBe(false);
+    });
+
+    it('records publish3 runs through ledger sync, never an in-run append that always refuses', () => {
+        const doc = Bun.YAML.parse(readFileSync(WORKFLOW, 'utf-8')) as {
+            nodes: Array<{ id: string; action?: { options: { command: string } } }>;
+        };
+        const ledger = doc.nodes.find((node) => node.id === 'ledger')?.action?.options.command ?? '';
+        expect(ledger).toContain('kk ledger sync --workflow kk-daily-publish3');
+        expect(ledger).not.toContain('ledger append');
+    });
+
     it('leaves the rendered schedule artifacts installable and DST-explanatory', () => {
         const cnPeak = Bun.spawnSync(
             [

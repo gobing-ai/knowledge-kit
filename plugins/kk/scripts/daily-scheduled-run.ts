@@ -20,6 +20,7 @@ const { values } = parseArgs({
         'generate-only': { type: 'boolean', default: false },
         window: { type: 'string' },
         'publish-preset': { type: 'string' },
+        'publish-live-channels': { type: 'string' },
     },
 });
 const timeoutMs = Number(values['timeout-ms']);
@@ -47,6 +48,9 @@ const vars = isVoice3
     ? {
           auto_publish: generateOnly ? 'false' : 'true',
           ...(values['publish-preset'] !== undefined ? { publish_preset: values['publish-preset'] } : {}),
+          ...(values['publish-live-channels'] !== undefined
+              ? { publish_live_channels: values['publish-live-channels'] }
+              : {}),
           ...(values.window ? { window: values.window } : {}),
           skip_review: 'true',
           agent: values.agent,

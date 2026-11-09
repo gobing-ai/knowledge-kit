@@ -64,8 +64,8 @@ nodes:
   - id: plan
     description: >-
       Freeze this window's target rows and their payloads from the bundle and the preset
-      (`4-publish/plan.<window>.json`). Never runs for a gated-miss overseas day: the RSS gate's
-      non-zero exit skips its dependents, so an unpublished episode cannot be planned.
+      (`4-publish/plan.<window>.json`). Never runs for a gated-miss overseas day: the condition below
+      reads `rss-gate.json` (the gate itself always exits 0), so an unpublished episode cannot be planned.
     dependsOn: [rss-gate]
     condition:
       kind: shell
@@ -180,7 +180,9 @@ nodes:
       resolves its own checkout. A dummy or missing podcast episode yields
       explicit empty links; there is nothing to patch without a real post. The stage is its own gate:
       with no real tier-0 post evidence it records an explicit skip and exits 0 (the channel matrix
-      lives in the preset, so the graph cannot name channels here).
+      lives in the preset, so the graph cannot name channels here). `onError: continue`: the sends
+      already happened, so a patch failure (e.g. a dirty surfdash checkout, run 74007847) stays a
+      failed node in the trace instead of failing a delivered window; outcome-assert owns the exit.
     dependsOn: [classify]
     condition:
       kind: shell
@@ -189,6 +191,7 @@ nodes:
 
     action:
       kind: shell
+      onError: continue
       options:
         command: 'kk stage run publish-matrix-patch-surfdash "${vars.work_dir}" --window "${vars.window}"'
 
@@ -201,9 +204,11 @@ nodes:
     condition:
       kind: shell
       options:
+        # classify writes the bare status to publish-status.<window>.txt (the outcome JSON is
+        # pretty-printed, so the old whole-line grep there never fired). `full` is admitted so the
+        # stage can delete a stale marker after a recovered retry; `dummy` writes nothing.
         command: >-
-          grep -qx 'partial' "${vars.work_dir}/4-publish/outcome.${vars.window}.json" 2>/dev/null ||
-          grep -qx 'none' "${vars.work_dir}/4-publish/outcome.${vars.window}.json" 2>/dev/null
+          grep -qxE 'full|partial|none' "${vars.work_dir}/4-publish/publish-status.${vars.window}.txt" 2>/dev/null
 
     action:
       kind: shell
@@ -268,6 +273,7 @@ nodes:
       options:
         role: scribe
         agent: ${vars.agent}
+        timeoutMs: 600000
         input: |
           Diagnose a missed overseas publish window. Read only these paths:
           - ${vars.work_dir}/4-publish/rss-gate.json (the miss reason)
@@ -329,10 +335,12 @@ nodes:
           "${vars.work_dir}/4-publish/outcome.${vars.window}.json" >> "$OUT" 2>/dev/null || true
 
   - id: ledger
-    description: "Append the window's row to the workflow ledger; `onError: continue` — bookkeeping never fails a publish."
+    description: >-
+      Backfill the workflow ledger with every finished publish3 run it does not record yet. An in-run
+      `kk ledger append` of this run always refuses (`kk.ledger.run.running`), so this run lands on the
+      next window's sync. `|| true` — bookkeeping never fails a publish.
     dependsOn: [report]
     action:
       kind: shell
       options:
-        command: >-
-          kk ledger append --workflow kk-daily-publish3 --work-dir "${vars.work_dir}" --run "${vars.__runId}" || true
+        command: 'kk ledger sync --workflow kk-daily-publish3 || true'

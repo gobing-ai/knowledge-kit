@@ -21,7 +21,7 @@ LLM-as-judge is **not** a knowledge-kit plugin kind (ADR-007 amdt 2026-08-07). I
 
 - A spur workflow needs a quality gate between `generate` and `publish`.
 - A user asks to "judge", "evaluate", "quality-check", or "gate" generated content.
-- A workflow or skill names a rubric (`tech-accuracy` / `brand-tone` / `compliance` / `general`).
+- A workflow or skill names a rubric (`tech-accuracy` / `brand-tone` / `compliance` / `news-balance` / `general`).
 
 ## Verdict output contract
 
@@ -99,7 +99,7 @@ and `escalate` flag; treat `LOW` as a signal to demand human review before publi
 1. **Read the Content** from the path given in the evaluation request (the `content.json` written
    by the preceding `kk executor run <generator>` step).
 2. **Select the rubric** — named in the request (`tech-accuracy`, `brand-tone`,
-   `compliance`, `general`). Default: `general`.
+   `compliance`, `news-balance`, `general`). Default: `general`.
 3. **Evaluate each criterion** in the rubric. For each, produce a `pass` / `fail` / `warn` status
    backed by a specific, quotable evidence reference (quote, section, claim).
 4. **Score** — weighted aggregate per the rubric's scoring rules. `score` is 0.0–1.0.
@@ -127,7 +127,7 @@ and `escalate` flag; treat `LOW` as a signal to demand human review before publi
 
 ## Rubrics
 
-Four built-in rubrics. Full definitions, weights, and thresholds live in
+Five built-in rubrics. Full definitions, weights, and thresholds live in
 `references/rubrics.md`. The skill body intentionally stays lean — load the reference when
 evaluating.
 
@@ -137,6 +137,7 @@ evaluating.
 | `tech-accuracy` | Technical content | factual correctness vs. sources, no fabricated citations, code correctness |
 | `brand-tone` | Published voice | tone consistency, banned-phrase compliance, audience fit |
 | `compliance` | Sensitive content | no prohibited claims, disclosure presence, jurisdictional rules |
+| `news-balance` | Daily news script plan | news-first, commentary-share, no-restatement |
 
 ## Prompt template
 
@@ -147,7 +148,7 @@ Use this template when the skill is invoked by an `agent.run` step. The workflow
 You are an LLM-as-judge evaluating generated content for the knowledge-kit pipeline.
 
 Content to evaluate: {{content_path}}
-Rubric: {{rubric}}              # general | tech-accuracy | brand-tone | compliance
+Rubric: {{rubric}}              # general | tech-accuracy | brand-tone | compliance | news-balance
 Output verdict to: {{verdict_path}}
 
 Load the rubric definition from plugins/kk/skills/content-judge/references/rubrics.md (section: {{rubric}}).
