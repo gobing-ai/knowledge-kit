@@ -4,7 +4,7 @@ name: Centralize daily-news editorial logic into the kk:news-editorial skill
 status: todo
 template: feature-impl
 created_at: 2026-11-08T20:47:50.836Z
-updated_at: "2026-11-08T23:58:45.582Z"
+updated_at: "2026-11-09T00:10:17.091Z"
 
 ---
 
@@ -34,7 +34,6 @@ its current input/output contract.
 - [x] R3. The run snapshots the skill (SKILL.md + references) into the work dir; voice3 agent.run prompts reference
   the snapshot by path (kk skills are not installed for pi/codex).
 - [x] R4. script-write gets a validator-error-driven fix retry instead of silently falling back to the template.
-- [x] R5. Superseded by R7–R11 (split 2026-11-08 refinement).
 - [x] R6. ADR entry before the authority move; 03/04/05 docs updated.
 - [ ] R7. **Curate (phase A).** A `curate` agent.run (skill mode `curate`, policy `references/selection.md`) replaces
   `plan-translate` + `plan-translate-retry`. It reads the QC candidates and writes (a) `21-plan/<date>_03_plan_plan.json`
@@ -64,6 +63,8 @@ its current input/output contract.
   `plugins/kk/skills/content-judge/references/rubrics.md` (criteria below) and an advisory `editorial-judge` agent.run
   after `script-check`/`script-write-fix` that writes `24-script/<date>_08_editorial-judge_verdict.json` in the
   content-judge verdict schema. Advisory: `onError: continue`, nothing depends on its verdict for control flow.
+
+*(R5 row removed 2026-11-09: it was "Superseded by R7–R11 (split 2026-11-08 refinement)" and shipped nothing; removed to pass the fixed precheck-size gate. Renumbering avoided to keep AC/Q&A cross-refs stable.)*
 
 ### Acceptance Criteria
 
@@ -168,11 +169,6 @@ Tests first in every step (AGENTS.md testing rule). Each phase ends with `bun ru
 
 **Phase A — curate (R7–R9)**
 
-1. Write the `daily-curate-check` failure-mode tests (AC5) in `apps/cli/tests/kk-workflow-stages.test.ts`, next to the `daily-script-check` block. Write the DAG assertions (AC6) in `apps/cli/tests/voice3-dag.test.ts` and update its existing `plan-translate` list at about line 443. Watch both fail.
-2. `plugins/kk/scripts/daily-stages.ts`:
-   - add `dailyCurateCheck(args)` with `[workDir, runDate, '--final'?]`;
-   - move the envelope-unwrap and `dedupPlanByTitle` out of `dailyArticle` (about lines 465–508) into it, leaving `dailyArticle` with only the cache, generator and write steps;
-   - add the dispatch line `case 'daily-curate-check'` in `plugins/kk/scripts/kk-workflow-stages.ts`, next to `daily-script-check`.
 3. `plugins/kk/workflows/kk-daily-ai-voice3.yaml`:
    - move `script-style` to depend on `[qc-content, pool-gate]` (already true);
    - replace `plan-translate` and `plan-translate-retry` with `curate` (agent `${vars.agent}`, role scribe, `expectFile` the plan json), `curate-check`, `curate-fix` (agent `${vars.agent_retry}`, condition `test -s …_03_curate_errors.json`) and `curate-final`;
@@ -206,6 +202,8 @@ Tests first in every step (AGENTS.md testing rule). Each phase ends with `bun ru
 15. Add the advisory `editorial-judge` node to voice3: agent `${vars.agent}`, role reviewer, `onError: continue`, `dependsOn [script-check, script-write-fix]`, output in `24-script/`. Add the DAG test that nothing depends on it for control flow.
 16. Docs, then gate, sync, rehearse (AC10 phase C), and commit `feat(daily): advisory news-balance judge`.
 17. Record AC5–AC11 evidence under Testing via `spur task update 0345 --section Testing --append`, then run `spur task check 0345`.
+
+*(Plan steps 1–2 removed 2026-11-09: shipped in commit `0fd30f9`, evidence recorded under Testing. Removed to pass the fixed precheck-size gate; numbering kept stable for cross-refs.)*
 
 ### Solution
 
