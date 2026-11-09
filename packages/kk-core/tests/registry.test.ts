@@ -714,6 +714,28 @@ describe('browserSession records (0277 R1)', () => {
         });
     });
 
+    it('propagates an ingestion descriptor onto the record (0346 R5)', () => {
+        withTempDir((root) => {
+            const dir = writePlugin(root, 'ingestion', 'xhs-collect', { entry: './src/index.ts' });
+            writeFileSync(
+                join(dir, 'plugin.json'),
+                JSON.stringify({
+                    name: 'xhs-collect',
+                    kind: 'ingestion',
+                    entry: './src/index.ts',
+                    check: './src/profile-check.ts',
+                    browserSession: { profileName: 'xhs', homeUrl: 'https://www.xiaohongshu.com/' },
+                }),
+            );
+
+            const res = discoverPlugins(root);
+            expect(res.diagnostics).toHaveLength(0);
+            const record = getByName(res, 'xhs-collect');
+            expect(record?.kind).toBe('ingestion');
+            expect(record?.browserSession).toEqual({ profileName: 'xhs', homeUrl: 'https://www.xiaohongshu.com/' });
+        });
+    });
+
     it('reports an invalid descriptor as malformed and drops the plugin', () => {
         withTempDir((root) => {
             const dir = writePlugin(root, 'publish', 'bad-session', { entry: './src/index.ts' });

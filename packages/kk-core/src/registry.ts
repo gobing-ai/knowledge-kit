@@ -27,7 +27,7 @@ export interface PluginRecord {
     description?: string;
     /** Declared auxiliary operations (0110 I3), if the manifest declares any. */
     operations?: Record<string, PluginOperation>;
-    /** Declared browser session (0277 R1): publish plugins with a probe entry only. */
+    /** Declared browser session (0277 R1, 0346): publish or ingestion plugins with a probe entry. */
     browserSession?: BrowserSessionDescriptor;
     /** Declared publishing capabilities (0298 / ADR-040). */
     publishing?: PublishingCapabilities;

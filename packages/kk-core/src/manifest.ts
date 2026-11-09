@@ -178,23 +178,24 @@ const PluginManifestSchemaBase = z.looseObject({
     // dispatches an input form only when the manifest declares it. Without a
     // declaration the kind contract alone applies (publish = Content → Result).
     operations: z.record(z.string(), PluginOperationSchema).optional(),
-    // Declared browser session (0277 R1): publish plugins with a probe entry only, enforced
-    // by `superRefine` below (a session without a probe script could never be driven).
+    // Declared browser session (0277 R1, ingestion widened by 0346): a plugin that also declares
+    // the probe entry owning its login/check/open routines — enforced by `superRefine` below.
     browserSession: BrowserSessionDescriptorSchema.optional(),
     // Declared publishing capabilities (0298 / ADR-040): publish plugins describe operation-specific
     // profiles, limits, format, and mode bindings.
     publishing: PublishingCapabilitiesSchema.optional(),
 });
 
-// A browser session is drivable only by a publish plugin that also declares the probe
-// entry which owns the site-specific login/check/open routines (0277 R1).
+// A browser session is drivable by a publish OR ingestion plugin that also declares the probe
+// entry owning the site-specific login/check/open routines (0277 R1; ingestion widened by 0346 —
+// the collection runner drives the same profile from inside the plugin child, ADR-038 amendment).
 export const PluginManifestSchema = PluginManifestSchemaBase.superRefine((manifest, ctx) => {
     if (manifest.browserSession !== undefined) {
-        if (manifest.kind !== 'publish') {
+        if (manifest.kind !== 'publish' && manifest.kind !== 'ingestion') {
             ctx.addIssue({
                 code: 'custom',
                 path: ['browserSession'],
-                message: `browserSession requires kind "publish", not "${manifest.kind}"`,
+                message: `browserSession requires kind "publish" or "ingestion", not "${manifest.kind}"`,
             });
         }
         if (manifest.check === undefined) {
