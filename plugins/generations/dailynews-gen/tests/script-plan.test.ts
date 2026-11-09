@@ -491,6 +491,51 @@ describe('F613 R4 — processGeneratorIO plan handling and explicit fallback', (
         });
     });
 
+    // 0345 R9: curate drops excluded docs from the plan, so `excluded` ids are absent from the
+    // generator input; DAILYNEWS_CURATE_EXCLUDED is what keeps them from reading as unknown-id.
+    it('accepts curate-excluded ids via DAILYNEWS_CURATE_EXCLUDED and ignores an absent or malformed sidecar', async () => {
+        writeFileSync(inPath, JSON.stringify([FIXTURE_DOC]));
+        const plan = twoDocPlan();
+        plan.items = [plan.items[0] as ScriptPlan['items'][number]];
+        plan.excluded = [{ id: 'curated-out-1', reason: '主线为公共政策争议' }];
+        writeFileSync(planPath, JSON.stringify(plan));
+        const sidecar = join(testDir, 'curate_excluded.json');
+        const unknown = [{ itemId: 'curated-out-1', rule: 'unknown-id' }];
+
+        writeFileSync(
+            sidecar,
+            JSON.stringify([{ id: 'curated-out-1', reason: '主线为公共政策争议' }, { reason: 'x' }]),
+        );
+        await withPlanEnv(
+            {
+                DAILYNEWS_SCRIPT_PLAN: planPath,
+                DAILYNEWS_STYLE_FILE: STYLE_SIDECAR,
+                DAILYNEWS_CURATE_EXCLUDED: sidecar,
+            },
+            async () => {
+                const content = await processGeneratorIO(inPath, outPath, options);
+                expect(content.metadata?.scriptSource).toBe('plan');
+                expect(content.metadata?.scriptPlanErrors).toEqual([]);
+            },
+        );
+
+        for (const env of [join(testDir, 'absent.json'), sidecar]) {
+            if (env === sidecar) writeFileSync(sidecar, '{not-json');
+            await withPlanEnv(
+                {
+                    DAILYNEWS_SCRIPT_PLAN: planPath,
+                    DAILYNEWS_STYLE_FILE: STYLE_SIDECAR,
+                    DAILYNEWS_CURATE_EXCLUDED: env,
+                },
+                async () => {
+                    const content = await processGeneratorIO(inPath, outPath, options);
+                    expect(content.metadata?.scriptSource).toBe('template');
+                    expect(content.metadata?.scriptPlanErrors).toEqual(unknown);
+                },
+            );
+        }
+    });
+
     it('a rejected plan falls back to templates, warns once naming every itemId/rule, and exits 0', async () => {
         const rejected = twoDocPlan();
         rejected.intro = '好'.repeat(151);
