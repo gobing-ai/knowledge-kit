@@ -1197,10 +1197,12 @@ export async function enrichArticleDraft(
     const enrichWarnings = await enrichArticle(page, meta);
     const audio = audioBlockOf(content);
     let audioFailed = false;
+    let coverSeeded = false;
     if (audio !== null) {
-        const audioWarning = await insertAudioMaterial(page, audio);
-        if (audioWarning !== '') {
-            enrichWarnings.push(audioWarning);
+        const audioResult = await insertAudioMaterial(page, audio);
+        coverSeeded = audioResult.coverSeeded;
+        if (audioResult.warning !== '') {
+            enrichWarnings.push(audioResult.warning);
             audioFailed = true;
         }
     }
@@ -1209,8 +1211,8 @@ export async function enrichArticleDraft(
     // leaves the library without the requested cover, so the dependent picker must not run).
     const coverWarnings: string[] = [];
     if (coverSourceOf(content) === 'library' && audio !== null) {
-        if (audioFailed) {
-            coverWarnings.push('cover: 音频上传未成功，图片库不保证已有请求封面，已跳过图片库封面');
+        if (audioFailed && !coverSeeded) {
+            coverWarnings.push('cover: 音频上传未成功且图片库尚无请求封面，已跳过图片库封面');
         } else {
             const cover = await setCover(
                 page,
@@ -2581,8 +2583,16 @@ function escapeHtml(text: string): string {
 export async function insertAudioMaterial(
     page: WechatPage,
     input: { title: string; audioPath: string; coverPath: string },
-): Promise<string> {
+): Promise<{ warning: string; coverSeeded: boolean }> {
     const { title, audioPath, coverPath } = input;
+    // The library demonstrably holds the episode cover once the picker verified the unique same-name
+    // row (0260 R1 refined 2026-11-09): failures AFTER that point must not suppress the deferred
+    // library cover — the skip guard is only honest for failures BEFORE the cover committed.
+    let libraryHasCover = false;
+    const result = (warning: string): { warning: string; coverSeeded: boolean } => ({
+        warning,
+        coverSeeded: libraryHasCover,
+    });
     const CARET = `(async () => {
             const pm = [...document.querySelectorAll('.ProseMirror')].find((e) => !(e.getAttribute('data-placeholder') ?? '').includes('标题'));
             if (!pm || !pm.firstChild) return;
@@ -2655,15 +2665,15 @@ export async function insertAudioMaterial(
             return JSON.stringify({ state: 'top', identity });
         })()`;
 
-    /** Upload the audio + its cover, acknowledge the rules, and 保存. Returns a warning or null. */
-    const upload = async (): Promise<string | null> => {
+    /** Upload the audio + its cover, acknowledge the rules, and 保存. Returns a structured outcome. */
+    const upload = async (): Promise<{ warning: string; coverSeeded: boolean }> => {
         const uploadControl = await trySelectors(page, UPLOAD_AUDIO);
-        if (!uploadControl.found) return '音频: 上传音频 control not found in the audio dialog';
+        if (!uploadControl.found) return result('音频: 上传音频 control not found in the audio dialog');
         // Click the winner, never a joined union: `text=…, css…` mixes selector engines and
         // Playwright parses the whole string as CSS — zero matches (DOM fixture 0260).
         await clickSelector(page, uploadControl.selector ?? UPLOAD_AUDIO[0] ?? 'text=上传音频', 8_000);
         const audioInput = await trySelectors(page, AUDIO_UPLOAD_INPUT, { visible: false });
-        if (!audioInput.found) return '音频: no audio file input appeared';
+        if (!audioInput.found) return result('音频: no audio file input appeared');
         await uploadFile(asPlaywrightPage(page), audioInput.selector ?? AUDIO_UPLOAD_INPUT.join(', '), audioPath, {
             timeoutMs: 60_000,
         });
@@ -2687,13 +2697,13 @@ export async function insertAudioMaterial(
                             ),
                         5_000,
                     );
-                    if (!libraryReady) return '音频: 封面素材库加载未完成，未上传重复封面';
+                    if (!libraryReady) return result('音频: 封面素材库加载未完成，未上传重复封面');
                     existing = Number(
                         await page.evaluate(
                             `([...document.querySelectorAll('.weui-desktop-img-picker__item')].filter(row => row.offsetWidth > 0 && row.querySelector('.weui-desktop-img-picker__img-title')?.textContent?.trim() === ${JSON.stringify(coverName)})).length`,
                         ),
                     );
-                    if (existing > 1) return '音频: 内容绑定封面存在多个同名素材，未猜测选择';
+                    if (existing > 1) return result('音频: 内容绑定封面存在多个同名素材，未猜测选择');
                 }
                 let uploadPath = coverPath;
                 let temporaryDir: string | undefined;
@@ -2730,7 +2740,10 @@ export async function insertAudioMaterial(
                                 ),
                             30_000,
                         );
-                        if (!selected) return '音频: 上传封面未出现唯一已选中的同名图片，未提交封面';
+                        if (!selected) return result('音频: 上传封面未出现唯一已选中的同名图片，未提交封面');
+                        // The picker just proved the library holds the unique same-name cover; every
+                        // failure past this point leaves the cover in the 图片库 (cover rescue valid).
+                        libraryHasCover = true;
                         const next = await findSelector(
                             page,
                             [`${chooser} button:has-text("下一步"):not(.weui-desktop-btn_disabled)`],
@@ -2745,11 +2758,23 @@ export async function insertAudioMaterial(
                             30_000,
                         );
                         await clickSelector(page, finish, 8_000);
-                        const closed = await waitUntil(
+                        // Hardened like the 播客 walk: 完成 may bounce a crop-confirm page; wait long,
+                        // retry via 确定, and only then abandon the audio save.
+                        let closed = await waitUntil(
                             async () => !(await page.locator(chooser).first().isVisible()),
-                            8_000,
+                            25_000,
                         );
-                        if (!closed) return '音频: 封面选择器完成后未关闭，未保存音频';
+                        if (!closed) {
+                            const confirm = await tryFindSelector(page, [`${chooser} button:has-text("确定")`], 5_000);
+                            if (confirm !== undefined) {
+                                await clickSelector(page, confirm, 8_000);
+                                closed = await waitUntil(
+                                    async () => !(await page.locator(chooser).first().isVisible()),
+                                    10_000,
+                                );
+                            }
+                        }
+                        if (!closed) return result('音频: 封面选择器完成后未关闭，未保存音频');
                     }
                 } finally {
                     if (temporaryDir !== undefined) {
@@ -2762,7 +2787,7 @@ export async function insertAudioMaterial(
         const titleInput = await trySelectors(page, AUDIO_TITLE_INPUT);
         if (titleInput.found) await fillSelector(page, titleInput.selector ?? AUDIO_TITLE_INPUT.join(', '), title);
         const agreed = String(await page.evaluate(AGREE));
-        if (agreed !== 'checked') return `音频: 服务规则勾选失败 (${agreed})`;
+        if (agreed !== 'checked') return result(`音频: 服务规则勾选失败 (${agreed})`);
         const save = await findSelector(
             page,
             UPLOAD_SAVE.map((selector) => `${selector}:not(.weui-desktop-btn_disabled):not([disabled])`),
@@ -2770,7 +2795,7 @@ export async function insertAudioMaterial(
             90_000,
         );
         await clickSelector(page, save, 8_000);
-        return null;
+        return result('');
     };
 
     /** One MATCH read; a throwing probe stays 'error' (unknown, never treated as missing). */
@@ -2804,24 +2829,24 @@ export async function insertAudioMaterial(
         if (match === 'missing') {
             // No reusable material: upload one, then POLL until the new row actually exists — never
             // assume the upload auto-selected a default row (task 0260 AC2).
-            const uploadWarning = await upload();
-            if (uploadWarning !== null) {
+            const uploadResult = await upload();
+            if (uploadResult.warning !== '') {
                 await page.evaluate(CANCEL);
-                return uploadWarning;
+                return result(uploadResult.warning);
             }
             await waitForVisible(page, AUDIO_DIALOG, AUDIO_DIALOG_TIMEOUT_MS);
             match = await awaitMatch();
             if (match === 'missing') {
                 await page.evaluate(CANCEL);
-                return `音频: 保存后素材列表未出现「${title}」，未插入音频`;
+                return result(`音频: 保存后素材列表未出现「${title}」，未插入音频`);
             }
             if (match === 'error') {
                 await page.evaluate(CANCEL);
-                return '音频: 保存后素材匹配探测失败，未插入音频';
+                return result('音频: 保存后素材匹配探测失败，未插入音频');
             }
         } else if (match === 'error') {
             await page.evaluate(CANCEL);
-            return '音频: 素材匹配探测失败，未插入音频';
+            return result('音频: 素材匹配探测失败，未插入音频');
         }
         // Parse the match; anything but a unique ticked row stays a warning (never first-item).
         let identity = '';
@@ -2829,32 +2854,36 @@ export async function insertAudioMaterial(
             const parsed = JSON.parse(match) as { state?: string; identity?: string };
             if (parsed.state !== 'checked') {
                 await page.evaluate(CANCEL);
-                return `音频: 素材「${title}」${parsed.state === 'ambiguous' ? '列表匹配到多个同名条目，身份不唯一' : parsed.state === 'nobox' ? '行没有勾选框' : '未选中'}，未插入音频`;
+                return result(
+                    `音频: 素材「${title}」${parsed.state === 'ambiguous' ? '列表匹配到多个同名条目，身份不唯一' : parsed.state === 'nobox' ? '行没有勾选框' : '未选中'}，未插入音频`,
+                );
             }
             identity = parsed.identity ?? '';
         } catch {
             await page.evaluate(CANCEL);
-            return '音频: 素材匹配探测返回未知结果，未插入音频';
+            return result('音频: 素材匹配探测返回未知结果，未插入音频');
         }
         if ((await page.evaluate(INSERT)) !== true) {
             await page.evaluate(CANCEL);
-            return '音频: 插入按钮未找到，请手动插入';
+            return result('音频: 插入按钮未找到，请手动插入');
         }
         await page.waitForTimeout?.(2_000);
         let verdict: { state?: string; identity?: string };
         try {
             verdict = JSON.parse(String(await page.evaluate(VERIFY))) as { state?: string; identity?: string };
         } catch {
-            return '音频: 已插入但无法读取正文状态，请手动检查';
+            return result('音频: 已插入但无法读取正文状态，请手动检查');
         }
-        if (verdict.state === 'absent' || verdict.state === 'noeditor') return '音频: 插入未生效，请手动检查';
-        if (verdict.state !== 'top') return '音频: 已插入但未在文首，请手动调整位置';
+        if (verdict.state === 'absent' || verdict.state === 'noeditor') return result('音频: 插入未生效，请手动检查');
+        if (verdict.state !== 'top') return result('音频: 已插入但未在文首，请手动调整位置');
         // Identity readback (0260 R2): success requires the selected identity to reappear on the
         // inserted node; an unreadable identity is an unverifiable warning, never a silent pass.
         if (identity === '' || (verdict.identity ?? '') === '' || verdict.identity !== identity)
-            return `音频: 已插入文首但无法核对素材身份（selected=${identity || '未读到'} node=${(verdict.identity ?? '').slice(0, 60) || '未读到'}），请手动核对`;
-        return '';
+            return result(
+                `音频: 已插入文首但无法核对素材身份（selected=${identity || '未读到'} node=${(verdict.identity ?? '').slice(0, 60) || '未读到'}），请手动核对`,
+            );
+        return result('');
     } catch (error) {
-        return `音频: ${error instanceof Error ? error.message.slice(0, 120) : '自动插入失败'}，请手动插入`;
+        return result(`音频: ${error instanceof Error ? error.message.slice(0, 120) : '自动插入失败'}，请手动插入`);
     }
 }

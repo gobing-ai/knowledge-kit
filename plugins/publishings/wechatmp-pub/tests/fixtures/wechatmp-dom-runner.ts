@@ -52,6 +52,7 @@ export interface Facts {
         clicks: Record<string, number>;
         uploads: string[];
         audioResult?: string;
+        audioCoverSeeded?: boolean;
         committed?: Record<string, unknown>;
         accountValue?: string | null;
         insertedMediaId?: string | null;
@@ -526,6 +527,7 @@ export async function runScenario(scenario: string): Promise<Facts> {
             const wrapped = wrapPlaywrightPage(page);
             let warnings: string[] = [];
             let audioResult: string | undefined;
+            let audioCoverSeeded: boolean | undefined;
             if (cfg.run === 'enrich') {
                 warnings = await enrichArticle(wrapped, cfg.meta ?? {});
             } else if (cfg.run === 'cover') {
@@ -542,15 +544,17 @@ export async function runScenario(scenario: string): Promise<Facts> {
                 const warning = await runCover(wrapped, 'library', { stepTimeoutMs: 1000 }, { requested: coverPath });
                 warnings = warning === null ? [] : [warning];
             } else {
-                audioResult = await insertAudioMaterial(wrapped, {
+                const audio = await insertAudioMaterial(wrapped, {
                     title: cfg.title ?? '',
                     audioPath,
                     coverPath,
                 });
+                audioResult = audio.warning;
+                audioCoverSeeded = audio.coverSeeded;
             }
             const ops = (await page.evaluate(COLLECT)) as NonNullable<Facts['ops']>;
             await browser.close();
-            return { scenario, warnings, ops: { ...ops, audioResult } };
+            return { scenario, warnings, ops: { ...ops, audioResult, audioCoverSeeded } };
         } finally {
             try {
                 await browser.close();

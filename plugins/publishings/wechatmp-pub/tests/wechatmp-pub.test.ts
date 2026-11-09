@@ -2633,7 +2633,7 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
 
     test('insertAudioMaterial reuses the same-title 素材库 material and verifies placement at the top', async () => {
         const ops: string[] = [];
-        const warning = await insertAudioMaterial(
+        const { warning } = await insertAudioMaterial(
             // caret, match (JSON identity), insert, verify (the menu-open evaluates script no returns).
             recordingPage(ops, [
                 undefined,
@@ -2725,7 +2725,7 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
 
     test('insertAudioMaterial uploads the audio + cover when the 素材库 has no same-title material', async () => {
         const ops: string[] = [];
-        const warning = await insertAudioMaterial(
+        const { warning } = await insertAudioMaterial(
             // caret, match missing ×3 (the 素材库 rows stream in), agree, post-upload match, insert, verify.
             recordingPage(ops, [
                 undefined,
@@ -2750,12 +2750,80 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
 
     test('insertAudioMaterial reports an unticked service-rules box instead of silently saving', async () => {
         const ops: string[] = [];
-        const warning = await insertAudioMaterial(
+        const { warning } = await insertAudioMaterial(
             recordingPage(ops, [undefined, 'missing', 'missing', 'missing', 'no-label']),
             AUDIO_INPUT,
         );
         expect(warning).toContain('服务规则勾选失败');
         expect(warning).toContain('no-label');
+    });
+
+    test('a failure after the cover picker verified the unique row reports coverSeeded (library rescue)', async () => {
+        // 2026-11-09: the daily run lost BOTH audio and cover because the chooser-close wait was
+        // tight and the post-failure guard skipped the library cover even though the cover had
+        // committed. The contract: failures AFTER the picker's unique-row check carry
+        // coverSeeded=true so enrichArticleDraft still binds the cover.
+        const cover = join(tmpdir(), `kk-audio-seeded-${randomUUID()}.png`);
+        await Bun.write(cover, 'png');
+        let chooserClosed = false;
+        const evals: string[] = ['missing', 'missing', 'missing'];
+        const page = {
+            goto: async () => undefined,
+            url: () => editorUrlFor(0),
+            press: async () => undefined,
+            waitForTimeout: async () => undefined,
+            setInputFiles: async () => undefined,
+            evaluate: async (script: string) => {
+                if (script.includes('audio_item')) return evals.shift() ?? 'missing';
+                if (script.includes('weui-desktop-loading')) return true;
+                if (script.includes('img-picker__item')) return script.includes('classList') ? true : '0';
+                if (script.includes('我已阅读并同意')) return 'no-label';
+                if (script.includes('插入') && script.includes('button')) return true;
+                return undefined;
+            },
+            locator: (selector: string) => ({
+                count: async () => (selector.includes('选择图片') && chooserClosed ? 0 : 1),
+                first: () => ({
+                    count: async () => 1,
+                    isVisible: async () => (selector.includes('选择图片') ? !chooserClosed : true),
+                    waitFor: async () => undefined,
+                    click: async () => {
+                        if (selector.includes('完成')) chooserClosed = true;
+                    },
+                    fill: async () => undefined,
+                }),
+            }),
+        } as unknown as WechatPage;
+        try {
+            const stuck = await insertAudioMaterial(page, { title: 'Episode 1', audioPath: 'a.mp3', coverPath: cover });
+            expect(stuck.warning).toContain('服务规则勾选失败');
+            expect(stuck.coverSeeded).toBe(true);
+
+            // Nothing committed before the upload control: a dialog that opens but offers no
+            // 上传音频 control — the walk returns before any cover upload.
+            const noUpload = {
+                ...page,
+                locator: (selector: string) => ({
+                    count: async () => (selector.includes('audio_dialog') ? 1 : 0),
+                    first: () => ({
+                        count: async () => (selector.includes('audio_dialog') ? 1 : 0),
+                        isVisible: async () => selector.includes('audio_dialog'),
+                        waitFor: async () => undefined,
+                        click: async () => undefined,
+                        fill: async () => undefined,
+                    }),
+                }),
+            } as unknown as WechatPage;
+            const early = await insertAudioMaterial(noUpload, {
+                title: 'Episode 1',
+                audioPath: 'a.mp3',
+                coverPath: cover,
+            });
+            expect(early.warning).toContain('上传音频 control not found');
+            expect(early.coverSeeded).toBe(false);
+        } finally {
+            await rm(cover, { force: true });
+        }
     });
 
     test('a step whose row keeps detaching is retried once, then warned and swept', async () => {
@@ -2852,7 +2920,7 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
         ];
         for (const [returns, expected] of cases) {
             const ops: string[] = [];
-            const warning = await insertAudioMaterial(recordingPage(ops, returns), AUDIO_INPUT);
+            const { warning } = await insertAudioMaterial(recordingPage(ops, returns), AUDIO_INPUT);
             expect(warning).toContain(expected);
         }
     });
@@ -3786,7 +3854,7 @@ describe('wechatmp-pub CLI surface (unchanged contract)', () => {
 
             // 1. Success case
             const pageOk = makeAudioPage({});
-            const resOk = await insertAudioMaterial(pageOk, {
+            const { warning: resOk } = await insertAudioMaterial(pageOk, {
                 title: 'Episode 1',
                 audioPath: 'a.mp3',
                 coverPath: 'c.png',
@@ -3799,7 +3867,7 @@ describe('wechatmp-pub CLI surface (unchanged contract)', () => {
                     throw new Error('match probe failed');
                 },
             });
-            const resMatchThrows = await insertAudioMaterial(pageMatchThrows, {
+            const { warning: resMatchThrows } = await insertAudioMaterial(pageMatchThrows, {
                 title: 'Episode 1',
                 audioPath: 'a.mp3',
                 coverPath: 'c.png',
@@ -3810,7 +3878,7 @@ describe('wechatmp-pub CLI surface (unchanged contract)', () => {
             const pageAmbiguous = makeAudioPage({
                 matchResult: JSON.stringify({ state: 'ambiguous' }),
             });
-            const resAmbiguous = await insertAudioMaterial(pageAmbiguous, {
+            const { warning: resAmbiguous } = await insertAudioMaterial(pageAmbiguous, {
                 title: 'Episode 1',
                 audioPath: 'a.mp3',
                 coverPath: 'c.png',
@@ -3821,7 +3889,7 @@ describe('wechatmp-pub CLI surface (unchanged contract)', () => {
             const pageNobox = makeAudioPage({
                 matchResult: JSON.stringify({ state: 'nobox' }),
             });
-            const resNobox = await insertAudioMaterial(pageNobox, {
+            const { warning: resNobox } = await insertAudioMaterial(pageNobox, {
                 title: 'Episode 1',
                 audioPath: 'a.mp3',
                 coverPath: 'c.png',
@@ -3832,7 +3900,7 @@ describe('wechatmp-pub CLI surface (unchanged contract)', () => {
             const pageUnchecked = makeAudioPage({
                 matchResult: JSON.stringify({ state: 'unchecked' }),
             });
-            const resUnchecked = await insertAudioMaterial(pageUnchecked, {
+            const { warning: resUnchecked } = await insertAudioMaterial(pageUnchecked, {
                 title: 'Episode 1',
                 audioPath: 'a.mp3',
                 coverPath: 'c.png',
@@ -3843,7 +3911,7 @@ describe('wechatmp-pub CLI surface (unchanged contract)', () => {
             const pageInvalidJson = makeAudioPage({
                 matchResult: 'invalid-json',
             });
-            const resInvalid = await insertAudioMaterial(pageInvalidJson, {
+            const { warning: resInvalid } = await insertAudioMaterial(pageInvalidJson, {
                 title: 'Episode 1',
                 audioPath: 'a.mp3',
                 coverPath: 'c.png',
@@ -3854,7 +3922,7 @@ describe('wechatmp-pub CLI surface (unchanged contract)', () => {
             const pageInsertFail = makeAudioPage({
                 insertResult: false,
             });
-            const resInsertFail = await insertAudioMaterial(pageInsertFail, {
+            const { warning: resInsertFail } = await insertAudioMaterial(pageInsertFail, {
                 title: 'Episode 1',
                 audioPath: 'a.mp3',
                 coverPath: 'c.png',
@@ -3865,7 +3933,7 @@ describe('wechatmp-pub CLI surface (unchanged contract)', () => {
             const pageVerifyInvalid = makeAudioPage({
                 verifyResult: 'invalid-json',
             });
-            const resVerifyInvalid = await insertAudioMaterial(pageVerifyInvalid, {
+            const { warning: resVerifyInvalid } = await insertAudioMaterial(pageVerifyInvalid, {
                 title: 'Episode 1',
                 audioPath: 'a.mp3',
                 coverPath: 'c.png',
@@ -3876,7 +3944,7 @@ describe('wechatmp-pub CLI surface (unchanged contract)', () => {
             const pageVerifyAbsent = makeAudioPage({
                 verifyResult: JSON.stringify({ state: 'absent' }),
             });
-            const resVerifyAbsent = await insertAudioMaterial(pageVerifyAbsent, {
+            const { warning: resVerifyAbsent } = await insertAudioMaterial(pageVerifyAbsent, {
                 title: 'Episode 1',
                 audioPath: 'a.mp3',
                 coverPath: 'c.png',
@@ -3887,7 +3955,7 @@ describe('wechatmp-pub CLI surface (unchanged contract)', () => {
             const pageVerifyMiddle = makeAudioPage({
                 verifyResult: JSON.stringify({ state: 'middle' }),
             });
-            const resVerifyMiddle = await insertAudioMaterial(pageVerifyMiddle, {
+            const { warning: resVerifyMiddle } = await insertAudioMaterial(pageVerifyMiddle, {
                 title: 'Episode 1',
                 audioPath: 'a.mp3',
                 coverPath: 'c.png',
@@ -3898,7 +3966,7 @@ describe('wechatmp-pub CLI surface (unchanged contract)', () => {
             const pageVerifyMismatch = makeAudioPage({
                 verifyResult: JSON.stringify({ state: 'top', identity: 'different-id' }),
             });
-            const resVerifyMismatch = await insertAudioMaterial(pageVerifyMismatch, {
+            const { warning: resVerifyMismatch } = await insertAudioMaterial(pageVerifyMismatch, {
                 title: 'Episode 1',
                 audioPath: 'a.mp3',
                 coverPath: 'c.png',
@@ -3909,7 +3977,7 @@ describe('wechatmp-pub CLI surface (unchanged contract)', () => {
             const pageThrows = makeAudioPage({
                 throwsOnPress: true,
             });
-            const resThrows = await insertAudioMaterial(pageThrows, {
+            const { warning: resThrows } = await insertAudioMaterial(pageThrows, {
                 title: 'Episode 1',
                 audioPath: 'a.mp3',
                 coverPath: 'c.png',
@@ -3921,7 +3989,7 @@ describe('wechatmp-pub CLI surface (unchanged contract)', () => {
                 matchResult: 'missing',
                 noUploadControl: true,
             });
-            const resMissingUpload = await insertAudioMaterial(pageMissingUploadNotFound, {
+            const { warning: resMissingUpload } = await insertAudioMaterial(pageMissingUploadNotFound, {
                 title: 'Episode 1',
                 audioPath: 'a.mp3',
                 coverPath: 'c.png',
@@ -3937,7 +4005,7 @@ describe('wechatmp-pub CLI surface (unchanged contract)', () => {
                 },
                 skipUploadCover: true,
             });
-            const resMissingUploadSucceeds = await insertAudioMaterial(pageMissingUploadSucceeds, {
+            const { warning: resMissingUploadSucceeds } = await insertAudioMaterial(pageMissingUploadSucceeds, {
                 title: 'Episode 1',
                 audioPath: 'a.mp3',
                 coverPath: 'c.png',
@@ -3955,7 +4023,7 @@ describe('wechatmp-pub CLI surface (unchanged contract)', () => {
                 },
                 skipUploadCover: true,
             });
-            const resMissingUploadProbeThrows = await insertAudioMaterial(pageMissingUploadProbeThrows, {
+            const { warning: resMissingUploadProbeThrows } = await insertAudioMaterial(pageMissingUploadProbeThrows, {
                 title: 'Episode 1',
                 audioPath: 'a.mp3',
                 coverPath: 'c.png',
@@ -4094,9 +4162,7 @@ describe('wechatmp-pub CLI surface (unchanged contract)', () => {
             };
             const enrichRes = await enrichArticleDraft(audioFailPage, contentWithAudio, 100);
             expect(enrichRes.enrichWarnings.length).toBeGreaterThan(0);
-            expect(enrichRes.coverWarnings).toContain(
-                'cover: 音频上传未成功，图片库不保证已有请求封面，已跳过图片库封面',
-            );
+            expect(enrichRes.coverWarnings).toContain('cover: 音频上传未成功且图片库尚无请求封面，已跳过图片库封面');
 
             // 7. applyLayout branches
             const mockPageLayout = {
