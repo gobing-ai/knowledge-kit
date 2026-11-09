@@ -4,7 +4,7 @@ name: Harden kk bot into a general data-collection substrate
 status: done
 template: feature-impl
 created_at: 2026-11-09T06:36:45.705Z
-updated_at: "2026-11-09T08:59:22.224Z"
+updated_at: "2026-11-09T18:35:45.580Z"
 feature_id: G3
 
 ac_altitude: task-local
@@ -269,21 +269,21 @@ Why this shape: the plan is data, so a plugin and the probe use one runner; the 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | packages/publish-harness/src/bot-collection.ts:388 |
-| R2 | MET | packages/publish-harness/src/bot-collection.ts:633 |
-| R3 | MET | packages/publish-harness/src/bot-collection.ts:290 |
-| R4 | MET | packages/publish-harness/src/bot-collection.ts:345 |
-| R5 | MET | packages/kk-core/src/manifest.ts:198 |
-| R6 | MET | apps/cli/tests/e2e-bot-collection.ts:464 |
+| R1 | MET | `packages/publish-harness/src/bot-collection.ts:409` implements ordered request/navigate/wait/click/scroll/extract execution; `packages/publish-harness/tests/bot-collection.test.ts:406` proves order, identity and redacted final URLs, and the focused suite passed 92/92. |
+| R2 | MET | `packages/publish-harness/src/bot-collection.ts:657` installs capture listeners before steps and returns typed, redacted artifacts; `apps/cli/tests/e2e-bot-collection.ts:268` checks rendered, request and XHR artifacts through real fan-in, with the final E2E PASS. |
+| R3 | MET | `packages/publish-harness/src/bot-collection.ts:700` bounds the whole step, including scroll and request-body reads; `packages/publish-harness/tests/bot-collection.test.ts:746` proves both wedged paths time out with safe IDs and exactly one close/release, and `packages/publish-harness/tests/bot-collection.test.ts:868` rechecks failure cleanup. |
+| R4 | MET | `packages/publish-harness/src/bot-collection.ts:347` classifies step/capture statuses and `packages/publish-harness/src/bot-collection.ts:399` removes supplied header/data secrets; `packages/publish-harness/tests/bot-collection.test.ts:590` covers captured 401/403/404 and `packages/publish-harness/tests/bot-collection.test.ts:677` proves header/data/query redaction. |
+| R5 | MET | `packages/kk-core/src/manifest.ts:191` admits only publish/ingestion descriptors and still requires `check`; manifest/registry suites passed 50/50 and adapter/bot-CLI/ordinary-fan-in suites passed 69/69, including `apps/cli/tests/bot-adapter.test.ts:119` and the five-verb control at `apps/cli/tests/commands/bot.test.ts:159`. |
+| R6 | MET | `apps/cli/tests/e2e-bot-collection.ts:268` passed every real-Chromium check, `packages/publish-harness/scripts/bot-collection-probe.ts:100` enforces 0600 on reused files, and the owning docs are present at `docs/00_ADR.md:1515`, `docs/03_ARCHITECTURE.md:630`, `docs/04_DESIGN.md:1297`, `docs/design/kk-noun-verb-bots.md:89`, and `docs/design/ingestion-plugin-specification.md:73`. The full gate passed 4753/4753 tests after the hermetic fixture correction at `plugins/kk/tests/safety-retry-preserves-artifacts.test.ts:202`. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — one session executes an ordered rendered collection (req: R1) | MET | test | packages/publish-harness/tests/bot-collection.test.ts:388 |
-| AC2 — authenticated request and XHR artifacts reach an ingestion consumer (req: R2) | MET | command | `bun apps/cli/tests/e2e-bot-collection.ts` — `kk executor fan-in --source` spawns apps/cli/tests/fixtures/plugins/ingestions/e2e-bot-collection/entry.ts and yields docs `e2e-bot-collection:rendered |
-| AC3 — invalid or wedged runs are bounded and release every owned resource (req: R3) | MET | test | packages/publish-harness/tests/bot-collection.test.ts:725 |
-| AC4 — missing data and authentication failures cannot masquerade as a quiet day (req: R4) | MET | test | packages/publish-harness/tests/bot-collection.test.ts:574 |
-| AC5 — ingestion descriptors join the existing session boundary without CLI drift (req: R5) | MET | test | packages/kk-core/tests/manifest.test.ts:88 + apps/cli/tests/bot-adapter.test.ts:116 + untouched apps/cli/tests/commands/bot.test.ts:158 |
-| AC6 — the E2E and documents leave repeatable implementation evidence (req: R6) | MET | command | `bun run spur-check` exit 0 (format + lint/typecheck + rules + 4748-test suite + coverage/TSDoc) and `.spur/run/e2e/0346-bot-collection.json` `pass: true`, `externalRequests: 0` |
+| AC1 — one session executes an ordered rendered collection (req: R1) | MET | test | `packages/publish-harness/tests/bot-collection.test.ts:406` proves declaration order, one launch/lease and rendered artifacts; focused publish-harness suites passed 92/92. |
+| AC2 — authenticated request and XHR artifacts reach an ingestion consumer (req: R2) | MET | command | `bun apps/cli/tests/e2e-bot-collection.ts .spur/run/e2e/0346-bot-collection.json` exited 0; `apps/cli/tests/e2e-bot-collection.ts:165` uses the real fan-in CLI and `apps/cli/tests/e2e-bot-collection.ts:268` checks deterministic Doc IDs, rendered/request/XHR artifacts, authenticated loopback observation and probe output. |
+| AC3 — invalid or wedged runs are bounded and release every owned resource (req: R3) | MET | test | `packages/publish-harness/tests/bot-collection.test.ts:746` proves wedged scroll/request-body reads stop at their 60 ms bound with one close/release; validation, caps and cleanup cases all passed in the 92-test publish-harness run. |
+| AC4 — missing data and authentication failures cannot masquerade as a quiet day (req: R4) | MET | test | `packages/publish-harness/tests/bot-collection.test.ts:590` proves required captures classify 401/403/404 and never return the marker body; `packages/publish-harness/tests/bot-collection.test.ts:677` proves header/data/query values are redacted; existing empty/auth/expiry cases also passed. |
+| AC5 — ingestion descriptors join the existing session boundary without CLI drift (req: R5) | MET | test | `packages/kk-core/tests/manifest.test.ts:88`, `packages/kk-core/tests/registry.test.ts:717`, and `apps/cli/tests/bot-adapter.test.ts:119` cover ingestion binding/rejections; `apps/cli/tests/commands/bot.test.ts:159` pins five verbs; ordinary fan-in tests passed without Chromium. |
+| AC6 — the E2E and documents leave repeatable implementation evidence (req: R6) | MET | command | `gateTimeoutMs=1800000 spur task gate 0346 run --cmd 'bun run gate'` passed attempt 1 with 4753 tests / 0 failures; `bun apps/cli/tests/e2e-bot-collection.ts .spur/run/e2e/0346-bot-collection.json` exited 0 with every check true, including `probeArtifactPermissions` at `apps/cli/tests/e2e-bot-collection.ts:282`. The dated ADR and all four owning documents are cited in R6. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -314,7 +314,7 @@ Confidence: MEDIUM
 | R5 | MET | packages/kk-core/src/manifest.ts:198 |
 | R6 | MET | apps/cli/tests/e2e-bot-collection.ts:464 |
 
-#### Acceptance Criteria
+**Acceptance Criteria**
 
 | AC | Status | Evidence Type | Evidence |
 | --- | --- | --- | --- |

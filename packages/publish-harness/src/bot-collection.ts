@@ -136,6 +136,8 @@ interface CaptureState {
     pending: Promise<void>[];
     /** Matched-but-unreadable bodies; only fatal when the declaration ends with no usable artifact. */
     readFailures: number;
+    /** First explicit error status observed for this required capture. */
+    failure?: BotError;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -342,17 +344,26 @@ function looksLikeAuthWall(url: string | undefined): boolean {
 }
 
 /** Classify an observed status before its body is read; `undefined` means "keep going". */
-function classifyStatus(status: number, stepIndex: number, stepId: string): BotError | undefined {
+function classifyStatus(
+    status: number,
+    stepIndex: number | undefined,
+    stepId: string,
+    what: 'step' | 'capture' = 'step',
+): BotError | undefined {
+    const details = {
+        ...(stepIndex === undefined ? {} : { stepIndex }),
+        stepId,
+    };
     if (status === 401 || status === 403) {
         return new BotError(
             'authentication',
-            `step '${stepId}' hit an authentication wall (status ${status}) — ` +
+            `${what} '${stepId}' hit an authentication wall (status ${status}) — ` +
                 'run `kk bot login <url> --save <profileName>` to renew the session',
-            { stepIndex, stepId },
+            details,
         );
     }
     if (status >= 400) {
-        return new BotError('browser', `step '${stepId}' returned status ${status}`, { stepIndex, stepId });
+        return new BotError('browser', `${what} '${stepId}' returned status ${status}`, details);
     }
     return undefined;
 }
@@ -384,6 +395,16 @@ function stepTimeout(step: BotCollectionStep, remaining: number, stepIndex: numb
     return Math.min(step.timeoutMs ?? DEFAULT_STEP_TIMEOUT_MS, remaining);
 }
 
+/** Remove caller-supplied secrets Playwright may include in a transport error. */
+function requestFailureDetail(error: unknown, step: Extract<BotCollectionStep, { type: 'request' }>): string {
+    let detail = execFailureDetail(error, step.url);
+    const secrets = [...Object.values(step.headers ?? {}), ...(step.data === undefined ? [] : [step.data])];
+    for (const secret of secrets) {
+        if (secret.length > 0) detail = detail.split(secret).join('<redacted>');
+    }
+    return detail.slice(0, 200);
+}
+
 /** Execute one validated step and return its result row. */
 async function runStep(
     step: BotCollectionStep,
@@ -408,7 +429,7 @@ async function runStep(
             } catch (error) {
                 throw new BotError(
                     'browser',
-                    `step '${step.id}' request failed (${execFailureDetail(error, step.url)})`,
+                    `step '${step.id}' request failed (${requestFailureDetail(error, step)})`,
                     details,
                 );
             }
@@ -533,6 +554,9 @@ async function runStep(
     }
 }
 
+/** Internal signal distinguishing an enforced deadline from an arbitrary rejected operation. */
+class StepTimeoutError extends Error {}
+
 /** Enforce the artifact ceiling and body caps once per artifact, in deterministic order. */
 function enforceCaps(artifact: BotCollectionArtifact, artifacts: BotCollectionArtifact[], aggregate: number): number {
     if (artifacts.length >= MAX_ARTIFACTS) {
@@ -562,7 +586,7 @@ function enforceCaps(artifact: BotCollectionArtifact, artifacts: BotCollectionAr
 async function applyTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const expiry = new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error('step timeout')), timeoutMs);
+        timer = setTimeout(() => reject(new StepTimeoutError()), timeoutMs);
     });
     try {
         return await Promise.race([promise, expiry]);
@@ -642,12 +666,20 @@ export async function runBotCollection(
                     const { origin, pathPrefix } = state.declaration;
                     if (origin !== undefined && parsed.origin !== origin) continue;
                     if (!parsed.pathname.startsWith(pathPrefix)) continue;
+                    const status = response.status();
+                    const failure = classifyStatus(status, undefined, state.declaration.id, 'capture');
+                    if (failure !== undefined) {
+                        // The event callback cannot throw into the awaited plan; retain the typed
+                        // failure and let the ordered capture drain throw it through `finally`.
+                        state.failure ??= failure;
+                        continue;
+                    }
                     // Never rejects: an orphaned rejection here would surface as an unhandled fault.
                     state.pending.push(
                         readBody(response).then(
                             (body) => {
                                 state.matches.push({
-                                    status: response.status(),
+                                    status,
                                     text: body.toString('utf8'),
                                     url: `${parsed.origin}${parsed.pathname}`,
                                 });
@@ -666,7 +698,21 @@ export async function runBotCollection(
         const artifacts: BotCollectionArtifact[] = [];
         let aggregate = 0;
         for (const [index, step] of normalized.steps.entries()) {
-            const outcome = await runStep(step, index, activeContext, page, stepTimeout(step, deadline - now(), index));
+            const timeoutMs = stepTimeout(step, deadline - now(), index);
+            let outcome: Awaited<ReturnType<typeof runStep>>;
+            try {
+                // Bound the whole step, not only Playwright calls that accept a timeout: request-body
+                // reads and scroll/evaluate can otherwise outlive both the step and run budgets.
+                outcome = await applyTimeout(runStep(step, index, activeContext, page, timeoutMs), timeoutMs);
+            } catch (error) {
+                if (error instanceof StepTimeoutError) {
+                    throw new BotError('browser', `step '${step.id}' exceeded the collection deadline`, {
+                        stepIndex: index,
+                        stepId: step.id,
+                    });
+                }
+                throw error;
+            }
             steps.push(outcome.result);
             if (outcome.artifact !== undefined) {
                 aggregate = enforceCaps(outcome.artifact, artifacts, aggregate);
@@ -675,6 +721,7 @@ export async function runBotCollection(
         }
 
         for (const state of captures) {
+            if (state.failure !== undefined) throw state.failure;
             const settled = await waitWithin(
                 Promise.all(state.pending).then(() => undefined),
                 deadline - now(),
@@ -688,6 +735,7 @@ export async function runBotCollection(
                     },
                 );
             }
+            if (state.failure !== undefined) throw state.failure;
             const found = state.matches.filter((match) => match.text.trim() !== '');
             // A read failure that leaves the declaration empty is reported as such; a sibling match
             // that did produce a body (a navigation can evict an in-flight one) keeps the run green.

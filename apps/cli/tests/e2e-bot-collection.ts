@@ -6,7 +6,7 @@
 //
 // Writes `.spur/run/e2e/0346-bot-collection.json` with pass/fail, Doc evidence, artifact metadata,
 // launch observations, `authenticated` and `externalRequests`. Exit 0 only when every check passes.
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { BotCollectionPlan } from '@gobing-ai/publish-harness/bot-collection';
@@ -190,6 +190,10 @@ async function main(): Promise<void> {
         }
 
         probeOut = join(work, 'probe');
+        mkdirSync(probeOut, { recursive: true, mode: 0o700 });
+        const reusedArtifact = join(probeOut, '00-copy.txt');
+        writeFileSync(reusedArtifact, 'stale');
+        chmodSync(reusedArtifact, 0o644);
         const child = Bun.spawn(
             [
                 'bun',

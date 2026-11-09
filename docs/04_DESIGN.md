@@ -1322,7 +1322,7 @@ runBotCollection(profileName: string, plan: BotCollectionPlan, options?: BotColl
 - **Artifacts.** `{id, kind: request|response|html|text, body, status?, url?, stepIndex?}`; `url` is
   origin+pathname only. Response headers and `Set-Cookie` are never returned. Every declared capture
   and every request/extract artifact must be non-empty — a plugin with a genuinely quiet source
-  declares optional captures rather than weakening the runner's quiet-day guard.
+  omits optional capture declarations rather than weakening the runner's quiet-day guard.
 - **Failures.** `BotError.code` gained `authentication` (explicit request/navigation/required-response
   401/403, or a final URL whose path carries `login|signin|sign-in|auth|sso`) and `empty` (a required
   capture with no match or an empty artifact); other explicit ≥400 statuses, transport failures, body

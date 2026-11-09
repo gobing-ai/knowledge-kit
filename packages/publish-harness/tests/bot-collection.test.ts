@@ -38,6 +38,8 @@ interface FakeBehaviour {
     fetchStatus?: number;
     fetchBody?: string;
     fetchThrows?: boolean;
+    fetchError?: string;
+    fetchBodyHangs?: boolean;
     gotoStatus?: number;
     gotoThrows?: boolean;
     gotoNoResponse?: boolean;
@@ -46,6 +48,7 @@ interface FakeBehaviour {
     waitThrows?: boolean;
     clickThrows?: boolean;
     scrollThrows?: boolean;
+    scrollHangs?: boolean;
     extractThrows?: boolean;
     /** An extraction that never settles — proves the step bound actually applies. */
     extractHangs?: boolean;
@@ -164,6 +167,11 @@ function makeFake(behaviour: FakeBehaviour = {}): FakeContext {
                 return behaviour.bodyText ?? '';
             }
             if (behaviour.scrollThrows === true) throw new Error('scroll refused');
+            if (behaviour.scrollHangs === true) {
+                return await new Promise<void>((_resolve, reject) => {
+                    hangingSettles.push(() => reject(new Error('context closed')));
+                });
+            }
             return undefined;
         },
         url: () => currentUrl,
@@ -174,12 +182,21 @@ function makeFake(behaviour: FakeBehaviour = {}): FakeContext {
             async fetch(url: string, init: { method?: string; timeout?: number; data?: Buffer }) {
                 ops.push(`fetch:${init.method}`);
                 timeouts.push(init.timeout ?? 0);
-                if (behaviour.fetchThrows === true) throw new Error(`apiRequestContext.fetch failed: ${url}`);
+                if (behaviour.fetchThrows === true) {
+                    throw new Error(behaviour.fetchError ?? `apiRequestContext.fetch failed: ${url}`);
+                }
                 return {
                     status: () => behaviour.fetchStatus ?? 200,
                     statusText: () => 'OK',
                     headersArray: () => [],
-                    body: async () => Buffer.from(behaviour.fetchBody ?? 'request-body'),
+                    body: async () => {
+                        if (behaviour.fetchBodyHangs === true) {
+                            return await new Promise<Buffer>((_resolve, reject) => {
+                                hangingSettles.push(() => reject(new Error('context closed')));
+                            });
+                        }
+                        return Buffer.from(behaviour.fetchBody ?? 'request-body');
+                    },
                 };
             },
         },
@@ -569,6 +586,26 @@ describe('pre-registered response capture (R2)', () => {
         expect(error?.code).toBe('browser');
         expect(error?.message).toContain('exceeded the collection deadline');
     });
+
+    test('classifies required capture statuses instead of returning their error bodies', async () => {
+        for (const [status, code] of [
+            [401, 'authentication'],
+            [403, 'authentication'],
+            [404, 'browser'],
+        ] as const) {
+            const { error, fake } = await run(plan, {
+                duringWait: [{ url: `${BASE}/api/items?token=SEKRET`, status, body: 'MARKER-BODY' }],
+            });
+            expect(error?.code).toBe(code);
+            expect(error?.details).toMatchObject({ stepId: 'items' });
+            expect(error?.details.stepIndex).toBeUndefined();
+            expect(error?.message).toContain("capture 'items'");
+            expect(error?.message).not.toContain('SEKRET');
+            expect(error?.message).not.toContain('MARKER-BODY');
+            expect(fake.closes).toBe(1);
+            expect(fake.releases).toBe(1);
+        }
+    });
 });
 
 describe('fail-closed classification and redaction (R4)', () => {
@@ -637,6 +674,28 @@ describe('fail-closed classification and redaction (R4)', () => {
         expect(error?.message).toContain('<url>');
     });
 
+    test('request transport failures remove every supplied header and data value', async () => {
+        const { error } = await run(
+            {
+                steps: [
+                    {
+                        ...requestStep,
+                        headers: { authorization: 'HEADER-SEKRET', 'x-api-key': 'KEY-SEKRET' },
+                        data: 'DATA-SEKRET',
+                    },
+                ],
+            },
+            {
+                fetchThrows: true,
+                fetchError: `fetch failed for ${requestStep.url}: HEADER-SEKRET KEY-SEKRET DATA-SEKRET`,
+            },
+        );
+        expect(error?.code).toBe('browser');
+        for (const secret of ['SEKRET', 'HEADER-SEKRET', 'KEY-SEKRET', 'DATA-SEKRET']) {
+            expect(error?.message).not.toContain(secret);
+        }
+    });
+
     test('navigation failures keep the query out of the diagnostic', async () => {
         const { error } = await run(
             {
@@ -682,6 +741,34 @@ describe('fail-closed classification and redaction (R4)', () => {
         expect(error?.code).toBe('browser');
         expect(error?.message).toContain('could not extract');
         expect(error?.details.stepId).toBe('copy');
+    });
+
+    test('scroll and request-body reads are bounded by the step timeout', async () => {
+        const cases = [
+            {
+                plan: {
+                    steps: [
+                        { id: 'down', type: 'scroll', deltaY: 50, timeoutMs: 60 },
+                        { id: 'copy', type: 'extract', format: 'text' },
+                    ],
+                } as BotCollectionPlan,
+                behaviour: { scrollHangs: true },
+                id: 'down',
+            },
+            {
+                plan: { steps: [{ ...requestStep, timeoutMs: 60 }] },
+                behaviour: { fetchBodyHangs: true },
+                id: 'fetch',
+            },
+        ];
+        for (const entry of cases) {
+            const { error, fake } = await run({ ...entry.plan, timeoutMs: 5000 }, entry.behaviour);
+            expect(error?.code).toBe('browser');
+            expect(error?.message).toContain('exceeded the collection deadline');
+            expect(error?.details).toMatchObject({ stepIndex: 0, stepId: entry.id });
+            expect(fake.closes).toBe(1);
+            expect(fake.releases).toBe(1);
+        }
     });
 
     test('an extract step with no content fails empty', async () => {

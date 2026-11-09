@@ -8,7 +8,7 @@
 // Writes each body to `<out>/<n>-<id>.txt` (0600) and `<out>/result.json` without bodies. On
 // failure it writes `<out>/error.json` with the typed code/message/step id only. It never prints a
 // body, a query-bearing URL, or a supplied plan value — an ingest plan can carry a token.
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { BotError } from '../src/bot';
 import { type BotCollectionOptions, type BotCollectionPlan, runBotCollection } from '../src/bot-collection';
@@ -96,7 +96,9 @@ async function main(): Promise<void> {
         const artifacts: Array<Record<string, unknown>> = [];
         for (const [index, artifact] of result.artifacts.entries()) {
             const file = artifactFileName(index, artifact.id);
-            await writeFile(join(args.outDir, file), artifact.body, { encoding: 'utf8', mode: 0o600 });
+            const path = join(args.outDir, file);
+            await writeFile(path, artifact.body, { encoding: 'utf8', mode: 0o600 });
+            await chmod(path, 0o600);
             artifacts.push({
                 id: artifact.id,
                 kind: artifact.kind,
@@ -112,6 +114,7 @@ async function main(): Promise<void> {
             encoding: 'utf8',
             mode: 0o600,
         });
+        await chmod(join(args.outDir, 'result.json'), 0o600);
         process.stdout.write(`${JSON.stringify(summary)}\n`);
     } catch (error) {
         const failure =
@@ -133,6 +136,7 @@ async function main(): Promise<void> {
                 encoding: 'utf8',
                 mode: 0o600,
             });
+            await chmod(join(args.outDir, 'error.json'), 0o600);
         } catch {
             // A probe that cannot write its error artifact still reports the typed failure below.
         }
