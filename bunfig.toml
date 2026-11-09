@@ -10,6 +10,10 @@ coverageReporter = ["text", "lcov"]
 coverageThreshold = { lines = 0.9, functions = 0.9 }
 coverageSkipTestFiles = true
 coveragePathIgnorePatterns = ["vendors/**", "build/**", "dist/**", "node_modules/**",
+	# decision-hub.test.ts writes a broken-hub.ts hub fixture into a mkdtemp dir and
+	# dynamically imports it; bun's coverage instruments the temp module, which then
+	# shows up in the summary as an absolute /private/var/... path.
+	"**/kk-decision-hub-*/**",
 	# chromium.ts drives real headless Chromium via Playwright. Its only coverage is
 	# tests/compose-e2e.test.ts, which skips where Playwright's Chromium is not
 	# installed, so per-file coverage would depend on the machine.

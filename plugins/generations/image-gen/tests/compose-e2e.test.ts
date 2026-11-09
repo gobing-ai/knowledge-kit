@@ -93,11 +93,11 @@ describe('E2E — real Chromium compose (0180 Plan item 9)', () => {
             const bytes2 = await composer.compose(input);
             expect(sha256(bytes1)).toBe(sha256(bytes2));
 
-            // Write artifact for human inspection.
+            // Write artifact for human inspection (fixed location; nothing printed — the gate
+            // output is dots-only and test stdout is not the artifact's discovery channel).
             mkdirSync(ARTIFACT_DIR, { recursive: true });
             const outPath = join(ARTIFACT_DIR, 'card-without-illustration.png');
             writeFileSync(outPath, bytes1);
-            console.log(`Artifact: ${outPath}`);
 
             // Sanity: artifact is readable and parseable.
             const onDisk = readFileSync(outPath);
@@ -153,11 +153,10 @@ describe('E2E — real Chromium compose (0180 Plan item 9)', () => {
             const bytes2 = await composer.compose(input);
             expect(sha256(bytes1)).toBe(sha256(bytes2));
 
-            // Write artifact.
+            // Write artifact (same fixed location as above; nothing printed).
             mkdirSync(ARTIFACT_DIR, { recursive: true });
             const outPath = join(ARTIFACT_DIR, 'card-with-illustration.png');
             writeFileSync(outPath, bytes1);
-            console.log(`Artifact: ${outPath}`);
 
             expect(existsSync(outPath)).toBeTrue();
         },
