@@ -10,7 +10,7 @@
  *   AC1 — every declared list equals the derived closure, sorted and de-duplicated.
  *   AC2 — checkRequires is pure: mutated in-memory fixtures (direct + inherited)
  *         fail with the entity name and the missing/extra tokens.
- *   AC3 — the group snapshot matches the frozen table (8/5/1/5; 2026-11-08 adds news-editorial) and no
+ *   AC3 — the group snapshot matches the frozen table (9/5/0/5; 2026-11-09 adds web-automation to cli:kk) and no
  *         entity declares hooks or subagents.
  *
  * Plugin standalone contract: only bun:* and node:* builtins plus relative imports.
@@ -176,16 +176,15 @@ describe('runtime-requires (task 0342 / feature F81 R1, R2, R3)', () => {
         }
     });
 
-    test('AC3: the group snapshot matches the 2026-11-08 frozen table (8/5/1/5)', () => {
+    test('AC3: the group snapshot matches the 2026-11-09 frozen table (9/5/0/5)', () => {
         const groups: Record<string, number> = {};
         for (const entity of entities) {
             const key = [...deriveRequires(entity.path)].sort().join(',');
             groups[key] = (groups[key] ?? 0) + 1;
         }
         expect(groups).toEqual({
-            'cli:kk,cli:spur,local-fs': 8,
+            'cli:kk,cli:spur,local-fs': 9,
             'cli:kk,local-fs': 5,
-            'cli:spur,local-fs': 1,
             'local-fs': 5,
         });
         // No kk entity may claim hooks or subagents (kk ships none).

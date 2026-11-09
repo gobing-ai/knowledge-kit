@@ -25,7 +25,7 @@ not add a `kk publish` noun.
 | medium | `medium-pub` | `file-cli` (token API) | `kk executor run medium-pub --in <content.json> --out <result.json>` |
 | wechatmp | `wechatmp-pub` | `file-cli` (`draft/add`) | `kk executor run wechatmp-pub` (default operation `draft`) |
 | x post | `x-pub` | `file-cli` (`POST /2/tweets`) | `kk executor run x-pub` (`options.operation` omitted / `post`) |
-| x article | `x-pub` | `browser` / `script` | `kk executor run x-pub --in <content.json> --out <result.json>` (`options.operation: article`); a missing or expired profile refuses (`ok: false`, naming `profile-check.ts login`) before any window opens |
+| x article | `x-pub` | `browser` / `script` | `kk executor run x-pub --in <content.json> --out <result.json>` (`options.operation: article`); a missing or expired profile refuses (`ok: false`, naming `kk bot login x`) before any window opens |
 | juejin | `juejin-pub` | `browser` / `script` | `kk executor run juejin-pub --in <content.json> --out <result.json>` |
 | infoq | `infoq-pub` | `browser` / `script` | `kk executor run infoq-pub --in <content.json> --out <result.json>` |
 | substack | `substack-pub` | `browser` / `script` | `kk executor run substack-pub --in <content.json> --out <result.json>` (needs `SUBSTACK_PUBLICATION_URL`) |
@@ -43,8 +43,8 @@ credentials. Before the first script-driver run (and after any session expiry), 
 headed login, then verify reuse read-only:
 
 ```bash
-bun plugins/publishings/xhs-pub/src/profile-check.ts login   # headed; sign in once in the window
-bun plugins/publishings/xhs-pub/src/profile-check.ts check   # headless; exit 0 = session verified
+kk bot login xhs                                             # headed; sign in once in the window (adapter-verified)
+bun plugins/publishings/xhs-pub/src/profile-check.ts check   # headless; exit 0 = session verified (underlying probe)
 ```
 
 `check` never signs in — with no saved profile it refuses (exit 1) instead of reporting success.
