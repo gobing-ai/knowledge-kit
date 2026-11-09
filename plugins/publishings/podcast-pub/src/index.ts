@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { basename, dirname, extname } from 'node:path';
+import { basename, dirname, extname, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, DocListSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeFileCliTransport, type PublishTransport, type PublishTransportPayload } from '@gobing-ai/publish-harness';
@@ -25,6 +25,7 @@ import {
     warn,
 } from './seo';
 import { renderShowNotesMarkdown, type ShowNotesRenderOptions } from './show-notes';
+import { buildTranscriptSegments, renderWebVtt, resolveTranscriptConfig, transcriptReferences } from './transcript';
 
 /** Result target name for this plugin. */
 /**
@@ -261,6 +262,65 @@ function resolveAssemblyOptions(options: PodcastPubOptions): { assembly: Assembl
     return { assembly };
 }
 
+/**
+ * Builds `_microfeed.podcast.transcripts` behind `PODCAST_PUB_TRANSCRIPT` (design
+ * docs/design/podcast-transcript.md): builds the WebVTT from `metadata.segments[]` measured
+ * absolute offsets and writes it as a local dry-run artifact next to the episode's audio
+ * source — transcript files are never uploaded here (microfeed hosts only already-external
+ * HTTPS URLs). Inert today: the audio chain records no measured offsets, so this returns
+ * undefined and the payload omits `podcast` entirely so a later update cannot erase a stored
+ * transcript list.
+ */
+function prepareTranscript(
+    metadata: Record<string, unknown> | undefined,
+    warnings: string[],
+    emit: (message: string) => void = (message) => warn(message, warnings),
+): EpisodeMapping['transcripts'] {
+    const config = resolveTranscriptConfig(metadata);
+    if ('error' in config) throw new Error(config.error);
+    if (!config.config.enabled) return undefined;
+    if (!config.config.url) {
+        emit('transcript skipped: PODCAST_PUB_TRANSCRIPT is on but no transcriptUrl was provided');
+        return undefined;
+    }
+    const meta = metadata ?? {};
+    const segments = Array.isArray(meta.segments)
+        ? (meta.segments as Array<Record<string, unknown>>).map((s) => ({
+              startSeconds: typeof s.startSeconds === 'number' ? s.startSeconds : undefined,
+              endSeconds: typeof s.endSeconds === 'number' ? s.endSeconds : undefined,
+              transcription: typeof s.transcription === 'string' ? s.transcription : undefined,
+          }))
+        : [];
+    const cues = buildTranscriptSegments(segments);
+    if (!cues) {
+        emit(
+            'transcript skipped: no measured absolute offsets recorded for every segment (concat does not record startSeconds/endSeconds yet); summed per-clip durations are never used for cue timing',
+        );
+        return undefined;
+    }
+    const source = (() => {
+        for (const key of ['mp3Path', 'audioPath', 'audioFile'] as const) {
+            const value = meta[key];
+            if (typeof value === 'string' && value.trim().length > 0) return value.trim();
+        }
+        return undefined;
+    })();
+    if (!source) {
+        emit('transcript skipped: no local mp3Path/audioPath/audioFile to anchor the .vtt artifact next to');
+        return undefined;
+    }
+    const vttPath = `${join(dirname(source), basename(source).replace(/\.[^.]+$/, ''))}.vtt`;
+    try {
+        writeFileSync(vttPath, renderWebVtt(cues), 'utf-8');
+    } catch (error: unknown) {
+        emit(
+            `transcript skipped: could not write ${vttPath} (${error instanceof Error ? error.message : String(error)})`,
+        );
+        return undefined;
+    }
+    return transcriptReferences(config.config.url);
+}
+
 /** Builds the RSS-enclosure attachment from the presigned-upload media URL (design D2). */
 function audioAttachment(
     audio: ReturnType<typeof mapContentToEpisode>['audio'],
@@ -284,6 +344,7 @@ function episodeExtras(episode: EpisodeMapping, seo?: SeoBlock): MicrofeedItemIn
         ...(episode.datePublishedMs !== undefined ? { date_published_ms: episode.datePublishedMs } : {}),
         ...(episode.link ? { url: episode.link } : {}),
         _microfeed: {
+            ...(episode.transcripts ? { podcast: { transcripts: episode.transcripts } } : {}),
             'itunes:episodeType': episode.itunes?.episodeType ?? 'full',
             ...(episode.itunes?.title ? { 'itunes:title': episode.itunes.title } : {}),
             ...(episode.itunes?.season !== undefined ? { 'itunes:season': episode.itunes.season } : {}),
@@ -499,6 +560,14 @@ async function publishEpisode(
     const policy = prepareEpisodeFields(episode, content.metadata ?? {}, seoConfig.config);
     if (!policy.ok) return fail(policy.error);
     const fields = policy.fields;
+    // Transcript (PODCAST_PUB_TRANSCRIPT): built and written to disk before any create call so
+    // the `_microfeed` payload in both create branches carries the same field when it exists.
+    try {
+        episode.transcripts = prepareTranscript(content.metadata, fields.warnings);
+    } catch (error: unknown) {
+        return fail(`Invalid transcript config: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
     let social: NonNullable<SeoBlock['social_image']> | undefined;
     try {
         social = await resolveSocialImage(client, fields, fields.warnings);
