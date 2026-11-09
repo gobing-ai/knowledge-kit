@@ -560,3 +560,13 @@ the same text with one hedge adverb restored in the WeChat row → `{"ok":false,
 - **`spur feature sync G15` hangs >2/7/9.7 min under concurrent-campaign contention (I14 runall + live gates, 2026-11-05)** — three attempts timed out, each leaving a stale `docs/features/.G15.lock` (holder pid dead; safe to rm). `feature update G15 done` is FSM-denied from `active` (legal path needs sync-derived hop). G15 stays `active` with 0329–0335 all `done`; rerun sync when the host is quiet.
 - **Voice3 cut-over 2026-11-05** — `.spur/config.yaml` daily job now `kk-daily-ai-voice3 --window 72h` (was voice2 + `--wechat-live`); supervisor gained `--workflow/--window/--publish-preset` (0340/0432; tests in daily-scheduled-run.test.ts). Reasons: dogfood mandate + 24h pool too thin (3 items → 8.4-min script duration-refused; heuristic labels keep quality<2, the extract profile gate cuts them — 72h needed until full-text ingest lands). Design §8 "3-day shadow then flip" superseded by operator decision; note appended to docs/design/kk-daily-ai-voice3.md §8.
 - Voice3 rerun gotchas (2026-11-05 dogfood): a failed voice2 morning run leaves stale downstream artifacts; re-extracting with a WIDER window re-plans and `daily-plan` refuses stale-downstream pairing — archive `<works>/<date>/{21,22,23,24,25,30,31,4}-*/` + `.safety-revise-count` + `step-timing.json` into `_archive/` before rerun. codex-sol quota exhaustion mid-run disables it (`agent.executors.codex-sol.disabled`) and every agent.run degrades; the nested `kk-daily-safety` run has NO executor fallback — a degraded review = judge_status `block` = nested `refuse` (exit 1). claude hit its session limit 5:30pm PT the same day; resume is fine (plan cache reused) once any executor has quota.
+- **0346 rendered collection substrate (2026-11-09)**: `packages/publish-harness/src/bot-collection.ts` is a
+  library, not a verb — one JSON plan (`request|navigate|wait|click|scroll|extract` + required
+  `responses[]` captures), one lease, one headless launch, plugin-owned selectors/pagination/politeness.
+  `browserSession` is now legal on `kind: ingestion` (still `check`-required) and adapter selection was
+  already kind-agnostic, so fan-in/invoke/CLI needed zero edits. Fail-closed classification is the point:
+  `authentication` (observed 401/403 or a login/signin/auth/sso final-URL path) and `empty` (a declared
+  capture or extract that yields nothing) exist so an SPA shell can never read as a quiet day; a stored
+  `expiresAt` is never evidence. Verification is loopback-only (`apps/cli/tests/e2e-bot-collection.ts`
+  drives the real `kk executor fan-in --source` child plus the probe script): live sites, anti-bot,
+  binary payloads and adapter special state stay documented limits, not claims.
