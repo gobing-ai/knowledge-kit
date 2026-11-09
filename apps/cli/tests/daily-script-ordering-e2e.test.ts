@@ -27,10 +27,14 @@ test('daily script authoring waits for article exclusions in voice2 and voice3',
                 kind: 'dag',
                 nodes: [
                     shell('script-style', 'true'),
-                    shell('plan-translate', 'true'),
-                    shell('plan-translate-retry', 'true'),
-                    shell('article-write', `sleep 1; printf '%s' '{"excluded":["finance"]}' > '${article}'`),
-                    shell('article', `test -s '${article}'`, ['article-write']),
+                    ...(dependencies.includes('curate-final')
+                        ? [shell('curate-final', `printf '%s' '{"excluded":["finance"]}' > '${article}'`)]
+                        : [
+                              shell('plan-translate', 'true'),
+                              shell('plan-translate-retry', 'true'),
+                              shell('article-write', `sleep 1; printf '%s' '{"excluded":["finance"]}' > '${article}'`),
+                              shell('article', `test -s '${article}'`, ['article-write']),
+                          ]),
                     // voice3's script-write also waits on pool-gate (0238/voice3 union); declare it so
                     // the replayed dependencies stay valid in this minimal DAG.
                     ...(dependencies.includes('pool-gate') ? [shell('pool-gate', 'true')] : []),

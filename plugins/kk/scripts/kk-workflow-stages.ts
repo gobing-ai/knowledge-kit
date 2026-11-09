@@ -1883,6 +1883,16 @@ if (import.meta.main)
             dailyScriptCheck(rest);
             break;
         }
+        case 'daily-curate-check': {
+            const { dailyCurateCheck } = await loadDailyStages();
+            dailyCurateCheck(rest);
+            break;
+        }
+        case 'daily-editorial-render': {
+            const { dailyEditorialRender } = await loadDailyStages();
+            dailyEditorialRender(rest);
+            break;
+        }
         case 'daily-script': {
             const { dailyScript } = await loadDailyStages();
             dailyScript(rest);

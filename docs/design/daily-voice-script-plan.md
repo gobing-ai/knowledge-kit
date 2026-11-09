@@ -62,11 +62,17 @@ It reads `21-plan/<date>_03_plan_plan.json` (a bare `Doc[]`), the same items, or
   "version": 1,
   "intro": "…today's themes…",
   "outro": "…",
-  "items": [{ "id": "<Doc.id>", "lead": "…", "insight": "…" }]
+  "items": [{ "id": "<Doc.id>", "lead": "…", "insight": "…", "card": { "copy": "…", "points": ["…"], "subject": "…" } }],
+  "cover": "…visual prompt…",
+  "cards": { "title": "…", "body": "…" },
+  "social": { "short": "…<=140…", "long": "…<=500…" },
+  "excluded": [{ "id": "…", "reason": "…" }]
 }
 ```
 
-Rewiring: `article → script` and `cover → script` gain a preceding `→ script-write` edge (guarded: enabled, zh, and neither today's plan nor YAML exists), and a new `script-write → script` edge is added with `always`. A new var `script_write_enabled` (default `"true"`) guards the state. When it is false, the article/cover edges go straight to `script`, mirroring `article_write_enabled`.
+In voice3 (0345), `script-write` authors this master editorial plan. The `excluded` array mirrors `21-plan/<date>_03_curate_excluded.json` produced by `curate`. Downstream, `dailyEditorialRender` reads these master fields to render the article body, cover brief, XHS cards plan, and social copy deterministically.
+
+Rewiring: in voice3, `curate` -> `curate-check` -> `curate-fix` -> `curate-final` feeds `script-write` -> `script-check` -> `script-write-fix` -> `script` -> `editorial-render`. An advisory `editorial-judge` evaluates the plan under the `news-balance` rubric.
 
 ### 3. Builder consumes the plan (R3, R4)
 

@@ -4550,6 +4550,309 @@ describe('F613 (0162) — script-write stage wiring', () => {
         });
     });
 
+    describe('daily-curate-check (0345 R8 / AC5: curate split validation, unwrap, dedup, final fallback)', () => {
+        const stamp = '20261108';
+
+        function setupCandidates(dir: string, docs: Record<string, unknown>[]) {
+            mkdirSync(join(dir, '21-plan'), { recursive: true });
+            const candidatesPath = join(dir, `21-plan/${stamp}_04_quality-control-content_candidates.json`);
+            writeFileSync(candidatesPath, JSON.stringify({ metadata: { docs } }));
+            return {
+                candidatesPath,
+                planPath: join(dir, `21-plan/${stamp}_03_plan_plan.json`),
+                excludedPath: join(dir, `21-plan/${stamp}_03_curate_excluded.json`),
+                errorsPath: join(dir, `21-plan/${stamp}_03_curate_errors.json`),
+            };
+        }
+
+        it('(a) valid split writes no errors file and removes a stale one', () => {
+            withTempDir((dir) => {
+                const { planPath, excludedPath, errorsPath } = setupCandidates(dir, [
+                    { id: 'a', title: 'Item A', body: 'Body A' },
+                    { id: 'b', title: 'Item B', body: 'Body B' },
+                ]);
+                writeFileSync(planPath, JSON.stringify([{ id: 'a', title: '条目A', body: '正文A' }]));
+                writeFileSync(excludedPath, JSON.stringify([{ id: 'b', reason: '低价值公关通稿' }]));
+                writeFileSync(errorsPath, JSON.stringify([{ itemId: 'episode', rule: 'missing-plan' }]));
+
+                const res = run(['daily-curate-check', dir, stamp]);
+                expect(res.status).toBe(0);
+                expect(existsSync(errorsPath)).toBe(false);
+            });
+        });
+
+        it('(b) id in both files reports conflict-id; (c) candidate id in neither reports missing-item; (d) unknown id reports unknown-id', () => {
+            withTempDir((dir) => {
+                const { planPath, excludedPath, errorsPath } = setupCandidates(dir, [
+                    { id: 'a', title: 'Item A', body: 'Body A' },
+                    { id: 'b', title: 'Item B', body: 'Body B' },
+                    { id: 'c', title: 'Item C', body: 'Body C' },
+                ]);
+                // 'a' in both (conflict-id), 'b' in neither (missing-item), 'x' in plan and 'y' in excluded (unknown-id)
+                writeFileSync(
+                    planPath,
+                    JSON.stringify([
+                        { id: 'a', title: '条目A', body: '正文A' },
+                        { id: 'c', title: '条目C', body: '正文C' },
+                        { id: 'x', title: '未知X', body: '正文X' },
+                    ]),
+                );
+                writeFileSync(
+                    excludedPath,
+                    JSON.stringify([
+                        { id: 'a', reason: '重复列入' },
+                        { id: 'y', reason: '未知Y' },
+                    ]),
+                );
+
+                const res = run(['daily-curate-check', dir, stamp]);
+                expect(res.status).toBe(0);
+                expect(JSON.parse(readFileSync(errorsPath, 'utf-8'))).toEqual(
+                    expect.arrayContaining([
+                        { itemId: 'x', rule: 'unknown-id' },
+                        { itemId: 'y', rule: 'unknown-id' },
+                        { itemId: 'a', rule: 'conflict-id' },
+                        { itemId: 'b', rule: 'missing-item' },
+                    ]),
+                );
+            });
+        });
+
+        it('(e) Content envelope in _03_plan_plan.json is unwrapped to Doc[] and accepted', () => {
+            withTempDir((dir) => {
+                const { planPath, excludedPath, errorsPath } = setupCandidates(dir, [
+                    { id: 'a', title: 'Item A', body: 'Body A' },
+                ]);
+                const docs = [{ id: 'a', title: '条目A', body: '已翻译正文A' }];
+                writeFileSync(
+                    planPath,
+                    JSON.stringify({ title: 'plan', body: '# plan', format: 'markdown', metadata: { docs } }),
+                );
+                writeFileSync(excludedPath, JSON.stringify([]));
+
+                const res = run(['daily-curate-check', dir, stamp]);
+                expect(res.status).toBe(0);
+                expect(existsSync(errorsPath)).toBe(false);
+                expect(JSON.parse(readFileSync(planPath, 'utf-8'))).toEqual(docs);
+            });
+        });
+
+        it('(f) near-duplicate titles in _03_plan_plan.json are deduped via dedupPlanByTitle and stay valid on --final', () => {
+            withTempDir((dir) => {
+                const { planPath, excludedPath, errorsPath } = setupCandidates(dir, [
+                    { id: 'a', title: 'OpenAI 发布 GPT-5 推理架构', body: 'Body A' },
+                    {
+                        id: 'b1',
+                        title: 'Google 发布 Gemini 3.8 Live 实时语音模型支持超低延迟多模态交互',
+                        body: 'Body B1',
+                    },
+                    {
+                        id: 'b2',
+                        title: 'Google 推出 Gemini 3.8 Live 实时语音模型支持超低延迟多模态对话',
+                        body: 'Body B2',
+                    },
+                ]);
+                writeFileSync(
+                    planPath,
+                    JSON.stringify([
+                        { id: 'a', title: 'OpenAI 发布 GPT-5 推理架构', body: 'Body A' },
+                        {
+                            id: 'b1',
+                            title: 'Google 发布 Gemini 3.8 Live 实时语音模型支持超低延迟多模态交互',
+                            body: 'Body B1',
+                        },
+                        {
+                            id: 'b2',
+                            title: 'Google 推出 Gemini 3.8 Live 实时语音模型支持超低延迟多模态对话',
+                            body: 'Body B2',
+                        },
+                    ]),
+                );
+                writeFileSync(excludedPath, JSON.stringify([]));
+
+                const res = run(['daily-curate-check', dir, stamp]);
+                expect(res.status).toBe(0);
+                expect(existsSync(errorsPath)).toBe(false);
+                expect((JSON.parse(readFileSync(planPath, 'utf-8')) as { id: string }[]).map((d) => d.id)).toEqual([
+                    'a',
+                    'b1',
+                ]);
+
+                // Running --final after dedup still succeeds because b2 was recorded in excluded.json
+                const finalRes = run(['daily-curate-check', dir, stamp, '--final']);
+                expect(finalRes.status).toBe(0);
+                expect(existsSync(errorsPath)).toBe(false);
+                expect((JSON.parse(readFileSync(planPath, 'utf-8')) as { id: string }[]).map((d) => d.id)).toEqual([
+                    'a',
+                    'b1',
+                ]);
+            });
+        });
+
+        it('(g) --final with an invalid plan falls back to untranslated candidates with [] exclusions and exits 0', () => {
+            withTempDir((dir) => {
+                const rawCandidates = [
+                    { id: 'a', title: 'Untranslated A', body: 'Raw body A' },
+                    { id: 'b', title: 'Untranslated B', body: 'Raw body B' },
+                ];
+                const { planPath, excludedPath, errorsPath } = setupCandidates(dir, rawCandidates);
+                // First check on missing plan writes missing-plan error
+                const first = run(['daily-curate-check', dir, stamp]);
+                expect(first.status).toBe(0);
+                expect(JSON.parse(readFileSync(errorsPath, 'utf-8'))).toEqual([
+                    { itemId: 'episode', rule: 'missing-plan' },
+                ]);
+
+                // --final with still-invalid plan falls back to untranslated candidates and [] exclusions, removing errors
+                writeFileSync(planPath, '{not valid json');
+                const finalRes = run(['daily-curate-check', dir, stamp, '--final']);
+                expect(finalRes.status).toBe(0);
+                expect(existsSync(errorsPath)).toBe(false);
+                expect(JSON.parse(readFileSync(planPath, 'utf-8'))).toEqual(rawCandidates);
+                expect(JSON.parse(readFileSync(excludedPath, 'utf-8'))).toEqual([]);
+            });
+        });
+    });
+
+    describe('daily-editorial-render (0345 R10 / AC7b: deterministic renders from master script plan)', () => {
+        const stamp = '20261108';
+
+        function seedMaster(dir: string, overrides: Record<string, unknown> = {}) {
+            for (const sub of ['21-plan', '24-script']) mkdirSync(join(dir, sub), { recursive: true });
+            writeFileSync(
+                join(dir, `21-plan/${stamp}_03_plan_plan.json`),
+                JSON.stringify([
+                    {
+                        id: 'doc-1',
+                        title: 'OpenAI 开源轻量推理引擎',
+                        body: 'OpenAI 今日宣布开源轻量级推理引擎，单卡吞吐提升 2.4 倍。',
+                        sourceUri: 'https://openai.com/news/engine',
+                        metadata: { source: 'OpenAI' },
+                    },
+                    {
+                        id: 'doc-2',
+                        title: 'Anthropic 发布上下文缓存协议',
+                        body: 'Anthropic 公布跨会话上下文缓存协议，长文档延迟降低 60%。',
+                        sourceUri: 'https://anthropic.com/news/cache',
+                        metadata: { source: 'Anthropic' },
+                    },
+                ]),
+            );
+            const master = {
+                version: 1,
+                intro: '今天我们看两条推理效率动态：OpenAI 开源轻量推理引擎，Anthropic 发布上下文缓存协议。',
+                outro: '以上就是今天的全部内容，推理成本与延迟正在同步下探。',
+                cover: 'A sleek crystalline processor core splitting a beam of light into two parallel fiber channels',
+                cards: {
+                    title: '推理加速双突破',
+                    body: '今日聚焦推理吞吐与上下文缓存两项核心进展 #AI工程 #大模型推理 #开源技术',
+                },
+                social: {
+                    short: '今日AI乱炖：OpenAI 开源轻量推理引擎（单卡吞吐×2.4），Anthropic 发布跨会话缓存（延迟-60%）。',
+                    long: '今日两项推理基础设施进展：1. OpenAI 开源轻量级推理引擎，单卡吞吐提升 2.4 倍；2. Anthropic 发布跨会话上下文缓存协议，长文档延迟降低 60%。本地与云端推理成本同步下探。',
+                },
+                items: [
+                    {
+                        id: 'doc-1',
+                        lead: '先看 OpenAI 在推理侧的新动作。',
+                        insight:
+                            '单卡吞吐翻倍意味着中小团队部署专有模型的硬件门槛进一步降低，接下来值得观察社区算子适配速度。',
+                        card: {
+                            copy: 'OpenAI开源推理引擎',
+                            points: ['单卡吞吐提升2.4倍', '降低私有化部署硬件门槛'],
+                            subject: 'A compact server blade glowing with cyan light channels on a dark workbench',
+                        },
+                    },
+                    {
+                        id: 'doc-2',
+                        lead: '再看 Anthropic 针对长上下文的优化。',
+                        insight: '跨会话缓存直接切中 Agent 多轮调用的延迟痛点，长文档工作流的边际成本将显著下降。',
+                        card: {
+                            copy: '跨会话缓存协议',
+                            points: ['长文档延迟降低60%', '切中Agent多轮调用成本痛点'],
+                            subject: 'Layered translucent memory plates connected by golden optical threads',
+                        },
+                    },
+                ],
+                ...overrides,
+            };
+            writeFileSync(join(dir, `24-script/${stamp}_08_script-write_plan.json`), JSON.stringify(master, null, 2));
+        }
+
+        it('produces all five artifacts byte-stable across two runs and xhs_plan.json matches dailyXhsRender contract', () => {
+            withTempDir((dir) => {
+                seedMaster(dir);
+                const first = run(['daily-editorial-render', dir, stamp, 'true', '4']);
+                expect(first.status).toBe(0);
+
+                const paths = {
+                    article: join(dir, `22-article/${stamp}_06_article-write_body.md`),
+                    cover: join(dir, `23-cover/${stamp}_07_cover-brief.json`),
+                    xhs: join(dir, `25-xhs/${stamp}_18_xhs_plan.json`),
+                    x: join(dir, '26-social/x.md'),
+                    threads: join(dir, '26-social/threads.md'),
+                    weibo: join(dir, '26-social/weibo.md'),
+                    linkedin: join(dir, '26-social/linkedin.md'),
+                };
+                const snap1 = Object.fromEntries(Object.entries(paths).map(([k, p]) => [k, readFileSync(p, 'utf-8')]));
+
+                // Check article content structure
+                expect(snap1.article).toContain('这里是由Robin为你带来的咸话咸说之每日AI乱炖。');
+                expect(snap1.article).toContain('## OpenAI 开源轻量推理引擎');
+                expect(snap1.article).toContain('单卡吞吐提升 2.4 倍');
+                expect(snap1.article).toContain('[来源：OpenAI](https://openai.com/news/engine)');
+                expect(snap1.article).toContain('以上就是今天的全部内容');
+
+                // Check cover brief
+                expect(JSON.parse(snap1.cover as string)).toEqual({
+                    subject:
+                        'A sleek crystalline processor core splitting a beam of light into two parallel fiber channels',
+                });
+
+                // Check xhs_plan.json shape (cover + 2 content + closing = 4 cards)
+                const xhs = JSON.parse(snap1.xhs as string);
+                expect(xhs.title).toBe('推理加速双突破');
+                expect(xhs.cards).toHaveLength(4);
+                expect(xhs.cards[0].role).toBe('cover');
+                expect(xhs.cards[1]).toMatchObject({
+                    role: 'content',
+                    copy: 'OpenAI开源推理引擎',
+                    itemId: 'doc-1',
+                });
+                expect(xhs.cards[2]).toMatchObject({
+                    role: 'content',
+                    copy: '跨会话缓存协议',
+                    itemId: 'doc-2',
+                });
+                expect(xhs.cards[3].role).toBe('closing');
+
+                // Check social files
+                expect(snap1.x).toBe(snap1.threads);
+                expect(snap1.weibo).toBe(snap1.linkedin);
+
+                // Second run is byte-identical
+                const second = run(['daily-editorial-render', dir, stamp, 'true', '4']);
+                expect(second.status).toBe(0);
+                const snap2 = Object.fromEntries(Object.entries(paths).map(([k, p]) => [k, readFileSync(p, 'utf-8')]));
+                expect(snap2).toEqual(snap1);
+            });
+        });
+
+        it('skips xhs_plan.json when cards_enabled is false, and skips only the missing artifact when a master field is omitted', () => {
+            withTempDir((dir) => {
+                seedMaster(dir, { cover: undefined });
+                const res = run(['daily-editorial-render', dir, stamp, 'false', '4']);
+                expect(res.status).toBe(0);
+                expect(existsSync(join(dir, `22-article/${stamp}_06_article-write_body.md`))).toBe(true);
+                expect(existsSync(join(dir, `23-cover/${stamp}_07_cover-brief.json`))).toBe(false);
+                expect(existsSync(join(dir, `25-xhs/${stamp}_18_xhs_plan.json`))).toBe(false);
+                expect(existsSync(join(dir, '26-social/x.md'))).toBe(true);
+                expect(existsSync(join(dir, '26-social/weibo.md'))).toBe(true);
+                expect(`${res.stdout}${res.stderr}`).toContain('cover');
+            });
+        });
+    });
+
     it('daily-run-report passes NEWS_REPORT_SCRIPT_FILE for the 脚本来源 read (R5)', () => {
         withTempDir((dir) => {
             for (const sub of ['21-plan', '24-script']) mkdirSync(join(dir, sub), { recursive: true });

@@ -73,8 +73,7 @@ vars:
   # The 合集 tag a channel payload carries is that channel's preset `options` (the shipped preset
   # pins 「每日AI资讯」), not a generate-side var: voice3 does not know which channels exist.
   plan_max_items: "20"
-  plan_translate_enabled: "true"
-  article_write_enabled: "true"
+  curate_enabled: "true"
   script_write_enabled: "true"
   plugins_path: ""
   # Content-safety budget and platforms, forwarded to the nested kk-daily-safety state machine.
@@ -146,8 +145,7 @@ nodes:
           --run "${vars.__runId}" --definition-digest "${vars.__definitionDigest}"
           --setting window="${vars.window}" --setting language="${vars.language}" --setting vdriver="${vars.vdriver}"
           --setting skip_review="${vars.skip_review}" --setting transcode_mp3="${vars.transcode_mp3}"
-          --setting cover_enabled="${vars.cover_enabled}" --setting plan_translate_enabled="${vars.plan_translate_enabled}"
-          --setting article_write_enabled="${vars.article_write_enabled}"
+          --setting cover_enabled="${vars.cover_enabled}" --setting curate_enabled="${vars.curate_enabled}"
           --setting script_write_enabled="${vars.script_write_enabled}" --setting plan_max_items="${vars.plan_max_items}"
           --setting safety_max_revise="${vars.safety_max_revise}" --setting qc_min_quality="${vars.qc_min_quality}"
           --setting qc_min_importance="${vars.qc_min_importance}" --setting qc_min_urgency="${vars.qc_min_urgency}"
@@ -227,7 +225,7 @@ nodes:
       kind: shell
       options:
         command: >-
-          kk stage daily-plan "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.plan_max_items}" "${vars.plan_translate_enabled}"
+          kk stage daily-plan "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.plan_max_items}" "${vars.curate_enabled}"
 
   - id: qc-content
     description: >-
@@ -290,206 +288,10 @@ nodes:
           kk store select --topic ai-news --workflow kk-daily-ai-voice2 --run "${vars.__runId}"
           --in "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json"
 
-  # ---- content branches: translate / prose article / cover / script author (concurrent) ----
-  #
-  # 0238 R2: `plan-translate` and `article-write` are the two HARD-FAIL agent.run producers — a
-  # missing expectFile fails the run (R4 property, kept). The resolved executor is stochastic: a run
-  # answered a greeting with zero tool calls and exited 0 (0238 evidence). The engine has no node
-  # retry, so each producer carries a `-retry` sibling on a DIFFERENT tier (`agent_retry`, role
-  # reviewer) with the SAME input/expectFile; the primary becomes `onError: continue` and the sibling
-  # (no onError) is the loud gate. Downstream readers depend on BOTH, so the done+skipped mix of a
-  # successful primary still proceeds. Delete the siblings when spur grows an agent.run retry.
-
-  - id: plan-translate
-    description: "Translate the needsTranslation plan items into the output plan.json via agent.run; onError: continue — plan-translate-retry below is the loud gate (0238 R2)"
-    dependsOn: [qc-content, pool-gate]
-    condition:
-      kind: shell
-      options:
-        # 0324 R3: the pool verdict is `pool-gate`'s token, never a repeated `kk store pool-count`.
-        command: >-
-          test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS
-          && test "${vars.plan_translate_enabled}" = "true"
-          && ! jq -e --argjson n "$(jq '.metadata.docs|length' "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json")" 'type=="array" and length==$n and all(.[];type=="object")' "${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json"
-    action:
-      kind: agent.run
-      # 0238 R2: a stochastic executor no-op must not end the run here — the retry sibling decides.
-      onError: continue
-      options:
-        role: scribe
-        agent: ${vars.agent}
-        timeoutMs: 600000
-        # ADR-115 error tier: keep this prompt <= 1000 chars (0133 R3; 0138 R4a copy discipline).
-        # The anchor is shared with plan-translate-retry so the two attempts cannot drift apart.
-        # 20261015 forensics: headless agy's terminal sandbox denies workspace writes for EVERY
-        # shell command (command() rules are promptless-but-sandboxed; unsandboxed() is dead), so
-        # the producer must deliver via the file-write tool; and the condition gate checks JSON
-        # validity (array, length == candidates docs, all objects) because a pi token-cap staged
-        # write once flowed 4/12 items downstream. Keep both when editing prompt or condition.
-        input: &plan-translate-input |
-          Read ${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json; metadata.docs (Doc[]) is the plan.
-          For needsTranslation items adapt "title", "body" and "metadata.brief" into spoken simplified Chinese — keep every fact, number, name, quote, hedge (口播全长改编，不摘要不省略), body ≈0.6–0.7× source; generic background/concept explainers shrink to one sentence.
-          Titles read as news; keep product/model names and body URLs verbatim, use 「」 not ASCII quotes.
-          Copy discipline: reader-facing news copy — no scaffold labels (「可做角度」「为什么现在值得注意」「社区讨论」「背景」「潜在影响」「影响」), no hedging labels (「读者宜另行核实」「仍待验证」) — merge or drop.
-          Keep id/sourceUri/mediaType/metadata as-is; no comments/trailing commas.
-          Deliver with your file-write tool (headless agy sandbox blocks shell writes); the file must end as ONE valid JSON array — no split markers/placeholders.
-          Output the JSON array — same length and order — to ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json.
-        expectFile: ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json
-        allowAppend: false
-
-  - id: plan-translate-retry
-    description: >-
-      Bounded recovery for plan-translate (0238 R2): runs only when the primary settled without a
-      VALID expectFile (missing or contract-violating JSON), retries the same input on a different
-      tier, and carries NO onError — a second miss fails the run loudly instead of letting an
-      untranslated or truncated plan flow downstream.
-    dependsOn: [plan-translate, pool-gate]
-    condition:
-      kind: shell
-      options:
-        # 0324 R3: the pool verdict is `pool-gate`'s token, never a repeated `kk store pool-count`.
-        command: >-
-          test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS
-          && test "${vars.plan_translate_enabled}" = "true"
-          && ! jq -e --argjson n "$(jq '.metadata.docs|length' "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json")" 'type=="array" and length==$n and all(.[];type=="object")' "${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json"
-    action:
-      kind: agent.run
-      options:
-        role: reviewer
-        agent: ${vars.agent_retry}
-        timeoutMs: 600000
-        input: *plan-translate-input
-        expectFile: ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json
-        allowAppend: false
-
-  - id: article-write
-    description: "Write the tech-sharing prose article from the translated plan via agent.run (3-format split: surfdash gets prose, not a news list); onError: continue — article-write-retry below is the loud gate (0238 R2)"
-    dependsOn: [qc-content, plan-translate, plan-translate-retry, pool-gate]
-    condition:
-      kind: shell
-      options:
-        # 0324 R3: the pool verdict is `pool-gate`'s token, never a repeated `kk store pool-count`.
-        command: >-
-          test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS
-          && test "${vars.article_write_enabled}" = "true"
-          && ! test -s "${vars.work_dir}/22-article/${vars.run_date}_06_article-write_body.md"
-    action:
-      kind: agent.run
-      # 0238 R2: a stochastic executor no-op must not end the run here — the retry sibling decides.
-      onError: continue
-      options:
-        role: scribe
-        agent: ${vars.agent}
-        timeoutMs: 600000
-        # ADR-115 error tier: keep this prompt <= 1000 chars. No title line: the canonical episode
-        # title is computed by daily-article-gen (0189 R4).
-        # The anchor is shared with article-write-retry so the two attempts cannot drift apart.
-        input: &article-write-input |
-          Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — metadata.docs (Doc[]) is the translated plan; don't edit it.
-          Write vivid simplified-Chinese tech news for 咸话咸说之每日AI乱炖 (column 每日AI乱炖, host Robin). No title line. Open with exactly「这里是由Robin为你带来的咸话咸说之每日AI乱炖」。Never「我是咸话咸说」or an AI-production footer. Each ## section: who did what and when, why it matters, one concrete detail — a human reporter, not a telegram; opinion ≤⅓, no generic explainers. Inline [来源：<label>](<sourceUri>). Close by tying the items together.
-          选题边界：只写技术内容；某条主线若属政治/外交或贸易管制/军事/公共政策争议/社会公共事件，跳过该条并在文末加一行「> 注：<N> 条条目因选题边界未写入：<id>（<原因>）、<id>（<原因>）」。
-          事实纪律：每个事实取自该条计划内容，不虚构、不引他处；数字与主体不得放大；引语只能归属其原句主语；保留「据报道/称/承诺」等限定词；导语/收束不加计划外程度词；材料不足就少写或不写，不凑数。
-          Narrative register — smooth transitions, no list-like bulleting, no scaffold labels (「可做角度」「背景」「潜在影响」), no hedging (「读者宜另行核实」「仍待验证」). 「」 quotes.
-          Output the markdown to ${vars.work_dir}/22-article/${vars.run_date}_06_article-write_body.md.
-        expectFile: ${vars.work_dir}/22-article/${vars.run_date}_06_article-write_body.md
-        allowAppend: false
-
-  - id: article-write-retry
-    description: >-
-      Bounded recovery for article-write (0238 R2): runs only when the primary settled without its
-      expectFile, retries the same input on a different tier, and carries NO onError — a second miss
-      fails the run loudly instead of publishing an article nobody wrote.
-    dependsOn: [article-write, pool-gate]
-    condition:
-      kind: shell
-      options:
-        # 0324 R3: the pool verdict is `pool-gate`'s token, never a repeated `kk store pool-count`.
-        command: >-
-          test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS
-          && test "${vars.article_write_enabled}" = "true"
-          && ! test -s "${vars.work_dir}/22-article/${vars.run_date}_06_article-write_body.md"
-    action:
-      kind: agent.run
-      options:
-        role: reviewer
-        agent: ${vars.agent_retry}
-        timeoutMs: 600000
-        input: *article-write-input
-        expectFile: ${vars.work_dir}/22-article/${vars.run_date}_06_article-write_body.md
-        allowAppend: false
-
-  - id: article
-    description: >-
-      Generate the dated daily article Content from the episode plan (daily-article-gen template).
-      Depends on the QC candidates (so the prose/translate nodes can be disabled without skipping
-      this node: a done dependency in the mix keeps it runnable) as well as on both authoring nodes
-      AND their retry siblings, and it carries the same candidates guard — a pool that filtered to
-      zero items must not build an empty article.
-    dependsOn: [qc-content, plan-translate, plan-translate-retry, article-write, article-write-retry, pool-gate]
-    condition:
-      kind: shell
-      options:
-        # 0324 R3: the pool verdict is `pool-gate`'s token, never a repeated `kk store pool-count`.
-        command: 'test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS'
-    action:
-      kind: shell
-      options:
-        command: >-
-          kk stage daily-article "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
-
-  - id: cover-brief
-    description: "Author the cover subject from the lead plan item via agent.run (F614; onError: continue — a bad brief falls back to the format default subject in the render stage)"
-    # 0238 R3: reads 21-plan/<date>_03_plan_plan.json, so it must not start before the plan
-    # producers settle. `qc-content` stays in the list: a done dependency in the mix keeps this node
-    # runnable when the plan-authoring nodes are disabled (all-skipped deps skip a node).
-    dependsOn: [qc-content, plan-translate, plan-translate-retry, pool-gate]
-    condition:
-      kind: shell
-      options:
-        # 0324 R3: the pool verdict is `pool-gate`'s token, never a repeated `kk store pool-count`.
-        command: >-
-          test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS
-          && test "${vars.cover_enabled}" = "true"
-          && test ! -f "${vars.work_dir}/23-cover/${vars.run_date}_07_cover_cover.png"
-    action:
-      kind: agent.run
-      # A bad or failed brief must never halt the run: the stage falls back to the format's default
-      # subject and keeps the same pinned format/style/provider/model.
-      onError: continue
-      options:
-        role: scribe
-        agent: ${vars.agent}
-        timeoutMs: 600000
-        # ADR-115 error tier: keep this prompt <= 1000 chars.
-        input: |
-          Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of plan docs; don't edit it.
-          Take item 1 only (its "title" and "metadata.brief") — the episode's lead story. If item 1's mainline is public affairs (politics/diplomacy, trade controls, military, policy disputes, social events), take the first in-scope item instead.
-          Write one concrete visual scene in English, ≤240 characters, that a viewer would connect to that story: objects, settings, symbols, metaphor.
-          No text, letters, numbers, logos, brand marks, flags, or recognizable real people. No style, color, lighting, or composition words — the preset owns those.
-          Output strictly valid JSON {"subject": "..."} to ${vars.work_dir}/23-cover/${vars.run_date}_07_cover-brief.json.
-        expectFile: ${vars.work_dir}/23-cover/${vars.run_date}_07_cover-brief.json
-        allowAppend: false
-
-  - id: cover
-    description: "Render the daily cover through the pinned daily-news presets (F614)"
-    dependsOn: [cover-brief]
-    action:
-      kind: shell
-      options:
-        command: >-
-          kk stage daily-cover "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.cover_provider}" "${vars.cover_model}" "${vars.cover_fallback}"
-
-  - id: cover-normalize
-    description: "Normalize the rendered cover (dimensions/format pins) so every consumer sees the same asset"
-    dependsOn: [cover]
-    action:
-      kind: shell
-      options:
-        command: >-
-          kk stage daily-cover-normalize "${vars.work_dir}" "${vars.run_date}"
+  # ---- editorial pipeline: curate -> script-write (master) -> script -> editorial-render (0345) ----
 
   - id: script-style
-    description: "Snapshot the shipped zh style contract into the work dir (separate node: it is also an audit input for the revision loop)"
+    description: "Snapshot the shipped kk:news-editorial skill and zh style contract into the work dir (20-editorial/news-editorial/ + 24-script/<date>_08_script-write_style.md)"
     dependsOn: [qc-content, pool-gate]
     condition:
       kind: shell
@@ -502,12 +304,90 @@ nodes:
         command: >-
           kk stage daily-script-style "${vars.work_dir}" "${vars.run_date}"
 
+  - id: curate
+    description: "0345 R7: curate QC candidates into kept translated plan.json + _03_curate_excluded.json via kk:news-editorial mode `curate`; onError: continue — curate-check/curate-fix/curate-final below validate and recover"
+    dependsOn: [qc-content, script-style, pool-gate]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS
+          && test "${vars.curate_enabled}" = "true"
+          && ! (test -s "${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json" && test -s "${vars.work_dir}/21-plan/${vars.run_date}_03_curate_excluded.json")
+    action:
+      kind: agent.run
+      onError: continue
+      options:
+        role: scribe
+        agent: ${vars.agent}
+        timeoutMs: 600000
+        # ADR-115 error tier: keep this prompt <= 1000 chars.
+        input: |
+          Follow mode `curate` in ${vars.work_dir}/20-editorial/news-editorial/SKILL.md (read references/selection.md and references/style-contract.zh.md first).
+          --in ${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json (metadata.docs is the candidate Doc[]; don't edit it)
+          --out-plan ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json
+          --out-excluded ${vars.work_dir}/21-plan/${vars.run_date}_03_curate_excluded.json
+          Deliver both JSON files with your file-write tool (headless agy sandbox blocks shell writes).
+        expectFile: ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json
+        allowAppend: false
+
+  - id: curate-check
+    description: "0345 R8: validate the curate split, unwrap any Content envelope, and dedup near-duplicate titles; writes _03_curate_errors.json on failure"
+    dependsOn: [qc-content, script-style, curate, pool-gate]
+    condition:
+      kind: shell
+      options:
+        command: 'test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS'
+    action:
+      kind: shell
+      onError: continue
+      options:
+        command: >-
+          kk stage daily-curate-check "${vars.work_dir}" "${vars.run_date}"
+
+  - id: curate-fix
+    description: "0345 R8: one targeted kk:news-editorial `curate --fix` pass on curate-check errors"
+    dependsOn: [curate-check, pool-gate]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS
+          && test -s "${vars.work_dir}/21-plan/${vars.run_date}_03_curate_errors.json"
+    action:
+      kind: agent.run
+      onError: continue
+      options:
+        role: reviewer
+        agent: ${vars.agent_retry}
+        timeoutMs: 600000
+        # ADR-115 error tier: keep this prompt <= 1000 chars.
+        input: |
+          Follow mode `curate --fix` in ${vars.work_dir}/20-editorial/news-editorial/SKILL.md (read references/selection.md and references/style-contract.zh.md first).
+          --in ${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json (metadata.docs is the candidate Doc[]; don't edit it)
+          --fix ${vars.work_dir}/21-plan/${vars.run_date}_03_curate_errors.json
+          --out-plan ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json
+          --out-excluded ${vars.work_dir}/21-plan/${vars.run_date}_03_curate_excluded.json
+          Deliver both corrected JSON files with your file-write tool.
+        expectFile: ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json
+        allowAppend: false
+
+  - id: curate-final
+    description: "0345 R8: final curate validation; falls back to untranslated candidates with [] exclusions if still invalid"
+    dependsOn: [curate-check, curate-fix, pool-gate]
+    condition:
+      kind: shell
+      options:
+        command: 'test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS'
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-curate-check "${vars.work_dir}" "${vars.run_date}" --final
+
   - id: script-write
-    description: "Author the per-item script plan (intro/outro + lead/insight per doc id) from the plan via agent.run; onError: continue — a failed plan falls back to templates (F613)"
-    # 0238 R3: reads 21-plan/<date>_03_plan_plan.json, so it must not start before the plan
-    # producers settle. `script-style` stays first in the list: a done dependency in the mix keeps
-    # this node runnable when the plan-authoring nodes are disabled (all-skipped deps skip a node).
-    dependsOn: [script-style, plan-translate, plan-translate-retry, article, pool-gate]
+    description: "Author the master script plan (intro/outro, lead/insight/card per doc id, cover, cards, social, excluded) from the curated plan via agent.run; onError: continue — a failed plan falls back to templates (F613, 0345 R9/R10)"
+    dependsOn: [script-style, curate-final, pool-gate]
     condition:
       kind: shell
       options:
@@ -526,10 +406,10 @@ nodes:
         timeoutMs: 600000
         # ADR-115 error tier: keep this prompt <= 1000 chars.
         input: |
-          Follow mode `write` in ${vars.work_dir}/20-editorial/news-editorial/SKILL.md (ADR-045: the kk:news-editorial skill owns selection, balance, topic boundary, style contract and the output shape; read its references first).
+          Follow mode `write` in ${vars.work_dir}/20-editorial/news-editorial/SKILL.md (ADR-045: the kk:news-editorial skill owns selection, balance, style contract and the master output shape; read its references first).
           --in ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json (don't edit it)
+          --excluded ${vars.work_dir}/21-plan/${vars.run_date}_03_curate_excluded.json
           --out ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json
-          Article closing note: ${vars.work_dir}/22-article/${vars.run_date}_06_article-write_body.md
           Output only the JSON file.
         expectFile: ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json
         allowAppend: false
@@ -553,11 +433,13 @@ nodes:
 
   - id: script-write-fix
     description: "0345 R4: one targeted kk:news-editorial `write --fix` pass on validator errors; onError: continue — still-rejected plans fall back to templates"
-    dependsOn: [script-check]
+    dependsOn: [script-check, curate-final, pool-gate]
     condition:
       kind: shell
       options:
-        command: 'test -s "${vars.work_dir}/24-script/${vars.run_date}_08_script-write_errors.json"'
+        command: >-
+          test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS
+          && test -s "${vars.work_dir}/24-script/${vars.run_date}_08_script-write_errors.json"
     action:
       kind: agent.run
       onError: continue
@@ -569,6 +451,7 @@ nodes:
         input: |
           Follow mode `write --fix` in ${vars.work_dir}/20-editorial/news-editorial/SKILL.md (read its references first).
           --in ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json (don't edit it)
+          --excluded ${vars.work_dir}/21-plan/${vars.run_date}_03_curate_excluded.json
           Previous plan (may be absent): ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json
           --fix ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_errors.json
           --out ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json (overwrite it with the full corrected plan)
@@ -576,12 +459,41 @@ nodes:
         expectFile: ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json
         allowAppend: false
 
+  - id: editorial-judge
+    description: "0345 R11: advisory kk:content-judge evaluation of the script plan under the news-balance rubric; nothing depends on it for control flow"
+    dependsOn: [script-check, script-write-fix, curate-final, pool-gate]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS
+          && test -s "${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json"
+    action:
+      kind: agent.run
+      onError: continue
+      options:
+        role: reviewer
+        agent: ${vars.agent}
+        timeoutMs: 600000
+        # ADR-115 error tier: keep this prompt <= 1000 chars.
+        input: |
+          You are an LLM-as-judge evaluating a daily news script plan for the knowledge-kit pipeline.
+          Content to evaluate: ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json
+          Plan docs reference: ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json
+          Rubric: news-balance
+          Output verdict to: ${vars.work_dir}/24-script/${vars.run_date}_08_editorial-judge_verdict.json
+          Load the rubric definition from plugins/kk/skills/content-judge/references/rubrics.md (section: news-balance) and the contract from plugins/kk/skills/content-judge/SKILL.md.
+          Evaluate the script plan against every criterion in news-balance (news-first, commentary-share, no-restatement, tech-depth, ordering).
+          Write the verdict JSON (with confidence HIGH | MEDIUM | LOW) to ${vars.work_dir}/24-script/${vars.run_date}_08_editorial-judge_verdict.json.
+        expectFile: ${vars.work_dir}/24-script/${vars.run_date}_08_editorial-judge_verdict.json
+        allowAppend: false
+
   - id: script
     description: >-
       Compile the episode plan Doc[] into structured broadcast VoiceScript YAML Content. Depends on
-      `article` so the node still runs when the plan-authoring nodes were disabled or skipped (the
+      `curate-final` so the node still runs when the plan-authoring nodes were disabled or skipped (the
       builder falls back to templates) — but not when the whole content branch is skipped.
-    dependsOn: [article, script-style, script-write, script-check, script-write-fix, pool-gate]
+    dependsOn: [curate-final, script-style, script-write, script-check, script-write-fix, pool-gate]
     condition:
       kind: shell
       options:
@@ -592,6 +504,59 @@ nodes:
       options:
         command: >-
           kk stage daily-script "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.language}" "${vars.title}" "${vars.voice_profile}" "${vars.episode_max_minutes}" "${vars.vdriver}"
+
+  - id: editorial-render
+    description: "0345 R10: deterministically render the prose article body, cover brief, XHS card plan and social posts from the master script plan and curated plan"
+    dependsOn: [script, curate-final, pool-gate]
+    condition:
+      kind: shell
+      options:
+        command: 'test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS'
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-editorial-render "${vars.work_dir}" "${vars.run_date}" "${vars.cards_enabled}" "${vars.cards}"
+
+  - id: article
+    description: >-
+      Generate the dated daily article Content from the episode plan and rendered article body (daily-article-gen).
+    dependsOn: [qc-content, curate-final, editorial-render, pool-gate]
+    condition:
+      kind: shell
+      options:
+        # 0324 R3: the pool verdict is `pool-gate`'s token, never a repeated `kk store pool-count`.
+        command: 'test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS'
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-article "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
+
+  - id: cover
+    description: "Render the daily cover through the pinned daily-news presets (F614)"
+    dependsOn: [editorial-render, pool-gate]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS
+          && test "${vars.cover_enabled}" = "true"
+          && test ! -f "${vars.work_dir}/23-cover/${vars.run_date}_07_cover_cover.png"
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-cover "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.cover_provider}" "${vars.cover_model}" "${vars.cover_fallback}"
+
+  - id: cover-normalize
+    description: "Normalize the rendered cover (dimensions/format pins) so every consumer sees the same asset"
+    dependsOn: [cover]
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-cover-normalize "${vars.work_dir}" "${vars.run_date}"
 
   # ---- content safety: a nested state machine (no sub-workflow action exists; ADR-031) ----
 
@@ -604,7 +569,7 @@ nodes:
       runner strips, kk-workflow-stages.ts): without it `spur workflow run` refuses to start inside
       an active run. voice3 always runs the gate: it is the only check between an LLM draft and a
       published post.
-    dependsOn: [script]
+    dependsOn: [article, script]
     action:
       kind: shell
       options:
@@ -808,37 +773,11 @@ nodes:
       options:
         command: >-
           kk stage daily-publish-prep "${vars.work_dir}" "${vars.run_date}" "${vars.podcast_artist}" "${vars.podcast_album}"
-  - id: cards-write
-    description: "Plan the card series across the episode's plan items via agent.run; onError: continue — a failed plan skips the card series, never the run"
-    dependsOn: [script, review, pool-gate]
-    condition:
-      kind: shell
-      options:
-        command: 'test "${vars.cards_enabled}" = "true" && test "$(cat ".spur/run/${vars.__runId}-pool-gate.status" 2>/dev/null)" = PASS'
-    action:
-      kind: agent.run
-      onError: continue
-      options:
-        role: scribe
-        agent: ${vars.agent}
-        timeoutMs: 600000
-        # ADR-115 error tier: keep this prompt <= 1000 chars.
-        input: |
-          Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of news docs; don't edit it.
-          Plan the whole episode, not the lead item alone. Card 1 is the episode hook.
-          Write a card note: "title" (≤20 chars) and "body" (Chinese lead paragraph + 3-5 hashtags) — the stage appends one numbered line per image below it. 选题边界：公共事务主线不写入，只写技术内容。
-          Write exactly ${vars.cards} cards in plan order: card 1 "cover"; one "content" card per plan item, up to ${vars.cards} - 2 of them; the last "closing". Each card carries "role", "copy" (Chinese headline ≤12 chars), "points" (2-4 short Chinese bullets), "layout", "subject" (one concrete English visual scene), "sourcePoint" (that item's fact) and "itemId" (its "id").
-          Ground every field in that item — no invented facts. No writing, letters, numbers, logos or people; screens stay blank.
-          Output strictly valid JSON {"title": "...", "body": "...", "cards": [...]} to ${vars.work_dir}/25-xhs/${vars.run_date}_18_xhs_plan.json.
-        expectFile: ${vars.work_dir}/25-xhs/${vars.run_date}_18_xhs_plan.json
-        allowAppend: false
-
   - id: cards-render
     description: "Render the card series through the pinned xhs-card/xhs-knowledge presets, attach the episode cover last and pair every image with its numbered line (0235 note_scope=episode); onError: continue — the publish node names the missing series and stays soft"
-    dependsOn: [cards-write, pool-gate]
-    # A skipped cards-write still admits its dependents, so each card node keeps its own switch:
-    # without it a run with cards_enabled=false would re-package a stale same-day 25-xhs/ series.
-    # The pool guard is `pool-gate`'s alone in voice3 (0324 R3).
+    dependsOn: [editorial-render, review, pool-gate]
+    # Each card node keeps its own switch: without it a run with cards_enabled=false would
+    # re-package a stale same-day 25-xhs/ series. The pool guard is `pool-gate`'s alone in voice3 (0324 R3).
     condition:
       kind: shell
       options:
@@ -852,32 +791,6 @@ nodes:
 
   # ---- generate-side payloads and the frozen bundle (0324 R2/R3) ----
 
-  - id: social-write
-    description: >-
-      Author one short post per social platform (x, weibo, threads, linkedin) from the approved
-      plan, in zh, inside each platform's character cap. `daily-bundle-variants` truncates as a
-      backstop, so a missed cap degrades rather than fails; a missing file simply skips that
-      platform's variant.
-    dependsOn: [quality]
-    action:
-      kind: agent.run
-      onError: continue
-      options:
-        role: scribe
-        agent: ${vars.agent}
-        timeoutMs: 600000
-        input: |
-          Read the approved episode plan at ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json.
-          Write four short zh posts, one per file:
-          - ${vars.work_dir}/26-social/x.md — at most 280 weighted characters (this feed counts CJK as 2, so ~140 汉字 or 280 Latin letters)
-          - ${vars.work_dir}/26-social/weibo.md — at most 2000 characters
-          - ${vars.work_dir}/26-social/threads.md — at most 500 characters
-          - ${vars.work_dir}/26-social/linkedin.md — at most 3000 characters
-          Each post: the day's single most interesting item, one concrete number or name from the
-          plan, no hashtag spam, no emoji, no "点击链接", no invented facts. Plain text, no markdown
-          headings. Deliver with your file-write tool; each file must be non-empty.
-        expectFile: ${vars.work_dir}/26-social/x.md
-
   - id: bundle-variants
     description: >-
       Build the channel payloads from the run's own artifacts (0327 builders): `30-variants/<key>`
@@ -886,7 +799,7 @@ nodes:
       F16: depends on every producer it reads (the 0324 file order alone was not a guarantee),
       wipes stale variants first, and follows the cards/cover switches so a disabled producer's
       variant is a skip, not a stale re-read.
-    dependsOn: [quality, social-write, publish-prep, cover-normalize, cards-render, pool-gate]
+    dependsOn: [quality, editorial-render, publish-prep, cover-normalize, cards-render, pool-gate]
     condition:
       kind: shell
       options:

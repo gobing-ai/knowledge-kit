@@ -93,8 +93,6 @@ import {
     readJson,
     readTopicBoundary,
     requireJson,
-    requireSidecar,
-    resolveSidecar,
     resultPublishStatus,
     SAFETY_PLATFORM_DECISIONS,
     SAFETY_REVISE_COUNT,
@@ -4002,6 +4000,7 @@ export function dailyScript(args: string[]): void {
                 // plan; a plan file absent at build time reports missing-plan (template fallback).
                 DAILYNEWS_SCRIPT_PLAN: resolve(join(workDir, '24-script', `${runDate}_08_script-write_plan.json`)),
                 DAILYNEWS_STYLE_FILE: resolve(STYLE_CONTRACT),
+                DAILYNEWS_CURATE_EXCLUDED: resolve(join(workDir, '21-plan', `${runDate}_03_curate_excluded.json`)),
             },
         });
         const body = readJson(contentOut)?.body;
@@ -4084,6 +4083,7 @@ export function dailyScriptCheck(args: string[]): void {
                 DAILYNEWS_DATE: runDate,
                 DAILYNEWS_SCRIPT_PLAN: resolve(planOut),
                 DAILYNEWS_STYLE_FILE: resolve(STYLE_CONTRACT),
+                DAILYNEWS_CURATE_EXCLUDED: resolve(join(workDir, '21-plan', `${runDate}_03_curate_excluded.json`)),
             },
         });
         const metadata = readJson(trialOut)?.metadata;
@@ -4099,6 +4099,395 @@ export function dailyScriptCheck(args: string[]): void {
         writeErrors(Array.isArray(metadata.scriptPlanErrors) ? metadata.scriptPlanErrors : []);
     } finally {
         if (isFile(trialOut)) unlinkSync(trialOut);
+    }
+}
+
+/**
+ * 0345 R8: validate the `curate` agent output (`21-plan/<date>_03_plan_plan.json` +
+ * `21-plan/<date>_03_curate_excluded.json`) against the QC candidates
+ * (`21-plan/<date>_04_quality-control-content_candidates.json`). Unwraps a `Content` envelope and
+ * dedups near-duplicate titles in place before `write` reads the plan. Writes
+ * `21-plan/<date>_03_curate_errors.json` (`[{itemId, rule}]`) on failure and removes it on success.
+ * With `--final`, falls back to the untranslated candidates and `[]` exclusions on failure.
+ */
+export function dailyCurateCheck(args: string[]): void {
+    const [workDir = '', runDate = '', flag = ''] = args;
+    if (!workDir) fail('missing work_dir');
+    if (!runDate) fail('missing run_date');
+    const isFinal = flag === '--final';
+    const candidatesFile = join(workDir, '21-plan', `${runDate}_04_quality-control-content_candidates.json`);
+    const planFile = join(workDir, '21-plan', `${runDate}_03_plan_plan.json`);
+    const excludedFile = join(workDir, '21-plan', `${runDate}_03_curate_excluded.json`);
+    const errFile = join(workDir, '21-plan', `${runDate}_03_curate_errors.json`);
+
+    const candRaw = readJson(candidatesFile);
+    const candidateDocs: Record<string, unknown>[] = Array.isArray(candRaw)
+        ? (candRaw as Record<string, unknown>[])
+        : Array.isArray(metadataOf(candRaw).docs)
+          ? (metadataOf(candRaw).docs as Record<string, unknown>[])
+          : [];
+    const candidateIds = candidateDocs.map((doc) => (typeof doc?.id === 'string' ? doc.id.trim() : '')).filter(Boolean);
+    const candidateIdSet = new Set(candidateIds);
+
+    const handleErrors = (errors: { itemId: string; rule: string }[]): void => {
+        if (isFinal) {
+            const reason = errors.map((e) => `${e.itemId}:${e.rule}`).join(', ');
+            console.error(
+                `curate-check: final check failed (${reason}) — falling back to ${candidateDocs.length} untranslated candidate(s)`,
+            );
+            sted('write', planFile, () => writeJsonText(planFile, candidateDocs));
+            sted('write', excludedFile, () => writeJsonText(excludedFile, []));
+            if (isFile(errFile)) unlinkSync(errFile);
+            return;
+        }
+        sted('write', errFile, () => writeJsonText(errFile, errors));
+        console.log(`curate-check: rejected (${errors.length} error(s)): ${errFile}`);
+    };
+
+    if (!isFile(planFile)) {
+        handleErrors([{ itemId: 'episode', rule: 'missing-plan' }]);
+        return;
+    }
+
+    let planParsed: unknown;
+    try {
+        planParsed = JSON.parse(readFileSync(planFile, 'utf-8'));
+    } catch {
+        handleErrors([{ itemId: 'episode', rule: 'invalid-json' }]);
+        return;
+    }
+
+    let planDocs: Record<string, unknown>[];
+    if (Array.isArray(planParsed)) {
+        planDocs = planParsed as Record<string, unknown>[];
+    } else if (
+        planParsed !== null &&
+        typeof planParsed === 'object' &&
+        Array.isArray(metadataOf(planParsed as Record<string, unknown>).docs)
+    ) {
+        planDocs = metadataOf(planParsed as Record<string, unknown>).docs as Record<string, unknown>[];
+        sted('write', planFile, () => writeJsonText(planFile, planDocs));
+        console.log(`curate-check: unwrapped Content envelope (${planDocs.length} doc(s)) in ${planFile}`);
+    } else {
+        handleErrors([{ itemId: 'episode', rule: 'invalid-json' }]);
+        return;
+    }
+
+    for (const entry of planDocs) {
+        if (entry === null || typeof entry !== 'object' || typeof entry.id !== 'string' || entry.id.trim() === '') {
+            handleErrors([{ itemId: 'episode', rule: 'invalid-json' }]);
+            return;
+        }
+    }
+
+    const excludedItems: { id: string; reason: string }[] = [];
+    if (isFile(excludedFile)) {
+        let exParsed: unknown;
+        try {
+            exParsed = JSON.parse(readFileSync(excludedFile, 'utf-8'));
+        } catch {
+            handleErrors([{ itemId: 'episode', rule: 'invalid-json' }]);
+            return;
+        }
+        if (!Array.isArray(exParsed)) {
+            handleErrors([{ itemId: 'episode', rule: 'invalid-json' }]);
+            return;
+        }
+        for (const entry of exParsed) {
+            if (
+                entry === null ||
+                typeof entry !== 'object' ||
+                typeof (entry as { id?: unknown }).id !== 'string' ||
+                (entry as { id: string }).id.trim() === '' ||
+                typeof (entry as { reason?: unknown }).reason !== 'string' ||
+                (entry as { reason: string }).reason.trim() === ''
+            ) {
+                handleErrors([{ itemId: 'episode', rule: 'invalid-json' }]);
+                return;
+            }
+            excludedItems.push({
+                id: (entry as { id: string }).id.trim(),
+                reason: (entry as { reason: string }).reason.trim(),
+            });
+        }
+    }
+
+    const errors: { itemId: string; rule: string }[] = [];
+    if (planDocs.length === 0) {
+        errors.push({ itemId: 'episode', rule: 'empty-plan' });
+    }
+
+    const keptIds = new Set<string>();
+    for (const doc of planDocs) {
+        const id = (doc.id as string).trim();
+        keptIds.add(id);
+        if (candidateIdSet.size > 0 && !candidateIdSet.has(id)) {
+            errors.push({ itemId: id, rule: 'unknown-id' });
+        }
+    }
+
+    const excludedIds = new Set<string>();
+    for (const ex of excludedItems) {
+        excludedIds.add(ex.id);
+        if (candidateIdSet.size > 0 && !candidateIdSet.has(ex.id)) {
+            errors.push({ itemId: ex.id, rule: 'unknown-id' });
+        }
+        if (keptIds.has(ex.id)) {
+            errors.push({ itemId: ex.id, rule: 'conflict-id' });
+        }
+    }
+
+    for (const cid of candidateIds) {
+        if (!keptIds.has(cid) && !excludedIds.has(cid)) {
+            errors.push({ itemId: cid, rule: 'missing-item' });
+        }
+    }
+
+    if (errors.length > 0) {
+        handleErrors(errors);
+        return;
+    }
+
+    const { kept, dropped } = dedupPlanByTitle(planDocs);
+    if (dropped.length > 0) {
+        sted('write', planFile, () => writeJsonText(planFile, kept));
+        console.error(`curate-check: dropped ${dropped.length} near-duplicate plan item(s): ${dropped.join(', ')}`);
+        for (const droppedId of dropped) {
+            if (!excludedIds.has(droppedId)) {
+                excludedIds.add(droppedId);
+                excludedItems.push({ id: droppedId, reason: '标题近似重复自动去重' });
+            }
+        }
+        sted('write', excludedFile, () => writeJsonText(excludedFile, excludedItems));
+    } else if (!isFile(excludedFile)) {
+        sted('write', excludedFile, () => writeJsonText(excludedFile, excludedItems));
+    }
+
+    if (isFile(errFile)) unlinkSync(errFile);
+    console.log(`curate-check: accepted (${kept.length} kept, ${excludedItems.length} excluded)`);
+}
+
+function sourceLabelForDoc(doc: Record<string, unknown>, sourceUri: string): string {
+    const meta = metadataOf(doc);
+    if (typeof meta.source === 'string' && meta.source.trim() !== '') {
+        return meta.source.trim();
+    }
+    try {
+        return new URL(sourceUri).hostname.replace(/^www\./, '') || '原文';
+    } catch {
+        return '原文';
+    }
+}
+
+/**
+ * 0345 R10: deterministically render the five sibling editorial artifacts from the master script
+ * plan (`24-script/<date>_08_script-write_plan.json`) and the curated plan
+ * (`21-plan/<date>_03_plan_plan.json`):
+ *  1. `22-article/<date>_06_article-write_body.md`
+ *  2. `23-cover/<date>_07_cover-brief.json`
+ *  3. `25-xhs/<date>_18_xhs_plan.json` (only when `cards_enabled === 'true'`)
+ *  4. `26-social/{x,threads}.md` (`social.short`)
+ *  5. `26-social/{weibo,linkedin}.md` (`social.long`)
+ * Missing master field -> skip that one artifact with a logged reason, write the others.
+ */
+export function dailyEditorialRender(args: string[]): void {
+    const [workDir = '', runDate = '', cardsEnabled = 'false', cardsRaw = '6'] = args;
+    if (!workDir) fail('missing work_dir');
+    if (!runDate) fail('missing run_date');
+    const cardsCount = Math.max(2, Number.parseInt(cardsRaw, 10) || 6);
+    const planFile = join(workDir, '21-plan', `${runDate}_03_plan_plan.json`);
+    const masterFile = join(workDir, '24-script', `${runDate}_08_script-write_plan.json`);
+
+    const master = readJson(masterFile);
+    if (master === null) {
+        console.log(`editorial-render: no master script plan at ${masterFile} — skipping all renders`);
+        return;
+    }
+
+    const planRaw = readJson(planFile);
+    const planDocs: Record<string, unknown>[] = Array.isArray(planRaw)
+        ? (planRaw as Record<string, unknown>[])
+        : Array.isArray(metadataOf(planRaw).docs)
+          ? (metadataOf(planRaw).docs as Record<string, unknown>[])
+          : [];
+    const docById = new Map<string, Record<string, unknown>>();
+    for (const doc of planDocs) {
+        if (typeof doc?.id === 'string' && doc.id.trim() !== '') {
+            docById.set(doc.id.trim(), doc);
+        }
+    }
+
+    const rawItems = Array.isArray(master.items) ? (master.items as Record<string, unknown>[]) : [];
+    const itemById = new Map<string, Record<string, unknown>>();
+    for (const item of rawItems) {
+        if (item !== null && typeof item === 'object' && typeof item.id === 'string' && item.id.trim() !== '') {
+            itemById.set(item.id.trim(), item);
+        }
+    }
+    const orderedIds =
+        planDocs.length > 0
+            ? planDocs
+                  .map((d) => (typeof d.id === 'string' ? d.id.trim() : ''))
+                  .filter((id) => id !== '' && itemById.has(id))
+            : [...itemById.keys()];
+
+    // 1. Article body: 22-article/<date>_06_article-write_body.md
+    const outro = typeof master.outro === 'string' ? master.outro.trim() : '';
+    const articleSections: string[] = [];
+    for (const id of orderedIds) {
+        const doc = docById.get(id);
+        const item = itemById.get(id);
+        const title = typeof doc?.title === 'string' ? doc.title.trim() : '';
+        const body = typeof doc?.body === 'string' ? doc.body.trim() : '';
+        const lead = typeof item?.lead === 'string' ? item.lead.trim() : '';
+        const insight = typeof item?.insight === 'string' ? item.insight.trim() : '';
+        if (!title || !body || !lead || !insight) continue;
+        const sourceUri = typeof doc?.sourceUri === 'string' ? doc.sourceUri.trim() : '';
+        const sourceLine = sourceUri ? `[来源：${sourceLabelForDoc(doc ?? {}, sourceUri)}](${sourceUri})` : '';
+        const parts = [`## ${title}`, lead, body, insight, ...(sourceLine ? [sourceLine] : [])];
+        articleSections.push(parts.join('\n\n'));
+    }
+    if (articleSections.length > 0 && outro !== '') {
+        const articleDir = join(workDir, '22-article');
+        sted('mkdir', articleDir, () => mkdirSync(articleDir, { recursive: true }));
+        const articleOut = join(articleDir, `${runDate}_06_article-write_body.md`);
+        const articleText = `${['这里是由Robin为你带来的咸话咸说之每日AI乱炖。', ...articleSections, outro].join('\n\n')}\n`;
+        sted('write', articleOut, () => writeRaw(articleOut, articleText));
+        console.log(`editorial-render: wrote article body (${articleSections.length} item(s)): ${articleOut}`);
+    } else {
+        console.log('editorial-render: skipping article body (missing items/doc fields or outro)');
+    }
+
+    // 2. Cover brief: 23-cover/<date>_07_cover-brief.json
+    const coverSubject = typeof master.cover === 'string' ? master.cover.trim() : '';
+    if (coverSubject !== '') {
+        const coverDir = join(workDir, '23-cover');
+        sted('mkdir', coverDir, () => mkdirSync(coverDir, { recursive: true }));
+        const coverOut = join(coverDir, `${runDate}_07_cover-brief.json`);
+        sted('write', coverOut, () => writeJsonText(coverOut, { subject: coverSubject }));
+        console.log(`editorial-render: wrote cover brief: ${coverOut}`);
+    } else {
+        console.log('editorial-render: skipping cover brief (missing cover in script plan)');
+    }
+
+    // 3. XHS card plan: 25-xhs/<date>_18_xhs_plan.json (only when cards_enabled === 'true')
+    if (cardsEnabled === 'true') {
+        const cardsMeta =
+            master.cards !== null && typeof master.cards === 'object'
+                ? (master.cards as Record<string, unknown>)
+                : null;
+        const cardTitle = typeof cardsMeta?.title === 'string' ? cardsMeta.title.trim() : '';
+        const cardBody = typeof cardsMeta?.body === 'string' ? cardsMeta.body.trim() : '';
+        const contentItems = orderedIds
+            .map((id) => ({ id, item: itemById.get(id), doc: docById.get(id) }))
+            .filter(({ item }) => {
+                const c = item?.card as Record<string, unknown> | undefined;
+                return (
+                    c !== null &&
+                    typeof c === 'object' &&
+                    typeof c.copy === 'string' &&
+                    c.copy.trim() !== '' &&
+                    Array.isArray(c.points) &&
+                    c.points.length >= 1 &&
+                    typeof c.subject === 'string' &&
+                    c.subject.trim() !== ''
+                );
+            });
+        const maxContent = Math.max(1, cardsCount - 2);
+        const chosenContent = contentItems.slice(0, maxContent);
+        if (cardTitle !== '' && cardBody !== '' && chosenContent.length > 0) {
+            const firstSubject =
+                coverSubject ||
+                ((chosenContent[0]?.item?.card as { subject?: string } | undefined)?.subject ?? '').trim() ||
+                'Minimalist geometric light sculpture on a dark studio table';
+            const introText =
+                typeof master.intro === 'string' && master.intro.trim() !== '' ? master.intro.trim() : cardTitle;
+            const coverPoints = chosenContent
+                .slice(0, 4)
+                .map(({ item }) => ((item?.card as { copy?: string } | undefined)?.copy || '').trim())
+                .filter(Boolean);
+            const renderedCards: Record<string, unknown>[] = [
+                {
+                    role: 'cover',
+                    copy: cardTitle.slice(0, 12),
+                    points: coverPoints.length >= 2 ? coverPoints : [cardTitle, introText.slice(0, 36)],
+                    layout: 'hero',
+                    subject: firstSubject,
+                    sourcePoint: introText,
+                },
+                ...chosenContent.map(({ id, item, doc }) => {
+                    const card = item?.card as { copy: string; points: string[]; subject: string };
+                    const lead = typeof item?.lead === 'string' && item.lead.trim() !== '' ? item.lead.trim() : '';
+                    const docTitle = typeof doc?.title === 'string' && doc.title.trim() !== '' ? doc.title.trim() : id;
+                    return {
+                        role: 'content',
+                        copy: card.copy.trim(),
+                        points: card.points
+                            .map((p) => String(p).trim())
+                            .filter(Boolean)
+                            .slice(0, 4),
+                        layout: 'split',
+                        subject: card.subject.trim(),
+                        sourcePoint: lead || docTitle,
+                        itemId: id,
+                    };
+                }),
+            ];
+            // Pad content cards if chosenContent.length < maxContent so total length equals cardsCount
+            while (renderedCards.length < cardsCount - 1) {
+                const seed = renderedCards[renderedCards.length - 1] as Record<string, unknown>;
+                renderedCards.push({ ...seed });
+            }
+            const closingPoints = [outro || introText, cardTitle].filter(Boolean);
+            renderedCards.push({
+                role: 'closing',
+                copy: '本期小结',
+                points: closingPoints.length >= 2 ? closingPoints : [outro || cardTitle, '感谢关注每日AI乱炖'],
+                layout: 'summary',
+                subject: firstSubject,
+                sourcePoint: outro || introText,
+            });
+            const xhsDir = join(workDir, '25-xhs');
+            sted('mkdir', xhsDir, () => mkdirSync(xhsDir, { recursive: true }));
+            const xhsOut = join(xhsDir, `${runDate}_18_xhs_plan.json`);
+            sted('write', xhsOut, () =>
+                writeJsonText(xhsOut, {
+                    title: cardTitle,
+                    body: cardBody,
+                    cards: renderedCards,
+                }),
+            );
+            console.log(`editorial-render: wrote xhs card plan (${renderedCards.length} card(s)): ${xhsOut}`);
+        } else {
+            console.log('editorial-render: skipping xhs card plan (missing cards.title/body or items[].card)');
+        }
+    }
+
+    // 4 & 5. Social posts: 26-social/{x,threads}.md and 26-social/{weibo,linkedin}.md
+    const social =
+        master.social !== null && typeof master.social === 'object' ? (master.social as Record<string, unknown>) : null;
+    const socialShort = typeof social?.short === 'string' ? social.short.trim() : '';
+    const socialDir = join(workDir, '26-social');
+    if (socialShort !== '') {
+        sted('mkdir', socialDir, () => mkdirSync(socialDir, { recursive: true }));
+        for (const name of ['x.md', 'threads.md']) {
+            const out = join(socialDir, name);
+            sted('write', out, () => writeRaw(out, `${socialShort}\n`));
+        }
+        console.log('editorial-render: wrote 26-social/{x,threads}.md');
+    } else {
+        console.log('editorial-render: skipping social short posts (missing social.short in script plan)');
+    }
+    const socialLong = typeof social?.long === 'string' ? social.long.trim() : '';
+    if (socialLong !== '') {
+        sted('mkdir', socialDir, () => mkdirSync(socialDir, { recursive: true }));
+        for (const name of ['weibo.md', 'linkedin.md']) {
+            const out = join(socialDir, name);
+            sted('write', out, () => writeRaw(out, `${socialLong}\n`));
+        }
+        console.log('editorial-render: wrote 26-social/{weibo,linkedin}.md');
+    } else {
+        console.log('editorial-render: skipping social long posts (missing social.long in script plan)');
     }
 }
 

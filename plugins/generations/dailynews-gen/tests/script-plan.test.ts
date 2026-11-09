@@ -94,7 +94,17 @@ async function withPlanEnv(env: Record<string, string | undefined>, run: () => P
 describe('F613 R1 — style contract sidecar', () => {
     it('parseStyleContract reads the real shipped sidecar: caps and the full banned list', () => {
         const style = parseStyleContract(readFileSync(STYLE_SIDECAR, 'utf-8'));
-        expect(style.caps).toEqual({ intro: 150, outro: 150, lead: 80, insight: 380 });
+        expect(style.caps).toEqual({
+            intro: 150,
+            outro: 150,
+            lead: 80,
+            insight: 380,
+            cover: 240,
+            cardCopy: 12,
+            cardTitle: 20,
+            socialShort: 140,
+            socialLong: 500,
+        });
         // every current zhInsightFor canned line is banned, so a plan can never reuse them
         for (const canned of [
             '在各种技术光环背后，正是这样专注而不知疲倦的底层攻坚者，为今天整个大模型生态奠定了最坚实的技术基石。',
@@ -607,5 +617,121 @@ describe('F613 R5 — 20260924 misfire regression (doc 520246ce54c2a6e6)', () =>
     it('the same doc without a plan still produces that canned line, pinning the bug the plan fixes', () => {
         const script = buildNewsVoiceScript([FIXTURE_DOC], { date, language: 'zh', voiceProfile: 'Robin' });
         expect(script.segments.map((segment) => segment.text).join('\n')).toContain('硬件层承担的安全与算力责任');
+    });
+});
+
+describe('0345 R10 / AC7a — master script plan optional fields, caps and banned phrases', () => {
+    const style = parseStyleContract(readFileSync(STYLE_SIDECAR, 'utf-8'));
+    const docs: Doc[] = [FIXTURE_DOC, ENERGY_DOC];
+
+    it('accepts a plan without the optional master fields and a plan with valid master fields', () => {
+        expect(validateScriptPlan(twoDocPlan(), docs, style).ok).toBe(true);
+
+        const fullPlan: ScriptPlan = {
+            ...twoDocPlan(),
+            cover: 'A dimly lit server rack cooled by glowing liquid pipes beside a diplomatic conference table',
+            cards: {
+                title: 'AI基建与安全双线动态',
+                body: '今日聚焦大模型算力能耗与跨国安全机制两条主线 #AI技术 #算力基建 #大模型',
+            },
+            social: {
+                short: '今日AI动态：算力中心液冷与跨国安全通报机制同步推进，底层工程投入持续升温。',
+                long: '今日两项关键动态值得开发者留意：一是跨国AI安全通报机制进入技术磋商阶段，二是超大规模数据中心液冷与供电改造加速落地。算力与治理正在同步走向工程化深水区。',
+            },
+            items: twoDocPlan().items.map((item) => ({
+                ...item,
+                card: {
+                    copy: '安全与算力新进展',
+                    points: ['通报机制建立常态化沟通渠道', '基础设施功耗成为核心指标'],
+                    subject: 'Minimalist glass prism refracting two laser beams over a dark circuit board',
+                },
+            })),
+        };
+        const res = validateScriptPlan(fullPlan, docs, style);
+        expect(res.ok).toBe(true);
+
+        // Pre-excluded candidate ids from curate (_03_curate_excluded.json) are accepted in plan.excluded
+        // even when curate already omitted them from _03_plan_plan.json (0345 R7/R9).
+        const curatedPlan: ScriptPlan = {
+            ...fullPlan,
+            items: [fullPlan.items[0] as ScriptPlan['items'][number]],
+            excluded: [{ id: 'curate-dropped-1', reason: '低价值公关通稿' }],
+        };
+        expect(validateScriptPlan(curatedPlan, [FIXTURE_DOC], style, new Set(['curate-dropped-1'])).ok).toBe(true);
+    });
+
+    it('enforces cap:cover, cap:cardCopy, cap:cardTitle, cap:socialShort, cap:socialLong', () => {
+        const overPlan: ScriptPlan = {
+            ...twoDocPlan(),
+            cover: 'x'.repeat(241),
+            cards: {
+                title: '字'.repeat(21),
+                body: '正文导语',
+            },
+            social: {
+                short: '短'.repeat(141),
+                long: '长'.repeat(501),
+            },
+            items: [
+                {
+                    ...(twoDocPlan().items[0] as ScriptPlan['items'][number]),
+                    card: {
+                        copy: '题'.repeat(13),
+                        points: ['要点一', '要点二'],
+                        subject: 'A clean geometric cube on a matte surface',
+                    },
+                },
+                twoDocPlan().items[1] as ScriptPlan['items'][number],
+            ],
+        };
+        const res = validateScriptPlan(overPlan, docs, style);
+        expect(res).toEqual({
+            ok: false,
+            errors: [
+                { itemId: 'episode', rule: 'cap:cover' },
+                { itemId: 'episode', rule: 'cap:cardTitle' },
+                { itemId: 'episode', rule: 'cap:socialShort' },
+                { itemId: 'episode', rule: 'cap:socialLong' },
+                { itemId: '520246ce54c2a6e6', rule: 'cap:cardCopy' },
+            ],
+        });
+    });
+
+    it('enforces banned phrases across cards and social fields', () => {
+        const bannedPlan: ScriptPlan = {
+            ...twoDocPlan(),
+            cards: {
+                title: '每日AI资讯速览',
+                body: '背景：今日看点汇总',
+            },
+            social: {
+                short: '首先看今天的第一条消息',
+                long: '这则消息仍待验证，后续我们将持续观察。',
+            },
+            items: [
+                {
+                    ...(twoDocPlan().items[0] as ScriptPlan['items'][number]),
+                    card: {
+                        copy: '算力新进展',
+                        points: ['可做角度：硬件层安全', '有效要点二'],
+                        subject: 'A silicon wafer under a microscope light',
+                    },
+                },
+                twoDocPlan().items[1] as ScriptPlan['items'][number],
+            ],
+        };
+        const res = validateScriptPlan(bannedPlan, docs, style);
+        expect(res.ok).toBe(false);
+        if (!res.ok) {
+            expect(res.errors).toEqual(
+                expect.arrayContaining([
+                    { itemId: 'episode', rule: 'banned:每日AI资讯' },
+                    { itemId: 'episode', rule: 'banned:背景' },
+                    { itemId: 'episode', rule: 'banned:首先' },
+                    { itemId: 'episode', rule: 'banned:仍待验证' },
+                    { itemId: '520246ce54c2a6e6', rule: 'banned:可做角度' },
+                ]),
+            );
+        }
     });
 });

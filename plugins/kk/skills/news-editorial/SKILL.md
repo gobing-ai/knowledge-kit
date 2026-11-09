@@ -29,9 +29,10 @@ discovery.
 
 | Mode | Input → output | Status |
 |---|---|---|
-| `curate` | QC candidates `Doc[]` → the same array, kept and translated, plus exclusions | Policy: `references/selection.md`. Wired in the next migration step (task 0345 R5) |
-| `write` | translated plan `Doc[]` → script plan JSON | Wired (`script-write`) |
-| `write --fix` | plan `Doc[]` + previous script plan + validator errors → corrected script plan | Wired (`script-write-fix`) |
+| `curate` | QC candidates `Doc[]` → kept translated `Doc[]` (`--out-plan`) + exclusions (`--out-excluded`) | Wired (`curate`, policy: `references/selection.md`) |
+| `curate --fix` | QC candidates `Doc[]` + curate validator errors (`--fix`) → corrected plan + exclusions | Wired (`curate-fix`) |
+| `write` | translated plan `Doc[]` + exclusions (`--excluded`) → master script plan JSON | Wired (`script-write`) |
+| `write --fix` | plan `Doc[]` + previous script plan + validator errors → corrected master script plan | Wired (`script-write-fix`) |
 
 ## Shared rules (every mode)
 
@@ -54,22 +55,44 @@ validator enforces mechanically, so violating them means the plan is rejected.
 
 ## Mode: write
 
-Read the plan `Doc[]` (`--in`). For each doc not excluded, write:
+Read the curated plan `Doc[]` (`--in`) and the curate exclusions (`--excluded`). For each doc in `--in`, write:
 
-- `lead`: one spoken bridge into the item. It is not the title and not a rhetorical question.
-- `insight`: 2–4 sentences anchored to the doc's named actors, saying why it matters or what to watch. Never
-  restate the doc's facts, numbers or phrasing (the listener has just heard them), give no generic advice or
-  methodology, and add no new facts. The cap is a ceiling, not a target.
+- `lead`: one spoken bridge into the item (≤80 chars). It is not the title and not a rhetorical question.
+- `insight`: 2–4 sentences (≤380 chars) anchored to the doc's named actors, saying why it matters or what to watch. Never restate the doc's facts, numbers or phrasing (the listener has just heard them), give no generic advice or methodology, and add no new facts. The cap is a ceiling, not a target.
+- `card`: optional per-item card slot `{ "copy": "≤12字标题", "points": ["要点1", "要点2"], "subject": "English visual scene" }` (2–4 points).
 
-`intro` names the top two or three concrete in-scope developments. `outro` is a short close. Write `excluded`
-for every boundary item, including any id the article's closing note (`22-article/*_06_article-write_body.md`)
-names, with a Chinese reason. Output:
+At the episode level, write:
+
+- `intro` (≤150 chars): names the top two or three concrete in-scope developments.
+- `outro` (≤150 chars): a short close tying the items together.
+- `excluded`: copy the array from `--excluded` (`21-plan/<date>_03_curate_excluded.json`) verbatim so the script plan records every dropped candidate with its Chinese reason.
+- `cover` (≤240 chars): one concrete visual scene in English for the lead item (objects, settings, symbols, metaphor; no text, letters, numbers, logos, flags, or recognizable people).
+- `cards`: `{ "title": "≤20字总标题", "body": "中文导语段落 + 3-5个话题标签" }` for the episode card series.
+- `social`: `{ "short": "≤140字 X/Threads 短帖", "long": "≤500字 微博/LinkedIn 长帖" }` (plain text, no markdown headings, no emoji spam, grounded in the plan).
+
+Output:
 
 ```json
-{"version":1,"intro":"…","outro":"…","items":[{"id":"…","lead":"…","insight":"…"}],"excluded":[{"id":"…","reason":"…"}]}
+{
+  "version": 1,
+  "intro": "…",
+  "outro": "…",
+  "cover": "…",
+  "cards": { "title": "…", "body": "…" },
+  "social": { "short": "…", "long": "…" },
+  "items": [
+    {
+      "id": "…",
+      "lead": "…",
+      "insight": "…",
+      "card": { "copy": "…", "points": ["…", "…"], "subject": "…" }
+    }
+  ],
+  "excluded": [{ "id": "…", "reason": "…" }]
+}
 ```
 
-Every doc id appears exactly once, either in `items` or in `excluded`, never both.
+Every doc id in `--in` appears in `items`, and `excluded` carries the curate exclusions; no id may appear in both.
 
 ## Mode: write --fix
 
@@ -78,17 +101,20 @@ validator). Change only what the errors name and copy everything else unchanged.
 
 | Rule | Fix |
 |---|---|
-| `cap:<field>` | Shorten that field below its cap in the contract. Cut opinion, not the actor |
-| `banned:<phrase>` | Rephrase without the phrase |
+| `cap:<field>` | Shorten that field (`intro`, `outro`, `lead`, `insight`, `cover`, `cardCopy`, `cardTitle`, `socialShort`, `socialLong`) below its cap in the contract. Cut opinion, not the actor |
+| `banned:<phrase>` | Rephrase without the phrase (applies to spoken, card and social fields alike) |
 | `redundant-insight` | Rewrite the insight as commentary; drop the restated facts |
 | `duplicate-insight` | Make each insight specific to its own item |
-| `missing-item` / `unknown-id` / `conflict-id` | Make the ids match the docs exactly once (`items` or `excluded`) |
-| `schema` / `missing-plan` | Write the full plan per mode `write` |
+| `missing-item` / `unknown-id` / `conflict-id` | Make `items` match `--in` and `excluded` match `--excluded` with no overlap |
+| `schema` / `missing-plan` | Write the full master plan per mode `write` |
 
-## Mode: curate
+## Mode: curate / curate --fix
 
-See `references/selection.md`. It covers keep and drop, order, how deep each item goes, and the spoken
-Chinese adaptation of title, body and brief.
+See `references/selection.md`. Reads QC candidates (`--in`) and writes two JSON files:
+1. `--out-plan` (`21-plan/<date>_03_plan_plan.json`): bare `Doc[]` of **kept** items only, in editorial order (lead first), with `title`, `body` and `metadata.brief` adapted into spoken simplified Chinese.
+2. `--out-excluded` (`21-plan/<date>_03_curate_excluded.json`): `[{"id":"<Doc.id>","reason":"<具体中文原因>"}]` for every dropped candidate (`[]` when none dropped). Every candidate id must land in **exactly one** of the two files.
+
+With `--fix <errors.json>` (`missing-plan`, `invalid-json`, `unknown-id`, `missing-item`, `conflict-id`, `empty-plan`), repair the partition so every candidate id is accounted for exactly once and at least one in-scope item is kept.
 
 ## References
 

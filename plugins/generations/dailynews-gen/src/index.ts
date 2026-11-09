@@ -59,7 +59,29 @@ async function resolveScriptPlan(fs: FileSystem, docs: Doc[]): Promise<ScriptPla
     } catch {
         return fallback([{ itemId: 'episode', rule: 'schema' }]);
     }
-    const validated = validateScriptPlan(planJson, docs, style);
+    let preExcludedIds: Set<string> | undefined;
+    const curateExcludedPath = process.env.DAILYNEWS_CURATE_EXCLUDED;
+    if (curateExcludedPath && (await fs.exists(curateExcludedPath))) {
+        try {
+            const rawExcluded = JSON.parse(await fs.readFile(curateExcludedPath));
+            if (Array.isArray(rawExcluded)) {
+                preExcludedIds = new Set(
+                    rawExcluded
+                        .map((entry: unknown) =>
+                            entry !== null &&
+                            typeof entry === 'object' &&
+                            typeof (entry as { id?: unknown }).id === 'string'
+                                ? (entry as { id: string }).id
+                                : '',
+                        )
+                        .filter(Boolean),
+                );
+            }
+        } catch {
+            // Ignore malformed sidecar; validateScriptPlan will validate against docs.
+        }
+    }
+    const validated = validateScriptPlan(planJson, docs, style, preExcludedIds);
     if (!validated.ok) {
         return fallback(validated.errors);
     }

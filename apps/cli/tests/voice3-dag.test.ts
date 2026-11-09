@@ -247,7 +247,7 @@ describe('kk-daily-ai-voice3 shape (0324 R1, R3, R4)', () => {
 
     it('ends with the generate-side payload chain and a conditional nested publish', () => {
         for (const node of [
-            'social-write',
+            'editorial-render',
             'bundle-variants',
             'bundle-freeze',
             'generation-report',
@@ -341,7 +341,7 @@ describe('kk-daily-ai-voice3 shape (0324 R1, R3, R4)', () => {
 
             for (const id of [
                 'show-notes',
-                'cards-write',
+                'editorial-render',
                 'cards-render',
                 'bundle-variants',
                 'bundle-freeze',
@@ -394,7 +394,7 @@ describe('kk-daily-ai-voice3 shape (0324 R1, R3, R4)', () => {
             const variants = dependsOn('bundle-variants');
             for (const producer of [
                 'quality',
-                'social-write',
+                'editorial-render',
                 'publish-prep',
                 'cover-normalize',
                 'cards-render',
@@ -440,9 +440,7 @@ describe('kk-daily-ai-voice3 shape (0324 R1, R3, R4)', () => {
             'plan',
             'qc-content',
             'select',
-            'plan-translate',
-            'article-write',
-            'cover-brief',
+            'article',
             'cover',
             'cover-normalize',
             'script-style',
@@ -470,5 +468,135 @@ describe('kk-daily-ai-voice3 shape (0324 R1, R3, R4)', () => {
                 inVoice3: true,
             });
         }
+        // Legacy per-artifact agent nodes remain in voice2 while voice3 replaces them with curate + editorial-render (0345).
+        for (const legacyNode of ['plan-translate', 'article-write', 'cover-brief']) {
+            expect(voice2.includes(`- id: ${legacyNode}`)).toBe(true);
+            expect(yaml.includes(`- id: ${legacyNode}`)).toBe(false);
+        }
+    });
+
+    describe('0345 centralize daily-news editorial logic (AC6, AC8, AC9)', () => {
+        function nodeIndex(id: string): number {
+            return yaml.indexOf(`- id: ${id}\n`);
+        }
+
+        function nodeBlock(id: string): string {
+            const start = nodeIndex(id);
+            expect({ id, found: start > -1 }).toEqual({ id, found: true });
+            const rest = yaml.slice(start);
+            const next = rest.indexOf('\n  - id:');
+            return next === -1 ? rest : rest.slice(0, next);
+        }
+
+        function dependsOn(id: string): string[] {
+            const match = /dependsOn:\s*\[([^\]]*)\]/.exec(nodeBlock(id));
+            if (!match) return [];
+            return (match[1] ?? '')
+                .split(',')
+                .map((part) => part.trim())
+                .filter((part) => part !== '');
+        }
+
+        it('AC6: plan-translate is replaced by curate -> curate-check -> curate-fix -> curate-final, every _03_plan_plan.json reader depends on curate-final, and no prompt contains 选题边界', () => {
+            for (const removed of ['plan-translate', 'plan-translate-retry']) {
+                expect(yaml.includes(`- id: ${removed}\n`)).toBe(false);
+            }
+            expect(yaml.includes('plan_translate_enabled')).toBe(false);
+            expect(yaml.includes('curate_enabled: "true"')).toBe(true);
+
+            const chain = ['script-style', 'curate', 'curate-check', 'curate-fix', 'curate-final'];
+            for (let i = 0; i < chain.length - 1; i++) {
+                const curr = chain[i] as string;
+                const next = chain[i + 1] as string;
+                expect(nodeIndex(curr)).toBeGreaterThan(-1);
+                expect(nodeIndex(curr)).toBeLessThan(nodeIndex(next));
+            }
+            expect(dependsOn('curate')).toContain('script-style');
+            expect(dependsOn('curate-check')).toContain('curate');
+            expect(dependsOn('curate-fix')).toContain('curate-check');
+            expect(dependsOn('curate-final')).toEqual(expect.arrayContaining(['curate-check', 'curate-fix']));
+
+            // Every node outside the curate chain that reads _03_plan_plan.json depends on curate-final
+            const curateNodes = new Set(['curate', 'curate-check', 'curate-fix', 'curate-final']);
+            const allNodes = yaml
+                .split('\n  - id: ')
+                .slice(1)
+                .map((b) => b.split('\n')[0]?.trim())
+                .filter((id): id is string => Boolean(id));
+            for (const id of allNodes) {
+                if (curateNodes.has(id)) continue;
+                if (nodeBlock(id).includes('_03_plan_plan.json') || id === 'editorial-render' || id === 'article') {
+                    expect({ id, deps: dependsOn(id), hasCurateFinal: dependsOn(id).includes('curate-final') }).toEqual(
+                        {
+                            id,
+                            deps: expect.any(Array),
+                            hasCurateFinal: true,
+                        },
+                    );
+                }
+            }
+
+            expect(yaml).not.toContain('选题边界');
+        });
+
+        it('AC8: removes duplicate writer nodes and article_write_enabled, wires editorial-render after script, and keeps every prompt <= 1000 chars', () => {
+            for (const removed of [
+                'article-write',
+                'article-write-retry',
+                'cover-brief',
+                'cards-write',
+                'social-write',
+            ]) {
+                expect(yaml.includes(`- id: ${removed}\n`)).toBe(false);
+            }
+            expect(yaml.includes('article_write_enabled')).toBe(false);
+
+            const scriptIdx = nodeIndex('script');
+            const renderIdx = nodeIndex('editorial-render');
+            expect(scriptIdx).toBeGreaterThan(-1);
+            expect(renderIdx).toBeGreaterThan(scriptIdx);
+            expect(dependsOn('editorial-render')).toContain('script');
+
+            for (const consumer of ['article', 'cover', 'cards-render', 'bundle-variants']) {
+                expect(nodeIndex(consumer)).toBeGreaterThan(renderIdx);
+                expect(dependsOn(consumer)).toContain('editorial-render');
+            }
+
+            // Every agent.run prompt in kk-daily-ai-voice3.yaml is <= 1000 chars
+            const parsed = Bun.YAML.parse(yaml) as {
+                nodes: { id: string; action?: { kind?: string; options?: { input?: string } } }[];
+            };
+            const agentNodes = parsed.nodes.filter((n) => n.action?.kind === 'agent.run');
+            expect(agentNodes.length).toBeGreaterThanOrEqual(4);
+            for (const node of agentNodes) {
+                const input = node.action?.options?.input ?? '';
+                expect({ id: node.id, len: input.length, withinCap: input.length <= 1000 }).toEqual({
+                    id: node.id,
+                    len: expect.any(Number),
+                    withinCap: true,
+                });
+            }
+        });
+
+        it('AC9: editorial-judge is advisory (onError: continue, reviewer role, news-balance rubric) and nothing depends on it for control flow', () => {
+            const judgeBlock = nodeBlock('editorial-judge');
+            expect(dependsOn('editorial-judge')).toEqual(expect.arrayContaining(['script-check', 'script-write-fix']));
+            expect(judgeBlock).toContain('onError: continue');
+            expect(judgeBlock).toContain('role: reviewer');
+            expect(judgeBlock).toContain('news-balance');
+            expect(judgeBlock).toContain('_08_editorial-judge_verdict.json');
+
+            const allNodes = yaml
+                .split('\n  - id: ')
+                .slice(1)
+                .map((b) => b.split('\n')[0]?.trim())
+                .filter((id): id is string => Boolean(id));
+            for (const id of allNodes) {
+                expect({ id, dependsOnJudge: dependsOn(id).includes('editorial-judge') }).toEqual({
+                    id,
+                    dependsOnJudge: false,
+                });
+            }
+        });
     });
 });

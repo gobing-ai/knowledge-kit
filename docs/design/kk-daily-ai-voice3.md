@@ -101,8 +101,8 @@ Changes against the proposed flow are marked ▲.
 | --- | --- | --- |
 | 0 prepare | `preflight` (stages exist in the installed runner) · `prepare` · read work_dir/run_date | — |
 | 1 选题 | `extract` → `plan` → `qc-content` → `select` (ledger at QC, unchanged) | `plan.json` |
-| 2 品控+翻译 | `translate` (+ `-retry` sibling until spur has agent.run retry) | translated `plan.json` |
-| 3 初稿 (parallel) | `article-write` · `script-write` · `cover-brief` · `cards-write` ▲(channel-neutral cards, replaces `xhs-write`) · `social-write` ▲(one agent call → `{x, weibo, threads, xhs, …}` short copy, per-channel char caps from the preset) · `show-notes` ▲(template with `{{article_url}}` / `{{podcast_url}}` placeholders) | `drafts/*` |
+| 2 选题精选 (curate) ▲ | `script-style` (snapshot skill) → `curate` (editorial select + title dedup) → `curate-check` → `curate-fix` (if errors) → `curate-final` (final validation / fallback) | `21-plan/plan.json`, `curate_excluded.json` |
+| 3 初稿与渲染 ▲ | `script-write` (master plan with speech, cover brief, card plan, social) → `script-check` → `script-write-fix` (if errors) → `script` (dailynews-gen) → `editorial-render` (deterministic article body, cover brief, cards, social) · `show-notes` · advisory `editorial-judge` (news-balance rubric) | `24-script/script-write_plan.json`, `22-article/*`, `23-cover/*`, `25-xhs/*`, `26-social/*` |
 | 3b 润色 ▲ | **not a node per draft.** Polish rules (taste-unslop, copy discipline) go into each authoring prompt; the gate is the existing content-safety state machine, extended to read every draft, not only the script | `safety/verdict.json` |
 | 3c 审核 ▲ | `review` pause (content approval only — send approval moves to publish3) | — |
 | 4 语音 | `wrap-docs` (条目切分) → `generate` + fallback chain (分条录音, ADR-034 one request per section) → `intro` → `duration` → `voice-audit` (组装/校准) | `episode.mp3`, duration |

@@ -6,11 +6,19 @@ store thresholds (`decisions/extract/ai-news.yaml`), the QC score floors and the
 
 ## Keep or drop
 
-- Drop items that cross the topic boundary (SKILL.md shared rule 2) and give a Chinese reason.
-- Merge near-duplicates (the same event from two sources) into the item with the richer facts. Never let the
-  same story be spoken twice.
+- Drop items that cross the topic boundary (SKILL.md shared rule 2) and give a specific Chinese reason.
+- Drop low-value items (pure PR fluff, minor point-release changelogs with no architectural or developer impact, thin stubs with no verifiable actor/action) and give a specific Chinese reason.
+- Merge near-duplicates (the same event from two sources) into the item with the richer facts; drop the duplicate id into `--out-excluded` with a Chinese reason (e.g., `与另一条候选同属一事，已合并至信息更完整条目`). Never let the same story be spoken twice.
 - Keep everything else that has a concrete actor and action. An opinion thread or tutorial with no news event
   stays only when the day is thin, and goes after the news items.
+
+## Output invariant (two files)
+
+`curate` writes two JSON files:
+1. `--out-plan` (`21-plan/<date>_03_plan_plan.json`): a bare `Doc[]` array containing **only the kept docs**, ordered with the day's lead news item first, with `title`, `body` and `metadata.brief` adapted into spoken simplified Chinese.
+2. `--out-excluded` (`21-plan/<date>_03_curate_excluded.json`): `[{ "id": "<Doc.id>", "reason": "<具体中文原因>" }]` for every dropped candidate (`[]` when nothing is dropped).
+
+Every candidate `id` from `21-plan/<date>_04_quality-control-content_candidates.json` (`metadata.docs`) must land in **exactly one** of the two files — never both (`conflict-id`), never neither (`missing-item`), and with no invented ids (`unknown-id`).
 
 ## Order and balance
 
@@ -22,12 +30,18 @@ store thresholds (`decisions/extract/ai-news.yaml`), the QC score floors and the
 
 ## Spoken Chinese adaptation
 
-For items marked `needsTranslation`, adapt `title`, `body` and `metadata.brief` into spoken simplified Chinese:
+For kept items (especially those marked `needsTranslation`), adapt `title`, `body` and `metadata.brief` into spoken simplified Chinese:
 
 - Keep every fact, number, name, quote and hedge. This is a full-length spoken adaptation, not a summary;
   the body is about 0.6–0.7× the source.
 - Shrink generic background or concept explainers to one sentence.
 - Titles read as news. Keep product and model names and body URLs verbatim, and use 「」 for quotes.
-- Keep `id`, `sourceUri`, `mediaType` and `metadata` as they are. The output keeps the input's length and
-  order. Dropped items are not deleted here; they are recorded as `excluded` (with a reason) in the script plan
-  that `write` produces, which the builder already honours.
+- Keep `id`, `sourceUri`, `mediaType` and `metadata` as they are.
+
+## Mode: curate --fix
+
+When `daily-curate-check` writes `21-plan/<date>_03_curate_errors.json` (`[{ "itemId": "...", "rule": "..." }]`), inspect the rules and rewrite both `--out-plan` and `--out-excluded`:
+- `missing-plan` / `invalid-json` / `empty-plan`: write a valid non-empty `Doc[]` to `--out-plan` and valid `[{id, reason}]` to `--out-excluded`.
+- `missing-item`: add the missing candidate id either to `--out-plan` (translated) or to `--out-excluded` (with a Chinese reason).
+- `conflict-id`: remove the id from one of the two files so it appears in only one.
+- `unknown-id`: remove any id that does not exist in `candidates.json`'s `metadata.docs`.

@@ -94,16 +94,24 @@ if printf '%s' "$*" | grep -q 'incident[.]json'; then
 fi
 if [ -z "$expect" ]; then
   for a in "$@"; do
-    hit=$(printf '%s' "$a" | grep -oE "[^ \\"]*.(json|md)" | tail -1)
+    hit=$(printf '%s' "$a" | grep -oE '[^ ",:]+[.](json|md)' | tail -1)
     [ -n "$hit" ] && expect="$hit"
   done
 fi
 if [ -z "$expect" ]; then exit 0; fi
 case "$expect" in
-  *_03_plan_plan.json)
+  *_03_plan_plan.json|*_03_curate_excluded.json)
     if [ -n "\${KK_STUB_PLAN_FAIL:-}" ]; then exit 1; fi
-    cat > "$expect" <<'EOF2'
+    plan_out="\${expect%_03_*}_03_plan_plan.json"
+    excl_out="\${expect%_03_*}_03_curate_excluded.json"
+    cat > "$plan_out" <<'EOF2'
 [{"id":"story-a","title":"模型新版本发布：跑分提升明显","body":"主线A：新版本的跑分提升明显，这对推理成本是直接的影响。据报道，新版本已在多家云厂商上线。","sourceUri":"https://example.com/story-a","sourceLabel":"科技早报","metadata":{"brief":"模型侧在卷成本。"}},{"id":"story-b","title":"开源项目融资：维护者承诺协议不变","body":"主线B：开源项目拿到融资，维护者承诺保持协议不变，这对下游集成方是稳定性的信号。","sourceUri":"https://example.com/story-b","sourceLabel":"开源周报","metadata":{"brief":"应用侧在卷生态。"}}]
+EOF2
+    printf '[]\n' > "$excl_out"
+    ;;
+  *_08_editorial-judge_verdict.json)
+    cat > "$expect" <<'EOF2'
+{"verdict":"PASS","confidence":"HIGH","rubric":"news-balance","score":0.95,"summary":"balanced news and commentary","findings":[{"criterion":"news-first","status":"pass","detail":"actors and actions named"},{"criterion":"commentary-share","status":"pass","detail":"within 1/3 cap"},{"criterion":"no-restatement","status":"pass","detail":"no verbatim restatement"},{"criterion":"tech-depth","status":"pass","detail":"concise mechanism"},{"criterion":"ordering","status":"pass","detail":"lead news first"}],"feedback":[],"content_ref":"24-script/script-write_plan.json","evaluated_at":"2026-11-08T12:00:00.000Z"}
 EOF2
     ;;
   *26-social/*)
@@ -111,7 +119,7 @@ EOF2
     # last-mentioned one, or social:x / social:weibo variants never exist and the overseas
     # tier3 rows are omitted (failed effect-none receipts) instead of delivered.
     dir=$(dirname "$expect")
-    post='每日AI乱炖：模型新版本发布，跑分提升明显，成本下探。Robin 为你带来每日AI资讯。'
+    post='每日AI乱炖：模型新版本发布，跑分提升明显，成本下探。Robin 为你带来每日AI乱炖。'
     printf '%s\n' "$post" > "$dir/x.md"
     printf '%s\n' "$post" > "$dir/weibo.md"
     printf '%s\n' "$post" > "$dir/threads.md"
@@ -139,8 +147,11 @@ EOF2
     md="\${expect%.json}.md"
     printf 'The overseas window is missing because no episode was generated for %s.\nClass: no-content — the pool gate refused an empty plan.\nFix: supply stories and rerun the generation window.\n' "\${KK_STUB_RUN_DATE:-unknown}" > "$md"
     ;;
-  *_08_script-write_plan.json)
-    echo '{}' > "$expect"
+  *_08_script-write_plan.json|*_08_script-write_errors.json)
+    plan_out="\${expect%_08_*}_08_script-write_plan.json"
+    cat > "$plan_out" <<'EOF2'
+{"version":1,"intro":"今天我们聚焦两条动态：模型新版本发布跑分提升，以及开源项目拿到融资并承诺协议不变。","outro":"两条主线放在一起看：模型侧在卷成本，应用侧在卷生态，明日值得继续跟踪发布后的真实负载表现。","cover":"A sleek server rack illuminated by cool cyan light beside an open source crystal emblem","cards":{"title":"模型提速与开源融资","body":"今日聚焦模型跑分提升与开源生态融资两条主线 #AI技术 #开源生态 #大模型"},"social":{"short":"每日AI乱炖：模型新版本发布，跑分提升明显，成本下探；开源项目获融资并承诺协议不变。","long":"今日两条核心动态：1. 模型新版本在多家云厂商上线，跑分提升显著拉低推理成本；2. 开源项目完成新一轮融资，维护者承诺保持开源协议不变，给下游集成方吃下定心丸。"},"items":[{"id":"story-a","lead":"先看模型侧刚刚上线的新版本进展。","insight":"跑分提升叠加多家云厂商同步上线，意味着中小团队的推理调用成本将直接下探，接下来重点看真实高并发负载下的稳定性。","card":{"copy":"模型新版本上线","points":["跑分与推理吞吐双升","多家云厂商同步上线"],"subject":"A glowing processor core mounted on a dark circuit board"}},{"id":"story-b","lead":"再看开源社区的一笔关键融资。","insight":"商业化融资与协议稳定性往往存在张力，维护者明确承诺协议不变，为企业级下游集成消除了最大的合规顾虑。","card":{"copy":"开源项目获融资","points":["维护者承诺协议不变","消除下游企业集成顾虑"],"subject":"Interlocking metallic rings resting on a clean studio surface"}}],"excluded":[]}
+EOF2
     ;;
   *_06_article_content.json)
     mkdir -p "$(dirname "$expect")"
@@ -296,12 +307,12 @@ EOF2
 {"title":"标题","format":"markdown","body":"audio","metadata":{"duration":$(( \${KK_STUB_DURATION_MS:-1620000} / 1000 )),"qc":{"passed":true,"overallScore":88},"audioPath":"$wd/30-audio/\${rd}_11_generate_audio.mp3"}}
 EOF2
     exit 0 ;;
-  "stage daily-intro"|"stage daily-voice-audit"|"stage daily-quality-report"|"stage daily-cover"|"stage daily-cover-normalize"|"stage daily-script-style"|"stage daily-xhs-render"|"store select")
+  "stage daily-intro"|"stage daily-voice-audit"|"stage daily-quality-report"|"stage daily-cover"|"stage daily-cover-normalize"|"stage daily-xhs-render"|"store select")
     # Side-car surfaces the proof does not need to double beyond execution: clock-free cover,
-    # LLM auditor, style snapshot, cards (off), store selection promotion.
+    # LLM auditor, cards (off), store selection promotion.
     echo 'ok (stubbed)'
     exit 0 ;;
-  "store pool-count"|"stage daily-safety-prep"|"stage daily-safety-gate"|"stage daily-safety-verdict"|"stage daily-safety-revise"|"stage daily-episode-duration"|"stage daily-article"|"stage daily-script"|"stage daily-show-notes"|"stage daily-publish-prep"|"stage daily-preflight"|"daily run-report"|"store settle"|"store mark-published")
+  "store pool-count"|"stage daily-script-style"|"stage daily-curate-check"|"stage daily-script-check"|"stage daily-editorial-render"|"stage daily-safety-prep"|"stage daily-safety-gate"|"stage daily-safety-verdict"|"stage daily-safety-revise"|"stage daily-episode-duration"|"stage daily-article"|"stage daily-script"|"stage daily-show-notes"|"stage daily-publish-prep"|"stage daily-preflight"|"daily run-report"|"store settle"|"store mark-published")
     # Real seams, delegated to the checkout CLI; stage runners resolve from KK_PLUGIN_PATH.
     exec "$BUN" "$REAL" "$@" ;;
   "executor run")
@@ -551,9 +562,8 @@ function voice3Vars(override: Record<string, string> = {}): Record<string, strin
         vdriver: 'omnivoice',
         title: '每日AI乱炖',
         plan_max_items: '10',
-        plan_translate_enabled: 'true',
-        article_write_enabled: 'true',
-        script_write_enabled: 'false',
+        curate_enabled: 'true',
+        script_write_enabled: 'true',
         cover_enabled: 'false',
         cards_enabled: 'false',
         skip_review: 'true',
@@ -706,10 +716,12 @@ describe('0335 R1: fresh offline multi-window migration rehearsal', () => {
         }
         expectFallbackAdmits(planDir);
         expect(readFileSync(join(planDir, `${RUN_DATE}_09_safety-verdict.status`), 'utf8').trim()).toBe('accept');
-        // Two agent dispatches logged: the plan translation and the article body.
+        // Editorial agent dispatches logged: curate (_03_plan_plan.json) and master script-write (_08_script-write_plan.json);
+        // daily-editorial-render deterministically materializes _06_article-write_body.md from the master plan.
         const agentLog = readFileSync(join(fx.root, 'agents.log'), 'utf8');
         expect(agentLog.includes('_03_plan_plan.json')).toBe(true);
-        expect(agentLog.includes('_06_article-write_body.md')).toBe(true);
+        expect(agentLog.includes('_08_script-write_plan.json')).toBe(true);
+        expect(existsSync(join(fx.dayDir, '22-article', `${RUN_DATE}_06_article-write_body.md`))).toBe(true);
 
         // Every delivered receipt exists with the window's intended mode.
         const byKey = new Map(receiptsOf(fx).map((r) => [r.target as string, r]));
