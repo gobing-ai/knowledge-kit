@@ -85,17 +85,41 @@ export function normalizeSessionExpiry(value: unknown): string | undefined {
     return isSessionFactDate(value) ? value : undefined;
 }
 
-/** Failure classification the CLI maps to exit codes (usage→2, the rest→1). */
-export type BotErrorCode = 'usage' | 'not-found' | 'busy' | 'unconfirmed' | 'persistence' | 'browser';
+/**
+ * Failure classification the CLI maps to exit codes (usage→2, the rest→1).
+ * `authentication` and `empty` belong to the collection runner (0346): an observed auth wall,
+ * and a declared capture that produced nothing. Both stay operational failures, not usage errors.
+ */
+export type BotErrorCode =
+    | 'usage'
+    | 'not-found'
+    | 'busy'
+    | 'unconfirmed'
+    | 'persistence'
+    | 'browser'
+    | 'authentication'
+    | 'empty';
+
+/** Safe step/capture identity attached to a collection-runner failure (0346). */
+export interface BotErrorDetails {
+    /** Zero-based position in `plan.steps`; absent for a capture that no step produced. */
+    stepIndex?: number;
+    /** The declared step or capture id — a safe identifier, never a URL or selector. */
+    stepId?: string;
+}
 
 /** Typed bot failure. Messages must never carry state values, tokens or grant-bearing URLs. */
 export class BotError extends Error {
     public readonly code: BotErrorCode;
 
-    constructor(code: BotErrorCode, message: string) {
+    /** Safe step/capture identity for a collection-runner failure (0346). */
+    public readonly details: BotErrorDetails;
+
+    constructor(code: BotErrorCode, message: string, details: BotErrorDetails = {}) {
         super(message);
         this.name = 'BotError';
         this.code = code;
+        this.details = details;
     }
 }
 

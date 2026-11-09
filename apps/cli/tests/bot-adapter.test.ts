@@ -24,6 +24,20 @@ function sessionPlugin(
     };
 }
 
+/** The same descriptor on an ingestion plugin (0346): selection is kind-agnostic by design. */
+function ingestionSessionPlugin(name: string, profileName: string, homeUrl?: string): PluginRecord {
+    return {
+        name,
+        kind: 'ingestion',
+        entry: './src/index.ts',
+        check: './src/profile-check.ts',
+        browserSession: { profileName, ...(homeUrl === undefined ? {} : { homeUrl }) },
+        dir: `/plugins/ingestions/${name}`,
+        manifestPath: `/plugins/ingestions/${name}/plugin.json`,
+        origin: 'project',
+    };
+}
+
 const CHANNELS: readonly PluginRecord[] = [
     sessionPlugin('infoq-pub', { profileName: 'infoq', homeUrl: 'https://xie.infoq.cn/' }),
     sessionPlugin('juejin-pub', { profileName: 'juejin', homeUrl: 'https://juejin.cn/editor/drafts/new?v=2' }),
@@ -96,6 +110,28 @@ describe('selectBotAdapter (0277 R2)', () => {
     it('rule 4 — no match yields the generic route (null adapter, no error)', () => {
         const none = selectBotAdapter(CHANNELS, { botName: 'unknown-bot', url: 'https://elsewhere.example.com/' });
         expect(none).toEqual({ adapter: null });
+    });
+});
+
+describe('selectBotAdapter — ingestion descriptors (0346 R5)', () => {
+    const plugins = [ingestionSessionPlugin('xhs-collect', 'xhs', 'https://www.xiaohongshu.com/')];
+
+    it('binds an ingestion descriptor by declared profileName', () => {
+        const match = selectBotAdapter(plugins, { botName: 'xhs' });
+        expect(match.adapter?.pluginName).toBe('xhs-collect');
+        expect(match.adapter?.record.kind).toBe('ingestion');
+    });
+
+    it('binds an ingestion descriptor by homeUrl origin', () => {
+        const match = selectBotAdapter(plugins, { botName: 'unrelated', url: 'https://www.xiaohongshu.com/explore' });
+        expect(match.adapter?.pluginName).toBe('xhs-collect');
+    });
+
+    it('still refuses an ingestion record without a probe entry (no silent generic fallback)', () => {
+        const noProbe: PluginRecord = { ...ingestionSessionPlugin('broken-collect', 'broken'), check: undefined };
+        const match = selectBotAdapter([noProbe], { botName: 'broken', savedPluginName: 'broken-collect' });
+        expect(match.adapter).toBeNull();
+        expect(match.error).toContain('broken-collect');
     });
 });
 

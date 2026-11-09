@@ -1246,7 +1246,10 @@ kk bot exec <bot> <url> [curl opts] # one request with the cached cookies; body 
 - `open` reuses the saved default URL and profile headed and stays until the context closes; it
   never invents a session for a missing, legacy or corrupt profile; `--login` completes the same
   login/save transaction and then reopens.
-- Channel binding (0277): a publish plugin may declare `browserSession {profileName, homeUrl?}`.
+- Channel binding (0277): a publish **or ingestion** plugin may declare `browserSession
+  {profileName, homeUrl?}` (ingestion added by 0346); the `check` probe entry stays mandatory. This is
+  the whole of the ingestion integration — the `kk bot` command set, flags, output and exit mapping are
+  unchanged, and no `kk-collect` or fan-in code moved.
   Selection order is the saved `pluginName` (an unavailable or non-session adapter refuses rather
   than falling back), then a unique declared `profileName` equal to the bot name, then a unique
   literal `homeUrl` origin; ambiguity refuses and no match stays generic. A bound adapter runs the
@@ -1290,6 +1293,51 @@ kk bot exec <bot> <url> [curl opts] # one request with the cached cookies; body 
 
 Channel descriptor integration and site-verified login evidence are task 0277; the caller/recipe
 migration review is task 0278.
+
+### 1.13 Rendered collection runner — shipped (0346, ADR-038 amendment 2026-11-09)
+
+`@gobing-ai/publish-harness/bot-collection` exposes one deep library function, not a command:
+
+```ts
+runBotCollection(profileName: string, plan: BotCollectionPlan, options?: BotCollectionOptions): Promise<BotCollectionResult>
+```
+
+- **Plan (frozen, JSON data).** `steps[]` of `request | navigate | wait | click | scroll | extract`
+  (each with a safe `id`), optional `responses[]` captures (`{id, origin?, pathPrefix}`) and an optional
+  whole-run `timeoutMs`. Steps run sequentially in declaration order in one headless persistent
+  context; a plugin generates the list in its own code — there is no URL templating, output-schema
+  mapping, pagination engine, politeness policy or JavaScript-callback surface.
+- **Defaults and limits.** 30 s per step, 120 s whole run (max 600 s), 5 MiB per artifact, 20 MiB
+  aggregate, 100 artifacts. A per-step timeout is clamped to the remaining run budget. The post-read
+  caps bound what we return, not upstream Playwright buffering.
+- **Validation before side effects.** The whole plan is validated (ids unique across steps and
+  captures in `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`, http(s) credential-free URLs, exact capture origins,
+  absolute `pathPrefix` without query/fragment) before the profile is checked, the lease acquired or a
+  browser launched. A plan declaring no request/extract step and no capture is `usage`.
+- **Ownership.** One lease acquisition and one launch per call; the profile must already exist
+  (`not-found` with `kk bot login <url> --save <name>` guidance — the runner never creates or converts
+  one). The listener set is registered before the first step, capture reads are awaited within the
+  deadline, and the context is closed, capture promises drained, then the lease released on every
+  success, failure and timeout path. A stored `expiresAt` is never read.
+- **Artifacts.** `{id, kind: request|response|html|text, body, status?, url?, stepIndex?}`; `url` is
+  origin+pathname only. Response headers and `Set-Cookie` are never returned. Every declared capture
+  and every request/extract artifact must be non-empty — a plugin with a genuinely quiet source
+  declares optional captures rather than weakening the runner's quiet-day guard.
+- **Failures.** `BotError.code` gained `authentication` (explicit request/navigation/required-response
+  401/403, or a final URL whose path carries `login|signin|sign-in|auth|sso`) and `empty` (a required
+  capture with no match or an empty artifact); other explicit ≥400 statuses, transport failures, body
+  reads and extract failures are `browser`. Details carry only `stepIndex`/`stepId`. Diagnostics are
+  static or URL-stripped (`execFailureDetail`), and never include a query, fragment, header value,
+  request data, cookie value or response body.
+- **Probe.** `bun packages/publish-harness/scripts/bot-collection-probe.ts --profile <name> --plan
+  <plan.json> --out <dir> [--profile-root <dir> --lease-root <dir>]` drives the same plan by hand
+  (writes artifact bodies to `0600` files, `result.json` without bodies, `error.json` on failure, exit 2
+  for `usage` and 1 otherwise) — a repository debugging script, deliberately not a `kk` surface.
+- **Out of scope (documented limits, not certifications).** Cookie/storage export or import, HAR
+  replay or response cache, a warm browser pool/daemon, a declarative recipe engine, generic crawling,
+  retry/politeness policy, anti-bot/robots bypass, binary/media payloads, adapter special-state
+  emulation, and live-site compatibility. Acceptance evidence is loopback-only:
+  `apps/cli/tests/e2e-bot-collection.ts` (not part of the default unit gate).
 
 ## 2. Configuration keys
 

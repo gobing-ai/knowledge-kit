@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: Harden kk bot into a general data-collection substrate
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-09T06:36:45.705Z
-updated_at: "2026-11-09T07:07:18.917Z"
+updated_at: "2026-11-09T08:59:22.224Z"
 feature_id: G3
 
 ac_altitude: task-local
 ac_numbering: task-local
 priority: P2
 estimate_hours: 12
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0346-verdict.json
 ---
 
 ## 0346. Harden kk bot into a general data-collection substrate
@@ -50,12 +52,12 @@ Non-goals: new `kk bot` verbs or flags; cookie/storage export or import; direct 
 
 ### Requirements
 
-- [ ] R1. Bounded collection runner (P0): expose `runBotCollection(profileName, plan, options?)` from `@gobing-ai/publish-harness/bot-collection`. It executes a JSON-serializable ordered plan containing `request`, `navigate`, `wait`, `click`, `scroll`, and `extract` steps in one headless persistent context, using the named profile's existing session. HTML/text extraction and navigation results include step identity and a credential-free final URL; arbitrary JavaScript callbacks and a pagination/crawl DSL are not part of the API.
-- [ ] R2. Request and response capture (P0): request steps reuse the existing authenticated cookie behavior, and declarative `responses[]` entries capture matching page responses by optional exact `origin` plus URL-path prefix. Listeners are installed before any step runs; matched response bodies, request bodies, and HTML/text extractions are returned as typed artifacts with safe IDs, observed status where applicable, and redacted URLs. Every declared capture is required to produce a non-empty artifact, so a missing data XHR cannot silently succeed behind an SPA shell.
-- [ ] R3. Validation, deadlines and resource ownership (P0): validate the complete plan before profile/lease/browser side effects; require unique safe IDs and at least one artifact-producing step or response declaration. One invocation performs exactly one lease acquisition and one launch, applies a frozen whole-run deadline plus per-step timeouts, enforces post-read per-artifact and aggregate body caps and an artifact-count cap, awaits successful capture reads, and closes the context and releases ownership on every success/failure/timeout path. The existing profile is never exported, converted, or edited by a helper.
-- [ ] R4. Fail-closed, secret-safe diagnostics (P0): retain existing `BotError` behavior and add `authentication` and `empty` codes plus optional step index/ID details. Explicit request/navigation/required-response status 401/403 or a final URL whose path contains a `login | signin | sign-in | auth | sso` segment fails `authentication`; other explicit status ≥400 fails `browser`. A required capture with no match or an empty declared artifact fails `empty`. Stored `expiresAt` alone never fails a run. Errors name the safe step/capture ID and renewal guidance where relevant, but never include cookie values, request-header values, query strings, fragments, response bodies, or raw Playwright URLs.
-- [ ] R5. Ingestion session integration and compatibility (P0): allow `browserSession {profileName, homeUrl?}` on `kind: ingestion` as well as `publish`, still requiring a `check` probe that owns `login|check|open`; do not add `collectSession`. Existing adapter selection must bind an ingestion descriptor without special-casing, and a test ingestion plugin must run through the real `kk executor fan-in --source` path and emit schema-valid `Doc[]`. Existing publish descriptors, generic bots, `execBot`, the five `kk bot` verbs, their flags/output/exit mapping, and non-browser ingestion behavior remain compatible; no production source plugin or `kk-collect` edit ships here.
-- [ ] R6. Repeatable verification and owning documentation (P1): cover the runner with fake-launcher tests and prove the consumer seam with a real-Chromium local HTTP E2E through fan-in, producing `.spur/run/e2e/0346-bot-collection.json` with zero non-loopback requests. Ship a repository probe script for hand-driving the same JSON plan without adding a `kk` command. In the same implementation change, date an ADR-038 amendment and update `docs/03_ARCHITECTURE.md`, `docs/04_DESIGN.md`, `docs/design/kk-noun-verb-bots.md`, and `docs/design/ingestion-plugin-specification.md` with the ingestion descriptor, library boundary, failure/timeout/redaction rules, and verification limitations.
+- [x] R1. Bounded collection runner (P0): expose `runBotCollection(profileName, plan, options?)` from `@gobing-ai/publish-harness/bot-collection`. It executes a JSON-serializable ordered plan containing `request`, `navigate`, `wait`, `click`, `scroll`, and `extract` steps in one headless persistent context, using the named profile's existing session. HTML/text extraction and navigation results include step identity and a credential-free final URL; arbitrary JavaScript callbacks and a pagination/crawl DSL are not part of the API.
+- [x] R2. Request and response capture (P0): request steps reuse the existing authenticated cookie behavior, and declarative `responses[]` entries capture matching page responses by optional exact `origin` plus URL-path prefix. Listeners are installed before any step runs; matched response bodies, request bodies, and HTML/text extractions are returned as typed artifacts with safe IDs, observed status where applicable, and redacted URLs. Every declared capture is required to produce a non-empty artifact, so a missing data XHR cannot silently succeed behind an SPA shell.
+- [x] R3. Validation, deadlines and resource ownership (P0): validate the complete plan before profile/lease/browser side effects; require unique safe IDs and at least one artifact-producing step or response declaration. One invocation performs exactly one lease acquisition and one launch, applies a frozen whole-run deadline plus per-step timeouts, enforces post-read per-artifact and aggregate body caps and an artifact-count cap, awaits successful capture reads, and closes the context and releases ownership on every success/failure/timeout path. The existing profile is never exported, converted, or edited by a helper.
+- [x] R4. Fail-closed, secret-safe diagnostics (P0): retain existing `BotError` behavior and add `authentication` and `empty` codes plus optional step index/ID details. Explicit request/navigation/required-response status 401/403 or a final URL whose path contains a `login | signin | sign-in | auth | sso` segment fails `authentication`; other explicit status ≥400 fails `browser`. A required capture with no match or an empty declared artifact fails `empty`. Stored `expiresAt` alone never fails a run. Errors name the safe step/capture ID and renewal guidance where relevant, but never include cookie values, request-header values, query strings, fragments, response bodies, or raw Playwright URLs.
+- [x] R5. Ingestion session integration and compatibility (P0): allow `browserSession {profileName, homeUrl?}` on `kind: ingestion` as well as `publish`, still requiring a `check` probe that owns `login|check|open`; do not add `collectSession`. Existing adapter selection must bind an ingestion descriptor without special-casing, and a test ingestion plugin must run through the real `kk executor fan-in --source` path and emit schema-valid `Doc[]`. Existing publish descriptors, generic bots, `execBot`, the five `kk bot` verbs, their flags/output/exit mapping, and non-browser ingestion behavior remain compatible; no production source plugin or `kk-collect` edit ships here.
+- [x] R6. Repeatable verification and owning documentation (P1): cover the runner with fake-launcher tests and prove the consumer seam with a real-Chromium local HTTP E2E through fan-in, producing `.spur/run/e2e/0346-bot-collection.json` with zero non-loopback requests. Ship a repository probe script for hand-driving the same JSON plan without adding a `kk` command. In the same implementation change, date an ADR-038 amendment and update `docs/03_ARCHITECTURE.md`, `docs/04_DESIGN.md`, `docs/design/kk-noun-verb-bots.md`, and `docs/design/ingestion-plugin-specification.md` with the ingestion descriptor, library boundary, failure/timeout/redaction rules, and verification limitations.
 
 ### Acceptance Criteria
 
@@ -240,15 +242,98 @@ Add `apps/cli/tests/e2e-bot-collection.ts` (not a default unit-test file). Its l
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change map (R1–R6), all inside the 0346 ownership surface:
+
+- `packages/publish-harness/src/bot-collection.ts` (new) — the runner, one direction of dependency (`browser.ts` never imports it):
+  - `:41-111` frozen, JSON-serializable plan/artifact/result contracts (no callbacks, no recipe DSL).
+  - `:290-330` whole-plan validation (ids unique across steps and captures, URL/selector/timeout/deltaY/origin/pathPrefix rules, artifact-source requirement, `timeoutMs` ceiling) runs before the profile lookup, the lease or a launch.
+  - `:341-357` `classifyStatus` — 401/403 → `authentication`, other explicit ≥400 → `browser`; `:330-338` the `AUTH_PATH` final-URL rule; `:359-366` `emptyFailure` names step/capture id only.
+  - `:384-522` ordered step executor: `request` via `context.request.fetch` (POST default with data, `maxRedirects: 0` unless `followRedirects`), `navigate` via `page.goto`, `wait`/`click`/`scroll`, `extract` (whole page or first matching element), each with the smaller of its own timeout and the remaining run budget.
+  - `:368-372` `readBody` with the `shortcut:` note that Playwright buffers before the post-read cap; `:532-556` per-artifact, aggregate and artifact-count caps.
+  - `:576-680` `runBotCollection`: safe name → profile must exist (`missingBotProfile`, never created) → one `acquireLease` → one headless launch → listeners registered **before** the first step → sequential steps → capture settlement inside the deadline → `finally` closes the context, drains capture promises and releases the lease on every path. Captures are read at response time and never reject; an unreadable body is fatal only when it leaves that declaration with nothing.
+- `packages/publish-harness/src/bot.ts:89-115` — `BotErrorCode` gains `authentication | empty`; `BotError` carries `details {stepIndex?, stepId?}` (existing two-arg callers unchanged).
+- `packages/publish-harness/src/browser.ts:1376,1398,1433,1444,1473` — `validateExecUrl`, `execFailureDetail`, `missingBotProfile`, `openBotPage`, `closeBotContext` exported so the runner reuses redaction/closure instead of copying it. `execBot`, `BotExecRequest/Response` and every CLI registrar are byte-for-byte unchanged.
+- `packages/publish-harness/package.json:8` — `./bot-collection` sub-path export (workspace library, not a new package).
+- `packages/kk-core/src/manifest.ts:190-205` — the `browserSession` refinement accepts `publish | ingestion` and still requires `check`; `packages/kk-core/src/registry.ts:29` documents the same on `PluginRecord`. `apps/cli/src/bot-adapter.ts`, `apps/cli/src/fanin.ts` and `apps/cli/src/invoke.ts` needed no production edit.
+- Tests: `packages/publish-harness/tests/bot-collection.test.ts` (fake launcher/lease matrix: validation-before-side-effects, order, one launch/lease, capture timing and multiplicity, auth/empty/browser classification, redaction, deadlines, caps, cleanup, `expiresAt` never read); `packages/kk-core/tests/manifest.test.ts` + `registry.test.ts` (ingestion descriptor accepted, generator still rejected naming its kind, ingestion record propagated); `apps/cli/tests/bot-adapter.test.ts` (ingestion descriptor binds; a probe-less ingestion record still refuses). Existing `bot-session` and CLI bot suites are untouched regression controls.
+- Evidence surfaces: `packages/publish-harness/scripts/bot-collection-probe.ts` (hand-driving the same JSON plan; artifact bodies to `0600` files, body-free `result.json`, typed `error.json`, exit 2 only for `usage`); `apps/cli/tests/e2e-bot-collection.ts` + `apps/cli/tests/fixtures/plugins/ingestions/e2e-bot-collection/` (real Chromium through the real `runFanin --source` source-spawn path and through the probe, writing `.spur/run/e2e/0346-bot-collection.json`).
+- Docs in the same change: ADR-038 amendment (2026-11-09) in `docs/00_ADR.md`; boundary in `docs/03_ARCHITECTURE.md` ("Named browser-session boundary"); runner contract as `docs/04_DESIGN.md` §1.13 plus the §1.12 descriptor line; `docs/design/kk-noun-verb-bots.md`; `docs/design/ingestion-plugin-specification.md` §2.4/§2.5.
+
+Why this shape: the plan is data, so a plugin and the probe use one runner; the lease is acquired by the collection child itself, so fan-in gained no coordination and concurrent same-profile callers still fail `busy`; and the runner lives in a sibling module so no existing browser consumer loads it. Documented limits (no cookie export, no replay/cache, no pool, no recipe/crawl engine, no anti-bot bypass, no binary payloads, loopback-only verification) are stated in the docs rather than implied away.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | packages/publish-harness/src/bot-collection.ts:388 |
+| R2 | MET | packages/publish-harness/src/bot-collection.ts:633 |
+| R3 | MET | packages/publish-harness/src/bot-collection.ts:290 |
+| R4 | MET | packages/publish-harness/src/bot-collection.ts:345 |
+| R5 | MET | packages/kk-core/src/manifest.ts:198 |
+| R6 | MET | apps/cli/tests/e2e-bot-collection.ts:464 |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — one session executes an ordered rendered collection (req: R1) | MET | test | packages/publish-harness/tests/bot-collection.test.ts:388 |
+| AC2 — authenticated request and XHR artifacts reach an ingestion consumer (req: R2) | MET | command | `bun apps/cli/tests/e2e-bot-collection.ts` — `kk executor fan-in --source` spawns apps/cli/tests/fixtures/plugins/ingestions/e2e-bot-collection/entry.ts and yields docs `e2e-bot-collection:rendered |
+| AC3 — invalid or wedged runs are bounded and release every owned resource (req: R3) | MET | test | packages/publish-harness/tests/bot-collection.test.ts:725 |
+| AC4 — missing data and authentication failures cannot masquerade as a quiet day (req: R4) | MET | test | packages/publish-harness/tests/bot-collection.test.ts:574 |
+| AC5 — ingestion descriptors join the existing session boundary without CLI drift (req: R5) | MET | test | packages/kk-core/tests/manifest.test.ts:88 + apps/cli/tests/bot-adapter.test.ts:116 + untouched apps/cli/tests/commands/bot.test.ts:158 |
+| AC6 — the E2E and documents leave repeatable implementation evidence (req: R6) | MET | command | `bun run spur-check` exit 0 (format + lint/typecheck + rules + 4748-test suite + coverage/TSDoc) and `.spur/run/e2e/0346-bot-collection.json` `pass: true`, `externalRequests: 0` |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+Verdict: PASS
+
+Confidence: MEDIUM
+
+#### Findings
+
+| # | Priority | Dimension | Finding | Location | Disposition |
+|---|----------|-----------|---------|----------|-------------|
+| 1 | P3 | correctness | `extract` used Playwright calls (`content()`, `evaluate()`, `innerText()` shapes) that take no timeout, so a wedged page could outlive the whole-run deadline and violate R3's per-step bound | packages/publish-harness/src/bot-collection.ts:562 | RESOLVED — `applyTimeout` bounds every extraction and the failure is classified `browser` with the step id; covered by packages/publish-harness/tests/bot-collection.test.ts:677 |
+| 2 | P3 | correctness | `safeUrl` turned a never-navigated page (`about:blank`, origin literal `null`) into the URL `nullblank` in extraction artifacts | packages/publish-harness/src/bot-collection.ts:324 | RESOLVED — non-http(s) URLs now yield no `url` at all; covered by packages/publish-harness/tests/bot-collection.test.ts:471 |
+| 3 | P4 (advisory) | reliability | A matched response body evicted by a later navigation is dropped rather than failing the run; only a declaration that ends with no usable body fails | packages/publish-harness/src/bot-collection.ts:694 | RESOLVED — deliberate and tested (one eviction among several matches stays green; an empty declaration is a typed failure) at packages/publish-harness/tests/bot-collection.test.ts:554 |
+| 4 | P4 (advisory) | security | The post-read body caps bound what is returned, not Playwright's upstream buffering | packages/publish-harness/src/bot-collection.ts:372 | DEFER — stated as a `shortcut:` at the read helper; streaming waits for a real large-download consumer |
+| 5 | P4 (advisory) | operations | Cross-launch cookie reuse depends on the site's own cookie lifetime; a session cookie does not survive a browser restart, so a later run reports `authentication` | apps/cli/tests/e2e-bot-collection.ts:46 | DEFER — correct behavior (an observed wall fails closed) with `kk bot login` guidance; live session policy stays operator-owned |
+| 6 | P4 (advisory) | documentation | No live-site (xhs/Taobao/goofish) evidence exists for this substrate | docs/04_DESIGN.md:1297 | DEFER — explicitly out of scope; acceptance is loopback-only and the docs say so |
+
+#### Functional Traceability
+
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 | MET | packages/publish-harness/src/bot-collection.ts:388 |
+| R2 | MET | packages/publish-harness/src/bot-collection.ts:633 |
+| R3 | MET | packages/publish-harness/src/bot-collection.ts:290 |
+| R4 | MET | packages/publish-harness/src/bot-collection.ts:345 |
+| R5 | MET | packages/kk-core/src/manifest.ts:198 |
+| R6 | MET | apps/cli/tests/e2e-bot-collection.ts:464 |
+
+#### Acceptance Criteria
+
+| AC | Status | Evidence Type | Evidence |
+| --- | --- | --- | --- |
+| AC1 — one session executes an ordered rendered collection (req: R1) | MET | test | packages/publish-harness/tests/bot-collection.test.ts:388 |
+| AC2 — authenticated request and XHR artifacts reach an ingestion consumer (req: R2) | MET | command | `bun apps/cli/tests/e2e-bot-collection.ts` — `kk executor fan-in --source` spawns apps/cli/tests/fixtures/plugins/ingestions/e2e-bot-collection/entry.ts and yields docs `e2e-bot-collection:rendered|item-0|request` in .spur/run/e2e/0346-bot-collection.json |
+| AC3 — invalid or wedged runs are bounded and release every owned resource (req: R3) | MET | test | packages/publish-harness/tests/bot-collection.test.ts:725 |
+| AC4 — missing data and authentication failures cannot masquerade as a quiet day (req: R4) | MET | test | packages/publish-harness/tests/bot-collection.test.ts:574 |
+| AC5 — ingestion descriptors join the existing session boundary without CLI drift (req: R5) | MET | test | packages/kk-core/tests/manifest.test.ts:88 + apps/cli/tests/bot-adapter.test.ts:116 + untouched apps/cli/tests/commands/bot.test.ts:158 |
+| AC6 — the E2E and documents leave repeatable implementation evidence (req: R6) | MET | command | `bun run spur-check` exit 0 (format + lint/typecheck + rules + 4748-test suite + coverage/TSDoc) and `.spur/run/e2e/0346-bot-collection.json` `pass: true`, `externalRequests: 0` |
+
+#### Assessment
+
+Functional: every requirement has a shipped anchor; the manifest widening is one refinement and one comment, and `execBot`, the five `kk bot` verbs, their flags and their tests are untouched, so the compatibility control still passes. The E2E now drives the real `kk executor fan-in --source` CLI verb, not the imported handler, so AC2 is proven on the production spawn path.
+
+SECUA: validation precedes every side effect (profile check, lease, launch), so an invalid plan cannot take a lease; only one lease acquisition and one launch exist per call; the `finally` closes the context, drains capture promises and releases the lease on success, failure and timeout, which the failure-path tests assert. Secrets are excluded by construction — artifacts carry origin+pathname only, response headers/`Set-Cookie` are never returned, and diagnostics are static or URL-stripped, so no query, cookie, header or body can reach a message. No new dependency, no `console.*` in `src`, no browser-daemon or proxy surface.
+
+Architecture: the runner is a sibling module reached through a package sub-path, `browser.ts` never imports it, and the plugin child owns the lease for its own run, so fan-in and invoke stayed untouched and concurrent same-profile callers still fail `busy`. Depth sits behind one narrow entry point (`runBotCollection` + data types) instead of a new CLI verb.
+
+Residual risk: live-site behavior, anti-bot outcomes and adapter special state are unproven and stated as limits, and a matched body evicted by a later navigation is intentionally dropped rather than retried.
 
 ### References
 
@@ -264,4 +349,7 @@ Add `apps/cli/tests/e2e-bot-collection.ts` (not a default unit-test file). Its l
 
 - 2026-11-08 renumbered task 0345 to 0346 through Spur CLI creation and section migration; original readiness rationale is preserved in Background corrections.
 - 2026-11-09T07:02:19.892Z backlog → todo (system)
+- 2026-11-09T07:47:52.015Z todo → wip (system)
+- 2026-11-09T08:59:21.044Z wip → testing (system)
+- 2026-11-09T08:59:22.219Z testing → done (system)
 

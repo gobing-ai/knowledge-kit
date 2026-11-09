@@ -1,0 +1,9 @@
+{
+    "name": "e2e-bot-collection",
+    "kind": "ingestion",
+    "entry": "entry.ts",
+    "check": "check.ts",
+    "version": "0.0.1",
+    "description": "0346 E2E fixture: drives the rendered collection runner inside a real fan-in source child",
+    "browserSession": { "profileName": "e2e-bot" }
+}
