@@ -243,8 +243,8 @@ if (args.includes('run')) {
         expect(vars).toMatchObject({
             auto_publish: 'false',
             window: '72h',
-            agent: 'codex-sol',
-            agent_retry: 'claude',
+            agent: 'planner',
+            agent_retry: 'planner',
             skip_review: 'true',
         });
         expect(vars.work_dir).toContain(fx.works);
