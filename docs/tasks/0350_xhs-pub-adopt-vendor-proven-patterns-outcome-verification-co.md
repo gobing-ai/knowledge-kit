@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "xhs-pub: adopt vendor-proven patterns (outcome verification, counter limits, draft verify) and close composePodcast gap"
-status: backlog
+status: todo
 template: standard
 created_at: 2026-11-10T22:48:43.838Z
-updated_at: "2026-11-10T22:49:54.126Z"
+updated_at: "2026-11-10T23:56:17.762Z"
 
 ---
 
@@ -81,3 +81,6 @@ ADR-022 launch-only). Adopt patterns; reject transports.
 <!-- Links to features, docs, ADRs, related tasks, or external references. -->
 
 ### History
+
+- 2026-11-10T23:56:17.762Z backlog → todo (system)
+
