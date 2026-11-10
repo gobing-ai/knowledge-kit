@@ -3330,10 +3330,20 @@ export function dailySafetyGate(args: string[]): void {
             status = 'exclude';
             reason = 'RISK decisions carry only gap/note/fix dispositions — recorded, publishing at recorded risk';
         } else status = 'pass';
-        if (status === 'pass' || status === 'escalate' || status === 'exclude') {
-            sted('write', stampFile, () => writeJsonText(stampFile, { digest, status, excludedPlatforms }));
-        }
-        if (status === 'block' && drafts && !edited) {
+        // 0347 F4 (2026-11-10): an executor outage must not masquerade as a content verdict. When
+        // the final classification is block AND the evidence the gate grades is missing entirely
+        // (request/report/verdict never appeared because a reviewer or judge agent died), record an
+        // infra marker the `judge -> infra-fail` transition reads; `block` stays reserved for real
+        // content verdicts. The caller contract is unchanged — both terminals are failureStates, so
+        // "non-zero = never publish" holds; infra-fail only makes the death retryable-by-machine and
+        // legible to daily-triage.
+        const infraMarker = scopeArtifact(workDir, scopeDir, runDate, 'safety-infra.json');
+        const infraMissing = [
+            ...(request === null ? ['review-request'] : []),
+            ...(report === null ? ['review-report'] : []),
+            ...(verdict === null ? ['judge-verdict'] : []),
+        ];
+        if (status === 'block' && drafts && !edited && infraMissing.length === 0) {
             // A quality block poisons the isFile() draft cache: every same-day retry would
             // re-fail on unchanged bytes (20261002 dogfood — two judge-fail runs replayed until
             // the drafts were moved by hand). Quarantine (mv, never rm) so the next run
@@ -3347,6 +3357,24 @@ export function dailySafetyGate(args: string[]): void {
                 for (let n = 2; isFile(dest); n += 1) dest = join(q, `${n}-${basename(path)}`);
                 renameSync(path, dest);
             }
+        }
+        if (status === 'pass' || status === 'escalate' || status === 'exclude') {
+            sted('write', stampFile, () => writeJsonText(stampFile, { digest, status, excludedPlatforms }));
+        }
+        if (status === 'block' && infraMissing.length > 0) {
+            sted('write', infraMarker, () =>
+                writeJsonText(infraMarker, {
+                    infra: true,
+                    missing: infraMissing,
+                    reason,
+                    classifiedAt: new Date().toISOString(),
+                }),
+            );
+            console.error(
+                `safety: infra — refusal is due to missing evidence (${infraMissing.join(', ')}), not a content verdict`,
+            );
+        } else if (isFile(infraMarker)) {
+            unlinkSync(infraMarker);
         }
         sted('write', statusFile, () => writeRaw(statusFile, status));
         console.log(`safety: status=${status} (${reason}); routing is transition-owned`);

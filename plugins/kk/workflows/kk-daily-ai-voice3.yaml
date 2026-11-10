@@ -575,7 +575,7 @@ nodes:
         command: >-
           env -u SPUR_WORKFLOW_RUN_ACTIVE -u SPUR_EXPECTED_DEFINITION_DIGEST
           spur workflow run plugins/kk/workflows/kk-daily-safety.yaml
-          --vars "{\"work_dir\":\"${vars.work_dir}\",\"run_date\":\"${vars.run_date}\",\"safety_max_revise\":\"${vars.safety_max_revise}\",\"safety_platforms\":\"${vars.safety_platforms}\",\"agent\":\"${vars.agent}\"}"
+          --vars "{\"work_dir\":\"${vars.work_dir}\",\"run_date\":\"${vars.run_date}\",\"safety_max_revise\":\"${vars.safety_max_revise}\",\"safety_platforms\":\"${vars.safety_platforms}\",\"agent\":\"${vars.agent}\",\"agent_retry\":\"${vars.agent_retry}\"}"
           --quiet --no-plan
 
   - id: review
@@ -834,7 +834,7 @@ nodes:
           kk stage run daily-safety-manifest "${vars.work_dir}" "${vars.run_date}" &&
           env -u SPUR_WORKFLOW_RUN_ACTIVE -u SPUR_EXPECTED_DEFINITION_DIGEST
           spur workflow run plugins/kk/workflows/kk-daily-safety.yaml
-          --vars "{\"work_dir\":\"${vars.work_dir}\",\"run_date\":\"${vars.run_date}\",\"safety_max_revise\":\"${vars.safety_max_revise}\",\"safety_platforms\":\"${vars.safety_platforms}\",\"agent\":\"${vars.agent}\",\"safety_scope_dir\":\"4-safety-variants\"}"
+          --vars "{\"work_dir\":\"${vars.work_dir}\",\"run_date\":\"${vars.run_date}\",\"safety_max_revise\":\"${vars.safety_max_revise}\",\"safety_platforms\":\"${vars.safety_platforms}\",\"agent\":\"${vars.agent}\",\"agent_retry\":\"${vars.agent_retry}\",\"safety_scope_dir\":\"4-safety-variants\"}"
           --quiet --no-plan
 
   - id: bundle-freeze
