@@ -286,3 +286,11 @@ Tasks 0200–0204 all in `testing`. Recipe replay per task: (a) spur task show �
 - Delivered: `packages/publish-harness/src/bot-collection.ts` (+ `./bot-collection` sub-path), `BotError` `authentication|empty`, five `browser.ts` helpers exported, `browserSession` widened to `publish|ingestion`, 61 fake-launcher tests, probe script, loopback E2E through the real `kk executor fan-in`, ADR-038 amendment + 4 owning docs.
 - Verification: full gate green twice on the final tree (4750 tests, 0 fail, rules + coverage/TSDoc), E2E `pass: true` with `externalRequests: 0`. Two review-found defects fixed pre-review: an unbounded `extract` (now `applyTimeout`) and `about:blank` surfacing as a `nullblank` URL.
 - Follow-up owner: feature G3 — a bot-backed ingestion plugin + `kk-collect` registration is the deferred consumer (needs an operator login and site recipe). Open environment debt: `.spur/spur.db` at 9.7 GB makes `feature sync` unusable interactively.
+
+## 2026-11-10 — /sp-dev-runall 0347,0348,0349 (feature L2, host executor, WT 57fe)
+Batch: sequential task-pipeline v9 runs, all three → done, each verdict PASS / Confidence HIGH / residual blocking=0.
+- 0347 presets+brief: RID 6812e23a, commit 441f3d2, main FF via 25b0b2f; gate PASS tree (0348 attempt1 reused).
+- 0348 compositing: RID c2d6a3e8, commit 6ab49e1; gate PASS tree d960b4fe after loneRunner fixture fix (cover-compositor ship); wrapHeadline dead-code root cause fixed.
+- 0349 integration+mock: RID bad39739, commit b18b4aa; gate PASS tree 103dde6e (1 retry after F614 envelope expectation update); daily-cover-mock.ts + 3-test integration suite; docs/04 cover row + docs/05 L2 row synced in wrap.
+- Decoy runs: 5187ba29 (taskId mis-key, 0349) — stale .spur/run/5187ba29-* artifacts remain, harmless.
+- Feature corpus: task statuses done (CLI); L2 feature lifecycle sync/update blocked (lock contention + active→done path) — feature table still shows wip/todo; INDEX refresh pending; revisit when corpus lock frees.
