@@ -196,6 +196,34 @@ interface ActionClick {
     click: string;
 }
 
+/**
+ * Invoke the draft-save method the action bar exposes on its `xhs-publish-btn` host. The bar
+ * renders inside a CLOSED shadow root, so synthetic coordinate clicks from an automated context
+ * are no-ops (OpenCLI#1606); the host method is the reliable trigger. Returns the method name,
+ * or null when no visible host carries a save method (the click fallback then runs).
+ */
+async function invokeHostSave(page: XhsPage): Promise<string | null> {
+    try {
+        const verdict = await page.evaluate(`(() => {
+            const hosts = Array.from(document.querySelectorAll('xhs-publish-btn')).filter((el) => {
+                const r = el.getBoundingClientRect();
+                return r.width > 0 && r.height > 0;
+            });
+            for (const el of hosts) {
+                for (const name of ['_onSave', '_onSaveDraft', '_onDraft']) {
+                    const fn = el[name];
+                    if (typeof fn === 'function') { fn.call(el); return 'kk-host-save:' + name; }
+                }
+            }
+            return 'kk-host-save-none';
+        })()`);
+        const called = typeof verdict === 'string' ? verdict : '';
+        return called.startsWith('kk-host-save:') ? called.slice('kk-host-save:'.length) : null;
+    } catch {
+        return null;
+    }
+}
+
 /** Click an action-bar control of this mode, on the path its evidence says that bar lives on. */
 async function clickActionControl(
     operation: XhsOperation,
@@ -327,20 +355,40 @@ async function typeNoteBody(deps: ModeRunDeps, selectors: readonly string[], wha
     await body.fill(text);
 }
 
-/** The uploaded-preview count must match the payload: it is how a wrong input is caught. */
+/**
+ * A `blob:`/`data:` src is the instant local preview — it proves nothing about the server-side
+ * copy. The durable https src appears only after the upload round-trip; saving while any
+ * thumbnail still showed a blob src persisted a draft whose images were gone (2026-11-10 run).
+ * Note the durable src itself can be a geo-fenced CDN host (sns-creator-preview.xhscdn.com):
+ * from a non-CN egress the preview may render dead even when the ref is valid, so naturalWidth
+ * is NOT a reliable completion signal cross-region — the src scheme is.
+ */
+
+/** The uploaded-preview count must match the payload, and every src must be durable (uploaded). */
 async function confirmThumbnails(deps: ModeRunDeps, expected: number): Promise<void> {
     const selector = await findSelector(deps.page, NOTE_THUMBNAIL, 'thumbnail wait', deps.stepTimeoutMs);
-    const matches = await waitUntil(
-        () =>
-            deps.page
-                .locator(selector)
-                .count()
-                .then((count) => count >= expected),
-        deps.stepTimeoutMs,
-    );
+    const allDurable = async (): Promise<boolean> => {
+        // Sentinel strings, not booleans: a generic mocked evaluate must never read as a real
+        // DOM verdict — a false positive would let the save run before uploads finish.
+        const verdict = await deps.page.evaluate(`(() => {
+            const imgs = Array.from(document.querySelectorAll("${selector}"));
+            if (imgs.length < ${expected}) return 'kk-thumb-pending';
+            return imgs.every((img) => /^https?:/.test(img.getAttribute("src") || ""))
+                ? 'kk-thumb-all-durable'
+                : 'kk-thumb-pending';
+        })()`);
+        return verdict === 'kk-thumb-all-durable';
+    };
+    const matches = await waitUntil(allDurable, deps.stepTimeoutMs);
     const observed = await deps.page.locator(selector).count();
     if (!matches || observed !== expected) {
-        throw new Error(`thumbnail count: expected ${expected}, observed ${observed}`);
+        const pending = await deps.page.evaluate(`/* kk-count-local-srcs */ (() => {
+            return Array.from(document.querySelectorAll("${selector}"))
+                .filter((img) => !/^https?:/.test(img.getAttribute("src") || "")).length;
+        })()`);
+        throw new Error(
+            `thumbnail count: expected ${expected} durable previews, observed ${observed} previews with ${String(pending)} still on a local (blob/data) src — the ${deps.stepTimeoutMs}ms window expired before the console finished uploading`,
+        );
     }
 }
 
@@ -667,7 +715,12 @@ async function saveDraft(input: ModeInput, deps: ModeRunDeps): Promise<Result> {
     while (signal === null && attempts < deps.submitAttempts) {
         attempts += 1;
         await sleep(deps.submitSettleMs);
-        const control = await clickActionControl(input.operation, deps, DRAFT_LABELS, 'draft control');
+        // Host-method save first: the closed-shadow bar swallows synthetic coordinate clicks.
+        const method = await invokeHostSave(deps.page);
+        const control: Awaited<ReturnType<typeof clickActionControl>> =
+            method !== null
+                ? { ok: true, path: 'shadow', label: `_onSave:${method}`, click: 'shadow-host-method' }
+                : await clickActionControl(input.operation, deps, DRAFT_LABELS, 'draft control');
         if (!control.ok) return fail(control.error);
         clicked = control;
         const outcome = await expectOutcome(() => draftSignalEvidence(deps.page, deps.draftBaseline), {

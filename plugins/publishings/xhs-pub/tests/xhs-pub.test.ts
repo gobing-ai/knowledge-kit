@@ -118,6 +118,10 @@ interface FakeState {
     podcastCoverChooserSilent: boolean;
     podcastAudioAttached: boolean;
     podcastCoverAttached: boolean;
+    /** When true some uploaded thumbnails still carry a local (blob) src — the upload is unfinished. */
+    thumbLocalSrcs: boolean;
+    /** When set, the visible `xhs-publish-btn` host exposes this save method (the closed-shadow bar). */
+    hostSaveMethod: string | null;
 }
 
 /** Labels XHS uses for the draft control, inside the closed shadow publish bar. */
@@ -284,6 +288,16 @@ function makeFakePage(initial: FakeState) {
         },
         evaluate: async (expression) => {
             calls.push({ op: 'evaluate', args: [] });
+            if (expression.includes('kk-count-local-srcs')) return state.thumbLocalSrcs ? 1 : 0;
+            if (expression.includes('kk-thumb-')) {
+                const expected = Number(/imgs\.length < (\d+)/.exec(expression)?.[1] ?? 0);
+                const countOk = (state.thumbCount ?? 0) >= expected;
+                return countOk && !state.thumbLocalSrcs ? 'kk-thumb-all-durable' : 'kk-thumb-pending';
+            }
+            if (expression.includes('kk-host-save')) {
+                if (state.hostSaveMethod !== null) applySaveClick('暂存离开');
+                return state.hostSaveMethod === null ? 'kk-host-save-none' : `kk-host-save:${state.hostSaveMethod}`;
+            }
             if (expression.includes('ClipboardEvent')) {
                 state.articlePasted = true;
                 return true;
@@ -388,6 +402,8 @@ const happy: FakeState = {
     podcastCoverChooserSilent: false,
     podcastAudioAttached: false,
     podcastCoverAttached: false,
+    thumbLocalSrcs: false,
+    hostSaveMethod: null,
 };
 
 describe('xhs-pub validation (no browser opens)', () => {
@@ -469,6 +485,41 @@ describe('xhs-pub script flow (fake page)', () => {
         expect(result.metadata?.draftAttempts).toBe(1);
         expect(result.metadata?.draftClick).toBe('606,855');
         expect(closed).toHaveLength(1);
+    });
+
+    test('regression 2026-11-10: a draft save never runs while a thumbnail still carries a blob src', async () => {
+        await seedImages();
+        const state = { ...happy, thumbLocalSrcs: true };
+        const { open, calls } = makeOpenPage(state);
+        const t = makeTransport('script', {
+            openPage: open,
+            stepTimeoutMs: 200,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+        });
+        const result = await t.publish({ content: cardContent() });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('durable previews');
+        expect(result.error).toContain('local (blob/data) src');
+        // No draft click may fire before every image has a durable server-side src.
+        expect(state.draftClicked).toBe(false);
+        expect(calls.some((pageCalls) => pageCalls.some((entry) => entry.op === 'findShadowControl'))).toBe(false);
+    });
+
+    test("the bar's _onSave host method is the draft trigger; the click fallback stays intact without it", async () => {
+        await seedImages();
+        const { open } = makeOpenPage({ ...happy, hostSaveMethod: '_onSave' });
+        const t = makeTransport('script', {
+            openPage: open,
+            stepTimeoutMs: 500,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+        });
+        const result = await t.publish({ content: cardContent() });
+        expect(result.ok).toBe(true);
+        expect(result.metadata?.draftControl).toBe('_onSave:_onSave');
+        expect(result.metadata?.draftPath).toBe('shadow');
+        expect(result.metadata?.draftClick).toBe('shadow-host-method');
     });
 
     test('live console contract: in-viewport tab click, hidden input upload, TipTap body, shadow draft', async () => {

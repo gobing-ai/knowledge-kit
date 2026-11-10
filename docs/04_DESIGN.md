@@ -1093,6 +1093,7 @@ Robin's approval; evidence is in `docs/report/2026-11-01-daily-ai-news-recovery.
 
 ```bash
 bun run daily-news:generate                       # supervised generation only; auto_publish=false, 72h pool
+                                                  # agent defaults to the planner role (tier-resolved at dispatch); --agent/--retry-agent override
 bun run daily-news:publish                        # valid today's bundle -> after-generate
 bun run daily-news:validate                       # quick: required files + dated bundle/variants only
 bun run daily-news:validate -- --mode full         # live read-only diagnosis + offline voice3 dogfood

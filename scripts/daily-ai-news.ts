@@ -16,10 +16,13 @@ const EXTRACT_PROFILE = join(REPO, 'plugins/kk/decisions/extract/ai-news.yaml');
 const DOGFOOD_TEST = 'apps/cli/tests/voice3-migration.e2e.test.ts';
 const WINDOWS = new Set(['after-generate', 'cn-peak', 'overseas-rss']);
 const USAGE = `usage:
-  bun run daily-news:generate [-- <daily-scheduled-run options>]
+  bun run daily-news:generate [--agent <role|executor>] [--retry-agent <role|executor>] [-- <daily-scheduled-run options>]
   bun run daily-news:publish [-- --run-date <YYYY-MM-DD|YYYYMMDD>] [--window <window>] [--yes] [publisher flags]
   bun run daily-news:validate [-- --run-date <YYYY-MM-DD|YYYYMMDD>] [--mode quick|full] [--skip-dogfood]
 
+generate defaults to the 'planner' role (capable-2, tier-resolved at dispatch — no pinned model);
+--agent/--retry-agent accept a role or a named executor to override. Explicit executor names are
+resolved with a one-time transition warning (0542 R2).
 publish defaults to today's after-generate window. Missing/incomplete generation asks on a TTY;
 --yes explicitly consents to generation. Non-TTY runs never generate implicitly.
 validate defaults to quick file-readiness checks. --mode full runs live read-only diagnosis;
@@ -219,10 +222,14 @@ function generate(args: string[]): number {
             '--generate-only',
             '--window',
             '72h',
+            // Roles, not executor names (ADR-078 / 0542 R2): planner = capable-2
+            // authoring grade, tier-resolved at dispatch, so a quota-dead model
+            // never pins the daily run. Explicit --agent/--retry-agent override
+            // via the forwarded args below.
             '--agent',
-            'codex-sol',
+            'planner',
             '--retry-agent',
-            'claude',
+            'planner',
             ...args,
         ],
         { KK_BROWSER_CHANNEL: process.env.KK_BROWSER_CHANNEL ?? 'chrome' },
