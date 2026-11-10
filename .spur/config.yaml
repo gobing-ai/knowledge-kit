@@ -152,7 +152,13 @@ bootstrap:
       # 2026-11-08: primary moved to pi-dsv4.1-flash-volc (volc deepseek-v4-1-flash). The 11-02..11-07
       # codex-sol (gpt-6.1-sol) episodes drifted toward commentary and technical detail, the 11-08
       # rehearsal on this executor passed the script-plan validator, and it saves gpt/opus tokens.
-      # Retry stays on claude, a different binary from the primary (see the 11-04 note above).
+      # 2026-11-10: volc's monthly quota died mid-run (AccountQuotaExceeded, resets 2026-11-18) and
+      # the claude retry was weekly-limit-dead, so the 04:30 run burned its window on dead executors.
+      # Primary repointed to pi-deepseek (deepseek kin to the validated volc executor, probe-passed
+      # 2026-11-10), retry to agy-gemini (different binary family, probe-passed). The scheduler now
+      # probes both before spending the window (0347 F1 preflight) and refuses the day on a dead
+      # primary. When volc resets on 11-18, re-evaluate before switching back.
+      # Retry stays a different binary from the primary (see the 11-04 note above).
       # The kk-daily-publish3 re-run below must keep the same flags.
       # --window 72h (2026-11-05): the 24h pool produced 3 items / an 8.4-min script and the
       # 15-min floor refused before TTS (duration-refusal on 11-05); the extract ladder's
@@ -165,7 +171,7 @@ bootstrap:
           KK_BROWSER_CHANNEL=chrome bun plugins/kk/scripts/daily-scheduled-run.ts
           --repo /Users/robin/xprojects/knowledge-kit
           --works-dir /Users/robin/xprojects/knowledge-kit/.works
-          --agent pi-dsv4.1-flash-volc --retry-agent claude
+          --agent pi-deepseek --retry-agent agy-gemini
           --workflow kk-daily-ai-voice3 --window 72h
 
       # 07:00 daily: the publish3 `overseas-rss` window (design kk-daily-ai-voice3 §5a) — X/Threads
@@ -195,7 +201,7 @@ bootstrap:
           KK_BROWSER_CHANNEL=chrome bun plugins/kk/scripts/daily-scheduled-run.ts
           --repo /Users/robin/xprojects/knowledge-kit
           --works-dir /Users/robin/xprojects/knowledge-kit/.works
-          --agent pi-dsv4.1-flash-volc --retry-agent claude
+          --agent pi-deepseek --retry-agent agy-gemini
           --workflow kk-daily-ai-voice3 --window 72h;; esac;
           bun plugins/kk/scripts/voice3-publish-window.ts --window overseas-rss
 
