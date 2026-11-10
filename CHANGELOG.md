@@ -1,3 +1,61 @@
+## [0.1.15] - 2026-11-09
+
+### Added
+
+- feat(bot): add plan verb for declarative collection runs (d356308)
+<!-- src: apps/cli/src/commands/bot.ts:398 -->
+- feat(daily): centralize news editorial logic, master renders, and news-balance judge (0345) (1b1fe7c)
+<!-- src: plugins/kk/scripts/daily-stages.ts:4123 -->
+- feat(bot): add rendered collection runner for ingestion sessions (de45df7)
+<!-- src: packages/publish-harness/src/bot-collection.ts:622 -->
+- feat(daily): centralize editorial policy and quicken validation (0fd30f9)
+<!-- src: plugins/kk/skills/news-editorial/SKILL.md:56 -->
+- feat(podcast-pub): add inert podcast:transcript support gated on measured offsets (da47b25)
+<!-- src: plugins/publishings/podcast-pub/src/transcript.ts:48 -->
+
+### Fixed
+
+- fix(bot): normalize plan response captures before running (bb6c894)
+<!-- src: packages/publish-harness/src/bot-collection.ts:639 -->
+- fix(wechatmp-pub): rescue library cover when the audio upload fails late (17b4818)
+<!-- src: plugins/publishings/wechatmp-pub/src/flow.ts:2745 -->
+- fix(daily): re-derive stale article pairs and teach article-write the heading contract (53b4445)
+<!-- src: plugins/kk/scripts/daily-stages.ts:515 -->
+- fix(bot): harden collection runner verification (0346) (a09fb71)
+<!-- src: apps/cli/tests/e2e-bot-collection.ts:165 -->
+- fix(daily): repair voice3 production operations (8b6e9b5)
+<!-- src: plugins/kk/scripts/daily-scheduled-run.ts:41 -->
+
+### Changed
+
+- refactor(daily): name the fixed editorial article opening line (004aab2)
+<!-- src: plugins/kk/scripts/daily-stages.ts:4293 -->
+- refactor(bot): extract plan-file decoding into bot-plan module (5ddfc3d)
+<!-- src: apps/cli/src/bot-plan.ts:12 -->
+
+### Other
+
+- chore(wechatmp-pub): capture dialog inventory on the audio cover-chooser close stall (d532f2c)
+<!-- src: plugins/publishings/wechatmp-pub/src/flow.ts:970 -->
+- test: exclude decision-hub fixture from coverage, adjust compose e2e (93be009)
+<!-- src: bunfig.toml:16 -->
+- test(dailynews-gen): verify curate-excluded ids via DAILYNEWS_CURATE_EXCLUDED (98b18a7)
+<!-- src: plugins/generations/dailynews-gen/tests/script-plan.test.ts:496 -->
+- test(podcast-pub): replace direct fetch assignment with spyOn to pass http rules (dd3d33e)
+<!-- src: plugins/publishings/podcast-pub/tests/transcript.test.ts:86 -->
+- docs: refresh web-automation and publish skill guidance (204f47f)
+- docs: record task 0345 pipeline verify verdicts (cc9e45e)
+- docs(learnings): record wechatmp SIGTRAP pitfall and 11-09 report (bbfbb2f)
+- docs(learnings): add task 0345 voice3 editorial centralization learnings (1eeeeee)
+- docs(context): record 0346 collection substrate learnings and traps (c7d08ca)
+- docs(features): refresh G3 roster after 0346 completion (83afc32)
+- docs(tasks): add 0346 bot collection substrate task (2288b66)
+- docs(tasks): fold never-shipped plan items 1-2 into item 3 after verify (8efbeee)
+- docs(tasks): trim task 0345 to 15 shipped/remaining plan steps and 10 R-items to pass the fixed precheck-size gate (operator override accepted 2026-11-09; R5 superseded row and shipped steps 1-2 removed, evidence under Testing) (d199e85)
+- docs(tasks): update task files after refinement (28da920)
+- chore(run): task 0345 precheck-size found (11 R / 17 Plan items vs max 10/16) — operator override accepted 2026-11-09, counts trims to follow (f500dd7)
+- chore(run): start task 0345 run in worktree dev-run-0345-2639 on sp/run-0345-2639 (base 28da920) (8ccf2b6)
+
 ## [0.1.14] - 2026-11-07
 
 ### Fixed
