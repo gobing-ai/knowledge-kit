@@ -834,9 +834,9 @@ describe('0335 R2: content-safety gate', () => {
         expect(publish.finalState).toBe('failed');
         expect(publish.stdout + publish.stderr).toContain('no bundle');
         // The overseas day on a no-content rehearsal: the feed carries no episode for today, so
-        // the gate misses and the diagnose/repair path runs. The repair honestly refuses (there is
-        // no bundle to repair from — a lost generation stays an operator decision), so the window
-        // fails AFTER the incident evidence survives.
+        // the gate misses and the diagnose/repair path runs. Under F7 (0347) the repair settles as
+        // a vacuous no-op — nothing was ever planned, so nothing can be resent; the window still
+        // completes and the incident evidence carries the miss for the operator.
         writeRssFeed(fx_feedPath(fx.root), GUID_THIN, '别处的节目 · 2026-01-01');
         const ovs = runWorkflow(
             fx,
@@ -845,8 +845,8 @@ describe('0335 R2: content-safety gate', () => {
             'overseas-rss',
             publish3Vars(fx, 'overseas-rss', { dummy: 'true' }),
         );
-        expect(ovs.finalState).toBe('failed');
-        expect(ovs.stdout + ovs.stderr).toContain('publish-matrix-send');
+        expect(ovs.finalState).toBe('done');
+        expect(ovs.stdout + ovs.stderr).toContain('"status": "done"');
         const rss = readJson<{ hit: boolean; reason: string }>(join(fx.dayDir, '4-publish', 'rss-gate.json'));
         expect(rss.hit).toBe(false);
         const incident = readJson<{ class: string }>(join(fx.dayDir, '4-publish', 'incident.json'));
