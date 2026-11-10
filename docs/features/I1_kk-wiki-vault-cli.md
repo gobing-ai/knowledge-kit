@@ -2,11 +2,11 @@
 schema_version: 1
 id: "I1"
 name: "kk wiki vault CLI"
-status: backlog
+status: active
 priority: P2
 tags: []
 created_at: "2026-11-10T19:06:55.156Z"
-updated_at: "2026-11-10T19:08:08.287Z"
+updated_at: "2026-11-10T21:27:41.791Z"
 ---
 
 # I1: kk wiki vault CLI
@@ -242,9 +242,12 @@ Feature: I1 — kk wiki vault CLI
 | 0354 | Publish, sync and retrieval surfaces | todo |
 | 0352 | Guarded page writes: summarize, synthesize and the user-edited guard | todo |
 | 0353 | Merge, compile and gc maintenance verbs | todo |
-| 0350 | kk wiki noun foundation, config and raw ingest | todo |
+| 0350 | kk wiki noun foundation, config and raw ingest | wip |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
 
 ## History
+
+- 2026-11-10T21:27:41.791Z backlog → active (system)
+

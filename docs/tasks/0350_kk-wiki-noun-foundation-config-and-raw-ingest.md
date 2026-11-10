@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: kk wiki noun foundation, config and raw ingest
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-10T19:11:03.849Z
-updated_at: "2026-11-10T20:24:47.256Z"
+updated_at: "2026-11-10T22:55:06.882Z"
 feature_id: I1
 priority: P1
 tags:
@@ -12,6 +12,8 @@ tags:
   - cli
 estimate_hours: 5
 
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0350-verdict.json
 ---
 
 ## 0350. kk wiki noun foundation, config and raw ingest
@@ -38,23 +40,23 @@ Rejected: putting the vault helpers inside `apps/cli` - it violates the module-b
 
 ### Requirements
 
-- [ ] R1. `packages/kk-wiki` exists as a Bun workspace (workspace glob `package.json:9`) exporting `writeRawSnapshot` and the page frontmatter schema.
-- [ ] R2. `kk wiki ingest <source>` writes `raw/<type>/<id>.md` with `title`, `source_type`, `source_uri` and `ingested_at` frontmatter.
-- [ ] R3. `kk wiki ingest -` reads the body from stdin and records stdin as its origin.
-- [ ] R4. An unknown extension with no `--type` exits 2 naming the unsupported type and writes nothing.
-- [ ] R5. `--type html|pdf|url` extracts its body through the markitdown runner pattern; when the binary is absent the command exits 1 naming the missing tool and writes nothing.
-- [ ] R6. Every wiki verb prints one JSON document carrying `ok` when `--json` is passed, and returns 0 / 1 / 2 for success / handled failure / usage error.
-- [ ] R7. `apps/cli/src/wiki/config.ts` resolves `kk.config.json` then `KK_WIKI_*` then built-in defaults, wins over `~/.config/kk/config.yaml` for vault paths only, never creates or rewrites the config file, and fails naming an unsupported declared key.
-- [ ] R8. The project-file versus global-file config split is recorded in an ADR in the same commit that ships the resolver.
-- [ ] R9. Every new file in `packages/kk-wiki` and `apps/cli/src/wiki` clears the per-file coverage threshold with its own tests.
+- [x] R1. `packages/kk-wiki` exists as a Bun workspace (workspace glob `package.json:9`) exporting `writeRawSnapshot` and the page frontmatter schema.
+- [x] R2. `kk wiki ingest <source>` writes `raw/<type>/<id>.md` with `title`, `source_type`, `source_uri` and `ingested_at` frontmatter.
+- [x] R3. `kk wiki ingest -` reads the body from stdin and records stdin as its origin.
+- [x] R4. An unknown extension with no `--type` exits 2 naming the unsupported type and writes nothing.
+- [x] R5. `--type html|pdf|url` extracts its body through the markitdown runner pattern; when the binary is absent the command exits 1 naming the missing tool and writes nothing.
+- [x] R6. Every wiki verb prints one JSON document carrying `ok` when `--json` is passed, and returns 0 / 1 / 2 for success / handled failure / usage error.
+- [x] R7. `apps/cli/src/wiki/config.ts` resolves `kk.config.json` then `KK_WIKI_*` then built-in defaults, wins over `~/.config/kk/config.yaml` for vault paths only, never creates or rewrites the config file, and fails naming an unsupported declared key.
+- [x] R8. The project-file versus global-file config split is recorded in an ADR in the same commit that ships the resolver.
+- [x] R9. Every new file in `packages/kk-wiki` and `apps/cli/src/wiki` clears the per-file coverage threshold with its own tests.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Ingest a local file into a raw snapshot with frontmatter
-- [ ] AC2 — Ingest a URL or stdin source into the same raw shape
-- [ ] AC3 — Ingest rejects an unsupported source type
-- [ ] AC4 — Every wiki verb supports JSON output and a stable exit code
-- [ ] AC5 — Configuration resolves from kk.config.json and the environment
+- [x] AC1 — Ingest a local file into a raw snapshot with frontmatter
+- [x] AC2 — Ingest a URL or stdin source into the same raw shape
+- [x] AC3 — Ingest rejects an unsupported source type
+- [x] AC4 — Every wiki verb supports JSON output and a stable exit code
+- [x] AC5 — Configuration resolves from kk.config.json and the environment
 
 ### Q&A
 
@@ -106,15 +108,87 @@ Rejected: putting the vault helpers inside `apps/cli` - it violates the module-b
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/package.json:4` |
+| `apps/cli/package.json:51` |
+| `apps/cli/src/cli.ts:13` |
+| `apps/cli/src/cli.ts:41` |
+| `apps/cli/tests/main.test.ts:237` |
+| `apps/cli/tests/main.test.ts:84` |
+| `docs/00_ADR.md:1696` |
+| `docs/00_ADR.md:6` |
+| `docs/04_DESIGN.md:6` |
+| `docs/04_DESIGN.md:86` |
+| `docs/design/kk-wiki.md:10` |
+| `docs/design/kk-wiki.md:40` |
+| `docs/design/kk-wiki.md:6` |
+| `docs/features/I1_kk-wiki-vault-cli.md:245` |
+| `docs/features/I1_kk-wiki-vault-cli.md:251` |
+| `docs/features/I1_kk-wiki-vault-cli.md:5` |
+| `docs/features/I1_kk-wiki-vault-cli.md:9` |
+| `docs/features/INDEX.md:98` |
+| `scripts/publish-manifest.test.ts:94` |
+| `apps/cli/src/commands/wiki.ts:1` |
+| `apps/cli/src/wiki/config.ts:1` |
+| `apps/cli/src/wiki/ingest.ts:1` |
+| `apps/cli/tests/commands/wiki.test.ts:1` |
+| `apps/cli/tests/wiki/config.test.ts:1` |
+| `apps/cli/tests/wiki/ingest.test.ts:1` |
+| `packages/kk-wiki/package.json:1` |
+| `packages/kk-wiki/src/index.ts:1` |
+| `packages/kk-wiki/src/markitdown.ts:1` |
+| `packages/kk-wiki/src/page.ts:1` |
+| `packages/kk-wiki/src/raw.ts:1` |
+| `packages/kk-wiki/tests/markitdown.test.ts:1` |
+| `packages/kk-wiki/tests/page.test.ts:1` |
+| `packages/kk-wiki/tests/raw.test.ts:1` |
+| `packages/kk-wiki/tsconfig.json:1` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `packages/kk-wiki/package.json:1`, `packages/kk-wiki/src/index.ts:1`; workspace glob `package.json:9` |
+| R2 | MET | `packages/kk-wiki/src/raw.ts:46-79`; `packages/kk-wiki/tests/raw.test.ts` (four source keys) |
+| R3 | MET | `apps/cli/src/wiki/ingest.ts:82`; `apps/cli/tests/wiki/ingest.test.ts` (stdin origin) |
+| R4 | MET | `apps/cli/src/wiki/ingest.ts:84-88`; `apps/cli/tests/commands/wiki.test.ts` (exit 2, nothing written) |
+| R5 | MET | `packages/kk-wiki/src/markitdown.ts:65`, `apps/cli/src/wiki/ingest.ts:116-120`; `packages/kk-wiki/tests/markitdown.test.ts` |
+| R6 | MET | `apps/cli/src/commands/wiki.ts:18-30`; `apps/cli/tests/commands/wiki.test.ts` (JSON shape, exit 0/1/2) |
+| R7 | MET | `apps/cli/src/wiki/config.ts:83-176`; `apps/cli/tests/wiki/config.test.ts` |
+| R8 | MET | `docs/00_ADR.md:1699` (ADR-047) |
+| R9 | MET | per-file coverage from the gate run: `page.ts`/`raw.ts`/`markitdown.ts` 100, `config.ts` 97.5, `ingest.ts` 100, `commands/wiki.ts` 100 |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — Ingest a local file into a raw snapshot with frontmatter | MET | test | `apps/cli/tests/commands/wiki.test.ts` — local file ingest with frontmatter |
+| AC2 — Ingest a URL or stdin source into the same raw shape | MET | test | `apps/cli/tests/wiki/ingest.test.ts` — stdin source; `apps/cli/tests/commands/wiki.test.ts` — real stdin stream |
+| AC3 — Ingest rejects an unsupported source type | MET | test | `apps/cli/tests/commands/wiki.test.ts` — unsupported type and `--type docx` both exit 2 |
+| AC4 — Every wiki verb supports JSON output and a stable exit code | MET | test | `apps/cli/tests/commands/wiki.test.ts`; `apps/cli/tests/main.test.ts` — `wiki ingest` in the leaf inventory |
+| AC5 — Configuration resolves from kk.config.json and the environment | MET | test | `apps/cli/tests/wiki/config.test.ts` — file/env/flag precedence; end-to-end override in `apps/cli/tests/commands/wiki.test.ts` |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+**Scope.** Task 0350 — `@gobing-ai/kk-wiki` package skeleton, vault config resolver, `kk wiki ingest`.
+Traceability: 9/9 Requirements MET, 5/5 feature ACs MET; per-requirement evidence is in the review
+answer artifact and captured as `.spur/run/0350-verdict.json` (verdict PASS). The project gate is PASS
+on this tree (`.spur/run/0350-check-receipt.json`).
+
+| Priority | Location | Finding | Disposition |
+| --- | --- | --- | --- |
+| P4 | `docs/design/kk-wiki.md:41` | The satellite's `ingest` row still described the verb as unbuilt and credited text extraction to the skill | FIXED |
+
+Confidence: HIGH
+
+Verdict: PASS
 
 ### References
 
@@ -127,3 +201,8 @@ Rejected: putting the vault helpers inside `apps/cli` - it violates the module-b
 - Discovery: `docs/plans/2026-11-10-kk-wiki-brainstorm.md`.
 
 ### History
+
+- 2026-11-10T20:50:16.180Z todo → wip (system)
+- 2026-11-10T22:55:05.666Z wip → testing (system)
+- 2026-11-10T22:55:06.876Z testing → done (system)
+

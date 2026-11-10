@@ -25,7 +25,7 @@
     },
     "apps/cli": {
       "name": "@gobing-ai/knowledge-kit",
-      "version": "0.1.11",
+      "version": "0.1.15",
       "bin": {
         "kk": "./dist/index.js",
         "knowledge-kit": "./dist/index.js",
@@ -33,6 +33,7 @@
       "dependencies": {
         "@gobing-ai/kk-core": "workspace:*",
         "@gobing-ai/kk-store": "workspace:*",
+        "@gobing-ai/kk-wiki": "workspace:*",
         "@gobing-ai/publish-harness": "workspace:*",
         "@gobing-ai/ts-ai-decision": "catalog:",
         "@gobing-ai/ts-infra": "catalog:",
@@ -68,6 +69,18 @@
         "@gobing-ai/ts-runtime": "catalog:",
         "drizzle-orm": "0.45.3",
         "drizzle-zod": "0.8.3",
+        "zod": "4.4.3",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.3",
+      },
+    },
+    "packages/kk-wiki": {
+      "name": "@gobing-ai/kk-wiki",
+      "version": "0.0.1",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/ts-runtime": "catalog:",
         "zod": "4.4.3",
       },
       "devDependencies": {
@@ -629,6 +642,8 @@
     "@gobing-ai/kk-core": ["@gobing-ai/kk-core@workspace:packages/kk-core"],
 
     "@gobing-ai/kk-store": ["@gobing-ai/kk-store@workspace:packages/kk-store"],
+
+    "@gobing-ai/kk-wiki": ["@gobing-ai/kk-wiki@workspace:packages/kk-wiki"],
 
     "@gobing-ai/knowledge-kit": ["@gobing-ai/knowledge-kit@workspace:apps/cli"],
 

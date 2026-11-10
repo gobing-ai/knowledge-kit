@@ -3,7 +3,7 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.44.0
+version: 1.45.0
 created_at: 2026-05-28
 updated_at: 2026-11-10
 edit_rules: 99 §6.1
@@ -1693,3 +1693,21 @@ mechanics must be testable without a provider and the user-edit guard must be en
 rather than requested in a prompt.
 
 **Detail:** `docs/design/kk-wiki.md`; §Module boundaries and "kk wiki vault" in `docs/03_ARCHITECTURE.md`.
+
+---
+
+## ADR-047: the vault config splits project file from global file
+
+**Status:** Accepted · **Date:** 2026-11-10 · **Feature:** I1 (task 0350)
+
+**Decision.** Vault paths, defaults, mirror dirs and remote definitions live in a project-level
+`kk.config.json` at the vault root, owned by `apps/cli/src/wiki/config.ts`; the existing global
+`~/.config/kk/config.yaml` keeps owning channels, presets and credentials. Precedence inside the
+project file's keys is flag → `KK_WIKI_*` → `kk.config.json` → built-in default. The resolver never
+creates or rewrites either file and fails naming an unsupported declared key.
+
+**Why.** A vault is a directory the operator moves between machines and commits to its own
+repository, while channel credentials are per-machine; folding both into one file makes either the
+vault machine-bound or the credentials publishable.
+
+**Detail:** `docs/design/kk-wiki.md` §5; resolver `apps/cli/src/wiki/config.ts`.

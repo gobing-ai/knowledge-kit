@@ -1,7 +1,7 @@
 {
     "name": "@gobing-ai/knowledge-kit",
     "version": "0.1.15",
-    "description": "An ingest → create → publish content pipeline CLI (Bun).",
+    "description": "An ingest \u2192 create \u2192 publish content pipeline CLI (Bun).",
     "repository": {
         "type": "git",
         "url": "git+https://github.com/gobing-ai/knowledge-kit.git"
@@ -48,6 +48,7 @@
     "dependencies": {
         "@gobing-ai/kk-core": "workspace:*",
         "@gobing-ai/kk-store": "workspace:*",
+        "@gobing-ai/kk-wiki": "workspace:*",
         "@gobing-ai/publish-harness": "workspace:*",
         "@gobing-ai/ts-ai-decision": "catalog:",
         "@gobing-ai/ts-infra": "catalog:",

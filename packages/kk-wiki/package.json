@@ -1,0 +1,21 @@
+{
+    "name": "@gobing-ai/kk-wiki",
+    "type": "module",
+    "private": true,
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "scripts": {
+        "test": "NODE_ENV=test bun test --coverage --coverage-dir=.coverage --reporter=dots",
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "zod": "4.4.3"
+    },
+    "devDependencies": {
+        "@types/bun": "1.4.3"
+    },
+    "version": "0.0.1"
+}

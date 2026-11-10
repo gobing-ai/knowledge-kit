@@ -91,6 +91,8 @@ describe('preparePublishedManifest', () => {
                 '@gobing-ai/kk-store',
                 '@gobing-ai/kk-board',
                 '@gobing-ai/publish-harness',
+                // kk-wiki joined with feature I1 task 0350 (`kk wiki ingest`).
+                '@gobing-ai/kk-wiki',
             ]),
         });
         const deps = manifest.dependencies as Record<string, string>;

@@ -3,11 +3,11 @@ name: kk wiki vault
 doc: design/kk-wiki
 owns: "SHAPES — kk wiki verb signatures, vault frontmatter schema, config keys, publish projection"
 authority: derived
-version: 0.1.0
+version: 0.2.0
 created_at: 2026-11-10
 updated_at: 2026-11-10
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
-status: accepted design (I1, ADR-046 — not yet built)
+status: partial — `ingest` shipped (0350); the remaining verbs are accepted design (I1, ADR-046)
 ---
 
 # kk wiki vault — design satellite
@@ -37,7 +37,7 @@ exits `0` on success / `1` on a handled failure / `2` on a usage error.
 
 | Verb | Signature | Deterministic behavior | Model-bearing? |
 | --- | --- | --- | --- |
-| `ingest` | `kk wiki ingest <source\|-> [--type=url\|pdf\|html\|rss] [--out <dir>] [--json]` | Writes `raw/<type>/<id>.md` with frontmatter; unknown extension without `--type` exits 2 naming the type | no (a skill supplies extracted text for pdf/url through `--type` + stdin) |
+| `ingest` | `kk wiki ingest <source\|-> [--type=url\|pdf\|html\|rss] [--out <dir>] [--json]` | Writes `raw/<type>/<id>.md` with frontmatter; unknown extension without `--type` exits 2 naming the type; html/pdf/url go through the markitdown runner and exit 1 naming it when absent (**shipped, 0350**) | no |
 | `summarize` | `kk wiki summarize <file\|dir> [--section <name>] [--json]` | Renders the supplied summary text into the target page's summary section and records extracted references as wikilinks | text is authored by the `kk:wiki-authoring` skill and passed on stdin |
 | `synthesize` | `kk wiki synthesize <topic\|file> [--out <path>] [--json]` | Creates a page when absent, extends in place when present; applies the `user_edited` guard | text authored by the skill |
 | `merge` | `kk wiki merge <source-page> <target-page> [--json]` | Unions bodies + frontmatter `sources`, writes a redirect for the source path, rewrites inbound links | no |
