@@ -430,6 +430,21 @@ export function dailyExtract(args: string[]): void {
     }
     timed(workDir, 'extract', () => {
         mkdirSync(join(workDir, '10-collect'), { recursive: true });
+        // 0347 F6 (2026-11-10): extract re-reads the store on every rerun, so a next-day retry of a
+        // failed episode saw overnight collects invalidate the plan fingerprint and the plan stage
+        // fail-closed ("refusing to pair a new plan with stale outputs"). Once the plan has
+        // authored its output, the episode is frozen: keep the pool byte-for-byte so a rerun
+        // resumes the same material (work dirs are per-run-date, so the 21-plan prefix glob is
+        // unambiguous). Removing the pool or the plan files re-extracts deliberately.
+        const planAuthored = existsSync(join(workDir, '21-plan'))
+            ? readdirSync(join(workDir, '21-plan')).some(
+                  (entry) => entry.endsWith('_03_plan_content.json') || entry.endsWith('_03_plan_plan.json'),
+              )
+            : false;
+        if (planAuthored && isFile(poolPath)) {
+            console.error(`extract: plan already authored — keeping the frozen pool (${poolPath})`);
+            return;
+        }
         let chosen: { window: string; docs: unknown[] } | null = null;
         for (const ms of windows) {
             const label = formatWindowMs(ms);
