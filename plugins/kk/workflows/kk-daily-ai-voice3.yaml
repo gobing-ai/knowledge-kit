@@ -533,7 +533,7 @@ nodes:
           kk stage daily-article "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
 
   - id: cover
-    description: "Render the daily cover through the pinned daily-news presets (F614)"
+    description: "Render the daily cover through the pinned quasi-news podcast presets (F614, 0349: daily-news-podcast-cover x quasi-news-podcast)"
     dependsOn: [editorial-render, pool-gate]
     condition:
       kind: shell

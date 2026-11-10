@@ -1,14 +1,16 @@
 ---
 schema_version: 1
 name: Integrate into kk-daily-ai-voice3 workflow and provide standalone mock test runner
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-10T04:05:28.049Z
-updated_at: "2026-11-10T04:37:36.062Z"
+updated_at: "2026-11-10T21:19:13.882Z"
 feature_id: L2
 priority: P1
 
 dependencies: ["0348"]
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0349-verdict.json
 ---
 
 ## 0349. Integrate into kk-daily-ai-voice3 workflow and provide standalone mock test runner
@@ -29,19 +31,19 @@ With presets (0347) and the typography/branding compositor (0348) established, t
 
 ### Requirements
 
-- [ ] R1. Update cover stage configuration in `plugins/kk/scripts/kk-workflow-stages.ts:88` and `plugins/kk/workflows/kk-daily-ai-voice3.yaml`: pin `COVER_FORMAT = 'daily-news-podcast-cover'` and `COVER_STYLE = 'quasi-news-podcast'` (with backwards-compatible variable overrides), so the daily voice3 pipeline executes the quasi-news podcast cover presets.
-- [ ] R2. Implement standalone mock test runner `plugins/kk/scripts/daily-cover-mock.ts`: accept `--headline <text>`, `--scene <text>`, `--out <path>`, `--provider <name>`, and `--mock-bg` (renders a local gradient placeholder background when API keys are not supplied), invoking `compositeCover` to generate a 1344x576 composite PNG.
-- [ ] R3. Add test runner integration test in `plugins/kk/tests/daily-cover-mock.test.ts`: test that the mock runner successfully executes with mock news input and produces a valid 1344x576 PNG file.
-- [ ] R4. Verify end-to-end downstream compatibility: verify that `${work_dir}/23-cover/${runDate}_07_cover_cover.png` is correctly ingested by downstream consumers (`dailyPublishPrep` and `dailyBundleVariants`) without format or path mismatches.
-- [ ] R5. Run comprehensive quality gates: execute `bun run gate` (Biome check, typecheck, tests, and rule checks) ensuring all checks pass cleanly.
+- [x] R1. Update cover stage configuration in `plugins/kk/scripts/kk-workflow-stages.ts:88` and `plugins/kk/workflows/kk-daily-ai-voice3.yaml`: pin `COVER_FORMAT = 'daily-news-podcast-cover'` and `COVER_STYLE = 'quasi-news-podcast'` (with backwards-compatible variable overrides), so the daily voice3 pipeline executes the quasi-news podcast cover presets.
+- [x] R2. Implement standalone mock test runner `plugins/kk/scripts/daily-cover-mock.ts`: accept `--headline <text>`, `--scene <text>`, `--out <path>`, `--provider <name>`, and `--mock-bg` (renders a local gradient placeholder background when API keys are not supplied), invoking `compositeCover` to generate a 1344x576 composite PNG.
+- [x] R3. Add test runner integration test in `plugins/kk/tests/daily-cover-mock.test.ts`: test that the mock runner successfully executes with mock news input and produces a valid 1344x576 PNG file.
+- [x] R4. Verify end-to-end downstream compatibility: verify that `${work_dir}/23-cover/${runDate}_07_cover_cover.png` is correctly ingested by downstream consumers (`dailyPublishPrep` and `dailyBundleVariants`) without format or path mismatches.
+- [x] R5. Run comprehensive quality gates: execute `bun run gate` (Biome check, typecheck, tests, and rule checks) ensuring all checks pass cleanly.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — 集成接入 kk-daily-ai-voice3 生成工作流 (req: R1, R4)
+- [x] AC1 — 集成接入 kk-daily-ai-voice3 生成工作流 (req: R1, R4)
   - `kk-daily-ai-voice3.yaml` executes `daily-cover` using format `daily-news-podcast-cover` and style `quasi-news-podcast`.
   - Normalization outputs `${work_dir}/23-cover/${runDate}_07_cover_cover.png` satisfying existing downstream contracts.
   - Existing workflow stage tests in `apps/cli/tests/kk-workflow-stages.test.ts` pass without regression.
-- [ ] AC2 — 独立 Mock 新闻驱动封面生成测试与验收 (req: R2, R3, R5)
+- [x] AC2 — 独立 Mock 新闻驱动封面生成测试与验收 (req: R2, R3, R5)
   - Running `bun plugins/kk/scripts/daily-cover-mock.ts --mock-bg --headline "测试大标题：模型推理能力爆发" --out /tmp/mock-out.png` outputs a 1344x576 PNG file with headline and logo badge.
   - `bun test plugins/kk/tests/daily-cover-mock.test.ts` passes.
   - `bun run gate` passes cleanly.
@@ -100,15 +102,58 @@ With presets (0347) and the typography/branding compositor (0348) established, t
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change map:
+- plugins/kk/scripts/kk-workflow-stages.ts:89-90 — pins flipped to `daily-news-podcast-cover` / `quasi-news-podcast` (dailyCover daily-stages.ts:611-612 and the yaml cover node both resolve these; F614 pinned-look invariant preserved, provider/model args remain the override surface).
+- plugins/kk/workflows/kk-daily-ai-voice3.yaml:536 — cover node description names the new presets (node shells `kk stage daily-cover`; no other yaml hardcoding).
+- plugins/kk/scripts/daily-cover-mock.ts (new) — parseArgs CLI (`--headline/--scene/--out/--provider/--mock-bg`), mock-bg = local SVG→sips gradient (zero tokens, offline), live path writes the same envelope shape dailyCover uses through the pinned presets, `compositeCover` for the overlay, missing-output-parent fail-fast (0348 sips finding), `verifyOutput` asserts 1344×576 via sips probe.
+- plugins/kk/tests/daily-cover-mock.test.ts (new) — spawned-runner integration: mac-only AC2 run asserts 1344×576 PNG + composited stderr; platform-neutral loud-failure (missing out dir) and unknown-flag rejection.
+Rationale: R4 needs no code — downstream consumers (daily-stages.ts:1993/:2270/:3033/:5219) read `23-cover/${runDate}_07_cover_cover.png`, which 0348's composite seam already preserves (asserted by daily-cover-normalize.test.ts).
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | plugins/kk/scripts/kk-workflow-stages.ts:89-90 (`COVER_FORMAT = 'daily-news-podcast-cover'`, `COVER_STYLE = 'quasi-news-podcast'`), consumed by daily-stages.ts:611-612 (`dailyCover` envelope) and plugins/kk/workflows/kk-daily-ai-voice3.yaml:536 (node description names the presets); provider/model var overrides preserved (daily-stages.ts:613-614); F614 envelope tests updated and green (163 pass / 0 fail, command: `bun test apps/cli/tests/kk-workflow-stages.test.ts`) |
+| R2 | MET | plugins/kk/scripts/daily-cover-mock.ts:43 (parseArgs: `--headline/--scene/--out/--provider/--mock-bg`), :24 (mock gradient SVG), :65 (SVG→sips render), :75 (live image-gen path through the pinned presets), :126 (`runMock` → `compositeCover`), :112 (`verifyOutput` asserts 1344×576 via sips probe); asserted by plugins/kk/tests/daily-cover-mock.test.ts (command: `bun test plugins/kk/tests/daily-cover-mock.test.ts`) |
+| R3 | MET | plugins/kk/tests/daily-cover-mock.test.ts:36 — spawned `--mock-bg --headline 测试大标题：模型推理能力爆发` run asserts exit 0, composited stderr, file exists, sips probe 1344×576 (3 pass / 0 fail, replayed) |
+| R4 | MET | consumers unchanged and green: daily-stages.ts:1993 (`dailyPublishPrep`), :2270/:3033 (`dailyBundleVariants`), :5219 (`dailyCardsRender`) all read `23-cover/${runDate}_07_cover_cover.png`; the composite seam keeps that exact filename (kk-workflow-stages.ts:1043) and daily-cover-normalize.test.ts asserts it (22 pass / 0 fail, replayed) |
+| R5 | MET | full quality gate `spur self exec check` PASS (attempts: 1 after a targeted F614 expectation fix; receipt keyed to tree 103dde6e; 4858-test suite green) (command: `spur task gate 0349 run --no-logo`) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 [R1] | MET | test | plugins/kk/workflows/kk-daily-ai-voice3.yaml:536 + apps/cli/tests/kk-workflow-stages.test.ts:3858 (F614 suite asserts the envelope carries format `daily-news-podcast-cover` / style `quasi-news-podcast`; 163 pass / 0 fail, replayed); normalization output name asserted by plugins/kk/tests/daily-cover-normalize.test.ts (22 pass / 0 fail) |
+| AC2 [R2] | MET | test | plugins/kk/tests/daily-cover-mock.test.ts:36 — mock run produces a 1344×576 PNG with headline and badge (sips probe); runner exits non-zero on missing output dir (platform-neutral); full gate PASS (R5) |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+Findings (none open at P1-P3):
+
+| P | Finding | Disposition |
+|---|---------|-------------|
+| P4 | `daily-cover-mock.ts` live path shells `kk executor run image-gen` with its own envelope (daily-cover-mock.ts:75) rather than calling the `dailyCover` stage | Accept — verification harness, not a pipeline stage; intentionally bypasses brief validation; envelope shape mirrors dailyCover's |
+| P4 | `KK_BIN` env override (daily-cover-mock.ts:77) defaults to bare `kk` via PATH | Accept — matches every other stage subprocess in the suite; AGENTS.md documents the operator-side staleness discipline |
+| P4 | Mock-background SVG does not render the `--scene` text | Accept — `--scene` is the live-path diffusion prompt; the design keeps the deterministic layer text-free |
+
+SECUA: no secrets; spawnSync argv arrays only; mock SVG is a fixed template (no user-input
+interpolation); headline reaches SVG only through compositeCover's XML-escaping; strict parseArgs
+(tested); fixtures use mkdtemp + bounded cleanup.
+Architecture: pin flip is one line pair in the single source of truth
+(kk-workflow-stages.ts:89-90) consumed by both callers — no duplicated pin; output contract
+`23-cover/${runDate}_07_cover_cover.png` untouched so downstream consumers need no edits; the
+mock runner reuses compositeCover, so AC2 verifies the same code path the cron runs.
+
+Review verdict evidence: 0349 review cert (5 requirements MET, AC1 [R1] MET, AC2 [R2] MET);
+mock 3 pass, normalize+compositor 22 pass, stage suite 163 pass; full gate PASS receipt tree
+103dde6e.
+
+Verdict: PASS
+
+Confidence: HIGH
 
 ### References
 
@@ -121,4 +166,7 @@ With presets (0347) and the typography/branding compositor (0348) established, t
 ### History
 
 - 2026-11-10T04:28:44.581Z feature_id Q → L2 (system)
+- 2026-11-10T21:18:01.011Z todo → wip (system)
+- 2026-11-10T21:19:11.664Z wip → testing (system)
+- 2026-11-10T21:19:13.871Z testing → done (system)
 

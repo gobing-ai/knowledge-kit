@@ -345,3 +345,7 @@
 - After ANY generate-side artifact rebuild (bundle-variants + safety + freeze), all succeeded receipts bind stale payload digests → every rerun degrades to reconciliation errors. Plan the rebuild BEFORE the first send, not after.
 - xhs-pub `publish` operation cap = one per 2h per profile (KK_XHS_AUTOMATION_STATE): 发播客 + 上传图文 in one day must be scheduled ≥2h apart or the second hits `automation cap` (fast-fail, uncertain receipt).
 - surfing.salty.vi locales: en is the default locale → `/posts/<slug>`; zh/ja → `/{locale}/posts/<slug>`. `/en/posts/<slug>` serves a soft-404 (HTTP 200, "Page not found", hero og:image) — probe the right URL before diagnosing CDN/render issues.
+## 2026-11-10 — runall 0347-0349
+- `spur feature sync/update <id>` can hang indefinitely on corpus-lock contention with a concurrent session — run it nohup+background and check the log; lifecycle update from `active` is denied (legal path via sync's derived hops). Task `done` statuses are authoritative; feature-table/INDEX projections lag until the lock frees.
+- `bunx biome check --write` used ad-hoc can use a different binary than the pinned one (`bun run lint`/`bun run format`) — fixes landed on disk once but the committed tree still carried violations; always re-run `bun run lint` after the write and before `git write-tree`.
+- `spur workflow run` mis-keying the pipeline var (`taskId` instead of `wbs`) produces a failed run with `0000-*` artifacts — check the precheck log for "defaulting" hints before assuming the run started.
