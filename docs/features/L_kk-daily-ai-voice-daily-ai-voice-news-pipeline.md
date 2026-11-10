@@ -43,8 +43,8 @@ Feature: kk-daily-ai-voice — daily AI voice news pipeline
 | WBS | Task | Status |
 | --- | ---- | ------ |
 | 0110 | Repair plugin packaging, execution contracts, cancellation, and retry integrity | done |
-| 0111 | Prune workspace node_modules from staged plugin packaging | done |
 | 0112 | Close out feature L verification (roll-up carrier) | done |
+| 0111 | Prune workspace node_modules from staged plugin packaging | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes

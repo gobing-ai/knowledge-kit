@@ -60,8 +60,8 @@ Feature: Tech and community blog publishers: jike-pub, csdn-pub, cnblogs-pub, ss
 | --- | ---- | ------ |
 | 0291 | Implement jike-pub publish plugin for Jike dynamic posts and topic tagging | done |
 | 0292 | Implement csdn-pub publish plugin for CSDN markdown articles and covers | done |
-| 0293 | Implement cnblogs-pub publish plugin for Cnblogs markdown articles and categories | done |
 | 0294 | Implement sspai-pub publish plugin for SSPAI Matrix column submissions | done |
+| 0293 | Implement cnblogs-pub publish plugin for Cnblogs markdown articles and categories | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes

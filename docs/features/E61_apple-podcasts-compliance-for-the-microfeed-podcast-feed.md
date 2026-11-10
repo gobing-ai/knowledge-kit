@@ -101,8 +101,8 @@ Feature: Apple Podcasts compliance for the microfeed podcast feed
 | WBS | Task | Status |
 | --- | ---- | ------ |
 | 0170 | podcast-pub: reject non-Apple-compatible audio MIME before any network call | done |
-| 0171 | kk-daily-ai-voice: publish MP3 by default with ID3 tags | done |
 | 0172 | Republish the 2026-09-24 episode with an MP3 enclosure | done |
+| 0171 | kk-daily-ai-voice: publish MP3 by default with ID3 tags | done |
 | 0173 | Apple-compliant channel artwork, operator checklist, and known microfeed gaps | done |
 | 0176 | daily-intro merges from mp3Path so the concat output collides with its input | done |
 <!-- END AUTO-GENERATED -->
