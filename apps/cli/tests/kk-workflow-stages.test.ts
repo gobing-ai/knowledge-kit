@@ -3933,8 +3933,8 @@ describe('F614 (0163) — daily-cover stage', () => {
             const [imageGen] = imageGens(readFileSync(envLog, 'utf-8'));
             expect(imageGen).toEqual({
                 job: 'cover',
-                format: 'daily-news-cover',
-                style: 'daily-news',
+                format: 'daily-news-podcast-cover',
+                style: 'quasi-news-podcast',
                 vars: { subject: briefSubject },
                 maxImages: 1,
                 provider: 'minimax',
@@ -3994,8 +3994,8 @@ describe('F614 (0163) — daily-cover stage', () => {
             let imageGensOut = imageGens(readFileSync(envLog, 'utf-8'));
             expect(imageGensOut[0]).toEqual({
                 job: 'cover',
-                format: 'daily-news-cover',
-                style: 'daily-news',
+                format: 'daily-news-podcast-cover',
+                style: 'quasi-news-podcast',
                 vars: { subject: briefSubject },
                 maxImages: 1,
             });
@@ -4035,8 +4035,8 @@ describe('F614 (0163) — daily-cover stage', () => {
                 const [imageGen] = imageGens(readFileSync(envLog, 'utf-8'));
                 expect(imageGen, name).toEqual({
                     job: 'cover',
-                    format: 'daily-news-cover',
-                    style: 'daily-news',
+                    format: 'daily-news-podcast-cover',
+                    style: 'quasi-news-podcast',
                     vars: {},
                     maxImages: 1,
                     provider: 'minimax',

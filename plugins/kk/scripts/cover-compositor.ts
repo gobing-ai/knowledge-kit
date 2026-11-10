@@ -50,7 +50,7 @@ export function wrapHeadline(headline: string): string[] {
     const rest = source.slice(1).join(' ');
     const second = chunk(rest)[0] ?? '';
     if (rest.length <= second.length) return [source[0], second];
-    return [source[0], second.slice(0, HEADLINE_LINE_CAP - 1) + '…'];
+    return [source[0], `${second.slice(0, HEADLINE_LINE_CAP - 1)}…`];
 }
 
 /** Fixed-width chunker for CJK headlines — code points, not UTF-16 units. */

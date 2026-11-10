@@ -86,8 +86,8 @@ export const DEDUP_TITLE_THRESHOLD = 0.4;
 // F614: the daily cover renders through the shipped daily-news presets; the brief's subject is
 // the only per-run var. The format/style pins and the subject cap are part of the style
 // contract — changing the look means editing the preset files, not this stage.
-export const COVER_FORMAT = 'daily-news-cover';
-export const COVER_STYLE = 'daily-news';
+export const COVER_FORMAT = 'daily-news-podcast-cover';
+export const COVER_STYLE = 'quasi-news-podcast';
 export const COVER_SUBJECT_CAP = 240;
 // E8: the XHS card series. Format and style are pinned exactly like the cover's; only the copy is
 // model-authored. `XHS_MAX_CARDS` mirrors the format preset's own series guidance.
