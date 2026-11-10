@@ -4,7 +4,7 @@ name: Implement deterministic Chinese typography compositing and podcast logo ov
 status: done
 template: feature-impl
 created_at: 2026-11-10T04:05:28.048Z
-updated_at: "2026-11-10T20:19:01.716Z"
+updated_at: "2026-11-10T23:50:25.026Z"
 feature_id: L2
 priority: P1
 
@@ -145,17 +145,17 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | plugins/kk/scripts/cover-compositor.ts:13 (`CoverCompositorOptions`), cover-compositor.ts:87 (`buildCoverSvg` 1344×576 canvas), cover-compositor.ts:129 (`compositeCover` sips render); asserted by plugins/kk/tests/cover-compositor.test.ts (command: `bun test plugins/kk/tests/cover-compositor.test.ts`) |
-| R2 | MET | plugins/kk/scripts/cover-compositor.ts:27 (HEADLINE_LINE_CAP 25), cover-compositor.ts:28 (PingFang SC fallback stack), cover-compositor.ts:96-102 (46px/800 #FFFFFF line 1, 32px/700 #FFB800 line 2, textShadow filter), cover-compositor.ts:91 (bottomScrim gradient over lower half); wrap/truncate asserted by plugins/kk/tests/cover-compositor.test.ts (command: `bun test plugins/kk/tests/cover-compositor.test.ts`) |
-| R3 | MET | plugins/kk/scripts/cover-compositor.ts:70 (`logoBadgeSvg` re-clips viewBox to `0 0 1095 760`, cropping the SALTY CLUB band at Y≥780), cover-compositor.ts:83-85 (badge rect x36 y30 96×70 rx12 + emblem at 48,40 72×50); asserted by plugins/kk/tests/cover-compositor.test.ts (badge geometry + viewBox clip) |
-| R4 | MET | plugins/kk/scripts/cover-compositor.ts:129 (`compositeCover(options): string` — writes overlay svg, wraps `sips -s format png`, fail-fast on missing binary, nonzero status, or missing output file); asserted by plugins/kk/tests/cover-compositor.test.ts (mac-only 1344×576 render + platform-neutral loud-failure) |
-| R5 | MET | plugins/kk/scripts/kk-workflow-stages.ts:1021 (`briefHeadline` reads `headline` from `23-cover/<date>_07_cover-brief.json`), kk-workflow-stages.ts:1074-1087 (composite seam in `coverNormalizeBody`, graceful skip when absent/empty); daily-stages.ts:629 `dailyCoverNormalize` delegates to the same body — both callers covered; asserted by plugins/kk/tests/daily-cover-normalize.test.ts |
-| R6 | MET | plugins/kk/tests/cover-compositor.test.ts (wrapHeadline, logo clipping, svg template, real sips render) + plugins/kk/tests/daily-cover-normalize.test.ts (brief variants incl. jpg transcode + composite, 19 tests total, 100% funcs / 97.4% lines) (command: `bun test plugins/kk/tests/cover-compositor.test.ts plugins/kk/tests/daily-cover-normalize.test.ts`) |
+| R1 | MET | `plugins/kk/scripts/cover-compositor.ts:13-22` defines CoverCompositorOptions (background, headline, logo, output). Canvas constants 1344 and 576 at `plugins/kk/scripts/cover-compositor.ts:24-25`. SVG overlay at `plugins/kk/scripts/cover-compositor.ts:87-121`. PNG render via sips at `plugins/kk/scripts/cover-compositor.ts:129-151`. |
+| R2 | MET | Line cap 25 at `plugins/kk/scripts/cover-compositor.ts:27`. Font stack PingFang SC, Hiragino Sans GB, Noto Sans CJK SC at `:28`. wrapHeadline at `:40-54`. Line 1 is 46px weight 800 `#FFFFFF` at `:95-96` (inside the 44-52px band). Line 2 is 32px weight 700 `#FFB800` at `:97`, the approved Design size. Drop shadow at `:112-114`. Lower-third scrim at `:108-116`. |
+| R3 | MET | `plugins/kk/scripts/cover-compositor.ts:70-83` loads the logo and re-clips viewBox `0 0 1095 760`, dropping the SALTY CLUB band at y >= 780. Emblem is placed at x 48 y 40, 72 by 50, at `:91`. Plate is the rect at x 36 y 30, 96 by 70, at `:101`. Approved Design specifies that 72 by 50 emblem inside the 96 by 70 plate. Test asserts the geometry at `plugins/kk/tests/cover-compositor.test.ts:74-77`. |
+| R4 | MET | `plugins/kk/scripts/cover-compositor.ts:129` returns string, matching the Design signature (the requirement union includes string). sips invocation at `:133-135`. Missing sips throws at `:137-138`, nonzero status throws at `:140-141`, missing output throws at `:145-146`. Temp SVG removed in finally at `:148-150`. |
+| R5 | MET | `plugins/kk/scripts/daily-stages.ts:629-634` dailyCoverNormalize delegates to coverNormalizeBody. `plugins/kk/scripts/kk-workflow-stages.ts:1074-1087` reads `23-cover/<date>_07_cover-brief.json`, and calls compositeCover only when headline is non-empty. Empty headline keeps the raw normalized PNG at the same output name (`:1043`). |
+| R6 | MET | Wrap, logo viewBox, SVG template, mac sips 1344x576 render, and fail-loud cases live in `plugins/kk/tests/cover-compositor.test.ts`. Command `bun test plugins/kk/tests/cover-compositor.test.ts plugins/kk/tests/daily-cover-normalize.test.ts plugins/kk/tests/daily-cover-mock.test.ts` exited 0 with 22 pass and 0 fail. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 [R3] | MET | test | plugins/kk/tests/cover-compositor.test.ts — glyph-safe deterministic typography (XML-escaped, wrapped ≤2×25), SALTY CLUB-free badge (viewBox 0 0 1095 760), 1344×576 PNG render verified via `sips -g pixelWidth` (19 pass / 0 fail, replayed) |
-| AC2 [R4] | MET | test | plugins/kk/tests/daily-cover-normalize.test.ts — `dailyCoverNormalize` composites when `headline` present (pixelWidth 1344) and preserves the raw cover when absent/empty (platform-neutral mv path); 19 pass / 0 fail, replayed |
+| R3 — 中文大标题排版与播客品牌 Logo 确定性图层合成 | MET | test | Logo re-clip omits the lower SALTY CLUB band at `plugins/kk/scripts/cover-compositor.ts:83` and `plugins/kk/tests/cover-compositor.test.ts:74-77`. PNG size 1344x576 is COVER_WIDTH and COVER_HEIGHT at `plugins/kk/scripts/cover-compositor.ts:24-25`. `bun test plugins/kk/tests/cover-compositor.test.ts` was in the 22 pass, 0 fail run. |
+| R4 — 模块化封面生成与合成技能封装 | MET | test | Headline present composites at `plugins/kk/scripts/kk-workflow-stages.ts:1078-1082`. No headline keeps the raw cover at `plugins/kk/tests/daily-cover-normalize.test.ts:55`. Missing or malformed brief keeps the raw cover at `plugins/kk/tests/daily-cover-normalize.test.ts:65`. Same command exited 0 with 22 pass and 0 fail. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

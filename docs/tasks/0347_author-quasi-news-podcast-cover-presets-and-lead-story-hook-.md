@@ -4,7 +4,7 @@ name: Author quasi-news podcast cover presets and lead-story Hook headline extra
 status: done
 template: feature-impl
 created_at: 2026-11-10T04:05:28.042Z
-updated_at: "2026-11-10T18:33:05.746Z"
+updated_at: "2026-11-10T23:50:24.602Z"
 feature_id: L2
 priority: P1
 
@@ -173,17 +173,17 @@ if (coverSubject !== '') {
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | plugins/generations/image-gen/presets/formats/daily-news-podcast-cover.yaml:1 — 21:9, 1344×576, defaultStyle quasi-news-podcast, single `subject` var; asserted by test in plugins/generations/image-gen/tests/presets.test.ts:511 (command: `bun test plugins/generations/image-gen/tests/presets.test.ts`) |
-| R2 | MET | plugins/generations/image-gen/presets/styles/quasi-news-podcast.yaml:1 — editorial-documentary modifiers, navy/white/amber palette, text-free negative list; asserted by test in plugins/generations/image-gen/tests/presets.test.ts:511 |
-| R3 | MET | plugins/generations/image-gen/tests/presets.test.ts:511 — inventory 6 formats / 13 styles, compose-from-single-subject, default-scene fallback (command: `bun test plugins/generations/image-gen/tests/presets.test.ts`) |
-| R4 | MET | plugins/kk/skills/news-editorial/SKILL.md:69 (dual-shape cover contract), plugins/kk/skills/news-editorial/SKILL.md:104 (`coverHeadline` fix lane), plugins/kk/skills/news-editorial/references/style-contract.zh.md:50 + plugins/kk/skills/news-editorial/references/style-contract.zh.md:69 (scene/headline contract, cap 25) |
-| R5 | MET | plugins/kk/scripts/daily-stages.ts:4421 — union parse of string vs `{scene, headline}` cover, headline falls back to lead story title, brief writes `{subject, headline, leadStoryTitle}` (plugins/kk/scripts/daily-stages.ts:4437, plugins/kk/scripts/daily-stages.ts:4444) |
-| R6 | MET | plugins/kk/tests/kk-workflow-stages.test.ts:934 — object cover, legacy string cover (backward compat), object-without-headline inheritance; 3 stage tests via spawned `kk stage` (command: `bun test plugins/kk/tests/kk-workflow-stages.test.ts`) |
+| R1 | MET | `plugins/generations/image-gen/presets/formats/daily-news-podcast-cover.yaml:1-17` names daily-news-podcast-cover, job cover, aspectRatio 21:9, width 1344, height 576, defaultStyle quasi-news-podcast, subject variable, and lower-third negative space. Asserted at `plugins/generations/image-gen/tests/presets.test.ts:511-528`. Command `bun test plugins/generations/image-gen/tests/presets.test.ts` exited 0 with 34 pass and 0 fail. |
+| R2 | MET | `plugins/generations/image-gen/presets/styles/quasi-news-podcast.yaml:1-8` sets editorial documentary photography, cinematic dramatic lighting, deep navy/slate palette `#0A1424` / `#FFFFFF` / `#FFB800`, and negative `text, letters, words, numbers, captions, watermark, logo, brand marks, flags, real people, recognizable faces, blurry, clutter, distorted graphics`. That negative string is the approved Design text. Asserted at `plugins/generations/image-gen/tests/presets.test.ts:531-540`. |
+| R3 | MET | Inventory is six formats and thirteen styles, including daily-news-podcast-cover and quasi-news-podcast, at `plugins/generations/image-gen/tests/presets.test.ts:321-348`. Prompt composition and negative preservation are at `plugins/generations/image-gen/tests/presets.test.ts:543-563`. Same presets command: 34 pass, 0 fail. |
+| R4 | MET | `plugins/kk/skills/news-editorial/SKILL.md:69` allows cover as an English scene or `{ scene, headline }` with headline 1-2 Chinese lines at 25 characters. Example object at `plugins/kk/skills/news-editorial/SKILL.md:80`. `plugins/kk/skills/news-editorial/references/style-contract.zh.md:50` states the same contract. Machine cap `coverHeadline` 25 at `plugins/kk/skills/news-editorial/references/style-contract.zh.md:69`. |
+| R5 | MET | `plugins/kk/scripts/daily-stages.ts:4440-4468` reads master.cover as a legacy string or `{ scene, headline }`, falls back an empty headline to the lead story title, and writes `23-cover/<date>_07_cover-brief.json` with subject, headline, and leadStoryTitle. |
+| R6 | MET | R6 allows `plugins/kk/tests/kk-workflow-stages.test.ts`. Describe `daily-editorial-render cover brief (task 0347 R5/R6)` at `plugins/kk/tests/kk-workflow-stages.test.ts:934`. Object form at `:960-974`, legacy string fallback at `:976-985`, object without headline at `:988-996`. Command `bun test plugins/kk/tests/kk-workflow-stages.test.ts` exited 0 with 62 pass and 0 fail. Filtered `cover brief` run exited 0 with 3 pass and 0 fail. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 [R1] | MET | test | plugins/generations/image-gen/tests/presets.test.ts:511 — both shipped presets load with pinned geometry/style/negative/compose contracts (34 pass / 0 fail, replayed) |
-| AC2 [R2] | MET | test | plugins/kk/tests/kk-workflow-stages.test.ts:934 — editorial-render emits `23-cover/<date>_07_cover-brief.json` with `{subject, headline, leadStoryTitle}` and legacy-string compatibility (62 pass / 0 fail, replayed) |
+| R1 — 准新闻播客封面 preset 定义与视觉规格固化 | MET | test | `bun test plugins/generations/image-gen/tests/presets.test.ts` exited 0, 34 pass, 0 fail. Format pins at `plugins/generations/image-gen/presets/formats/daily-news-podcast-cover.yaml:3-9` and `plugins/generations/image-gen/tests/presets.test.ts:519-524`. Negative bans for text, letters, watermark, and brand marks at `plugins/generations/image-gen/presets/styles/quasi-news-podcast.yaml:8` and `plugins/generations/image-gen/tests/presets.test.ts:538-540`. |
+| R2 — 重大新闻 Hook 大标题与视觉主体提取契约 | MET | test | Object cover writes subject, headline, and leadStoryTitle at `plugins/kk/tests/kk-workflow-stages.test.ts:960-971`. Legacy string sets subject from the cover string and headline from the lead title at `plugins/kk/tests/kk-workflow-stages.test.ts:976-984`. Writer at `plugins/kk/scripts/daily-stages.ts:4443-4468`. `bun test plugins/kk/tests/kk-workflow-stages.test.ts` exited 0, 62 pass, 0 fail. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
