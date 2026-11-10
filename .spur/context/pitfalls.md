@@ -349,3 +349,19 @@
 - `spur feature sync/update <id>` can hang indefinitely on corpus-lock contention with a concurrent session — run it nohup+background and check the log; lifecycle update from `active` is denied (legal path via sync's derived hops). Task `done` statuses are authoritative; feature-table/INDEX projections lag until the lock frees.
 - `bunx biome check --write` used ad-hoc can use a different binary than the pinned one (`bun run lint`/`bun run format`) — fixes landed on disk once but the committed tree still carried violations; always re-run `bun run lint` after the write and before `git write-tree`.
 - `spur workflow run` mis-keying the pipeline var (`taskId` instead of `wbs`) produces a failed run with `0000-*` artifacts — check the precheck log for "defaulting" hints before assuming the run started.
+
+## 2026-11-10 xhs draft image previews dead from overseas egress (XHS CDN, not our data)
+- Symptom: after a verified xhs upload+save, reopening the draft shows image tiles
+  with `naturalWidth===0` from a US egress — looks like data loss, isn't.
+- Mechanism: draft editor tiles load `sns-creator-preview.xhscdn.com/spectrum/<file_id>`
+  signed URLs. XHS re-signs per editor open via `web_api/sns/v5/creator/file/encryption`
+  (`file_id` is the durable server-side key). That host geo-splits DNS: CN clients get
+  `sched.vplego-dk.tdnsvod4.cn` (working), overseas clients get
+  `ovslegovideo.sched.apdcdn.com` (43.146.x) which has NO `/spectrum/` route and answers
+  `400 text/html` from `alb` → Chrome `net::ERR_BLOCKED_BY_ORB` → dead tile.
+- Verification recipe (no CN egress needed): query Tencent/Ali DoH with
+  `edns_client_subnet=<CN ip>` to get the CN edge IP, then
+  `curl --resolve sns-creator-preview.xhscdn.com:443:<cn-edge-ip> "<signed url>"`.
+  200 image/png = bytes intact server-side.
+- Corollary: `naturalWidth` is NOT a validity signal for xhs draft previews cross-region
+  (also the reason confirmThumbnails keys on src scheme, not naturalWidth).
