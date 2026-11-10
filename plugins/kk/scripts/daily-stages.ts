@@ -1646,10 +1646,15 @@ export function dailyPlan(args: string[]): void {
         if (isFile(target)) {
             const descendants = authoredPlanDescendants(workDir, runDate);
             if (descendants.length > 0) {
-                failWith(
-                    1,
-                    `plan cache changed after downstream artifacts were authored; refusing to pair a new plan with stale outputs (${descendants.join(', ')})`,
+                // 0347 F6 (2026-11-10): the pool can drift between the authoring day and a rerun
+                // (overnight collects grow the store; extract-overwrite used to break the
+                // fingerprint). Keeping the existing plan pairs old artifacts with the plan that
+                // actually produced them — the pairing the old refusal guarded. Rebuilding from
+                // the current pool is explicit: delete the 21-plan outputs and the descendants.
+                console.error(
+                    `plan: pool changed after authoring — keeping the existing plan and its ${descendants.length} downstream artifact(s) (delete 21-plan/${runDate}_03_plan_*.* and the descendants to rebuild)`,
                 );
+                return;
             }
             console.log(`plan cache stale: ${target}`);
         }
