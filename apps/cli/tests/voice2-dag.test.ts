@@ -849,6 +849,8 @@ describe('kk-daily-safety — decision-bound publish verdict (AC6, 0317 R6)', ()
             'revise-apply',
             'clean',
             'block',
+            // 0347 F4 — infra-outage terminal, distinct from the content-verdict block.
+            'infra-fail',
         ]);
         expect(transitions.some((t) => t.from === 'revise-apply' && t.to === 'review')).toBe(true);
         expect(transitions.find((t) => t.from === 'review' && t.to === 'review-retry')?.command).toContain(

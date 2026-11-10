@@ -231,7 +231,7 @@ if (args.includes('run')) {
 `),
         );
         executable(fx.bin, 'kk', recordBody());
-        const result = runCli(fx, ['generate'], {
+        const result = runCli(fx, ['generate', '--skip-probe', '--allow-dirty'], {
             TZ: 'UTC',
             PATH: `${fx.bin}:${process.env.PATH ?? ''}`,
             READY_BUNDLE: join(supervisorDir, 'bundle.ready.json'),
@@ -306,6 +306,8 @@ if (args.includes('trace')) console.log('{}');
                     '--generate-only',
                     '--window',
                     '72h',
+                    '--skip-probe',
+                    '--allow-dirty',
                 ],
                 {
                     env: {
