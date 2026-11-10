@@ -4,7 +4,7 @@ name: kk wiki noun foundation, config and raw ingest
 status: todo
 template: feature-impl
 created_at: 2026-11-10T19:11:03.849Z
-updated_at: "2026-11-10T19:36:34.226Z"
+updated_at: "2026-11-10T20:24:47.256Z"
 feature_id: I1
 priority: P1
 tags:
@@ -14,7 +14,7 @@ estimate_hours: 5
 
 ---
 
-## 9350. kk wiki noun foundation, config and raw ingest
+## 0350. kk wiki noun foundation, config and raw ingest
 
 ### Background
 
@@ -90,7 +90,7 @@ Rejected: putting the vault helpers inside `apps/cli` - it violates the module-b
 
 **Test observability.** Fixtures under `packages/kk-wiki/tests/fixtures/`; CLI assertions go through the `main(argv)` seam with captured writers (`apps/cli/src/main.ts:6-14`), so a JSON-shape change fails a test rather than a log grep.
 
-**Handoff to dependents.** 9351 consumes `PageFrontmatterSchema` and `parsePage`; 9352/9353/9354 consume `WikiConfig`. Do not rename those exports without updating those tasks.
+**Handoff to dependents.** 0351 consumes `PageFrontmatterSchema` and `parsePage`; 0352/0353/0354 consume `WikiConfig`. Do not rename those exports without updating those tasks.
 
 **Rejected.** Reusing the ingestion-plugin `Doc[]` path for file ingest: plugins need a `plugin.json` and a runner per source, while `ingest` must accept one arbitrary file or stdin; the plugin path stays the projection route for karakeep/R2 folders. Rejected a YAML parser dependency: it would add a runtime dependency for a format this project writes itself.
 

@@ -4,7 +4,7 @@ name: "Guarded page writes: summarize, synthesize and the user-edited guard"
 status: todo
 template: feature-impl
 created_at: 2026-11-10T19:11:03.856Z
-updated_at: "2026-11-10T19:36:34.643Z"
+updated_at: "2026-11-10T20:24:54.447Z"
 feature_id: I1
 priority: P1
 tags:
@@ -13,10 +13,10 @@ tags:
   - guard
 estimate_hours: 6
 
-dependencies: ["9351"]
+dependencies: ["0351"]
 ---
 
-## 9352. Guarded page writes: summarize, synthesize and the user-edited guard
+## 0352. Guarded page writes: summarize, synthesize and the user-edited guard
 
 ### Background
 
@@ -33,7 +33,7 @@ Rejected: letting the skill write files directly and keeping the guard as a prom
 **Refine corrections (2026-11-10)**
 - The skill was described as authored at `plugins/kk/skills/wiki-authoring` with no note about the packaged copy -> `apps/cli/plugins/` is a gitignored build artifact staged by `scripts/bundle-plugins.ts:1-15` ("never hand-edit") -> author the skill under `plugins/kk/`, then let `bun run build` stage it; verify the staged path instead of editing it.
 - Skill registration was an open question -> `plugins/kk/plugin.json` carries only `name`, `description`, `version` (no skills list) -> a new skill needs no registry edit; discovery is directory-based.
-- The guard lived inside `write.ts` from this task only -> 9351 already lands `applyWrite` in its minimal append-only form -> this task extends that single function; a second writer remains forbidden.
+- The guard lived inside `write.ts` from this task only -> 0351 already lands `applyWrite` in its minimal append-only form -> this task extends that single function; a second writer remains forbidden.
 - Coverage was unstated -> `bunfig.toml` enforces 90% lines/functions per file, and a CLI verb module is one file -> each verb's tests must exercise the verb module itself, not only the package function.
 
 ### Requirements
@@ -64,10 +64,10 @@ Rejected: letting the skill write files directly and keeping the guard as a prom
 
 ### Design
 
-**Approach.** `packages/kk-wiki/src/write.ts` is the single write path, created by 9351 and extended here: `applyWrite(page, material, { mode, date })` returns either a full body (unguarded page) or the body with material appended under `## AI Updates (<date>)` (guarded page). `summarize.ts` and `synthesize.ts` compose `applyWrite` with the index from `graph.ts`. Authored text arrives on stdin (`--from -`) or `--text-file`; the package never reads a provider.
+**Approach.** `packages/kk-wiki/src/write.ts` is the single write path, created by 0351 and extended here: `applyWrite(page, material, { mode, date })` returns either a full body (unguarded page) or the body with material appended under `## AI Updates (<date>)` (guarded page). `summarize.ts` and `synthesize.ts` compose `applyWrite` with the index from `graph.ts`. Authored text arrives on stdin (`--from -`) or `--text-file`; the package never reads a provider.
 
 **Frozen names.**
-- `applyWrite` (from 9351) is the only body writer; `appendGuardSection(body, material, date)` is its helper.
+- `applyWrite` (from 0351) is the only body writer; `appendGuardSection(body, material, date)` is its helper.
 - `summarizePage(index, target, text, opts)`, `synthesizePage(index, target, text, opts) -> { path, guard, created }`.
 - Verb modules `apps/cli/src/wiki/summarize.ts`, `apps/cli/src/wiki/synthesize.ts`.
 - Skill home `plugins/kk/skills/wiki-authoring/SKILL.md` plus `references/page-shapes.md`.
@@ -91,7 +91,7 @@ Rejected: letting the skill write files directly and keeping the guard as a prom
 
 **Test observability.** Package tests cover clean, appended, same-day-twice and new-day outcomes, plus a byte-equality determinism test that runs the same input twice. CLI tests assert the guard decision in the JSON payload. The skill itself is verified by presence at the canonical path plus the staged artifact after `bun run build`, not by invoking a model.
 
-**Handoff to dependents.** 9353 reuses `applyWrite` for merge; 9354 does not write pages. The skill's documented input shapes are the contract the loop in the treasury project relies on - keep `--from -` and the `## AI Updates` heading stable.
+**Handoff to dependents.** 0353 reuses `applyWrite` for merge; 0354 does not write pages. The skill's documented input shapes are the contract the loop in the treasury project relies on - keep `--from -` and the `## AI Updates` heading stable.
 
 ### Plan
 

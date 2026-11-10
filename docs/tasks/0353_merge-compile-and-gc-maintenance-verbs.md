@@ -4,7 +4,7 @@ name: Merge, compile and gc maintenance verbs
 status: todo
 template: feature-impl
 created_at: 2026-11-10T19:11:03.857Z
-updated_at: "2026-11-10T19:36:34.848Z"
+updated_at: "2026-11-10T20:24:54.625Z"
 feature_id: I1
 priority: P2
 tags:
@@ -12,10 +12,10 @@ tags:
   - maintenance
 estimate_hours: 6
 
-dependencies: ["9351"]
+dependencies: ["0351"]
 ---
 
-## 9353. Merge, compile and gc maintenance verbs
+## 0353. Merge, compile and gc maintenance verbs
 
 ### Background
 
@@ -31,8 +31,8 @@ Rejected: deleting the absorbed page in `merge` - a redirect stub keeps old Obsi
 
 **Refine corrections (2026-11-10)**
 - `gc` deleted "unreferenced `raw/**`" with no exception -> the first real consumer, the treasury vault, keeps an rclone-managed mirror under `raw/karakeep/` (see `~/xprojects/treasury` feature A, task 0004) where deletion fights the next sync -> `gc` only reclaims `raw/<type>/` snapshots this tool wrote and `raw/tmp/`, and skips any directory listed in `wiki.mirrors`.
-- `merge` was to "write the union of both bodies" -> 9351's `applyWrite` is the only body writer and 9352 owns guard semantics -> merge composes `applyWrite` and refuses a guarded source page instead of adding its own writer.
-- Redirect storage was unnamed -> it is a frontmatter key on the absorbed page (`redirect_to: <slug>`), which the 9351 index already reads as a page field and `link --fix` can rewrite against.
+- `merge` was to "write the union of both bodies" -> 0351's `applyWrite` is the only body writer and 0352 owns guard semantics -> merge composes `applyWrite` and refuses a guarded source page instead of adding its own writer.
+- Redirect storage was unnamed -> it is a frontmatter key on the absorbed page (`redirect_to: <slug>`), which the 0351 index already reads as a page field and `link --fix` can rewrite against.
 - Coverage and dry-run defaults were unstated -> `bunfig.toml` enforces 90% lines/functions per file; `gc` defaults to a plan-only run.
 
 ### Requirements
@@ -82,7 +82,7 @@ Rejected: deleting the absorbed page in `merge` - a redirect stub keeps old Obsi
 
 **Test observability.** Fixture vaults under `packages/kk-wiki/tests/fixtures/`: two overlapping pages with three inbound links, a guarded source page, a vault with no pages (empty compile), a `raw/karakeep/` directory listed in `wiki.mirrors`, and a referenced raw snapshot. Compile idempotency is asserted by comparing two consecutive renders byte for byte.
 
-**Handoff to dependents.** 9354 reads the compiled index for `query`; the treasury loop relies on `lint` (9351) and `compile` staying side-effect free apart from `content/index.md` and `content/MAP.md`.
+**Handoff to dependents.** 0354 reads the compiled index for `query`; the treasury loop relies on `lint` (0351) and `compile` staying side-effect free apart from `content/index.md` and `content/MAP.md`.
 
 ### Plan
 

@@ -4,7 +4,7 @@ name: Publish, sync and retrieval surfaces
 status: todo
 template: feature-impl
 created_at: 2026-11-10T19:11:03.858Z
-updated_at: "2026-11-10T19:36:35.061Z"
+updated_at: "2026-11-10T20:24:54.801Z"
 feature_id: I1
 priority: P2
 tags:
@@ -13,10 +13,10 @@ tags:
   - retrieval
 estimate_hours: 6
 
-dependencies: ["9351"]
+dependencies: ["0351"]
 ---
 
-## 9354. Publish, sync and retrieval surfaces
+## 0354. Publish, sync and retrieval surfaces
 
 ### Background
 
@@ -31,7 +31,7 @@ Rubric: E3 D2 L1 C1 R1 = 8 -> decompose (four verbs over one vault index, plus t
 Rejected: vendoring or patching Quartz to control the output - the spec's own rule is to keep Quartz an upstream dependency of the consuming repository.
 
 **Refine corrections (2026-11-10)**
-- `sync` was to "resolve `wiki.remotes.<name>`" without saying who owns that config -> 9350 freezes `WikiConfig` with `mirrors` and `remotes` -> this task reads that resolver only; it never re-reads the config file itself.
+- `sync` was to "resolve `wiki.remotes.<name>`" without saying who owns that config -> 0350 freezes `WikiConfig` with `mirrors` and `remotes` -> this task reads that resolver only; it never re-reads the config file itself.
 - `query` ranking had no stated reuse check -> the only ranking code in the repo is store-bound (`packages/kk-store/src/dao/*`, FTS over `.works/kk.db`), and ADR-046 forbids `kk-wiki` depending on the store -> scoring is a local pure function with the frozen weights below.
 - `publish` output shape was loosely described -> the Quartz contract needs the vault's `content/` tree preserved one-to-one under `<target>/content/` with attachments rewritten -> fixed below.
 - Coverage was unstated -> `bunfig.toml` enforces 90% lines/functions per file; `query`/`context` are pure and fully testable from fixtures.

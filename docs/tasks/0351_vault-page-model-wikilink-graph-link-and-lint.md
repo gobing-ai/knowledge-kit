@@ -4,7 +4,7 @@ name: Vault page model, wikilink graph, link and lint
 status: todo
 template: feature-impl
 created_at: 2026-11-10T19:11:03.854Z
-updated_at: "2026-11-10T19:36:34.433Z"
+updated_at: "2026-11-10T20:24:54.125Z"
 feature_id: I1
 priority: P1
 tags:
@@ -12,10 +12,10 @@ tags:
   - graph
 estimate_hours: 6
 
-dependencies: ["9350"]
+dependencies: ["0350"]
 ---
 
-## 9351. Vault page model, wikilink graph, link and lint
+## 0351. Vault page model, wikilink graph, link and lint
 
 ### Background
 
@@ -31,8 +31,8 @@ Rejected: parsing links with a regex over the whole file including code fences -
 
 **Refine corrections (2026-11-10)**
 - The Design implied a third-party markdown or frontmatter parser -> a grep over `packages/*/src` and `apps/cli/src` finds no frontmatter parser (`packages/publish-harness/src/index.ts:9` only mentions the word in a doc comment), and no YAML library is declared -> this task owns a minimal line-based splitter, and nested frontmatter is a finding rather than a parsed value.
-- Link-fixing wrote through "the shared guard-aware writer" -> that writer ships in 9352, not here -> this task lands the minimal append-only guard and 9352 extends it; the seam is named below so neither task invents a second one.
-- The lint finding shape was declared but not frozen -> the exact `code` values are fixed below so 9353/9354 and the CLI renderer share them.
+- Link-fixing wrote through "the shared guard-aware writer" -> that writer ships in 0352, not here -> this task lands the minimal append-only guard and 0352 extends it; the seam is named below so neither task invents a second one.
+- The lint finding shape was declared but not frozen -> the exact `code` values are fixed below so 0353/0354 and the CLI renderer share them.
 - Coverage was unstated -> `bunfig.toml` enforces 90% lines/functions per file -> the fixtures and tests below are this task's own.
 
 ### Requirements
@@ -61,13 +61,13 @@ Rejected: parsing links with a regex over the whole file including code fences -
 
 ### Design
 
-**Approach.** `packages/kk-wiki/src/graph.ts` builds the index once per command: `parsePage` (frontmatter via the zod schema from 9350), `extractLinks(body)` (fenced blocks and inline code spans excluded), `resolveSlug`, `buildVaultIndex(dir)`. `packages/kk-wiki/src/lint.ts` is pure: `lintPages(index) -> Finding[]`. `packages/kk-wiki/src/link.ts` returns `Mention[]` and, in fix mode, rewrites through `applyWrite` from `write.ts` - created here in its minimal append-only form and extended by 9352.
+**Approach.** `packages/kk-wiki/src/graph.ts` builds the index once per command: `parsePage` (frontmatter via the zod schema from 0350), `extractLinks(body)` (fenced blocks and inline code spans excluded), `resolveSlug`, `buildVaultIndex(dir)`. `packages/kk-wiki/src/lint.ts` is pure: `lintPages(index) -> Finding[]`. `packages/kk-wiki/src/link.ts` returns `Mention[]` and, in fix mode, rewrites through `applyWrite` from `write.ts` - created here in its minimal append-only form and extended by 0352.
 
 **Frozen names.**
 - `buildVaultIndex(contentDir) -> VaultIndex`, `parsePage(text, path) -> VaultPage`, `extractLinks(body) -> LinkRef[]`, `resolveSlug(title) -> string`, `lintPages(index) -> Finding[]`, `fixLinks(index, opts) -> { changed: string[], mentions: Mention[] }`.
 - `VaultIndex = { pages: VaultPage[], bySlug: Map<string, VaultPage>, findings: Finding[] }`.
 - `Finding = { code, path, line, message }` with `code` exactly one of `broken-link`, `orphan`, `missing-frontmatter`, `invalid-frontmatter`, `duplicate-slug`.
-- `applyWrite(page, material, { mode: 'full' | 'append', date }) -> { body, guard: 'clean' | 'appended' | 'refused' }` (guard seam shared with 9352).
+- `applyWrite(page, material, { mode: 'full' | 'append', date }) -> { body, guard: 'clean' | 'appended' | 'refused' }` (guard seam shared with 0352).
 - Verb modules: `apps/cli/src/wiki/link.ts`, `apps/cli/src/wiki/lint.ts`.
 
 **Slug rule (frozen).** Lowercase the title, replace every run of non-alphanumerics with `-`, trim leading and trailing `-`. Two pages resolving to the same slug across `concepts/` and `entities/` produce one `duplicate-slug` finding and both pages stay indexed.
@@ -85,11 +85,11 @@ Rejected: parsing links with a regex over the whole file including code fences -
 
 **Test observability.** Fixtures in `packages/kk-wiki/tests/fixtures/` cover: a broken link, an orphan page, a page without frontmatter, a nested-map frontmatter (invalid), a duplicate slug, a fenced block containing `[[example]]`, and an idempotent `link --fix` run. CLI exit codes are asserted through `main(argv)` with captured writers.
 
-**Handoff to dependents.** 9352 imports `applyWrite` and the index; 9353 imports `buildVaultIndex` and `lintPages`; 9354 imports `buildVaultIndex` and `resolveSlug`. Renaming any frozen exportrequires updating those tasks in the same commit.
+**Handoff to dependents.** 0352 imports `applyWrite` and the index; 0353 imports `buildVaultIndex` and `lintPages`; 0354 imports `buildVaultIndex` and `resolveSlug`. Renaming any frozen exportrequires updating those tasks in the same commit.
 
 ### Plan
 
-1. Implement `graph.ts` (frontmatter splitter reuse from 9350, link scanner, slug rule, index) with fixtures for fences and both link forms.
+1. Implement `graph.ts` (frontmatter splitter reuse from 0350, link scanner, slug rule, index) with fixtures for fences and both link forms.
 2. Implement `write.ts` in its minimal append-only form plus unit tests for clean, appended and refused outcomes.
 3. Implement `lint.ts` with one test per finding code, the clean-vault case and the duplicate-slug case.
 4. Implement `link.ts` report and fix modes through `write.ts`; assert `updated_at` is untouched by the read-only mode.
