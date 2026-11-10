@@ -4418,12 +4418,35 @@ export function dailyEditorialRender(args: string[]): void {
     }
 
     // 2. Cover brief: 23-cover/<date>_07_cover-brief.json
-    const coverSubject = typeof master.cover === 'string' ? master.cover.trim() : '';
+    // 0347 R5: cover may be a legacy string (subject only) or `{ scene, headline }` — the
+    // headline falls back to the lead story's title either way.
+    const rawCover = master.cover;
+    let coverSubject = '';
+    let coverHeadline = '';
+    if (typeof rawCover === 'string') {
+        coverSubject = rawCover.trim();
+    } else if (rawCover !== null && typeof rawCover === 'object') {
+        const coverObj = rawCover as Record<string, unknown>;
+        coverSubject = typeof coverObj.scene === 'string' ? coverObj.scene.trim() : '';
+        coverHeadline = typeof coverObj.headline === 'string' ? coverObj.headline.trim() : '';
+    }
+    const leadId = orderedIds[0];
+    const leadDoc = leadId !== undefined ? docById.get(leadId) : undefined;
+    const leadStoryTitle = typeof leadDoc?.title === 'string' ? leadDoc.title.trim() : '';
     if (coverSubject !== '') {
+        if (coverHeadline === '' && leadStoryTitle !== '') {
+            coverHeadline = leadStoryTitle;
+        }
         const coverDir = join(workDir, '23-cover');
         sted('mkdir', coverDir, () => mkdirSync(coverDir, { recursive: true }));
         const coverOut = join(coverDir, `${runDate}_07_cover-brief.json`);
-        sted('write', coverOut, () => writeJsonText(coverOut, { subject: coverSubject }));
+        sted('write', coverOut, () =>
+            writeJsonText(coverOut, {
+                subject: coverSubject,
+                headline: coverHeadline,
+                leadStoryTitle,
+            }),
+        );
         console.log(`editorial-render: wrote cover brief: ${coverOut}`);
     } else {
         console.log('editorial-render: skipping cover brief (missing cover in script plan)');

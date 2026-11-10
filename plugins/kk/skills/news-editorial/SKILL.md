@@ -66,7 +66,7 @@ At the episode level, write:
 - `intro` (≤150 chars): names the top two or three concrete in-scope developments.
 - `outro` (≤150 chars): a short close tying the items together.
 - `excluded`: copy the array from `--excluded` (`21-plan/<date>_03_curate_excluded.json`) verbatim so the script plan records every dropped candidate with its Chinese reason.
-- `cover` (≤240 chars): one concrete visual scene in English for the lead item (objects, settings, symbols, metaphor; no text, letters, numbers, logos, flags, or recognizable people).
+- `cover` (≤240 chars): one concrete visual scene in English for the lead item (objects, settings, symbols, metaphor; no text, letters, numbers, logos, flags, or recognizable people). 0347 R4: it may instead be `{ "scene": "…", "headline": "…" }` — `scene` keeps the same English visual contract (≤240 chars), and `headline` is a punchy 1–2 line Chinese Hook headline (≤25 chars per line) grounded in the lead news story, for deterministic lower-third typesetting downstream.
 - `cards`: `{ "title": "≤20字总标题", "body": "中文导语段落 + 3-5个话题标签" }` for the episode card series.
 - `social`: `{ "short": "≤140字 X/Threads 短帖", "long": "≤500字 微博/LinkedIn 长帖" }` (plain text, no markdown headings, no emoji spam, grounded in the plan).
 
@@ -77,7 +77,7 @@ Output:
   "version": 1,
   "intro": "…",
   "outro": "…",
-  "cover": "…",
+  "cover": { "scene": "…", "headline": "…" },
   "cards": { "title": "…", "body": "…" },
   "social": { "short": "…", "long": "…" },
   "items": [
@@ -101,7 +101,7 @@ validator). Change only what the errors name and copy everything else unchanged.
 
 | Rule | Fix |
 |---|---|
-| `cap:<field>` | Shorten that field (`intro`, `outro`, `lead`, `insight`, `cover`, `cardCopy`, `cardTitle`, `socialShort`, `socialLong`) below its cap in the contract. Cut opinion, not the actor |
+| `cap:<field>` | Shorten that field (`intro`, `outro`, `lead`, `insight`, `cover`, `coverHeadline`, `cardCopy`, `cardTitle`, `socialShort`, `socialLong`) below its cap in the contract. Cut opinion, not the actor |
 | `banned:<phrase>` | Rephrase without the phrase (applies to spoken, card and social fields alike) |
 | `redundant-insight` | Rewrite the insight as commentary; drop the restated facts |
 | `duplicate-insight` | Make each insight specific to its own item |

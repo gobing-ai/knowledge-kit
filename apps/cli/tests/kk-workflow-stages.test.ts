@@ -4803,10 +4803,13 @@ describe('F613 (0162) — script-write stage wiring', () => {
                 expect(snap1.article).toContain('[来源：OpenAI](https://openai.com/news/engine)');
                 expect(snap1.article).toContain('以上就是今天的全部内容');
 
-                // Check cover brief
+                // Check cover brief (0347 R5: legacy string cover keeps subject, gains the
+                // lead-anchored headline fallback pair)
                 expect(JSON.parse(snap1.cover as string)).toEqual({
                     subject:
                         'A sleek crystalline processor core splitting a beam of light into two parallel fiber channels',
+                    headline: 'OpenAI 开源轻量推理引擎',
+                    leadStoryTitle: 'OpenAI 开源轻量推理引擎',
                 });
 
                 // Check xhs_plan.json shape (cover + 2 content + closing = 4 cards)

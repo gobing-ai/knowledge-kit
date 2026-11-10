@@ -1,13 +1,15 @@
 ---
 schema_version: 1
 name: Author quasi-news podcast cover presets and lead-story Hook headline extraction
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-10T04:05:28.042Z
-updated_at: "2026-11-10T04:35:15.173Z"
+updated_at: "2026-11-10T18:33:05.746Z"
 feature_id: L2
 priority: P1
 
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0347-verdict.json
 ---
 
 ## 0347. Author quasi-news podcast cover presets and lead-story Hook headline extraction
@@ -26,20 +28,20 @@ The existing Daily AI News cover generation pipeline relies on `daily-news-cover
 
 ### Requirements
 
-- [ ] R1. Author format preset `plugins/generations/image-gen/presets/formats/daily-news-podcast-cover.yaml`: aspect ratio 21:9 (1344x576), job `cover`, default style `quasi-news-podcast`, subject variable with fallback, and composition prompt leaving negative space in the lower-third for headline typography.
-- [ ] R2. Author style preset `plugins/generations/image-gen/presets/styles/quasi-news-podcast.yaml`: editorial documentary photography, cinematic lighting, dramatic contrast, deep navy/slate shadows, bold focal subject, and strict negative text prompt (`text, letters, words, numbers, captions, watermark, logo, brand marks, flags, real people, recognizable faces, blur, clutter`).
-- [ ] R3. Update preset inventory tests in `plugins/generations/image-gen/tests/presets.test.ts`: extend expected format set to include `daily-news-podcast-cover` (6 formats) and expected style set to include `quasi-news-podcast` (13 styles), verifying prompt composition and negative prompt preservation.
-- [ ] R4. Extend `plugins/kk/skills/news-editorial/SKILL.md` (lines 69-82) and `references/style-contract.zh.md` (lines 50, 68): allow `cover` field in the master script plan to be `{ scene: string, headline: string }`, where `scene` is an English visual description (<=240 chars) and `headline` is a 1-2 lines Chinese Hook headline (<=25 chars/line) grounded in the lead news story.
-- [ ] R5. Update `editorialRender` in `plugins/kk/scripts/daily-stages.ts` (lines 4402-4414): write `23-cover/<date>_07_cover-brief.json` containing `{ subject: string, headline: string, leadStoryTitle: string }`, extracting `headline` from `master.cover.headline` (or falling back to lead story title if `cover` is a legacy string).
-- [ ] R6. Add unit test coverage in `plugins/kk/tests/daily-stages.test.ts` (or `kk-workflow-stages.test.ts`) validating both legacy string cover and new `{ scene, headline }` object parsing during `editorialRender`.
+- [x] R1. Author format preset `plugins/generations/image-gen/presets/formats/daily-news-podcast-cover.yaml`: aspect ratio 21:9 (1344x576), job `cover`, default style `quasi-news-podcast`, subject variable with fallback, and composition prompt leaving negative space in the lower-third for headline typography.
+- [x] R2. Author style preset `plugins/generations/image-gen/presets/styles/quasi-news-podcast.yaml`: editorial documentary photography, cinematic lighting, dramatic contrast, deep navy/slate shadows, bold focal subject, and strict negative text prompt (`text, letters, words, numbers, captions, watermark, logo, brand marks, flags, real people, recognizable faces, blur, clutter`).
+- [x] R3. Update preset inventory tests in `plugins/generations/image-gen/tests/presets.test.ts`: extend expected format set to include `daily-news-podcast-cover` (6 formats) and expected style set to include `quasi-news-podcast` (13 styles), verifying prompt composition and negative prompt preservation.
+- [x] R4. Extend `plugins/kk/skills/news-editorial/SKILL.md` (lines 69-82) and `references/style-contract.zh.md` (lines 50, 68): allow `cover` field in the master script plan to be `{ scene: string, headline: string }`, where `scene` is an English visual description (<=240 chars) and `headline` is a 1-2 lines Chinese Hook headline (<=25 chars/line) grounded in the lead news story.
+- [x] R5. Update `editorialRender` in `plugins/kk/scripts/daily-stages.ts` (lines 4402-4414): write `23-cover/<date>_07_cover-brief.json` containing `{ subject: string, headline: string, leadStoryTitle: string }`, extracting `headline` from `master.cover.headline` (or falling back to lead story title if `cover` is a legacy string).
+- [x] R6. Add unit test coverage in `plugins/kk/tests/daily-stages.test.ts` (or `kk-workflow-stages.test.ts`) validating both legacy string cover and new `{ scene, headline }` object parsing during `editorialRender`.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — 准新闻播客封面 preset 定义与视觉规格固化 (req: R1, R2, R3)
+- [x] AC1 — 准新闻播客封面 preset 定义与视觉规格固化 (req: R1, R2, R3)
   - `bun test plugins/generations/image-gen/tests/presets.test.ts` passes with 0 failures.
   - `daily-news-podcast-cover` format declares width 1344, height 576, aspectRatio '21:9', defaultStyle 'quasi-news-podcast', and outputFilename 'daily-news-podcast-cover.png'.
   - `quasi-news-podcast` style declares negative text prompts forbidding text, letters, watermarks, and brand marks.
-- [ ] AC2 — 重大新闻 Hook 大标题与视觉主体提取契约 (req: R4, R5, R6)
+- [x] AC2 — 重大新闻 Hook 大标题与视觉主体提取契约 (req: R4, R5, R6)
   - `editorialRender` reads master script plan with `{ cover: { scene: "...", headline: "..." } }` and writes `23-cover/<date>_07_cover-brief.json` with `{ subject, headline, leadStoryTitle }`.
   - When master script plan contains legacy string `cover: "..."`, `editorialRender` preserves backwards compatibility by assigning `subject = master.cover` and falling back to lead item's title for `leadStoryTitle`.
   - Unit test in `plugins/kk/tests/daily-stages.test.ts` passes.
@@ -156,15 +158,49 @@ if (coverSubject !== '') {
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+- R1 `plugins/generations/image-gen/presets/formats/daily-news-podcast-cover.yaml` (new): cover job pinned at 21:9 / 1344×576, `defaultStyle: quasi-news-podcast`, single `subject` variable with fixed default scene, template reserves lower-third negative space for the headline overlay (ADR-046 two-layer pipeline).
+- R2 `plugins/generations/image-gen/presets/styles/quasi-news-podcast.yaml` (new): editorial documentary photography modifiers, deep navy slate / signal white / urgent amber palette, strict anti-glyph negative (text, letters, words, numbers, captions, watermark, logo, brand marks, flags, real people, recognizable faces).
+- R3 `plugins/generations/image-gen/tests/presets.test.ts`: inventory extended to 6 formats / 13 styles (two existing assertions + shadow-diagnostic key list); new describe `quasi-news podcast cover presets (L2 0347 R1-R3)` pinning geometry, default style, outputFilename, negative text ban and a subject-only compose test.
+- R4 `plugins/kk/skills/news-editorial/SKILL.md:69` cover bullet now documents the dual `{ scene, headline }` contract (scene ≤240 chars English; headline 1–2 Chinese lines ≤25 chars/line); `:80` JSON example shows the object form; `:104` cap list gains `coverHeadline`. `plugins/kk/skills/news-editorial/references/style-contract.zh.md:50` mirrors the dual contract; `:68` caps add `coverHeadline: 25`.
+- R5 `plugins/kk/scripts/daily-stages.ts` (`dailyEditorialRender` cover-brief block): parses `master.cover` as legacy string or `{ scene, headline }` object; resolves `leadStoryTitle` from the first ordered plan doc; headline falls back to it when absent; writes `23-cover/<date>_07_cover-brief.json` with `{ subject, headline, leadStoryTitle }`. `coverSubject` stays in scope for the existing XHS first-card fallback.
+- R6 `plugins/kk/tests/kk-workflow-stages.test.ts`: new describe `daily-editorial-render cover brief (task 0347 R5/R6)` — object cover writes all three fields; legacy string preserves backward compatibility with lead-title headline fallback; object cover without headline inherits the lead title.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | plugins/generations/image-gen/presets/formats/daily-news-podcast-cover.yaml:1 — 21:9, 1344×576, defaultStyle quasi-news-podcast, single `subject` var; asserted by test in plugins/generations/image-gen/tests/presets.test.ts:511 (command: `bun test plugins/generations/image-gen/tests/presets.test.ts`) |
+| R2 | MET | plugins/generations/image-gen/presets/styles/quasi-news-podcast.yaml:1 — editorial-documentary modifiers, navy/white/amber palette, text-free negative list; asserted by test in plugins/generations/image-gen/tests/presets.test.ts:511 |
+| R3 | MET | plugins/generations/image-gen/tests/presets.test.ts:511 — inventory 6 formats / 13 styles, compose-from-single-subject, default-scene fallback (command: `bun test plugins/generations/image-gen/tests/presets.test.ts`) |
+| R4 | MET | plugins/kk/skills/news-editorial/SKILL.md:69 (dual-shape cover contract), plugins/kk/skills/news-editorial/SKILL.md:104 (`coverHeadline` fix lane), plugins/kk/skills/news-editorial/references/style-contract.zh.md:50 + plugins/kk/skills/news-editorial/references/style-contract.zh.md:69 (scene/headline contract, cap 25) |
+| R5 | MET | plugins/kk/scripts/daily-stages.ts:4421 — union parse of string vs `{scene, headline}` cover, headline falls back to lead story title, brief writes `{subject, headline, leadStoryTitle}` (plugins/kk/scripts/daily-stages.ts:4437, plugins/kk/scripts/daily-stages.ts:4444) |
+| R6 | MET | plugins/kk/tests/kk-workflow-stages.test.ts:934 — object cover, legacy string cover (backward compat), object-without-headline inheritance; 3 stage tests via spawned `kk stage` (command: `bun test plugins/kk/tests/kk-workflow-stages.test.ts`) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 [R1] | MET | test | plugins/generations/image-gen/tests/presets.test.ts:511 — both shipped presets load with pinned geometry/style/negative/compose contracts (34 pass / 0 fail, replayed) |
+| AC2 [R2] | MET | test | plugins/kk/tests/kk-workflow-stages.test.ts:934 — editorial-render emits `23-cover/<date>_07_cover-brief.json` with `{subject, headline, leadStoryTitle}` and legacy-string compatibility (62 pass / 0 fail, replayed) |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+Three-dimensional review (functional traceability + SECUA + architecture) over the 0347 diff; full gate receipt 4835 pass / 0 fail (tree 9632fd53); cited suites replayed standalone (presets 34/0, kk-workflow-stages 62/0, daily-triage 11/0).
+
+| P | Finding | Disposition |
+|---|---------|-------------|
+| P4 | `bunfig.toml` adds 2 coverage ignores for stage-runner bodies (`daily-stages.ts`, `kk-workflow-stages.ts`) exercised only via spawned `kk stage` subprocesses bun cannot attribute coverage to; inline why-comment matches the existing 8 entries | ACCEPTED — attribution limitation, subprocess e2e asserts cover the behavior |
+| P4 | 18 binary sample JPGs under `plugins/generations/image-gen/assets/sample/` add repo weight | ACCEPTED — README gallery convention; spend user-authorized |
+| P4 | `daily-triage-core.ts` ANSI fix adds one `biome-ignore` for the ESC-byte regex | ACCEPTED — the control byte is the match target; root-cause fix covered by 11/11 triage tests |
+
+Residual risk: none open — no P1-P3 findings; preset addition follows the shipped pinned format x style compose pattern; cover dual-shape stays inside editorial-render's existing union with legacy-string compatibility.
+
+Verdict: PASS
+
+Confidence: HIGH
 
 ### References
 
@@ -176,4 +212,7 @@ if (coverSubject !== '') {
 ### History
 
 - 2026-11-10T04:28:44.581Z feature_id Q → L2 (system)
+- 2026-11-10T04:53:44.719Z todo → wip (system)
+- 2026-11-10T18:33:03.054Z wip → testing (system)
+- 2026-11-10T18:33:05.737Z testing → done (system)
 

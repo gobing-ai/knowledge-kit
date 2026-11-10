@@ -75,7 +75,8 @@ const FAILED_RECEIPT_STATUSES = new Set(['failed', 'timed-out', 'interrupted', '
 /** Receipt statuses that mean the supervisor is mid-flight, not failed. */
 const ACTIVE_RECEIPT_STATUSES = new Set(['running', 'inspecting']);
 const GOOD_RECEIPT_STATUSES = new Set(['done', 'no-content']);
-const ANSI = /\[[0-9;]*[A-Za-z]/g;
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching the ANSI ESC byte is the whole point of this strip
+const ANSI = /\u001B\[[0-9;]*[A-Za-z]/g;
 
 function readText(path: string): string | null {
     try {

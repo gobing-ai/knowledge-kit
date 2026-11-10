@@ -134,7 +134,14 @@ describe('R1 — preset schemas', () => {
         const { formats, diagnostics } = loadPresets();
 
         expect(formats.has('cover')).toBe(true); // the built-in still loads
-        expect([...formats.keys()].sort()).toEqual(['cover', 'daily-news-cover', 'free', 'illustration', 'xhs-card']);
+        expect([...formats.keys()].sort()).toEqual([
+            'cover',
+            'daily-news-cover',
+            'daily-news-podcast-cover',
+            'free',
+            'illustration',
+            'xhs-card',
+        ]);
         const invalid = diagnostics.filter((d) => d.code === 'invalid');
         expect(invalid).toHaveLength(1);
         expect(invalid[0]?.path).toBe(brokenPath);
@@ -276,7 +283,7 @@ describe('R4 — resolution order and shadowing', () => {
 
         const { styles, diagnostics } = loadPresets(); // must not throw
 
-        expect(styles.size).toBe(12);
+        expect(styles.size).toBe(13);
         expect(styles.has('broken')).toBe(false);
         const invalid = diagnostics.filter((d) => d.code === 'invalid');
         expect(invalid).toHaveLength(1);
@@ -311,11 +318,19 @@ describe('R5 — the v1 inventory', () => {
         expect(formats.get('daily-news-cover')?.job).toBe('cover');
     });
 
-    test('the shipped inventory is five formats and twelve styles', () => {
+    test('the shipped inventory is six formats and thirteen styles', () => {
         const { formats, styles, diagnostics } = loadShipped();
         expect(diagnostics).toEqual([]);
-        // F614 0163 joins daily-news-cover beside the three v1 formats.
-        expect([...formats.keys()].sort()).toEqual(['cover', 'daily-news-cover', 'free', 'illustration', 'xhs-card']);
+        // F614 0163 joins daily-news-cover beside the three v1 formats; 0347 adds the
+        // quasi-news podcast cover beside it.
+        expect([...formats.keys()].sort()).toEqual([
+            'cover',
+            'daily-news-cover',
+            'daily-news-podcast-cover',
+            'free',
+            'illustration',
+            'xhs-card',
+        ]);
         expect([...styles.keys()].sort()).toEqual([
             'clean-webapp-ui',
             'cute',
@@ -324,12 +339,19 @@ describe('R5 — the v1 inventory', () => {
             'fresh',
             'minimalist',
             'photorealistic',
+            'quasi-news-podcast',
             'sketch',
             'technical-diagram',
             'vibrant',
             'warm',
             'xhs-knowledge',
         ]);
+    });
+
+    test('daily-news-podcast-cover pins the cover job beside daily-news-cover', () => {
+        const { formats } = loadShipped();
+        // 0347: the quasi-news podcast preset drives the same cover job through a second pinned look.
+        expect(formats.get('daily-news-podcast-cover')?.job).toBe('cover');
     });
 });
 
@@ -482,6 +504,61 @@ describe('daily-news cover presets (F614 R1)', () => {
         // Omitting vars resolves the fixed default scene (the R4 fallback path).
         expect(composePrompt(format, style, {})).toContain(
             'a glowing network of connected nodes rising above a quiet city at dawn',
+        );
+    });
+});
+
+describe('quasi-news podcast cover presets (L2 0347 R1-R3)', () => {
+    test('daily-news-podcast-cover pins the 21:9 episode geometry and the quasi-news-podcast default style', () => {
+        const { formats, styles } = loadShipped();
+        const format = formats.get('daily-news-podcast-cover');
+        const style = styles.get('quasi-news-podcast');
+        if (format === undefined || style === undefined) {
+            throw new Error('shipped daily-news-podcast-cover format or quasi-news-podcast style missing');
+        }
+        expect(format.job).toBe('cover');
+        expect(format.aspectRatio).toBe('21:9');
+        expect(format.width).toBe(1344);
+        expect(format.height).toBe(576);
+        expect(format.defaultStyle).toBe('quasi-news-podcast');
+        expect(format.outputFilename).toBe('daily-news-podcast-cover.png');
+        // One declared variable: the subject scene is the only per-run input.
+        expect(Object.keys(format.variables)).toEqual(['subject']);
+        // The lower-third negative space is the headline overlay slot (ADR-046 two-layer pipeline).
+        expect(format.template).toContain('negative space in the lower third');
+    });
+
+    test('quasi-news-podcast bans text on the diffusion layer', () => {
+        const { styles } = loadShipped();
+        const style = styles.get('quasi-news-podcast');
+        if (style === undefined) {
+            throw new Error('shipped quasi-news-podcast style missing');
+        }
+        expect(style.palette?.map((entry) => entry.hex)).toEqual(['#0A1424', '#FFFFFF', '#FFB800']);
+        for (const banned of ['text', 'letters', 'words', 'numbers', 'captions', 'watermark', 'logo', 'brand marks']) {
+            expect(style.negative, `${banned} in the quasi-news-podcast negative`).toContain(banned);
+        }
+    });
+
+    test('daily-news-podcast-cover × quasi-news-podcast composes from a single subject var', () => {
+        const { formats, styles } = loadShipped();
+        const format = formats.get('daily-news-podcast-cover');
+        const style = styles.get('quasi-news-podcast');
+        if (format === undefined || style === undefined) {
+            throw new Error('shipped daily-news-podcast-cover format or quasi-news-podcast style missing');
+        }
+        const subject = 'a row of broadcast towers under storm clouds at dusk';
+        const prompt = composePrompt(format, style, { subject });
+
+        expect(prompt).toContain(subject);
+        expect(prompt).not.toContain('{{');
+        expect(prompt).toContain('negative space in the lower third');
+        expect(prompt).toContain('editorial documentary, dramatic contrast, news podcast, lead story scene');
+        expect(prompt).toContain('editorial documentary photography');
+
+        // Omitting vars resolves the fixed default scene.
+        expect(composePrompt(format, style, {})).toContain(
+            'an illuminated advanced semiconductor wafer glowing under industrial microscope inspection',
         );
     });
 });
