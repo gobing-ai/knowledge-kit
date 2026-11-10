@@ -4,7 +4,7 @@ name: Harden kk bot into a general data-collection substrate
 status: done
 template: feature-impl
 created_at: 2026-11-09T06:36:45.705Z
-updated_at: "2026-11-09T22:35:38.681Z"
+updated_at: "2026-11-09T22:47:50.359Z"
 feature_id: G3
 
 ac_altitude: task-local
@@ -98,7 +98,7 @@ Scenario: AC5 — ingestion descriptors join the existing session boundary witho
   When manifests are parsed and adapter selection runs
   Then the first resolves and binds normally, the second is rejected naming `check`, and the generator is rejected naming its kind
   And existing publish descriptor and adapter tests still pass
-  And the registered bot command remains exactly `list|login|logout|open|exec` with unchanged flags and output/exit tests
+  And the registered bot command keeps `list|login|logout|open|exec` with unchanged flags and output/exit tests (a sixth `plan` verb was added later by the ADR-038 amendment of 2026-11-09; see the Solution correction)
   And ordinary non-browser fan-in tests still pass without a browser installed
 
 Scenario: AC6 — the E2E and documents leave repeatable implementation evidence (req: R6)
@@ -260,6 +260,11 @@ Change map (R1–R6), all inside the 0346 ownership surface:
 - Docs in the same change: ADR-038 amendment (2026-11-09) in `docs/00_ADR.md`; boundary in `docs/03_ARCHITECTURE.md` ("Named browser-session boundary"); runner contract as `docs/04_DESIGN.md` §1.13 plus the §1.12 descriptor line; `docs/design/kk-noun-verb-bots.md`; `docs/design/ingestion-plugin-specification.md` §2.4/§2.5.
 
 Why this shape: the plan is data, so a plugin and the probe use one runner; the lease is acquired by the collection child itself, so fan-in gained no coordination and concurrent same-profile callers still fail `busy`; and the runner lives in a sibling module so no existing browser consumer loads it. Documented limits (no cookie export, no replay/cache, no pool, no recipe/crawl engine, no anti-bot bypass, no binary payloads, loopback-only verification) are stated in the docs rather than implied away.
+
+**Post-ship correction — 2026-11-09 (ADR-038 amendment "canonical collection execution via kk bot plan").** A later decision (commit d356308, follow-ups 5ddfc3d/bb6c894) added a sixth verb, `kk bot plan`, registered at `apps/cli/src/commands/bot.ts:398`. That supersedes this task's "no new `kk bot` verb" stance in R5/AC5. The compatibility intent that R5/AC5 protected still holds:
+- `list|login|logout|open|exec` keep their flags, output and exit mapping. The control at `apps/cli/tests/commands/bot.test.ts:178` now pins six verbs, and the five pre-existing verbs' flag/output/exit tests are unchanged.
+- `browser.ts` still neither imports nor re-exports `bot-collection`. The CLI loads the sub-path directly at `apps/cli/src/commands/bot.ts:41`.
+- bb6c894 makes the runner take its response captures from the normalized plan (`packages/publish-harness/src/bot-collection.ts:639`) instead of the raw input.
 
 ### Testing
 

@@ -175,7 +175,7 @@ afterAll(() => {
 });
 
 describe('kk bot registration and argv shape (A22 R1)', () => {
-    it('registers one visible bot noun with exactly list/login/logout/open/exec and no extra flags', () => {
+    it('registers one visible bot noun with exactly list/login/logout/open/exec/plan and no extra flags', () => {
         const program = createProgram();
         const bot = program.commands.find((command) => command.name() === 'bot');
         expect(bot).toBeDefined();
