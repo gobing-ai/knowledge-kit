@@ -1673,3 +1673,31 @@ each item's facts from being authored three times.
 has no selection policy. Keeping policy in YAML prompts, which hit the prompt cap and drift per model.
 
 **Detail:** task 0345; `docs/design/kk-daily-ai-voice3.md`; `docs/04_DESIGN.md` §daily stages.
+
+---
+
+## ADR-046: Quasi-news podcast cover rendering via layered generation and deterministic typography compositing
+
+**Status:** Accepted · **Date:** 2026-11-10 · **Task:** (Feature L2)
+
+**Decision.** The Daily AI News episode cover transitions from an abstract flat vector illustration to a
+quasi-news podcast cover (准新闻类播客封面) using a two-layer rendering architecture:
+1. **Layer 1: AI Diffusion News Scene.** Generates a pure visual background (`negative: text, letters...`)
+   grounded in the lead story's concrete visual scene, using a dedicated format (`daily-news-podcast-cover`,
+   1344x576 at 21:9) and style preset (`quasi-news-podcast`, documentary/cinematic lighting with negative space).
+2. **Layer 2: Deterministic Typography & Branding Compositing.** Composites a bold Chinese Hook headline
+   (derived from the day's top news item via `news-editorial`) and the podcast brand logo badge (`assets/general/xhxs.svg`
+   anchored at the top-left or top-right, with the lower `SALTY CLUB` text omitted for visual cleanliness) onto the
+   generated background using deterministic graphics rendering.
+3. **Anti-garble guarantee (中文抗乱码):** AI text-to-image diffusion models are strictly forbidden from directly
+   synthesizing Chinese characters; all Chinese text is rendered via local vector/font engines (SVG/Canvas)
+   to ensure 100% glyph correctness and crispness.
+4. **Isolated testability:** A standalone runner (`kk cover render --mock`) enables immediate generation and
+   verification of mock news items without running the entire daily audio pipeline.
+
+**Why.** Abstract covers lack journalistic timeliness and viral clickability. However, direct diffusion generation
+of Chinese headlines produces garbled glyphs and visual hallucinations. Layering clean AI imagery with deterministic
+typography achieves both rich visual context and reliable typography.
+
+**Detail:** Feature L2; `docs/design/daily-news-podcast-cover.md`.
+
