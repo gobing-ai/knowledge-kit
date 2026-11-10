@@ -56,6 +56,7 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
+import { compositeCover } from './cover-compositor';
 
 export const SCRIPTS_DIR = import.meta.dir;
 export const VALIDATE_SIDECAR = 'validate-voicescript.ts';
@@ -1016,6 +1017,20 @@ export function coverBrief(briefPath: string): { reason: string | null; subject:
     return { reason: null, subject: trimmed };
 }
 
+/** The 0347 cover brief's Hook headline, or '' when the brief is absent, malformed, or headline-less. */
+function briefHeadline(briefPath: string): string {
+    if (!existsSync(briefPath)) return '';
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(readFileSync(briefPath, 'utf-8'));
+    } catch {
+        return '';
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return '';
+    const headline = (parsed as Record<string, unknown>).headline;
+    return typeof headline === 'string' ? headline.trim() : '';
+}
+
 export function coverNormalizeBody(workDir: string, runDate: string): void {
     // F614 R5: the artifact name follows the format preset (`<stem>-<format>-NN.<ext>`,
     // paths.ts), so normalize reads the path the plugin itself recorded in the manifest instead
@@ -1055,6 +1070,20 @@ export function coverNormalizeBody(workDir: string, runDate: string): void {
         } catch {
             // `rm -f` is silent when the file is already gone (a renamed source lands here too).
         }
+    }
+    // 0348: deterministic typography + branding overlay. The 0347 editorial brief carries a
+    // Chinese Hook headline; when present, composite it (and the podcast emblem) onto the
+    // normalized cover. Missing/invalid brief or empty headline keeps the raw background —
+    // downstream stages read the same `${runDate}_07_cover_cover.png` either way.
+    const briefPath = join(workDir, '23-cover', `${runDate}_07_cover-brief.json`);
+    const headline = briefHeadline(briefPath);
+    if (headline !== '') {
+        try {
+            compositeCover({ backgroundImagePath: out, headline, outputPath: out });
+        } catch (error) {
+            failWith(1, `cover composite: ${(error as Error).message}`);
+        }
+        console.error(`cover composited: headline=${headline.replaceAll('\n', ' ')}`);
     }
     console.error(`cover normalized: ${runDate}_07_cover_cover.png`);
 }

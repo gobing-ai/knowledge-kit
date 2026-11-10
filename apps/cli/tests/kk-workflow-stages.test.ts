@@ -29,6 +29,8 @@ const runner = join(import.meta.dir, '../../../plugins/kk/scripts/kk-workflow-st
 const dailyStages = join(import.meta.dir, '../../../plugins/kk/scripts/daily-stages.ts');
 const seriesNames = join(import.meta.dir, '../../../plugins/kk/scripts/series-names.ts');
 const sentences = join(import.meta.dir, '../../../plugins/kk/scripts/sentences.ts');
+// 0348: the runner imports cover-compositor at module load, so lone-runner copies ship it too.
+const coverCompositor = join(import.meta.dir, '../../../plugins/kk/scripts/cover-compositor.ts');
 
 // A real 1x1 JPEG (generated once via `sips -s format jpeg` from a 1x1 png) so the jpg transcode
 // test exercises sips with data it can actually decode.
@@ -278,6 +280,7 @@ describe('kk workflow stage runner (0132)', () => {
             // whole chain misses and `requireSidecar` must name the remediation.
             const loneRunner = join(dir, 'kk-workflow-stages.ts');
             copyFileSync(runner, loneRunner);
+            copyFileSync(coverCompositor, join(dir, 'cover-compositor.ts'));
             const scriptPath = join(dir, '3-script-voicescript.yaml');
             writeFileSync(scriptPath, 'title: "Episode 1"\n');
             const env = { HOME: dir, KK_WORKFLOWS_DIR: '' };
@@ -4430,6 +4433,7 @@ describe('F613 (0162) — script-write stage wiring', () => {
             const loneRunner = join(dir, 'kk-workflow-stages.ts');
             copyFileSync(runner, loneRunner);
             copyFileSync(dailyStages, join(dir, 'daily-stages.ts'));
+            copyFileSync(coverCompositor, join(dir, 'cover-compositor.ts'));
             copyFileSync(seriesNames, join(dir, 'series-names.ts'));
             copyFileSync(sentences, join(dir, 'sentences.ts'));
             const result = run(
