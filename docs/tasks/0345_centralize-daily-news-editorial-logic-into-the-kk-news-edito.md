@@ -4,7 +4,7 @@ name: Centralize daily-news editorial logic into the kk:news-editorial skill
 status: done
 template: feature-impl
 created_at: 2026-11-08T20:47:50.836Z
-updated_at: "2026-11-09T20:14:15.610Z"
+updated_at: "2026-11-09T22:48:36.102Z"
 
 done_forced: "true"
 done_reason: "all 11 ACs verified green, full e2e passes, live rehearsal against 20261108 data verified"
@@ -235,6 +235,8 @@ Phase C (news-balance judge, R11):
 - `plugins/kk/skills/content-judge/SKILL.md:24`: Registered `news-balance` rubric.
 - `plugins/kk/workflows/kk-daily-ai-voice3.yaml:462`: Added advisory `editorial-judge` node (`role: reviewer`, `onError: continue`, dependsOn `[script-check, script-write-fix, curate-final, pool-gate]`).
 - `docs/04_DESIGN.md:1961`, `docs/design/kk-daily-ai-voice3.md:104`, `docs/design/daily-voice-script-plan.md:60`, `docs/design/dailynews-gen.md:23`: Updated documentation.
+
+- `plugins/kk/scripts/daily-stages.ts:4293`: The fixed column opening line is now the named constant `EDITORIAL_ARTICLE_OPENING`, used by `dailyEditorialRender` at `plugins/kk/scripts/daily-stages.ts:4367`. This closes the Design item "move that opening line into a constant in the render stage" (commit 004aab2, re-verify 2026-11-09).
 
 ### Testing
 
