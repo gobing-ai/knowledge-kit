@@ -19,7 +19,7 @@
  *
  * Window model (kk-daily-publish3.yaml + daily-ai-voice-migration.json):
  * - after-generate: surfdash.article + podcast.episode (tier 0, required), wechatmp.podcast,
- *   xhs.podcast, wechatmp.article, xhs.article (dummy), xhs.cards (off) — no RSS gate.
+ *   xhs.podcast, wechatmp.article — no RSS gate. xhs.article is closed (mode off, 2194994).
  * - cn-peak: weibo.article + x.article (draft; live only behind an explicit live-channel token),
  *   waits on the (stubbed) 09:00 Asia/Shanghai clock.
  * - overseas-rss: x.post / weibo.post / threads.post (dummy), gated by the RSS proof: the gate
@@ -730,7 +730,7 @@ describe('0335 R1: fresh offline multi-window migration rehearsal', () => {
             'podcast.episode',
             'xhs.podcast',
             'wechatmp.article',
-            'xhs.article',
+            // 2194994 closed xhs.article (mode off) in the migration preset — no receipt, by policy.
             'weibo.article',
             'x.post',
             'weibo.post',
@@ -748,8 +748,8 @@ describe('0335 R1: fresh offline multi-window migration rehearsal', () => {
         // Deliberate offline scoping: only the podcast row went live (comment above); the rest,
         // tier-2 drafts included, record the rehearsal's dummy delivery.
         expect((byKey.get('surfdash.article') as { dummy?: boolean }).dummy).toBe(true);
-        // Off targets never deliver.
-        expect(byKey.has('wechatmp.podcast')).toBe(false);
+        // Off targets never deliver (2194994 reopened wechatmp.podcast as a tier-1 draft; the
+        // remaining closed targets stay receipt-less).
         expect(byKey.has('x.article')).toBe(false);
         expect(byKey.has('xhs.cards')).toBe(false);
         expect(byKey.has('shipinhao.cards')).toBe(false);
