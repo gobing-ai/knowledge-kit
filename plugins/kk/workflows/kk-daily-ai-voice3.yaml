@@ -15,9 +15,8 @@ vars:
   # ---- voice3 additions (task 0324 R4) ----
   # `auto_publish` launches publish3 nested when true; off by default exactly like voice2's
   # publish_enabled, and the operator turns it on in the schedule entry after the shadow period.
-  # Card-series authoring/rendering (billed image generation). The cards ROW in the publish preset
-  # is `off` by default, so this stays false until an operator turns both on.
-  cards_enabled: "false"
+  # Card-series authoring/rendering (billed image generation). Turned on by default for XHS 上传图文.
+  cards_enabled: "true"
   # Card count (voice2's `xhs_cards`, minus the channel name): the card plan targets this many.
   cards: "6"
   auto_publish: "false"
