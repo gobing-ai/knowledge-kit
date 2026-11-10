@@ -56,7 +56,7 @@ sync: [T3]
 | [voxcpm-daily-voice-driver.md](design/voxcpm-daily-voice-driver.md) | Standalone VoxCPM voice generator: private uv Python worker behind voice-gen (ADR-036) | implemented (G14) |
 | [workflow-board-modules.md](design/workflow-board-modules.md) | Native Collect / Daily AI Voice / IT Content Board modules; recorded run settings with Settings → Workflows reuse; local reader and run capture surface | shipped (G8; 0252–0255) |
 | [collect-store-views.md](design/collect-store-views.md) | Collect module read-only store views: cadence overview, run funnel, label quality, items browser and downstream yield over `.works/kk.db` | accepted design (G81) |
-| [daily-news-podcast-cover.md](design/daily-news-podcast-cover.md) | Quasi-news podcast cover rendering via layered generation and deterministic typography compositing (ADR-046) | planned (L2; tasks 0347–0349) |
+| [daily-news-podcast-cover.md](design/daily-news-podcast-cover.md) | Quasi-news podcast cover rendering via layered generation and deterministic typography compositing (ADR-046) | done (L2; tasks 0347–0349, 2026-11-10) |
 
 ## 1. CLI commands
 
