@@ -75,7 +75,8 @@ const FAILED_RECEIPT_STATUSES = new Set(['failed', 'timed-out', 'interrupted', '
 /** Receipt statuses that mean the supervisor is mid-flight, not failed. */
 const ACTIVE_RECEIPT_STATUSES = new Set(['running', 'inspecting']);
 const GOOD_RECEIPT_STATUSES = new Set(['done', 'no-content']);
-const ANSI = /\[[0-9;]*[A-Za-z]/g;
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching the ANSI ESC control char is the point of the stripper
+const ANSI = /\u001b\[[0-9;]*[A-Za-z]/g;
 
 function readText(path: string): string | null {
     try {
@@ -273,7 +274,7 @@ export function suggestionsFor(report: Omit<TriageReport, 'suggestions' | 'colle
 export function collectTriage(
     repo: string,
     runId: string,
-    opts: { receiptPath?: string; receipt?: TriageReceipt; workflow?: string } = {},
+    opts: { receiptPath?: string; receipt?: TriageReceipt; workflow?: string; env?: NodeJS.ProcessEnv } = {},
 ): TriageReport {
     const report: TriageReport = {
         runId,
@@ -311,6 +312,8 @@ export function collectTriage(
         cwd: repo,
         encoding: 'utf-8',
         timeout: 20_000,
+        // opts.env layers over the inherited environment (tests shim `spur` through PATH).
+        ...(opts.env ? { env: { ...process.env, ...opts.env } } : {}),
     });
     if (trace.status === 0 && trace.stdout.trim() !== '') {
         const parsed = parseTrace(trace.stdout);
