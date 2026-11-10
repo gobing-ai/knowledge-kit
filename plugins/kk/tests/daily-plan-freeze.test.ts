@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
 /**
@@ -18,7 +18,13 @@ describe('daily-plan freeze on pool drift with authored descendants (0347 F6)', 
 
     function fingerprint(poolText: string): string {
         return createHash('sha256')
-            .update(JSON.stringify({ version: 1, source: poolText, inputs: { runDate: date, planMaxItems: '8', deferPlanDocs: 'true' } }))
+            .update(
+                JSON.stringify({
+                    version: 1,
+                    source: poolText,
+                    inputs: { runDate: date, planMaxItems: '8', deferPlanDocs: 'true' },
+                }),
+            )
             .digest('hex');
     }
 
