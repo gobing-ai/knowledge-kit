@@ -4826,9 +4826,9 @@ describe('F613 (0162) — script-write stage wiring', () => {
                 });
                 expect(xhs.cards[3].role).toBe('closing');
 
-                // Check social files
+                // Check social files (x, threads and weibo share unified short notice)
                 expect(snap1.x).toBe(snap1.threads);
-                expect(snap1.weibo).toBe(snap1.linkedin);
+                expect(snap1.weibo).toBe(snap1.x);
 
                 // Second run is byte-identical
                 const second = run(['daily-editorial-render', dir, stamp, 'true', '4']);

@@ -26,7 +26,7 @@
             "variant": "episode",
             "tier": 1,
             "window": "after-generate",
-            "mode": "off"
+            "mode": "draft"
         },
         {
             "plugin": "xhs-pub",
@@ -53,7 +53,7 @@
             "variant": "article",
             "tier": 2,
             "window": "after-generate",
-            "mode": "draft"
+            "mode": "off"
         },
         {
             "plugin": "xhs-pub",

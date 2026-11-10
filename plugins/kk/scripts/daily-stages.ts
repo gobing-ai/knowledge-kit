@@ -1885,7 +1885,12 @@ function weightedLength(text: string): number {
  */
 export function buildSocialContent(
     copy: string,
-    options: { platform: string; coverPath?: string; limit: SocialLimit },
+    options: {
+        platform: string;
+        limit: SocialLimit;
+        coverPath?: string;
+        cardPath?: string;
+    },
 ): Record<string, unknown> {
     const trimmed = copy.trim();
     const measure = (text: string): number => (options.limit.weighted === true ? weightedLength(text) : text.length);
@@ -1903,6 +1908,7 @@ export function buildSocialContent(
         }
         body = kept;
     }
+    const attachedImage = options.cardPath ?? options.coverPath;
     return {
         title: `${options.platform} · 每日AI乱炖`,
         format: 'text',
@@ -1915,7 +1921,7 @@ export function buildSocialContent(
                       truncatedFrom: measure(trimmed),
                       truncatedUnit: options.limit.weighted === true ? 'weighted' : 'code_units',
                   }),
-            ...(options.coverPath === undefined ? {} : { coverImage: options.coverPath }),
+            ...(attachedImage === undefined ? {} : { coverImage: attachedImage }),
         },
     };
 }
@@ -2020,11 +2026,22 @@ export function dailyBundleVariants(args: string[]): void {
             );
         }
 
+        const cards = cardsEnabledArg !== 'false' ? readJson(cardsPath) : null;
+        let cardImage: string | undefined;
+        if (cards !== null && Array.isArray((cards.metadata as Record<string, unknown> | undefined)?.images)) {
+            const rawImages = (cards.metadata as Record<string, unknown>).images as Array<{ path?: string }>;
+            if (rawImages.length > 0 && typeof rawImages[0]?.path === 'string' && isFile(rawImages[0].path)) {
+                cardImage = resolve(rawImages[0].path);
+            }
+        }
+
         if (cardsEnabledArg === 'false') skipped.push('cards (cards_enabled=false)');
         else {
-            const cards = readJson(cardsPath);
             if (cards === null) skipped.push('cards (no rendered card series)');
-            else write('cards@xhs-pub', buildXhsCardsContent(cards, { publishStatus: 'draft' }));
+            else {
+                write('cards', buildXhsCardsContent(cards, { publishStatus: 'draft' }));
+                write('cards@xhs-pub', buildXhsCardsContent(cards, { publishStatus: 'draft' }));
+            }
         }
 
         for (const platform of Object.keys(SOCIAL_LIMITS)) {
@@ -2040,6 +2057,7 @@ export function dailyBundleVariants(args: string[]): void {
                     platform,
                     limit,
                     ...(cover === undefined ? {} : { coverPath: cover }),
+                    ...(cardImage === undefined ? {} : { cardPath: cardImage }),
                 }),
             );
         }
@@ -4504,29 +4522,32 @@ export function dailyEditorialRender(args: string[]): void {
         }
     }
 
-    // 4 & 5. Social posts: 26-social/{x,threads}.md and 26-social/{weibo,linkedin}.md
+    // 4 & 5. Social posts: unified short notice for 26-social/{x,threads,weibo}.md; linkedin.md (and weibo fallback) long
     const social =
         master.social !== null && typeof master.social === 'object' ? (master.social as Record<string, unknown>) : null;
     const socialShort = typeof social?.short === 'string' ? social.short.trim() : '';
+    const socialLong = typeof social?.long === 'string' ? social.long.trim() : '';
     const socialDir = join(workDir, '26-social');
     if (socialShort !== '') {
         sted('mkdir', socialDir, () => mkdirSync(socialDir, { recursive: true }));
-        for (const name of ['x.md', 'threads.md']) {
+        for (const name of ['x.md', 'threads.md', 'weibo.md']) {
             const out = join(socialDir, name);
             sted('write', out, () => writeRaw(out, `${socialShort}\n`));
         }
-        console.log('editorial-render: wrote 26-social/{x,threads}.md');
+        console.log('editorial-render: wrote 26-social/{x,threads,weibo}.md');
+    } else if (socialLong !== '') {
+        sted('mkdir', socialDir, () => mkdirSync(socialDir, { recursive: true }));
+        const out = join(socialDir, 'weibo.md');
+        sted('write', out, () => writeRaw(out, `${socialLong}\n`));
+        console.log('editorial-render: wrote 26-social/weibo.md from social.long');
     } else {
         console.log('editorial-render: skipping social short posts (missing social.short in script plan)');
     }
-    const socialLong = typeof social?.long === 'string' ? social.long.trim() : '';
     if (socialLong !== '') {
         sted('mkdir', socialDir, () => mkdirSync(socialDir, { recursive: true }));
-        for (const name of ['weibo.md', 'linkedin.md']) {
-            const out = join(socialDir, name);
-            sted('write', out, () => writeRaw(out, `${socialLong}\n`));
-        }
-        console.log('editorial-render: wrote 26-social/{weibo,linkedin}.md');
+        const out = join(socialDir, 'linkedin.md');
+        sted('write', out, () => writeRaw(out, `${socialLong}\n`));
+        console.log('editorial-render: wrote 26-social/linkedin.md');
     } else {
         console.log('editorial-render: skipping social long posts (missing social.long in script plan)');
     }
