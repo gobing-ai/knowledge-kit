@@ -1270,6 +1270,16 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
     }
 
     try {
+        // 0347 F7 (2026-11-10): repair (--retry) on a gated-miss day hits a missing plan — the plan
+        // node never runs when the rss-gate misses, so "no plan" there is a vacuous repair, not a
+        // misconfiguration. Settle as a no-op so the window records a clean incident instead of a
+        // dag failure; non-retry sends still fail loud through readPlan.
+        if (retry && !(await fs.exists(join(workDir, '4-publish', `plan.${parsedWindow.data}.json`)))) {
+            echo(
+                `publish-matrix-send: no plan for window '${parsedWindow.data}' — nothing was planned, nothing to resend`,
+            );
+            return 0;
+        }
         const plan = await readPlan(fs, workDir, parsedWindow.data);
         const publishDir = join(workDir, '4-publish');
         const receiptsDir = join(publishDir, 'receipts');
