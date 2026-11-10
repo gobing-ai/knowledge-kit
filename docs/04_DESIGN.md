@@ -3,7 +3,7 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.59.0
+version: 2.60.0
 created_at: 2026-07-22
 updated_at: 2026-11-10
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
@@ -84,6 +84,8 @@ kk bot logout <bot>
 kk bot open <bot> [--login]
 kk bot exec <bot> <url> [-X <method>] [-H <header>…] [-d <data>] [-o <file>] [-i] [-L] [-f] [-m <seconds>]
 kk wiki ingest <source|-> [--type <url|pdf|html|rss>] [--out <dir>] [--json]
+kk wiki link [--fix] [--json]
+kk wiki lint [--json]
 kk store migrate [--db <path>]
 kk store ingest --run <id> --in <Doc[].json> --new-ids <path> [--db <path>]
 kk store backfill-facts [--db <path>]

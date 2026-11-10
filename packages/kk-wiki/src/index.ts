@@ -1,3 +1,15 @@
+export type { FindingCode, FindingRecord } from './findings';
+export {
+    buildVaultIndex,
+    extractLinks,
+    type LinkRef,
+    resolveLink,
+    scanLines,
+    type VaultIndex,
+    type VaultPageEntry,
+} from './graph';
+export { findMentions, fixLinks, type LinkFixResult, type Mention } from './link';
+export { lintExitCode, lintPages } from './lint';
 export {
     createMarkitdownRunner,
     type MarkitdownRunner,
@@ -30,3 +42,11 @@ export {
     type WriteRawSnapshotInput,
     writeRawSnapshot,
 } from './raw';
+export {
+    applyWrite,
+    applyWriteToPage,
+    type GuardDecision,
+    guardHeading,
+    type WriteMode,
+    type WriteResult,
+} from './write';

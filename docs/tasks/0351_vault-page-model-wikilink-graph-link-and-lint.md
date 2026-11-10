@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Vault page model, wikilink graph, link and lint
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-10T19:11:03.854Z
-updated_at: "2026-11-10T20:24:54.125Z"
+updated_at: "2026-11-10T23:21:21.646Z"
 feature_id: I1
 priority: P1
 tags:
@@ -13,6 +13,8 @@ tags:
 estimate_hours: 6
 
 dependencies: ["0350"]
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0351-verdict.json
 ---
 
 ## 0351. Vault page model, wikilink graph, link and lint
@@ -37,21 +39,21 @@ Rejected: parsing links with a regex over the whole file including code fences -
 
 ### Requirements
 
-- [ ] R1. `buildVaultIndex(contentDir)` returns every page with parsed frontmatter, outbound links and inbound counts, built fresh from disk on each call.
-- [ ] R2. Wikilink parsing skips fenced code blocks and inline code spans, and resolves both `[[slug]]` and `[[slug|Surface]]` forms.
-- [ ] R3. `kk wiki link` reports unlinked mentions of existing page titles and leaves files unchanged.
-- [ ] R4. `kk wiki link --fix` rewrites reported mentions to `[[slug|Surface]]` and lists the changed files.
-- [ ] R5. `kk wiki lint` reports broken links, orphan pages and missing or invalid frontmatter, one finding per defect with its file path and line.
-- [ ] R6. `kk wiki lint` exits 1 when findings exist and 0 when the findings list is empty.
-- [ ] R7. A page with `user_edited: true` is never rewritten by `link --fix`; the change lands under `## AI Updates (YYYY-MM-DD)` through the single guard function.
-- [ ] R8. Every new file in `packages/kk-wiki/src` clears the per-file coverage threshold with its own tests.
+- [x] R1. `buildVaultIndex(contentDir)` returns every page with parsed frontmatter, outbound links and inbound counts, built fresh from disk on each call.
+- [x] R2. Wikilink parsing skips fenced code blocks and inline code spans, and resolves both `[[slug]]` and `[[slug|Surface]]` forms.
+- [x] R3. `kk wiki link` reports unlinked mentions of existing page titles and leaves files unchanged.
+- [x] R4. `kk wiki link --fix` rewrites reported mentions to `[[slug|Surface]]` and lists the changed files.
+- [x] R5. `kk wiki lint` reports broken links, orphan pages and missing or invalid frontmatter, one finding per defect with its file path and line.
+- [x] R6. `kk wiki lint` exits 1 when findings exist and 0 when the findings list is empty.
+- [x] R7. A page with `user_edited: true` is never rewritten by `link --fix`; the change lands under `## AI Updates (YYYY-MM-DD)` through the single guard function.
+- [x] R8. Every new file in `packages/kk-wiki/src` clears the per-file coverage threshold with its own tests.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Link reports unlinked entity mentions without editing
-- [ ] AC2 — Link fix injects the wikilinks it reported
-- [ ] AC3 — Lint reports broken links, orphan pages and missing frontmatter
-- [ ] AC4 — Lint exits zero once no finding remains
+- [x] AC1 — Link reports unlinked entity mentions without editing
+- [x] AC2 — Link fix injects the wikilinks it reported
+- [x] AC3 — Lint reports broken links, orphan pages and missing frontmatter
+- [x] AC4 — Lint exits zero once no finding remains
 
 ### Q&A
 
@@ -98,15 +100,82 @@ Rejected: parsing links with a regex over the whole file including code fences -
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/src/commands/wiki.ts:33` |
+| `apps/cli/src/commands/wiki.ts:4` |
+| `apps/cli/src/commands/wiki.ts:58` |
+| `apps/cli/tests/main.test.ts:238` |
+| `docs/04_DESIGN.md:6` |
+| `docs/04_DESIGN.md:87` |
+| `docs/design/kk-wiki.md:10` |
+| `docs/design/kk-wiki.md:45` |
+| `docs/design/kk-wiki.md:6` |
+| `packages/kk-wiki/src/index.ts:1` |
+| `packages/kk-wiki/src/index.ts:45` |
+| `packages/kk-wiki/src/page.ts:117` |
+| `packages/kk-wiki/src/page.ts:121` |
+| `packages/kk-wiki/src/page.ts:123` |
+| `packages/kk-wiki/src/page.ts:40` |
+| `packages/kk-wiki/src/page.ts:82` |
+| `packages/kk-wiki/src/page.ts:86` |
+| `apps/cli/src/wiki/link.ts:1` |
+| `apps/cli/src/wiki/lint.ts:1` |
+| `apps/cli/tests/wiki/link.test.ts:1` |
+| `apps/cli/tests/wiki/lint.test.ts:1` |
+| `packages/kk-wiki/src/findings.ts:1` |
+| `packages/kk-wiki/src/graph.ts:1` |
+| `packages/kk-wiki/src/link.ts:1` |
+| `packages/kk-wiki/src/lint.ts:1` |
+| `packages/kk-wiki/src/write.ts:1` |
+| `packages/kk-wiki/tests/findings.test.ts:1` |
+| `packages/kk-wiki/tests/graph.test.ts:1` |
+| `packages/kk-wiki/tests/link.test.ts:1` |
+| `packages/kk-wiki/tests/lint.test.ts:1` |
+| `packages/kk-wiki/tests/write.test.ts:1` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `packages/kk-wiki/src/graph.ts:118`; `packages/kk-wiki/tests/graph.test.ts` |
+| R2 | MET | `packages/kk-wiki/src/graph.ts:69`; `packages/kk-wiki/tests/graph.test.ts` (fences, inline code, both link forms) |
+| R3 | MET | `apps/cli/src/wiki/link.ts:25`; `apps/cli/tests/wiki/link.test.ts` (report leaves the file unchanged) |
+| R4 | MET | `packages/kk-wiki/src/link.ts:83`; `apps/cli/tests/wiki/link.test.ts` (`--fix` writes the wikilink) |
+| R5 | MET | `packages/kk-wiki/src/lint.ts:14`; `packages/kk-wiki/tests/lint.test.ts` |
+| R6 | MET | `packages/kk-wiki/src/lint.ts:40`; `apps/cli/tests/wiki/lint.test.ts` (exit 0 clean, exit 1 with findings) |
+| R7 | MET | `packages/kk-wiki/src/write.ts:50`; `packages/kk-wiki/tests/write.test.ts`; guarded case in `apps/cli/tests/wiki/link.test.ts` |
+| R8 | MET | per-file coverage on the gate run: `graph.ts`, `lint.ts`, `write.ts`, `link.ts` all 100 |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — Link reports unlinked entity mentions without editing | MET | test | `apps/cli/tests/wiki/link.test.ts` — report mode leaves the file byte-identical |
+| AC2 — Link fix injects the wikilinks it reported | MET | test | `apps/cli/tests/wiki/link.test.ts` — `--fix` writes `[[karakeep |
+| AC3 — Lint reports broken links, orphan pages and missing frontmatter | MET | test | `packages/kk-wiki/tests/lint.test.ts`, `apps/cli/tests/wiki/lint.test.ts` |
+| AC4 — Lint exits zero once no finding remains | MET | test | `apps/cli/tests/wiki/lint.test.ts` — clean vault exits 0 |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+**Scope.** Task 0351 — vault index and wikilink graph, lint, the single-page write guard, mention
+detection, `kk wiki link` and `kk wiki lint`. Traceability: 8/8 Requirements MET, 4/4 feature ACs MET;
+evidence per row in `.spur/run/b1485866-4836-43f5-ac03-af6fccd8b10d-review-answer.txt`, captured as
+`.spur/run/0351-verdict.json` (PASS). Project gate PASS on this tree (`.spur/run/0351-check-receipt.json`).
+
+| Priority | Location | Finding | Disposition |
+| --- | --- | --- | --- |
+| P4 | `packages/kk-wiki/src/graph.ts:118` | The first graph draft reported body-relative line numbers, so a lint finding pointed inside the body instead of at the file | FIXED |
+
+Confidence: HIGH
+
+Verdict: PASS
 
 ### References
 
@@ -115,3 +184,8 @@ Rejected: parsing links with a regex over the whole file including code fences -
 - Shapes: `docs/design/kk-wiki.md:33-54` (verb surface), `docs/design/kk-wiki.md:56-82` (vault layout and frontmatter keys).
 
 ### History
+
+- 2026-11-10T23:00:12.803Z todo → wip (system)
+- 2026-11-10T23:20:18.231Z wip → testing (system)
+- 2026-11-10T23:21:21.635Z testing → done (system)
+

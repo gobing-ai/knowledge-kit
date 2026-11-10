@@ -37,6 +37,8 @@ export interface ParsedFrontmatter {
     data: Record<string, string | boolean | string[]>;
     body: string;
     errors: string[];
+    /** 1-based line of the body's first line in the original file (1 when there is no frontmatter). */
+    bodyStartLine: number;
 }
 
 /** A page whose frontmatter does not satisfy the schema. Carries the path for the caller. */
@@ -77,11 +79,11 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter {
     const text = raw.replace(/^\uFEFF/, '');
     const lines = text.split('\n');
     if (lines[0]?.trim() !== FENCE) {
-        return { data: {}, body: text, errors: ['missing-frontmatter'] };
+        return { data: {}, body: text, errors: ['missing-frontmatter'], bodyStartLine: 1 };
     }
     const close = lines.findIndex((line, index) => index > 0 && line.trim() === FENCE);
     if (close < 0) {
-        return { data: {}, body: text, errors: ['unterminated-frontmatter'] };
+        return { data: {}, body: text, errors: ['unterminated-frontmatter'], bodyStartLine: 1 };
     }
     const data: Record<string, string | boolean | string[]> = {};
     let openArrayKey: string | null = null;
@@ -112,13 +114,13 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter {
         }
         data[key] = parseScalar(value);
     }
+    const rest = lines.slice(close + 1);
+    const leadingBlank = rest[0] === '' ? 1 : 0;
     return {
         data,
-        body: lines
-            .slice(close + 1)
-            .join('\n')
-            .replace(/^\n/, ''),
+        body: rest.join('\n').replace(/^\n/, ''),
         errors,
+        bodyStartLine: close + 2 + leadingBlank,
     };
 }
 

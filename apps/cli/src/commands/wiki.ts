@@ -1,6 +1,8 @@
 import { type Command, CommanderError } from 'commander';
 import { consoleOutput, toJson } from '../output';
 import { runIngest } from '../wiki/ingest';
+import { printLinkOutcome, runLink } from '../wiki/link';
+import { printLintOutcome, runLint } from '../wiki/lint';
 
 /** Options accepted by `kk wiki ingest`. */
 interface WikiIngestOptions {
@@ -28,6 +30,20 @@ async function ingestAction(source: string, options: WikiIngestOptions): Promise
     throw new CommanderError(outcome.code, 'kk.wiki.ingest', message);
 }
 
+/** `kk wiki link [--fix]`: report unlinked mentions of page titles, or inject them. */
+async function linkAction(options: { fix?: boolean; json?: boolean }): Promise<void> {
+    const outcome = await runLink({ fix: options.fix === true, json: options.json === true });
+    printLinkOutcome(outcome, options.json === true);
+    if (!outcome.ok) throw new CommanderError(outcome.code, 'kk.wiki.link', 'kk.wiki.link failed');
+}
+
+/** `kk wiki lint`: audit the vault; exits 1 when findings exist. */
+async function lintAction(options: { json?: boolean }): Promise<void> {
+    const outcome = await runLint({ json: options.json === true });
+    printLintOutcome(outcome, options.json === true);
+    if (outcome.code !== 0) throw new CommanderError(outcome.code, 'kk.wiki.lint', 'kk.wiki.lint findings');
+}
+
 /** Register the `wiki` noun. One subcommand module per verb (docs/design/kk-wiki.md §1). */
 export function registerWikiCommand(parent: Command): void {
     const wiki = parent.command('wiki').description('Deterministic Markdown vault mechanics (ADR-046)');
@@ -39,4 +55,15 @@ export function registerWikiCommand(parent: Command): void {
         .option('--out <dir>', 'Raw directory override (default: wiki.raw from kk.config.json)')
         .option('--json', 'Print one JSON document instead of a one-line summary')
         .action(ingestAction);
+
+    wiki.command('link')
+        .description('Report unlinked mentions of existing page titles; --fix injects them')
+        .option('--fix', 'Rewrite the reported mentions to [[slug|Surface]]')
+        .option('--json', 'Print one JSON document')
+        .action(linkAction);
+
+    wiki.command('lint')
+        .description('Audit the vault for broken links, orphan pages and frontmatter defects')
+        .option('--json', 'Print one JSON document')
+        .action(lintAction);
 }

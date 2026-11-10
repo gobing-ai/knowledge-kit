@@ -3,11 +3,11 @@ name: kk wiki vault
 doc: design/kk-wiki
 owns: "SHAPES — kk wiki verb signatures, vault frontmatter schema, config keys, publish projection"
 authority: derived
-version: 0.2.0
+version: 0.3.0
 created_at: 2026-11-10
 updated_at: 2026-11-10
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
-status: partial — `ingest` shipped (0350); the remaining verbs are accepted design (I1, ADR-046)
+status: partial — `ingest` (0350), `link` and `lint` (0351) shipped; the remaining verbs are accepted design (I1, ADR-046)
 ---
 
 # kk wiki vault — design satellite
@@ -42,8 +42,8 @@ exits `0` on success / `1` on a handled failure / `2` on a usage error.
 | `synthesize` | `kk wiki synthesize <topic\|file> [--out <path>] [--json]` | Creates a page when absent, extends in place when present; applies the `user_edited` guard | text authored by the skill |
 | `merge` | `kk wiki merge <source-page> <target-page> [--json]` | Unions bodies + frontmatter `sources`, writes a redirect for the source path, rewrites inbound links | no |
 | `compile` | `kk wiki compile [--json]` | Regenerates `content/index.md` and `content/MAP.md`; idempotent byte-for-byte | no |
-| `link` | `kk wiki link [--fix] [--json]` | Reports unlinked mentions of existing page titles; `--fix` rewrites them to `[[slug\|Surface]]` | no |
-| `lint` | `kk wiki lint [--json]` | Reports broken links, orphan pages, missing/invalid frontmatter; nonzero when findings exist | no |
+| `link` | `kk wiki link [--fix] [--json]` | Reports unlinked mentions of existing page titles; `--fix` rewrites them to `[[slug\|Surface]]`, and a `user_edited` page receives the change under `## AI Updates` (**shipped, 0351**) | no |
+| `lint` | `kk wiki lint [--json]` | Reports broken links, orphan pages, missing/invalid frontmatter; nonzero when findings exist (**shipped, 0351**) | no |
 | `gc` | `kk wiki gc [--json]` | Deletes unreferenced `raw/**` caches and `raw/tmp/**`; keeps referenced raw files | no |
 | `sync` | `kk wiki sync <remote> [--dry-run] [--json]` | Runs the remote declared in config (`command`), prints the resolved command and planned transfers; `--dry-run` transfers nothing | no (transport lives in the remote's own CLI, e.g. rclone) |
 | `publish` | `kk wiki publish --target <dir> [--json]` | Renders `content/` into `<dir>/content/` as a Quartz-compatible tree; never forks or patches Quartz | no |

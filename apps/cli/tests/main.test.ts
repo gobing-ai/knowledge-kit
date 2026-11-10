@@ -235,6 +235,8 @@ describe('kk command tree shape (0275 AC1 — A22 R1)', () => {
             'store select',
             'store stats',
             'wiki ingest',
+            'wiki link',
+            'wiki lint',
         ]);
     });
 
