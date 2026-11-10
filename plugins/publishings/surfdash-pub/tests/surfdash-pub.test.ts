@@ -20,6 +20,7 @@ import {
     PostsurfingFileCliTransport,
     processPublishIO,
     pushPostGit,
+    runDailyTopicsSync,
     runListenLinkBackfill,
     runSiteGate,
     slugify,
@@ -2175,6 +2176,14 @@ if (argv[0] === 'seo' && argv[1] === 'listen-link') {
     console.log('seo listen-link backfill — 0 linked (written), 0 not-live, 0 already-linked');
     process.exit(0);
 }
+if (argv[0] === 'seo' && argv[1] === 'retitle') {
+    if (process.env.TEST_SD_RETITLE_FAIL === '1') {
+        console.error('sd seo retitle failed: could not stamp claims');
+        process.exit(1);
+    }
+    console.log('seo retitle --write --stamp-claims ok');
+    process.exit(0);
+}
 if (argv[0] === 'check' && argv[1] === 'digest') {
     if (process.env.TEST_SD_CHECK_DIGEST_FAIL === '1') {
         console.error('sd check digest failed: content/posts/articles/zh/20261024-test/index.md: filler sentence detected');
@@ -2317,7 +2326,7 @@ process.exit(0);
             }
         });
 
-        test('warn mode -> push happens and warning echoed', async () => {
+        test('warn mode on main still blocks the push and logs that the hatch was ignored', async () => {
             const fx = await setupGateFixture('test-gate-warn');
             const restoreFetch = mockLiveFetch();
 
@@ -2332,14 +2341,16 @@ process.exit(0);
             try {
                 const transport = new PostsurfingFileCliTransport();
                 const result = await transport.publish({ content: makeContent(fx.coverSrc) });
-                expect(result.ok).toBe(true);
-                expect(errTarget.text()).toContain('site gate (warn):');
+                expect(result.ok).toBe(false);
+                expect(result.error).toContain('bun run sd check digest');
+                expect(result.error).toContain('filler sentence detected');
+                expect(errTarget.text()).toContain('ignored because this run pushes to surfdash main');
                 expect(errTarget.text()).toContain('filler sentence detected');
 
                 const pushed = await new Response(
                     Bun.spawn(['git', '--git-dir', fx.origin, 'log', '-1', '--format=%s', 'main']).stdout,
                 ).text();
-                expect(pushed).toContain('daily AI news 20261024');
+                expect(pushed.trim()).toBe('seed');
             } finally {
                 restore();
                 restoreFetch();
@@ -2347,6 +2358,78 @@ process.exit(0);
                 delete process.env.SURFDASH_DIGEST_CHECK;
                 delete process.env.POSTSURFING_BIN;
                 delete process.env.SURFDASH_ROOT;
+                process.env.SURFDASH_AUTO_PUSH = '0';
+                await rm(fx.base, { recursive: true, force: true });
+            }
+        });
+
+        test('warn mode with AUTO_PUSH=0 still continues (dry-run hatch)', async () => {
+            const fx = await setupGateFixture('test-gate-warn-dry');
+            process.env.SURFDASH_AUTO_PUSH = '0';
+            process.env.SURFDASH_DIGEST_CHECK = 'warn';
+            process.env.TEST_SD_CHECK_DIGEST_FAIL = '1';
+            const errTarget = createBufferTarget();
+            const restore = setDefaultOutputTargets({ stderr: errTarget });
+            try {
+                const outcome = await runSiteGate(fx.work);
+                expect(outcome.ok).toBe(true);
+                expect(errTarget.text()).toContain('site gate (warn):');
+                expect(errTarget.text()).toContain('filler sentence detected');
+            } finally {
+                restore();
+                delete process.env.TEST_SD_CHECK_DIGEST_FAIL;
+                delete process.env.SURFDASH_DIGEST_CHECK;
+                process.env.SURFDASH_AUTO_PUSH = '0';
+                await rm(fx.base, { recursive: true, force: true });
+            }
+        });
+
+        test('warn mode off main still continues when AUTO_PUSH=1', async () => {
+            const fx = await setupGateFixture('test-gate-warn-topic');
+            const branch = Bun.spawn(['git', 'checkout', '-b', 'topic-fix'], {
+                cwd: fx.work,
+                stdout: 'pipe',
+                stderr: 'pipe',
+            });
+            expect(await branch.exited).toBe(0);
+            process.env.SURFDASH_AUTO_PUSH = '1';
+            process.env.SURFDASH_DIGEST_CHECK = 'warn';
+            process.env.TEST_SD_CHECK_DIGEST_FAIL = '1';
+            const errTarget = createBufferTarget();
+            const restore = setDefaultOutputTargets({ stderr: errTarget });
+            try {
+                const outcome = await runSiteGate(fx.work);
+                expect(outcome.ok).toBe(true);
+                expect(errTarget.text()).toContain('site gate (warn):');
+            } finally {
+                restore();
+                delete process.env.TEST_SD_CHECK_DIGEST_FAIL;
+                delete process.env.SURFDASH_DIGEST_CHECK;
+                process.env.SURFDASH_AUTO_PUSH = '0';
+                await rm(fx.base, { recursive: true, force: true });
+            }
+        });
+
+        test('off mode on main with AUTO_PUSH=1 still runs the gate and blocks', async () => {
+            const fx = await setupGateFixture('test-gate-off-main');
+            process.env.SURFDASH_AUTO_PUSH = '1';
+            process.env.SURFDASH_DIGEST_CHECK = 'off';
+            process.env.TEST_SD_CHECK_DIGEST_FAIL = '1';
+            const errTarget = createBufferTarget();
+            const restore = setDefaultOutputTargets({ stderr: errTarget });
+            try {
+                const outcome = await runSiteGate(fx.work);
+                expect(outcome.ok).toBe(false);
+                if (!outcome.ok) {
+                    expect(outcome.error).toContain('bun run sd check digest');
+                    expect(outcome.error).toContain('filler sentence detected');
+                }
+                expect(errTarget.text()).toContain('SURFDASH_DIGEST_CHECK=off ignored');
+                expect(errTarget.text()).toContain('pushes to surfdash main');
+            } finally {
+                restore();
+                delete process.env.TEST_SD_CHECK_DIGEST_FAIL;
+                delete process.env.SURFDASH_DIGEST_CHECK;
                 process.env.SURFDASH_AUTO_PUSH = '0';
                 await rm(fx.base, { recursive: true, force: true });
             }
@@ -2412,7 +2495,7 @@ process.exit(0);
             }
         });
 
-        test('patchPost and runSiteGate warn and continue when site gate fails only on an unrelated date post', async () => {
+        test('patchPost and runSiteGate block an unrelated-date failure when pushing to main', async () => {
             const fx = await setupGateFixture('test-patch-unrelated-date-gate');
             process.env.SURFDASH_ROOT = fx.work;
             process.env.SURFDASH_AUTO_PUSH = '1';
@@ -2464,11 +2547,225 @@ process.exit(0);
                         dateIso: '2026-11-05',
                     },
                 });
-                expect(result.ok).toBe(true);
-                expect(errTarget.text()).toContain('site gate (warn):');
+                expect(result.ok).toBe(false);
+                expect(result.error).toContain('bun run sd check digest');
+                expect(result.error).toContain('20261106-ai-2026-11-06');
+                expect(errTarget.text()).toContain('ignored because this run pushes to surfdash main');
                 expect(errTarget.text()).toContain('20261106-ai-2026-11-06');
+                const pushed = await new Response(
+                    Bun.spawn(['git', '--git-dir', fx.origin, 'log', '-1', '--format=%s', 'main']).stdout,
+                ).text();
+                expect(pushed.trim()).toBe('add-20261105-post');
             } finally {
                 restore();
+                delete process.env.SURFDASH_ROOT;
+                process.env.SURFDASH_AUTO_PUSH = '0';
+                await rm(fx.base, { recursive: true, force: true });
+            }
+        });
+
+        const digestPost = (locale: 'zh' | 'en' | 'ja', dateIso = '2026-11-08'): string => {
+            if (locale === 'zh') {
+                return `---
+title: "每日AI乱炖 · ${dateIso}：Claude Code、OpenAI 新证明"
+description: "Claude Code 被指在请求头里用 curl 带上某个组织的邮箱地址；OpenAI 上周发布了一批新证明，其中一项朝一个长期悬而未决的物理学问题迈进了一步：杨-米尔斯理论究竟是否存在。"
+tags:
+  - ai-news
+  - 'sub-category:ai-daily'
+publishDate: '${dateIso}'
+image: ./assets/cover.png
+refined: true
+key_points:
+  - "Claude Code — 一位评论者说，Claude Code 在私人账号下运行时用 curl 带上了某个组织的邮箱地址；至于它凭什么挑出这个地址、又是怎么把它发出去的，目前并不清楚。"
+  - "OpenAI 新证明 — 按他的说法，然后就在上周，OpenAI 发布了一批新证明，其中一项朝一个长期悬而未决的物理问题迈了一步：杨-米尔斯理论究竟是否存在。"
+---
+
+正文。
+`;
+            }
+            if (locale === 'en') {
+                return `---
+title: "Daily AI Stew · ${dateIso}: Claude Code, OpenAI"
+description: "One commenter says Claude Code sent an organizational email address via curl; OpenAI released new proofs last week, one toward Yang–Mills existence."
+tags:
+  - ai-news
+  - 'sub-category:ai-daily'
+publishDate: '${dateIso}'
+image: ./assets/cover.png
+refined: true
+key_points:
+  - "Claude Code — One commenter says Claude Code, running under a private account, sent an organizational email address via curl; how it picked that address and how it sent it remain unclear."
+  - "OpenAI — According to the video's author, last week OpenAI released a batch of new proofs, one of which took a step toward a long-open physics question: whether Yang–Mills theory actually exists."
+---
+
+Body.
+`;
+            }
+            return `---
+title: "デイリーAIシチュー · ${dateIso}：Claude Code、OpenAI の新証明"
+description: "コメント投稿者によれば Claude Code は curl で組織のメールアドレスを付加。動画の作者の説明では OpenAI は先週新しい証明を公開し、その一つがヤン=ミルズの存在性へ一歩。"
+tags:
+  - ai-news
+  - 'sub-category:ai-daily'
+publishDate: '${dateIso}'
+image: ./assets/cover.png
+refined: true
+key_points:
+  - "Claude Code — あるコメント投稿者によれば、Claude Code は個人アカウントで実行中に curl で組織のメールアドレスを付加していたといい、どうしてそのアドレスを選んだのか、どうやって送ったのかは不明のままです。"
+  - "OpenAI の新証明 — 動画の作者の説明では、先週 OpenAI がまとめて新しい証明を公開し、その一つが長く未解決だった物理学の問いに一歩踏み込みました。ヤン=ミルズ理論はそもそも存在するのか、という問いです。"
+---
+
+本文。
+`;
+        };
+
+        const writeDigestLocales = async (work: string, slug: string, dateIso = '2026-11-08'): Promise<string> => {
+            const zhPostPath = join(work, 'content', 'posts', 'articles', 'zh', slug, 'index.md');
+            for (const locale of ['zh', 'en', 'ja'] as const) {
+                const indexMd = join(work, 'content', 'posts', 'articles', locale, slug, 'index.md');
+                await mkdir(dirname(indexMd), { recursive: true });
+                await writeFile(indexMd, digestPost(locale, dateIso));
+            }
+            return zhPostPath;
+        };
+
+        test('runDailyTopicsSync upserts a new daily-topics entry and records the map path', async () => {
+            const fx = await setupGateFixture('test-topics-upsert');
+            const slug = '20261108-ai-2026-11-08';
+            const zhPostPath = await writeDigestLocales(fx.work, slug);
+            try {
+                const result = await runDailyTopicsSync(fx.work, zhPostPath);
+                expect(result.ok).toBe(true);
+                if (!result.ok) return;
+                expect(result.paths).toContain('scripts/seo/daily-topics.json');
+                const map = JSON.parse(readFileSync(join(fx.work, 'scripts', 'seo', 'daily-topics.json'), 'utf-8')) as {
+                    [key: string]: { zh: { headlines: string[] } };
+                };
+                expect(Object.keys(map)).toEqual([slug]);
+                expect(map[slug]?.zh.headlines).toEqual(['Claude Code', 'OpenAI 新证明']);
+            } finally {
+                await rm(fx.base, { recursive: true, force: true });
+            }
+        });
+
+        test('runDailyTopicsSync skips when a locale is missing and does not invent an entry', async () => {
+            const fx = await setupGateFixture('test-topics-skip');
+            const slug = '20261108-ai-2026-11-08';
+            const zhPostPath = join(fx.work, 'content', 'posts', 'articles', 'zh', slug, 'index.md');
+            await mkdir(dirname(zhPostPath), { recursive: true });
+            await writeFile(zhPostPath, digestPost('zh'));
+            const errTarget = createBufferTarget();
+            const restore = setDefaultOutputTargets({ stderr: errTarget });
+            try {
+                const result = await runDailyTopicsSync(fx.work, zhPostPath);
+                expect(result.ok).toBe(true);
+                if (result.ok) expect(result.paths).toEqual([]);
+                expect(errTarget.text()).toContain('locale index.md missing');
+                expect(existsSync(join(fx.work, 'scripts', 'seo', 'daily-topics.json'))).toBe(false);
+            } finally {
+                restore();
+                await rm(fx.base, { recursive: true, force: true });
+            }
+        });
+
+        test('runDailyTopicsSync fails closed when retitle exits non-zero', async () => {
+            const fx = await setupGateFixture('test-topics-retitle-fail');
+            const zhPostPath = await writeDigestLocales(fx.work, '20261108-ai-2026-11-08');
+            process.env.TEST_SD_RETITLE_FAIL = '1';
+            try {
+                const result = await runDailyTopicsSync(fx.work, zhPostPath);
+                expect(result.ok).toBe(false);
+                if (!result.ok) {
+                    expect(result.error).toContain('retitle');
+                    expect(result.error).toContain('could not stamp claims');
+                }
+            } finally {
+                delete process.env.TEST_SD_RETITLE_FAIL;
+                await rm(fx.base, { recursive: true, force: true });
+            }
+        });
+
+        test('patchPost does not push when retitle fails after all locales exist', async () => {
+            const fx = await setupGateFixture('test-patch-retitle-fail');
+            const slug = '20261108-ai-2026-11-08';
+            const zhPostPath = await writeDigestLocales(fx.work, slug);
+            await writeFile(join(fx.work, 'scripts', 'publish-orchestrator.ts'), 'process.exit(0);\n');
+            const gitRun = async (cmd: string[], cwd: string): Promise<void> => {
+                const proc = Bun.spawn(cmd, { cwd, stdout: 'pipe', stderr: 'pipe' });
+                await proc.exited;
+            };
+            await gitRun(['git', 'add', '-A'], fx.work);
+            await gitRun(['git', 'commit', '-m', 'add-digest'], fx.work);
+            await gitRun(['git', 'push', 'origin', 'main'], fx.work);
+
+            process.env.SURFDASH_ROOT = fx.work;
+            process.env.SURFDASH_AUTO_PUSH = '1';
+            process.env.TEST_SD_RETITLE_FAIL = '1';
+            try {
+                const transport = new PostsurfingFileCliTransport();
+                const result = await transport.publish({
+                    content: { title: 'unused', body: 'unused', format: 'markdown' },
+                    options: {
+                        operation: 'patch',
+                        postPath: zhPostPath,
+                        coverUrl: 'https://cdn.example/cover.png',
+                        dateIso: '2026-11-08',
+                    },
+                });
+                expect(result.ok).toBe(false);
+                expect(result.error).toContain('retitle');
+                const pushed = await new Response(
+                    Bun.spawn(['git', '--git-dir', fx.origin, 'log', '-1', '--format=%s', 'main']).stdout,
+                ).text();
+                expect(pushed.trim()).toBe('add-digest');
+            } finally {
+                delete process.env.TEST_SD_RETITLE_FAIL;
+                delete process.env.SURFDASH_ROOT;
+                process.env.SURFDASH_AUTO_PUSH = '0';
+                await rm(fx.base, { recursive: true, force: true });
+            }
+        });
+
+        test('patchPost upserts daily-topics and pushes on the happy path', async () => {
+            const fx = await setupGateFixture('test-patch-topics-push');
+            const slug = '20261108-ai-2026-11-08';
+            const zhPostPath = await writeDigestLocales(fx.work, slug);
+            await writeFile(join(fx.work, 'scripts', 'publish-orchestrator.ts'), 'process.exit(0);\n');
+            const gitRun = async (cmd: string[], cwd: string): Promise<void> => {
+                const proc = Bun.spawn(cmd, { cwd, stdout: 'pipe', stderr: 'pipe' });
+                await proc.exited;
+            };
+            await gitRun(['git', 'add', '-A'], fx.work);
+            await gitRun(['git', 'commit', '-m', 'add-digest'], fx.work);
+            await gitRun(['git', 'push', 'origin', 'main'], fx.work);
+
+            process.env.SURFDASH_ROOT = fx.work;
+            process.env.SURFDASH_AUTO_PUSH = '1';
+            try {
+                const transport = new PostsurfingFileCliTransport();
+                const result = await transport.publish({
+                    content: { title: 'unused', body: 'unused', format: 'markdown' },
+                    options: {
+                        operation: 'patch',
+                        postPath: zhPostPath,
+                        coverUrl: 'https://cdn.example/cover.png',
+                        dateIso: '2026-11-08',
+                    },
+                });
+                expect(result.ok).toBe(true);
+                const map = JSON.parse(readFileSync(join(fx.work, 'scripts', 'seo', 'daily-topics.json'), 'utf-8')) as {
+                    [key: string]: { en: { headlines: string[] } };
+                };
+                expect(map[slug]?.en.headlines).toEqual(['Claude Code', 'OpenAI']);
+                const pushed = await new Response(
+                    Bun.spawn(['git', '--git-dir', fx.origin, 'log', '-1', '--format=%s', 'main']).stdout,
+                ).text();
+                expect(pushed).toContain('cover + podcast cross-link');
+                const originMap = await new Response(
+                    Bun.spawn(['git', '--git-dir', fx.origin, 'show', 'HEAD:scripts/seo/daily-topics.json']).stdout,
+                ).text();
+                expect(originMap).toContain(slug);
+            } finally {
                 delete process.env.SURFDASH_ROOT;
                 process.env.SURFDASH_AUTO_PUSH = '0';
                 await rm(fx.base, { recursive: true, force: true });
