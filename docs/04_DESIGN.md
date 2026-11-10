@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.57.0
+version: 2.58.0
 created_at: 2026-07-22
-updated_at: 2026-11-04
+updated_at: 2026-11-10
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -54,6 +54,7 @@ sync: [T3]
 | [xhs-image-cards.md](design/xhs-image-cards.md) | XHS card skill, image-gen presets, ordered Content images, browser draft/public Result | shipped (E8, ADR-024; 0167 xhs-pub script transport, 0168 xhs-images skill + presets) |
 | [segmented-episode-speech.md](design/segmented-episode-speech.md) | Voice2 section synthesis, per-section cache, join, then the existing intro sting (ADR-034) | implemented (G13) |
 | [voxcpm-daily-voice-driver.md](design/voxcpm-daily-voice-driver.md) | Standalone VoxCPM voice generator: private uv Python worker behind voice-gen (ADR-036) | implemented (G14) |
+| [kk-wiki.md](design/kk-wiki.md) | `kk wiki` verb surface, vault frontmatter, config keys and Quartz publish projection | accepted design (I1, ADR-046; not yet built — §1 transcribes the verbs once they ship) |
 | [workflow-board-modules.md](design/workflow-board-modules.md) | Native Collect / Daily AI Voice / IT Content Board modules; recorded run settings with Settings → Workflows reuse; local reader and run capture surface | shipped (G8; 0252–0255) |
 | [collect-store-views.md](design/collect-store-views.md) | Collect module read-only store views: cadence overview, run funnel, label quality, items browser and downstream yield over `.works/kk.db` | accepted design (G81) |
 

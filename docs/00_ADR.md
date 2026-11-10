@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.43.0
+version: 1.44.0
 created_at: 2026-05-28
-updated_at: 2026-11-04
+updated_at: 2026-11-10
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -1673,3 +1673,23 @@ each item's facts from being authored three times.
 has no selection policy. Keeping policy in YAML prompts, which hit the prompt cap and drift per model.
 
 **Detail:** task 0345; `docs/design/kk-daily-ai-voice3.md`; `docs/04_DESIGN.md` §daily stages.
+
+---
+
+## ADR-046: `kk wiki` is a model-free vault package behind a CLI noun
+
+**Status:** Accepted (design) · **Date:** 2026-11-10 · **Feature:** I1
+
+**Decision.** A new workspace package `packages/kk-wiki` (`@gobing-ai/kk-wiki`) owns every
+deterministic wiki mechanic — page model and frontmatter schema, `[[wikilink]]` graph, link/lint,
+merge with redirect, `index.md`/`MAP.md` compilation, gc, the `user_edited` append-only guard, the
+raw snapshot writer and the Quartz-compatible publish projection. `apps/cli/src/commands/wiki.ts`
+exposes them as the `kk wiki <verb>` noun. Model-bearing authoring (`summarize`, `synthesize`,
+`query`) stays in a `plugins/kk` skill that hands text to those verbs: the package never calls a
+model, and the CLI never imports the executor, browser or store.
+
+**Why.** The vault has to stay plain Markdown that a human edits and Quartz publishes, so its
+mechanics must be testable without a provider and the user-edit guard must be enforced in code
+rather than requested in a prompt.
+
+**Detail:** `docs/design/kk-wiki.md`; §Module boundaries and "kk wiki vault" in `docs/03_ARCHITECTURE.md`.

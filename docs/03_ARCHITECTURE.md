@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.43.0
+version: 2.44.0
 created_at: 2026-07-22
-updated_at: 2026-11-04
+updated_at: 2026-11-10
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -18,6 +18,29 @@ sync: [T1]
 ## Smart SEO (G9 — ADR-039; tasks 0281–0286 shipped collection stages, decision catalogs and the skill; a live-site audit remains)
 
 G9 adds native KK audit stages, typed Spur decision catalogs and one `smart-seo` skill. Observed facts, assessments, semantic judgments and report claims remain separate run-bound artifacts; `spur workflow` owns sequencing and KK owns bounded deterministic work. The [design satellite](design/kk-smart-seo.md) owns collection limits, network policy, evidence contracts, fallback semantics and distribution. `vendors/jev-seo` remains reference-only.
+
+## kk wiki vault (accepted design — ADR-046; not yet built)
+
+`kk wiki` turns raw snapshots into a persistent, interlinked Markdown vault and a Quartz-compatible
+projection of it. `@gobing-ai/kk-wiki` holds every deterministic mechanic (page model + frontmatter
+schema, wikilink graph, link/lint, merge with redirect, index/MAP compile, gc, `user_edited` guard,
+raw snapshot writer, publish projection); `apps/cli/src/commands/wiki.ts` registers one module per
+verb; `plugins/kk/skills/wiki-authoring` supplies the model-authored text for `summarize`,
+`synthesize` and `query`. Paths: `raw/<type>/<id>.md` (write-once layer 1) → `content/**` (layer 2,
+the vault root and Quartz content root) → `<target>/content/**` (layer 3, published tree).
+
+**Invariants**
+
+1. `kk-wiki` imports no provider client, no executor seam, no browser automation and no store; a
+   verb that would need a model returns the assembled context instead of calling one.
+2. Every page write goes through the guard function; a page with `user_edited: true` is never
+   replaced — changes land under `## AI Updates (<YYYY-MM-DD>)`.
+3. `kk wiki compile` is idempotent: two consecutive runs produce byte-identical `index.md` and
+   `MAP.md`.
+4. `kk wiki publish` writes only under `--target` and never modifies `content/` or Quartz.
+
+Shapes (verb signatures, frontmatter keys, config keys, projection layout) live in
+`docs/design/kk-wiki.md`.
 
 ## System shape
 
@@ -420,6 +443,7 @@ Full spec: `docs/design/storm-evidence-cache.md`.
 | -------- | -------------- | ---------------- | --------------- |
 | `apps/cli` | `@gobing-ai/knowledge-kit` | Commander surface (`executor`, `plugin`; hidden aliases `invoke`/`fanin`/`fanout`/`plugins *`), arg coercion, wiring | `@gobing-ai/kk-core`, `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra`, `commander` |
 | `packages/kk-core` | `@gobing-ai/kk-core` | Doc/Content/Result + fan-out aggregate schemas (`TargetOutcomeSchema` / `AggregateResultSchema`, 0157 R11), `PluginKind` / `kindContract`, filesystem plugin discovery | `zod` + `node:fs` / `node:path` (discovery only) |
+| `packages/kk-wiki` | `@gobing-ai/kk-wiki` | Accepted design (ADR-046, feature I1 — not yet built): vault page model, wikilink graph, link/lint, merge with redirect, index/MAP compile, gc, `user_edited` guard, raw snapshot writer, Quartz publish projection | `@gobing-ai/kk-core`, `zod`, `node:fs` / `node:path` |
 | `packages/publish-harness` | `@gobing-ai/publish-harness` | Publish transport abstraction; `FakeFileCliTransport` / `FakeBrowserTransport`; browser session helpers (`resolveBrowserProfileDir`, `trySelectors`; browser launch moved upstream to `@gobing-ai/ts-browser-automation`, task 0177); shared `./browser` command library — channel profile-dir precedence, `login\|check` profile CLI, poll/editor-input/observed-outcome helpers (E91, ADR-027) | `@gobing-ai/kk-core`, `@gobing-ai/ts-browser-automation`, `@gobing-ai/ts-utils` |
 | `plugins/ingestions/aihot-ingest` | `@gobing-ai/aihot-ingest` | Aihot selected snapshot/changes → attributed `Doc[]`; atomic cursor state (F6) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
 | `plugins/ingestions/karakeep-local` | `@gobing-ai/karakeep-local` | Ingestion plugin: rclone-synced folder → `Doc[]` | `@gobing-ai/kk-core`, `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra` |

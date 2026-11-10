@@ -3,9 +3,9 @@ name: Product Requirements
 doc: 01_PRD
 owns: WHAT — product vision, users, scope (in / out / deferred)
 authority: authoritative-on-scope
-version: 3.18.0
+version: 3.19.0
 created_at: 2026-07-22
-updated_at: 2026-10-15
+updated_at: 2026-11-10
 derived_from: [00_ADR]
 edit_rules: 99 §6.2
 sync: [T6]
@@ -57,7 +57,6 @@ Technical content creation and published output are fragmented: turning ideas or
 
 - Engine-level parallel execution — sequential fan-in/fan-out owned by `kk` satisfies multi-channel publish without premature engine complexity (ADR-007 R4).
 - Package rename — the name `knowledge-kit` / `@gobing-ai/knowledge-kit` is historical and retained (ADR-007 R2). The operator binary is `kk` (ADR-010 / feature A2); that is not a package rename.
-- The **LLM wiki** — explicitly undecided map fog (feature **I**), requiring a go/no-go spike first.
 
 ## In scope
 
@@ -75,6 +74,7 @@ Technical content creation and published output are fragmented: turning ideas or
 | Platform Repositioning | **J** | Phase 2 | **J** Reposition knowledge-kit to ingest-create-publish (ADR-007, PRD v3, contract designs) |
 
 | Workflow visibility in Spur Board | **G8** | Phase 3 | Collect, Daily AI Voice and IT Content: run-bound summaries, outputs, progress and recorded run settings; reuse Settings → Workflows for definitions; local read-only operation; tasks `0252`–`0255`; [design](design/workflow-board-modules.md) |
+| LLM wiki vault | **I** / **I1** | Phase 3 | Committed via the operator specs dated 2026-11-10 (`kk wiki` verb family). `kk` owns the deterministic vault mechanics (raw snapshots, wikilink graph, link/lint, merge with redirect, index/MAP compile, gc, `user_edited` guard, Quartz publish projection); model-bearing summarize/synthesize/query authoring stays in a `kk` skill; ADR-046; [design](design/kk-wiki.md). The separate `treasury` vault repository (Quartz 4, R2/rclone `raw/`, cron loop, Cloudflare Pages) is deferred to its own run. |
 
 Topic → article without prior ingestion is in scope through the planned `Brief` generator input.
 This is a product requirement, not a shipped CLI claim: `docs/04_DESIGN.md` §1.7/§4 identifies
@@ -86,7 +86,7 @@ the unimplemented `Brief` / `GeneratorInput` contract.
 | ------ | --------- | -------- | -------- |
 | Engine-level parallel execution | — | Deferred | `kk` sequential fan-out meets requirement without engine complexity (ADR-007 R4) |
 | Package rename | — | Rejected | Package `@gobing-ai/knowledge-kit` is historical (ADR-007 R2). Operator binary `kk` is in scope (A2 / ADR-010). |
-| LLM wiki | **I** | Undecided | Parked as map fog; requires go/no-go spike first |
+| LLM wiki static-site deployment (treasury repo) | **I1** | Deferred (needs its own run) | Committed at the `kk wiki` surface; the Quartz/R2/Pages repository turns committed once its own run plans it |
 | Own STORM generator | **D4** | Phase 3 | Future generator depth |
 | Remaining WT agent-skill families | **F41** | Shipped | Image, auxiliary research, adaptation and publishing delivered by F41 kk-itc end-to-end (ADR-021/ADR-022, `docs/design/kk-itc-end-to-end.md`) |
 
