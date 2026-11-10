@@ -1,9 +1,12 @@
 #!/usr/bin/env bun
 /** Supervise one scheduled daily run and persist its terminal outcome even after a deadline. */
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import type { TriageReceipt, TriageReport } from './daily-triage-core';
+import { collectTriage, summarizeTriage } from './daily-triage-core';
 
 const { values } = parseArgs({
     options: {
@@ -21,6 +24,8 @@ const { values } = parseArgs({
         window: { type: 'string' },
         'publish-preset': { type: 'string' },
         'publish-live-channels': { type: 'string' },
+        'allow-dirty': { type: 'boolean', default: false },
+        'skip-probe': { type: 'boolean', default: false },
     },
 });
 const timeoutMs = Number(values['timeout-ms']);
@@ -67,7 +72,155 @@ const vars = isVoice3
           work_dir: workDir,
           run_date: stamp,
       };
-writeFileSync(receiptPath, JSON.stringify({ runId, startedAt, status: 'running', workDir }, null, 2));
+// ------------------------------------------------------------------
+// Preflight (0347 F1, 2026-11-10). Fail fast at minute one with named
+// reasons instead of burning the window on a doomed run (2026-11-09: 80
+// minutes died on a quota-dead executor chain a probe would have refused,
+// on workflow bytes that had already diverged from the installed kk).
+// ------------------------------------------------------------------
+
+interface Preflight {
+    ok: boolean;
+    reasons: string[];
+    warnings: string[];
+}
+
+const ANSI_RE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*[A-Za-z]`, 'g');
+
+function harnessDirtyPaths(): string[] {
+    const git = spawnSync('git', ['status', '--porcelain', '--', 'plugins/kk', '.spur/workflows'], {
+        cwd: repo,
+        encoding: 'utf-8',
+        timeout: 10_000,
+    });
+    if (git.status !== 0) return [];
+    return git.stdout
+        .split('\n')
+        .map((line) => line.slice(3).trim())
+        .filter(Boolean);
+}
+
+/** Package root of the kk binary this machine resolves `kk` to, or null. */
+function kkPackageRoot(): string | null {
+    const which = spawnSync('sh', ['-c', 'command -v kk'], { encoding: 'utf-8', timeout: 5_000 });
+    const bin = which.stdout.trim();
+    if (which.status !== 0 || bin === '') return null;
+    try {
+        const real = realpathSync(bin);
+        // <pkg>/dist/index.js -> <pkg>
+        return dirname(dirname(real));
+    } catch {
+        return null;
+    }
+}
+
+function diffDirs(a: string, b: string): string[] {
+    if (!existsSync(a) || !existsSync(b)) return [];
+    const diff = spawnSync('diff', ['-rq', a, b], { encoding: 'utf-8', timeout: 20_000 });
+    if (diff.status === 0) return [];
+    if (diff.error || (diff.status !== 1 && diff.status !== null)) return []; // unavailable: warn elsewhere, never false-refuse
+    return diff.stdout
+        .split('\n')
+        .filter((line) => line.trim() !== '')
+        .map((line) => line.replace(a, 'checkout').replace(b, 'install'))
+        .slice(0, 5);
+}
+
+/**
+ * One minimal real agent round-trip. `spur agent doctor` reports usable:true for accounts whose
+ * quota is exhausted (2026-11-09 R3), so executor health must be proven with traffic, not probes.
+ */
+function executorProbe(agentName: string): { ok: boolean; detail: string } {
+    const probeCwd = mkdtempSync(join(tmpdir(), 'kk-preflight-'));
+    try {
+        const probe = spawnSync(
+            'spur',
+            ['agent', 'run', '--agent', agentName, '--mode', 'text', '--json', 'Reply with exactly: OK'],
+            { cwd: probeCwd, encoding: 'utf-8', timeout: 120_000 },
+        );
+        if (probe.status === 0) return { ok: true, detail: 'ok' };
+        const text = `${probe.stderr ?? ''}${probe.stdout ?? ''}`.replace(ANSI_RE, '').trim();
+        const named = text
+            .split('\n')
+            .filter((line) => line.trim() !== '')
+            .slice(-2)
+            .join(' | ')
+            .slice(-240);
+        return { ok: false, detail: named !== '' ? named : `exit ${probe.status ?? '?'}` };
+    } finally {
+        rmSync(probeCwd, { recursive: true, force: true });
+    }
+}
+
+function runPreflight(): Preflight {
+    const reasons: string[] = [];
+    const warnings: string[] = [];
+    const dirty = harnessDirtyPaths();
+    if (dirty.length > 0 && values['allow-dirty'] !== true) {
+        reasons.push(`working tree dirty on harness paths: ${dirty.slice(0, 5).join(', ')}`);
+    }
+    const install = kkPackageRoot();
+    if (install === null) {
+        warnings.push('kk binary not found on PATH; executed-vs-installed sync not checked');
+    } else {
+        const diffs = [
+            ...diffDirs(join(repo, 'plugins', 'kk', 'workflows'), join(install, 'plugins', 'kk', 'workflows')),
+            ...diffDirs(join(repo, 'plugins', 'kk', 'scripts'), join(install, 'plugins', 'kk', 'scripts')),
+        ];
+        if (diffs.length > 0) {
+            reasons.push(`checkout diverges from installed kk (${install}): ${diffs.join('; ')}`);
+        }
+    }
+    if (values['skip-probe'] !== true) {
+        if (values.agent !== 'inline') {
+            const probe = executorProbe(values.agent);
+            if (!probe.ok) reasons.push(`executor probe failed for primary '${values.agent}': ${probe.detail}`);
+        }
+        const retry = values['retry-agent'];
+        if (retry !== undefined && retry !== 'inline') {
+            const retryProbe = executorProbe(retry);
+            if (!retryProbe.ok) {
+                warnings.push(`executor probe failed for retry '${retry}': ${retryProbe.detail}`);
+            }
+        }
+    }
+    return { ok: reasons.length === 0, reasons, warnings };
+}
+
+const preflight = runPreflight();
+if (!preflight.ok) {
+    const refused = {
+        runId,
+        startedAt,
+        completedAt: new Date().toISOString(),
+        status: 'preflight-refused',
+        exitCode: 5,
+        agent: values.agent,
+        retryAgent: values['retry-agent'],
+        workDir,
+        preflight: { reasons: preflight.reasons, warnings: preflight.warnings },
+        error: preflight.reasons[0] ?? 'preflight refused',
+    };
+    writeFileSync(receiptPath, `${JSON.stringify(refused, null, 2)}\n`);
+    console.error(`daily-scheduled-run: preflight refused run ${runId}`);
+    for (const reason of preflight.reasons) console.error(`  ! ${reason}`);
+    for (const warning of preflight.warnings) console.error(`  ~ ${warning}`);
+    process.exit(5);
+}
+writeFileSync(
+    receiptPath,
+    JSON.stringify(
+        {
+            runId,
+            startedAt,
+            status: 'running',
+            workDir,
+            preflight: { warnings: preflight.warnings, probes: values['skip-probe'] === true ? 'skipped' : 'passed' },
+        },
+        null,
+        2,
+    ),
+);
 let interrupted = false;
 let timedOut = false;
 let spawnError = '';
@@ -369,6 +522,33 @@ const status =
             : primaryPublishStatus === 'full' && !(!isVoice3 && missingRequiredChannels.length > 0)
               ? 'done'
               : 'incomplete';
+function buildTriage(finalStatus: string, exitCode: number): TriageReport | null {
+    try {
+        const inlineReceipt: TriageReceipt = {
+            status: finalStatus,
+            startedAt,
+            completedAt: new Date().toISOString(),
+            workDir,
+            agent: values.agent,
+            retryAgent: values['retry-agent'],
+            exitCode,
+            error: spawnError || null,
+        };
+        const report = collectTriage(repo, runId, { receipt: inlineReceipt, workflow: values.workflow });
+        console.error('daily-scheduled-run: triage summary');
+        for (const line of summarizeTriage(report)) console.error(`  ${line}`);
+        return report;
+    } catch (error) {
+        console.error(`daily-scheduled-run: triage collection failed: ${String(error)}`);
+        return null;
+    }
+}
+
+const terminalExitCode = timedOut ? 124 : interrupted ? 143 : exitCode !== 0 ? exitCode : status === 'done' ? 0 : 4;
+const triage =
+    status === 'failed' || status === 'timed-out' || status === 'interrupted' || status === 'incomplete'
+        ? buildTriage(status, terminalExitCode)
+        : null;
 const receipt = {
     runId,
     startedAt,
@@ -376,7 +556,7 @@ const receipt = {
     status,
     generateOnly,
     generationInspection,
-    exitCode: timedOut ? 124 : interrupted ? 143 : exitCode !== 0 ? exitCode : status === 'done' ? 0 : 4,
+    exitCode: terminalExitCode,
     workDir,
     timeoutMs,
     agent: values.agent,
@@ -388,6 +568,7 @@ const receipt = {
     runSummary,
     reservationRecovery,
     cleanup,
+    triage,
 };
 writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
 console.log(JSON.stringify(receipt));
