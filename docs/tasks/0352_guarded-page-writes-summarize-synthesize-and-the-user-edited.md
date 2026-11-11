@@ -4,7 +4,7 @@ name: "Guarded page writes: summarize, synthesize and the user-edited guard"
 status: done
 template: feature-impl
 created_at: 2026-11-10T19:11:03.856Z
-updated_at: "2026-11-11T00:02:44.314Z"
+updated_at: "2026-11-11T02:45:11.747Z"
 feature_id: I1
 priority: P1
 tags:
@@ -140,27 +140,27 @@ Each entry cites the first changed line per file (`file:line`).
 
 **Pipeline verify results**
 
-- Verdict: PARTIAL (from verdict artifact)
+- Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `packages/kk-wiki/src/summarize.ts:28`; `packages/kk-wiki/tests/summarize.test.ts` |
-| R2 | MET | `packages/kk-wiki/src/synthesize.ts:39`; `packages/kk-wiki/tests/synthesize.test.ts` (frontmatter + folder) |
-| R3 | MET | `packages/kk-wiki/src/synthesize.ts:39`; `packages/kk-wiki/tests/synthesize.test.ts` (extends, keeps sections) |
-| R4 | MET | `packages/kk-wiki/src/write.ts:50`; `packages/kk-wiki/tests/write.test.ts`; guarded cases in both new suites |
-| R5 | MET | `packages/kk-wiki/src/summarize.ts:28`, `packages/kk-wiki/src/synthesize.ts:39`, `packages/kk-wiki/src/link.ts:123`; CLI tests assert the guard decision |
-| R6 | MET | `packages/kk-wiki/tests/synthesize.test.ts` (identical bytes for identical input); no provider import in the module graph |
-| R7 | MET | `plugins/kk/skills/wiki-authoring/SKILL.md` + `references/page-shapes.md`; staged copy verified by `bun run build` in the task's Plan |
-| R8 | MET | per-file coverage on the gate run: `summarize.ts`, `synthesize.ts`, `write.ts`, `link.ts` all 100 |
+| R1 | MET | `packages/kk-wiki/src/summarize.ts:28` writes the summary section and links existing titles; `packages/kk-wiki/tests/summarize.test.ts:28`; CLI `apps/cli/tests/wiki/write-verbs.test.ts:87` |
+| R2 | MET | `packages/kk-wiki/src/synthesize.ts:39` creates content/type/slug.md; `packages/kk-wiki/tests/synthesize.test.ts:28`; `apps/cli/tests/wiki/write-verbs.test.ts:43` |
+| R3 | MET | `packages/kk-wiki/src/synthesize.ts:39` extends an existing page; `packages/kk-wiki/tests/synthesize.test.ts:52`; `apps/cli/tests/wiki/write-verbs.test.ts:53` |
+| R4 | MET | `packages/kk-wiki/src/write.ts:50-52` keeps bytes above the dated heading; `packages/kk-wiki/tests/write.test.ts:20`; `apps/cli/tests/wiki/write-verbs.test.ts:61` |
+| R5 | MET | summarize `packages/kk-wiki/src/summarize.ts:28`, synthesize `packages/kk-wiki/src/synthesize.ts:39`, link `packages/kk-wiki/src/link.ts:83` all call the guard in `packages/kk-wiki/src/write.ts:50`; guarded cases in `packages/kk-wiki/tests/write.test.ts:20`, `packages/kk-wiki/tests/summarize.test.ts:49`, `apps/cli/tests/wiki/link.test.ts:65` |
+| R6 | MET | `packages/kk-wiki/tests/synthesize.test.ts:62` asserts identical bytes; no provider client under packages/kk-wiki/src or apps/cli/src/wiki (reviewed this run) |
+| R7 | MET | `plugins/kk/skills/wiki-authoring/SKILL.md:5-22` documents summarize and synthesize and forbids direct file edits; `plugins/kk/skills/wiki-authoring/references/page-shapes.md:1` |
+| R8 | MET | This run: `(cd packages/kk-wiki && bun test --coverage)` 91 pass / 0 fail; summarize.ts and synthesize.ts and write.ts 100 lines. After the stderr test, `(cd apps/cli && bun test tests/wiki/write-verbs.test.ts --coverage)` reports write-verbs.ts 92.98 lines and 100 functions (threshold 0.9 in `bunfig.toml:10`) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Summarize a raw asset into a summary section with extracted references | MET | test | `packages/kk-wiki/tests/summarize.test.ts`, `apps/cli/tests/wiki/write-verbs.test.ts` |
-| AC2 — Synthesize creates a page for a topic the vault does not have | MET | test | `apps/cli/tests/wiki/write-verbs.test.ts` — `created: true` and the file on disk |
-| AC3 — Synthesize extends an existing page in place | MET | test | `packages/kk-wiki/tests/synthesize.test.ts` — sections preserved |
-| AC4 — A user-edited page receives AI changes only in a dated append section | MET | test | `apps/cli/tests/wiki/write-verbs.test.ts` (stdin + guarded page), `packages/kk-wiki/tests/write.test.ts` |
-| AC5 — The user-edited guard applies to every write verb | MET | test | guarded cases across `write`, `summarize`, `synthesize`, `link` suites |
-| AC6 — Model-bearing verbs stay deterministic in the CLI | MET | test | `packages/kk-wiki/tests/synthesize.test.ts` — byte equality for identical input |
+| AC1 — Summarize a raw asset into a summary section with extracted references | MET | test | `packages/kk-wiki/tests/summarize.test.ts:28` and `apps/cli/tests/wiki/write-verbs.test.ts:87`. This run: kk-wiki 91 pass / 0 fail; CLI wiki 58 pass / 0 fail |
+| AC2 — Synthesize creates a page for a topic the vault does not have | MET | test | `apps/cli/tests/wiki/write-verbs.test.ts:43` and `packages/kk-wiki/tests/synthesize.test.ts:28`. Same suites, 58 pass / 0 fail and 91 pass / 0 fail |
+| AC3 — Synthesize extends an existing page in place | MET | test | `packages/kk-wiki/tests/synthesize.test.ts:52` and `apps/cli/tests/wiki/write-verbs.test.ts:53`. Same suites, 91 pass / 0 fail and 58 pass / 0 fail |
+| AC4 — A user-edited page receives AI changes only in a dated append section | MET | test | `apps/cli/tests/wiki/write-verbs.test.ts:61` and `packages/kk-wiki/tests/write.test.ts:20`. Same suites, 58 pass / 0 fail and 91 pass / 0 fail |
+| AC5 — The user-edited guard applies to every write verb | MET | test | `packages/kk-wiki/tests/write.test.ts:20`, `packages/kk-wiki/tests/summarize.test.ts:49`, `packages/kk-wiki/tests/link.test.ts:60`. Same kk-wiki suite, 91 pass / 0 fail |
+| AC6 — Model-bearing verbs stay deterministic in the CLI | MET | test | `packages/kk-wiki/tests/synthesize.test.ts:62`. Same kk-wiki suite, 91 pass / 0 fail |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

@@ -4,7 +4,7 @@ name: Publish, sync and retrieval surfaces
 status: done
 template: feature-impl
 created_at: 2026-11-10T19:11:03.858Z
-updated_at: "2026-11-11T01:20:40.116Z"
+updated_at: "2026-11-11T02:45:12.945Z"
 feature_id: I1
 priority: P2
 tags:
@@ -142,22 +142,22 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `scripts/publish.ts:25`; `packages/kk-wiki/tests/publish.test.ts` |
-| R2 | MET | `scripts/publish.ts:25` (refusal); CLI case in `apps/cli/tests/wiki/retrieval.test.ts` |
-| R3 | MET | `packages/kk-wiki/src/sync.ts:28`; `packages/kk-wiki/tests/sync.test.ts` (substitution, dry run) |
-| R4 | MET | `packages/kk-wiki/tests/sync.test.ts` (unknown remote names the declared set); CLI exit 2 |
-| R5 | MET | `packages/kk-wiki/src/query.ts:53`; `packages/kk-wiki/tests/query.test.ts` (ranking, tie-break, limit, empty) |
-| R6 | MET | `packages/kk-wiki/src/context.ts:16`; `packages/kk-wiki/tests/context.test.ts` (path-headed block, both link directions) |
-| R7 | MET | consumer notes live in `docs/design/kk-wiki.md` §7; no file was created in the treasury repository |
-| R8 | MET | per-file coverage on the gate run: `publish.ts`, `sync.ts`, `query.ts`, `context.ts` all ≥96% lines |
+| R1 | MET | `packages/kk-wiki/src/publish.ts:25-41` copies each page to target/content with the source bytes, so wikilinks stay intact; `packages/kk-wiki/tests/publish.test.ts:28`. Prior Testing cited `scripts/publish.ts:25`, which is the npm publish script; this run re-read that line and rejected it |
+| R2 | MET | `packages/kk-wiki/src/publish.ts:31` refuses a target inside the vault and writes only under the target; `packages/kk-wiki/tests/publish.test.ts:41`; `apps/cli/tests/wiki/retrieval.test.ts:61` |
+| R3 | MET | `packages/kk-wiki/src/sync.ts:28-37` substitutes the declared command and does not execute it; `packages/kk-wiki/tests/sync.test.ts:10`; `apps/cli/tests/wiki/retrieval.test.ts:70` |
+| R4 | MET | `packages/kk-wiki/src/sync.ts:35` throws with the declared names; `packages/kk-wiki/tests/sync.test.ts:26`; CLI exit 2 at `apps/cli/tests/wiki/retrieval.test.ts:79` |
+| R5 | MET | `packages/kk-wiki/src/query.ts:53-59` ranks by the frozen weights and returns path, title, excerpt, score; `packages/kk-wiki/tests/query.test.ts:36` and `:48` |
+| R6 | MET | `packages/kk-wiki/src/context.ts:16` packs the topic page and depth-1 neighbours under path headings; `packages/kk-wiki/tests/context.test.ts:29` |
+| R7 | MET | `docs/design/kk-wiki.md:118-124` records the treasury consumer notes. No file was created in that repository by this run |
+| R8 | MET | This run: `(cd packages/kk-wiki && bun test --coverage)` 91 pass / 0 fail; publish.ts, sync.ts, context.ts 100 lines; query.ts 97.30 lines and 100 functions |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Publish writes a Quartz-compatible tree | MET | test | `packages/kk-wiki/tests/publish.test.ts`, `apps/cli/tests/wiki/retrieval.test.ts` |
-| AC2 — Sync runs the configured remote adapter | MET | test | `packages/kk-wiki/tests/sync.test.ts`, CLI dry-run case |
-| AC3 — Sync rejects an undeclared remote name | MET | test | `packages/kk-wiki/tests/sync.test.ts`, CLI exit 2 case |
-| AC4 — Query returns ranked pages with their paths | MET | test | `packages/kk-wiki/tests/query.test.ts`, CLI JSON case |
-| AC5 — Context packs the topic page with its graph neighbours | MET | test | `packages/kk-wiki/tests/context.test.ts`, CLI case |
+| AC1 — Publish writes a Quartz-compatible tree | MET | test | `packages/kk-wiki/tests/publish.test.ts:28` and `apps/cli/tests/wiki/retrieval.test.ts:53`. This run: kk-wiki 91 pass / 0 fail; CLI wiki 58 pass / 0 fail |
+| AC2 — Sync runs the configured remote adapter | MET | test | `packages/kk-wiki/tests/sync.test.ts:10` and `apps/cli/tests/wiki/retrieval.test.ts:70`. Same suites, 91 pass / 0 fail and 58 pass / 0 fail |
+| AC3 — Sync rejects an undeclared remote name | MET | test | `packages/kk-wiki/tests/sync.test.ts:26` and `apps/cli/tests/wiki/retrieval.test.ts:79`. Same suites, 91 pass / 0 fail and 58 pass / 0 fail |
+| AC4 — Query returns ranked pages with their paths | MET | test | `packages/kk-wiki/tests/query.test.ts:36` and `apps/cli/tests/wiki/retrieval.test.ts:88`. Same suites, 91 pass / 0 fail and 58 pass / 0 fail |
+| AC5 — Context packs the topic page with its graph neighbours | MET | test | `packages/kk-wiki/tests/context.test.ts:29` and `apps/cli/tests/wiki/retrieval.test.ts:96`. Same suites, 91 pass / 0 fail and 58 pass / 0 fail |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

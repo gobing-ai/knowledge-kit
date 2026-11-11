@@ -4,7 +4,7 @@ name: kk wiki noun foundation, config and raw ingest
 status: done
 template: feature-impl
 created_at: 2026-11-10T19:11:03.849Z
-updated_at: "2026-11-11T01:40:58.852Z"
+updated_at: "2026-11-11T02:45:10.510Z"
 feature_id: I1
 priority: P1
 tags:
@@ -156,23 +156,23 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `packages/kk-wiki/package.json:1`, `packages/kk-wiki/src/index.ts:1`; workspace glob `package.json:9` |
-| R2 | MET | `packages/kk-wiki/src/raw.ts:46-79`; `packages/kk-wiki/tests/raw.test.ts` (four source keys) |
-| R3 | MET | `apps/cli/src/wiki/ingest.ts:82`; `apps/cli/tests/wiki/ingest.test.ts` (stdin origin) |
-| R4 | MET | `apps/cli/src/wiki/ingest.ts:84-88`; `apps/cli/tests/commands/wiki.test.ts` (exit 2, nothing written) |
-| R5 | MET | `packages/kk-wiki/src/markitdown.ts:65`, `apps/cli/src/wiki/ingest.ts:116-120`; `packages/kk-wiki/tests/markitdown.test.ts` |
-| R6 | MET | `apps/cli/src/commands/wiki.ts:18-30`; `apps/cli/tests/commands/wiki.test.ts` (JSON shape, exit 0/1/2) |
-| R7 | MET | `apps/cli/src/wiki/config.ts:83-176`; `apps/cli/tests/wiki/config.test.ts` |
-| R8 | MET | `docs/00_ADR.md:1699` (ADR-047) |
-| R9 | MET | per-file coverage from the gate run: `page.ts`/`raw.ts`/`markitdown.ts` 100, `config.ts` 97.5, `ingest.ts` 100, `commands/wiki.ts` 100 |
+| R1 | MET | `package.json:9` workspace glob packages/*; `packages/kk-wiki/package.json:2` name; `packages/kk-wiki/src/index.ts:40-49` exports writeRawSnapshot; `packages/kk-wiki/src/page.ts:16` is the frontmatter schema; `packages/kk-wiki/tests/page.test.ts:134` |
+| R2 | MET | `packages/kk-wiki/src/raw.ts:50-79` writes title, source_type, source_uri, ingested_at under raw/type/id.md; `packages/kk-wiki/tests/raw.test.ts:34`; CLI `apps/cli/tests/commands/wiki.test.ts:34` |
+| R3 | MET | `apps/cli/src/wiki/ingest.ts:82` and `:123` record source `-` as origin stdin; `apps/cli/tests/wiki/ingest.test.ts:42`; `apps/cli/tests/commands/wiki.test.ts:54` |
+| R4 | MET | `apps/cli/src/wiki/ingest.ts:84-86` returns code 2 and writes nothing; `apps/cli/tests/commands/wiki.test.ts:80` and `:88` |
+| R5 | MET | `packages/kk-wiki/src/markitdown.ts:65` and `apps/cli/src/wiki/ingest.ts:111-118` exit 1 naming a missing normaliser; `packages/kk-wiki/tests/markitdown.test.ts:29`; `apps/cli/tests/wiki/ingest.test.ts:74` |
+| R6 | MET | `apps/cli/src/commands/wiki.ts:24-33` prints one JSON document and throws the outcome code; `apps/cli/tests/commands/wiki.test.ts:34` (exit 0) and `:80` (exit 2) |
+| R7 | MET | `apps/cli/src/wiki/config.ts:87-90` rejects an unknown key; `:155-183` resolves file, env, then flags and does not write the file; `apps/cli/tests/wiki/config.test.ts:62` and `:81` |
+| R8 | MET | `docs/00_ADR.md:1699` ADR-047 records the project-file versus global-file split |
+| R9 | MET | This run: `(cd packages/kk-wiki && bun test --coverage)` 91 pass / 0 fail; page.ts, raw.ts, markitdown.ts 100 lines. `(cd apps/cli && bun test tests/wiki tests/commands/wiki.test.ts --coverage)` config.ts 98.11 lines, ingest.ts 98.63, commands/wiki.ts 100, all functions 100 |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Ingest a local file into a raw snapshot with frontmatter | MET | test | `apps/cli/tests/commands/wiki.test.ts` — local file ingest with frontmatter |
-| AC2 — Ingest a URL or stdin source into the same raw shape | MET | test | `apps/cli/tests/wiki/ingest.test.ts` — stdin source; `apps/cli/tests/commands/wiki.test.ts` — real stdin stream |
-| AC3 — Ingest rejects an unsupported source type | MET | test | `apps/cli/tests/commands/wiki.test.ts` — unsupported type and `--type docx` both exit 2 |
-| AC4 — Every wiki verb supports JSON output and a stable exit code | MET | test | `apps/cli/tests/commands/wiki.test.ts`; `apps/cli/tests/main.test.ts` — `wiki ingest` in the leaf inventory |
-| AC5 — Configuration resolves from kk.config.json and the environment | MET | test | `apps/cli/tests/wiki/config.test.ts` — file/env/flag precedence; end-to-end override in `apps/cli/tests/commands/wiki.test.ts` |
+| AC1 — Ingest a local file into a raw snapshot with frontmatter | MET | test | `apps/cli/tests/commands/wiki.test.ts:34` and `packages/kk-wiki/tests/raw.test.ts:34`. This run: apps/cli wiki suite 58 pass / 0 fail; kk-wiki suite 91 pass / 0 fail |
+| AC2 — Ingest a URL or stdin source into the same raw shape | MET | test | `apps/cli/tests/wiki/ingest.test.ts:42` and `apps/cli/tests/commands/wiki.test.ts:54`. Same suites, 58 pass / 0 fail and 91 pass / 0 fail |
+| AC3 — Ingest rejects an unsupported source type | MET | test | `apps/cli/tests/commands/wiki.test.ts:80` and `:88`. Same CLI suite, 58 pass / 0 fail |
+| AC4 — Every wiki verb supports JSON output and a stable exit code | MET | test | `apps/cli/tests/commands/wiki.test.ts:34` plus `apps/cli/tests/wiki/lint.test.ts:58`, `apps/cli/tests/wiki/link.test.ts:78`, `apps/cli/tests/wiki/retrieval.test.ts:88`. Same CLI suite, 58 pass / 0 fail |
+| AC5 — Configuration resolves from kk.config.json and the environment | MET | test | `apps/cli/tests/wiki/config.test.ts:39` and `:62`; end-to-end `apps/cli/tests/commands/wiki.test.ts:96`. Same suites, 58 pass / 0 fail |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

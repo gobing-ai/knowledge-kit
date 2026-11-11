@@ -4,7 +4,7 @@ name: Merge, compile and gc maintenance verbs
 status: done
 template: feature-impl
 created_at: 2026-11-10T19:11:03.857Z
-updated_at: "2026-11-11T00:41:17.125Z"
+updated_at: "2026-11-11T02:45:12.346Z"
 feature_id: I1
 priority: P2
 tags:
@@ -132,19 +132,19 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `packages/kk-wiki/src/merge.ts:27`; `packages/kk-wiki/tests/merge.test.ts` |
-| R2 | MET | `packages/kk-wiki/src/merge.ts:27`; `packages/kk-wiki/tests/merge.test.ts` (stub + rewrites) |
-| R3 | MET | `packages/kk-wiki/tests/merge.test.ts` (guarded source refused); CLI case in `apps/cli/tests/wiki/maintenance.test.ts` |
-| R4 | MET | `packages/kk-wiki/src/compile.ts:38`; `packages/kk-wiki/tests/compile.test.ts` (byte-identical renders) |
-| R5 | MET | `packages/kk-wiki/src/gc.ts:21`; `packages/kk-wiki/tests/gc.test.ts` (keeps referenced, skips mirrors) |
-| R6 | MET | `apps/cli/src/wiki/maintenance.ts:102`; `apps/cli/tests/wiki/maintenance.test.ts` (plan without `--yes`) |
-| R7 | MET | per-file coverage on the gate run: `merge.ts`, `compile.ts`, `gc.ts` all 100 |
+| R1 | MET | `packages/kk-wiki/src/merge.ts:45-51` unions bodies and sources through the guard; `packages/kk-wiki/tests/merge.test.ts:34` |
+| R2 | MET | `packages/kk-wiki/src/merge.ts:59-93` rewrites inbound links and writes redirect_to; `packages/kk-wiki/tests/merge.test.ts:44` |
+| R3 | MET | `packages/kk-wiki/src/merge.ts:32-42` returns refused and leaves both bodies; `packages/kk-wiki/tests/merge.test.ts:54`; `apps/cli/tests/wiki/maintenance.test.ts:68` |
+| R4 | MET | `packages/kk-wiki/src/compile.ts:38` renders index.md and MAP.md; `packages/kk-wiki/tests/compile.test.ts:27` and `:42` |
+| R5 | MET | `packages/kk-wiki/src/gc.ts:21-57` deletes only unreferenced raw type and tmp files and skips mirrors; `packages/kk-wiki/tests/gc.test.ts:28` and `:42` |
+| R6 | MET | `apps/cli/src/wiki/maintenance.ts:107` returns the plan and an empty deleted list unless yes is set; `apps/cli/tests/wiki/maintenance.test.ts:80` |
+| R7 | MET | This run: `(cd packages/kk-wiki && bun test --coverage)` 91 pass / 0 fail; merge.ts, compile.ts, gc.ts each 100 lines and 100 functions |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Merge combines overlapping pages and redirects incoming links | MET | test | `packages/kk-wiki/tests/merge.test.ts`, `apps/cli/tests/wiki/maintenance.test.ts` |
-| AC2 — Compile regenerates the index and map from the vault structure | MET | test | `packages/kk-wiki/tests/compile.test.ts`, `apps/cli/tests/wiki/maintenance.test.ts` |
-| AC3 — Gc removes unused raw caches and keeps referenced raw files | MET | test | `packages/kk-wiki/tests/gc.test.ts`, `apps/cli/tests/wiki/maintenance.test.ts` (mirror skip) |
+| AC1 — Merge combines overlapping pages and redirects incoming links | MET | test | `packages/kk-wiki/tests/merge.test.ts:34` and `:44`; `apps/cli/tests/wiki/maintenance.test.ts:55`. This run: kk-wiki 91 pass / 0 fail; CLI wiki 58 pass / 0 fail |
+| AC2 — Compile regenerates the index and map from the vault structure | MET | test | `packages/kk-wiki/tests/compile.test.ts:27` and `apps/cli/tests/wiki/maintenance.test.ts:43`. Same suites, 91 pass / 0 fail and 58 pass / 0 fail |
+| AC3 — Gc removes unused raw caches and keeps referenced raw files | MET | test | `packages/kk-wiki/tests/gc.test.ts:28` and `apps/cli/tests/wiki/maintenance.test.ts:90`. Same suites, 91 pass / 0 fail and 58 pass / 0 fail |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

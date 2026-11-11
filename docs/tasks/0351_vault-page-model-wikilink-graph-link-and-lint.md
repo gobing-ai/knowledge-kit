@@ -4,7 +4,7 @@ name: Vault page model, wikilink graph, link and lint
 status: done
 template: feature-impl
 created_at: 2026-11-10T19:11:03.854Z
-updated_at: "2026-11-11T01:40:59.068Z"
+updated_at: "2026-11-11T02:45:11.156Z"
 feature_id: I1
 priority: P1
 tags:
@@ -145,21 +145,21 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `packages/kk-wiki/src/graph.ts:118`; `packages/kk-wiki/tests/graph.test.ts` |
-| R2 | MET | `packages/kk-wiki/src/graph.ts:69`; `packages/kk-wiki/tests/graph.test.ts` (fences, inline code, both link forms) |
-| R3 | MET | `apps/cli/src/wiki/link.ts:25`; `apps/cli/tests/wiki/link.test.ts` (report leaves the file unchanged) |
-| R4 | MET | `packages/kk-wiki/src/link.ts:83`; `apps/cli/tests/wiki/link.test.ts` (`--fix` writes the wikilink) |
-| R5 | MET | `packages/kk-wiki/src/lint.ts:14`; `packages/kk-wiki/tests/lint.test.ts` |
-| R6 | MET | `packages/kk-wiki/src/lint.ts:40`; `apps/cli/tests/wiki/lint.test.ts` (exit 0 clean, exit 1 with findings) |
-| R7 | MET | `packages/kk-wiki/src/write.ts:50`; `packages/kk-wiki/tests/write.test.ts`; guarded case in `apps/cli/tests/wiki/link.test.ts` |
-| R8 | MET | per-file coverage on the gate run: `graph.ts`, `lint.ts`, `write.ts`, `link.ts` all 100 |
+| R1 | MET | `packages/kk-wiki/src/graph.ts:118` rebuilds the index from disk; `packages/kk-wiki/tests/graph.test.ts:45` |
+| R2 | MET | `packages/kk-wiki/src/graph.ts:69` skips fences and inline code and accepts both link forms; `packages/kk-wiki/tests/graph.test.ts:26` and `:34` |
+| R3 | MET | `apps/cli/src/wiki/link.ts:35-37` returns mentions and does not write when fix is unset; `apps/cli/tests/wiki/link.test.ts:48` |
+| R4 | MET | `packages/kk-wiki/src/link.ts:83` rewrites mentions and lists changed files; `apps/cli/tests/wiki/link.test.ts:57`; `packages/kk-wiki/tests/link.test.ts:52` |
+| R5 | MET | `packages/kk-wiki/src/lint.ts:14` one finding per defect with path and line; `packages/kk-wiki/tests/lint.test.ts:27` and `:35` |
+| R6 | MET | `packages/kk-wiki/src/lint.ts:40` returns 0 or 1; `apps/cli/tests/wiki/lint.test.ts:43` and `:50` |
+| R7 | MET | `packages/kk-wiki/src/write.ts:50-52` appends under the dated heading; `packages/kk-wiki/tests/write.test.ts:20`; `apps/cli/tests/wiki/link.test.ts:65` |
+| R8 | MET | This run: `(cd packages/kk-wiki && bun test --coverage)` 91 pass / 0 fail; graph.ts, lint.ts, write.ts, link.ts each 100 lines and 100 functions |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Link reports unlinked entity mentions without editing | MET | test | `apps/cli/tests/wiki/link.test.ts` — report mode leaves the file byte-identical |
-| AC2 — Link fix injects the wikilinks it reported | MET | test | `apps/cli/tests/wiki/link.test.ts` — `--fix` writes `[[karakeep |
-| AC3 — Lint reports broken links, orphan pages and missing frontmatter | MET | test | `packages/kk-wiki/tests/lint.test.ts`, `apps/cli/tests/wiki/lint.test.ts` |
-| AC4 — Lint exits zero once no finding remains | MET | test | `apps/cli/tests/wiki/lint.test.ts` — clean vault exits 0 |
+| AC1 — Link reports unlinked entity mentions without editing | MET | test | `apps/cli/tests/wiki/link.test.ts:48` and `packages/kk-wiki/tests/link.test.ts:27`. This run: CLI wiki suite 58 pass / 0 fail; kk-wiki suite 91 pass / 0 fail |
+| AC2 — Link fix injects the wikilinks it reported | MET | test | `apps/cli/tests/wiki/link.test.ts:57` and `packages/kk-wiki/tests/link.test.ts:52`. Same suites, 58 pass / 0 fail and 91 pass / 0 fail |
+| AC3 — Lint reports broken links, orphan pages and missing frontmatter | MET | test | `packages/kk-wiki/tests/lint.test.ts:27` and `apps/cli/tests/wiki/lint.test.ts:50`. Same suites, 91 pass / 0 fail and 58 pass / 0 fail |
+| AC4 — Lint exits zero once no finding remains | MET | test | `apps/cli/tests/wiki/lint.test.ts:43` and `packages/kk-wiki/tests/lint.test.ts:43`. Same suites, 58 pass / 0 fail and 91 pass / 0 fail |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

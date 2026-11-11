@@ -101,6 +101,14 @@ describe('kk wiki summarize (CLI)', () => {
         expect(result.out).toContain("no page at 'missing.md'");
     });
 
+    it('prints the missing-page error on stderr when --json is omitted', async () => {
+        const dir = vault({ 'a.md': page('Alpha', 'body') });
+        writeFileSync(join(dir, 'text.md'), 'x\n');
+        const result = await run(['wiki', 'summarize', 'missing.md', '--from', 'text.md'], dir);
+        expect(result.code).toBe(1);
+        expect(result.err).toContain("no page at 'missing.md'");
+    });
+
     it('exposes outcomes to direct callers', async () => {
         const dir = vault({ 'a.md': page('Alpha', 'body') });
         writeFileSync(join(dir, 'text.md'), 'summary\n');
