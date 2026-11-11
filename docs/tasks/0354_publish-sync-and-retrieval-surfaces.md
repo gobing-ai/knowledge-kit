@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Publish, sync and retrieval surfaces
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-10T19:11:03.858Z
-updated_at: "2026-11-10T20:24:54.801Z"
+updated_at: "2026-11-11T01:20:40.116Z"
 feature_id: I1
 priority: P2
 tags:
@@ -14,6 +14,8 @@ tags:
 estimate_hours: 6
 
 dependencies: ["0351"]
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0354-verdict.json
 ---
 
 ## 0354. Publish, sync and retrieval surfaces
@@ -39,22 +41,22 @@ Rejected: vendoring or patching Quartz to control the output - the spec's own ru
 
 ### Requirements
 
-- [ ] R1. `kk wiki publish --target <dir>` writes `<dir>/content/**` mirroring the vault one-to-one with wikilinks intact and attachment paths vault-relative.
-- [ ] R2. `publish` refuses a target inside the vault, writes only under `--target`, and never modifies the vault or Quartz source.
-- [ ] R3. `kk wiki sync <remote> --dry-run` prints the resolved command and planned transfers from `WikiConfig.remotes` without transferring.
-- [ ] R4. `kk wiki sync <unknown>` exits 2 naming the unknown remote and prints the declared remote names.
-- [ ] R5. `kk wiki query <prompt> --json` ranks pages by the frozen deterministic scoring and returns vault-relative paths with excerpts.
-- [ ] R6. `kk wiki context <topic>` emits one Markdown block holding the topic page and its graph neighbours, each introduced by its vault-relative path.
-- [ ] R7. The treasury consumer notes (Quartz config, `content/`, rclone-synced `raw/`, loop stages, Pages build) are recorded in `docs/design/kk-wiki.md` without creating files in that repository.
-- [ ] R8. Every new file in `packages/kk-wiki/src` clears the per-file coverage threshold with its own tests.
+- [x] R1. `kk wiki publish --target <dir>` writes `<dir>/content/**` mirroring the vault one-to-one with wikilinks intact and attachment paths vault-relative.
+- [x] R2. `publish` refuses a target inside the vault, writes only under `--target`, and never modifies the vault or Quartz source.
+- [x] R3. `kk wiki sync <remote> --dry-run` prints the resolved command and planned transfers from `WikiConfig.remotes` without transferring.
+- [x] R4. `kk wiki sync <unknown>` exits 2 naming the unknown remote and prints the declared remote names.
+- [x] R5. `kk wiki query <prompt> --json` ranks pages by the frozen deterministic scoring and returns vault-relative paths with excerpts.
+- [x] R6. `kk wiki context <topic>` emits one Markdown block holding the topic page and its graph neighbours, each introduced by its vault-relative path.
+- [x] R7. The treasury consumer notes (Quartz config, `content/`, rclone-synced `raw/`, loop stages, Pages build) are recorded in `docs/design/kk-wiki.md` without creating files in that repository.
+- [x] R8. Every new file in `packages/kk-wiki/src` clears the per-file coverage threshold with its own tests.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Publish writes a Quartz-compatible tree
-- [ ] AC2 — Sync runs the configured remote adapter
-- [ ] AC3 — Sync rejects an undeclared remote name
-- [ ] AC4 — Query returns ranked pages with their paths
-- [ ] AC5 — Context packs the topic page with its graph neighbours
+- [x] AC1 — Publish writes a Quartz-compatible tree
+- [x] AC2 — Sync runs the configured remote adapter
+- [x] AC3 — Sync rejects an undeclared remote name
+- [x] AC4 — Query returns ranked pages with their paths
+- [x] AC5 — Context packs the topic page with its graph neighbours
 
 ### Q&A
 
@@ -102,15 +104,86 @@ Rejected: vendoring or patching Quartz to control the output - the spec's own ru
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/src/commands/wiki.ts:180` |
+| `apps/cli/src/commands/wiki.ts:7` |
+| `apps/cli/src/commands/wiki.ts:93` |
+| `apps/cli/tests/main.test.ts:238` |
+| `apps/cli/tests/main.test.ts:244` |
+| `apps/cli/tests/main.test.ts:247` |
+| `docs/04_DESIGN.md:6` |
+| `docs/04_DESIGN.md:87` |
+| `docs/design/kk-wiki.md:10` |
+| `docs/design/kk-wiki.md:48` |
+| `docs/design/kk-wiki.md:6` |
+| `packages/kk-wiki/src/index.ts:2` |
+| `packages/kk-wiki/src/index.ts:38` |
+| `packages/kk-wiki/src/index.ts:52` |
+| `apps/cli/src/wiki/retrieval.ts:1` |
+| `apps/cli/tests/wiki/retrieval.test.ts:1` |
+| `packages/kk-wiki/src/context.ts:1` |
+| `packages/kk-wiki/src/publish.ts:1` |
+| `packages/kk-wiki/src/query.ts:1` |
+| `packages/kk-wiki/src/sync.ts:1` |
+| `packages/kk-wiki/tests/context.test.ts:1` |
+| `packages/kk-wiki/tests/publish.test.ts:1` |
+| `packages/kk-wiki/tests/query.test.ts:1` |
+| `packages/kk-wiki/tests/sync.test.ts:1` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `scripts/publish.ts:25`; `packages/kk-wiki/tests/publish.test.ts` |
+| R2 | MET | `scripts/publish.ts:25` (refusal); CLI case in `apps/cli/tests/wiki/retrieval.test.ts` |
+| R3 | MET | `packages/kk-wiki/src/sync.ts:28`; `packages/kk-wiki/tests/sync.test.ts` (substitution, dry run) |
+| R4 | MET | `packages/kk-wiki/tests/sync.test.ts` (unknown remote names the declared set); CLI exit 2 |
+| R5 | MET | `packages/kk-wiki/src/query.ts:53`; `packages/kk-wiki/tests/query.test.ts` (ranking, tie-break, limit, empty) |
+| R6 | MET | `packages/kk-wiki/src/context.ts:16`; `packages/kk-wiki/tests/context.test.ts` (path-headed block, both link directions) |
+| R7 | MET | consumer notes live in `docs/design/kk-wiki.md` §7; no file was created in the treasury repository |
+| R8 | MET | per-file coverage on the gate run: `publish.ts`, `sync.ts`, `query.ts`, `context.ts` all ≥96% lines |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — Publish writes a Quartz-compatible tree | MET | test | `packages/kk-wiki/tests/publish.test.ts`, `apps/cli/tests/wiki/retrieval.test.ts` |
+| AC2 — Sync runs the configured remote adapter | MET | test | `packages/kk-wiki/tests/sync.test.ts`, CLI dry-run case |
+| AC3 — Sync rejects an undeclared remote name | MET | test | `packages/kk-wiki/tests/sync.test.ts`, CLI exit 2 case |
+| AC4 — Query returns ranked pages with their paths | MET | test | `packages/kk-wiki/tests/query.test.ts`, CLI JSON case |
+| AC5 — Context packs the topic page with its graph neighbours | MET | test | `packages/kk-wiki/tests/context.test.ts`, CLI case |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+**Scope.** Task 0354 — the four remaining verbs: `publish`, `sync`, `query`, `context`. This closes the
+twelve-verb `kk wiki` surface.
+
+**Traceability.** publish projects `content/` one-to-one and refuses a target inside it
+(`packages/kk-wiki/src/publish.ts:25`); sync resolves the declared remote into an argv and names an
+undeclared one (`packages/kk-wiki/src/sync.ts:28`); query ranks with the frozen weights
+(`packages/kk-wiki/src/query.ts:53`); context packs the topic page plus neighbours
+(`packages/kk-wiki/src/context.ts:16`). The CLI is a thin renderer over those four functions.
+
+**SECUA.** Security: publish writes only under `--target` and cannot target the vault itself; sync
+never executes in a dry run and never invents a remote; no credential is read. Errors: an undeclared
+remote is a usage exit 2, a config defect exits 1, and a publish refusal exits 2. Contracts: the
+package owns the four functions, the CLI imports only the package entry, and no provider client is
+reachable. Usability: every verb supports `--json` and a readable summary.
+
+| Priority | Location | Finding | Disposition |
+| --- | --- | --- | --- |
+| P4 | `packages/kk-wiki/src/query.ts` | The first cut special-cased a prompt term equal to a slug, duplicating what the title weight already scores | FIXED |
+
+Confidence: HIGH
+
+Verdict: PASS
 
 ### References
 
@@ -120,3 +193,8 @@ Rejected: vendoring or patching Quartz to control the output - the spec's own ru
 - Raw layer projection source: `plugins/ingestions/karakeep-local/plugin.json:6`.
 
 ### History
+
+- 2026-11-11T00:43:47.136Z todo → wip (system)
+- 2026-11-11T01:20:38.737Z wip → testing (system)
+- 2026-11-11T01:20:40.106Z testing → done (system)
+

@@ -1,4 +1,5 @@
 export { type CompiledVault, compileIndex, needsWrite } from './compile';
+export { type PackedContext, packContext } from './context';
 export type { FindingCode, FindingRecord } from './findings';
 export { applyGc, type GcPlan, planGc } from './gc';
 export {
@@ -34,6 +35,8 @@ export {
     resolveSlug,
     type VaultPage,
 } from './page';
+export { type PublishResult, publishVault } from './publish';
+export { type QueryHit, rankPages } from './query';
 export {
     deriveTitle,
     RAW_SOURCE_TYPES,
@@ -46,6 +49,7 @@ export {
     writeRawSnapshot,
 } from './raw';
 export { SUMMARY_HEADING, type SummarizeResult, summarizePage } from './summarize';
+export { type ResolvedRemote, resolveRemote, UnknownRemoteError } from './sync';
 export { type SynthesizeInput, type SynthesizeResult, synthesizePage } from './synthesize';
 export {
     applyWrite,

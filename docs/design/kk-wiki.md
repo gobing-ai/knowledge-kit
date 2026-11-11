@@ -3,11 +3,11 @@ name: kk wiki vault
 doc: design/kk-wiki
 owns: "SHAPES — kk wiki verb signatures, vault frontmatter schema, config keys, publish projection"
 authority: derived
-version: 0.5.0
+version: 1.0.0
 created_at: 2026-11-10
 updated_at: 2026-11-10
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
-status: partial — `ingest` (0350), `link`/`lint` (0351), `summarize`/`synthesize` (0352), `merge`/`compile`/`gc` (0353) shipped; `sync`/`publish`/`query`/`context` remain accepted design (I1, ADR-046)
+status: implemented — all twelve verbs shipped (0350 ingest, 0351 link/lint, 0352 summarize/synthesize, 0353 merge/compile/gc, 0354 publish/sync/query/context)
 ---
 
 # kk wiki vault — design satellite
@@ -45,10 +45,10 @@ exits `0` on success / `1` on a handled failure / `2` on a usage error.
 | `link` | `kk wiki link [--fix] [--json]` | Reports unlinked mentions of existing page titles; `--fix` rewrites them to `[[slug\|Surface]]`, and a `user_edited` page receives the change under `## AI Updates` (**shipped, 0351**) | no |
 | `lint` | `kk wiki lint [--json]` | Reports broken links, orphan pages, missing/invalid frontmatter; nonzero when findings exist (**shipped, 0351**) | no |
 | `gc` | `kk wiki gc [--yes] [--json]` | Reclaims unreferenced `raw/<type>/` snapshots and `raw/tmp/**`, skips every `wiki.mirrors` tree, prints the plan unless `--yes` (**shipped, 0353**) | no |
-| `sync` | `kk wiki sync <remote> [--dry-run] [--json]` | Runs the remote declared in config (`command`), prints the resolved command and planned transfers; `--dry-run` transfers nothing | no (transport lives in the remote's own CLI, e.g. rclone) |
-| `publish` | `kk wiki publish --target <dir> [--json]` | Renders `content/` into `<dir>/content/` as a Quartz-compatible tree; never forks or patches Quartz | no |
-| `query` | `kk wiki query <prompt> [--limit <n>] [--json]` | Ranks vault pages against the prompt by deterministic term scoring; prints page paths + excerpts; the answer is composed by the skill | no |
-| `context` | `kk wiki context <topic> [--depth <n>] [--json]` | Emits one Markdown block: the topic page plus its graph neighbours, each introduced by its vault-relative path | no |
+| `sync` | `kk wiki sync <remote> [--dry-run] [--json]` | Resolves `wiki.remotes.<name>` into an argv (`{content}`/`{remote}` substituted) and names an undeclared remote (**shipped, 0354**) | no (transport lives in the remote's own CLI, e.g. rclone) |
+| `publish` | `kk wiki publish --target <dir> [--json]` | Projects `content/` into `<dir>/content/` one-to-one with wikilinks intact; refuses a target inside `content/` (**shipped, 0354**) | no |
+| `query` | `kk wiki query <prompt> [--limit <n>] [--json]` | Ranks pages (title 3 / tag 2 / body 1, slug tie-break) and prints paths + excerpts; the answer is composed by the skill (**shipped, 0354**) | no |
+| `context` | `kk wiki context <topic> [--depth <n>] [--json]` | Emits one Markdown block: the topic page plus its graph neighbours, each introduced by its vault-relative path (**shipped, 0354**) | no |
 
 `summarize`, `synthesize` and `query` are the only verbs a model feeds; the CLI itself performs no
 network or provider call (R21).
