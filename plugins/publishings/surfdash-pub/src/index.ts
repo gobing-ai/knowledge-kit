@@ -12,13 +12,23 @@
  * `bun run check:content` in the surfdash checkout. The surfdash site gate is the authoritative
  * validation suite before deployment.
  *
+ * Daily-topics sync:
+ * Before the site gate and commit, digest posts with all three locale files are mapped into
+ * the surfdash site's `scripts/seo/daily-topics.json` (from the posts' own refined frontmatter,
+ * no new prose), then `bun run sd seo retitle --write --stamp-claims` runs in the checkout.
+ * A build/retitle failure fails the run before anything is committed or pushed. See
+ * `./topic-claims` for the file work.
+ *
  * Environment variables:
  * - `SURFDASH_LISTEN_BACKFILL`:
  *   - `off`: skips the listen-link backfill command.
  * - `SURFDASH_DIGEST_CHECK`:
  *   - unset / default: fail-loud on gate failure; commit and push are blocked.
- *   - `warn`: echoes gate failures via `echoError` prefixed with `site gate (warn):` and continues to push.
+ *   - `warn`: echoes gate failures via `echoError` prefixed with `site gate (warn):` and continues.
  *   - `off`: bypasses the gate check.
+ *   - Both escape hatches are IGNORED while this run pushes to surfdash `main`
+ *     (`SURFDASH_AUTO_PUSH !== '0'` and the checkout is on `main`): a failing gate always
+ *     blocks there, and `off` still runs the gate.
  * - `SURFDASH_AUTO_PUSH`:
  *   - '0': disables auto-commit and push (used in tests and offline runs).
  */
@@ -34,8 +44,10 @@ import { echoError } from '@gobing-ai/ts-utils';
 // The plugin's public digest-contract surface (2026-10-24).
 import { checkDigestFrontmatter, DIGEST_TAG, type DigestLocale } from './digest-check';
 import { localeIndexPath, PATCH_LOCALES, type PatchPostOutcome, patchPostFiles } from './patch';
+import { buildDailyTopicsEntry, isDigestMarkdown, slugFromPostPath, upsertDailyTopicsEntry } from './topic-claims';
 
 export { checkDigestFrontmatter, DIGEST_TAG, type DigestLocale } from './digest-check';
+export { buildDailyTopicsEntry, isDigestMarkdown, slugFromPostPath, upsertDailyTopicsEntry } from './topic-claims';
 
 /** Result target name for this plugin. */
 const TARGET = 'surfdash';
@@ -458,6 +470,78 @@ export async function runListenLinkBackfill(surfdashRoot: string): Promise<strin
     return [...new Set(afterPaths.filter((p) => !beforePaths.has(p)))];
 }
 
+/** Outcome of {@link runDailyTopicsSync} — `paths` are checkout-relative for the commit pathspec. */
+export type DailyTopicsSyncOutcome = { ok: true; paths: string[] } | { ok: false; error: string };
+
+/** Paths the sync's git diff watches: the map file plus everything the retitle may rewrite. */
+const DAILY_TOPICS_GIT_PATHS = ['scripts/seo/daily-topics.json', 'content/posts'] as const;
+
+/**
+ * Maps a digest post's three refined locale posts into the site's daily-topics map and runs
+ * the site's retitle over them (`bun run sd seo retitle --write --stamp-claims`).
+ *
+ * Skips (ok, no paths, logged) when the post is not a digest or not all of zh/en/ja `index.md`
+ * exist — the site gate still validates whatever the posts already carry. A failing entry build
+ * or retitle run returns `{ ok: false }` so the caller never commits or pushes. Returns the map
+ * file plus every path the retitle changed, for the commit pathspec.
+ */
+export async function runDailyTopicsSync(surfdashRoot: string, zhPostPath: string): Promise<DailyTopicsSyncOutcome> {
+    const enPath = localeIndexPath(zhPostPath, 'en');
+    const jaPath = localeIndexPath(zhPostPath, 'ja');
+    if (enPath === undefined || jaPath === undefined) {
+        echoError(`daily-topics sync: skipped — ${zhPostPath} is not a zh locale post path`);
+        return { ok: true, paths: [] };
+    }
+    if (!existsSync(zhPostPath)) {
+        echoError(`daily-topics sync: skipped — zh post is missing: ${zhPostPath}`);
+        return { ok: true, paths: [] };
+    }
+    const zhPost = readFileSync(zhPostPath, 'utf-8');
+    if (!isDigestMarkdown(zhPost)) {
+        echoError(`daily-topics sync: skipped — not a digest post (no ${DIGEST_TAG} tag): ${zhPostPath}`);
+        return { ok: true, paths: [] };
+    }
+    if (!existsSync(enPath) || !existsSync(jaPath)) {
+        echoError(
+            `daily-topics sync: skipped — locale index.md missing (en=${existsSync(enPath)} ja=${existsSync(jaPath)}): ${zhPostPath}`,
+        );
+        return { ok: true, paths: [] };
+    }
+    const slug = slugFromPostPath(zhPostPath);
+    if (slug === undefined) {
+        return { ok: false, error: `daily-topics sync failed: cannot derive slug from ${zhPostPath}` };
+    }
+    const built = buildDailyTopicsEntry({
+        zh: zhPost,
+        en: readFileSync(enPath, 'utf-8'),
+        ja: readFileSync(jaPath, 'utf-8'),
+    });
+    if (!built.ok) {
+        return { ok: false, error: `daily-topics sync failed: ${built.error}` };
+    }
+    const mapPath = join(surfdashRoot, 'scripts', 'seo', 'daily-topics.json');
+    const before = await spawnCli(['git', 'status', '--porcelain', '--', ...DAILY_TOPICS_GIT_PATHS], surfdashRoot);
+    const beforePaths = new Set(parsePorcelainPaths(before.stdout));
+    try {
+        upsertDailyTopicsEntry(mapPath, slug, built.entry);
+    } catch (error: unknown) {
+        return {
+            ok: false,
+            error: `daily-topics sync failed: ${error instanceof Error ? error.message : String(error)}`,
+        };
+    }
+    const retitle = await spawnCli(['bun', 'run', 'sd', 'seo', 'retitle', '--write', '--stamp-claims'], surfdashRoot);
+    if (retitle.exitCode !== 0) {
+        return {
+            ok: false,
+            error: `daily-topics sync failed: bun run sd seo retitle --write --stamp-claims (exit ${retitle.exitCode}): ${cliErrorText(retitle)}`,
+        };
+    }
+    const after = await spawnCli(['git', 'status', '--porcelain', '--', ...DAILY_TOPICS_GIT_PATHS], surfdashRoot);
+    const changed = parsePorcelainPaths(after.stdout).filter((p) => !beforePaths.has(p));
+    return { ok: true, paths: [...new Set([relative(surfdashRoot, mapPath), ...changed])] };
+}
+
 /** Outcome of {@link runSiteGate}. */
 export type SiteGateOutcome = { ok: true } | { ok: false; error: string };
 
@@ -499,11 +583,23 @@ function isUnrelatedDatePostFailure(output: string, ownedPaths: readonly string[
     return true;
 }
 
+/** The checkout's current branch name, or '' when git fails (the caller keeps its existing behavior). */
+async function checkoutBranch(surfdashRoot: string): Promise<string> {
+    const branch = await spawnCli(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], surfdashRoot);
+    return branch.exitCode === 0 ? branch.stdout.trim() : '';
+}
+
 /**
  * Runs the surfdash site gates (`bun run sd check digest` then `bun run check:content`)
  * with cwd = `surfdashRoot` via `spawnCli`.
  *
- * If either command exits non-zero:
+ * Fail-closed on main pushes: when the checkout is on `main` and this run will push
+ * (`SURFDASH_AUTO_PUSH !== '0'`), a failing gate ALWAYS returns `{ ok: false }` — the
+ * `warn` / unrelated-date escape hatch logs that it was ignored (this is a push to main)
+ * plus the gate output and failing-post hint, and `off` still runs the gate instead of
+ * skipping it.
+ *
+ * Otherwise:
  * - With `SURFDASH_DIGEST_CHECK=warn` (or when every failing post belongs to an unrelated date
  *   outside `ownedPaths`): echoes each line of the failure via `echoError` prefixed with
  *   `site gate (warn):` and continues.
@@ -511,8 +607,15 @@ function isUnrelatedDatePostFailure(output: string, ownedPaths: readonly string[
  * - Default (unset or any other value): fails loud with command, trimmed output, and post hint.
  */
 export async function runSiteGate(surfdashRoot: string, ownedPaths: readonly string[] = []): Promise<SiteGateOutcome> {
+    const pushingToMain = process.env.SURFDASH_AUTO_PUSH !== '0' && (await checkoutBranch(surfdashRoot)) === 'main';
     if (process.env.SURFDASH_DIGEST_CHECK === 'off') {
-        return { ok: true };
+        if (pushingToMain) {
+            echoError(
+                'site gate: SURFDASH_DIGEST_CHECK=off ignored — this run pushes to surfdash main, so the gate runs fail-closed',
+            );
+        } else {
+            return { ok: true };
+        }
     }
 
     for (const cmd of SITE_GATE_COMMANDS) {
@@ -522,7 +625,18 @@ export async function runSiteGate(surfdashRoot: string, ownedPaths: readonly str
             const postHint = extractFailingPostHint(output);
             const hint = postHint ? ` [failing post: ${postHint}]` : '';
             const error = `site gate failed: ${cmd.join(' ')} (exit ${spawned.exitCode})${hint}: ${output}`;
-            if (process.env.SURFDASH_DIGEST_CHECK === 'warn' || isUnrelatedDatePostFailure(output, ownedPaths)) {
+            const escapable =
+                process.env.SURFDASH_DIGEST_CHECK === 'warn' || isUnrelatedDatePostFailure(output, ownedPaths);
+            if (escapable && pushingToMain) {
+                echoError(
+                    'site gate: warn/unrelated-date escape hatch ignored because this run pushes to surfdash main — failing closed (set SURFDASH_AUTO_PUSH=0 to skip the push entirely)',
+                );
+                for (const line of error.split('\n')) {
+                    echoError(`site gate (blocked): ${line}`);
+                }
+                return { ok: false, error };
+            }
+            if (escapable) {
                 for (const line of error.split('\n')) {
                     echoError(`site gate (warn): ${line}`);
                 }
@@ -862,8 +976,13 @@ async function patchPost(options: SurfdashPubOptions): Promise<Result> {
         return fail(`patch error: ${error instanceof Error ? error.message : String(error)}`);
     }
     if (outcome.changed === 0) echoError(`patch: no post bytes changed for ${outcome.slug}`);
+    // Daily-topics map + retitle run before the CMS sync so the synced rows carry the retitled
+    // frontmatter; a failure here must not commit or push a half-synced post.
+    const topics = await runDailyTopicsSync(surfdashRoot, postPath.postPath);
+    if (!topics.ok) return fail(topics.error);
     const synced = await syncPost({ postPath: postPath.postPath });
     const commitPaths = new Set(outcome.written.map((path) => relative(surfdashRoot, path)));
+    for (const p of topics.paths) commitPaths.add(p);
     for (const locale of PATCH_LOCALES) {
         const indexMd = localeIndexPath(postPath.postPath, locale);
         if (!indexMd) continue;
@@ -1282,16 +1401,18 @@ async function publishPreparedFile(
                 },
             });
         }
+        const topics = await runDailyTopicsSync(surfdashRoot, filePath);
+        if (!topics.ok) return failUncertain(topics.error);
         const backfilled = await runListenLinkBackfill(surfdashRoot);
         const commitPaths = relPostDirs ?? [relPostDir];
-        const gate = await runSiteGate(surfdashRoot, [...commitPaths, ...backfilled]);
+        const gate = await runSiteGate(surfdashRoot, [...commitPaths, ...backfilled, ...topics.paths]);
         if (!gate.ok) return failUncertain(gate.error);
         const commitLocales: SupportedLocale[] = relPostDirs === undefined ? [locale] : ['zh', 'en', 'ja'];
         const pushed = await pushPostGit(
             surfdashRoot,
             commitPaths,
             `content: daily AI news ${dateStamp} (${commitLocales.join(', ')})`,
-            backfilled,
+            [...backfilled, ...topics.paths],
         );
         if (!pushed.ok) return failUncertain(pushed.error);
         const live = await awaitArticleLive(articleUrl);
