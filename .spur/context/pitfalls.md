@@ -365,3 +365,10 @@
   200 image/png = bytes intact server-side.
 - Corollary: `naturalWidth` is NOT a validity signal for xhs draft previews cross-region
   (also the reason confirmThumbnails keys on src scheme, not naturalWidth).
+
+## 2026-11-20 · dev-run 0350 · pipeline verdict gates (fc9e752d)
+- Verdict replay only extracts BACKTICKED, repo-root-relative `path:line` anchors; bare or worktree-relative test citations become `missing` replay findings → verdict PASS downgrades to PARTIAL. Plugin test files resolve to workspace "." → skipped via root bunfig coverageThreshold guard, so root-relative cites replay clean.
+- After review, the task `### Review` section needs: a P1–P4 findings table with ≥1 populated row (hasPopulatedPriorityTable), a `Confidence:` line, and a `Verdict:` line — else residual review-contract blocks AND the L3 done-gate check fails.
+- The review approval token is folded from review.status at hitl.confirm time; after fixing evidence, re-answer the review work item so the token recomputes — a stale DENIED token routes review→remediate.
+- Any task-file/docs commit after a gate run invalidates the receipt (stale). Batch doc commits BEFORE the final gate run.
+- An engine run that fails its `done/command.gate` is terminal-failed and NOT resumable; recover via `spur task record <wbs> --transition done --no-lifecycle` after fixing, then persist-out + merge manually.
