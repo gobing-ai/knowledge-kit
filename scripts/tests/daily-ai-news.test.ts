@@ -11,6 +11,11 @@
  *  7. Validation hides a live run failure behind green offline dogfood.
  *  8. Nonzero dogfood is accepted because its summary has passes and zero failures.
  *  9. Read-only diagnosis mutates the config, store, schedule, or installed runtime.
+ *  10. `--full` leaks `--generate-only` (auto_publish=false) into the production run,
+ *      drops the production executor pair, or cannot be overridden per dispatch.
+ *  11. Unattended publish regenerates on a healthy receipt (done/no-content/incomplete/
+ *      running — a running 04:30 job owns the store lock) or skips on a dead one.
+ *  12. Unattended regeneration drops a production flag or fires after the window launch.
  */
 
 import { describe, expect, it } from 'bun:test';
@@ -39,7 +44,8 @@ function laDate(offsetDays = 0): string {
 
 const RUN_DATE_ISO = laDate();
 const RUN_DATE = RUN_DATE_ISO.replaceAll('-', '');
-const PRIOR_DATE = laDate(-1).replaceAll('-', '');
+const PRIOR_DATE_ISO = laDate(-1);
+const PRIOR_DATE = PRIOR_DATE_ISO.replaceAll('-', '');
 
 function supervisorRunDate(): string {
     return new Date().toISOString().slice(0, 10).replaceAll('-', '');
@@ -457,6 +463,140 @@ describe('0344 publish dependency and bundle admission', () => {
             expect({ scenario, status: result.status, stderr: result.stderr }).toMatchObject({ status: 1 });
             expect(actions(fx)).toEqual([]);
         }
+    });
+});
+
+describe('production posture and unattended publish', () => {
+    it('generate --full forwards the production executor pair with publishing enabled', () => {
+        const fx = fixture('generate-full');
+        const supervisorDate = supervisorRunDate();
+        const supervisorDir = join(fx.works, 'kk-daily-ai-voice2', supervisorDate);
+        renameSync(
+            writeBundle(fx, { runDate: supervisorDate }, supervisorDir),
+            join(supervisorDir, 'bundle.ready.json'),
+        );
+        executable(
+            fx.bin,
+            'spur',
+            recordBody(`import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const args = process.argv.slice(2);
+if (args.includes('run')) {
+    const vars = JSON.parse(args[args.indexOf('--vars') + 1]);
+    copyFileSync(process.env.READY_BUNDLE, join(vars.work_dir, 'bundle.json'));
+    mkdirSync(join(vars.work_dir, '4-publish'), { recursive: true });
+    writeFileSync(join(vars.work_dir, '4-publish', 'publish-status.after-generate.txt'), 'full');
+}
+`),
+        );
+        executable(fx.bin, 'kk', recordBody());
+        const result = runCli(fx, ['generate', '--full', '--skip-probe', '--allow-dirty'], {
+            TZ: 'UTC',
+            PATH: `${fx.bin}:${process.env.PATH ?? ''}`,
+            READY_BUNDLE: join(supervisorDir, 'bundle.ready.json'),
+        });
+        expect({ status: result.status, stderr: result.stderr }).toMatchObject({ status: 0 });
+        const launch = actions(fx).find((args) => args.includes('run'));
+        const vars = JSON.parse(launch?.[(launch?.indexOf('--vars') ?? -1) + 1] ?? '{}') as Record<string, string>;
+        expect(vars).toMatchObject({
+            auto_publish: 'true',
+            window: '72h',
+            agent: 'pi-deepseek',
+            agent_retry: 'agy-gemini',
+            skip_review: 'true',
+        });
+        expect(vars.work_dir).toContain(fx.works);
+    });
+
+    it('generate --full accepts explicit agent overrides over the production pair', () => {
+        const fx = fixture('generate-full-override');
+        const supervisorDate = supervisorRunDate();
+        const supervisorDir = join(fx.works, 'kk-daily-ai-voice2', supervisorDate);
+        renameSync(
+            writeBundle(fx, { runDate: supervisorDate }, supervisorDir),
+            join(supervisorDir, 'bundle.ready.json'),
+        );
+        executable(
+            fx.bin,
+            'spur',
+            recordBody(`import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const args = process.argv.slice(2);
+if (args.includes('run')) {
+    const vars = JSON.parse(args[args.indexOf('--vars') + 1]);
+    copyFileSync(process.env.READY_BUNDLE, join(vars.work_dir, 'bundle.json'));
+    mkdirSync(join(vars.work_dir, '4-publish'), { recursive: true });
+    writeFileSync(join(vars.work_dir, '4-publish', 'publish-status.after-generate.txt'), 'full');
+}
+`),
+        );
+        executable(fx.bin, 'kk', recordBody());
+        const result = runCli(fx, ['generate', '--full', '--agent', 'planner', '--skip-probe', '--allow-dirty'], {
+            TZ: 'UTC',
+            PATH: `${fx.bin}:${process.env.PATH ?? ''}`,
+            READY_BUNDLE: join(supervisorDir, 'bundle.ready.json'),
+        });
+        expect({ status: result.status, stderr: result.stderr }).toMatchObject({ status: 0 });
+        const launch = actions(fx).find((args) => args.includes('run'));
+        const vars = JSON.parse(launch?.[(launch?.indexOf('--vars') ?? -1) + 1] ?? '{}') as Record<string, string>;
+        expect(vars).toMatchObject({ auto_publish: 'true', agent: 'planner', agent_retry: 'agy-gemini' });
+    });
+
+    it('unattended publish regenerates only on a dead or missing voice3 receipt, then launches the window', () => {
+        const regenStatuses = ['missing', 'malformed', 'failed', 'timed-out', 'interrupted'];
+        const skipStatuses = ['done', 'no-content', 'incomplete', 'running'];
+        for (const scenario of [...regenStatuses, ...skipStatuses]) {
+            const fx = fixture(`unattended-${scenario}`);
+            if (scenario !== 'missing') {
+                mkdirSync(fx.dayDir, { recursive: true });
+                writeFileSync(
+                    join(fx.dayDir, 'schedule-receipt.json'),
+                    scenario === 'malformed' ? '{broken' : JSON.stringify({ status: scenario, exitCode: 1 }),
+                );
+            }
+            executable(fx.bin, 'bun', recordBody());
+            const result = runCli(fx, ['publish', '--window', 'overseas-rss', '--unattended'], {
+                TZ: 'UTC',
+                PATH: `${fx.bin}:${process.env.PATH ?? ''}`,
+            });
+            expect({ scenario, status: result.status, stderr: result.stderr }).toMatchObject({ status: 0 });
+            const calls = actions(fx);
+            const regenIndex = calls.findIndex((args) =>
+                args.some((arg) => String(arg).includes('daily-scheduled-run.ts')),
+            );
+            const launchIndex = calls.findIndex((args) =>
+                args.some((arg) => String(arg).includes('voice3-publish-window.ts')),
+            );
+            const regen = regenIndex === -1 ? undefined : calls[regenIndex];
+            const launch = launchIndex === -1 ? undefined : calls[launchIndex];
+            expect(calls.some((args) => args.includes('daily-news:generate'))).toBe(false);
+            expect(launch).toBeDefined();
+            expect(launch?.[launch.indexOf('--window') + 1]).toBe('overseas-rss');
+            expect(launch?.[launch.indexOf('--run-date') + 1]).toBe(PRIOR_DATE_ISO);
+            if (regenStatuses.includes(scenario)) {
+                expect(regen).toBeDefined();
+                expect(regen?.some((arg) => arg.includes('kk-daily-ai-voice3'))).toBe(true);
+                expect(regen?.[regen.indexOf('--agent') + 1]).toBe('pi-deepseek');
+                expect(regen?.[regen.indexOf('--retry-agent') + 1]).toBe('agy-gemini');
+                expect(regen?.[regen.indexOf('--window') + 1]).toBe('72h');
+                expect(regen?.includes('--generate-only')).toBe(false);
+                expect(regenIndex).toBeLessThan(launchIndex);
+            } else {
+                expect(regen).toBeUndefined();
+            }
+        }
+    }, 60_000);
+
+    it('refuses unattended publish outside the known windows', () => {
+        const fx = fixture('unattended-bad-window');
+        expect(runCli(fx, ['publish', '--window', 'nope', '--unattended']).status).toBeGreaterThan(0);
+        expect(actions(fx)).toEqual([]);
+    });
+
+    it('asserts the scheduler delegates both daily jobs to the operator script', () => {
+        const config = readFileSync(join(REPO, '.spur/config.yaml'), 'utf-8');
+        expect(config).toContain('bun scripts/daily-ai-news.ts generate --full');
+        expect(config).toContain('bun scripts/daily-ai-news.ts publish --window overseas-rss --unattended');
     });
 });
 

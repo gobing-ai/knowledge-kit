@@ -15,16 +15,42 @@ const SUPPLY_REPORT = join(REPO, 'scripts/ai-news-supply-report.ts');
 const EXTRACT_PROFILE = join(REPO, 'plugins/kk/decisions/extract/ai-news.yaml');
 const DOGFOOD_TEST = 'apps/cli/tests/voice3-migration.e2e.test.ts';
 const WINDOWS = new Set(['after-generate', 'cn-peak', 'overseas-rss']);
+// Production posture of the two scheduled jobs in .spur/config.yaml (2026-11-12
+// consolidation): `generate --full` IS the 04:30 kk-daily-ai-voice job and
+// `publish --window overseas-rss --unattended` IS the 07:00 kk-daily-publish3 job, so
+// cron and a local run of the same command share one flag definition.
+// --window 72h (2026-11-05): the 24h pool produced a 8.4-min script and the 15-min
+// floor refused before TTS (duration-refusal); pinned until ingest bodies or label
+// quality widen the fresh pool.
+// Executor pair: retry stays a DIFFERENT binary family (2026-11-04 — spur's readiness
+// gate SIGTERMs a stalled `<agent> --version` after 5s, so a same-binary retry re-hits
+// the same stall); 2026-11-08 primary was pi-dsv4.1-flash-volc; 2026-11-10 volc's quota
+// died mid-run (AccountQuotaExceeded) with the claude retry weekly-limit-dead, so
+// primary repointed to pi-deepseek (kin to the validated volc executor) and retry to
+// agy-gemini (different binary family, probe-passed). The 0347 F1 preflight probes both
+// before spending the window; re-evaluate when volc resets.
+const PRODUCTION = {
+    agent: 'pi-deepseek',
+    retryAgent: 'agy-gemini',
+    workflow: 'kk-daily-ai-voice3',
+    window: '72h',
+} as const;
 const USAGE = `usage:
-  bun run daily-news:generate [--agent <role|executor>] [--retry-agent <role|executor>] [-- <daily-scheduled-run options>]
-  bun run daily-news:publish [-- --run-date <YYYY-MM-DD|YYYYMMDD>] [--window <window>] [--yes] [publisher flags]
+  bun run daily-news:generate [--full] [--agent <role|executor>] [--retry-agent <role|executor>] [-- <daily-scheduled-run options>]
+  bun run daily-news:publish [-- --run-date <YYYY-MM-DD|YYYYMMDD>] [--window <window>] [--unattended] [--yes] [publisher flags]
   bun run daily-news:validate [-- --run-date <YYYY-MM-DD|YYYYMMDD>] [--mode quick|full] [--skip-dogfood]
 
-generate defaults to the 'planner' role (capable-2, tier-resolved at dispatch — no pinned model);
---agent/--retry-agent accept a role or a named executor to override. Explicit executor names are
-resolved with a one-time transition warning (0542 R2).
+generate defaults to the supervised shadow posture: generate-only (auto_publish=false) over the
+72h pool; --agent/--retry-agent default to the 'planner' role (capable-2, tier-resolved at
+dispatch — no pinned model) and accept a role or a named executor to override. Explicit executor
+names are resolved with a one-time transition warning (0542 R2). --full is the 04:30 scheduled
+posture: the whole voice3 workflow with auto_publish=true and the production pair
+(pi-deepseek + agy-gemini); per-dispatch overrides still win (last flag wins).
 publish defaults to today's after-generate window. Missing/incomplete generation asks on a TTY;
---yes explicitly consents to generation. Non-TTY runs never generate implicitly.
+--yes explicitly consents to generation. Non-TTY runs never generate implicitly. --unattended is
+the 07:00 scheduled posture (kk-daily-publish3): today's voice3 receipt gates a full production
+regeneration (done/no-content/incomplete/running skip; missing/hard-failed re-run), then the
+window launcher runs without any prompt — bundle admission stays with the launcher.
 validate defaults to quick file-readiness checks. --mode full runs live read-only diagnosis;
 dogfood uses the offline voice3 migration rehearsal.`;
 
@@ -204,36 +230,45 @@ function runCaptured(command: string, args: string[], timeout = 120_000): Captur
     };
 }
 
+function buildGenerateArgv(full: boolean, overrides: string[]): string[] {
+    return [
+        SUPERVISOR,
+        '--repo',
+        REPO,
+        '--works-dir',
+        resolveWorksDir(),
+        '--workflow',
+        PRODUCTION.workflow,
+        '--window',
+        PRODUCTION.window,
+        // Shadow posture (default): roles, not executor names (ADR-078 / 0542 R2) —
+        // planner = capable-2 authoring grade, tier-resolved at dispatch, so a quota-dead
+        // model never pins a supervised run. The full posture pins the production pair
+        // and drops --generate-only (auto_publish=true); forwarded args below still
+        // override per dispatch (parseArgs is last-wins).
+        ...(full ? [] : ['--generate-only']),
+        '--agent',
+        full ? PRODUCTION.agent : 'planner',
+        '--retry-agent',
+        full ? PRODUCTION.retryAgent : 'planner',
+        ...overrides,
+    ];
+}
+
+function browserEnv(): Record<string, string> {
+    return { KK_BROWSER_CHANNEL: process.env.KK_BROWSER_CHANNEL ?? 'chrome' };
+}
+
 function generate(args: string[]): number {
     if (args.includes('--help') || args.includes('-h')) {
         console.log(USAGE);
         return 0;
     }
-    return runInherited(
-        'bun',
-        [
-            SUPERVISOR,
-            '--repo',
-            REPO,
-            '--works-dir',
-            resolveWorksDir(),
-            '--workflow',
-            'kk-daily-ai-voice3',
-            '--generate-only',
-            '--window',
-            '72h',
-            // Roles, not executor names (ADR-078 / 0542 R2): planner = capable-2
-            // authoring grade, tier-resolved at dispatch, so a quota-dead model
-            // never pins the daily run. Explicit --agent/--retry-agent override
-            // via the forwarded args below.
-            '--agent',
-            'planner',
-            '--retry-agent',
-            'planner',
-            ...args,
-        ],
-        { KK_BROWSER_CHANNEL: process.env.KK_BROWSER_CHANNEL ?? 'chrome' },
-    );
+    // --full runs the whole voice3 workflow (auto_publish=true) in the production
+    // posture; without it the run stays generate-only (auto_publish=false).
+    const full = args.includes('--full');
+    const forwarded = args.filter((arg) => arg !== '--full');
+    return runInherited('bun', buildGenerateArgv(full, forwarded), browserEnv());
 }
 
 function valueAfter(args: string[], flag: string): string | undefined {
@@ -287,14 +322,44 @@ async function publish(args: string[]): Promise<number> {
     if (args.includes('--work-dir'))
         throw new Error('--work-dir is not supported; use KK_WORKS_DIR so generation and publishing share one root');
     const yes = args.includes('--yes');
+    const unattended = args.includes('--unattended');
     const forwarded = args.filter(
         (arg, index) =>
             arg !== '--yes' &&
-            arg !== '--window' &&
-            arg !== '--run-date' &&
+            arg !== '--unattended' &&
             args[index - 1] !== '--window' &&
             args[index - 1] !== '--run-date',
     );
+    if (unattended) {
+        // The 07:00 scheduled posture (kk-daily-publish3): the receipt, not the bundle,
+        // gates regeneration — done|no-content|incomplete|running skip (a 'running' 04:30
+        // job may legally still be executing and owns the store lock), anything else
+        // (missing/hard-failed/garbage) re-runs the full voice3 workflow with the same
+        // production flags as the 04:30 job (one definition: buildGenerateArgv(true)).
+        // Bundle admission stays with the window launcher, exactly as in the shell this
+        // replaced.
+        const stamp = losAngelesDate().replaceAll('-', '');
+        const receiptPath = join(resolveWorksDir(), 'kk-daily-ai-voice2', stamp, 'schedule-receipt.json');
+        let status = 'missing';
+        try {
+            const parsed = JSON.parse(readFileSync(receiptPath, 'utf-8')) as { status?: unknown };
+            if (typeof parsed.status === 'string') status = parsed.status;
+        } catch {
+            // A missing or unreadable receipt regenerates, like the former jq fallback.
+        }
+        const regen = !['done', 'no-content', 'incomplete', 'running'].includes(status);
+        console.log(
+            `daily-ai-news: voice3 receipt status=${status}${regen ? '; re-running generation with the 04:30 production flags' : ''}`,
+        );
+        if (regen) {
+            const generated = runInherited('bun', buildGenerateArgv(true, []), browserEnv());
+            if (generated !== 0) {
+                console.error(`daily-ai-news: generation re-run exited ${generated}; skipping the ${window} window.`);
+                return generated;
+            }
+        }
+        return runInherited('bun', [PUBLISH_LAUNCHER, '--window', window, '--run-date', runDate, ...forwarded]);
+    }
     const dayDir = join(resolveWorksDir(), 'kk-daily-ai-voice2', runDate.replaceAll('-', ''));
     let inspection = await inspectGeneration(dayDir, runDate);
     if (inspection.status !== 'complete') {
@@ -578,12 +643,9 @@ async function validate(args: string[]): Promise<number> {
         schedulerReady =
             scheduler.enabled === true &&
             daily?.cron === '30 4 * * *' &&
-            dailyCommand.includes('daily-scheduled-run.ts') &&
-            dailyCommand.includes('--workflow kk-daily-ai-voice3') &&
-            dailyCommand.includes('--window 72h') &&
-            !dailyCommand.includes('--generate-only') &&
+            dailyCommand.includes('bun scripts/daily-ai-news.ts generate --full') &&
             publishJob?.cron === '0 7 * * *' &&
-            publishCommand.includes('voice3-publish-window.ts --window overseas-rss') &&
+            publishCommand.includes('bun scripts/daily-ai-news.ts publish --window overseas-rss --unattended') &&
             activeWindowLine('cn-peak') &&
             activeWindowLine('overseas-rss');
     } catch {

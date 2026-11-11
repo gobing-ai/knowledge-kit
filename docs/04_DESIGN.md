@@ -1102,12 +1102,16 @@ workflow exit codes are retained. The receipt includes `channelCompleteness` and
 Installing this launcher requires operator approval. It was activated on November 1 following
 Robin's approval; evidence is in `docs/report/2026-11-01-daily-ai-news-recovery.md`.
 
-**Daily AI-news operator entries (0344).** Three root package scripts wrap the active voice3 path:
+**Daily AI-news operator entries (0344).** Three root package scripts wrap the active voice3 path;
+the two scheduled jobs in `.spur/config.yaml` are one-line delegates to the same script (see below):
 
 ```bash
 bun run daily-news:generate                       # supervised generation only; auto_publish=false, 72h pool
                                                   # agent defaults to the planner role (tier-resolved at dispatch); --agent/--retry-agent override
+bun run daily-news:generate -- --full             # the 04:30 scheduled posture: auto_publish=true, production pair (pi-deepseek + agy-gemini)
+                                                  # per-dispatch overrides still win (parseArgs last-wins)
 bun run daily-news:publish                        # valid today's bundle -> after-generate
+bun run daily-news:publish -- --window overseas-rss --unattended  # the 07:00 scheduled posture: receipt-gated regen, no prompts
 bun run daily-news:validate                       # quick: required files + dated bundle/variants only
 bun run daily-news:validate -- --mode full         # live read-only diagnosis + offline voice3 dogfood
 bun run daily-news:validate -- --mode full --skip-dogfood  # full diagnosis without dogfood
@@ -1115,15 +1119,20 @@ bun run daily-news:validate -- --mode full --skip-dogfood  # full diagnosis with
 
 `generate` adds the supervisor's voice3-only `--generate-only` mode: a terminal run with a bundle is
 `done`, the existing summary can close as `no-content`, and a green DAG with no bundle is
-`incomplete` (exit 4); it never launches publish3. `publish` validates bundle schema/date, variant
-hashes and final-variant safety before invoking `voice3-publish-window.ts`; empty-variant bundles and
-`--dummy` do not bypass that admission. If generation is missing,
-a TTY asks before running the generate entry (`--yes` is the explicit non-interactive consent); a
-non-TTY without `--yes` refuses with the exact command. Invalid existing bundles, running or
-no-content runs, and historical/foreign-day gaps never trigger automatic generation. The default
-window is `after-generate`; `--window cn-peak|overseas-rss` and the launcher's preset/live/dummy flags
-pass through without bypassing its RSS or send-confirm gates. `--work-dir` is refused so generation
-and publishing cannot silently use different roots; use `KK_WORKS_DIR` or `KK_CONFIG` consistently.
+`incomplete` (exit 4); it never launches publish3. `--full` drops `--generate-only` and pins the
+production pair (executor-pair history lives beside the script's `PRODUCTION` constant). `publish`
+validates bundle schema/date, variant hashes and final-variant safety before invoking
+`voice3-publish-window.ts`; empty-variant bundles and `--dummy` do not bypass that admission. If
+generation is missing, a TTY asks before running the generate entry (`--yes` is the explicit
+non-interactive consent); a non-TTY without `--yes` refuses with the exact command. Invalid existing
+bundles, running or no-content runs, and historical/foreign-day gaps never trigger automatic
+generation. The default window is `after-generate`; `--window cn-peak|overseas-rss` and the
+launcher's preset/live/dummy flags pass through without bypassing its RSS or send-confirm gates.
+`--unattended` replaces the bundle-inspection + consent flow with the scheduled 07:00 contract:
+today's voice3 receipt gates a full production regeneration (done/no-content/incomplete/running
+skip; missing/hard-failed re-run) and the window launcher owns bundle admission, exactly like the
+inline shell it replaced. `--work-dir` is refused so generation and publishing cannot silently use
+different roots; use `KK_WORKS_DIR` or `KK_CONFIG` consistently.
 
 `validate` defaults to **quick mode**: it checks the workflow/config/launcher files plus the dated
 `bundle.json` and its declared variant files for presence only. It does not inspect bundle quality,
