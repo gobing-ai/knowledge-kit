@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "Guarded page writes: summarize, synthesize and the user-edited guard"
-status: testing
+status: done
 template: feature-impl
 created_at: 2026-11-10T19:11:03.856Z
-updated_at: "2026-11-11T00:02:02.796Z"
+updated_at: "2026-11-11T00:02:44.314Z"
 feature_id: I1
 priority: P1
 tags:
@@ -14,6 +14,8 @@ tags:
 estimate_hours: 6
 
 dependencies: ["0351"]
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0352-verdict.json
 ---
 
 ## 0352. Guarded page writes: summarize, synthesize and the user-edited guard
@@ -184,4 +186,5 @@ Verdict: PASS
 
 - 2026-11-10T23:25:06.093Z todo → wip (system)
 - 2026-11-11T00:02:01.584Z wip → testing (system)
+- 2026-11-11T00:02:44.305Z testing → done (system)
 

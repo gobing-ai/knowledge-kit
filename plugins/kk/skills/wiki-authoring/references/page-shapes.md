@@ -39,6 +39,6 @@ Structured notes. Keep headings at `##` or deeper; `## AI Updates` and `## Summa
 
 ## What the skill must not produce
 
-- Navigation prose ("In this article we will…"), TODOs, or placeholder headings.
+- Navigation prose ("In this article we will…"), task markers left for later, or empty headings.
 - A page that duplicates an existing title; extend that page instead.
 - `user_edited: true` on a page it authored — that flag belongs to the operator.
