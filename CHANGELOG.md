@@ -2,6 +2,9 @@
 
 ### Fixed
 
+- fix(content-gen): retry STORM stages on malformed JSON, switch `spur agent run` to `--mode json`, unwrap the Grok `{ text }` envelope, and embed a compact `Doc[]` corpus in the prompt
+<!-- src: plugins/generations/content-gen/src/storm.ts:172 -->
+
 - fix(surfdash-pub): upsert `scripts/seo/daily-topics.json` from refined digest posts and run `sd seo retitle --write --stamp-claims` before the site gate, then fail-closed on pushes to `main` even when `SURFDASH_DIGEST_CHECK` is `warn` or `off` (duplicate map keys were what broke robinmin/surfdash#30)
 <!-- src: plugins/publishings/surfdash-pub/src/index.ts:488 -->
 
