@@ -3543,6 +3543,24 @@ describe('wechatmp-pub CLI surface (unchanged contract)', () => {
             expect(warn).toContain('the panel offers none of');
         });
 
+        test('setCover keeps its warning contract when the page dies mid-sweep (browser closed)', async () => {
+            const dead = () => Promise.reject(new Error('press: Target page, context or browser has been closed'));
+            const mockPage = {
+                evaluate: dead,
+                locator: () => ({
+                    count: dead,
+                    first: () => ({ count: dead, isVisible: dead, click: dead }),
+                }),
+                press: dead,
+                waitForTimeout: dead,
+            } as unknown as WechatPage;
+            // Regression: the best-effort dismiss sweep must never turn a dead target into a hard
+            // failure — the cover step's contract is a named warning, never a gate.
+            const warn = await setCover(mockPage, 'library', { stepTimeoutMs: 10 }, { requested: 'test.png' });
+            expect(typeof warn).toBe('string');
+            expect(warn).toContain('cover:');
+        }, 20_000);
+
         test('setCover warns when wanted cover list is empty', async () => {
             const mockPage = {
                 evaluate: async () => '',
