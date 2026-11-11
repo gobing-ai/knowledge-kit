@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "xhs-pub: adopt vendor-proven patterns (outcome verification, counter limits, draft verify) and close composePodcast gap"
-status: todo
+status: wip
 template: standard
 created_at: 2026-11-10T22:48:43.838Z
-updated_at: "2026-11-10T23:56:17.762Z"
+updated_at: "2026-11-11T01:54:21.167Z"
 
 ---
 
@@ -74,7 +74,31 @@ ADR-022 launch-only). Adopt patterns; reject transports.
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+Reviewed on branch `sp/run-0350-943e` (commits `12dcead`, `820c0ad` vs base `main@967ffc9`); full artifact: `.spur/run/fc9e752d-2098-4072-ad69-dda15615e9fe-review-cert.md`, captured verdict `.spur/run/0350-verdict.json`.
+
+| Req | Status | Evidence |
+| --- | ------ | -------- |
+| R1 | MET | Layered capture armed before save/publish (`plugins/publishings/xhs-pub/src/flow.ts:1027`, `plugins/publishings/xhs-pub/src/flow.ts:1096`); classify maps −913x → `AccountRiskControlError`, biz → `PublishError`, note_id → metadata (`plugins/publishings/xhs-pub/src/flow.ts:346`); fake-dispatch sentinel tests `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3009`–`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3035` |
+| R2 | MET | Platform counters as ground truth + UTF-16 units (`plugins/publishings/xhs-pub/src/flow.ts:540`, `plugins/publishings/xhs-pub/src/flow.ts:560`); typed throws before save (`plugins/publishings/xhs-pub/src/flow.ts:580`); zero-save-click refusal test `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3043` |
+| R3 | MET | 草稿箱→编辑 reopen with slot/https-src/title/body/合集 asserts (`plugins/publishings/xhs-pub/src/flow.ts:1193`), loud per-assertion `DraftVerifyError`; seven named-failure tests `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3062`–`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3099` |
+| R4 | MET | Podcast title counter-assert + derived ≤1000-unit body + 合集 selection (`plugins/publishings/xhs-pub/src/flow.ts:861`, `plugins/publishings/xhs-pub/src/flow.ts:833`); tests `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3105`–`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3146` |
+| R5 | MET | Transport/launcher/shadow-save/durable-src wait untouched by the diff (constraint honored, no work) |
+
+| AC | Status | Evidence Type | Evidence |
+| --- | ------ | ------------- | -------- |
+| AC1 | MET | test | capture → typed errors + serverCapture metadata (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3009`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3027`); gate PASS receipt `.spur/run/0350-check-receipt.json` |
+| AC2 | MET | test | counter-quoted typed rejection before save (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3043`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3051`) |
+| AC3 | MET | test | named reopen failures + passing 2026-11-09 shape (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3062`–`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3099`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3105`) |
+| AC4 | MET | test | non-empty title, counter-verified body, collection in `draftVerified` (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3105`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3118`) |
+| AC5 | MET | command | plugin suite 143/143; full gate 4882 pass / 0 fail incl. legacy `thumbnail count:` + `_onSave`/`shadow-host-method` contract tests (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:584`) |
+
+Findings: none at P1–P3. One P4 note (non-blocking): post-verify the flow re-navigates to `PUBLISH_URL` so a re-verify never re-saves (`plugins/publishings/xhs-pub/src/flow.ts:1200`) — deliberate.
+
+Checks: `bunx tsc --noEmit` OK; `bun run lint` OK; plugin suite 143/143; full gate `spur self exec check` PASS (4882 tests, 253 files) with tree-hash receipt reuse confirmed.
+
+Confidence: HIGH
+
+Verdict: PASS
 
 ### References
 
@@ -83,4 +107,5 @@ ADR-022 launch-only). Adopt patterns; reject transports.
 ### History
 
 - 2026-11-10T23:56:17.762Z backlog → todo (system)
+- 2026-11-11T01:39:39.645Z todo → wip (system)
 
