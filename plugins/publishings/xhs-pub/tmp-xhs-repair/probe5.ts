@@ -72,7 +72,7 @@ try {
     }
 
     // DNS: what does this host resolve to locally?
-    const dns = await Array.fromAsync(await import('dns').then((d) => d.promises));
+    const dns = await Array.fromAsync(await import('node:dns').then((d) => d.promises));
     void dns;
 } catch (e) {
     log('ERROR', e instanceof Error ? e.message : String(e));
