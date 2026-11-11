@@ -1,3 +1,10 @@
+## [Unreleased]
+
+### Fixed
+
+- fix(surfdash-pub): upsert `scripts/seo/daily-topics.json` from refined digest posts and run `sd seo retitle --write --stamp-claims` before the site gate, then fail-closed on pushes to `main` even when `SURFDASH_DIGEST_CHECK` is `warn` or `off` (duplicate map keys were what broke robinmin/surfdash#30)
+<!-- src: plugins/publishings/surfdash-pub/src/index.ts:488 -->
+
 ## [0.1.15] - 2026-11-09
 
 ### Added
