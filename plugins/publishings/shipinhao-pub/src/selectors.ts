@@ -31,6 +31,32 @@ export const SHP_TARGET = 'shipinhao';
 export const SHP_HOME_URL = 'https://channels.weixin.qq.com/platform/post/video';
 
 /**
+ * The post kinds the 发布 page offers (视频， 图文， 音乐， 音频). Declared operation names are
+ * ASCII (`shortVideo` is the task 0296 freeze), one per platform post kind.
+ */
+export const SHP_OPERATION_NAMES = ['shortVideo', 'audio', 'image', 'music'] as const;
+export type ShipinhaoOperationName = (typeof SHP_OPERATION_NAMES)[number];
+
+/**
+ * Per-operation creation entries. Only the video URL is Grounded (task 0296 freeze). The
+ * audio/image/music URLs mirror the same `/platform/post/<kind>` shape and are **Provisional**:
+ * the operator-observed audio works manager lives at `/platform/post/audioManager` (a listing
+ * page, not necessarily the creation form), so the first logged-in live recon confirms — or
+ * corrects — these direct-create URLs before any real audio send relies on them.
+ */
+export const SHP_AUDIO_HOME_URL = 'https://channels.weixin.qq.com/platform/post/audio';
+export const SHP_IMAGE_HOME_URL = 'https://channels.weixin.qq.com/platform/post/image';
+export const SHP_MUSIC_HOME_URL = 'https://channels.weixin.qq.com/platform/post/music';
+
+/** Creation-page entry per declared operation (see {@link SHP_AUDIO_HOME_URL} for the caveat). */
+export const SHP_HOME_URL_BY_OPERATION: Record<ShipinhaoOperationName, string> = {
+    shortVideo: SHP_HOME_URL,
+    audio: SHP_AUDIO_HOME_URL,
+    image: SHP_IMAGE_HOME_URL,
+    music: SHP_MUSIC_HOME_URL,
+};
+
+/**
  * Login/passport redirect marker. **Provisional**: shipinhao.js never observes a redirect URL; it
  * only gates on creator-form readiness (shipinhao.js:155-164). The readiness predicate below
  * carries the real gate: an unauthenticated visit is rejected by the missing creator form, not by
@@ -189,6 +215,47 @@ export const SHP_VIDEO_SELECTORS = {
 export type ShipinhaoVideoSelectorKey = keyof typeof SHP_VIDEO_SELECTORS;
 
 /**
+ * The 音频 (audio-post) flow selectors: the video flow's rails (title, description editor,
+ * 声明原创 dialog, cover dialog, submit rail) reused verbatim plus an audio file-input ladder
+ * (accept-kind → extension → semantic 上传音频 region → the single untyped input, the vendor's
+ * priority order applied to audio). **Provisional until live recon** — every selector fails
+ * closed: a miss resolves to a typed stage failure, never a wrong send.
+ */
+export const SHP_AUDIO_SELECTORS = {
+    ...SHP_VIDEO_SELECTORS,
+    audioInput: [
+        'input[type="file"][accept*="audio"]',
+        'input[type="file"][accept*=".mp3"]',
+        'input[type="file"][accept*=".m4a"]',
+        'input[type="file"][accept*=".wav"]',
+        'section:has(input[type="file"]):has-text("上传音频") input[type="file"]',
+        'input[type="file"]',
+    ] as readonly string[],
+} as const;
+
+/**
+ * The 音乐 (music-post) flow selectors: the audio flow's file-input ladder plus the cover rails
+ * (music posts carry their own cover). **Provisional until live recon**, same fail-closed rule.
+ */
+export const SHP_MUSIC_SELECTORS: typeof SHP_AUDIO_SELECTORS = { ...SHP_AUDIO_SELECTORS };
+
+/**
+ * The 图文 (image-post) flow selectors: a multi-file image-input ladder plus the shared
+ * text/submit rails. No cover rails are read — the platform owns the 图文 cover from the images
+ * themselves, so the flow refuses an explicit cover for this operation instead of guessing a
+ * slot. **Provisional until live recon**, same fail-closed rule.
+ */
+export const SHP_IMAGE_SELECTORS = {
+    ...SHP_VIDEO_SELECTORS,
+    imagesInput: [
+        'input[type="file"][multiple]',
+        'input[type="file"][accept*="image"]',
+        'section:has(input[type="file"]):has-text("上传图片") input[type="file"]',
+        'input[type="file"]',
+    ] as readonly string[],
+} as const;
+
+/**
  * Receipt-shaped URLs. **Provisional**: the vendor never reads a receipt (a clicked 发表 without
  * a works record is `unknown`, shipinhao.js:2326), so these are the id-bearing works/record
  * shapes the task 0296 Design freeze names. Only shapes in this list count as receipts, and only
@@ -198,6 +265,9 @@ export type ShipinhaoVideoSelectorKey = keyof typeof SHP_VIDEO_SELECTORS;
 export const SHP_RECEIPT_URL_RES = [
     /channels\.weixin\.qq\.com\/platform\/record\/detail\/[0-9a-zA-Z_-]+/,
     /channels\.weixin\.qq\.com\/platform\/post\/video\/[0-9a-zA-Z_-]+/,
+    /channels\.weixin\.qq\.com\/platform\/post\/audio\/[0-9a-zA-Z_-]+/,
+    /channels\.weixin\.qq\.com\/platform\/post\/image\/[0-9a-zA-Z_-]+/,
+    /channels\.weixin\.qq\.com\/platform\/post\/music\/[0-9a-zA-Z_-]+/,
 ] as const;
 
 /** Upload/processing ceiling for the video step (media ceiling — large local files, task 0296 freeze). */

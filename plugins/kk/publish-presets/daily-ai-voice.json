@@ -37,6 +37,14 @@
             "mode": "draft"
         },
         {
+            "plugin": "shipinhao-pub",
+            "operation": "audio",
+            "variant": "episode",
+            "tier": 1,
+            "window": "after-generate",
+            "mode": "draft"
+        },
+        {
             "plugin": "wechatmp-pub",
             "operation": "文章",
             "variant": "article",
@@ -113,7 +121,7 @@
         },
         {
             "plugin": "shipinhao-pub",
-            "operation": "图文",
+            "operation": "image",
             "variant": "cards",
             "tier": 3,
             "window": "overseas-rss",

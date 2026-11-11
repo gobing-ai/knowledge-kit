@@ -420,6 +420,7 @@ function makeFixture(caseName: string): Fixture {
         'weibo-pub',
         'x-pub',
         'threads-pub',
+        'shipinhao-pub',
     ]) {
         writeFakeTransport(binDir, transport);
     }
@@ -781,8 +782,9 @@ describe('0335 R1: fresh offline multi-window migration rehearsal', () => {
         );
         expectDone(second, 'replayed after-generate');
         expect(dispatchCount(fx, 'surfdash-pub')).toBe(afterFirst);
-        // 6 tier0-2 receipts (surfdash+podcast, 1×podcast tier1, 3×article tier2); overseas skipped.
-        expect(receiptsOf(fx).length).toBe(6);
+        // 7 tier0-2 receipts (surfdash+podcast, 2×podcast tier1 [xhs+shipinhao], 3×article tier2);
+        // overseas skipped.
+        expect(receiptsOf(fx).length).toBe(7);
     });
 });
 

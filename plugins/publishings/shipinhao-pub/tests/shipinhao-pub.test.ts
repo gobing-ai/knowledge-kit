@@ -1,6 +1,7 @@
 /**
- * shipinhao-pub offline unit suite (0296) — mirrors the xiaoyuzhou-pub unit suite (0295) layer by
- * layer, adapted to the shipinhao (channels.weixin.qq.com) short-video flow contract.
+ * shipinhao-pub offline unit suite (0296; four operations since 2026-11-10) — mirrors the
+ * xiaoyuzhou-pub unit suite (0295) layer by layer, adapted to the shipinhao (channels.weixin.qq.com)
+ * post flow contract (shortVideo 视频, audio 音频, music 音乐, image 图文).
  *
  * Eight describes:
  *   1. Declared surface — selector table, constants, config, operations, manifest,
@@ -40,13 +41,17 @@ import { getPublishTransport, main, processPublishIO, resolveOperation, SHP_OPER
 import {
     isShipinhaoAuthenticated,
     readRootSnapshot,
+    SHP_AUDIO_SELECTORS,
     SHP_CONFIG,
     SHP_COVER_PREVIEW_WAIT_MS,
     SHP_COVER_SAVE_WAIT_MS,
     SHP_FORM_WAIT_MS,
     SHP_HOME_URL,
+    SHP_HOME_URL_BY_OPERATION,
+    SHP_IMAGE_SELECTORS,
     SHP_LOGIN_TIMEOUT_MS,
     SHP_LOGIN_URL_RE,
+    SHP_MUSIC_SELECTORS,
     SHP_PROCESSING_WAIT_MS,
     SHP_RECEIPT_URL_RES,
     SHP_ROOT_WAIT_MS,
@@ -57,6 +62,8 @@ import {
 
 const TMP_DIR = join(process.cwd(), '.works/tmp/test-shipinhao-pub-main');
 const VIDEO_PATH = join(TMP_DIR, 'video.mp4');
+const AUDIO_PATH = join(TMP_DIR, 'episode.mp3');
+const IMAGE_PATHS = [join(TMP_DIR, 'card-1.jpg'), join(TMP_DIR, 'card-2.webp')];
 const COVER_PATH = join(TMP_DIR, 'cover.png');
 const BIG_PATH = join(TMP_DIR, 'big.mp4');
 const PROFILE_OVERRIDE_DIR = join(TMP_DIR, 'profile-flag-override');
@@ -68,11 +75,19 @@ const PUBLISH_URL = 'https://channels.weixin.qq.com/platform/post/video/pub0777'
 
 const { videoInput, titleInput, descriptionEditor, saveButton, publishButton, coverDialog } = SHP_VIDEO_SELECTORS;
 const VIDEO_INPUT = videoInput[0];
+const AUDIO_INPUT = SHP_AUDIO_SELECTORS.audioInput[0];
+const IMAGES_INPUT = SHP_IMAGE_SELECTORS.imagesInput[0];
 const TITLE_INPUT = titleInput[0];
 const EDITOR = descriptionEditor[0];
 const SAVE = saveButton[0];
 const PUBLISH = publishButton[0];
 const COVER_DIALOG = coverDialog[0];
+/** Every operation's media file-input ladder — the fake counts all of them the same way. */
+const MEDIA_INPUT_LADDER: readonly string[] = [
+    ...videoInput,
+    ...SHP_AUDIO_SELECTORS.audioInput,
+    ...SHP_IMAGE_SELECTORS.imagesInput,
+];
 
 /** Original env, captured before any beforeEach mutates it (restored by describe 8). */
 const originalChannelDir = process.env.SHP_PROFILE_DIR;
@@ -144,7 +159,7 @@ interface FakePageShared {
 const makeFakePage = (shared: FakePageShared, options: FakePageOptions): Page => {
     let rootReads = 0;
     let url = 'about:blank';
-    let videoAssigned = false;
+    let mediaAssigned = false;
     let titleValue = '';
     let editorHtml = '';
     let coverDescriptor = 'base';
@@ -163,9 +178,9 @@ const makeFakePage = (shared: FakePageShared, options: FakePageOptions): Page =>
     const countOf = (selector: string): number => {
         const base = baseSelector(selector);
         if (base === 'wujie-app') return options.groundedMissing ? 0 : 1;
-        if (videoInput.includes(base)) return options.missingVideoInput ? 0 : 1;
-        if (titleInput.includes(base)) return videoAssigned && !options.missingTitleInput ? 1 : 0;
-        if (descriptionEditor.includes(base)) return videoAssigned && !options.missingEditor ? 1 : 0;
+        if (MEDIA_INPUT_LADDER.includes(base)) return options.missingVideoInput ? 0 : 1;
+        if (titleInput.includes(base)) return mediaAssigned && !options.missingTitleInput ? 1 : 0;
+        if (descriptionEditor.includes(base)) return mediaAssigned && !options.missingEditor ? 1 : 0;
         if (saveButton.includes(base) || publishButton.includes(base)) return options.submitMissing ? 0 : 1;
         if (base === `${COVER_DIALOG} input[type="file"]`)
             return coverDialogOpen && !options.coverDialogNoFileInput ? 1 : 0;
@@ -239,7 +254,7 @@ const makeFakePage = (shared: FakePageShared, options: FakePageOptions): Page =>
                 });
             }
             if (expression.includes('{ ready:'))
-                return JSON.stringify({ ready: videoAssigned && !options.missingTitleInput });
+                return JSON.stringify({ ready: mediaAssigned && !options.missingTitleInput });
             if (expression.includes("String(el.value ?? '')")) return titleValue;
             if (expression.includes("String(el.innerText ?? el.textContent ?? '')"))
                 return options.bodyReadbackDrops ? '' : editorHtml.replace(/<[^>]*>/g, ' ');
@@ -336,7 +351,7 @@ const makeFakePage = (shared: FakePageShared, options: FakePageOptions): Page =>
                     if (options.uploadThrows) throw new Error('detached during upload');
                     shared.calls.push(`setInputFiles:${selector}|${String(files)}`);
                     const base = baseSelector(selector);
-                    if (videoInput.includes(base)) videoAssigned = true;
+                    if (MEDIA_INPUT_LADDER.includes(base)) mediaAssigned = true;
                     if (base === `${COVER_DIALOG} input[type="file"]`) shared.calls.push('cover:attach');
                 },
             };
@@ -386,8 +401,9 @@ const makeFakeLauncher = (options: FakeLauncherOptions = {}) => {
 const transport = (
     fake: ReturnType<typeof makeFakeLauncher>,
     driver: 'script' | 'agent' = 'script',
+    operation: 'shortVideo' | 'audio' | 'music' | 'image' = 'shortVideo',
 ): ShipinhaoBrowserTransport =>
-    new ShipinhaoBrowserTransport('shortVideo', driver, { launcher: fake.launcher, stepTimeoutMs: 250 });
+    new ShipinhaoBrowserTransport(operation, driver, { launcher: fake.launcher, stepTimeoutMs: 250 });
 
 /** Fails unless the comment block directly above `anchor` carries the Provisional label. */
 const expectProvisionalLabel = (source: string, anchor: string): void => {
@@ -411,6 +427,9 @@ const expectGroundedLabel = (source: string, anchor: string): void => {
 beforeEach(async () => {
     await mkdir(TMP_DIR, { recursive: true });
     await writeFile(VIDEO_PATH, 'fake-mp4-bytes-for-flow-tests');
+    await writeFile(AUDIO_PATH, 'fake-mp3-bytes-for-flow-tests');
+    await writeFile(IMAGE_PATHS[0] as string, 'fake-jpg-bytes-for-flow-tests');
+    await writeFile(IMAGE_PATHS[1] as string, 'fake-webp-bytes-for-flow-tests');
     await writeFile(COVER_PATH, 'fake-png-bytes-for-flow-tests');
     delete process.env.SHP_PROFILE_DIR;
     delete process.env.KK_BROWSER_PROFILE_DIR;
@@ -486,16 +505,19 @@ describe('1. declared surface (selectors, constants, config, operations, manifes
     });
 
     test('operations table and resolveOperation precedence/unknown handling', () => {
-        expect([...SHP_OPERATIONS]).toEqual(['shortVideo']);
+        expect([...SHP_OPERATIONS]).toEqual(['shortVideo', 'audio', 'image', 'music']);
         expect(resolveOperation(undefined, undefined)).toEqual({ operation: 'shortVideo' });
         expect(resolveOperation({ operation: 'shortVideo' }, undefined).operation).toBe('shortVideo');
+        expect(resolveOperation({ operation: 'audio' }, undefined).operation).toBe('audio');
+        expect(resolveOperation(undefined, draftContent({ operation: 'image' })).operation).toBe('image');
+        expect(resolveOperation({ operation: 'music' }, undefined).operation).toBe('music');
         expect(resolveOperation(undefined, draftContent({ operation: 'shortVideo' })).operation).toBe('shortVideo');
         // options.operation wins over content.metadata.operation.
         expect(resolveOperation({ operation: 'shortVideo' }, draftContent({ operation: 'article' })).operation).toBe(
             'shortVideo',
         );
         expect(resolveOperation({ operation: 'podcast' }, undefined).error).toContain(
-            "unsupported operation 'podcast' for shipinhao: expected one of shortVideo",
+            "unsupported operation 'podcast' for shipinhao: expected one of shortVideo, audio, image, music",
         );
         expect(resolveOperation(undefined, draftContent({ operation: 'article' })).error).toContain(
             "unsupported operation 'article' for shipinhao",
@@ -503,6 +525,26 @@ describe('1. declared surface (selectors, constants, config, operations, manifes
         expect(resolveOperation({ operation: 'article' }, draftContent({ operation: 'shortVideo' })).error).toContain(
             "unsupported operation 'article' for shipinhao",
         );
+    });
+
+    test('per-operation selector tables and home URLs (four post kinds)', () => {
+        // The per-op tables reuse the video rails verbatim (spread) plus their own input ladder;
+        // the flow reads only the per-op ladder key.
+        expect(Object.keys(SHP_AUDIO_SELECTORS).sort()).toEqual(
+            [...Object.keys(SHP_VIDEO_SELECTORS), 'audioInput'].sort(),
+        );
+        expect(SHP_AUDIO_SELECTORS.audioInput[0]).toBe('input[type="file"][accept*="audio"]');
+        expect(Object.keys(SHP_MUSIC_SELECTORS)).toEqual(Object.keys(SHP_AUDIO_SELECTORS));
+        expect(Object.keys(SHP_IMAGE_SELECTORS).sort()).toEqual(
+            [...Object.keys(SHP_VIDEO_SELECTORS), 'imagesInput'].sort(),
+        );
+        expect(SHP_IMAGE_SELECTORS.imagesInput[0]).toBe('input[type="file"][multiple]');
+        expect(SHP_HOME_URL_BY_OPERATION).toEqual({
+            shortVideo: 'https://channels.weixin.qq.com/platform/post/video',
+            audio: 'https://channels.weixin.qq.com/platform/post/audio',
+            image: 'https://channels.weixin.qq.com/platform/post/image',
+            music: 'https://channels.weixin.qq.com/platform/post/music',
+        });
     });
 
     test('plugin.json manifest declares the shipinhao browser session and packed entry/check', async () => {
@@ -731,6 +773,68 @@ describe('2. pre-browser refusals (zero browser launches)', () => {
         expect(result.error).toContain('metadata.images');
         expect(result.error).toContain('metadata.publishTime');
         expect(result.error).toContain('scheduling/publishTime is an unported vendor enhancement');
+        expect(fake.requests).toHaveLength(0);
+    });
+
+    test('audio refusals: missing, non-string, nonexistent, and unsupported extensions', async () => {
+        const fake = makeFakeLauncher();
+        const t = transport(fake, 'script', 'audio');
+        const publish = (metadata: Record<string, unknown>) =>
+            t.publish({ content: draftContent(metadata, { format: 'audio' }) });
+
+        expect((await publish({})).error).toContain('must be a non-empty local audio file path');
+        expect((await publish({ audio: 42 })).error).toContain('must be a non-empty local audio file path');
+        expect((await publish({ audio: join(TMP_DIR, 'nope.mp3') })).error).toContain(
+            'does not resolve to a readable nonempty local audio file',
+        );
+        const txt = await publish({ audio: join(TMP_DIR, 'note.txt') });
+        expect(txt.error).toContain('must be a local MP3/M4A/WAV/AAC/FLAC file');
+        expect(txt.error).toContain('unsupported extension in');
+        expect(fake.requests).toHaveLength(0);
+    });
+
+    test('images refusals: missing, non-array, and per-entry extension gates', async () => {
+        const fake = makeFakeLauncher();
+        const t = transport(fake, 'script', 'image');
+        const publish = (metadata: Record<string, unknown>) =>
+            t.publish({ content: draftContent(metadata, { format: 'image' }) });
+
+        expect((await publish({})).error).toContain(
+            'metadata.images must be a non-empty array of local image file paths',
+        );
+        expect((await publish({ images: 'card.png' })).error).toContain(
+            'metadata.images must be a non-empty array of local image file paths',
+        );
+        expect((await publish({ images: [] })).error).toContain(
+            'metadata.images must be a non-empty array of local image file paths',
+        );
+        const bad = await publish({ images: [join(TMP_DIR, 'card.tiff')] });
+        expect(bad.error).toContain('metadata.images[] must be a local PNG/JPEG/WebP file');
+        expect(fake.requests).toHaveLength(0);
+    });
+
+    test('images entries may be plain paths or { path } objects (the cards-variant spelling)', async () => {
+        const fake = makeFakeLauncher({ onSaveClick: 'draftReceipt' });
+        const result = await transport(fake, 'script', 'image').publish({
+            content: draftContent({ images: [{ path: IMAGE_PATHS[0] }, IMAGE_PATHS[1]] }, { format: 'image' }),
+        });
+        expect(result.ok).toBe(true);
+        expect(fake.calls).toContain(`setInputFiles:wujie-app ${IMAGES_INPUT}|${IMAGE_PATHS[0]},${IMAGE_PATHS[1]}`);
+    });
+
+    test('cross-kind fields refuse per operation: videoPath on audio, coverPath on 图文', async () => {
+        const fake = makeFakeLauncher();
+        const audioResult = await transport(fake, 'script', 'audio').publish({
+            content: draftContent({ videoPath: VIDEO_PATH, audio: AUDIO_PATH }, { format: 'audio' }),
+        });
+        expect(audioResult.error).toContain('unsupported field(s)');
+        expect(audioResult.error).toContain('metadata.videoPath');
+
+        const imageResult = await transport(fake, 'script', 'image').publish({
+            content: draftContent({ images: IMAGE_PATHS, coverPath: COVER_PATH }, { format: 'image' }),
+        });
+        expect(imageResult.error).toContain('unsupported field(s)');
+        expect(imageResult.error).toContain('metadata.coverPath');
         expect(fake.requests).toHaveLength(0);
     });
 });
@@ -1057,7 +1161,7 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
         // The processing poll is bounded by the module-level media ceiling, not the step timeout.
         expect(src).toContain('timeoutMs: SHP_UPLOAD_TIMEOUT_MS');
         expect(src).toContain("'upload-processing'");
-        expect(src).toContain('refusing to claim an uploaded video');
+        expect(src).toContain(`refusing to claim an uploaded \${spec.mediaLabel}`);
         // The typed branch the deadline returns: single line, staged, no claimed upload.
         const typed = stageFail(
             SHP_TARGET,
@@ -1266,6 +1370,66 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
         expect(result.metadata).toMatchObject({ stage: 'draft-receipt' });
         expect(result.error).toContain('receipt is ambiguous');
         expect(result.metadata?.evidence).toContain('2 disagreeing fresh works ids');
+    });
+
+    test('an audio post (音频) rides the shared rails with the audio ladder — draft with a cover', async () => {
+        const fake = makeFakeLauncher({ onSaveClick: 'draftReceipt' });
+        const result = await transport(fake, 'script', 'audio').publish({
+            content: draftContent({ audio: AUDIO_PATH, coverPath: COVER_PATH }, { format: 'audio' }),
+        });
+        expect(result.ok).toBe(true);
+        expect(result.metadata).toMatchObject({
+            operation: 'audio',
+            publishStatus: 'draft',
+            confirmedBy: 'draft-receipt',
+        });
+        expect(result.message).toContain('shipinhao audio draft confirmed in profile');
+        expect(fake.calls).toContain(`setInputFiles:wujie-app ${AUDIO_INPUT}|${AUDIO_PATH}`);
+        expect(fake.calls).toContain(`fill:wujie-app ${TITLE_INPUT}|Fixture 短标题`);
+        expect(fake.calls).toContain(`click:wujie-app ${SAVE}`);
+        expect(fake.calls).toContain('cover:confirm');
+    });
+
+    test('the audio payload may spell the file as metadata.audioFile (publish-prep contract)', async () => {
+        const fake = makeFakeLauncher({ onSaveClick: 'draftReceipt' });
+        const result = await transport(fake, 'script', 'audio').publish({
+            content: draftContent({ audioFile: AUDIO_PATH }, { format: 'audio' }),
+        });
+        expect(result.ok).toBe(true);
+        expect(fake.calls).toContain(`setInputFiles:wujie-app ${AUDIO_INPUT}|${AUDIO_PATH}`);
+    });
+
+    test('a public audio post clicks 发表 and confirms on the same fresh-receipt contract', async () => {
+        const fake = makeFakeLauncher();
+        const result = await transport(fake, 'script', 'audio').publish({
+            content: draftContent({ audio: AUDIO_PATH, publishStatus: 'public' }, { format: 'audio' }),
+        });
+        expect(result.ok).toBe(true);
+        expect(result.url).toBe(PUBLISH_URL);
+        expect(result.message).toContain('shipinhao audio public confirmed in profile');
+        expect(fake.calls).toContain(`click:wujie-app ${PUBLISH}`);
+    });
+
+    test('a music post (音乐) uses the same audio ladder plus cover rails', async () => {
+        const fake = makeFakeLauncher({ onSaveClick: 'draftReceipt' });
+        const result = await transport(fake, 'script', 'music').publish({
+            content: draftContent({ audio: AUDIO_PATH, coverPath: COVER_PATH }, { format: 'audio' }),
+        });
+        expect(result.ok).toBe(true);
+        expect(result.metadata).toMatchObject({ operation: 'music' });
+        expect(fake.calls).toContain(`setInputFiles:wujie-app ${AUDIO_INPUT}|${AUDIO_PATH}`);
+        expect(fake.calls).toContain('cover:confirm');
+    });
+
+    test('an image post (图文) attaches the image array in one setInputFiles and never touches the cover', async () => {
+        const fake = makeFakeLauncher({ onSaveClick: 'draftReceipt' });
+        const result = await transport(fake, 'script', 'image').publish({
+            content: draftContent({ images: IMAGE_PATHS }, { format: 'image' }),
+        });
+        expect(result.ok).toBe(true);
+        expect(result.metadata).toMatchObject({ operation: 'image' });
+        expect(fake.calls).toContain(`setInputFiles:wujie-app ${IMAGES_INPUT}|${IMAGE_PATHS[0]},${IMAGE_PATHS[1]}`);
+        expect(fake.calls.some((call) => call.startsWith('cover:'))).toBe(false);
     });
 });
 

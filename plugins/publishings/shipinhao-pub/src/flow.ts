@@ -1,10 +1,15 @@
 /**
- * shipinhao-pub transport + flow (task 0296).
+ * shipinhao-pub transport + flow (task 0296; four post kinds since 2026-11-10).
  *
- * The live short-video flow in `runShortVideoFlow`, stage-typed on every `Result.metadata.stage`:
- * root-resolve (the wujie policy) → video-upload → media-processing → title-fill →
+ * The live post flow in `runPostFlow`, stage-typed on every `Result.metadata.stage`, shared by the
+ * four declared operations (视频 shortVideo, 音频 audio, 音乐 music, 图文 image): root-resolve
+ * (the wujie policy) → media-upload → media-processing → title-fill →
  * description-paste-readback → original-declare (only when `metadata.original === true`) →
- * cover-attach (when requested) → draft-save | publish-click → draft-receipt | publish-receipt.
+ * cover-attach (when requested; never for 图文) → draft-save | publish-click → draft-receipt |
+ * publish-receipt. Per-operation differences are data, not code: the file-input selector ladder,
+ * the creation-page URL and the media payload gates (videoPath | audio(audioFile) | images).
+ * The audio/image/music selectors are **Provisional** until the first logged-in live recon —
+ * every one of them fails closed to a typed stage failure, never a wrong send.
  *
  * Root policy (shipinhao.js:3-5, 514-545, frozen by the task 0296 Design): if `wujie-app` is
  * present, wait at most `SHP_ROOT_WAIT_MS` (vendor ROOT_WAIT_MS 30000, shipinhao.js:38) for its
@@ -49,21 +54,25 @@ import type { Locator, Page } from 'playwright';
 import {
     isShipinhaoAuthenticated,
     readRootSnapshot,
+    SHP_AUDIO_SELECTORS,
     SHP_CONFIG,
     SHP_COVER_SAVE_WAIT_MS,
-    SHP_HOME_URL,
+    SHP_HOME_URL_BY_OPERATION,
+    SHP_IMAGE_SELECTORS,
+    SHP_MUSIC_SELECTORS,
     SHP_RECEIPT_URL_RES,
     SHP_ROOT_WAIT_MS,
     SHP_TARGET,
     SHP_UPLOAD_TIMEOUT_MS,
     SHP_VIDEO_SELECTORS,
+    type ShipinhaoOperationName,
     type ShipinhaoRootSnapshot,
 } from './selectors';
 
 const STEP_TIMEOUT_MS = 30_000;
 /**
- * KK v1 local-video size bound (task 0296 Design freeze): 2 GiB. A project-scoped product bound,
- * not a platform limit — Channels' own ceiling is unpinned.
+ * KK v1 local-media size bound (task 0296 Design freeze): 2 GiB, applied to every media kind. A
+ * project-scoped product bound, not a platform limit — Channels' own ceiling is unpinned.
  */
 const MAX_VIDEO_BYTES = 2 * 1024 * 1024 * 1024;
 /** Operator recovery command every session failure names — never a cookie, DOM dump or stack. */
@@ -300,40 +309,114 @@ async function readReceiptUrls(page: Page): Promise<readonly string[]> {
     }
 }
 
-/** Works/record id from an observed receipt URL (shapes: `/record/detail/<id>`, `/post/video/<id>`; provisional). */
+/** Works/record id from an observed receipt URL (shapes: `/record/detail/<id>`, `/post/<kind>/<id>`; provisional). */
 function receiptIdFrom(url: string): string | undefined {
-    return /\/(?:detail|video)\/([0-9a-zA-Z_-]+)/.exec(url)?.[1];
+    return /\/(?:detail|video|audio|image|music)\/([0-9a-zA-Z_-]+)/.exec(url)?.[1];
+}
+
+interface MediaPathSpec {
+    /** Metadata key named in every refusal (never the caller's raw value). */
+    field: string;
+    /** Kind word in the non-file/missing messages ('video', 'audio', 'image'). */
+    kindLabel: string;
+    /** Extension word in the unsupported-extension message ('MP4/MOV', 'MP3/M4A/...'). */
+    extLabel: string;
+    extRe: RegExp;
 }
 
 /**
- * Pre-browser required-video gate: `metadata.videoPath` must name an existing, regular, readable,
- * nonempty local MP4/MOV under the KK v1 2 GiB local cap (labeled local bound — not a platform
- * limit). Probed through the Bun file API (repo rule no-direct-fs-io) — never node:fs.
+ * Pre-browser media gate: the raw value must name an existing, regular, readable, nonempty local
+ * file of the accepted extensions under the KK v1 2 GiB local cap (labeled local bound — not a
+ * platform limit). Probed through the Bun file API (repo rule no-direct-fs-io) — never node:fs.
  */
-async function resolveVideoPath(
+async function resolveMediaPath(
     raw: unknown,
+    spec: MediaPathSpec,
 ): Promise<{ path?: string; error?: undefined } | { path?: undefined; error: string }> {
     if (typeof raw !== 'string' || raw.trim().length === 0) {
-        return { error: `metadata.videoPath must be a non-empty local video file path, got '${bounded(raw)}'` };
+        return {
+            error: `metadata.${spec.field} must be a non-empty local ${spec.kindLabel} file path, got '${bounded(raw)}'`,
+        };
     }
     const path = raw.trim();
-    if (!/\.(mp4|mov)$/i.test(path)) {
+    if (!spec.extRe.test(path)) {
         return {
-            error: `metadata.videoPath must be a local MP4/MOV file, got unsupported extension in '${bounded(path)}'`,
+            error: `metadata.${spec.field} must be a local ${spec.extLabel} file, got unsupported extension in '${bounded(path)}'`,
         };
     }
     // no-direct-fs-io: probe the file through the Bun API instead of node:fs.
     const file = Bun.file(path);
     const readable = await file.exists().catch(() => false);
     if (!readable || file.size === 0) {
-        return { error: 'metadata.videoPath does not resolve to a readable nonempty local video file' };
+        return {
+            error: `metadata.${spec.field} does not resolve to a readable nonempty local ${spec.kindLabel} file`,
+        };
     }
     if (file.size > MAX_VIDEO_BYTES) {
         return {
-            error: `metadata.videoPath exceeds the KK v1 local video cap of 2 GiB (${file.size} bytes; a local product bound, not a platform limit)`,
+            error: `metadata.${spec.field} exceeds the KK v1 local ${spec.kindLabel} cap of 2 GiB (${file.size} bytes; a local product bound, not a platform limit)`,
         };
     }
     return { path };
+}
+
+/** Video gate over the generic media gate (task 0296 messages preserved verbatim). */
+function resolveVideoPath(
+    raw: unknown,
+): Promise<{ path?: string; error?: undefined } | { path?: undefined; error: string }> {
+    return resolveMediaPath(raw, {
+        field: 'videoPath',
+        kindLabel: 'video',
+        extLabel: 'MP4/MOV',
+        extRe: /\.(mp4|mov)$/i,
+    });
+}
+
+/**
+ * Audio gate (音频/音乐): the daily episode mp3 rides `metadata.audioFile` (publish-prep's
+ * spelling); the variant builders also restate it as `metadata.audio` — the transport accepts
+ * either, so the field name in refusals names both.
+ */
+function resolveAudioPath(
+    raw: unknown,
+): Promise<{ path?: string; error?: undefined } | { path?: undefined; error: string }> {
+    return resolveMediaPath(raw, {
+        field: 'audio (or audioFile)',
+        kindLabel: 'audio',
+        extLabel: 'MP3/M4A/WAV/AAC/FLAC',
+        extRe: /\.(mp3|m4a|wav|aac|flac)$/i,
+    });
+}
+
+/**
+ * Image gate (图文): `metadata.images` is a non-empty array of local PNG/JPEG/WebP paths (plain
+ * strings or `{ path }` objects, the cards-variant spelling), each probed like a single media
+ * file. shortcut: no array-length cap — the platform's 图文 count limit is unpinned until live
+ * recon.
+ */
+async function resolveImagesPath(
+    raw: unknown,
+): Promise<{ paths?: readonly string[]; error?: undefined } | { paths?: undefined; error: string }> {
+    if (!Array.isArray(raw) || raw.length === 0) {
+        return {
+            error: `metadata.images must be a non-empty array of local image file paths, got '${bounded(raw)}'`,
+        };
+    }
+    const paths: string[] = [];
+    for (const entry of raw) {
+        // The shared cards variant ships `images: [{ path }]`; the transport flattens to paths.
+        const candidate =
+            typeof entry === 'object' && entry !== null && 'path' in entry ? (entry as { path?: unknown }).path : entry;
+        const one = await resolveMediaPath(candidate, {
+            field: 'images[]',
+            kindLabel: 'image',
+            extLabel: 'PNG/JPEG/WebP',
+            extRe: /\.(png|jpe?g|webp)$/i,
+        });
+        if (one.error !== undefined) return { error: one.error };
+        paths.push(one.path as string);
+    }
+    return { paths };
 }
 
 /**
@@ -399,26 +482,48 @@ function resolveOriginal(
 }
 
 /**
- * Unsupported requested fields for this flow: images, categories, publishTime/scheduling are not
- * implemented (定时 is an unported vendor enhancement, shipinhao.js:7-9), so any of them — in
- * options or metadata — is a typed unsupported-field refusal, never a silent claim of applied.
- * `tags`/`original`/`coverPath` are implemented and validated in their resolvers.
+ * Unsupported requested fields, per operation: fields that mean nothing to the requested flow —
+ * images/videoPath outside their own operation, coverPath for 图文 — are typed unsupported-field
+ * refusals, never silently ignored. categories and publishTime/scheduling are refused for every
+ * operation (定时 is an unported vendor enhancement, shipinhao.js:7-9). `tags`/`original`/
+ * `coverPath` (except on image) are implemented and validated in their resolvers.
  */
-function unsupportedFields(payload: PublishTransportPayload): readonly string[] {
+function unsupportedFields(payload: PublishTransportPayload, operation: ShipinhaoOperationName): readonly string[] {
+    const perOperation: Record<ShipinhaoOperationName, readonly string[]> = {
+        shortVideo: ['images', 'categories', 'publishTime', 'scheduling'],
+        audio: ['videoPath', 'images', 'categories', 'publishTime', 'scheduling'],
+        music: ['videoPath', 'images', 'categories', 'publishTime', 'scheduling'],
+        image: ['videoPath', 'coverPath', 'categories', 'publishTime', 'scheduling'],
+    };
     const refused: string[] = [];
-    for (const [container, keys] of [
-        ['options', ['images', 'categories', 'publishTime', 'scheduling'] as const],
-        ['metadata', ['images', 'categories', 'publishTime', 'scheduling'] as const],
-    ] as const) {
-        const source: unknown = container === 'options' ? payload.options : payload.content.metadata;
-        for (const key of keys) {
-            if (source !== undefined && source !== null && typeof source === 'object' && key in source) {
-                refused.push(`${container}.${key}`);
-            }
+    for (const [container, source] of [
+        ['options', payload.options] as const,
+        ['metadata', payload.content.metadata] as const,
+    ]) {
+        if (source === undefined || source === null || typeof source !== 'object') continue;
+        for (const key of perOperation[operation]) {
+            if (key in source) refused.push(`${container}.${key}`);
         }
     }
     return refused;
 }
+
+/**
+ * Per-operation flow data: the shared rails' selector table, the media file-input ladder, and the
+ * message label used by every upload/media-processing stage failure.
+ */
+interface PostFlowSpec {
+    selectors: typeof SHP_VIDEO_SELECTORS;
+    fileSelectors: readonly string[];
+    mediaLabel: string;
+}
+
+const POST_FLOW_SPECS: Record<ShipinhaoOperationName, PostFlowSpec> = {
+    shortVideo: { selectors: SHP_VIDEO_SELECTORS, fileSelectors: SHP_VIDEO_SELECTORS.videoInput, mediaLabel: 'video' },
+    audio: { selectors: SHP_AUDIO_SELECTORS, fileSelectors: SHP_AUDIO_SELECTORS.audioInput, mediaLabel: 'audio' },
+    music: { selectors: SHP_MUSIC_SELECTORS, fileSelectors: SHP_MUSIC_SELECTORS.audioInput, mediaLabel: 'music' },
+    image: { selectors: SHP_IMAGE_SELECTORS, fileSelectors: SHP_IMAGE_SELECTORS.imagesInput, mediaLabel: 'image' },
+};
 
 /** Post-upload media-processing probe: the editing form (title input + description editor) must appear in the active root — the assignment itself is never success (shipinhao.js:623-625, 2676-2683). */
 function editingFormReadyScript(mode: 'wujie' | 'direct', titleSelector: string, editorSelector: string): string {
@@ -636,11 +741,11 @@ function persistedStateScript(
 export class ShipinhaoBrowserTransport implements PublishTransport {
     public readonly kind = 'browser';
     public readonly driver: BrowserDriver;
-    private readonly operation: 'shortVideo';
+    private readonly operation: ShipinhaoOperationName;
     private readonly launcher: BrowserLauncher;
     private readonly stepTimeoutMs: number;
     constructor(
-        operation: 'shortVideo' = 'shortVideo',
+        operation: ShipinhaoOperationName = 'shortVideo',
         driver: BrowserDriver = 'script',
         deps: { launcher?: BrowserLauncher; stepTimeoutMs?: number } = {},
     ) {
@@ -651,7 +756,8 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
     }
 
     /**
-     * Publishes one Content as a shipinhao short-video draft (default) or public work.
+     * Publishes one Content as a shipinhao post (per the resolved operation) — a draft (default)
+     * or public work.
      * @param payload - Target content plus per-call options.
      * @returns The publish `Result`, `ok: true` only from an observed fresh persisted receipt.
      */
@@ -672,7 +778,9 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
                 `unknown publishStatus '${bounded(requested)}' for ${SHP_TARGET}: expected 'draft', 'public' or absent (absent defaults to draft)`,
             );
         }
-        if (payload.content.format !== 'video') {
+        // Only the shortVideo flow pins Content.format; the other flows accept the episode/article
+        // Content as-is (the daily episode payload is format markdown).
+        if (this.operation === 'shortVideo' && payload.content.format !== 'video') {
             return fail(
                 SHP_TARGET,
                 `shipinhao shortVideo requires Content.format 'video', got '${bounded(payload.content.format)}'`,
@@ -682,29 +790,49 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
         if (title.length === 0) {
             return fail(
                 SHP_TARGET,
-                'shipinhao shortVideo requires a non-empty Content.title (the 短标题 input, shipinhao.js:638-654)',
+                `shipinhao ${this.operation} requires a non-empty Content.title (the 短标题 input, shipinhao.js:638-654)`,
             );
         }
         const body = payload.content.body.trim();
         if (body.length === 0) {
             return fail(
                 SHP_TARGET,
-                'shipinhao shortVideo requires non-empty Content.body Markdown (the 添加描述 description is pasted as sanitized text/html, shipinhao.js:669-674)',
+                `shipinhao ${this.operation} requires non-empty Content.body Markdown (the 添加描述 description is pasted as sanitized text/html, shipinhao.js:669-674)`,
             );
         }
-        const video = await resolveVideoPath(payload.content.metadata?.videoPath);
-        if (video.error !== undefined) return fail(SHP_TARGET, video.error);
-        const cover = await resolveCoverPath(payload.content.metadata?.coverPath ?? payload.options?.coverPath);
-        if (cover.error !== undefined) return fail(SHP_TARGET, cover.error);
+        // Per-operation media payload: shortVideo videoPath, audio/music audio(audioFile), image
+        // images[]; the cover is requested-only and never read for image (图文 has no cover rails).
+        const metadataRecord = (payload.content.metadata ?? {}) as Record<string, unknown>;
+        let media: readonly string[];
+        let coverPath: string | undefined;
+        if (this.operation === 'shortVideo') {
+            const video = await resolveVideoPath(metadataRecord.videoPath);
+            if (video.error !== undefined) return fail(SHP_TARGET, video.error);
+            media = [video.path as string];
+            const cover = await resolveCoverPath(payload.content.metadata?.coverPath ?? payload.options?.coverPath);
+            if (cover.error !== undefined) return fail(SHP_TARGET, cover.error);
+            coverPath = cover.path;
+        } else if (this.operation === 'audio' || this.operation === 'music') {
+            const audio = await resolveAudioPath(metadataRecord.audio ?? metadataRecord.audioFile);
+            if (audio.error !== undefined) return fail(SHP_TARGET, audio.error);
+            media = [audio.path as string];
+            const cover = await resolveCoverPath(payload.content.metadata?.coverPath ?? payload.options?.coverPath);
+            if (cover.error !== undefined) return fail(SHP_TARGET, cover.error);
+            coverPath = cover.path;
+        } else {
+            const images = await resolveImagesPath(metadataRecord.images);
+            if (images.error !== undefined) return fail(SHP_TARGET, images.error);
+            media = images.paths as readonly string[];
+        }
         const tags = resolveTags(payload.content.metadata?.tags ?? payload.options?.tags);
         if (tags.error !== undefined) return fail(SHP_TARGET, tags.error);
         const original = resolveOriginal(payload.content.metadata?.original);
         if (original.error !== undefined) return fail(SHP_TARGET, original.error);
-        const unsupported = unsupportedFields(payload);
+        const unsupported = unsupportedFields(payload, this.operation);
         if (unsupported.length > 0) {
             return fail(
                 SHP_TARGET,
-                `unsupported field(s) ${unsupported.join(', ')} for shipinhao: this flow implements title/description/tags/video/cover/original declaration only, and scheduling/publishTime is an unported vendor enhancement (shipinhao.js:7-9)`,
+                `unsupported field(s) ${unsupported.join(', ')} for shipinhao ${this.operation}: implemented fields are title/description/tags/media/cover/original declaration only, and scheduling/publishTime is an unported vendor enhancement (shipinhao.js:7-9)`,
             );
         }
 
@@ -732,7 +860,7 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
             return await withProfilePage(
                 {
                     profileDir,
-                    url: SHP_HOME_URL,
+                    url: SHP_HOME_URL_BY_OPERATION[this.operation],
                     isAuthenticated: isShipinhaoAuthenticated,
                     // Headed by default; the headless preflight above is the unattended pass and
                     // `options.headless === true` the opt-in.
@@ -743,14 +871,15 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
                     timeoutMs: this.stepTimeoutMs,
                 },
                 async ({ page }) =>
-                    this.runShortVideoFlow(
+                    this.runPostFlow(
                         page,
+                        POST_FLOW_SPECS[this.operation],
                         title,
                         body,
                         tags.tags as readonly string[],
                         original.original === true,
-                        video.path as string,
-                        cover.path,
+                        media,
+                        coverPath,
                         requested === 'public',
                         profileDir,
                     ),
@@ -769,19 +898,20 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
     }
 
     /**
-     * The live short-video flow on the already-navigated publishing page (`SHP_HOME_URL`): the
-     * bounded wujie root policy (never a wrong root) → video attach with editing-form verification
-     * → title fill with readback → sanitized description/topics paste with readback →
-     * requested-only 声明原创 → optional committed cover → the draft save or the explicit-public
-     * 发表 → fresh-receipt confirmation.
+     * The live post flow on the already-navigated creation page (per-operation entry,
+     * `SHP_HOME_URL_BY_OPERATION`): the bounded wujie root policy (never a wrong root) → media
+     * attach with editing-form verification → title fill with readback → sanitized
+     * description/topics paste with readback → requested-only 声明原创 → optional committed cover
+     * → the draft save or the explicit-public 发表 → fresh-receipt confirmation.
      */
-    private async runShortVideoFlow(
+    private async runPostFlow(
         page: Page,
+        spec: PostFlowSpec,
         title: string,
         body: string,
         tags: readonly string[],
         declareOriginal: boolean,
-        videoPath: string,
+        media: readonly string[],
         coverPath: string | undefined,
         publishPublic: boolean,
         profileDir: string,
@@ -809,23 +939,25 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
             const resolved = await resolveRootLocator(
                 page,
                 mode,
-                SHP_VIDEO_SELECTORS.videoInput,
-                'shipinhao video file input',
+                spec.fileSelectors,
+                `shipinhao ${spec.mediaLabel} file input`,
                 this.stepTimeoutMs,
             );
             if (resolved.selector === 'input[type="file"]' && (await resolved.locator.count()) !== 1) {
                 return stageFail(
                     SHP_TARGET,
-                    `shipinhao video file input ambiguous: the untyped input[type=file] candidate matched more than one input in the ${mode === 'wujie' ? 'wujie shadowRoot' : 'document'} root — the vendor resolves a unique untyped input or nothing (shipinhao.js:580-583)`,
+                    `shipinhao ${spec.mediaLabel} file input ambiguous: the untyped input[type=file] candidate matched more than one input in the ${mode === 'wujie' ? 'wujie shadowRoot' : 'document'} root — the vendor resolves a unique untyped input or nothing (shipinhao.js:580-583)`,
                     'root-resolve',
                     metadata,
                 );
             }
-            await resolved.locator.setInputFiles(videoPath, { timeout: this.stepTimeoutMs });
+            await resolved.locator.setInputFiles(media.length === 1 ? (media[0] as string) : media, {
+                timeout: this.stepTimeoutMs,
+            });
         } catch (error) {
             return stageFail(
                 SHP_TARGET,
-                `shipinhao video file input/attach failed on ${page.url()}: ${errorMessage(error)}`,
+                `shipinhao ${spec.mediaLabel} file input/attach failed on ${page.url()}: ${errorMessage(error)}`,
                 'upload-timeout',
                 metadata,
             );
@@ -843,7 +975,7 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
                 await resolveRootLocator(
                     page,
                     mode,
-                    SHP_VIDEO_SELECTORS.titleInput,
+                    spec.selectors.titleInput,
                     'shipinhao title input',
                     this.stepTimeoutMs,
                 )
@@ -852,7 +984,7 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
                 await resolveRootLocator(
                     page,
                     mode,
-                    SHP_VIDEO_SELECTORS.descriptionEditor,
+                    spec.selectors.descriptionEditor,
                     'shipinhao description editor',
                     this.stepTimeoutMs,
                 )
@@ -860,7 +992,7 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
         } catch (error) {
             return stageFail(
                 SHP_TARGET,
-                `shipinhao media processing not confirmed: the file was assigned but the post-upload editing form never appeared — ${errorMessage(error)}; refusing to claim an uploaded video`,
+                `shipinhao media processing not confirmed: the file was assigned but the post-upload editing form never appeared — ${errorMessage(error)}; refusing to claim an uploaded ${spec.mediaLabel}`,
                 'upload-processing',
                 metadata,
             );
@@ -875,7 +1007,7 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
         if (!formReady.ok) {
             return stageFail(
                 SHP_TARGET,
-                `shipinhao media processing not confirmed within the ${SHP_UPLOAD_TIMEOUT_MS}ms ceiling — the file was assigned but no editing form appeared; refusing to claim an uploaded video`,
+                `shipinhao media processing not confirmed within the ${SHP_UPLOAD_TIMEOUT_MS}ms ceiling — the file was assigned but no editing form appeared; refusing to claim an uploaded ${spec.mediaLabel}`,
                 'upload-processing',
                 metadata,
             );
@@ -889,7 +1021,7 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
                 await resolveRootLocator(
                     page,
                     mode,
-                    SHP_VIDEO_SELECTORS.titleInput,
+                    spec.selectors.titleInput,
                     'shipinhao title input',
                     this.stepTimeoutMs,
                 )
@@ -934,7 +1066,7 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
                 await resolveRootLocator(
                     page,
                     mode,
-                    SHP_VIDEO_SELECTORS.descriptionEditor,
+                    spec.selectors.descriptionEditor,
                     'shipinhao description editor',
                     this.stepTimeoutMs,
                 )
@@ -988,7 +1120,7 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
         // (shipinhao.js:2312-2316). Missing current control = typed failure, never a manufactured
         // draft and never a publish fallback for a requested draft.
         const stage = publishPublic ? 'publish-click' : 'draft-save';
-        const submitSelectors = publishPublic ? SHP_VIDEO_SELECTORS.publishButton : SHP_VIDEO_SELECTORS.saveButton;
+        const submitSelectors = publishPublic ? spec.selectors.publishButton : spec.selectors.saveButton;
         let submitLocator: Locator;
         try {
             const resolved = await resolveRootLocator(
@@ -1092,7 +1224,7 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
             target: SHP_TARGET,
             id: receiptIdFrom(url),
             url,
-            message: `shipinhao shortVideo ${publishStatus} confirmed in profile ${profileDir}`,
+            message: `shipinhao ${this.operation} ${publishStatus} confirmed in profile ${profileDir}`,
             metadata: { ...metadata, confirmedBy: receiptStage },
         });
     }
