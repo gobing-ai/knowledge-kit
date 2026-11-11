@@ -4,7 +4,7 @@ name: "xhs-pub: adopt vendor-proven patterns (outcome verification, counter limi
 status: done
 template: standard
 created_at: 2026-11-10T22:48:43.838Z
-updated_at: "2026-11-11T02:47:45.376Z"
+updated_at: "2026-11-11T04:09:46.823Z"
 
 done_forced: "false"
 done_reason: unforced close
@@ -68,41 +68,32 @@ ADR-022 launch-only). Adopt patterns; reject transports.
 
 ### Solution
 
-Change-map (auto-generated — implement step did not record a Solution).
-Each entry cites the first changed line per file (`file:line`).
+Fix pass (verifyall --fix all, 2026-11-11) closed the toast layer, the quoted collection probe, and the body-counter scan that also walked the title container.
+
+- R1 DOM toast layer: the page script observes short toast nodes and records the first match for 违反, 违规, 禁止发笔记, 审核未通过, 账号异常, or 无法发布. `plugins/publishings/xhs-pub/src/flow.ts:316`
+- R2/R3 body probes scan only `div.edit-container *`. The title container is excluded so its N/20 leaf cannot satisfy a missing body counter. `plugins/publishings/xhs-pub/src/flow.ts:577` and `plugins/publishings/xhs-pub/src/flow.ts:1196`
+- R3 collection probe: the 合集 name is embedded with JSON.stringify so a quote cannot break the evaluated page script. `plugins/publishings/xhs-pub/src/flow.ts:1205`
+- Skill note: `plugins/kk/skills/publish/SKILL.md:34` states a draft is ok only after the reopen check.
+
+Workflow deviation, goal-equivalent to the Design wiring claim: daily-publish3 and voice3 have no xhs node. The xhs tiers that exist, `plugins/kk/workflows/kk-daily-ai-voice.yaml:503` and `plugins/kk/workflows/kk-daily-ai-voice2.yaml:813`, shell `kk stage daily-publish-xhs`, which runs `kk executor run xhs-pub` at `plugins/kk/scripts/daily-stages.ts:3129`. runMode calls verifyDraft before a draft Result is ok (`plugins/publishings/xhs-pub/src/flow.ts:1306`). That reopen is the tier's post-save check, so no extra workflow node was added.
 
 | Change (`file:line`) |
-|----------------------|
-| `plugins/publishings/xhs-pub/src/errors.ts:1` |
-| `plugins/publishings/xhs-pub/src/flow.ts:1026` |
-| `plugins/publishings/xhs-pub/src/flow.ts:1039` |
-| `plugins/publishings/xhs-pub/src/flow.ts:1053` |
-| `plugins/publishings/xhs-pub/src/flow.ts:1059` |
-| `plugins/publishings/xhs-pub/src/flow.ts:1082` |
-| `plugins/publishings/xhs-pub/src/flow.ts:1095` |
-| `plugins/publishings/xhs-pub/src/flow.ts:1102` |
-| `plugins/publishings/xhs-pub/src/flow.ts:1112` |
-| `plugins/publishings/xhs-pub/src/flow.ts:1131` |
-| `plugins/publishings/xhs-pub/src/flow.ts:1136` |
-| `plugins/publishings/xhs-pub/src/flow.ts:12` |
-| `plugins/publishings/xhs-pub/src/flow.ts:1269` |
-| `plugins/publishings/xhs-pub/src/flow.ts:1274` |
-| `plugins/publishings/xhs-pub/src/flow.ts:251` |
-| `plugins/publishings/xhs-pub/src/flow.ts:507` |
-| `plugins/publishings/xhs-pub/src/flow.ts:511` |
-| `plugins/publishings/xhs-pub/src/flow.ts:519` |
-| `plugins/publishings/xhs-pub/src/flow.ts:524` |
-| `plugins/publishings/xhs-pub/src/flow.ts:573` |
-| `plugins/publishings/xhs-pub/src/flow.ts:811` |
-| `plugins/publishings/xhs-pub/src/flow.ts:86` |
-| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:126` |
-| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:18` |
-| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:208` |
-| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:260` |
-| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:276` |
-| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:2964` |
-| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:319` |
-| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:470` |
+| --- |
+| `plugins/publishings/xhs-pub/src/errors.ts:11` |
+| `plugins/publishings/xhs-pub/src/flow.ts:262` |
+| `plugins/publishings/xhs-pub/src/flow.ts:316` |
+| `plugins/publishings/xhs-pub/src/flow.ts:366` |
+| `plugins/publishings/xhs-pub/src/flow.ts:577` |
+| `plugins/publishings/xhs-pub/src/flow.ts:605` |
+| `plugins/publishings/xhs-pub/src/flow.ts:858` |
+| `plugins/publishings/xhs-pub/src/flow.ts:886` |
+| `plugins/publishings/xhs-pub/src/flow.ts:1196` |
+| `plugins/publishings/xhs-pub/src/flow.ts:1205` |
+| `plugins/publishings/xhs-pub/src/flow.ts:1220` |
+| `plugins/publishings/xhs-pub/src/flow.ts:1306` |
+| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3041` |
+| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3148` |
+| `plugins/kk/skills/publish/SKILL.md:34` |
 
 ### Testing
 
@@ -112,19 +103,19 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Layered capture armed before both save (`plugins/publishings/xhs-pub/src/flow.ts:1027`) and publish (`plugins/publishings/xhs-pub/src/flow.ts:1096`); XHR+fetch+console patches with first-wins `window.__kkXhsArmed` (`plugins/publishings/xhs-pub/src/flow.ts:261`); content-signature classify (`plugins/publishings/xhs-pub/src/flow.ts:346`) maps −913x/禁止发笔记 → `AccountRiskControlError`, `HTTPBizError`+code → `PublishError` (`plugins/publishings/xhs-pub/src/flow.ts:364`); ok verdicts (note_id) surface via `captureMetadata` (`plugins/publishings/xhs-pub/src/flow.ts:379`) into Result metadata; save retry abandoned on captured refusal (`plugins/publishings/xhs-pub/src/flow.ts:1052`), publish click never retried (assertion inside the `waitUntil` predicate, `plugins/publishings/xhs-pub/src/flow.ts:1113`); sentinel-string evaluate contracts kept — the fake dispatches only on `kk-capture-*` markers, tests `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3009`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3018`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3027`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3035` |
-| R2 | MET | Platform counters read as ground truth: title `div.title-container div.max_suffix` + leaf fallbacks (`plugins/publishings/xhs-pub/src/flow.ts:540`), body `length-error` first (`plugins/publishings/xhs-pub/src/flow.ts:549`); UTF-16-aware `counterUnits` (`plugins/publishings/xhs-pub/src/flow.ts:560`); typed `TitleTooLongError`/`ContentTooLongError` raised before any save click (`plugins/publishings/xhs-pub/src/flow.ts:580`, wired at `plugins/publishings/xhs-pub/src/flow.ts:508` title, `plugins/publishings/xhs-pub/src/flow.ts:530` body, `plugins/publishings/xhs-pub/src/flow.ts:872` podcast); unreadable/`kk-counter-none` counters stay silent so modes.ts client caps remain the gate; tests `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3043` (asserts zero `clickAt` calls — refusal precedes save), `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3051`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3057` |
-| R3 | MET | `verifyDraft` reopens via 草稿箱 → 编辑 (`plugins/publishings/xhs-pub/src/flow.ts:1162`, `plugins/publishings/xhs-pub/src/flow.ts:1193`), asserts slot count, all-`https:` srcs (`plugins/publishings/xhs-pub/src/flow.ts:1165`), title, body counter/textLen, 合集 membership (`plugins/publishings/xhs-pub/src/flow.ts:1246`); every violated assertion named in one `DraftVerifyError` (`plugins/publishings/xhs-pub/src/flow.ts:1198` and siblings); expectation per mode via `draftExpectation` (`plugins/publishings/xhs-pub/src/flow.ts:1144`); exits via `goto(PUBLISH_URL)` without re-saving (a 暂存离开 would shift the draft counter the next run baselines against); `draftVerified` metadata on Result; tests `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3062`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3069`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3075`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3081`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3087`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3093`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3099` |
-| R4 | MET | `applyPodcastFields` (`plugins/publishings/xhs-pub/src/flow.ts:861`) fills title + counter-asserts, types the derived body, clicks 合集 chip + collection entry; `derivePodcastBody` (`plugins/publishings/xhs-pub/src/flow.ts:833`) derives intro + `·` headlines + closing within `XHS_NOTE_BODY_MAX` with a hard `.slice` cap; collection from `metadata.collection` else the show default (`plugins/publishings/xhs-pub/src/flow.ts:816`); tests `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3105` (title fill, ≤1000 typed body, chip click, `draftVerified.collection`), `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3118` (custom collection wins), `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3124`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3137`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3146` (pure derivation caps/drops/fallback) |
-| R5 | MET | Constraint honored, no work: transport/launcher/profile/`invokeHostSave`/durable-src wait untouched by the diff; vendor's count-based upload wait explicitly not adopted (durable-src wait kept in flow, unmodified) |
+| R1 | MET | Capture is armed before save at plugins/publishings/xhs-pub/src/flow.ts:1052 and before publish at plugins/publishings/xhs-pub/src/flow.ts:1121. The page script at plugins/publishings/xhs-pub/src/flow.ts:262 records XHR loadend, fetch, console, and a DOM toast observer at plugins/publishings/xhs-pub/src/flow.ts:316 (element nodes, trimmed length 1-300, keywords 违反/违规/禁止发笔记/审核未通过/账号异常/无法发布). classifyOutcome at plugins/publishings/xhs-pub/src/flow.ts:377 treats a -913x code or RISK_SIGNATURE at plugins/publishings/xhs-pub/src/flow.ts:366 as risk before a note_id ok. assertCapturedOutcome throws AccountRiskControlError at plugins/publishings/xhs-pub/src/flow.ts:392 or PublishError at plugins/publishings/xhs-pub/src/flow.ts:397. Classes: plugins/publishings/xhs-pub/src/errors.ts:11 and plugins/publishings/xhs-pub/src/errors.ts:20. Tests plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3015, plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3024, plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3033, plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3041, plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3050, plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3126. |
+| R2 | MET | Title probe reads div.title-container div.max_suffix at plugins/publishings/xhs-pub/src/flow.ts:566. Body probe reads div.edit-container div.length-error first at plugins/publishings/xhs-pub/src/flow.ts:575, then scans only div.edit-container * at plugins/publishings/xhs-pub/src/flow.ts:577. counterUnits parses the N/M current value at plugins/publishings/xhs-pub/src/flow.ts:585. assertPlatformCounter at plugins/publishings/xhs-pub/src/flow.ts:605 throws TitleTooLongError or ContentTooLongError quoting the counter text. Wired after the title fill at plugins/publishings/xhs-pub/src/flow.ts:532, after the body type at plugins/publishings/xhs-pub/src/flow.ts:554, and on the podcast title at plugins/publishings/xhs-pub/src/flow.ts:897. Classes plugins/publishings/xhs-pub/src/errors.ts:27 and plugins/publishings/xhs-pub/src/errors.ts:34. Tests plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3134 (TitleTooLongError, counter reads, zero clickAt), plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3142 (ContentTooLongError on 1001/1000), plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3148 (title N/20 does not satisfy a missing body counter), plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3201 (unreadable counter is not fatal). |
+| R3 | MET | verifyDraft at plugins/publishings/xhs-pub/src/flow.ts:1220 clicks 草稿箱 at plugins/publishings/xhs-pub/src/flow.ts:1228 and 编辑 at plugins/publishings/xhs-pub/src/flow.ts:1235. Slot expectation is input.images.length at plugins/publishings/xhs-pub/src/flow.ts:1173; a mismatch is named at plugins/publishings/xhs-pub/src/flow.ts:1241; a non-https src is named at plugins/publishings/xhs-pub/src/flow.ts:1251. The reopen body probe scans only div.edit-container * at plugins/publishings/xhs-pub/src/flow.ts:1196. collectionProbeExpr embeds the 合集 name with JSON.stringify at plugins/publishings/xhs-pub/src/flow.ts:1205. Any violated assertion throws DraftVerifyError at plugins/publishings/xhs-pub/src/flow.ts:1282 (class plugins/publishings/xhs-pub/src/errors.ts:41). runMode invokes that reopen before a draft Result is ok at plugins/publishings/xhs-pub/src/flow.ts:1306. Tests plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3206, plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3213, plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3219, plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3225, plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3231, plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3237, plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3243, plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3117, plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3184, plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3249. |
+| R4 | MET | applyPodcastFields at plugins/publishings/xhs-pub/src/flow.ts:886 fills the title, counter-checks it at plugins/publishings/xhs-pub/src/flow.ts:897, types the derived body, and clicks the 合集. derivePodcastBody at plugins/publishings/xhs-pub/src/flow.ts:858 keeps intro, bullet headlines, and closing, with a hard slice at plugins/publishings/xhs-pub/src/flow.ts:877. Default collection is 咸话咸说之每日AI乱炖 at plugins/publishings/xhs-pub/src/flow.ts:92. Tests plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3249 (non-empty title, typed length at most 1000, default 合集), plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3262, plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3268, plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3281, plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3290. |
+| R5 | MET | invokeHostSave at plugins/publishings/xhs-pub/src/flow.ts:229 is the first save path at plugins/publishings/xhs-pub/src/flow.ts:1057 and records shadow-host-method at plugins/publishings/xhs-pub/src/flow.ts:1060. confirmThumbnails at plugins/publishings/xhs-pub/src/flow.ts:631 fails with the thumbnail count prefix and names a local blob/data src at plugins/publishings/xhs-pub/src/flow.ts:653. The same run kept both contracts green: plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:590 (draftControl _onSave:_onSave at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:601 and draftClick shadow-host-method at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:603) and plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:752 (error contains thumbnail count at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:764). |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | test | Draft-save −913x capture → `AccountRiskControlError` "not retryable" and biz-code capture → `PublishError` (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3009`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3018`); note_id success confirmed from the observed response in `metadata.serverCapture` {source, verdict ok, code, noteId} (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3027`); publish path refuses on captured refusal pre-URL-marker (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3035`); full gate `spur self exec check` PASS receipt `.spur/run/0350-check-receipt.json` (tier full, inputDigest 4f098088bfad11a77f9a3845) |
-| AC2 | MET | test | Over-limit readable counter throws `TitleTooLongError` quoting `counter reads '23/20'` before any save click — zero `clickAt` calls asserted (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3043`); body variant `ContentTooLongError` at `1001/1000` (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3051`); unreadable counter text ignored, not fatal (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3057`) |
-| AC3 | MET | test | Reopen failures are loud and named per assertion: slot mismatch "expected 2 thumbnails" (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3062`), non-https srcs (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3069`), title mismatch (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3075`), empty body (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3081`), missing 合集 (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3087`), missing draft-box entry (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3093`), missing 编辑 control (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3099`) — all `DraftVerifyError`; passing-shape path proven by the 5 draft-mode happy paths + podcast verify (`draftVerified` metadata, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3105`) |
-| AC4 | MET | test | Podcast note carries non-empty title (fill recorded, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3105`), counter-verified ≤1000-unit body (R2 assert at `plugins/publishings/xhs-pub/src/flow.ts:872` runs after the typed body; the test asserts typed length ≤1000 at `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3105`), collection selection recorded in `draftVerified.collection` (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3105` default, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3118` custom) — no manual repair step in the flow |
-| AC5 | MET | command | 143 pass / 0 fail plugin suite (`bun test plugins/publishings/xhs-pub/tests/xhs-pub.test.ts`, root cwd); full monorepo gate 4882 pass / 0 fail incl. legacy `thumbnail count:` prefix tests and `_onSave`/`shadow-host-method` contract tests (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:584`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:586`) — receipt PASS at tier full |
+| AC1 | MET | test | -913x capture aborts as AccountRiskControlError and not retryable at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3015; biz code aborts as PublishError at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3024; note_id success is metadata.serverCapture verdict ok at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3033; a toast-only phrase aborts as AccountRiskControlError at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3041; the inject script records a short DOM toast at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3050; publish refuses before the URL marker at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3126. |
+| AC2 | MET | test | Over-limit title counter throws TitleTooLongError quoting counter reads and records zero clickAt calls at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3134. Body counter 1001/1000 throws ContentTooLongError at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3142. A title counter of 5/20 does not satisfy a missing body counter at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3148. |
+| AC3 | MET | test | Reopen failures name the assertion: slot mismatch expected 2 thumbnails at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3206, non-https src at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3213, title at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3219, empty body at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3225, missing 合集 at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3231, missing 草稿箱 at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3237, missing 编辑 at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3243. A quoted collection name stays inside the probe at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3117. The reopen body probe ignores a title counter at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3184. The podcast happy path records title, body, and 合集 at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3249. Slot expectation is the saved image count at plugins/publishings/xhs-pub/src/flow.ts:1173. |
+| AC4 | MET | test | Podcast note carries a non-empty title, a typed body of length at most 1000, and 咸话咸说之每日AI乱炖 at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3249. A metadata collection wins at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3262. Derivation caps at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3268. |
+| AC5 | MET | command | bun test plugins/publishings/xhs-pub/tests/xhs-pub.test.ts on 2026-11-11T04:05:34Z reported 148 pass / 0 fail / 545 expect() calls. Process exit 1 with 0 fail; bunfig.toml:10 sets coverageThreshold to 0.9 lines and 0.9 functions, and that run's loaded graph is All files 48.46% funcs / 53.95% lines. Plugin files in that run are above the threshold: plugins/publishings/xhs-pub/src/flow.ts 93.10% funcs / 96.11% lines and plugins/publishings/xhs-pub/src/errors.ts 100% funcs and lines. Host-save and thumbnail-count contracts passed at plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:590 and plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:752. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -158,6 +149,8 @@ Verdict: PASS
 | Priority | Location | Finding | Disposition |
 | --- | --- | --- | --- |
 | P4 | plugins/publishings/xhs-pub/src/flow.ts:1200 | After verifyDraft the flow re-navigates to PUBLISH_URL and the runMode caller closes the page — a deliberate single extra navigation so a re-verify never re-saves (a 暂存离开 would shift the draft counter the next run baselines against) | resolved — deliberate, documented in the code comment |
+
+Re-verify note (2026-11-11, after the body-counter fix): the deliberate post-verify navigation cited above at plugins/publishings/xhs-pub/src/flow.ts:1200 is plugins/publishings/xhs-pub/src/flow.ts:1280. Both body probes scan only the edit container at plugins/publishings/xhs-pub/src/flow.ts:577 and plugins/publishings/xhs-pub/src/flow.ts:1196. Current requirement anchors are in Testing.
 
 ### References
 

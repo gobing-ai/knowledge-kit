@@ -15,7 +15,13 @@ import {
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { runInvoke } from '../../../../apps/cli/src/invoke';
 import { type AutomationGuard, CAP_WINDOW_MS, createAutomationGuard } from '../src/automation-guard';
-import { derivePodcastBody } from '../src/flow';
+import {
+    BODY_COUNTER_EXPR,
+    CAPTURE_INJECT_EXPR,
+    collectionProbeExpr,
+    derivePodcastBody,
+    VERIFY_BODY_EXPR,
+} from '../src/flow';
 import {
     CREATOR_TAB_COUNT,
     clickCreatorTab,
@@ -3032,6 +3038,91 @@ describe('task 0350 — layered capture, counter gate, reopen verify, podcast fi
         expect(result.metadata?.serverCapture).toEqual({ source: 'xhr', verdict: 'ok', code: '0', noteId: 'abc123' });
     });
 
+    test('R1: a toast that only names a platform risk phrase aborts as AccountRiskControlError', async () => {
+        const { result } = await draftRun({
+            serverCapture: { source: 'toast', text: '审核未通过' },
+        });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('AccountRiskControlError');
+        expect(result.error).toContain('not retryable');
+    });
+
+    test('R1: the inject script records a short DOM risk toast and ignores a long node', () => {
+        const g = globalThis as unknown as {
+            window?: unknown;
+            XMLHttpRequest?: { prototype: Record<string, unknown> };
+            fetch?: ((...args: unknown[]) => Promise<unknown>) & { __kkPatched?: boolean };
+            console: Record<string, unknown>;
+            MutationObserver?: new (cb: (muts: Array<{ addedNodes: unknown[] }>) => void) => { observe: () => void };
+            document?: { body: Record<string, unknown> };
+            __kkXhsArmed?: boolean;
+            __kkXhsOutcome?: { source: string; text: string } | null;
+            __kkXhsToastObs?: boolean;
+        };
+        const saved = {
+            window: g.window,
+            XMLHttpRequest: g.XMLHttpRequest,
+            fetch: g.fetch,
+            console: g.console,
+            MutationObserver: g.MutationObserver,
+            document: g.document,
+        };
+        const callbacks: Array<(muts: Array<{ addedNodes: unknown[] }>) => void> = [];
+        try {
+            g.window = g;
+            g.XMLHttpRequest = function XHR(this: unknown) {} as unknown as { prototype: Record<string, unknown> };
+            g.XMLHttpRequest.prototype = { open() {}, send() {}, addEventListener() {} };
+            g.fetch = (() =>
+                Promise.resolve({ clone: () => ({ text: () => Promise.resolve('') }), url: '' })) as typeof g.fetch;
+            g.console = { error() {}, warn() {}, log() {} };
+            g.MutationObserver = class {
+                constructor(cb: (muts: Array<{ addedNodes: unknown[] }>) => void) {
+                    callbacks.push(cb);
+                }
+                observe(): void {}
+            } as unknown as typeof g.MutationObserver;
+            g.document = { body: {} };
+            delete g.__kkXhsArmed;
+            delete g.__kkXhsOutcome;
+            delete g.__kkXhsToastObs;
+            const runPageScript = new Function(`return ${CAPTURE_INJECT_EXPR}`) as () => string;
+            const armed = runPageScript();
+            expect(armed).toBe('kk-capture-armed');
+            expect(callbacks.length).toBe(1);
+            callbacks[0]?.([
+                {
+                    addedNodes: [
+                        { nodeType: 1, textContent: 'x'.repeat(301) },
+                        { nodeType: 3, textContent: '审核未通过' },
+                        { nodeType: 1, textContent: ' 审核未通过 ' },
+                    ],
+                },
+            ]);
+            // delete narrows the optional field to undefined; the page script writes it back.
+            const outcome = g.__kkXhsOutcome as { source: string; text: string } | null | undefined;
+            expect(outcome).toEqual({ source: 'toast', text: '审核未通过' });
+        } finally {
+            g.window = saved.window;
+            g.XMLHttpRequest = saved.XMLHttpRequest;
+            g.fetch = saved.fetch;
+            g.console = saved.console;
+            g.MutationObserver = saved.MutationObserver;
+            g.document = saved.document;
+            delete g.__kkXhsArmed;
+            delete g.__kkXhsOutcome;
+            delete g.__kkXhsToastObs;
+        }
+    });
+
+    test('R3: a collection name with a quote stays inside the probe string', () => {
+        const name = "合集'; throw new Error('x')";
+        const expr = collectionProbeExpr(name);
+        const run = (innerText: string): string =>
+            new Function('document', `return ${expr}`)({ body: { innerText } }) as string;
+        expect(run(`prefix ${name} suffix`)).toBe('kk-verify-collection:yes');
+        expect(run('other collection')).toBe('kk-verify-collection:no');
+    });
+
     test('R1: the publish path aborts on a captured refusal even before the URL marker is checked', async () => {
         const result = await publicRun({
             serverCapture: { source: 'xhr', text: '{"code":-91301,"msg":"禁止发笔记"}' },
@@ -3052,6 +3143,59 @@ describe('task 0350 — layered capture, counter gate, reopen verify, podcast fi
         const { result } = await draftRun({ counterBodyOverride: '1001/1000' });
         expect(result.ok).toBe(false);
         expect(result.error).toContain('ContentTooLongError');
+    });
+
+    test('R2: the body counter ignores a title counter when the body length-error is absent', () => {
+        const read = (document: {
+            querySelector: (sel: string) => { textContent: string; children: never[] } | null;
+            querySelectorAll: (sel: string) => Array<{ textContent: string; children: never[] }>;
+        }): string => {
+            const previous = (globalThis as { document?: unknown }).document;
+            (globalThis as { document?: unknown }).document = document;
+            try {
+                return (new Function(`return ${BODY_COUNTER_EXPR}`) as () => string)();
+            } finally {
+                (globalThis as { document?: unknown }).document = previous;
+            }
+        };
+        const leaf = (text: string) => ({ textContent: text, children: [] as never[] });
+        const documentFor = (input: { lengthError?: string; editLeaves?: string[]; titleLeaves?: string[] }) => ({
+            querySelector(sel: string) {
+                if (sel === 'div.edit-container div.length-error' && input.lengthError !== undefined) {
+                    return leaf(input.lengthError);
+                }
+                return null;
+            },
+            querySelectorAll(sel: string) {
+                const edit = (input.editLeaves ?? []).map(leaf);
+                const title = (input.titleLeaves ?? []).map(leaf);
+                if (sel === 'div.edit-container *') return edit;
+                if (sel === 'div.title-container *') return title;
+                if (sel.includes('div.edit-container') && sel.includes('div.title-container'))
+                    return [...edit, ...title];
+                return [];
+            },
+        });
+        expect(read(documentFor({ lengthError: '1001/1000', titleLeaves: ['5/20'] }))).toBe('1001/1000');
+        expect(read(documentFor({ editLeaves: ['3/1000'], titleLeaves: ['5/20'] }))).toBe('3/1000');
+        expect(read(documentFor({ titleLeaves: ['5/20'] }))).toBe('kk-counter-none');
+    });
+
+    test('R3: the reopen body probe ignores a title counter', () => {
+        const previous = (globalThis as { document?: unknown }).document;
+        (globalThis as { document?: unknown }).document = {
+            querySelector: () => null,
+            querySelectorAll: (sel: string) =>
+                sel === 'div.title-container *' || sel.includes('div.title-container')
+                    ? [{ textContent: '5/20', children: [] as never[] }]
+                    : [],
+        };
+        try {
+            const read = (new Function(`return ${VERIFY_BODY_EXPR}`) as () => string)();
+            expect(read).toBe(JSON.stringify({ textLen: 0 }));
+        } finally {
+            (globalThis as { document?: unknown }).document = previous;
+        }
     });
 
     test('R2: a counter that does not read N/M is ignored, not fatal', async () => {

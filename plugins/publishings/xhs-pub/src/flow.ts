@@ -252,18 +252,25 @@ async function invokeHostSave(page: XhsPage): Promise<string | null> {
  * Layered server-response capture (task 0350 R1, vendor-proven from
  * `vendors/xiaohongshu-skills/scripts/xhs/publish.py`): the save/publish response is the only
  * truth about whether a note persisted — the console toast has lied while the API returned
- * `HTTPBizError` (2026-11-09/10 runs). Three layers race for the first matching payload — XHR
- * `loadend`, wrapped `fetch`, console output — and the first capture wins. Signatures are
- * content-based, not URL-based: `HTTPBizError`, a −913x code, `禁止发笔记`, or `note_id`.
+ * `HTTPBizError` (2026-11-09/10 runs). Four layers race for the first matching payload — XHR
+ * `loadend`, wrapped `fetch`, console output, and a DOM toast observer — and the first capture
+ * wins. Signatures are content-based, not URL-based: `HTTPBizError`, a −913x code, `note_id`,
+ * or a short toast naming 禁止发笔记 / 违反 / 违规 / 审核未通过 / 账号异常 / 无法发布.
  * Arming is idempotent; a page that refused injection degrades to the legacy UI signals. The
  * sentinel markers keep a mocked evaluate from ever reading as a real capture.
  */
-const CAPTURE_INJECT_EXPR = `/* kk-capture-inject */ (() => {
+export const CAPTURE_INJECT_EXPR = `/* kk-capture-inject */ (() => {
     const w = window;
     if (w.__kkXhsArmed) return 'kk-capture-armed';
     w.__kkXhsArmed = true;
     w.__kkXhsOutcome = null;
-    const signatures = [/HTTPBizError/, /"code"\\s*:\\s*-913\\d/, /禁止发笔记/, /note_id/];
+    const signatures = [
+        /HTTPBizError/,
+        /"code"\\s*:\\s*-913\\d/,
+        /禁止发笔记/,
+        /note_id/,
+        /违反|违规|审核未通过|账号异常|无法发布/,
+    ];
     const matches = (text) => signatures.some((re) => re.test(text));
     const record = (source, text) => {
         if (w.__kkXhsOutcome) return;
@@ -306,6 +313,23 @@ const CAPTURE_INJECT_EXPR = `/* kk-capture-inject */ (() => {
             };
         }
     }
+    if (typeof MutationObserver === 'function' && document.body && !w.__kkXhsToastObs) {
+        const toastRisk = /违反|违规|禁止发笔记|审核未通过|账号异常|无法发布/;
+        const obs = new MutationObserver((muts) => {
+            if (w.__kkXhsOutcome) return;
+            for (const m of muts) {
+                for (const n of m.addedNodes || []) {
+                    if (!n || n.nodeType !== 1) continue;
+                    const txt = String(n.textContent || '').trim();
+                    if (txt.length === 0 || txt.length > 300) continue;
+                    if (!toastRisk.test(txt)) continue;
+                    record('toast', txt);
+                }
+            }
+        });
+        obs.observe(document.body, { childList: true, subtree: true });
+        w.__kkXhsToastObs = true;
+    }
     return 'kk-capture-armed';
 })()`;
 const CAPTURE_READ_EXPR = `/* kk-capture-read */ (() => {
@@ -339,7 +363,7 @@ async function readOutcomeCapture(page: XhsPage): Promise<OutcomeCapture | null>
     }
 }
 
-const RISK_SIGNATURE = /禁止发笔记|违反|违规/;
+const RISK_SIGNATURE = /禁止发笔记|违反|违规|审核未通过|账号异常|无法发布/;
 const CODE_SIGNATURE = /"code"\s*:\s*(-?\d+)/;
 const NOTE_ID_SIGNATURE = /"note_id"\s*:\s*"([^"]+)"/;
 
@@ -533,8 +557,9 @@ async function typeNoteBody(
 /**
  * Platform-counter probes (task 0350 R2). Measured: the note title counter is
  * `div.title-container div.max_suffix` reading `N/20`. The body counter is observed as `0/1000`
- * but not selector-measured — the read scans the editor containers for a leaf `N/M` element and
+ * but not selector-measured — the read scans the edit container for a leaf `N/M` element and
  * `kk-counter-none` means unreadable (the client-side caps in modes.ts stay the only gate).
+ * The title container is excluded: its `N/20` leaf would otherwise satisfy a missing body counter.
  * xhs counts units, not JS chars: 2 half-width chars = 1 unit.
  */
 const TITLE_COUNTER_EXPR = `/* kk-counter-title */ (() => {
@@ -546,10 +571,10 @@ const TITLE_COUNTER_EXPR = `/* kk-counter-title */ (() => {
     }
     return 'kk-counter-none';
 })()`;
-const BODY_COUNTER_EXPR = `/* kk-counter-body */ (() => {
+export const BODY_COUNTER_EXPR = `/* kk-counter-body */ (() => {
     const err = document.querySelector('div.edit-container div.length-error');
     if (err && err.textContent && err.textContent.trim()) return err.textContent.trim();
-    for (const node of document.querySelectorAll('div.edit-container *, div.title-container *')) {
+    for (const node of document.querySelectorAll('div.edit-container *')) {
         const t = (node.textContent || '').trim();
         if (/^\\d+\\/\\d+$/.test(t) && node.children.length === 0) return t;
     }
@@ -1167,8 +1192,8 @@ const VERIFY_TITLE_EXPR = `/* kk-verify-title */ (() => {
     const input = document.querySelector('input.d-text') || document.querySelector('textarea[placeholder*="标题"]');
     return input ? (input.value || '') : '';
 })()`;
-const VERIFY_BODY_EXPR = `/* kk-verify-body */ (() => {
-    for (const node of document.querySelectorAll('div.edit-container *, div.title-container *')) {
+export const VERIFY_BODY_EXPR = `/* kk-verify-body */ (() => {
+    for (const node of document.querySelectorAll('div.edit-container *')) {
         const t = (node.textContent || '').trim();
         if (/^\\d+\\/\\d+$/.test(t) && node.children.length === 0) return JSON.stringify({ counter: t });
     }
@@ -1176,8 +1201,10 @@ const VERIFY_BODY_EXPR = `/* kk-verify-body */ (() => {
     return JSON.stringify({ textLen: (editor?.textContent || '').trim().length });
 })()`;
 
-function collectionProbeExpr(collection: string): string {
-    return `/* kk-verify-collection */ (() => (document.body.innerText.includes('${collection}') ? 'kk-verify-collection:yes' : 'kk-verify-collection:no'))()`;
+/** Reopen probe for 合集 membership. The name is a JSON string literal so a quote cannot escape the page script. */
+export function collectionProbeExpr(collection: string): string {
+    const literal = JSON.stringify(collection);
+    return `/* kk-verify-collection */ (() => (document.body.innerText.includes(${literal}) ? 'kk-verify-collection:yes' : 'kk-verify-collection:no'))()`;
 }
 
 /**
