@@ -4,7 +4,7 @@ name: "xhs-pub: adopt vendor-proven patterns (outcome verification, counter limi
 status: wip
 template: standard
 created_at: 2026-11-10T22:48:43.838Z
-updated_at: "2026-11-11T01:54:21.167Z"
+updated_at: "2026-11-11T02:27:39.174Z"
 
 ---
 
@@ -27,19 +27,19 @@ stronger verification/limit patterns into that direction and closes the podcast 
 
 ### Requirements
 
-- [ ] R1. Save/publish outcome verification: replace counter/stamp-only confirmation with server-response capture — inject layered response observation (XHR + fetch + console + DOM toast, content-signature matching for note_id / HTTPBizError / -913x risk codes), map codes to typed errors (PublishError, AccountRiskControlError), keep sentinel-string evaluate contracts (kk-* sentinels) so fakes cannot false-positive.
-- [ ] R2. Platform-counter-based limit validation: read XHS's own counters as ground truth — title `div.title-container div.max_suffix` (UTF-16-aware cap 20: 2 half-width chars = 1) and body length error/counter elements (podcast editor 0/1000) — raise typed TitleTooLongError / ContentTooLongError before any save, instead of pre-counting client-side.
-- [ ] R3. verifyDraft post-save stage: reopen the saved draft and assert observable persistence — expected slot count, all img srcs durable (`https:` scheme; never naturalWidth), title/body length, 合集 badge — egress-independent; loud typed failure naming the violated assertion.
-- [ ] R4. composePodcast completeness: type title, mechanically derive podcast-note body ≤1000 chars (intro + `·` headlines + closing, counter-verified via R2), and select 合集 (咸话咸说之每日AI乱炖) — no manual repair pass needed for daily podcast drafts.
-- [ ] R5. Architecture preservation (constraint, not work): keep Playwright + kkBrowserLauncher + persistent profile transport, closed-shadow host-method save (`invokeHostSave` first, click fallback), and durable-src thumbnail wait — vendor's Python/CDP/extension-bridge transport is reference only; its count-based upload wait is explicitly NOT adopted (weaker than the 2026-11-10 fix).
+- [x] R1. Save/publish outcome verification: replace counter/stamp-only confirmation with server-response capture — inject layered response observation (XHR + fetch + console + DOM toast, content-signature matching for note_id / HTTPBizError / -913x risk codes), map codes to typed errors (PublishError, AccountRiskControlError), keep sentinel-string evaluate contracts (kk-* sentinels) so fakes cannot false-positive.
+- [x] R2. Platform-counter-based limit validation: read XHS's own counters as ground truth — title `div.title-container div.max_suffix` (UTF-16-aware cap 20: 2 half-width chars = 1) and body length error/counter elements (podcast editor 0/1000) — raise typed TitleTooLongError / ContentTooLongError before any save, instead of pre-counting client-side.
+- [x] R3. verifyDraft post-save stage: reopen the saved draft and assert observable persistence — expected slot count, all img srcs durable (`https:` scheme; never naturalWidth), title/body length, 合集 badge — egress-independent; loud typed failure naming the violated assertion.
+- [x] R4. composePodcast completeness: type title, mechanically derive podcast-note body ≤1000 chars (intro + `·` headlines + closing, counter-verified via R2), and select 合集 (咸话咸说之每日AI乱炖) — no manual repair pass needed for daily podcast drafts.
+- [x] R5. Architecture preservation (constraint, not work): keep Playwright + kkBrowserLauncher + persistent profile transport, closed-shadow host-method save (`invokeHostSave` first, click fallback), and durable-src thumbnail wait — vendor's Python/CDP/extension-bridge transport is reference only; its count-based upload wait is explicitly NOT adopted (weaker than the 2026-11-10 fix).
 
 ### Acceptance Criteria
 
-- [ ] AC1 — a draft save whose server response carries a business error code (incl. -913x risk control) fails with the mapped typed error, and a note_id-bearing success is confirmed from the observed response, not client-side counters only `(req: R1)`
-- [ ] AC2 — a title/body exceeding the platform counter limit is rejected before save with a typed error quoting the counter text observed in the DOM `(req: R2)`
-- [ ] AC3 — verifyDraft reopens a just-saved draft and fails loudly when any slot lacks a durable `https:` src or expected metadata is absent; it passes against the repaired 2026-11-09 drafts' shape (7 durable slots / podcast title+body+合集) `(req: R3)`
-- [ ] AC4 — composePodcast output carries non-empty title, a counter-verified ≤1000-char body, and the collection selection, so a generated podcast draft needs no manual repair `(req: R4)`
-- [ ] AC5 — regression suite covers the new paths; existing `thumbnail count:` error prefix and host-save (`_onSave` / `shadow-host-method`) contracts stay green `(req: R1, R2, R3, R4)`
+- [x] AC1 — a draft save whose server response carries a business error code (incl. -913x risk control) fails with the mapped typed error, and a note_id-bearing success is confirmed from the observed response, not client-side counters only `(req: R1)`
+- [x] AC2 — a title/body exceeding the platform counter limit is rejected before save with a typed error quoting the counter text observed in the DOM `(req: R2)`
+- [x] AC3 — verifyDraft reopens a just-saved draft and fails loudly when any slot lacks a durable `https:` src or expected metadata is absent; it passes against the repaired 2026-11-09 drafts' shape (7 durable slots / podcast title+body+合集) `(req: R3)`
+- [x] AC4 — composePodcast output carries non-empty title, a counter-verified ≤1000-char body, and the collection selection, so a generated podcast draft needs no manual repair `(req: R4)`
+- [x] AC5 — regression suite covers the new paths; existing `thumbnail count:` error prefix and host-save (`_onSave` / `shadow-host-method`) contracts stay green `(req: R1, R2, R3, R4)`
 
 ### Q&A
 
@@ -66,11 +66,64 @@ ADR-022 launch-only). Adopt patterns; reject transports.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `plugins/publishings/xhs-pub/src/errors.ts:1` |
+| `plugins/publishings/xhs-pub/src/flow.ts:1026` |
+| `plugins/publishings/xhs-pub/src/flow.ts:1039` |
+| `plugins/publishings/xhs-pub/src/flow.ts:1053` |
+| `plugins/publishings/xhs-pub/src/flow.ts:1059` |
+| `plugins/publishings/xhs-pub/src/flow.ts:1082` |
+| `plugins/publishings/xhs-pub/src/flow.ts:1095` |
+| `plugins/publishings/xhs-pub/src/flow.ts:1102` |
+| `plugins/publishings/xhs-pub/src/flow.ts:1112` |
+| `plugins/publishings/xhs-pub/src/flow.ts:1131` |
+| `plugins/publishings/xhs-pub/src/flow.ts:1136` |
+| `plugins/publishings/xhs-pub/src/flow.ts:12` |
+| `plugins/publishings/xhs-pub/src/flow.ts:1269` |
+| `plugins/publishings/xhs-pub/src/flow.ts:1274` |
+| `plugins/publishings/xhs-pub/src/flow.ts:251` |
+| `plugins/publishings/xhs-pub/src/flow.ts:507` |
+| `plugins/publishings/xhs-pub/src/flow.ts:511` |
+| `plugins/publishings/xhs-pub/src/flow.ts:519` |
+| `plugins/publishings/xhs-pub/src/flow.ts:524` |
+| `plugins/publishings/xhs-pub/src/flow.ts:573` |
+| `plugins/publishings/xhs-pub/src/flow.ts:811` |
+| `plugins/publishings/xhs-pub/src/flow.ts:86` |
+| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:126` |
+| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:18` |
+| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:208` |
+| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:260` |
+| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:276` |
+| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:2964` |
+| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:319` |
+| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:470` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | Layered capture armed before both save (`plugins/publishings/xhs-pub/src/flow.ts:1027`) and publish (`plugins/publishings/xhs-pub/src/flow.ts:1096`); XHR+fetch+console patches with first-wins `window.__kkXhsArmed` (`plugins/publishings/xhs-pub/src/flow.ts:261`); content-signature classify (`plugins/publishings/xhs-pub/src/flow.ts:346`) maps −913x/禁止发笔记 → `AccountRiskControlError`, `HTTPBizError`+code → `PublishError` (`plugins/publishings/xhs-pub/src/flow.ts:364`); ok verdicts (note_id) surface via `captureMetadata` (`plugins/publishings/xhs-pub/src/flow.ts:379`) into Result metadata; save retry abandoned on captured refusal (`plugins/publishings/xhs-pub/src/flow.ts:1052`), publish click never retried (assertion inside the `waitUntil` predicate, `plugins/publishings/xhs-pub/src/flow.ts:1113`); sentinel-string evaluate contracts kept — the fake dispatches only on `kk-capture-*` markers, tests `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3009`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3018`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3027`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3035` |
+| R2 | MET | Platform counters read as ground truth: title `div.title-container div.max_suffix` + leaf fallbacks (`plugins/publishings/xhs-pub/src/flow.ts:540`), body `length-error` first (`plugins/publishings/xhs-pub/src/flow.ts:549`); UTF-16-aware `counterUnits` (`plugins/publishings/xhs-pub/src/flow.ts:560`); typed `TitleTooLongError`/`ContentTooLongError` raised before any save click (`plugins/publishings/xhs-pub/src/flow.ts:580`, wired at `plugins/publishings/xhs-pub/src/flow.ts:508` title, `plugins/publishings/xhs-pub/src/flow.ts:530` body, `plugins/publishings/xhs-pub/src/flow.ts:872` podcast); unreadable/`kk-counter-none` counters stay silent so modes.ts client caps remain the gate; tests `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3043` (asserts zero `clickAt` calls — refusal precedes save), `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3051`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3057` |
+| R3 | MET | `verifyDraft` reopens via 草稿箱 → 编辑 (`plugins/publishings/xhs-pub/src/flow.ts:1162`, `plugins/publishings/xhs-pub/src/flow.ts:1193`), asserts slot count, all-`https:` srcs (`plugins/publishings/xhs-pub/src/flow.ts:1165`), title, body counter/textLen, 合集 membership (`plugins/publishings/xhs-pub/src/flow.ts:1246`); every violated assertion named in one `DraftVerifyError` (`plugins/publishings/xhs-pub/src/flow.ts:1198` and siblings); expectation per mode via `draftExpectation` (`plugins/publishings/xhs-pub/src/flow.ts:1144`); exits via `goto(PUBLISH_URL)` without re-saving (a 暂存离开 would shift the draft counter the next run baselines against); `draftVerified` metadata on Result; tests `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3062`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3069`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3075`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3081`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3087`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3093`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3099` |
+| R4 | MET | `applyPodcastFields` (`plugins/publishings/xhs-pub/src/flow.ts:861`) fills title + counter-asserts, types the derived body, clicks 合集 chip + collection entry; `derivePodcastBody` (`plugins/publishings/xhs-pub/src/flow.ts:833`) derives intro + `·` headlines + closing within `XHS_NOTE_BODY_MAX` with a hard `.slice` cap; collection from `metadata.collection` else the show default (`plugins/publishings/xhs-pub/src/flow.ts:816`); tests `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3105` (title fill, ≤1000 typed body, chip click, `draftVerified.collection`), `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3118` (custom collection wins), `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3124`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3137`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3146` (pure derivation caps/drops/fallback) |
+| R5 | MET | Constraint honored, no work: transport/launcher/profile/`invokeHostSave`/durable-src wait untouched by the diff; vendor's count-based upload wait explicitly not adopted (durable-src wait kept in flow, unmodified) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | Draft-save −913x capture → `AccountRiskControlError` "not retryable" and biz-code capture → `PublishError` (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3009`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3018`); note_id success confirmed from the observed response in `metadata.serverCapture` {source, verdict ok, code, noteId} (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3027`); publish path refuses on captured refusal pre-URL-marker (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3035`); full gate `spur self exec check` PASS receipt `.spur/run/0350-check-receipt.json` (tier full, inputDigest 4f098088bfad11a77f9a3845) |
+| AC2 | MET | test | Over-limit readable counter throws `TitleTooLongError` quoting `counter reads '23/20'` before any save click — zero `clickAt` calls asserted (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3043`); body variant `ContentTooLongError` at `1001/1000` (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3051`); unreadable counter text ignored, not fatal (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3057`) |
+| AC3 | MET | test | Reopen failures are loud and named per assertion: slot mismatch "expected 2 thumbnails" (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3062`), non-https srcs (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3069`), title mismatch (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3075`), empty body (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3081`), missing 合集 (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3087`), missing draft-box entry (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3093`), missing 编辑 control (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3099`) — all `DraftVerifyError`; passing-shape path proven by the 5 draft-mode happy paths + podcast verify (`draftVerified` metadata, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3105`) |
+| AC4 | MET | test | Podcast note carries non-empty title (fill recorded, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3105`), counter-verified ≤1000-unit body (R2 assert at `plugins/publishings/xhs-pub/src/flow.ts:872` runs after the typed body; the test asserts typed length ≤1000 at `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3105`), collection selection recorded in `draftVerified.collection` (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3105` default, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3118` custom) — no manual repair step in the flow |
+| AC5 | MET | command | 143 pass / 0 fail plugin suite (`bun test plugins/publishings/xhs-pub/tests/xhs-pub.test.ts`, root cwd); full monorepo gate 4882 pass / 0 fail incl. legacy `thumbnail count:` prefix tests and `_onSave`/`shadow-host-method` contract tests (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:584`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:586`) — receipt PASS at tier full |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
@@ -99,6 +152,10 @@ Checks: `bunx tsc --noEmit` OK; `bun run lint` OK; plugin suite 143/143; full ga
 Confidence: HIGH
 
 Verdict: PASS
+
+| Priority | Location | Finding | Disposition |
+| --- | --- | --- | --- |
+| P4 | plugins/publishings/xhs-pub/src/flow.ts:1200 | After verifyDraft the flow re-navigates to PUBLISH_URL and the runMode caller closes the page — a deliberate single extra navigation so a re-verify never re-saves (a 暂存离开 would shift the draft counter the next run baselines against) | resolved — deliberate, documented in the code comment |
 
 ### References
 
