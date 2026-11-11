@@ -4,7 +4,7 @@ name: Integrate into kk-daily-ai-voice3 workflow and provide standalone mock tes
 status: done
 template: feature-impl
 created_at: 2026-11-10T04:05:28.049Z
-updated_at: "2026-11-10T21:19:13.882Z"
+updated_at: "2026-11-11T00:20:41.824Z"
 feature_id: L2
 priority: P1
 
@@ -117,16 +117,16 @@ Rationale: R4 needs no code — downstream consumers (daily-stages.ts:1993/:2270
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | plugins/kk/scripts/kk-workflow-stages.ts:89-90 (`COVER_FORMAT = 'daily-news-podcast-cover'`, `COVER_STYLE = 'quasi-news-podcast'`), consumed by daily-stages.ts:611-612 (`dailyCover` envelope) and plugins/kk/workflows/kk-daily-ai-voice3.yaml:536 (node description names the presets); provider/model var overrides preserved (daily-stages.ts:613-614); F614 envelope tests updated and green (163 pass / 0 fail, command: `bun test apps/cli/tests/kk-workflow-stages.test.ts`) |
-| R2 | MET | plugins/kk/scripts/daily-cover-mock.ts:43 (parseArgs: `--headline/--scene/--out/--provider/--mock-bg`), :24 (mock gradient SVG), :65 (SVG→sips render), :75 (live image-gen path through the pinned presets), :126 (`runMock` → `compositeCover`), :112 (`verifyOutput` asserts 1344×576 via sips probe); asserted by plugins/kk/tests/daily-cover-mock.test.ts (command: `bun test plugins/kk/tests/daily-cover-mock.test.ts`) |
-| R3 | MET | plugins/kk/tests/daily-cover-mock.test.ts:36 — spawned `--mock-bg --headline 测试大标题：模型推理能力爆发` run asserts exit 0, composited stderr, file exists, sips probe 1344×576 (3 pass / 0 fail, replayed) |
-| R4 | MET | consumers unchanged and green: daily-stages.ts:1993 (`dailyPublishPrep`), :2270/:3033 (`dailyBundleVariants`), :5219 (`dailyCardsRender`) all read `23-cover/${runDate}_07_cover_cover.png`; the composite seam keeps that exact filename (kk-workflow-stages.ts:1043) and daily-cover-normalize.test.ts asserts it (22 pass / 0 fail, replayed) |
-| R5 | MET | full quality gate `spur self exec check` PASS (attempts: 1 after a targeted F614 expectation fix; receipt keyed to tree 103dde6e; 4858-test suite green) (command: `spur task gate 0349 run --no-logo`) |
+| R1 | MET | COVER_FORMAT is daily-news-podcast-cover and COVER_STYLE is quasi-news-podcast at plugins/kk/scripts/kk-workflow-stages.ts:89-90. dailyCover copies those pins at plugins/kk/scripts/daily-stages.ts:611-612. Provider, model, and fallback remain the variable overrides at plugins/kk/scripts/daily-stages.ts:616-621. Workflow vars cover_provider, cover_model, and cover_fallback are at plugins/kk/workflows/kk-daily-ai-voice3.yaml:64-66. The cover node shells daily-cover with those vars at plugins/kk/workflows/kk-daily-ai-voice3.yaml:549, and its description names the presets at :536. |
+| R2 | MET | parseMockArgs accepts headline, scene, out, provider, and mock-bg at plugins/kk/scripts/daily-cover-mock.ts:43-61. The mock background SVG is sized from COVER_WIDTH and COVER_HEIGHT at :24-41 and rendered through sips at :65-71. The live path pins format daily-news-podcast-cover and style quasi-news-podcast at :85-86. compositeCover runs at :146-150. verifyOutput requires width 1344 and height 576 at :112-122. Direct invoke is the basename check at :161-163. |
+| R3 | MET | plugins/kk/tests/daily-cover-mock.test.ts:30-40 spawns the runner with mock-bg and headline 测试大标题：模型推理能力爆发, then asserts pixelWidth 1344 and pixelHeight 576. A missing output directory fails at :43-49. An unknown flag fails at :52-55. |
+| R4 | MET | The normalized file is 23-cover plus the run date and _07_cover_cover.png at plugins/kk/scripts/kk-workflow-stages.ts:1043. dailyPublishPrep reads that path at plugins/kk/scripts/daily-stages.ts:2270 and writes coverImage and options.coverPath at :2305-2312. dailyBundleVariants reads the same path at plugins/kk/scripts/daily-stages.ts:1993 and passes it into the article payloads at :2012-2013. dailyXhsRender, the cards-render stage, reads it at plugins/kk/scripts/daily-stages.ts:5219. The surfdash patch localCover is the same path at plugins/kk/scripts/kk-workflow-stages.ts:1710. WeChat publish reads it at plugins/kk/scripts/daily-stages.ts:3033. |
+| R5 | MET | bun run gate exited 0 this run after format, build, typecheck, 58 pre-check rules, 4863 pass and 0 fail across 253 files, and 2 post-check rules. One biome info on an unrelated repair script did not fail the gate. The first gate this session failed the single test at scripts/tests/daily-ai-news.test.ts:243. The expectation now matches the launcher: agent planner and agent_retry planner at scripts/tests/daily-ai-news.test.ts:246-247 and scripts/daily-ai-news.ts:230-232. Gitignored fix-pass artifacts are .spur/run/0349-verify-answer.txt and .spur/run/0349-verdict.json. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 [R1] | MET | test | plugins/kk/workflows/kk-daily-ai-voice3.yaml:536 + apps/cli/tests/kk-workflow-stages.test.ts:3858 (F614 suite asserts the envelope carries format `daily-news-podcast-cover` / style `quasi-news-podcast`; 163 pass / 0 fail, replayed); normalization output name asserted by plugins/kk/tests/daily-cover-normalize.test.ts (22 pass / 0 fail) |
-| AC2 [R2] | MET | test | plugins/kk/tests/daily-cover-mock.test.ts:36 — mock run produces a 1344×576 PNG with headline and badge (sips probe); runner exits non-zero on missing output dir (platform-neutral); full gate PASS (R5) |
+| R5 — 集成接入 kk-daily-ai-voice3 生成工作流 | MET | test | The daily-cover envelope asserts format daily-news-podcast-cover and style quasi-news-podcast at apps/cli/tests/kk-workflow-stages.test.ts:3934-3942. bun test apps/cli/tests/kk-workflow-stages.test.ts exited 0 with 163 pass and 0 fail. The output name downstream consumers read is unchanged at plugins/kk/scripts/kk-workflow-stages.ts:1043 and plugins/kk/scripts/daily-stages.ts:2270. |
+| R6 — 独立 Mock 新闻驱动封面生成测试与验收 | MET | command | bun plugins/kk/scripts/daily-cover-mock.ts --mock-bg --headline "测试大标题：模型推理能力爆发" --out /tmp/mock-out.png printed composited /tmp/mock-out.png (1344x576, background=mock). sips reported pixelWidth 1344, pixelHeight 576, format png. The same headline is asserted at plugins/kk/tests/daily-cover-mock.test.ts:30-40. bun run gate exited 0 with 4863 pass and 0 fail. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
