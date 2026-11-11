@@ -84,6 +84,16 @@ export interface XhsPage {
     findShadowControl?(labels: readonly string[]): Promise<ShadowControl | null>;
     /** Click at viewport coordinates. */
     clickAt?(x: number, y: number): Promise<void>;
+    /** Subscribe/unsubscribe a raw page event (e.g. 'response' upload tracking); optional —
+     * offline fakes omit it and callers degrade to their non-event signals. */
+    on?(event: string, handler: (payload: unknown) => void): void;
+    off?(event: string, handler: (payload: unknown) => void): void;
+    /** Context-level response tracking — XHS uploads run in a service worker, so page-level
+     * 'response' events never see them (measured 2026-11-10). Optional like on/off. */
+    onContextResponse?(handler: (payload: unknown) => void): void;
+    offContextResponse?(handler: (payload: unknown) => void): void;
+    /** Viewport-clipped bounding boxes for all matches (the tab-clone geometry read). */
+    boundingBoxesOnScreen?(selector: string): Promise<Array<{ x: number; y: number; width: number; height: number }>>;
 }
 
 export interface OpenedPage {
@@ -255,6 +265,29 @@ export function wrapPlaywrightPage(raw: unknown, shadow?: ShadowProbe): XhsPage 
             }
             return pw.waitForEvent(event, options) as Promise<unknown>;
         },
+        on: (event, handler) => {
+            const raw2 = raw as { on?: (event: string, handler: (payload: unknown) => void) => unknown };
+            raw2.on?.(event, handler);
+        },
+        off: (event, handler) => {
+            const raw2 = raw as { off?: (event: string, handler: (payload: unknown) => void) => unknown };
+            raw2.off?.(event, handler);
+        },
+        onContextResponse: (handler) => {
+            const raw2 = raw as {
+                context?: () => { on?: (event: string, handler: (payload: unknown) => void) => unknown } | undefined;
+            };
+            const ctx = raw2.context?.();
+            ctx?.on?.('response', handler);
+        },
+        offContextResponse: (handler) => {
+            const raw2 = raw as {
+                context?: () => { off?: (event: string, handler: (payload: unknown) => void) => unknown } | undefined;
+            };
+            const ctx = raw2.context?.();
+            ctx?.off?.('response', handler);
+        },
+        boundingBoxesOnScreen: (selector) => onScreen(selector).then((found) => found.map((entry) => entry.box)),
         mouse: {
             click: (x, y) => pw.mouse.click(x, y),
         },

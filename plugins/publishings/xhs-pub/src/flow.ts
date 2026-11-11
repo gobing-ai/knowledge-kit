@@ -50,14 +50,14 @@ const NOTE_BODY = [
 ];
 // Uploaded previews carry XHS's own class spelling (`preivew`, not `preview`).
 const NOTE_THUMBNAIL = ['img.preivew-image', '.img-preview img'];
-// The image input is distinguishable from the video input by its accept list (`.jpg` first).
-const IMAGE_FILE_INPUT = [
-    'input[type="file"][accept*=".jpg"]',
-    'input[type="file"].upload-input',
-    'input[type="file"]',
-];
 const VIDEO_FILE_INPUT = ['input[type="file"][accept*=".mp4"]', 'input[type="file"].upload-input'];
 const VIDEO_EDITOR = ['div.tiptap.ProseMirror', 'div.tiptap[contenteditable="true"]', '.ProseMirror'];
+/** The image editor mounts its upload wiring lazily; measured-settle from probe-thumb-src.ts. */
+const IMAGE_MODE_SETTLE_MS = 1500;
+/** The console's uploader chunk mounts while the SPA idles after load (probe-thumb-src.ts slept
+ * 9s before touching anything). Clicking earlier leaves the editor preview-capable but mute. */
+const CONSOLE_SETTLE_MS = 9000;
+const CONSOLE_SETTLE_QUIET_MS = 2000;
 
 // 写长文: the landing offers 新的创作 (author in place) and 导入链接 (excluded — it is fed from a
 // 公众号 source, which would put another platform's publishing and censorship in the critical
@@ -625,10 +625,40 @@ async function assertPlatformCounter(
  * Note the durable src itself can be a geo-fenced CDN host (sns-creator-preview.xhscdn.com):
  * from a non-CN egress the preview may render dead even when the ref is valid, so naturalWidth
  * is NOT a reliable completion signal cross-region — the src scheme is.
+ *
+ * Drift (measured 2026-11-10 late, probe-thumb-src): the console stopped swapping preview srcs
+ * off `blob:` — uploads DO complete (permit + one 200 per file to ros-upload.xiaohongshu.com/spectrum)
+ * but the DOM keeps the local preview indefinitely. So network completion is an accepted
+ * durability signal alongside the src scheme.
  */
 
+/** Count successful image-upload round-trips (ros-upload/spectrum 200s) from page load on. */
+function trackSpectrumUploads(page: XhsPage): { completions(): Promise<number>; seen(): number; dispose(): void } {
+    let count = 0;
+    // Capability-optional: a driver without response events (the test fake) degrades to 0 and the
+    // src scheme stays the only durability signal — the old strictness is preserved there.
+    let anySeen = 0;
+    const handler = (payload: unknown): void => {
+        anySeen += 1;
+        const response = payload as { status(): number; url(): string };
+        if (response.status() === 200 && /ros-upload\.xiaohongshu\.com\/spectrum\//.test(response.url())) {
+            count += 1;
+        }
+    };
+    page.onContextResponse?.(handler);
+    return {
+        completions: async () => count,
+        seen: () => anySeen,
+        dispose: () => page.offContextResponse?.(handler),
+    };
+}
+
 /** The uploaded-preview count must match the payload, and every src must be durable (uploaded). */
-async function confirmThumbnails(deps: ModeRunDeps, expected: number): Promise<void> {
+async function confirmThumbnails(
+    deps: ModeRunDeps,
+    expected: number,
+    uploads: { completions(): Promise<number>; seen(): number },
+): Promise<{ completions: number }> {
     const selector = await findSelector(deps.page, NOTE_THUMBNAIL, 'thumbnail wait', deps.stepTimeoutMs);
     const allDurable = async (): Promise<boolean> => {
         // Sentinel strings, not booleans: a generic mocked evaluate must never read as a real
@@ -640,7 +670,10 @@ async function confirmThumbnails(deps: ModeRunDeps, expected: number): Promise<v
                 ? 'kk-thumb-all-durable'
                 : 'kk-thumb-pending';
         })()`);
-        return verdict === 'kk-thumb-all-durable';
+        if (verdict === 'kk-thumb-all-durable') return true;
+        // DOM-drift path (2026-11-10): previews stay on blob: after upload, so the network
+        // round-trips are the completion evidence instead.
+        return (await uploads.completions()) >= expected;
     };
     const matches = await waitUntil(allDurable, deps.stepTimeoutMs);
     const observed = await deps.page.locator(selector).count();
@@ -650,24 +683,99 @@ async function confirmThumbnails(deps: ModeRunDeps, expected: number): Promise<v
                 .filter((img) => !/^https?:/.test(img.getAttribute("src") || "")).length;
         })()`);
         throw new Error(
-            `thumbnail count: expected ${expected} durable previews, observed ${observed} previews with ${String(pending)} still on a local (blob/data) src — the ${deps.stepTimeoutMs}ms window expired before the console finished uploading`,
+            `thumbnail count: expected ${expected} durable previews, observed ${observed} previews with ${String(pending)} still on a local (blob/data) src, wire completions ${await uploads.completions()} [flow-20261110b] — the ${deps.stepTimeoutMs}ms window expired before the console finished uploading`,
         );
+    }
+    return { completions: await uploads.completions() };
+}
+
+/**
+ * Image mode entry uses a raw coordinate click at the tab's centre. The console renders each tab
+ * bar three times and locator clicks (forced included) land on overlay clones — measured
+ * 2026-11-10 (probe-thumb-src.ts) where a viewport-centred mouse click was the only click that
+ * activated the editor, after which the file input began uploading immediately.
+ */
+async function enterImageMode(deps: ModeRunDeps, label: string): Promise<void> {
+    if (!deps.page.clickAt || !deps.page.boundingBoxesOnScreen) {
+        throw new Error('mode entry (image): this driver cannot read viewport boxes or click coordinates');
+    }
+    // Let the console finish mounting (uploader chunk included) BEFORE entering the tab; a drop
+    // into a half-mounted editor renders previews but never uploads (2026-11-10 incident).
+    await settleConsole(deps);
+    const selector = `text=${label}`;
+    const deadline = Date.now() + deps.stepTimeoutMs;
+    while (Date.now() < deadline) {
+        const boxes = await deps.page.boundingBoxesOnScreen(selector).catch(() => []);
+        const box = boxes[0];
+        if (box) {
+            await deps.page.clickAt(box.x + box.width / 2, box.y + box.height / 2);
+            // The proven probe cadence (2026-11-10): the image editor's upload wiring is a lazy
+            // chunk — files dropped before it mounts render previews but never upload. Settle for
+            // the editor headline, then the probe's 1.5s.
+            await findSelector(
+                deps.page,
+                ['text=上传图片，或写文字生成图片'],
+                'image editor settle',
+                deps.stepTimeoutMs,
+            );
+            await new Promise((resolve) => setTimeout(resolve, IMAGE_MODE_SETTLE_MS));
+            return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+    }
+    throw new Error(
+        `mode entry: no on-screen '${label}' tab found within ${deps.stepTimeoutMs}ms — the mode was not entered`,
+    );
+}
+
+/**
+ * Wait until the console goes network-quiet (no context responses for CONSOLE_SETTLE_QUIET_MS) or
+ * CONSOLE_SETTLE_MS elapses — whichever first. Mirrors the proven probe cadence of sleeping out
+ * the SPA's post-load churn before interacting.
+ */
+async function settleConsole(deps: ModeRunDeps): Promise<void> {
+    let lastResponseAt = Date.now();
+    deps.page.onContextResponse?.(() => {
+        lastResponseAt = Date.now();
+    });
+    try {
+        const start = Date.now();
+        while (Date.now() - start < CONSOLE_SETTLE_MS) {
+            if (Date.now() - lastResponseAt >= CONSOLE_SETTLE_QUIET_MS) return;
+            await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+        }
+    } finally {
+        deps.page.offContextResponse?.(() => {
+            lastResponseAt = Date.now();
+        });
     }
 }
 
-async function composeImageText(input: { operation: '上传图文'; images: string[] }, deps: ModeRunDeps): Promise<void> {
-    await enterMode(deps, input.operation);
+async function composeImageText(
+    input: { operation: '上传图文'; images: string[] },
+    deps: ModeRunDeps,
+): Promise<number> {
+    await enterImageMode(deps, input.operation);
+    // VISIBLE, not merely attached: the 2026-11-10 console rewired its upload widget — several
+    // stale hidden inputs stay attached while only the active tab's input actually ingests
+    // files (measured: files on the first attached input never started an upload).
     const fileSelector = await findAttachedSelector(
         deps.page,
-        IMAGE_FILE_INPUT,
+        ['input[type="file"]'],
         'image file input',
         deps.stepTimeoutMs,
     );
     // One ordered call: the console keeps the batch in payload order, and that order is the post.
-    await deps.page.setInputFiles(fileSelector, input.images);
-    await confirmThumbnails(deps, input.images.length);
-    await applyNoteTitle(deps);
-    await typeNoteBody(deps, NOTE_BODY, 'note body');
+    const uploads = trackSpectrumUploads(deps.page);
+    try {
+        await deps.page.setInputFiles(fileSelector, input.images);
+        const confirmed = await confirmThumbnails(deps, input.images.length, uploads);
+        await applyNoteTitle(deps);
+        await typeNoteBody(deps, NOTE_BODY, 'note body');
+        return confirmed.completions;
+    } finally {
+        uploads.dispose();
+    }
 }
 
 async function composeVideo(input: { operation: '上传视频'; video: string }, deps: ModeRunDeps): Promise<void> {
@@ -1011,20 +1119,19 @@ async function podcastAdvanceReady(deps: ModeRunDeps): Promise<void> {
 }
 
 /** Compose the requested mode's post. Exhaustive over {@link ModeInput}. */
-async function compose(input: ModeInput, deps: ModeRunDeps): Promise<void> {
+async function compose(input: ModeInput, deps: ModeRunDeps): Promise<{ wireCompletions?: number }> {
     switch (input.operation) {
         case '上传图文':
-            await composeImageText(input, deps);
-            return;
+            return { wireCompletions: await composeImageText(input, deps) };
         case '上传视频':
             await composeVideo(input, deps);
-            return;
+            return {};
         case '写长文':
             await composeArticle(deps);
-            return;
+            return {};
         case '发播客':
             await composePodcast(input, deps);
-            return;
+            return {};
     }
 }
 
@@ -1217,23 +1324,72 @@ export function collectionProbeExpr(collection: string): string {
  * Evidence note (2026-11-11 discovery): the 草稿箱 counter is measured; the draft LIST and its
  * 编辑 control are not selector-measured — these probes say so by naming what they try.
  */
-async function verifyDraft(input: ModeInput, deps: ModeRunDeps): Promise<Record<string, unknown>> {
+async function verifyDraft(
+    input: ModeInput,
+    deps: ModeRunDeps,
+    wired?: { wireCompletions?: number },
+): Promise<Record<string, unknown>> {
     const expectation = draftExpectation(input, deps);
     const nav = deps.page.locator(DRAFT_NAV_SELECTOR);
-    if ((await nav.count().catch(() => 0)) === 0) {
+    // The save click leaves a success modal / in-flight navigation; the sidebar nav re-appears
+    // once both settle (2026-11-10 incident: an instant count raced the modal and failed a save
+    // the captured server response had already confirmed). Poll for it inside the step window.
+    const navAppeared = await waitUntil(
+        async () => (await nav.count().catch(() => 0)) > 0,
+        deps.stepTimeoutMs,
+        POLL_MS,
+    );
+    if (!navAppeared) {
         throw new DraftVerifyError(
-            `DraftVerifyError: could not reopen the saved draft — '${DRAFT_NAV_SELECTOR}' matched nothing after the save; verify the draft box manually in profile ${deps.profileDir}`,
+            `DraftVerifyError: could not reopen the saved draft — '${DRAFT_NAV_SELECTOR}' matched nothing within ${deps.stepTimeoutMs}ms after the save; verify the draft box manually in profile ${deps.profileDir}`,
         );
     }
-    await nav.first().click({ timeout: deps.stepTimeoutMs });
+    // Locator clicks hang on this console wherever an overlay intercepts pointer events (the tab
+    // bar clones measured 2026-11-10; the same overlay class intercepted the 草稿箱 nav on the
+    // 2026-11-11 daily run — locator resolved, click never dispatched). Aim raw coordinates at
+    // the first on-screen match, with the locator click as the fallback for other drivers.
+    const navBox = (await deps.page.boundingBoxesOnScreen?.(DRAFT_NAV_SELECTOR).catch(() => []))?.[0];
+    if (navBox && deps.page.clickAt) {
+        await deps.page.clickAt(navBox.x + navBox.width / 2, navBox.y + navBox.height / 2);
+    } else {
+        await nav.first().click({ timeout: deps.stepTimeoutMs });
+    }
     const edit = deps.page.locator(DRAFT_EDIT_SELECTOR);
     if ((await edit.count().catch(() => 0)) === 0) {
         throw new DraftVerifyError(
             `DraftVerifyError: the draft list shows no '${DRAFT_EDIT_SELECTOR}' control to reopen the saved note (2026-11-11 evidence: 编辑 1/18 on the draft list)`,
         );
     }
-    await edit.first().click({ timeout: deps.stepTimeoutMs });
+    const editBox = (await deps.page.boundingBoxesOnScreen?.(DRAFT_EDIT_SELECTOR).catch(() => []))?.[0];
+    if (editBox && deps.page.clickAt) {
+        await deps.page.clickAt(editBox.x + editBox.width / 2, editBox.y + editBox.height / 2);
+    } else {
+        await edit.first().click({ timeout: deps.stepTimeoutMs });
+    }
+    // The reopened editor mounts asynchronously (TipTap hydrates after the route lands); reading
+    // it instantly returned 0 slots / empty title on the 2026-11-11 daily run. Poll until the
+    // editor answers with any content before judging the persisted state.
+    const editorReady = await waitUntil(
+        async () => {
+            const slotsRead = await deps.page.evaluate(VERIFY_SLOTS_EXPR).catch(() => null);
+            const titleRead = await deps.page.evaluate(VERIFY_TITLE_EXPR).catch(() => null);
+            const bodyRead = await deps.page.evaluate(VERIFY_BODY_EXPR).catch(() => null);
+            const count = typeof slotsRead === 'string' ? (JSON.parse(slotsRead) as { count?: number }).count : 0;
+            const title = typeof titleRead === 'string' ? titleRead : '';
+            const body =
+                typeof bodyRead === 'string' ? (JSON.parse(bodyRead) as { counter?: string; textLen?: number }) : {};
+            const slotsVisible = expectation.slots !== null && (count ?? 0) > 0;
+            const titleVisible = expectation.title && title.length > 0;
+            const bodyVisible = expectation.body && (body.counter !== undefined || (body.textLen ?? 0) > 0);
+            return Boolean(slotsVisible || titleVisible || bodyVisible);
+        },
+        deps.stepTimeoutMs,
+        POLL_MS,
+    );
     const problems: string[] = [];
+    if (!editorReady) {
+        problems.push('the reopened editor never rendered content within the step window (0 thumbnails, empty title)');
+    }
     if (expectation.slots !== null) {
         const slotsRead = await deps.page.evaluate(VERIFY_SLOTS_EXPR);
         const count = typeof slotsRead === 'string' ? (JSON.parse(slotsRead) as { count?: number }).count : null;
@@ -1247,7 +1403,16 @@ async function verifyDraft(input: ModeInput, deps: ModeRunDeps): Promise<Record<
             const local = srcs
                 .map((src, index) => (src.startsWith('https://') ? null : index + 1))
                 .filter((slot) => slot !== null);
-            if (local.length > 0) {
+            // On the REOPENED editor the console re-hosts its own CDN images as blob: object URLs
+            // (measured 2026-11-11: 7 slots all blob: after the wire had completed every upload),
+            // so the src scheme is not a persistence signal here. When the wire completed every
+            // upload before the save, the slot count is the persistence evidence; without wire
+            // completions a local src still means the server-side copy may be missing.
+            const wireDone =
+                expectation.slots !== null &&
+                (wired?.wireCompletions ?? 0) >= expectation.slots &&
+                count === expectation.slots;
+            if (local.length > 0 && !wireDone) {
                 problems.push(
                     `slots ${local.join(', ')} still carry a non-https (blob/data/local) src — the server-side copy is missing`,
                 );
@@ -1297,13 +1462,13 @@ async function verifyDraft(input: ModeInput, deps: ModeRunDeps): Promise<Record<
  * (task 0350 R3) — a save that cannot survive its own reopen fails the run.
  */
 export async function runMode(input: ModeInput, deps: ModeRunDeps): Promise<Result> {
-    await compose(input, deps);
+    const wired = await compose(input, deps);
     if (deps.publishStatus === 'public') return publishNote(input, deps);
     const saved = await saveDraft(input, deps);
     if (!saved.ok) return saved;
     let verified: Record<string, unknown>;
     try {
-        verified = await verifyDraft(input, deps);
+        verified = await verifyDraft(input, deps, wired);
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         return fail(`draft saved but the reopen verification failed: ${reason}`);
