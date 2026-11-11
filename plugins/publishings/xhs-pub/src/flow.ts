@@ -9,7 +9,23 @@ import {
     uploadFile,
 } from '@gobing-ai/publish-harness/browser';
 import type { Page } from 'playwright';
-import { artifactPaths, type ModeInput, PUBLISH_URL, PUBLISHED_MARKER, TARGET, type XhsOperation } from './modes';
+import {
+    AccountRiskControlError,
+    ContentTooLongError,
+    DraftVerifyError,
+    PublishError,
+    TitleTooLongError,
+} from './errors';
+import {
+    artifactPaths,
+    type ModeInput,
+    PUBLISH_URL,
+    PUBLISHED_MARKER,
+    TARGET,
+    XHS_NOTE_BODY_MAX,
+    XHS_NOTE_TITLE_MAX,
+    type XhsOperation,
+} from './modes';
 import { clickCreatorTab, findAttachedSelector, findSelector, POLL_MS, waitUntil, type XhsPage } from './page';
 
 /**
@@ -66,6 +82,14 @@ const PODCAST_MODAL_ADVANCE = ['去发布'];
  * so a draft run may click it too — it does not publish on its own. */
 const PODCAST_COVER_ZONE = '.d-modal div:has-text("设置封面")';
 const PODCAST_UPLOAD_ACK = '上传成功';
+
+// Task 0350 R4: the podcast editor's fields — measured in the 2026-11-11 discovery (智能标题 chip,
+// a 0/1000 body counter, an 加入播客合集 entry in the bottom bar's closed shadow), none of them
+// selector-measured. These probe chains name what they try; every apply is followed by a
+// counter/verify read that fails loud when the field did not take.
+const PODCAST_TITLE_SELECTORS = ['input.d-text', 'input[placeholder*="标题"]', 'textarea[placeholder*="标题"]'];
+const PODCAST_COLLECTION_SELECTORS = ['button:has-text("加入播客合集")', 'text=加入播客合集', 'text=合集'];
+const PODCAST_COLLECTION_DEFAULT = '咸话咸说之每日AI乱炖';
 
 /**
  * The `暂存离开` labels, newest first: XHS renamed the control, and the older labels stay as
@@ -224,6 +248,147 @@ async function invokeHostSave(page: XhsPage): Promise<string | null> {
     }
 }
 
+/**
+ * Layered server-response capture (task 0350 R1, vendor-proven from
+ * `vendors/xiaohongshu-skills/scripts/xhs/publish.py`): the save/publish response is the only
+ * truth about whether a note persisted — the console toast has lied while the API returned
+ * `HTTPBizError` (2026-11-09/10 runs). Three layers race for the first matching payload — XHR
+ * `loadend`, wrapped `fetch`, console output — and the first capture wins. Signatures are
+ * content-based, not URL-based: `HTTPBizError`, a −913x code, `禁止发笔记`, or `note_id`.
+ * Arming is idempotent; a page that refused injection degrades to the legacy UI signals. The
+ * sentinel markers keep a mocked evaluate from ever reading as a real capture.
+ */
+const CAPTURE_INJECT_EXPR = `/* kk-capture-inject */ (() => {
+    const w = window;
+    if (w.__kkXhsArmed) return 'kk-capture-armed';
+    w.__kkXhsArmed = true;
+    w.__kkXhsOutcome = null;
+    const signatures = [/HTTPBizError/, /"code"\\s*:\\s*-913\\d/, /禁止发笔记/, /note_id/];
+    const matches = (text) => signatures.some((re) => re.test(text));
+    const record = (source, text) => {
+        if (w.__kkXhsOutcome) return;
+        const asString = String(text || '');
+        if (!asString || !matches(asString)) return;
+        w.__kkXhsOutcome = { source: source, text: asString.slice(0, 800) };
+    };
+    const proto = XMLHttpRequest.prototype;
+    if (!proto.__kkPatched) {
+        proto.__kkPatched = true;
+        const open = proto.open;
+        const send = proto.send;
+        proto.open = function (method, url) { this.__kkUrl = url; return open.apply(this, arguments); };
+        proto.send = function () {
+            this.addEventListener('loadend', () => {
+                try { record('xhr', (this.__kkUrl || '') + ' ' + this.responseText); } catch (e) {}
+            });
+            return send.apply(this, arguments);
+        };
+    }
+    if (typeof w.fetch === 'function' && !w.fetch.__kkPatched) {
+        const original = w.fetch;
+        w.fetch = function () {
+            return original.apply(this, arguments).then((response) => {
+                try {
+                    response.clone().text().then((text) => record('fetch', (response.url || '') + ' ' + text)).catch(() => {});
+                } catch (e) {}
+                return response;
+            });
+        };
+        w.fetch.__kkPatched = true;
+    }
+    if (!console.__kkPatched) {
+        console.__kkPatched = true;
+        for (const key of ['error', 'warn', 'log']) {
+            const original = console[key].bind(console);
+            console[key] = function () {
+                try { record('console', Array.prototype.map.call(arguments, String).join(' ')); } catch (e) {}
+                original.apply(console, arguments);
+            };
+        }
+    }
+    return 'kk-capture-armed';
+})()`;
+const CAPTURE_READ_EXPR = `/* kk-capture-read */ (() => {
+    const captured = window.__kkXhsOutcome;
+    return captured ? JSON.stringify(captured) : 'kk-capture-none';
+})()`;
+
+interface OutcomeCapture {
+    source: string;
+    text: string;
+}
+
+async function armOutcomeCapture(page: XhsPage): Promise<void> {
+    try {
+        await page.evaluate(CAPTURE_INJECT_EXPR);
+    } catch {
+        // No injection, no capture: the legacy UI signals remain the only outcome evidence.
+    }
+}
+
+async function readOutcomeCapture(page: XhsPage): Promise<OutcomeCapture | null> {
+    try {
+        const read = await page.evaluate(CAPTURE_READ_EXPR);
+        if (typeof read !== 'string' || !read.startsWith('{')) return null;
+        const parsed = JSON.parse(read) as Partial<OutcomeCapture>;
+        return typeof parsed.source === 'string' && typeof parsed.text === 'string'
+            ? { source: parsed.source, text: parsed.text }
+            : null;
+    } catch {
+        return null;
+    }
+}
+
+const RISK_SIGNATURE = /禁止发笔记|违反|违规/;
+const CODE_SIGNATURE = /"code"\s*:\s*(-?\d+)/;
+const NOTE_ID_SIGNATURE = /"note_id"\s*:\s*"([^"]+)"/;
+
+function classifyOutcome(text: string): {
+    verdict: 'risk' | 'biz' | 'ok';
+    code: string | null;
+    noteId: string | null;
+} {
+    const code = CODE_SIGNATURE.exec(text)?.[1] ?? null;
+    const noteId = NOTE_ID_SIGNATURE.exec(text)?.[1] ?? null;
+    if ((code !== null && /^-913\d$/.test(code)) || RISK_SIGNATURE.test(text)) {
+        return { verdict: 'risk', code, noteId };
+    }
+    if (noteId !== null && (code === null || code === '0')) return { verdict: 'ok', code, noteId };
+    return { verdict: 'biz', code, noteId };
+}
+
+/**
+ * A captured refusal outranks every UI signal (vendor first-wins): risk control is a typed
+ * no-retry abort, a platform biz error a typed failure. Ok verdicts ride the Result metadata.
+ */
+function assertCapturedOutcome(capture: OutcomeCapture | null): void {
+    if (capture === null) return;
+    const { verdict, code } = classifyOutcome(capture.text);
+    if (verdict === 'risk') {
+        throw new AccountRiskControlError(
+            `AccountRiskControlError: the ${capture.source} response matched risk-control signatures (code ${code ?? 'unknown'}, matched: ${RISK_SIGNATURE.exec(capture.text)?.[0] ?? '-913x code'}) — the account is restricted from posting on ${TARGET}; not retryable`,
+        );
+    }
+    if (verdict === 'biz') {
+        throw new PublishError(
+            `PublishError: the ${capture.source} response reported a platform error (code ${code ?? 'unknown'}): ${capture.text.slice(0, 200)}`,
+        );
+    }
+}
+
+function captureMetadata(capture: OutcomeCapture | null): Record<string, unknown> {
+    if (capture === null) return {};
+    const { verdict, code, noteId } = classifyOutcome(capture.text);
+    return {
+        serverCapture: {
+            source: capture.source,
+            verdict,
+            ...(code !== null ? { code } : {}),
+            ...(noteId !== null ? { noteId } : {}),
+        },
+    };
+}
+
 /** Click an action-bar control of this mode, on the path its evidence says that bar lives on. */
 async function clickActionControl(
     operation: XhsOperation,
@@ -339,20 +504,93 @@ async function applyNoteTitle(deps: ModeRunDeps): Promise<void> {
         .locator(selector)
         .first()
         .fill(deps.content.title ?? '');
+    // Task 0350 R2: counter-verified in the editor before any save.
+    await assertPlatformCounter(deps.page, TITLE_COUNTER_EXPR, XHS_NOTE_TITLE_MAX, 'title');
 }
 
-async function typeNoteBody(deps: ModeRunDeps, selectors: readonly string[], what: string): Promise<void> {
+async function typeNoteBody(
+    deps: ModeRunDeps,
+    selectors: readonly string[],
+    what: string,
+    text?: string,
+): Promise<void> {
     const selector = await findSelector(deps.page, selectors, what, deps.stepTimeoutMs);
     const body = deps.page.locator(selector).first();
-    const text = deps.content.body ?? '';
+    const value = text ?? deps.content.body ?? '';
     // Type rather than fill: TipTap ignores a synthetic value set, so a filled body leaves the
     // note unsaved and the draft never becomes observable.
     if (typeof body.type === 'function') {
         await body.click();
-        await body.type(text, { delay: 5 });
-        return;
+        await body.type(value, { delay: 5 });
+    } else {
+        await body.fill(value);
     }
-    await body.fill(text);
+    // Task 0350 R2: the platform counter is ground truth once the text is in the editor — the
+    // client-side cap below cannot see xhs's 2-half-width-chars-per-unit counting.
+    await assertPlatformCounter(deps.page, BODY_COUNTER_EXPR, XHS_NOTE_BODY_MAX, 'body');
+}
+
+/**
+ * Platform-counter probes (task 0350 R2). Measured: the note title counter is
+ * `div.title-container div.max_suffix` reading `N/20`. The body counter is observed as `0/1000`
+ * but not selector-measured — the read scans the editor containers for a leaf `N/M` element and
+ * `kk-counter-none` means unreadable (the client-side caps in modes.ts stay the only gate).
+ * xhs counts units, not JS chars: 2 half-width chars = 1 unit.
+ */
+const TITLE_COUNTER_EXPR = `/* kk-counter-title */ (() => {
+    const el = document.querySelector('div.title-container div.max_suffix');
+    if (el && el.textContent && el.textContent.trim()) return el.textContent.trim();
+    for (const node of document.querySelectorAll('div.title-container *')) {
+        const t = (node.textContent || '').trim();
+        if (/^\\d+\\/\\d+$/.test(t) && node.children.length === 0) return t;
+    }
+    return 'kk-counter-none';
+})()`;
+const BODY_COUNTER_EXPR = `/* kk-counter-body */ (() => {
+    const err = document.querySelector('div.edit-container div.length-error');
+    if (err && err.textContent && err.textContent.trim()) return err.textContent.trim();
+    for (const node of document.querySelectorAll('div.edit-container *, div.title-container *')) {
+        const t = (node.textContent || '').trim();
+        if (/^\\d+\\/\\d+$/.test(t) && node.children.length === 0) return t;
+    }
+    return 'kk-counter-none';
+})()`;
+
+/** The counter's current value in units; null when it does not read `N/M`. */
+function counterUnits(counter: string): number | null {
+    const current = Number.parseInt(counter.split('/')[0] ?? '', 10);
+    return Number.isFinite(current) ? current : null;
+}
+
+async function readPlatformCounter(page: XhsPage, expression: string): Promise<string | null> {
+    try {
+        const read = await page.evaluate(expression);
+        if (typeof read !== 'string' || read.includes('kk-counter-none')) return null;
+        return read.trim();
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Reject before any save when the platform's own counter says the field is over its limit
+ * (task 0350 R2). Unreadable counters return silently — the client-side caps in modes.ts remain
+ * the only gate, and a real overflow then surfaces in verifyDraft instead.
+ */
+async function assertPlatformCounter(
+    page: XhsPage,
+    expression: string,
+    max: number,
+    what: 'title' | 'body',
+): Promise<void> {
+    const counter = await readPlatformCounter(page, expression);
+    if (counter === null) return;
+    const units = counterUnits(counter);
+    if (units === null || units <= max) return;
+    const message = `the ${what} counter reads '${counter}' — ${units} units over the platform limit of ${max}; shorten the ${what} before saving (xhs counts units: 2 half-width chars = 1 unit)`;
+    throw what === 'title'
+        ? new TitleTooLongError(`TitleTooLongError: ${message}`)
+        : new ContentTooLongError(`ContentTooLongError: ${message}`);
 }
 
 /**
@@ -570,6 +808,79 @@ async function composePodcast(
     await uploadPodcastCover(deps, input.cover);
     await podcastAdvanceReady(deps);
     await leavePodcastModal(deps);
+    // Task 0350 R4: fill the podcast editor's fields — title, derived ≤1000-unit body, 合集 chip.
+    await applyPodcastFields(deps);
+}
+
+/** The 合集 the episode joins: the content's declared collection, else the daily show's. */
+function podcastCollection(content: Content): string {
+    const declared = content.metadata?.collection;
+    return typeof declared === 'string' && declared.trim().length > 0 ? declared.trim() : PODCAST_COLLECTION_DEFAULT;
+}
+
+function clipLine(text: string, cap: number): string {
+    return text.length > cap ? `${text.slice(0, cap - 1)}…` : text;
+}
+
+/**
+ * The podcast editor's body is derived, never the raw article: the episode content carries the
+ * full multi-thousand-char markdown while the field caps at 1000 counter units — a raw
+ * pass-through overflows every save (the manual-repair failure mode task 0350 closes). Mechanical
+ * derivation: the intro line, one `· ` bullet per `## ` headline, and the closing line. Headlines
+ * drop first when the budget runs out; intro/closing are clipped; the final slice is the hard
+ * guarantee. The platform counter re-verifies after typing.
+ */
+export function derivePodcastBody(content: Content, max = XHS_NOTE_BODY_MAX): string {
+    const lines = (content.body ?? '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+    const prose = lines.filter((line) => !line.startsWith('#'));
+    const introSource = prose[0] ?? content.title ?? '';
+    const intro = clipLine(introSource, 80);
+    const closing = prose.length > 1 ? clipLine(prose[prose.length - 1] ?? '', 60) : '';
+    const budget = max - (closing.length > 0 ? closing.length + 1 : 0);
+    const parts: string[] = [intro];
+    let used = intro.length;
+    for (const line of lines.filter((line) => line.startsWith('## '))) {
+        const bullet = `· ${line.slice(3).trim()}`;
+        if (used + bullet.length + 1 > budget) break;
+        parts.push(bullet);
+        used += bullet.length + 1;
+    }
+    if (closing.length > 0) parts.push(closing);
+    return parts.join('\n').slice(0, max);
+}
+
+/**
+ * Fill the podcast editor's fields (task 0350 R4). The title input, the 0/1000 body counter and
+ * the 加入播客合集 chip were measured in the 2026-11-11 discovery but not selector-measured —
+ * the probe chains name what they try, and the platform counters plus verifyDraft fail loud when
+ * a field did not take.
+ */
+async function applyPodcastFields(deps: ModeRunDeps): Promise<void> {
+    const title = deps.content.title ?? '';
+    if (title.length > 0) {
+        const selector = await findSelector(
+            deps.page,
+            PODCAST_TITLE_SELECTORS,
+            'podcast title input',
+            deps.stepTimeoutMs,
+        );
+        await deps.page.locator(selector).first().fill(title);
+    }
+    await assertPlatformCounter(deps.page, TITLE_COUNTER_EXPR, XHS_NOTE_TITLE_MAX, 'title');
+    const body = derivePodcastBody(deps.content, XHS_NOTE_BODY_MAX);
+    await typeNoteBody(deps, NOTE_BODY, 'podcast body', body);
+    const collection = podcastCollection(deps.content);
+    const chip = await findSelector(
+        deps.page,
+        PODCAST_COLLECTION_SELECTORS,
+        '加入播客合集 control',
+        deps.stepTimeoutMs,
+    );
+    await deps.page.locator(chip).first().click({ timeout: deps.stepTimeoutMs });
+    await deps.page.locator(`text=${collection}`).first().click({ timeout: deps.stepTimeoutMs });
 }
 
 async function uploadPodcastCover(deps: ModeRunDeps, cover: string): Promise<void> {
@@ -712,6 +1023,8 @@ async function saveDraft(input: ModeInput, deps: ModeRunDeps): Promise<Result> {
     let clicked: ActionClick | null = null;
     let signal: string | null = null;
     let attempts = 0;
+    let capture: OutcomeCapture | null = null;
+    await armOutcomeCapture(deps.page);
     while (signal === null && attempts < deps.submitAttempts) {
         attempts += 1;
         await sleep(deps.submitSettleMs);
@@ -723,13 +1036,30 @@ async function saveDraft(input: ModeInput, deps: ModeRunDeps): Promise<Result> {
                 : await clickActionControl(input.operation, deps, DRAFT_LABELS, 'draft control');
         if (!control.ok) return fail(control.error);
         clicked = control;
-        const outcome = await expectOutcome(() => draftSignalEvidence(deps.page, deps.draftBaseline), {
-            timeoutMs: deps.submitSettleMs,
-            label: `draft confirmation '${control.label}'`,
-            pollMs: POLL_MS,
-        });
+        // The capture is refreshed inside the probe (expectOutcome swallows probe throws by
+        // design — the refusal is classified OUTSIDE, so it propagates as a typed error).
+        const outcome = await expectOutcome(
+            async () => {
+                if (capture === null) capture = await readOutcomeCapture(deps.page);
+                return draftSignalEvidence(deps.page, deps.draftBaseline);
+            },
+            {
+                timeoutMs: deps.submitSettleMs,
+                label: `draft confirmation '${control.label}'`,
+                pollMs: POLL_MS,
+            },
+        );
         if (outcome.ok) signal = outcome.evidence;
+        else {
+            // A captured refusal must not be retried: refresh and re-check before another click.
+            capture = capture ?? (await readOutcomeCapture(deps.page));
+            assertCapturedOutcome(capture);
+        }
     }
+    if (capture === null) capture = await readOutcomeCapture(deps.page);
+    // The captured server response outranks every UI signal — a toast can lie while the API
+    // refused (2026-11-09/10 runs) — so it is classified before any success is reported.
+    assertCapturedOutcome(capture);
     const draftCountAfter = await readDraftCount(deps.page);
     if (signal === null || clicked === null) {
         return fail(
@@ -749,6 +1079,7 @@ async function saveDraft(input: ModeInput, deps: ModeRunDeps): Promise<Result> {
             draftSignal: signal,
             draftCountBefore: deps.draftBaseline.count,
             draftCountAfter,
+            ...captureMetadata(capture),
         },
     });
 }
@@ -761,17 +1092,26 @@ async function saveDraft(input: ModeInput, deps: ModeRunDeps): Promise<Result> {
  */
 async function publishNote(input: ModeInput, deps: ModeRunDeps): Promise<Result> {
     await sleep(deps.submitSettleMs);
+    let capture: OutcomeCapture | null = null;
+    await armOutcomeCapture(deps.page);
     const submitted = await clickActionControl(input.operation, deps, PUBLISH_LABELS, 'publish control');
     if (!submitted.ok) return fail(submitted.error);
 
     const urlBeforeSubmit = deps.page.url();
     const confirmed = await waitUntil(async () => {
+        // The captured refusal aborts immediately — waitUntil propagates the typed throw, and a
+        // publish click is never retried (unlike the draft loop there is no next attempt).
+        if (capture === null) capture = await readOutcomeCapture(deps.page);
+        assertCapturedOutcome(capture);
         // The console rewrites its URL to `…published=true` once the post is accepted; the toast is
         // the fallback, read scoped (never from the document at large).
         if (deps.page.url().includes(PUBLISHED_MARKER)) return true;
         return (await readScopedSignal(asPlaywrightPage(deps.page), PUBLISH_CONFIRM)) !== null;
     }, deps.stepTimeoutMs);
     if (!confirmed) {
+        // A refusal that lands late still outranks the "state unknown" timeout message.
+        capture = capture ?? (await readOutcomeCapture(deps.page));
+        assertCapturedOutcome(capture);
         return fail(
             `publish submission: state unknown — the '${submitted.label}' click (${submitted.click}) was sent from ${urlBeforeSubmit} but no success state was observed (now ${deps.page.url()}). Check the ${TARGET} creator note manager before retrying: a retry could duplicate the post.`,
         );
@@ -788,15 +1128,158 @@ async function publishNote(input: ModeInput, deps: ModeRunDeps): Promise<Result>
             publishPath: submitted.path,
             publishClick: submitted.click,
             publishSignal: url.includes(PUBLISHED_MARKER) ? `url:${PUBLISHED_MARKER}` : 'toast',
+            ...captureMetadata(capture),
         },
     });
 }
 
+/** What the reopened draft must show for the save to count as server-side complete (R3). */
+interface DraftExpectation {
+    slots: number | null;
+    title: boolean;
+    body: boolean;
+    collection: string | null;
+}
+
+function draftExpectation(input: ModeInput, deps: ModeRunDeps): DraftExpectation {
+    switch (input.operation) {
+        case '上传图文':
+            return {
+                slots: input.images.length,
+                title: true,
+                body: (deps.content.body ?? '').trim().length > 0,
+                collection: null,
+            };
+        case '上传视频':
+            return { slots: null, title: true, body: (deps.content.body ?? '').trim().length > 0, collection: null };
+        case '写长文':
+            return { slots: null, title: false, body: true, collection: null };
+        case '发播客':
+            return { slots: null, title: true, body: true, collection: podcastCollection(deps.content) };
+    }
+}
+
+const DRAFT_NAV_SELECTOR = 'text=草稿箱';
+const DRAFT_EDIT_SELECTOR = 'text=编辑';
+const VERIFY_SLOTS_EXPR = `/* kk-verify-slots */ (() => JSON.stringify({ count: document.querySelectorAll('img.preivew-image').length }))()`;
+const VERIFY_SRCS_EXPR = `/* kk-verify-srcs */ (() => JSON.stringify(Array.from(document.querySelectorAll('img.preivew-image')).map((img) => img.getAttribute('src') || '')))()`;
+const VERIFY_TITLE_EXPR = `/* kk-verify-title */ (() => {
+    const input = document.querySelector('input.d-text') || document.querySelector('textarea[placeholder*="标题"]');
+    return input ? (input.value || '') : '';
+})()`;
+const VERIFY_BODY_EXPR = `/* kk-verify-body */ (() => {
+    for (const node of document.querySelectorAll('div.edit-container *, div.title-container *')) {
+        const t = (node.textContent || '').trim();
+        if (/^\\d+\\/\\d+$/.test(t) && node.children.length === 0) return JSON.stringify({ counter: t });
+    }
+    const editor = document.querySelector('div.tiptap, .ProseMirror, .ql-editor');
+    return JSON.stringify({ textLen: (editor?.textContent || '').trim().length });
+})()`;
+
+function collectionProbeExpr(collection: string): string {
+    return `/* kk-verify-collection */ (() => (document.body.innerText.includes('${collection}') ? 'kk-verify-collection:yes' : 'kk-verify-collection:no'))()`;
+}
+
+/**
+ * Task 0350 R3 — verifyDraft: the save click proves nothing about the SERVER-side copy (the
+ * 2026-11-09/10 incidents: drafts whose images were blob-only, fields never persisted). The flow
+ * reopens the saved draft (草稿箱 → the list's 编辑) and asserts what must have persisted: the
+ * exact slot count with every src durable https, the title/body/合集 fields. A violated assertion
+ * is a typed failure — the draft stays in the box for a manual pass, but the run reports failure.
+ *
+ * Evidence note (2026-11-11 discovery): the 草稿箱 counter is measured; the draft LIST and its
+ * 编辑 control are not selector-measured — these probes say so by naming what they try.
+ */
+async function verifyDraft(input: ModeInput, deps: ModeRunDeps): Promise<Record<string, unknown>> {
+    const expectation = draftExpectation(input, deps);
+    const nav = deps.page.locator(DRAFT_NAV_SELECTOR);
+    if ((await nav.count().catch(() => 0)) === 0) {
+        throw new DraftVerifyError(
+            `DraftVerifyError: could not reopen the saved draft — '${DRAFT_NAV_SELECTOR}' matched nothing after the save; verify the draft box manually in profile ${deps.profileDir}`,
+        );
+    }
+    await nav.first().click({ timeout: deps.stepTimeoutMs });
+    const edit = deps.page.locator(DRAFT_EDIT_SELECTOR);
+    if ((await edit.count().catch(() => 0)) === 0) {
+        throw new DraftVerifyError(
+            `DraftVerifyError: the draft list shows no '${DRAFT_EDIT_SELECTOR}' control to reopen the saved note (2026-11-11 evidence: 编辑 1/18 on the draft list)`,
+        );
+    }
+    await edit.first().click({ timeout: deps.stepTimeoutMs });
+    const problems: string[] = [];
+    if (expectation.slots !== null) {
+        const slotsRead = await deps.page.evaluate(VERIFY_SLOTS_EXPR);
+        const count = typeof slotsRead === 'string' ? (JSON.parse(slotsRead) as { count?: number }).count : null;
+        if (count !== expectation.slots) {
+            problems.push(
+                `expected ${expectation.slots} thumbnails on the reopened draft, the editor shows ${String(count)}`,
+            );
+        } else {
+            const srcsRead = await deps.page.evaluate(VERIFY_SRCS_EXPR);
+            const srcs = typeof srcsRead === 'string' ? (JSON.parse(srcsRead) as string[]) : [];
+            const local = srcs
+                .map((src, index) => (src.startsWith('https://') ? null : index + 1))
+                .filter((slot) => slot !== null);
+            if (local.length > 0) {
+                problems.push(
+                    `slots ${local.join(', ')} still carry a non-https (blob/data/local) src — the server-side copy is missing`,
+                );
+            }
+        }
+    }
+    if (expectation.title) {
+        const editorTitle = String((await deps.page.evaluate(VERIFY_TITLE_EXPR)) ?? '');
+        if (editorTitle !== (deps.content.title ?? '')) {
+            problems.push(`title mismatch: content '${deps.content.title ?? ''}' vs reopened draft '${editorTitle}'`);
+        }
+    }
+    if (expectation.body) {
+        const bodyRead = await deps.page.evaluate(VERIFY_BODY_EXPR);
+        const parsed =
+            typeof bodyRead === 'string' ? (JSON.parse(bodyRead) as { counter?: string; textLen?: number }) : {};
+        const units = parsed.counter !== undefined ? counterUnits(parsed.counter) : null;
+        if (!((units ?? 0) > 0) && !((parsed.textLen ?? 0) > 0)) {
+            problems.push('body: the reopened draft shows neither a readable N/M counter nor editor text');
+        }
+    }
+    if (expectation.collection !== null) {
+        const verdict = await deps.page.evaluate(collectionProbeExpr(expectation.collection));
+        if (verdict !== 'kk-verify-collection:yes') {
+            problems.push(`collection: the reopened podcast draft does not show '${expectation.collection}'`);
+        }
+    }
+    // Leave the reopened editor WITHOUT saving: a 暂存离开 here would re-save and move the draft
+    // counter the next run baselines against. Navigating away is the exit that touches nothing.
+    await deps.page.goto(PUBLISH_URL);
+    if (problems.length > 0) {
+        throw new DraftVerifyError(
+            `DraftVerifyError: the saved draft does not verify after reopen — ${problems.join('; ')}`,
+        );
+    }
+    return {
+        ...(expectation.slots !== null ? { slots: expectation.slots } : {}),
+        ...(expectation.title ? { titleChecked: true } : {}),
+        ...(expectation.body ? { bodyChecked: true } : {}),
+        ...(expectation.collection !== null ? { collection: expectation.collection } : {}),
+    };
+}
+
 /**
  * Run one validated operation end to end: compose the post, then take it to a draft or (only on an
- * explicit live request) publish it.
+ * explicit live request) publish it. A draft only counts when the REOPENED copy verifies
+ * (task 0350 R3) — a save that cannot survive its own reopen fails the run.
  */
 export async function runMode(input: ModeInput, deps: ModeRunDeps): Promise<Result> {
     await compose(input, deps);
-    return deps.publishStatus === 'public' ? publishNote(input, deps) : saveDraft(input, deps);
+    if (deps.publishStatus === 'public') return publishNote(input, deps);
+    const saved = await saveDraft(input, deps);
+    if (!saved.ok) return saved;
+    let verified: Record<string, unknown>;
+    try {
+        verified = await verifyDraft(input, deps);
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return fail(`draft saved but the reopen verification failed: ${reason}`);
+    }
+    return ResultSchema.parse({ ...saved, metadata: { ...saved.metadata, draftVerified: verified } });
 }
