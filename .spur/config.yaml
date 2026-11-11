@@ -149,6 +149,11 @@ bootstrap:
         cron: "30 4 * * *"
         timeoutMs: 14400000
         command: bun scripts/daily-ai-news.ts generate --full
+      # Morning runs stay draft-only (ADR-022: live is launch-only) — podcast-pub items land
+      # microfeed-unpublished and are invisible on podcast.salty.vip until go-live. Operator
+      # routine mid-morning: `bun run daily-news:live` then approve the send-confirm pause with
+      # `spur workflow continue` (surfdash publishes publicly in draft, podcast does not —
+      # 2026-11-10 lesson: the episode stayed hidden all day).
 
       # 07:00 daily: the publish3 `overseas-rss` window (design kk-daily-ai-voice3 §5a) — X/Threads
       # overseas targets behind the podcast RSS gate, the first of the two scheduled windows to ship

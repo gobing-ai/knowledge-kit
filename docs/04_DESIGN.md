@@ -1112,6 +1112,10 @@ bun run daily-news:generate -- --full             # the 04:30 scheduled posture:
                                                   # per-dispatch overrides still win (parseArgs last-wins)
 bun run daily-news:publish                        # valid today's bundle -> after-generate
 bun run daily-news:publish -- --window overseas-rss --unattended  # the 07:00 scheduled posture: receipt-gated regen, no prompts
+bun run daily-news:live                           # operator go-live (2026-11-11): after-generate with surfdash+podcast live;
+                                                  # pauses at send-confirm — approve with `spur workflow continue`. Unattended
+                                                  # morning runs stay draft-only (ADR-022: live is launch-only), so podcast-pub
+                                                  # items stay microfeed-unpublished until this runs — the 11-10 root cause.
 bun run daily-news:validate                       # quick: required files + dated bundle/variants only
 bun run daily-news:validate -- --mode full         # live read-only diagnosis + offline voice3 dogfood
 bun run daily-news:validate -- --mode full --skip-dogfood  # full diagnosis without dogfood
