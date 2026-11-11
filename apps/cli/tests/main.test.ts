@@ -81,6 +81,7 @@ describe('kk main exit seam', () => {
                 'schedule',
                 'stage',
                 'store',
+                'wiki',
             ]);
         }
     });
@@ -233,6 +234,18 @@ describe('kk command tree shape (0275 AC1 — A22 R1)', () => {
             'store release',
             'store select',
             'store stats',
+            'wiki compile',
+            'wiki context',
+            'wiki gc',
+            'wiki ingest',
+            'wiki link',
+            'wiki lint',
+            'wiki merge',
+            'wiki publish',
+            'wiki query',
+            'wiki summarize',
+            'wiki sync',
+            'wiki synthesize',
         ]);
     });
 

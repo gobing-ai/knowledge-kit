@@ -1,0 +1,211 @@
+import { type Command, CommanderError } from 'commander';
+import { consoleOutput, toJson } from '../output';
+import { runIngest } from '../wiki/ingest';
+import { printLinkOutcome, runLink } from '../wiki/link';
+import { printLintOutcome, runLint } from '../wiki/lint';
+import { printMaintenanceOutcome, runCompile, runGc, runMerge } from '../wiki/maintenance';
+import { printRetrievalOutcome, runContext, runPublish, runQuery, runSync } from '../wiki/retrieval';
+import { printWriteOutcome, runSummarize, runSynthesize } from '../wiki/write-verbs';
+
+/** Options accepted by `kk wiki ingest`. */
+interface WikiIngestOptions {
+    type?: string;
+    out?: string;
+    json?: boolean;
+}
+
+/**
+ * `kk wiki ingest <source|-> [--type=url|pdf|html|rss] [--out <dir>] [--json]` (feature I1, task 0355).
+ *
+ * The verb normalises one file, URL or stdin body into a layer-1 raw snapshot. It never calls a
+ * model: html/pdf/url go through the markitdown normaliser, everything else is written as given.
+ */
+async function ingestAction(source: string, options: WikiIngestOptions): Promise<void> {
+    const outcome = await runIngest({ source, type: options.type, out: options.out, json: options.json });
+    if (outcome.ok) {
+        if (options.json === true) consoleOutput.write(toJson(outcome.payload));
+        else consoleOutput.write(`raw snapshot: ${outcome.payload.path}`);
+        return;
+    }
+    const message = `kk.wiki.ingest: ${outcome.payload.error}`;
+    if (options.json === true) consoleOutput.write(toJson({ ok: false, error: outcome.payload.error }));
+    consoleOutput.error(message);
+    throw new CommanderError(outcome.code, 'kk.wiki.ingest', message);
+}
+
+/** `kk wiki link [--fix]`: report unlinked mentions of page titles, or inject them. */
+async function linkAction(options: { fix?: boolean; json?: boolean }): Promise<void> {
+    const outcome = await runLink({ fix: options.fix === true, json: options.json === true });
+    printLinkOutcome(outcome, options.json === true);
+    if (!outcome.ok) throw new CommanderError(outcome.code, 'kk.wiki.link', 'kk.wiki.link failed');
+}
+
+/** `kk wiki lint`: audit the vault; exits 1 when findings exist. */
+async function lintAction(options: { json?: boolean }): Promise<void> {
+    const outcome = await runLint({ json: options.json === true });
+    printLintOutcome(outcome, options.json === true);
+    if (outcome.code !== 0) throw new CommanderError(outcome.code, 'kk.wiki.lint', 'kk.wiki.lint findings');
+}
+
+/** `kk wiki summarize <file> --from <-|path>`: place authored text into a summary section. */
+async function summarizeAction(target: string, options: { from: string; json?: boolean }): Promise<void> {
+    const outcome = await runSummarize({ target, from: options.from, json: options.json === true });
+    printWriteOutcome(outcome, options.json === true);
+    if (!outcome.ok) throw new CommanderError(outcome.code, 'kk.wiki.summarize', 'kk.wiki.summarize failed');
+}
+
+/** `kk wiki synthesize <topic|file> --from <-|path>`: create or extend a page from authored text. */
+async function synthesizeAction(
+    target: string,
+    options: { from: string; type?: string; json?: boolean },
+): Promise<void> {
+    const outcome = await runSynthesize({
+        target,
+        from: options.from,
+        type: options.type,
+        json: options.json === true,
+    });
+    printWriteOutcome(outcome, options.json === true);
+    if (!outcome.ok) throw new CommanderError(outcome.code, 'kk.wiki.synthesize', 'kk.wiki.synthesize failed');
+}
+
+/** `kk wiki merge <source> <target>`. */
+async function mergeAction(source: string, target: string, options: { json?: boolean }): Promise<void> {
+    const outcome = await runMerge({ from: source, to: target, json: options.json === true });
+    printMaintenanceOutcome(outcome, options.json === true);
+    if (!outcome.ok) throw new CommanderError(outcome.code, 'kk.wiki.merge', 'kk.wiki.merge failed');
+}
+
+/** `kk wiki compile`. */
+async function compileAction(options: { json?: boolean }): Promise<void> {
+    const outcome = await runCompile({ json: options.json === true });
+    printMaintenanceOutcome(outcome, options.json === true);
+    if (!outcome.ok) throw new CommanderError(outcome.code, 'kk.wiki.compile', 'kk.wiki.compile failed');
+}
+
+/** `kk wiki gc [--yes]`. */
+async function gcAction(options: { yes?: boolean; json?: boolean }): Promise<void> {
+    const outcome = await runGc({ yes: options.yes === true, json: options.json === true });
+    printMaintenanceOutcome(outcome, options.json === true);
+    if (!outcome.ok) throw new CommanderError(outcome.code, 'kk.wiki.gc', 'kk.wiki.gc failed');
+}
+
+/** `kk wiki publish --target <dir>`. */
+async function publishAction(options: { target: string; json?: boolean }): Promise<void> {
+    const outcome = await runPublish({ value: options.target, json: options.json === true });
+    printRetrievalOutcome(outcome, options.json === true);
+    if (!outcome.ok) throw new CommanderError(outcome.code, 'kk.wiki.publish', 'kk.wiki.publish failed');
+}
+
+/** `kk wiki sync <remote> [--dry-run]`. */
+async function syncAction(remote: string, options: { dryRun?: boolean; json?: boolean }): Promise<void> {
+    const outcome = await runSync({ value: remote, dryRun: options.dryRun === true, json: options.json === true });
+    printRetrievalOutcome(outcome, options.json === true);
+    if (!outcome.ok) throw new CommanderError(outcome.code, 'kk.wiki.sync', 'kk.wiki.sync failed');
+}
+
+/** `kk wiki query <prompt>`. */
+async function queryAction(prompt: string, options: { limit?: string; json?: boolean }): Promise<void> {
+    const outcome = await runQuery({
+        value: prompt,
+        limit: options.limit === undefined ? undefined : Number(options.limit),
+        json: options.json === true,
+    });
+    printRetrievalOutcome(outcome, options.json === true);
+    if (!outcome.ok) throw new CommanderError(outcome.code, 'kk.wiki.query', 'kk.wiki.query failed');
+}
+
+/** `kk wiki context <topic>`. */
+async function contextAction(topic: string, options: { depth?: string; json?: boolean }): Promise<void> {
+    const outcome = await runContext({
+        value: topic,
+        depth: options.depth === undefined ? undefined : Number(options.depth),
+        json: options.json === true,
+    });
+    printRetrievalOutcome(outcome, options.json === true);
+    if (!outcome.ok) throw new CommanderError(outcome.code, 'kk.wiki.context', 'kk.wiki.context failed');
+}
+
+/** Register the `wiki` noun. One subcommand module per verb (docs/design/kk-wiki.md §1). */
+export function registerWikiCommand(parent: Command): void {
+    const wiki = parent.command('wiki').description('Deterministic Markdown vault mechanics (ADR-048)');
+
+    wiki.command('ingest')
+        .description('Normalise a file, URL or stdin body into a layer-1 raw snapshot')
+        .argument('<source>', 'File path, http(s) URL, or - for stdin')
+        .option('--type <type>', 'Source type: url | pdf | html | rss (default: from the extension)')
+        .option('--out <dir>', 'Raw directory override (default: wiki.raw from kk.config.json)')
+        .option('--json', 'Print one JSON document instead of a one-line summary')
+        .action(ingestAction);
+
+    wiki.command('link')
+        .description('Report unlinked mentions of existing page titles; --fix injects them')
+        .option('--fix', 'Rewrite the reported mentions to [[slug|Surface]]')
+        .option('--json', 'Print one JSON document')
+        .action(linkAction);
+
+    wiki.command('summarize')
+        .description('Place authored summary text into a page and link the references it mentions')
+        .argument('<target>', 'Vault-relative page path, e.g. concepts/vector-index.md')
+        .requiredOption('--from <source>', 'Text source: - for stdin, or a file path')
+        .option('--json', 'Print one JSON document')
+        .action(summarizeAction);
+
+    wiki.command('synthesize')
+        .description('Create a page for a new topic, or extend an existing page, from authored text')
+        .argument('<target>', 'Topic title or vault-relative page path')
+        .requiredOption('--from <source>', 'Text source: - for stdin, or a file path')
+        .option('--type <pageType>', 'Page class for a created page: concept | entity | source | index')
+        .option('--json', 'Print one JSON document')
+        .action(synthesizeAction);
+
+    wiki.command('merge')
+        .description('Merge a source page into a target page, leaving a redirect and rewriting inbound links')
+        .argument('<source>', 'Page path or slug to absorb')
+        .argument('<target>', 'Page path or slug to survive')
+        .option('--json', 'Print one JSON document')
+        .action(mergeAction);
+
+    wiki.command('compile')
+        .description('Regenerate content/index.md and content/MAP.md from the vault structure')
+        .option('--json', 'Print one JSON document')
+        .action(compileAction);
+
+    wiki.command('gc')
+        .description('Reclaim unreferenced raw snapshots; prints the plan unless --yes is passed')
+        .option('--yes', 'Delete the planned files')
+        .option('--json', 'Print one JSON document')
+        .action(gcAction);
+
+    wiki.command('publish')
+        .description('Project content/ into a Quartz-compatible tree at --target')
+        .requiredOption('--target <dir>', 'Destination directory (the published tree lands under <dir>/content)')
+        .option('--json', 'Print one JSON document')
+        .action(publishAction);
+
+    wiki.command('sync')
+        .description('Resolve a configured remote into its command; --dry-run transfers nothing')
+        .argument('<remote>', 'Remote name declared in kk.config.json wiki.remotes')
+        .option('--dry-run', 'Print the resolved command without transferring')
+        .option('--json', 'Print one JSON document')
+        .action(syncAction);
+
+    wiki.command('query')
+        .description('Rank vault pages against a prompt and print their paths')
+        .argument('<prompt>', 'Search prompt')
+        .option('--limit <n>', 'Maximum hits (default 10)')
+        .option('--json', 'Print one JSON document')
+        .action(queryAction);
+
+    wiki.command('context')
+        .description('Pack the topic page and its graph neighbours into one Markdown block')
+        .argument('<topic>', 'Topic title or slug')
+        .option('--depth <n>', 'Neighbour depth (default 1)')
+        .option('--json', 'Print one JSON document')
+        .action(contextAction);
+
+    wiki.command('lint')
+        .description('Audit the vault for broken links, orphan pages and frontmatter defects')
+        .option('--json', 'Print one JSON document')
+        .action(lintAction);
+}

@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.43.0
+version: 1.45.0
 created_at: 2026-05-28
-updated_at: 2026-11-04
+updated_at: 2026-11-10
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -1701,3 +1701,40 @@ typography achieves both rich visual context and reliable typography.
 
 **Detail:** Feature L2; `docs/design/daily-news-podcast-cover.md`.
 
+---
+
+## ADR-047: the vault config splits project file from global file
+
+**Status:** Accepted · **Date:** 2026-11-10 · **Feature:** I1 (task 0355)
+
+**Decision.** Vault paths, defaults, mirror dirs and remote definitions live in a project-level
+`kk.config.json` at the vault root, owned by `apps/cli/src/wiki/config.ts`; the existing global
+`~/.config/kk/config.yaml` keeps owning channels, presets and credentials. Precedence inside the
+project file's keys is flag → `KK_WIKI_*` → `kk.config.json` → built-in default. The resolver never
+creates or rewrites either file and fails naming an unsupported declared key.
+
+**Why.** A vault is a directory the operator moves between machines and commits to its own
+repository, while channel credentials are per-machine; folding both into one file makes either the
+vault machine-bound or the credentials publishable.
+
+**Detail:** `docs/design/kk-wiki.md` §5; resolver `apps/cli/src/wiki/config.ts`.
+
+---
+
+## ADR-048: `kk wiki` is a model-free vault package behind a CLI noun
+
+**Status:** Accepted (design) · **Date:** 2026-11-10 · **Feature:** I1
+
+**Decision.** A new workspace package `packages/kk-wiki` (`@gobing-ai/kk-wiki`) owns every
+deterministic wiki mechanic — page model and frontmatter schema, `[[wikilink]]` graph, link/lint,
+merge with redirect, `index.md`/`MAP.md` compilation, gc, the `user_edited` append-only guard, the
+raw snapshot writer and the Quartz-compatible publish projection. `apps/cli/src/commands/wiki.ts`
+exposes them as the `kk wiki <verb>` noun. Model-bearing authoring (`summarize`, `synthesize`,
+`query`) stays in a `plugins/kk` skill that hands text to those verbs: the package never calls a
+model, and the CLI never imports the executor, browser or store.
+
+**Why.** The vault has to stay plain Markdown that a human edits and Quartz publishes, so its
+mechanics must be testable without a provider and the user-edit guard must be enforced in code
+rather than requested in a prompt.
+
+**Detail:** `docs/design/kk-wiki.md`; §Module boundaries and "kk wiki vault" in `docs/03_ARCHITECTURE.md`.

@@ -10,6 +10,7 @@ import { registerPluginCommand } from './commands/plugin';
 import { registerScheduleCommand } from './commands/schedule';
 import { registerStageCommand } from './commands/stage';
 import { registerStoreCommand } from './commands/store';
+import { registerWikiCommand } from './commands/wiki';
 import { CLI_CONFIG } from './config';
 
 /**
@@ -37,6 +38,7 @@ export function createProgram(): Command {
     registerScheduleCommand(program);
     registerStageCommand(program);
     registerStoreCommand(program);
+    registerWikiCommand(program);
 
     return program;
 }
