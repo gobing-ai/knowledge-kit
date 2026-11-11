@@ -4,7 +4,7 @@ name: kk wiki noun foundation, config and raw ingest
 status: done
 template: feature-impl
 created_at: 2026-11-10T19:11:03.849Z
-updated_at: "2026-11-10T22:55:06.882Z"
+updated_at: "2026-11-11T01:40:58.852Z"
 feature_id: I1
 priority: P1
 tags:
@@ -178,13 +178,13 @@ Each entry cites the first changed line per file (`file:line`).
 ### Review
 
 **Scope.** Task 0350 — `@gobing-ai/kk-wiki` package skeleton, vault config resolver, `kk wiki ingest`.
-Traceability: 9/9 Requirements MET, 5/5 feature ACs MET; per-requirement evidence is in the review
-answer artifact and captured as `.spur/run/0350-verdict.json` (verdict PASS). The project gate is PASS
-on this tree (`.spur/run/0350-check-receipt.json`).
+Traceability: 9/9 Requirements MET, 5/5 feature ACs MET; per-requirement evidence is captured in
+`.spur/memory/evidence/0350-verdict.json` (verdict PASS). The project gate ran green on this tree
+(receipt is a disposable run-scoped artifact).
 
 | Priority | Location | Finding | Disposition |
 | --- | --- | --- | --- |
-| P4 | `docs/design/kk-wiki.md:41` | The satellite's `ingest` row still described the verb as unbuilt and credited text extraction to the skill | FIXED |
+| P4 | `docs/design/kk-wiki.md` | The satellite's `ingest` row still described the verb as unbuilt | FIXED |
 
 Confidence: HIGH
 

@@ -95,7 +95,7 @@
     └── [active] **G9**: kk-smart-seo: evidence-grounded SEO and GEO audits ([G9_kk-smart-seo-evidence-grounded-seo-and-geo-audits.md](./G9_kk-smart-seo-evidence-grounded-seo-and-geo-audits.md))
 [cancelled] **H**: Real STORM generator and wt generator harvest ([H_real-storm-generator-and-wt-generator-harvest.md](./H_real-storm-generator-and-wt-generator-harvest.md))
 [backlog] **I**: LLM wiki ([I_llm-wiki.md](./I_llm-wiki.md))
-    └── [active] **I1**: kk wiki vault CLI ([I1_kk-wiki-vault-cli.md](./I1_kk-wiki-vault-cli.md))
+    └── [done] **I1**: kk wiki vault CLI ([I1_kk-wiki-vault-cli.md](./I1_kk-wiki-vault-cli.md))
 [done] **J**: Reposition knowledge-kit as an ingest-create-publish platform (wayfinder map) ([J_reposition-knowledge-kit-as-an-ingest-create-publish-platform-wayfinder-map.md](./J_reposition-knowledge-kit-as-an-ingest-create-publish-platform-wayfinder-map.md))
 [done] **K**: kk image pipeline — migrate wt image skills to a TypeScript generator plugin (wayfinder map) ([K_kk-image-pipeline-migrate-wt-image-skills-to-a-typescript-generator-plugin-wayfinder-map.md](./K_kk-image-pipeline-migrate-wt-image-skills-to-a-typescript-generator-plugin-wayfinder-map.md))
     └── [done] **K1**: image-gen preset sample gallery README ([K1_image-gen-preset-sample-gallery-readme.md](./K1_image-gen-preset-sample-gallery-readme.md))

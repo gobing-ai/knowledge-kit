@@ -4,7 +4,7 @@ name: Vault page model, wikilink graph, link and lint
 status: done
 template: feature-impl
 created_at: 2026-11-10T19:11:03.854Z
-updated_at: "2026-11-10T23:21:21.646Z"
+updated_at: "2026-11-11T01:40:59.068Z"
 feature_id: I1
 priority: P1
 tags:
@@ -166,8 +166,8 @@ Each entry cites the first changed line per file (`file:line`).
 
 **Scope.** Task 0351 — vault index and wikilink graph, lint, the single-page write guard, mention
 detection, `kk wiki link` and `kk wiki lint`. Traceability: 8/8 Requirements MET, 4/4 feature ACs MET;
-evidence per row in `.spur/run/b1485866-4836-43f5-ac03-af6fccd8b10d-review-answer.txt`, captured as
-`.spur/run/0351-verdict.json` (PASS). Project gate PASS on this tree (`.spur/run/0351-check-receipt.json`).
+evidence per row is captured in `.spur/memory/evidence/0351-verdict.json` (PASS). The project gate ran
+green on this tree (receipt is a disposable run-scoped artifact).
 
 | Priority | Location | Finding | Disposition |
 | --- | --- | --- | --- |
