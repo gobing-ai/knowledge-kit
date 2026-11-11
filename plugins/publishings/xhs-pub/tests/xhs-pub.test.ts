@@ -15,6 +15,7 @@ import {
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { runInvoke } from '../../../../apps/cli/src/invoke';
 import { type AutomationGuard, CAP_WINDOW_MS, createAutomationGuard } from '../src/automation-guard';
+import { derivePodcastBody } from '../src/flow';
 import {
     CREATOR_TAB_COUNT,
     clickCreatorTab,
@@ -122,6 +123,24 @@ interface FakeState {
     thumbLocalSrcs: boolean;
     /** When set, the visible `xhs-publish-btn` host exposes this save method (the closed-shadow bar). */
     hostSaveMethod: string | null;
+    /** The last title filled into the editor (the counter/verify reads report it back). */
+    editorTitle: string | null;
+    /** Units the editor's body counter reports after the last typed body (2 half-width chars = 1). */
+    editorBodyUnits: number | null;
+    /** A scripted server response the capture layer reports (risk-control / biz-error scripting). */
+    serverCapture: { source: string; text: string } | null;
+    /** Scripted platform-counter reads; null derives from the editor state. */
+    counterTitleOverride: string | null;
+    counterBodyOverride: string | null;
+    /** verifyDraft scripting: the reopened draft disagrees with the composed content. */
+    verifyTitleMismatch: boolean;
+    verifySlotCount: number | null;
+    verifyLocalSrcs: boolean;
+    verifyBodyEmpty: boolean;
+    verifyCollectionMissing: boolean;
+    /** verifyDraft scripting: the draft box / its 编辑 control is unreachable. */
+    draftNavMissing: boolean;
+    draftEditMissing: boolean;
 }
 
 /** Labels XHS uses for the draft control, inside the closed shadow publish bar. */
@@ -186,7 +205,9 @@ function makeFakePage(initial: FakeState) {
         if (isLegacyThumb(selector)) return false;
         if (isEditor(selector)) return state.inEditor || state.articleOpen;
         if (isStamp(selector)) return selector === `text=${savedStamp}`;
-        if (isDraftBox(selector)) return counterAttached();
+        if (isDraftBox(selector))
+            return state.loggedIn && !state.draftNavMissing && (counterAttached() || savedStamp !== null);
+        if (selector === 'text=编辑') return state.loggedIn && !state.draftEditMissing;
         if (isTextProbe(selector)) return toastFound(selector);
         if (isModal(selector)) return state.podcastModal;
         // `去发布` enables only once both cards register; the disabled-state probe matches nothing
@@ -236,6 +257,9 @@ function makeFakePage(initial: FakeState) {
                             : null,
                     fill: async (text) => {
                         calls.push({ op: 'fill', args: [selector, text] });
+                        // The title input's value is what the counter/verify reads report back
+                        // (`input.d-text` is the podcast editor's title probe hit).
+                        if (selector.includes('标题') || selector === 'input.d-text') state.editorTitle = text;
                     },
                     click: async () => {
                         calls.push({ op: 'click', args: [selector] });
@@ -249,8 +273,12 @@ function makeFakePage(initial: FakeState) {
                     },
                     type: async (text) => {
                         calls.push({ op: 'type', args: [selector, text] });
-                        // TipTap only registers typed content in this model.
-                        if (selector.includes('tiptap')) bodyTyped = true;
+                        // TipTap only registers typed content in this model; the units echo is
+                        // what the platform-counter probe reports back.
+                        if (selector.includes('tiptap')) {
+                            bodyTyped = true;
+                            state.editorBodyUnits = Math.max(1, Math.ceil(text.length / 2));
+                        }
                     },
                     textContent: async () => (isDraftBox(selector) ? draftBoxText() : ''),
                 }),
@@ -288,6 +316,41 @@ function makeFakePage(initial: FakeState) {
         },
         evaluate: async (expression) => {
             calls.push({ op: 'evaluate', args: [] });
+            // Task 0350: the flow's own read-back probes, dispatched by their sentinel markers.
+            if (expression.includes('kk-capture-inject')) return 'kk-capture-armed';
+            if (expression.includes('kk-capture-read')) {
+                return state.serverCapture === null ? 'kk-capture-none' : JSON.stringify(state.serverCapture);
+            }
+            if (expression.includes('kk-counter-title')) {
+                if (state.counterTitleOverride !== null) return state.counterTitleOverride;
+                return state.editorTitle === null ? 'kk-counter-none' : `${Math.ceil(state.editorTitle.length / 2)}/20`;
+            }
+            if (expression.includes('kk-counter-body')) {
+                if (state.counterBodyOverride !== null) return state.counterBodyOverride;
+                return state.editorBodyUnits === null ? 'kk-counter-none' : `${state.editorBodyUnits}/1000`;
+            }
+            if (expression.includes('kk-verify-slots')) {
+                return JSON.stringify({ count: state.verifySlotCount ?? state.thumbCount ?? 0 });
+            }
+            if (expression.includes('kk-verify-srcs')) {
+                return JSON.stringify(
+                    state.thumbLocalSrcs || state.verifyLocalSrcs
+                        ? ['blob:local']
+                        : Array.from({ length: state.thumbCount ?? 0 }, () => 'https://sns-img.qhupdate.com/x'),
+                );
+            }
+            if (expression.includes('kk-verify-title')) {
+                return state.verifyTitleMismatch ? '别的标题' : (state.editorTitle ?? '');
+            }
+            if (expression.includes('kk-verify-body')) {
+                if (state.verifyBodyEmpty) return JSON.stringify({ textLen: 0 });
+                return state.editorBodyUnits !== null
+                    ? JSON.stringify({ counter: `${state.editorBodyUnits}/1000` })
+                    : JSON.stringify({ textLen: state.articlePasted ? 4 : 0 });
+            }
+            if (expression.includes('kk-verify-collection')) {
+                return state.verifyCollectionMissing ? 'kk-verify-collection:no' : 'kk-verify-collection:yes';
+            }
             if (expression.includes('kk-count-local-srcs')) return state.thumbLocalSrcs ? 1 : 0;
             if (expression.includes('kk-thumb-')) {
                 const expected = Number(/imgs\.length < (\d+)/.exec(expression)?.[1] ?? 0);
@@ -404,6 +467,18 @@ const happy: FakeState = {
     podcastCoverAttached: false,
     thumbLocalSrcs: false,
     hostSaveMethod: null,
+    editorTitle: null,
+    editorBodyUnits: null,
+    serverCapture: null,
+    counterTitleOverride: null,
+    counterBodyOverride: null,
+    verifyTitleMismatch: false,
+    verifySlotCount: null,
+    verifyLocalSrcs: false,
+    verifyBodyEmpty: false,
+    verifyCollectionMissing: false,
+    draftNavMissing: false,
+    draftEditMissing: false,
 };
 
 describe('xhs-pub validation (no browser opens)', () => {
@@ -2884,5 +2959,192 @@ describe('xhs-pub profile-check `open` verb (0277, operator-interactive)', () =>
             restore();
             rmSync(dir, { recursive: true, force: true });
         }
+    });
+});
+
+describe('task 0350 — layered capture, counter gate, reopen verify, podcast fields (R1-R4)', () => {
+    const draftRun = async (state: Partial<FakeState>, over: Partial<Content> = {}) => {
+        await seedImages();
+        const { open, calls } = makeOpenPage({ ...happy, ...state });
+        const t = makeTransport('script', {
+            openPage: open,
+            stepTimeoutMs: 400,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+            submitAttempts: 2,
+        });
+        const result = await t.publish({ content: cardContent(over), options: { operation: '上传图文' } });
+        return { result, log: calls[0] ?? [] };
+    };
+
+    const publicRun = async (state: Partial<FakeState>) => {
+        await seedImages();
+        const { open } = makeOpenPage({ ...happy, ...state });
+        const t = makeTransport('script', {
+            openPage: open,
+            stepTimeoutMs: 400,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+        });
+        return t.publish({ content: cardContent({ publishStatus: 'public' }) });
+    };
+
+    const podcastRun = async (state: Partial<FakeState>, metaOver: Record<string, unknown> = {}) => {
+        await seedMedia();
+        const { open, calls } = makeOpenPage({ ...happy, ...state });
+        const t = makeTransport('script', {
+            openPage: open,
+            stepTimeoutMs: 400,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+            submitAttempts: 2,
+        });
+        const result = await t.publish({
+            content: modeContent({ audio: { path: audio }, coverImage: cover, ...metaOver }),
+            options: { operation: '发播客' },
+        });
+        return { result, log: calls[0] ?? [] };
+    };
+
+    test('R1: a captured -913x response aborts with AccountRiskControlError, not a save retry', async () => {
+        const { result } = await draftRun({
+            serverCapture: { source: 'xhr', text: 'HTTPBizError: {"code":-91301,"msg":"禁止发笔记，请遵守社区规范"}' },
+        });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('AccountRiskControlError');
+        expect(result.error).toContain('not retryable');
+    });
+
+    test('R1: a captured platform biz error aborts with PublishError', async () => {
+        const { result } = await draftRun({
+            serverCapture: { source: 'fetch', text: 'HTTPBizError: {"code":-300,"msg":"操作频繁"}' },
+        });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('PublishError');
+        expect(result.error).toContain('platform error');
+    });
+
+    test('R1: a captured ok response (note_id) lands in the Result metadata', async () => {
+        const { result } = await draftRun({
+            serverCapture: { source: 'xhr', text: '{"code":0,"success":true,"data":{"note_id":"abc123"}}' },
+        });
+        expect(result.ok).toBe(true);
+        expect(result.metadata?.serverCapture).toEqual({ source: 'xhr', verdict: 'ok', code: '0', noteId: 'abc123' });
+    });
+
+    test('R1: the publish path aborts on a captured refusal even before the URL marker is checked', async () => {
+        const result = await publicRun({
+            serverCapture: { source: 'xhr', text: '{"code":-91301,"msg":"禁止发笔记"}' },
+        });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('AccountRiskControlError');
+    });
+
+    test('R2: a readable over-limit title counter throws TitleTooLongError before any save click', async () => {
+        const { result, log } = await draftRun({ counterTitleOverride: '23/20' });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('TitleTooLongError');
+        expect(result.error).toContain('counter reads');
+        expect(log.filter((entry) => entry.op === 'clickAt').length).toBe(0);
+    });
+
+    test('R2: a readable over-limit body counter throws ContentTooLongError', async () => {
+        const { result } = await draftRun({ counterBodyOverride: '1001/1000' });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('ContentTooLongError');
+    });
+
+    test('R2: a counter that does not read N/M is ignored, not fatal', async () => {
+        const { result } = await draftRun({ counterTitleOverride: '无法读取' });
+        expect(result.ok).toBe(true);
+    });
+
+    test('R3: a draft whose reopened slots disagree fails verification by name', async () => {
+        const { result } = await draftRun({ verifySlotCount: 1 });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('DraftVerifyError');
+        expect(result.error).toContain('expected 2 thumbnails');
+    });
+
+    test('R3: blob-only thumbnails on the reopened draft fail verification', async () => {
+        const { result } = await draftRun({ verifyLocalSrcs: true });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('non-https');
+    });
+
+    test('R3: a title that did not persist fails verification', async () => {
+        const { result } = await draftRun({ verifyTitleMismatch: true });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('title mismatch');
+    });
+
+    test('R3: an empty reopened body fails verification', async () => {
+        const { result } = await draftRun({ verifyBodyEmpty: true });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('neither');
+    });
+
+    test('R3: a missing collection membership on the podcast draft fails verification', async () => {
+        const { result } = await podcastRun({ verifyCollectionMissing: true });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('collection');
+    });
+
+    test('R3: a missing draft box entry fails verification loudly', async () => {
+        const { result } = await draftRun({ draftNavMissing: true });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('could not reopen');
+    });
+
+    test('R3: a draft list without an 编辑 control fails verification loudly', async () => {
+        const { result } = await draftRun({ draftEditMissing: true });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('shows no');
+    });
+
+    test('R4: the podcast note titles the editor, derives a bounded body, and joins the 合集', async () => {
+        const { result, log } = await podcastRun({});
+        expect(result.ok).toBe(true);
+        const fills = log.filter((entry) => entry.op === 'fill' && String(entry.args[0]).includes('input.d-text'));
+        expect(fills.length).toBeGreaterThan(0);
+        expect(fills[0]?.args[1]).toBe('模式标题');
+        const types = log.filter((entry) => entry.op === 'type');
+        expect((types[0]?.args[1] as string | undefined)?.length).toBeLessThanOrEqual(1000);
+        const chip = log.filter((entry) => entry.op === 'click' && String(entry.args[0]).includes('加入播客合集'));
+        expect(chip.length).toBeGreaterThan(0);
+        expect((result.metadata?.draftVerified as Record<string, unknown>)?.collection).toBe('咸话咸说之每日AI乱炖');
+    });
+
+    test('R4: a custom 合集 in content metadata wins over the default show collection', async () => {
+        const { result } = await podcastRun({}, { collection: '我的合集' });
+        expect(result.ok).toBe(true);
+        expect((result.metadata?.draftVerified as Record<string, unknown>)?.collection).toBe('我的合集');
+    });
+
+    test('R4: derivePodcastBody caps the raw article at the body limit and keeps intro/closing', () => {
+        const article = ['开头段']
+            .concat(
+                Array.from({ length: 40 }, (_, i) => `## 标题${i} 一些正文内容放在这里`),
+                ['结尾段'],
+            )
+            .join('\n');
+        const out = derivePodcastBody({ title: 'T', body: article, format: 'markdown' } as Content);
+        expect(out.length).toBeLessThanOrEqual(1000);
+        expect(out.startsWith('开头段')).toBe(true);
+        expect(out.endsWith('结尾段')).toBe(true);
+    });
+
+    test('R4: derivePodcastBody drops headlines first when the budget runs out', () => {
+        const out = derivePodcastBody({
+            title: 'T',
+            body: '开头\n' + Array.from({ length: 200 }, (_, i) => `## 很长的标题${i}`).join('\n'),
+            format: 'markdown',
+        } as Content);
+        expect(out.length).toBeLessThanOrEqual(1000);
+    });
+
+    test('R4: an empty body derives from the title', () => {
+        const out = derivePodcastBody({ title: '只有标题', body: '', format: 'markdown' } as Content);
+        expect(out).toBe('只有标题');
     });
 });
