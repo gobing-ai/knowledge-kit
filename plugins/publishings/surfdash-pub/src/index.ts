@@ -523,7 +523,7 @@ export async function runDailyTopicsSync(surfdashRoot: string, zhPostPath: strin
     const before = await spawnCli(['git', 'status', '--porcelain', '--', ...DAILY_TOPICS_GIT_PATHS], surfdashRoot);
     const beforePaths = new Set(parsePorcelainPaths(before.stdout));
     try {
-        upsertDailyTopicsEntry(mapPath, slug, built.entry);
+        await upsertDailyTopicsEntry(mapPath, slug, built.entry);
     } catch (error: unknown) {
         return {
             ok: false,
