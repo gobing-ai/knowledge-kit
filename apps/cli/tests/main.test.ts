@@ -237,6 +237,8 @@ describe('kk command tree shape (0275 AC1 — A22 R1)', () => {
             'wiki ingest',
             'wiki link',
             'wiki lint',
+            'wiki summarize',
+            'wiki synthesize',
         ]);
     });
 

@@ -163,9 +163,9 @@ function checkRequires(list: Entity[]): string[] {
 }
 
 describe('runtime-requires (task 0342 / feature F81 R1, R2, R3)', () => {
-    test('19 kk entities are collected (15 skills, 4 commands)', () => {
-        expect(entities.length).toBe(19);
-        expect(byPath.size).toBe(19);
+    test('20 kk entities are collected (16 skills, 4 commands)', () => {
+        expect(entities.length).toBe(20);
+        expect(byPath.size).toBe(20);
     });
 
     test('AC1: every entity declares a valid, sorted, de-duplicated requires list equal to the derived closure', () => {
@@ -176,7 +176,7 @@ describe('runtime-requires (task 0342 / feature F81 R1, R2, R3)', () => {
         }
     });
 
-    test('AC3: the group snapshot matches the 2026-11-09 frozen table (9/5/0/5)', () => {
+    test('AC3: the group snapshot matches the 2026-11-10 frozen table (9/6/0/5)', () => {
         const groups: Record<string, number> = {};
         for (const entity of entities) {
             const key = [...deriveRequires(entity.path)].sort().join(',');
@@ -184,7 +184,7 @@ describe('runtime-requires (task 0342 / feature F81 R1, R2, R3)', () => {
         }
         expect(groups).toEqual({
             'cli:kk,cli:spur,local-fs': 9,
-            'cli:kk,local-fs': 5,
+            'cli:kk,local-fs': 6,
             'local-fs': 5,
         });
         // No kk entity may claim hooks or subagents (kk ships none).

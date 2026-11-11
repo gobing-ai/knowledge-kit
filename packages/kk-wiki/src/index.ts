@@ -8,7 +8,7 @@ export {
     type VaultIndex,
     type VaultPageEntry,
 } from './graph';
-export { findMentions, fixLinks, type LinkFixResult, type Mention } from './link';
+export { findMentions, fixLinks, type LinkFixResult, linkTitlesInText, type Mention } from './link';
 export { lintExitCode, lintPages } from './lint';
 export {
     createMarkitdownRunner,
@@ -42,6 +42,8 @@ export {
     type WriteRawSnapshotInput,
     writeRawSnapshot,
 } from './raw';
+export { SUMMARY_HEADING, type SummarizeResult, summarizePage } from './summarize';
+export { type SynthesizeInput, type SynthesizeResult, synthesizePage } from './synthesize';
 export {
     applyWrite,
     applyWriteToPage,

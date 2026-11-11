@@ -113,3 +113,22 @@ export async function fixLinks(
     }
     return { changed, refused, mentions };
 }
+
+/**
+ * Link the first occurrence of each existing page title inside arbitrary text.
+ *
+ * Used by the write verbs (`summarize`, `synthesize`) so agent-authored prose enters the vault
+ * already wired into the graph, without a second mention pass.
+ */
+export function linkTitlesInText(index: VaultIndex, text: string): string {
+    let linked = text;
+    const titles = index.pages
+        .map((page) => ({ slug: page.slug, title: page.frontmatter.title.trim() }))
+        .filter((entry) => entry.title.length >= 3)
+        .sort((a, b) => b.title.length - a.title.length);
+    for (const { slug, title } of titles) {
+        const pattern = new RegExp(`(?<![\\w\\[|])${escapeRegExp(title)}(?![\\w\\]])`, 'i');
+        linked = linked.replace(pattern, `[[${slug}|${title}]]`);
+    }
+    return linked;
+}

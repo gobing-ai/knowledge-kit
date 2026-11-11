@@ -65,3 +65,25 @@ describe('guardHeading', () => {
         expect(guardHeading('2026-11-10')).toBe('## AI Updates (2026-11-10)');
     });
 });
+
+describe('applyWrite append mode on an unguarded page', () => {
+    it('adds the dated section without touching the body above it', () => {
+        const result = applyWrite(base, 'material', { mode: 'append', date: '2026-11-10' });
+        expect(result.guard).toBe('clean');
+        expect(result.body).toContain('Original prose.');
+        expect(result.body).toContain(guardHeading('2026-11-10'));
+    });
+
+    it('reuses the existing dated section when appending again', () => {
+        const once = applyWrite(base, 'first', { mode: 'append', date: '2026-11-10' });
+        const twice = applyWrite({ ...base, body: once.body }, 'second', { mode: 'append', date: '2026-11-10' });
+        expect(twice.body.split(guardHeading('2026-11-10'))).toHaveLength(2);
+        expect(twice.body).toContain('first');
+        expect(twice.body).toContain('second');
+    });
+
+    it('trailing blank lines collapse so repeated appends stay stable', () => {
+        const once = applyWrite(base, 'first\n\n', { mode: 'append', date: '2026-11-10' });
+        expect(once.body.includes('\n\n\n')).toBe(false);
+    });
+});

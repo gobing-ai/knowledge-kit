@@ -3,6 +3,7 @@ import { consoleOutput, toJson } from '../output';
 import { runIngest } from '../wiki/ingest';
 import { printLinkOutcome, runLink } from '../wiki/link';
 import { printLintOutcome, runLint } from '../wiki/lint';
+import { printWriteOutcome, runSummarize, runSynthesize } from '../wiki/write-verbs';
 
 /** Options accepted by `kk wiki ingest`. */
 interface WikiIngestOptions {
@@ -44,6 +45,28 @@ async function lintAction(options: { json?: boolean }): Promise<void> {
     if (outcome.code !== 0) throw new CommanderError(outcome.code, 'kk.wiki.lint', 'kk.wiki.lint findings');
 }
 
+/** `kk wiki summarize <file> --from <-|path>`: place authored text into a summary section. */
+async function summarizeAction(target: string, options: { from: string; json?: boolean }): Promise<void> {
+    const outcome = await runSummarize({ target, from: options.from, json: options.json === true });
+    printWriteOutcome(outcome, options.json === true);
+    if (!outcome.ok) throw new CommanderError(outcome.code, 'kk.wiki.summarize', 'kk.wiki.summarize failed');
+}
+
+/** `kk wiki synthesize <topic|file> --from <-|path>`: create or extend a page from authored text. */
+async function synthesizeAction(
+    target: string,
+    options: { from: string; type?: string; json?: boolean },
+): Promise<void> {
+    const outcome = await runSynthesize({
+        target,
+        from: options.from,
+        type: options.type,
+        json: options.json === true,
+    });
+    printWriteOutcome(outcome, options.json === true);
+    if (!outcome.ok) throw new CommanderError(outcome.code, 'kk.wiki.synthesize', 'kk.wiki.synthesize failed');
+}
+
 /** Register the `wiki` noun. One subcommand module per verb (docs/design/kk-wiki.md §1). */
 export function registerWikiCommand(parent: Command): void {
     const wiki = parent.command('wiki').description('Deterministic Markdown vault mechanics (ADR-046)');
@@ -61,6 +84,21 @@ export function registerWikiCommand(parent: Command): void {
         .option('--fix', 'Rewrite the reported mentions to [[slug|Surface]]')
         .option('--json', 'Print one JSON document')
         .action(linkAction);
+
+    wiki.command('summarize')
+        .description('Place authored summary text into a page and link the references it mentions')
+        .argument('<target>', 'Vault-relative page path, e.g. concepts/vector-index.md')
+        .requiredOption('--from <source>', 'Text source: - for stdin, or a file path')
+        .option('--json', 'Print one JSON document')
+        .action(summarizeAction);
+
+    wiki.command('synthesize')
+        .description('Create a page for a new topic, or extend an existing page, from authored text')
+        .argument('<target>', 'Topic title or vault-relative page path')
+        .requiredOption('--from <source>', 'Text source: - for stdin, or a file path')
+        .option('--type <pageType>', 'Page class for a created page: concept | entity | source | index')
+        .option('--json', 'Print one JSON document')
+        .action(synthesizeAction);
 
     wiki.command('lint')
         .description('Audit the vault for broken links, orphan pages and frontmatter defects')

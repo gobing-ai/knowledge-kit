@@ -3,11 +3,11 @@ name: kk wiki vault
 doc: design/kk-wiki
 owns: "SHAPES — kk wiki verb signatures, vault frontmatter schema, config keys, publish projection"
 authority: derived
-version: 0.3.0
+version: 0.4.0
 created_at: 2026-11-10
 updated_at: 2026-11-10
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
-status: partial — `ingest` (0350), `link` and `lint` (0351) shipped; the remaining verbs are accepted design (I1, ADR-046)
+status: partial — `ingest` (0350), `link`/`lint` (0351), `summarize`/`synthesize` (0352) shipped; the remaining verbs are accepted design (I1, ADR-046)
 ---
 
 # kk wiki vault — design satellite
@@ -38,8 +38,8 @@ exits `0` on success / `1` on a handled failure / `2` on a usage error.
 | Verb | Signature | Deterministic behavior | Model-bearing? |
 | --- | --- | --- | --- |
 | `ingest` | `kk wiki ingest <source\|-> [--type=url\|pdf\|html\|rss] [--out <dir>] [--json]` | Writes `raw/<type>/<id>.md` with frontmatter; unknown extension without `--type` exits 2 naming the type; html/pdf/url go through the markitdown runner and exit 1 naming it when absent (**shipped, 0350**) | no |
-| `summarize` | `kk wiki summarize <file\|dir> [--section <name>] [--json]` | Renders the supplied summary text into the target page's summary section and records extracted references as wikilinks | text is authored by the `kk:wiki-authoring` skill and passed on stdin |
-| `synthesize` | `kk wiki synthesize <topic\|file> [--out <path>] [--json]` | Creates a page when absent, extends in place when present; applies the `user_edited` guard | text authored by the skill |
+| `summarize` | `kk wiki summarize <page> --from <-\|file> [--json]` | Renders the supplied summary text into the page's `## Summary` section and links every mentioned title (**shipped, 0352**) | text is authored by the `kk:wiki-authoring` skill and passed on stdin |
+| `synthesize` | `kk wiki synthesize <topic\|page> --from <-\|file> [--type <pageType>] [--json]` | Creates a page when absent, extends in place when present; applies the `user_edited` guard (**shipped, 0352**) | text authored by the skill |
 | `merge` | `kk wiki merge <source-page> <target-page> [--json]` | Unions bodies + frontmatter `sources`, writes a redirect for the source path, rewrites inbound links | no |
 | `compile` | `kk wiki compile [--json]` | Regenerates `content/index.md` and `content/MAP.md`; idempotent byte-for-byte | no |
 | `link` | `kk wiki link [--fix] [--json]` | Reports unlinked mentions of existing page titles; `--fix` rewrites them to `[[slug\|Surface]]`, and a `user_edited` page receives the change under `## AI Updates` (**shipped, 0351**) | no |
