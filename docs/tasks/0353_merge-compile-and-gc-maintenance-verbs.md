@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Merge, compile and gc maintenance verbs
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-10T19:11:03.857Z
-updated_at: "2026-11-10T20:24:54.625Z"
+updated_at: "2026-11-11T00:41:17.125Z"
 feature_id: I1
 priority: P2
 tags:
@@ -13,6 +13,8 @@ tags:
 estimate_hours: 6
 
 dependencies: ["0351"]
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0353-verdict.json
 ---
 
 ## 0353. Merge, compile and gc maintenance verbs
@@ -37,19 +39,19 @@ Rejected: deleting the absorbed page in `merge` - a redirect stub keeps old Obsi
 
 ### Requirements
 
-- [ ] R1. `kk wiki merge <source> <target>` writes the union of both bodies and frontmatter `sources` into the target page through `applyWrite`.
-- [ ] R2. `merge` leaves a `redirect_to: <slug>` stub for the absorbed path and rewrites every inbound link to the surviving page.
-- [ ] R3. `merge` on a guarded source page refuses, reports `refused`, and leaves both bodies unchanged.
-- [ ] R4. `kk wiki compile` regenerates `content/index.md` and `content/MAP.md` from the current pages, and a second consecutive run is byte-identical.
-- [ ] R5. `kk wiki gc` deletes unreferenced snapshots under `raw/<type>/` and `raw/tmp/` only, keeps every referenced raw file, never touches a directory listed in `wiki.mirrors`, and reports both lists.
-- [ ] R6. `kk wiki gc` without `--yes` prints the plan and deletes nothing.
-- [ ] R7. Every new file in `packages/kk-wiki/src` clears the per-file coverage threshold with its own tests.
+- [x] R1. `kk wiki merge <source> <target>` writes the union of both bodies and frontmatter `sources` into the target page through `applyWrite`.
+- [x] R2. `merge` leaves a `redirect_to: <slug>` stub for the absorbed path and rewrites every inbound link to the surviving page.
+- [x] R3. `merge` on a guarded source page refuses, reports `refused`, and leaves both bodies unchanged.
+- [x] R4. `kk wiki compile` regenerates `content/index.md` and `content/MAP.md` from the current pages, and a second consecutive run is byte-identical.
+- [x] R5. `kk wiki gc` deletes unreferenced snapshots under `raw/<type>/` and `raw/tmp/` only, keeps every referenced raw file, never touches a directory listed in `wiki.mirrors`, and reports both lists.
+- [x] R6. `kk wiki gc` without `--yes` prints the plan and deletes nothing.
+- [x] R7. Every new file in `packages/kk-wiki/src` clears the per-file coverage threshold with its own tests.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Merge combines overlapping pages and redirects incoming links
-- [ ] AC2 — Compile regenerates the index and map from the vault structure
-- [ ] AC3 — Gc removes unused raw caches and keeps referenced raw files
+- [x] AC1 — Merge combines overlapping pages and redirects incoming links
+- [x] AC2 — Compile regenerates the index and map from the vault structure
+- [x] AC3 — Gc removes unused raw caches and keeps referenced raw files
 
 ### Q&A
 
@@ -94,15 +96,81 @@ Rejected: deleting the absorbed page in `merge` - a redirect stub keeps old Obsi
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/src/commands/wiki.ts:125` |
+| `apps/cli/src/commands/wiki.ts:6` |
+| `apps/cli/src/commands/wiki.ts:71` |
+| `apps/cli/tests/main.test.ts:237` |
+| `apps/cli/tests/main.test.ts:242` |
+| `docs/04_DESIGN.md:6` |
+| `docs/04_DESIGN.md:87` |
+| `docs/design/kk-wiki.md:10` |
+| `docs/design/kk-wiki.md:43` |
+| `docs/design/kk-wiki.md:47` |
+| `docs/design/kk-wiki.md:6` |
+| `packages/kk-wiki/src/index.ts:1` |
+| `packages/kk-wiki/src/index.ts:23` |
+| `packages/kk-wiki/src/index.ts:3` |
+| `apps/cli/src/wiki/maintenance.ts:1` |
+| `apps/cli/tests/wiki/maintenance.test.ts:1` |
+| `packages/kk-wiki/src/compile.ts:1` |
+| `packages/kk-wiki/src/gc.ts:1` |
+| `packages/kk-wiki/src/merge.ts:1` |
+| `packages/kk-wiki/tests/compile.test.ts:1` |
+| `packages/kk-wiki/tests/gc.test.ts:1` |
+| `packages/kk-wiki/tests/merge.test.ts:1` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `packages/kk-wiki/src/merge.ts:27`; `packages/kk-wiki/tests/merge.test.ts` |
+| R2 | MET | `packages/kk-wiki/src/merge.ts:27`; `packages/kk-wiki/tests/merge.test.ts` (stub + rewrites) |
+| R3 | MET | `packages/kk-wiki/tests/merge.test.ts` (guarded source refused); CLI case in `apps/cli/tests/wiki/maintenance.test.ts` |
+| R4 | MET | `packages/kk-wiki/src/compile.ts:38`; `packages/kk-wiki/tests/compile.test.ts` (byte-identical renders) |
+| R5 | MET | `packages/kk-wiki/src/gc.ts:21`; `packages/kk-wiki/tests/gc.test.ts` (keeps referenced, skips mirrors) |
+| R6 | MET | `apps/cli/src/wiki/maintenance.ts:102`; `apps/cli/tests/wiki/maintenance.test.ts` (plan without `--yes`) |
+| R7 | MET | per-file coverage on the gate run: `merge.ts`, `compile.ts`, `gc.ts` all 100 |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — Merge combines overlapping pages and redirects incoming links | MET | test | `packages/kk-wiki/tests/merge.test.ts`, `apps/cli/tests/wiki/maintenance.test.ts` |
+| AC2 — Compile regenerates the index and map from the vault structure | MET | test | `packages/kk-wiki/tests/compile.test.ts`, `apps/cli/tests/wiki/maintenance.test.ts` |
+| AC3 — Gc removes unused raw caches and keeps referenced raw files | MET | test | `packages/kk-wiki/tests/gc.test.ts`, `apps/cli/tests/wiki/maintenance.test.ts` (mirror skip) |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+**Scope.** Task 0353 — `merge`, `compile` and `gc`: the three maintenance verbs and the mirror-safety
+scope `gc` needs for a vault whose `raw/` holds an externally managed mirror.
+
+**Traceability.** All seven requirements land in named files with tests: merge unions bodies and
+sources, writes a `redirect_to` stub and rewrites inbound links (`packages/kk-wiki/src/merge.ts:27`);
+compile renders `index.md`/`MAP.md` from a sorted page set (`packages/kk-wiki/src/compile.ts:38`);
+gc plans deletions only inside `raw/<type>/` and `raw/tmp/`, skipping every `wiki.mirrors` tree
+(`packages/kk-wiki/src/gc.ts:21`). The CLI verbs are thin renderers over those functions
+(`apps/cli/src/wiki/maintenance.ts:49`).
+
+**SECUA.** Security: `gc` deletes nothing without `--yes` and cannot reach a mirror path; merge
+refuses a `user_edited` source instead of overwriting it. Errors: a missing page throws a named
+error, a config defect exits 1. Contracts: the package exposes the three functions; the CLI imports
+only the package entry. Usability: every verb prints a plan or an outcome and supports `--json`.
+
+| Priority | Location | Finding | Disposition |
+| --- | --- | --- | --- |
+| P4 | `apps/cli/src/wiki/maintenance.ts` | The first cut computed inbound-link rewrites in memory but wrote only the target and the stub, so the rewritten pages never reached disk | FIXED |
+
+Confidence: HIGH
+
+Verdict: PASS
 
 ### References
 
@@ -111,3 +179,8 @@ Rejected: deleting the absorbed page in `merge` - a redirect stub keeps old Obsi
 - Shapes: `docs/design/kk-wiki.md:33-54` (merge/compile/gc rows), `docs/design/kk-wiki.md:56-82` (vault layout).
 
 ### History
+
+- 2026-11-11T00:05:30.632Z todo → wip (system)
+- 2026-11-11T00:41:15.890Z wip → testing (system)
+- 2026-11-11T00:41:17.119Z testing → done (system)
+

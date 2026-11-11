@@ -3,6 +3,7 @@ import { consoleOutput, toJson } from '../output';
 import { runIngest } from '../wiki/ingest';
 import { printLinkOutcome, runLink } from '../wiki/link';
 import { printLintOutcome, runLint } from '../wiki/lint';
+import { printMaintenanceOutcome, runCompile, runGc, runMerge } from '../wiki/maintenance';
 import { printWriteOutcome, runSummarize, runSynthesize } from '../wiki/write-verbs';
 
 /** Options accepted by `kk wiki ingest`. */
@@ -67,6 +68,27 @@ async function synthesizeAction(
     if (!outcome.ok) throw new CommanderError(outcome.code, 'kk.wiki.synthesize', 'kk.wiki.synthesize failed');
 }
 
+/** `kk wiki merge <source> <target>`. */
+async function mergeAction(source: string, target: string, options: { json?: boolean }): Promise<void> {
+    const outcome = await runMerge({ from: source, to: target, json: options.json === true });
+    printMaintenanceOutcome(outcome, options.json === true);
+    if (!outcome.ok) throw new CommanderError(outcome.code, 'kk.wiki.merge', 'kk.wiki.merge failed');
+}
+
+/** `kk wiki compile`. */
+async function compileAction(options: { json?: boolean }): Promise<void> {
+    const outcome = await runCompile({ json: options.json === true });
+    printMaintenanceOutcome(outcome, options.json === true);
+    if (!outcome.ok) throw new CommanderError(outcome.code, 'kk.wiki.compile', 'kk.wiki.compile failed');
+}
+
+/** `kk wiki gc [--yes]`. */
+async function gcAction(options: { yes?: boolean; json?: boolean }): Promise<void> {
+    const outcome = await runGc({ yes: options.yes === true, json: options.json === true });
+    printMaintenanceOutcome(outcome, options.json === true);
+    if (!outcome.ok) throw new CommanderError(outcome.code, 'kk.wiki.gc', 'kk.wiki.gc failed');
+}
+
 /** Register the `wiki` noun. One subcommand module per verb (docs/design/kk-wiki.md §1). */
 export function registerWikiCommand(parent: Command): void {
     const wiki = parent.command('wiki').description('Deterministic Markdown vault mechanics (ADR-046)');
@@ -99,6 +121,24 @@ export function registerWikiCommand(parent: Command): void {
         .option('--type <pageType>', 'Page class for a created page: concept | entity | source | index')
         .option('--json', 'Print one JSON document')
         .action(synthesizeAction);
+
+    wiki.command('merge')
+        .description('Merge a source page into a target page, leaving a redirect and rewriting inbound links')
+        .argument('<source>', 'Page path or slug to absorb')
+        .argument('<target>', 'Page path or slug to survive')
+        .option('--json', 'Print one JSON document')
+        .action(mergeAction);
+
+    wiki.command('compile')
+        .description('Regenerate content/index.md and content/MAP.md from the vault structure')
+        .option('--json', 'Print one JSON document')
+        .action(compileAction);
+
+    wiki.command('gc')
+        .description('Reclaim unreferenced raw snapshots; prints the plan unless --yes is passed')
+        .option('--yes', 'Delete the planned files')
+        .option('--json', 'Print one JSON document')
+        .action(gcAction);
 
     wiki.command('lint')
         .description('Audit the vault for broken links, orphan pages and frontmatter defects')

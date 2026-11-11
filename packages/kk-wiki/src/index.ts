@@ -1,4 +1,6 @@
+export { type CompiledVault, compileIndex, needsWrite } from './compile';
 export type { FindingCode, FindingRecord } from './findings';
+export { applyGc, type GcPlan, planGc } from './gc';
 export {
     buildVaultIndex,
     extractLinks,
@@ -18,6 +20,7 @@ export {
     type NormalizerInput,
     type NormalizerKind,
 } from './markitdown';
+export { type MergeResult, mergePages } from './merge';
 export {
     FrontmatterError,
     type PageFrontmatter,

@@ -3,11 +3,11 @@ name: kk wiki vault
 doc: design/kk-wiki
 owns: "SHAPES — kk wiki verb signatures, vault frontmatter schema, config keys, publish projection"
 authority: derived
-version: 0.4.0
+version: 0.5.0
 created_at: 2026-11-10
 updated_at: 2026-11-10
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
-status: partial — `ingest` (0350), `link`/`lint` (0351), `summarize`/`synthesize` (0352) shipped; the remaining verbs are accepted design (I1, ADR-046)
+status: partial — `ingest` (0350), `link`/`lint` (0351), `summarize`/`synthesize` (0352), `merge`/`compile`/`gc` (0353) shipped; `sync`/`publish`/`query`/`context` remain accepted design (I1, ADR-046)
 ---
 
 # kk wiki vault — design satellite
@@ -40,11 +40,11 @@ exits `0` on success / `1` on a handled failure / `2` on a usage error.
 | `ingest` | `kk wiki ingest <source\|-> [--type=url\|pdf\|html\|rss] [--out <dir>] [--json]` | Writes `raw/<type>/<id>.md` with frontmatter; unknown extension without `--type` exits 2 naming the type; html/pdf/url go through the markitdown runner and exit 1 naming it when absent (**shipped, 0350**) | no |
 | `summarize` | `kk wiki summarize <page> --from <-\|file> [--json]` | Renders the supplied summary text into the page's `## Summary` section and links every mentioned title (**shipped, 0352**) | text is authored by the `kk:wiki-authoring` skill and passed on stdin |
 | `synthesize` | `kk wiki synthesize <topic\|page> --from <-\|file> [--type <pageType>] [--json]` | Creates a page when absent, extends in place when present; applies the `user_edited` guard (**shipped, 0352**) | text authored by the skill |
-| `merge` | `kk wiki merge <source-page> <target-page> [--json]` | Unions bodies + frontmatter `sources`, writes a redirect for the source path, rewrites inbound links | no |
-| `compile` | `kk wiki compile [--json]` | Regenerates `content/index.md` and `content/MAP.md`; idempotent byte-for-byte | no |
+| `merge` | `kk wiki merge <source> <target> [--json]` | Unions bodies + frontmatter `sources`, writes a `redirect_to` stub, rewrites inbound links; refuses a `user_edited` source (**shipped, 0353**) | no |
+| `compile` | `kk wiki compile [--json]` | Regenerates `content/index.md` and `content/MAP.md`; idempotent byte-for-byte (**shipped, 0353**) | no |
 | `link` | `kk wiki link [--fix] [--json]` | Reports unlinked mentions of existing page titles; `--fix` rewrites them to `[[slug\|Surface]]`, and a `user_edited` page receives the change under `## AI Updates` (**shipped, 0351**) | no |
 | `lint` | `kk wiki lint [--json]` | Reports broken links, orphan pages, missing/invalid frontmatter; nonzero when findings exist (**shipped, 0351**) | no |
-| `gc` | `kk wiki gc [--json]` | Deletes unreferenced `raw/**` caches and `raw/tmp/**`; keeps referenced raw files | no |
+| `gc` | `kk wiki gc [--yes] [--json]` | Reclaims unreferenced `raw/<type>/` snapshots and `raw/tmp/**`, skips every `wiki.mirrors` tree, prints the plan unless `--yes` (**shipped, 0353**) | no |
 | `sync` | `kk wiki sync <remote> [--dry-run] [--json]` | Runs the remote declared in config (`command`), prints the resolved command and planned transfers; `--dry-run` transfers nothing | no (transport lives in the remote's own CLI, e.g. rclone) |
 | `publish` | `kk wiki publish --target <dir> [--json]` | Renders `content/` into `<dir>/content/` as a Quartz-compatible tree; never forks or patches Quartz | no |
 | `query` | `kk wiki query <prompt> [--limit <n>] [--json]` | Ranks vault pages against the prompt by deterministic term scoring; prints page paths + excerpts; the answer is composed by the skill | no |
