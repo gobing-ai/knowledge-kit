@@ -1,11 +1,13 @@
 ---
 schema_version: 1
 name: "xhs-pub: adopt vendor-proven patterns (outcome verification, counter limits, draft verify) and close composePodcast gap"
-status: wip
+status: done
 template: standard
 created_at: 2026-11-10T22:48:43.838Z
-updated_at: "2026-11-11T02:27:39.174Z"
+updated_at: "2026-11-11T02:47:45.376Z"
 
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0350. xhs-pub: adopt vendor-proven patterns (outcome verification, counter limits, draft verify) and close composePodcast gap
@@ -165,4 +167,6 @@ Verdict: PASS
 
 - 2026-11-10T23:56:17.762Z backlog → todo (system)
 - 2026-11-11T01:39:39.645Z todo → wip (system)
+- 2026-11-11T02:47:45.352Z wip → testing (system)
+- 2026-11-11T02:47:45.371Z testing → done (system)
 
