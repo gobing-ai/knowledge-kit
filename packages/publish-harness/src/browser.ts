@@ -26,7 +26,7 @@ import {
     readBotMetadata,
     resolveBotProfileDir,
 } from './bot';
-import { chmod, lstat } from './bot-fs';
+import { chmod, lstat, rename } from './bot-fs';
 
 export { chmod, createExclusiveFile, mkdirExclusive, rmdir } from './bot-fs';
 
@@ -156,6 +156,45 @@ const ATTACH_POLL_MS = 100;
  * adopted as-is, a headed launch creates a missing one owner-only (0o700), and a headless launch
  * never creates one.
  */
+/**
+ * Chromium's "the browser died during startup" shape: Playwright reports a closed target, never a
+ * reason. Distinct from a busy profile, which names the singleton lock instead.
+ */
+function isInstantBrowserDeath(message: string): boolean {
+    return /target page, context or browser has been closed|browser has been closed|target closed/i.test(message);
+}
+
+/**
+ * Map a launch failure to the operator-facing error. Busy and not-installed get their own types so a
+ * caller can act on them; anything else — including a profile Chromium keeps trapping on — is a
+ * poisoned-profile error naming the directory, because the only remaining repair is to move it aside.
+ */
+function classifyLaunchError(error: unknown, profileDir: string, channel: string): Error {
+    const message = errorMessage(error);
+    if (/singleton|already in use|in use by another/i.test(message))
+        return new BrowserProfileBusyError(profileDir, error);
+    if (/playwright install|executable doesn't exist/i.test(message)) {
+        return new PlaywrightUnavailableError(
+            `Browser channel '${channel}' is not installed. Run \`bunx playwright install chromium\` (or install Google Chrome for KK_BROWSER_CHANNEL=chrome).`,
+            { cause: error },
+        );
+    }
+    if (isInstantBrowserDeath(message)) {
+        return new PlaywrightUnavailableError(
+            `browser profile ${profileDir} makes Chromium exit during startup (no diagnostic reported). Move it aside (\`mv ${profileDir} ${profileDir}.broken-<date>\`) and log in again; \`storage-state.json\` is the only state worth keeping.`,
+            { cause: error },
+        );
+    }
+    return error instanceof Error ? error : new Error(message);
+}
+
+/** Move `<profile>/Default/Sync Data` aside; `false` when it is absent so the caller stops retrying. */
+function quarantineProfileSyncData(profileDir: string): boolean {
+    const syncData = join(profileDir, 'Default', 'Sync Data');
+    if (lstat(syncData) === null) return false;
+    return rename(syncData, `${syncData}.broken-${new Date().toISOString().replace(/[:.]/g, '').slice(0, 15)}`);
+}
+
 /** Ownership a caller already holds for the context it is about to open (design §Shared ownership). */
 export interface KkLauncherOwnership {
     /** Logical-profile lease the parent already holds; the launcher borrows it instead of reacquiring. */
@@ -230,26 +269,28 @@ async function launchKkContext(
         );
     }
     const channel = process.env.KK_BROWSER_CHANNEL?.trim() || 'chromium';
-    let context: BrowserContext;
-    try {
-        context = await playwright.chromium.launchPersistentContext(profileDir, {
+    const launch = () =>
+        playwright.chromium.launchPersistentContext(profileDir, {
             headless,
             channel,
             args: ['--disable-blink-features=AutomationControlled'],
             ignoreDefaultArgs: ['--enable-automation'],
         });
+    let context: BrowserContext;
+    try {
+        context = await launch();
     } catch (error) {
-        const message = errorMessage(error);
-        if (/singleton|already in use|in use by another/i.test(message)) {
-            throw new BrowserProfileBusyError(profileDir, error);
+        if (!isInstantBrowserDeath(errorMessage(error))) throw classifyLaunchError(error, profileDir, channel);
+        // Chromium can die inside startup on a profile it wrote itself and report nothing but a closed
+        // browser (measured 2026-11-12: a corrupt `Default/Sync Data` LevelDB trapped it, and every
+        // later login refused). Sync state is disposable here — auth lives in the cookies and the
+        // channel's `storage-state.json` — so quarantine it and launch once more before giving up.
+        if (!quarantineProfileSyncData(profileDir)) throw classifyLaunchError(error, profileDir, channel);
+        try {
+            context = await launch();
+        } catch (retryError) {
+            throw classifyLaunchError(retryError, profileDir, channel);
         }
-        if (/playwright install|executable doesn't exist/i.test(message)) {
-            throw new PlaywrightUnavailableError(
-                `Browser channel '${channel}' is not installed. Run \`bunx playwright install chromium\` (or install Google Chrome for KK_BROWSER_CHANNEL=chrome).`,
-                { cause: error },
-            );
-        }
-        throw error;
     }
     try {
         await context.addInitScript(() => {
@@ -514,6 +555,13 @@ export async function runProfileCli(
     if (command === 'login') {
         const loginTimeoutMs = timeoutMs ?? config.loginTimeoutMs ?? DEFAULT_LOGIN_TIMEOUT_MS;
         const launcher = deps.launcher ?? kkBrowserLauncher;
+        // Say what is happening before blocking: a silent 3-minute wait reads as a hang and gets
+        // Ctrl-C'd (measured 2026-11-12), and an interrupted login leaves a lock behind.
+        stdout(
+            `${config.channel} profile login: a browser window is opening — sign in there; waiting up to ${Math.round(
+                loginTimeoutMs / 1000,
+            )}s for the signed-in state`,
+        );
         try {
             // Bot mode (--url given by the `kk bot` parent) needs the context after the readiness
             // predicate passes: `withProfilePage` is the same package's scoped opener, one headed
@@ -1047,6 +1095,7 @@ export async function loginBot(name: string, url: string, options: BotSessionOpt
         context = await launcher.launch({ profileDir: transaction.stageDir, headless: false });
         const page = await openBotPage(context);
         await navigateBot(page, navigationUrl);
+        await focusBotPage(page);
         const confirm = options.confirm ?? confirmBotLogin;
         if (!(await confirm(options.timeoutMs ?? DEFAULT_BOT_LOGIN_TIMEOUT_MS))) {
             throw new BotError(
@@ -1273,6 +1322,7 @@ export async function openBot(name: string, options: OpenBotOptions = {}): Promi
         });
         const page = await openBotPage(context);
         await navigateBot(page, openUrl);
+        await focusBotPage(page);
         await closed;
         return {
             name,
@@ -1454,6 +1504,22 @@ async function navigateBot(page: Page, url: string): Promise<void> {
     }
 }
 
+/**
+ * Activate the window after opening it.
+ *
+ * Measured 2026-11-12 on the Medium/Google OAuth popup: the page renders and accepts input, but both
+ * windows reported `document.hasFocus() === false` — the OS focus stayed with the terminal that ran
+ * `kk bot login`, so an operator who starts typing without clicking the window first sees nothing
+ * appear ("I cannot input the email address"). Bringing the page to the front makes the window the
+ * active one, which is what any interactive login needs. Guarded because test fakes and headless
+ * contexts may not implement it.
+ */
+async function focusBotPage(page: Page): Promise<void> {
+    const target = page as unknown as { bringToFront?: () => Promise<void> };
+    if (typeof target.bringToFront !== 'function') return;
+    await target.bringToFront().catch(() => undefined);
+}
+
 /** Playwright embeds the failed URL in its message, so strip the URL and its query/fragment. */
 function redactNavigationError(error: unknown, url: string): string {
     let detail = error instanceof Error ? error.message : String(error);
@@ -1495,7 +1561,7 @@ async function confirmBotLogin(timeoutMs: number): Promise<boolean> {
         );
     }
     echo(
-        `Sign in to the opened browser window, then type y + Enter within ${Math.round(
+        `Sign in to the browser window that just came to the front (click into its email field first if the window lost focus), then type y + Enter within ${Math.round(
             timeoutMs / 1000,
         )}s to save this bot session (anything else cancels).`,
     );

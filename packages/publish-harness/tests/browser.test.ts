@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdtemp, readdir, rm, stat } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -462,7 +462,11 @@ describe('runProfileCli', () => {
         expect(code).toBe(0);
         expect(requests).toHaveLength(1);
         expect(cookieQueries).toEqual([]);
-        expect(lines).toEqual([`infoq profile login verified: ${join(homedir(), 'from-flag')}`]);
+        // The wait is announced first (a silent 3-minute block reads as a hang), then exactly one
+        // verdict line and no JSON facts — bot mode is the only caller that needs them.
+        expect(lines).toHaveLength(2);
+        expect(lines[0]).toContain('a browser window is opening');
+        expect(lines[1]).toBe(`infoq profile login verified: ${join(homedir(), 'from-flag')}`);
     });
 
     test('login exits 1 when the headed login never confirms', async () => {
@@ -934,6 +938,54 @@ describe('createKkBrowserLauncher (0214, lease ownership 0276)', () => {
             }) as unknown as typeof import('playwright');
         return { load, launches, initScripts, handles };
     }
+
+    test('quarantines a poisoned Default/Sync Data and relaunches once', async () => {
+        // Measured 2026-11-12: a corrupt Sync Data LevelDB made Chromium trap during startup, which
+        // Playwright reports only as a closed browser — every later login then failed. Sync state is
+        // disposable, so the launcher moves it aside and relaunches before giving up.
+        const profileDir = join(root, 'poison');
+        mkdirSync(join(profileDir, 'Default', 'Sync Data'), { recursive: true });
+        writeFileSync(join(profileDir, 'Default', 'Sync Data', 'CURRENT'), 'MANIFEST-000001');
+        const pw = fakePlaywright();
+        let calls = 0;
+        const inner = pw.load;
+        const load = async () => {
+            const real = await inner();
+            return {
+                ...real,
+                chromium: {
+                    ...real.chromium,
+                    async launchPersistentContext(dir: string, options: Record<string, unknown>) {
+                        calls += 1;
+                        if (calls === 1)
+                            throw new Error('persistentContext: Target page, context or browser has been closed');
+                        return real.chromium.launchPersistentContext(dir, options);
+                    },
+                },
+            } as unknown as typeof import('playwright');
+        };
+
+        const context = await createKkBrowserLauncher(load, undefined, { leaseRoot }).launch({
+            profileDir,
+            headless: true,
+        });
+        expect(calls).toBe(2);
+        expect(pw.launches).toHaveLength(1);
+        expect(existsSync(join(profileDir, 'Default', 'Sync Data'))).toBe(false);
+        expect(readdirSync(join(profileDir, 'Default')).some((name) => name.startsWith('Sync Data.broken-'))).toBe(
+            true,
+        );
+        await context.close();
+    });
+
+    test('a profile that keeps dying during startup reports the poisoned profile, not a raw trace', async () => {
+        const profileDir = join(root, 'poison-stubborn');
+        mkdirSync(join(profileDir, 'Default', 'Sync Data'), { recursive: true });
+        const pw = fakePlaywright(new Error('Target page, context or browser has been closed'));
+        await expect(
+            createKkBrowserLauncher(pw.load, undefined, { leaseRoot }).launch({ profileDir, headless: true }),
+        ).rejects.toThrow(/makes Chromium exit during startup/);
+    });
 
     test('defaults to the full Chromium channel with the stealth options and webdriver init script', async () => {
         const pw = fakePlaywright();

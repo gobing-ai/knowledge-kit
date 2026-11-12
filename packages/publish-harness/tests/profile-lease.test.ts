@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BotError } from '../src/bot';
@@ -67,6 +67,31 @@ describe('profile lease (0276)', () => {
     test('refuses a native Chromium singleton lock', async () => {
         mkdirSync(profileDir, { recursive: true });
         writeFileSync(join(profileDir, 'SingletonLock'), '');
+        await expect(acquireProfileLease(profileDir, { leaseRoot })).rejects.toThrow(/native Chromium/);
+    });
+
+    test('refuses a singleton lock whose owner pid is still alive', async () => {
+        mkdirSync(profileDir, { recursive: true });
+        symlinkSync(`${hostname()}-${process.pid}`, join(profileDir, 'SingletonLock'));
+        await expect(acquireProfileLease(profileDir, { leaseRoot })).rejects.toThrow(/native Chromium/);
+    });
+
+    test('reclaims the singleton lock a crashed launch left behind (dead pid)', async () => {
+        mkdirSync(profileDir, { recursive: true });
+        // A crashed Chromium leaves <host>-<pid> behind; the pid is gone, so the lock is stale and
+        // one crash must not turn every later launch into a hand-cleanup.
+        symlinkSync(`${hostname()}-999999`, join(profileDir, 'SingletonLock'));
+        symlinkSync('12345', join(profileDir, 'SingletonCookie'));
+        writeFileSync(join(profileDir, 'SingletonSocket'), '');
+        const lease = await acquireProfileLease(profileDir, { leaseRoot });
+        expect(existsSync(join(profileDir, 'SingletonLock'))).toBe(false);
+        expect(existsSync(join(profileDir, 'SingletonCookie'))).toBe(false);
+        await lease.release();
+    });
+
+    test("refuses another host's singleton lock", async () => {
+        mkdirSync(profileDir, { recursive: true });
+        symlinkSync('other-host-999999', join(profileDir, 'SingletonLock'));
         await expect(acquireProfileLease(profileDir, { leaseRoot })).rejects.toThrow(/native Chromium/);
     });
 

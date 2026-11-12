@@ -6,9 +6,12 @@ import {
     mkdirSync,
     openSync,
     readdirSync,
+    readlinkSync,
     realpathSync,
+    renameSync,
     rmdirSync,
     type Stats,
+    unlinkSync,
 } from 'node:fs';
 import { join } from 'node:path';
 
@@ -61,6 +64,37 @@ export function rmdir(path: string): boolean {
     } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
         if (code === 'ENOENT' || code === 'ENOTEMPTY' || code === 'EEXIST') return false;
+        throw error;
+    }
+}
+
+/** Symlink target text without following it; `null` when the path is absent or not a symlink. */
+export function readlink(path: string): string | null {
+    try {
+        return readlinkSync(path);
+    } catch {
+        return null;
+    }
+}
+
+/** Remove one path without following symlinks; `false` when it is already absent. */
+export function unlink(path: string): boolean {
+    try {
+        unlinkSync(path);
+        return true;
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+        throw error;
+    }
+}
+
+/** Rename one path (same volume); `false` when the source is absent. */
+export function rename(from: string, to: string): boolean {
+    try {
+        renameSync(from, to);
+        return true;
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
         throw error;
     }
 }

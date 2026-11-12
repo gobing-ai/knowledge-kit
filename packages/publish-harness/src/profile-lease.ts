@@ -1,9 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { homedir } from 'node:os';
+import { homedir, hostname } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { BotError } from './bot';
-import { chmod, lstat, mkdirExclusive, realpath, rmdir } from './bot-fs';
+import { chmod, lstat, mkdirExclusive, readlink, realpath, rmdir, unlink } from './bot-fs';
 
 /**
  * Frozen shared per-profile lease (task 0276, design §Lease module). Every
@@ -22,8 +22,8 @@ export const KK_BOT_LEASE_TOKEN = 'KK_BOT_LEASE_TOKEN';
 
 const OWNER_FILE = 'owner.json';
 const HOLDER_PREFIX = 'holder-';
-/** Chromium writes these into the user-data dir; their presence means a live browser owner. */
-const NATIVE_LOCK_FILES = ['SingletonLock', 'SingletonSocket'] as const;
+/** Chromium writes these into the user-data dir; their presence usually means a live browser owner. */
+const NATIVE_LOCK_FILES = ['SingletonLock', 'SingletonSocket', 'SingletonCookie'] as const;
 
 interface LeaseOwner {
     schemaVersion: 1;
@@ -289,7 +289,18 @@ function isProcessAlive(pid: number): boolean {
     }
 }
 
+/**
+ * Refuse a profile Chromium still owns, but reclaim the lock a dead browser left behind.
+ *
+ * `SingletonLock` is a symlink to `<hostname>-<pid>`. A crashed launch leaves it behind (measured
+ * 2026-11-12: a poisoned `Default/Sync Data` LevelDB made Chromium trap on startup), and refusing
+ * that lock turned one crash into a permanent "confirm no browser is using …" wall that only a
+ * hand-deleted lock could clear. A lock naming this host with a pid that no longer exists is stale
+ * by definition, so it is removed and the launch proceeds. A live pid, another host's lock or an
+ * unparseable target still refuses — the exclusion set is unchanged for any live owner.
+ */
 function refuseNativeLock(profileDir: string): void {
+    if (reclaimStaleNativeLock(profileDir)) return;
     for (const name of NATIVE_LOCK_FILES) {
         const path = join(profileDir, name);
         if (lstat(path) !== null) {
@@ -299,6 +310,21 @@ function refuseNativeLock(profileDir: string): void {
             );
         }
     }
+}
+
+/** `true` when the lock named this host and a pid that is gone — removed, so a crashed launch self-heals. */
+function reclaimStaleNativeLock(profileDir: string): boolean {
+    const lockPath = join(profileDir, 'SingletonLock');
+    const target = readlink(lockPath);
+    if (target === null) return false;
+    const match = /^(.*)-(\d+)$/.exec(target);
+    if (match === null) return false;
+    const [, host, pidText] = match;
+    if (host !== hostname()) return false;
+    const pid = Number(pidText);
+    if (!Number.isInteger(pid) || pid <= 0 || isProcessAlive(pid)) return false;
+    for (const name of NATIVE_LOCK_FILES) unlink(join(profileDir, name));
+    return true;
 }
 
 function sha256Hex(value: string): string {

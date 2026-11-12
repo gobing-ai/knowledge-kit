@@ -52,6 +52,8 @@ interface FakeHandle {
 
 interface FakeSession {
     launcher: BrowserLauncher;
+    /** Counts `bringToFront()` calls: the login must activate the window it opens. */
+    focus: { count: number };
     requests: ProfileLaunchRequest[];
     navigations: string[];
     handles: FakeHandle[];
@@ -64,6 +66,7 @@ function makeSession(
     options: { gotoError?: boolean; rejectConfirm?: boolean; cookies?: Partial<Cookie>[] } = {},
 ): FakeSession {
     const requests: ProfileLaunchRequest[] = [];
+    const focus = { count: 0 };
     const navigations: string[] = [];
     const handles: FakeHandle[] = [];
     const cookieQueries: string[] = [];
@@ -74,11 +77,15 @@ function makeSession(
             let pagesEmpty = false;
             const listeners: (() => void)[] = [];
             const page = {
+                bringsToFront: 0,
                 async goto(url: string) {
                     if (options.gotoError === true) {
                         throw new Error(`page.goto: net::ERR_NAME_NOT_RESOLVED at ${url}`);
                     }
                     navigations.push(url);
+                },
+                async bringToFront() {
+                    focus.count += 1;
                 },
             };
             const cookies = async (url: string) => {
@@ -119,7 +126,7 @@ function makeSession(
             return context as unknown as BrowserContext;
         },
     };
-    return { launcher, requests, navigations, handles, cookieQueries };
+    return { launcher, requests, navigations, handles, cookieQueries, focus };
 }
 
 /** A stdin-shaped stream that reports itself as an interactive terminal. */
@@ -205,6 +212,10 @@ describe('bot session lifecycle (0276)', () => {
         expect(result.defaultUrl).toBe('https://site.example.com/login');
         // The full supplied URL is navigation input only.
         expect(session.navigations).toEqual([supplied]);
+        // The window is brought to the front after navigation: an operator who types without
+        // clicking first would otherwise send keystrokes to the terminal that ran `kk bot login`
+        // (measured 2026-11-12 on the Medium/Google OAuth popup: both windows had hasFocus=false).
+        expect(session.focus.count).toBe(1);
         // The browser opened the staged profile headed, never the final path.
         expect(session.requests).toHaveLength(1);
         expect(session.requests[0]?.headless).toBe(false);

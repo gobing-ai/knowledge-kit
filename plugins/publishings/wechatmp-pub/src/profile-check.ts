@@ -83,8 +83,15 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     }
 
     if (command === 'login') {
+        const loginTimeoutMs = timeoutMs ?? LOGIN_TIMEOUT_MS;
+        // Announce the wait before blocking: a silent scan deadline reads as a hang and gets Ctrl-C'd.
+        echo(
+            `wechatmp profile login: a browser window is opening — scan the console QR code there; waiting up to ${Math.round(
+                loginTimeoutMs / 1000,
+            )}s`,
+        );
         try {
-            await openWechatLogin({ profileDir, timeoutMs: timeoutMs ?? LOGIN_TIMEOUT_MS });
+            await openWechatLogin({ profileDir, timeoutMs: loginTimeoutMs });
             echo(`wechatmp profile login verified: ${profileDir}`);
             // Bot mode (`kk bot login` supplies --url): the parent persists a default URL only from
             // this LAST-line verdict, and only the plugin-owned console home is canonical — never the
