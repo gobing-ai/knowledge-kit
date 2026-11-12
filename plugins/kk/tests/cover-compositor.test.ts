@@ -113,6 +113,19 @@ describe('buildCoverSvg', () => {
         expect(svg).toContain('DAILY AI PODCAST');
     });
 
+    // 2026-11-11 regression: `sips` cannot fetch an SVG `<image href="file://…">`, so the real
+    // render dropped the AI background and shipped only the overlay chrome as the cover.
+    it('embeds a data-URI background when one is supplied (sips cannot read file URLs)', () => {
+        const svg = buildCoverSvg({
+            backgroundImagePath: '/tmp/bg.png',
+            backgroundUri: `data:image/png;base64,${PNG_BYTES.toString('base64')}`,
+            headline: HEADLINE,
+            logoPath: '/tmp/missing.svg',
+        });
+        expect(svg).toContain(`href="data:image/png;base64,${PNG_BYTES.toString('base64')}"`);
+        expect(svg).not.toContain('file://');
+    });
+
     it('styles a single headline white 46px and a second line signal yellow 32px', () => {
         const single = buildCoverSvg(base);
         expect(single).toContain('font-size="46" font-weight="800" fill="#FFFFFF"');
@@ -164,39 +177,39 @@ describe('compositeCover', () => {
     });
 
     it('throws when sips binary is missing or invocation errors', () => {
-        const spy = spyOn(childProcess, 'spawnSync').mockReturnValue({
-            status: null,
-            error: new Error('ENOENT'),
-        } as unknown as childProcess.SpawnSyncReturns<Buffer>);
-        try {
-            expect(() =>
-                compositeCover({
-                    backgroundImagePath: '/tmp/bg.png',
-                    headline: HEADLINE,
-                    outputPath: '/tmp/cover.png',
-                }),
-            ).toThrow(/sips not found; cannot render the cover overlay \(macOS required\)/);
-        } finally {
-            spy.mockRestore();
-        }
+        withTempDir((dir) => {
+            const bg = join(dir, 'bg.png');
+            writeFileSync(bg, PNG_BYTES);
+            const spy = spyOn(childProcess, 'spawnSync').mockReturnValue({
+                status: null,
+                error: new Error('ENOENT'),
+            } as unknown as childProcess.SpawnSyncReturns<Buffer>);
+            try {
+                expect(() =>
+                    compositeCover({ backgroundImagePath: bg, headline: HEADLINE, outputPath: join(dir, 'cover.png') }),
+                ).toThrow(/sips not found; cannot render the cover overlay \(macOS required\)/);
+            } finally {
+                spy.mockRestore();
+            }
+        });
     });
 
     it('throws when sips exits with non-zero status', () => {
-        const spy = spyOn(childProcess, 'spawnSync').mockReturnValue({
-            status: 1,
-            error: undefined,
-        } as unknown as childProcess.SpawnSyncReturns<Buffer>);
-        try {
-            expect(() =>
-                compositeCover({
-                    backgroundImagePath: '/tmp/bg.png',
-                    headline: HEADLINE,
-                    outputPath: '/tmp/cover.png',
-                }),
-            ).toThrow(/sips failed \(status 1\); overlay did not render/);
-        } finally {
-            spy.mockRestore();
-        }
+        withTempDir((dir) => {
+            const bg = join(dir, 'bg.png');
+            writeFileSync(bg, PNG_BYTES);
+            const spy = spyOn(childProcess, 'spawnSync').mockReturnValue({
+                status: 1,
+                error: undefined,
+            } as unknown as childProcess.SpawnSyncReturns<Buffer>);
+            try {
+                expect(() =>
+                    compositeCover({ backgroundImagePath: bg, headline: HEADLINE, outputPath: join(dir, 'cover.png') }),
+                ).toThrow(/sips failed \(status 1\); overlay did not render/);
+            } finally {
+                spy.mockRestore();
+            }
+        });
     });
 
     itMacOnly('does not leave the intermediate svg behind', () => {

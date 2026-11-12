@@ -12,6 +12,13 @@ import { join, resolve } from 'node:path';
 
 export interface CoverCompositorOptions {
     backgroundImagePath: string;
+    /**
+     * Background as a `data:` URI. `compositeCover` always sets it: `sips` cannot rasterize an
+     * SVG `<image href="file://…">`, so the file-URL form silently rendered only the overlay
+     * chrome (the placeholder-looking cover that shipped on 2026-11-11) plus a lost headline.
+     * The field is optional only so the pure template probes can exercise the legacy form.
+     */
+    backgroundUri?: string;
     headline: string;
     leadStoryTitle?: string;
     /** Defaults to the repo `assets/general/xhxs.svg`; a missing asset omits the badge. */
@@ -103,7 +110,7 @@ export function buildCoverSvg(options: CoverCompositorOptions): string {
             : '';
 
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-  <image href="${encodeURI(`file://${resolve(options.backgroundImagePath)}`)}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="xMidYMid slice" />
+  <image href="${options.backgroundUri ?? encodeURI(`file://${resolve(options.backgroundImagePath)}`)}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="xMidYMid slice" />
   <defs>
     <linearGradient id="bottomScrim" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#0a1424" stop-opacity="0" />
@@ -126,9 +133,20 @@ export function buildCoverSvg(options: CoverCompositorOptions): string {
  * native image dependency). Fail-fast: a missing `sips` or nonzero transcode throws with an
  * actionable message — the daily run must not publish a half-composited cover.
  */
+/** Inline the background as a data URI so `sips` actually rasterizes it (see the option doc). */
+function backgroundDataUri(path: string): string {
+    const lower = path.toLowerCase();
+    const mime = lower.endsWith('.jpg') || lower.endsWith('.jpeg') ? 'image/jpeg' : 'image/png';
+    return `data:${mime};base64,${readFileSync(path).toString('base64')}`;
+}
+
 export function compositeCover(options: CoverCompositorOptions): string {
     const svgPath = join(tmpdir(), `cover-composite-${Date.now()}.svg`);
-    writeFileSync(svgPath, buildCoverSvg(options), 'utf-8');
+    writeFileSync(
+        svgPath,
+        buildCoverSvg({ ...options, backgroundUri: backgroundDataUri(options.backgroundImagePath) }),
+        'utf-8',
+    );
     try {
         const sips = spawnSync('sips', ['-s', 'format', 'png', svgPath, '--out', options.outputPath], {
             stdio: 'ignore',
