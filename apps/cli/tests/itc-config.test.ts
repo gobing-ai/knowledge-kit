@@ -157,12 +157,19 @@ describe('0303 R3 — ITC workspace follows the configured topic and optional da
         });
     });
 
-    it('resolves a relative works_dir against the config directory and expands ~ only', async () => {
+    it('resolves a relative works_dir against the config directory and expands ~ and $HOME prefixes', async () => {
         await withTempDir(async (home) => {
-            writeConfig(home, 'works_dir: ~/custom-works\n');
-            const options = await resolveItcOptions({ topic: 't' }, ctx(home));
-            expect(options.worksRoot).toBe(join(home, 'custom-works'));
-            expect(options.workDir).toBe(join(home, 'custom-works', 'kk-itc', 't'));
+            const cases: Array<[string, string]> = [
+                ['~/custom-works', join(home, 'custom-works')],
+                ['$HOME/custom-works', join(home, 'custom-works')],
+                ['$HOME', home],
+            ];
+            for (const [worksDir, expectedRoot] of cases) {
+                writeConfig(home, `works_dir: ${worksDir}\n`);
+                const options = await resolveItcOptions({ topic: 't' }, ctx(home));
+                expect(options.worksRoot, worksDir).toBe(expectedRoot);
+                expect(options.workDir, worksDir).toBe(join(expectedRoot, 'kk-itc', 't'));
+            }
         });
     });
 

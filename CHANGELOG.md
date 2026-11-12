@@ -1,3 +1,14 @@
+## [Unreleased]
+
+### Fixed
+
+- fix(itc): skip a cover-requiring publish target instead of aborting the whole plan — the plan records a `warnings` entry and every other target still materializes; the plan-writing stages echo each warning to stderr and still exit 0
+<!-- src: apps/cli/src/itc-plan.ts:489 -->
+- fix(itc): expand a leading `$HOME` and `$HOME/` in `works_dir` (and the `KK_CONFIG` path) against the configured home, matching the `~` forms; every other `$`/backtick sequence stays literal data
+<!-- src: apps/cli/src/itc-config.ts:184 -->
+- fix(itc): ship the `itc-main` publish preset in the package root and resolve it through the shared package-root resolver so a run from a foreign work dir still finds the shipped preset
+<!-- src: plugins/kk/publish-presets/itc-main.json:3 -->
+
 ## [0.1.16] - 2026-11-11
 
 ### Added

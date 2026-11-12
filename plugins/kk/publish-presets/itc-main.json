@@ -1,0 +1,42 @@
+{
+    "schemaVersion": 1,
+    "name": "itc-main",
+    "targets": [
+        {
+            "plugin": "surfdash-pub",
+            "profile": "article"
+        },
+        {
+            "plugin": "infoq-pub",
+            "profile": "article"
+        },
+        {
+            "plugin": "juejin-pub",
+            "profile": "article"
+        },
+        {
+            "plugin": "wechatmp-pub",
+            "profile": "article"
+        },
+        {
+            "plugin": "x-pub",
+            "profile": "article-zh"
+        },
+        {
+            "plugin": "zenn-pub",
+            "profile": "article"
+        },
+        {
+            "plugin": "qiita-pub",
+            "profile": "article"
+        },
+        {
+            "plugin": "medium-pub",
+            "profile": "article"
+        },
+        {
+            "plugin": "substack-pub",
+            "profile": "article"
+        }
+    ]
+}

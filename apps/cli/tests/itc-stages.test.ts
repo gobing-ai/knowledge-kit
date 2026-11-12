@@ -374,7 +374,7 @@ describe('itc-publish-plan (0150)', () => {
         expect(resDraft.stderr).toContain('no draft mode');
     });
 
-    it('plans wechatmp-pub live with complete bindings and rejects cover-less targets by name', () => {
+    it('plans wechatmp-pub live with complete bindings and skips cover-less targets by name', () => {
         const liveWorkDir = seedWorkDir();
         mkdirSync(join(liveWorkDir, '4-illustrations'), { recursive: true });
         writeFileSync(join(liveWorkDir, '4-illustrations/cover.png'), 'png');
@@ -389,9 +389,13 @@ describe('itc-publish-plan (0150)', () => {
 
         const noCover = seedWorkDir();
         const resCover = run(['itc-publish-plan', noCover, 'xhs-pub', 'zh', 'false']);
-        expect(resCover.status).toBe(1);
-        expect(resCover.stderr).toContain('xhs-pub');
+        expect(resCover.status, resCover.stderr).toBe(0);
+        expect(resCover.stderr).toContain('itc-publish-plan: skipped xhs-pub');
         expect(resCover.stderr).toContain('needs a cover image');
+        expect(planOf(noCover).warnings).toEqual([
+            `skipped xhs-pub: needs a cover image at 4-illustrations/cover.* in ${noCover}`,
+        ]);
+        expect(planOf(noCover).variants).toEqual({});
 
         const withCover = seedWorkDir();
         mkdirSync(join(withCover, '4-illustrations'), { recursive: true });
@@ -648,13 +652,23 @@ describe('itc stages in-process (coverage of the spawned module body)', () => {
         for (const [targets, live, message] of [
             ['podcast-pub', 'false', 'unsupported publish target'],
             ['x-pub', 'false', 'no draft mode'],
-            ['xhs-pub', 'false', 'needs a cover image'],
         ] as const) {
             const workDir = seedWorkDir();
             const res = await capture((m) => m.itcPublishPlan([workDir, targets, 'en', live]));
             expect(res.exit, targets).toBe(1);
             expect(res.stderr, targets).toContain(message);
         }
+
+        // A cover-requiring target without a cover is SKIPPED, not an error: the stage stays clean,
+        // the warning is echoed to stderr, and a plan is still written (with nothing left to route).
+        const coverless = seedWorkDir();
+        const skipped = await capture((m) => m.itcPublishPlan([coverless, 'xhs-pub', 'en', 'false']));
+        expect(skipped.exit).toBeUndefined();
+        expect(skipped.stderr).toContain('itc-publish-plan: skipped xhs-pub');
+        expect(skipped.stderr).toContain('needs a cover image');
+        expect(JSON.parse(readFileSync(join(coverless, '4-publish/publish-plan.json'), 'utf-8')).warnings).toEqual([
+            `skipped xhs-pub: needs a cover image at 4-illustrations/cover.* in ${coverless}`,
+        ]);
 
         const live = seedWorkDir();
         mkdirSync(join(live, '4-illustrations'));
