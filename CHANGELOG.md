@@ -39,16 +39,10 @@
 
 ### Fixed
 
-- fix(daily): freeze the pool once a plan has authored (0347 F6) (1e83f6e)
-<!-- src: plugins/kk/scripts/daily-stages.ts:430 -->
-- fix(daily): keep the authored plan on pool drift instead of refusing (0347 F6) (830e511)
-<!-- src: plugins/kk/scripts/daily-stages.ts:1646 -->
-- fix(cli): repair --retry with no plan settles as a clean no-op (0347 F7) (11f384e)
-<!-- src: apps/cli/src/publish-matrix.ts:1270 -->
-- fix(plugins): close daily-triage-core coverage gaps and exempt subprocess stage bodies (89e73a3)
-<!-- src: plugins/kk/scripts/daily-triage-core.ts:70 -->
 - fix(surfdash-pub): upsert daily-topics and fail-closed gate before push to main (193b1b8)
 <!-- src: plugins/publishings/surfdash-pub/src/index.ts:488 -->
+- fix(content-gen): retry STORM JSON stages and unwrap Grok mode-json envelopes (9ddd7e9)
+<!-- src: plugins/generations/content-gen/src/storm.ts:172 -->
 - fix(xhs-pub): assign error names in constructors for coverage-attributable functions (820c0ad)
 <!-- src: plugins/publishings/xhs-pub/src/errors.ts:18 -->
 - fix(xhs-pub): close outcome-verification gaps from the verifyall fix pass (0350) (c5536e0)
@@ -119,6 +113,9 @@
 - docs(content-safety): verify WeChat AI-identification rules (CAC 标识办法 + 2025-08-31 platform notice) (c307522)
 - docs(context): log shipinhao audio known-gap and hidden-dialog pitfall (274418b)
 - docs(context): hand off shipinhao tmp-recon disposal location (dd5decc)
+- test(cover): mute compositor log noise and cover sips error branches (cfabefb)
+<!-- src: plugins/kk/tests/cover-compositor.test.ts:45 -->
+- Merge pull request #9 from gobing-ai/fix/storm-json-mode-retry (130785b)
 
 ## [0.1.15] - 2026-11-09
 

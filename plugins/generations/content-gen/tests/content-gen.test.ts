@@ -153,10 +153,11 @@ describe('content-gen plugin adapter', () => {
         await mkdir(FIXTURES_DIR, { recursive: true });
         await writeFile(IN_FILE, JSON.stringify([{ id: 'doc-1', body: 'test' }]), 'utf-8');
         await writeFile(OUT_FILE, 'stale', 'utf-8');
+        const outlineCrash = { exitCode: 1, stdout: '', stderr: 'outline agent crashed' };
         await writeSequentialMockSpur([
             { exitCode: 0, stdout: JSON.stringify(CURATION), stderr: '' },
-            { exitCode: 1, stdout: '', stderr: 'outline agent crashed' },
-            { exitCode: 1, stdout: '', stderr: 'outline agent crashed' }, // stage-runner retry also crashes
+            // parseStageJson retries 3 times; spurStageRunner also retries each crash once
+            ...Array.from({ length: 6 }, () => outlineCrash),
         ]);
         const cap = captureOutput();
 
@@ -178,10 +179,14 @@ describe('content-gen plugin adapter', () => {
     test('malformed stage output fails loud before writing', async () => {
         await mkdir(FIXTURES_DIR, { recursive: true });
         await writeFile(IN_FILE, JSON.stringify([{ id: 'doc-1', body: 'test' }]), 'utf-8');
+        const badArticle = { exitCode: 0, stdout: JSON.stringify({ body: '' }), stderr: '' };
         await writeSequentialMockSpur([
             { exitCode: 0, stdout: JSON.stringify(CURATION), stderr: '' },
             { exitCode: 0, stdout: JSON.stringify(OUTLINE), stderr: '' },
-            { exitCode: 0, stdout: JSON.stringify({ body: '' }), stderr: '' },
+            // exit 0 + unparseable JSON: parseStageJson retries 3 times; runner does not crash-retry
+            badArticle,
+            badArticle,
+            badArticle,
         ]);
         const cap = captureOutput();
 
@@ -280,12 +285,13 @@ describe('content-gen plugin adapter', () => {
         await mkdir(FIXTURES_DIR, { recursive: true });
         await writeFile(IN_FILE, JSON.stringify([{ id: 'doc-1', body: 'test' }]), 'utf-8');
         await writeFile(OUT_FILE, 'stale', 'utf-8');
+        const polishCrash = { exitCode: 1, stdout: '', stderr: 'polish agent crashed' };
         await writeSequentialMockSpur([
             { exitCode: 0, stdout: JSON.stringify(CURATION), stderr: '' },
             { exitCode: 0, stdout: JSON.stringify(OUTLINE), stderr: '' },
             { exitCode: 0, stdout: JSON.stringify(ARTICLE), stderr: '' },
-            { exitCode: 1, stdout: '', stderr: 'polish agent crashed' },
-            { exitCode: 1, stdout: '', stderr: 'polish agent crashed' }, // stage-runner retry also crashes
+            // parseStageJson retries 3 times; spurStageRunner also retries each crash once
+            ...Array.from({ length: 6 }, () => polishCrash),
         ]);
         process.argv = ['bun', 'index.ts', '--in', IN_FILE, '--out', OUT_FILE];
         const errTarget = createBufferTarget();

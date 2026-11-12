@@ -7,14 +7,17 @@ import {
     type ArticleResult,
     articleStage,
     type CurationResult,
+    compactDocsForPrompt,
     curationStage,
     generateWithStormPipeline,
     type OutlineResult,
     outlineStage,
     type PolishResult,
+    parseStageJson,
     polishStage,
     type StormStageRunner,
     spurStageRunner,
+    unwrapGrokModeJson,
 } from '../src/storm';
 
 const FIXTURES_DIR = join(import.meta.dir, 'storm-fixtures');
@@ -116,6 +119,9 @@ describe('curation stage (R2)', () => {
         expect(prompt).toContain('untrusted');
         expect(prompt).toContain('do not fetch or retrieve any external source');
         expect(prompt).toContain('"doc-1","doc-2"');
+        expect(prompt).toContain('Corpus JSON:');
+        expect(prompt).toContain('Content for architecture overview.');
+        expect(prompt).not.toContain(INPUT_PATH);
     });
 
     test('rejects a single-perspective result (R2 requires multiple perspectives)', async () => {
@@ -411,28 +417,38 @@ describe('owned STORM pipeline (R1)', () => {
     });
 
     test('a failed stage aborts the pipeline with a stage-specific diagnostic', async () => {
+        const crashed = { exitCode: 1, stdout: '', stderr: 'outline agent crashed' };
         const { runner, prompts } = scriptedRunner([
             { exitCode: 0, stdout: JSON.stringify(VALID_CURATION), stderr: '' },
-            { exitCode: 1, stdout: '', stderr: 'outline agent crashed' },
+            crashed,
+            crashed,
+            crashed,
         ]);
 
         await expect(generateWithStormPipeline(DOCS, INPUT_PATH, runner)).rejects.toThrow(
             'Outline stage failed: outline agent crashed',
         );
-        expect(prompts.length).toBe(2);
+        expect(prompts.length).toBe(4);
+        expect(prompts[2]).toContain('RETRY:');
+        expect(prompts[3]).toContain('RETRY:');
     });
 
     test('a malformed stage result aborts the pipeline before later stages run', async () => {
+        const badArticle = { exitCode: 0, stdout: JSON.stringify({ body: '' }), stderr: '' };
         const { runner, prompts } = scriptedRunner([
             { exitCode: 0, stdout: JSON.stringify(VALID_CURATION), stderr: '' },
             { exitCode: 0, stdout: JSON.stringify(VALID_OUTLINE), stderr: '' },
-            { exitCode: 0, stdout: JSON.stringify({ body: '' }), stderr: '' },
+            badArticle,
+            badArticle,
+            badArticle,
         ]);
 
         await expect(generateWithStormPipeline(DOCS, INPUT_PATH, runner)).rejects.toThrow(
             'Article stage failed: malformed output',
         );
-        expect(prompts.length).toBe(3);
+        expect(prompts.length).toBe(5);
+        expect(prompts[3]).toContain('RETRY:');
+        expect(prompts[4]).toContain('RETRY:');
     });
 });
 
@@ -454,7 +470,7 @@ describe('spur stage runner (R1)', () => {
         expect(argv.slice(2, 4)).toEqual(['agent', 'run']);
         expect(argv).toContain('--json');
         expect(argv).toContain('--mode');
-        expect(argv).toContain('text');
+        expect(argv).toContain('json');
     });
 
     test('anchors --cwd to KNOWLEDGE_KIT_PROJECT_ROOT when set, else the process cwd', async () => {
@@ -603,6 +619,27 @@ console.log('garbage');
         expect(envelope).toEqual({ exitCode: 7, stdout: 'agent produced this', stderr: 'agent failed' });
     });
 
+    test('unwraps a Grok --mode json { text } envelope inside the CLI envelope', async () => {
+        await mkdir(FIXTURES_DIR, { recursive: true });
+        const stage = JSON.stringify(VALID_CURATION);
+        const grok = JSON.stringify({ text: stage, stopReason: 'end' });
+        await writeFile(
+            MOCK_SPUR,
+            `#!/usr/bin/env bun
+console.log(JSON.stringify({ exitCode: 0, stdout: ${JSON.stringify(grok)}, stderr: '' }));
+`,
+            'utf-8',
+        );
+        await chmod(MOCK_SPUR, 0o755);
+        process.env.KNOWLEDGE_KIT_SPUR_BIN = MOCK_SPUR;
+
+        const envelope = await spurStageRunner.runStage('test prompt');
+
+        expect(envelope.exitCode).toBe(0);
+        expect(envelope.stdout).toBe(stage);
+        expect(JSON.parse(envelope.stdout)).toEqual(VALID_CURATION);
+    });
+
     test('curation stage runs end to end through the real runner', async () => {
         await mkdir(FIXTURES_DIR, { recursive: true });
         await writeFile(
@@ -621,5 +658,127 @@ console.log(JSON.stringify({ exitCode: 0, stdout: JSON.stringify(result), stderr
         expect(result.perspectives.map((perspective) => perspective.name)).toEqual(['Architect', 'Operator']);
         expect(result.perspectives).toHaveLength(2);
         expect(result.perspectives[0]?.evidence).toEqual(['doc-1']);
+    });
+});
+
+describe('unwrapGrokModeJson', () => {
+    test('prefers the inner text of a Grok --mode json envelope', () => {
+        const stage = JSON.stringify(VALID_CURATION);
+        const wrapped = JSON.stringify({ text: stage, stopReason: 'end' });
+        expect(unwrapGrokModeJson(wrapped)).toBe(stage);
+    });
+
+    test('leaves plain text and stage JSON without a string text field as-is', () => {
+        expect(unwrapGrokModeJson('not json at all')).toBe('not json at all');
+        const stage = JSON.stringify(VALID_CURATION);
+        expect(unwrapGrokModeJson(stage)).toBe(stage);
+        const numericText = JSON.stringify({ text: 12, stopReason: 'end' });
+        expect(unwrapGrokModeJson(numericText)).toBe(numericText);
+        const arrayStdout = JSON.stringify(['agent', 'run']);
+        expect(unwrapGrokModeJson(arrayStdout)).toBe(arrayStdout);
+    });
+});
+
+describe('compactDocsForPrompt', () => {
+    test('keeps ids and titles and truncates bodies to maxBodyChars', () => {
+        const docs: Doc[] = [
+            { id: 'doc-long', title: 'Long', sourceUri: 'https://example.test/a', body: 'ABCDEFGHIJ' },
+            { id: 'doc-empty' } as Doc,
+        ];
+        const compact = JSON.parse(compactDocsForPrompt(docs, 4)) as Array<{
+            id: string;
+            title?: string;
+            sourceUri?: string;
+            body: string;
+        }>;
+        expect(compact).toEqual([
+            { id: 'doc-long', title: 'Long', sourceUri: 'https://example.test/a', body: 'ABCD' },
+            { id: 'doc-empty', title: undefined, sourceUri: undefined, body: '' },
+        ]);
+    });
+});
+
+describe('parseStageJson', () => {
+    test('returns the first successful parse without a RETRY suffix', async () => {
+        const prompts: string[] = [];
+        const runner = jsonRunner(VALID_CURATION, (p) => prompts.push(p));
+        const result = await parseStageJson(
+            'Curation',
+            runner,
+            'base prompt',
+            (stdout) => JSON.parse(stdout) as CurationResult,
+        );
+        expect(result).toEqual(VALID_CURATION);
+        expect(prompts).toEqual(['base prompt']);
+    });
+
+    test('retries after malformed JSON and succeeds on a later attempt', async () => {
+        const { runner, prompts } = scriptedRunner([
+            { exitCode: 0, stdout: 'not-json', stderr: '' },
+            { exitCode: 0, stdout: '{', stderr: '' },
+            { exitCode: 0, stdout: JSON.stringify(VALID_CURATION), stderr: '' },
+        ]);
+        const result = await parseStageJson(
+            'Curation',
+            runner,
+            'base prompt',
+            (stdout) => JSON.parse(stdout) as CurationResult,
+        );
+        expect(result).toEqual(VALID_CURATION);
+        expect(prompts).toHaveLength(3);
+        expect(prompts[0]).toBe('base prompt');
+        expect(prompts[1]).toContain('RETRY:');
+        expect(prompts[2]).toContain('RETRY:');
+        expect(prompts[1]).toContain('base prompt');
+    });
+
+    test('retries a non-zero exit and then succeeds', async () => {
+        const { runner, prompts } = scriptedRunner([
+            { exitCode: 1, stdout: '', stderr: 'agent exploded' },
+            { exitCode: 0, stdout: JSON.stringify(VALID_CURATION), stderr: '' },
+        ]);
+        const result = await parseStageJson(
+            'Curation',
+            runner,
+            'base prompt',
+            (stdout) => JSON.parse(stdout) as CurationResult,
+        );
+        expect(result).toEqual(VALID_CURATION);
+        expect(prompts).toHaveLength(2);
+        expect(prompts[1]).toContain('RETRY:');
+    });
+
+    test('fails loud after three malformed attempts', async () => {
+        const { runner, prompts } = scriptedRunner([
+            { exitCode: 0, stdout: 'nope', stderr: '' },
+            { exitCode: 0, stdout: 'nope', stderr: '' },
+            { exitCode: 0, stdout: 'nope', stderr: '' },
+        ]);
+        await expect(
+            parseStageJson('Curation', runner, 'base prompt', (stdout) => JSON.parse(stdout) as CurationResult),
+        ).rejects.toThrow('Curation stage failed: malformed output');
+        expect(prompts).toHaveLength(3);
+    });
+
+    test('fails loud after three non-zero exits and reports the last stderr', async () => {
+        const { runner } = scriptedRunner([
+            { exitCode: 1, stdout: '', stderr: 'first crash' },
+            { exitCode: 2, stdout: '', stderr: '' },
+            { exitCode: 3, stdout: '', stderr: 'final crash' },
+        ]);
+        await expect(
+            parseStageJson('Outline', runner, 'base prompt', (stdout) => JSON.parse(stdout) as OutlineResult),
+        ).rejects.toThrow('Outline stage failed: final crash');
+    });
+
+    test('uses a generic exit diagnostic when stderr is empty', async () => {
+        const { runner } = scriptedRunner([
+            { exitCode: 4, stdout: '', stderr: '' },
+            { exitCode: 4, stdout: '', stderr: '' },
+            { exitCode: 4, stdout: '', stderr: '' },
+        ]);
+        await expect(
+            parseStageJson('Article', runner, 'base prompt', (stdout) => JSON.parse(stdout) as ArticleResult),
+        ).rejects.toThrow('Article stage failed: agent exited 4');
     });
 });
