@@ -1711,3 +1711,77 @@ repository, while channel credentials are per-machine; folding both into one fil
 vault machine-bound or the credentials publishable.
 
 **Detail:** `docs/design/kk-wiki.md` §5; resolver `apps/cli/src/wiki/config.ts`.
+
+---
+
+## ADR-048: `itc-check-targets` records readiness instead of gating the send
+
+**Status:** Accepted · **Date:** 2026-11-12 · **Feature:** F41 (dogfood of `kk-itc-publish-tail`)
+
+**Decision.** The `itc-check-targets` stage is warn-only: it probes each distinct planned plugin once,
+writes `4-publish/check-targets.json`, prints every refusal and exits 0. Exit 1 is reserved for an
+unreadable plan or an unwritable probe file.
+
+**Why.** The stage returned 1 on the first refusal, so one dead browser session blocked every other
+channel of a fan-out — measured 2026-11-12, when an expired InfoQ session stopped a nine-target
+`kk-itc-publish-tail` run before `send-confirm`, with seven healthy channels behind it. The daily path
+had already settled this the other way: `publish-matrix-check` (0332) is warn-only for the same reason,
+and each channel's own preflight refuses a sessionless send inside the plugin, so the probe was a
+duplicate gate whose failure mode was all-or-nothing.
+
+**Detail:** `apps/cli/src/itc-publish.ts` (`itcCheckTargets`); `apps/cli/tests/itc-publish.test.ts`;
+`docs/04_DESIGN.md` (kk-itc publication contract).
+
+---
+
+## ADR-049: a browser profile is repaired in place, never abandoned silently
+
+**Status:** Accepted · **Date:** 2026-11-12 · **Feature:** publish channels (infoq-pub, wechatmp-pub)
+
+**Decision.** `kkBrowserLauncher` and the profile lease reclaim two kinds of leftover state instead of
+refusing:
+
+1. A Chromium `SingletonLock` symlink naming **this host** with a **pid that no longer exists** is
+   stale — the three `Singleton*` entries are removed and the launch proceeds. A live pid, another
+   host's lock, or an unparseable target still refuses with the existing `busy` error.
+2. A launch that dies inside startup (Playwright reports only "Target page, context or browser has
+   been closed", with no diagnostic) quarantines `<profile>/Default/Sync Data` to
+   `Sync Data.broken-<stamp>` and relaunches once. If the relaunch also dies, the error names the
+   profile directory and the one repair left (move it aside, log in again).
+
+**Why.** Both failures arrived together on 2026-11-12 and each cost an operator a hand repair. A
+corrupt `Default/Sync Data` LevelDB (a 20 KB directory, isolated by bisection: a profile with only
+that directory present traps Chromium 140.0.7339.16 at startup, exit 133) made every later launch of
+the wechatmp profile trap; the crashed launch then left a `SingletonLock` whose pid was dead, which
+the lease refused — so the documented repair ("confirm no browser is using …") was a dead end and the
+channel was unusable until a human deleted files. Profile sync state is disposable (auth lives in the
+cookie store and each channel's `storage-state.json`), and a lock owned by a dead process excludes
+nobody, so refusing bought no safety. `login` also printed nothing while it waited, so the operator
+interrupted the InfoQ login; the wait is now announced up front.
+
+**Detail:** `packages/publish-harness/src/browser.ts` (`launchKkContext`, `runProfileCli`),
+`packages/publish-harness/src/profile-lease.ts` (`refuseNativeLock`),
+`packages/publish-harness/src/bot-fs.ts` (`readlink`, `unlink`, `rename`);
+`packages/publish-harness/tests/browser.test.ts`, `.../profile-lease.test.ts`.
+
+---
+
+## ADR-050: Zenn articles deploy through the GitHub Contents API, not the public API
+
+**Status:** Accepted · **Date:** 2026-11-12 · **Feature:** publish channels (zenn-pub)
+
+**Decision.** `zenn-pub` gains a GitHub Contents-API transport, selected when `ZENN_GITHUB_REPO`
+(`owner/repo`) and `GITHUB_TOKEN` are both set. It writes `articles/<slug>.md` (reusing the blob sha
+on update) with `ZENN_BRANCH` (default `main`). The local `zenn-cli` + `ZENN_REPO` path remains the
+fallback when those variables are absent.
+
+**Why.** The premise for a token-only Zenn path does not hold for articles: the Zenn public API
+(`https://zenn.dev/openapi.yaml`, read 2026-11-12) exposes only Scraps, comments and images, and a
+live probe of `/public-api/v0/articles` answers 404 with a valid `zenn_api_…` token (scraps and
+images answer 200). Articles are still deployed from a repository, so the token can replace the CLI —
+not the repository. The API path also removes what made the CLI path fragile: a local checkout,
+`npx zenn-cli` version pinning, and a `git push` from the caller's working tree.
+
+**Detail:** `plugins/publishings/zenn-pub/src/index.ts` (`resolveZennGithubConfig`,
+`ZennGithubApiTransport`, `getPublishTransport`); `plugins/publishings/zenn-pub/tests/zenn-pub.test.ts`;
+`docs/04_DESIGN.md` (plugin surface).
