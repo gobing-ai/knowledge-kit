@@ -94,9 +94,11 @@ function harnessDirtyPaths(): string[] {
         timeout: 10_000,
     });
     if (git.status !== 0) return [];
+    // Keep the full porcelain line (XY + path): the refusal must show whether a byte is staged,
+    // unstaged or untracked — 20261111 a16 spent a fix loop guessing that from bare paths.
     return git.stdout
         .split('\n')
-        .map((line) => line.slice(3).trim())
+        .map((line) => line.trimEnd())
         .filter(Boolean);
 }
 
@@ -157,7 +159,9 @@ function runPreflight(): Preflight {
     const warnings: string[] = [];
     const dirty = harnessDirtyPaths();
     if (dirty.length > 0 && values['allow-dirty'] !== true) {
-        reasons.push(`working tree dirty on harness paths: ${dirty.slice(0, 5).join(', ')}`);
+        reasons.push(
+            `working tree dirty on harness paths (git status --porcelain):\n  ${dirty.slice(0, 10).join('\n  ')}`,
+        );
     }
     const install = kkPackageRoot();
     if (install === null) {
