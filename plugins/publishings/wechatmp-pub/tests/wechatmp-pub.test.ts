@@ -1265,13 +1265,16 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
         expect(result.error).toContain('native auto-save did not transition');
     });
 
-    test('文章 refuses submission when the full-page layout preview remains open', async () => {
+    test('文章 saves the draft with a layout warning when the preview commits nothing', async () => {
         await seedMedia();
         const console = makeConsole(happyState({ layoutPreview: true, layoutCommitRefused: true }));
         const result = await makeTransport(console).publish({ content: ARTICLE });
-        expect(result.ok).toBe(false);
-        expect(result.error).toContain('一键排版');
-        expect(selectorsOf(console.calls.editor, 'click').some(isSaveBar)).toBe(false);
+        // Measured 2026-11-12: the layout preview is its OWN tab (articlestruct) and the body is
+        // already pasted as HTML, so a preview that commits nothing costs formatting, not the post.
+        // The run still saves and carries the warning; nothing claims the layout was applied.
+        expect(result.ok).toBe(true);
+        expect(String(result.metadata?.warnings)).toContain('一键排版');
+        expect(selectorsOf(console.calls.editor, 'click').some(isSaveBar)).toBe(true);
     }, 10000);
 
     test('文章: body images, title block, pasted body + 一键排版, 摘要, 作者, cover from body, observed save', async () => {
@@ -4190,9 +4193,8 @@ describe('wechatmp-pub CLI surface (unchanged contract)', () => {
                 content: { title: 't', body: 'b', format: 'markdown' },
                 pages: () => [mockPageLayout, mockPageLayout],
             } as unknown as ModeRunDeps;
-            await expect(applyLayout(mockPageLayout, depsMorePages)).rejects.toThrow(
-                'the visible control exposed no recognized commit action',
-            );
+            // A control that opens nothing is a warning (the pasted body stands), never a failure.
+            expect(await applyLayout(mockPageLayout, depsMorePages)).toContain('no recognized apply action');
 
             let pageCallCount = 0;
             const depsOpenTab = {
@@ -4207,9 +4209,7 @@ describe('wechatmp-pub CLI surface (unchanged contract)', () => {
                     return pageCallCount <= 1 ? [mockPageLayout] : [mockPageLayout, mockPageLayout];
                 },
             } as unknown as ModeRunDeps;
-            await expect(applyLayout(mockPageLayout, depsOpenTab)).rejects.toThrow(
-                'a new preview tab opened without a recognized commit action',
-            );
+            expect(await applyLayout(mockPageLayout, depsOpenTab)).toContain('preview tab opened');
 
             const mockPageLayoutOptionThrow = {
                 locator: (sel: string) => {

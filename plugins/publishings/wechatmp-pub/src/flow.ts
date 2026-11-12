@@ -92,8 +92,22 @@ const AUTHOR_INPUT = ['input#author', 'input.js_author'];
 /** The editor's own image input (§3: `accept="image/gif,image/jpeg,image/jpg,image/png,image/svg,image/webp"`). */
 const IMAGE_FILE_INPUT = ['input[type="file"][accept*="image/"]', 'input[type="file"][accept*=".png"]'];
 
-/** `一键排版` and its measured UEditor menu (see applyLayout). */
-const LAYOUT_CONTROL = ['button:has-text("一键排版")', 'div.ailayout-btn_wrp', 'div.ailayout-btn_label'];
+/**
+ * `一键排版` and its measured UEditor menu (see applyLayout).
+ *
+ * Measured 2026-11-12 on the `appmsg_edit_v2` editor: the clickable node is the wrapper
+ * (`div.ailayout-btn_wrp` inside `.edui-for-ailayout`); the visible text child
+ * (`div.ailayout-btn_label`) has **width 0**, so Playwright refuses to click it and a selector list
+ * that starts there can burn the whole step budget on an unclickable node.
+ */
+const LAYOUT_CONTROL = [
+    'div.ailayout-btn_wrp',
+    '.edui-for-ailayout',
+    'button:has-text("一键排版")',
+    'div.ailayout-btn_label',
+];
+/** The plugin's one-time explainer that swallows the first click until 我知道了 is dismissed. */
+const LAYOUT_EDU_DISMISS = '.ailayout-edu_tips:visible button:has-text("我知道了")';
 const LAYOUT_TARGET = [
     'div.edui-popup:visible .edui-pastecontainer > .edui-button > div.edui-default:nth-child(2)',
     'div[role="menuitem"]:has-text("匹配目标格式")',
@@ -139,6 +153,23 @@ const COVER_CONFIRM = [
     'button:has-text("确定")',
     'button:has-text("确认")',
     'button:has-text("完成")',
+];
+
+/**
+ * 图片库 has no row for a cover the pipeline just generated, so the picker's own 上传文件 control is
+ * the only way to attach it (measured 2026-11-12: the article flow never seeds the library — only the
+ * daily audio form does). The uploaded material keeps its filename, so the name-identified pick that
+ * follows still applies.
+ */
+const COVER_LIBRARY_UPLOAD = [
+    '.weui-desktop-dialog:visible:has(h3:has-text("选择图片")) :text-is("上传文件")',
+    '.weui-desktop-dialog:visible:has(h3:has-text("选择图片")) :text-matches("上传", "i")',
+    'text=上传文件',
+];
+/** The picker dialog's own file input (present up front, or revealed by the 上传文件 control). */
+const COVER_LIBRARY_FILE_INPUT = [
+    '.weui-desktop-dialog:visible:has(h3:has-text("选择图片")) input[type="file"]',
+    '.weui-desktop-dialog:visible input[type="file"][accept*="image"]',
 ];
 
 /** The controls that close whatever modal the cover step left open, most specific first. */
@@ -670,7 +701,68 @@ async function insertBody(page: WechatPage, deps: ModeRunDeps, selectors: string
     const body = bodyOf(deps.content);
     if (body.trim().length === 0) return;
     const selector = await findSelector(page, selectors, 'article body', deps.stepTimeoutMs);
-    await pasteHtml(asPlaywrightPage(page), selector, markdownToWechatHtml(body), { timeoutMs: deps.stepTimeoutMs });
+    const html = markdownToWechatHtml(body);
+
+    // The historical path: a synthetic ClipboardEvent carrying rich HTML. Older editor builds
+    // honour it; `appmsg_edit_v2` (measured 2026-11-12) silently ignores it and every paste ends
+    // with an empty body, so a failed paste falls back rather than aborting the publish.
+    try {
+        await pasteHtml(asPlaywrightPage(page), selector, html, { timeoutMs: Math.min(deps.stepTimeoutMs, 10_000) });
+        return;
+    } catch {
+        // fall through to the real-editing-command path
+    }
+
+    // This build answers a paste with its own modal (`article-preview` inside `#js_vue_dialog`,
+    // measured 2026-11-12) that covers the body block, so clear it before the fallback click.
+    await closeOpenDialogs(page);
+    // ProseMirror only honours an editing command once the block holds a selection, so click it
+    // first and let the browser insert the HTML itself; plain text is the last resort so a draft
+    // is never saved with an empty body.
+    await clickSelector(page, selector, deps.stepTimeoutMs);
+    const inserted = await page.evaluate(insertHtmlScript(selector, html)).catch(() => 'failed');
+    if (String(inserted) === 'true' && (await bodyLength(page, selector)) > 0) return;
+    await page.evaluate(insertTextScript(selector, body)).catch(() => 'failed');
+    if ((await bodyLength(page, selector)) > 0) return;
+    throw new Error(`article body: ${selector} stayed empty after paste, insertHTML and insertText`);
+}
+
+/**
+ * Visible character count of an editor block, ignoring ProseMirror's placeholder widget.
+ *
+ * The widget is real DOM text (`从这里开始写正文`), so a plain `textContent` read reports a filled
+ * editor for an empty one — the false positive that let `pasteHtml` "succeed" on a build where the
+ * paste never landed (measured 2026-11-12).
+ */
+async function bodyLength(page: WechatPage, selector: string): Promise<number> {
+    const script = `(() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) return 0;
+        const clone = el.cloneNode(true);
+        for (const placeholder of clone.querySelectorAll('.editor_content_placeholder, .ProseMirror-widget')) {
+            placeholder.remove();
+        }
+        return (clone.textContent || '').trim().length;
+    })()`;
+    return Number(await page.evaluate(script).catch(() => 0));
+}
+
+function insertHtmlScript(selector: string, html: string): string {
+    return `(() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) return 'missing';
+        el.focus();
+        return String(document.execCommand('insertHTML', false, ${JSON.stringify(html)}));
+    })()`;
+}
+
+function insertTextScript(selector: string, text: string): string {
+    return `(() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) return 'missing';
+        el.focus();
+        return String(document.execCommand('insertText', false, ${JSON.stringify(text)}));
+    })()`;
 }
 
 /** 播客 titles type into the visible `textarea.js_title` directly; fill + read-back is the proof. */
@@ -841,8 +933,23 @@ export async function applyLayout(page: WechatPage, deps: ModeRunDeps): Promise<
     }
     let layoutPage = page;
     let option: string | undefined;
+    let tipDismissed = false;
     await waitUntil(
         async () => {
+            // The first click on a build that has not shown the explainer yet only raises the tips
+            // panel; dismiss it and keep polling instead of declaring the control dead.
+            if (!tipDismissed) {
+                const tip = await trySelectors(page, [LAYOUT_EDU_DISMISS], { timeout: 500 });
+                if (tip.found && tip.selector) {
+                    tipDismissed = true;
+                    await page
+                        .locator(tip.selector)
+                        .first()
+                        .click({ timeout: 5_000 })
+                        .catch(() => undefined);
+                    return false;
+                }
+            }
             for (const candidate of [...deps.pages().slice(before), page]) {
                 const found = await trySelectors(candidate, [...LAYOUT_PREVIEW_APPLY, ...LAYOUT_TARGET]);
                 if (found.found && found.selector) {
@@ -853,7 +960,8 @@ export async function applyLayout(page: WechatPage, deps: ModeRunDeps): Promise<
             }
             return false;
         },
-        Math.min(deps.stepTimeoutMs, 15_000),
+        Math.min(deps.stepTimeoutMs, 20_000),
+        deps.pollMs,
     );
     if (option !== undefined && LAYOUT_PREVIEW_APPLY.includes(option)) {
         const selected = option;
@@ -866,18 +974,16 @@ export async function applyLayout(page: WechatPage, deps: ModeRunDeps): Promise<
             },
             Math.min(deps.stepTimeoutMs, 5_000),
         );
-        if (!closed)
-            throw new Error('一键排版: 使用此排版 did not close the preview — composition stopped before submission');
+        if (!closed) return '一键排版: 使用此排版 did not close the preview — verify the body layout in the console';
         return null;
     }
     if (option === undefined) {
-        if (deps.pages().length > before)
-            throw new Error(
-                '一键排版: a new preview tab opened without a recognized commit action — composition stopped before submission',
-            );
-        throw new Error(
-            '一键排版: the visible control exposed no recognized commit action — composition stopped before submission',
-        );
+        // Degraded, not fatal: the body was already pasted as HTML, so a layout that cannot be
+        // committed costs formatting, not the post. Publishing it beats refusing the whole run —
+        // the warning travels into the Result so nothing pretends the layout was applied.
+        return deps.pages().length > before
+            ? '一键排版: a preview tab opened without a recognized apply action — body kept as pasted'
+            : '一键排版: the control exposed no recognized apply action — body kept as pasted';
     }
     try {
         await clickSelector(layoutPage, option, 5_000);
@@ -950,6 +1056,56 @@ interface CoverIdentity {
  * `#js_cover_area` is read back: the empty state (`add_cover` icon still visible) or an unreadable
  * preview is a named warning, never a success claim (task 0260 R1).
  */
+/**
+ * Select the first row of the open picker. Only used immediately after this run uploaded the cover:
+ * the upload lands in 最近使用 at position 0 and WeChat does not expose the original filename on the
+ * row, so the name-identified pick cannot find it (measured 2026-11-12: 最近使用 grew by one and the
+ * new material stayed unnamed). The cover-area change after 确认 is still the success evidence.
+ */
+/** How many picker rows are visible right now (0 = the grid is not readable in this build). */
+function libraryRowCountScript(): string {
+    return `(() => [...document.querySelectorAll('.weui-desktop-img-picker__item, div[class*="img_picker" i] li, div[class*="imgList" i] li, div[class*="cover" i] li')].filter((row) => row.offsetWidth > 0).length)()`;
+}
+
+function newestLibraryRowScript(): string {
+    // Row query deliberately mirrors IDENTIFY (same selectors, no dialog scoping): the dialog's own
+    // DOM wrapper moved between builds, while these row selectors are what the name-identified pick
+    // already matches against.
+    return `(() => {
+        const rows = [...document.querySelectorAll('.weui-desktop-img-picker__item, div[class*="img_picker" i] li, div[class*="imgList" i] li, div[class*="cover" i] li')]
+            .filter((row) => row.offsetWidth > 0);
+        const row = rows[0];
+        if (!row) return 'missing';
+        if (!row.classList.contains('selected')) {
+            row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+            row.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+            row.click();
+        }
+        const css = row.querySelector('[style*="background-image"]')?.style.backgroundImage ?? '';
+        const backgroundUrl = css.startsWith('url("') || css.startsWith("url('") ? css.slice(5, -2) : css.startsWith('url(') ? css.slice(4, -1) : '';
+        const src = row.querySelector('img')?.src || backgroundUrl;
+        return JSON.stringify({ picked: true, src });
+    })()`;
+}
+
+/** Upload `file` into 图片库 through the open picker; `false` when the dialog offers no control. */
+async function uploadCoverToLibrary(
+    page: WechatPage,
+    file: string,
+    deps: Pick<ModeRunDeps, 'stepTimeoutMs'>,
+): Promise<boolean> {
+    let input = await tryFindSelector(page, COVER_LIBRARY_FILE_INPUT, 1_500);
+    if (input === undefined) {
+        const upload = await tryFindSelector(page, COVER_LIBRARY_UPLOAD, Math.min(deps.stepTimeoutMs, 4_000));
+        if (upload === undefined) return false;
+        await clickSelector(page, upload, deps.stepTimeoutMs).catch(() => undefined);
+        input = await tryFindSelector(page, COVER_LIBRARY_FILE_INPUT, Math.min(deps.stepTimeoutMs, 5_000));
+    }
+    if (input === undefined) return false;
+    await uploadFile(asPlaywrightPage(page), input, file, { timeoutMs: 120_000 });
+    return true;
+}
+
 export async function setCover(
     page: WechatPage,
     source: 'library' | 'body',
@@ -1054,6 +1210,27 @@ export async function setCover(
                 Math.min(deps.stepTimeoutMs, 8_000),
             );
             rawIdentify = String(await page.evaluate(IDENTIFY));
+        }
+        // Only upload into a grid we can actually read back: an upload whose pick cannot follow just
+        // duplicates material in the operator's library (measured 2026-11-12: 336 → 339 with no
+        // cover attached), so a grid we cannot query means "warn", not "upload anyway".
+        const gridReadable =
+            rawIdentify === 'missing' && Number(await page.evaluate(libraryRowCountScript()).catch(() => 0)) > 0;
+        if (gridReadable && source === 'library' && identity.requested !== undefined) {
+            // The pipeline's cover is not in the library yet: upload it, then let the same
+            // name-identified pick run against the refreshed list.
+            const uploaded = await uploadCoverToLibrary(page, identity.requested, deps).catch(() => false);
+            if (uploaded) {
+                await waitUntil(
+                    async () => {
+                        rawIdentify = String(await page.evaluate(IDENTIFY));
+                        return rawIdentify !== 'missing';
+                    },
+                    Math.min(deps.stepTimeoutMs, 20_000),
+                );
+                // Uploaded in this step and still unnamed in the grid: the first row is that upload.
+                if (rawIdentify === 'missing') rawIdentify = String(await page.evaluate(newestLibraryRowScript()));
+            }
         }
         if (rawIdentify === 'missing')
             return await warn(`cover: ${what} 未标出与请求文件同名的素材，未选择（不按首图猜测）`);
@@ -1245,6 +1422,10 @@ async function composeArticle(
     ]) {
         if (warning !== null) warnings.push(warning);
     }
+    // The editor raises its own 内容结构检测 notice after a paste when the body carries code fences
+    // (measured 2026-11-12: two <pre> blocks). That modal covers the cover-panel opener, so every
+    // later control reads as absent drift unless it is cleared first.
+    await closeOpenDialogs(page);
     const coverSource = coverSourceOf(deps.content);
     const audioRuns = audioBlockOf(deps.content) !== null;
     if (!(coverSource === 'library' && audioRuns)) {
