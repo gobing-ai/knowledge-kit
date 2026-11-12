@@ -1052,9 +1052,9 @@ export function dailyGenerate(args: string[]): void {
     // Pre-spend script floor gate (2026-10-22). QC's candidate-text estimate does not predict the
     // spoken length — 20261020 planned 3968 chars and rendered 8.4 min, 20261021 planned 4548 and
     // rendered 17.9 — but the authored VoiceScript IS the spoken text, and 14 measured episodes
-    // deliver it at 5.24-5.94 chars/s. Reusing `spokenCharRate` (the slowest measured band) makes the
-    // estimate over-predict slightly, which is the safe direction here: a thin day is refused before
-    // the 1-2 h synthesis, and one that would have cleared the floor is never refused.
+    // deliver it at 5.24-5.94 chars/s. The floor estimate uses `scriptFloorCharRate`, NOT
+    // `spokenCharRate`: the fit rate's slow calibration over-predicts minutes and passes a thin
+    // script into the full synthesis, which the measured gate then refuses (20261111).
     const minMinutes = episodeMinMinutes === '' ? 0 : Number(episodeMinMinutes);
     if (!Number.isFinite(minMinutes) || minMinutes < 0) {
         failWith(1, `generate: invalid episode_min_minutes: ${episodeMinMinutes}`);
@@ -1070,7 +1070,7 @@ export function dailyGenerate(args: string[]): void {
                 (sum, segment) => sum + (typeof segment.text === 'string' ? segment.text.length : 0),
                 0,
             );
-            const charRate = spokenCharRate(vdriver);
+            const charRate = scriptFloorCharRate(vdriver);
             const seconds = 8 + chars / charRate;
             if (seconds < minMinutes * 60) {
                 refuseScriptBelowFloor(workDir, runDate, { chars, charRate, seconds, minMinutes });
@@ -3941,6 +3941,22 @@ function voicescriptToBlockYaml(script: Record<string, unknown>): string {
         }
     }
     return lines.join('\n');
+}
+
+/**
+ * Floor-gate char rate — deliberately separate from `spokenCharRate` because the two consumers
+ * need opposite safe directions. The fit/ceiling budget wants the slow rate (a too-big fit renders
+ * an episode the ceiling then rejects — why gemini was recalibrated to 4.95 on 2026-10-15). The
+ * pre-spend script floor gate wants the opposite: a slow rate over-predicts minutes and passes a
+ * thin script into the 1-2 h synthesis, which the measured gate refuses after the spend
+ * (20261111 a17: 4,805-char script estimated 16.3 min at 4.95, rendered 14.2 min at a measured
+ * 5.64 chars/s; band 5.33-5.88 across 20261004/07 + the 0237 live dry run). 5.6 — the band center
+ * and the voicebox default — refuses a17-class days before any spend; slow-mix days near the
+ * floor may be refused early, the cheaper error per the ceiling gate's own economics.
+ */
+function scriptFloorCharRate(vdriver: string): number {
+    if (vdriver === 'gemini') return 5.6;
+    return spokenCharRate(vdriver);
 }
 
 /** Measured driver rates from dailyGenerate. Unknown drivers reuse the voicebox rate. */
