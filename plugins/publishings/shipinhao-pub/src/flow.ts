@@ -57,6 +57,9 @@ import {
     SHP_AUDIO_SELECTORS,
     SHP_CONFIG,
     SHP_COVER_SAVE_WAIT_MS,
+    SHP_DESCRIPTION_MAX_CHARS,
+    SHP_DRAFT_CONFIRM_DIALOG_TEXT,
+    SHP_DRAFT_CONFIRM_PROCEED_LABEL,
     SHP_HOME_URL_BY_OPERATION,
     SHP_IMAGE_SELECTORS,
     SHP_MUSIC_SELECTORS,
@@ -122,6 +125,39 @@ function needsLogin(error: unknown): boolean {
 /** Whitespace-insensitive comparison: site normalizations must not fail a strict readback. */
 function normalizeText(value: string): string {
     return value.replace(/\s+/g, '');
+}
+
+/** Plain text of sanitized HTML: block tags → newlines, then strip tags and decode entities. */
+function htmlToPlainText(html: string): string {
+    return html
+        .replace(/<\/(p|h[1-6]|li|blockquote|div)>/gi, '\n')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .trim();
+}
+
+/**
+ * Build the description the 添加描述 editor can actually retain: plain text (the editor keeps
+ * innerText, not markdown — headings lose `#`, links keep only their text) clipped to the 100-char
+ * platform cap with the topic tags kept whole, then re-rendered to the HTML we paste. Exported for
+ * the test contract (same pipeline the flow pastes).
+ */
+export function buildShipinhaoDescription(
+    body: string,
+    tags: readonly string[],
+): { description: string; html: string } {
+    const bodyPlain = htmlToPlainText(sanitizeShipinhaoHtml(markdownToHtml(body)));
+    const topicLine = tags.map((tag) => `#${tag.replace(/^#/, '')}`).join(' ');
+    const budget = SHP_DESCRIPTION_MAX_CHARS - (tags.length > 0 ? Array.from(topicLine).length + 1 : 0);
+    const clipped = Array.from(bodyPlain).slice(0, Math.max(budget, 0)).join('').trim();
+    const description = tags.length > 0 ? `${clipped}\n${topicLine}` : clipped;
+    return { description, html: sanitizeShipinhaoHtml(markdownToHtml(description)) };
 }
 
 /**
@@ -280,6 +316,44 @@ function editorTextScript(mode: 'wujie' | 'direct', selector: string): string {
     return `${rootScriptPrefix(mode)}
     const el = root === null ? null : root.querySelector(${JSON.stringify(selector)});
     return el === null ? '' : String(el.innerText ?? el.textContent ?? '');
+})()`;
+}
+
+/**
+ * Draft-save confirm dialog (Grounded live probe 2026-11-11): with 定时发表 active, clicking
+ * 保存草稿 renders the confirm dialog whose exact text is SHP_DRAFT_CONFIRM_DIALOG_TEXT with
+ * visible 不保存/保存 buttons — the save only proceeds after clicking the visible 保存. The same
+ * dialog also exists as a hidden 0×0 template, so the click requires a rendered box; absent
+ * dialog = normal no-op. **Audio known-gap**: the audio form's auto-cover slot stays
+ * primary-loading ≥8 min (headless AND headed) and the vendor never posts the save — draft-save
+ * for audio is a typed ceiling failure until a viable audio intake is pinned.
+ */
+function draftConfirmClickScript(mode: 'wujie' | 'direct'): string {
+    return `${rootScriptPrefix(mode)} // kk-shp-draft-confirm
+    const mark = ${JSON.stringify(SHP_DRAFT_CONFIRM_DIALOG_TEXT)};
+    const proceed = ${JSON.stringify(SHP_DRAFT_CONFIRM_PROCEED_LABEL)};
+    for (const scope of [document, root]) {
+        if (!scope) continue;
+        // Anchor from the button side: the dialog text repeats across nested toast/dialog spans and
+        // the last text-bearing element is a leaf without buttons (Grounded live probe 2026-11-11).
+        for (const button of scope.querySelectorAll('button')) {
+            if (String(button.textContent || '').trim() !== proceed || button.disabled) continue;
+            // Only click a genuinely rendered dialog button: the vendor ships this dialog as a
+            // permanently hidden 0×0 template inside the form (Grounded live probe 2026-11-11) —
+            // clicking the hidden copy is a silent no-op that would otherwise satisfy the rail.
+            const rect = button.getBoundingClientRect();
+            if (!(rect.width > 0 && rect.height > 0)) continue;
+            let ancestor = button;
+            for (let depth = 0; depth < 6 && ancestor; depth++) {
+                if (String(ancestor.textContent || '').includes(mark)) {
+                    button.click();
+                    return JSON.stringify({ ok: true });
+                }
+                ancestor = ancestor.parentElement;
+            }
+        }
+    }
+    return JSON.stringify({ ok: false, reason: 'absent' });
 })()`;
 }
 
@@ -898,11 +972,13 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
     }
 
     /**
-     * The live post flow on the already-navigated creation page (per-operation entry,
-     * `SHP_HOME_URL_BY_OPERATION`): the bounded wujie root policy (never a wrong root) → media
-     * attach with editing-form verification → title fill with readback → sanitized
-     * description/topics paste with readback → requested-only 声明原创 → optional committed cover
-     * → the draft save or the explicit-public 发表 → fresh-receipt confirmation.
+     * The live post flow on the already-navigated dashboard (recon-Grounded 2026-11-11: ALL
+     * operations enter through the dashboard — direct per-kind URLs redirect there): dashboard
+     * create-entry click-through (发表视频 → /platform/post/create) → the bounded wujie root
+     * policy (never a wrong root) → media attach with editing-form verification → title fill with
+     * readback → sanitized description/topics paste with readback → requested-only 声明原创 →
+     * optional committed cover → the draft save or the explicit-public 发表 → fresh-receipt
+     * confirmation.
      */
     private async runPostFlow(
         page: Page,
@@ -924,6 +1000,49 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
             profileDir,
             ...(declareOriginal ? { original: true } : {}),
         };
+
+        // Dashboard click-through: the entry button opens the unified /platform/post/create
+        // surface (recon-Grounded 2026-11-11); the create page is confirmed by a media file input
+        // appearing in the active root. Already-open create pages (defensive re-entry) skip the
+        // click.
+        const entrySnapshot = await readRootSnapshot(page);
+        if (entrySnapshot.shadowFileInputs + entrySnapshot.directFileInputs === 0) {
+            const entryRoot = await resolveCreatorRoot(page);
+            if (entryRoot.error !== undefined) return stageFail(SHP_TARGET, entryRoot.error, 'root-resolve', metadata);
+            try {
+                const entry = (
+                    await resolveRootLocator(
+                        page,
+                        entryRoot.mode as 'wujie' | 'direct',
+                        spec.selectors.createEntry,
+                        'shipinhao create entry',
+                        this.stepTimeoutMs,
+                    )
+                ).locator;
+                await entry.click();
+            } catch (error) {
+                return stageFail(
+                    SHP_TARGET,
+                    `shipinhao create entry click failed — ${errorMessage(error)}`,
+                    'entry-open',
+                    metadata,
+                );
+            }
+            const opened = await expectOutcome(
+                async () => {
+                    const snapshot = await readRootSnapshot(page);
+                    return snapshot.shadowFileInputs + snapshot.directFileInputs > 0 ? 'create surface open' : null;
+                },
+                { timeoutMs: this.stepTimeoutMs, label: 'shipinhao create surface' },
+            );
+            if (!opened.ok)
+                return stageFail(
+                    SHP_TARGET,
+                    `shipinhao create surface never opened after the entry click — no media file input appeared in the active root — ${opened.error}`,
+                    'entry-open',
+                    metadata,
+                );
+        }
 
         // Root-resolve BEFORE any upload: the bounded wujie policy — wujie shadowRoot only, or the
         // unique direct creator form; ambiguity/absence refuses here (see `resolveCreatorRoot`).
@@ -1051,16 +1170,14 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
             );
         }
 
-        // Description + topics: Markdown → sanitized HTML (topics appended as `#tag` lines, the
-        // vendor strips `#`/trims the same way before writing, shipinhao.js:2689-2692) pasted as
-        // text/html through the root-scoped locator, then a strict text readback. Topic-token
-        // conversion (the vendor's per-topic paste + Enter, shipinhao.js:1414) is not asserted —
-        // the readback is text-level, and the receipt stage re-verifies persistence.
-        const html = sanitizeShipinhaoHtml(
-            markdownToHtml(
-                tags.length === 0 ? body : `${body}\n\n${tags.map((tag) => `#${tag.replace(/^#/, '')}`).join('  ')}`,
-            ),
-        );
+        // Description + topics: the editor retains plain text only (headings lose `#`, links
+        // keep just their text) and hard-truncates any paste to 100 chars (Grounded live probe
+        // 2026-11-11), so the pasted content IS the clipped plain description (topics appended as
+        // `#tag`, the vendor strips `#`/trims the same way before writing, shipinhao.js:2689-2692),
+        // and the readback asserts that same string. Topic-token conversion (the vendor's
+        // per-topic paste + Enter, shipinhao.js:1414) is not asserted — the readback is
+        // text-level, and the receipt stage re-verifies persistence.
+        const { description, html } = buildShipinhaoDescription(body, tags);
         try {
             const editorSelector = (
                 await resolveRootLocator(
@@ -1076,7 +1193,7 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
                 async () => {
                     const editorText = String(await page.evaluate(editorTextScript(mode, editorSelector)));
                     return editorText.length > 0 &&
-                        normalizeText(editorText).includes(normalizeText(body)) &&
+                        normalizeText(editorText).includes(normalizeText(description)) &&
                         tags.every((tag) => editorText.includes(`#${tag.replace(/^#/, '')}`))
                         ? 'description and topics read back'
                         : null;
@@ -1171,6 +1288,13 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
         await submitLocator.click();
         const confirmed = await expectOutcome(
             async () => {
+                if (!publishPublic) {
+                    // 定时发表 guard (Grounded 2026-11-11): a draft save opens the confirm dialog;
+                    // absent dialog = no-op. Fail-closed stays with the receipt ceiling below.
+                    const confirmRaw = String(await page.evaluate(draftConfirmClickScript(mode)));
+                    const confirm = JSON.parse(confirmRaw) as { ok: boolean; reason?: string };
+                    if (confirm.ok) return null; // 保存 clicked — receipts land on a later poll
+                }
                 const fresh = (await readReceiptUrls(page)).filter((candidate) => !beforeReceipts.has(candidate));
                 if (fresh.length === 0) return null;
                 const ids = new Set(fresh.map(receiptIdFrom).filter((id): id is string => id !== undefined));

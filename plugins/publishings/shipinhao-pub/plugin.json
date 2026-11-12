@@ -7,6 +7,6 @@
     "description": "shipinhao (channels.weixin.qq.com) publish via a script browser transport with wujie-app shadowRoot traversal; four post kinds (shortVideo 视频, audio 音频, image 图文, music 音乐 — audio is the first deliverable); draft by default, public only on an explicit publishStatus with a fresh works receipt, requested-only 声明原创 declaration",
     "browserSession": {
         "profileName": "shipinhao",
-        "homeUrl": "https://channels.weixin.qq.com/platform/post/video"
+        "homeUrl": "https://channels.weixin.qq.com/platform"
     }
 }

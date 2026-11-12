@@ -1,7 +1,7 @@
 /**
  * shipinhao profile-session capability (task 0296, Chunk A).
  *
- * `login` opens the Channels publishing home (https://channels.weixin.qq.com/platform/post/video,
+ * `login` opens the Channels dashboard (https://channels.weixin.qq.com/platform,
  * see `src/selectors.ts`) in a headed browser and resolves only once the site readiness predicate
  * passes; `check` reopens the profile (headlessly, unless the operator passes `--headed` or the
  * config sets `checkHeadedOnly`) and reports `verified` or `refused`; `open` just brings the

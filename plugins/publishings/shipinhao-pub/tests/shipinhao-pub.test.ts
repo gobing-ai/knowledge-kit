@@ -36,7 +36,13 @@ import {
     type ProfileLaunchRequest,
 } from '@gobing-ai/ts-browser-automation';
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
-import { SHP_LOGIN_INSTRUCTION, ShipinhaoBrowserTransport, sanitizeShipinhaoHtml, stageFail } from '../src/flow';
+import {
+    buildShipinhaoDescription,
+    SHP_LOGIN_INSTRUCTION,
+    ShipinhaoBrowserTransport,
+    sanitizeShipinhaoHtml,
+    stageFail,
+} from '../src/flow';
 import { getPublishTransport, main, processPublishIO, resolveOperation, SHP_OPERATIONS } from '../src/index';
 import {
     isShipinhaoAuthenticated,
@@ -45,6 +51,8 @@ import {
     SHP_CONFIG,
     SHP_COVER_PREVIEW_WAIT_MS,
     SHP_COVER_SAVE_WAIT_MS,
+    SHP_CREATE_ENTRY_SELECTORS,
+    SHP_DESCRIPTION_MAX_CHARS,
     SHP_FORM_WAIT_MS,
     SHP_HOME_URL,
     SHP_HOME_URL_BY_OPERATION,
@@ -73,7 +81,8 @@ const DRAFT_URL = 'https://channels.weixin.qq.com/platform/record/detail/shp2600
 const SECOND_DRAFT_URL = 'https://channels.weixin.qq.com/platform/record/detail/shp26002';
 const PUBLISH_URL = 'https://channels.weixin.qq.com/platform/post/video/pub0777';
 
-const { videoInput, titleInput, descriptionEditor, saveButton, publishButton, coverDialog } = SHP_VIDEO_SELECTORS;
+const { videoInput, titleInput, descriptionEditor, saveButton, publishButton, coverDialog, createEntry } =
+    SHP_VIDEO_SELECTORS;
 const VIDEO_INPUT = videoInput[0];
 const AUDIO_INPUT = SHP_AUDIO_SELECTORS.audioInput[0];
 const IMAGES_INPUT = SHP_IMAGE_SELECTORS.imagesInput[0];
@@ -139,6 +148,8 @@ interface FakePageOptions {
     submitInvisible?: boolean;
     submitNeverEnabled?: boolean;
     onSaveClick?: 'draftReceipt' | 'none' | 'twoIds';
+    /** The 定时发表 draft-save confirm dialog (保存/不保存) appears after the 保存草稿 click. */
+    draftConfirmDialog?: boolean;
     existingReceiptUrl?: string;
     /** Toast text present on the page — must never rescue a publish (this flow reads no toasts). */
     existingToasts?: string[];
@@ -160,10 +171,14 @@ const makeFakePage = (shared: FakePageShared, options: FakePageOptions): Page =>
     let rootReads = 0;
     let url = 'about:blank';
     let mediaAssigned = false;
+    // Dashboard → create-surface model (recon-Grounded 2026-11-11): the flow lands on the
+    // dashboard (no file input), clicks 发表视频, and only then does the media file input exist.
+    let createOpened = false;
     let titleValue = '';
     let editorHtml = '';
     let coverDescriptor = 'base';
     let coverDialogOpen = false;
+    let draftConfirmOpen = false;
     let originalEntryChecked = false;
     let originalAgreementChecked = false;
     let originalWrapperPresent = false;
@@ -178,7 +193,8 @@ const makeFakePage = (shared: FakePageShared, options: FakePageOptions): Page =>
     const countOf = (selector: string): number => {
         const base = baseSelector(selector);
         if (base === 'wujie-app') return options.groundedMissing ? 0 : 1;
-        if (MEDIA_INPUT_LADDER.includes(base)) return options.missingVideoInput ? 0 : 1;
+        if (createEntry.includes(base)) return 1;
+        if (MEDIA_INPUT_LADDER.includes(base)) return createOpened && !options.missingVideoInput ? 1 : 0;
         if (titleInput.includes(base)) return mediaAssigned && !options.missingTitleInput ? 1 : 0;
         if (descriptionEditor.includes(base)) return mediaAssigned && !options.missingEditor ? 1 : 0;
         if (saveButton.includes(base) || publishButton.includes(base)) return options.submitMissing ? 0 : 1;
@@ -217,7 +233,7 @@ const makeFakePage = (shared: FakePageShared, options: FakePageOptions): Page =>
                     return JSON.stringify({
                         wujiePresent: false,
                         shadowRootReady: false,
-                        directFileInputs: 1,
+                        directFileInputs: createOpened ? 1 : 0,
                         directTextEvidence: 2,
                         shadowFileInputs: 0,
                         shadowTextEvidence: 0,
@@ -228,8 +244,8 @@ const makeFakePage = (shared: FakePageShared, options: FakePageOptions): Page =>
                     shadowRootReady: ready,
                     directFileInputs: 0,
                     directTextEvidence: 0,
-                    shadowFileInputs: ready ? 1 : 0,
-                    shadowTextEvidence: ready ? 2 : 0,
+                    shadowFileInputs: createOpened ? 1 : 0,
+                    shadowTextEvidence: 2,
                 });
             }
             if (expression.includes('kk-shp-receipt-urls')) {
@@ -325,6 +341,13 @@ const makeFakePage = (shared: FakePageShared, options: FakePageOptions): Page =>
                 shared.calls.push('cover:confirm');
                 return JSON.stringify({ ok: true });
             }
+            if (expression.includes('kk-shp-draft-confirm')) {
+                if (options.draftConfirmDialog !== true || draftConfirmOpen === false)
+                    return JSON.stringify({ ok: false, reason: 'absent' });
+                draftConfirmOpen = false; // one-shot: clicking 保存 closes the dialog
+                shared.calls.push('draft:confirm');
+                return JSON.stringify({ ok: true });
+            }
             return '';
         },
         locator: (selector: string) => {
@@ -341,10 +364,15 @@ const makeFakePage = (shared: FakePageShared, options: FakePageOptions): Page =>
                 click: async () => {
                     const base = baseSelector(selector);
                     shared.calls.push(`click:${selector}`);
+                    if (createEntry.includes(base)) {
+                        createOpened = true;
+                        shared.calls.push('entry:open');
+                    }
                     if (publishButton.includes(base)) url = PUBLISH_URL;
                     if (saveButton.includes(base)) {
                         if (options.onSaveClick === 'draftReceipt') url = DRAFT_URL;
                         if (options.onSaveClick === 'twoIds') freshAnchors.push(DRAFT_URL, SECOND_DRAFT_URL);
+                        if (options.draftConfirmDialog === true) draftConfirmOpen = true;
                     }
                 },
                 setInputFiles: async (files: string | readonly string[]) => {
@@ -449,6 +477,7 @@ describe('1. declared surface (selectors, constants, config, operations, manifes
                 'coverDialog',
                 'coverDialogFileInputSuffix',
                 'coverEditEntry',
+                'createEntry',
                 'descriptionEditor',
                 'originalAgreementCheckbox',
                 'originalConfirmLabel',
@@ -477,7 +506,9 @@ describe('1. declared surface (selectors, constants, config, operations, manifes
 
     test('URL / regex / timeout constants match the vendor surface contract', () => {
         expect(SHP_TARGET).toBe('shipinhao');
-        expect(SHP_HOME_URL).toBe('https://channels.weixin.qq.com/platform/post/video');
+        expect(SHP_HOME_URL).toBe('https://channels.weixin.qq.com/platform');
+        expect(SHP_CREATE_ENTRY_SELECTORS).toEqual(['button:text-is("发表视频")']);
+        expect(SHP_DESCRIPTION_MAX_CHARS).toBe(100);
         expect(SHP_LOGIN_URL_RE.source).toContain('open\\.weixin\\.qq\\.com');
         expect(SHP_LOGIN_URL_RE.test(SIGNIN_URL)).toBe(true);
         expect(SHP_LOGIN_URL_RE.test(SHP_HOME_URL)).toBe(false);
@@ -533,17 +564,17 @@ describe('1. declared surface (selectors, constants, config, operations, manifes
         expect(Object.keys(SHP_AUDIO_SELECTORS).sort()).toEqual(
             [...Object.keys(SHP_VIDEO_SELECTORS), 'audioInput'].sort(),
         );
-        expect(SHP_AUDIO_SELECTORS.audioInput[0]).toBe('input[type="file"][accept*="audio"]');
+        expect(SHP_AUDIO_SELECTORS.audioInput).toEqual(['input[type="file"][accept*="video"]', 'input[type="file"]']);
         expect(Object.keys(SHP_MUSIC_SELECTORS)).toEqual(Object.keys(SHP_AUDIO_SELECTORS));
         expect(Object.keys(SHP_IMAGE_SELECTORS).sort()).toEqual(
             [...Object.keys(SHP_VIDEO_SELECTORS), 'imagesInput'].sort(),
         );
         expect(SHP_IMAGE_SELECTORS.imagesInput[0]).toBe('input[type="file"][multiple]');
         expect(SHP_HOME_URL_BY_OPERATION).toEqual({
-            shortVideo: 'https://channels.weixin.qq.com/platform/post/video',
-            audio: 'https://channels.weixin.qq.com/platform/post/audio',
-            image: 'https://channels.weixin.qq.com/platform/post/image',
-            music: 'https://channels.weixin.qq.com/platform/post/music',
+            shortVideo: SHP_HOME_URL,
+            audio: SHP_HOME_URL,
+            image: SHP_HOME_URL,
+            music: SHP_HOME_URL,
         });
     });
 
@@ -894,6 +925,35 @@ describe('3. sanitizer chain and paste-script construction', () => {
         const pastedHtml = (paste ?? '').slice((paste ?? '').indexOf('|') + 1);
         expect(pastedHtml).toBe(sanitizeShipinhaoHtml(markdownToHtml('Fixture 描述正文。')));
     });
+
+    test('a long body is pasted as the clipped plain description with topics kept whole', async () => {
+        const longBody = `# 标题\n\n${'很长的节目内容。'.repeat(30)}`;
+        const fake = makeFakeLauncher({ onSaveClick: 'draftReceipt' });
+        const result = await transport(fake).publish({
+            content: draftContent({ videoPath: VIDEO_PATH, tags: ['AI', '播客'] }, { body: longBody }),
+        });
+        expect(result.ok).toBe(true);
+        const paste = fake.calls.find((call) => call.startsWith('paste:')) ?? '';
+        const pastedHtml = paste.slice(paste.indexOf('|') + 1);
+        const { description } = buildShipinhaoDescription(longBody, ['AI', '播客']);
+        expect(pastedHtml).toBe(sanitizeShipinhaoHtml(markdownToHtml(description)));
+        expect(description.endsWith('\n#AI #播客')).toBe(true);
+    });
+
+    test('buildShipinhaoDescription clips plain text to the 100-char editor cap and strips markdown', () => {
+        const { description } = buildShipinhaoDescription(
+            `## 一${'很长的节目内容。'.repeat(30)}[来源：x](https://example.com/a)`,
+            ['AI'],
+        );
+        expect(description.endsWith('#AI')).toBe(true);
+        expect(Array.from(description).length).toBeLessThanOrEqual(100);
+        expect(description).not.toContain('##');
+        expect(description).not.toContain('http');
+        const short = buildShipinhaoDescription('短正文。', ['AI', '播客']);
+        expect(short.description).toBe('短正文。\n#AI #播客');
+        const bare = buildShipinhaoDescription('短正文。', []);
+        expect(bare.description).toBe('短正文。');
+    });
 });
 
 describe('4. payload/IO + main() exit semantics', () => {
@@ -1043,6 +1103,21 @@ describe('5. session preflight', () => {
 });
 
 describe('6. flow stages (offline fake page running the real evaluate scripts)', () => {
+    test('the 定时发表 draft-confirm dialog is clicked through 保存 before the receipt', async () => {
+        const fake = makeFakeLauncher({ onSaveClick: 'draftReceipt', draftConfirmDialog: true });
+        // Own transport: the confirm click spends one extra poll round before the receipt read.
+        const t = new ShipinhaoBrowserTransport('shortVideo', 'script', {
+            launcher: fake.launcher,
+            stepTimeoutMs: 3000,
+        });
+        const result = await t.publish({ content: draftContent({ videoPath: VIDEO_PATH }) });
+
+        expect(result.ok).toBe(true);
+        expect(result.url).toBe(DRAFT_URL);
+        expect(fake.calls).toContain('draft:confirm');
+        expect(fake.calls.indexOf('draft:confirm')).toBeGreaterThan(fake.calls.indexOf(`click:wujie-app ${SAVE}`));
+    });
+
     test('a fresh receipt with full persisted readback confirms the draft', async () => {
         const fake = makeFakeLauncher({ onSaveClick: 'draftReceipt' });
         const result = await transport(fake).publish({ content: draftContent({ videoPath: VIDEO_PATH }) });
@@ -1192,7 +1267,7 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
         expect(result.metadata).toMatchObject({ stage: 'title-readback' });
         expect(result.error).toContain('title readback failed');
         expect(fake.calls.some((call) => call.startsWith('paste:'))).toBe(false);
-        expect(fake.calls.some((call) => call.startsWith('click:'))).toBe(false);
+        expect(fake.calls.some((call) => call.includes(SAVE) || call.includes(PUBLISH))).toBe(false);
     });
 
     test('a missing description editor is a typed upload-processing failure, never a silent skip', async () => {
@@ -1201,7 +1276,7 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
         expect(result.ok).toBe(false);
         expect(result.metadata).toMatchObject({ stage: 'upload-processing' });
         expect(result.error).toContain('media processing not confirmed');
-        expect(fake.calls.some((call) => call.startsWith('click:'))).toBe(false);
+        expect(fake.calls.some((call) => call.includes(SAVE) || call.includes(PUBLISH))).toBe(false);
     });
 
     test('a paste the editor never receives is refused before any submit control is touched', async () => {
@@ -1211,7 +1286,7 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
         expect(result.metadata).toMatchObject({ stage: 'description-paste-readback' });
         expect(result.error).toContain('description paste failed');
         expect(result.error).toContain('not attached for paste');
-        expect(fake.calls.some((call) => call.startsWith('click:'))).toBe(false);
+        expect(fake.calls.some((call) => call.includes(SAVE) || call.includes(PUBLISH))).toBe(false);
     });
 
     test('a dropped paste is refused at the description readback before any save control is clicked', async () => {
@@ -1220,7 +1295,7 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
         expect(result.ok).toBe(false);
         expect(result.metadata).toMatchObject({ stage: 'description-paste-readback' });
         expect(result.error).toContain('description readback failed');
-        expect(fake.calls.some((call) => call.startsWith('click:'))).toBe(false);
+        expect(fake.calls.some((call) => call.includes(SAVE) || call.includes(PUBLISH))).toBe(false);
     });
 
     test('a missing 声明原创 entry checkbox refuses the requested declaration', async () => {
@@ -1231,7 +1306,7 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
         expect(result.ok).toBe(false);
         expect(result.metadata).toMatchObject({ stage: 'original-declare' });
         expect(result.error).toContain('entry checkbox not found');
-        expect(fake.calls.some((call) => call.startsWith('click:'))).toBe(false);
+        expect(fake.calls.some((call) => call.includes(SAVE) || call.includes(PUBLISH))).toBe(false);
     });
 
     test('an ambiguous 声明原创 entry refuses rather than guessing which 原创 control', async () => {
@@ -1314,7 +1389,7 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
         expect(result.metadata).toMatchObject({ stage: 'draft-save' });
         expect(result.error).toContain('draft-save control never attached');
         expect(result.error).toContain('not a manufactured draft');
-        expect(fake.calls.some((call) => call.startsWith('click:'))).toBe(false);
+        expect(fake.calls.some((call) => call.includes(SAVE) || call.includes(PUBLISH))).toBe(false);
     });
 
     test('a hidden or never-clickable submit control refuses at its own leg, before any click', async () => {
@@ -1323,7 +1398,7 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
         expect(hiddenResult.ok).toBe(false);
         expect(hiddenResult.metadata).toMatchObject({ stage: 'draft-save' });
         expect(hiddenResult.error).toContain('attached but not visible');
-        expect(hidden.calls.some((call) => call.startsWith('click:'))).toBe(false);
+        expect(hidden.calls.some((call) => call.includes(SAVE) || call.includes(PUBLISH))).toBe(false);
 
         const disabled = makeFakeLauncher({ submitNeverEnabled: true, onSaveClick: 'draftReceipt' });
         const disabledResult = await transport(disabled).publish({
@@ -1332,7 +1407,7 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
         expect(disabledResult.ok).toBe(false);
         expect(disabledResult.metadata).toMatchObject({ stage: 'draft-save' });
         expect(disabledResult.error).toContain('never became clickable');
-        expect(disabled.calls.some((call) => call.startsWith('click:'))).toBe(false);
+        expect(disabled.calls.some((call) => call.includes(SAVE) || call.includes(PUBLISH))).toBe(false);
     });
 
     test('an idless state (stale receipt on screen, no fresh gain) is a typed draft-receipt failure', async () => {
@@ -1471,7 +1546,7 @@ describe('7. source hygiene (no eval, one evaluate paste, setInputFiles media, n
     test('every resolveRootLocator call site is wrapped in a catch arm returning a typed stageFail', async () => {
         const flow = await readFile(join(import.meta.dir, '..', 'src', 'flow.ts'), 'utf-8');
         const sites = [...flow.matchAll(/await resolveRootLocator\(/g)];
-        expect(sites).toHaveLength(7); // video input, form title, form editor, paste editor, cover input, submit, title fill
+        expect(sites).toHaveLength(8); // create entry, video input, form title, form editor, paste editor, cover input, submit, title fill
         for (const site of sites) {
             const tail = flow.slice(site.index ?? 0);
             const catchIdx = tail.indexOf('} catch');
@@ -1481,13 +1556,14 @@ describe('7. source hygiene (no eval, one evaluate paste, setInputFiles media, n
         }
     });
 
-    test('the title is filled natively and the only awaited click is the resolved submit control', async () => {
+    test('the title is filled natively and the awaited clicks are the entry and the resolved submit control', async () => {
         const flow = await readFile(join(import.meta.dir, '..', 'src', 'flow.ts'), 'utf-8');
         expect(flow).toContain('.fill(title)');
         // Every `.value` occurrence in the flow is a readback read; never a bare write.
         expect(flow).not.toMatch(/\.value\s*=[^=]/);
-        // The only awaited locator click is the submit rail (draft save or 发表).
-        expect(flow.match(/await [A-Za-z.]+\.click\(/g)).toHaveLength(1);
+        // The awaited locator clicks are the dashboard entry rail and the submit rail (draft save or 发表).
+        expect(flow.match(/await [A-Za-z.]+\.click\(/g)).toHaveLength(2);
+        expect(flow).toContain('await entry.click()');
         expect(flow).toContain('await submitLocator.click()');
     });
 

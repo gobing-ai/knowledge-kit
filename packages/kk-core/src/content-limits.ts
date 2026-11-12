@@ -174,7 +174,8 @@ export const PLATFORM_CONTENT_LIMITS: PlatformLimitsConfig = Object.freeze({
         shortVideo: Object.freeze({
             douyin: Object.freeze({ max: 1000, unit: 'unicode_code_points' }),
             kuaishou: Object.freeze({ max: 1000, unit: 'unicode_code_points' }),
-            shipinhao: Object.freeze({ max: 1000, unit: 'unicode_code_points' }),
+            // 添加描述 hard-truncates to 100 plain chars (Grounded live probe 2026-11-11).
+            shipinhao: Object.freeze({ max: 100, unit: 'unicode_code_points' }),
         }),
     }),
 });
