@@ -159,7 +159,7 @@ describe('itcCheckTargets & Probes (0302 / G21 R1)', () => {
         });
     });
 
-    it('refuses with exit 1 when a target channel probe fails', async () => {
+    it('records a refusing probe and keeps the run alive (warn-only, 0332 parity)', async () => {
         await withTempDir(async (workDir) => {
             const publishDir = join(workDir, '4-publish');
             mkdirSync(publishDir, { recursive: true });
@@ -183,9 +183,14 @@ describe('itcCheckTargets & Probes (0302 / G21 R1)', () => {
             }
 
             const code = await itcCheckTargets([workDir], undefined, new FailingProbe());
-            expect(code).toBe(1);
+            expect(code).toBe(0);
             expect(probed).toHaveLength(1);
             expect(probed[0]?.[1]).toBe('check');
+            // One dead channel must not veto the rest of the fan-out; the receipt stays the authority.
+            const probes = JSON.parse(readFileSync(join(publishDir, 'check-targets.json'), 'utf-8')) as {
+                plugins: Array<{ plugin: string; ok: boolean }>;
+            };
+            expect(probes.plugins).toEqual([{ plugin: 'juejin-pub', ok: false }]);
         });
     });
 
@@ -236,7 +241,7 @@ describe('itcCheckTargets & Probes (0302 / G21 R1)', () => {
                 });
                 const withDetail = captureOutput();
                 try {
-                    expect(await itcCheckTargets([workDir], undefined, detailed)).toBe(1);
+                    expect(await itcCheckTargets([workDir], undefined, detailed)).toBe(0);
                 } finally {
                     withDetail.restore();
                 }
@@ -246,7 +251,7 @@ describe('itcCheckTargets & Probes (0302 / G21 R1)', () => {
                 const generic = new RecordingProbe({ exitCode: 1 });
                 const noDetail = captureOutput();
                 try {
-                    expect(await itcCheckTargets([workDir], undefined, generic)).toBe(1);
+                    expect(await itcCheckTargets([workDir], undefined, generic)).toBe(0);
                 } finally {
                     noDetail.restore();
                 }
@@ -273,7 +278,7 @@ describe('itcCheckTargets & Probes (0302 / G21 R1)', () => {
                 });
                 const captured = captureOutput();
                 try {
-                    expect(await itcCheckTargets([workDir], undefined, probe)).toBe(1);
+                    expect(await itcCheckTargets([workDir], undefined, probe)).toBe(0);
                 } finally {
                     captured.restore();
                 }
@@ -303,7 +308,7 @@ describe('itcCheckTargets & Probes (0302 / G21 R1)', () => {
                 } finally {
                     captured.restore();
                 }
-                expect(code).toBe(1);
+                expect(code).toBe(0);
                 // The probe did receive it …
                 expect(probe.envs[0]?.SUBSTACK_PUBLICATION_URL).toBe(secret);
                 // … but only the probe's verdict survives into the operator message.
@@ -315,6 +320,7 @@ describe('itcCheckTargets & Probes (0302 / G21 R1)', () => {
 
                 for (const artifact of [
                     join(publishDir, 'publish-plan.json'),
+                    join(publishDir, 'check-targets.json'),
                     join(publishDir, 'receipts', 'substack-pub.json'),
                     join(workDir, '5-report', 'report.json'),
                     join(workDir, '5-report', 'report.md'),
@@ -384,6 +390,58 @@ describe('itcSendTargets, Receipts & Recovery (0302 / G21 R3, R4)', () => {
             expect(receipt.effect).toBe('confirmed');
             // Draft mode URLs must not be marked verified public
             expect(receipt.publicUrlVerified).toBe(false);
+        });
+    });
+
+    it('re-derives target payloads from the plan variants, so an adapted translation reaches the wire', async () => {
+        await withTempDir(async (workDir) => {
+            const publishDir = join(workDir, '4-publish');
+            mkdirSync(publishDir, { recursive: true });
+            seedRun(workDir, 'run-adapt');
+            const content = (title: string, body: string) => JSON.stringify({ title, format: 'markdown', body });
+            writeFileSync(join(publishDir, 'content.json'), content('原文标题', '中文正文'));
+            // The payload as materialized before `adapt` ran: still the source article.
+            writeFileSync(join(publishDir, 'content.fake-pub.json'), content('原文标题', '中文正文'));
+            writeFileSync(join(publishDir, 'content.ja-article.json'), content('日本語タイトル', '日本語の本文'));
+            writeFileSync(
+                join(publishDir, 'publish-plan.json'),
+                JSON.stringify({
+                    schemaVersion: 1,
+                    live: false,
+                    sourceLocale: 'zh',
+                    variants: { 'ja-article': { file: 'content.ja-article.json', adapt: true, switches: {} } },
+                    targets: [
+                        {
+                            plugin: 'fake-pub',
+                            profile: 'article',
+                            mode: 'draft',
+                            variant: 'ja-article',
+                            transport: 'fanout',
+                            payloadPath: '4-publish/content.fake-pub.json',
+                            metadata: { published: false },
+                        },
+                    ],
+                    fanout: [{ variant: 'ja-article', targets: ['fake-pub'] }],
+                    browser: [],
+                }),
+            );
+
+            let dispatchedTitle: string | undefined;
+            await itcSendTargets([workDir], undefined, async (argv) => {
+                const arg = (flag: string) => argv[argv.indexOf(flag) + 1] ?? '';
+                dispatchedTitle = (JSON.parse(readFileSync(arg('--content'), 'utf-8')) as { title?: string }).title;
+                writeFileSync(
+                    arg('--out'),
+                    JSON.stringify({
+                        ok: true,
+                        summary: { total: 1, succeeded: 1, failed: 0, skipped: 0 },
+                        targets: [{ target: 'fake-pub', ok: true, status: 'published', url: 'https://example.test/d' }],
+                    }),
+                );
+                return 0;
+            });
+
+            expect(dispatchedTitle).toBe('日本語タイトル');
         });
     });
 

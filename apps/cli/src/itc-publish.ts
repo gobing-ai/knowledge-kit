@@ -270,9 +270,9 @@ async function prepareTargetPayloads(
     workDir: string,
     plan: ItcPublishPlan,
     plugins: readonly PluginRecord[],
-): Promise<void> {
+): Promise<ItcPublishPlan> {
     const publishDir = join(workDir, '4-publish');
-    if (!plan.targets || plan.targets.length === 0) return;
+    if (!plan.targets || plan.targets.length === 0) return plan;
     const planned = new Set(plan.targets.map((t) => t.plugin));
     const modeKeys = new Set(['operation', 'published', 'publishStatus', 'private', 'mode']);
     for (const plugin of plugins) {
@@ -284,8 +284,10 @@ async function prepareTargetPayloads(
         }
     }
 
+    const variants = plan.variants ?? {};
+    let written = false;
     for (const target of plan.targets) {
-        const variantEntry = plan.variants[target.variant];
+        const variantEntry = variants[target.variant];
         const baseFile = variantEntry?.file ?? 'content.json';
         let basePath = join(publishDir, baseFile);
         if (!(await fs.exists(basePath))) {
@@ -318,10 +320,15 @@ async function prepareTargetPayloads(
         const payloadDigest = createHash('sha256').update(contentStr).digest('hex');
         target.payloadPath = `4-publish/${targetFileName}`;
         (target as unknown as Record<string, unknown>).payloadDigest = payloadDigest;
+        written = true;
     }
 
-    // Re-save plan with updated payloadPath and digests
-    await fs.writeFile(join(publishDir, 'publish-plan.json'), `${JSON.stringify(plan, null, 2)}\n`);
+    // Re-save only when a payload changed: the plan's own digest is a receipt-identity input, so a
+    // byte-identical rewrite is not free — it would re-key every prior receipt of the same plan.
+    if (written) {
+        await fs.writeFile(join(publishDir, 'publish-plan.json'), `${JSON.stringify(plan, null, 2)}\n`);
+    }
+    return plan;
 }
 
 /**
@@ -373,7 +380,12 @@ export async function probePlugin(
 }
 
 /**
- * Checks plugin readiness probes for declared targets before sending.
+ * `itc-check-targets`: readiness probes for the plan's targets, recorded as data.
+ *
+ * Warn-only (exit 0) — the same contract as `publish-matrix-check` (0332): a refusal is printed and
+ * written to `4-publish/check-targets.json`, never a run failure. One stale browser session must not
+ * veto the other channels of a fan-out, and the per-target receipt stays the authority on whether a
+ * channel could publish. Exit 1 is reserved for a plan that cannot be read.
  */
 export async function itcCheckTargets(
     args: string[],
@@ -388,25 +400,49 @@ export async function itcCheckTargets(
     const planPath = join(workDir, '4-publish/publish-plan.json');
     if (!(await fs.exists(planPath))) return 0;
 
-    const plan = JSON.parse(await fs.readFile(planPath)) as ItcPublishPlan;
+    let plan: ItcPublishPlan;
+    try {
+        plan = JSON.parse(await fs.readFile(planPath)) as ItcPublishPlan;
+    } catch (error: unknown) {
+        echoError(
+            `itc-check-targets: unreadable plan at ${planPath}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        return 1;
+    }
     if (!plan.targets || plan.targets.length === 0) return 0;
 
     const { plugins } = discoverAllPlugins();
     const byName = new Map(plugins.map((p) => [p.name, p]));
+    const probes: Array<{ plugin: string; ok: boolean; detail?: string }> = [];
 
     for (const target of plan.targets) {
+        if (probes.some((row) => row.plugin === target.plugin)) continue;
         const plugin = byName.get(target.plugin);
-        if (!plugin?.check) continue;
+        // A target whose plugin vanished from the tree is a runtime gap worth naming, not a plan error.
+        if (plugin === undefined) {
+            probes.push({ plugin: target.plugin, ok: false, detail: 'plugin not installed' });
+            continue;
+        }
+        if (!plugin.check) continue;
         const probe = await probePlugin(plugin, executor);
+        probes.push({ plugin: target.plugin, ok: probe.ok, ...(probe.detail ? { detail: probe.detail } : {}) });
         if (!probe.ok) {
             const botName = plugin.browserSession?.profileName ?? plugin.name;
             echoError(
-                probe.detail
-                    ? `channel probe for '${target.plugin}' refused: ${probe.detail}`
-                    : `channel probe for '${target.plugin}' refused: run \`kk bot open/login ${botName}\` to authenticate`,
+                `channel probe for '${target.plugin}': ${probe.detail ?? `run \`kk bot open/login ${botName}\` to authenticate`}`,
             );
-            return 1;
         }
+    }
+
+    try {
+        await fs.ensureDir(join(workDir, '4-publish'));
+        await fs.writeFile(
+            join(workDir, '4-publish/check-targets.json'),
+            `${JSON.stringify({ schemaVersion: 1, plugins: probes }, null, 2)}\n`,
+        );
+    } catch (error: unknown) {
+        echoError(`itc-check-targets: cannot write probes: ${error instanceof Error ? error.message : String(error)}`);
+        return 1;
     }
     return 0;
 }
@@ -749,7 +785,7 @@ export async function itcSendTargets(
     const planPath = join(publishDir, 'publish-plan.json');
     if (!(await fs.exists(planPath))) return 0;
 
-    const plan = JSON.parse(await fs.readFile(planPath)) as ItcPublishPlan;
+    let plan = JSON.parse(await fs.readFile(planPath)) as ItcPublishPlan;
     if (!plan.targets || plan.targets.length === 0) return 0;
     // A receipt is evidence for one run; without the frozen snapshot there is no run to bind it to.
     const parentRunId = (await readOptionsSnapshot(fs, workDir))?.parentRunId;
@@ -758,13 +794,31 @@ export async function itcSendTargets(
         return 1;
     }
 
+    // Re-derive the per-target payloads from the plan's variant files before dispatch. The plan is
+    // materialized BEFORE `adapt` in kk-itc.yaml, so the payloads written then carry whatever base
+    // existed at that moment — the source article. Without this refresh an adapted translation never
+    // reaches the wire: measured 2026-11-12, a `ja-article` plan dispatched the Chinese original.
+    const { plugins } = discoverAllPlugins();
+    plan = await prepareTargetPayloads(fs, workDir, plan, plugins);
+    const targets = plan.targets ?? [];
+    // An adapt:true variant with no file means the refresh fell back to the source article: the
+    // target would ship the wrong locale. Say so; the send still records it as data.
+    for (const target of targets) {
+        const entry = plan.variants?.[target.variant];
+        if (entry?.adapt !== true) continue;
+        if (await fs.exists(join(publishDir, entry.file))) continue;
+        echoError(
+            `itc-send-targets: variant ${target.variant} has no ${entry.file}; '${target.plugin}' receives the ${plan.sourceLocale} source article`,
+        );
+    }
+
     const receiptsDir = join(publishDir, 'receipts');
     await fs.ensureDir(receiptsDir);
 
     const planRaw = await fs.readFile(planPath);
     const planDigest = createHash('sha256').update(planRaw).digest('hex');
 
-    const rows: SendRow[] = plan.targets.map((target) => ({
+    const rows: SendRow[] = targets.map((target) => ({
         key: target.plugin,
         plugin: target.plugin,
         profile: target.profile,
