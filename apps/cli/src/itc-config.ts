@@ -177,10 +177,14 @@ export function slugifyTopicName(name: string): string | null {
     return slug;
 }
 
-/** Expand ONLY a leading `~`; every other `$`/backtick sequence is left as literal data. */
+/**
+ * Expand ONLY a leading `~`/`$HOME` prefix (the forms the kk config examples use); any other
+ * `$`/backtick sequence — including an embedded or `$HOME`-containing literal — stays as data.
+ */
 function expandHome(value: string, homeDir: string): string {
-    if (value === '~') return homeDir;
+    if (value === '~' || value === '$HOME') return homeDir;
     if (value.startsWith('~/')) return join(homeDir, value.slice(2));
+    if (value.startsWith('$HOME/')) return join(homeDir, value.slice('$HOME/'.length));
     return value;
 }
 

@@ -31,8 +31,9 @@
  *       the source-locale article profile share content.json (adapt:false); every other profile
  *       gets content.<variant>.json (adapt:true) and each variant carries the union of its
  *       targets' draft/live switches (V3). Exits 1, naming the target, for an unknown or
- *       non-article target, a target with no switch for the run's mode (x-pub in draft,
- *       wechatmp-pub live), or a target that needs a cover when 4-illustrations/cover.* is absent.
+ *       non-article target or a target with no switch for the run's mode (x-pub in draft,
+ *       wechatmp-pub live). A target that needs a cover when 4-illustrations/cover.* is absent is
+ *       SKIPPED instead: the plan records a warning and every other target still plans.
  *
  *   itc-adapt-verify <work_dir>
  *       R3 follow-up check for the adapt state: every plan variant with adapt:true must have its

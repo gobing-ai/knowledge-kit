@@ -204,7 +204,7 @@ describe('buildItcPublishPlan (0298 / G21 R5)', () => {
         });
     });
 
-    it('rejects targets requiring a cover image when cover is absent', async () => {
+    it('skips a target requiring a cover image when the cover is absent, warning instead of throwing', async () => {
         await withTempDir(async (workDir) => {
             const req: ItcPlanRequest = {
                 schemaVersion: 1,
@@ -213,7 +213,36 @@ describe('buildItcPublishPlan (0298 / G21 R5)', () => {
                 live: false,
                 targets: [{ plugin: 'fake-custom-pub' }],
             };
-            await expect(buildItcPublishPlan(req, plugins)).rejects.toThrow('needs a cover image');
+            const plan = await buildItcPublishPlan(req, plugins);
+            expect(plan.warnings).toEqual([
+                `skipped fake-custom-pub: needs a cover image at 4-illustrations/cover.* in ${workDir}`,
+            ]);
+            expect(plan.variants).toEqual({});
+            expect(plan.fanout).toEqual([]);
+            expect(plan.browser).toEqual([]);
+            expect(plan.targets).toEqual([]);
+        });
+    });
+
+    it('skips only the cover-requiring targets and still plans the rest', async () => {
+        await withTempDir(async (workDir) => {
+            const req: ItcPlanRequest = {
+                schemaVersion: 1,
+                workDir,
+                sourceLocale: 'en',
+                live: false,
+                targets: [{ plugin: 'qiita-pub' }, { plugin: 'wechatmp-pub' }],
+            };
+            const plan = await buildItcPublishPlan(req, plugins);
+            expect(plan.warnings).toEqual([
+                `skipped wechatmp-pub: needs a cover image at 4-illustrations/cover.* in ${workDir}`,
+            ]);
+            // qiita-pub still plans; wechatmp-pub is dropped from every output surface.
+            expect(plan.variants['ja-article']).toBeDefined();
+            expect(plan.variants['zh-wechat-article']).toBeUndefined();
+            expect(plan.fanout).toEqual([{ variant: 'ja-article', targets: ['qiita-pub'] }]);
+            expect(plan.browser).toEqual([]);
+            expect(plan.targets?.map((t) => t.plugin)).toEqual(['qiita-pub']);
         });
     });
 
@@ -382,6 +411,23 @@ describe('runItcStage (0298 / G21 R5)', () => {
                 private: true,
                 published: false,
             });
+        });
+    });
+
+    it('itc-publish-plan skips a cover-requiring target, warns, and still writes the plan', async () => {
+        await withTempDir(async (workDir) => {
+            const code = await runItcStage(['itc-publish-plan', workDir, 'wechatmp-pub', 'zh', 'false']);
+            expect(code).toBe(0);
+
+            const planPath = join(workDir, '4-publish/publish-plan.json');
+            expect(existsSync(planPath)).toBe(true);
+            const plan = JSON.parse(readFileSync(planPath, 'utf-8'));
+            expect(plan.warnings).toEqual([
+                `skipped wechatmp-pub: needs a cover image at 4-illustrations/cover.* in ${workDir}`,
+            ]);
+            expect(plan.variants).toEqual({});
+            expect(plan.fanout).toEqual([]);
+            expect(plan.browser).toEqual([]);
         });
     });
 

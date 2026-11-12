@@ -136,6 +136,22 @@ describe('itcMaterializePlan & Target Payloads (0302 / G21 R2)', () => {
             expect(wechatPayload.metadata).not.toHaveProperty('private');
         });
     });
+
+    it('skips a cover-requiring target, warns, and still writes the plan', async () => {
+        await withTempDir(async (workDir) => {
+            writeFileSync(join(workDir, '3-draft-draft-article.md'), '# Test Draft\n\nFull substantive markdown body.');
+            // No 4-illustrations cover: wechatmp-pub is skipped, not fatal.
+            const code = await itcMaterializePlan([workDir, 'wechatmp-pub', 'zh', 'false']);
+            expect(code).toBe(0);
+
+            const plan = JSON.parse(readFileSync(join(workDir, '4-publish/publish-plan.json'), 'utf-8'));
+            expect(plan.warnings).toEqual([
+                `skipped wechatmp-pub: needs a cover image at 4-illustrations/cover.* in ${workDir}`,
+            ]);
+            expect(plan.variants).toEqual({});
+            expect(plan.targets).toEqual([]);
+        });
+    });
 });
 
 describe('itcCheckTargets & Probes (0302 / G21 R1)', () => {

@@ -1,9 +1,23 @@
 import { describe, expect, it } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { PluginRecord } from '@gobing-ai/kk-core';
-import { buildItcPublishPlan, type ItcPlanRequest, resolveItcTargets } from '../src/itc-plan';
+import { buildItcPublishPlan, type ItcPlanRequest, loadPublishPreset, resolveItcTargets } from '../src/itc-plan';
+
+const REPO = resolve(import.meta.dir, '../../..');
+
+const ITC_MAIN_TARGETS = [
+    'surfdash-pub',
+    'infoq-pub',
+    'juejin-pub',
+    'wechatmp-pub',
+    'x-pub',
+    'zenn-pub',
+    'qiita-pub',
+    'medium-pub',
+    'substack-pub',
+];
 
 async function withTempDir(fn: (dir: string) => Promise<void> | void): Promise<void> {
     const tempDir = mkdtempSync(join(tmpdir(), 'kk-itc-presets-test-'));
@@ -224,4 +238,41 @@ describe('resolveItcTargets & Presets (0300 / G21 R6)', () => {
             expect(plan.targets).toHaveLength(2);
         });
     });
+});
+
+describe('itc-main preset (0298 / G21 R6)', () => {
+    it('ships a valid itc-main preset in plugins/kk/publish-presets', async () => {
+        const path = join(REPO, 'plugins/kk/publish-presets', 'itc-main.json');
+        expect(existsSync(path)).toBe(true);
+        // Resolve against the package copy only (no project `.kk` override).
+        const { preset } = await loadPublishPreset('itc-main', {
+            projectRoot: '/tmp/no-kk-project',
+            packageRoot: REPO,
+        });
+        expect(preset.name).toBe('itc-main');
+        expect(preset.targets.map((t) => t.plugin)).toEqual(ITC_MAIN_TARGETS);
+    });
+
+    it('loads itc-main from a package-shaped tree when the project has no override', async () => {
+        await withTempDir(async (dir) => {
+            const projectRoot = join(dir, 'foreign-workdir');
+            mkdirSync(projectRoot, { recursive: true }); // no .kk/publish-presets
+            const pkg = join(dir, 'node_modules/@gobing-ai/knowledge-kit');
+            const presetsDir = join(pkg, 'plugins/kk/publish-presets');
+            mkdirSync(presetsDir, { recursive: true });
+            writeFileSync(
+                join(presetsDir, 'itc-main.json'),
+                readFileSync(join(REPO, 'plugins/kk/publish-presets/itc-main.json'), 'utf-8'),
+            );
+
+            const { preset, digest } = await loadPublishPreset('itc-main', { projectRoot, packageRoot: pkg });
+            expect(preset.name).toBe('itc-main');
+            expect(preset.targets.map((t) => t.plugin)).toEqual(ITC_MAIN_TARGETS);
+            expect(digest).toMatch(/^[0-9a-f]{64}$/);
+        });
+    });
+
+    // Script-dir discovery (`resolvePackageRoot`'s fallback to the runtime script's tree) is covered
+    // directly by apps/cli/tests/package-root.test.ts; here the preset-level contract is exercised
+    // through an explicit installed-package-shaped `packageRoot`, which is what the packed CLI binds.
 });
