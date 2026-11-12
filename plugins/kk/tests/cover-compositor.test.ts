@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import * as childProcess from 'node:child_process';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -40,6 +41,12 @@ function pixelSize(pngPath: string): { width: string; height: string } {
     const height = /pixelHeight: (\d+)/.exec(probe.stdout)?.[1] ?? '';
     return { width, height };
 }
+
+let consoleErrorSpy: { mockRestore(): void };
+beforeEach(() => {
+    consoleErrorSpy = spyOn(console, 'error').mockImplementation(() => {});
+});
+afterEach(() => consoleErrorSpy.mockRestore());
 
 describe('wrapHeadline', () => {
     it('keeps an explicit two-line headline', () => {
@@ -154,6 +161,42 @@ describe('compositeCover', () => {
             );
             expect(existsSync(doomed)).toBe(false);
         });
+    });
+
+    it('throws when sips binary is missing or invocation errors', () => {
+        const spy = spyOn(childProcess, 'spawnSync').mockReturnValue({
+            status: null,
+            error: new Error('ENOENT'),
+        } as unknown as childProcess.SpawnSyncReturns<Buffer>);
+        try {
+            expect(() =>
+                compositeCover({
+                    backgroundImagePath: '/tmp/bg.png',
+                    headline: HEADLINE,
+                    outputPath: '/tmp/cover.png',
+                }),
+            ).toThrow(/sips not found; cannot render the cover overlay \(macOS required\)/);
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
+    it('throws when sips exits with non-zero status', () => {
+        const spy = spyOn(childProcess, 'spawnSync').mockReturnValue({
+            status: 1,
+            error: undefined,
+        } as unknown as childProcess.SpawnSyncReturns<Buffer>);
+        try {
+            expect(() =>
+                compositeCover({
+                    backgroundImagePath: '/tmp/bg.png',
+                    headline: HEADLINE,
+                    outputPath: '/tmp/cover.png',
+                }),
+            ).toThrow(/sips failed \(status 1\); overlay did not render/);
+        } finally {
+            spy.mockRestore();
+        }
     });
 
     itMacOnly('does not leave the intermediate svg behind', () => {
