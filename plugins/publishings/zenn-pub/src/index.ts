@@ -165,7 +165,7 @@ export class ZennCliFileCliTransport implements PublishTransport {
             return ResultSchema.parse({
                 ok: false,
                 target: 'zenn',
-                error: 'ZENN_REPO environment variable is required: path to the Zenn/GitHub repository',
+                error: missingZennRepositoryMessage(),
             });
         }
         const repoPath = repo.startsWith('~') ? join(homedir(), repo.slice(2)) : repo;
@@ -264,13 +264,146 @@ export class ZennCliFileCliTransport implements PublishTransport {
     }
 }
 
+/** GitHub Contents-API settings for the deploy repository Zenn reads. */
+export interface ZennGithubConfig {
+    /** `owner/repo` of the repository connected to Zenn. */
+    repo: string;
+    token: string;
+    branch: string;
+    username?: string;
+}
+
+/**
+ * `ZENN_TOKEN` cannot publish an article: the Zenn public API (`https://zenn.dev/openapi.yaml`,
+ * read 2026-11-12) exposes Scraps, comments and images only — articles are deployed from a GitHub
+ * repository, exactly as the CLI path assumes. What the token *can* replace is the CLI binary: this
+ * transport writes `articles/<slug>.md` straight into that repository through the GitHub Contents
+ * API, so no checkout, no `npx zenn-cli`, no `git push`.
+ *
+ * Required: `ZENN_GITHUB_REPO` (`owner/repo`) + `GITHUB_TOKEN` with `contents:write`.
+ * Optional: `ZENN_BRANCH` (default `main`), `ZENN_USERNAME` (only to report the article URL).
+ */
+export function resolveZennGithubConfig(env: NodeJS.ProcessEnv = process.env): ZennGithubConfig | undefined {
+    const repo = env.ZENN_GITHUB_REPO?.trim() ?? '';
+    const token = env.GITHUB_TOKEN?.trim() ?? '';
+    if (repo === '' || token === '') return undefined;
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) {
+        throw new Error(`ZENN_GITHUB_REPO must be 'owner/repo', got '${repo}'`);
+    }
+    const branch = env.ZENN_BRANCH?.trim() || 'main';
+    const username = env.ZENN_USERNAME?.trim();
+    return { repo, token, branch, ...(username ? { username } : {}) };
+}
+
+/**
+ * The one message a run with no usable deploy target needs to see.
+ *
+ * `ZENN_TOKEN` alone is the common half-configuration (an operator reads "Zenn now has API keys"
+ * and sets one), and the old text — "ZENN_REPO environment variable is required" — sent them
+ * looking for a checkout instead of the GitHub repository Zenn actually deploys from.
+ */
+export function missingZennRepositoryMessage(env: NodeJS.ProcessEnv = process.env): string {
+    const base =
+        'no Zenn deploy target configured: set ZENN_GITHUB_REPO (owner/repo) + GITHUB_TOKEN for the GitHub Contents API, or ZENN_REPO (path to a local zenn-cli checkout)';
+    const tokenOnly = (env.ZENN_TOKEN?.trim() ?? '') !== '';
+    return tokenOnly
+        ? `${base}. ZENN_TOKEN alone cannot publish an article: the Zenn public API (zenn.dev/openapi.yaml) exposes scraps, comments and images only — /public-api/v0/articles answers 404.`
+        : base;
+}
+
+/** Minimal `fetch` seam so the transport is testable without network access. */
+export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
+
+/** Publishes a Zenn article by committing `articles/<slug>.md` through the GitHub Contents API. */
+export class ZennGithubApiTransport implements PublishTransport {
+    public readonly kind = 'file-cli';
+
+    constructor(
+        private readonly config: ZennGithubConfig,
+        private readonly fetchImpl: FetchLike = fetch,
+    ) {}
+
+    public async publish(payload: PublishTransportPayload): Promise<Result> {
+        const content = payload.content;
+        const fields = resolveArticleFields(content);
+        const markdown = renderZennMarkdown(content, fields);
+        const path = `articles/${fields.slug}.md`;
+        const endpoint = `https://api.github.com/repos/${this.config.repo}/contents/${path}`;
+        const headers: Record<string, string> = {
+            Authorization: `Bearer ${this.config.token}`,
+            Accept: 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
+        };
+
+        try {
+            // An existing file must be updated with its blob sha; a new one is created without it.
+            const existing = await this.fetchImpl(`${endpoint}?ref=${encodeURIComponent(this.config.branch)}`, {
+                headers,
+            });
+            let sha: string | undefined;
+            if (existing.ok) {
+                const body = (await existing.json()) as { sha?: string };
+                sha = typeof body.sha === 'string' ? body.sha : undefined;
+            } else if (existing.status !== 404) {
+                return ResultSchema.parse({
+                    ok: false,
+                    target: 'zenn',
+                    error: `GitHub contents read failed (${existing.status}): ${(await existing.text()).slice(0, 200)}`,
+                });
+            }
+
+            const write = await this.fetchImpl(endpoint, {
+                method: 'PUT',
+                headers: { ...headers, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message: `${sha ? 'Update' : 'Add'} article: ${fields.title}`,
+                    content: Buffer.from(markdown, 'utf-8').toString('base64'),
+                    branch: this.config.branch,
+                    ...(sha ? { sha } : {}),
+                }),
+            });
+            if (!write.ok) {
+                return ResultSchema.parse({
+                    ok: false,
+                    target: 'zenn',
+                    error: `GitHub contents write failed (${write.status}): ${(await write.text()).slice(0, 200)}`,
+                });
+            }
+            const written = (await write.json()) as { commit?: { sha?: string } };
+
+            return ResultSchema.parse({
+                ok: true,
+                target: 'zenn',
+                id: fields.slug,
+                // Only a published article has a public URL; a draft (`published: false`) stays in
+                // the repository until Zenn deploys it, so reporting one would be a broken link.
+                ...(fields.published && this.config.username
+                    ? { url: `https://zenn.dev/${this.config.username}/articles/${fields.slug}` }
+                    : {}),
+                message: `${fields.published ? 'Committed a published article' : 'Committed a draft article (published: false)'} to ${this.config.repo}@${this.config.branch} (${path}${written.commit?.sha ? `, commit ${written.commit.sha.slice(0, 7)}` : ''})`,
+            });
+        } catch (err: unknown) {
+            return ResultSchema.parse({
+                ok: false,
+                target: 'zenn',
+                error: `Zenn GitHub transport error: ${err instanceof Error ? err.message : String(err)}`,
+            });
+        }
+    }
+}
+
 /**
  * Resolves default PublishTransport based on environment configuration.
+ *
+ * GitHub Contents API when `ZENN_GITHUB_REPO` + `GITHUB_TOKEN` are configured; otherwise the local
+ * `zenn-cli` path (`ZENN_REPO`), which still needs a checkout and a push.
  */
 export function getPublishTransport(): PublishTransport {
     if (process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT === 'fake') {
         return new FakeFileCliTransport();
     }
+    const github = resolveZennGithubConfig();
+    if (github !== undefined) return new ZennGithubApiTransport(github);
     return new ZennCliFileCliTransport();
 }
 

@@ -10,9 +10,12 @@ import {
     getPublishTransport,
     main,
     mapContentToZennMarkdown,
+    missingZennRepositoryMessage,
     processPublishIO,
+    resolveZennGithubConfig,
     slugify,
     ZennCliFileCliTransport,
+    ZennGithubApiTransport,
 } from '../src/index';
 
 /** Spy transport: records publish invocations offline; can be configured to reject. */
@@ -598,5 +601,146 @@ describe('Zenn CLI packaging, git scoping, and URL (R10)', () => {
                 expect(result.message).toContain('ZENN_USERNAME');
             });
         });
+    });
+});
+
+describe('Zenn GitHub Contents API transport (ZENN_GITHUB_REPO + GITHUB_TOKEN)', () => {
+    // The Zenn public API (zenn.dev/openapi.yaml, read 2026-11-12) has no article endpoint — only
+    // Scraps, comments and images — so an article still deploys from a GitHub repository. What the
+    // token path removes is the `npx zenn-cli` + local-checkout requirement, not the repository.
+    const content: Content = {
+        title: 'A2UI 1.0 で UI を返す',
+        format: 'markdown',
+        body: '# A2UI 1.0 で UI を返す\n\n本文です。',
+        // A pinned slug keeps the path deterministic; an unpinned title under 12 chars gets a
+        // timestamp suffix (generateZennSlug), which is not what these assertions are about.
+        metadata: { published: false, tags: ['A2UI', 'Generative UI'], slug: 'a2ui-intro-2026' },
+    };
+
+    interface Call {
+        url: string;
+        method: string;
+        body?: Record<string, unknown>;
+    }
+
+    function fakeFetch(script: { get?: { status: number; json?: unknown }; put?: { status: number; json?: unknown } }) {
+        const calls: Call[] = [];
+        const impl = async (url: string, init?: RequestInit): Promise<Response> => {
+            const method = init?.method ?? 'GET';
+            calls.push({
+                url,
+                method,
+                ...(typeof init?.body === 'string' ? { body: JSON.parse(init.body) as Record<string, unknown> } : {}),
+            });
+            const plan = method === 'PUT' ? script.put : script.get;
+            const status = plan?.status ?? 404;
+            return new Response(JSON.stringify(plan?.json ?? { message: 'Not Found' }), {
+                status,
+                headers: { 'content-type': 'application/json' },
+            });
+        };
+        return { impl, calls };
+    }
+
+    test('refuses an unset or malformed repository slug instead of guessing', () => {
+        expect(resolveZennGithubConfig({})).toBeUndefined();
+        expect(resolveZennGithubConfig({ ZENN_GITHUB_REPO: 'owner/repo' })).toBeUndefined();
+        expect(() => resolveZennGithubConfig({ ZENN_GITHUB_REPO: 'not-a-repo', GITHUB_TOKEN: 't' })).toThrow(
+            /owner\/repo/,
+        );
+        expect(resolveZennGithubConfig({ ZENN_GITHUB_REPO: 'robin/zenn', GITHUB_TOKEN: 't' })).toEqual({
+            repo: 'robin/zenn',
+            token: 't',
+            branch: 'main',
+        });
+    });
+
+    test('creates the article file when the path is new, with base64 markdown and no sha', async () => {
+        const { impl, calls } = fakeFetch({
+            get: { status: 404 },
+            put: { status: 201, json: { commit: { sha: 'abc1234def' } } },
+        });
+        const result = await new ZennGithubApiTransport(
+            { repo: 'robin/zenn', token: 'tok', branch: 'main' },
+            impl,
+        ).publish({ content });
+
+        expect(result.ok).toBe(true);
+        expect(calls.map((call) => call.method)).toEqual(['GET', 'PUT']);
+        expect(calls[0]?.url).toBe(
+            'https://api.github.com/repos/robin/zenn/contents/articles/a2ui-intro-2026.md?ref=main',
+        );
+        const put = calls[1]?.body ?? {};
+        expect(put.sha).toBeUndefined();
+        expect(put.branch).toBe('main');
+        expect(Buffer.from(String(put.content), 'base64').toString('utf-8')).toContain('published: false');
+        // A draft has no public URL; reporting one would 404 on Zenn.
+        expect(result.url).toBeUndefined();
+        expect(result.message).toContain('draft article');
+    });
+
+    test('updates an existing file with its blob sha and reports the article URL when published', async () => {
+        const { impl, calls } = fakeFetch({
+            get: { status: 200, json: { sha: 'deadbeef' } },
+            put: { status: 200, json: { commit: { sha: 'fff0000' } } },
+        });
+        const result = await new ZennGithubApiTransport(
+            { repo: 'robin/zenn', token: 'tok', branch: 'drafts', username: 'robin' },
+            impl,
+        ).publish({ content: { ...content, metadata: { ...content.metadata, published: true } } });
+
+        expect(result.ok).toBe(true);
+        expect(calls[1]?.body?.sha).toBe('deadbeef');
+        expect(calls[1]?.body?.branch).toBe('drafts');
+        expect(result.url).toBe('https://zenn.dev/robin/articles/a2ui-intro-2026');
+    });
+
+    test('reports a refused read or write as a Result failure, never a throw', async () => {
+        const readDenied = fakeFetch({ get: { status: 403, json: { message: 'Resource not accessible' } } });
+        const first = await new ZennGithubApiTransport(
+            { repo: 'a/b', token: 't', branch: 'main' },
+            readDenied.impl,
+        ).publish({
+            content,
+        });
+        expect(first.ok).toBe(false);
+        expect(first.error).toContain('403');
+
+        const writeDenied = fakeFetch({
+            get: { status: 404 },
+            put: { status: 422, json: { message: 'sha required' } },
+        });
+        const second = await new ZennGithubApiTransport(
+            { repo: 'a/b', token: 't', branch: 'main' },
+            writeDenied.impl,
+        ).publish({
+            content,
+        });
+        expect(second.ok).toBe(false);
+        expect(second.error).toContain('422');
+    });
+
+    test('a transport error is reported, not thrown', async () => {
+        const impl = async (): Promise<Response> => {
+            throw new Error('network down');
+        };
+        const result = await new ZennGithubApiTransport({ repo: 'a/b', token: 't', branch: 'main' }, impl).publish({
+            content,
+        });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('network down');
+    });
+});
+
+describe('Zenn deploy-target diagnosis', () => {
+    test('names both real deploy targets, and says what a lone ZENN_TOKEN cannot do', () => {
+        const bare = missingZennRepositoryMessage({});
+        expect(bare).toContain('ZENN_GITHUB_REPO');
+        expect(bare).toContain('ZENN_REPO');
+        expect(bare).not.toContain('ZENN_TOKEN');
+
+        const tokenOnly = missingZennRepositoryMessage({ ZENN_TOKEN: 'zenn_api_x' });
+        expect(tokenOnly).toContain('ZENN_TOKEN alone cannot publish an article');
+        expect(tokenOnly).toContain('404');
     });
 });
