@@ -1,4 +1,5 @@
-import { dirname } from 'node:path';
+import { existsSync } from 'node:fs';
+import { dirname, isAbsolute } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import {
@@ -50,6 +51,13 @@ export const SELECTORS = {
     category: '.category-list .item',
     tagInput: '.tag-input input',
     confirm: ['button:has-text("确定并发布")'],
+    /**
+     * 封面 lives only in the publish popup (measured 2026-11-12: `div.publish-popup` shows
+     * `文章封面：` + `div.upload`/上传封面 + a hidden file input, recommended 192×128). A draft run
+     * never opens that popup, so a draft cannot carry a cover.
+     */
+    coverFile: ['.publish-popup input[type="file"]', '.publish-popup .upload input[type="file"]'],
+    coverPreview: ['.publish-popup .upload img', '.publish-popup img'],
 } as const;
 
 const STEP_TIMEOUT_MS = 30_000;
@@ -171,6 +179,32 @@ export function resolveOperation(
     return { operation: raw as JuejinOperation };
 }
 
+/**
+ * Attach the cover in the publish popup; a warning string instead of a throw, because a cover is
+ * an improvement, not the post. Returns `null` when nothing was requested and when the upload
+ * visibly landed.
+ */
+async function attachCover(page: Page, content: Content, timeoutMs: number): Promise<string | null> {
+    const coverPath = content.metadata?.coverImage;
+    if (coverPath === undefined) return null;
+    if (typeof coverPath !== 'string' || coverPath.trim() === '') {
+        return `cover: metadata.coverImage must be a non-empty local path, got '${String(coverPath)}'`;
+    }
+    if (!isAbsolute(coverPath) || !existsSync(coverPath)) {
+        return `cover: metadata.coverImage is not a readable absolute path: ${coverPath}`;
+    }
+    const input = await trySelectors(page, SELECTORS.coverFile, { visible: false });
+    if (!input.found || input.selector === null) {
+        return 'cover: the publish popup exposed no 上传封面 file input — cover not attached';
+    }
+    await page.locator(input.selector).first().setInputFiles(coverPath);
+    const shown = await waitUntil(
+        async () => (await page.locator(SELECTORS.coverPreview[0]).count()) > 0,
+        Math.min(timeoutMs, 15_000),
+    );
+    return shown ? null : 'cover: the upload landed but the popup shows no cover preview';
+}
+
 export class JuejinBrowserTransport implements PublishTransport {
     public readonly kind = 'browser';
     public readonly driver: BrowserDriver;
@@ -287,13 +321,17 @@ export class JuejinBrowserTransport implements PublishTransport {
         if (run.publishStatus === 'draft') {
             const url = page.url();
             const id = idFromUrl(url);
+            const coverWarning =
+                content.metadata?.coverImage === undefined
+                    ? null
+                    : 'cover: juejin keeps 封面 only in the publish popup — this draft carries none (publish live to attach it)';
             return ResultSchema.parse({
                 ok: true,
                 target: TARGET,
                 ...(id === undefined ? {} : { id }),
                 url,
                 message: `${TARGET} draft saved (unpublished) in profile ${run.profileDir}`,
-                metadata,
+                metadata: { ...metadata, ...(coverWarning === null ? {} : { warnings: [coverWarning] }) },
             });
         }
 
@@ -303,6 +341,8 @@ export class JuejinBrowserTransport implements PublishTransport {
         });
         await page.locator(publishSelector).first().click();
         await fillPublishPopup(page, run.live, this.stepTimeoutMs);
+        const coverWarning = await attachCover(page, content, this.stepTimeoutMs);
+        if (coverWarning !== null) Object.assign(metadata, { warnings: [coverWarning] });
 
         const confirmSelector = await resolveSelector(page, SELECTORS.confirm, {
             timeoutMs: this.stepTimeoutMs,

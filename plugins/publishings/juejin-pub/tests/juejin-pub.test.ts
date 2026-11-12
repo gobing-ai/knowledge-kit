@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Content, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeBrowserTransport } from '@gobing-ai/publish-harness';
@@ -67,6 +68,8 @@ interface FakePageOptions {
     onLive?: Signal;
     /** Category items rendered in the publish popup. */
     categories?: string[];
+    /** The publish popup's 上传封面 input + a preview that appears once a file is set. */
+    cover?: { inputPresent?: boolean };
 }
 
 /**
@@ -97,6 +100,10 @@ function makeFakePage(options: FakePageOptions, calls: string[]): Page {
         }
         if (TITLE_SELECTORS.includes(selector)) return options.missingTitle === true ? 0 : 1;
         if (selector === SELECTORS.category) return categories.length;
+        if ((SELECTORS.coverFile as readonly string[]).includes(selector)) {
+            return options.cover?.inputPresent === false ? 0 : 1;
+        }
+        if (selector === SELECTORS.coverPreview[0]) return options.cover === undefined ? 0 : 1;
         return 1;
     };
 
@@ -106,6 +113,9 @@ function makeFakePage(options: FakePageOptions, calls: string[]): Page {
         textContent: async () => (selector === SELECTORS.category ? (categories[index] ?? '') : (toast ?? '')),
         fill: async (text: string) => {
             calls.push(`fill:${selector}|${text}`);
+        },
+        setInputFiles: async (files: string) => {
+            calls.push(`setInputFiles:${selector}|${files}`);
         },
         press: async (key: string) => {
             calls.push(`press:${selector}|${key}`);
@@ -362,6 +372,45 @@ describe('juejin-pub live switch (R4 / AC2)', () => {
         expect(result.ok).toBe(true);
         expect(result.url).toBe(POST_URL);
         expect(result.id).toBe('7412345678901234567');
+    });
+
+    test('a live run attaches metadata.coverImage through the popup cover input', async () => {
+        const coverFile = join(mkdtempSync(join(tmpdir(), 'juejin-cover-')), 'cover.png');
+        writeFileSync(coverFile, 'png');
+        const fake = makeFakeLauncher({ page: { onBodyFill: 'url', onLive: 'url', cover: {} } });
+        const result = await transport(fake).publish({
+            content: { ...liveContent, metadata: { ...liveContent.metadata, coverImage: coverFile } },
+        });
+
+        expect(result.ok).toBe(true);
+        // The cover is set inside the publish popup, through its own file input.
+        expect(fake.calls).toContain(`setInputFiles:${SELECTORS.coverFile[0]}|${coverFile}`);
+        expect(result.metadata?.warnings).toBeUndefined();
+    });
+
+    test('a popup without a 上传封面 input warns instead of failing the publish', async () => {
+        const coverFile = join(mkdtempSync(join(tmpdir(), 'juejin-cover-')), 'cover.png');
+        writeFileSync(coverFile, 'png');
+        const fake = makeFakeLauncher({ page: { onBodyFill: 'url', onLive: 'url', cover: { inputPresent: false } } });
+        const result = await transport(fake).publish({
+            content: { ...liveContent, metadata: { ...liveContent.metadata, coverImage: coverFile } },
+        });
+
+        expect(result.ok).toBe(true);
+        expect(String(result.metadata?.warnings)).toContain('上传封面');
+    });
+
+    test('a draft run records that juejin keeps 封面 only in the publish popup', async () => {
+        const coverFile = join(mkdtempSync(join(tmpdir(), 'juejin-cover-')), 'cover.png');
+        writeFileSync(coverFile, 'png');
+        const fake = makeFakeLauncher({ page: { onBodyFill: 'url' } });
+        const result = await transport(fake).publish({
+            content: { ...content, metadata: { ...content.metadata, coverImage: coverFile } },
+        });
+
+        expect(result.ok).toBe(true);
+        expect(String(result.metadata?.warnings)).toContain('publish popup');
+        expect(fake.calls.some((call) => call.startsWith('setInputFiles:'))).toBe(false);
     });
 
     test('an explicit draft publishStatus stays a draft run', async () => {
