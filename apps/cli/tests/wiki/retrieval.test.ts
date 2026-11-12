@@ -6,7 +6,7 @@ import { main } from '../../src/main';
 import { runContext, runPublish, runQuery, runSync } from '../../src/wiki/retrieval';
 import { captureOutput } from '../capture';
 
-/** Feature I1 R15/R16/R24/R17/R18 (task 0354): publish, sync, query and context. */
+/** Feature I1 R15/R16/R24/R17/R18 (task 0359): publish, sync, query and context. */
 
 const dirs: string[] = [];
 function vault(files: Record<string, string>): string {

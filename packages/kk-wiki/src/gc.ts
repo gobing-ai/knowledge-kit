@@ -3,7 +3,7 @@ import type { FileSystem } from '@gobing-ai/ts-runtime';
 import type { VaultIndex } from './graph';
 
 /**
- * `gc` mechanics (task 0353): reclaim unreferenced layer-1 snapshots.
+ * `gc` mechanics (task 0358): reclaim unreferenced layer-1 snapshots.
  *
  * Scope is deliberately narrow. Only `raw/<type>/` snapshots this tool wrote and `raw/tmp/` are
  * candidates; any directory listed in `wiki.mirrors` is skipped wholesale, because an external

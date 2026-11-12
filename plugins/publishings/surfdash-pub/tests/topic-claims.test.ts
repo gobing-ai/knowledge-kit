@@ -125,10 +125,10 @@ describe('upsertDailyTopicsEntry', () => {
         en: { ...entry.en, description: 'replaced description from the existing key.' },
     };
 
-    test('creates a missing file and inserts the slug once', () => {
+    test('creates a missing file and inserts the slug once', async () => {
         const dir = mkdtempSync(join(tmpdir(), 'daily-topics-'));
         const mapPath = join(dir, 'scripts', 'seo', 'daily-topics.json');
-        upsertDailyTopicsEntry(mapPath, '20261108-ai-2026-11-08', entry);
+        await upsertDailyTopicsEntry(mapPath, '20261108-ai-2026-11-08', entry);
         const raw = readFileSync(mapPath, 'utf-8');
         const parsed = JSON.parse(raw) as Record<string, unknown>;
         expect(Object.keys(parsed)).toEqual(['20261108-ai-2026-11-08']);
@@ -137,12 +137,12 @@ describe('upsertDailyTopicsEntry', () => {
         expect(raw.endsWith('\n')).toBe(true);
     });
 
-    test('replaces an existing key in place without adding a second copy', () => {
+    test('replaces an existing key in place without adding a second copy', async () => {
         const dir = mkdtempSync(join(tmpdir(), 'daily-topics-'));
         const mapPath = join(dir, 'daily-topics.json');
-        upsertDailyTopicsEntry(mapPath, '20261107-ai-2026-11-07', entry);
-        upsertDailyTopicsEntry(mapPath, '20261108-ai-2026-11-08', entry);
-        upsertDailyTopicsEntry(mapPath, '20261108-ai-2026-11-08', other);
+        await upsertDailyTopicsEntry(mapPath, '20261107-ai-2026-11-07', entry);
+        await upsertDailyTopicsEntry(mapPath, '20261108-ai-2026-11-08', entry);
+        await upsertDailyTopicsEntry(mapPath, '20261108-ai-2026-11-08', other);
         const raw = readFileSync(mapPath, 'utf-8');
         expect((raw.match(/"20261108-ai-2026-11-08"/g) ?? []).length).toBe(1);
         const parsed = JSON.parse(raw) as Record<string, { en: { description: string } }>;
@@ -150,7 +150,7 @@ describe('upsertDailyTopicsEntry', () => {
         expect(parsed['20261108-ai-2026-11-08']?.en.description).toBe('replaced description from the existing key.');
     });
 
-    test('collapses a raw file that already has the same key twice', () => {
+    test('collapses a raw file that already has the same key twice', async () => {
         const dir = mkdtempSync(join(tmpdir(), 'daily-topics-'));
         mkdirSync(dir, { recursive: true });
         const mapPath = join(dir, 'daily-topics.json');
@@ -160,7 +160,7 @@ describe('upsertDailyTopicsEntry', () => {
             '{\n\t"20261108-ai-2026-11-08": {"en":{"headlines":["Old"]}},\n\t"20261107-ai-2026-11-07": {"en":{"headlines":["Keep"]}},\n\t"20261108-ai-2026-11-08": {"en":{"headlines":["Also old"]}}\n}\n',
             'utf-8',
         );
-        upsertDailyTopicsEntry(mapPath, '20261108-ai-2026-11-08', entry);
+        await upsertDailyTopicsEntry(mapPath, '20261108-ai-2026-11-08', entry);
         const raw = readFileSync(mapPath, 'utf-8');
         expect((raw.match(/"20261108-ai-2026-11-08"/g) ?? []).length).toBe(1);
         const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -168,13 +168,15 @@ describe('upsertDailyTopicsEntry', () => {
         expect(parsed['20261107-ai-2026-11-07']).toEqual({ en: { headlines: ['Keep'] } });
     });
 
-    test('throws on invalid JSON or a non-object document', () => {
+    test('throws on invalid JSON or a non-object document', async () => {
         const dir = mkdtempSync(join(tmpdir(), 'daily-topics-'));
         const mapPath = join(dir, 'daily-topics.json');
         writeFileSync(mapPath, '{not json', 'utf-8');
-        expect(() => upsertDailyTopicsEntry(mapPath, '20261108-ai-2026-11-08', entry)).toThrow('invalid JSON');
+        await expect(upsertDailyTopicsEntry(mapPath, '20261108-ai-2026-11-08', entry)).rejects.toThrow('invalid JSON');
         writeFileSync(mapPath, '[]\n', 'utf-8');
-        expect(() => upsertDailyTopicsEntry(mapPath, '20261108-ai-2026-11-08', entry)).toThrow('not a JSON object');
-        expect(() => upsertDailyTopicsEntry(mapPath, '  ', entry)).toThrow('empty slug');
+        await expect(upsertDailyTopicsEntry(mapPath, '20261108-ai-2026-11-08', entry)).rejects.toThrow(
+            'not a JSON object',
+        );
+        await expect(upsertDailyTopicsEntry(mapPath, '  ', entry)).rejects.toThrow('empty slug');
     });
 });

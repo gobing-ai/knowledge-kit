@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 
 /**
- * Layer-1 raw snapshots (ADR-046, docs/design/kk-wiki.md §3).
+ * Layer-1 raw snapshots (ADR-048, docs/design/kk-wiki.md §3).
  *
  * A raw snapshot is NOT a vault page: it carries the four source keys ingest promises and is
  * never edited afterwards. Keeping its frontmatter separate from `PageFrontmatterSchema` is what

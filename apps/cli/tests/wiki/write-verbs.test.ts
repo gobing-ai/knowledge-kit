@@ -6,7 +6,7 @@ import { main } from '../../src/main';
 import { runSummarize, runSynthesize } from '../../src/wiki/write-verbs';
 import { captureOutput } from '../capture';
 
-/** Feature I1 R5/R6/R7/R8/R9/R21 (task 0352): the two model-fed write verbs. */
+/** Feature I1 R5/R6/R7/R8/R9/R21 (task 0357): the two model-fed write verbs. */
 
 const dirs: string[] = [];
 function vault(files: Record<string, string>): string {

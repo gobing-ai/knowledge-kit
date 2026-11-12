@@ -430,6 +430,21 @@ export function dailyExtract(args: string[]): void {
     }
     timed(workDir, 'extract', () => {
         mkdirSync(join(workDir, '10-collect'), { recursive: true });
+        // 0347 F6 (2026-11-10): extract re-reads the store on every rerun, so a next-day retry of a
+        // failed episode saw overnight collects invalidate the plan fingerprint and the plan stage
+        // fail-closed ("refusing to pair a new plan with stale outputs"). Once the plan has
+        // authored its output, the episode is frozen: keep the pool byte-for-byte so a rerun
+        // resumes the same material (work dirs are per-run-date, so the 21-plan prefix glob is
+        // unambiguous). Removing the pool or the plan files re-extracts deliberately.
+        const planAuthored = existsSync(join(workDir, '21-plan'))
+            ? readdirSync(join(workDir, '21-plan')).some(
+                  (entry) => entry.endsWith('_03_plan_content.json') || entry.endsWith('_03_plan_plan.json'),
+              )
+            : false;
+        if (planAuthored && isFile(poolPath)) {
+            console.error(`extract: plan already authored — keeping the frozen pool (${poolPath})`);
+            return;
+        }
         let chosen: { window: string; docs: unknown[] } | null = null;
         for (const ms of windows) {
             const label = formatWindowMs(ms);
@@ -1037,9 +1052,9 @@ export function dailyGenerate(args: string[]): void {
     // Pre-spend script floor gate (2026-10-22). QC's candidate-text estimate does not predict the
     // spoken length — 20261020 planned 3968 chars and rendered 8.4 min, 20261021 planned 4548 and
     // rendered 17.9 — but the authored VoiceScript IS the spoken text, and 14 measured episodes
-    // deliver it at 5.24-5.94 chars/s. Reusing `spokenCharRate` (the slowest measured band) makes the
-    // estimate over-predict slightly, which is the safe direction here: a thin day is refused before
-    // the 1-2 h synthesis, and one that would have cleared the floor is never refused.
+    // deliver it at 5.24-5.94 chars/s. The floor estimate uses `scriptFloorCharRate`, NOT
+    // `spokenCharRate`: the fit rate's slow calibration over-predicts minutes and passes a thin
+    // script into the full synthesis, which the measured gate then refuses (20261111).
     const minMinutes = episodeMinMinutes === '' ? 0 : Number(episodeMinMinutes);
     if (!Number.isFinite(minMinutes) || minMinutes < 0) {
         failWith(1, `generate: invalid episode_min_minutes: ${episodeMinMinutes}`);
@@ -1055,7 +1070,7 @@ export function dailyGenerate(args: string[]): void {
                 (sum, segment) => sum + (typeof segment.text === 'string' ? segment.text.length : 0),
                 0,
             );
-            const charRate = spokenCharRate(vdriver);
+            const charRate = scriptFloorCharRate(vdriver);
             const seconds = 8 + chars / charRate;
             if (seconds < minMinutes * 60) {
                 refuseScriptBelowFloor(workDir, runDate, { chars, charRate, seconds, minMinutes });
@@ -1631,10 +1646,15 @@ export function dailyPlan(args: string[]): void {
         if (isFile(target)) {
             const descendants = authoredPlanDescendants(workDir, runDate);
             if (descendants.length > 0) {
-                failWith(
-                    1,
-                    `plan cache changed after downstream artifacts were authored; refusing to pair a new plan with stale outputs (${descendants.join(', ')})`,
+                // 0347 F6 (2026-11-10): the pool can drift between the authoring day and a rerun
+                // (overnight collects grow the store; extract-overwrite used to break the
+                // fingerprint). Keeping the existing plan pairs old artifacts with the plan that
+                // actually produced them — the pairing the old refusal guarded. Rebuilding from
+                // the current pool is explicit: delete the 21-plan outputs and the descendants.
+                console.error(
+                    `plan: pool changed after authoring — keeping the existing plan and its ${descendants.length} downstream artifact(s) (delete 21-plan/${runDate}_03_plan_*.* and the descendants to rebuild)`,
                 );
+                return;
             }
             console.log(`plan cache stale: ${target}`);
         }
@@ -1885,7 +1905,12 @@ function weightedLength(text: string): number {
  */
 export function buildSocialContent(
     copy: string,
-    options: { platform: string; coverPath?: string; limit: SocialLimit },
+    options: {
+        platform: string;
+        limit: SocialLimit;
+        coverPath?: string;
+        cardPath?: string;
+    },
 ): Record<string, unknown> {
     const trimmed = copy.trim();
     const measure = (text: string): number => (options.limit.weighted === true ? weightedLength(text) : text.length);
@@ -1903,6 +1928,7 @@ export function buildSocialContent(
         }
         body = kept;
     }
+    const attachedImage = options.cardPath ?? options.coverPath;
     return {
         title: `${options.platform} · 每日AI乱炖`,
         format: 'text',
@@ -1915,7 +1941,7 @@ export function buildSocialContent(
                       truncatedFrom: measure(trimmed),
                       truncatedUnit: options.limit.weighted === true ? 'weighted' : 'code_units',
                   }),
-            ...(options.coverPath === undefined ? {} : { coverImage: options.coverPath }),
+            ...(attachedImage === undefined ? {} : { coverImage: attachedImage }),
         },
     };
 }
@@ -2020,11 +2046,22 @@ export function dailyBundleVariants(args: string[]): void {
             );
         }
 
+        const cards = cardsEnabledArg !== 'false' ? readJson(cardsPath) : null;
+        let cardImage: string | undefined;
+        if (cards !== null && Array.isArray((cards.metadata as Record<string, unknown> | undefined)?.images)) {
+            const rawImages = (cards.metadata as Record<string, unknown>).images as Array<{ path?: string }>;
+            if (rawImages.length > 0 && typeof rawImages[0]?.path === 'string' && isFile(rawImages[0].path)) {
+                cardImage = resolve(rawImages[0].path);
+            }
+        }
+
         if (cardsEnabledArg === 'false') skipped.push('cards (cards_enabled=false)');
         else {
-            const cards = readJson(cardsPath);
             if (cards === null) skipped.push('cards (no rendered card series)');
-            else write('cards@xhs-pub', buildXhsCardsContent(cards, { publishStatus: 'draft' }));
+            else {
+                write('cards', buildXhsCardsContent(cards, { publishStatus: 'draft' }));
+                write('cards@xhs-pub', buildXhsCardsContent(cards, { publishStatus: 'draft' }));
+            }
         }
 
         for (const platform of Object.keys(SOCIAL_LIMITS)) {
@@ -2040,6 +2077,7 @@ export function dailyBundleVariants(args: string[]): void {
                     platform,
                     limit,
                     ...(cover === undefined ? {} : { coverPath: cover }),
+                    ...(cardImage === undefined ? {} : { cardPath: cardImage }),
                 }),
             );
         }
@@ -3330,10 +3368,20 @@ export function dailySafetyGate(args: string[]): void {
             status = 'exclude';
             reason = 'RISK decisions carry only gap/note/fix dispositions — recorded, publishing at recorded risk';
         } else status = 'pass';
-        if (status === 'pass' || status === 'escalate' || status === 'exclude') {
-            sted('write', stampFile, () => writeJsonText(stampFile, { digest, status, excludedPlatforms }));
-        }
-        if (status === 'block' && drafts && !edited) {
+        // 0347 F4 (2026-11-10): an executor outage must not masquerade as a content verdict. When
+        // the final classification is block AND the evidence the gate grades is missing entirely
+        // (request/report/verdict never appeared because a reviewer or judge agent died), record an
+        // infra marker the `judge -> infra-fail` transition reads; `block` stays reserved for real
+        // content verdicts. The caller contract is unchanged — both terminals are failureStates, so
+        // "non-zero = never publish" holds; infra-fail only makes the death retryable-by-machine and
+        // legible to daily-triage.
+        const infraMarker = scopeArtifact(workDir, scopeDir, runDate, 'safety-infra.json');
+        const infraMissing = [
+            ...(request === null ? ['review-request'] : []),
+            ...(report === null ? ['review-report'] : []),
+            ...(verdict === null ? ['judge-verdict'] : []),
+        ];
+        if (status === 'block' && drafts && !edited && infraMissing.length === 0) {
             // A quality block poisons the isFile() draft cache: every same-day retry would
             // re-fail on unchanged bytes (20261002 dogfood — two judge-fail runs replayed until
             // the drafts were moved by hand). Quarantine (mv, never rm) so the next run
@@ -3347,6 +3395,24 @@ export function dailySafetyGate(args: string[]): void {
                 for (let n = 2; isFile(dest); n += 1) dest = join(q, `${n}-${basename(path)}`);
                 renameSync(path, dest);
             }
+        }
+        if (status === 'pass' || status === 'escalate' || status === 'exclude') {
+            sted('write', stampFile, () => writeJsonText(stampFile, { digest, status, excludedPlatforms }));
+        }
+        if (status === 'block' && infraMissing.length > 0) {
+            sted('write', infraMarker, () =>
+                writeJsonText(infraMarker, {
+                    infra: true,
+                    missing: infraMissing,
+                    reason,
+                    classifiedAt: new Date().toISOString(),
+                }),
+            );
+            console.error(
+                `safety: infra — refusal is due to missing evidence (${infraMissing.join(', ')}), not a content verdict`,
+            );
+        } else if (isFile(infraMarker)) {
+            unlinkSync(infraMarker);
         }
         sted('write', statusFile, () => writeRaw(statusFile, status));
         console.log(`safety: status=${status} (${reason}); routing is transition-owned`);
@@ -3877,6 +3943,22 @@ function voicescriptToBlockYaml(script: Record<string, unknown>): string {
     return lines.join('\n');
 }
 
+/**
+ * Floor-gate char rate — deliberately separate from `spokenCharRate` because the two consumers
+ * need opposite safe directions. The fit/ceiling budget wants the slow rate (a too-big fit renders
+ * an episode the ceiling then rejects — why gemini was recalibrated to 4.95 on 2026-10-15). The
+ * pre-spend script floor gate wants the opposite: a slow rate over-predicts minutes and passes a
+ * thin script into the 1-2 h synthesis, which the measured gate refuses after the spend
+ * (20261111 a17: 4,805-char script estimated 16.3 min at 4.95, rendered 14.2 min at a measured
+ * 5.64 chars/s; band 5.33-5.88 across 20261004/07 + the 0237 live dry run). 5.6 — the band center
+ * and the voicebox default — refuses a17-class days before any spend; slow-mix days near the
+ * floor may be refused early, the cheaper error per the ceiling gate's own economics.
+ */
+function scriptFloorCharRate(vdriver: string): number {
+    if (vdriver === 'gemini') return 5.6;
+    return spokenCharRate(vdriver);
+}
+
 /** Measured driver rates from dailyGenerate. Unknown drivers reuse the voicebox rate. */
 function spokenCharRate(vdriver: string): number {
     // Recalibrated 2026-10-15: episode measured 7,395 spoken chars / 1,490.9 s across 12 sections
@@ -4372,12 +4454,35 @@ export function dailyEditorialRender(args: string[]): void {
     }
 
     // 2. Cover brief: 23-cover/<date>_07_cover-brief.json
-    const coverSubject = typeof master.cover === 'string' ? master.cover.trim() : '';
+    // 0347 R5: cover may be a legacy string (subject only) or `{ scene, headline }` — the
+    // headline falls back to the lead story's title either way.
+    const rawCover = master.cover;
+    let coverSubject = '';
+    let coverHeadline = '';
+    if (typeof rawCover === 'string') {
+        coverSubject = rawCover.trim();
+    } else if (rawCover !== null && typeof rawCover === 'object') {
+        const coverObj = rawCover as Record<string, unknown>;
+        coverSubject = typeof coverObj.scene === 'string' ? coverObj.scene.trim() : '';
+        coverHeadline = typeof coverObj.headline === 'string' ? coverObj.headline.trim() : '';
+    }
+    const leadId = orderedIds[0];
+    const leadDoc = leadId !== undefined ? docById.get(leadId) : undefined;
+    const leadStoryTitle = typeof leadDoc?.title === 'string' ? leadDoc.title.trim() : '';
     if (coverSubject !== '') {
+        if (coverHeadline === '' && leadStoryTitle !== '') {
+            coverHeadline = leadStoryTitle;
+        }
         const coverDir = join(workDir, '23-cover');
         sted('mkdir', coverDir, () => mkdirSync(coverDir, { recursive: true }));
         const coverOut = join(coverDir, `${runDate}_07_cover-brief.json`);
-        sted('write', coverOut, () => writeJsonText(coverOut, { subject: coverSubject }));
+        sted('write', coverOut, () =>
+            writeJsonText(coverOut, {
+                subject: coverSubject,
+                headline: coverHeadline,
+                leadStoryTitle,
+            }),
+        );
         console.log(`editorial-render: wrote cover brief: ${coverOut}`);
     } else {
         console.log('editorial-render: skipping cover brief (missing cover in script plan)');
@@ -4476,29 +4581,32 @@ export function dailyEditorialRender(args: string[]): void {
         }
     }
 
-    // 4 & 5. Social posts: 26-social/{x,threads}.md and 26-social/{weibo,linkedin}.md
+    // 4 & 5. Social posts: unified short notice for 26-social/{x,threads,weibo}.md; linkedin.md (and weibo fallback) long
     const social =
         master.social !== null && typeof master.social === 'object' ? (master.social as Record<string, unknown>) : null;
     const socialShort = typeof social?.short === 'string' ? social.short.trim() : '';
+    const socialLong = typeof social?.long === 'string' ? social.long.trim() : '';
     const socialDir = join(workDir, '26-social');
     if (socialShort !== '') {
         sted('mkdir', socialDir, () => mkdirSync(socialDir, { recursive: true }));
-        for (const name of ['x.md', 'threads.md']) {
+        for (const name of ['x.md', 'threads.md', 'weibo.md']) {
             const out = join(socialDir, name);
             sted('write', out, () => writeRaw(out, `${socialShort}\n`));
         }
-        console.log('editorial-render: wrote 26-social/{x,threads}.md');
+        console.log('editorial-render: wrote 26-social/{x,threads,weibo}.md');
+    } else if (socialLong !== '') {
+        sted('mkdir', socialDir, () => mkdirSync(socialDir, { recursive: true }));
+        const out = join(socialDir, 'weibo.md');
+        sted('write', out, () => writeRaw(out, `${socialLong}\n`));
+        console.log('editorial-render: wrote 26-social/weibo.md from social.long');
     } else {
         console.log('editorial-render: skipping social short posts (missing social.short in script plan)');
     }
-    const socialLong = typeof social?.long === 'string' ? social.long.trim() : '';
     if (socialLong !== '') {
         sted('mkdir', socialDir, () => mkdirSync(socialDir, { recursive: true }));
-        for (const name of ['weibo.md', 'linkedin.md']) {
-            const out = join(socialDir, name);
-            sted('write', out, () => writeRaw(out, `${socialLong}\n`));
-        }
-        console.log('editorial-render: wrote 26-social/{weibo,linkedin}.md');
+        const out = join(socialDir, 'linkedin.md');
+        sted('write', out, () => writeRaw(out, `${socialLong}\n`));
+        console.log('editorial-render: wrote 26-social/linkedin.md');
     } else {
         console.log('editorial-render: skipping social long posts (missing social.long in script plan)');
     }

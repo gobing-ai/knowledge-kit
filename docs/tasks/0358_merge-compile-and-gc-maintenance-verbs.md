@@ -12,12 +12,12 @@ tags:
   - maintenance
 estimate_hours: 6
 
-dependencies: ["0351"]
+dependencies: ["0356"]
 done_forced: "false"
-done_reason: unforced close; PASS artifact at .spur/memory/evidence/0353-verdict.json
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0358-verdict.json
 ---
 
-## 0353. Merge, compile and gc maintenance verbs
+## 0358. Merge, compile and gc maintenance verbs
 
 ### Background
 
@@ -33,8 +33,8 @@ Rejected: deleting the absorbed page in `merge` - a redirect stub keeps old Obsi
 
 **Refine corrections (2026-11-10)**
 - `gc` deleted "unreferenced `raw/**`" with no exception -> the first real consumer, the treasury vault, keeps an rclone-managed mirror under `raw/karakeep/` (see `~/xprojects/treasury` feature A, task 0004) where deletion fights the next sync -> `gc` only reclaims `raw/<type>/` snapshots this tool wrote and `raw/tmp/`, and skips any directory listed in `wiki.mirrors`.
-- `merge` was to "write the union of both bodies" -> 0351's `applyWrite` is the only body writer and 0352 owns guard semantics -> merge composes `applyWrite` and refuses a guarded source page instead of adding its own writer.
-- Redirect storage was unnamed -> it is a frontmatter key on the absorbed page (`redirect_to: <slug>`), which the 0351 index already reads as a page field and `link --fix` can rewrite against.
+- `merge` was to "write the union of both bodies" -> 0356's `applyWrite` is the only body writer and 0357 owns guard semantics -> merge composes `applyWrite` and refuses a guarded source page instead of adding its own writer.
+- Redirect storage was unnamed -> it is a frontmatter key on the absorbed page (`redirect_to: <slug>`), which the 0356 index already reads as a page field and `link --fix` can rewrite against.
 - Coverage and dry-run defaults were unstated -> `bunfig.toml` enforces 90% lines/functions per file; `gc` defaults to a plan-only run.
 
 ### Requirements
@@ -84,7 +84,7 @@ Rejected: deleting the absorbed page in `merge` - a redirect stub keeps old Obsi
 
 **Test observability.** Fixture vaults under `packages/kk-wiki/tests/fixtures/`: two overlapping pages with three inbound links, a guarded source page, a vault with no pages (empty compile), a `raw/karakeep/` directory listed in `wiki.mirrors`, and a referenced raw snapshot. Compile idempotency is asserted by comparing two consecutive renders byte for byte.
 
-**Handoff to dependents.** 0354 reads the compiled index for `query`; the treasury loop relies on `lint` (0351) and `compile` staying side-effect free apart from `content/index.md` and `content/MAP.md`.
+**Handoff to dependents.** 0359 reads the compiled index for `query`; the treasury loop relies on `lint` (0356) and `compile` staying side-effect free apart from `content/index.md` and `content/MAP.md`.
 
 ### Plan
 
@@ -149,7 +149,7 @@ Each entry cites the first changed line per file (`file:line`).
 
 ### Review
 
-**Scope.** Task 0353 — `merge`, `compile` and `gc`: the three maintenance verbs and the mirror-safety
+**Scope.** Task 0358 — `merge`, `compile` and `gc`: the three maintenance verbs and the mirror-safety
 scope `gc` needs for a vault whose `raw/` holds an externally managed mirror.
 
 **Traceability.** All seven requirements land in named files with tests: merge unions bodies and
@@ -175,7 +175,7 @@ Verdict: PASS
 ### References
 
 - Feature: `docs/features/I1_kk-wiki-vault-cli.md` — AC R10, R11, R14.
-- Decision: `docs/00_ADR.md:1679` ADR-046.
+- Decision: `docs/00_ADR.md:1679` ADR-048.
 - Shapes: `docs/design/kk-wiki.md:33-54` (merge/compile/gc rows), `docs/design/kk-wiki.md:56-82` (vault layout).
 
 ### History

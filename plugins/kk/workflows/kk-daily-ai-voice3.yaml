@@ -533,7 +533,7 @@ nodes:
           kk stage daily-article "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
 
   - id: cover
-    description: "Render the daily cover through the pinned daily-news presets (F614)"
+    description: "Render the daily cover through the pinned quasi-news podcast presets (F614, 0349: daily-news-podcast-cover x quasi-news-podcast)"
     dependsOn: [editorial-render, pool-gate]
     condition:
       kind: shell
@@ -575,7 +575,7 @@ nodes:
         command: >-
           env -u SPUR_WORKFLOW_RUN_ACTIVE -u SPUR_EXPECTED_DEFINITION_DIGEST
           spur workflow run plugins/kk/workflows/kk-daily-safety.yaml
-          --vars "{\"work_dir\":\"${vars.work_dir}\",\"run_date\":\"${vars.run_date}\",\"safety_max_revise\":\"${vars.safety_max_revise}\",\"safety_platforms\":\"${vars.safety_platforms}\",\"agent\":\"${vars.agent}\"}"
+          --vars "{\"work_dir\":\"${vars.work_dir}\",\"run_date\":\"${vars.run_date}\",\"safety_max_revise\":\"${vars.safety_max_revise}\",\"safety_platforms\":\"${vars.safety_platforms}\",\"agent\":\"${vars.agent}\",\"agent_retry\":\"${vars.agent_retry}\"}"
           --quiet --no-plan
 
   - id: review
@@ -834,7 +834,7 @@ nodes:
           kk stage run daily-safety-manifest "${vars.work_dir}" "${vars.run_date}" &&
           env -u SPUR_WORKFLOW_RUN_ACTIVE -u SPUR_EXPECTED_DEFINITION_DIGEST
           spur workflow run plugins/kk/workflows/kk-daily-safety.yaml
-          --vars "{\"work_dir\":\"${vars.work_dir}\",\"run_date\":\"${vars.run_date}\",\"safety_max_revise\":\"${vars.safety_max_revise}\",\"safety_platforms\":\"${vars.safety_platforms}\",\"agent\":\"${vars.agent}\",\"safety_scope_dir\":\"4-safety-variants\"}"
+          --vars "{\"work_dir\":\"${vars.work_dir}\",\"run_date\":\"${vars.run_date}\",\"safety_max_revise\":\"${vars.safety_max_revise}\",\"safety_platforms\":\"${vars.safety_platforms}\",\"agent\":\"${vars.agent}\",\"agent_retry\":\"${vars.agent_retry}\",\"safety_scope_dir\":\"4-safety-variants\"}"
           --quiet --no-plan
 
   - id: bundle-freeze

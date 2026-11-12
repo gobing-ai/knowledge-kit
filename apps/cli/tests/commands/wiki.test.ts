@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { main } from '../../src/main';
 import { captureOutput } from '../capture';
 
-/** Feature I1 R2/R3/R4/R19/R20 (task 0350): the `kk wiki ingest` CLI surface, exit codes and config seam. */
+/** Feature I1 R2/R3/R4/R19/R20 (task 0355): the `kk wiki ingest` CLI surface, exit codes and config seam. */
 
 const dirs: string[] = [];
 function tempVault(): string {

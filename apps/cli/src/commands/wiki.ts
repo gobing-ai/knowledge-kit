@@ -15,7 +15,7 @@ interface WikiIngestOptions {
 }
 
 /**
- * `kk wiki ingest <source|-> [--type=url|pdf|html|rss] [--out <dir>] [--json]` (feature I1, task 0350).
+ * `kk wiki ingest <source|-> [--type=url|pdf|html|rss] [--out <dir>] [--json]` (feature I1, task 0355).
  *
  * The verb normalises one file, URL or stdin body into a layer-1 raw snapshot. It never calls a
  * model: html/pdf/url go through the markitdown normaliser, everything else is written as given.
@@ -128,7 +128,7 @@ async function contextAction(topic: string, options: { depth?: string; json?: bo
 
 /** Register the `wiki` noun. One subcommand module per verb (docs/design/kk-wiki.md §1). */
 export function registerWikiCommand(parent: Command): void {
-    const wiki = parent.command('wiki').description('Deterministic Markdown vault mechanics (ADR-046)');
+    const wiki = parent.command('wiki').description('Deterministic Markdown vault mechanics (ADR-048)');
 
     wiki.command('ingest')
         .description('Normalise a file, URL or stdin body into a layer-1 raw snapshot')

@@ -1,4 +1,4 @@
-/** The closed set of vault defect classes (docs/design/kk-wiki.md §3, task 0351). */
+/** The closed set of vault defect classes (docs/design/kk-wiki.md §3, task 0356). */
 export type FindingCode = 'broken-link' | 'orphan' | 'missing-frontmatter' | 'invalid-frontmatter' | 'duplicate-slug';
 
 /** One defect with the page that carries it. */

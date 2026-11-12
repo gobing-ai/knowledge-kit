@@ -1,12 +1,18 @@
 /**
- * shipinhao-pub — shipinhao (channels.weixin.qq.com) short-video publisher plugin surface (task 0296).
+ * shipinhao-pub — shipinhao (channels.weixin.qq.com) publisher plugin surface (task 0296; four
+ * post kinds since 2026-11-10).
  *
  * This module is the manifest-facing plugin surface: the declared operation list, the pre-browser
- * refusal ladder (operation → driver → publishStatus → format → title → body → video file → cover
+ * refusal ladder (operation → driver → publishStatus → format → title → body → media file → cover
  * → tags → original → unsupported fields — all refused before any browser opens),
  * `getPublishTransport`, the `--in/--out` IO contract and the CLI `main`. The selectors and the
  * vendor-grounded site predicates live in `src/selectors.ts`, the browser transport and flow in
  * `src/flow.ts`, and the operator session CLI in `src/profile-check.ts`.
+ *
+ * Operations map one-to-one onto the 发布 page's post kinds (视频， 图文， 音乐， 音频):
+ * `shortVideo` (Grounded, vendor-port), `audio` (the first deliverable — the daily AI news
+ * episode mp3), `image` (图文） and `music`. The audio/image/music selectors are Provisional until
+ * the first logged-in live recon; everything fails closed.
  *
  * Evidence: the recovered extension adapter
  * `.spur/run/yijianfa-source/platforms/shipinhao.js` (2817 lines) pins the field semantics cited
@@ -26,14 +32,16 @@ import { type BrowserDriver, FakeBrowserTransport, type PublishTransport } from 
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 import { bounded, boundedDetail, errorMessage, fail, ShipinhaoBrowserTransport } from './flow';
-import { SHP_TARGET } from './selectors';
+import { SHP_OPERATION_NAMES, SHP_TARGET, type ShipinhaoOperationName } from './selectors';
 
 /**
- * Declared operations (ADR-029 dispatch): the source registers a single short-video flow
- * (`shortVideo`; the vendor's type dispatch, shipinhao.js:10,2802, declares this one kind).
+ * Declared operations (ADR-029 dispatch): one per 发布-page post kind — `shortVideo` (视频， the
+ * vendor-port), `audio` (音频）, `image` (图文）, `music` (音乐）. The vendor adapter declares only
+ * the short-video kind (shipinhao.js:10,2802); the other three are Provisional fail-closed flows
+ * over the same stage rails, pending the first logged-in live recon.
  */
-export const SHP_OPERATIONS = ['shortVideo'] as const;
-export type ShipinhaoOperation = (typeof SHP_OPERATIONS)[number];
+export const SHP_OPERATIONS = SHP_OPERATION_NAMES;
+export type ShipinhaoOperation = ShipinhaoOperationName;
 
 /**
  * Resolves the requested operation (`options.operation ?? content.metadata.operation ?? default`)
@@ -80,7 +88,7 @@ function resolveDriver(
  * `KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake` (offline, no profile, no browser), otherwise the real
  * shipinhao browser transport (`src/flow.ts`). API-only paths never load Playwright eagerly:
  * the harness launcher imports Playwright dynamically at launch time only.
- * @param operation - Resolved operation (`shortVideo`).
+ * @param operation - Resolved operation (one of `SHP_OPERATIONS`).
  * @param driver - Resolved driver; only `script` is declared.
  * @returns The publish transport for this channel.
  */

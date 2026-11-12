@@ -1,7 +1,7 @@
 import { renderPage, type VaultPage } from './page';
 
 /**
- * The single page-write path (task 0351 minimal form, extended by 0352).
+ * The single page-write path (task 0356 minimal form, extended by 0357).
  *
  * Every verb that changes a page body goes through `applyWrite`, so the `user_edited` guard cannot
  * be bypassed by calling a lower-level writer.

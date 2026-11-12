@@ -31,7 +31,7 @@ not add a `kk publish` noun.
 | substack | `substack-pub` | `browser` / `script` | `kk executor run substack-pub --in <content.json> --out <result.json>` (needs `SUBSTACK_PUBLICATION_URL`) |
 | threads | `threads-pub` | `file-cli` (Threads Graph, container → `threads_publish`) | `kk executor run threads-pub --in <content.json> --out <result.json>` — text only; needs `THREADS_ACCESS_TOKEN` + `THREADS_USER_ID`, no browser path |
 | weibo | `weibo-pub` | `browser` / `script` | `kk executor run weibo-pub --in <content.json> --out <result.json>`; `options.operation` `article` (头条文章, draft via 保存草稿 by default) or `post` (home composer, which has **no draft** — it requires `metadata.publishStatus: public`) |
-| xhs | `xhs-pub` | `browser` / `script` | `kk executor run xhs-pub --in <content.json> --out <result.json>` — its default `script` driver uploads the ordered card images with Playwright `setInputFiles`; the `agent` driver fails loud for this channel (ADR-024) |
+| xhs | `xhs-pub` | `browser` / `script` | `kk executor run xhs-pub --in <content.json> --out <result.json>` — its default `script` driver uploads the ordered card images with Playwright `setInputFiles`; the `agent` driver fails loud for this channel (ADR-024). A draft returns `ok: true` only after the plugin reopens the saved note and checks slot count, `https` srcs, title, body, and 合集; a miss is `DraftVerifyError` and `ok: false`. Daily voice and publish tiers call this same executor, so that reopen is their post-save check |
 
 Already-harvested file-cli channels (`qiita-pub`, `zenn-pub`, `surfdash-pub`,
 `emdash-pub`, `podcast-pub`) compose the same way.

@@ -1,6 +1,7 @@
 /**
- * shipinhao-pub offline unit suite (0296) — mirrors the xiaoyuzhou-pub unit suite (0295) layer by
- * layer, adapted to the shipinhao (channels.weixin.qq.com) short-video flow contract.
+ * shipinhao-pub offline unit suite (0296; four operations since 2026-11-10) — mirrors the
+ * xiaoyuzhou-pub unit suite (0295) layer by layer, adapted to the shipinhao (channels.weixin.qq.com)
+ * post flow contract (shortVideo 视频, audio 音频, music 音乐, image 图文).
  *
  * Eight describes:
  *   1. Declared surface — selector table, constants, config, operations, manifest,
@@ -35,18 +36,30 @@ import {
     type ProfileLaunchRequest,
 } from '@gobing-ai/ts-browser-automation';
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
-import { SHP_LOGIN_INSTRUCTION, ShipinhaoBrowserTransport, sanitizeShipinhaoHtml, stageFail } from '../src/flow';
+import {
+    buildShipinhaoDescription,
+    SHP_LOGIN_INSTRUCTION,
+    ShipinhaoBrowserTransport,
+    sanitizeShipinhaoHtml,
+    stageFail,
+} from '../src/flow';
 import { getPublishTransport, main, processPublishIO, resolveOperation, SHP_OPERATIONS } from '../src/index';
 import {
     isShipinhaoAuthenticated,
     readRootSnapshot,
+    SHP_AUDIO_SELECTORS,
     SHP_CONFIG,
     SHP_COVER_PREVIEW_WAIT_MS,
     SHP_COVER_SAVE_WAIT_MS,
+    SHP_CREATE_ENTRY_SELECTORS,
+    SHP_DESCRIPTION_MAX_CHARS,
     SHP_FORM_WAIT_MS,
     SHP_HOME_URL,
+    SHP_HOME_URL_BY_OPERATION,
+    SHP_IMAGE_SELECTORS,
     SHP_LOGIN_TIMEOUT_MS,
     SHP_LOGIN_URL_RE,
+    SHP_MUSIC_SELECTORS,
     SHP_PROCESSING_WAIT_MS,
     SHP_RECEIPT_URL_RES,
     SHP_ROOT_WAIT_MS,
@@ -57,6 +70,8 @@ import {
 
 const TMP_DIR = join(process.cwd(), '.works/tmp/test-shipinhao-pub-main');
 const VIDEO_PATH = join(TMP_DIR, 'video.mp4');
+const AUDIO_PATH = join(TMP_DIR, 'episode.mp3');
+const IMAGE_PATHS = [join(TMP_DIR, 'card-1.jpg'), join(TMP_DIR, 'card-2.webp')];
 const COVER_PATH = join(TMP_DIR, 'cover.png');
 const BIG_PATH = join(TMP_DIR, 'big.mp4');
 const PROFILE_OVERRIDE_DIR = join(TMP_DIR, 'profile-flag-override');
@@ -66,13 +81,22 @@ const DRAFT_URL = 'https://channels.weixin.qq.com/platform/record/detail/shp2600
 const SECOND_DRAFT_URL = 'https://channels.weixin.qq.com/platform/record/detail/shp26002';
 const PUBLISH_URL = 'https://channels.weixin.qq.com/platform/post/video/pub0777';
 
-const { videoInput, titleInput, descriptionEditor, saveButton, publishButton, coverDialog } = SHP_VIDEO_SELECTORS;
+const { videoInput, titleInput, descriptionEditor, saveButton, publishButton, coverDialog, createEntry } =
+    SHP_VIDEO_SELECTORS;
 const VIDEO_INPUT = videoInput[0];
+const AUDIO_INPUT = SHP_AUDIO_SELECTORS.audioInput[0];
+const IMAGES_INPUT = SHP_IMAGE_SELECTORS.imagesInput[0];
 const TITLE_INPUT = titleInput[0];
 const EDITOR = descriptionEditor[0];
 const SAVE = saveButton[0];
 const PUBLISH = publishButton[0];
 const COVER_DIALOG = coverDialog[0];
+/** Every operation's media file-input ladder — the fake counts all of them the same way. */
+const MEDIA_INPUT_LADDER: readonly string[] = [
+    ...videoInput,
+    ...SHP_AUDIO_SELECTORS.audioInput,
+    ...SHP_IMAGE_SELECTORS.imagesInput,
+];
 
 /** Original env, captured before any beforeEach mutates it (restored by describe 8). */
 const originalChannelDir = process.env.SHP_PROFILE_DIR;
@@ -124,6 +148,8 @@ interface FakePageOptions {
     submitInvisible?: boolean;
     submitNeverEnabled?: boolean;
     onSaveClick?: 'draftReceipt' | 'none' | 'twoIds';
+    /** The 定时发表 draft-save confirm dialog (保存/不保存) appears after the 保存草稿 click. */
+    draftConfirmDialog?: boolean;
     existingReceiptUrl?: string;
     /** Toast text present on the page — must never rescue a publish (this flow reads no toasts). */
     existingToasts?: string[];
@@ -144,11 +170,15 @@ interface FakePageShared {
 const makeFakePage = (shared: FakePageShared, options: FakePageOptions): Page => {
     let rootReads = 0;
     let url = 'about:blank';
-    let videoAssigned = false;
+    let mediaAssigned = false;
+    // Dashboard → create-surface model (recon-Grounded 2026-11-11): the flow lands on the
+    // dashboard (no file input), clicks 发表视频, and only then does the media file input exist.
+    let createOpened = false;
     let titleValue = '';
     let editorHtml = '';
     let coverDescriptor = 'base';
     let coverDialogOpen = false;
+    let draftConfirmOpen = false;
     let originalEntryChecked = false;
     let originalAgreementChecked = false;
     let originalWrapperPresent = false;
@@ -163,9 +193,10 @@ const makeFakePage = (shared: FakePageShared, options: FakePageOptions): Page =>
     const countOf = (selector: string): number => {
         const base = baseSelector(selector);
         if (base === 'wujie-app') return options.groundedMissing ? 0 : 1;
-        if (videoInput.includes(base)) return options.missingVideoInput ? 0 : 1;
-        if (titleInput.includes(base)) return videoAssigned && !options.missingTitleInput ? 1 : 0;
-        if (descriptionEditor.includes(base)) return videoAssigned && !options.missingEditor ? 1 : 0;
+        if (createEntry.includes(base)) return 1;
+        if (MEDIA_INPUT_LADDER.includes(base)) return createOpened && !options.missingVideoInput ? 1 : 0;
+        if (titleInput.includes(base)) return mediaAssigned && !options.missingTitleInput ? 1 : 0;
+        if (descriptionEditor.includes(base)) return mediaAssigned && !options.missingEditor ? 1 : 0;
         if (saveButton.includes(base) || publishButton.includes(base)) return options.submitMissing ? 0 : 1;
         if (base === `${COVER_DIALOG} input[type="file"]`)
             return coverDialogOpen && !options.coverDialogNoFileInput ? 1 : 0;
@@ -202,7 +233,7 @@ const makeFakePage = (shared: FakePageShared, options: FakePageOptions): Page =>
                     return JSON.stringify({
                         wujiePresent: false,
                         shadowRootReady: false,
-                        directFileInputs: 1,
+                        directFileInputs: createOpened ? 1 : 0,
                         directTextEvidence: 2,
                         shadowFileInputs: 0,
                         shadowTextEvidence: 0,
@@ -213,8 +244,8 @@ const makeFakePage = (shared: FakePageShared, options: FakePageOptions): Page =>
                     shadowRootReady: ready,
                     directFileInputs: 0,
                     directTextEvidence: 0,
-                    shadowFileInputs: ready ? 1 : 0,
-                    shadowTextEvidence: ready ? 2 : 0,
+                    shadowFileInputs: createOpened ? 1 : 0,
+                    shadowTextEvidence: 2,
                 });
             }
             if (expression.includes('kk-shp-receipt-urls')) {
@@ -239,7 +270,7 @@ const makeFakePage = (shared: FakePageShared, options: FakePageOptions): Page =>
                 });
             }
             if (expression.includes('{ ready:'))
-                return JSON.stringify({ ready: videoAssigned && !options.missingTitleInput });
+                return JSON.stringify({ ready: mediaAssigned && !options.missingTitleInput });
             if (expression.includes("String(el.value ?? '')")) return titleValue;
             if (expression.includes("String(el.innerText ?? el.textContent ?? '')"))
                 return options.bodyReadbackDrops ? '' : editorHtml.replace(/<[^>]*>/g, ' ');
@@ -310,6 +341,13 @@ const makeFakePage = (shared: FakePageShared, options: FakePageOptions): Page =>
                 shared.calls.push('cover:confirm');
                 return JSON.stringify({ ok: true });
             }
+            if (expression.includes('kk-shp-draft-confirm')) {
+                if (options.draftConfirmDialog !== true || draftConfirmOpen === false)
+                    return JSON.stringify({ ok: false, reason: 'absent' });
+                draftConfirmOpen = false; // one-shot: clicking 保存 closes the dialog
+                shared.calls.push('draft:confirm');
+                return JSON.stringify({ ok: true });
+            }
             return '';
         },
         locator: (selector: string) => {
@@ -326,17 +364,22 @@ const makeFakePage = (shared: FakePageShared, options: FakePageOptions): Page =>
                 click: async () => {
                     const base = baseSelector(selector);
                     shared.calls.push(`click:${selector}`);
+                    if (createEntry.includes(base)) {
+                        createOpened = true;
+                        shared.calls.push('entry:open');
+                    }
                     if (publishButton.includes(base)) url = PUBLISH_URL;
                     if (saveButton.includes(base)) {
                         if (options.onSaveClick === 'draftReceipt') url = DRAFT_URL;
                         if (options.onSaveClick === 'twoIds') freshAnchors.push(DRAFT_URL, SECOND_DRAFT_URL);
+                        if (options.draftConfirmDialog === true) draftConfirmOpen = true;
                     }
                 },
                 setInputFiles: async (files: string | readonly string[]) => {
                     if (options.uploadThrows) throw new Error('detached during upload');
                     shared.calls.push(`setInputFiles:${selector}|${String(files)}`);
                     const base = baseSelector(selector);
-                    if (videoInput.includes(base)) videoAssigned = true;
+                    if (MEDIA_INPUT_LADDER.includes(base)) mediaAssigned = true;
                     if (base === `${COVER_DIALOG} input[type="file"]`) shared.calls.push('cover:attach');
                 },
             };
@@ -386,8 +429,9 @@ const makeFakeLauncher = (options: FakeLauncherOptions = {}) => {
 const transport = (
     fake: ReturnType<typeof makeFakeLauncher>,
     driver: 'script' | 'agent' = 'script',
+    operation: 'shortVideo' | 'audio' | 'music' | 'image' = 'shortVideo',
 ): ShipinhaoBrowserTransport =>
-    new ShipinhaoBrowserTransport('shortVideo', driver, { launcher: fake.launcher, stepTimeoutMs: 250 });
+    new ShipinhaoBrowserTransport(operation, driver, { launcher: fake.launcher, stepTimeoutMs: 250 });
 
 /** Fails unless the comment block directly above `anchor` carries the Provisional label. */
 const expectProvisionalLabel = (source: string, anchor: string): void => {
@@ -411,6 +455,9 @@ const expectGroundedLabel = (source: string, anchor: string): void => {
 beforeEach(async () => {
     await mkdir(TMP_DIR, { recursive: true });
     await writeFile(VIDEO_PATH, 'fake-mp4-bytes-for-flow-tests');
+    await writeFile(AUDIO_PATH, 'fake-mp3-bytes-for-flow-tests');
+    await writeFile(IMAGE_PATHS[0] as string, 'fake-jpg-bytes-for-flow-tests');
+    await writeFile(IMAGE_PATHS[1] as string, 'fake-webp-bytes-for-flow-tests');
     await writeFile(COVER_PATH, 'fake-png-bytes-for-flow-tests');
     delete process.env.SHP_PROFILE_DIR;
     delete process.env.KK_BROWSER_PROFILE_DIR;
@@ -430,6 +477,7 @@ describe('1. declared surface (selectors, constants, config, operations, manifes
                 'coverDialog',
                 'coverDialogFileInputSuffix',
                 'coverEditEntry',
+                'createEntry',
                 'descriptionEditor',
                 'originalAgreementCheckbox',
                 'originalConfirmLabel',
@@ -458,7 +506,9 @@ describe('1. declared surface (selectors, constants, config, operations, manifes
 
     test('URL / regex / timeout constants match the vendor surface contract', () => {
         expect(SHP_TARGET).toBe('shipinhao');
-        expect(SHP_HOME_URL).toBe('https://channels.weixin.qq.com/platform/post/video');
+        expect(SHP_HOME_URL).toBe('https://channels.weixin.qq.com/platform');
+        expect(SHP_CREATE_ENTRY_SELECTORS).toEqual(['button:text-is("发表视频")']);
+        expect(SHP_DESCRIPTION_MAX_CHARS).toBe(100);
         expect(SHP_LOGIN_URL_RE.source).toContain('open\\.weixin\\.qq\\.com');
         expect(SHP_LOGIN_URL_RE.test(SIGNIN_URL)).toBe(true);
         expect(SHP_LOGIN_URL_RE.test(SHP_HOME_URL)).toBe(false);
@@ -486,16 +536,19 @@ describe('1. declared surface (selectors, constants, config, operations, manifes
     });
 
     test('operations table and resolveOperation precedence/unknown handling', () => {
-        expect([...SHP_OPERATIONS]).toEqual(['shortVideo']);
+        expect([...SHP_OPERATIONS]).toEqual(['shortVideo', 'audio', 'image', 'music']);
         expect(resolveOperation(undefined, undefined)).toEqual({ operation: 'shortVideo' });
         expect(resolveOperation({ operation: 'shortVideo' }, undefined).operation).toBe('shortVideo');
+        expect(resolveOperation({ operation: 'audio' }, undefined).operation).toBe('audio');
+        expect(resolveOperation(undefined, draftContent({ operation: 'image' })).operation).toBe('image');
+        expect(resolveOperation({ operation: 'music' }, undefined).operation).toBe('music');
         expect(resolveOperation(undefined, draftContent({ operation: 'shortVideo' })).operation).toBe('shortVideo');
         // options.operation wins over content.metadata.operation.
         expect(resolveOperation({ operation: 'shortVideo' }, draftContent({ operation: 'article' })).operation).toBe(
             'shortVideo',
         );
         expect(resolveOperation({ operation: 'podcast' }, undefined).error).toContain(
-            "unsupported operation 'podcast' for shipinhao: expected one of shortVideo",
+            "unsupported operation 'podcast' for shipinhao: expected one of shortVideo, audio, image, music",
         );
         expect(resolveOperation(undefined, draftContent({ operation: 'article' })).error).toContain(
             "unsupported operation 'article' for shipinhao",
@@ -503,6 +556,26 @@ describe('1. declared surface (selectors, constants, config, operations, manifes
         expect(resolveOperation({ operation: 'article' }, draftContent({ operation: 'shortVideo' })).error).toContain(
             "unsupported operation 'article' for shipinhao",
         );
+    });
+
+    test('per-operation selector tables and home URLs (four post kinds)', () => {
+        // The per-op tables reuse the video rails verbatim (spread) plus their own input ladder;
+        // the flow reads only the per-op ladder key.
+        expect(Object.keys(SHP_AUDIO_SELECTORS).sort()).toEqual(
+            [...Object.keys(SHP_VIDEO_SELECTORS), 'audioInput'].sort(),
+        );
+        expect(SHP_AUDIO_SELECTORS.audioInput).toEqual(['input[type="file"][accept*="video"]', 'input[type="file"]']);
+        expect(Object.keys(SHP_MUSIC_SELECTORS)).toEqual(Object.keys(SHP_AUDIO_SELECTORS));
+        expect(Object.keys(SHP_IMAGE_SELECTORS).sort()).toEqual(
+            [...Object.keys(SHP_VIDEO_SELECTORS), 'imagesInput'].sort(),
+        );
+        expect(SHP_IMAGE_SELECTORS.imagesInput[0]).toBe('input[type="file"][multiple]');
+        expect(SHP_HOME_URL_BY_OPERATION).toEqual({
+            shortVideo: SHP_HOME_URL,
+            audio: SHP_HOME_URL,
+            image: SHP_HOME_URL,
+            music: SHP_HOME_URL,
+        });
     });
 
     test('plugin.json manifest declares the shipinhao browser session and packed entry/check', async () => {
@@ -733,6 +806,68 @@ describe('2. pre-browser refusals (zero browser launches)', () => {
         expect(result.error).toContain('scheduling/publishTime is an unported vendor enhancement');
         expect(fake.requests).toHaveLength(0);
     });
+
+    test('audio refusals: missing, non-string, nonexistent, and unsupported extensions', async () => {
+        const fake = makeFakeLauncher();
+        const t = transport(fake, 'script', 'audio');
+        const publish = (metadata: Record<string, unknown>) =>
+            t.publish({ content: draftContent(metadata, { format: 'audio' }) });
+
+        expect((await publish({})).error).toContain('must be a non-empty local audio file path');
+        expect((await publish({ audio: 42 })).error).toContain('must be a non-empty local audio file path');
+        expect((await publish({ audio: join(TMP_DIR, 'nope.mp3') })).error).toContain(
+            'does not resolve to a readable nonempty local audio file',
+        );
+        const txt = await publish({ audio: join(TMP_DIR, 'note.txt') });
+        expect(txt.error).toContain('must be a local MP3/M4A/WAV/AAC/FLAC file');
+        expect(txt.error).toContain('unsupported extension in');
+        expect(fake.requests).toHaveLength(0);
+    });
+
+    test('images refusals: missing, non-array, and per-entry extension gates', async () => {
+        const fake = makeFakeLauncher();
+        const t = transport(fake, 'script', 'image');
+        const publish = (metadata: Record<string, unknown>) =>
+            t.publish({ content: draftContent(metadata, { format: 'image' }) });
+
+        expect((await publish({})).error).toContain(
+            'metadata.images must be a non-empty array of local image file paths',
+        );
+        expect((await publish({ images: 'card.png' })).error).toContain(
+            'metadata.images must be a non-empty array of local image file paths',
+        );
+        expect((await publish({ images: [] })).error).toContain(
+            'metadata.images must be a non-empty array of local image file paths',
+        );
+        const bad = await publish({ images: [join(TMP_DIR, 'card.tiff')] });
+        expect(bad.error).toContain('metadata.images[] must be a local PNG/JPEG/WebP file');
+        expect(fake.requests).toHaveLength(0);
+    });
+
+    test('images entries may be plain paths or { path } objects (the cards-variant spelling)', async () => {
+        const fake = makeFakeLauncher({ onSaveClick: 'draftReceipt' });
+        const result = await transport(fake, 'script', 'image').publish({
+            content: draftContent({ images: [{ path: IMAGE_PATHS[0] }, IMAGE_PATHS[1]] }, { format: 'image' }),
+        });
+        expect(result.ok).toBe(true);
+        expect(fake.calls).toContain(`setInputFiles:wujie-app ${IMAGES_INPUT}|${IMAGE_PATHS[0]},${IMAGE_PATHS[1]}`);
+    });
+
+    test('cross-kind fields refuse per operation: videoPath on audio, coverPath on 图文', async () => {
+        const fake = makeFakeLauncher();
+        const audioResult = await transport(fake, 'script', 'audio').publish({
+            content: draftContent({ videoPath: VIDEO_PATH, audio: AUDIO_PATH }, { format: 'audio' }),
+        });
+        expect(audioResult.error).toContain('unsupported field(s)');
+        expect(audioResult.error).toContain('metadata.videoPath');
+
+        const imageResult = await transport(fake, 'script', 'image').publish({
+            content: draftContent({ images: IMAGE_PATHS, coverPath: COVER_PATH }, { format: 'image' }),
+        });
+        expect(imageResult.error).toContain('unsupported field(s)');
+        expect(imageResult.error).toContain('metadata.coverPath');
+        expect(fake.requests).toHaveLength(0);
+    });
 });
 
 describe('3. sanitizer chain and paste-script construction', () => {
@@ -789,6 +924,35 @@ describe('3. sanitizer chain and paste-script construction', () => {
         expect((paste ?? '').startsWith('paste:wujie|')).toBe(true);
         const pastedHtml = (paste ?? '').slice((paste ?? '').indexOf('|') + 1);
         expect(pastedHtml).toBe(sanitizeShipinhaoHtml(markdownToHtml('Fixture 描述正文。')));
+    });
+
+    test('a long body is pasted as the clipped plain description with topics kept whole', async () => {
+        const longBody = `# 标题\n\n${'很长的节目内容。'.repeat(30)}`;
+        const fake = makeFakeLauncher({ onSaveClick: 'draftReceipt' });
+        const result = await transport(fake).publish({
+            content: draftContent({ videoPath: VIDEO_PATH, tags: ['AI', '播客'] }, { body: longBody }),
+        });
+        expect(result.ok).toBe(true);
+        const paste = fake.calls.find((call) => call.startsWith('paste:')) ?? '';
+        const pastedHtml = paste.slice(paste.indexOf('|') + 1);
+        const { description } = buildShipinhaoDescription(longBody, ['AI', '播客']);
+        expect(pastedHtml).toBe(sanitizeShipinhaoHtml(markdownToHtml(description)));
+        expect(description.endsWith('\n#AI #播客')).toBe(true);
+    });
+
+    test('buildShipinhaoDescription clips plain text to the 100-char editor cap and strips markdown', () => {
+        const { description } = buildShipinhaoDescription(
+            `## 一${'很长的节目内容。'.repeat(30)}[来源：x](https://example.com/a)`,
+            ['AI'],
+        );
+        expect(description.endsWith('#AI')).toBe(true);
+        expect(Array.from(description).length).toBeLessThanOrEqual(100);
+        expect(description).not.toContain('##');
+        expect(description).not.toContain('http');
+        const short = buildShipinhaoDescription('短正文。', ['AI', '播客']);
+        expect(short.description).toBe('短正文。\n#AI #播客');
+        const bare = buildShipinhaoDescription('短正文。', []);
+        expect(bare.description).toBe('短正文。');
     });
 });
 
@@ -939,6 +1103,21 @@ describe('5. session preflight', () => {
 });
 
 describe('6. flow stages (offline fake page running the real evaluate scripts)', () => {
+    test('the 定时发表 draft-confirm dialog is clicked through 保存 before the receipt', async () => {
+        const fake = makeFakeLauncher({ onSaveClick: 'draftReceipt', draftConfirmDialog: true });
+        // Own transport: the confirm click spends one extra poll round before the receipt read.
+        const t = new ShipinhaoBrowserTransport('shortVideo', 'script', {
+            launcher: fake.launcher,
+            stepTimeoutMs: 3000,
+        });
+        const result = await t.publish({ content: draftContent({ videoPath: VIDEO_PATH }) });
+
+        expect(result.ok).toBe(true);
+        expect(result.url).toBe(DRAFT_URL);
+        expect(fake.calls).toContain('draft:confirm');
+        expect(fake.calls.indexOf('draft:confirm')).toBeGreaterThan(fake.calls.indexOf(`click:wujie-app ${SAVE}`));
+    });
+
     test('a fresh receipt with full persisted readback confirms the draft', async () => {
         const fake = makeFakeLauncher({ onSaveClick: 'draftReceipt' });
         const result = await transport(fake).publish({ content: draftContent({ videoPath: VIDEO_PATH }) });
@@ -1057,7 +1236,7 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
         // The processing poll is bounded by the module-level media ceiling, not the step timeout.
         expect(src).toContain('timeoutMs: SHP_UPLOAD_TIMEOUT_MS');
         expect(src).toContain("'upload-processing'");
-        expect(src).toContain('refusing to claim an uploaded video');
+        expect(src).toContain(`refusing to claim an uploaded \${spec.mediaLabel}`);
         // The typed branch the deadline returns: single line, staged, no claimed upload.
         const typed = stageFail(
             SHP_TARGET,
@@ -1088,7 +1267,7 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
         expect(result.metadata).toMatchObject({ stage: 'title-readback' });
         expect(result.error).toContain('title readback failed');
         expect(fake.calls.some((call) => call.startsWith('paste:'))).toBe(false);
-        expect(fake.calls.some((call) => call.startsWith('click:'))).toBe(false);
+        expect(fake.calls.some((call) => call.includes(SAVE) || call.includes(PUBLISH))).toBe(false);
     });
 
     test('a missing description editor is a typed upload-processing failure, never a silent skip', async () => {
@@ -1097,7 +1276,7 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
         expect(result.ok).toBe(false);
         expect(result.metadata).toMatchObject({ stage: 'upload-processing' });
         expect(result.error).toContain('media processing not confirmed');
-        expect(fake.calls.some((call) => call.startsWith('click:'))).toBe(false);
+        expect(fake.calls.some((call) => call.includes(SAVE) || call.includes(PUBLISH))).toBe(false);
     });
 
     test('a paste the editor never receives is refused before any submit control is touched', async () => {
@@ -1107,7 +1286,7 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
         expect(result.metadata).toMatchObject({ stage: 'description-paste-readback' });
         expect(result.error).toContain('description paste failed');
         expect(result.error).toContain('not attached for paste');
-        expect(fake.calls.some((call) => call.startsWith('click:'))).toBe(false);
+        expect(fake.calls.some((call) => call.includes(SAVE) || call.includes(PUBLISH))).toBe(false);
     });
 
     test('a dropped paste is refused at the description readback before any save control is clicked', async () => {
@@ -1116,7 +1295,7 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
         expect(result.ok).toBe(false);
         expect(result.metadata).toMatchObject({ stage: 'description-paste-readback' });
         expect(result.error).toContain('description readback failed');
-        expect(fake.calls.some((call) => call.startsWith('click:'))).toBe(false);
+        expect(fake.calls.some((call) => call.includes(SAVE) || call.includes(PUBLISH))).toBe(false);
     });
 
     test('a missing 声明原创 entry checkbox refuses the requested declaration', async () => {
@@ -1127,7 +1306,7 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
         expect(result.ok).toBe(false);
         expect(result.metadata).toMatchObject({ stage: 'original-declare' });
         expect(result.error).toContain('entry checkbox not found');
-        expect(fake.calls.some((call) => call.startsWith('click:'))).toBe(false);
+        expect(fake.calls.some((call) => call.includes(SAVE) || call.includes(PUBLISH))).toBe(false);
     });
 
     test('an ambiguous 声明原创 entry refuses rather than guessing which 原创 control', async () => {
@@ -1210,7 +1389,7 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
         expect(result.metadata).toMatchObject({ stage: 'draft-save' });
         expect(result.error).toContain('draft-save control never attached');
         expect(result.error).toContain('not a manufactured draft');
-        expect(fake.calls.some((call) => call.startsWith('click:'))).toBe(false);
+        expect(fake.calls.some((call) => call.includes(SAVE) || call.includes(PUBLISH))).toBe(false);
     });
 
     test('a hidden or never-clickable submit control refuses at its own leg, before any click', async () => {
@@ -1219,7 +1398,7 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
         expect(hiddenResult.ok).toBe(false);
         expect(hiddenResult.metadata).toMatchObject({ stage: 'draft-save' });
         expect(hiddenResult.error).toContain('attached but not visible');
-        expect(hidden.calls.some((call) => call.startsWith('click:'))).toBe(false);
+        expect(hidden.calls.some((call) => call.includes(SAVE) || call.includes(PUBLISH))).toBe(false);
 
         const disabled = makeFakeLauncher({ submitNeverEnabled: true, onSaveClick: 'draftReceipt' });
         const disabledResult = await transport(disabled).publish({
@@ -1228,7 +1407,7 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
         expect(disabledResult.ok).toBe(false);
         expect(disabledResult.metadata).toMatchObject({ stage: 'draft-save' });
         expect(disabledResult.error).toContain('never became clickable');
-        expect(disabled.calls.some((call) => call.startsWith('click:'))).toBe(false);
+        expect(disabled.calls.some((call) => call.includes(SAVE) || call.includes(PUBLISH))).toBe(false);
     });
 
     test('an idless state (stale receipt on screen, no fresh gain) is a typed draft-receipt failure', async () => {
@@ -1266,6 +1445,66 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
         expect(result.metadata).toMatchObject({ stage: 'draft-receipt' });
         expect(result.error).toContain('receipt is ambiguous');
         expect(result.metadata?.evidence).toContain('2 disagreeing fresh works ids');
+    });
+
+    test('an audio post (音频) rides the shared rails with the audio ladder — draft with a cover', async () => {
+        const fake = makeFakeLauncher({ onSaveClick: 'draftReceipt' });
+        const result = await transport(fake, 'script', 'audio').publish({
+            content: draftContent({ audio: AUDIO_PATH, coverPath: COVER_PATH }, { format: 'audio' }),
+        });
+        expect(result.ok).toBe(true);
+        expect(result.metadata).toMatchObject({
+            operation: 'audio',
+            publishStatus: 'draft',
+            confirmedBy: 'draft-receipt',
+        });
+        expect(result.message).toContain('shipinhao audio draft confirmed in profile');
+        expect(fake.calls).toContain(`setInputFiles:wujie-app ${AUDIO_INPUT}|${AUDIO_PATH}`);
+        expect(fake.calls).toContain(`fill:wujie-app ${TITLE_INPUT}|Fixture 短标题`);
+        expect(fake.calls).toContain(`click:wujie-app ${SAVE}`);
+        expect(fake.calls).toContain('cover:confirm');
+    });
+
+    test('the audio payload may spell the file as metadata.audioFile (publish-prep contract)', async () => {
+        const fake = makeFakeLauncher({ onSaveClick: 'draftReceipt' });
+        const result = await transport(fake, 'script', 'audio').publish({
+            content: draftContent({ audioFile: AUDIO_PATH }, { format: 'audio' }),
+        });
+        expect(result.ok).toBe(true);
+        expect(fake.calls).toContain(`setInputFiles:wujie-app ${AUDIO_INPUT}|${AUDIO_PATH}`);
+    });
+
+    test('a public audio post clicks 发表 and confirms on the same fresh-receipt contract', async () => {
+        const fake = makeFakeLauncher();
+        const result = await transport(fake, 'script', 'audio').publish({
+            content: draftContent({ audio: AUDIO_PATH, publishStatus: 'public' }, { format: 'audio' }),
+        });
+        expect(result.ok).toBe(true);
+        expect(result.url).toBe(PUBLISH_URL);
+        expect(result.message).toContain('shipinhao audio public confirmed in profile');
+        expect(fake.calls).toContain(`click:wujie-app ${PUBLISH}`);
+    });
+
+    test('a music post (音乐) uses the same audio ladder plus cover rails', async () => {
+        const fake = makeFakeLauncher({ onSaveClick: 'draftReceipt' });
+        const result = await transport(fake, 'script', 'music').publish({
+            content: draftContent({ audio: AUDIO_PATH, coverPath: COVER_PATH }, { format: 'audio' }),
+        });
+        expect(result.ok).toBe(true);
+        expect(result.metadata).toMatchObject({ operation: 'music' });
+        expect(fake.calls).toContain(`setInputFiles:wujie-app ${AUDIO_INPUT}|${AUDIO_PATH}`);
+        expect(fake.calls).toContain('cover:confirm');
+    });
+
+    test('an image post (图文) attaches the image array in one setInputFiles and never touches the cover', async () => {
+        const fake = makeFakeLauncher({ onSaveClick: 'draftReceipt' });
+        const result = await transport(fake, 'script', 'image').publish({
+            content: draftContent({ images: IMAGE_PATHS }, { format: 'image' }),
+        });
+        expect(result.ok).toBe(true);
+        expect(result.metadata).toMatchObject({ operation: 'image' });
+        expect(fake.calls).toContain(`setInputFiles:wujie-app ${IMAGES_INPUT}|${IMAGE_PATHS[0]},${IMAGE_PATHS[1]}`);
+        expect(fake.calls.some((call) => call.startsWith('cover:'))).toBe(false);
     });
 });
 
@@ -1307,7 +1546,7 @@ describe('7. source hygiene (no eval, one evaluate paste, setInputFiles media, n
     test('every resolveRootLocator call site is wrapped in a catch arm returning a typed stageFail', async () => {
         const flow = await readFile(join(import.meta.dir, '..', 'src', 'flow.ts'), 'utf-8');
         const sites = [...flow.matchAll(/await resolveRootLocator\(/g)];
-        expect(sites).toHaveLength(7); // video input, form title, form editor, paste editor, cover input, submit, title fill
+        expect(sites).toHaveLength(8); // create entry, video input, form title, form editor, paste editor, cover input, submit, title fill
         for (const site of sites) {
             const tail = flow.slice(site.index ?? 0);
             const catchIdx = tail.indexOf('} catch');
@@ -1317,13 +1556,14 @@ describe('7. source hygiene (no eval, one evaluate paste, setInputFiles media, n
         }
     });
 
-    test('the title is filled natively and the only awaited click is the resolved submit control', async () => {
+    test('the title is filled natively and the awaited clicks are the entry and the resolved submit control', async () => {
         const flow = await readFile(join(import.meta.dir, '..', 'src', 'flow.ts'), 'utf-8');
         expect(flow).toContain('.fill(title)');
         // Every `.value` occurrence in the flow is a readback read; never a bare write.
         expect(flow).not.toMatch(/\.value\s*=[^=]/);
-        // The only awaited locator click is the submit rail (draft save or 发表).
-        expect(flow.match(/await [A-Za-z.]+\.click\(/g)).toHaveLength(1);
+        // The awaited locator clicks are the dashboard entry rail and the submit rail (draft save or 发表).
+        expect(flow.match(/await [A-Za-z.]+\.click\(/g)).toHaveLength(2);
+        expect(flow).toContain('await entry.click()');
         expect(flow).toContain('await submitLocator.click()');
     });
 

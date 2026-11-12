@@ -2,7 +2,7 @@ import { buildVaultIndex, findMentions, fixLinks } from '@gobing-ai/kk-wiki';
 import { consoleOutput, toJson } from '../output';
 import { resolveWikiConfig, WikiConfigError } from './config';
 
-/** `kk wiki link [--fix]` (task 0351): report unlinked mentions, or inject them on request. */
+/** `kk wiki link [--fix]` (task 0356): report unlinked mentions, or inject them on request. */
 
 /** One CLI invocation's outcome. */
 export interface WikiLinkOutcome {

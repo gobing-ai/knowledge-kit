@@ -19,7 +19,7 @@
  *
  * Window model (kk-daily-publish3.yaml + daily-ai-voice-migration.json):
  * - after-generate: surfdash.article + podcast.episode (tier 0, required), wechatmp.podcast,
- *   xhs.podcast, wechatmp.article, xhs.article (dummy), xhs.cards (off) — no RSS gate.
+ *   xhs.podcast, wechatmp.article — no RSS gate. xhs.article is closed (mode off, 2194994).
  * - cn-peak: weibo.article + x.article (draft; live only behind an explicit live-channel token),
  *   waits on the (stubbed) 09:00 Asia/Shanghai clock.
  * - overseas-rss: x.post / weibo.post / threads.post (dummy), gated by the RSS proof: the gate
@@ -420,6 +420,7 @@ function makeFixture(caseName: string): Fixture {
         'weibo-pub',
         'x-pub',
         'threads-pub',
+        'shipinhao-pub',
     ]) {
         writeFakeTransport(binDir, transport);
     }
@@ -730,7 +731,7 @@ describe('0335 R1: fresh offline multi-window migration rehearsal', () => {
             'podcast.episode',
             'xhs.podcast',
             'wechatmp.article',
-            'xhs.article',
+            // 2194994 closed xhs.article (mode off) in the migration preset — no receipt, by policy.
             'weibo.article',
             'x.post',
             'weibo.post',
@@ -748,8 +749,8 @@ describe('0335 R1: fresh offline multi-window migration rehearsal', () => {
         // Deliberate offline scoping: only the podcast row went live (comment above); the rest,
         // tier-2 drafts included, record the rehearsal's dummy delivery.
         expect((byKey.get('surfdash.article') as { dummy?: boolean }).dummy).toBe(true);
-        // Off targets never deliver.
-        expect(byKey.has('wechatmp.podcast')).toBe(false);
+        // Off targets never deliver (2194994 reopened wechatmp.podcast as a tier-1 draft; the
+        // remaining closed targets stay receipt-less).
         expect(byKey.has('x.article')).toBe(false);
         expect(byKey.has('xhs.cards')).toBe(false);
         expect(byKey.has('shipinhao.cards')).toBe(false);
@@ -781,8 +782,9 @@ describe('0335 R1: fresh offline multi-window migration rehearsal', () => {
         );
         expectDone(second, 'replayed after-generate');
         expect(dispatchCount(fx, 'surfdash-pub')).toBe(afterFirst);
-        // 6 tier0-2 receipts (surfdash+podcast, 1×podcast tier1, 3×article tier2); overseas skipped.
-        expect(receiptsOf(fx).length).toBe(6);
+        // 7 tier0-2 receipts (surfdash+podcast, 2×podcast tier1 [xhs+shipinhao], 3×article tier2);
+        // overseas skipped.
+        expect(receiptsOf(fx).length).toBe(7);
     });
 });
 
@@ -834,9 +836,9 @@ describe('0335 R2: content-safety gate', () => {
         expect(publish.finalState).toBe('failed');
         expect(publish.stdout + publish.stderr).toContain('no bundle');
         // The overseas day on a no-content rehearsal: the feed carries no episode for today, so
-        // the gate misses and the diagnose/repair path runs. The repair honestly refuses (there is
-        // no bundle to repair from — a lost generation stays an operator decision), so the window
-        // fails AFTER the incident evidence survives.
+        // the gate misses and the diagnose/repair path runs. Under F7 (0347) the repair settles as
+        // a vacuous no-op — nothing was ever planned, so nothing can be resent; the window still
+        // completes and the incident evidence carries the miss for the operator.
         writeRssFeed(fx_feedPath(fx.root), GUID_THIN, '别处的节目 · 2026-01-01');
         const ovs = runWorkflow(
             fx,
@@ -845,8 +847,8 @@ describe('0335 R2: content-safety gate', () => {
             'overseas-rss',
             publish3Vars(fx, 'overseas-rss', { dummy: 'true' }),
         );
-        expect(ovs.finalState).toBe('failed');
-        expect(ovs.stdout + ovs.stderr).toContain('publish-matrix-send');
+        expect(ovs.finalState).toBe('done');
+        expect(ovs.stdout + ovs.stderr).toContain('"status": "done"');
         const rss = readJson<{ hit: boolean; reason: string }>(join(fx.dayDir, '4-publish', 'rss-gate.json'));
         expect(rss.hit).toBe(false);
         const incident = readJson<{ class: string }>(join(fx.dayDir, '4-publish', 'incident.json'));

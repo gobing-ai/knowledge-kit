@@ -54,9 +54,9 @@ Feature: Feature tree restructure (wayfinder map)
 | WBS | Task | Status |
 | --- | ---- | ------ |
 | 0006 | Inventory feature-ID blast radius across docs and tasks | done |
-| 0007 | Draft feature-tree-restructure mapping file (dispositions) | done |
-| 0008 | Dry-run restructure plan and free-digit preflight | done |
 | 0009 | Apply restructure + sync derived docs (01/02/05) | done |
+| 0008 | Dry-run restructure plan and free-digit preflight | done |
+| 0007 | Draft feature-tree-restructure mapping file (dispositions) | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes

@@ -6,7 +6,7 @@ import { main } from '../../src/main';
 import { runLink } from '../../src/wiki/link';
 import { captureOutput } from '../capture';
 
-/** Feature I1 R12/R22 (task 0351): `kk wiki link` report and `--fix`. */
+/** Feature I1 R12/R22 (task 0356): `kk wiki link` report and `--fix`. */
 
 const dirs: string[] = [];
 function vault(files: Record<string, string>): string {

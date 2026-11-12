@@ -11,6 +11,14 @@
  *  7. Validation hides a live run failure behind green offline dogfood.
  *  8. Nonzero dogfood is accepted because its summary has passes and zero failures.
  *  9. Read-only diagnosis mutates the config, store, schedule, or installed runtime.
+ *  10. `--full` leaks `--generate-only` (auto_publish=false) into the production run,
+ *      drops the production executor pair, or cannot be overridden per dispatch.
+ *  11. Unattended publish regenerates on a healthy receipt (done/no-content/incomplete/
+ *      running — a running 04:30 job owns the store lock) or skips on a dead one.
+ *  12. Unattended regeneration drops a production flag or fires after the window launch.
+ *  13. The parts breakdown mislabels state: a started-but-unfinished step as not-started,
+ *      a refused safety verdict as done, a failed run as healthy, or lets validation pass
+ *      while a part failed.
  */
 
 import { describe, expect, it } from 'bun:test';
@@ -39,7 +47,8 @@ function laDate(offsetDays = 0): string {
 
 const RUN_DATE_ISO = laDate();
 const RUN_DATE = RUN_DATE_ISO.replaceAll('-', '');
-const PRIOR_DATE = laDate(-1).replaceAll('-', '');
+const PRIOR_DATE_ISO = laDate(-1);
+const PRIOR_DATE = PRIOR_DATE_ISO.replaceAll('-', '');
 
 function supervisorRunDate(): string {
     return new Date().toISOString().slice(0, 10).replaceAll('-', '');
@@ -192,7 +201,12 @@ function sha256(path: string): string {
 
 function latestValidationReport(fx: Fixture): {
     path: string;
-    report: { status: string; mode?: string; checks: { name: string; status: string; detail: string }[] };
+    report: {
+        status: string;
+        mode?: string;
+        checks: { name: string; status: string; detail: string }[];
+        parts?: { part: string; state: string; detail: string }[];
+    };
 } {
     const root = join(fx.works, 'tmp/test-daily-ai-news');
     const dirs = readdirSync(root).sort();
@@ -231,7 +245,7 @@ if (args.includes('run')) {
 `),
         );
         executable(fx.bin, 'kk', recordBody());
-        const result = runCli(fx, ['generate'], {
+        const result = runCli(fx, ['generate', '--skip-probe', '--allow-dirty'], {
             TZ: 'UTC',
             PATH: `${fx.bin}:${process.env.PATH ?? ''}`,
             READY_BUNDLE: join(supervisorDir, 'bundle.ready.json'),
@@ -243,8 +257,8 @@ if (args.includes('run')) {
         expect(vars).toMatchObject({
             auto_publish: 'false',
             window: '72h',
-            agent: 'codex-sol',
-            agent_retry: 'claude',
+            agent: 'planner',
+            agent_retry: 'planner',
             skip_review: 'true',
         });
         expect(vars.work_dir).toContain(fx.works);
@@ -306,6 +320,8 @@ if (args.includes('trace')) console.log('{}');
                     '--generate-only',
                     '--window',
                     '72h',
+                    '--skip-probe',
+                    '--allow-dirty',
                 ],
                 {
                     env: {
@@ -458,6 +474,280 @@ describe('0344 publish dependency and bundle admission', () => {
     });
 });
 
+describe('production posture and unattended publish', () => {
+    it('generate --full forwards the production executor pair with publishing enabled', () => {
+        const fx = fixture('generate-full');
+        const supervisorDate = supervisorRunDate();
+        const supervisorDir = join(fx.works, 'kk-daily-ai-voice2', supervisorDate);
+        renameSync(
+            writeBundle(fx, { runDate: supervisorDate }, supervisorDir),
+            join(supervisorDir, 'bundle.ready.json'),
+        );
+        executable(
+            fx.bin,
+            'spur',
+            recordBody(`import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const args = process.argv.slice(2);
+if (args.includes('run')) {
+    const vars = JSON.parse(args[args.indexOf('--vars') + 1]);
+    copyFileSync(process.env.READY_BUNDLE, join(vars.work_dir, 'bundle.json'));
+    mkdirSync(join(vars.work_dir, '4-publish'), { recursive: true });
+    writeFileSync(join(vars.work_dir, '4-publish', 'publish-status.after-generate.txt'), 'full');
+}
+`),
+        );
+        executable(fx.bin, 'kk', recordBody());
+        const result = runCli(fx, ['generate', '--full', '--skip-probe', '--allow-dirty'], {
+            TZ: 'UTC',
+            PATH: `${fx.bin}:${process.env.PATH ?? ''}`,
+            READY_BUNDLE: join(supervisorDir, 'bundle.ready.json'),
+        });
+        expect({ status: result.status, stderr: result.stderr }).toMatchObject({ status: 0 });
+        const launch = actions(fx).find((args) => args.includes('run'));
+        const vars = JSON.parse(launch?.[(launch?.indexOf('--vars') ?? -1) + 1] ?? '{}') as Record<string, string>;
+        expect(vars).toMatchObject({
+            auto_publish: 'true',
+            window: '72h',
+            agent: 'pi-deepseek',
+            agent_retry: 'agy-gemini',
+            skip_review: 'true',
+        });
+        expect(vars.work_dir).toContain(fx.works);
+    });
+
+    it('generate --full accepts explicit agent overrides over the production pair', () => {
+        const fx = fixture('generate-full-override');
+        const supervisorDate = supervisorRunDate();
+        const supervisorDir = join(fx.works, 'kk-daily-ai-voice2', supervisorDate);
+        renameSync(
+            writeBundle(fx, { runDate: supervisorDate }, supervisorDir),
+            join(supervisorDir, 'bundle.ready.json'),
+        );
+        executable(
+            fx.bin,
+            'spur',
+            recordBody(`import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const args = process.argv.slice(2);
+if (args.includes('run')) {
+    const vars = JSON.parse(args[args.indexOf('--vars') + 1]);
+    copyFileSync(process.env.READY_BUNDLE, join(vars.work_dir, 'bundle.json'));
+    mkdirSync(join(vars.work_dir, '4-publish'), { recursive: true });
+    writeFileSync(join(vars.work_dir, '4-publish', 'publish-status.after-generate.txt'), 'full');
+}
+`),
+        );
+        executable(fx.bin, 'kk', recordBody());
+        const result = runCli(fx, ['generate', '--full', '--agent', 'planner', '--skip-probe', '--allow-dirty'], {
+            TZ: 'UTC',
+            PATH: `${fx.bin}:${process.env.PATH ?? ''}`,
+            READY_BUNDLE: join(supervisorDir, 'bundle.ready.json'),
+        });
+        expect({ status: result.status, stderr: result.stderr }).toMatchObject({ status: 0 });
+        const launch = actions(fx).find((args) => args.includes('run'));
+        const vars = JSON.parse(launch?.[(launch?.indexOf('--vars') ?? -1) + 1] ?? '{}') as Record<string, string>;
+        expect(vars).toMatchObject({ auto_publish: 'true', agent: 'planner', agent_retry: 'agy-gemini' });
+    });
+
+    it('unattended publish regenerates only on a dead or missing voice3 receipt, then launches the window', () => {
+        const regenStatuses = ['missing', 'malformed', 'failed', 'timed-out', 'interrupted'];
+        const skipStatuses = ['done', 'no-content', 'incomplete', 'running'];
+        for (const scenario of [...regenStatuses, ...skipStatuses]) {
+            const fx = fixture(`unattended-${scenario}`);
+            if (scenario !== 'missing') {
+                mkdirSync(fx.dayDir, { recursive: true });
+                writeFileSync(
+                    join(fx.dayDir, 'schedule-receipt.json'),
+                    scenario === 'malformed' ? '{broken' : JSON.stringify({ status: scenario, exitCode: 1 }),
+                );
+            }
+            executable(fx.bin, 'bun', recordBody());
+            const result = runCli(fx, ['publish', '--window', 'overseas-rss', '--unattended'], {
+                TZ: 'UTC',
+                PATH: `${fx.bin}:${process.env.PATH ?? ''}`,
+            });
+            expect({ scenario, status: result.status, stderr: result.stderr }).toMatchObject({ status: 0 });
+            const calls = actions(fx);
+            const regenIndex = calls.findIndex((args) =>
+                args.some((arg) => String(arg).includes('daily-scheduled-run.ts')),
+            );
+            const launchIndex = calls.findIndex((args) =>
+                args.some((arg) => String(arg).includes('voice3-publish-window.ts')),
+            );
+            const regen = regenIndex === -1 ? undefined : calls[regenIndex];
+            const launch = launchIndex === -1 ? undefined : calls[launchIndex];
+            expect(calls.some((args) => args.includes('daily-news:generate'))).toBe(false);
+            expect(launch).toBeDefined();
+            expect(launch?.[launch.indexOf('--window') + 1]).toBe('overseas-rss');
+            expect(launch?.[launch.indexOf('--run-date') + 1]).toBe(PRIOR_DATE_ISO);
+            if (regenStatuses.includes(scenario)) {
+                expect(regen).toBeDefined();
+                expect(regen?.some((arg) => arg.includes('kk-daily-ai-voice3'))).toBe(true);
+                expect(regen?.[regen.indexOf('--agent') + 1]).toBe('pi-deepseek');
+                expect(regen?.[regen.indexOf('--retry-agent') + 1]).toBe('agy-gemini');
+                expect(regen?.[regen.indexOf('--window') + 1]).toBe('72h');
+                expect(regen?.includes('--generate-only')).toBe(false);
+                expect(regenIndex).toBeLessThan(launchIndex);
+            } else {
+                expect(regen).toBeUndefined();
+            }
+        }
+    }, 60_000);
+
+    it('refuses unattended publish outside the known windows', () => {
+        const fx = fixture('unattended-bad-window');
+        expect(runCli(fx, ['publish', '--window', 'nope', '--unattended']).status).toBeGreaterThan(0);
+        expect(actions(fx)).toEqual([]);
+    });
+
+    it('asserts the scheduler delegates both daily jobs to the operator script', () => {
+        const config = readFileSync(join(REPO, '.spur/config.yaml'), 'utf-8');
+        expect(config).toContain('bun scripts/daily-ai-news.ts generate --full');
+        expect(config).toContain('bun scripts/daily-ai-news.ts publish --window overseas-rss --unattended');
+    });
+});
+
+describe('generation parts breakdown', () => {
+    it('labels done, failed, and not-started parts of a dead run and fails validation', () => {
+        const fx = fixture('parts-failed-run');
+        for (const [dir, name, body] of [
+            ['21-plan', `${RUN_DATE}_04_quality-control-content_candidates.json`, '[]'],
+            ['22-article', `${RUN_DATE}_06_article_article.md`, '# Daily AI'],
+            ['23-cover', `${RUN_DATE}_07_cover_cover.png`, 'png'],
+        ] as const) {
+            mkdirSync(join(fx.dayDir, dir), { recursive: true });
+            writeFileSync(join(fx.dayDir, dir, name), body);
+        }
+        mkdirSync(join(fx.dayDir, '24-script'), { recursive: true });
+        writeFileSync(join(fx.dayDir, '24-script', `${RUN_DATE}_09_safety-verdict.status`), 'refuse');
+        writeFileSync(
+            join(fx.dayDir, 'step-timing.json'),
+            ['plan', 'article', 'cover', 'script', 'safety-verdict-check']
+                .map((step) => `${JSON.stringify({ step, startedAt: '', endedAt: '' })}\n`)
+                .join(''),
+        );
+        writeFileSync(
+            join(fx.dayDir, 'schedule-receipt.json'),
+            JSON.stringify({
+                status: 'failed',
+                exitCode: 1,
+                channelCompleteness: [],
+                triage: { failedNode: { id: 'select', stderrTail: 'kk store select ... exited with 1' } },
+            }),
+        );
+        const result = runCli(fx, ['validate']);
+        expect(result.status).toBe(1);
+        for (const expected of [
+            '[DONE] plan',
+            '[DONE] article',
+            '[DONE] cover',
+            '[FAILED] script',
+            '[FAILED] safety',
+            '[NOT-STARTED] audio',
+            '[NOT-STARTED] bundle',
+            '[NOT-STARTED] publish:overseas-rss',
+            '[FAILED] run',
+            'failed node select',
+            '[FAIL] generation-parts',
+        ])
+            expect(result.stdout).toContain(expected);
+        expect(result.stdout).not.toContain('[DONE] safety');
+        const { report } = latestValidationReport(fx);
+        expect(report.parts?.find((part) => part.part === 'script')?.state).toBe('failed');
+        expect(report.parts?.find((part) => part.part === 'channels')?.state).toBe('not-started');
+    });
+
+    it('passes a bundle-complete morning run whose publish windows have not started', () => {
+        const fx = fixture('parts-healthy-morning');
+        writeBundle(fx);
+        mkdirSync(join(fx.dayDir, '24-script'), { recursive: true });
+        writeFileSync(join(fx.dayDir, '24-script', `${RUN_DATE}_09_safety-verdict.status`), 'accept');
+        mkdirSync(join(fx.dayDir, '30-audio'), { recursive: true });
+        writeFileSync(join(fx.dayDir, '30-audio', `${RUN_DATE}_11_generate_content.mp3`), 'mp3');
+        writeFileSync(
+            join(fx.dayDir, '30-audio', `${RUN_DATE}_11_generate_content_duration.json`),
+            JSON.stringify({ measuredMinutes: 22, minMinutes: 15, maxMinutes: 25, ok: true }),
+        );
+        writeFileSync(
+            join(fx.dayDir, 'schedule-receipt.json'),
+            JSON.stringify({
+                status: 'done',
+                exitCode: 0,
+                channelCompleteness: [{ channel: 'surfdash-pub', state: 'done', required: true, dummy: false }],
+            }),
+        );
+        const result = runCli(fx, ['validate']);
+        expect(result.status).toBe(0);
+        for (const expected of [
+            '[DONE] bundle',
+            '[DONE] channels — 1 required channels delivered',
+            '[DONE] safety',
+            '[DONE] audio',
+            '~22 min',
+            '[NOT-STARTED] publish:overseas-rss',
+        ])
+            expect(result.stdout).toContain(expected);
+        expect(result.stdout).not.toContain('[FAILED]');
+        expect(result.stdout).toContain('[PASS] generation-parts');
+    });
+
+    it('keeps a running receipt non-failing but fails on a malformed window outcome in full mode', () => {
+        const fx = fixture('parts-running-run');
+        validationTools(fx);
+        writeBundle(fx);
+        writeFileSync(
+            join(fx.dayDir, 'step-timing.json'),
+            `${JSON.stringify({ step: 'generate', startedAt: '', endedAt: '' })}\n`,
+        );
+        mkdirSync(join(fx.dayDir, '4-publish'), { recursive: true });
+        writeFileSync(join(fx.dayDir, '4-publish', 'outcome.after-generate.json'), '{broken');
+        writeFileSync(
+            join(fx.dayDir, 'schedule-receipt.json'),
+            JSON.stringify({
+                status: 'running',
+                channelCompleteness: [
+                    { channel: 'x-pub', state: 'failed', required: true, dummy: false },
+                    { channel: 'surfdash-pub', state: 'done', required: true, dummy: false },
+                ],
+            }),
+        );
+        const result = runCli(fx, ['validate', '--run-date', RUN_DATE, '--mode', 'full', '--skip-dogfood'], {
+            PATH: `${fx.bin}:/usr/bin:/bin`,
+        });
+        expect(result.stdout).toContain('[RUNNING] run');
+        expect(result.stdout).toContain('[FAILED] audio');
+        expect(result.stdout).toContain('[FAILED] publish:after-generate');
+        expect(result.stdout).toContain('[PARTIAL] channels — not delivered: x-pub=failed');
+        expect(result.stdout).toContain('[FAIL] generation-parts');
+        expect(result.status).toBe(1);
+    });
+
+    it('warns the parts view on a no-content run while the readiness gate still refuses', () => {
+        const fx = fixture('parts-no-content');
+        writeBundle(fx, { emptyVariants: true });
+        mkdirSync(join(fx.dayDir, '5-report'), { recursive: true });
+        writeFileSync(join(fx.dayDir, 'run-report.summary.txt'), 'no-content: pool exhausted\n');
+        writeFileSync(
+            join(fx.dayDir, 'schedule-receipt.json'),
+            JSON.stringify({
+                status: 'no-content',
+                exitCode: 4,
+                channelCompleteness: [
+                    { channel: 'x-pub', state: 'failed', required: true, dummy: false },
+                    { channel: 'surfdash-pub', state: 'done', required: true, dummy: false },
+                ],
+            }),
+        );
+        const result = runCli(fx, ['validate']);
+        expect(result.stdout).toContain('[NO-CONTENT] run');
+        expect(result.stdout).toContain('[NO-CONTENT] bundle');
+        expect(result.stdout).toContain('[PARTIAL] channels — not delivered: x-pub=failed');
+        expect(result.stdout).toContain('[WARN] generation-parts');
+        expect(result.status).toBe(1);
+    });
+});
+
 describe('0344 validation evidence and dogfood', () => {
     it('defaults to quick file-readiness checks without quality validation or subprocesses', () => {
         const fx = fixture('validation-quick-default');
@@ -469,7 +759,11 @@ describe('0344 validation evidence and dogfood', () => {
         expect({ status: result.status, stdout: result.stdout, stderr: result.stderr }).toMatchObject({ status: 0 });
         const { report } = latestValidationReport(fx);
         expect(report.mode).toBe('quick');
-        expect(report.checks.map((check) => check.name)).toEqual(['required-files', 'generation-files']);
+        expect(report.checks.map((check) => check.name)).toEqual([
+            'generation-parts',
+            'required-files',
+            'generation-files',
+        ]);
         expect(report.checks.every((check) => check.status === 'pass')).toBe(true);
         expect(actions(fx)).toEqual([]);
     });
@@ -484,7 +778,11 @@ describe('0344 validation evidence and dogfood', () => {
         expect(result.status).toBe(1);
         const { report } = latestValidationReport(fx);
         expect(report.mode).toBe('quick');
-        expect(report.checks.map((check) => check.name)).toEqual(['required-files', 'generation-files']);
+        expect(report.checks.map((check) => check.name)).toEqual([
+            'generation-parts',
+            'required-files',
+            'generation-files',
+        ]);
         expect(report.checks.find((check) => check.name === 'generation-files')?.status).toBe('fail');
         expect(report.checks.find((check) => check.name === 'generation-files')?.detail).toContain('article.json');
         expect(actions(fx)).toEqual([]);

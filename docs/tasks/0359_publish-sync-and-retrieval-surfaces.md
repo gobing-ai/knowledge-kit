@@ -13,18 +13,18 @@ tags:
   - retrieval
 estimate_hours: 6
 
-dependencies: ["0351"]
+dependencies: ["0356"]
 done_forced: "false"
-done_reason: unforced close; PASS artifact at .spur/memory/evidence/0354-verdict.json
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0359-verdict.json
 ---
 
-## 0354. Publish, sync and retrieval surfaces
+## 0359. Publish, sync and retrieval surfaces
 
 ### Background
 
 The vault has to leave the machine in three directions: a static-site tree for Quartz, a remote transfer for the raw layer, and a dense context block an agent can consume. This task ships those four verbs (`publish`, `sync`, `query`, `context`) and the consumer notes the treasury repository needs.
 
-`query` deliberately stops at ranked pages plus excerpts: composing the answer is the skill's job, so the CLI performs no model call (ADR-046) and the ranking stays deterministic and testable.
+`query` deliberately stops at ranked pages plus excerpts: composing the answer is the skill's job, so the CLI performs no model call (ADR-048) and the ranking stays deterministic and testable.
 
 Implements: R15 - Publish writes a Quartz-compatible tree; R16 - Sync runs the configured remote adapter; R24 - Sync rejects an undeclared remote name; R17 - Query returns ranked pages with their paths; R18 - Context packs the topic page with its graph neighbours.
 
@@ -33,8 +33,8 @@ Rubric: E3 D2 L1 C1 R1 = 8 -> decompose (four verbs over one vault index, plus t
 Rejected: vendoring or patching Quartz to control the output - the spec's own rule is to keep Quartz an upstream dependency of the consuming repository.
 
 **Refine corrections (2026-11-10)**
-- `sync` was to "resolve `wiki.remotes.<name>`" without saying who owns that config -> 0350 freezes `WikiConfig` with `mirrors` and `remotes` -> this task reads that resolver only; it never re-reads the config file itself.
-- `query` ranking had no stated reuse check -> the only ranking code in the repo is store-bound (`packages/kk-store/src/dao/*`, FTS over `.works/kk.db`), and ADR-046 forbids `kk-wiki` depending on the store -> scoring is a local pure function with the frozen weights below.
+- `sync` was to "resolve `wiki.remotes.<name>`" without saying who owns that config -> 0355 freezes `WikiConfig` with `mirrors` and `remotes` -> this task reads that resolver only; it never re-reads the config file itself.
+- `query` ranking had no stated reuse check -> the only ranking code in the repo is store-bound (`packages/kk-store/src/dao/*`, FTS over `.works/kk.db`), and ADR-048 forbids `kk-wiki` depending on the store -> scoring is a local pure function with the frozen weights below.
 - `publish` output shape was loosely described -> the Quartz contract needs the vault's `content/` tree preserved one-to-one under `<target>/content/` with attachments rewritten -> fixed below.
 - Coverage was unstated -> `bunfig.toml` enforces 90% lines/functions per file; `query`/`context` are pure and fully testable from fixtures.
 - The treasury consumer now exists (`~/xprojects/treasury`, feature A) -> the consumer notes are a factual pointer, not a hypothetical.
@@ -162,7 +162,7 @@ Each entry cites the first changed line per file (`file:line`).
 
 ### Review
 
-**Scope.** Task 0354 — the four remaining verbs: `publish`, `sync`, `query`, `context`. This closes the
+**Scope.** Task 0359 — the four remaining verbs: `publish`, `sync`, `query`, `context`. This closes the
 twelve-verb `kk wiki` surface.
 
 **Traceability.** publish projects `content/` one-to-one and refuses a target inside it
@@ -188,7 +188,7 @@ Verdict: PASS
 ### References
 
 - Feature: `docs/features/I1_kk-wiki-vault-cli.md` — AC R15, R16, R24, R17, R18.
-- Decision: `docs/00_ADR.md:1679` ADR-046.
+- Decision: `docs/00_ADR.md:1679` ADR-048.
 - Shapes: `docs/design/kk-wiki.md:111-124` (publish projection and the treasury consumer).
 - Raw layer projection source: `plugins/ingestions/karakeep-local/plugin.json:6`.
 

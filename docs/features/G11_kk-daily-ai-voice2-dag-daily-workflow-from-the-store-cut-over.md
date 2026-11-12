@@ -113,21 +113,21 @@ Scenario: R9 — Safety sub-workflow judge verdicts carry a HIGH, MEDIUM, or LOW
 | WBS | Task | Status |
 | --- | ---- | ------ |
 | 0211 | kk-daily-ai-voice2 DAG workflow with safety sub-workflow and plugin-owned stages | done |
-| 0212 | voice2 rollout: cut-over check, end-to-end dogfood, docs sync | done |
 | 0238 | kk-daily-ai-voice2: every agent.run node exits 0 without writing its expected file, so each daily run ends failed | done |
-| 0250 | Cover the voice2 dogfood stage contracts with regression tests | done |
-| 0251 | Keep a voice2 XHS series when card point text overflows the safe area | done |
-| 0265 | Render the Spur server keepalive as a schedule artifact, not a hand-written plist | done |
-| 0266 | Decide and encode the thin-day episode policy instead of closing the day silently | done |
-| 0267 | Stop the test suite from composing workspaces under the operator's home | done |
-| 0269 | Retry a transient image-gen failure instead of losing the whole XHS card series | done |
-| 0270 | Make a failed safety reviewer reach the gate instead of aborting the nested run | done |
 | 0272 | Re-measure the WeChat MP enrichment rail against the drifted console | done |
-| 0273 | Residuals from 0269 | cancelled |
-| 0280 | Fix voice2-dag AC1: retry sibling never fires after primary exit-0 without expectFile | cancelled |
-| 0336 | Fix sticky no-content: QC candidates cache ignores changed floor vars | cancelled |
-| 0338 | Restore unattended scheduled daily AI news generation and delivery after October 26 outage | done |
+| 0265 | Render the Spur server keepalive as a schedule artifact, not a hand-written plist | done |
+| 0267 | Stop the test suite from composing workspaces under the operator's home | done |
+| 0266 | Decide and encode the thin-day episode policy instead of closing the day silently | done |
 | 0339 | Recover daily cover generation from transient MiniMax failures without changing providers | done |
+| 0336 | Fix sticky no-content: QC candidates cache ignores changed floor vars | cancelled |
+| 0269 | Retry a transient image-gen failure instead of losing the whole XHS card series | done |
+| 0212 | voice2 rollout: cut-over check, end-to-end dogfood, docs sync | done |
+| 0251 | Keep a voice2 XHS series when card point text overflows the safe area | done |
+| 0250 | Cover the voice2 dogfood stage contracts with regression tests | done |
+| 0338 | Restore unattended scheduled daily AI news generation and delivery after October 26 outage | done |
+| 0273 | Residuals from 0269 | cancelled |
+| 0270 | Make a failed safety reviewer reach the gate instead of aborting the nested run | done |
+| 0280 | Fix voice2-dag AC1: retry sibling never fires after primary exit-0 without expectFile | cancelled |
 <!-- END AUTO-GENERATED -->
 
 ## Notes

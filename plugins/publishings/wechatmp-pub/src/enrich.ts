@@ -1,5 +1,13 @@
 import { trySelectors } from '@gobing-ai/publish-harness';
-import { clickSelector, fillSelector, modalState, tryFindSelector, type WechatPage, waitForVisible } from './page';
+import {
+    bestEffortPress,
+    clickSelector,
+    fillSelector,
+    modalState,
+    tryFindSelector,
+    type WechatPage,
+    waitForVisible,
+} from './page';
 
 /**
  * The 文章 operation's `metadata.wechatmp` enrichment rail (2026-09-29, ADR-026; committed-value
@@ -150,8 +158,7 @@ export async function enrichArticle(page: WechatPage, meta: Record<string, unkno
                 // The dialog may already be gone; the sweep is best-effort.
             }
         }
-        await page.press?.('Escape');
-        await page.waitForTimeout?.(SWEEP_SETTLE_MS);
+        await bestEffortPress(page, 'Escape', SWEEP_SETTLE_MS);
         const state = await modalState(page);
         if (state === 'open') {
             // One explicit close-button pass before giving up: some dialogs ignore Escape.

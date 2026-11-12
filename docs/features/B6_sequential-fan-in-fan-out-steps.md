@@ -43,9 +43,9 @@ Feature: Sequential fan-in/fan-out steps
 | WBS | Task | Status |
 | --- | ---- | ------ |
 | 0042 | Implement kk fan-in merge command | done |
+| 0274 | Make the full spur-check suite deterministic under load (module-store race and timing flakes) | done |
 | 0043 | Implement kk fan-out dispatch with retry-from | done |
 | 0248 | Repair production fan-out concurrency and enforce publisher process deadlines | done |
-| 0274 | Make the full spur-check suite deterministic under load (module-store race and timing flakes) | todo |
 <!-- END AUTO-GENERATED -->
 
 ## Notes

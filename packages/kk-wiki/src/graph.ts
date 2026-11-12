@@ -5,7 +5,7 @@ import { type PageFrontmatter, PageFrontmatterSchema, parseFrontmatter, resolveS
 
 /**
  * Vault index: every page parsed once, its wikilinks resolved, its inbound links counted
- * (task 0351, docs/design/kk-wiki.md §3).
+ * (task 0356, docs/design/kk-wiki.md §3).
  *
  * The index is rebuilt from disk on every call — there is no cache file, so a stale index cannot
  * report a false clean lint.

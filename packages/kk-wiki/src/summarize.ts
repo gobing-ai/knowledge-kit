@@ -4,7 +4,7 @@ import { renderPage } from './page';
 import { applyWrite, type GuardDecision } from './write';
 
 /**
- * `summarize` mechanics (task 0352): place agent-authored text into a summary section and wire the
+ * `summarize` mechanics (task 0357): place agent-authored text into a summary section and wire the
  * page references. Deterministic — the caller supplies the text, the CLI never calls a provider.
  */
 

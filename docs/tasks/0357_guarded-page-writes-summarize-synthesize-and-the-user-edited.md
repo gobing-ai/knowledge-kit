@@ -13,18 +13,18 @@ tags:
   - guard
 estimate_hours: 6
 
-dependencies: ["0351"]
+dependencies: ["0356"]
 done_forced: "false"
-done_reason: unforced close; PASS artifact at .spur/memory/evidence/0352-verdict.json
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0357-verdict.json
 ---
 
-## 0352. Guarded page writes: summarize, synthesize and the user-edited guard
+## 0357. Guarded page writes: summarize, synthesize and the user-edited guard
 
 ### Background
 
 The vault is only worth keeping if a human can edit it without the agent flattening that work. This task adds the write verbs and the guard that makes human edits survive: a page with `user_edited: true` is never replaced, only appended to under `## AI Updates (<YYYY-MM-DD>)`.
 
-The CLI stays model-free (ADR-046). `summarize` and `synthesize` take the authored text as input and perform only deterministic work - section placement, reference extraction, frontmatter upkeep, guard decisions. The `plugins/kk/skills/wiki-authoring` skill is the caller that supplies that text.
+The CLI stays model-free (ADR-048). `summarize` and `synthesize` take the authored text as input and perform only deterministic work - section placement, reference extraction, frontmatter upkeep, guard decisions. The `plugins/kk/skills/wiki-authoring` skill is the caller that supplies that text.
 
 Implements: R5 - Summarize a raw asset into a summary section with extracted references; R6 - Synthesize creates a page for a topic the vault does not have; R7 - Synthesize extends an existing page in place; R8 - A user-edited page receives AI changes only in a dated append section; R9 - The user-edited guard applies to every write verb; R21 - Model-bearing verbs stay deterministic in the CLI.
 
@@ -35,7 +35,7 @@ Rejected: letting the skill write files directly and keeping the guard as a prom
 **Refine corrections (2026-11-10)**
 - The skill was described as authored at `plugins/kk/skills/wiki-authoring` with no note about the packaged copy -> `apps/cli/plugins/` is a gitignored build artifact staged by `scripts/bundle-plugins.ts:1-15` ("never hand-edit") -> author the skill under `plugins/kk/`, then let `bun run build` stage it; verify the staged path instead of editing it.
 - Skill registration was an open question -> `plugins/kk/plugin.json` carries only `name`, `description`, `version` (no skills list) -> a new skill needs no registry edit; discovery is directory-based.
-- The guard lived inside `write.ts` from this task only -> 0351 already lands `applyWrite` in its minimal append-only form -> this task extends that single function; a second writer remains forbidden.
+- The guard lived inside `write.ts` from this task only -> 0356 already lands `applyWrite` in its minimal append-only form -> this task extends that single function; a second writer remains forbidden.
 - Coverage was unstated -> `bunfig.toml` enforces 90% lines/functions per file, and a CLI verb module is one file -> each verb's tests must exercise the verb module itself, not only the package function.
 
 ### Requirements
@@ -66,10 +66,10 @@ Rejected: letting the skill write files directly and keeping the guard as a prom
 
 ### Design
 
-**Approach.** `packages/kk-wiki/src/write.ts` is the single write path, created by 0351 and extended here: `applyWrite(page, material, { mode, date })` returns either a full body (unguarded page) or the body with material appended under `## AI Updates (<date>)` (guarded page). `summarize.ts` and `synthesize.ts` compose `applyWrite` with the index from `graph.ts`. Authored text arrives on stdin (`--from -`) or `--text-file`; the package never reads a provider.
+**Approach.** `packages/kk-wiki/src/write.ts` is the single write path, created by 0356 and extended here: `applyWrite(page, material, { mode, date })` returns either a full body (unguarded page) or the body with material appended under `## AI Updates (<date>)` (guarded page). `summarize.ts` and `synthesize.ts` compose `applyWrite` with the index from `graph.ts`. Authored text arrives on stdin (`--from -`) or `--text-file`; the package never reads a provider.
 
 **Frozen names.**
-- `applyWrite` (from 0351) is the only body writer; `appendGuardSection(body, material, date)` is its helper.
+- `applyWrite` (from 0356) is the only body writer; `appendGuardSection(body, material, date)` is its helper.
 - `summarizePage(index, target, text, opts)`, `synthesizePage(index, target, text, opts) -> { path, guard, created }`.
 - Verb modules `apps/cli/src/wiki/summarize.ts`, `apps/cli/src/wiki/synthesize.ts`.
 - Skill home `plugins/kk/skills/wiki-authoring/SKILL.md` plus `references/page-shapes.md`.
@@ -93,7 +93,7 @@ Rejected: letting the skill write files directly and keeping the guard as a prom
 
 **Test observability.** Package tests cover clean, appended, same-day-twice and new-day outcomes, plus a byte-equality determinism test that runs the same input twice. CLI tests assert the guard decision in the JSON payload. The skill itself is verified by presence at the canonical path plus the staged artifact after `bun run build`, not by invoking a model.
 
-**Handoff to dependents.** 0353 reuses `applyWrite` for merge; 0354 does not write pages. The skill's documented input shapes are the contract the loop in the treasury project relies on - keep `--from -` and the `## AI Updates` heading stable.
+**Handoff to dependents.** 0358 reuses `applyWrite` for merge; 0359 does not write pages. The skill's documented input shapes are the contract the loop in the treasury project relies on - keep `--from -` and the `## AI Updates` heading stable.
 
 ### Plan
 
@@ -165,7 +165,7 @@ Each entry cites the first changed line per file (`file:line`).
 
 ### Review
 
-**Scope.** Task 0352 — the two model-fed write verbs (`summarize`, `synthesize`), the shared `applyWrite`
+**Scope.** Task 0357 — the two model-fed write verbs (`summarize`, `synthesize`), the shared `applyWrite`
 guard they compose, and the `kk:wiki-authoring` skill that supplies their text.
 
 | Priority | Location | Finding | Disposition |
@@ -178,7 +178,7 @@ Verdict: PASS
 ### References
 
 - Feature: `docs/features/I1_kk-wiki-vault-cli.md` — AC R5, R6, R7, R8, R9, R21.
-- Decision: `docs/00_ADR.md:1679` ADR-046 (the CLI performs no provider call).
+- Decision: `docs/00_ADR.md:1679` ADR-048 (the CLI performs no provider call).
 - Guard shape: `docs/design/kk-wiki.md:83-91`.
 - Skill home convention this task follows: `plugins/kk/skills/content-judge/SKILL.md:1`.
 

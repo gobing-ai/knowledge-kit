@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * Vault page contract (ADR-046, docs/design/kk-wiki.md §3).
+ * Vault page contract (ADR-048, docs/design/kk-wiki.md §3).
  *
  * The frontmatter is intentionally flat: scalars plus string arrays, written one `key: value`
  * per line. No YAML library is imported (the repo declares none), so a nested map is a reported

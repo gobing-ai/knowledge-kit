@@ -6,7 +6,7 @@ import type { GuardDecision } from './write';
 import { applyWriteToPage } from './write';
 
 /**
- * Unlinked-mention detection and repair (task 0351, docs/design/kk-wiki.md §2 `link`).
+ * Unlinked-mention detection and repair (task 0356, docs/design/kk-wiki.md §2 `link`).
  *
  * Candidates are existing page titles only — a general vocabulary matcher floods a growing vault.
  * Fenced blocks and inline code are skipped by the shared line scanner.

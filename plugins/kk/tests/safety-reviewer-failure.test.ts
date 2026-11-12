@@ -250,8 +250,9 @@ describe('kk-daily-safety reviewer steps — a failed reviewer reaches the gate,
 
     it('AC4: the accept edge reads the folded decision token and the judge -> block catch-all stays unconditional', () => {
         const outbound = machine.transitions.filter((transition) => transition.from === 'judge');
-        // Declaration order is load-bearing: a refused verdict falls through clean and revise to block.
-        expect(outbound.map((transition) => transition.to)).toEqual(['clean', 'revise', 'block']);
+        // Declaration order is load-bearing: a refused verdict falls through clean and revise to block;
+        // the 0347 F4 infra-fail edge sits before block and carries its own marker+terminalReason.
+        expect(outbound.map((transition) => transition.to)).toEqual(['clean', 'revise', 'infra-fail', 'block']);
         const accept = outbound.at(0)?.command;
         if (SPLIT_MACHINE) {
             expect(accept).toContain('safety-artifact-check.ts publish-valid');
@@ -262,8 +263,12 @@ describe('kk-daily-safety reviewer steps — a failed reviewer reaches the gate,
             expect(accept).toContain('_09_safety-verdict.status');
             expect(accept).toContain('= accept');
         }
-        const block = outbound.at(2);
+        const block = outbound.at(3);
         expect(block?.command).toBeNull();
+        // 0347 F4: the infra-fail edge, just before block, tests for the gate's marker file.
+        const infraEdge = outbound.at(2);
+        expect(infraEdge?.command).toContain('_09_safety-infra.json');
+        expect(infraEdge?.to).toBe('infra-fail');
         expect(block?.terminalReason).toBe('failed-check');
     });
 
@@ -417,17 +422,20 @@ describe('the gate classifies a reviewer failure fail-closed (AC3, AC4)', () => 
         return dir;
     }
 
-    it('AC3: a missing report (the reviewer produced nothing) → block, no stamp, reason line, quarantine', () => {
+    it('AC3: a missing report (the reviewer produced nothing) → infra-fail marker, no stamp, no quarantine (0347 F4)', () => {
         const dir = setupSafetyDir(undefined, PASS_VERDICT);
         const result = runStage(['daily-safety-gate', dir, STAMP]);
         expect(result.status, result.stderr).toBe(0);
         expect(readFileSync(at(dir, 'safety-judge_status.txt'), 'utf-8')).toBe('block');
         expect(existsSync(at(dir, 'safety-judge_stamp.json'))).toBe(false);
         expect(result.stdout).toContain('content-safety report missing or malformed');
-        // The block-only quarantine: a same-day retry must not replay on the poisoned drafts.
+        // 0347 F4: a missing report with request/report/verdict all absent is an infra outage —
+        // the marker lets the parent machine route to infra-fail; drafts stay in place for retry.
+        const marker = join(dir, '24-script', `${STAMP}_09_safety-infra.json`);
+        expect(existsSync(marker)).toBe(true);
+        expect(JSON.parse(readFileSync(marker, 'utf-8'))).toMatchObject({ infra: true, missing: ['review-report'] });
         const quarantine = join(dir, '24-script', `.quarantine-${STAMP}-judge-block`);
-        expect(existsSync(join(quarantine, `${STAMP}_06_article_content.json`))).toBe(true);
-        expect(existsSync(join(quarantine, `${STAMP}_08_script_voicescript.yaml`))).toBe(true);
+        expect(existsSync(quarantine)).toBe(false);
     });
 
     it('AC4: a missing verdict (the judge re-check produced nothing) → block naming the verdict and the enum', () => {

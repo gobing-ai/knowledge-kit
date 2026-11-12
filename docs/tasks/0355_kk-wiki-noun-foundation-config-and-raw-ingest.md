@@ -13,14 +13,14 @@ tags:
 estimate_hours: 5
 
 done_forced: "false"
-done_reason: unforced close; PASS artifact at .spur/memory/evidence/0350-verdict.json
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0355-verdict.json
 ---
 
-## 0350. kk wiki noun foundation, config and raw ingest
+## 0355. kk wiki noun foundation, config and raw ingest
 
 ### Background
 
-`kk` has eleven nouns (`apps/cli/src/cli.ts:29-39`) and none of them touches a Markdown vault. This task creates `packages/kk-wiki` (`@gobing-ai/kk-wiki`, ADR-046) with only the pieces ingest needs - the raw-snapshot writer and the page/frontmatter schema - and registers the `kk wiki` noun with its first verb, so the remaining verbs land on an existing seam instead of inventing one each.
+`kk` has eleven nouns (`apps/cli/src/cli.ts:29-39`) and none of them touches a Markdown vault. This task creates `packages/kk-wiki` (`@gobing-ai/kk-wiki`, ADR-048) with only the pieces ingest needs - the raw-snapshot writer and the page/frontmatter schema - and registers the `kk wiki` noun with its first verb, so the remaining verbs land on an existing seam instead of inventing one each.
 
 The noun also fixes the conventions every later verb copies: the config resolver, the `--json` document shape, and the exit-code contract (0 success / 1 handled failure / 2 usage). Getting those in one place now is what keeps twelve verbs from growing twelve conventions.
 
@@ -92,7 +92,7 @@ Rejected: putting the vault helpers inside `apps/cli` - it violates the module-b
 
 **Test observability.** Fixtures under `packages/kk-wiki/tests/fixtures/`; CLI assertions go through the `main(argv)` seam with captured writers (`apps/cli/src/main.ts:6-14`), so a JSON-shape change fails a test rather than a log grep.
 
-**Handoff to dependents.** 0351 consumes `PageFrontmatterSchema` and `parsePage`; 0352/0353/0354 consume `WikiConfig`. Do not rename those exports without updating those tasks.
+**Handoff to dependents.** 0356 consumes `PageFrontmatterSchema` and `parsePage`; 0357/0358/0359 consume `WikiConfig`. Do not rename those exports without updating those tasks.
 
 **Rejected.** Reusing the ingestion-plugin `Doc[]` path for file ingest: plugins need a `plugin.json` and a runner per source, while `ingest` must accept one arbitrary file or stdin; the plugin path stays the projection route for karakeep/R2 folders. Rejected a YAML parser dependency: it would add a runtime dependency for a format this project writes itself.
 
@@ -102,7 +102,7 @@ Rejected: putting the vault helpers inside `apps/cli` - it violates the module-b
 2. Write the markitdown-backed extractor used by `--type html|pdf|url`, mirroring `plugins/ingestions/web-search/src/index.ts:59,74` (PATH probe, fail loud, no silent empty body).
 3. Add `apps/cli/src/wiki/config.ts` (project file -> env -> defaults, fail on unknown key) and register the `wiki` noun in `apps/cli/src/cli.ts`.
 4. Implement `apps/cli/src/wiki/ingest.ts` for file, stdin and `--type` handling, including the exit-code table.
-5. Record the config split as an ADR entry (amendment to ADR-046 or ADR-047) in the same commit.
+5. Record the config split as an ADR entry (amendment to ADR-048 or ADR-047) in the same commit.
 6. Write package unit tests (html/rss/stdin/markitdown-absent fixtures) and CLI tests for `--json`, exit codes and config precedence; confirm per-file coverage.
 7. Transcribe the shipped verb flags into `docs/04_DESIGN.md` §1 and mark `docs/design/kk-wiki.md` status as partially implemented.
 
@@ -177,9 +177,9 @@ Each entry cites the first changed line per file (`file:line`).
 
 ### Review
 
-**Scope.** Task 0350 — `@gobing-ai/kk-wiki` package skeleton, vault config resolver, `kk wiki ingest`.
+**Scope.** Task 0355 — `@gobing-ai/kk-wiki` package skeleton, vault config resolver, `kk wiki ingest`.
 Traceability: 9/9 Requirements MET, 5/5 feature ACs MET; per-requirement evidence is captured in
-`.spur/memory/evidence/0350-verdict.json` (verdict PASS). The project gate ran green on this tree
+`.spur/memory/evidence/0355-verdict.json` (verdict PASS). The project gate ran green on this tree
 (receipt is a disposable run-scoped artifact).
 
 | Priority | Location | Finding | Disposition |
@@ -193,7 +193,7 @@ Verdict: PASS
 ### References
 
 - Feature: `docs/features/I1_kk-wiki-vault-cli.md` — AC R2, R3, R4, R19, R20.
-- Decision: `docs/00_ADR.md:1679` ADR-046 (model-free vault package behind the `kk wiki` noun).
+- Decision: `docs/00_ADR.md:1679` ADR-048 (model-free vault package behind the `kk wiki` noun).
 - Shapes: `docs/design/kk-wiki.md:19-31` (package boundary), `docs/design/kk-wiki.md:92-110` (config keys).
 - Noun registration site this task extends: `apps/cli/src/cli.ts:29-39`.
 - Workspace globs that admit a new package: `package.json:6-13`.

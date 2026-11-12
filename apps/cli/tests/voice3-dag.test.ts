@@ -599,4 +599,33 @@ describe('kk-daily-ai-voice3 shape (0324 R1, R3, R4)', () => {
             }
         });
     });
+
+    // 0347 F4 (2026-11-10): the nested safety machine separates an executor outage (infra-fail,
+    // machine-retryable) from a content verdict (block). Both nested safety nodes must forward the
+    // scheduler's retry executor, and the machine must order the infra-fail edge before the
+    // unconditional block edge.
+    describe('safety infra-fail separation (0347 F4)', () => {
+        const safety = readFileSync(join(REPO, 'plugins/kk/workflows/kk-daily-safety.yaml'), 'utf-8');
+
+        it('both nested safety invocations forward agent_retry to the machine', () => {
+            const invocations = yaml.split('spur workflow run plugins/kk/workflows/kk-daily-safety.yaml').slice(1);
+            expect(invocations.length).toBe(2);
+            for (const invocation of invocations) {
+                expect(invocation.slice(0, invocation.indexOf('--quiet'))).toContain('agent_retry');
+            }
+        });
+
+        it('the machine declares infra-fail as a terminal failure state with a guarded edge before block', () => {
+            expect(safety).toMatch(/^ {2}- infra-fail$/m);
+            expect(safety).toMatch(/terminalStates:[\s\S]*?- clean[\s\S]*?- block[\s\S]*?- infra-fail/);
+            expect(safety).toMatch(/failureStates:[\s\S]*?- block[\s\S]*?- infra-fail/);
+            const judgeEdges = safety.slice(safety.indexOf('  - from: judge'));
+            const infraEdge = judgeEdges.indexOf('to: infra-fail');
+            const blockEdge = judgeEdges.indexOf('to: block');
+            expect(infraEdge).toBeGreaterThan(-1);
+            expect(blockEdge).toBeGreaterThan(infraEdge);
+            expect(judgeEdges.slice(infraEdge, blockEdge)).toContain('_09_safety-infra.json"');
+            expect(judgeEdges.slice(infraEdge, blockEdge)).toContain('terminalReason: failed-agent');
+        });
+    });
 });

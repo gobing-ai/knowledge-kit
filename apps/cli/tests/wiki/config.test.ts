@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resolveWikiConfig, WikiConfigError } from '../../src/wiki/config';
 
-/** Feature I1 R20 (task 0350): precedence, defaults and fail-loud validation for `kk.config.json`. */
+/** Feature I1 R20 (task 0355): precedence, defaults and fail-loud validation for `kk.config.json`. */
 
 const dirs: string[] = [];
 function tempDir(): string {

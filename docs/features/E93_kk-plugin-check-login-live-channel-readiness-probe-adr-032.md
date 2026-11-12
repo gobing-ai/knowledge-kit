@@ -102,8 +102,8 @@ Feature: kk plugin check / login — live channel readiness probe (ADR-032)
 | WBS | Task | Status |
 | --- | ---- | ------ |
 | 0215 | kk plugin check / login verbs + manifest check field (ADR-032) | done |
+| 0249 | Bundle manifest-declared readiness probes for installed plugins | done |
 | 0216 | Wire six browser channels to the ADR-032 probe contract | done |
-| 0249 | Bundle manifest-declared readiness probes for installed plugins | todo |
 <!-- END AUTO-GENERATED -->
 
 ## Notes

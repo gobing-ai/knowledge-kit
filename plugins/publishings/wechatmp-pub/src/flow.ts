@@ -37,6 +37,7 @@ import {
     type WechatmpOperation,
 } from './modes';
 import {
+    bestEffortPress,
     clickSelector,
     fillSelector,
     findAttachedSelector,
@@ -197,8 +198,7 @@ async function dismissOpenDialog(page: WechatPage): Promise<void> {
         }
         break;
     }
-    await page.press?.('Escape');
-    await page.waitForTimeout?.(400);
+    await bestEffortPress(page, 'Escape');
 }
 
 /** The close controls a console modal exposes, most specific first (the audio picker shows no 取消).
@@ -235,8 +235,7 @@ async function closeOpenDialogs(page: WechatPage): Promise<'closed' | 'residual'
             }
             break;
         }
-        await page.press?.('Escape');
-        await page.waitForTimeout?.(400);
+        await bestEffortPress(page, 'Escape');
     }
     return (await modalState(page)) === 'closed' ? 'closed' : 'residual';
 }

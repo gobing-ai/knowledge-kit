@@ -3,7 +3,7 @@ import type { FileSystem } from '@gobing-ai/ts-runtime';
 import type { VaultIndex } from './graph';
 
 /**
- * `publish` mechanics (task 0354): project `content/` into a Quartz-compatible tree.
+ * `publish` mechanics (task 0359): project `content/` into a Quartz-compatible tree.
  *
  * Quartz stays an upstream dependency of the consuming repository — this module copies the vault's
  * relative structure unchanged (wikilinks intact) and nothing else. It never deletes from the target

@@ -5,7 +5,7 @@ import { consoleOutput, toJson } from '../output';
 import { resolveWikiConfig, WikiConfigError } from './config';
 
 /**
- * `kk wiki summarize` and `kk wiki synthesize` (task 0352).
+ * `kk wiki summarize` and `kk wiki synthesize` (task 0357).
  *
  * Both verbs take agent-authored text on stdin (`--from -`) or from a file and perform only
  * deterministic placement: section rendering, reference linking, frontmatter upkeep and the

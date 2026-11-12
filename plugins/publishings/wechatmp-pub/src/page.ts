@@ -94,6 +94,20 @@ export async function modalState(page: WechatPage): Promise<'closed' | 'open' | 
     }
 }
 
+/** Best-effort key press + settle wait for the dialog sweeps. A page that died mid-run (browser
+ *  crash or close) has no UI left to settle, and every sweep sits on a warning contract — the
+ *  press must degrade to "nothing left to dismiss", never throw through the warning path
+ *  (measured: the cover-stale-commit fixture run crashed when Chromium died between the
+ *  committed-preview read and the Escape). */
+export async function bestEffortPress(page: WechatPage, key: string, settleMs = 400): Promise<void> {
+    try {
+        await page.press?.(key);
+        await page.waitForTimeout?.(settleMs);
+    } catch {
+        // Page/context/browser already gone — nothing left to dismiss or settle.
+    }
+}
+
 /** A selector with an ATTACHED match (hidden inputs included), or `undefined` at the deadline. */
 async function tryFindAttachedSelector(
     page: WechatPage,

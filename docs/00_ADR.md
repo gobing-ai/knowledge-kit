@@ -1676,7 +1676,52 @@ has no selection policy. Keeping policy in YAML prompts, which hit the prompt ca
 
 ---
 
-## ADR-046: `kk wiki` is a model-free vault package behind a CLI noun
+## ADR-046: Quasi-news podcast cover rendering via layered generation and deterministic typography compositing
+
+**Status:** Accepted · **Date:** 2026-11-10 · **Task:** (Feature L2)
+
+**Decision.** The Daily AI News episode cover transitions from an abstract flat vector illustration to a
+quasi-news podcast cover (准新闻类播客封面) using a two-layer rendering architecture:
+1. **Layer 1: AI Diffusion News Scene.** Generates a pure visual background (`negative: text, letters...`)
+   grounded in the lead story's concrete visual scene, using a dedicated format (`daily-news-podcast-cover`,
+   1344x576 at 21:9) and style preset (`quasi-news-podcast`, documentary/cinematic lighting with negative space).
+2. **Layer 2: Deterministic Typography & Branding Compositing.** Composites a bold Chinese Hook headline
+   (derived from the day's top news item via `news-editorial`) and the podcast brand logo badge (`assets/general/xhxs.svg`
+   anchored at the top-left or top-right, with the lower `SALTY CLUB` text omitted for visual cleanliness) onto the
+   generated background using deterministic graphics rendering.
+3. **Anti-garble guarantee (中文抗乱码):** AI text-to-image diffusion models are strictly forbidden from directly
+   synthesizing Chinese characters; all Chinese text is rendered via local vector/font engines (SVG/Canvas)
+   to ensure 100% glyph correctness and crispness.
+4. **Isolated testability:** A standalone runner (`kk cover render --mock`) enables immediate generation and
+   verification of mock news items without running the entire daily audio pipeline.
+
+**Why.** Abstract covers lack journalistic timeliness and viral clickability. However, direct diffusion generation
+of Chinese headlines produces garbled glyphs and visual hallucinations. Layering clean AI imagery with deterministic
+typography achieves both rich visual context and reliable typography.
+
+**Detail:** Feature L2; `docs/design/daily-news-podcast-cover.md`.
+
+---
+
+## ADR-047: the vault config splits project file from global file
+
+**Status:** Accepted · **Date:** 2026-11-10 · **Feature:** I1 (task 0355)
+
+**Decision.** Vault paths, defaults, mirror dirs and remote definitions live in a project-level
+`kk.config.json` at the vault root, owned by `apps/cli/src/wiki/config.ts`; the existing global
+`~/.config/kk/config.yaml` keeps owning channels, presets and credentials. Precedence inside the
+project file's keys is flag → `KK_WIKI_*` → `kk.config.json` → built-in default. The resolver never
+creates or rewrites either file and fails naming an unsupported declared key.
+
+**Why.** A vault is a directory the operator moves between machines and commits to its own
+repository, while channel credentials are per-machine; folding both into one file makes either the
+vault machine-bound or the credentials publishable.
+
+**Detail:** `docs/design/kk-wiki.md` §5; resolver `apps/cli/src/wiki/config.ts`.
+
+---
+
+## ADR-048: `kk wiki` is a model-free vault package behind a CLI noun
 
 **Status:** Accepted (design) · **Date:** 2026-11-10 · **Feature:** I1
 
@@ -1693,28 +1738,7 @@ mechanics must be testable without a provider and the user-edit guard must be en
 rather than requested in a prompt.
 
 **Detail:** `docs/design/kk-wiki.md`; §Module boundaries and "kk wiki vault" in `docs/03_ARCHITECTURE.md`.
-
----
-
-## ADR-047: the vault config splits project file from global file
-
-**Status:** Accepted · **Date:** 2026-11-10 · **Feature:** I1 (task 0350)
-
-**Decision.** Vault paths, defaults, mirror dirs and remote definitions live in a project-level
-`kk.config.json` at the vault root, owned by `apps/cli/src/wiki/config.ts`; the existing global
-`~/.config/kk/config.yaml` keeps owning channels, presets and credentials. Precedence inside the
-project file's keys is flag → `KK_WIKI_*` → `kk.config.json` → built-in default. The resolver never
-creates or rewrites either file and fails naming an unsupported declared key.
-
-**Why.** A vault is a directory the operator moves between machines and commits to its own
-repository, while channel credentials are per-machine; folding both into one file makes either the
-vault machine-bound or the credentials publishable.
-
-**Detail:** `docs/design/kk-wiki.md` §5; resolver `apps/cli/src/wiki/config.ts`.
-
----
-
-## ADR-048: `itc-check-targets` records readiness instead of gating the send
+## ADR-049: `itc-check-targets` records readiness instead of gating the send
 
 **Status:** Accepted · **Date:** 2026-11-12 · **Feature:** F41 (dogfood of `kk-itc-publish-tail`)
 
@@ -1734,7 +1758,7 @@ duplicate gate whose failure mode was all-or-nothing.
 
 ---
 
-## ADR-049: a browser profile is repaired in place, never abandoned silently
+## ADR-050: a browser profile is repaired in place, never abandoned silently
 
 **Status:** Accepted · **Date:** 2026-11-12 · **Feature:** publish channels (infoq-pub, wechatmp-pub)
 
@@ -1766,7 +1790,7 @@ interrupted the InfoQ login; the wait is now announced up front.
 
 ---
 
-## ADR-050: Zenn articles deploy through the GitHub Contents API, not the public API
+## ADR-051: Zenn articles deploy through the GitHub Contents API, not the public API
 
 **Status:** Accepted · **Date:** 2026-11-12 · **Feature:** publish channels (zenn-pub)
 

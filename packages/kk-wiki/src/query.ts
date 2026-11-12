@@ -1,7 +1,7 @@
 import type { VaultIndex, VaultPageEntry } from './graph';
 
 /**
- * `query` mechanics (task 0354): rank pages against a prompt with a frozen, deterministic score.
+ * `query` mechanics (task 0359): rank pages against a prompt with a frozen, deterministic score.
  *
  * Title 3, tag 2, body 1 per matched term; ties break on slug ascending. No provider call, no
  * embedding index — the answer itself is composed by the skill.

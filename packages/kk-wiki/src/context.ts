@@ -2,7 +2,7 @@ import type { VaultIndex } from './graph';
 import { resolveSlug } from './page';
 
 /**
- * `context` mechanics (task 0354): pack a topic page plus its graph neighbours into one Markdown
+ * `context` mechanics (task 0359): pack a topic page plus its graph neighbours into one Markdown
  * block for an external agent. Each page is introduced by its vault-relative path.
  */
 

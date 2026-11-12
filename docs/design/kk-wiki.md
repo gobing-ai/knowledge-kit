@@ -7,7 +7,7 @@ version: 1.0.0
 created_at: 2026-11-10
 updated_at: 2026-11-10
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
-status: implemented — all twelve verbs shipped (0350 ingest, 0351 link/lint, 0352 summarize/synthesize, 0353 merge/compile/gc, 0354 publish/sync/query/context)
+status: implemented — all twelve verbs shipped (0355 ingest, 0356 link/lint, 0357 summarize/synthesize, 0358 merge/compile/gc, 0359 publish/sync/query/context)
 ---
 
 # kk wiki vault — design satellite
@@ -37,18 +37,18 @@ exits `0` on success / `1` on a handled failure / `2` on a usage error.
 
 | Verb | Signature | Deterministic behavior | Model-bearing? |
 | --- | --- | --- | --- |
-| `ingest` | `kk wiki ingest <source\|-> [--type=url\|pdf\|html\|rss] [--out <dir>] [--json]` | Writes `raw/<type>/<id>.md` with frontmatter; unknown extension without `--type` exits 2 naming the type; html/pdf/url go through the markitdown runner and exit 1 naming it when absent (**shipped, 0350**) | no |
-| `summarize` | `kk wiki summarize <page> --from <-\|file> [--json]` | Renders the supplied summary text into the page's `## Summary` section and links every mentioned title (**shipped, 0352**) | text is authored by the `kk:wiki-authoring` skill and passed on stdin |
-| `synthesize` | `kk wiki synthesize <topic\|page> --from <-\|file> [--type <pageType>] [--json]` | Creates a page when absent, extends in place when present; applies the `user_edited` guard (**shipped, 0352**) | text authored by the skill |
-| `merge` | `kk wiki merge <source> <target> [--json]` | Unions bodies + frontmatter `sources`, writes a `redirect_to` stub, rewrites inbound links; refuses a `user_edited` source (**shipped, 0353**) | no |
-| `compile` | `kk wiki compile [--json]` | Regenerates `content/index.md` and `content/MAP.md`; idempotent byte-for-byte (**shipped, 0353**) | no |
-| `link` | `kk wiki link [--fix] [--json]` | Reports unlinked mentions of existing page titles; `--fix` rewrites them to `[[slug\|Surface]]`, and a `user_edited` page receives the change under `## AI Updates` (**shipped, 0351**) | no |
-| `lint` | `kk wiki lint [--json]` | Reports broken links, orphan pages, missing/invalid frontmatter; nonzero when findings exist (**shipped, 0351**) | no |
-| `gc` | `kk wiki gc [--yes] [--json]` | Reclaims unreferenced `raw/<type>/` snapshots and `raw/tmp/**`, skips every `wiki.mirrors` tree, prints the plan unless `--yes` (**shipped, 0353**) | no |
-| `sync` | `kk wiki sync <remote> [--dry-run] [--json]` | Resolves `wiki.remotes.<name>` into an argv (`{content}`/`{remote}` substituted) and names an undeclared remote (**shipped, 0354**) | no (transport lives in the remote's own CLI, e.g. rclone) |
-| `publish` | `kk wiki publish --target <dir> [--json]` | Projects `content/` into `<dir>/content/` one-to-one with wikilinks intact; refuses a target inside `content/` (**shipped, 0354**) | no |
-| `query` | `kk wiki query <prompt> [--limit <n>] [--json]` | Ranks pages (title 3 / tag 2 / body 1, slug tie-break) and prints paths + excerpts; the answer is composed by the skill (**shipped, 0354**) | no |
-| `context` | `kk wiki context <topic> [--depth <n>] [--json]` | Emits one Markdown block: the topic page plus its graph neighbours, each introduced by its vault-relative path (**shipped, 0354**) | no |
+| `ingest` | `kk wiki ingest <source\|-> [--type=url\|pdf\|html\|rss] [--out <dir>] [--json]` | Writes `raw/<type>/<id>.md` with frontmatter; unknown extension without `--type` exits 2 naming the type; html/pdf/url go through the markitdown runner and exit 1 naming it when absent (**shipped, 0355**) | no |
+| `summarize` | `kk wiki summarize <page> --from <-\|file> [--json]` | Renders the supplied summary text into the page's `## Summary` section and links every mentioned title (**shipped, 0357**) | text is authored by the `kk:wiki-authoring` skill and passed on stdin |
+| `synthesize` | `kk wiki synthesize <topic\|page> --from <-\|file> [--type <pageType>] [--json]` | Creates a page when absent, extends in place when present; applies the `user_edited` guard (**shipped, 0357**) | text authored by the skill |
+| `merge` | `kk wiki merge <source> <target> [--json]` | Unions bodies + frontmatter `sources`, writes a `redirect_to` stub, rewrites inbound links; refuses a `user_edited` source (**shipped, 0358**) | no |
+| `compile` | `kk wiki compile [--json]` | Regenerates `content/index.md` and `content/MAP.md`; idempotent byte-for-byte (**shipped, 0358**) | no |
+| `link` | `kk wiki link [--fix] [--json]` | Reports unlinked mentions of existing page titles; `--fix` rewrites them to `[[slug\|Surface]]`, and a `user_edited` page receives the change under `## AI Updates` (**shipped, 0356**) | no |
+| `lint` | `kk wiki lint [--json]` | Reports broken links, orphan pages, missing/invalid frontmatter; nonzero when findings exist (**shipped, 0356**) | no |
+| `gc` | `kk wiki gc [--yes] [--json]` | Reclaims unreferenced `raw/<type>/` snapshots and `raw/tmp/**`, skips every `wiki.mirrors` tree, prints the plan unless `--yes` (**shipped, 0358**) | no |
+| `sync` | `kk wiki sync <remote> [--dry-run] [--json]` | Resolves `wiki.remotes.<name>` into an argv (`{content}`/`{remote}` substituted) and names an undeclared remote (**shipped, 0359**) | no (transport lives in the remote's own CLI, e.g. rclone) |
+| `publish` | `kk wiki publish --target <dir> [--json]` | Projects `content/` into `<dir>/content/` one-to-one with wikilinks intact; refuses a target inside `content/` (**shipped, 0359**) | no |
+| `query` | `kk wiki query <prompt> [--limit <n>] [--json]` | Ranks pages (title 3 / tag 2 / body 1, slug tie-break) and prints paths + excerpts; the answer is composed by the skill (**shipped, 0359**) | no |
+| `context` | `kk wiki context <topic> [--depth <n>] [--json]` | Emits one Markdown block: the topic page plus its graph neighbours, each introduced by its vault-relative path (**shipped, 0359**) | no |
 
 `summarize`, `synthesize` and `query` are the only verbs a model feeds; the CLI itself performs no
 network or provider call (R21).

@@ -19,7 +19,7 @@ sync: [T1]
 
 G9 adds native KK audit stages, typed Spur decision catalogs and one `smart-seo` skill. Observed facts, assessments, semantic judgments and report claims remain separate run-bound artifacts; `spur workflow` owns sequencing and KK owns bounded deterministic work. The [design satellite](design/kk-smart-seo.md) owns collection limits, network policy, evidence contracts, fallback semantics and distribution. `vendors/jev-seo` remains reference-only.
 
-## kk wiki vault (accepted design — ADR-046; not yet built)
+## kk wiki vault (accepted design — ADR-048; not yet built)
 
 `kk wiki` turns raw snapshots into a persistent, interlinked Markdown vault and a Quartz-compatible
 projection of it. `@gobing-ai/kk-wiki` holds every deterministic mechanic (page model + frontmatter
@@ -443,7 +443,7 @@ Full spec: `docs/design/storm-evidence-cache.md`.
 | -------- | -------------- | ---------------- | --------------- |
 | `apps/cli` | `@gobing-ai/knowledge-kit` | Commander surface (`executor`, `plugin`; hidden aliases `invoke`/`fanin`/`fanout`/`plugins *`), arg coercion, wiring | `@gobing-ai/kk-core`, `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra`, `commander` |
 | `packages/kk-core` | `@gobing-ai/kk-core` | Doc/Content/Result + fan-out aggregate schemas (`TargetOutcomeSchema` / `AggregateResultSchema`, 0157 R11), `PluginKind` / `kindContract`, filesystem plugin discovery | `zod` + `node:fs` / `node:path` (discovery only) |
-| `packages/kk-wiki` | `@gobing-ai/kk-wiki` | Accepted design (ADR-046, feature I1 — not yet built): vault page model, wikilink graph, link/lint, merge with redirect, index/MAP compile, gc, `user_edited` guard, raw snapshot writer, Quartz publish projection | `@gobing-ai/kk-core`, `zod`, `node:fs` / `node:path` |
+| `packages/kk-wiki` | `@gobing-ai/kk-wiki` | Accepted design (ADR-048, feature I1 — not yet built): vault page model, wikilink graph, link/lint, merge with redirect, index/MAP compile, gc, `user_edited` guard, raw snapshot writer, Quartz publish projection | `@gobing-ai/kk-core`, `zod`, `node:fs` / `node:path` |
 | `packages/publish-harness` | `@gobing-ai/publish-harness` | Publish transport abstraction; `FakeFileCliTransport` / `FakeBrowserTransport`; browser session helpers (`resolveBrowserProfileDir`, `trySelectors`; browser launch moved upstream to `@gobing-ai/ts-browser-automation`, task 0177); shared `./browser` command library — channel profile-dir precedence, `login\|check` profile CLI, poll/editor-input/observed-outcome helpers (E91, ADR-027) | `@gobing-ai/kk-core`, `@gobing-ai/ts-browser-automation`, `@gobing-ai/ts-utils` |
 | `plugins/ingestions/aihot-ingest` | `@gobing-ai/aihot-ingest` | Aihot selected snapshot/changes → attributed `Doc[]`; atomic cursor state (F6) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
 | `plugins/ingestions/karakeep-local` | `@gobing-ai/karakeep-local` | Ingestion plugin: rclone-synced folder → `Doc[]` | `@gobing-ai/kk-core`, `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra` |

@@ -6,7 +6,7 @@ import { main } from '../../src/main';
 import { runCompile, runGc, runMerge } from '../../src/wiki/maintenance';
 import { captureOutput } from '../capture';
 
-/** Feature I1 R10/R11/R14 (task 0353): merge, compile and gc. */
+/** Feature I1 R10/R11/R14 (task 0358): merge, compile and gc. */
 
 const dirs: string[] = [];
 function vault(files: Record<string, string>): string {

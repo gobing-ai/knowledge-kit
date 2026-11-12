@@ -574,3 +574,11 @@ the same text with one hedge adverb restored in the WeChat row → `{"ok":false,
   `expiresAt` is never evidence. Verification is loopback-only (`apps/cli/tests/e2e-bot-collection.ts`
   drives the real `kk executor fan-in --source` child plus the probe script): live sites, anti-bot,
   binary payloads and adapter special state stay documented limits, not claims.
+
+## 2026-11-10 — runall 0347-0349 batch (quasi-news cover)
+- sips quirks (0348): it may exit 0 while silently NOT writing output when the parent dir is missing — compositeCover now throws on `!existsSync(outputPath)`; status 13 = transcode failure; hand-trimmed base64 JPEG fixtures are invalid (status 13) — extract the full fixture from existing tests.
+- Test harness (0348): `kk-workflow-stages.ts` is spawnSync-tested (coverage threshold); any NEW sibling import of the runner must be copyFileSync'd at BOTH loneRunner fixture sites (~:280, ~:4431).
+- wrapHeadline root cause (0348): `split('\n')` always returns ≥1 element so the chunk fallback was dead code — decide source with `includes('\n')` before splitting; chunk cap 25 code points; >2 lines → line1 + ellipsized line2; escape via esc() at the SVG seam.
+- Pipeline recipe (0347-0349): `spur workflow run <task-pipeline.yaml> --vars '{"wbs":"0349","executor":"host","qualityGateCmd":"spur self exec check","gateTimeoutMs":"2400000"}'` — var key is `wbs` (not taskId, default "0000" → decoy runs); --vars values must be strings; RIDs are not greppable as "run <uuid>" — UUID-grep the log; continue with `--answer-text <receipt>` / `--answer yes` (resume does not exist).
+- Gate recipe: `qualityGateCmd` env + `gateTimeoutMs=2400000` (default 900000ms is too short for the full suite ≈19min); `spur task gate <wbs> run --no-logo`; gate receipts are keyed by tree hash — re-stage before `git write-tree` after any edit; the host-wide gate lock serializes with concurrent sessions (queueWait up to ~17min observed).
+- Review flow (validated 3×): cert named `<rid>-review-cert.md` (rid from the LOG, not guesses) → cp to `-review-answer.txt` → `spur task verdict <wbs> --from-answer` (row keying: bare R rows; `[R<n>]` refs only on AC rows; one Confidence line; `| P |` table header) → pre-fill Review section → residual blocking=0 → continue review receipt → continue `--answer yes`.

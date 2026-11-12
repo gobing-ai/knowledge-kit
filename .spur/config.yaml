@@ -128,6 +128,14 @@ bootstrap:
       # clientOverride path, so voice-gen's local-server auto-start never fires.
       # cover_enabled stays at its workflow default (true, minimax/image-01).
       #
+      # The command is a one-line delegate (2026-11-12 consolidation): production flags
+      # (KK_BROWSER_CHANNEL=chrome, kk-daily-ai-voice3, 72h window, pi-deepseek +
+      # agy-gemini pair, works root, internal 3h45m deadline) live once in
+      # scripts/daily-ai-news.ts's PRODUCTION constant — executor-pair history (why retry
+      # must be a different binary family, the 11-08 volc switch, the 11-10 quota death
+      # and 0347 F1 preflight) is documented beside that constant, and a local
+      # `bun scripts/daily-ai-news.ts generate --full` reproduces this job exactly.
+      #
       # 04:30 and not 06:00, because the pool must already be in the store:
       # `kk store extract` only sees what the preceding 04:00 kk-collect tick has
       # ingested AND labeled. Measured kk-collect durations (runs table,
@@ -137,36 +145,15 @@ bootstrap:
       # 16.8 min. A pathological 04:00 tick would therefore still finish by
       # ~04:17, so 04:30 clears the observed worst case by ~13 min while handing
       # the run a fresh pool (extract window 24h against a 6h collect cadence).
-      #
-      # Cut-over caveat (2026-10-10): `kk ledger cutover-check --candidate
-      # kk-daily-ai-voice2 --baseline kk-daily-ai-voice --runs 5` still reports
-      # ready=false, streak 1/5 — the newest voice2 runs are dry-run (no classify
-      # step), so publish parity against voice1 is unproven. This job is the first
-      # scheduled voice2 publishing path; check the first two ticks.
-      # Supervised local 04:30 daily run; explicit vars and works root.
-      # Internal 3h45m deadline closes owned runs before the outer four-hour kill.
-      # codex-sol passed a real artifact-write probe during the 2026-11-01 recovery.
-      # Retry stays on a DIFFERENT binary (2026-11-04): spur's readiness gate SIGTERMs
-      # `<agent> --version` after a fixed 5s, and when the 04:30 codex probe stalled past it, the
-      # codex-sol retry hit the same stalled probe 5s later — plan-translate never dispatched.
-      # 2026-11-08: primary moved to pi-dsv4.1-flash-volc (volc deepseek-v4-1-flash). The 11-02..11-07
-      # codex-sol (gpt-6.1-sol) episodes drifted toward commentary and technical detail, the 11-08
-      # rehearsal on this executor passed the script-plan validator, and it saves gpt/opus tokens.
-      # Retry stays on claude, a different binary from the primary (see the 11-04 note above).
-      # The kk-daily-publish3 re-run below must keep the same flags.
-      # --window 72h (2026-11-05): the 24h pool produced 3 items / an 8.4-min script and the
-      # 15-min floor refused before TTS (duration-refusal on 11-05); the extract ladder's
-      # raw-pool estimate over-counts stub bodies, so pin the window to 72h until ingest bodies
-      # or label quality widen the fresh pool again.
       - name: kk-daily-ai-voice
         cron: "30 4 * * *"
         timeoutMs: 14400000
-        command: >-
-          KK_BROWSER_CHANNEL=chrome bun plugins/kk/scripts/daily-scheduled-run.ts
-          --repo /Users/robin/xprojects/knowledge-kit
-          --works-dir /Users/robin/xprojects/knowledge-kit/.works
-          --agent pi-dsv4.1-flash-volc --retry-agent claude
-          --workflow kk-daily-ai-voice3 --window 72h
+        command: bun scripts/daily-ai-news.ts generate --full
+      # Morning runs stay draft-only (ADR-022: live is launch-only) — podcast-pub items land
+      # microfeed-unpublished and are invisible on podcast.salty.vip until go-live. Operator
+      # routine mid-morning: `bun run daily-news:live` then approve the send-confirm pause with
+      # `spur workflow continue` (surfdash publishes publicly in draft, podcast does not —
+      # 2026-11-10 lesson: the episode stayed hidden all day).
 
       # 07:00 daily: the publish3 `overseas-rss` window (design kk-daily-ai-voice3 §5a) — X/Threads
       # overseas targets behind the podcast RSS gate, the first of the two scheduled windows to ship
@@ -177,27 +164,18 @@ bootstrap:
       # generation bundle, per R1). Unattended-safe because every overseas row is dummy/off in the
       # pinned daily-ai-voice preset — no live row means the send-confirm pause never fires.
       #
-      # Second trigger (operator request 2026-11-05): if today's voice3 receipt is missing or a hard
-      # failure (failed/timed-out/interrupted — NOT 'running', the 04:30 job can legally still be
-      # executing until ~08:30, and a duplicate run would fight it for the store lock), re-run voice3
-      # first with the same flags as the 04:30 job, then publish either way — receipts make the
-      # window a no-op for what is already delivered, and a gated miss is diagnosed, not silently
-      # dropped. 6h timeout = one 3h45m retrigger budget plus the window.
+      # --unattended (2026-11-12 consolidation) implements the second trigger (operator request
+      # 2026-11-05) that used to be an inline case/jq shell here: if today's voice3 receipt is
+      # missing or a hard failure (failed/timed-out/interrupted — NOT 'running', the 04:30 job can
+      # legally still be executing until ~08:30, and a duplicate run would fight it for the store
+      # lock), re-run voice3 first with the same production flags as the 04:30 job (one definition,
+      # the script's PRODUCTION constant), then publish either way — receipts make the window a
+      # no-op for what is already delivered, and a gated miss is diagnosed, not silently dropped.
+      # 6h timeout = one 3h45m retrigger budget plus the window.
       - name: kk-daily-publish3
         cron: "0 7 * * *"
         timeoutMs: 21600000
-        command: >-
-          STAMP=$(TZ=America/Los_Angeles date +%Y%m%d);
-          RC=".works/kk-daily-ai-voice2/$STAMP/schedule-receipt.json";
-          STATUS=$(jq -r '.status // "missing"' "$RC" 2>/dev/null || echo missing);
-          echo "kk-daily-publish3: voice3 receipt status=$STATUS";
-          case "$STATUS" in done|no-content|incomplete|running) ;; *)
-          KK_BROWSER_CHANNEL=chrome bun plugins/kk/scripts/daily-scheduled-run.ts
-          --repo /Users/robin/xprojects/knowledge-kit
-          --works-dir /Users/robin/xprojects/knowledge-kit/.works
-          --agent pi-dsv4.1-flash-volc --retry-agent claude
-          --workflow kk-daily-ai-voice3 --window 72h;; esac;
-          bun plugins/kk/scripts/voice3-publish-window.ts --window overseas-rss
+        command: bun scripts/daily-ai-news.ts publish --window overseas-rss --unattended
 
       # 04:05, 10:05, 16:05, 22:05 daily: kk-collect standalone 6-hourly collection
       # into the kk store (aihot + last30days + horizon -> store ingest -> label).

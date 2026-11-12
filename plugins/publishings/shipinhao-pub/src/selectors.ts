@@ -24,11 +24,62 @@ import type { IsAuthenticatedPredicate } from '@gobing-ai/ts-browser-automation'
 export const SHP_TARGET = 'shipinhao';
 
 /**
- * Fixed home entry (task 0296 Design freeze): the Channels short-video publishing page. Grounded
- * as the display entry only — shipinhao.js never navigates (it fills in place inside an
- * already-open assistant tab).
+ * Fixed home entry (recon-Grounded 2026-11-11): the Channels dashboard. Every direct
+ * `/platform/post/<kind>` URL redirects here for a logged-in session — the per-op direct-create
+ * URLs in the earlier Provisional table do not exist. The unified create surface lives at
+ * `/platform/post/create`, reached by clicking the dashboard entry button (see
+ * `SHP_CREATE_ENTRY_SELECTORS`); the publish flow performs that click-through after navigation.
  */
-export const SHP_HOME_URL = 'https://channels.weixin.qq.com/platform/post/video';
+export const SHP_HOME_URL = 'https://channels.weixin.qq.com/platform';
+
+/**
+ * The post kinds the 发布 page offers (视频， 图文， 音乐， 音频). Declared operation names are
+ * ASCII (`shortVideo` is the task 0296 freeze), one per platform post kind.
+ */
+export const SHP_OPERATION_NAMES = ['shortVideo', 'audio', 'image', 'music'] as const;
+export type ShipinhaoOperationName = (typeof SHP_OPERATION_NAMES)[number];
+
+/**
+ * Dashboard create-entry button (recon-Grounded 2026-11-11): the dashboard offers exactly the
+ * visible `发表视频` button; clicking it opens the unified `/platform/post/create` surface for
+ * every post kind — the kind is determined by the media file fed to the single intake input.
+ */
+export const SHP_CREATE_ENTRY_SELECTORS = ['button:text-is("发表视频")'] as const;
+
+/**
+ * 添加描述 hard cap: the editor truncates any paste to exactly 100 plain-text characters
+ * (Grounded live probe 2026-11-11 — a 6054-char paste retained exactly 100). Topic tags count
+ * toward the same budget, so the body plain text is clipped to leave room for them.
+ */
+export const SHP_DESCRIPTION_MAX_CHARS = 100;
+
+/**
+ * Draft-save confirm dialog (Grounded live probe 2026-11-11): with 定时发表 active, clicking
+ * 保存草稿 renders a dialog — "使用定时发表将无法保存草稿。若要保存草稿，需先取消定时发表。"
+ * with visible buttons 不保存 (abort) / 保存 (proceed); the save only proceeds after clicking the
+ * visible dialog's 保存. The vendor also ships this dialog as a permanently hidden 0×0 template,
+ * so the rail anchors from the button side and requires a rendered box; absence = normal no-op.
+ */
+export const SHP_DRAFT_CONFIRM_DIALOG_TEXT = '使用定时发表将无法保存草稿';
+export const SHP_DRAFT_CONFIRM_PROCEED_LABEL = '保存';
+
+/**
+ * Per-operation creation entries: ALL operations share the dashboard entry and the unified
+ * `/platform/post/create` surface (recon-Grounded 2026-11-11 — the former per-kind
+ * `/platform/post/<kind>` URLs redirect to the dashboard; the kept map keeps the flow's
+ * per-operation seam while every entry is the same page).
+ */
+export const SHP_AUDIO_HOME_URL = SHP_HOME_URL;
+export const SHP_IMAGE_HOME_URL = SHP_HOME_URL;
+export const SHP_MUSIC_HOME_URL = SHP_HOME_URL;
+
+/** Creation-page entry per declared operation (see {@link SHP_AUDIO_HOME_URL} for the caveat). */
+export const SHP_HOME_URL_BY_OPERATION: Record<ShipinhaoOperationName, string> = {
+    shortVideo: SHP_HOME_URL,
+    audio: SHP_AUDIO_HOME_URL,
+    image: SHP_IMAGE_HOME_URL,
+    music: SHP_MUSIC_HOME_URL,
+};
 
 /**
  * Login/passport redirect marker. **Provisional**: shipinhao.js never observes a redirect URL; it
@@ -117,6 +168,11 @@ export const SHP_COVER_SAVE_WAIT_MS = 60_000;
  */
 export const SHP_VIDEO_SELECTORS = {
     /**
+     * Dashboard entry button into the unified create surface (see
+     * {@link SHP_CREATE_ENTRY_SELECTORS}). Clicked once after navigation, before the form rails.
+     */
+    createEntry: SHP_CREATE_ENTRY_SELECTORS,
+    /**
      * Video file input candidates, vendor priority: accept-kind (shipinhao.js:549-555) → semantic
      * upload region 上传视频/视频文件/选择视频 (shipinhao.js:565-568) → the single untyped
      * `input[type="file"]` (shipinhao.js:580-583; the flow refuses when more than one matches).
@@ -145,7 +201,11 @@ export const SHP_VIDEO_SELECTORS = {
     coverEditEntry: ['div.cover-preview-wrap > div'],
     /**
      * Cover dialog container candidates (vendor `findCoverControl`, shipinhao.js:2144-2149): the
-     * flow requires the resolved dialog to hold an `input[type="file"]` before use.
+     * flow requires the resolved dialog to hold an `input[type="file"]` before use. **Grounded
+     * audio known-gap (live probe 2026-11-11)**: for AUDIO the container stays `visible:false` and
+     * the slot stays `primary-loading` (auto-cover processing), so the vendor's visible-dialog
+     * contract never materializes — a requested audio cover is a typed cover-attach failure, never
+     * a silent skip. Daily presets request no cover for shipinhao rows.
      */
     coverDialog: [
         'div.cover-control-wrap',
@@ -189,6 +249,41 @@ export const SHP_VIDEO_SELECTORS = {
 export type ShipinhaoVideoSelectorKey = keyof typeof SHP_VIDEO_SELECTORS;
 
 /**
+ * The 音频 (audio-post) flow selectors: the video flow's rails (title, description editor,
+ * 声明原创 dialog, cover dialog, submit rail) reused verbatim plus the unified intake ladder.
+ * Recon-Grounded 2026-11-11: the create surface has ONE media intake (the video-accept input)
+ * and no audio-accept input exists — feeding the .mp3 to that input morphs the form into the
+ * audio post flow (title/description/cover/save rails all render post-upload). **Grounded.**
+ */
+export const SHP_AUDIO_SELECTORS = {
+    ...SHP_VIDEO_SELECTORS,
+    audioInput: ['input[type="file"][accept*="video"]', 'input[type="file"]'] as readonly string[],
+} as const;
+
+/**
+ * The 音乐 (music-post) flow selectors: the audio flow's unified-intake ladder plus the cover
+ * rails (music posts carry their own cover). Same intake evidence as audio; the music-specific
+ * form rails stay **Provisional until live recon**, same fail-closed rule.
+ */
+export const SHP_MUSIC_SELECTORS: typeof SHP_AUDIO_SELECTORS = { ...SHP_AUDIO_SELECTORS };
+
+/**
+ * The 图文 (image-post) flow selectors: a multi-file image-input ladder plus the shared
+ * text/submit rails. No cover rails are read — the platform owns the 图文 cover from the images
+ * themselves, so the flow refuses an explicit cover for this operation instead of guessing a
+ * slot. **Provisional until live recon**, same fail-closed rule.
+ */
+export const SHP_IMAGE_SELECTORS = {
+    ...SHP_VIDEO_SELECTORS,
+    imagesInput: [
+        'input[type="file"][multiple]',
+        'input[type="file"][accept*="image"]',
+        'section:has(input[type="file"]):has-text("上传图片") input[type="file"]',
+        'input[type="file"]',
+    ] as readonly string[],
+} as const;
+
+/**
  * Receipt-shaped URLs. **Provisional**: the vendor never reads a receipt (a clicked 发表 without
  * a works record is `unknown`, shipinhao.js:2326), so these are the id-bearing works/record
  * shapes the task 0296 Design freeze names. Only shapes in this list count as receipts, and only
@@ -198,6 +293,9 @@ export type ShipinhaoVideoSelectorKey = keyof typeof SHP_VIDEO_SELECTORS;
 export const SHP_RECEIPT_URL_RES = [
     /channels\.weixin\.qq\.com\/platform\/record\/detail\/[0-9a-zA-Z_-]+/,
     /channels\.weixin\.qq\.com\/platform\/post\/video\/[0-9a-zA-Z_-]+/,
+    /channels\.weixin\.qq\.com\/platform\/post\/audio\/[0-9a-zA-Z_-]+/,
+    /channels\.weixin\.qq\.com\/platform\/post\/image\/[0-9a-zA-Z_-]+/,
+    /channels\.weixin\.qq\.com\/platform\/post\/music\/[0-9a-zA-Z_-]+/,
 ] as const;
 
 /** Upload/processing ceiling for the video step (media ceiling — large local files, task 0296 freeze). */

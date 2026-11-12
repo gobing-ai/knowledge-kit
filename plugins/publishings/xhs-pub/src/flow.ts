@@ -9,7 +9,23 @@ import {
     uploadFile,
 } from '@gobing-ai/publish-harness/browser';
 import type { Page } from 'playwright';
-import { artifactPaths, type ModeInput, PUBLISH_URL, PUBLISHED_MARKER, TARGET, type XhsOperation } from './modes';
+import {
+    AccountRiskControlError,
+    ContentTooLongError,
+    DraftVerifyError,
+    PublishError,
+    TitleTooLongError,
+} from './errors';
+import {
+    artifactPaths,
+    type ModeInput,
+    PUBLISH_URL,
+    PUBLISHED_MARKER,
+    TARGET,
+    XHS_NOTE_BODY_MAX,
+    XHS_NOTE_TITLE_MAX,
+    type XhsOperation,
+} from './modes';
 import { clickCreatorTab, findAttachedSelector, findSelector, POLL_MS, waitUntil, type XhsPage } from './page';
 
 /**
@@ -34,14 +50,14 @@ const NOTE_BODY = [
 ];
 // Uploaded previews carry XHS's own class spelling (`preivew`, not `preview`).
 const NOTE_THUMBNAIL = ['img.preivew-image', '.img-preview img'];
-// The image input is distinguishable from the video input by its accept list (`.jpg` first).
-const IMAGE_FILE_INPUT = [
-    'input[type="file"][accept*=".jpg"]',
-    'input[type="file"].upload-input',
-    'input[type="file"]',
-];
 const VIDEO_FILE_INPUT = ['input[type="file"][accept*=".mp4"]', 'input[type="file"].upload-input'];
 const VIDEO_EDITOR = ['div.tiptap.ProseMirror', 'div.tiptap[contenteditable="true"]', '.ProseMirror'];
+/** The image editor mounts its upload wiring lazily; measured-settle from probe-thumb-src.ts. */
+const IMAGE_MODE_SETTLE_MS = 1500;
+/** The console's uploader chunk mounts while the SPA idles after load (probe-thumb-src.ts slept
+ * 9s before touching anything). Clicking earlier leaves the editor preview-capable but mute. */
+const CONSOLE_SETTLE_MS = 9000;
+const CONSOLE_SETTLE_QUIET_MS = 2000;
 
 // 写长文: the landing offers 新的创作 (author in place) and 导入链接 (excluded — it is fed from a
 // 公众号 source, which would put another platform's publishing and censorship in the critical
@@ -66,6 +82,14 @@ const PODCAST_MODAL_ADVANCE = ['去发布'];
  * so a draft run may click it too — it does not publish on its own. */
 const PODCAST_COVER_ZONE = '.d-modal div:has-text("设置封面")';
 const PODCAST_UPLOAD_ACK = '上传成功';
+
+// Task 0350 R4: the podcast editor's fields — measured in the 2026-11-11 discovery (智能标题 chip,
+// a 0/1000 body counter, an 加入播客合集 entry in the bottom bar's closed shadow), none of them
+// selector-measured. These probe chains name what they try; every apply is followed by a
+// counter/verify read that fails loud when the field did not take.
+const PODCAST_TITLE_SELECTORS = ['input.d-text', 'input[placeholder*="标题"]', 'textarea[placeholder*="标题"]'];
+const PODCAST_COLLECTION_SELECTORS = ['button:has-text("加入播客合集")', 'text=加入播客合集', 'text=合集'];
+const PODCAST_COLLECTION_DEFAULT = '咸话咸说之每日AI乱炖';
 
 /**
  * The `暂存离开` labels, newest first: XHS renamed the control, and the older labels stay as
@@ -196,6 +220,199 @@ interface ActionClick {
     click: string;
 }
 
+/**
+ * Invoke the draft-save method the action bar exposes on its `xhs-publish-btn` host. The bar
+ * renders inside a CLOSED shadow root, so synthetic coordinate clicks from an automated context
+ * are no-ops (OpenCLI#1606); the host method is the reliable trigger. Returns the method name,
+ * or null when no visible host carries a save method (the click fallback then runs).
+ */
+async function invokeHostSave(page: XhsPage): Promise<string | null> {
+    try {
+        const verdict = await page.evaluate(`(() => {
+            const hosts = Array.from(document.querySelectorAll('xhs-publish-btn')).filter((el) => {
+                const r = el.getBoundingClientRect();
+                return r.width > 0 && r.height > 0;
+            });
+            for (const el of hosts) {
+                for (const name of ['_onSave', '_onSaveDraft', '_onDraft']) {
+                    const fn = el[name];
+                    if (typeof fn === 'function') { fn.call(el); return 'kk-host-save:' + name; }
+                }
+            }
+            return 'kk-host-save-none';
+        })()`);
+        const called = typeof verdict === 'string' ? verdict : '';
+        return called.startsWith('kk-host-save:') ? called.slice('kk-host-save:'.length) : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Layered server-response capture (task 0350 R1, vendor-proven from
+ * `vendors/xiaohongshu-skills/scripts/xhs/publish.py`): the save/publish response is the only
+ * truth about whether a note persisted — the console toast has lied while the API returned
+ * `HTTPBizError` (2026-11-09/10 runs). Four layers race for the first matching payload — XHR
+ * `loadend`, wrapped `fetch`, console output, and a DOM toast observer — and the first capture
+ * wins. Signatures are content-based, not URL-based: `HTTPBizError`, a −913x code, `note_id`,
+ * or a short toast naming 禁止发笔记 / 违反 / 违规 / 审核未通过 / 账号异常 / 无法发布.
+ * Arming is idempotent; a page that refused injection degrades to the legacy UI signals. The
+ * sentinel markers keep a mocked evaluate from ever reading as a real capture.
+ */
+export const CAPTURE_INJECT_EXPR = `/* kk-capture-inject */ (() => {
+    const w = window;
+    if (w.__kkXhsArmed) return 'kk-capture-armed';
+    w.__kkXhsArmed = true;
+    w.__kkXhsOutcome = null;
+    const signatures = [
+        /HTTPBizError/,
+        /"code"\\s*:\\s*-913\\d/,
+        /禁止发笔记/,
+        /note_id/,
+        /违反|违规|审核未通过|账号异常|无法发布/,
+    ];
+    const matches = (text) => signatures.some((re) => re.test(text));
+    const record = (source, text) => {
+        if (w.__kkXhsOutcome) return;
+        const asString = String(text || '');
+        if (!asString || !matches(asString)) return;
+        w.__kkXhsOutcome = { source: source, text: asString.slice(0, 800) };
+    };
+    const proto = XMLHttpRequest.prototype;
+    if (!proto.__kkPatched) {
+        proto.__kkPatched = true;
+        const open = proto.open;
+        const send = proto.send;
+        proto.open = function (method, url) { this.__kkUrl = url; return open.apply(this, arguments); };
+        proto.send = function () {
+            this.addEventListener('loadend', () => {
+                try { record('xhr', (this.__kkUrl || '') + ' ' + this.responseText); } catch (e) {}
+            });
+            return send.apply(this, arguments);
+        };
+    }
+    if (typeof w.fetch === 'function' && !w.fetch.__kkPatched) {
+        const original = w.fetch;
+        w.fetch = function () {
+            return original.apply(this, arguments).then((response) => {
+                try {
+                    response.clone().text().then((text) => record('fetch', (response.url || '') + ' ' + text)).catch(() => {});
+                } catch (e) {}
+                return response;
+            });
+        };
+        w.fetch.__kkPatched = true;
+    }
+    if (!console.__kkPatched) {
+        console.__kkPatched = true;
+        for (const key of ['error', 'warn', 'log']) {
+            const original = console[key].bind(console);
+            console[key] = function () {
+                try { record('console', Array.prototype.map.call(arguments, String).join(' ')); } catch (e) {}
+                original.apply(console, arguments);
+            };
+        }
+    }
+    if (typeof MutationObserver === 'function' && document.body && !w.__kkXhsToastObs) {
+        const toastRisk = /违反|违规|禁止发笔记|审核未通过|账号异常|无法发布/;
+        const obs = new MutationObserver((muts) => {
+            if (w.__kkXhsOutcome) return;
+            for (const m of muts) {
+                for (const n of m.addedNodes || []) {
+                    if (!n || n.nodeType !== 1) continue;
+                    const txt = String(n.textContent || '').trim();
+                    if (txt.length === 0 || txt.length > 300) continue;
+                    if (!toastRisk.test(txt)) continue;
+                    record('toast', txt);
+                }
+            }
+        });
+        obs.observe(document.body, { childList: true, subtree: true });
+        w.__kkXhsToastObs = true;
+    }
+    return 'kk-capture-armed';
+})()`;
+const CAPTURE_READ_EXPR = `/* kk-capture-read */ (() => {
+    const captured = window.__kkXhsOutcome;
+    return captured ? JSON.stringify(captured) : 'kk-capture-none';
+})()`;
+
+interface OutcomeCapture {
+    source: string;
+    text: string;
+}
+
+async function armOutcomeCapture(page: XhsPage): Promise<void> {
+    try {
+        await page.evaluate(CAPTURE_INJECT_EXPR);
+    } catch {
+        // No injection, no capture: the legacy UI signals remain the only outcome evidence.
+    }
+}
+
+async function readOutcomeCapture(page: XhsPage): Promise<OutcomeCapture | null> {
+    try {
+        const read = await page.evaluate(CAPTURE_READ_EXPR);
+        if (typeof read !== 'string' || !read.startsWith('{')) return null;
+        const parsed = JSON.parse(read) as Partial<OutcomeCapture>;
+        return typeof parsed.source === 'string' && typeof parsed.text === 'string'
+            ? { source: parsed.source, text: parsed.text }
+            : null;
+    } catch {
+        return null;
+    }
+}
+
+const RISK_SIGNATURE = /禁止发笔记|违反|违规|审核未通过|账号异常|无法发布/;
+const CODE_SIGNATURE = /"code"\s*:\s*(-?\d+)/;
+const NOTE_ID_SIGNATURE = /"note_id"\s*:\s*"([^"]+)"/;
+
+function classifyOutcome(text: string): {
+    verdict: 'risk' | 'biz' | 'ok';
+    code: string | null;
+    noteId: string | null;
+} {
+    const code = CODE_SIGNATURE.exec(text)?.[1] ?? null;
+    const noteId = NOTE_ID_SIGNATURE.exec(text)?.[1] ?? null;
+    if ((code !== null && /^-913\d$/.test(code)) || RISK_SIGNATURE.test(text)) {
+        return { verdict: 'risk', code, noteId };
+    }
+    if (noteId !== null && (code === null || code === '0')) return { verdict: 'ok', code, noteId };
+    return { verdict: 'biz', code, noteId };
+}
+
+/**
+ * A captured refusal outranks every UI signal (vendor first-wins): risk control is a typed
+ * no-retry abort, a platform biz error a typed failure. Ok verdicts ride the Result metadata.
+ */
+function assertCapturedOutcome(capture: OutcomeCapture | null): void {
+    if (capture === null) return;
+    const { verdict, code } = classifyOutcome(capture.text);
+    if (verdict === 'risk') {
+        throw new AccountRiskControlError(
+            `AccountRiskControlError: the ${capture.source} response matched risk-control signatures (code ${code ?? 'unknown'}, matched: ${RISK_SIGNATURE.exec(capture.text)?.[0] ?? '-913x code'}) — the account is restricted from posting on ${TARGET}; not retryable`,
+        );
+    }
+    if (verdict === 'biz') {
+        throw new PublishError(
+            `PublishError: the ${capture.source} response reported a platform error (code ${code ?? 'unknown'}): ${capture.text.slice(0, 200)}`,
+        );
+    }
+}
+
+function captureMetadata(capture: OutcomeCapture | null): Record<string, unknown> {
+    if (capture === null) return {};
+    const { verdict, code, noteId } = classifyOutcome(capture.text);
+    return {
+        serverCapture: {
+            source: capture.source,
+            verdict,
+            ...(code !== null ? { code } : {}),
+            ...(noteId !== null ? { noteId } : {}),
+        },
+    };
+}
+
 /** Click an action-bar control of this mode, on the path its evidence says that bar lives on. */
 async function clickActionControl(
     operation: XhsOperation,
@@ -311,52 +528,254 @@ async function applyNoteTitle(deps: ModeRunDeps): Promise<void> {
         .locator(selector)
         .first()
         .fill(deps.content.title ?? '');
+    // Task 0350 R2: counter-verified in the editor before any save.
+    await assertPlatformCounter(deps.page, TITLE_COUNTER_EXPR, XHS_NOTE_TITLE_MAX, 'title');
 }
 
-async function typeNoteBody(deps: ModeRunDeps, selectors: readonly string[], what: string): Promise<void> {
+async function typeNoteBody(
+    deps: ModeRunDeps,
+    selectors: readonly string[],
+    what: string,
+    text?: string,
+): Promise<void> {
     const selector = await findSelector(deps.page, selectors, what, deps.stepTimeoutMs);
     const body = deps.page.locator(selector).first();
-    const text = deps.content.body ?? '';
+    const value = text ?? deps.content.body ?? '';
     // Type rather than fill: TipTap ignores a synthetic value set, so a filled body leaves the
     // note unsaved and the draft never becomes observable.
     if (typeof body.type === 'function') {
         await body.click();
-        await body.type(text, { delay: 5 });
-        return;
+        await body.type(value, { delay: 5 });
+    } else {
+        await body.fill(value);
     }
-    await body.fill(text);
+    // Task 0350 R2: the platform counter is ground truth once the text is in the editor — the
+    // client-side cap below cannot see xhs's 2-half-width-chars-per-unit counting.
+    await assertPlatformCounter(deps.page, BODY_COUNTER_EXPR, XHS_NOTE_BODY_MAX, 'body');
 }
 
-/** The uploaded-preview count must match the payload: it is how a wrong input is caught. */
-async function confirmThumbnails(deps: ModeRunDeps, expected: number): Promise<void> {
+/**
+ * Platform-counter probes (task 0350 R2). Measured: the note title counter is
+ * `div.title-container div.max_suffix` reading `N/20`. The body counter is observed as `0/1000`
+ * but not selector-measured — the read scans the edit container for a leaf `N/M` element and
+ * `kk-counter-none` means unreadable (the client-side caps in modes.ts stay the only gate).
+ * The title container is excluded: its `N/20` leaf would otherwise satisfy a missing body counter.
+ * xhs counts units, not JS chars: 2 half-width chars = 1 unit.
+ */
+const TITLE_COUNTER_EXPR = `/* kk-counter-title */ (() => {
+    const el = document.querySelector('div.title-container div.max_suffix');
+    if (el && el.textContent && el.textContent.trim()) return el.textContent.trim();
+    for (const node of document.querySelectorAll('div.title-container *')) {
+        const t = (node.textContent || '').trim();
+        if (/^\\d+\\/\\d+$/.test(t) && node.children.length === 0) return t;
+    }
+    return 'kk-counter-none';
+})()`;
+export const BODY_COUNTER_EXPR = `/* kk-counter-body */ (() => {
+    const err = document.querySelector('div.edit-container div.length-error');
+    if (err && err.textContent && err.textContent.trim()) return err.textContent.trim();
+    for (const node of document.querySelectorAll('div.edit-container *')) {
+        const t = (node.textContent || '').trim();
+        if (/^\\d+\\/\\d+$/.test(t) && node.children.length === 0) return t;
+    }
+    return 'kk-counter-none';
+})()`;
+
+/** The counter's current value in units; null when it does not read `N/M`. */
+function counterUnits(counter: string): number | null {
+    const current = Number.parseInt(counter.split('/')[0] ?? '', 10);
+    return Number.isFinite(current) ? current : null;
+}
+
+async function readPlatformCounter(page: XhsPage, expression: string): Promise<string | null> {
+    try {
+        const read = await page.evaluate(expression);
+        if (typeof read !== 'string' || read.includes('kk-counter-none')) return null;
+        return read.trim();
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Reject before any save when the platform's own counter says the field is over its limit
+ * (task 0350 R2). Unreadable counters return silently — the client-side caps in modes.ts remain
+ * the only gate, and a real overflow then surfaces in verifyDraft instead.
+ */
+async function assertPlatformCounter(
+    page: XhsPage,
+    expression: string,
+    max: number,
+    what: 'title' | 'body',
+): Promise<void> {
+    const counter = await readPlatformCounter(page, expression);
+    if (counter === null) return;
+    const units = counterUnits(counter);
+    if (units === null || units <= max) return;
+    const message = `the ${what} counter reads '${counter}' — ${units} units over the platform limit of ${max}; shorten the ${what} before saving (xhs counts units: 2 half-width chars = 1 unit)`;
+    throw what === 'title'
+        ? new TitleTooLongError(`TitleTooLongError: ${message}`)
+        : new ContentTooLongError(`ContentTooLongError: ${message}`);
+}
+
+/**
+ * A `blob:`/`data:` src is the instant local preview — it proves nothing about the server-side
+ * copy. The durable https src appears only after the upload round-trip; saving while any
+ * thumbnail still showed a blob src persisted a draft whose images were gone (2026-11-10 run).
+ * Note the durable src itself can be a geo-fenced CDN host (sns-creator-preview.xhscdn.com):
+ * from a non-CN egress the preview may render dead even when the ref is valid, so naturalWidth
+ * is NOT a reliable completion signal cross-region — the src scheme is.
+ *
+ * Drift (measured 2026-11-10 late, probe-thumb-src): the console stopped swapping preview srcs
+ * off `blob:` — uploads DO complete (permit + one 200 per file to ros-upload.xiaohongshu.com/spectrum)
+ * but the DOM keeps the local preview indefinitely. So network completion is an accepted
+ * durability signal alongside the src scheme.
+ */
+
+/** Count successful image-upload round-trips (ros-upload/spectrum 200s) from page load on. */
+function trackSpectrumUploads(page: XhsPage): { completions(): Promise<number>; seen(): number; dispose(): void } {
+    let count = 0;
+    // Capability-optional: a driver without response events (the test fake) degrades to 0 and the
+    // src scheme stays the only durability signal — the old strictness is preserved there.
+    let anySeen = 0;
+    const handler = (payload: unknown): void => {
+        anySeen += 1;
+        const response = payload as { status(): number; url(): string };
+        if (response.status() === 200 && /ros-upload\.xiaohongshu\.com\/spectrum\//.test(response.url())) {
+            count += 1;
+        }
+    };
+    page.onContextResponse?.(handler);
+    return {
+        completions: async () => count,
+        seen: () => anySeen,
+        dispose: () => page.offContextResponse?.(handler),
+    };
+}
+
+/** The uploaded-preview count must match the payload, and every src must be durable (uploaded). */
+async function confirmThumbnails(
+    deps: ModeRunDeps,
+    expected: number,
+    uploads: { completions(): Promise<number>; seen(): number },
+): Promise<{ completions: number }> {
     const selector = await findSelector(deps.page, NOTE_THUMBNAIL, 'thumbnail wait', deps.stepTimeoutMs);
-    const matches = await waitUntil(
-        () =>
-            deps.page
-                .locator(selector)
-                .count()
-                .then((count) => count >= expected),
-        deps.stepTimeoutMs,
-    );
+    const allDurable = async (): Promise<boolean> => {
+        // Sentinel strings, not booleans: a generic mocked evaluate must never read as a real
+        // DOM verdict — a false positive would let the save run before uploads finish.
+        const verdict = await deps.page.evaluate(`(() => {
+            const imgs = Array.from(document.querySelectorAll("${selector}"));
+            if (imgs.length < ${expected}) return 'kk-thumb-pending';
+            return imgs.every((img) => /^https?:/.test(img.getAttribute("src") || ""))
+                ? 'kk-thumb-all-durable'
+                : 'kk-thumb-pending';
+        })()`);
+        if (verdict === 'kk-thumb-all-durable') return true;
+        // DOM-drift path (2026-11-10): previews stay on blob: after upload, so the network
+        // round-trips are the completion evidence instead.
+        return (await uploads.completions()) >= expected;
+    };
+    const matches = await waitUntil(allDurable, deps.stepTimeoutMs);
     const observed = await deps.page.locator(selector).count();
     if (!matches || observed !== expected) {
-        throw new Error(`thumbnail count: expected ${expected}, observed ${observed}`);
+        const pending = await deps.page.evaluate(`/* kk-count-local-srcs */ (() => {
+            return Array.from(document.querySelectorAll("${selector}"))
+                .filter((img) => !/^https?:/.test(img.getAttribute("src") || "")).length;
+        })()`);
+        throw new Error(
+            `thumbnail count: expected ${expected} durable previews, observed ${observed} previews with ${String(pending)} still on a local (blob/data) src, wire completions ${await uploads.completions()} [flow-20261110b] — the ${deps.stepTimeoutMs}ms window expired before the console finished uploading`,
+        );
+    }
+    return { completions: await uploads.completions() };
+}
+
+/**
+ * Image mode entry uses a raw coordinate click at the tab's centre. The console renders each tab
+ * bar three times and locator clicks (forced included) land on overlay clones — measured
+ * 2026-11-10 (probe-thumb-src.ts) where a viewport-centred mouse click was the only click that
+ * activated the editor, after which the file input began uploading immediately.
+ */
+async function enterImageMode(deps: ModeRunDeps, label: string): Promise<void> {
+    if (!deps.page.clickAt || !deps.page.boundingBoxesOnScreen) {
+        throw new Error('mode entry (image): this driver cannot read viewport boxes or click coordinates');
+    }
+    // Let the console finish mounting (uploader chunk included) BEFORE entering the tab; a drop
+    // into a half-mounted editor renders previews but never uploads (2026-11-10 incident).
+    await settleConsole(deps);
+    const selector = `text=${label}`;
+    const deadline = Date.now() + deps.stepTimeoutMs;
+    while (Date.now() < deadline) {
+        const boxes = await deps.page.boundingBoxesOnScreen(selector).catch(() => []);
+        const box = boxes[0];
+        if (box) {
+            await deps.page.clickAt(box.x + box.width / 2, box.y + box.height / 2);
+            // The proven probe cadence (2026-11-10): the image editor's upload wiring is a lazy
+            // chunk — files dropped before it mounts render previews but never upload. Settle for
+            // the editor headline, then the probe's 1.5s.
+            await findSelector(
+                deps.page,
+                ['text=上传图片，或写文字生成图片'],
+                'image editor settle',
+                deps.stepTimeoutMs,
+            );
+            await new Promise((resolve) => setTimeout(resolve, IMAGE_MODE_SETTLE_MS));
+            return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+    }
+    throw new Error(
+        `mode entry: no on-screen '${label}' tab found within ${deps.stepTimeoutMs}ms — the mode was not entered`,
+    );
+}
+
+/**
+ * Wait until the console goes network-quiet (no context responses for CONSOLE_SETTLE_QUIET_MS) or
+ * CONSOLE_SETTLE_MS elapses — whichever first. Mirrors the proven probe cadence of sleeping out
+ * the SPA's post-load churn before interacting.
+ */
+async function settleConsole(deps: ModeRunDeps): Promise<void> {
+    let lastResponseAt = Date.now();
+    deps.page.onContextResponse?.(() => {
+        lastResponseAt = Date.now();
+    });
+    try {
+        const start = Date.now();
+        while (Date.now() - start < CONSOLE_SETTLE_MS) {
+            if (Date.now() - lastResponseAt >= CONSOLE_SETTLE_QUIET_MS) return;
+            await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+        }
+    } finally {
+        deps.page.offContextResponse?.(() => {
+            lastResponseAt = Date.now();
+        });
     }
 }
 
-async function composeImageText(input: { operation: '上传图文'; images: string[] }, deps: ModeRunDeps): Promise<void> {
-    await enterMode(deps, input.operation);
+async function composeImageText(
+    input: { operation: '上传图文'; images: string[] },
+    deps: ModeRunDeps,
+): Promise<number> {
+    await enterImageMode(deps, input.operation);
+    // VISIBLE, not merely attached: the 2026-11-10 console rewired its upload widget — several
+    // stale hidden inputs stay attached while only the active tab's input actually ingests
+    // files (measured: files on the first attached input never started an upload).
     const fileSelector = await findAttachedSelector(
         deps.page,
-        IMAGE_FILE_INPUT,
+        ['input[type="file"]'],
         'image file input',
         deps.stepTimeoutMs,
     );
     // One ordered call: the console keeps the batch in payload order, and that order is the post.
-    await deps.page.setInputFiles(fileSelector, input.images);
-    await confirmThumbnails(deps, input.images.length);
-    await applyNoteTitle(deps);
-    await typeNoteBody(deps, NOTE_BODY, 'note body');
+    const uploads = trackSpectrumUploads(deps.page);
+    try {
+        await deps.page.setInputFiles(fileSelector, input.images);
+        const confirmed = await confirmThumbnails(deps, input.images.length, uploads);
+        await applyNoteTitle(deps);
+        await typeNoteBody(deps, NOTE_BODY, 'note body');
+        return confirmed.completions;
+    } finally {
+        uploads.dispose();
+    }
 }
 
 async function composeVideo(input: { operation: '上传视频'; video: string }, deps: ModeRunDeps): Promise<void> {
@@ -522,6 +941,79 @@ async function composePodcast(
     await uploadPodcastCover(deps, input.cover);
     await podcastAdvanceReady(deps);
     await leavePodcastModal(deps);
+    // Task 0350 R4: fill the podcast editor's fields — title, derived ≤1000-unit body, 合集 chip.
+    await applyPodcastFields(deps);
+}
+
+/** The 合集 the episode joins: the content's declared collection, else the daily show's. */
+function podcastCollection(content: Content): string {
+    const declared = content.metadata?.collection;
+    return typeof declared === 'string' && declared.trim().length > 0 ? declared.trim() : PODCAST_COLLECTION_DEFAULT;
+}
+
+function clipLine(text: string, cap: number): string {
+    return text.length > cap ? `${text.slice(0, cap - 1)}…` : text;
+}
+
+/**
+ * The podcast editor's body is derived, never the raw article: the episode content carries the
+ * full multi-thousand-char markdown while the field caps at 1000 counter units — a raw
+ * pass-through overflows every save (the manual-repair failure mode task 0350 closes). Mechanical
+ * derivation: the intro line, one `· ` bullet per `## ` headline, and the closing line. Headlines
+ * drop first when the budget runs out; intro/closing are clipped; the final slice is the hard
+ * guarantee. The platform counter re-verifies after typing.
+ */
+export function derivePodcastBody(content: Content, max = XHS_NOTE_BODY_MAX): string {
+    const lines = (content.body ?? '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+    const prose = lines.filter((line) => !line.startsWith('#'));
+    const introSource = prose[0] ?? content.title ?? '';
+    const intro = clipLine(introSource, 80);
+    const closing = prose.length > 1 ? clipLine(prose[prose.length - 1] ?? '', 60) : '';
+    const budget = max - (closing.length > 0 ? closing.length + 1 : 0);
+    const parts: string[] = [intro];
+    let used = intro.length;
+    for (const line of lines.filter((line) => line.startsWith('## '))) {
+        const bullet = `· ${line.slice(3).trim()}`;
+        if (used + bullet.length + 1 > budget) break;
+        parts.push(bullet);
+        used += bullet.length + 1;
+    }
+    if (closing.length > 0) parts.push(closing);
+    return parts.join('\n').slice(0, max);
+}
+
+/**
+ * Fill the podcast editor's fields (task 0350 R4). The title input, the 0/1000 body counter and
+ * the 加入播客合集 chip were measured in the 2026-11-11 discovery but not selector-measured —
+ * the probe chains name what they try, and the platform counters plus verifyDraft fail loud when
+ * a field did not take.
+ */
+async function applyPodcastFields(deps: ModeRunDeps): Promise<void> {
+    const title = deps.content.title ?? '';
+    if (title.length > 0) {
+        const selector = await findSelector(
+            deps.page,
+            PODCAST_TITLE_SELECTORS,
+            'podcast title input',
+            deps.stepTimeoutMs,
+        );
+        await deps.page.locator(selector).first().fill(title);
+    }
+    await assertPlatformCounter(deps.page, TITLE_COUNTER_EXPR, XHS_NOTE_TITLE_MAX, 'title');
+    const body = derivePodcastBody(deps.content, XHS_NOTE_BODY_MAX);
+    await typeNoteBody(deps, NOTE_BODY, 'podcast body', body);
+    const collection = podcastCollection(deps.content);
+    const chip = await findSelector(
+        deps.page,
+        PODCAST_COLLECTION_SELECTORS,
+        '加入播客合集 control',
+        deps.stepTimeoutMs,
+    );
+    await deps.page.locator(chip).first().click({ timeout: deps.stepTimeoutMs });
+    await deps.page.locator(`text=${collection}`).first().click({ timeout: deps.stepTimeoutMs });
 }
 
 async function uploadPodcastCover(deps: ModeRunDeps, cover: string): Promise<void> {
@@ -627,20 +1119,19 @@ async function podcastAdvanceReady(deps: ModeRunDeps): Promise<void> {
 }
 
 /** Compose the requested mode's post. Exhaustive over {@link ModeInput}. */
-async function compose(input: ModeInput, deps: ModeRunDeps): Promise<void> {
+async function compose(input: ModeInput, deps: ModeRunDeps): Promise<{ wireCompletions?: number }> {
     switch (input.operation) {
         case '上传图文':
-            await composeImageText(input, deps);
-            return;
+            return { wireCompletions: await composeImageText(input, deps) };
         case '上传视频':
             await composeVideo(input, deps);
-            return;
+            return {};
         case '写长文':
             await composeArticle(deps);
-            return;
+            return {};
         case '发播客':
             await composePodcast(input, deps);
-            return;
+            return {};
     }
 }
 
@@ -664,19 +1155,43 @@ async function saveDraft(input: ModeInput, deps: ModeRunDeps): Promise<Result> {
     let clicked: ActionClick | null = null;
     let signal: string | null = null;
     let attempts = 0;
+    let capture: OutcomeCapture | null = null;
+    await armOutcomeCapture(deps.page);
     while (signal === null && attempts < deps.submitAttempts) {
         attempts += 1;
         await sleep(deps.submitSettleMs);
-        const control = await clickActionControl(input.operation, deps, DRAFT_LABELS, 'draft control');
+        // Host-method save first: the closed-shadow bar swallows synthetic coordinate clicks.
+        const method = await invokeHostSave(deps.page);
+        const control: Awaited<ReturnType<typeof clickActionControl>> =
+            method !== null
+                ? { ok: true, path: 'shadow', label: `_onSave:${method}`, click: 'shadow-host-method' }
+                : await clickActionControl(input.operation, deps, DRAFT_LABELS, 'draft control');
         if (!control.ok) return fail(control.error);
         clicked = control;
-        const outcome = await expectOutcome(() => draftSignalEvidence(deps.page, deps.draftBaseline), {
-            timeoutMs: deps.submitSettleMs,
-            label: `draft confirmation '${control.label}'`,
-            pollMs: POLL_MS,
-        });
+        // The capture is refreshed inside the probe (expectOutcome swallows probe throws by
+        // design — the refusal is classified OUTSIDE, so it propagates as a typed error).
+        const outcome = await expectOutcome(
+            async () => {
+                if (capture === null) capture = await readOutcomeCapture(deps.page);
+                return draftSignalEvidence(deps.page, deps.draftBaseline);
+            },
+            {
+                timeoutMs: deps.submitSettleMs,
+                label: `draft confirmation '${control.label}'`,
+                pollMs: POLL_MS,
+            },
+        );
         if (outcome.ok) signal = outcome.evidence;
+        else {
+            // A captured refusal must not be retried: refresh and re-check before another click.
+            capture = capture ?? (await readOutcomeCapture(deps.page));
+            assertCapturedOutcome(capture);
+        }
     }
+    if (capture === null) capture = await readOutcomeCapture(deps.page);
+    // The captured server response outranks every UI signal — a toast can lie while the API
+    // refused (2026-11-09/10 runs) — so it is classified before any success is reported.
+    assertCapturedOutcome(capture);
     const draftCountAfter = await readDraftCount(deps.page);
     if (signal === null || clicked === null) {
         return fail(
@@ -696,6 +1211,7 @@ async function saveDraft(input: ModeInput, deps: ModeRunDeps): Promise<Result> {
             draftSignal: signal,
             draftCountBefore: deps.draftBaseline.count,
             draftCountAfter,
+            ...captureMetadata(capture),
         },
     });
 }
@@ -708,17 +1224,26 @@ async function saveDraft(input: ModeInput, deps: ModeRunDeps): Promise<Result> {
  */
 async function publishNote(input: ModeInput, deps: ModeRunDeps): Promise<Result> {
     await sleep(deps.submitSettleMs);
+    let capture: OutcomeCapture | null = null;
+    await armOutcomeCapture(deps.page);
     const submitted = await clickActionControl(input.operation, deps, PUBLISH_LABELS, 'publish control');
     if (!submitted.ok) return fail(submitted.error);
 
     const urlBeforeSubmit = deps.page.url();
     const confirmed = await waitUntil(async () => {
+        // The captured refusal aborts immediately — waitUntil propagates the typed throw, and a
+        // publish click is never retried (unlike the draft loop there is no next attempt).
+        if (capture === null) capture = await readOutcomeCapture(deps.page);
+        assertCapturedOutcome(capture);
         // The console rewrites its URL to `…published=true` once the post is accepted; the toast is
         // the fallback, read scoped (never from the document at large).
         if (deps.page.url().includes(PUBLISHED_MARKER)) return true;
         return (await readScopedSignal(asPlaywrightPage(deps.page), PUBLISH_CONFIRM)) !== null;
     }, deps.stepTimeoutMs);
     if (!confirmed) {
+        // A refusal that lands late still outranks the "state unknown" timeout message.
+        capture = capture ?? (await readOutcomeCapture(deps.page));
+        assertCapturedOutcome(capture);
         return fail(
             `publish submission: state unknown — the '${submitted.label}' click (${submitted.click}) was sent from ${urlBeforeSubmit} but no success state was observed (now ${deps.page.url()}). Check the ${TARGET} creator note manager before retrying: a retry could duplicate the post.`,
         );
@@ -735,15 +1260,218 @@ async function publishNote(input: ModeInput, deps: ModeRunDeps): Promise<Result>
             publishPath: submitted.path,
             publishClick: submitted.click,
             publishSignal: url.includes(PUBLISHED_MARKER) ? `url:${PUBLISHED_MARKER}` : 'toast',
+            ...captureMetadata(capture),
         },
     });
 }
 
+/** What the reopened draft must show for the save to count as server-side complete (R3). */
+interface DraftExpectation {
+    slots: number | null;
+    title: boolean;
+    body: boolean;
+    collection: string | null;
+}
+
+function draftExpectation(input: ModeInput, deps: ModeRunDeps): DraftExpectation {
+    switch (input.operation) {
+        case '上传图文':
+            return {
+                slots: input.images.length,
+                title: true,
+                body: (deps.content.body ?? '').trim().length > 0,
+                collection: null,
+            };
+        case '上传视频':
+            return { slots: null, title: true, body: (deps.content.body ?? '').trim().length > 0, collection: null };
+        case '写长文':
+            return { slots: null, title: false, body: true, collection: null };
+        case '发播客':
+            return { slots: null, title: true, body: true, collection: podcastCollection(deps.content) };
+    }
+}
+
+const DRAFT_NAV_SELECTOR = 'text=草稿箱';
+const DRAFT_EDIT_SELECTOR = 'text=编辑';
+const VERIFY_SLOTS_EXPR = `/* kk-verify-slots */ (() => JSON.stringify({ count: document.querySelectorAll('img.preivew-image').length }))()`;
+const VERIFY_SRCS_EXPR = `/* kk-verify-srcs */ (() => JSON.stringify(Array.from(document.querySelectorAll('img.preivew-image')).map((img) => img.getAttribute('src') || '')))()`;
+const VERIFY_TITLE_EXPR = `/* kk-verify-title */ (() => {
+    const input = document.querySelector('input.d-text') || document.querySelector('textarea[placeholder*="标题"]');
+    return input ? (input.value || '') : '';
+})()`;
+export const VERIFY_BODY_EXPR = `/* kk-verify-body */ (() => {
+    for (const node of document.querySelectorAll('div.edit-container *')) {
+        const t = (node.textContent || '').trim();
+        if (/^\\d+\\/\\d+$/.test(t) && node.children.length === 0) return JSON.stringify({ counter: t });
+    }
+    const editor = document.querySelector('div.tiptap, .ProseMirror, .ql-editor');
+    return JSON.stringify({ textLen: (editor?.textContent || '').trim().length });
+})()`;
+
+/** Reopen probe for 合集 membership. The name is a JSON string literal so a quote cannot escape the page script. */
+export function collectionProbeExpr(collection: string): string {
+    const literal = JSON.stringify(collection);
+    return `/* kk-verify-collection */ (() => (document.body.innerText.includes(${literal}) ? 'kk-verify-collection:yes' : 'kk-verify-collection:no'))()`;
+}
+
+/**
+ * Task 0350 R3 — verifyDraft: the save click proves nothing about the SERVER-side copy (the
+ * 2026-11-09/10 incidents: drafts whose images were blob-only, fields never persisted). The flow
+ * reopens the saved draft (草稿箱 → the list's 编辑) and asserts what must have persisted: the
+ * exact slot count with every src durable https, the title/body/合集 fields. A violated assertion
+ * is a typed failure — the draft stays in the box for a manual pass, but the run reports failure.
+ *
+ * Evidence note (2026-11-11 discovery): the 草稿箱 counter is measured; the draft LIST and its
+ * 编辑 control are not selector-measured — these probes say so by naming what they try.
+ */
+async function verifyDraft(
+    input: ModeInput,
+    deps: ModeRunDeps,
+    wired?: { wireCompletions?: number },
+): Promise<Record<string, unknown>> {
+    const expectation = draftExpectation(input, deps);
+    const nav = deps.page.locator(DRAFT_NAV_SELECTOR);
+    // The save click leaves a success modal / in-flight navigation; the sidebar nav re-appears
+    // once both settle (2026-11-10 incident: an instant count raced the modal and failed a save
+    // the captured server response had already confirmed). Poll for it inside the step window.
+    const navAppeared = await waitUntil(
+        async () => (await nav.count().catch(() => 0)) > 0,
+        deps.stepTimeoutMs,
+        POLL_MS,
+    );
+    if (!navAppeared) {
+        throw new DraftVerifyError(
+            `DraftVerifyError: could not reopen the saved draft — '${DRAFT_NAV_SELECTOR}' matched nothing within ${deps.stepTimeoutMs}ms after the save; verify the draft box manually in profile ${deps.profileDir}`,
+        );
+    }
+    // Locator clicks hang on this console wherever an overlay intercepts pointer events (the tab
+    // bar clones measured 2026-11-10; the same overlay class intercepted the 草稿箱 nav on the
+    // 2026-11-11 daily run — locator resolved, click never dispatched). Aim raw coordinates at
+    // the first on-screen match, with the locator click as the fallback for other drivers.
+    const navBox = (await deps.page.boundingBoxesOnScreen?.(DRAFT_NAV_SELECTOR).catch(() => []))?.[0];
+    if (navBox && deps.page.clickAt) {
+        await deps.page.clickAt(navBox.x + navBox.width / 2, navBox.y + navBox.height / 2);
+    } else {
+        await nav.first().click({ timeout: deps.stepTimeoutMs });
+    }
+    const edit = deps.page.locator(DRAFT_EDIT_SELECTOR);
+    if ((await edit.count().catch(() => 0)) === 0) {
+        throw new DraftVerifyError(
+            `DraftVerifyError: the draft list shows no '${DRAFT_EDIT_SELECTOR}' control to reopen the saved note (2026-11-11 evidence: 编辑 1/18 on the draft list)`,
+        );
+    }
+    const editBox = (await deps.page.boundingBoxesOnScreen?.(DRAFT_EDIT_SELECTOR).catch(() => []))?.[0];
+    if (editBox && deps.page.clickAt) {
+        await deps.page.clickAt(editBox.x + editBox.width / 2, editBox.y + editBox.height / 2);
+    } else {
+        await edit.first().click({ timeout: deps.stepTimeoutMs });
+    }
+    // The reopened editor mounts asynchronously (TipTap hydrates after the route lands); reading
+    // it instantly returned 0 slots / empty title on the 2026-11-11 daily run. Poll until the
+    // editor answers with any content before judging the persisted state.
+    const editorReady = await waitUntil(
+        async () => {
+            const slotsRead = await deps.page.evaluate(VERIFY_SLOTS_EXPR).catch(() => null);
+            const titleRead = await deps.page.evaluate(VERIFY_TITLE_EXPR).catch(() => null);
+            const bodyRead = await deps.page.evaluate(VERIFY_BODY_EXPR).catch(() => null);
+            const count = typeof slotsRead === 'string' ? (JSON.parse(slotsRead) as { count?: number }).count : 0;
+            const title = typeof titleRead === 'string' ? titleRead : '';
+            const body =
+                typeof bodyRead === 'string' ? (JSON.parse(bodyRead) as { counter?: string; textLen?: number }) : {};
+            const slotsVisible = expectation.slots !== null && (count ?? 0) > 0;
+            const titleVisible = expectation.title && title.length > 0;
+            const bodyVisible = expectation.body && (body.counter !== undefined || (body.textLen ?? 0) > 0);
+            return Boolean(slotsVisible || titleVisible || bodyVisible);
+        },
+        deps.stepTimeoutMs,
+        POLL_MS,
+    );
+    const problems: string[] = [];
+    if (!editorReady) {
+        problems.push('the reopened editor never rendered content within the step window (0 thumbnails, empty title)');
+    }
+    if (expectation.slots !== null) {
+        const slotsRead = await deps.page.evaluate(VERIFY_SLOTS_EXPR);
+        const count = typeof slotsRead === 'string' ? (JSON.parse(slotsRead) as { count?: number }).count : null;
+        if (count !== expectation.slots) {
+            problems.push(
+                `expected ${expectation.slots} thumbnails on the reopened draft, the editor shows ${String(count)}`,
+            );
+        } else {
+            const srcsRead = await deps.page.evaluate(VERIFY_SRCS_EXPR);
+            const srcs = typeof srcsRead === 'string' ? (JSON.parse(srcsRead) as string[]) : [];
+            const local = srcs
+                .map((src, index) => (src.startsWith('https://') ? null : index + 1))
+                .filter((slot) => slot !== null);
+            // On the REOPENED editor the console re-hosts its own CDN images as blob: object URLs
+            // (measured 2026-11-11: 7 slots all blob: after the wire had completed every upload),
+            // so the src scheme is not a persistence signal here. When the wire completed every
+            // upload before the save, the slot count is the persistence evidence; without wire
+            // completions a local src still means the server-side copy may be missing.
+            const wireDone =
+                expectation.slots !== null &&
+                (wired?.wireCompletions ?? 0) >= expectation.slots &&
+                count === expectation.slots;
+            if (local.length > 0 && !wireDone) {
+                problems.push(
+                    `slots ${local.join(', ')} still carry a non-https (blob/data/local) src — the server-side copy is missing`,
+                );
+            }
+        }
+    }
+    if (expectation.title) {
+        const editorTitle = String((await deps.page.evaluate(VERIFY_TITLE_EXPR)) ?? '');
+        if (editorTitle !== (deps.content.title ?? '')) {
+            problems.push(`title mismatch: content '${deps.content.title ?? ''}' vs reopened draft '${editorTitle}'`);
+        }
+    }
+    if (expectation.body) {
+        const bodyRead = await deps.page.evaluate(VERIFY_BODY_EXPR);
+        const parsed =
+            typeof bodyRead === 'string' ? (JSON.parse(bodyRead) as { counter?: string; textLen?: number }) : {};
+        const units = parsed.counter !== undefined ? counterUnits(parsed.counter) : null;
+        if (!((units ?? 0) > 0) && !((parsed.textLen ?? 0) > 0)) {
+            problems.push('body: the reopened draft shows neither a readable N/M counter nor editor text');
+        }
+    }
+    if (expectation.collection !== null) {
+        const verdict = await deps.page.evaluate(collectionProbeExpr(expectation.collection));
+        if (verdict !== 'kk-verify-collection:yes') {
+            problems.push(`collection: the reopened podcast draft does not show '${expectation.collection}'`);
+        }
+    }
+    // Leave the reopened editor WITHOUT saving: a 暂存离开 here would re-save and move the draft
+    // counter the next run baselines against. Navigating away is the exit that touches nothing.
+    await deps.page.goto(PUBLISH_URL);
+    if (problems.length > 0) {
+        throw new DraftVerifyError(
+            `DraftVerifyError: the saved draft does not verify after reopen — ${problems.join('; ')}`,
+        );
+    }
+    return {
+        ...(expectation.slots !== null ? { slots: expectation.slots } : {}),
+        ...(expectation.title ? { titleChecked: true } : {}),
+        ...(expectation.body ? { bodyChecked: true } : {}),
+        ...(expectation.collection !== null ? { collection: expectation.collection } : {}),
+    };
+}
+
 /**
  * Run one validated operation end to end: compose the post, then take it to a draft or (only on an
- * explicit live request) publish it.
+ * explicit live request) publish it. A draft only counts when the REOPENED copy verifies
+ * (task 0350 R3) — a save that cannot survive its own reopen fails the run.
  */
 export async function runMode(input: ModeInput, deps: ModeRunDeps): Promise<Result> {
-    await compose(input, deps);
-    return deps.publishStatus === 'public' ? publishNote(input, deps) : saveDraft(input, deps);
+    const wired = await compose(input, deps);
+    if (deps.publishStatus === 'public') return publishNote(input, deps);
+    const saved = await saveDraft(input, deps);
+    if (!saved.ok) return saved;
+    let verified: Record<string, unknown>;
+    try {
+        verified = await verifyDraft(input, deps, wired);
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return fail(`draft saved but the reopen verification failed: ${reason}`);
+    }
+    return ResultSchema.parse({ ...saved, metadata: { ...saved.metadata, draftVerified: verified } });
 }

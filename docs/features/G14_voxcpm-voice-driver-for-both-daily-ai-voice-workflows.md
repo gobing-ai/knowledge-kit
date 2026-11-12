@@ -101,9 +101,9 @@ Feature: VoxCPM voice driver for both daily AI voice workflows
 | WBS | Task | Status |
 | --- | ---- | ------ |
 | 0256 | Add standalone VoxCPM generator using the shared voice pipeline | done |
-| 0257 | Wire VoxCPM into both daily workflows with driver-aware audio reuse | done |
-| 0258 | Compare VoxCPM and Gemini daily audio with recorded quality evidence | done |
 | 0263 | Register the G14 documents in the API/library claim registry and write their claim blocks | done |
+| 0258 | Compare VoxCPM and Gemini daily audio with recorded quality evidence | done |
+| 0257 | Wire VoxCPM into both daily workflows with driver-aware audio reuse | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes

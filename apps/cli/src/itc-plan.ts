@@ -4,6 +4,7 @@ import type { PluginRecord } from '@gobing-ai/kk-core';
 import { parseProfile } from '@gobing-ai/kk-store';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { z } from 'zod';
+import { resolvePackageRoot } from './package-root';
 
 /** Origin of the resolved publication targets (task 0300). */
 export const ItcTargetsOriginSchema = z.enum([
@@ -140,24 +141,21 @@ export interface ItcPublishPlan {
     fanout: Array<{ variant: string; targets: string[] }>;
     browser: Array<{ target: string; variant: string }>;
     targets?: ItcPlanTargetDetail[];
+    /** Non-fatal planning notes: targets skipped for an unmet requirement (e.g. missing cover). */
+    warnings?: string[];
 }
 
 const SLUG_REGEX = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 /**
- * The package/checkout root that ships the ITC assets, found by walking up from the cwd for
- * `plugins/kk/publish-presets`. Never derived from the module location: Bun inlines `__dirname`
- * as an absolute source path in the bundle, which would make the packed CLI reference the checkout
- * it was built in (0255 AC7).
+ * The package/checkout root that ships the ITC assets, via the shared resolver: the cwd tree first
+ * (a checkout keeps shadowing the installed package), then the runtime script's directory so a run
+ * from a foreign work dir still finds the installed package's shipped presets. Never derived from
+ * `import.meta.dir`/`__dirname`: Bun inlines those as absolute source paths in the bundle, which
+ * would make the packed CLI reference the checkout it was built in (0255 AC7).
  */
 async function resolveDefaultPackageRoot(fs: FileSystem): Promise<string> {
-    let dir = resolve(process.cwd());
-    for (;;) {
-        if (await fs.exists(join(dir, 'plugins/kk/publish-presets'))) return dir;
-        const parent = resolve(dir, '..');
-        if (parent === dir) return process.cwd();
-        dir = parent;
-    }
+    return resolvePackageRoot(fs);
 }
 
 /** Parse comma-separated target tokens: `medium-pub,qiita-pub:article` */
@@ -464,6 +462,7 @@ export async function buildItcPublishPlan(
     const fanoutMap = new Map<string, string[]>();
     const browser: Array<{ target: string; variant: string }> = [];
     const targetDetails: ItcPlanTargetDetail[] = [];
+    const warnings: string[] = [];
 
     for (const targetReq of uniqueTargets) {
         const plugin = pluginsByName.get(targetReq.plugin);
@@ -486,9 +485,11 @@ export async function buildItcPublishPlan(
         }
 
         if (profile.requires?.cover && !hasCover) {
-            throw new Error(
-                `target ${targetReq.plugin} needs a cover image at 4-illustrations/cover.* in ${request.workDir}`,
+            // One unmet requirement skips only this target; the rest of the plan still materializes.
+            warnings.push(
+                `skipped ${targetReq.plugin}: needs a cover image at 4-illustrations/cover.* in ${request.workDir}`,
             );
+            continue;
         }
 
         if (profile.requires?.orderedImages && !(await hasOrderedImages(fs, request.workDir))) {
@@ -550,6 +551,7 @@ export async function buildItcPublishPlan(
         ...(request.origin !== undefined ? { origin: request.origin } : {}),
         ...(request.presetName !== undefined ? { presetName: request.presetName } : {}),
         ...(request.presetDigest !== undefined ? { presetDigest: request.presetDigest } : {}),
+        ...(warnings.length > 0 ? { warnings } : {}),
         live: request.live,
         sourceLocale: request.sourceLocale,
         variants,

@@ -16,6 +16,13 @@ import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils
 import { runInvoke } from '../../../../apps/cli/src/invoke';
 import { type AutomationGuard, CAP_WINDOW_MS, createAutomationGuard } from '../src/automation-guard';
 import {
+    BODY_COUNTER_EXPR,
+    CAPTURE_INJECT_EXPR,
+    collectionProbeExpr,
+    derivePodcastBody,
+    VERIFY_BODY_EXPR,
+} from '../src/flow';
+import {
     CREATOR_TAB_COUNT,
     clickCreatorTab,
     createShadowProbe,
@@ -117,7 +124,35 @@ interface FakeState {
     /** The cover card's click never opens the native file chooser (the measured failure case). */
     podcastCoverChooserSilent: boolean;
     podcastAudioAttached: boolean;
+    /** Set once the image tab's centre click lands (the active tab's file input turns visible). */
+    imageModeEntered?: boolean;
+    /** When true a dropped batch never reaches the wire (the console never uploaded). */
+    uploadNeverStarts?: boolean;
     podcastCoverAttached: boolean;
+    /** When true some uploaded thumbnails still carry a local (blob) src — the upload is unfinished. */
+    thumbLocalSrcs: boolean;
+    /** When set, the visible `xhs-publish-btn` host exposes this save method (the closed-shadow bar). */
+    hostSaveMethod: string | null;
+    /** The last title filled into the editor (the counter/verify reads report it back). */
+    editorTitle: string | null;
+    /** Units the editor's body counter reports after the last typed body (2 half-width chars = 1). */
+    editorBodyUnits: number | null;
+    /** A scripted server response the capture layer reports (risk-control / biz-error scripting). */
+    serverCapture: { source: string; text: string } | null;
+    /** Scripted platform-counter reads; null derives from the editor state. */
+    counterTitleOverride: string | null;
+    counterBodyOverride: string | null;
+    /** verifyDraft scripting: the reopened draft disagrees with the composed content. */
+    verifyTitleMismatch: boolean;
+    verifySlotCount: number | null;
+    verifyLocalSrcs: boolean;
+    verifyBodyEmpty: boolean;
+    verifyCollectionMissing: boolean;
+    /** verifyDraft scripting: the draft box / its 编辑 control is unreachable. */
+    draftNavMissing: boolean;
+    draftEditMissing: boolean;
+    /** verifyDraft scripting: the reopened editor never renders any content (TipTap never hydrates). */
+    verifyEditorBlank: boolean;
 }
 
 /** Labels XHS uses for the draft control, inside the closed shadow publish bar. */
@@ -148,6 +183,7 @@ function makeFakePage(initial: FakeState) {
     let savedStamp = state.draftSavedStamp ? saveTimestamp() : null;
     const calls: Array<{ op: string; args: unknown[] }> = [];
     let lastShadowLabel: string | null = null;
+    let contextResponseHandler: ((payload: { status(): number; url(): string }) => void) | null = null;
     let bodyTyped = false;
     // The counter lives on the landing view; the editor replaces the header.
     const counterAttached = () =>
@@ -182,7 +218,9 @@ function makeFakePage(initial: FakeState) {
         if (isLegacyThumb(selector)) return false;
         if (isEditor(selector)) return state.inEditor || state.articleOpen;
         if (isStamp(selector)) return selector === `text=${savedStamp}`;
-        if (isDraftBox(selector)) return counterAttached();
+        if (isDraftBox(selector))
+            return state.loggedIn && !state.draftNavMissing && (counterAttached() || savedStamp !== null);
+        if (selector === 'text=编辑') return state.loggedIn && !state.draftEditMissing;
         if (isTextProbe(selector)) return toastFound(selector);
         if (isModal(selector)) return state.podcastModal;
         // `去发布` enables only once both cards register; the disabled-state probe matches nothing
@@ -190,8 +228,13 @@ function makeFakePage(initial: FakeState) {
         if (isDisabledProbe(selector)) return false;
         return true;
     };
-    /** The upload inputs sit behind styled drop zones: attached but never "visible". */
-    const isVisible = (selector: string): boolean => attached(selector) && !isFileInput(selector);
+    /** The upload inputs sit behind styled drop zones: attached but never "visible" — except the
+     * ACTIVE tab's input once its mode is entered (2026-11-10 console rewires the upload widget). */
+    const isVisible = (selector: string): boolean => {
+        if (!attached(selector)) return false;
+        if (isFileInput(selector)) return state.imageModeEntered === true;
+        return true;
+    };
     /** The editor only holds something to persist once content registered in it. */
     const savableContent = () =>
         bodyTyped || state.articlePasted || (state.podcastAudioAttached && state.podcastCoverAttached);
@@ -232,6 +275,9 @@ function makeFakePage(initial: FakeState) {
                             : null,
                     fill: async (text) => {
                         calls.push({ op: 'fill', args: [selector, text] });
+                        // The title input's value is what the counter/verify reads report back
+                        // (`input.d-text` is the podcast editor's title probe hit).
+                        if (selector.includes('标题') || selector === 'input.d-text') state.editorTitle = text;
                     },
                     click: async () => {
                         calls.push({ op: 'click', args: [selector] });
@@ -245,8 +291,12 @@ function makeFakePage(initial: FakeState) {
                     },
                     type: async (text) => {
                         calls.push({ op: 'type', args: [selector, text] });
-                        // TipTap only registers typed content in this model.
-                        if (selector.includes('tiptap')) bodyTyped = true;
+                        // TipTap only registers typed content in this model; the units echo is
+                        // what the platform-counter probe reports back.
+                        if (selector.includes('tiptap')) {
+                            bodyTyped = true;
+                            state.editorBodyUnits = Math.max(1, Math.ceil(text.length / 2));
+                        }
                     },
                     textContent: async () => (isDraftBox(selector) ? draftBoxText() : ''),
                 }),
@@ -262,6 +312,23 @@ function makeFakePage(initial: FakeState) {
             state.inEditor = true;
             if (state.podcastModal && isPodcastAudioInput(selector)) state.podcastAudioAttached = true;
             if (state.podcastModal && isPodcastCoverInput(selector)) state.podcastCoverAttached = true;
+            // uploads land on the wire unless a test scripts a missed drop (uploadNeverStarts).
+            if (state.uploadNeverStarts !== true && contextResponseHandler) {
+                for (let i = 0; i < files.length; i += 1) {
+                    contextResponseHandler({
+                        status: () => 200,
+                        url: () => `https://ros-upload.xiaohongshu.com/spectrum/${i}`,
+                    });
+                }
+            }
+        },
+        onContextResponse: (handler) => {
+            calls.push({ op: 'onContextResponse', args: [] });
+            contextResponseHandler = handler;
+        },
+        offContextResponse: () => {
+            calls.push({ op: 'offContextResponse', args: [] });
+            contextResponseHandler = null;
         },
         waitForEvent: async (event, opts) => {
             calls.push({ op: 'waitForEvent', args: [event, opts?.timeout ?? null] });
@@ -284,6 +351,55 @@ function makeFakePage(initial: FakeState) {
         },
         evaluate: async (expression) => {
             calls.push({ op: 'evaluate', args: [] });
+            // Task 0350: the flow's own read-back probes, dispatched by their sentinel markers.
+            if (expression.includes('kk-capture-inject')) return 'kk-capture-armed';
+            if (expression.includes('kk-capture-read')) {
+                return state.serverCapture === null ? 'kk-capture-none' : JSON.stringify(state.serverCapture);
+            }
+            if (expression.includes('kk-counter-title')) {
+                if (state.counterTitleOverride !== null) return state.counterTitleOverride;
+                return state.editorTitle === null ? 'kk-counter-none' : `${Math.ceil(state.editorTitle.length / 2)}/20`;
+            }
+            if (expression.includes('kk-counter-body')) {
+                if (state.counterBodyOverride !== null) return state.counterBodyOverride;
+                return state.editorBodyUnits === null ? 'kk-counter-none' : `${state.editorBodyUnits}/1000`;
+            }
+            if (expression.includes('kk-verify-slots')) {
+                return JSON.stringify({
+                    count: state.verifyEditorBlank ? 0 : (state.verifySlotCount ?? state.thumbCount ?? 0),
+                });
+            }
+            if (expression.includes('kk-verify-srcs')) {
+                return JSON.stringify(
+                    state.thumbLocalSrcs || state.verifyLocalSrcs
+                        ? ['blob:local']
+                        : Array.from({ length: state.thumbCount ?? 0 }, () => 'https://sns-img.qhupdate.com/x'),
+                );
+            }
+            if (expression.includes('kk-verify-title')) {
+                if (state.verifyEditorBlank) return '';
+                return state.verifyTitleMismatch ? '别的标题' : (state.editorTitle ?? '');
+            }
+            if (expression.includes('kk-verify-body')) {
+                if (state.verifyEditorBlank) return JSON.stringify({ textLen: 0 });
+                if (state.verifyBodyEmpty) return JSON.stringify({ textLen: 0 });
+                return state.editorBodyUnits !== null
+                    ? JSON.stringify({ counter: `${state.editorBodyUnits}/1000` })
+                    : JSON.stringify({ textLen: state.articlePasted ? 4 : 0 });
+            }
+            if (expression.includes('kk-verify-collection')) {
+                return state.verifyCollectionMissing ? 'kk-verify-collection:no' : 'kk-verify-collection:yes';
+            }
+            if (expression.includes('kk-count-local-srcs')) return state.thumbLocalSrcs ? 1 : 0;
+            if (expression.includes('kk-thumb-')) {
+                const expected = Number(/imgs\.length < (\d+)/.exec(expression)?.[1] ?? 0);
+                const countOk = (state.thumbCount ?? 0) >= expected;
+                return countOk && !state.thumbLocalSrcs ? 'kk-thumb-all-durable' : 'kk-thumb-pending';
+            }
+            if (expression.includes('kk-host-save')) {
+                if (state.hostSaveMethod !== null) applySaveClick('暂存离开');
+                return state.hostSaveMethod === null ? 'kk-host-save-none' : `kk-host-save:${state.hostSaveMethod}`;
+            }
             if (expression.includes('ClipboardEvent')) {
                 state.articlePasted = true;
                 return true;
@@ -320,6 +436,14 @@ function makeFakePage(initial: FakeState) {
             calls.push({ op: 'clickAt', args: [x, y] });
             if (lastShadowLabel === null) return;
             applySaveClick(lastShadowLabel);
+        },
+        boundingBoxesOnScreen: async (selector: string) => {
+            calls.push({ op: 'boundingBoxesOnScreen', args: [selector] });
+            if (state.loggedIn && attached(selector)) {
+                if (selector === 'text=上传图文') state.imageModeEntered = true;
+                return [{ x: 100, y: 200, width: 80, height: 30 }];
+            }
+            return [];
         },
     };
     return { page, calls };
@@ -388,6 +512,21 @@ const happy: FakeState = {
     podcastCoverChooserSilent: false,
     podcastAudioAttached: false,
     podcastCoverAttached: false,
+    thumbLocalSrcs: false,
+    hostSaveMethod: null,
+    editorTitle: null,
+    editorBodyUnits: null,
+    serverCapture: null,
+    counterTitleOverride: null,
+    counterBodyOverride: null,
+    verifyTitleMismatch: false,
+    verifySlotCount: null,
+    verifyLocalSrcs: false,
+    verifyBodyEmpty: false,
+    verifyCollectionMissing: false,
+    verifyEditorBlank: false,
+    draftNavMissing: false,
+    draftEditMissing: false,
 };
 
 describe('xhs-pub validation (no browser opens)', () => {
@@ -471,6 +610,63 @@ describe('xhs-pub script flow (fake page)', () => {
         expect(closed).toHaveLength(1);
     });
 
+    test('regression 2026-11-10: a draft save never runs while a thumbnail still carries a blob src', async () => {
+        await seedImages();
+        // The original failure: previews render locally (blob) and the wire stays silent — the
+        // console never uploaded, so the durability gate fails before any save.
+        const state = { ...happy, thumbLocalSrcs: true, uploadNeverStarts: true };
+        const { open, calls } = makeOpenPage(state);
+        const t = makeTransport('script', {
+            openPage: open,
+            stepTimeoutMs: 200,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+        });
+        const result = await t.publish({ content: cardContent() });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('durable previews');
+        expect(result.error).toContain('local (blob/data) src');
+        // No draft click may fire before every image has a durable server-side src.
+        expect(state.draftClicked).toBe(false);
+        expect(calls.some((pageCalls) => pageCalls.some((entry) => entry.op === 'findShadowControl'))).toBe(false);
+    });
+
+    test('regression 2026-11-10: the console settles before the tab click and the drop stays single', async () => {
+        await seedImages();
+        const { open, calls } = makeOpenPage({ ...happy });
+        const t = makeTransport('script', {
+            openPage: open,
+            stepTimeoutMs: 400,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+        });
+        const result = await t.publish({ content: cardContent() });
+        expect(result.ok).toBe(true);
+        const ops = (calls[0] ?? []).map((entry) => entry.op);
+        // The uploader mounts while the SPA idles: the settle subscribe precedes mode entry.
+        expect(ops.indexOf('onContextResponse')).toBeGreaterThan(-1);
+        expect(ops.indexOf('onContextResponse')).toBeLessThan(ops.indexOf('boundingBoxesOnScreen'));
+        // One drop only — a re-drop duplicates the previews on the live console (14 previews).
+        const drops = (calls[0] ?? []).filter((entry) => entry.op === 'setInputFiles');
+        expect(drops).toHaveLength(1);
+    });
+
+    test("the bar's _onSave host method is the draft trigger; the click fallback stays intact without it", async () => {
+        await seedImages();
+        const { open } = makeOpenPage({ ...happy, hostSaveMethod: '_onSave' });
+        const t = makeTransport('script', {
+            openPage: open,
+            stepTimeoutMs: 500,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+        });
+        const result = await t.publish({ content: cardContent() });
+        expect(result.ok).toBe(true);
+        expect(result.metadata?.draftControl).toBe('_onSave:_onSave');
+        expect(result.metadata?.draftPath).toBe('shadow');
+        expect(result.metadata?.draftClick).toBe('shadow-host-method');
+    });
+
     test('live console contract: in-viewport tab click, hidden input upload, TipTap body, shadow draft', async () => {
         await seedImages();
         const state = { ...happy };
@@ -486,20 +682,21 @@ describe('xhs-pub script flow (fake page)', () => {
         const log = calls[0] ?? [];
         const ops = log.map((entry) => entry.op);
         expect(ops[0]).toBe('goto');
-        // R1: the console opens on the video tab, so the image tab is entered before any upload.
-        expect(ops.indexOf('clickInViewport')).toBeGreaterThan(ops.indexOf('goto'));
-        expect(ops.indexOf('clickInViewport')).toBeLessThan(ops.indexOf('setInputFiles'));
+        // R1: the console opens on the video tab, so the image tab is entered before any upload —
+        // via a raw coordinate click at the live tab's centre (locator clicks land on clones).
+        expect(ops.indexOf('boundingBoxesOnScreen')).toBeGreaterThan(ops.indexOf('goto'));
+        expect(ops.indexOf('boundingBoxesOnScreen')).toBeLessThan(ops.indexOf('setInputFiles'));
+        expect(ops).toContain('clickAt');
         // R2: the note body is the TipTap editor (Quill was replaced in 2026-09), and it must be
         // TYPED — a synthetic value set leaves nothing for the save to persist.
         const typed = log.filter((entry) => entry.op === 'type').map((entry) => String(entry.args[0]));
         expect(typed).toContain('div.tiptap[contenteditable="true"]');
         const filled = log.filter((entry) => entry.op === 'fill').map((entry) => String(entry.args[0]));
         expect(filled).not.toContain('div.tiptap[contenteditable="true"]');
-        // R3: previews are counted through XHS's own `preivew` class, and the image input is
-        // the .jpg one (the video input has no accept list match).
+        // R3: previews are counted through XHS's own `preivew` class, and the upload goes through
+        // the visible `input[type="file"]` (the accept-scoped probes matched hidden clones).
         const selectors = log.filter((entry) => entry.op === 'locator').map((entry) => String(entry.args[0]));
         expect(selectors).toContain('img.preivew-image');
-        expect(selectors).toContain('input[type="file"][accept*=".jpg"]');
         // R4: the submit control is resolved by label inside the closed shadow bar.
         const shadow = log.find((entry) => entry.op === 'findShadowControl');
         expect(shadow?.args[0]).toEqual(['暂存离开', '存草稿', '保存草稿']);
@@ -509,7 +706,10 @@ describe('xhs-pub script flow (fake page)', () => {
     test('no CDP shadow access fails loud instead of clicking a guessed coordinate', async () => {
         await seedImages();
         const fake = makeFakePage({ ...happy });
-        const pageWithoutShadow: XhsPage = { ...fake.page, findShadowControl: undefined, clickAt: undefined };
+        const pageWithoutShadow: XhsPage = {
+            ...fake.page,
+            findShadowControl: undefined,
+        };
         const open: OpenPage = async () => ({ page: pageWithoutShadow, close: async () => {} });
         const t = makeTransport('script', {
             openPage: open,
@@ -545,7 +745,7 @@ describe('xhs-pub script flow (fake page)', () => {
         await seedImages();
         const fake = makeFakePage({ ...happy });
         const open: OpenPage = async () => ({
-            page: { ...fake.page, clickInViewport: async () => false },
+            page: { ...fake.page, boundingBoxesOnScreen: async () => [] },
             close: async () => {},
         });
         const t = makeTransport('script', {
@@ -557,7 +757,8 @@ describe('xhs-pub script flow (fake page)', () => {
         });
         const result = await t.publish({ content: cardContent() });
         expect(result.ok).toBe(false);
-        expect(result.error).toContain('in-viewport');
+        expect(result.error).toContain("no on-screen '上传图文' tab");
+        expect(result.error).toContain('the mode was not entered');
     });
 
     test('paths reach setInputFiles in payload order, single call', async () => {
@@ -773,6 +974,60 @@ describe('xhs-pub playwright adapter', () => {
             'nthClick:1:force=true',
             'mouse:606,855',
         ]);
+    });
+
+    // The 2026-11-10 durability seam: spectrum-upload tracking needs page- and context-level
+    // response subscriptions, and the wrapped page must forward them to the raw Playwright page.
+    test('wrapPlaywrightPage wires response tracking and geometry reads onto the raw page', async () => {
+        const events: string[] = [];
+        const handler = (payload: unknown): void => {
+            void payload;
+        };
+        const stub = {
+            on: (event: string, fn: (payload: unknown) => void) => {
+                expect(fn).toBe(handler);
+                events.push(`on:${event}`);
+            },
+            off: (event: string, fn: (payload: unknown) => void) => {
+                expect(fn).toBe(handler);
+                events.push(`off:${event}`);
+            },
+            context: () => ({
+                on: (event: string, fn: (payload: unknown) => void) => {
+                    expect(fn).toBe(handler);
+                    events.push(`ctx-on:${event}`);
+                },
+                off: (event: string, fn: (payload: unknown) => void) => {
+                    expect(fn).toBe(handler);
+                    events.push(`ctx-off:${event}`);
+                },
+            }),
+            locator: (_selector: string) => ({
+                count: async () => 2,
+                nth: (index: number) => ({
+                    boundingBox: async () => (index === 0 ? null : { x: 5, y: 6, width: 7, height: 8 }),
+                    click: async () => undefined,
+                }),
+            }),
+            viewportSize: () => ({ width: 1000, height: 800 }),
+        };
+        const page = wrapPlaywrightPage(stub);
+        page.on?.('request', handler);
+        page.off?.('request', handler);
+        page.onContextResponse?.(handler);
+        page.offContextResponse?.(handler);
+        expect(events).toEqual(['on:request', 'off:request', 'ctx-on:response', 'ctx-off:response']);
+        // A seam without a raw event source degrades to a typed rejection, never a silent hang.
+        await expect(page.waitForEvent?.('filechooser')).rejects.toThrow(
+            "the page seam does not expose a 'filechooser' event source",
+        );
+        expect(await page.boundingBoxesOnScreen?.('div.creator-tab')).toEqual([{ x: 5, y: 6, width: 7, height: 8 }]);
+    });
+
+    // Tab entry must fail fast (not hang) when the driver cannot tell on-screen tabs apart.
+    test('clickCreatorTab rejects a driver that cannot read viewport geometry', async () => {
+        const bare = { countOnScreen: async () => 4 } as unknown as XhsPage;
+        await expect(clickCreatorTab(bare, '视频')).rejects.toThrow('cannot read viewport geometry');
     });
 
     // 20261016: the 2026-10-16 daily run lost its XHS draft to a single `net::ERR_TIMED_OUT` on
@@ -1416,8 +1671,9 @@ describe('xhs-pub live publish confirmation (0174 R5, measured 2026-09-26)', () 
         expect(result.ok).toBe(false);
         expect(result.error).toContain('state unknown');
         expect(result.error).toContain('duplicate');
-        // Exactly one submit click: a retry could publish twice.
-        expect(log.filter((entry) => entry.op === 'clickAt')).toHaveLength(1);
+        // Exactly one submit click: a retry could publish twice (the image tab click also lands
+        // on clickAt now, so the count is tab + submit).
+        expect(log.filter((entry) => entry.op === 'clickAt')).toHaveLength(2);
     });
 });
 
@@ -1971,7 +2227,9 @@ describe('xhs-pub operations (ADR-029 mode dispatch)', () => {
     /** Exactly one publish click: the shadow bar's `发布` or 写长文's light-DOM `发布`. */
     const publishClicks = (log: Array<{ op: string; args: unknown[] }>): number =>
         log.filter((entry) => entry.op === 'clickAt').length +
-        log.filter((entry) => entry.op === 'click' && String(entry.args[0]) === 'button:has-text("发布")').length;
+        log.filter((entry) => entry.op === 'click' && String(entry.args[0]) === 'button:has-text("发布")').length -
+        // The image tab entry click also lands on clickAt; the submit click is the LAST one.
+        (log.some((entry) => entry.op === 'boundingBoxesOnScreen') ? 1 : 0);
 
     interface ModeCase {
         operation: XhsOperation;
@@ -2063,8 +2321,8 @@ describe('xhs-pub operations (ADR-029 mode dispatch)', () => {
         const result = await t.publish({ content: cardContent() });
         expect(result.ok).toBe(true);
         expect(result.metadata?.operation).toBe('上传图文');
-        const entered = (calls[0] ?? []).filter((entry) => entry.op === 'clickInViewport');
-        expect(entered[0]?.args[0]).toBe('div.creator-tab:has-text("上传图文")');
+        const entered = (calls[0] ?? []).filter((entry) => entry.op === 'boundingBoxesOnScreen');
+        expect(entered[0]?.args[0]).toBe('text=上传图文');
     });
 
     test('options.operation wins over content.metadata.operation', async () => {
@@ -2098,9 +2356,14 @@ describe('xhs-pub operations (ADR-029 mode dispatch)', () => {
             expect(result.metadata?.draftSignal).toBe('draft-row');
             expect(result.message).toContain(PROFILE);
             const ops = log.map((entry) => entry.op);
-            // Mode entry waits for the tab bar to mount BEFORE clicking an on-screen tab.
-            expect(ops.indexOf('countOnScreen')).toBeGreaterThan(-1);
-            expect(ops.indexOf('countOnScreen')).toBeLessThan(ops.indexOf('clickInViewport'));
+            // Mode entry: the image tab uses a raw centre click (clone-proof), the other modes
+            // wait for the tab bar to mount then click an on-screen tab.
+            if (mode.operation === '上传图文') {
+                expect(ops.indexOf('boundingBoxesOnScreen')).toBeGreaterThan(-1);
+            } else {
+                expect(ops.indexOf('countOnScreen')).toBeGreaterThan(-1);
+                expect(ops.indexOf('countOnScreen')).toBeLessThan(ops.indexOf('clickInViewport'));
+            }
             expect(draftTouches(log).length).toBeGreaterThan(0);
             // Rail: a draft run never touches a publish control.
             expect(publishTouches(log)).toEqual([]);
@@ -2242,7 +2505,9 @@ describe('xhs-pub operations (ADR-029 mode dispatch)', () => {
         const article = await run(ARTICLE_CASE);
         expect(article.result.metadata?.draftPath).toBe('light');
         expect(article.result.metadata?.draftControl).toBe('暂存离开');
-        expect(article.log.filter((entry) => entry.op === 'clickAt')).toEqual([]);
+        // The only coordinate clicks belong to verifyDraft's reopen (overlay-proofed nav + edit,
+        // 2026-11-11); the article's SAVE itself is a light-DOM click, never clickAt.
+        expect(article.log.filter((entry) => entry.op === 'clickAt')).toHaveLength(2);
 
         const imageText = await run(IMAGE_TEXT_CASE);
         expect(imageText.result.metadata?.draftPath).toBe('shadow');
@@ -2377,6 +2642,292 @@ describe('xhs-pub operations (ADR-029 mode dispatch)', () => {
         const result = await t.publish({
             content: PODCAST_CASE.content(),
             options: { operation: '发播客' },
+        });
+        expect(result.ok).toBe(true);
+    });
+
+    test('发播客: a missed light-DOM advance probe recovers through the DOM fallback re-click inside the wait loop', async () => {
+        await PODCAST_CASE.seed();
+        const state: FakeState = { ...happy };
+        const fake = makeFakePage(state);
+        let fallbackCalls = 0;
+        let advanceProbeMiss = false;
+        const page: XhsPage = {
+            ...fake.page,
+            locator: (selector) => {
+                const inner = fake.page.locator(selector);
+                // podcastAdvanceReady needs the plain 去发布 probe attached; once its disabled
+                // probe runs, the light-DOM candidates miss, so clickLightControl reports
+                // ok:false instead of throwing through the catch arm.
+                if (selector.includes('去发布')) {
+                    if (selector.includes('disabled')) {
+                        advanceProbeMiss = true;
+                        return inner;
+                    }
+                    if (advanceProbeMiss) {
+                        return {
+                            ...inner,
+                            count: async () => 0,
+                            first: () => ({ ...inner.first(), count: async () => 0 }),
+                        };
+                    }
+                }
+                return inner;
+            },
+            evaluate: async (expression) => {
+                if (expression.includes('kk-counter-')) {
+                    // The counter probes die mid-read: the gates treat an unreadable counter as
+                    // absent, not fatal.
+                    throw new Error('counter probe: execution context destroyed');
+                }
+                if (expression.includes('去发布') && expression.includes('cancel-btn')) {
+                    fallbackCalls += 1;
+                    // The first fallback click (before the wait loop) does not close the modal;
+                    // the wait-loop re-click does — the stale-modal recovery path 0236 R3 names.
+                    // The close must go through the fake's own click handler so its internal
+                    // state (not the outer capture) actually flips.
+                    if (fallbackCalls >= 2) await fake.page.locator('button:has-text("去发布")').first().click();
+                    return JSON.stringify({ clickedAdvance: fallbackCalls >= 2 });
+                }
+                return fake.page.evaluate(expression);
+            },
+        };
+        const t = makeTransport('script', {
+            openPage: async () => ({ page, close: async () => {} }),
+            stepTimeoutMs: 400,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+        });
+        const result = await t.publish({
+            content: PODCAST_CASE.content(),
+            options: { operation: '发播客' },
+        });
+        expect(result.ok).toBe(true);
+        expect(fallbackCalls).toBe(2);
+    });
+
+    test('发播客: a modal that never closes reports the stayed-open diagnostic instead of hanging', async () => {
+        await PODCAST_CASE.seed();
+        const state: FakeState = { ...happy };
+        const fake = makeFakePage(state);
+        let advanceProbeMiss = false;
+        const page: XhsPage = {
+            ...fake.page,
+            locator: (selector) => {
+                const inner = fake.page.locator(selector);
+                // Same phase-keyed miss as the recovery test: podcastAdvanceReady passes first,
+                // then the light-DOM candidates vanish so the fallback path is forced.
+                if (selector.includes('去发布')) {
+                    if (selector.includes('disabled')) {
+                        advanceProbeMiss = true;
+                        return inner;
+                    }
+                    if (advanceProbeMiss) {
+                        return {
+                            ...inner,
+                            count: async () => 0,
+                            first: () => ({ ...inner.first(), count: async () => 0 }),
+                        };
+                    }
+                }
+                return inner;
+            },
+            evaluate: async (expression) => {
+                if (expression.includes('去发布') && expression.includes('cancel-btn')) {
+                    // The fallback clicks land but the modal never closes: the wait loop must
+                    // exhaust and name what it saw, not retry forever.
+                    return JSON.stringify({ clickedAdvance: false, buttons: [] });
+                }
+                return fake.page.evaluate(expression);
+            },
+        };
+        const t = makeTransport('script', {
+            openPage: async () => ({ page, close: async () => {} }),
+            stepTimeoutMs: 400,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+        });
+        const result = await t.publish({
+            content: PODCAST_CASE.content(),
+            options: { operation: '发播客' },
+        });
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error).toContain('stayed open');
+    });
+
+    test('发播客: audio assignment without the 上传成功 ack fails the compose before the cover stage', async () => {
+        await PODCAST_CASE.seed();
+        const state: FakeState = { ...happy };
+        const fake = makeFakePage(state);
+        const page: XhsPage = {
+            ...fake.page,
+            locator: (selector) => {
+                const inner = fake.page.locator(selector);
+                // The audio card registers but its ack probe never lights up: the assignment did
+                // not take, and compose must stop before the cover chooser stalls on a disabled
+                // 去发布.
+                if (selector.includes('上传成功')) {
+                    return {
+                        ...inner,
+                        count: async () => {
+                            throw new Error('ack probe: execution context destroyed');
+                        },
+                        first: () => ({ ...inner.first(), count: async () => 0 }),
+                    };
+                }
+                return inner;
+            },
+        };
+        const t = makeTransport('script', {
+            openPage: async () => ({ page, close: async () => {} }),
+            stepTimeoutMs: 400,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+        });
+        const result = await t.publish({
+            content: PODCAST_CASE.content(),
+            options: { operation: '发播客' },
+        });
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error).toContain('上传成功');
+    });
+
+    test('发播客: an advance button stuck disabled after both cards attach names the unaccepted cards', async () => {
+        await PODCAST_CASE.seed();
+        const state: FakeState = { ...happy };
+        const fake = makeFakePage(state);
+        const page: XhsPage = {
+            ...fake.page,
+            locator: (selector) => {
+                const inner = fake.page.locator(selector);
+                // The disabled-state probe dies mid-read: the enabled check stays false through
+                // the whole window and the diagnostic must survive the probe failure.
+                if (selector.includes('disabled')) {
+                    return {
+                        ...inner,
+                        count: async () => {
+                            throw new Error('probe: execution context destroyed');
+                        },
+                    };
+                }
+                return inner;
+            },
+        };
+        const t = makeTransport('script', {
+            openPage: async () => ({ page, close: async () => {} }),
+            stepTimeoutMs: 400,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+        });
+        const result = await t.publish({
+            content: PODCAST_CASE.content(),
+            options: { operation: '发播客' },
+        });
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error).toContain('stayed disabled');
+    });
+
+    test('发播客: a cover card without a bounding box fails the coordinate click loudly', async () => {
+        await PODCAST_CASE.seed();
+        const state: FakeState = { ...happy };
+        const fake = makeFakePage(state);
+        const page: XhsPage = {
+            ...fake.page,
+            locator: (selector) => {
+                const inner = fake.page.locator(selector);
+                // The cover card is attached but geometry-less: the coordinate click cannot be
+                // aimed, so the guard must name the miss instead of clicking (0,0).
+                if (selector.includes('设置封面')) {
+                    return {
+                        ...inner,
+                        first: () => ({ ...inner.first(), boundingBox: async () => null }),
+                    };
+                }
+                return inner;
+            },
+        };
+        const t = makeTransport('script', {
+            openPage: async () => ({ page, close: async () => {} }),
+            stepTimeoutMs: 400,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+        });
+        const result = await t.publish({
+            content: PODCAST_CASE.content(),
+            options: { operation: '发播客' },
+        });
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error).toContain('no bounding box');
+    });
+
+    test('发播客: a page without a raw mouse refuses the cover-card coordinate click', async () => {
+        await PODCAST_CASE.seed();
+        const state: FakeState = { ...happy };
+        const fake = makeFakePage(state);
+        const page: XhsPage = { ...fake.page };
+        // The modal's cover card only responds to coordinate clicks; a driver without the raw
+        // mouse seam must fail loud, not silently skip the attach.
+        delete (page as { mouse?: unknown }).mouse;
+        const t = makeTransport('script', {
+            openPage: async () => ({ page, close: async () => {} }),
+            stepTimeoutMs: 400,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+        });
+        const result = await t.publish({
+            content: PODCAST_CASE.content(),
+            options: { operation: '发播客' },
+        });
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error).toContain('raw mouse');
+    });
+
+    test('image mode entry rejects a driver that cannot read viewport boxes or click coordinates', async () => {
+        await IMAGE_TEXT_CASE.seed();
+        const state: FakeState = { ...happy };
+        const fake = makeFakePage(state);
+        const bare: XhsPage = { ...fake.page };
+        delete (bare as { clickAt?: unknown }).clickAt;
+        delete (bare as { boundingBoxesOnScreen?: unknown }).boundingBoxesOnScreen;
+        const t = makeTransport('script', {
+            openPage: async () => ({ page: bare, close: async () => {} }),
+            stepTimeoutMs: 400,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+        });
+        const result = await t.publish({
+            content: IMAGE_TEXT_CASE.content(),
+            options: { operation: '上传图文' },
+        });
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error).toContain('cannot read viewport boxes');
+    });
+
+    test('the console settle window absorbs a straggler context response at listener registration', async () => {
+        await IMAGE_TEXT_CASE.seed();
+        const state: FakeState = { ...happy };
+        const fake = makeFakePage(state);
+        const page: XhsPage = {
+            ...fake.page,
+            // A spectrum response lands the instant the settle listener registers — the quiet
+            // window must restart from it, not treat the mount as already-settled.
+            offContextResponse: () => {},
+            onContextResponse: (handler) => {
+                handler({
+                    status: () => 200,
+                    url: () => 'https://ros-upload.xiaohongshu.com/spectrum/0',
+                });
+            },
+        };
+        const t = makeTransport('script', {
+            openPage: async () => ({ page, close: async () => {} }),
+            stepTimeoutMs: 400,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+        });
+        const result = await t.publish({
+            content: IMAGE_TEXT_CASE.content(),
+            options: { operation: '上传图文' },
         });
         expect(result.ok).toBe(true);
     });
@@ -2833,5 +3384,372 @@ describe('xhs-pub profile-check `open` verb (0277, operator-interactive)', () =>
             restore();
             rmSync(dir, { recursive: true, force: true });
         }
+    });
+});
+
+describe('task 0350 — layered capture, counter gate, reopen verify, podcast fields (R1-R4)', () => {
+    const draftRun = async (state: Partial<FakeState>, over: Partial<Content> = {}) => {
+        await seedImages();
+        const { open, calls } = makeOpenPage({ ...happy, ...state });
+        const t = makeTransport('script', {
+            openPage: open,
+            stepTimeoutMs: 400,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+            submitAttempts: 2,
+        });
+        const result = await t.publish({ content: cardContent(over), options: { operation: '上传图文' } });
+        return { result, log: calls[0] ?? [] };
+    };
+
+    const publicRun = async (state: Partial<FakeState>) => {
+        await seedImages();
+        const { open } = makeOpenPage({ ...happy, ...state });
+        const t = makeTransport('script', {
+            openPage: open,
+            stepTimeoutMs: 400,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+        });
+        return t.publish({ content: cardContent({ publishStatus: 'public' }) });
+    };
+
+    const podcastRun = async (state: Partial<FakeState>, metaOver: Record<string, unknown> = {}) => {
+        await seedMedia();
+        const { open, calls } = makeOpenPage({ ...happy, ...state });
+        const t = makeTransport('script', {
+            openPage: open,
+            stepTimeoutMs: 400,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+            submitAttempts: 2,
+        });
+        const result = await t.publish({
+            content: modeContent({ audio: { path: audio }, coverImage: cover, ...metaOver }),
+            options: { operation: '发播客' },
+        });
+        return { result, log: calls[0] ?? [] };
+    };
+
+    test('R1: a captured -913x response aborts with AccountRiskControlError, not a save retry', async () => {
+        const { result } = await draftRun({
+            serverCapture: { source: 'xhr', text: 'HTTPBizError: {"code":-91301,"msg":"禁止发笔记，请遵守社区规范"}' },
+        });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('AccountRiskControlError');
+        expect(result.error).toContain('not retryable');
+    });
+
+    test('R1: a captured platform biz error aborts with PublishError', async () => {
+        const { result } = await draftRun({
+            serverCapture: { source: 'fetch', text: 'HTTPBizError: {"code":-300,"msg":"操作频繁"}' },
+        });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('PublishError');
+        expect(result.error).toContain('platform error');
+    });
+
+    test('R1: a captured ok response (note_id) lands in the Result metadata', async () => {
+        const { result } = await draftRun({
+            serverCapture: { source: 'xhr', text: '{"code":0,"success":true,"data":{"note_id":"abc123"}}' },
+        });
+        expect(result.ok).toBe(true);
+        expect(result.metadata?.serverCapture).toEqual({ source: 'xhr', verdict: 'ok', code: '0', noteId: 'abc123' });
+    });
+
+    test('R1: a toast that only names a platform risk phrase aborts as AccountRiskControlError', async () => {
+        const { result } = await draftRun({
+            serverCapture: { source: 'toast', text: '审核未通过' },
+        });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('AccountRiskControlError');
+        expect(result.error).toContain('not retryable');
+    });
+
+    test('R1: the inject script records a short DOM risk toast and ignores a long node', () => {
+        const g = globalThis as unknown as {
+            window?: unknown;
+            XMLHttpRequest?: { prototype: Record<string, unknown> };
+            fetch?: ((...args: unknown[]) => Promise<unknown>) & { __kkPatched?: boolean };
+            console: Record<string, unknown>;
+            MutationObserver?: new (cb: (muts: Array<{ addedNodes: unknown[] }>) => void) => { observe: () => void };
+            document?: { body: Record<string, unknown> };
+            __kkXhsArmed?: boolean;
+            __kkXhsOutcome?: { source: string; text: string } | null;
+            __kkXhsToastObs?: boolean;
+        };
+        const saved = {
+            window: g.window,
+            XMLHttpRequest: g.XMLHttpRequest,
+            fetch: g.fetch,
+            console: g.console,
+            MutationObserver: g.MutationObserver,
+            document: g.document,
+        };
+        const callbacks: Array<(muts: Array<{ addedNodes: unknown[] }>) => void> = [];
+        try {
+            g.window = g;
+            g.XMLHttpRequest = function XHR(this: unknown) {} as unknown as { prototype: Record<string, unknown> };
+            g.XMLHttpRequest.prototype = { open() {}, send() {}, addEventListener() {} };
+            g.fetch = (() =>
+                Promise.resolve({ clone: () => ({ text: () => Promise.resolve('') }), url: '' })) as typeof g.fetch;
+            g.console = { error() {}, warn() {}, log() {} };
+            g.MutationObserver = class {
+                constructor(cb: (muts: Array<{ addedNodes: unknown[] }>) => void) {
+                    callbacks.push(cb);
+                }
+                observe(): void {}
+            } as unknown as typeof g.MutationObserver;
+            g.document = { body: {} };
+            delete g.__kkXhsArmed;
+            delete g.__kkXhsOutcome;
+            delete g.__kkXhsToastObs;
+            const runPageScript = new Function(`return ${CAPTURE_INJECT_EXPR}`) as () => string;
+            const armed = runPageScript();
+            expect(armed).toBe('kk-capture-armed');
+            expect(callbacks.length).toBe(1);
+            callbacks[0]?.([
+                {
+                    addedNodes: [
+                        { nodeType: 1, textContent: 'x'.repeat(301) },
+                        { nodeType: 3, textContent: '审核未通过' },
+                        { nodeType: 1, textContent: ' 审核未通过 ' },
+                    ],
+                },
+            ]);
+            // delete narrows the optional field to undefined; the page script writes it back.
+            const outcome = g.__kkXhsOutcome as { source: string; text: string } | null | undefined;
+            expect(outcome).toEqual({ source: 'toast', text: '审核未通过' });
+        } finally {
+            g.window = saved.window;
+            g.XMLHttpRequest = saved.XMLHttpRequest;
+            g.fetch = saved.fetch;
+            g.console = saved.console;
+            g.MutationObserver = saved.MutationObserver;
+            g.document = saved.document;
+            delete g.__kkXhsArmed;
+            delete g.__kkXhsOutcome;
+            delete g.__kkXhsToastObs;
+        }
+    });
+
+    test('R3: a collection name with a quote stays inside the probe string', () => {
+        const name = "合集'; throw new Error('x')";
+        const expr = collectionProbeExpr(name);
+        const run = (innerText: string): string =>
+            new Function('document', `return ${expr}`)({ body: { innerText } }) as string;
+        expect(run(`prefix ${name} suffix`)).toBe('kk-verify-collection:yes');
+        expect(run('other collection')).toBe('kk-verify-collection:no');
+    });
+
+    test('R1: the publish path aborts on a captured refusal even before the URL marker is checked', async () => {
+        const result = await publicRun({
+            serverCapture: { source: 'xhr', text: '{"code":-91301,"msg":"禁止发笔记"}' },
+        });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('AccountRiskControlError');
+    });
+
+    test('R2: a readable over-limit title counter throws TitleTooLongError before any save click', async () => {
+        const { result, log } = await draftRun({ counterTitleOverride: '23/20' });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('TitleTooLongError');
+        expect(result.error).toContain('counter reads');
+        // The image tab click is mode entry, not a save click; no save click may occur.
+        expect(log.filter((entry) => entry.op === 'clickAt').length).toBe(1);
+    });
+
+    test('R2: a readable over-limit body counter throws ContentTooLongError', async () => {
+        const { result } = await draftRun({ counterBodyOverride: '1001/1000' });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('ContentTooLongError');
+    });
+
+    test('R2: the body counter ignores a title counter when the body length-error is absent', () => {
+        const read = (document: {
+            querySelector: (sel: string) => { textContent: string; children: never[] } | null;
+            querySelectorAll: (sel: string) => Array<{ textContent: string; children: never[] }>;
+        }): string => {
+            const previous = (globalThis as { document?: unknown }).document;
+            (globalThis as { document?: unknown }).document = document;
+            try {
+                return (new Function(`return ${BODY_COUNTER_EXPR}`) as () => string)();
+            } finally {
+                (globalThis as { document?: unknown }).document = previous;
+            }
+        };
+        const leaf = (text: string) => ({ textContent: text, children: [] as never[] });
+        const documentFor = (input: { lengthError?: string; editLeaves?: string[]; titleLeaves?: string[] }) => ({
+            querySelector(sel: string) {
+                if (sel === 'div.edit-container div.length-error' && input.lengthError !== undefined) {
+                    return leaf(input.lengthError);
+                }
+                return null;
+            },
+            querySelectorAll(sel: string) {
+                const edit = (input.editLeaves ?? []).map(leaf);
+                const title = (input.titleLeaves ?? []).map(leaf);
+                if (sel === 'div.edit-container *') return edit;
+                if (sel === 'div.title-container *') return title;
+                if (sel.includes('div.edit-container') && sel.includes('div.title-container'))
+                    return [...edit, ...title];
+                return [];
+            },
+        });
+        expect(read(documentFor({ lengthError: '1001/1000', titleLeaves: ['5/20'] }))).toBe('1001/1000');
+        expect(read(documentFor({ editLeaves: ['3/1000'], titleLeaves: ['5/20'] }))).toBe('3/1000');
+        expect(read(documentFor({ titleLeaves: ['5/20'] }))).toBe('kk-counter-none');
+    });
+
+    test('R3: the reopen body probe ignores a title counter', () => {
+        const previous = (globalThis as { document?: unknown }).document;
+        (globalThis as { document?: unknown }).document = {
+            querySelector: () => null,
+            querySelectorAll: (sel: string) =>
+                sel === 'div.title-container *' || sel.includes('div.title-container')
+                    ? [{ textContent: '5/20', children: [] as never[] }]
+                    : [],
+        };
+        try {
+            const read = (new Function(`return ${VERIFY_BODY_EXPR}`) as () => string)();
+            expect(read).toBe(JSON.stringify({ textLen: 0 }));
+        } finally {
+            (globalThis as { document?: unknown }).document = previous;
+        }
+    });
+
+    test('R2: a counter that does not read N/M is ignored, not fatal', async () => {
+        const { result } = await draftRun({ counterTitleOverride: '无法读取' });
+        expect(result.ok).toBe(true);
+    });
+
+    test('R3: a draft whose reopened slots disagree fails verification by name', async () => {
+        const { result } = await draftRun({ verifySlotCount: 1 });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('DraftVerifyError');
+        expect(result.error).toContain('expected 2 thumbnails');
+    });
+
+    test('R3: blob-only thumbnails on the reopened draft fail verification when the wire was silent', async () => {
+        // uploadNeverStarts scripts a console that never uploaded; the pre-save gate passes on
+        // srcs alone, so the reopen must still reject local srcs — the server copy may be missing.
+        const { result } = await draftRun({ verifyLocalSrcs: true, uploadNeverStarts: true });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('non-https');
+    });
+
+    test('R3: blob srcs on the reopened draft pass when the wire completed every upload', async () => {
+        // Measured 2026-11-11: the reopened editor re-hosts its CDN images as blob: URLs after the
+        // wire finished all uploads — blob srcs there are presentation, not missing persistence.
+        const { result } = await draftRun({ verifyLocalSrcs: true });
+        expect(result.ok).toBe(true);
+    });
+
+    test('R3: a reopened editor that never renders content fails verification', async () => {
+        // TipTap hydrates after the route lands; if it never answers within the step window the
+        // verify must fail by name instead of judging the blank editor as an empty draft.
+        const { result } = await draftRun({ verifyEditorBlank: true });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('never rendered content');
+    });
+
+    test('R3: verify reopen navigation falls back to locator clicks when box reads fail', async () => {
+        // A driver whose boundingBoxesOnScreen rejects (or returns nothing) for the draft-box
+        // selectors must still reopen via the plain locator path — coordinate clicks are only an
+        // overlay-proof optimization, not a hard dependency.
+        await seedImages();
+        const state: FakeState = { ...happy };
+        const fake = makeFakePage(state);
+        const page: XhsPage = {
+            ...fake.page,
+            boundingBoxesOnScreen: async (selector: string) =>
+                selector === 'text=上传图文'
+                    ? [{ x: 100, y: 200, width: 80, height: 30 }]
+                    : Promise.reject(new Error('box read failed')),
+        };
+        const t = makeTransport('script', {
+            openPage: async () => ({ page, close: async () => {} }),
+            stepTimeoutMs: 400,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+        });
+        const result = await t.publish({ content: cardContent(), options: { operation: '上传图文' } });
+        expect(result.ok).toBe(true);
+    });
+
+    test('R3: a title that did not persist fails verification', async () => {
+        const { result } = await draftRun({ verifyTitleMismatch: true });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('title mismatch');
+    });
+
+    test('R3: an empty reopened body fails verification', async () => {
+        const { result } = await draftRun({ verifyBodyEmpty: true });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('neither');
+    });
+
+    test('R3: a missing collection membership on the podcast draft fails verification', async () => {
+        const { result } = await podcastRun({ verifyCollectionMissing: true });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('collection');
+    });
+
+    test('R3: a missing draft box entry fails verification loudly', async () => {
+        const { result } = await draftRun({ draftNavMissing: true });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('could not reopen');
+    });
+
+    test('R3: a draft list without an 编辑 control fails verification loudly', async () => {
+        const { result } = await draftRun({ draftEditMissing: true });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('shows no');
+    });
+
+    test('R4: the podcast note titles the editor, derives a bounded body, and joins the 合集', async () => {
+        const { result, log } = await podcastRun({});
+        expect(result.ok).toBe(true);
+        const fills = log.filter((entry) => entry.op === 'fill' && String(entry.args[0]).includes('input.d-text'));
+        expect(fills.length).toBeGreaterThan(0);
+        expect(fills[0]?.args[1]).toBe('模式标题');
+        const types = log.filter((entry) => entry.op === 'type');
+        expect((types[0]?.args[1] as string | undefined)?.length).toBeLessThanOrEqual(1000);
+        const chip = log.filter((entry) => entry.op === 'click' && String(entry.args[0]).includes('加入播客合集'));
+        expect(chip.length).toBeGreaterThan(0);
+        expect((result.metadata?.draftVerified as Record<string, unknown>)?.collection).toBe('咸话咸说之每日AI乱炖');
+    });
+
+    test('R4: a custom 合集 in content metadata wins over the default show collection', async () => {
+        const { result } = await podcastRun({}, { collection: '我的合集' });
+        expect(result.ok).toBe(true);
+        expect((result.metadata?.draftVerified as Record<string, unknown>)?.collection).toBe('我的合集');
+    });
+
+    test('R4: derivePodcastBody caps the raw article at the body limit and keeps intro/closing', () => {
+        const article = ['开头段']
+            .concat(
+                Array.from({ length: 40 }, (_, i) => `## 标题${i} 一些正文内容放在这里`),
+                ['结尾段'],
+            )
+            .join('\n');
+        const out = derivePodcastBody({ title: 'T', body: article, format: 'markdown' } as Content);
+        expect(out.length).toBeLessThanOrEqual(1000);
+        expect(out.startsWith('开头段')).toBe(true);
+        expect(out.endsWith('结尾段')).toBe(true);
+    });
+
+    test('R4: derivePodcastBody drops headlines first when the budget runs out', () => {
+        const out = derivePodcastBody({
+            title: 'T',
+            body: `开头\n${Array.from({ length: 200 }, (_, i) => `## 很长的标题${i}`).join('\n')}`,
+            format: 'markdown',
+        } as Content);
+        expect(out.length).toBeLessThanOrEqual(1000);
+    });
+
+    test('R4: an empty body derives from the title', () => {
+        const out = derivePodcastBody({ title: '只有标题', body: '', format: 'markdown' } as Content);
+        expect(out).toBe('只有标题');
     });
 });

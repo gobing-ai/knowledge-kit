@@ -152,6 +152,8 @@ async function runItcPublishPlan(args: string[], fs: FileSystem): Promise<number
         const outDir = join(request.workDir, '4-publish');
         await fs.ensureDir(outDir);
         await fs.writeFile(join(outDir, 'publish-plan.json'), `${JSON.stringify(plan, null, 4)}\n`);
+        // A skipped target is not an error, but the operator must see which one was dropped.
+        for (const warning of plan.warnings ?? []) echoError(`itc-publish-plan: ${warning}`);
         return 0;
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);

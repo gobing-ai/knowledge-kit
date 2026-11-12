@@ -3,7 +3,7 @@ import { renderPage } from './page';
 import { applyWriteToPage } from './write';
 
 /**
- * `merge` mechanics (task 0353): collapse two overlapping pages into one and keep every inbound
+ * `merge` mechanics (task 0358): collapse two overlapping pages into one and keep every inbound
  * link working.
  *
  * The absorbed page is never deleted — it becomes a redirect stub, so old Obsidian links and

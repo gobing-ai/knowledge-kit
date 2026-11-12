@@ -3,7 +3,7 @@ import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { consoleOutput, toJson } from '../output';
 import { resolveWikiConfig, WikiConfigError } from './config';
 
-/** `kk wiki lint` (task 0351): report vault defects; nonzero when any is found. */
+/** `kk wiki lint` (task 0356): report vault defects; nonzero when any is found. */
 
 /** One CLI invocation's outcome. */
 export interface WikiLintOutcome {

@@ -2,7 +2,7 @@ import type { FindingRecord } from './findings';
 import { resolveLink, type VaultIndex } from './graph';
 
 /**
- * Vault health check (task 0351, docs/design/kk-wiki.md §3).
+ * Vault health check (task 0356, docs/design/kk-wiki.md §3).
  *
  * Pure: everything it needs comes from the index. Findings are data; the CLI renders them.
  */

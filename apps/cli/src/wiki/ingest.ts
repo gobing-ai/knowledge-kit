@@ -12,7 +12,7 @@ import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { resolveWikiConfig, WikiConfigError } from './config';
 
 /**
- * `kk wiki ingest <source|-> [--type=url|pdf|html|rss] [--out <dir>] [--json]` (task 0350).
+ * `kk wiki ingest <source|-> [--type=url|pdf|html|rss] [--out <dir>] [--json]` (task 0355).
  *
  * Exit contract: 0 success, 1 handled failure (JSON `error`), 2 usage error. The module never
  * terminates the process — `commands/wiki.ts` maps the returned code onto a `CommanderError`.

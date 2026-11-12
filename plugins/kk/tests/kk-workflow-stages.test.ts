@@ -926,3 +926,73 @@ describe('daily-episode-duration stage — 15–20 min standing gate', () => {
         rmSync(dir3, { recursive: true, force: true });
     });
 });
+
+/**
+ * 0347 R6 — the editorial-render cover brief parses both cover shapes and anchors the
+ * headline to the lead story. Fixtures keep items id-only so only the cover brief renders.
+ */
+describe('daily-editorial-render cover brief (task 0347 R5/R6)', () => {
+    const LEAD_TITLE = 'OpenAI 发布全新推理模型';
+
+    function writeFixtures(dir: string, cover: unknown): void {
+        mkdirSync(join(dir, '21-plan'), { recursive: true });
+        writeFileSync(
+            join(dir, '21-plan', `${STAMP}_03_plan_plan.json`),
+            JSON.stringify([
+                { id: 'd1', title: LEAD_TITLE },
+                { id: 'd2', title: 'Second story' },
+            ]),
+        );
+        mkdirSync(join(dir, '24-script'), { recursive: true });
+        writeFileSync(
+            join(dir, '24-script', `${STAMP}_08_script-write_plan.json`),
+            JSON.stringify({
+                cover,
+                items: [{ id: 'd1' }, { id: 'd2' }],
+            }),
+        );
+    }
+
+    function readBrief(dir: string): Record<string, unknown> {
+        return readJson(join(dir, '23-cover', `${STAMP}_07_cover-brief.json`)) as Record<string, unknown>;
+    }
+
+    it('a { scene, headline } cover writes subject, headline and leadStoryTitle', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-cover-brief-'));
+        writeFixtures(dir, {
+            scene: 'a glowing reasoning circuit under microscope inspection in a dark cleanroom',
+            headline: '推理模型深夜炸场',
+        });
+        const result = runStage(['daily-editorial-render', dir, STAMP, 'false']);
+        expect(result.status).toBe(0);
+        const brief = readBrief(dir);
+        expect(brief.subject).toBe('a glowing reasoning circuit under microscope inspection in a dark cleanroom');
+        expect(brief.headline).toBe('推理模型深夜炸场');
+        expect(brief.leadStoryTitle).toBe(LEAD_TITLE);
+        expect(result.stdout).toContain('wrote cover brief');
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('a legacy string cover keeps backward compatibility and falls back to the lead title', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-cover-brief-'));
+        writeFixtures(dir, 'a glowing network of connected nodes above a quiet city');
+        const result = runStage(['daily-editorial-render', dir, STAMP, 'false']);
+        expect(result.status).toBe(0);
+        const brief = readBrief(dir);
+        expect(brief.subject).toBe('a glowing network of connected nodes above a quiet city');
+        expect(brief.headline).toBe(LEAD_TITLE);
+        expect(brief.leadStoryTitle).toBe(LEAD_TITLE);
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('an object cover without headline inherits the lead story title', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-cover-brief-'));
+        writeFixtures(dir, { scene: 'a fleet of delivery drones stacking newspapers' });
+        const result = runStage(['daily-editorial-render', dir, STAMP, 'false']);
+        expect(result.status).toBe(0);
+        const brief = readBrief(dir);
+        expect(brief.headline).toBe(LEAD_TITLE);
+        expect(brief.leadStoryTitle).toBe(LEAD_TITLE);
+        rmSync(dir, { recursive: true, force: true });
+    });
+});

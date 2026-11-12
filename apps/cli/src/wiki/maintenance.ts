@@ -5,7 +5,7 @@ import { consoleOutput, toJson } from '../output';
 import { resolveWikiConfig, WikiConfigError } from './config';
 
 /**
- * `kk wiki merge`, `kk wiki compile` and `kk wiki gc` (task 0353).
+ * `kk wiki merge`, `kk wiki compile` and `kk wiki gc` (task 0358).
  *
  * Each verb is deterministic and confined: merge writes the surviving page, the redirect stub and
  * the inbound-link rewrites; compile writes only the two compiled files; gc deletes nothing without

@@ -46,4 +46,10 @@ coveragePathIgnorePatterns = ["vendors/**", "build/**", "dist/**", "node_modules
 	# behind import.meta.main, launch via Playwright); bun test exercises it via
 	# spawnSync, whose coverage bun cannot attribute to this file.
 	"**/tests/fixtures/bilibili-pub-dom-runner.ts",
+	# kk stage bodies run as spawned `bun <script>` processes (dag/e2e fixtures pass the
+	# script path to a child bun), so bun's coverage cannot attribute them to these files;
+	# the narrow direct-import tests (daily-*-freeze, kk-workflow-stages.test) pin the
+	# critical branches instead. Revisit only if stage logic grows unit-testable seams.
+	"plugins/kk/scripts/daily-stages.ts",
+	"plugins/kk/scripts/kk-workflow-stages.ts",
 ]

@@ -26,11 +26,19 @@
             "variant": "episode",
             "tier": 1,
             "window": "after-generate",
-            "mode": "off"
+            "mode": "draft"
         },
         {
             "plugin": "xhs-pub",
             "operation": "发播客",
+            "variant": "episode",
+            "tier": 1,
+            "window": "after-generate",
+            "mode": "draft"
+        },
+        {
+            "plugin": "shipinhao-pub",
+            "operation": "audio",
             "variant": "episode",
             "tier": 1,
             "window": "after-generate",
@@ -53,7 +61,7 @@
             "variant": "article",
             "tier": 2,
             "window": "after-generate",
-            "mode": "draft"
+            "mode": "off"
         },
         {
             "plugin": "xhs-pub",
@@ -113,7 +121,7 @@
         },
         {
             "plugin": "shipinhao-pub",
-            "operation": "图文",
+            "operation": "image",
             "variant": "cards",
             "tier": 3,
             "window": "overseas-rss",

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { MissingNormalizerError } from '@gobing-ai/kk-wiki';
 import { detectSourceType, readStdin, runIngest } from '../../src/wiki/ingest';
 
-/** Feature I1 R2/R3/R5 (task 0350): the ingest engine behind `kk wiki ingest`. */
+/** Feature I1 R2/R3/R5 (task 0355): the ingest engine behind `kk wiki ingest`. */
 
 const dirs: string[] = [];
 function tempVault(): string {

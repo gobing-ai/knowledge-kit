@@ -2,8 +2,131 @@
 
 ### Fixed
 
-- fix(surfdash-pub): upsert `scripts/seo/daily-topics.json` from refined digest posts and run `sd seo retitle --write --stamp-claims` before the site gate, then fail-closed on pushes to `main` even when `SURFDASH_DIGEST_CHECK` is `warn` or `off` (duplicate map keys were what broke robinmin/surfdash#30)
+- fix(itc): skip a cover-requiring publish target instead of aborting the whole plan — the plan records a `warnings` entry and every other target still materializes; the plan-writing stages echo each warning to stderr and still exit 0
+<!-- src: apps/cli/src/itc-plan.ts:489 -->
+- fix(itc): expand a leading `$HOME` and `$HOME/` in `works_dir` (and the `KK_CONFIG` path) against the configured home, matching the `~` forms; every other `$`/backtick sequence stays literal data
+<!-- src: apps/cli/src/itc-config.ts:184 -->
+- fix(itc): ship the `itc-main` publish preset in the package root and resolve it through the shared package-root resolver so a run from a foreign work dir still finds the shipped preset
+<!-- src: plugins/kk/publish-presets/itc-main.json:3 -->
+
+## [0.1.16] - 2026-11-11
+
+### Added
+
+- feat(daily): add daily-triage collector for failed run post-mortems (525cc9a)
+<!-- src: plugins/kk/scripts/daily-triage.ts:23 -->
+- feat(daily): split safety infra-fail from content block (0347 F4) (cd7a1c0)
+<!-- src: plugins/kk/scripts/daily-stages.ts:3656 -->
+- feat(daily): preflight executors and tree before spending the window (0347 F1) (c9cb0a0)
+<!-- src: plugins/kk/scripts/daily-scheduled-run.ts:154 -->
+- feat(daily): adjust publish preset channels and unify social notice with cards (2194994)
+<!-- src: plugins/kk/publish-presets/daily-ai-voice.json:2 -->
+- feat(cover): quasi-news podcast cover presets and lead-story Hook headline extraction (0347) (441f3d2)
+<!-- src: plugins/generations/image-gen/presets/formats/daily-news-podcast-cover.yaml:2 -->
+- feat(cover): deterministic Chinese typography and podcast logo compositing (0348) (6ab49e1)
+<!-- src: plugins/kk/scripts/cover-compositor.ts:70 -->
+- feat(cover): integrate quasi-news presets and standalone mock cover runner (0349) (b18b4aa)
+<!-- src: plugins/kk/scripts/cover-compositor.ts:129 -->
+- feat(kk-wiki): add the kk wiki noun with raw ingest (0a96298)
+<!-- src: apps/cli/src/commands/wiki.ts:50 -->
+- feat(kk-wiki): index the vault and lint wikilinks (66e64a4)
+<!-- src: apps/cli/src/wiki/lint.ts:25 -->
+- feat(kk-wiki): place authored summaries and synthesized pages (9712849)
+<!-- src: apps/cli/src/wiki/write-verbs.ts:20 -->
+- feat(kk-wiki): merge, compile and gc the vault (91c0ce6)
+<!-- src: apps/cli/src/wiki/maintenance.ts:15 -->
+- feat(xhs-pub): adopt vendor-proven outcome verification for xhs publishes (0350) (12dcead)
+<!-- src: plugins/publishings/xhs-pub/src/flow.ts:870 -->
+- feat(kk-wiki): publish, sync and retrieval verbs (81edb8a)
+<!-- src: apps/cli/src/wiki/retrieval.ts:15 -->
+- feat(daily-news): make the two scheduled jobs one-line script delegates (f7a964e)
+<!-- src: scripts/daily-ai-news.ts:20 -->
+- feat(daily-news): add the operator go-live command for after-generate live sends (f87589e)
+<!-- src: scripts/daily-ai-news.ts:45 -->
+- feat(shipinhao): extend shipinhao-pub to four post kinds (shortVideo/audio/image/music), audio first (7e227b9)
+<!-- src: plugins/publishings/shipinhao-pub/plugin.json:12 -->
+- feat(daily-news): show a per-part generation breakdown in validate (694135e)
+<!-- src: scripts/daily-ai-news.ts:51 -->
+
+### Fixed
+
+- fix(surfdash-pub): upsert daily-topics and fail-closed gate before push to main (193b1b8)
 <!-- src: plugins/publishings/surfdash-pub/src/index.ts:488 -->
+- fix(content-gen): retry STORM JSON stages and unwrap Grok mode-json envelopes (9ddd7e9)
+<!-- src: plugins/generations/content-gen/src/storm.ts:172 -->
+- fix(xhs-pub): assign error names in constructors for coverage-attributable functions (820c0ad)
+<!-- src: plugins/publishings/xhs-pub/src/errors.ts:18 -->
+- fix(xhs-pub): close outcome-verification gaps from the verifyall fix pass (0350) (c5536e0)
+<!-- src: plugins/publishings/xhs-pub/src/flow.ts:955 -->
+- fix(xhs-pub): route console overlays with coordinate clicks and verify drafts by wire completions (8aa2bc2)
+<!-- src: plugins/publishings/xhs-pub/src/flow.ts:55 -->
+- fix(wechatmp-pub): keep the dialog sweeps best-effort when the page dies (d56f392)
+<!-- src: plugins/publishings/wechatmp-pub/src/enrich.ts:30 -->
+- fix: give the script floor gate its own char rate (scriptFloorCharRate) (6cbbefd)
+<!-- src: plugins/kk/scripts/daily-stages.ts:1052 -->
+- fix: print full porcelain lines in the preflight dirty-path refusal (9df8c6f)
+<!-- src: plugins/kk/scripts/daily-scheduled-run.ts:94 -->
+- fix(shipinhao-pub): live-validated unified-create surface — 100-char description clip + draft-save confirm rail (94f8171)
+<!-- src: packages/kk-core/src/content-limits.ts:174 -->
+
+### Changed
+
+- refactor(surfdash-pub): move topic-claims IO onto the FileSystem seam (d01ffe4)
+<!-- src: plugins/publishings/surfdash-pub/src/topic-claims.ts:20 -->
+
+### Other
+
+- docs(feature): update existing feature files (19e5190)
+- chore(daily): repoint daily executors to pi-deepseek and agy-gemini (a5a3656)
+<!-- src: .spur/config.yaml:152 -->
+- docs(daily): plan quasi-news podcast cover (ADR-046, L2, 0347-0349) (27e07b1)
+- test(daily): align safety reviewer and scheduled run tests with 0347 F4 (18fc785)
+<!-- src: apps/cli/tests/voice2-dag.test.ts:849 -->
+- test(daily): align migration rehearsal with 2194994 preset targets (350fe94)
+<!-- src: apps/cli/tests/voice3-migration.e2e.test.ts:19 -->
+- style: biome-format plan-freeze test (4c38d17)
+<!-- src: plugins/kk/tests/daily-plan-freeze.test.ts:1 -->
+- test(daily): align migration rehearsal with 2194994 preset targets (444ae8e)
+<!-- src: apps/cli/tests/voice3-migration.e2e.test.ts:19 -->
+- test(cli): pin F7 done-with-incident semantics in the C09 migration fixture (edf20f4)
+<!-- src: apps/cli/tests/voice3-migration.e2e.test.ts:834 -->
+- chore: merge main into sp/runall-0347-0348-0349-57fe (25b0b2f)
+- docs(changelog): cite the surfdash-pub daily-topics fail-closed fix (cf97858)
+- docs: plan the kk wiki vault CLI as feature I1 (1565b4b)
+- docs(tasks): renumber I1 tasks to 0350-0354 (da736fe)
+- docs(cover): sync docs/04 cover row and docs/05 L2 row for 0347-0349 wrap (3bf3455)
+- chore: commit in-flight main-checkout work from spur-dev-runall-1322-1325 session (59da3f5)
+- chore: merge 3bf3455 into main (c40688f)
+- docs: L2 design index row planned->done (tasks 0347-0349 shipped) (7ec89ef)
+- chore: keep one-off xhs draft repair scripts from 11-09 incident (d03a8f8)
+- docs: record xhs preview egress pitfall and 0350 vendor-pattern task (6da9ee8)
+- docs(cover): refresh 0347/0348 verify evidence with line-range citations (2f30ef5)
+- test(daily): align expected agent vars with planner role (cbbc961)
+<!-- src: scripts/tests/daily-ai-news.test.ts:243 -->
+- chore(task): promote 0350 backlog to todo for dev-run (967ffc9)
+- chore(kk-wiki): reword the page-shapes marker list (c329b5a)
+- docs(cover): refresh 0349 verify evidence with refreshed gate rows (8571b3c)
+- docs(task-0350): record review outcome in the task Review section (db9b10c)
+- chore(wiki): close feature I1 with its verification receipt (47bcfb5)
+- docs(task-0350): add P4 findings table to Review section (satisfies L3 done gate) (ec7d7d8)
+- docs(task-0350): record Testing section and close task as done (e6e0b3c)
+- chore: merge e6e0b3c into main (471c9f8)
+- docs(tasks): tighten the I1 verification evidence (bd59d7d)
+- docs(context): record dev-run 0350 verdict-gate pitfalls (d92fcb7)
+- chore: merge bd59d7d into main (dcb8962)
+- Merge pull request #8 from gobing-ai/fix/surfdash-pub-topic-claims (c485406)
+- chore: merge c485406 into main (2c4fd44)
+- test(wiki): replace non-null assertions with a requireSlug helper (5b3b1b1)
+<!-- src: packages/kk-wiki/tests/summarize.test.ts:2 -->
+- chore(xhs-pub): track the tmp-xhs-repair diagnostic probes (fbe0c14)
+- docs(report): add the 2026-11-11 history-anatomy daily report (9746098)
+- chore(xhs-pub): drop the 20261110 diagnosis probes (75be449)
+- docs(content-safety): verify WeChat AI-identification rules (CAC 标识办法 + 2025-08-31 platform notice) (c307522)
+- docs(context): log shipinhao audio known-gap and hidden-dialog pitfall (274418b)
+- docs(context): hand off shipinhao tmp-recon disposal location (dd5decc)
+- test(cover): mute compositor log noise and cover sips error branches (cfabefb)
+<!-- src: plugins/kk/tests/cover-compositor.test.ts:45 -->
+- Merge pull request #9 from gobing-ai/fix/storm-json-mode-retry (130785b)
 
 ## [0.1.15] - 2026-11-09
 

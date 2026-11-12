@@ -339,3 +339,37 @@
 - **A review re-entry deletes the captured answer.** `review` re-visit expects `<runId>-review-answer.txt` to exist again; if the fold removes it, `continue` refuses with `expected file(s) missing` — rewrite the answer (cert bytes) before resuming.
 - `spur feature sync <id> --json` against this tree's `.spur/spur.db` (9.7 GB) blocks for minutes even on a NOOP; the docs-only roster refresh is `spur feature refresh --feature <id>` (seconds) and is what updates a feature's `## Tasks` status column after a task closes.
 - **wechatmp profile SIGTRAP on headed launch (2026-11-09).** `~/.config/kk/browser-profiles/wechatmp` intermittently crash-launches (EXC_BREAKPOINT, ChromeMain) headed-only — headless works, fresh profile works. A single *healthy* launch heals it permanently (the run regenerates `Local State`/`Preferences`); deleting GPU caches does not. Recovery: empty `Default/` for one launch (login state replays from root `storage-state.json`), let it boot, then restore the full `Default/` — subsequent launches stay green.
+
+## 2026-11-10 (20261109 daily repair)
+- `publish-matrix-send` throws on receipt reconciliation INSIDE the tier loop — a tier-0 stale binding aborts tiers 1–3 before any dispatch. Recovery: tier-scoped sends (`--tier 1`, `--tier 2`, `--tier 3`) skip tier-0 rows entirely; row order within a tier means earlier rows still dispatch before a later row's reconciliation throw.
+- After ANY generate-side artifact rebuild (bundle-variants + safety + freeze), all succeeded receipts bind stale payload digests → every rerun degrades to reconciliation errors. Plan the rebuild BEFORE the first send, not after.
+- xhs-pub `publish` operation cap = one per 2h per profile (KK_XHS_AUTOMATION_STATE): 发播客 + 上传图文 in one day must be scheduled ≥2h apart or the second hits `automation cap` (fast-fail, uncertain receipt).
+- surfing.salty.vi locales: en is the default locale → `/posts/<slug>`; zh/ja → `/{locale}/posts/<slug>`. `/en/posts/<slug>` serves a soft-404 (HTTP 200, "Page not found", hero og:image) — probe the right URL before diagnosing CDN/render issues.
+## 2026-11-10 — runall 0347-0349
+- `spur feature sync/update <id>` can hang indefinitely on corpus-lock contention with a concurrent session — run it nohup+background and check the log; lifecycle update from `active` is denied (legal path via sync's derived hops). Task `done` statuses are authoritative; feature-table/INDEX projections lag until the lock frees.
+- `bunx biome check --write` used ad-hoc can use a different binary than the pinned one (`bun run lint`/`bun run format`) — fixes landed on disk once but the committed tree still carried violations; always re-run `bun run lint` after the write and before `git write-tree`.
+- `spur workflow run` mis-keying the pipeline var (`taskId` instead of `wbs`) produces a failed run with `0000-*` artifacts — check the precheck log for "defaulting" hints before assuming the run started.
+
+## 2026-11-10 xhs draft image previews dead from overseas egress (XHS CDN, not our data)
+- Symptom: after a verified xhs upload+save, reopening the draft shows image tiles
+  with `naturalWidth===0` from a US egress — looks like data loss, isn't.
+- Mechanism: draft editor tiles load `sns-creator-preview.xhscdn.com/spectrum/<file_id>`
+  signed URLs. XHS re-signs per editor open via `web_api/sns/v5/creator/file/encryption`
+  (`file_id` is the durable server-side key). That host geo-splits DNS: CN clients get
+  `sched.vplego-dk.tdnsvod4.cn` (working), overseas clients get
+  `ovslegovideo.sched.apdcdn.com` (43.146.x) which has NO `/spectrum/` route and answers
+  `400 text/html` from `alb` → Chrome `net::ERR_BLOCKED_BY_ORB` → dead tile.
+- Verification recipe (no CN egress needed): query Tencent/Ali DoH with
+  `edns_client_subnet=<CN ip>` to get the CN edge IP, then
+  `curl --resolve sns-creator-preview.xhscdn.com:443:<cn-edge-ip> "<signed url>"`.
+  200 image/png = bytes intact server-side.
+- Corollary: `naturalWidth` is NOT a validity signal for xhs draft previews cross-region
+  (also the reason confirmThumbnails keys on src scheme, not naturalWidth).
+
+## 2026-11-20 · dev-run 0350 · pipeline verdict gates (fc9e752d)
+- Verdict replay only extracts BACKTICKED, repo-root-relative `path:line` anchors; bare or worktree-relative test citations become `missing` replay findings → verdict PASS downgrades to PARTIAL. Plugin test files resolve to workspace "." → skipped via root bunfig coverageThreshold guard, so root-relative cites replay clean.
+- After review, the task `### Review` section needs: a P1–P4 findings table with ≥1 populated row (hasPopulatedPriorityTable), a `Confidence:` line, and a `Verdict:` line — else residual review-contract blocks AND the L3 done-gate check fails.
+- The review approval token is folded from review.status at hitl.confirm time; after fixing evidence, re-answer the review work item so the token recomputes — a stale DENIED token routes review→remediate.
+- Any task-file/docs commit after a gate run invalidates the receipt (stale). Batch doc commits BEFORE the final gate run.
+- An engine run that fails its `done/command.gate` is terminal-failed and NOT resumable; recover via `spur task record <wbs> --transition done --no-lifecycle` after fixing, then persist-out + merge manually.
+- Raw `playwright.chromium.launchPersistentContext` headless probes on a kk profile use the `chromium_headless_shell` binary, whose cookie store cannot read what headed full-Chromium (kkBrowserLauncher `channel: 'chromium'`) wrote and clobbers the Cookies DB on open (publish-harness browser.ts:144-147 documents the channel flag). Symptom 2026-11-11: shipinhao QR session looked "dead across contexts" for hours — every raw headless probe wiped/misread the store while the production paths (profile-check/preflight/flow via kkBrowserLauncher) were correctly wired (flow.ts:754). All ad-hoc browser probes MUST go through kkBrowserLauncher; post-login cookie flush is also async (lands seconds after context.close()) — a quiet window matters before the next open.

@@ -229,6 +229,8 @@ export async function itcMaterializePlan(args: string[], fs: FileSystem = create
         const plan = await buildItcPublishPlan(req, plugins, fs);
         const planPath = join(publishDir, 'publish-plan.json');
         await fs.writeFile(planPath, `${JSON.stringify(plan, null, 2)}\n`);
+        // A skipped target is not an error, but the operator must see which one was dropped.
+        for (const warning of plan.warnings ?? []) echoError(`itc-materialize-plan: ${warning}`);
 
         // Prepare isolated target payloads
         await prepareTargetPayloads(fs, workDir, plan, plugins);

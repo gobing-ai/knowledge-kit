@@ -7,8 +7,9 @@
  * file that already had a duplicated key (the surfdash #30 merge failure) is collapsed
  * on rewrite.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+
 import { dirname } from 'node:path';
+import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { DIGEST_TAG, parseFrontmatterScalars } from './digest-check';
 import { PATCH_LOCALES, type PatchLocale, SERIES_NAMES } from './patch';
 
@@ -154,13 +155,19 @@ export function buildDailyTopicsEntry(posts: Record<PatchLocale, string>): Build
 /**
  * Insert or replace `obj[slug] = entry` and write pretty tab-indented JSON. Parse+serialize
  * collapses a raw file that already contained the same key twice. Never appends a second key.
- * Throws on unreadable / non-object JSON so the caller can fail closed.
+ * Rejects on unreadable / non-object JSON so the caller can fail closed. Text IO routes
+ * through the ts-runtime FileSystem seam (runtime-boundaries no-direct-fs-io).
  */
-export function upsertDailyTopicsEntry(mapPath: string, slug: string, entry: DailyTopicsEntry): void {
+export async function upsertDailyTopicsEntry(
+    mapPath: string,
+    slug: string,
+    entry: DailyTopicsEntry,
+    fileSystem: FileSystem = createNodeFileSystem(),
+): Promise<void> {
     if (slug.trim() === '') throw new Error('daily-topics upsert: empty slug');
     let existing: Record<string, unknown> = {};
-    if (existsSync(mapPath)) {
-        const raw = readFileSync(mapPath, 'utf-8').trim();
+    if (await fileSystem.exists(mapPath)) {
+        const raw = (await fileSystem.readFile(mapPath)).trim();
         if (raw !== '') {
             let parsed: unknown;
             try {
@@ -177,6 +184,6 @@ export function upsertDailyTopicsEntry(mapPath: string, slug: string, entry: Dai
         }
     }
     existing[slug] = entry;
-    mkdirSync(dirname(mapPath), { recursive: true });
-    writeFileSync(mapPath, `${JSON.stringify(existing, null, '\t')}\n`, 'utf-8');
+    await fileSystem.ensureDir(dirname(mapPath));
+    await fileSystem.writeFile(mapPath, `${JSON.stringify(existing, null, '\t')}\n`);
 }

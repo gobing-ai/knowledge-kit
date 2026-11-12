@@ -6,7 +6,7 @@ import { main } from '../../src/main';
 import { runLint } from '../../src/wiki/lint';
 import { captureOutput } from '../capture';
 
-/** Feature I1 R13/R23 (task 0351): `kk wiki lint` findings and exit code. */
+/** Feature I1 R13/R23 (task 0356): `kk wiki lint` findings and exit code. */
 
 const dirs: string[] = [];
 function vault(files: Record<string, string>): string {

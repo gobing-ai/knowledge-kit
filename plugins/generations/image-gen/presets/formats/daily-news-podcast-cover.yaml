@@ -1,0 +1,18 @@
+name: daily-news-podcast-cover
+description: Daily AI quasi-news podcast episode cover — fixed ultrawide composition with lower-third negative space for headline text
+job: cover
+aspectRatio: '21:9'
+width: 1344
+height: 576
+defaultStyle: quasi-news-podcast
+keywords: [editorial documentary, dramatic contrast, news podcast, lead story scene]
+outputFilename: 'daily-news-podcast-cover.png'
+variables:
+    subject:
+        description: Concrete visual scene for the day's lead story (objects, settings, symbols, dramatic lighting; no text)
+        default: an illuminated advanced semiconductor wafer glowing under industrial microscope inspection in a dark cleanroom
+template: |-
+    Ultrawide quasi-news podcast cover background scene for a daily technology news report.
+    Scene: {{subject | an illuminated advanced semiconductor wafer glowing under industrial microscope inspection in a dark cleanroom}}.
+    Composition: dramatic cinematic lighting, clear focal subject in upper-center or right-third, generous dark negative space in the lower third for headline text overlay, uncluttered background.
+    Atmosphere: urgent, authoritative, investigative, cutting-edge technology journalism.

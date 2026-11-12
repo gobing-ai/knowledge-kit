@@ -56,6 +56,7 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
+import { compositeCover } from './cover-compositor';
 
 export const SCRIPTS_DIR = import.meta.dir;
 export const VALIDATE_SIDECAR = 'validate-voicescript.ts';
@@ -85,8 +86,8 @@ export const DEDUP_TITLE_THRESHOLD = 0.4;
 // F614: the daily cover renders through the shipped daily-news presets; the brief's subject is
 // the only per-run var. The format/style pins and the subject cap are part of the style
 // contract — changing the look means editing the preset files, not this stage.
-export const COVER_FORMAT = 'daily-news-cover';
-export const COVER_STYLE = 'daily-news';
+export const COVER_FORMAT = 'daily-news-podcast-cover';
+export const COVER_STYLE = 'quasi-news-podcast';
 export const COVER_SUBJECT_CAP = 240;
 // E8: the XHS card series. Format and style are pinned exactly like the cover's; only the copy is
 // model-authored. `XHS_MAX_CARDS` mirrors the format preset's own series guidance.
@@ -1016,6 +1017,20 @@ export function coverBrief(briefPath: string): { reason: string | null; subject:
     return { reason: null, subject: trimmed };
 }
 
+/** The 0347 cover brief's Hook headline, or '' when the brief is absent, malformed, or headline-less. */
+function briefHeadline(briefPath: string): string {
+    if (!existsSync(briefPath)) return '';
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(readFileSync(briefPath, 'utf-8'));
+    } catch {
+        return '';
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return '';
+    const headline = (parsed as Record<string, unknown>).headline;
+    return typeof headline === 'string' ? headline.trim() : '';
+}
+
 export function coverNormalizeBody(workDir: string, runDate: string): void {
     // F614 R5: the artifact name follows the format preset (`<stem>-<format>-NN.<ext>`,
     // paths.ts), so normalize reads the path the plugin itself recorded in the manifest instead
@@ -1055,6 +1070,20 @@ export function coverNormalizeBody(workDir: string, runDate: string): void {
         } catch {
             // `rm -f` is silent when the file is already gone (a renamed source lands here too).
         }
+    }
+    // 0348: deterministic typography + branding overlay. The 0347 editorial brief carries a
+    // Chinese Hook headline; when present, composite it (and the podcast emblem) onto the
+    // normalized cover. Missing/invalid brief or empty headline keeps the raw background —
+    // downstream stages read the same `${runDate}_07_cover_cover.png` either way.
+    const briefPath = join(workDir, '23-cover', `${runDate}_07_cover-brief.json`);
+    const headline = briefHeadline(briefPath);
+    if (headline !== '') {
+        try {
+            compositeCover({ backgroundImagePath: out, headline, outputPath: out });
+        } catch (error) {
+            failWith(1, `cover composite: ${(error as Error).message}`);
+        }
+        console.error(`cover composited: headline=${headline.replaceAll('\n', ' ')}`);
     }
     console.error(`cover normalized: ${runDate}_07_cover_cover.png`);
 }

@@ -1,0 +1,9 @@
+name: quasi-news-podcast
+description: House style for quasi-news podcast cover — editorial documentary photography, dramatic contrast, deep navy/slate shadows
+modifiers: editorial documentary photography, cinematic dramatic lighting, high contrast, deep navy and slate shadows, crisp focal subject, clean composition, uncluttered lower third
+palette:
+    - { role: background, name: deep navy slate, hex: '#0A1424' }
+    - { role: primary, name: signal white, hex: '#FFFFFF' }
+    - { role: accent, name: urgent amber, hex: '#FFB800' }
+negative: text, letters, words, numbers, captions, watermark, logo, brand marks, flags, real people, recognizable faces, blurry, clutter, distorted graphics
+source: { kind: authored }

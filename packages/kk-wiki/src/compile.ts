@@ -1,7 +1,7 @@
 import type { VaultPageEntry } from './graph';
 
 /**
- * `compile` mechanics (task 0353): regenerate `index.md` and `MAP.md` from the page set.
+ * `compile` mechanics (task 0358): regenerate `index.md` and `MAP.md` from the page set.
  *
  * A pure function of the pages — the same pages always render the same bytes, so a second
  * consecutive run changes nothing and git diffs stay meaningful.

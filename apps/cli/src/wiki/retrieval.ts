@@ -4,7 +4,7 @@ import { consoleOutput, toJson } from '../output';
 import { resolveWikiConfig, WikiConfigError } from './config';
 
 /**
- * `kk wiki publish`, `kk wiki sync`, `kk wiki query` and `kk wiki context` (task 0354).
+ * `kk wiki publish`, `kk wiki sync`, `kk wiki query` and `kk wiki context` (task 0359).
  *
  * Publish projects the vault into a Quartz tree, sync resolves a configured remote into an argv
  * (never executing it in a dry run), and the two retrieval verbs return ranked pages or a packed

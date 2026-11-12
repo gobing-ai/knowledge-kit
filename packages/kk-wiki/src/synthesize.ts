@@ -4,7 +4,7 @@ import { type PageType, renderPage, resolveSlug } from './page';
 import { applyWrite, type GuardDecision } from './write';
 
 /**
- * `synthesize` mechanics (task 0352): create a page for a new topic, or extend an existing one.
+ * `synthesize` mechanics (task 0357): create a page for a new topic, or extend an existing one.
  *
  * The body text is supplied by the caller (the `kk:wiki-authoring` skill); this module only places
  * it, derives the frontmatter and enforces the guard. Deterministic for identical input.

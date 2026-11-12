@@ -12,17 +12,23 @@ description: >-
   gate that classifies the pair into pass|escalate|exclude|revise|block, `revise` applies the
   findings to the two drafts and re-opens the review. The loop is bounded by `safety_max_revise`
   (the gate spends one unit per pass and stops revising at the bound). Terminal `clean` covers
-  every outcome that is not a draft-integrity refusal — pass, escalate and exclude all publish what
-  the gate admitted — and `block` is the failure state, so this run exits non-zero only on a block
+  every outcome that is not a refusal — pass, escalate and exclude all publish what the gate
+  admitted — and `block` is a failure state, so this run exits non-zero on a block, an infra-fail
   or an integrity failure. The caller (`kk-daily-ai-voice2`'s `safety` node) therefore reads
   "non-zero = never publish", which is the same contract the flat workflow's `safety-judge -> failed`
-  edge carried.
+  edge carried. 0347 F4 (2026-11-10) splits the failure state in two: `infra-fail` is a gate refusal
+  caused by missing evidence (executor/agent death — request/report/verdict never appeared, marker
+  file `<scope>/<date>_09_safety-infra.json`), so machine retries are meaningful; `block` is a real
+  content verdict (or a refusal with evidence present), so only a human should retry it. Both are
+  failureStates, so the caller's "non-zero = never publish" contract is unchanged.
 initialState: review
 terminalStates:
   - clean
   - block
+  - infra-fail
 failureStates:
   - block
+  - infra-fail
 
 vars:
   # Effective run workspace, passed by the caller via --vars (the DAG owns the layout; this
@@ -170,7 +176,7 @@ states:
           timeoutMs: 600000
           # ADR-115 error tier: keep this prompt <= 1000 chars. Shared with the retry below.
           input: &safety-revise-input |
-            Read ${vars.work_dir}/${vars.safety_scope_dir}/${vars.run_date}_09_safety-review_report.json — its per-platform findings carry `revision` proposals, and its `content_ref` names the reviewed files. Read the judge `feedback` beside it.
+            Read ${vars.work_dir}/${vars.safety_scope_dir}/${vars.run_date}_09_safety-review_report.json — its per-platform findings carry `revision` proposals, and its `content_ref` names the reviewed files. Read the judge feedback beside it.
             Invoke kk:content-safety in detect+revise mode; apply only named findings to the files listed in the request's `content` array.
             Scope `drafts`: keep the article title「每日AI乱炖 · <date>」, the opening「这里是由Robin为你带来的咸话咸说之每日AI乱炖」, the VoiceScript's date greeting, and valid YAML. Scope `variants`: keep valid JSON with non-empty `title`/`body`. Never add「我是咸话咸说」or an AI-production closer, even if a finding asks.
             Keep every fact, number, name, quote, hedge（据报道）and 来源 link, the ## structure, segment order and `title`.
@@ -205,6 +211,12 @@ states:
 
   - id: block
     description: "Terminal — draft integrity refused the drafts (PII on a blocked platform, a must-pass judge fail outside the admission criteria, an out-of-contract verdict, or drafts edited after review); the caller must not publish"
+
+  - id: infra-fail
+    description: >-
+      Terminal — the gate refused for missing evidence (executor/agent outage: the request, report
+      or verdict never appeared), not a content verdict. Machine-retryable once executors recover;
+      drafts and reviewed bytes are preserved (the gate skips quarantine for this case).
 
 transitions:
   - from: review
@@ -294,12 +306,25 @@ transitions:
         command: 'test "${vars.safety_status}" = "revise"'
 
   - from: judge
+    to: infra-fail
+    description: >-
+      0347 F4: the gate refused for missing evidence (request/report/verdict never appeared — an
+      executor or agent outage), recorded in the safety-infra.json marker it wrote.
+      Machine-retryable: distinct from a content `block`, same caller contract
+      (non-zero = never publish).
+    terminalReason: failed-agent
+    guard:
+      kind: shell
+      options:
+        command: test -f "${vars.work_dir}/${vars.safety_scope_dir}/${vars.run_date}_09_safety-infra.json"
+
+  - from: judge
     to: block
     description: >-
       block (draft integrity — PII on a blocked platform, a must-pass fail outside the admission
-      criteria, drafts edited after review), or no usable status (missing/unreadable report or
-      verdict, non-PASS) -> never publish. Unconditional, so a refused verdict leaves the state
-      instead of deadlocking the loop.
+      criteria, drafts edited after review, or a refusal with evidence present), or no usable status
+      (missing/unreadable report or verdict, non-PASS) -> never publish. Unconditional, so a refused
+      verdict leaves the state instead of deadlocking the loop.
     terminalReason: failed-check
     guard:
       kind: always

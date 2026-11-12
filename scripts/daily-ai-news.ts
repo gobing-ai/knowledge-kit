@@ -15,14 +15,45 @@ const SUPPLY_REPORT = join(REPO, 'scripts/ai-news-supply-report.ts');
 const EXTRACT_PROFILE = join(REPO, 'plugins/kk/decisions/extract/ai-news.yaml');
 const DOGFOOD_TEST = 'apps/cli/tests/voice3-migration.e2e.test.ts';
 const WINDOWS = new Set(['after-generate', 'cn-peak', 'overseas-rss']);
+// Production posture of the two scheduled jobs in .spur/config.yaml (2026-11-12
+// consolidation): `generate --full` IS the 04:30 kk-daily-ai-voice job and
+// `publish --window overseas-rss --unattended` IS the 07:00 kk-daily-publish3 job, so
+// cron and a local run of the same command share one flag definition.
+// --window 72h (2026-11-05): the 24h pool produced a 8.4-min script and the 15-min
+// floor refused before TTS (duration-refusal); pinned until ingest bodies or label
+// quality widen the fresh pool.
+// Executor pair: retry stays a DIFFERENT binary family (2026-11-04 — spur's readiness
+// gate SIGTERMs a stalled `<agent> --version` after 5s, so a same-binary retry re-hits
+// the same stall); 2026-11-08 primary was pi-dsv4.1-flash-volc; 2026-11-10 volc's quota
+// died mid-run (AccountQuotaExceeded) with the claude retry weekly-limit-dead, so
+// primary repointed to pi-deepseek (kin to the validated volc executor) and retry to
+// agy-gemini (different binary family, probe-passed). The 0347 F1 preflight probes both
+// before spending the window; re-evaluate when volc resets.
+const PRODUCTION = {
+    agent: 'pi-deepseek',
+    retryAgent: 'agy-gemini',
+    workflow: 'kk-daily-ai-voice3',
+    window: '72h',
+} as const;
 const USAGE = `usage:
-  bun run daily-news:generate [-- <daily-scheduled-run options>]
-  bun run daily-news:publish [-- --run-date <YYYY-MM-DD|YYYYMMDD>] [--window <window>] [--yes] [publisher flags]
+  bun run daily-news:generate [--full] [--agent <role|executor>] [--retry-agent <role|executor>] [-- <daily-scheduled-run options>]
+  bun run daily-news:publish [-- --run-date <YYYY-MM-DD|YYYYMMDD>] [--window <window>] [--unattended] [--yes] [publisher flags]
   bun run daily-news:validate [-- --run-date <YYYY-MM-DD|YYYYMMDD>] [--mode quick|full] [--skip-dogfood]
 
+generate defaults to the supervised shadow posture: generate-only (auto_publish=false) over the
+72h pool; --agent/--retry-agent default to the 'planner' role (capable-2, tier-resolved at
+dispatch — no pinned model) and accept a role or a named executor to override. Explicit executor
+names are resolved with a one-time transition warning (0542 R2). --full is the 04:30 scheduled
+posture: the whole voice3 workflow with auto_publish=true and the production pair
+(pi-deepseek + agy-gemini); per-dispatch overrides still win (last flag wins).
 publish defaults to today's after-generate window. Missing/incomplete generation asks on a TTY;
---yes explicitly consents to generation. Non-TTY runs never generate implicitly.
-validate defaults to quick file-readiness checks. --mode full runs live read-only diagnosis;
+--yes explicitly consents to generation. Non-TTY runs never generate implicitly. --unattended is
+the 07:00 scheduled posture (kk-daily-publish3): today's voice3 receipt gates a full production
+regeneration (done/no-content/incomplete/running skip; missing/hard-failed re-run), then the
+window launcher runs without any prompt — bundle admission stays with the launcher.
+validate defaults to quick file-readiness checks and prints a per-part generation breakdown (run,
+plan, article, cover, script, safety, audio, bundle, publish windows, channels — each done, failed,
+partial, not-started, running, or no-content). --mode full runs live read-only diagnosis;
 dogfood uses the offline voice3 migration rehearsal.`;
 
 type CheckStatus = 'pass' | 'warn' | 'fail' | 'skipped';
@@ -38,6 +69,21 @@ interface ValidationCheck {
     name: string;
     status: CheckStatus;
     detail: string;
+}
+
+type PartState = 'done' | 'failed' | 'partial' | 'not-started' | 'running' | 'no-content';
+
+interface GenerationPart {
+    part: string;
+    state: PartState;
+    detail: string;
+}
+
+interface ReceiptForParts {
+    status?: unknown;
+    exitCode?: unknown;
+    channelCompleteness?: unknown;
+    triage?: { failedNode?: { id?: unknown; stderrTail?: unknown } };
 }
 
 interface CapturedRun {
@@ -201,32 +247,45 @@ function runCaptured(command: string, args: string[], timeout = 120_000): Captur
     };
 }
 
+function buildGenerateArgv(full: boolean, overrides: string[]): string[] {
+    return [
+        SUPERVISOR,
+        '--repo',
+        REPO,
+        '--works-dir',
+        resolveWorksDir(),
+        '--workflow',
+        PRODUCTION.workflow,
+        '--window',
+        PRODUCTION.window,
+        // Shadow posture (default): roles, not executor names (ADR-078 / 0542 R2) —
+        // planner = capable-2 authoring grade, tier-resolved at dispatch, so a quota-dead
+        // model never pins a supervised run. The full posture pins the production pair
+        // and drops --generate-only (auto_publish=true); forwarded args below still
+        // override per dispatch (parseArgs is last-wins).
+        ...(full ? [] : ['--generate-only']),
+        '--agent',
+        full ? PRODUCTION.agent : 'planner',
+        '--retry-agent',
+        full ? PRODUCTION.retryAgent : 'planner',
+        ...overrides,
+    ];
+}
+
+function browserEnv(): Record<string, string> {
+    return { KK_BROWSER_CHANNEL: process.env.KK_BROWSER_CHANNEL ?? 'chrome' };
+}
+
 function generate(args: string[]): number {
     if (args.includes('--help') || args.includes('-h')) {
         console.log(USAGE);
         return 0;
     }
-    return runInherited(
-        'bun',
-        [
-            SUPERVISOR,
-            '--repo',
-            REPO,
-            '--works-dir',
-            resolveWorksDir(),
-            '--workflow',
-            'kk-daily-ai-voice3',
-            '--generate-only',
-            '--window',
-            '72h',
-            '--agent',
-            'codex-sol',
-            '--retry-agent',
-            'claude',
-            ...args,
-        ],
-        { KK_BROWSER_CHANNEL: process.env.KK_BROWSER_CHANNEL ?? 'chrome' },
-    );
+    // --full runs the whole voice3 workflow (auto_publish=true) in the production
+    // posture; without it the run stays generate-only (auto_publish=false).
+    const full = args.includes('--full');
+    const forwarded = args.filter((arg) => arg !== '--full');
+    return runInherited('bun', buildGenerateArgv(full, forwarded), browserEnv());
 }
 
 function valueAfter(args: string[], flag: string): string | undefined {
@@ -280,14 +339,44 @@ async function publish(args: string[]): Promise<number> {
     if (args.includes('--work-dir'))
         throw new Error('--work-dir is not supported; use KK_WORKS_DIR so generation and publishing share one root');
     const yes = args.includes('--yes');
+    const unattended = args.includes('--unattended');
     const forwarded = args.filter(
         (arg, index) =>
             arg !== '--yes' &&
-            arg !== '--window' &&
-            arg !== '--run-date' &&
+            arg !== '--unattended' &&
             args[index - 1] !== '--window' &&
             args[index - 1] !== '--run-date',
     );
+    if (unattended) {
+        // The 07:00 scheduled posture (kk-daily-publish3): the receipt, not the bundle,
+        // gates regeneration — done|no-content|incomplete|running skip (a 'running' 04:30
+        // job may legally still be executing and owns the store lock), anything else
+        // (missing/hard-failed/garbage) re-runs the full voice3 workflow with the same
+        // production flags as the 04:30 job (one definition: buildGenerateArgv(true)).
+        // Bundle admission stays with the window launcher, exactly as in the shell this
+        // replaced.
+        const stamp = losAngelesDate().replaceAll('-', '');
+        const receiptPath = join(resolveWorksDir(), 'kk-daily-ai-voice2', stamp, 'schedule-receipt.json');
+        let status = 'missing';
+        try {
+            const parsed = JSON.parse(readFileSync(receiptPath, 'utf-8')) as { status?: unknown };
+            if (typeof parsed.status === 'string') status = parsed.status;
+        } catch {
+            // A missing or unreadable receipt regenerates, like the former jq fallback.
+        }
+        const regen = !['done', 'no-content', 'incomplete', 'running'].includes(status);
+        console.log(
+            `daily-ai-news: voice3 receipt status=${status}${regen ? '; re-running generation with the 04:30 production flags' : ''}`,
+        );
+        if (regen) {
+            const generated = runInherited('bun', buildGenerateArgv(true, []), browserEnv());
+            if (generated !== 0) {
+                console.error(`daily-ai-news: generation re-run exited ${generated}; skipping the ${window} window.`);
+                return generated;
+            }
+        }
+        return runInherited('bun', [PUBLISH_LAUNCHER, '--window', window, '--run-date', runDate, ...forwarded]);
+    }
     const dayDir = join(resolveWorksDir(), 'kk-daily-ai-voice2', runDate.replaceAll('-', ''));
     let inspection = await inspectGeneration(dayDir, runDate);
     if (inspection.status !== 'complete') {
@@ -365,6 +454,208 @@ function generationFilesMissing(dayDir: string): string[] {
     }
 }
 
+function startedSteps(dayDir: string): Set<string> {
+    const steps = new Set<string>();
+    try {
+        for (const line of readFileSync(join(dayDir, 'step-timing.json'), 'utf-8').split('\n')) {
+            if (line.trim() === '') continue;
+            const parsed = JSON.parse(line) as { step?: unknown };
+            if (typeof parsed.step === 'string') steps.add(parsed.step);
+        }
+    } catch {
+        // No timing file: artifact presence alone decides the part state.
+    }
+    return steps;
+}
+
+// The voice3 user-visible products, in pipeline order. The `_NN_` node prefixes are the
+// workflow's stable stage numbers (the same convention validate already uses for the
+// safety verdict and 31-publish receipts).
+const PART_ARTIFACTS = [
+    {
+        part: 'plan',
+        path: (stamp: string) => `21-plan/${stamp}_04_quality-control-content_candidates.json`,
+        step: 'plan',
+    },
+    { part: 'article', path: (stamp: string) => `22-article/${stamp}_06_article_article.md`, step: 'article' },
+    { part: 'cover', path: (stamp: string) => `23-cover/${stamp}_07_cover_cover.png`, step: 'cover' },
+    { part: 'script', path: (stamp: string) => `24-script/${stamp}_08_script_content.json`, step: 'script' },
+];
+
+/** Per-part generation state: done / failed / partial / not-started / running / no-content. */
+async function inspectParts(dayDir: string, runDate: string, mode: 'quick' | 'full'): Promise<GenerationPart[]> {
+    const digits = runDate.replaceAll('-', '');
+    const parts: GenerationPart[] = [];
+    const steps = startedSteps(dayDir);
+
+    let receipt: ReceiptForParts | undefined;
+    if (existsSync(join(dayDir, 'schedule-receipt.json'))) {
+        try {
+            receipt = readJson(join(dayDir, 'schedule-receipt.json')) as ReceiptForParts;
+        } catch {
+            parts.push({
+                part: 'run',
+                state: 'failed',
+                detail: 'unreadable scheduler receipt at schedule-receipt.json',
+            });
+        }
+    }
+    if (receipt === undefined && !parts.some((part) => part.part === 'run')) {
+        parts.push({
+            part: 'run',
+            state: 'not-started',
+            detail: 'no scheduler receipt; no scheduled generation has run today',
+        });
+    } else if (receipt !== undefined) {
+        const status = typeof receipt.status === 'string' ? receipt.status : 'unknown';
+        const failedNode = receipt.triage?.failedNode;
+        const tail =
+            typeof failedNode?.stderrTail === 'string'
+                ? failedNode.stderrTail.replaceAll('\n', ' ').trim().slice(0, 140)
+                : '';
+        const hint =
+            typeof failedNode?.id === 'string'
+                ? `; failed node ${failedNode.id}${tail === '' ? '' : ` — ${tail}`}`
+                : '';
+        const state: PartState =
+            status === 'done'
+                ? 'done'
+                : status === 'no-content'
+                  ? 'no-content'
+                  : status === 'running'
+                    ? 'running'
+                    : status === 'incomplete'
+                      ? 'partial'
+                      : 'failed';
+        parts.push({
+            part: 'run',
+            state,
+            detail: `receipt status=${status}, exitCode=${String(receipt.exitCode ?? '?')}${state === 'failed' ? hint : ''}`,
+        });
+    }
+
+    for (const { part, path, step } of PART_ARTIFACTS) {
+        const rel = path(digits);
+        if (existsSync(join(dayDir, rel))) parts.push({ part, state: 'done', detail: rel });
+        else if (steps.has(step))
+            parts.push({ part, state: 'failed', detail: `${step} ran but left no artifact at ${rel}` });
+        else parts.push({ part, state: 'not-started', detail: `no ${step} step, no artifact at ${rel}` });
+    }
+
+    const verdictRel = `24-script/${digits}_09_safety-verdict.status`;
+    const verdict = readOptional(join(dayDir, verdictRel))?.trim();
+    if (verdict === 'accept') parts.push({ part: 'safety', state: 'done', detail: `verdict=accept (${verdictRel})` });
+    else if (verdict) parts.push({ part: 'safety', state: 'failed', detail: `verdict=${verdict} (${verdictRel})` });
+    else if (steps.has('safety-review') || steps.has('safety-verdict-check'))
+        parts.push({ part: 'safety', state: 'failed', detail: `safety ran but left no verdict at ${verdictRel}` });
+    else parts.push({ part: 'safety', state: 'not-started', detail: `no safety step, no verdict at ${verdictRel}` });
+
+    const audioRel = `30-audio/${digits}_11_generate_content.mp3`;
+    if (existsSync(join(dayDir, audioRel))) {
+        let detail = audioRel;
+        try {
+            const measured = (
+                readJson(join(dayDir, `30-audio/${digits}_11_generate_content_duration.json`)) as {
+                    measuredMinutes?: unknown;
+                }
+            ).measuredMinutes;
+            if (typeof measured === 'number') detail += ` (~${measured} min)`;
+        } catch {
+            // Duration probe is optional garnish on a done part.
+        }
+        parts.push({ part: 'audio', state: 'done', detail });
+    } else if (steps.has('generate') || steps.has('intro-music'))
+        parts.push({ part: 'audio', state: 'failed', detail: `TTS ran but left no episode at ${audioRel}` });
+    else parts.push({ part: 'audio', state: 'not-started', detail: `no TTS step, no episode at ${audioRel}` });
+
+    if (mode === 'quick') {
+        // Quick stays presence-only for quality (hash/safety/schema belongs to explicit full mode);
+        // the no-content marker and artifact presence are still honest there.
+        const summary = readOptional(join(dayDir, 'run-report.summary.txt')) ?? '';
+        const noContent = summary.startsWith('no-content:');
+        const bundleStarted = steps.has('bundle-variants') || steps.has('safety-manifest');
+        const hasBundle = existsSync(join(dayDir, 'bundle.json'));
+        parts.push({
+            part: 'bundle',
+            state: noContent ? 'no-content' : hasBundle ? 'done' : bundleStarted ? 'failed' : 'not-started',
+            detail: noContent
+                ? summary.trim()
+                : hasBundle
+                  ? 'bundle.json present (hash/safety/schema verified in --mode full)'
+                  : bundleStarted
+                    ? 'bundling ran but left no bundle.json'
+                    : 'no generation bundle (bundle.json absent)',
+        });
+    } else {
+        const inspection = await inspectGeneration(dayDir, runDate);
+        if (inspection.status === 'complete') parts.push({ part: 'bundle', state: 'done', detail: inspection.reason });
+        else if (inspection.status === 'missing')
+            parts.push({
+                part: 'bundle',
+                state: steps.has('bundle-variants') || steps.has('safety-manifest') ? 'failed' : 'not-started',
+                detail: inspection.reason,
+            });
+        else if (inspection.status === 'running')
+            parts.push({ part: 'bundle', state: 'running', detail: inspection.reason });
+        else if (inspection.status === 'no-content')
+            parts.push({ part: 'bundle', state: 'no-content', detail: inspection.reason });
+        else parts.push({ part: 'bundle', state: 'failed', detail: inspection.reason });
+    }
+
+    const { PublishOutcomeSchema } = await matrixSchemas();
+    for (const window of WINDOWS) {
+        const rel = `4-publish/outcome.${window}.json`;
+        if (!existsSync(join(dayDir, rel))) {
+            parts.push({ part: `publish:${window}`, state: 'not-started', detail: `no outcome yet at ${rel}` });
+            continue;
+        }
+        try {
+            const parsed = PublishOutcomeSchema.safeParse(readJson(join(dayDir, rel)));
+            if (!parsed.success) {
+                parts.push({ part: `publish:${window}`, state: 'failed', detail: `malformed outcome at ${rel}` });
+                continue;
+            }
+            const outcome: PublishOutcome = parsed.data;
+            const state: PartState =
+                outcome.status === 'full' || outcome.status === 'dummy'
+                    ? 'done'
+                    : outcome.status === 'partial'
+                      ? 'partial'
+                      : 'failed';
+            parts.push({
+                part: `publish:${window}`,
+                state,
+                detail: `status=${outcome.status}, published=${outcome.published}/${outcome.targets} (${rel})`,
+            });
+        } catch {
+            parts.push({ part: `publish:${window}`, state: 'failed', detail: `unreadable outcome at ${rel}` });
+        }
+    }
+
+    const rows = Array.isArray(receipt?.channelCompleteness)
+        ? (receipt.channelCompleteness as { channel?: unknown; state?: unknown; required?: unknown; dummy?: unknown }[])
+        : [];
+    const required = rows.filter(
+        (row) => row.required === true && row.dummy !== true && typeof row.channel === 'string',
+    );
+    if (receipt === undefined) parts.push({ part: 'channels', state: 'not-started', detail: 'no scheduler receipt' });
+    else if (required.length === 0)
+        parts.push({ part: 'channels', state: 'not-started', detail: 'no required channel rows in the receipt' });
+    else {
+        const notDone = required.filter((row) => row.state !== 'done');
+        parts.push({
+            part: 'channels',
+            state: notDone.length === 0 ? 'done' : 'partial',
+            detail:
+                notDone.length === 0
+                    ? `${required.length} required channels delivered`
+                    : `not delivered: ${notDone.map((row) => `${row.channel}=${String(row.state)}`).join(', ')}`,
+        });
+    }
+
+    return parts;
+}
+
 function evidenceDirectory(worksDir: string): string {
     const stamp = new Date().toISOString().replaceAll(':', '').replaceAll('.', '-');
     const dir = join(worksDir, 'tmp/test-daily-ai-news', `${stamp}-${process.pid}`);
@@ -401,6 +692,25 @@ async function validate(args: string[]): Promise<number> {
         checks.push({ name, status, detail });
         console.log(`[${status.toUpperCase()}] ${name} — ${detail}`);
     };
+    const parts = await inspectParts(dayDir, runDate, mode);
+    console.log(`generation parts for ${runDate} in ${dayDir}:`);
+    for (const part of parts) console.log(`  [${part.state.toUpperCase()}] ${part.part} — ${part.detail}`);
+    const failedParts = parts.filter((part) => part.state === 'failed');
+    add(
+        'generation-parts',
+        failedParts.length > 0
+            ? 'fail'
+            : parts.some((part) => part.state === 'partial' || part.state === 'no-content')
+              ? 'warn'
+              : 'pass',
+        `${
+            ['done', 'failed', 'partial', 'no-content', 'running', 'not-started']
+                .map((state) => [state, parts.filter((part) => part.state === state).length] as const)
+                .filter(([, count]) => count > 0)
+                .map(([state, count]) => `${count} ${state}`)
+                .join(', ') || 'no parts'
+        }${failedParts.length > 0 ? `; failed: ${failedParts.map((part) => part.part).join(', ')}` : ''}`,
+    );
     const finish = (): number => {
         const status = checks.some((check) => check.status === 'fail')
             ? 'fail'
@@ -416,6 +726,7 @@ async function validate(args: string[]): Promise<number> {
             worksDir,
             status,
             checks,
+            parts,
             evidence: {
                 directory: evidence,
                 ...(mode === 'full'
@@ -571,12 +882,9 @@ async function validate(args: string[]): Promise<number> {
         schedulerReady =
             scheduler.enabled === true &&
             daily?.cron === '30 4 * * *' &&
-            dailyCommand.includes('daily-scheduled-run.ts') &&
-            dailyCommand.includes('--workflow kk-daily-ai-voice3') &&
-            dailyCommand.includes('--window 72h') &&
-            !dailyCommand.includes('--generate-only') &&
+            dailyCommand.includes('bun scripts/daily-ai-news.ts generate --full') &&
             publishJob?.cron === '0 7 * * *' &&
-            publishCommand.includes('voice3-publish-window.ts --window overseas-rss') &&
+            publishCommand.includes('bun scripts/daily-ai-news.ts publish --window overseas-rss --unattended') &&
             activeWindowLine('cn-peak') &&
             activeWindowLine('overseas-rss');
     } catch {

@@ -1,5 +1,5 @@
 /**
- * `sync` mechanics (task 0354): resolve a configured remote adapter into an argv.
+ * `sync` mechanics (task 0359): resolve a configured remote adapter into an argv.
  *
  * The command template comes from `kk.config.json` (`wiki.remotes.<name>.command`); this module only
  * substitutes the two placeholders and reports the plan. Execution is the caller's decision, so a
