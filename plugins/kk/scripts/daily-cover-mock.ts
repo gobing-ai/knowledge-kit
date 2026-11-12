@@ -125,6 +125,11 @@ function verifyOutput(outPath: string): { width: number; height: number } {
 
 export function runMock(args: string[]): { out: string; width: number; height: number; background: string } {
     const options = parseMockArgs(args);
+    const parent = dirname(options.out);
+    if (!existsSync(parent)) {
+        // sips would silently no-op on a missing parent (0348 finding) — fail before compositing.
+        throw new Error(`daily-cover-mock: output directory does not exist: ${parent}`);
+    }
     const tmp = mkdtempSync(join(tmpdir(), 'kk-cover-mock-'));
     try {
         const envPath = join(tmp, 'mock-image-gen-in.json');
@@ -138,11 +143,6 @@ export function runMock(args: string[]): { out: string; width: number; height: n
                   return pngPath;
               })()
             : generateLiveBg(options, envPath, contentOut);
-        const parent = dirname(options.out);
-        if (!existsSync(parent)) {
-            // sips would silently no-op on a missing parent (0348 finding) — fail before compositing.
-            throw new Error(`daily-cover-mock: output directory does not exist: ${parent}`);
-        }
         compositeCover({
             backgroundImagePath: background,
             headline: options.headline,
