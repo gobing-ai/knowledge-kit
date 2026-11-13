@@ -394,6 +394,54 @@ describe('runFanout', () => {
         });
     });
 
+    it('0302 — reads a failed Result back from a plugin that exits 1, so itcDelivery metadata survives', async () => {
+        await withTempDir(async (root) => {
+            // Publish plugins write their Result and THEN exit 1 on `ok: false`. The aggregate must
+            // carry that Result (effect marker included) instead of a bare process error.
+            const pluginsRoot = join(root, 'plugins');
+            const dir = join(pluginsRoot, 'publishings', 'refuse-pub');
+            mkdirSync(join(dir, 'src'), { recursive: true });
+            writeFileSync(
+                join(dir, 'plugin.json'),
+                JSON.stringify({ name: 'refuse-pub', kind: 'publish', entry: './src/index.ts', version: '1.0.0' }),
+            );
+            writeFileSync(
+                join(dir, 'src', 'index.ts'),
+                [
+                    "import { writeFileSync } from 'node:fs';",
+                    'const argv = process.argv.slice(2);',
+                    "const outPath = argv[argv.indexOf('--out') + 1];",
+                    `writeFileSync(outPath, JSON.stringify({ ok: false, target: 'refuse-pub', error: 'session preflight refused', metadata: { itcDelivery: { schemaVersion: 1, effect: 'none' } } }));`,
+                    "console.error('refuse-pub failed: session preflight refused');",
+                    'process.exit(1);',
+                    '',
+                ].join('\n'),
+            );
+            const contentFile = join(root, 'content.json');
+            const outFile = join(root, 'result.json');
+            writeFileSync(contentFile, JSON.stringify(CONTENT));
+            const code = await runFanout([
+                '--content',
+                contentFile,
+                '--target',
+                'refuse-pub',
+                '--out',
+                outFile,
+                '--plugins-root',
+                pluginsRoot,
+            ]);
+            expect(code).toBe(1);
+            const outData = JSON.parse(await Bun.file(outFile).text());
+            expect(outData.targets[0]).toMatchObject({
+                target: 'refuse-pub',
+                ok: false,
+                status: 'failed',
+                error: 'session preflight refused',
+                metadata: { itcDelivery: { schemaVersion: 1, effect: 'none' } },
+            });
+        });
+    });
+
     it('R2 — --retry-from dispatches only the prior failures and carries successes as skipped', async () => {
         await withTempDir(async (root) => {
             const contentFile = join(root, 'content.json');

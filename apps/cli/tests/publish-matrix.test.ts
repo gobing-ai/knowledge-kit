@@ -453,6 +453,38 @@ describe('publish-matrix-send (0321 R4, R5)', () => {
         }, fixture);
     });
 
+    it('re-dispatches when the receipt was quarantined beside a stale failed aggregate', async () => {
+        // Operator recovery for an unknown-effect row is: verify the platform, move the receipt
+        // aside, re-send. The aggregate left by the failed attempt must not be reused as this
+        // pass's result (2026-11-12: 94s, identical error, no console visit).
+        const fixture = makeFixture([...TIER0]);
+        await withCleanup(async (fx) => {
+            const out = captureOutput();
+            try {
+                expect(await planPublishMatrix(planArgs(fx), { projectRoot: fx.root })).toBe(0);
+                const first = fakeDispatch({ 'surfdash-pub': { ok: false, error: 'boom' } });
+                expect(
+                    await sendPublishMatrix([fx.workDir, '--window', 'after-generate'], { dispatch: first.dispatch }),
+                ).toBe(0);
+                const receipt = join(fx.workDir, '4-publish/receipts/surfdash-pub.post.json');
+                expect(existsSync(receipt)).toBe(true);
+                rmSync(receipt);
+
+                const second = fakeDispatch();
+                expect(
+                    await sendPublishMatrix([fx.workDir, '--window', 'after-generate'], { dispatch: second.dispatch }),
+                ).toBe(0);
+                // Only the quarantined row re-dispatches; the sibling's succeeded receipt still skips.
+                expect(second.calls).toHaveLength(1);
+                const fresh = JSON.parse(readFileSync(receipt, 'utf-8')) as { status: string; effect: string };
+                expect(fresh.status).toBe('succeeded');
+                expect(fresh.effect).toBe('confirmed');
+            } finally {
+                out.restore();
+            }
+        }, fixture);
+    });
+
     it('never resends a window it already delivered', async () => {
         const fixture = makeFixture([...TIER0]);
         await withCleanup(async (fx) => {
@@ -497,17 +529,35 @@ describe('publish-matrix-send (0321 R4, R5)', () => {
         }, fixture);
     });
 
-    it('skips every later tier when a required tier-0 row fails', async () => {
-        const fixture = makeFixture([...TIER0, ...DOMESTIC]);
+    it('fails only the later rows that need a missing tier-0 link, not every later tier', async () => {
+        // 2026-11-12 daily run: one surfdash CMS failure skipped xhs/shipinhao/wechatmp entirely.
+        // The publication contract is per payload: a row whose placeholder cannot resolve fails
+        // with effect none (retryable), while a row that links nothing still dispatches.
+        const fixture = makeFixture(
+            [
+                ...TIER0,
+                ...DOMESTIC,
+                { plugin: 'shipinhao-pub', operation: 'audio', variant: 'episode', tier: 1, mode: 'draft' },
+            ],
+            { article: contentJson('正文 {{article_url}}'), episode: contentJson('播客') },
+        );
         await withCleanup(async (fx) => {
             const out = captureOutput();
             try {
                 expect(await planPublishMatrix(planArgs(fx), { projectRoot: fx.root })).toBe(0);
                 const { dispatch, calls } = fakeDispatch({ 'surfdash-pub': { ok: false, error: 'boom' } });
                 expect(await sendPublishMatrix([fx.workDir, '--window', 'after-generate'], { dispatch })).toBe(0);
+                // The episode row links nothing, so it is not held hostage by the article failure.
+                expect(calls.some((argv) => argv.includes('shipinhao-pub'))).toBe(true);
                 expect(calls.some((argv) => argv.includes('wechatmp-pub'))).toBe(false);
+                const blocked = JSON.parse(
+                    readFileSync(join(fx.workDir, '4-publish/receipts/wechatmp-pub.文章.json'), 'utf-8'),
+                ) as { effect: string; status: string; error: string };
+                expect(blocked.effect).toBe('none');
+                expect(blocked.status).toBe('failed');
+                expect(blocked.error).toBe('unresolved-link');
                 const events = readFileSync(join(fx.workDir, '4-publish/publish-events.jsonl'), 'utf-8');
-                expect(events).toContain('tier-0-required-failed');
+                expect(events).not.toContain('tier-0-required-failed');
             } finally {
                 out.restore();
             }

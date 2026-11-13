@@ -546,8 +546,11 @@ Invariants, each mechanically checkable:
   `<variant>@<plugin>` and wins the lookup over the shared `<variant>`), and `{{article_url}}` /
   `{{podcast_url}}` resolve at send time from the tier-0 receipts — a publish plugin only ever
   receives finished content.
-- Tier 0 is the publication contract: serial, and a failed required tier-0 row blocks every later
-  tier rather than letting them send against a content URL that does not exist.
+- Tier 0 is the publication contract: serial and first, because later tiers may link it. The
+  dependency is per payload, not per tier: a failed tier-0 row fails only the later rows whose
+  `{{article_url}}` / `{{podcast_url}}` cannot resolve (effect `none`, retryable); unrelated
+  channels still dispatch (2026-11-12 amendment — one surfdash CMS failure used to drop a whole
+  day's planned posts).
 
 **Module boundary.** `apps/cli/src/publish-matrix.ts` owns the `publish-matrix-*` stage family
 (plan, check, send, classify, bundle, rss-gate, wait-until), dispatched by

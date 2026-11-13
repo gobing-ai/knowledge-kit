@@ -2386,15 +2386,21 @@ Before any dispatch (0331 R5) it revalidates every pending non-dummy row: the pa
 hash to the plan's `payloadDigest` and the row's source variant to its `variantDigest` — a payload
 or variant edited while the run sat at the `send-confirm` pause throws before any transport spawn
 ("changed after the plan was frozen" / "changed after the freeze"), naming the row and the re-run to
-do. Tier 0 is the publication contract: serial, and a failed `required` tier-0 row records a `skipped`
-event for every later tier and sends none of them. Rows at tier ≥ 1 get their payload's
+do. Tier 0 is the publication contract: serial and first, because later payloads may link it. The
+blocking rule is per payload, not per tier (2026-11-12 amendment): a failed tier-0 row fails only
+the later rows whose placeholder cannot resolve, while rows that link nothing still dispatch — a
+single surfdash CMS failure used to drop a whole day's planned posts. Rows at tier ≥ 1 get their
 `{{article_url}}` / `{{podcast_url}}` placeholders resolved from the tier-0 receipts
 (`surfdash-pub` → article, `podcast-pub` → podcast, each url inserted JSON-string-escaped) into
 `4-publish/payloads/content.<id>.resolved.json`; a placeholder that stays unresolved fails that row
 with `effect: none`, `error: unresolved-link`, and no spawn. Resend rules are inherited unchanged
 from the shared `sendRows` loop, which the itc sender now also uses (`key` = plugin there, target id
 here): skip a succeeded row, never resend a live row whose effect is `unknown`, and `--retry`
-resends only `effect: none` failures. Receipts land in `4-publish/receipts/<id>.json`; the schema
+resends only `effect: none` failures. A plugin that refuses **before** it composes or saves anything
+must carry `metadata.itcDelivery.effect = "none"` (xhs cap/session/preflight, wechatmp
+session/validation/compose, weibo pre-save, shipinhao pre-submit); without it a genuinely retryable
+refusal is recorded as `uncertain` and `--retry` skips it forever — the 2026-11-12 daily window lost
+four channels that way. Receipts land in `4-publish/receipts/<id>.json`; the schema
 gains optional `target`, `window`, `dummy`, `error`, `startedAt`, `finishedAt` beside the existing
 `status`/`effect` shape, so an itc receipt is unchanged. `publish-events.jsonl` gets one
 `sent`/`failed` line per receipt. `--tier <n>` restricts the pass to exactly that tier.
@@ -2605,19 +2611,28 @@ drafted owned success and dummy rehearsals HOLD the selection (`marked: false`, 
 `4-publish/patch-surfdash.{result,payload}.json`, `4-publish/partial-marker.<window>.txt`.
 
 **Shipped preset.** `plugins/kk/publish-presets/daily-ai-voice.json` carries design §3's matrix,
-each row assigned to exactly one window: T0 owned + draft-capable domestic on `after-generate`
-(公众号 播客/文章 draft, 小红书 发播客 draft, 小红书 写长文 dummy, 小红书 上传图文 off), the
-no-draft domestic rows on `cn-peak` (微博 头条, X article draft), and the short-copy channels on
-`overseas-rss` (`social:x`, `social:weibo`, `social:threads` draft); the gap channels
-(视频号 图文, threads images) are `off`. A row's `variant` is the **shared** bundle key
-(`article`, `episode`, `cards`, `social:x`): a channel-specific bundle variant is keyed
-`<variant>@<plugin>` and wins the lookup, which is how generate ships channel copy without a preset
-edit. The selector is `workflows.kk-daily-ai-voice3.publish_preset` (default `daily-ai-voice`,
+each row assigned to exactly one window: the owned + domestic channels on `after-generate`
+(公众号 播客/文章, 小红书 发播客, 视频号 音频), the no-draft and capped rows on `cn-peak`
+(微博 头条, 小红书 上传图文), and the short-copy channels on `overseas-rss` (`social:x`,
+`social:weibo`, `social:threads`); the gap channels (小红书 写长文, 视频号 图文, threads images) and
+the X article row are `off`. A row's `variant` is the **shared** bundle key (`article`, `episode`, `cards`,
+`social:x`): a channel-specific bundle variant is keyed `<variant>@<plugin>` and wins the lookup,
+which is how generate ships channel copy without a preset edit.
+
+**Capped channels get their own window (2026-11-12).** xhs allows one headed publish visit per 2h
+(ADR-025), so two xhs rows in one window can never both run: the second was always refused as an
+automation-cap failure. 小红书 上传图文 therefore lives in `cn-peak`, 13h after 发播客, as its own
+plan row with its own receipt — independently retryable, unlike a note carried inside another row's
+`metadata.followUps`. The plugin's follow-up contract stays available to callers that really want
+one visit. The selector is `workflows.kk-daily-ai-voice3.publish_preset` (default `daily-ai-voice`,
 `plugins/kk/config.example.yaml`), resolved with the itc contract: a missing file/block means the
 compiled default, an unknown key or a non-slug value is refused by name.
 
 **Schedules.** `kk schedule render kk-daily-publish3-cn-peak|kk-daily-publish3-overseas --platform cron
---repo <checkout>` renders the two windows' cron entries; kk never installs them. cn-peak fires
+--repo <checkout>` renders the two windows' cron entries; kk never installs them. The spur scheduler
+also carries both as jobs (`kk-daily-publish3` at 07:00 and `kk-daily-publish3-cn-peak` at 17:00
+local, each `publish --window … --unattended`), and the scheduled-posture check in
+`scripts/daily-ai-news.ts` requires both. cn-peak fires
 `0 17 * * *` local and carries `live_channels` in the rendered line — that installed line **is** the
 operator's ADR-022 consent. overseas fires `0 7 * * *` and passes yesterday's `run_date`, because the
 observed episodes land after 07:00. Neither has a launchd template (no keepalive semantics needed).

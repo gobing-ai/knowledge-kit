@@ -492,6 +492,48 @@ async function composePlan(
     const rows: PublishPlanRow[] = [];
     const omitted: OmittedTarget[] = [];
     const seen = new Set<string>();
+
+    /**
+     * Resolve one bundle variant to validated Content, enforcing the frozen digest and — for every
+     * non-dummy row — the reviewed safety digest, so the row cannot ride a stale review.
+     */
+    const loadVariant = async (
+        variantName: string,
+        plugin: string,
+        rowMode: PublishPlanRow['mode'],
+        label: string,
+    ): Promise<{ content: Content; path: string; digest: string }> => {
+        const entry = bundle.variants[`${variantName}@${plugin}`] ?? bundle.variants[variantName];
+        if (entry === undefined) throw new Error(`bundle has no variant '${variantName}' for ${label}`);
+        const contentPath = resolve(bundleDir, entry.path);
+        if (!(await fs.exists(contentPath))) throw new Error(`variant file not found: ${contentPath}`);
+        const raw = await fs.readFile(contentPath);
+        const digest = createHash('sha256').update(raw).digest('hex');
+        if (digest !== entry.sha256) {
+            throw new Error(`variant digest mismatch for '${variantName}': expected ${entry.sha256}, got ${digest}`);
+        }
+        const parsed = ContentSchema.safeParse(JSON.parse(raw));
+        if (!parsed.success) {
+            throw new Error(`variant '${variantName}' is not valid Content: ${parsed.error.message}`);
+        }
+        if (rowMode !== 'dummy') {
+            const key =
+                bundle.variants[`${variantName}@${plugin}`] !== undefined ? `${variantName}@${plugin}` : variantName;
+            const reviewed = safety?.variants[key];
+            if (safety !== undefined && reviewed === undefined) {
+                throw new Error(
+                    `variant '${key}' is not covered by bundle.safety.variants; the variants safety gate must review every real row's variant`,
+                );
+            }
+            if (reviewed !== undefined && reviewed !== digest) {
+                throw new Error(
+                    `variant '${key}' changed after review: reviewed ${reviewed}, frozen ${digest}; re-run the variants safety gate`,
+                );
+            }
+        }
+        return { content: parsed.data, path: entry.path, digest };
+    };
+
     for (const target of selected) {
         const id = targetId(target);
         if (seen.has(id)) throw new Error(`duplicate target id '${id}' in preset '${preset.name}'`);
@@ -544,34 +586,8 @@ async function composePlan(
             });
             continue;
         }
-        const variantPath = resolve(bundleDir, entry.path);
-        if (!(await fs.exists(variantPath))) throw new Error(`variant file not found: ${variantPath}`);
-        const variantRaw = await fs.readFile(variantPath);
-        const actual = createHash('sha256').update(variantRaw).digest('hex');
-        if (actual !== entry.sha256) {
-            throw new Error(`variant digest mismatch for '${target.variant}': expected ${entry.sha256}, got ${actual}`);
-        }
-        const parsedContent = ContentSchema.safeParse(JSON.parse(variantRaw));
-        if (!parsedContent.success) {
-            throw new Error(`variant '${target.variant}' is not valid Content: ${parsedContent.error.message}`);
-        }
-        const variantKey =
-            bundle.variants[`${target.variant}@${target.plugin}`] !== undefined
-                ? `${target.variant}@${target.plugin}`
-                : target.variant;
-        if (mode !== 'dummy') {
-            const reviewed = safety?.variants[variantKey];
-            if (safety !== undefined && reviewed === undefined) {
-                throw new Error(
-                    `variant '${variantKey}' is not covered by bundle.safety.variants; the variants safety gate must review every real row's variant`,
-                );
-            }
-            if (reviewed !== undefined && reviewed !== actual) {
-                throw new Error(
-                    `variant '${variantKey}' changed after review: reviewed ${reviewed}, frozen ${actual}; re-run the variants safety gate`,
-                );
-            }
-        }
+        const loaded = await loadVariant(target.variant, target.plugin, mode, `target '${id}'`);
+        const parsedContent = { data: loaded.content };
 
         // Mode keys are plan-owned (0330 R3): a preset `options` entry that could flip a row's
         // mode behind the plan's back is a live-promotion attempt, so it is refused, not overridden.
@@ -1173,21 +1189,6 @@ async function writeDummyReceipt(
 }
 
 /**
- * Whether a row's receipt on disk (this pass or an earlier one) already records a success: one
- * tier-0 row skipping because it succeeded last night must not read as a failure, or "never resend"
- * would quietly become "never deliver".
- */
-async function readSucceeded(fs: FileSystem, receiptsDir: string, id: string): Promise<boolean> {
-    const path = join(receiptsDir, `${id}.json`);
-    if (!(await fs.exists(path))) return false;
-    try {
-        return (JSON.parse(await fs.readFile(path)) as ItcReceipt).status === 'succeeded';
-    } catch {
-        return false;
-    }
-}
-
-/**
  * Read the tier-0 receipts a link placeholder resolves from. `real` excludes dummy receipts: a draft
  * or live row must never publish a `dummy://` link, so with only a rehearsed tier 0 its placeholder
  * stays unresolved and the row fails with effect none; `all` serves dummy rows.
@@ -1243,10 +1244,12 @@ async function readLinkMap(
 /**
  * `publish-matrix-send`: dispatch the plan's rows in tier order and record one receipt per row.
  *
- * Tier 0 is the publication contract: serial, and a failed `required` tier-0 row skips every later
- * tier. Resend rules are the itc ones, inherited through `sendRows` — a succeeded row is skipped, a
- * live row with an unknown effect is never resent, and `--retry` only resends `effect: none`
- * failures.
+ * Tier 0 is the publication contract: serial and first, because every later tier's
+ * `{{article_url}}` / `{{podcast_url}}` resolves from its receipts. A failed tier-0 row fails only
+ * the later rows whose payload actually asks for the missing link (`unresolved-link`, effect none);
+ * unrelated channels still dispatch. Resend rules are the itc ones, inherited through `sendRows` —
+ * a succeeded row is skipped, a live row with an unknown effect is never resent, and `--retry` only
+ * resends `effect: none` failures.
  */
 export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps = {}): Promise<number> {
     const fs = deps.fs ?? createNodeFileSystem();
@@ -1291,7 +1294,6 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
             .update(await fs.readFile(join(publishDir, `plan.${plan.window}.json`)))
             .digest('hex');
 
-        const succeededAlready = (id: string): Promise<boolean> => readSucceeded(fs, receiptsDir, id);
         const tiers = [...new Set(plan.rows.map((row) => row.tier))].sort((a, b) => a - b);
         const pending = onlyTier === undefined ? plan.rows : plan.rows.filter((row) => row.tier === onlyTier);
 
@@ -1329,22 +1331,15 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
             }
         }
 
-        let tierZeroBroken = false;
+        // A failed required tier-0 row no longer blocks every later tier (2026-11-12): the link
+        // dependency is per payload, and `preparePayload` already fails a row whose `{{article_url}}`
+        // / `{{podcast_url}}` has no receipt to resolve — with `effect: none`, so a bounded retry can
+        // pick it up. Blocking unrelated channels (xhs, shipinhao) on a surfdash CMS hiccup lost two
+        // whole days of planned posts; downstream posts that do link tier 0 still cannot go out with
+        // a broken or missing link.
         for (const tier of tiers) {
             const rows = pending.filter((row) => row.tier === tier);
             if (rows.length === 0) continue;
-            if (tierZeroBroken) {
-                for (const row of rows) {
-                    await appendEvent(fs, publishDir, {
-                        event: 'skipped',
-                        window: plan.window,
-                        id: row.id,
-                        plugin: row.plugin,
-                        reason: 'tier-0-required-failed',
-                    });
-                }
-                continue;
-            }
 
             const linkMaps = tier === 0 ? { real: {}, live: {}, all: {} } : await readLinkMap(fs, publishDir, plan);
             const sendRowsInput: SendRow[] = rows.map((row) => ({
@@ -1407,20 +1402,6 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
                 throw new Error(
                     `receipt reconciliation required for: ${sendOutcome.reconciliationRequired.join(', ')}`,
                 );
-            }
-
-            if (tier === 0) {
-                // The publication contract: a required tier-0 row that did not succeed skips every
-                // later tier, because downstream payloads link what tier 0 published. A row an
-                // earlier pass already delivered (skipped here as succeeded) still satisfies it —
-                // otherwise re-entering the window after a T2 failure would skip T2 forever.
-                tierZeroBroken = false;
-                for (const row of rows) {
-                    if (!row.required) continue;
-                    if (await succeededAlready(row.id)) continue;
-                    tierZeroBroken = true;
-                    break;
-                }
             }
         }
 

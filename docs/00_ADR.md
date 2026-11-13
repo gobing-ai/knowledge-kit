@@ -1837,3 +1837,43 @@ not the repository. The API path also removes what made the CLI path fragile: a 
 **Detail:** `plugins/publishings/zenn-pub/src/index.ts` (`resolveZennGithubConfig`,
 `ZennGithubApiTransport`, `getPublishTransport`); `plugins/publishings/zenn-pub/tests/zenn-pub.test.ts`;
 `docs/04_DESIGN.md` (plugin surface).
+
+---
+
+## ADR-052: A publish window delivers every planned row, and a pre-send refusal is effect-free
+
+**Status:** Accepted · **Date:** 2026-11-12 · **Feature:** daily voice3 publish (G15/G21)
+
+**Decision.** Four changes to the daily publish path, all enforced in the shared matrix contract:
+
+1. **Tier-0 failure no longer blocks unrelated tiers.** The publication contract is per payload: a
+   later row is blocked only when its own `{{article_url}}` / `{{podcast_url}}` has no tier-0 receipt
+   to resolve. Such a row fails `unresolved-link` with `effect: none` (retryable), while a row that
+   links nothing dispatches normally.
+2. **A pre-send refusal carries `metadata.itcDelivery.effect = "none"`.** Plugins that refuse before
+   composing or saving (session preflight, automation cap, validation, driver/operation, a wechatmp
+   compose failure) return that marker, so the receipt is `failed`/`none` and the bounded `--retry`
+   resends it. Only a failure after a submit click stays `uncertain`/`unknown`.
+3. **A capped channel gets its own window, not a shared visit.** 小红书 allows one headed publish
+   visit per 2h (ADR-025), so 发播客 and 上传图文 can never both run in one window. 上传图文 moves to
+   the cn-peak window (13h later) as its own plan row, with its own receipt, instead of sharing the
+   primary's receipt through the plugin's `metadata.followUps` (a failed follow-up would be
+   invisible to the matrix and permanently unretryable). The plugin's follow-up contract stays
+   available to callers that genuinely want one visit.
+4. **The cn-peak window is scheduled.** `kk-daily-publish3-cn-peak` fires at 17:00
+   America/Los_Angeles (09:00 Asia/Shanghai), so the live 微博 row publishes without an operator
+   launch.
+
+**Why.** 2026-11-11 and 2026-11-12 both ended partially published although every channel was
+planned: one surfdash CMS failure skipped every later tier; four pre-send refusals were recorded as
+`uncertain` so the bounded retry could never pick them up; the second 小红书 row was always refused
+by the 2h visit cap; and the cn-peak window had no scheduler entry at all. None of these are channel
+outages — each is a contract defect that silently converted a retryable state into a permanent gap.
+The no-duplicate rule is preserved: nothing above resends a row whose effect is unknown or whose
+receipt already succeeded.
+
+**Detail:** `apps/cli/src/publish-matrix.ts` (`loadVariant`, tier loop), `apps/cli/src/itc-publish.ts`,
+`plugins/kk/publish-presets/daily-ai-voice.json` (cn-peak row),
+`plugins/publishings/{xhs,wechatmp,weibo,shipinhao}-pub/src/*`,
+`.spur/config.yaml` (`kk-daily-publish3-cn-peak`), `scripts/daily-ai-news.ts` (posture check),
+`docs/03_ARCHITECTURE.md`, `docs/04_DESIGN.md`.

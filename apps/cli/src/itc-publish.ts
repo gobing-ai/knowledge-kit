@@ -672,7 +672,24 @@ export async function sendRows(options: SendRowsOptions): Promise<SendRowsOutcom
         // A re-attempt must re-dispatch: the exists guard is only crash recovery for a dispatch
         // that never got its receipt written. Reusing the aggregate would re-read the old failure
         // (dogfood 2026-10-17: fixed-target resend silently kept the stale error).
-        if (reattempt && (await fs.exists(outPath))) await fs.deleteFile(outPath);
+        //
+        // The same rule applies when the receipt was quarantined by hand (the documented recovery
+        // for an unknown-effect refusal): the aggregate left beside it is the FAILED attempt, and
+        // reusing it would rewrite that old failure as this pass's result without ever dispatching
+        // (2026-11-12 xhs repair: 94s and an identical error, no console visit). A succeeded
+        // aggregate is still reused — that is the genuine lost-receipt recovery.
+        if (await fs.exists(outPath)) {
+            let staleFailure = false;
+            if (!reattempt) {
+                try {
+                    const prior = JSON.parse(await fs.readFile(outPath)) as { targets?: Array<{ ok?: boolean }> };
+                    staleFailure = (prior.targets ?? []).some((entry) => entry.ok !== true);
+                } catch {
+                    // An unreadable aggregate is no evidence; the recovery guard stays as it was.
+                }
+            }
+            if (reattempt || staleFailure) await fs.deleteFile(outPath);
+        }
         const fanoutArgs = [
             '--content',
             payloadPath,

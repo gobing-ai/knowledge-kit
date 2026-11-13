@@ -453,6 +453,26 @@ async function pluginDispatch(
             throw new Error(`target '${target}' exceeded its ${targetTimeoutMs}ms budget`);
         }
         if (proc.exitCode !== 0) {
+            // A publish plugin WRITES its Result and then exits 1 when `ok` is false
+            // (`processPublishIO` → `if (!result.ok) throw`). Reading that file back is what carries
+            // the plugin's `error`, `id` and reserved `metadata.itcDelivery` effect into the receipt;
+            // without it every failed row is recorded as effect `unknown`, which the bounded retry
+            // refuses to resend — the 2026-11-12 daily window lost four retryable channels that way.
+            // An `ok: true` result on a nonzero exit stays a process failure: a crash is not a publish.
+            if (await fs.exists(outTmp)) {
+                try {
+                    const written = await readPluginJson(
+                        fs,
+                        outTmp,
+                        ResultSchema,
+                        `Plugin '${target}'`,
+                        'wrote an invalid Result',
+                    );
+                    if (written.ok !== true) return written;
+                } catch {
+                    // Fall through to the process error: a malformed file is no evidence either.
+                }
+            }
             throw new Error(`Plugin '${target}' exited ${proc.exitCode}: ${proc.stderr || proc.stdout || 'no output'}`);
         }
 
