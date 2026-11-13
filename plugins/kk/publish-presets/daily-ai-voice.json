@@ -34,7 +34,7 @@
             "variant": "episode",
             "tier": 1,
             "window": "after-generate",
-            "mode": "live"
+            "mode": "off"
         },
         {
             "plugin": "shipinhao-pub",
@@ -77,7 +77,7 @@
             "variant": "cards",
             "tier": 3,
             "window": "cn-peak",
-            "mode": "live"
+            "mode": "off"
         },
         {
             "plugin": "x-pub",

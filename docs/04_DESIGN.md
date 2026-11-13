@@ -2612,19 +2612,22 @@ drafted owned success and dummy rehearsals HOLD the selection (`marked: false`, 
 
 **Shipped preset.** `plugins/kk/publish-presets/daily-ai-voice.json` carries design §3's matrix,
 each row assigned to exactly one window: the owned + domestic channels on `after-generate`
-(公众号 播客/文章, 小红书 发播客, 视频号 音频), the no-draft and capped rows on `cn-peak`
-(微博 头条, 小红书 上传图文), and the short-copy channels on `overseas-rss` (`social:x`,
-`social:weibo`, `social:threads`); the gap channels (小红书 写长文, 视频号 图文, threads images) and
-the X article row are `off`. A row's `variant` is the **shared** bundle key (`article`, `episode`, `cards`,
+(公众号 播客/文章, 视频号 音频), the no-draft rows on `cn-peak` (微博 头条), and the short-copy
+channels on `overseas-rss` (`social:x`, `social:weibo`, `social:threads`); the gap channels
+(小红书 写长文, 视频号 图文, threads images) and the X article row are `off`. **All three 小红书 rows
+are `off` since 2026-11-13**: the account answered `AccountRiskControlError -9136` (risk control) on
+its next publish, so the channel is opted out of every window until the operator clears it — the
+`off` row keeps the intent visible in the plan's `excluded[]` instead of deleting it. A row's `variant` is the **shared** bundle key (`article`, `episode`, `cards`,
 `social:x`): a channel-specific bundle variant is keyed `<variant>@<plugin>` and wins the lookup,
 which is how generate ships channel copy without a preset edit.
 
 **Capped channels get their own window (2026-11-12).** xhs allows one headed publish visit per 2h
 (ADR-025), so two xhs rows in one window can never both run: the second was always refused as an
-automation-cap failure. 小红书 上传图文 therefore lives in `cn-peak`, 13h after 发播客, as its own
+automation-cap failure. 小红书 上传图文 therefore belongs in `cn-peak`, 13h after 发播客, as its own
 plan row with its own receipt — independently retryable, unlike a note carried inside another row's
-`metadata.followUps`. The plugin's follow-up contract stays available to callers that really want
-one visit. The selector is `workflows.kk-daily-ai-voice3.publish_preset` (default `daily-ai-voice`,
+`metadata.followUps`. That placement is kept while both rows are `off` (2026-11-13), so re-enabling
+the channel restores one visit per window instead of reinstating the guaranteed cap collision. The
+plugin's follow-up contract stays available to callers that really want one visit. The selector is `workflows.kk-daily-ai-voice3.publish_preset` (default `daily-ai-voice`,
 `plugins/kk/config.example.yaml`), resolved with the itc contract: a missing file/block means the
 compiled default, an unknown key or a non-slug value is refused by name.
 

@@ -1872,6 +1872,12 @@ outages — each is a contract defect that silently converted a retryable state 
 The no-duplicate rule is preserved: nothing above resends a row whose effect is unknown or whose
 receipt already succeeded.
 
+**Amendment 2026-11-13.** 小红书 is opted out of every daily window (`mode: "off"` on 发播客,
+上传图文 and 写长文 in `daily-ai-voice.json`): the next publish after the 11-11/11-12 repair answered
+`AccountRiskControlError -9136` (违反), so the channel is restricted. Point 3's cn-peak placement is
+kept as the re-enable position; an `off` row stays in the plan's `excluded[]` so the intent is
+visible. Re-enable only after the restriction clears, one headed visit per window.
+
 **Detail:** `apps/cli/src/publish-matrix.ts` (`loadVariant`, tier loop), `apps/cli/src/itc-publish.ts`,
 `plugins/kk/publish-presets/daily-ai-voice.json` (cn-peak row),
 `plugins/publishings/{xhs,wechatmp,weibo,shipinhao}-pub/src/*`,
