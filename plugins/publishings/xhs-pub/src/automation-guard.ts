@@ -8,9 +8,8 @@
  * a small state file.
  *
  * Semantics that matter:
- *  - The `publish` budget is consumed at the headed launch, never at the attempt: a refused session
- *    preflight leaves the window intact so the operator can log in and retry. What the cap bounds is
- *    headed console visits, not attempts.
+ *  - The `publish` budget is consumed at the single headed launch, including session-readiness
+ *    refusal. Offline checks spend nothing; explicit headed checks consume the check budget.
  *  - `login` is deliberately uncapped. It is operator-interactive by construction (a human types the
  *    credentials into the opened window), so capping it would only block recovery.
  *  - An unreadable or unparsable state file is REFUSED, not treated as empty: the guard cannot prove
