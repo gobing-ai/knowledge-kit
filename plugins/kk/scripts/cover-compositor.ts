@@ -60,6 +60,29 @@ export function wrapHeadline(headline: string): string[] {
     return [source[0], `${second.slice(0, HEADLINE_LINE_CAP - 1)}…`];
 }
 
+/**
+ * Estimated rendered width in px for the mixed CJK/Latin headline: `sips` has no text metrics we
+ * can read back, so each code point is charged its rough advance (CJK ≈ 1em, Latin ≈ 0.55em,
+ * space ≈ 0.28em). Used only to shrink a line until it fits — a clipped headline is worse than a
+ * smaller one (the 2026-11-12 regeneration clipped "Anthropic" at the canvas edge).
+ */
+function estimateWidth(text: string, fontSize: number): number {
+    let em = 0;
+    for (const ch of text) {
+        if (/\s/.test(ch)) em += 0.28;
+        else if (/[\u2E80-\u9FFF\uF900-\uFAFF\uFF00-\uFF60\u3000-\u303F]/.test(ch)) em += 1;
+        else em += 0.55;
+    }
+    return em * fontSize;
+}
+
+/** Largest size <= `baseSize` at which `text` fits `maxWidth`, floored so it stays legible. */
+export function fitFontSize(text: string, baseSize: number, maxWidth: number, floorSize = 24): number {
+    let size = baseSize;
+    while (size > floorSize && estimateWidth(text, size) > maxWidth) size -= 1;
+    return size;
+}
+
 /** Fixed-width chunker for CJK headlines — code points, not UTF-16 units. */
 function chunk(text: string): string[] {
     const chars = Array.from(text);
@@ -97,11 +120,19 @@ export function buildCoverSvg(options: CoverCompositorOptions): string {
     const lines = wrapHeadline(options.headline);
     const logo = logoBadgeSvg(options.logoPath ?? 'assets/general/xhxs.svg', 48, 40, 72, 50);
 
+    // 2026-11-12 regression: `sips` drops EVERY `<text>` that carries an SVG filter, so the
+    // headline never rasterized (both the 11-11 and 11-12 covers shipped chrome with no headline).
+    // Contrast comes from the bottom scrim plus a geometric shadow — the same text drawn once in
+    // dark behind the visible line — because that is plain geometry, not a filter.
+    const line = (text: string, y: number, size: number, weight: number, fill: string): string =>
+        `<text x="48" y="${y + 3}" font-family="${FONT_STACK}" font-size="${size}" font-weight="${weight}" fill="#000000" fill-opacity="0.72">${esc(text)}</text>
+  <text x="48" y="${y}" font-family="${FONT_STACK}" font-size="${size}" font-weight="${weight}" fill="${fill}">${esc(text)}</text>`;
+    const textWidth = width - 96;
     const typography =
         lines.length === 1
-            ? `<text x="48" y="500" font-family="${FONT_STACK}" font-size="46" font-weight="800" fill="#FFFFFF" filter="url(#textShadow)">${esc(lines[0])}</text>`
-            : `<text x="48" y="472" font-family="${FONT_STACK}" font-size="46" font-weight="800" fill="#FFFFFF" filter="url(#textShadow)">${esc(lines[0])}</text>
-  <text x="48" y="532" font-family="${FONT_STACK}" font-size="32" font-weight="700" fill="#FFB800" filter="url(#textShadow)">${esc(lines[1])}</text>`;
+            ? line(lines[0], 500, fitFontSize(lines[0], 46, textWidth), 800, '#FFFFFF')
+            : `${line(lines[0], 472, fitFontSize(lines[0], 46, textWidth), 800, '#FFFFFF')}
+  ${line(lines[1], 532, fitFontSize(lines[1], 32, textWidth), 700, '#FFB800')}`;
 
     const badge =
         logo !== ''
@@ -116,9 +147,6 @@ export function buildCoverSvg(options: CoverCompositorOptions): string {
       <stop offset="0" stop-color="#0a1424" stop-opacity="0" />
       <stop offset="1" stop-color="#0a1424" stop-opacity="0.92" />
     </linearGradient>
-    <filter id="textShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#000000" flood-opacity="0.85" />
-    </filter>
   </defs>
   <rect x="0" y="${Math.round(height * 0.45)}" width="${width}" height="${height - Math.round(height * 0.45)}" fill="url(#bottomScrim)" />
   ${badge}

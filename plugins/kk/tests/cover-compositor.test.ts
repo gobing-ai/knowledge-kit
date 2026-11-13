@@ -104,13 +104,25 @@ describe('logoBadgeSvg', () => {
 describe('buildCoverSvg', () => {
     const base = { backgroundImagePath: '/tmp/bg.png', headline: HEADLINE };
 
-    it('embeds the background, scrim, text shadow and podcast tag on the 1344x576 canvas', () => {
+    it('embeds the background, scrim, a filter-free text shadow and the podcast tag on the 1344x576 canvas', () => {
         const svg = buildCoverSvg(base);
         expect(svg).toContain(`width="${COVER_WIDTH}" height="${COVER_HEIGHT}"`);
         expect(svg).toContain(`href="file://${encodeURI('/tmp/bg.png')}"`);
         expect(svg).toContain('url(#bottomScrim)');
-        expect(svg).toContain('url(#textShadow)');
+        // 2026-11-12 regression: `sips` drops every `<text>` carrying an SVG filter, so the
+        // headline (the only journalistic content on the cover) silently disappeared. The shadow
+        // must stay pure geometry: no filter attribute anywhere in the document.
+        expect(svg).not.toContain('<filter');
+        expect(svg).not.toContain('filter=');
+        expect(svg).toContain('fill-opacity="0.72"');
         expect(svg).toContain('DAILY AI PODCAST');
+    });
+
+    it('draws each headline line twice — dark offset behind the visible line — without a filter', () => {
+        const svg = buildCoverSvg({ ...base, headline: `${HEADLINE}\n全球科技巨头底层暗战打响！` });
+        expect(svg).toContain(`y="475"`);
+        expect(svg).toContain(`y="535"`);
+        expect(svg.match(/DAILY AI PODCAST/g) ?? []).toHaveLength(1);
     });
 
     // 2026-11-11 regression: `sips` cannot fetch an SVG `<image href="file://…">`, so the real
