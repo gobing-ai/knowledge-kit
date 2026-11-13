@@ -87,7 +87,7 @@
     ├── [backlog] **G4**: kk-solo-podcast ([G4_kk-solo-podcast.md](./G4_kk-solo-podcast.md))
     ├── [backlog] **G5**: kk-storm-research ([G5_kk-storm-research.md](./G5_kk-storm-research.md))
     ├── [backlog] **G6**: kk-ingest-generate-publish ([G6_kk-ingest-generate-publish.md](./G6_kk-ingest-generate-publish.md))
-        └── [backlog] **G61**: Content pipeline consolidation: shared publish core, article/news verbs, simplified workflows ([G61_content-pipeline-consolidation-shared-publish-core-article-news-verbs-simplified-workflows.md](./G61_content-pipeline-consolidation-shared-publish-core-article-news-verbs-simplified-workflows.md))
+        └── [active] **G61**: Content pipeline consolidation: shared publish core, article/news verbs, simplified workflows ([G61_content-pipeline-consolidation-shared-publish-core-article-news-verbs-simplified-workflows.md](./G61_content-pipeline-consolidation-shared-publish-core-article-news-verbs-simplified-workflows.md))
     ├── [active] **G7**: kk workflow run ledger ([G7_kk-workflow-run-ledger.md](./G7_kk-workflow-run-ledger.md))
         └── [done] **G71**: Per-workflow run ledger from spur action_runs ([G71_per-workflow-run-ledger-from-spur-action-runs.md](./G71_per-workflow-run-ledger-from-spur-action-runs.md))
     ├── [done] **G8**: Workflow visibility in Spur Board: Collect, Daily AI Voice, IT Content ([G8_workflow-visibility-in-spur-board-collect-daily-ai-voice-it-content.md](./G8_workflow-visibility-in-spur-board-collect-daily-ai-voice-it-content.md))
