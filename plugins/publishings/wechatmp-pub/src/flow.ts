@@ -733,7 +733,7 @@ async function insertBody(page: WechatPage, deps: ModeRunDeps, selectors: string
  * editor for an empty one — the false positive that let `pasteHtml` "succeed" on a build where the
  * paste never landed (measured 2026-11-12).
  */
-async function bodyLength(page: WechatPage, selector: string): Promise<number> {
+export async function bodyLength(page: WechatPage, selector: string): Promise<number> {
     const script = `(() => {
         const el = document.querySelector(${JSON.stringify(selector)});
         if (!el) return 0;
@@ -746,7 +746,7 @@ async function bodyLength(page: WechatPage, selector: string): Promise<number> {
     return Number(await page.evaluate(script).catch(() => 0));
 }
 
-function insertHtmlScript(selector: string, html: string): string {
+export function insertHtmlScript(selector: string, html: string): string {
     return `(() => {
         const el = document.querySelector(${JSON.stringify(selector)});
         if (!el) return 'missing';
@@ -755,7 +755,7 @@ function insertHtmlScript(selector: string, html: string): string {
     })()`;
 }
 
-function insertTextScript(selector: string, text: string): string {
+export function insertTextScript(selector: string, text: string): string {
     return `(() => {
         const el = document.querySelector(${JSON.stringify(selector)});
         if (!el) return 'missing';
