@@ -1883,3 +1883,48 @@ visible. Re-enable only after the restriction clears, one headed visit per windo
 `plugins/publishings/{xhs,wechatmp,weibo,shipinhao}-pub/src/*`,
 `.spur/config.yaml` (`kk-daily-publish3-cn-peak`), `scripts/daily-ai-news.ts` (posture check),
 `docs/03_ARCHITECTURE.md`, `docs/04_DESIGN.md`.
+
+---
+
+## ADR-053: News and article pipelines share one publish core and workflow; operator verbs live on `kk article` / `kk news`
+
+**Status:** Accepted · **Date:** 2026-11-13 · **Feature:** G61 · **Amends:** the `AGENTS.md` product-model rule ("kk owns steps; spur workflow owns orchestration"), ADR-040, ADR-043.
+
+**Decision.**
+
+1. **One publish core, one publish workflow.** Plan, check, send, classify, settle and receipts live in a
+   neutral `apps/cli/src/publish-core/` module with one plan schema and one preset dialect. A single
+   `kk-publish.yaml` publishes a frozen `bundle.json` for every content type; `kk-daily-publish3.yaml`
+   and `kk-itc-publish-tail.yaml` are retired. ITC is split into generate and publish the way ADR-043
+   split the daily voice product.
+2. **No `kk publish`, `kk run`, `kk itc` or `kk daily` noun.** `kk article` and `kk news` carry both
+   layers: plain verbs (`new`, `generate`, `publish`, `status`) are operator entry points, and
+   hyphenated verbs (`publish-plan`, `publish-check`, `publish-send`, `publish-settle`,
+   `publish-report`) are the steps a workflow calls. One registration function puts the shared verbs on
+   both nouns. Older spellings stay hidden compatibility routes (ADR-037).
+3. **A plain verb may launch and supervise exactly one workflow.** `generate` and `publish` take the
+   single-flight lock, probe the executor, start one `spur workflow run`, enforce the timeout, and on
+   exit cancel, release reservations and write the receipt. They never sequence steps; that stays with
+   the workflow. This is the only exception to "kk owns steps; spur workflow owns orchestration".
+4. **`--type` resolves through config.** `content_types.<type>` names the generate workflow, the writer
+   skill and the publish preset. `--channels` narrows a publish launch and is recorded in the plan.
+5. **One executor var per workflow.** `agent`, default `inline`, is the single source for every agent
+   node and every nested launch. Retry nodes resolve by role instead of a second pinned name. A
+   real-traffic probe is the first node.
+6. **Authoring stays in skills; generation plugins stay deterministic.** One writer skill per content
+   type (ADR-045 pattern); `plugins/generations` renders (TTS, image, cards) and never dispatches an
+   agent.
+7. **A workflow node must earn its place.** It survives only as an agent call, a human pause, or a
+   retry boundary worth minutes. Everything else folds into a `kk` verb.
+
+**Why.** The shared publish code is owned by `itc-*` modules and imported by the daily matrix; the ITC
+publish tail is a duplicated YAML held by a drift test; a channel retry on ITC costs a new topic
+directory; the operator API (executor pair, preflight, cleanup, publish-only path) lives in
+`scripts/`, outside the product; and a checkout with a stale job line ran a quota-dead pinned executor
+for two days. Each is a boundary in the wrong place rather than a channel defect.
+
+**Rejected.** A `kk publish` noun (the operator thinks in content, not transport); a generic `kk run`
+supervisor noun (the launch belongs to the content verb); moving authoring into generation plugins
+(plugins run without an agent).
+
+**Detail:** feature G61, tasks 0360–0362.

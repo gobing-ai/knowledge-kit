@@ -105,6 +105,7 @@ sync: [T4]
 | G4 | kk-solo-podcast | ⏳ planned | — | home node; historical: F5 |
 | G5 | kk-storm-research | ⏳ planned | — | home node; historical: C3–C5 |
 | G6 | kk-ingest-generate-publish | ⏳ planned | — | home node; historical: B5 |
+| G61 | Content pipeline consolidation: shared publish core, article/news verbs, simplified workflows | ⏳ planned | P1 | ADR-053 (accepted 2026-11-13); tasks `0360` (launch safety), `0361` (publish core), `0362` (design freeze → Phase 2–4 tasks); overlaps the remaining scope of G21 |
 | G7 | kk workflow run ledger | ⏳ planned | — | cross-workflow capabilities |
 | G71 | Per-workflow run ledger from spur action_runs | ⏳ ready | — | task `0207` |
 | G8 | Workflow visibility in Spur Board: Collect, Daily AI Voice, IT Content | 🔧 active | 3 | tasks `0252`–`0254` done; `0255` adds the separately-packed-install acceptance (`apps/board/tests/installed-board.test.ts`, `scripts/tests/board-package.test.ts`), four tabs per module, operator setup in `docs/04_DESIGN.md`; 0319 adds the Collect channel-yield aggregate and 0320 the Daily episode funnel + supply-context panel (ADR-035 amendments 2026-10-16/22); [satellite](design/workflow-board-modules.md) |
