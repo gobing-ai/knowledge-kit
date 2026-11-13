@@ -41,7 +41,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, type Page } from 'playwright';
 import { classifyStoreChange, type StoreFilePrint, storeFiles } from './store-digest';
@@ -690,8 +690,14 @@ function spurCommand(): string[] {
         return [process.execPath, join(dirname(fileURLToPath(pkg)), 'spur.js')];
     } catch {
         const which = Bun.which('spur');
-        if (which !== null) return [which];
-        throw new Error('cannot resolve the installed spur CLI; set SPUR_BIN to spur.js');
+        if (which === null) throw new Error('cannot resolve the installed spur CLI; set SPUR_BIN to spur.js');
+        let current = dirname(realpathSync(which));
+        while (current !== dirname(current)) {
+            if (basename(current) === 'spur' && basename(dirname(current)) === '@gobing-ai')
+                return [process.execPath, join(current, 'spur.js')];
+            current = dirname(current);
+        }
+        throw new Error(`cannot locate the @gobing-ai/spur package behind ${which}`);
     }
 }
 

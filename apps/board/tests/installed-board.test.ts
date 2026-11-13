@@ -30,7 +30,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openStore } from '@gobing-ai/kk-store';
 import { type Browser, type ConsoleMessage, chromium, type Locator, type Page } from 'playwright';
@@ -72,6 +72,22 @@ let browser: Browser | null = null;
 let page: Page | null = null;
 let spur: string[] = [];
 
+/** Resolve the globally installed Spur package when Bun's test resolver cannot see NODE_PATH. */
+function resolveSpurPackageRoot(): string {
+    try {
+        return dirname(fileURLToPath(import.meta.resolve('@gobing-ai/spur/package.json')));
+    } catch {
+        const which = Bun.which('spur');
+        if (which === null) throw new Error('cannot resolve the installed spur CLI; set SPUR_BIN to spur.js');
+        let current = dirname(realpathSync(which));
+        while (current !== dirname(current)) {
+            if (basename(current) === 'spur' && basename(dirname(current)) === '@gobing-ai') return current;
+            current = dirname(current);
+        }
+        throw new Error(`cannot locate the @gobing-ai/spur package behind ${which}`);
+    }
+}
+
 /** Run a short command to completion; a non-zero exit is a loud setup failure. */
 function shell(command: string, args: string[], cwd: string): string {
     const result = spawnSync(command, args, {
@@ -96,14 +112,7 @@ function spawnSpur(args: string[], cwd: string): string {
 function resolveSpur(): string[] {
     const override = process.env.SPUR_BIN;
     if (override !== undefined && override !== '') return [process.execPath, override];
-    try {
-        const pkg = import.meta.resolve('@gobing-ai/spur/package.json');
-        return [process.execPath, join(dirname(fileURLToPath(pkg)), 'spur.js')];
-    } catch {
-        const which = Bun.which('spur');
-        if (which !== null) return [which];
-        throw new Error('cannot resolve the installed spur CLI; set SPUR_BIN to spur.js');
-    }
+    return [process.execPath, join(resolveSpurPackageRoot(), 'spur.js')];
 }
 
 /** A fresh realpath'd temp dir the suite removes afterwards. */
