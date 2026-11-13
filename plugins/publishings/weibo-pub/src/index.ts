@@ -93,10 +93,18 @@ export const WEIBO_ARTICLE_SELECTORS = {
     ],
     fileInput: ['input[type="file"][accept*="image"]', 'input[type="file"]'],
     saveDraft: ['button:has-text("保存草稿")', 'a:has-text("保存草稿")'],
-    publish: ['button:has-text("发布")', 'button:has-text("发表")'],
+    // The v5 editor has NO 发布 button on the article page: its live rail is the bottom 下一步
+    // (publish settings → confirmation), measured 2026-11-12. 发布/发表 stay first for the older
+    // editor that had them, and for the confirmation dialog's own button.
+    publish: ['button:has-text("发布")', 'button:has-text("发表")', 'button:has-text("下一步")'],
 } as const;
 
 const STEP_TIMEOUT_MS = 30_000;
+/**
+ * The cover rail uploads + renders a library image in the publish-settings panel; 30s measured too
+ * tight on the 2026-11-12 daily article ("no outcome observed within 30000ms", nothing saved).
+ */
+const COVER_TIMEOUT_MS = 60_000;
 const LOGIN_TIMEOUT_MS = 180_000;
 /** Operator recovery command every session failure names — never a cookie, DOM dump or stack. */
 export const LOGIN_INSTRUCTION = 'bun plugins/publishings/weibo-pub/src/profile-check.ts login';
@@ -120,6 +128,20 @@ const EXCERPT_CHARS = 30;
 
 function fail(error: string): Result {
     return ResultSchema.parse({ ok: false, target: TARGET, error: boundedDetail(error) });
+}
+
+/**
+ * A refusal/failure before the composer was saved or published: nothing reached the channel, so a
+ * bounded retry is safe. The reserved marker is what `apps/cli/src/itc-publish.ts` reads; without
+ * it the receipt is `effect: unknown` and `--retry` skips the row forever (2026-11-12).
+ */
+function refuse(error: string): Result {
+    return ResultSchema.parse({
+        ok: false,
+        target: TARGET,
+        error: boundedDetail(error),
+        metadata: { itcDelivery: { schemaVersion: 1, effect: 'none' } },
+    });
 }
 
 /** One short line, bounded: no DOM dump, cookie, token or stack ever reaches the Result (E91-D6). */
@@ -262,15 +284,18 @@ export class WeiboBrowserTransport implements PublishTransport {
     private readonly operation: WeiboOperation;
     private readonly launcher: BrowserLauncher;
     private readonly stepTimeoutMs: number;
+    private readonly coverTimeoutMs: number;
     constructor(
         operation: WeiboOperation = 'post',
         driver: BrowserDriver = 'script',
-        deps: { launcher?: BrowserLauncher; stepTimeoutMs?: number } = {},
+        deps: { launcher?: BrowserLauncher; stepTimeoutMs?: number; coverTimeoutMs?: number } = {},
     ) {
         this.operation = operation;
         this.driver = driver;
         this.launcher = deps.launcher ?? kkBrowserLauncher;
         this.stepTimeoutMs = deps.stepTimeoutMs ?? STEP_TIMEOUT_MS;
+        // Explicit seam (tests pin a small value); production keeps the longer cover budget.
+        this.coverTimeoutMs = deps.coverTimeoutMs ?? COVER_TIMEOUT_MS;
     }
 
     /**
@@ -282,29 +307,29 @@ export class WeiboBrowserTransport implements PublishTransport {
         // Refusal order (all pre-browser, R8/R5/R3): operation → driver → publishStatus value →
         // post-without-public → post text → cover → session preflight.
         if (!(WEIBO_OPERATIONS as readonly string[]).includes(this.operation)) {
-            return fail(
+            return refuse(
                 `unsupported operation '${bounded(this.operation)}' for weibo: expected one of ${WEIBO_OPERATIONS.join(', ')}`,
             );
         }
         if (this.driver !== 'script') {
-            return fail(
+            return refuse(
                 `unsupported driver '${bounded(this.driver)}' for weibo: expected one of script (the weibo-pub browser flow has no agent path)`,
             );
         }
         const requested = payload.content.metadata?.publishStatus;
         if (requested !== undefined && requested !== 'draft' && requested !== 'public') {
-            return fail(`unknown publishStatus '${bounded(requested)}' (expected absent, 'draft' or 'public')`);
+            return refuse(`unknown publishStatus '${bounded(requested)}' (expected absent, 'draft' or 'public')`);
         }
         const publishStatus = requested === 'public' ? 'public' : 'draft';
         if (this.operation === 'post' && publishStatus !== 'public') {
-            return fail('weibo post has no draft; set publishStatus: public');
+            return refuse('weibo post has no draft; set publishStatus: public');
         }
         const text = payload.content.body.trim() || payload.content.title?.trim() || '';
         if (this.operation === 'post' && text.length === 0) {
-            return fail('weibo post requires Content.body or Content.title');
+            return refuse('weibo post requires Content.body or Content.title');
         }
         const cover = await resolveCover(payload.options, payload.content, this.operation);
-        if (cover !== undefined && 'error' in cover) return fail(cover.error);
+        if (cover !== undefined && 'error' in cover) return refuse(cover.error);
         // An episode announcement carries its cover: `post` accepts exactly one image (R9, 0246).
 
         const override = typeof payload.options?.profileDir === 'string' ? payload.options.profileDir : undefined;
@@ -321,7 +346,9 @@ export class WeiboBrowserTransport implements PublishTransport {
         if (session.status !== 'verified') {
             // The recovery command leads the message: `fail()` bounds the line, and the operator's
             // next action must never be the part that gets truncated.
-            return fail(`${TARGET} session preflight refused — run: ${LOGIN_INSTRUCTION} — detail: ${session.detail}`);
+            return refuse(
+                `${TARGET} session preflight refused — run: ${LOGIN_INSTRUCTION} — detail: ${session.detail}`,
+            );
         }
 
         try {
@@ -368,7 +395,12 @@ export class WeiboBrowserTransport implements PublishTransport {
         const metadata = { operation: 'article', driver: this.driver, publishStatus, profileDir };
         const title = content.title ?? 'Untitled';
 
-        await page.evaluate(ensureArticleDraftScript());
+        const blank = await page.evaluate(ensureArticleDraftScript());
+        if (blank !== true) {
+            return refuse(
+                'weibo article editor never reset to a blank draft — the auto-restored draft still carries a title or a cover, so filling and cover-attaching would land on the wrong article; open the editor, start 写文章, then retry',
+            );
+        }
         const editorUrl = page.url();
         const toastsBefore = await this.readToasts(page);
 
@@ -390,6 +422,16 @@ export class WeiboBrowserTransport implements PublishTransport {
             const preAttached = (await trySelectors(page, WEIBO_ARTICLE_SELECTORS.fileInput, { visible: false })).found;
             if (!preAttached) {
                 await page.evaluate(openCoverLibraryScript());
+                // The modal is the only place the library upload happens. Without it the file input
+                // below would be the BODY image input, and the upload would land in the article text.
+                const modal = await expectOutcome(
+                    async () =>
+                        String(await page.evaluate('() => document.querySelectorAll(".n-modal").length')) !== '0'
+                            ? 'open'
+                            : null,
+                    { timeoutMs: 15_000, label: 'weibo cover modal' },
+                );
+                if (!modal.ok) return refuse(`weibo cover modal never opened (no .n-modal after 15s)`);
             }
             const fileInputSelector = await resolveSelector(page, WEIBO_ARTICLE_SELECTORS.fileInput, {
                 timeoutMs: this.stepTimeoutMs,
@@ -406,19 +448,25 @@ export class WeiboBrowserTransport implements PublishTransport {
                     // body editor scope the body-image count probes, so accept the panel preview too.
                     this.probeCoverAttached(page, bodySelector, baseline),
                 {
-                    timeoutMs: this.stepTimeoutMs,
+                    timeoutMs: this.coverTimeoutMs,
                     label: 'weibo article cover attachment',
                 },
             );
-            if (!attached.ok) return fail(attached.error);
+            if (!attached.ok) {
+                // Diagnosable failure: the cover rail is DOM-fragile, and a silent 60s timeout is
+                // what made the 2026-11-12 loss hard to read. `KK_WEIBO_DEBUG_DIR` writes the page
+                // state beside the receipt; it is off in production.
+                await this.dumpDebug(page, 'cover-failure');
+                return refuse(attached.error);
+            }
         }
 
         // Read the composer back before the save/publish control: a field the editor dropped must
         // never become a saved draft or a live article (R4).
         const titleReadback = await this.requireReadback(page, titleSelector, title, 'article title readback');
-        if (!titleReadback.ok) return fail(titleReadback.error);
+        if (!titleReadback.ok) return refuse(titleReadback.error);
         const bodyReadback = await this.requireReadback(page, bodySelector, content.body, 'article body readback');
-        if (!bodyReadback.ok) return fail(bodyReadback.error);
+        if (!bodyReadback.ok) return refuse(bodyReadback.error);
 
         if (publishStatus === 'draft') {
             const saveSelector = await resolveSelector(page, WEIBO_ARTICLE_SELECTORS.saveDraft, {
@@ -445,11 +493,21 @@ export class WeiboBrowserTransport implements PublishTransport {
             label: 'article publish control',
         });
         await page.locator(publishSelector).first().click();
+        // 下一步 opens the publish confirmation; its own 发布/发表 is the irreversible click. The
+        // dialog is optional (an editor that publishes straight from the toolbar has none), so the
+        // script returns 'none' there and the live-URL probe below stays the authority.
+        await expectOutcome(
+            async () => (String(await page.evaluate(confirmPublishScript())) === 'clicked' ? 'clicked' : null),
+            { timeoutMs: 5_000, label: 'weibo publish confirmation' },
+        );
         const live = await expectOutcome(() => this.probeArticleLive(page), {
             timeoutMs: this.stepTimeoutMs,
             label: `weibo article publish '${publishSelector}'`,
         });
-        if (!live.ok) return fail(live.error);
+        if (!live.ok) {
+            await this.dumpDebug(page, 'publish-failure');
+            return fail(live.error);
+        }
         return ResultSchema.parse({
             ok: true,
             target: TARGET,
@@ -567,6 +625,30 @@ export class WeiboBrowserTransport implements PublishTransport {
         return Number.isFinite(value) ? value : 0;
     }
 
+    /** Opt-in failure evidence for the DOM-fragile rails (`KK_WEIBO_DEBUG_DIR`); never on by default. */
+    private async dumpDebug(page: Page, label: string): Promise<void> {
+        const dir = process.env.KK_WEIBO_DEBUG_DIR;
+        if (dir === undefined || dir.trim() === '') return;
+        try {
+            const fs = createNodeFileSystem();
+            await fs.ensureDir(dir);
+            const state = await page.evaluate(`(() => ({
+                url: location.href,
+                modals: document.querySelectorAll('.n-modal').length,
+                coverEmpty: document.querySelectorAll('div.cover-empty, [class*="cover-empty"]').length,
+                coverPreview: document.querySelectorAll('.cover-preview').length,
+                coverImg: document.querySelectorAll('img.cover-img').length,
+                previews: document.querySelectorAll('.n-image-preview-container').length,
+                dialog: (document.querySelector('.n-modal')?.textContent ?? '').replace(/\\s+/g, ' ').trim().slice(0, 300),
+                buttons: [...document.querySelectorAll('.n-modal button, section button')].slice(0, 30).map((b) => (b.textContent ?? '').trim()),
+            }))()`);
+            await fs.writeFile(`${dir}/${label}.json`, `${String(state)}\n`);
+            await page.screenshot({ path: `${dir}/${label}.png` });
+        } catch {
+            // Diagnostics must never change the publication result.
+        }
+    }
+
     private async probeCoverAttached(page: Page, selector: string, baseline: number): Promise<string | null> {
         const count = await this.countImages(page, selector);
         if (count > baseline) return `cover-attached (${count} images)`;
@@ -658,6 +740,21 @@ function statusIdFrom(url: string): string | undefined {
  */
 function liveArticleUrl(url: string): string | null {
     return /(?:\/ttarticle\/p\/show\?id=|\/article\/(?:show|detail)\/)[A-Za-z0-9]+/.test(url) ? url : null;
+}
+
+/**
+ * Clicks the publish confirmation's own 发布/发表 (the v5 editor's 下一步 opens it). Returns
+ * `'clicked'` or `'none'`; a JS click is used because the dialog's overlay intercepts pointer
+ * events (measured 2026-11-12).
+ */
+function confirmPublishScript(): string {
+    return `(() => { // kk-weibo-confirm-publish
+    const buttons = [...document.querySelectorAll('.n-modal button, .n-dialog button, [role="dialog"] button')];
+    const btn = buttons.find((b) => /^(发布|发表)$/.test((b.textContent ?? '').trim()) && !b.disabled);
+    if (!btn) return 'none';
+    btn.click();
+    return 'clicked';
+})()`;
 }
 
 /**
@@ -791,19 +888,28 @@ function ensureArticleDraftScript(): string {
     return `(async () => { // kk-weibo-draft-init
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const spin = () => document.querySelectorAll('.wb-editor-spin').length > 0;
-    const titleEl = document.querySelector('input[placeholder*="标题"], textarea[placeholder*="标题"]');
-    const titleVal = titleEl && titleEl.value ? String(titleEl.value).trim() : '';
-    const hasCover = document.querySelectorAll('.cover-preview, img.cover-img').length > 0;
-    if (spin() || titleVal.length > 0 || hasCover) {
+    const titleEl = () => document.querySelector('input[placeholder*="标题"], textarea[placeholder*="标题"]');
+    const titleVal = () => (titleEl() && titleEl().value ? String(titleEl().value).trim() : '');
+    const hasCover = () => document.querySelectorAll('.cover-preview, img.cover-img').length > 0;
+    const isBlank = () => titleVal().length === 0 && !hasCover();
+    if (spin() || !isBlank()) {
+        let clicked = false;
         for (const btn of document.querySelectorAll('button')) {
             const t = (btn.textContent || '').trim();
             if (t === '写文章' || t.includes('创作一篇新文章')) {
                 btn.click();
+                clicked = true;
                 break;
             }
         }
+        if (!clicked) return false;
         await sleep(600);
         for (let i = 0; i < 15 && spin(); i += 1) await sleep(200);
+        // The editor auto-restores the last draft (often one a failed run left with a cover). Wait
+        // for the blank pane, and report the failure instead of filling the old draft: a cover the
+        // restored draft already carries would satisfy the attachment probe on the WRONG image.
+        for (let i = 0; i < 40 && !isBlank(); i += 1) await sleep(250);
+        if (!isBlank()) return false;
     }
     return true;
 })()`;
@@ -843,14 +949,22 @@ function confirmCoverModalScript(): string {
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     if (!document.querySelector('.n-modal')) return true;
     await sleep(1500);
+    // Pick the LAST library image: the 图片库 grid lists newest uploads last, and the first
+    // <img> in the dialog is the 手机传图 QR art, not a selectable item (2026-11-12: clicking it left
+    // 下一步 with nothing selected, so the cover never attached).
     let item = null;
     for (let i = 0; i < 25; i += 1) {
-        item = document.querySelector('.n-modal .image-item, .n-modal img[src]');
+        const items = Array.from(document.querySelectorAll('.n-modal .image-item'));
+        const imgs = Array.from(document.querySelectorAll('.n-modal img[src]')).filter(
+            (img) => !img.closest('[class*="qrcode"], [class*="mobile"], [class*="upload"]'),
+        );
+        item = items.at(-1) ?? imgs.at(-1) ?? null;
         if (item) break;
         await sleep(200);
     }
     if (item instanceof HTMLElement && !item.classList.contains('is-selected')) {
         item.click();
+        await sleep(800);
     }
     for (let i = 0; i < 15; i += 1) {
         const nextBtn = Array.from(document.querySelectorAll('.n-modal button')).find(

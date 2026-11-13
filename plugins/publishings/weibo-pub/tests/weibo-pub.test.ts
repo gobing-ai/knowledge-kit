@@ -63,6 +63,8 @@ interface FakePageOptions {
     coverAttached?: boolean;
     /** Simulate v5 editor where cover file input mounts only after opening the cover modal. */
     v5CoverModal?: boolean;
+    /** The editor never resets to a blank draft (an auto-restored draft keeps its title/cover). */
+    draftPaneReset?: boolean;
     /** What clicking 保存草稿 emits. */
     onSaveDraft?: 'url' | 'toast' | 'v5ListItem' | 'none';
     /** What clicking the article publish control emits. */
@@ -172,6 +174,9 @@ function makeFakePage(options: FakePageOptions, calls: string[]): Page {
         },
         async evaluate(expression: string) {
             calls.push(`evaluate:${expression.slice(0, 40)}`);
+            if (expression.includes('kk-weibo-draft-init')) return options.draftPaneReset !== false;
+            if (expression.includes('kk-weibo-confirm-publish'))
+                return options.onPublish === 'article' ? 'clicked' : 'none';
             if (expression.includes('kk-weibo-open-cover')) {
                 coverModalOpened = true;
                 return true;
@@ -246,7 +251,11 @@ function makeFakeLauncher(options: FakePageOptions = {}): LauncherHandle {
 }
 
 function transport(fake: LauncherHandle, operation: 'post' | 'article' = 'article', stepTimeoutMs = 250) {
-    return new WeiboBrowserTransport(operation, 'script', { launcher: fake.launcher, stepTimeoutMs });
+    return new WeiboBrowserTransport(operation, 'script', {
+        launcher: fake.launcher,
+        stepTimeoutMs,
+        coverTimeoutMs: stepTimeoutMs,
+    });
 }
 
 const originalChannelDir = process.env.WEIBO_PROFILE_DIR;
@@ -467,7 +476,7 @@ describe('weibo-pub article flow (R2, R4)', () => {
         const result = await transport(fake).publish({ content: liveContent });
         expect(result.ok).toBe(false);
         expect(result.error).toContain('weibo article publish');
-    });
+    }, 20_000);
 
     test('an unreachable 头条文章 editor (the measured entitlement gate) is refused, never a silent draft', async () => {
         // Measured 2026-10-12 (task 0246, docs/design/weibo-ui-discovery.md §5): for an account without
@@ -493,6 +502,19 @@ describe('weibo-pub article flow (R2, R4)', () => {
         const result = await transport(fake).publish({ content });
         expect(result.ok).toBe(false);
         expect(result.error).toContain('article body editor');
+    });
+
+    test('an editor that never resets to a blank draft is refused before any cover work', async () => {
+        // The v5 editor auto-restores the last draft; a restored draft that still has a title or a
+        // cover would make the attachment probe pass on the WRONG article (2026-11-12 daily run).
+        const fake = makeFakeLauncher({ draftPaneReset: false });
+        const result = await transport(fake).publish({
+            content: { ...content, metadata: { coverImage: COVER_PATH } },
+        });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('never reset to a blank draft');
+        expect(fake.calls.some((call) => call.includes('kk-weibo-open-cover'))).toBe(false);
+        expect(fake.calls.some((call) => call.startsWith('fill:'))).toBe(false);
     });
 
     test('a cover upload is used and an unobserved attachment is refused', async () => {
