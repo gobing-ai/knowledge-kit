@@ -43,10 +43,6 @@ vars:
   safety_platforms: "xiaoyuzhou,apple-podcasts,wechatmp"
   # Agent selection for the two reviewer steps (inline | a dispatchable agent name).
   agent: "inline"
-  # Executor for the judge retry (2026-10-24). Must sit ABOVE `agent`'s rung: the primary judge
-  # failed on every attempt with a `scribe`-rung executor and the run closed `block` with no
-  # verdict, so the recovery attempt is where a capable executor delivers the artifact.
-  agent_retry: "claude"
   # Projected by the judge state from 24-script/<date>_09_safety-judge_status.txt; guards test this
   # var instead of cat-ing the file (state at decision time).
   safety_status: ""
@@ -88,7 +84,9 @@ states:
         onError: continue
         options:
           role: reviewer
-          agent: ${vars.agent_retry}
+          # 0360 R2: the second attempt resolves by role (above the primary's rung), so a dead
+          # operator pin still has a live retry and there is no second executor var.
+          agent: inline
           timeoutMs: 1200000
           input: *safety-review-input
           expectFile: ${vars.work_dir}/${vars.safety_scope_dir}/${vars.run_date}_09_safety-review_report.json
@@ -119,7 +117,7 @@ states:
         onError: continue
         options:
           role: reviewer
-          agent: ${vars.agent_retry}
+          agent: inline
           timeoutMs: 1200000
           input: *safety-judge-input
           expectFile: ${vars.work_dir}/${vars.safety_scope_dir}/${vars.run_date}_09_safety-judge_verdict.json
@@ -192,7 +190,7 @@ states:
         onError: continue
         options:
           role: reviewer
-          agent: ${vars.agent_retry}
+          agent: inline
           timeoutMs: 600000
           input: *safety-revise-input
           expectFile: ${vars.work_dir}/${vars.safety_scope_dir}/${vars.run_date}_09_safety-revise_attempt.json

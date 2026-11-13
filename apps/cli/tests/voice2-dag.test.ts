@@ -805,7 +805,8 @@ describe('kk-daily-safety — decision-bound publish verdict (AC6, 0317 R6)', ()
         // The failure this pins: `opencode ... Invalid credential` failed `review`, then `judge`, on
         // every attempt because both named `${vars.agent}` (a scribe/cheap rung). With no report the
         // gate scored `block` — an episode withheld although nothing had reviewed it. A retry on a
-        // DIFFERENT, higher rung is what recovered the run the same day.
+        // DIFFERENT, higher rung is what recovered the run the same day. 0360 R2: that second rung now
+        // comes from the role (agent: inline + role: reviewer), so the machine declares no retry var.
         type SafetyAction = { kind?: string; options?: Record<string, unknown> };
         const parsed = Bun.YAML.parse(readFileSync(SAFETY, 'utf-8')) as {
             vars: Record<string, string>;
@@ -827,12 +828,13 @@ describe('kk-daily-safety — decision-bound publish verdict (AC6, 0317 R6)', ()
             expect(steps).toHaveLength(1);
             const retry = agentSteps(retryId ?? '');
             expect(retry).toHaveLength(1);
-            expect(String(retry[0]?.options?.agent ?? ''), `${id} must retry on vars.agent_retry`).toContain(
-                'vars.agent_retry',
-            );
+            expect(retry[0]?.options, `${id} must retry above the primary's rung, by role`).toMatchObject({
+                agent: 'inline',
+                role: 'reviewer',
+            });
         }
-        // Declared, not an inline literal, so an operator can re-point it without editing the graph.
-        expect(parsed.vars.agent_retry).toBeTruthy();
+        // One executor var: the retry tier is role-resolved, never a second declared var.
+        expect(parsed.vars.agent_retry).toBeUndefined();
     });
 
     it('is a state machine whose loop is the review → judge → revise chain', () => {

@@ -79,11 +79,6 @@ vars:
   safety_max_revise: "2"
   safety_platforms: "xiaoyuzhou,apple-podcasts,wechatmp"
   agent: "inline"
-  # 0238 R2: executor for the `-retry` siblings of the two hard-fail agent.run producers. The
-  # siblings declare `role: reviewer` (capable-1), two rungs above the primary's `scribe`, so the
-  # default `inline` resolves the retry above any rung the primary reaches by climbing past an
-  # unusable cheap executor (ac5-live-1). The operator may still pin a known-good executor here.
-  agent_retry: "inline"
   # QC pins — lockstep with episode-plan-gen's DEFAULT_FILTER_CONFIG (env wins), same as voice1.
   qc_categories: "ai-news,ai-technical,ai-research,ai-industry"
   qc_min_quality: "2"
@@ -121,6 +116,16 @@ vars:
 # Wave-level waiting is the accepted ceiling (design §6): a node starts when its own deps settle,
 # but its whole wave is awaited before the next wave is dispatched.
 nodes:
+  - id: executor-probe
+    description: "One real prompt to the resolved executor; a dead executor fails the run here (ADR-053 §5)"
+    action:
+      kind: agent.run
+      options:
+        role: scribe
+        agent: ${vars.agent}
+        timeoutMs: 120000
+        input: "Reply with exactly: OK"
+
   - id: prepare
     description: >-
       Sync the workflow ledger and compose today's workspace: `kk daily prepare` writes the effective
@@ -133,6 +138,7 @@ nodes:
       stage the installed runner lacks must fail here, naming the stage, instead of 29 minutes later
       inside the nested safety machine (2026-10-20: `unknown stage: daily-safety-verdict`, nothing
       published).
+    dependsOn: [executor-probe]
     action:
       kind: shell
       options:
@@ -358,7 +364,9 @@ nodes:
       onError: continue
       options:
         role: reviewer
-        agent: ${vars.agent_retry}
+        # 0360 R2: the retry resolves by role (above the primary's rung) — a dead operator pin
+        # still has a live second attempt, without a second executor var.
+        agent: inline
         timeoutMs: 600000
         # ADR-115 error tier: keep this prompt <= 1000 chars.
         input: |
@@ -443,8 +451,10 @@ nodes:
       kind: agent.run
       onError: continue
       options:
-        role: scribe
-        agent: ${vars.agent_retry}
+        # 0360 R2: role reviewer (two rungs above the primary's scribe) + the literal `inline`
+        # executor, so the retry never shares the primary's pin.
+        role: reviewer
+        agent: inline
         timeoutMs: 600000
         # ADR-115 error tier: keep this prompt <= 1000 chars.
         input: |
@@ -575,7 +585,7 @@ nodes:
         command: >-
           env -u SPUR_WORKFLOW_RUN_ACTIVE -u SPUR_EXPECTED_DEFINITION_DIGEST
           spur workflow run plugins/kk/workflows/kk-daily-safety.yaml
-          --vars "{\"work_dir\":\"${vars.work_dir}\",\"run_date\":\"${vars.run_date}\",\"safety_max_revise\":\"${vars.safety_max_revise}\",\"safety_platforms\":\"${vars.safety_platforms}\",\"agent\":\"${vars.agent}\",\"agent_retry\":\"${vars.agent_retry}\"}"
+          --vars "{\"work_dir\":\"${vars.work_dir}\",\"run_date\":\"${vars.run_date}\",\"safety_max_revise\":\"${vars.safety_max_revise}\",\"safety_platforms\":\"${vars.safety_platforms}\",\"agent\":\"${vars.agent}\"}"
           --quiet --no-plan
 
   - id: review
@@ -834,7 +844,7 @@ nodes:
           kk stage run daily-safety-manifest "${vars.work_dir}" "${vars.run_date}" &&
           env -u SPUR_WORKFLOW_RUN_ACTIVE -u SPUR_EXPECTED_DEFINITION_DIGEST
           spur workflow run plugins/kk/workflows/kk-daily-safety.yaml
-          --vars "{\"work_dir\":\"${vars.work_dir}\",\"run_date\":\"${vars.run_date}\",\"safety_max_revise\":\"${vars.safety_max_revise}\",\"safety_platforms\":\"${vars.safety_platforms}\",\"agent\":\"${vars.agent}\",\"agent_retry\":\"${vars.agent_retry}\",\"safety_scope_dir\":\"4-safety-variants\"}"
+          --vars "{\"work_dir\":\"${vars.work_dir}\",\"run_date\":\"${vars.run_date}\",\"safety_max_revise\":\"${vars.safety_max_revise}\",\"safety_platforms\":\"${vars.safety_platforms}\",\"agent\":\"${vars.agent}\",\"safety_scope_dir\":\"4-safety-variants\"}"
           --quiet --no-plan
 
   - id: bundle-freeze
@@ -889,7 +899,7 @@ nodes:
         command: >-
           env -u SPUR_WORKFLOW_RUN_ACTIVE -u SPUR_EXPECTED_DEFINITION_DIGEST
           spur workflow run plugins/kk/workflows/kk-daily-publish3.yaml
-          --vars "{\"work_dir\":\"${vars.work_dir}\",\"run_date\":\"${vars.run_date}\",\"window\":\"${vars.publish_window}\",\"preset\":\"${vars.publish_preset}\",\"dummy\":\"${vars.publish_dummy}\",\"live_channels\":\"${vars.publish_live_channels}\"}"
+          --vars "{\"work_dir\":\"${vars.work_dir}\",\"run_date\":\"${vars.run_date}\",\"window\":\"${vars.publish_window}\",\"preset\":\"${vars.publish_preset}\",\"dummy\":\"${vars.publish_dummy}\",\"live_channels\":\"${vars.publish_live_channels}\",\"agent\":\"${vars.agent}\"}"
 
   - id: ledger
     description: >-

@@ -34,6 +34,12 @@ describe('kk-itc DAG workflow (0302 / G21 R6)', () => {
 
         const nodeIds = parsed.nodes.map((n) => n.id);
         expect(nodeIds).toContain('prepare');
+        // 0360 R4 (ADR-053 §5): the traffic probe is the sole root node, so no work starts on a dead executor.
+        expect(nodeIds[0]).toBe('executor-probe');
+        expect(parsed.nodes.filter((node) => (node.dependsOn ?? []).length === 0).map((node) => node.id)).toEqual([
+            'executor-probe',
+        ]);
+        expect(parsed.nodes.find((node) => node.id === 'prepare')?.dependsOn).toContain('executor-probe');
         expect(nodeIds).toContain('child-author');
         expect(nodeIds).toContain('verify-child-freeze');
         expect(nodeIds).toContain('materialize-plan');

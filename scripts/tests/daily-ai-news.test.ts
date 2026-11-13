@@ -117,7 +117,9 @@ function executable(dir: string, name: string, body: string): string {
 }
 
 function recordBody(extra = ''): string {
-    return `import { appendFileSync } from 'node:fs';\nappendFileSync(process.env.ACTIONS, JSON.stringify(process.argv.slice(2)) + '\\n');\n${extra}`;
+    // 0360: the supervisor takes a single-flight `kk lock acquire` before it runs; the double
+    // answers it as acquired so a fixture run is never mistaken for a concurrent launch.
+    return `import { appendFileSync } from 'node:fs';\nappendFileSync(process.env.ACTIONS, JSON.stringify(process.argv.slice(2)) + '\\n');\nif (process.argv.slice(2).includes('acquire')) console.log(JSON.stringify({ acquired: true }));\n${extra}`;
 }
 
 function actions(fx: Fixture): string[][] {
@@ -279,10 +281,11 @@ if (args.includes('run')) {
         expect(vars).toMatchObject({
             auto_publish: 'false',
             window: '72h',
-            agent: 'planner',
-            agent_retry: 'planner',
             skip_review: 'true',
         });
+        // 0360 R6: the entry forwards no executor — the workflow resolves it by role.
+        expect(vars.agent).toBe('inline');
+        expect(vars.agent_retry).toBeUndefined();
         expect(vars.work_dir).toContain(fx.works);
     });
 
@@ -531,10 +534,10 @@ if (args.includes('run')) {
         expect(vars).toMatchObject({
             auto_publish: 'true',
             window: '72h',
-            agent: 'pi-deepseek',
-            agent_retry: 'agy-gemini',
             skip_review: 'true',
         });
+        expect(vars.agent).toBe('inline');
+        expect(vars.agent_retry).toBeUndefined();
         expect(vars.work_dir).toContain(fx.works);
     });
 
@@ -569,7 +572,8 @@ if (args.includes('run')) {
         expect({ status: result.status, stderr: result.stderr }).toMatchObject({ status: 0 });
         const launch = actions(fx).find((args) => args.includes('run'));
         const vars = JSON.parse(launch?.[(launch?.indexOf('--vars') ?? -1) + 1] ?? '{}') as Record<string, string>;
-        expect(vars).toMatchObject({ auto_publish: 'true', agent: 'planner', agent_retry: 'agy-gemini' });
+        expect(vars).toMatchObject({ auto_publish: 'true', agent: 'planner' });
+        expect(vars.agent_retry).toBeUndefined();
     });
 
     it('unattended publish regenerates only on a dead or missing voice3 receipt, then launches the window', () => {
@@ -606,8 +610,8 @@ if (args.includes('run')) {
             if (regenStatuses.includes(scenario)) {
                 expect(regen).toBeDefined();
                 expect(regen?.some((arg) => arg.includes('kk-daily-ai-voice3'))).toBe(true);
-                expect(regen?.[regen.indexOf('--agent') + 1]).toBe('pi-deepseek');
-                expect(regen?.[regen.indexOf('--retry-agent') + 1]).toBe('agy-gemini');
+                expect(regen?.includes('--agent')).toBe(false);
+                expect(regen?.includes('--retry-agent')).toBe(false);
                 expect(regen?.[regen.indexOf('--window') + 1]).toBe('72h');
                 expect(regen?.includes('--generate-only')).toBe(false);
                 expect(regenIndex).toBeLessThan(launchIndex);

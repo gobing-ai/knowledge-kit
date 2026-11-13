@@ -570,7 +570,6 @@ function voice3Vars(override: Record<string, string> = {}): Record<string, strin
         skip_review: 'true',
         transcode_mp3: 'true',
         agent: 'inline',
-        agent_retry: 'inline',
         safety_max_revise: '2',
         safety_platforms: 'xiaoyuzhou,apple-podcasts,wechatmp',
         qc_min_quality: '0',

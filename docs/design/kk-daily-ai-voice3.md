@@ -99,7 +99,7 @@ Changes against the proposed flow are marked ▲.
 
 | Phase | Nodes (one `kk` command or one `agent.run` each) | Output in the bundle |
 | --- | --- | --- |
-| 0 prepare | `preflight` (stages exist in the installed runner) · `prepare` · read work_dir/run_date | — |
+| 0 prepare | `executor-probe` (one real prompt; a dead executor fails here, ADR-053 §5 — the sole root node) · `preflight` (stages exist in the installed runner) · `prepare` · read work_dir/run_date | — |
 | 1 选题 | `extract` → `plan` → `qc-content` → `select` (ledger at QC, unchanged) | `plan.json` |
 | 2 选题精选 (curate) ▲ | `script-style` (snapshot skill) → `curate` (editorial select + title dedup) → `curate-check` → `curate-fix` (if errors) → `curate-final` (final validation / fallback) | `21-plan/plan.json`, `curate_excluded.json` |
 | 3 初稿与渲染 ▲ | `script-write` (master plan with speech, cover brief, card plan, social) → `script-check` → `script-write-fix` (if errors) → `script` (dailynews-gen) → `editorial-render` (deterministic article body, cover brief, cards, social) · `show-notes` · advisory `editorial-judge` (news-balance rubric) | `24-script/script-write_plan.json`, `22-article/*`, `23-cover/*`, `25-xhs/*`, `26-social/*` |
@@ -260,6 +260,14 @@ Tracked as feature **G15** (under G1): T-a → 0321, T-b → 0322, T-c → 0325,
 - **T-f** `shipinhao-pub` 图文 operation; `threads-pub` image support via a public asset host;
   new `linkedin-pub`, `facebook-pub`, `instagram-pub`.
 - **T-g** agent.run retry in spur, then delete every `-retry` sibling.
+
+**Shipped in 0360 (2026-11-13).** One executor var: `agent` is the single source for every primary
+`agent.run` node, and the retry siblings (`curate-fix`, `script-write-fix`, and the safety machine's
+three retries) declare the literal `agent: inline` with `role: reviewer`, so they resolve by role
+above the primary's rung instead of pinning a second executor. Both nested safety launches and the
+nested publish3 launch forward `agent`. The first node is `executor-probe` — `role: scribe`,
+`agent: ${vars.agent}`, a 120 s bound and the prompt `Reply with exactly: OK`, with no `onError`, so
+a dead executor fails the run at minute 0 instead of at first spend.
 
 ## 11. Migration rehearsal (task 0334) — prepared surface, nothing installed
 

@@ -22,30 +22,22 @@ const WINDOWS = new Set(['after-generate', 'cn-peak', 'overseas-rss']);
 // --window 72h (2026-11-05): the 24h pool produced a 8.4-min script and the 15-min
 // floor refused before TTS (duration-refusal); pinned until ingest bodies or label
 // quality widen the fresh pool.
-// Executor pair: retry stays a DIFFERENT binary family (2026-11-04 — spur's readiness
-// gate SIGTERMs a stalled `<agent> --version` after 5s, so a same-binary retry re-hits
-// the same stall); 2026-11-08 primary was pi-dsv4.1-flash-volc; 2026-11-10 volc's quota
-// died mid-run (AccountQuotaExceeded) with the claude retry weekly-limit-dead, so
-// primary repointed to pi-deepseek (kin to the validated volc executor) and retry to
-// agy-gemini (different binary family, probe-passed). The 0347 F1 preflight probes both
-// before spending the window; re-evaluate when volc resets.
+// Executor selection moved into the workflow (0360 R6, ADR-053 §5): the `agent` var
+// is the single source for every agent node and the retries resolve by role, so this
+// entry forwards nothing and a pinned model can no longer shadow a workflow default.
 const PRODUCTION = {
-    agent: 'pi-deepseek',
-    retryAgent: 'agy-gemini',
     workflow: 'kk-daily-ai-voice3',
     window: '72h',
 } as const;
 const USAGE = `usage:
-  bun run daily-news:generate [--full] [--agent <role|executor>] [--retry-agent <role|executor>] [-- <daily-scheduled-run options>]
+  bun run daily-news:generate [--full] [-- <daily-scheduled-run options>]
   bun run daily-news:publish [-- --run-date <YYYY-MM-DD|YYYYMMDD>] [--window <window>] [--unattended] [--yes] [publisher flags]
   bun run daily-news:validate [-- --run-date <YYYY-MM-DD|YYYYMMDD>] [--mode quick|full] [--skip-dogfood]
 
 generate defaults to the supervised shadow posture: generate-only (auto_publish=false) over the
-72h pool; --agent/--retry-agent default to the 'planner' role (capable-2, tier-resolved at
-dispatch — no pinned model) and accept a role or a named executor to override. Explicit executor
-names are resolved with a one-time transition warning (0542 R2). --full is the 04:30 scheduled
-posture: the whole voice3 workflow with auto_publish=true and the production pair
-(pi-deepseek + agy-gemini); per-dispatch overrides still win (last flag wins).
+72h pool. The workflow resolves the executor by role (no pinned model); pass --agent <name>
+after -- to pin one anyway. --full is the 04:30 scheduled posture: the whole voice3 workflow
+with auto_publish=true; per-dispatch overrides still win (last flag wins).
 publish defaults to today's after-generate window. Missing/incomplete generation asks on a TTY;
 --yes explicitly consents to generation. Non-TTY runs never generate implicitly. --unattended is
 the 07:00 scheduled posture (kk-daily-publish3): today's voice3 receipt gates a full production
@@ -258,16 +250,12 @@ function buildGenerateArgv(full: boolean, overrides: string[]): string[] {
         PRODUCTION.workflow,
         '--window',
         PRODUCTION.window,
-        // Shadow posture (default): roles, not executor names (ADR-078 / 0542 R2) —
-        // planner = capable-2 authoring grade, tier-resolved at dispatch, so a quota-dead
-        // model never pins a supervised run. The full posture pins the production pair
-        // and drops --generate-only (auto_publish=true); forwarded args below still
+        // Shadow posture (default): roles, not executor names (ADR-078 / 0542 R2) — the
+        // workflow's `agent` var resolves the tier at dispatch, so a quota-dead model never
+        // pins a supervised run. 0360 R6: no executor is forwarded here at all; the full
+        // posture drops --generate-only (auto_publish=true). Forwarded args below still
         // override per dispatch (parseArgs is last-wins).
         ...(full ? [] : ['--generate-only']),
-        '--agent',
-        full ? PRODUCTION.agent : 'planner',
-        '--retry-agent',
-        full ? PRODUCTION.retryAgent : 'planner',
         ...overrides,
     ];
 }

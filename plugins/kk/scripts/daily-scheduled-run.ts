@@ -16,7 +16,6 @@ const { values } = parseArgs({
         'timeout-ms': { type: 'string', default: '13500000' },
         receipt: { type: 'string' },
         agent: { type: 'string', default: 'inline' },
-        'retry-agent': { type: 'string', default: 'claude' },
         'required-channels': { type: 'string', default: 'wechat,locales,cms-resync' },
         'wechat-live': { type: 'boolean', default: false },
         workflow: { type: 'string', default: 'kk-daily-ai-voice2' },
@@ -59,7 +58,6 @@ const vars = isVoice3
           ...(values.window ? { window: values.window } : {}),
           skip_review: 'true',
           agent: values.agent,
-          agent_retry: values['retry-agent'],
           work_dir: workDir,
           run_date: stamp,
       }
@@ -67,11 +65,67 @@ const vars = isVoice3
           publish_enabled: 'true',
           skip_review: 'true',
           agent: values.agent,
-          agent_retry: values['retry-agent'],
           wechat_live: values['wechat-live'] === true ? 'true' : 'false',
           work_dir: workDir,
           run_date: stamp,
       };
+/**
+ * The commit this wrapper runs from. A stale checkout that pins a quota-dead executor is invisible
+ * unless the receipt names the tree it ran (2026-11-11: a pre-f7a964e2 job line failed 7/7).
+ */
+function checkoutCommit(): string | null {
+    const result = spawnSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf-8', timeout: 5_000 });
+    const sha = result.stdout.trim();
+    return result.status === 0 && sha !== '' ? sha : null;
+}
+
+const commit = checkoutCommit();
+
+// ------------------------------------------------------------------
+// Single-flight (0360 R7). One launch per workflow per run day: a second launch for the same day
+// shares the work dir and would overwrite the live run's schedule receipt, so it is refused here —
+// before anything but the idempotent mkdir above is written. Fail closed: an acquire that cannot
+// run or prints nothing usable counts as not acquired.
+// ------------------------------------------------------------------
+const lockName = `${values.workflow}-${stamp}`;
+
+function acquireLock(): { acquired: boolean; holder?: string; detail?: string } {
+    const result = spawnSync(
+        'kk',
+        ['lock', 'acquire', '--name', lockName, '--run', runId, '--ttl', String(timeoutMs)],
+        { cwd: repo, encoding: 'utf-8', timeout: 20_000 },
+    );
+    if (result.status !== 0) {
+        return { acquired: false, detail: result.stderr.trim() || `kk lock acquire exited ${result.status ?? '?'}` };
+    }
+    try {
+        const parsed = JSON.parse(result.stdout.trim()) as { acquired?: unknown; holder?: unknown };
+        if (parsed.acquired === true) return { acquired: true };
+        return { acquired: false, holder: typeof parsed.holder === 'string' ? parsed.holder : undefined };
+    } catch {
+        return { acquired: false, detail: 'kk lock acquire printed no parseable claim' };
+    }
+}
+
+/** Free the claim iff this run still owns it; a lost claim releases nothing (kk exits 0 either way). */
+function releaseLock(): void {
+    spawnSync('kk', ['lock', 'release', '--name', lockName, '--run', runId], {
+        cwd: repo,
+        encoding: 'utf-8',
+        timeout: 20_000,
+    });
+}
+
+const lock = acquireLock();
+if (!lock.acquired) {
+    console.error(
+        `daily-scheduled-run: ${values.workflow} ${stamp} already running (holder ${lock.holder ?? 'unknown'})`,
+    );
+    if (lock.detail !== undefined) console.error(`  ! ${lock.detail}`);
+    // No receipt write: this launch owns nothing, and the holder's receipt must stay byte-identical.
+    process.exit(6);
+}
+
 // ------------------------------------------------------------------
 // Preflight (0347 F1, 2026-11-10). Fail fast at minute one with named
 // reasons instead of burning the window on a doomed run (2026-11-09: 80
@@ -176,17 +230,11 @@ function runPreflight(): Preflight {
         }
     }
     if (values['skip-probe'] !== true) {
-        if (values.agent !== 'inline') {
-            const probe = executorProbe(values.agent);
-            if (!probe.ok) reasons.push(`executor probe failed for primary '${values.agent}': ${probe.detail}`);
-        }
-        const retry = values['retry-agent'];
-        if (retry !== undefined && retry !== 'inline') {
-            const retryProbe = executorProbe(retry);
-            if (!retryProbe.ok) {
-                warnings.push(`executor probe failed for retry '${retry}': ${retryProbe.detail}`);
-            }
-        }
+        // 0360 R5: always probe real traffic. The default posture (`agent: inline`) is proven
+        // through the probe node's role — the executor the run will actually dispatch to.
+        const target = values.agent === 'inline' ? 'scribe' : values.agent;
+        const probe = executorProbe(target);
+        if (!probe.ok) reasons.push(`executor probe failed for '${target}': ${probe.detail}`);
     }
     return { ok: reasons.length === 0, reasons, warnings };
 }
@@ -200,7 +248,8 @@ if (!preflight.ok) {
         status: 'preflight-refused',
         exitCode: 5,
         agent: values.agent,
-        retryAgent: values['retry-agent'],
+        executor: values.agent,
+        checkoutCommit: commit,
         workDir,
         preflight: { reasons: preflight.reasons, warnings: preflight.warnings },
         error: preflight.reasons[0] ?? 'preflight refused',
@@ -209,6 +258,7 @@ if (!preflight.ok) {
     console.error(`daily-scheduled-run: preflight refused run ${runId}`);
     for (const reason of preflight.reasons) console.error(`  ! ${reason}`);
     for (const warning of preflight.warnings) console.error(`  ~ ${warning}`);
+    releaseLock();
     process.exit(5);
 }
 writeFileSync(
@@ -219,6 +269,9 @@ writeFileSync(
             startedAt,
             status: 'running',
             workDir,
+            agent: values.agent,
+            executor: values.agent,
+            checkoutCommit: commit,
             preflight: { warnings: preflight.warnings, probes: values['skip-probe'] === true ? 'skipped' : 'passed' },
         },
         null,
@@ -294,6 +347,8 @@ function terminate(): void {
 const onSignal = (): void => {
     interrupted = true;
     terminate();
+    // The claim is ours until this process is gone; a signal exit must not strand it for the day.
+    releaseLock();
 };
 process.once('SIGTERM', onSignal);
 process.once('SIGINT', onSignal);
@@ -486,7 +541,14 @@ function inspectGenerationOnly(): { status: string; reason: string } {
     if (!existsSync(inspector)) return { status: 'incomplete', reason: `bundle inspector not found: ${inspector}` };
     // The child is terminal, but our initial receipt still says running. Mark the inspection phase so
     // the shared admission check does not mistake this supervisor for a concurrent active run.
-    writeFileSync(receiptPath, JSON.stringify({ runId, startedAt, status: 'inspecting', workDir }, null, 2));
+    writeFileSync(
+        receiptPath,
+        JSON.stringify(
+            { runId, startedAt, status: 'inspecting', workDir, executor: values.agent, checkoutCommit: commit },
+            null,
+            2,
+        ),
+    );
     const probe = spawnSync(process.execPath, [inspector, 'inspect', '--work-dir', workDir, '--run-date', stamp], {
         cwd: repo,
         encoding: 'utf-8',
@@ -534,7 +596,6 @@ function buildTriage(finalStatus: string, exitCode: number): TriageReport | null
             completedAt: new Date().toISOString(),
             workDir,
             agent: values.agent,
-            retryAgent: values['retry-agent'],
             exitCode,
             error: spawnError || null,
         };
@@ -564,7 +625,9 @@ const receipt = {
     workDir,
     timeoutMs,
     agent: values.agent,
-    retryAgent: values['retry-agent'],
+    executor: values.agent,
+    // R8: the tree this run actually executed, so a stale scheduler job line is visible in the receipt.
+    checkoutCommit: commit,
     error: spawnError || null,
     primaryPublishStatus,
     channelCompleteness,
@@ -576,6 +639,7 @@ const receipt = {
 };
 writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
 console.log(JSON.stringify(receipt));
+releaseLock();
 process.removeListener('SIGTERM', onSignal);
 process.removeListener('SIGINT', onSignal);
 process.exit(receipt.exitCode);

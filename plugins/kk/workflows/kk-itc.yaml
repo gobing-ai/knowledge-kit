@@ -39,8 +39,19 @@ vars:
   __definitionDigest: ""
 
 nodes:
+  - id: executor-probe
+    description: "One real prompt to the resolved executor; a dead executor fails the run here (ADR-053 §5)"
+    action:
+      kind: agent.run
+      options:
+        role: scribe
+        agent: ${vars.agent}
+        timeoutMs: 120000
+        input: "Reply with exactly: OK"
+
   - id: prepare
     description: "Freeze the effective options (itc-prepare) bound to this run, then prepare the brief"
+    dependsOn: [executor-probe]
     action:
       kind: shell
       options:

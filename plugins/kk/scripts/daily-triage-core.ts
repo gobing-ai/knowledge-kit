@@ -25,7 +25,6 @@ export interface TriageReceipt {
     completedAt?: string;
     workDir?: string;
     agent?: string;
-    retryAgent?: string;
     exitCode?: number;
     error?: string | null;
 }
@@ -299,7 +298,6 @@ export function collectTriage(
                     ...(typeof raw.completedAt === 'string' ? { completedAt: raw.completedAt } : {}),
                     ...(typeof raw.workDir === 'string' ? { workDir: raw.workDir } : {}),
                     ...(typeof raw.agent === 'string' ? { agent: raw.agent } : {}),
-                    ...(typeof raw.retryAgent === 'string' ? { retryAgent: raw.retryAgent } : {}),
                     ...(typeof raw.exitCode === 'number' ? { exitCode: raw.exitCode } : {}),
                     ...(typeof raw.error === 'string' || raw.error === null
                         ? { error: raw.error as string | null }
