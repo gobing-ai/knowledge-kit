@@ -1,13 +1,60 @@
 ## [Unreleased]
 
+## [0.1.17] - 2026-11-12
+
+### Added
+
+- feat(juejin-pub): attach the cover image in the publish popup (bc72c747)
+<!-- src: plugins/publishings/juejin-pub/src/index.ts:183 · confidence: HIGH -->
+- feat(zenn-pub): deploy articles through the GitHub contents API (00f779b6)
+<!-- src: plugins/publishings/zenn-pub/src/index.ts:331 · confidence: HIGH -->
+- feat(cli): publish a finished article without re-authoring (f1622992)
+<!-- src: scripts/publish-article.ts:8 · confidence: HIGH -->
+- feat(infoq-pub): upload metadata.coverImage into the draft (50a1a074)
+<!-- src: plugins/publishings/infoq-pub/src/index.ts:221 · confidence: HIGH -->
+- feat(publish): let the daily preset own live consent (ADR-022 amendment) (e87015bf)
+<!-- src: plugins/kk/publish-presets/daily-ai-voice.json:11 · confidence: HIGH -->
+
 ### Fixed
 
-- fix(itc): skip a cover-requiring publish target instead of aborting the whole plan — the plan records a `warnings` entry and every other target still materializes; the plan-writing stages echo each warning to stderr and still exit 0
-<!-- src: apps/cli/src/itc-plan.ts:489 -->
-- fix(itc): expand a leading `$HOME` and `$HOME/` in `works_dir` (and the `KK_CONFIG` path) against the configured home, matching the `~` forms; every other `$`/backtick sequence stays literal data
-<!-- src: apps/cli/src/itc-config.ts:184 -->
-- fix(itc): ship the `itc-main` publish preset in the package root and resolve it through the shared package-root resolver so a run from a foreign work dir still finds the shipped preset
-<!-- src: plugins/kk/publish-presets/itc-main.json:3 -->
+- fix(itc): skip a cover-requiring publish target instead of aborting the whole plan, expand a leading `$HOME` in `works_dir`, and ship the `itc-main` preset (ede7d925)
+<!-- src: apps/cli/src/itc-plan.ts:489 · confidence: HIGH -->
+- fix(itc): keep the publish tail alive when a channel probe refuses — `itc-check-targets` records probes as data and exits 0, and `itc-send-targets` re-derives each payload from the plan's variant files (91fd13ca)
+<!-- src: apps/cli/src/itc-publish.ts:387 · confidence: HIGH -->
+- fix(bot): repair a broken browser profile instead of refusing to launch (51dd05a6)
+<!-- src: packages/publish-harness/src/browser.ts:192 · confidence: HIGH -->
+- fix(wechatmp-pub): drive the v2 editor's paste, dialogs and cover picker (30202fcd)
+<!-- src: plugins/publishings/wechatmp-pub/src/flow.ts:732 · confidence: HIGH -->
+- fix(cover): inline the background so sips renders it (166baa79)
+<!-- src: plugins/kk/scripts/cover-compositor.ts:140 · confidence: HIGH -->
+- fix(wechatmp-pub): route a cover-carrying article to the CGI draft route, which carries `coverImage` (e891ab81)
+<!-- src: plugins/publishings/wechatmp-pub/src/cgi-draft.ts:81 · confidence: HIGH -->
+- fix(surfdash-pub): record a pre-dispatch refusal as `effect: none` instead of `unknown` (2f8b7971)
+<!-- src: plugins/publishings/surfdash-pub/src/index.ts:236 · confidence: HIGH -->
+- fix(juejin-pub): probe the cover path through the FileSystem seam (1ab86921)
+<!-- src: plugins/publishings/juejin-pub/src/index.ts:192 · confidence: HIGH -->
+- fix(validate): let the daily-news posture check read an injected `KK_SPUR_CONFIG` (209bc1f7)
+<!-- src: scripts/daily-ai-news.ts:858 · confidence: HIGH -->
+- fix(infoq-pub): probe the cover path through the FileSystem seam (2fa21e2e)
+<!-- src: plugins/publishings/infoq-pub/src/index.ts:227 · confidence: HIGH -->
+
+### Other
+
+- chore: merge pull request #10 from fix/itc-publish-plan-bugs (2043ee81)
+- docs(publish): record the itc probe, profile-repair and zenn decisions (acc88021)
+- chore(spur): disable the project scheduler (673b8454)
+- docs(report): add the daily history-forensics reports (36dca9e5)
+- chore: merge origin/main into main (499bc6bb)
+- docs(publish): follow the ADR renumbering after the merge (2672c5d4)
+- docs(dogfood): record the 2026-11-11 daily-news runs (923652aa)
+- test(wechatmp-pub): pin the editor insertion primitives (bb3dee5b)
+<!-- src: plugins/publishings/wechatmp-pub/src/flow.ts:732 · confidence: HIGH -->
+- docs(dogfood): record the 2026-11-12 daily-news publish run (f4cbb45c)
+- chore(project): turn on sheduler job (1341bc06)
+<!-- src: .spur/config.yaml:62 · confidence: HIGH -->
+- chore: merge 50a1a074 into main (d5706af7)
+- test(voice3): launch the publish3 rehearsal with live_confirm (d9585343)
+<!-- src: apps/cli/tests/voice3-migration.e2e.test.ts:602 · confidence: HIGH -->
 
 ## [0.1.16] - 2026-11-11
 
