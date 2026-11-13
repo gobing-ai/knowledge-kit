@@ -597,6 +597,9 @@ function publish3Vars(fx: Fixture, window: string, override: Record<string, stri
         live_channels: '',
         dummy: 'true',
         agent: 'inline',
+        // ADR-022 amendment 2026-11-12: the preset's own live rows are consent, so the
+        // send-confirm pause is opt-in. The rehearsal asks for it where it asserts the gate.
+        live_confirm: 'true',
         ...override,
     };
 }
