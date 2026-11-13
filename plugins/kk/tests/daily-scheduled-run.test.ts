@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const repo = resolve(import.meta.dir, '../../..');
@@ -70,6 +70,98 @@ process.exit(0);
             expect(vars.wechat_live).toBe(policy.expected);
         }
     }, 20000);
+
+    it('resolves the operator kk, not a node_modules shadow bun injects into a package script', async () => {
+        // 2026-11-13: `bun run daily-news:generate` prepended every ancestor node_modules/.bin to
+        // PATH, so `command -v kk` found /Users/robin/node_modules/.bin/kk (a stale October install)
+        // and the divergence gate refused the scheduled run. The operator's own kk must win.
+        const dir = join(evidence, String(process.pid), 'kk-shadow');
+        rmSync(dir, { recursive: true, force: true });
+        for (const side of ['operator', 'shadow']) {
+            mkdirSync(join(dir, side, 'pkg/dist'), { recursive: true });
+            writeFileSync(join(dir, side, 'pkg/dist/index.js'), `#!${process.execPath}\nprocess.exit(0);\n`);
+            chmodSync(join(dir, side, 'pkg/dist/index.js'), 0o755);
+            mkdirSync(join(dir, side, 'bin'), { recursive: true });
+            mkdirSync(join(dir, side, 'pkg/plugins/kk'), { recursive: true });
+            if (side === 'operator') {
+                for (const sub of ['workflows', 'scripts']) {
+                    cpSync(join(repo, 'plugins/kk', sub), join(dir, side, 'pkg/plugins/kk', sub), { recursive: true });
+                }
+            } else {
+                // `<pkg>/dist/index.js` -> `<pkg>` is how kkPackageRoot reads the binary. A shadow
+                // package that really diverges: `diff -rq` against it reports "Only in checkout: …",
+                // so without the fix the run is refused.
+                mkdirSync(join(dir, 'shadow/node_modules/plugins/kk'), { recursive: true });
+                mkdirSync(join(dir, 'shadow/node_modules/dist'), { recursive: true });
+                writeFileSync(
+                    join(dir, 'shadow/node_modules/dist/index.js'),
+                    `#!${process.execPath}\nprocess.exit(0);\n`,
+                );
+                chmodSync(join(dir, 'shadow/node_modules/dist/index.js'), 0o755);
+                for (const sub of ['workflows', 'scripts']) {
+                    mkdirSync(join(dir, 'shadow/node_modules/plugins/kk', sub), { recursive: true });
+                    writeFileSync(join(dir, 'shadow/node_modules/plugins/kk', sub, 'STALE-INSTALL'), 'stale\n');
+                }
+            }
+            mkdirSync(join(dir, side, 'bin'), { recursive: true });
+            writeFileSync(
+                join(dir, side, 'bin/kk'),
+                `#!/bin/sh\nexec ${process.execPath} ${join(dir, side, 'pkg/dist/index.js')} "$@"\n`,
+            );
+            chmodSync(join(dir, side, 'bin/kk'), 0o755);
+        }
+        mkdirSync(join(dir, 'shadow/node_modules/.bin'), { recursive: true });
+        // A symlink like a real package bin: `command -v` reports .bin/kk, realpath lands on
+        // `<pkg>/dist/index.js`, and kkPackageRoot takes the shadow package root.
+        if (!existsSync(join(dir, 'shadow/node_modules/.bin/kk'))) {
+            writeFileSync(join(dir, 'shadow/node_modules/.bin/kk'), '#!/bin/sh\nexit 0\n');
+            chmodSync(join(dir, 'shadow/node_modules/.bin/kk'), 0o755);
+        }
+        const spur = join(dir, 'operator/bin/spur');
+        writeFileSync(
+            spur,
+            `#!${process.execPath}\nimport { writeFileSync } from 'node:fs';\nif (process.argv.includes('run')) writeFileSync(process.env.PROBE_VARS, '{}');\nprocess.exit(0);\n`,
+        );
+        chmodSync(spur, 0o755);
+        const receipt = join(dir, 'receipt.json');
+        const proc = Bun.spawn(
+            [
+                process.execPath,
+                runner,
+                '--repo',
+                repo,
+                '--works-dir',
+                join(dir, 'works'),
+                '--run-id',
+                'kk-shadow-preflight',
+                '--timeout-ms',
+                '5000',
+                '--skip-probe',
+                '--allow-dirty',
+                '--receipt',
+                receipt,
+            ],
+            {
+                env: {
+                    ...process.env,
+                    PATH: `${join(dir, 'shadow/node_modules/.bin')}:${join(dir, 'operator/bin')}:${process.env.PATH ?? ''}`,
+                    PROBE_VARS: join(dir, 'vars.json'),
+                },
+                stdout: 'pipe',
+                stderr: 'pipe',
+            },
+        );
+        const [exitCode, stdout, stderr] = await Promise.all([
+            proc.exited,
+            new Response(proc.stdout).text(),
+            new Response(proc.stderr).text(),
+        ]);
+        const recorded = JSON.parse(readFileSync(receipt, 'utf-8')) as { status?: string };
+        expect({ exitCode, recorded, stdout, stderr }).toMatchObject({
+            recorded: { status: expect.not.stringMatching(/^preflight-refused$/) },
+        });
+        expect(`${stdout}${stderr}`).not.toContain('diverges from installed kk');
+    }, 30000);
 
     it('records success, closes failures, and reaps a timed-out workflow before finalizing its ledger', async () => {
         const results: Record<string, unknown>[] = [];

@@ -72,6 +72,14 @@ const vars = isVoice3
           work_dir: workDir,
           run_date: stamp,
       };
+// One binary per machine (AGENTS.md): resolve `kk` without Bun's injected node_modules shadow and
+// put its directory first on PATH, so spur, the workflow's `kk stage run` steps and the store calls
+// all execute the same engine the operator invokes. Runs before any spawn below.
+{
+    const kkBin = kkBinary();
+    if (kkBin !== null) process.env.PATH = `${dirname(kkBin)}:${process.env.PATH ?? ''}`;
+}
+
 // ------------------------------------------------------------------
 // Preflight (0347 F1, 2026-11-10). Fail fast at minute one with named
 // reasons instead of burning the window on a doomed run (2026-11-09: 80
@@ -102,11 +110,34 @@ function harnessDirtyPaths(): string[] {
         .filter(Boolean);
 }
 
+/**
+ * The operator's PATH minus the `node_modules/.bin` entries Bun's script runner injects for every
+ * ancestor directory. `bun run daily-news:generate` put `/Users/robin/node_modules/.bin` ahead of
+ * the bun-global bin on 2026-11-13, so `command -v kk` resolved a stale October install, the
+ * divergence gate refused the run, and every `kk` stage the child workflow spawned would have run
+ * that stale engine instead of the operator's.
+ */
+function operatorPath(): string {
+    const path = process.env.PATH ?? '';
+    const stripped = path.split(':').filter((entry) => entry !== '' && !entry.endsWith('/node_modules/.bin'));
+    return stripped.length > 0 ? stripped.join(':') : path;
+}
+
+/** Absolute path of the `kk` the operator's own PATH resolves, not a node_modules shadow copy. */
+function kkBinary(): string | null {
+    const which = spawnSync('sh', ['-c', 'command -v kk'], {
+        encoding: 'utf-8',
+        timeout: 5_000,
+        env: { ...process.env, PATH: operatorPath() },
+    });
+    const bin = which.stdout.trim();
+    return which.status === 0 && bin !== '' ? bin : null;
+}
+
 /** Package root of the kk binary this machine resolves `kk` to, or null. */
 function kkPackageRoot(): string | null {
-    const which = spawnSync('sh', ['-c', 'command -v kk'], { encoding: 'utf-8', timeout: 5_000 });
-    const bin = which.stdout.trim();
-    if (which.status !== 0 || bin === '') return null;
+    const bin = kkBinary();
+    if (bin === null) return null;
     try {
         const real = realpathSync(bin);
         // <pkg>/dist/index.js -> <pkg>
