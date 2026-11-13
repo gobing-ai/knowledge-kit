@@ -2,11 +2,11 @@
 schema_version: 1
 id: "G61"
 name: "Content pipeline consolidation: shared publish core, article/news verbs, simplified workflows"
-status: backlog
+status: active
 priority: P1
 tags: []
 created_at: "2026-11-13T17:30:35.983Z"
-updated_at: "2026-11-13T20:22:50.422Z"
+updated_at: "2026-11-13T21:35:41.126Z"
 ---
 
 # G61: Content pipeline consolidation: shared publish core, article/news verbs, simplified workflows
@@ -96,11 +96,11 @@ Feature: Content pipeline consolidation: shared publish core, article/news verbs
 | --- | ---- | ------ |
 | 0369 | Scheduler cut-over and retirement of launcher scripts and old workflows | backlog |
 | 0362 | Design freeze: article/news verb set, content_types config, and the simplified workflow node maps | wip |
-| 0360 | Launch safety: single executor var, traffic probe first, single-flight lock, hard-fail writer | backlog |
+| 0360 | Launch safety: single executor var, traffic probe first, single-flight lock, hard-fail writer | done |
 | 0364 | Unified bundle and plan schema with the five publish step verbs | backlog |
 | 0368 | Article generate verbs, kk-article-generate workflow and article publish through kk-publish | backlog |
 | 0367 | News generate step verbs and the kk-news-generate workflow | backlog |
-| 0361 | Extract a neutral publish core from itc-publish, itc-plan and publish-matrix | backlog |
+| 0361 | Extract a neutral publish core from itc-publish, itc-plan and publish-matrix | done |
 | 0365 | launchWorkflow and the plain generate / publish verbs | backlog |
 | 0363 | content_types config and the kk article / kk news nouns with new and status | backlog |
 | 0366 | kk-publish workflow and news publish cut-over | backlog |
@@ -119,4 +119,5 @@ executor on 11-11 and 11-12 and failed 7/7 while a second machine ran the real s
 ## History
 
 - 2026-11-13T17:40:54.085Z moved Q → G61 (system)
+- 2026-11-13T21:35:41.126Z backlog → active (system)
 
