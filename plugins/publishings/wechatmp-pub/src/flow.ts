@@ -156,23 +156,6 @@ const COVER_CONFIRM = [
     'button:has-text("完成")',
 ];
 
-/**
- * 图片库 has no row for a cover the pipeline just generated, so the picker's own 上传文件 control is
- * the only way to attach it (measured 2026-11-12: the article flow never seeds the library — only the
- * daily audio form does). The uploaded material keeps its filename, so the name-identified pick that
- * follows still applies.
- */
-const COVER_LIBRARY_UPLOAD = [
-    '.weui-desktop-dialog:visible:has(h3:has-text("选择图片")) :text-is("上传文件")',
-    '.weui-desktop-dialog:visible:has(h3:has-text("选择图片")) :text-matches("上传", "i")',
-    'text=上传文件',
-];
-/** The picker dialog's own file input (present up front, or revealed by the 上传文件 control). */
-const COVER_LIBRARY_FILE_INPUT = [
-    '.weui-desktop-dialog:visible:has(h3:has-text("选择图片")) input[type="file"]',
-    '.weui-desktop-dialog:visible input[type="file"][accept*="image"]',
-];
-
 /** The controls that close whatever modal the cover step left open, most specific first. */
 const DIALOG_DISMISS = [
     '.weui-desktop-dialog:visible button:has-text("取消")',
@@ -1055,55 +1038,6 @@ interface CoverIdentity {
  * `#js_cover_area` is read back: the empty state (`add_cover` icon still visible) or an unreadable
  * preview is a named warning, never a success claim (task 0260 R1).
  */
-/**
- * Select the first row of the open picker. Only used immediately after this run uploaded the cover:
- * the upload lands in 最近使用 at position 0 and WeChat does not expose the original filename on the
- * row, so the name-identified pick cannot find it (measured 2026-11-12: 最近使用 grew by one and the
- * new material stayed unnamed). The cover-area change after 确认 is still the success evidence.
- */
-/** How many picker rows are visible right now (0 = the grid is not readable in this build). */
-function libraryRowCountScript(): string {
-    return `(() => [...document.querySelectorAll('.weui-desktop-img-picker__item, div[class*="img_picker" i] li, div[class*="imgList" i] li, div[class*="cover" i] li')].filter((row) => row.offsetWidth > 0).length)()`;
-}
-
-function newestLibraryRowScript(): string {
-    // Row query deliberately mirrors IDENTIFY (same selectors, no dialog scoping): the dialog's own
-    // DOM wrapper moved between builds, while these row selectors are what the name-identified pick
-    // already matches against.
-    return `(() => {
-        const rows = [...document.querySelectorAll('.weui-desktop-img-picker__item, div[class*="img_picker" i] li, div[class*="imgList" i] li, div[class*="cover" i] li')]
-            .filter((row) => row.offsetWidth > 0);
-        const row = rows[0];
-        if (!row) return 'missing';
-        if (!row.classList.contains('selected')) {
-            row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-            row.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-            row.click();
-        }
-        const css = row.querySelector('[style*="background-image"]')?.style.backgroundImage ?? '';
-        const backgroundUrl = css.startsWith('url("') || css.startsWith("url('") ? css.slice(5, -2) : css.startsWith('url(') ? css.slice(4, -1) : '';
-        const src = row.querySelector('img')?.src || backgroundUrl;
-        return JSON.stringify({ picked: true, src });
-    })()`;
-}
-
-/** Upload `file` into 图片库 through the open picker; `false` when the dialog offers no control. */
-async function uploadCoverToLibrary(
-    page: WechatPage,
-    file: string,
-    deps: Pick<ModeRunDeps, 'stepTimeoutMs'>,
-): Promise<boolean> {
-    let input = await tryFindSelector(page, COVER_LIBRARY_FILE_INPUT, 1_500);
-    if (input === undefined) {
-        const upload = await tryFindSelector(page, COVER_LIBRARY_UPLOAD, Math.min(deps.stepTimeoutMs, 4_000));
-        if (upload === undefined) return false;
-        await clickSelector(page, upload, deps.stepTimeoutMs).catch(() => undefined);
-        input = await tryFindSelector(page, COVER_LIBRARY_FILE_INPUT, Math.min(deps.stepTimeoutMs, 5_000));
-    }
-    if (input === undefined) return false;
-    await uploadFile(asPlaywrightPage(page), input, file, { timeoutMs: 120_000 });
-    return true;
-}
 
 export async function setCover(
     page: WechatPage,
@@ -1210,27 +1144,6 @@ export async function setCover(
             );
             rawIdentify = String(await page.evaluate(IDENTIFY));
         }
-        // Only upload into a grid we can actually read back: an upload whose pick cannot follow just
-        // duplicates material in the operator's library (measured 2026-11-12: 336 → 339 with no
-        // cover attached), so a grid we cannot query means "warn", not "upload anyway".
-        const gridReadable =
-            rawIdentify === 'missing' && Number(await page.evaluate(libraryRowCountScript()).catch(() => 0)) > 0;
-        if (gridReadable && source === 'library' && identity.requested !== undefined) {
-            // The pipeline's cover is not in the library yet: upload it, then let the same
-            // name-identified pick run against the refreshed list.
-            const uploaded = await uploadCoverToLibrary(page, identity.requested, deps).catch(() => false);
-            if (uploaded) {
-                await waitUntil(
-                    async () => {
-                        rawIdentify = String(await page.evaluate(IDENTIFY));
-                        return rawIdentify !== 'missing';
-                    },
-                    Math.min(deps.stepTimeoutMs, 20_000),
-                );
-                // Uploaded in this step and still unnamed in the grid: the first row is that upload.
-                if (rawIdentify === 'missing') rawIdentify = String(await page.evaluate(newestLibraryRowScript()));
-            }
-        }
         if (rawIdentify === 'missing')
             return await warn(`cover: ${what} 未标出与请求文件同名的素材，未选择（不按首图猜测）`);
         if (rawIdentify === 'ambiguous') return await warn(`cover: ${what} 匹配到多个同名素材，身份不唯一，未选择`);
@@ -1333,11 +1246,31 @@ export async function setCover(
     }
 }
 
-/** `metadata.wechatmp.coverSource` — `library` (default) is the uploaded episode cover. */
+/**
+ * Which cover route a run takes.
+ *
+ * An explicit `metadata.wechatmp.coverSource` always wins — the daily show pins `library`, because its
+ * audio rail has already uploaded the episode cover as the audio material's cover.
+ *
+ * Without it, a pipeline article (`metadata.coverImage`, the repo-wide single-cover convention that
+ * surfdash and xhs read too) has no library material: 图片库 only holds covers the daily audio form
+ * seeded. The flow *does* attach that file as the first body image, so 从正文选择 resolves it with no
+ * library dependency — which is the route a cover-carrying article should take (2026-11-12).
+ */
 function coverSourceOf(content: Content): 'library' | 'body' {
     const meta = content.metadata?.wechatmp;
-    if (meta === null || typeof meta !== 'object' || Array.isArray(meta)) return 'library';
-    return (meta as Record<string, unknown>).coverSource === 'body' ? 'body' : 'library';
+    if (meta !== null && typeof meta === 'object' && !Array.isArray(meta)) {
+        const declared = (meta as Record<string, unknown>).coverSource;
+        if (declared === 'body' || declared === 'library') return declared;
+    }
+    const generic = content.metadata?.coverImage;
+    const genericPath =
+        typeof generic === 'string'
+            ? generic
+            : typeof (generic as { path?: unknown } | undefined)?.path === 'string'
+              ? (generic as { path: string }).path
+              : undefined;
+    return genericPath !== undefined && genericPath.length > 0 ? 'body' : 'library';
 }
 
 /** The audio-embed block of `metadata.wechatmp`, or null when this run embeds no audio. Shared by
@@ -1412,9 +1345,13 @@ async function composeArticle(
 ): Promise<ComposeReport> {
     const page = entry.editor;
     const warnings: string[] = [];
-    await attachImages(page, input.images, deps);
     const titlePath = await typeTitle(page, deps);
     await insertBody(page, deps);
+    // Images go in AFTER the body: the v2 editor's own `execCommand('insertHTML')` body path
+    // REPLACES the document, so an image attached first is silently wiped — and with it the
+    // 默认首图为封面 / 从正文选择 material (measured 2026-11-12: bodyImgs 2 → 0, then 2 again when
+    // re-attached after the body). A cover-carrying article lost its cover exactly this way.
+    await attachImages(page, input.images, deps);
     for (const warning of [
         await fillOptional(page, DIGEST_INPUT, input.digest ?? '', '摘要', deps),
         await fillOptional(page, AUTHOR_INPUT, authorOf(deps.content), '作者', deps),
@@ -2548,12 +2485,18 @@ async function runCgiDraft(input: ModeInput, deps: ModeRunDeps): Promise<Result 
     }
     const metadata = deps.content.metadata ?? {};
     const bodyImages = input.images; // already resolved + validated by modes.resolveBodyImages pre-runMode
-    if (bodyImages.length === 0) return undefined;
-    // Cover parity: top-level coverPath wins, else the first body image (默认首图为封面).
+    // Cover parity, most explicit first: the channel's own `coverPath`, the repo-wide `coverImage`
+    // convention, then the first body image (默认首图为封面). A cover-only article — the shape
+    // `publish:article --cover` produces — is dispatched here too: it has no body image, and the DOM
+    // flow can only resolve a cover that already sits in 图片库 (daily audio rail), so leaving it to
+    // the DOM flow lost the cover outright (2026-11-12).
     const cover =
         typeof metadata.coverPath === 'string' && metadata.coverPath.length > 0
             ? metadata.coverPath
-            : (bodyImages[0] ?? '');
+            : typeof metadata.coverImage === 'string' && metadata.coverImage.length > 0
+              ? metadata.coverImage
+              : (bodyImages[0] ?? '');
+    if (cover === '') return undefined;
     try {
         await readLocalImageBytes(cover); // still local-only: validates readable, nonempty, ≤10 MiB, known mime
     } catch {
@@ -2565,8 +2508,18 @@ async function runCgiDraft(input: ModeInput, deps: ModeRunDeps): Promise<Result 
     const localImages: Record<string, string> = {};
     for (const path of bodyImages) localImages[path] = path;
     const imageBlock = bodyImages.map((path) => `<img src="${path}">`).join('');
+    let session: Awaited<ReturnType<typeof extractWechatCgiSession>>;
     try {
-        const session = await extractWechatCgiSession(deps.entry);
+        session = await extractWechatCgiSession(deps.entry);
+    } catch (error) {
+        // Session extraction runs BEFORE any mutation, so handing back to the DOM flow cannot leave a
+        // half-created draft behind. The no-fallback rule protects a dispatched create, not this step —
+        // and a console build whose inline ticket/user_name fields are absent would otherwise turn
+        // every plain article into a hard failure (measured 2026-11-12).
+        if (error instanceof WechatCgiDraftError && error.stage === 'extract-session') return undefined;
+        throw error;
+    }
+    try {
         let media: WechatArticleMedia;
         try {
             media = await prepareArticleMedia(deps.entry, session, {
