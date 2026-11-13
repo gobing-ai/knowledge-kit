@@ -1396,6 +1396,40 @@ runBotCollection(profileName: string, plan: BotCollectionPlan, options?: BotColl
   emulation, and live-site compatibility. Acceptance evidence is loopback-only:
   `apps/cli/tests/e2e-bot-collection.ts` (not part of the default unit gate).
 
+### 1.14 `article` / `news` — Planned (G61, ADR-053)
+
+**Not shipped.** Nothing below exists in the binary yet; every command documented above keeps
+working unchanged until the G61 cut-over task promotes this section. Frozen contract (flags, exit
+codes, stdout, files): `docs/design/content-pipeline-consolidation.md`.
+
+```text
+kk article new       --type <t> (--topic <text> | --from <file.md>) --slug <s> [--locale …] [--work-dir <dir>]
+kk article generate  --type <t> --slug <s> [--agent <executor>] [--auto] [--publish] [--dry-run]
+kk article publish   --type <t> (--slug <s> | --work-dir <dir>) [--window <w>] [--preset <name>]
+                     [--channels <a,b>] [--live-channels <a,b>] [--live-confirm] [--dummy] [--retry]
+                     [--unattended] [--yes] [--dry-run]
+kk article status    --type <t> (--slug <s> | --work-dir <dir>) [--window <w>]
+kk article publish-plan | publish-check | publish-send | publish-settle | publish-report
+                     --work-dir <dir> [--window <w>] …            # workflow steps, named flags only
+kk article generate-check | generate-bundle --work-dir <dir> …    # workflow steps
+
+kk news <same verbs, --type fixed to news, --run-date <YYYYMMDD> instead of --slug>
+kk news prepare | generate-render | generate-voice | generate-cards | report --work-dir <dir> …
+```
+
+- Exit codes: `0` done, `1` failed, `2` usage, `5` launch refused by preflight, `6` lock held.
+- Planned config key `content_types.<type>` = `{workflow, writer_skill, publish_preset, channels}`;
+  built-in types `news` and `itc`. Resolution: flag → `content_types` →
+  `workflows.<workflow>.publish_preset` → built-in.
+- `content_types.<type>.channels` maps `<plugin>` or `<plugin>/<variant>` to
+  `off | dummy | draft | live` and is the operator switch for a channel; the preset supplies
+  structure and the default mode; `--channels` / `--live-channels` override one run.
+- Run directories: `<works>/<workflow>/<run>` (`kk-news-generate/<YYYYMMDD>`,
+  `kk-article-generate/<slug>`); `kk-publish` writes inside the bundle's run directory.
+- Planned workflows: `kk-news-generate`, `kk-article-generate`, `kk-publish`.
+- Planned hidden routes (ADR-037) once shipped: `kk itc …`, `kk daily …`, and the `kk stage run`
+  names listed in the design's stage migration table.
+
 ## 2. Configuration keys
 
 Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness config stays under

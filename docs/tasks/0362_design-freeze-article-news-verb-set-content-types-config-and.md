@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "Design freeze: article/news verb set, content_types config, and the simplified workflow node maps"
-status: backlog
+status: wip
 template: feature-impl
 created_at: 2026-11-13T17:31:14.228Z
-updated_at: "2026-11-13T17:47:42.103Z"
+updated_at: "2026-11-13T18:18:41.598Z"
 feature_id: G61
 
 ac_altitude: task-local
@@ -93,11 +93,18 @@ Constraints the design must respect: `kk` owns steps, the workflow owns sequenci
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+- `docs/design/content-pipeline-consolidation.md` (new): §1 verb table, §2 `content_types`, §3 launch contract with line maps, §4 bundle/plan diff and work dirs, §5 node maps (voice3 42 → 20, publish3 18 + tail 7 → 9, kk-itc 14 + author 16 → 13 states), §6 stage migration (53 names), §7 retirement + scheduler lines, §8 task list, open points.
+- `docs/04_DESIGN.md` §1.14 "`article` / `news` — Planned (G61, ADR-053)": 29 added lines, 0 removed.
+- Tasks created under G61: 0363, 0364, 0365 (Phase 2); 0366, 0367, 0368 (Phase 3); 0369 (Phase 4), with `dependencies[]` set as a linear chain.
+- Two extensions of the ADR-053 pattern, reported to the operator as open points rather than decided: generate step verbs (`generate-check|render|voice|cards|bundle`), and keeping the `kk-daily-ai-voice2` run-directory namespace through `works_namespace`.
+- Corrections found while checking against code: ITC default preset is `itc-main`; the `--channels` exclusion reason string is `not in --channels list` (`apps/cli/src/publish-matrix.ts:488`); the executor probe is an `agent.run` node, not a `kk` verb.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+- AC1: every stage name called by voice3, publish3, kk-itc, kk-itc-author, kk-itc-publish-tail and kk-daily-safety (both spellings, 53 unique) has a row in §6 — scripted `rg … | sort -u` loop printed no `MISSING` line. Node counts taken from a `Bun.YAML.parse` inventory of the five workflows.
+- AC2: `git diff --stat docs/04_DESIGN.md` → `1 file changed, 29 insertions(+)`, no deletions.
+- AC3: `spur task check` PASS for 0363–0369 (remaining warnings are "prerequisite is backlog" only). `spur feature check G61` PASS with no uncovered-scenario warning; all seven scenarios are linked (warnings are "linked but unverified", expected before implementation). Owned-file overlap (`commands/content.ts`, `docs/04_DESIGN.md`) is covered by the dependency chain 0363 → 0364 → 0365 → 0366 → 0367 → 0368 → 0369.
+- No product code changed; lint/test/build not run for this task.
 
 ### Review
 
@@ -113,4 +120,6 @@ Constraints the design must respect: `kk` owns steps, the workflow owns sequenci
 ### History
 
 - 2026-11-13T17:40:54.085Z feature_id Q → G61 (system)
+- 2026-11-13T18:01:19.372Z backlog → todo (system)
+- 2026-11-13T18:01:19.983Z todo → wip (system)
 

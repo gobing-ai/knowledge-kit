@@ -1686,6 +1686,12 @@ renderers. The style contract moves from `plugins/kk/scripts/daily-voice-style.z
 a run never relies on skill discovery. `daily-script-style` snapshots `SKILL.md` and the style contract into the
 work dir, and prompts cite those snapshot paths. That also freezes the exact policy a run was written against.
 
+**Amendment 2026-11-13 (G61, ADR-053).** The new workflows (`kk-news-generate`, `kk-article-generate`) do not
+snapshot the skill. The launching verb resolves the writer skill inside the running kk package and passes its
+directory as workflow var `skill_dir`; prompts cite `${vars.skill_dir}/SKILL.md`, so skill discovery is still not
+relied on. The run's `schedule-receipt.json` records the directory and a content hash in place of the copy.
+`daily-script-style` and the snapshot remain for `kk-daily-ai-voice.yaml` / `kk-daily-ai-voice2.yaml` only.
+
 **Shape.** One editorial pass feeds many renders. `curate` keeps or drops items, orders them and writes the
 Chinese facts. `write` adds lead, insight, intro and outro, plus later card, social and cover lines. `write --fix`
 repairs a plan using the validator's error list instead of silently falling back to the template. The article,
@@ -1928,3 +1934,17 @@ supervisor noun (the launch belongs to the content verb); moving authoring into 
 (plugins run without an agent).
 
 **Detail:** feature G61, tasks 0360–0362.
+
+**Amendment 2026-11-13 (design freeze, task 0362).** Three extensions, none reversing a decision above.
+(a) Decision 2's hyphenated step-verb pattern also covers generation: `generate-check`,
+`generate-render`, `generate-voice`, `generate-cards`, `generate-bundle`, beside `prepare` and `report`
+— decision 7 cannot be met for generation without them. (b) Decision 4's `content_types.<type>` gains
+`channels`: a map of `<plugin>` or `<plugin>/<variant>` to `off | dummy | draft | live`, the single
+operator switch for a channel. The publish preset keeps structure and the default mode; `--channels` /
+`--live-channels` stay per-run; the plan records each row's mode source. Per-channel `enable_*` workflow
+variables were rejected: the publish workflow is shared across types and never branches per channel, so
+they would be pass-through, and a shipped workflow has the same installed-copy staleness as a shipped
+preset. (c) A run directory is `<works>/<workflow>/<run>` for the new workflow names (ADR-042 unchanged);
+the `kk-daily-ai-voice2` and `kk-itc` trees are not migrated, and phase directory names inside a run are
+unchanged. Production schedule host: the Mac mini; the laptop is the test host.
+**Detail:** `docs/design/content-pipeline-consolidation.md`, tasks 0363–0369.
