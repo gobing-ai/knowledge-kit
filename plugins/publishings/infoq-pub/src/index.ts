@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import { dirname, isAbsolute } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
@@ -225,7 +224,7 @@ async function attachCover(page: Page, content: Content, timeoutMs: number): Pro
     if (typeof coverPath !== 'string' || coverPath.trim() === '') {
         return `cover: metadata.coverImage must be a non-empty local path, got '${String(coverPath)}'`;
     }
-    if (!isAbsolute(coverPath) || !existsSync(coverPath)) {
+    if (!isAbsolute(coverPath) || !(await createNodeFileSystem().exists(coverPath))) {
         return `cover: metadata.coverImage is not a readable absolute path: ${coverPath}`;
     }
     const input = await trySelectors(page, SELECTORS.coverFile, { visible: false });
