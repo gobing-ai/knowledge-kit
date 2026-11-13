@@ -320,13 +320,16 @@ describe('publish-matrix-plan (0321 R1, R2)', () => {
         }, fixture);
     });
 
-    it('rejects a preset file that tries to yield a live send', async () => {
+    it('accepts a preset row that yields a live send (ADR-022 amendment 2026-11-12)', async () => {
         const fixture = makeFixture([{ plugin: 'podcast-pub', variant: 'episode', tier: 0, mode: 'live' }]);
         await withCleanup(async (fx) => {
             const out = captureOutput();
             try {
-                expect(await planPublishMatrix(planArgs(fx), { projectRoot: fx.root })).toBe(1);
-                expect(out.readErr()).toContain('malformed publish preset');
+                expect(await planPublishMatrix(planArgs(fx), { projectRoot: fx.root })).toBe(0);
+                const plan = JSON.parse(
+                    readFileSync(join(fx.workDir, '4-publish', 'plan.after-generate.json'), 'utf-8'),
+                ) as { rows: Array<{ plugin: string; mode: string }> };
+                expect(plan.rows.find((row) => row.plugin === 'podcast-pub')?.mode).toBe('live');
             } finally {
                 out.restore();
             }
@@ -771,7 +774,7 @@ describe('publish3 stage surface (0323 R2, R3, R5)', () => {
         }
     });
 
-    it('ships a preset whose every row belongs to exactly one window, with no live mode', async () => {
+    it('ships a preset whose every row belongs to exactly one window and publishes live by default', async () => {
         const shipped = JSON.parse(
             readFileSync(join(import.meta.dir, '../../../plugins/kk/publish-presets/daily-ai-voice.json'), 'utf-8'),
         ) as { targets: Array<{ plugin: string; window?: string; mode?: string }> };
@@ -779,13 +782,22 @@ describe('publish3 stage surface (0323 R2, R3, R5)', () => {
         expect(parsed.success).toBe(true);
         for (const target of shipped.targets) {
             expect(['after-generate', 'cn-peak', 'overseas-rss']).toContain(target.window ?? '');
-            // ADR-022: a preset file can never yield a live send.
-            expect(target.mode).not.toBe('live');
         }
-        // The owned publication contract is required and draft on after-generate.
+        // ADR-022 amendment 2026-11-12: the operator's live consent is the preset itself, so every
+        // enabled row publishes live. Two closed exceptions stay: `off` opts a channel out, and a
+        // DRAFTLESS row (no draft mode in its plugin profile — the social `post` rails) stays
+        // `dummy`, because there is no reversible state to fall back to.
+        const draftless = new Set(['x-pub.post', 'weibo-pub.post', 'threads-pub.post', 'linkedin-pub.post']);
+        const enabled = shipped.targets.filter((target) => target.mode !== 'off');
+        expect(enabled.length).toBeGreaterThan(0);
+        for (const target of enabled) {
+            const key = `${target.plugin}.${(target as { operation?: string }).operation ?? ''}`;
+            expect(target.mode).toBe(draftless.has(key) ? 'dummy' : 'live');
+        }
+        // The owned publication contract is required and live on after-generate.
         const tier0 = shipped.targets.filter((target) => target.window === 'after-generate');
-        expect(tier0.some((target) => target.plugin === 'surfdash-pub')).toBe(true);
-        expect(tier0.some((target) => target.plugin === 'podcast-pub')).toBe(true);
+        expect(tier0.some((target) => target.plugin === 'surfdash-pub' && target.mode === 'live')).toBe(true);
+        expect(tier0.some((target) => target.plugin === 'podcast-pub' && target.mode === 'live')).toBe(true);
     });
 });
 

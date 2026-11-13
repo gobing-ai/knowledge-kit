@@ -978,6 +978,34 @@ a launch-only live var keeps unattended runs reversible.
 
 **Detail:** `docs/design/kk-itc-end-to-end.md` §5; complements `kk:publish` § Confirmation.
 
+**Amendment 2026-11-12 — the daily preset owns live consent (supersedes "a preset never yields a
+live send").** The voice3 daily machine had no live row anywhere: `daily-ai-voice.json` shipped
+every target as `draft`, so `bun run daily-news:publish` and both cron entries could only ever
+produce drafts, and making a day public needed an unsupported manual promotion (hand-quarantined
+receipts, a hand-built plan, a hand-built microfeed PUT — see
+`docs/dogfood/2026-11-12-bun-run-daily-news-publish-dogfood.md`). The operator's decision
+(2026-11-12) is that the daily assistant publishes by default.
+
+- `plugins/kk/publish-presets/daily-ai-voice.json` now ships every enabled row as `mode: live`.
+  Two closed exceptions remain: a channel opts out with `mode: "off"` (four XHS/shipinhao/X
+  variants), and a **draftless** row — one whose plugin profile has no draft mode, i.e. the
+  overseas social `post` rails (`x`, `weibo`, `threads`, `linkedin`) — stays `mode: "dummy"`,
+  because a live send there has no reversible state and none of those rails is credential- or
+  selector-verified yet (2026-11-11 dogfood).
+- The preset is operator-owned configuration, so **it** is the live consent — the same standing a
+  launch var had before. A scheduled run therefore sends without a human at `send-confirm`.
+- The `send-confirm` pause is no longer implied by live rows alone: it fires only when the window
+  is launched with `live_confirm: "true"` (default `"false"`). Interactive one-off windows that
+  want the gate pass the var explicitly.
+- Unchanged: the matrix still refuses to resend a succeeded receipt from another bundle revision,
+  a live row with an unknown effect is never retried, and `outcome-assert` still decides the exit.
+  Plugins keep writing their own draft switch per target; what changed is the *default* the preset
+  selects.
+
+**Cost.** A scheduled run can now post publicly with no human in the loop; a bad generation that
+passes safety and review reaches the audience before anyone reads it. Mitigation: `--dummy`
+rehearsals, `mode: "off"` rows, and the incident/diagnose path stay as they are.
+
 ---
 
 ## ADR-023: A generator plugin may reuse a sibling generator's library via workspace dependency

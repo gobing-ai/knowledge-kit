@@ -1112,10 +1112,10 @@ bun run daily-news:generate -- --full             # the 04:30 scheduled posture:
                                                   # per-dispatch overrides still win (parseArgs last-wins)
 bun run daily-news:publish                        # valid today's bundle -> after-generate
 bun run daily-news:publish -- --window overseas-rss --unattended  # the 07:00 scheduled posture: receipt-gated regen, no prompts
-bun run daily-news:live                           # operator go-live (2026-11-11): after-generate with surfdash+podcast live;
-                                                  # pauses at send-confirm — approve with `spur workflow continue`. Unattended
-                                                  # morning runs stay draft-only (ADR-022: live is launch-only), so podcast-pub
-                                                  # items stay microfeed-unpublished until this runs — the 11-10 root cause.
+bun run daily-news:publish -- --live-confirm true # the same window with the send-confirm pause restored
+                                                  # (approve with `spur workflow continue`); since the ADR-022 amendment of
+                                                  # 2026-11-12 the preset's rows are live, so the plain publish and both cron
+                                                  # entries send without a pause.
 bun run daily-news:validate                       # quick: required files + dated bundle/variants only
 bun run daily-news:validate -- --mode full         # live read-only diagnosis + offline voice3 dogfood
 bun run daily-news:validate -- --mode full --skip-dogfood  # full diagnosis without dogfood
@@ -2295,8 +2295,10 @@ unchanged), dispatched from `apps/cli/src/publish-matrix-stage.ts` through
 `variant`, `tier` (0–3, default 3), `window` (`after-generate`|`cn-peak`|`overseas-rss`, default
 `after-generate`), `mode` (`off`|`dummy`|`draft`, default `draft`), `required` (default false) and
 `options`. Every field is optional, so the shipped itc presets still validate and every itc target
-still keys by plugin name. `mode` is closed over `off|dummy|draft`: a preset file can never yield a
-live send (ADR-022) — live is only reachable through the launch var `--live-channels`.
+still keys by plugin name. `mode` is closed over `off|dummy|draft|live`. Since ADR-022's
+2026-11-12 amendment the preset **does** carry live consent: `daily-ai-voice.json` ships every
+enabled row as `live`, a channel opts out with `mode: "off"`, and `--live-channels` still promotes a
+single row for an ad-hoc window. A preset row that says `live` is what a scheduled run publishes.
 
 `targetId(row)` = `id` ?? `${plugin}.${slug(operation)}` ?? `plugin`; the slug keeps CJK and maps
 whitespace and `/` to `-`, so voice3's four xhs operations and two wechatmp operations get distinct
@@ -2559,7 +2561,7 @@ Nodes and their gating rule:
 | `rss-gate` | every window (no-op outside overseas) | `publish-matrix-rss-gate --date <run_date>`; a miss is a **verdict in `4-publish/rss-gate.json`**, not a node failure (an HTTP error status or a 30 s fetch timeout is reason `fetch-failed`) |
 | `plan` | hit or non-overseas | `publish-matrix-plan --bundle … --window …` (+ `--channels/--live-channels/--dummy` when set) |
 | `check` | every planned window | `publish-matrix-check --window …`, warn-only |
-| `send-confirm` | `pause: true`, condition = the plan has a live row | resume = approval; skipped for a draft window |
+| `send-confirm` | `pause: true`, condition = the plan has a live row **and** `live_confirm=true` (default `false`) | resume = approval; a scheduled run with live rows sends without stopping (ADR-022 amendment 2026-11-12); a draft window and a rehearsal never pause |
 | `send` | depends on `check` **and** `send-confirm` | tier order, dummy-aware, receipt-keyed |
 | `classify` | every sent window | `publish-matrix-classify --window … --run-date …` |
 | `send-retry` | non-overseas, one bounded hop after `send` | `publish-matrix-send --window … --retry`: only live/draft **failures with `effect: none`** are resent — succeeded rows are skipped, an uncertain effect is never replayed, dummy rows never spawn a plugin. No unbounded back-edge; the outcome assertion rules after it |

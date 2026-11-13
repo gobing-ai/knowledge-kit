@@ -19,6 +19,10 @@ vars:
   window: after-generate
   # Empty = the operator's `workflows.kk-daily-ai-voice3.publish_preset` selector decides.
   preset: ""
+  # 2026-11-12 (ADR-022 amendment): the preset owns the live/draft decision, so the unattended
+  # daily posture runs without a human at the pause. `live_confirm: "true"` restores the
+  # send-confirm pause for an interactive, one-off window.
+  live_confirm: "false"
   channels: ""
   live_channels: ""
   dummy: "false"
@@ -114,15 +118,18 @@ nodes:
   - id: send-confirm
     description: >-
       Operator approval of a LIVE send: `pause: true` stops the run and RESUME is the approval;
-      cancelling is the rejection. Skipped for a draft-only window, so an unattended draft run and
-      every rehearsal proceed without a human.
+      cancelling is the rejection. Skipped for a draft-only window, so a rehearsal proceeds without
+      a human. Since 2026-11-12 (ADR-022 amendment) the operator's consent for the scheduled daily
+      posture lives in the preset's own modes, so the pause now requires `live_confirm=true` —
+      a scheduled run with live rows sends without stopping here.
     dependsOn: [check]
     pause: true
     condition:
       kind: shell
       options:
         command: >-
-          jq -e '[.rows[] | select(.mode == "live")] | length > 0'
+          test "${vars.live_confirm}" = "true"
+          && jq -e '[.rows[] | select(.mode == "live")] | length > 0'
           "${vars.work_dir}/4-publish/plan.${vars.window}.json" >/dev/null 2>&1
 
   - id: send

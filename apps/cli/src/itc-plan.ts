@@ -35,9 +35,11 @@ export const PublishWindowSchema = z.enum(['after-generate', 'cn-peak', 'oversea
 /**
  * Target entry inside a publish preset.
  *
- * The matrix fields are all optional so every shipped itc preset keeps validating (`mode` is
- * deliberately closed over `off | dummy | draft`: a preset file can never yield a live send, which
- * is launch-only per ADR-022).
+ * The matrix fields are all optional so every shipped itc preset keeps validating. `mode` is closed
+ * over `off | dummy | draft | live`: ADR-022's 2026-11-12 amendment moved live consent into the
+ * operator-owned preset, so `daily-ai-voice.json` ships live rows and a channel opts out with `off`
+ * (`--live-channels` still promotes a single row for an ad-hoc window; `live_confirm` keeps the
+ * send-confirm pause available to a supervised run).
  */
 export const PublishPresetTargetSchema = z
     .object({
@@ -48,7 +50,7 @@ export const PublishPresetTargetSchema = z
         variant: z.string().min(1).optional(),
         tier: z.number().int().min(0).max(3).optional(),
         window: PublishWindowSchema.optional(),
-        mode: z.enum(['off', 'dummy', 'draft']).optional(),
+        mode: z.enum(['off', 'dummy', 'draft', 'live']).optional(),
         required: z.boolean().optional(),
         options: z.record(z.string(), z.unknown()).optional(),
     })

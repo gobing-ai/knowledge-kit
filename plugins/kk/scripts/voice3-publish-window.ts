@@ -26,7 +26,7 @@ import { fileURLToPath } from 'node:url';
 
 const USAGE =
     'usage: voice3-publish-window.ts --window <after-generate|cn-peak|overseas-rss> [--run-date <YYYY-MM-DD|YYYYMMDD>] ' +
-    '[--preset <slug>] [--live-channels a,b] [--work-dir <dir>] [--dummy] [--dry-run]';
+    '[--preset <slug>] [--live-channels a,b] [--live-confirm true] [--work-dir <dir>] [--dummy] [--dry-run]';
 
 const WINDOWS = new Set(['after-generate', 'cn-peak', 'overseas-rss']);
 
@@ -96,6 +96,9 @@ function main(): void {
     if (window === undefined || !WINDOWS.has(window))
         failWith(1, `${USAGE}\nvoice3-publish-window: --window must be one of ${[...WINDOWS].join('|')}`);
     const dummy = args.includes('--dummy');
+    // ADR-022 amendment 2026-11-12: the preset's own rows carry live consent, so the send-confirm
+    // pause is opt-in. `--live-confirm true` restores it for a supervised one-off window.
+    const liveConfirm = (flagValue(args, '--live-confirm') ?? 'false').trim() === 'true';
     const dryRun = args.includes('--dry-run');
     const preset = flagValue(args, '--preset');
     const liveChannelsRaw = flagValue(args, '--live-channels');
@@ -182,6 +185,7 @@ function main(): void {
     if (preset !== undefined && preset.trim() !== '') vars.preset = preset;
     if (liveChannels.length > 0) vars.live_channels = liveChannels.join(',');
     if (dummy) vars.dummy = 'true';
+    if (liveConfirm) vars.live_confirm = 'true';
 
     if (dryRun) {
         console.log(JSON.stringify(vars, null, 2));

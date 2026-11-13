@@ -501,9 +501,12 @@ async function composePlan(
         if (liveToken !== undefined && target.mode === 'dummy') {
             throw new Error(`channel '${liveToken}' is dummy-only and cannot be promoted to live`);
         }
+        // ADR-022 amendment 2026-11-12: the preset's own `mode: live` is consent, so a scheduled
+        // window sends without a launch flag. `--live-channels` still promotes one row ad hoc and
+        // `--dummy` still rehearses the whole window.
         const mode: PublishPlanRow['mode'] = input.dummy
             ? 'dummy'
-            : liveToken !== undefined
+            : liveToken !== undefined || target.mode === 'live'
               ? 'live'
               : target.mode === 'dummy'
                 ? 'dummy'
