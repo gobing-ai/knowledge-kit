@@ -416,6 +416,19 @@ function fail(error: string): Result {
     return ResultSchema.parse({ ok: false, target: TARGET, error: sanitizeSessionEvidence(error) });
 }
 
+/**
+ * A failure that left no content behind on the channel (nothing was inserted or saved), so a bounded
+ * retry — not an operator — is the right next step. See `itcDelivery` in `apps/cli/src/itc-publish.ts`.
+ */
+function failNoEffect(error: string): Result {
+    return ResultSchema.parse({
+        ok: false,
+        target: TARGET,
+        error: sanitizeSessionEvidence(error),
+        metadata: { itcDelivery: { schemaVersion: 1, effect: 'none' } },
+    });
+}
+
 function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -1632,14 +1645,18 @@ async function composePodcast(
         const row = [...document.querySelectorAll('.weui-desktop-dialog li.audio_item_wrp, .weui-desktop-dialog div.audio_item_wrp')].find((r) => (r.textContent ?? '').includes(${JSON.stringify(materialTitle)}));
         return row ? (row.textContent ?? '') : null;
     })()`;
+    // Same 40min ceiling as the reuse path (2026-11-12): the measured MP transcode ran past 15min on
+    // the daily 30MB episode, so the old 15min cap guaranteed a failed insert and an effect-unknown
+    // receipt for a material that was already uploaded. The material is reusable either way, so the
+    // upload path now waits exactly as long as the reuse path does.
     const materialReady = await waitUntil(async () => {
         const rowText = (await page.evaluate(rowProbe)) as string | null;
         return rowText !== null && !/转码中|审核中|处理中/.test(rowText);
-    }, 15 * 60_000);
+    }, 40 * 60_000);
     if (!materialReady) {
         const probeNow = String(((await page.evaluate(reuseProbe)) as string | undefined) ?? 'ERR');
         throw new Error(
-            `播客: 音频素材 '${materialTitle}' 未在 15min 内完成转码/审核，插入未执行（可重跑）` +
+            `播客: 音频素材 '${materialTitle}' 未在 40min 内完成转码/审核，插入未执行（可重跑）` +
                 ` — reuse 窗口 [${reuseHistory.join(',')}] 最近读=${probeNow.slice(0, 30)}`,
         );
     }
@@ -2583,8 +2600,16 @@ export async function runMode(input: ModeInput, deps: ModeRunDeps): Promise<Resu
         const cgi = await runCgiDraft(input, deps);
         if (cgi !== undefined) return cgi;
     }
-    const entry = await enterMode(deps, input.operation);
-    const composed = await compose(input, deps, entry);
+    let entry: ModeEntry;
+    let composed: ComposeReport;
+    try {
+        entry = await enterMode(deps, input.operation);
+        composed = await compose(input, deps, entry);
+    } catch (error) {
+        // Nothing has been saved yet: entry and compose only fill the editor (the 文章 draft is saved
+        // later by saveDraft), so a throw here is retryable rather than an unknown-effect send.
+        return failNoEffect(error instanceof Error ? error.message : String(error));
+    }
     // 2026-10-12: a throw from the submit step drops every diagnostic the compose phase collected —
     // a leaked settings dialog blocked 保存为草稿 on the daily run and the failure Result carried only
     // the Playwright timeout, so the stuck step had to be rediscovered by hand. Ride them on the error.

@@ -1123,6 +1123,8 @@ describe('wechatmp-pub dispatch and validation (no browser opens)', () => {
         const result = await transport.publish({ content: ARTICLE, options: { target: 'wechatmp' } });
         expect(result.ok).toBe(false);
         expect(result.error).toContain('profile-check.ts login');
+        // Pre-browser refusal = effect none, so the bounded retry picks it up once logged in.
+        expect(result.metadata?.itcDelivery).toEqual({ schemaVersion: 1, effect: 'none' });
     });
 
     test('preflight error other than missing profile names the failure', async () => {
@@ -1138,6 +1140,7 @@ describe('wechatmp-pub dispatch and validation (no browser opens)', () => {
         const result = await transport.publish({ content: ARTICLE, options: { target: 'wechatmp' } });
         expect(result.ok).toBe(false);
         expect(result.error).toContain('timeout waiting');
+        expect(result.metadata?.itcDelivery).toEqual({ schemaVersion: 1, effect: 'none' });
     });
 
     test('a console that never reads ready fails loud with the profile dir', async () => {

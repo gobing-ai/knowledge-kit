@@ -56,8 +56,27 @@ const DRAFT_SIGNAL_TIMEOUT_MS = 15_000;
 /** The save click is retried — the console can drop one that lands while the editor is settling. */
 const SUBMIT_ATTEMPTS = 2;
 
+/** The reserved delivery evidence `apps/cli/src/itc-publish.ts` reads: no content reached the channel yet. */
+function noEffect(): { itcDelivery: { schemaVersion: 1; effect: 'none' } } {
+    return { itcDelivery: { schemaVersion: 1, effect: 'none' } };
+}
+
 function fail(error: string): Result {
     return ResultSchema.parse({ ok: false, target: TARGET, error: sanitizeSessionEvidence(error) });
+}
+
+/**
+ * A refusal before this run composed or submitted anything (driver/operation/validation/session).
+ * Without the marker the send loop records the failure as `effect: unknown`, which makes a bounded
+ * `--retry` refuse it forever — the 2026-11-12 daily window lost every channel this way.
+ */
+function refuse(error: string): Result {
+    return ResultSchema.parse({
+        ok: false,
+        target: TARGET,
+        error: sanitizeSessionEvidence(error),
+        metadata: noEffect(),
+    });
 }
 
 /** Console home readiness: an authenticated route carries the session token (discovery §1/§9-W9). */
@@ -315,19 +334,19 @@ export class WechatmpBrowserTransport implements PublishTransport {
     async publish(payload: PublishTransportPayload): Promise<Result> {
         const { content, options } = payload;
         if (this.driver !== 'script') {
-            return fail(
+            return refuse(
                 `unsupported driver '${this.driver}' for ${TARGET}: the console modes (${WECHATMP_OPERATIONS.join(', ')}) require the script driver (Playwright setInputFiles)`,
             );
         }
         // ADR-029 dispatch: an undeclared operation is refused by name before a browser is launched
         // or a profile is resolved, so a misrouted run cannot open a session it will not use.
         const requested = resolveWechatmpOperation(options, content);
-        if (requested.error !== undefined) return fail(requested.error);
+        if (requested.error !== undefined) return refuse(requested.error);
 
         // Mode validation: a missing artifact (which the 视频/播客 media modal would otherwise hide
         // the save bar for), an over-limit field or an unknown publishStatus all fail here.
         const validation = await validateModeInput(requested.operation, content);
-        if (validation.error !== undefined) return fail(validation.error);
+        if (validation.error !== undefined) return refuse(validation.error);
 
         const profileDir = resolveBrowserProfileDir(TARGET, process.env.WECHATMP_PROFILE_DIR);
         const publishStatus = content.metadata?.publishStatus === 'public' ? 'public' : 'draft';
@@ -343,14 +362,14 @@ export class WechatmpBrowserTransport implements PublishTransport {
                     : `console session preflight failed (${error instanceof Error ? error.message : String(error)})`;
             // Non-blocking contract (mirrors xhs-pub): a sessionless run refuses fast and stays
             // draftless — it must never open a login wall inside an unattended run.
-            return fail(`${TARGET}-pub: ${why}`);
+            return refuse(`${TARGET}-pub: ${why}`);
         }
 
         let opened: OpenedConsole;
         try {
             opened = await this.openPage(profileDir);
         } catch (error: unknown) {
-            return fail(error instanceof Error ? error.message : String(error));
+            return refuse(error instanceof Error ? error.message : String(error));
         }
         let result: Result;
         try {

@@ -46,7 +46,14 @@ export const LOGIN_TIMEOUT_MS = 120_000;
  * Headless session-preflight deadline (ADR-025): the step scale, not the 120s interactive login
  * wait. A preflight must fail fast — the point is to avoid a headed visit entirely.
  */
-const PREFLIGHT_TIMEOUT_MS = 30_000;
+/**
+ * Publish-path session budget. 30s refused profiles that the read-only probe verifies in 60-90s
+ * (`kk plugin check xhs-pub --timeout 90000` verified the same profile 40min after a publish
+ * preflight refused at 30s on 2026-11-12), and the check retries a headless pass headed — so the
+ * probe's budget is two passes, not one. A genuinely expired session still refuses; it just takes
+ * the same time the operator's own check takes.
+ */
+const PREFLIGHT_TIMEOUT_MS = 90_000;
 /** The console drops a submit click that lands while the note is still settling (live run 2026-09-25). */
 const SUBMIT_SETTLE_MS = 2_500;
 const SUBMIT_ATTEMPTS = 3;
@@ -71,6 +78,20 @@ export { CREATOR_TAB_BAR, CREATOR_TAB_COUNT, clickCreatorTab, creatorTabSelector
 
 function fail(error: string): Result {
     return ResultSchema.parse({ ok: false, target: TARGET, error });
+}
+
+/**
+ * A refusal before this run composed or saved any note. The send loop records a plain failure as
+ * `effect: unknown`, which makes a bounded `--retry` refuse it forever; a pre-save refusal is
+ * genuinely effect-free, so it carries the reserved marker instead (2026-11-12 daily window).
+ */
+function refuse(error: string): Result {
+    return ResultSchema.parse({
+        ok: false,
+        target: TARGET,
+        error,
+        metadata: { itcDelivery: { schemaVersion: 1, effect: 'none' } },
+    });
 }
 
 /** One operation of a visit: its own Content and the mode input validated before any browser work. */
@@ -115,6 +136,10 @@ async function planVisit(
         };
     }
     const followUps: VisitFollowUp[] = [];
+    // A follow-up rides the primary's visit, so it publishes the way the primary does unless the
+    // caller states a mode of its own. The 2026-11-11 repair hit the other default: a live 发播客
+    // beside a silently DRAFTED 上传图文.
+    const primaryStatus = content.metadata?.publishStatus;
     for (const [index, entry] of raw.entries()) {
         const label = `followUps[${index}]`;
         const parsed = ContentSchema.safeParse(entry);
@@ -128,12 +153,16 @@ async function planVisit(
             followUps.push({ operation, error: requested.error });
             continue;
         }
-        const validation = await validateModeInput(requested.operation, parsed.data);
+        const followUpContent: Content =
+            parsed.data.metadata?.publishStatus === undefined && primaryStatus !== undefined
+                ? { ...parsed.data, metadata: { ...(parsed.data.metadata ?? {}), publishStatus: primaryStatus } }
+                : parsed.data;
+        const validation = await validateModeInput(requested.operation, followUpContent);
         if (validation.error !== undefined) {
             followUps.push({ operation, error: validation.error });
             continue;
         }
-        followUps.push({ content: parsed.data, operation: requested.operation, input: validation.input });
+        followUps.push({ content: followUpContent, operation: requested.operation, input: validation.input });
     }
     return { plan: { primary, followUps } };
 }
@@ -288,27 +317,27 @@ export class XhsBrowserTransport implements PublishTransport {
      */
     public async publish(payload: PublishTransportPayload): Promise<Result> {
         if (this.driver !== 'script') {
-            return fail(
+            return refuse(
                 `unsupported driver '${this.driver}' for ${TARGET}: the console modes (${XHS_OPERATIONS.join(', ')}) require the script driver (Playwright setInputFiles)`,
             );
         }
         // ADR-029 dispatch: an undeclared operation is refused by name before a browser is launched
         // or a profile is resolved, so a misrouted run cannot open a session it will not use.
         const requested = resolveXhsOperation(payload.options, payload.content);
-        if (requested.error !== undefined) return fail(requested.error);
+        if (requested.error !== undefined) return refuse(requested.error);
         const operation = requested.operation;
 
         // Mode validation: missing artifact, over-limit field, or an unknown publishStatus all fail
         // here, naming what is missing and the mode's limit.
         const validation = await validateModeInput(operation, payload.content);
-        if (validation.error !== undefined) return fail(validation.error);
+        if (validation.error !== undefined) return refuse(validation.error);
         const input: ModeInput = validation.input;
 
         // ADR-025 amendment (2026-10-09, task 0236 option A): one visit may compose more than one
         // note. The follow-ups ride the primary Content's `metadata.followUps` and are planned here,
         // with the primary, before any browser work.
         const visited = await planVisit({ content: payload.content, input }, payload.content);
-        if (visited.error !== undefined) return fail(visited.error);
+        if (visited.error !== undefined) return refuse(visited.error);
         const visit = visited.plan;
 
         const override = typeof payload.options?.profileDir === 'string' ? payload.options.profileDir : undefined;
@@ -319,13 +348,13 @@ export class XhsBrowserTransport implements PublishTransport {
         //    account-level risk, not merely a failed run. The cap counts VISITS: one allow/record
         //    per visit covers every note the visit composes.
         const cap = this.automation.allow('publish');
-        if (!cap.allowed) return fail(`automation cap: ${cap.reason}`);
+        if (!cap.allowed) return refuse(`automation cap: ${cap.reason}`);
         // 2. Headless session preflight: an unauthenticated profile must never produce a headed
         //    visit. The upstream launcher refuses a missing profile headless, so this replaces the
         //    previous behaviour — a headed window waiting out the 120s login gate.
         const session = await this.preflight(profileDir);
         if (session.status !== 'verified') {
-            return fail(`session preflight refused (no headed visit attempted): ${session.detail}`);
+            return refuse(`session preflight refused (no headed visit attempted): ${session.detail}`);
         }
         // Consumed at the headed launch, not at the attempt: a refusal above leaves the window
         // intact so the operator can log in and retry the same day.
@@ -335,7 +364,7 @@ export class XhsBrowserTransport implements PublishTransport {
         try {
             opened = await this.openPage(profileDir);
         } catch (error) {
-            return fail(error instanceof Error ? error.message : String(error));
+            return refuse(error instanceof Error ? error.message : String(error));
         }
         const { page, close } = opened;
         try {
@@ -385,7 +414,7 @@ export class XhsBrowserTransport implements PublishTransport {
 
             const gated = await waitUntil(() => isXhsConsoleReady(page), this.loginTimeoutMs);
             if (!gated) {
-                return fail(
+                return refuse(
                     `login timeout after ${this.loginTimeoutMs}ms: no authenticated ${CHANNEL} creator console in ${profileDir}`,
                 );
             }

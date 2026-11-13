@@ -1016,9 +1016,11 @@ describe('0335 R3: receipt-identity guard', () => {
         expect(realReceipt.dummy).toBeUndefined();
         expect(realReceipt.mode).toBe('draft');
         // The real xhs-pub was dispatched (the re-attempt after the dummy receipt); offline it stops
-        // at the cover validation, which records an uncertain draft receipt — never a resend of the
-        // rehearsal, and never a fake success.
-        expect(realReceipt.status).toBe('uncertain');
+        // at the session preflight, which now records a FAILED effect-none receipt (ADR-052): a
+        // refusal before any console visit is retryable, not an unknown-effect send. Never a resend
+        // of the rehearsal, and never a fake success.
+        expect(realReceipt.status).toBe('failed');
+        expect((realReceipt as { effect?: string }).effect).toBe('none');
         expect(existsSync(join(fx.dayDir, '4-publish', 'fanout-result.xhs.podcast.json'))).toBe(true);
     });
 

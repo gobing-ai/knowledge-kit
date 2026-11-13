@@ -86,19 +86,31 @@ export function fail(target: string, error: string): Result {
     return ResultSchema.parse({ ok: false, target, error: boundedDetail(error) });
 }
 
-/** A browser-stage failure: `ok: false` with `stage` (and optional evidence) in the Result metadata. */
+/**
+ * A browser-stage failure: `ok: false` with `stage` (and optional evidence) in the Result metadata.
+ *
+ * `effect` defaults to `none`: every stage before the submit click only fills an editor, so nothing
+ * was accepted by the channel and a bounded retry is safe. The receipt stages (after the click) pass
+ * `unknown` explicitly — a clicked 发表 that produced no receipt may still have published.
+ */
 export function stageFail(
     target: string,
     error: string,
     stage: string,
     metadata: Record<string, unknown>,
     evidence?: string,
+    effect: 'none' | 'unknown' = 'none',
 ): Result {
     return ResultSchema.parse({
         ok: false,
         target,
         error: boundedDetail(error),
-        metadata: { ...metadata, stage, ...(evidence === undefined ? {} : { evidence: boundedDetail(evidence) }) },
+        metadata: {
+            ...metadata,
+            stage,
+            ...(evidence === undefined ? {} : { evidence: boundedDetail(evidence) }),
+            ...(effect === 'none' ? { itcDelivery: { schemaVersion: 1, effect: 'none' } } : {}),
+        },
     });
 }
 
@@ -1329,6 +1341,7 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
                 receiptStage,
                 metadata,
                 `still on ${page.url()}; ${beforeReceipts.size} pre-existing receipt-shaped url(s)`,
+                'unknown',
             );
         }
         if (confirmed.evidence.startsWith('stale-state: ') || confirmed.evidence.startsWith('ambiguous-receipt: ')) {
@@ -1340,6 +1353,7 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
                 receiptStage,
                 metadata,
                 confirmed.evidence,
+                'unknown',
             );
         }
         const url = confirmed.evidence;

@@ -2059,6 +2059,9 @@ describe('xhs-pub automation guard (ADR-025, XHS platform warning 2026-09-28)', 
             expect(secondResult.ok).toBe(false);
             expect(secondResult.error).toContain('automation cap');
             expect(secondResult.error).toContain("'publish' already ran");
+            // A pre-browser refusal must never read as an unknown-effect send: the 2026-11-12 daily
+            // window lost 上传图文 this way and `--retry` refused it forever.
+            expect(secondResult.metadata?.itcDelivery).toEqual({ schemaVersion: 1, effect: 'none' });
         });
     });
 
@@ -2079,6 +2082,7 @@ describe('xhs-pub automation guard (ADR-025, XHS platform warning 2026-09-28)', 
             expect(result.ok).toBe(false);
             expect(result.error).toContain('session preflight refused');
             expect(result.error).toContain('no authenticated console');
+            expect(result.metadata?.itcDelivery).toEqual({ schemaVersion: 1, effect: 'none' });
             expect(opened).toBe(0);
             // The operator can log in and retry the same day: the cap bounds headed visits, not attempts.
             expect(guard.allow('publish').allowed).toBe(true);
