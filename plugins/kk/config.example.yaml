@@ -11,8 +11,10 @@ defaults:
 
 # Per-workflow settings. `publish_preset` names the publish preset that owns the daily channel
 # matrix (files live in `plugins/kk/publish-presets/`, overridable per project under
-# `.kk/publish-presets/`). The preset decides WHICH channels publish; `live` is never in a preset
-# file — it is a launch var (`live_channels`) or an installed schedule entry (ADR-022).
+# `.kk/publish-presets/`). The preset decides WHICH channels publish, and since the ADR-022
+# amendment of 2026-11-12 a preset target may carry `mode: live` — the operator's consent lives in
+# the preset they own, so a shipped preset can publish for real. `--live-channels` still promotes a
+# single row for an ad-hoc window, and `live_confirm` keeps the send-confirm pause available.
 workflows:
   kk-daily-ai-voice3:
     publish_preset: "daily-ai-voice"

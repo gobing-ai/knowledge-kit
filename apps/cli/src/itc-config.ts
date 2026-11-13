@@ -2,6 +2,12 @@ import { createHash } from 'node:crypto';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 
+// 0361 R3: the config-path convention (with its `~` expansion) is neutral — it lives in the publish
+// core and is re-exported here under the ITC name the existing callers use.
+import { expandHome, resolveConfigPath as resolveItcConfigPath } from './publish-core';
+
+export { resolveItcConfigPath };
+
 /**
  * ITC configuration, workspace composition and the frozen effective-options snapshot (0303 / G21).
  *
@@ -177,17 +183,6 @@ export function slugifyTopicName(name: string): string | null {
     return slug;
 }
 
-/**
- * Expand ONLY a leading `~`/`$HOME` prefix (the forms the kk config examples use); any other
- * `$`/backtick sequence — including an embedded or `$HOME`-containing literal — stays as data.
- */
-function expandHome(value: string, homeDir: string): string {
-    if (value === '~' || value === '$HOME') return homeDir;
-    if (value.startsWith('~/')) return join(homeDir, value.slice(2));
-    if (value.startsWith('$HOME/')) return join(homeDir, value.slice('$HOME/'.length));
-    return value;
-}
-
 /** Canonical JSON with recursively sorted keys, so the digest never depends on insertion order. */
 function canonicalJson(value: unknown): string {
     if (value === null || typeof value !== 'object') return JSON.stringify(value ?? null);
@@ -201,13 +196,6 @@ function canonicalJson(value: unknown): string {
 /** The frozen snapshot digest: canonical JSON of the options, excluding volatile/self fields. */
 export function digestItcOptions(options: Omit<ItcEffectiveOptions, 'optionsDigest' | 'frozenAt'>): string {
     return createHash('sha256').update(canonicalJson(options)).digest('hex');
-}
-
-/** `KK_CONFIG` or `$HOME/.config/kk/config.yaml` — the ONE kk config path convention. */
-export function resolveItcConfigPath(env: Record<string, string | undefined>, homeDir: string): string {
-    const explicit = env.KK_CONFIG;
-    if (explicit !== undefined && explicit.trim() !== '') return expandHome(explicit.trim(), homeDir);
-    return join(homeDir, '.config', 'kk', 'config.yaml');
 }
 
 /**

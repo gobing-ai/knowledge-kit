@@ -9,15 +9,18 @@ import {
 } from '@gobing-ai/ts-runtime';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import { z } from 'zod';
-import { resolveItcConfigPath } from './itc-config';
 import {
     loadPublishPreset,
     type PublishPreset,
     type PublishPresetTarget,
     type PublishWindow,
     PublishWindowSchema,
-} from './itc-plan';
-import { type ItcReceipt, probePlugin, type SendRow, sendRows } from './itc-publish';
+    probePlugin,
+    type Receipt,
+    resolveConfigPath,
+    type SendRow,
+    sendRows,
+} from './publish-core';
 
 /** One frozen asset a bundle ships: a `Content` JSON path plus its sha256. */
 export const BundleVariantSchema = z
@@ -163,10 +166,10 @@ export type PublishOutcome = z.infer<typeof PublishOutcomeSchema>;
  */
 export function classifyPublishMatrix(
     plan: PublishPlan,
-    receipts: readonly ItcReceipt[],
+    receipts: readonly Receipt[],
     runDate: string,
 ): PublishOutcome {
-    const byTarget = new Map<string, ItcReceipt>();
+    const byTarget = new Map<string, Receipt>();
     for (const receipt of receipts) {
         const key = receipt.target ?? receipt.plugin;
         byTarget.set(key, receipt);
@@ -727,7 +730,7 @@ export async function planPublishMatrix(args: string[], deps: PublishMatrixDeps 
         // from the same file, so it is hashed from the exact bytes written above.
         const planDigest = createHash('sha256').update(planText).digest('hex');
         for (const target of omitted) {
-            const receipt: ItcReceipt = {
+            const receipt: Receipt = {
                 schemaVersion: 1,
                 parentRunId: plan.parentRunId,
                 planDigest,
@@ -965,14 +968,14 @@ export async function runPublishMatrixClassify(args: string[], deps: PublishMatr
     }
 
     const receiptsDir = join(publishDir, 'receipts');
-    const receipts: ItcReceipt[] = [];
+    const receipts: Receipt[] = [];
     // Every receipt in the dir is evidence (0332 R6): omitted variants' failed-effect-none receipts
     // carry the dummy accounting even though no plan row references them.
     if (await fs.exists(receiptsDir)) {
         for (const name of await fs.readDir(receiptsDir)) {
             if (!name.endsWith('.json')) continue;
             try {
-                receipts.push(JSON.parse(await fs.readFile(join(receiptsDir, name))) as ItcReceipt);
+                receipts.push(JSON.parse(await fs.readFile(join(receiptsDir, name))) as Receipt);
             } catch {
                 // an unreadable receipt is a row with no evidence: it stays `missing`
             }
@@ -1052,11 +1055,11 @@ export async function runPublishMatrixSettle(args: string[], deps: PublishMatrix
     }
     const parentRunId = plan.parentRunId;
     const receiptsDir = join(publishDir, 'receipts');
-    const receiptFor = async (id: string): Promise<ItcReceipt | undefined> => {
+    const receiptFor = async (id: string): Promise<Receipt | undefined> => {
         const path = join(receiptsDir, `${id}.json`);
         if (!(await fs.exists(path))) return undefined;
         try {
-            return JSON.parse(await fs.readFile(path)) as ItcReceipt;
+            return JSON.parse(await fs.readFile(path)) as Receipt;
         } catch {
             return undefined;
         }
@@ -1150,8 +1153,8 @@ async function writeDummyReceipt(
     fs: FileSystem,
     row: SendRow,
     context: { payloadPath: string; payloadDigest: string; startedAt: string; parentRunId: string; planDigest: string },
-): Promise<ItcReceipt> {
-    const base: ItcReceipt = {
+): Promise<Receipt> {
+    const base: Receipt = {
         ...(row.receiptExtras ?? {}),
         schemaVersion: 1,
         parentRunId: context.parentRunId,
@@ -1225,7 +1228,7 @@ async function readLinkMap(
         const path = join(publishDir, 'receipts', `${entry.rowId}.json`);
         if (!(await fs.exists(path))) continue;
         try {
-            const receipt = JSON.parse(await fs.readFile(path)) as ItcReceipt & { guid?: string };
+            const receipt = JSON.parse(await fs.readFile(path)) as Receipt & { guid?: string };
             if (receipt.status !== 'succeeded' || !receipt.url) continue;
             if (receipt.parentRunId !== plan.parentRunId) continue;
             all[source.receipt] = receipt.url;
@@ -1523,7 +1526,7 @@ export async function runPublishMatrixRssGate(args: string[], deps: RssGateDeps 
             if (row.plugin !== 'podcast-pub') continue;
             const receiptPath = join(receiptsDir, `${row.id}.json`);
             if (!(await fs.exists(receiptPath))) continue;
-            const receipt = JSON.parse(await fs.readFile(receiptPath)) as ItcReceipt & { guid?: string };
+            const receipt = JSON.parse(await fs.readFile(receiptPath)) as Receipt & { guid?: string };
             if (typeof receipt.guid === 'string') guid = receipt.guid;
         }
     }
@@ -1712,7 +1715,7 @@ export async function readPublishPresetSelector(
     // The ONE kk config path convention (`itc-config.ts`): `$KK_CONFIG` (with `~` expanded) or
     // `$HOME/.config/kk/config.yaml`. Hand-rolling it here resolved `~` against the cwd instead, so a
     // `KK_CONFIG=~/.config/kk/config.yaml` launch read a different file than every itc stage.
-    const configPath = resolveItcConfigPath(env, env.HOME ?? '');
+    const configPath = resolveConfigPath(env, env.HOME ?? '');
     if (!(await fs.exists(configPath))) return DEFAULT_PUBLISH_PRESET;
     let parsed: unknown;
     try {
