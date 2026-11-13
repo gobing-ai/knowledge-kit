@@ -1406,11 +1406,15 @@ runBotCollection(profileName: string, plan: BotCollectionPlan, options?: BotColl
   emulation, and live-site compatibility. Acceptance evidence is loopback-only:
   `apps/cli/tests/e2e-bot-collection.ts` (not part of the default unit gate).
 
-### 1.14 `article` / `news` — Planned (G61, ADR-053)
+### 1.14 `article` / `news` — Shipped (0363, G61, ADR-053)
 
-**Not shipped.** Nothing below exists in the binary yet; every command documented above keeps
-working unchanged until the G61 cut-over task promotes this section. Frozen contract (flags, exit
-codes, stdout, files): `docs/design/content-pipeline-consolidation.md`.
+**Shipped (0363).** The shared `new` and `status` verbs are registered for both nouns. They
+resolve `content_types`, create/read the canonical run directory, and keep `new --from` idempotent.
+Frozen contract (flags, exit codes, stdout, files): `docs/design/content-pipeline-consolidation.md`.
+
+- `kk article new` / `kk news new` and `kk article status` / `kk news status` are shipped.
+- `content_types.<type>` is shipped with built-in `itc` and `news` resolution; generation and
+  publish verbs remain planned follow-up work.
 
 ```text
 kk article new       --type <t> (--topic <text> | --from <file.md>) --slug <s> [--locale …] [--work-dir <dir>]
@@ -1428,8 +1432,8 @@ kk news prepare | generate-render | generate-voice | generate-cards | report --w
 ```
 
 - Exit codes: `0` done, `1` failed, `2` usage, `5` launch refused by preflight, `6` lock held.
-- Planned config key `content_types.<type>` = `{workflow, writer_skill, publish_preset, channels}`;
-  built-in types `news` and `itc`. Resolution: flag → `content_types` →
+- Shipped config key `content_types.<type>` = `{workflow, writer_skill, publish_preset, channels}`;
+  built-in types `news` and `itc` (0363). Resolution: flag → `content_types` →
   `workflows.<workflow>.publish_preset` → built-in.
 - `content_types.<type>.channels` maps `<plugin>` or `<plugin>/<variant>` to
   `off | dummy | draft | live` and is the operator switch for a channel; the preset supplies
@@ -1451,6 +1455,7 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `workflows_dir` | string | `$HOME/.config/kk/workflows` | User-override root for workflow YAMLs (`KK_WORKFLOWS_DIR` wins); resolution falls back: this → `KK_WORKFLOWS_SOURCE` → bun global → npm global → kk package root → repo checkout. ADR-042: an override silently wins over newer shipped copies — keep it deliberate and re-diff after upgrades, or omit the key |
 | `defaults.maxResults` | int | `8` | STORM ingest cap |
 | `defaults.fixture` | bool | `false` | STORM live vs fixture |
+| `content_types.<type>` | object | built-in `itc` / `news` | Content workflow, writer skill, publish preset and per-channel mode switches; resolved by `kk article` / `kk news` (`0363`) |
 | `plugins.<collection>.<name>.env` | map of scalars | — | Injected into that plugin's process env at `spawnPluginEntry`. Real env vars win (`flag > env > config > compiled default`). Collection names: `ingestions` / `generations` / `publishings`. Missing file or missing key → no extra env. Empty-string values are skipped. |
 
 ## 3. Environment variables

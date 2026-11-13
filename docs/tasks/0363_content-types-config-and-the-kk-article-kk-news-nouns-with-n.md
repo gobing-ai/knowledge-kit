@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: content_types config and the kk article / kk news nouns with new and status
-status: backlog
+status: wip
 template: feature-impl
 created_at: 2026-11-13T18:13:39.059Z
-updated_at: "2026-11-13T18:42:44.724Z"
+updated_at: "2026-11-13T22:26:00.352Z"
 feature_id: G61
 
 ac_altitude: task-local
@@ -82,15 +82,24 @@ Owned files (nobody else edits them while this task is open):
 
 ### Plan
 
-1. Write `content-types.test.ts` (AC1) and `content-nouns.e2e.test.ts` (AC2); confirm both fail.
-2. Implement `content-types.ts` (R1–R3).
-3. Implement `commands/content.ts` and the two lines in `index.ts` (R4–R7).
-4. Update `docs/04_DESIGN.md` (R8).
-5. `bun run lint && bun run test && bun run build`; paste outputs and the summary.json path into Testing.
+1. [x] Write `content-types.test.ts` (AC1) and `content-nouns.e2e.test.ts` (AC2); confirm both fail.
+2. [x] Implement `content-types.ts` (R1–R3).
+3. [x] Implement `commands/content.ts` and the two lines in `index.ts` (R4–R7).
+4. [x] Update `docs/04_DESIGN.md` (R8).
+5. [ ] `bun run lint && bun run test && bun run build`; paste outputs and the summary.json path into Testing. (Host pipeline owns the full gate.)
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Implemented 0363's frozen content-type and noun surface.
+
+- `apps/cli/src/content-types.ts:10-210` adds the strict Zod schemas, `news`/`itc` built-ins, field-by-field precedence and channel merging, writer-skill path/digest verification, unknown/missing-skill errors, and canonical LA-date/slug workspace resolution.
+- `apps/cli/src/commands/content.ts:1-414` adds the shared `registerContentVerbs()` implementation for `article` and `news`. `new` validates usage, seeds ITC preparation through `runItcStage`, copies Markdown/content metadata, writes the request once, removes its temporary stage request, and reports `created`; `status` is read-only, supports `--window`, and summarizes receipts, bundles, and outcome windows with null-safe reads.
+- `apps/cli/src/cli.ts:4,32-33` registers both nouns from one extension point.
+- `apps/cli/src/main.ts:61-66` maps Commander usage errors on these nouns to exit 2.
+- `apps/cli/tests/content-types.test.ts:1-79` covers precedence, channels, strict field/mode validation, canonical workspaces, digest shape, and missing skills. `apps/cli/tests/content-nouns.e2e.test.ts:1-208` covers idempotent article seeding, news/status artifacts including `--window`, usage failures, and writes the AC2 summary artifact under the isolated works root.
+- `docs/04_DESIGN.md:1409-1460` promotes the `article`/`news` `new`/`status` and `content_types` surfaces to Shipped (0363) and adds the configuration row.
+
+The existing `itc-prepare` path is used for article request preparation; the new command owns only the Markdown/content materialization required by the frozen `new --from` contract because the current prepare stage writes its options snapshot, not publish content.
 
 ### Testing
 
@@ -107,3 +116,7 @@ Owned files (nobody else edits them while this task is open):
 - Parent feature: G61.
 
 ### History
+
+- 2026-11-13T21:59:48.312Z backlog → todo (system)
+- 2026-11-13T22:26:00.352Z todo → wip (system)
+

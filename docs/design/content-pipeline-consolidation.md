@@ -6,7 +6,7 @@ This document freezes the surface that Phases 2–4 of G61 implement. It does no
 The points that extend the ADR's pattern were accepted by the operator on 2026-11-13 and are
 recorded as an amendment under ADR-053; see [Decisions](#decisions-2026-11-13).
 
-Inventory basis: `main` at `901a4fe1`. Node counts — voice3 42, publish3 18, kk-itc 14,
+Inventory basis: `main` at `901a4fe1`. Node counts — voice3 43, publish3 18, kk-itc 15,
 kk-itc-author 16 states, kk-itc-publish-tail 7. Durations are measured from
 `.works/kk-daily-ai-voice2/20261008/step-timing.json` (the fullest timing file on disk).
 
@@ -349,7 +349,7 @@ row above it unless a condition says otherwise; a conditional node that is skipp
 its successors (the engine skips a node only when all its dependencies were skipped); `onError`
 is the engine default (fail the run) except where a row says "continue on failure".
 
-### 5.1 `kk-news-generate` (DAG, 20 nodes; replaces voice3's 42)
+### 5.1 `kk-news-generate` (DAG, 20 nodes; replaces voice3's 43)
 
 Vars: `work_dir`, `run_date`, `run_id`, `agent`, `skill_dir`, `skip_review`, `preset`.
 
@@ -379,7 +379,7 @@ Vars: `work_dir`, `run_date`, `run_id`, `agent`, `skill_dir`, `skip_review`, `pr
 Publishing is not a node: `kk news generate --publish` launches `kk news publish` after the
 workflow exits 0. That removes the nested `publish` node and keeps "one verb, one workflow".
 
-Fate of the 42 voice3 nodes:
+Fate of the 43 voice3 nodes:
 
 | Current node(s) | Fate |
 | --- | --- |
@@ -395,6 +395,7 @@ Fate of the 42 voice3 nodes:
 | `safety-variants` | → node 19 (its `daily-safety-manifest` half moves into node 18) |
 | `bundle-freeze`, `generation-report`, `ledger` | → node 20 |
 | `publish` | **removed**; `generate --publish` |
+| `executor-probe` | → node 1 (the shared real-traffic probe) |
 
 ### 5.2 `kk-article-generate` (FSM, 13 states; replaces kk-itc's author half and kk-itc-author)
 
@@ -423,7 +424,7 @@ into `outline-select`'s `auto` branch (`generate-check --step outline`); `outlin
 edge already returns to `draft-write`); `judge` → kept; `author-finish` → `freeze`; `done`,
 `failed` → kept.
 
-Fate of the 14 kk-itc nodes: `prepare` → **removed** (`kk article new`); `child-author` →
+Fate of the 15 kk-itc nodes: `executor-probe` → kept as the shared real-traffic probe; `prepare` → **removed** (`kk article new`); `child-author` →
 **removed** (states inlined, §3.3); `verify-child-freeze` → **removed** (no child);
 `illustrate` → kept; `materialize-plan` → `freeze`; `adapt`, `adapt-verify` → state `adapt`;
 `check-targets`, `send-confirm`, `fanout-send`, `fanout-recovery`, `reconcile-settle`, `seo`,

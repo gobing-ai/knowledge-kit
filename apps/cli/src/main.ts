@@ -44,10 +44,10 @@ export async function main(argv: string[] = process.argv, options: MainOptions =
         }
     };
     inheritSettings(program);
+    const userArgs = argv.slice(2);
     try {
         // Bare invocation (no args at all): print help and exit 0. Commander 15
         // otherwise routes missing-subcommand to help({error:true}) → exit 1.
-        const userArgs = argv.slice(2);
         if (userArgs.length === 0) {
             program.help();
         }
@@ -57,6 +57,12 @@ export async function main(argv: string[] = process.argv, options: MainOptions =
         return 0;
     } catch (err) {
         if (err instanceof CommanderError) {
+            // Content nouns reserve exit 2 for Commander usage errors, including an option
+            // rejected before the noun action runs (`kk news --type …`). The older command
+            // surface keeps its historical Commander exit code for compatibility.
+            if (err.code === 'commander.unknownOption' && (userArgs[0] === 'article' || userArgs[0] === 'news')) {
+                return 2;
+            }
             return err.exitCode;
         }
         throw err;

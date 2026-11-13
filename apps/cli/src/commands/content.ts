@@ -1,0 +1,414 @@
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path';
+import { setDefaultOutputTargets } from '@gobing-ai/ts-utils';
+import { type Command, CommanderError } from 'commander';
+import {
+    type ContentTypeConfig,
+    ContentTypeSkillMissingError,
+    ContentTypeUnknownError,
+    resolveContentType,
+    resolveRun,
+} from '../content-types';
+import { runItcStage } from '../itc-stage';
+import { consoleOutput } from '../output';
+import { resolveConfigPath } from '../publish-core';
+
+interface NewOptions {
+    type?: string;
+    topic?: string;
+    from?: string;
+    slug?: string;
+    runDate?: string;
+    locale?: string;
+    title?: string;
+    tags?: string;
+    description?: string;
+    cover?: string;
+    variant?: string[];
+    workDir?: string;
+}
+
+interface StatusOptions {
+    type?: string;
+    slug?: string;
+    runDate?: string;
+    window?: string;
+    workDir?: string;
+}
+
+interface ContentConfigDocument extends ContentTypeConfig {
+    works_dir?: unknown;
+}
+
+interface JsonObject {
+    [key: string]: unknown;
+}
+
+function isObject(value: unknown): value is JsonObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function configPath(): string {
+    return resolveConfigPath(process.env, homedir());
+}
+
+function readConfig(path: string): ContentConfigDocument {
+    if (!existsSync(path)) return {};
+    try {
+        const parsed: unknown = Bun.YAML.parse(readFileSync(path, 'utf8'));
+        if (!isObject(parsed)) throw new Error('expected a YAML mapping');
+        return parsed as ContentConfigDocument;
+    } catch (error) {
+        throw new Error(`cannot read config ${path}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+
+function expandHome(value: string): string {
+    if (value === '~') return homedir();
+    if (value.startsWith('~/')) return join(homedir(), value.slice(2));
+    if (value === '$HOME') return homedir();
+    if (value.startsWith('$HOME/')) return join(homedir(), value.slice('$HOME/'.length));
+    return value;
+}
+
+function resolveWorksDir(config: ContentConfigDocument, path: string): string {
+    const fromEnv = process.env.KK_WORKS_DIR;
+    if (fromEnv !== undefined && fromEnv.trim() !== '') return resolve(expandHome(fromEnv.trim()));
+    if (typeof config.works_dir === 'string' && config.works_dir.trim() !== '') {
+        const configured = expandHome(config.works_dir.trim());
+        return isAbsolute(configured) ? configured : resolve(dirname(path), configured);
+    }
+    return resolve(process.cwd(), '.works');
+}
+
+function fail(code: number, id: string, message: string): never {
+    consoleOutput.error(message);
+    throw new CommanderError(code, id, message);
+}
+
+function knownError(error: unknown, configFile: string): never {
+    if (error instanceof ContentTypeUnknownError) fail(2, 'kk.content.unknown-type', error.message);
+    if (error instanceof ContentTypeSkillMissingError) fail(5, 'kk.content.skill-missing', error.message);
+    const message = error instanceof Error ? error.message : String(error);
+    fail(2, 'kk.content.invalid-type', `invalid content type configuration in ${configFile}: ${message}`);
+}
+
+async function resolveType(type: string, config: ContentConfigDocument, configFile: string, preset?: string) {
+    try {
+        return await resolveContentType(type, config, { configPath: configFile, ...(preset ? { preset } : {}) });
+    } catch (error) {
+        return knownError(error, configFile);
+    }
+}
+
+function validCalendarDate(value: string): boolean {
+    if (!/^\d{8}$/.test(value)) return false;
+    const date = new Date(`${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}T00:00:00Z`);
+    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10).replaceAll('-', '') === value;
+}
+
+function parseTags(raw: string | undefined): string[] | undefined {
+    if (raw === undefined) return undefined;
+    return raw
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter((tag) => tag !== '');
+}
+
+function parseVariants(raw: string[] | undefined, command: string): Record<string, string> | undefined {
+    if (raw === undefined || raw.length === 0) return undefined;
+    const variants: Record<string, string> = {};
+    for (const entry of raw) {
+        const split = entry.indexOf('=');
+        if (split < 1 || split === entry.length - 1) fail(2, command, `--variant must be <name=path>, got '${entry}'`);
+        const name = entry.slice(0, split).trim();
+        const path = entry.slice(split + 1).trim();
+        if (!/^[a-z][a-z0-9-]*$/.test(name)) fail(2, command, `invalid variant name '${name}'`);
+        if (!existsSync(resolve(expandHome(path)))) fail(2, command, `variant source not found: ${path}`);
+        variants[name] = resolve(expandHome(path));
+    }
+    return variants;
+}
+
+function requestValue(value: unknown): unknown {
+    return value === undefined || value === '' ? undefined : value;
+}
+
+function requestObject(
+    type: string,
+    resolved: Awaited<ReturnType<typeof resolveContentType>>,
+    run: ReturnType<typeof resolveRun>,
+    options: NewOptions,
+    locale: string,
+    variants: Record<string, string> | undefined,
+    workDir: string,
+): JsonObject {
+    return {
+        schemaVersion: 1,
+        type,
+        workflow: resolved.workflow,
+        run: run.run,
+        workDir,
+        ...(requestValue(options.slug) !== undefined ? { slug: options.slug } : {}),
+        ...(requestValue(options.runDate) !== undefined ? { runDate: options.runDate } : {}),
+        ...(requestValue(options.topic) !== undefined ? { topic: options.topic } : {}),
+        ...(requestValue(options.from) !== undefined ? { from: resolve(expandHome(options.from as string)) } : {}),
+        locale,
+        ...(requestValue(options.title) !== undefined ? { title: options.title } : {}),
+        ...(requestValue(options.tags) !== undefined ? { tags: parseTags(options.tags) } : {}),
+        ...(requestValue(options.description) !== undefined ? { description: options.description } : {}),
+        ...(requestValue(options.cover) !== undefined ? { cover: resolve(expandHome(options.cover as string)) } : {}),
+        ...(variants !== undefined ? { variants } : {}),
+    };
+}
+
+function splitMarkdown(
+    markdown: string,
+    fallbackTitle: string,
+    titleOverride?: string,
+): { title: string; body: string } {
+    const lines = markdown.split('\n');
+    const heading = lines.findIndex((line) => /^#\s+\S/.test(line));
+    const title =
+        titleOverride?.trim() || (heading >= 0 ? (lines[heading] ?? '').replace(/^#\s+/, '').trim() : fallbackTitle);
+    const body = (heading >= 0 ? [...lines.slice(0, heading), ...lines.slice(heading + 1)] : lines).join('\n').trim();
+    return { title, body };
+}
+
+function writeSeededContent(workDir: string, locale: string, markdown: string, options: NewOptions): void {
+    const contentDir = join(workDir, 'content', locale);
+    mkdirSync(contentDir, { recursive: true });
+    writeFileSync(join(contentDir, 'article.md'), markdown);
+
+    const fallbackTitle = options.slug?.replaceAll('-', ' ') ?? 'article';
+    const article = splitMarkdown(markdown, fallbackTitle, options.title);
+    if (article.body === '') fail(2, 'kk.content.new', `source file is empty: ${options.from ?? '(source)'}`);
+    const content: JsonObject = {
+        title: article.title,
+        format: 'markdown',
+        body: article.body,
+        metadata: {
+            published: false,
+            ...(parseTags(options.tags) !== undefined ? { tags: parseTags(options.tags) } : {}),
+            ...(options.description !== undefined ? { description: options.description } : {}),
+        },
+    };
+    const publishDir = join(workDir, '4-publish');
+    mkdirSync(publishDir, { recursive: true });
+    writeFileSync(join(publishDir, 'content.json'), `${JSON.stringify(content, null, 2)}\n`);
+}
+
+async function seedItcPreparation(
+    workDir: string,
+    run: ReturnType<typeof resolveRun>,
+    options: NewOptions,
+): Promise<void> {
+    const launchPath = join(workDir, '.content-itc-prepare.json');
+    const launch = {
+        topic: options.slug ?? run.run,
+        sourceLocale: options.locale ?? 'en',
+        workDir,
+        projectRoot: process.cwd(),
+        parentRunId: `kk-content-${run.run}`,
+        ...(options.runDate !== undefined ? { runDate: options.runDate } : {}),
+        force: true,
+    };
+    writeFileSync(launchPath, `${JSON.stringify(launch, null, 2)}\n`);
+    const restore = setDefaultOutputTargets({ stdout: { write() {} }, stderr: { write() {} } });
+    try {
+        const code = await runItcStage(['itc-prepare', '--request', launchPath]);
+        if (code !== 0) fail(1, 'kk.content.new', `itc-prepare failed for ${workDir}`);
+    } finally {
+        restore();
+        rmSync(launchPath, { force: true });
+    }
+}
+
+async function newAction(defaultType: string, options: NewOptions, article: boolean): Promise<void> {
+    const type = options.type ?? defaultType;
+    const configFile = configPath();
+    let config: ContentConfigDocument;
+    try {
+        config = readConfig(configFile);
+    } catch (error) {
+        fail(2, 'kk.content.config', error instanceof Error ? error.message : String(error));
+    }
+    const resolved = await resolveType(type, config, configFile);
+    if ((options.topic === undefined) === (options.from === undefined)) {
+        fail(2, 'kk.content.new', 'exactly one of --topic or --from is required');
+    }
+    if (article && (options.slug === undefined || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(options.slug))) {
+        fail(2, 'kk.content.new', '--slug is required for article content and must be a lowercase slug');
+    }
+    if (options.runDate !== undefined && !validCalendarDate(options.runDate)) {
+        fail(2, 'kk.content.new', '--run-date must be a real calendar date as YYYYMMDD');
+    }
+    const locale = options.locale ?? 'en';
+    if (!['en', 'zh', 'ja'].includes(locale)) fail(2, 'kk.content.new', '--locale must be one of en|zh|ja');
+    const worksDir = resolveWorksDir(config, configFile);
+    const run = resolveRun({
+        type,
+        slug: options.slug,
+        runDate: options.runDate,
+        workDir: options.workDir === undefined ? undefined : resolve(expandHome(options.workDir)),
+        worksDir,
+        workflow: resolved.workflow,
+        config,
+    });
+    const requestPath = join(run.workDir, 'request.json');
+    if (existsSync(requestPath)) {
+        consoleOutput.write(JSON.stringify({ workDir: run.workDir, run: run.run, type, created: false }));
+        return;
+    }
+    const fromPath = options.from === undefined ? undefined : resolve(expandHome(options.from));
+    if (fromPath !== undefined && !existsSync(fromPath))
+        fail(2, 'kk.content.new', `source file not found: ${fromPath}`);
+    const variants = parseVariants(options.variant, 'kk.content.new');
+    if (options.cover !== undefined && !existsSync(resolve(expandHome(options.cover)))) {
+        fail(2, 'kk.content.new', `cover file not found: ${options.cover}`);
+    }
+    mkdirSync(run.workDir, { recursive: true });
+    if (article) await seedItcPreparation(run.workDir, run, options);
+    if (fromPath !== undefined) writeSeededContent(run.workDir, locale, readFileSync(fromPath, 'utf8'), options);
+    if (options.cover !== undefined) {
+        const coverPath = resolve(expandHome(options.cover));
+        const coverDir = join(run.workDir, '4-illustrations');
+        mkdirSync(coverDir, { recursive: true });
+        copyFileSync(coverPath, join(coverDir, `cover${extname(coverPath) || '.png'}`));
+    }
+    const request = requestObject(type, resolved, run, options, locale, variants, run.workDir);
+    writeFileSync(requestPath, `${JSON.stringify(request, null, 2)}\n`);
+    consoleOutput.write(JSON.stringify({ workDir: run.workDir, run: run.run, type, created: true }));
+}
+
+function optionalString(value: unknown): string | null {
+    return typeof value === 'string' ? value : null;
+}
+
+function readJson(path: string): JsonObject | null {
+    if (!existsSync(path)) return null;
+    try {
+        const value: unknown = JSON.parse(readFileSync(path, 'utf8'));
+        return isObject(value) ? value : null;
+    } catch {
+        return null;
+    }
+}
+
+function statusPayload(workDir: string, type: string, selectedWindow?: string): JsonObject {
+    const receipt = readJson(join(workDir, 'schedule-receipt.json'));
+    const generate =
+        receipt === null
+            ? null
+            : {
+                  status: optionalString(receipt.status),
+                  runId: optionalString(receipt.runId),
+                  executor: optionalString(receipt.executor),
+                  checkoutCommit: optionalString(receipt.checkoutCommit),
+              };
+    const bundle = readJson(join(workDir, '4-publish', 'bundle.json'));
+    const bundleSummary =
+        bundle === null
+            ? null
+            : {
+                  frozen: typeof bundle.frozen === 'boolean' ? bundle.frozen : null,
+                  runId: optionalString(bundle.runId),
+                  variants: bundle.variants ?? null,
+              };
+    const windows: JsonObject = {};
+    const publishDir = join(workDir, '4-publish');
+    if (existsSync(publishDir)) {
+        for (const name of readdirSync(publishDir)
+            .filter((entry) => /^outcome\.[^.]+\.json$/.test(entry))
+            .sort()) {
+            const outcome = readJson(join(publishDir, name));
+            if (outcome === null) continue;
+            const window = optionalString(outcome.window) ?? name.slice('outcome.'.length, -'.json'.length);
+            if (selectedWindow !== undefined && selectedWindow !== window) continue;
+            windows[window] = {
+                status: optionalString(outcome.status),
+                published: outcome.published ?? null,
+                targets: outcome.targets ?? null,
+            };
+        }
+    }
+    return {
+        workDir,
+        type,
+        generate,
+        bundle: bundleSummary,
+        windows: Object.keys(windows).length === 0 ? null : windows,
+    };
+}
+
+async function statusAction(defaultType: string, options: StatusOptions): Promise<void> {
+    const type = options.type ?? defaultType;
+    const configFile = configPath();
+    let config: ContentConfigDocument;
+    try {
+        config = readConfig(configFile);
+    } catch (error) {
+        fail(2, 'kk.content.config', error instanceof Error ? error.message : String(error));
+    }
+    const resolved = await resolveType(type, config, configFile);
+    const worksDir = resolveWorksDir(config, configFile);
+    const suppliedWorkDir = options.workDir === undefined ? undefined : resolve(expandHome(options.workDir));
+    const slug = options.slug ?? (suppliedWorkDir === undefined ? undefined : basename(suppliedWorkDir));
+    const runDate = options.runDate;
+    if (runDate !== undefined && !validCalendarDate(runDate)) {
+        fail(2, 'kk.content.status', '--run-date must be a real calendar date as YYYYMMDD');
+    }
+    const run = resolveRun({
+        type,
+        slug: type === 'news' ? 'run' : slug,
+        runDate,
+        workDir: suppliedWorkDir,
+        worksDir,
+        workflow: resolved.workflow,
+        config,
+    });
+    const payload = statusPayload(run.workDir, type, options.window);
+    consoleOutput.write(JSON.stringify(payload));
+    if (!existsSync(run.workDir))
+        fail(1, 'kk.content.status.missing', `content run directory does not exist: ${run.workDir}`);
+}
+
+function configureNew(command: Command, noun: string, defaultType: string): void {
+    if (noun === 'article') command.option('--type <type>', 'content type', defaultType);
+    command
+        .option('--topic <text>', 'topic or brief text')
+        .option('--from <file.md>', 'seed from Markdown')
+        .option('--locale <locale>', 'source locale', 'en')
+        .option('--title <title>', 'title override')
+        .option('--tags <tags>', 'comma-separated tags')
+        .option('--description <text>', 'description or excerpt')
+        .option('--cover <path>', 'cover image path')
+        .option(
+            '--variant <name=path>',
+            'additional locale variant',
+            (value: string, prior: string[]) => [...prior, value],
+            [],
+        )
+        .option('--work-dir <dir>', 'explicit run directory');
+    if (noun === 'article') command.option('--slug <slug>', 'article run slug');
+    else command.option('--run-date <YYYYMMDD>', 'news run date');
+    command.action((options: NewOptions) => newAction(defaultType, options, noun === 'article'));
+}
+
+function configureStatus(command: Command, noun: string, defaultType: string): void {
+    if (noun === 'article') {
+        command.option('--type <type>', 'content type', defaultType).option('--slug <slug>', 'article run slug');
+    } else {
+        command.option('--run-date <YYYYMMDD>', 'news run date');
+    }
+    command.option('--work-dir <dir>', 'explicit run directory').option('--window <window>', 'publish window');
+    command.action((options: StatusOptions) => statusAction(defaultType, options));
+}
+
+/** Register the shared `new` and `status` verbs for one content noun. */
+export function registerContentVerbs(program: Command, noun: string, defaultType: string): void {
+    const group = program.command(noun).description(`${noun} content operations`);
+    configureNew(group.command('new').description('create a content run request'), noun, defaultType);
+    configureStatus(group.command('status').description('inspect a content run'), noun, defaultType);
+}

@@ -4,7 +4,7 @@ name: "Design freeze: article/news verb set, content_types config, and the simpl
 status: wip
 template: feature-impl
 created_at: 2026-11-13T17:31:14.228Z
-updated_at: "2026-11-13T18:18:41.598Z"
+updated_at: "2026-11-13T21:44:28.012Z"
 feature_id: G61
 
 ac_altitude: task-local
@@ -25,14 +25,19 @@ Inputs that are already decided and must not be reopened: ADR-053 in full; no `k
 noun; three CLI layers only (`kk <noun> <verb>`); `kk stage`, `kk itc`, `kk daily` survive only as hidden
 compatibility routes (ADR-037); authoring stays in skills; Spur Board work is out of scope.
 
+#### Refine correction — 2026-11-13
+
+- Re-audited the frozen design against the current workflow YAMLs. The inventory counted `executor-probe` in both `kk-daily-ai-voice3` and `kk-itc`; the document previously stated 42/14 and omitted those current nodes from the fate rows. The design now records 43/15 and maps both probes to the shared probe node.
+- Reconciled R3 with the accepted ADR-053 amendment and task 0363 contract: `channels` is the fourth `content_types.<type>` field and `works_namespace` is intentionally excluded. The prior requirement wording was stale and is corrected here; no run-directory namespace is reintroduced.
+
 ### Requirements
 
 - [ ] R1. New file `docs/design/content-pipeline-consolidation.md` with exactly these sections: 1 Verb table, 2 `content_types` config, 3 Launch contract, 4 Bundle and plan contract, 5 Workflow node maps, 6 Stage migration table, 7 Retirement list, 8 Phase 2–4 task list.
 - [ ] R2. §1 lists every verb of `kk article` (`new`, `generate`, `publish`, `status`, `publish-plan`, `publish-check`, `publish-send`, `publish-settle`, `publish-report`) and `kk news` (those plus `prepare`, `report`) with: flags and types, exit codes, stdout JSON shape, files read/written, and the existing function it wraps (`path:symbol`). Step verbs take named flags only (`--work-dir`, `--window`, …), never positionals.
-- [ ] R3. §2 specifies the `content_types.<type>` block for `~/.config/kk/config.yaml` as a zod-ready schema (fields: `workflow`, `writer_skill`, `publish_preset`, optional `works_namespace`), the built-in defaults for `news` and `itc`, the resolution order (flag → config → built-in), and the error for an unknown `--type`. It states how `--channels a,b` narrows a plan and where the override is recorded in the plan file.
+- [ ] R3. §2 specifies the `content_types.<type>` block for `~/.config/kk/config.yaml` as a zod-ready schema with `workflow`, `writer_skill`, `publish_preset`, and `channels` fields, the built-in defaults for `news` and `itc`, the resolution order (flag → config → built-in), and the error for an unknown `--type`. It states how `--channels a,b` narrows a plan and where the override is recorded in the plan file. The accepted 2026-11-13 amendment makes `channels` the fourth field; `works_namespace` is deliberately not part of this schema.
 - [ ] R4. §3 specifies what `generate` / `publish` do around the one `spur workflow run` they start — lock name, probe, timeout, cancel, reservation release, receipt path and schema — mapped line-by-line from `plugins/kk/scripts/daily-scheduled-run.ts` and `scripts/daily-ai-news.ts` so nothing is lost (each existing behaviour is marked keep / drop with a reason).
 - [ ] R5. §4 specifies the one frozen `bundle.json` and one `plan.<window>.json` both content types use, as a field-by-field diff against today's matrix bundle and ITC's `publish-plan.json`, and the work-dir layout `<works>/<workflow-name>/<run>` for `kk-news-generate`, `kk-article-generate` and `kk-publish` (ADR-042), including how publish finds the bundle of a generate run.
-- [ ] R6. §5 gives, for `kk-news-generate.yaml`, `kk-article-generate.yaml` (+ author child) and `kk-publish.yaml`, the full node list (id, kind, the `kk` verb or skill it calls, dependsOn, onError) and, for every node of today's `kk-daily-ai-voice3` (42), `kk-daily-publish3` (18), `kk-itc`, `kk-itc-author`, `kk-itc-publish-tail`, its fate: kept, or folded into which verb. A node is kept only as an agent call, a human pause, or a retry boundary worth minutes (ADR-053 §7); each kept non-agent node states the minutes it saves.
+- [ ] R6. §5 gives, for `kk-news-generate.yaml`, `kk-article-generate.yaml` (+ author child) and `kk-publish.yaml`, the full node list (id, kind, the `kk` verb or skill it calls, dependsOn, onError) and, for every node of today's `kk-daily-ai-voice3` (43), `kk-daily-publish3` (18), `kk-itc` (15), `kk-itc-author`, `kk-itc-publish-tail`, its fate: kept, or folded into which verb. A node is kept only as an agent call, a human pause, or a retry boundary worth minutes (ADR-053 §7); each kept non-agent node states the minutes it saves.
 - [ ] R7. §6 lists every `kk stage run <name>` referenced by the five in-scope workflows with its target verb or "deleted"; §7 lists the files retired in Phase 4 (`scripts/daily-ai-news.ts`, `scripts/publish-article.ts`, retired workflows, stage bodies) and the `.spur/config.yaml` job lines that replace the current three.
 - [ ] R8. `docs/04_DESIGN.md` gains a section marked **Planned (G61)** with the §1 verb table and the `content_types` block; nothing existing is removed.
 - [ ] R9. §8's tasks are created with `spur task create --feature G61` — one task per independently mergeable change, each ≤ ~1 day, each naming owned files so no two tasks edit the same file concurrently, with dependencies stated — and each is filled to the same standard as 0360/0361 (Background, Requirements, Acceptance Criteria, Q&A, Design, Plan, References). Together their ACs cover feature scenarios 5–7 so `spur feature check G61` shows no DD-09 warning.
@@ -93,18 +98,19 @@ Constraints the design must respect: `kk` owns steps, the workflow owns sequenci
 
 ### Solution
 
-- `docs/design/content-pipeline-consolidation.md` (new): §1 verb table, §2 `content_types`, §3 launch contract with line maps, §4 bundle/plan diff and work dirs, §5 node maps (voice3 42 → 20, publish3 18 + tail 7 → 9, kk-itc 14 + author 16 → 13 states), §6 stage migration (53 names), §7 retirement + scheduler lines, §8 task list, open points.
+- `docs/design/content-pipeline-consolidation.md` (new): §1 verb table, §2 `content_types`, §3 launch contract with line maps, §4 bundle/plan diff and work dirs, §5 node maps (voice3 43 → 20, publish3 18 + tail 7 → 9, kk-itc 15 + author 16 → 13 states), §6 stage migration (53 names), §7 retirement + scheduler lines, §8 task list, open points.
 - `docs/04_DESIGN.md` §1.14 "`article` / `news` — Planned (G61, ADR-053)": 29 added lines, 0 removed.
 - Tasks created under G61: 0363, 0364, 0365 (Phase 2); 0366, 0367, 0368 (Phase 3); 0369 (Phase 4), with `dependencies[]` set as a linear chain.
-- Two extensions of the ADR-053 pattern, reported to the operator as open points rather than decided: generate step verbs (`generate-check|render|voice|cards|bundle`), and keeping the `kk-daily-ai-voice2` run-directory namespace through `works_namespace`.
-- Corrections found while checking against code: ITC default preset is `itc-main`; the `--channels` exclusion reason string is `not in --channels list` (`apps/cli/src/publish-matrix.ts:488`); the executor probe is an `agent.run` node, not a `kk` verb.
+- The accepted ADR-053 amendment adds generation step verbs and the `content_types.<type>.channels` switchboard; the proposed `works_namespace` extension was rejected, and new runs use workflow-named directories.
+- Corrections checked against code: ITC default preset is `itc-main`; the `--channels` exclusion reason is `not in --channels list` (`apps/cli/src/publish-matrix.ts:491`); the executor probe is an `agent.run` node, not a `kk` verb.
 
 ### Testing
 
-- AC1: every stage name called by voice3, publish3, kk-itc, kk-itc-author, kk-itc-publish-tail and kk-daily-safety (both spellings, 53 unique) has a row in §6 — scripted `rg … | sort -u` loop printed no `MISSING` line. Node counts taken from a `Bun.YAML.parse` inventory of the five workflows.
-- AC2: `git diff --stat docs/04_DESIGN.md` → `1 file changed, 29 insertions(+)`, no deletions.
-- AC3: `spur task check` PASS for 0363–0369 (remaining warnings are "prerequisite is backlog" only). `spur feature check G61` PASS with no uncovered-scenario warning; all seven scenarios are linked (warnings are "linked but unverified", expected before implementation). Owned-file overlap (`commands/content.ts`, `docs/04_DESIGN.md`) is covered by the dependency chain 0363 → 0364 → 0365 → 0366 → 0367 → 0368 → 0369.
-- No product code changed; lint/test/build not run for this task.
+- Design section and inventory check: PASS. Required sections 1–8 are present; all 34 `kk stage run` names extracted from the five in-scope workflow files occur in §6.
+- Current YAML inventory: `kk-daily-ai-voice3` 43 nodes, `kk-daily-publish3` 18, `kk-itc` 15, `kk-itc-author` 16, `kk-itc-publish-tail` 7. The design’s fate tables now include the two executor-probe nodes and corrected counts.
+- `spur task check 0362 --precheck --json`: PASS.
+- `spur task check 0362 --json`: PASS with no findings.
+- No product code or workflow YAML changed; repository-wide lint/test/build belong to the batch gate.
 
 ### Review
 
