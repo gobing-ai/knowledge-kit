@@ -6,7 +6,7 @@ status: backlog
 priority: P1
 tags: []
 created_at: "2026-11-13T17:30:35.983Z"
-updated_at: "2026-11-13T17:43:21.847Z"
+updated_at: "2026-11-13T20:22:50.422Z"
 ---
 
 # G61: Content pipeline consolidation: shared publish core, article/news verbs, simplified workflows
@@ -17,14 +17,6 @@ Make the daily-news and article (ITC and later types) pipelines reliable enough 
 removing the boundary drift between them: one neutral publish core, one publish workflow, operator verbs on
 `kk article` / `kk news`, and workflows reduced to the nodes that earn a retry boundary. Decision record:
 ADR-053 (accepted 2026-11-13). Supersedes the remaining scope of G21 where they overlap.
-
-Evidence (review 2026-11-12/13): `publish-matrix.ts` imports its send loop, plugin probe, receipt type, preset
-schemas and config path from `itc-publish.ts`, `itc-plan.ts`, `itc-config.ts`; `kk-itc-publish-tail.yaml` is a
-byte-identical copy of seven `kk-itc.yaml` nodes; ITC channel retries produced `a2ui-intro-wechat2/3/4` work
-dirs; voice3 runs in the `kk-daily-ai-voice2` namespace; the operator API lives in `scripts/daily-ai-news.ts`
-and `scripts/publish-article.ts`; ~70 `kk stage run <name>` bodies take untyped positionals and most resolve
-from the installed package; a checkout holding a pre-f7a964e2 scheduler job line ran a quota-dead pinned
-executor on 11-11 and 11-12 and failed 7/7 while a second machine ran the real schedule.
 
 ## Scope
 
@@ -115,6 +107,14 @@ Feature: Content pipeline consolidation: shared publish core, article/news verbs
 <!-- END AUTO-GENERATED -->
 
 ## Notes
+
+Evidence (review 2026-11-12/13): `publish-matrix.ts` imports its send loop, plugin probe, receipt type, preset
+schemas and config path from `itc-publish.ts`, `itc-plan.ts`, `itc-config.ts`; `kk-itc-publish-tail.yaml` is a
+byte-identical copy of seven `kk-itc.yaml` nodes; ITC channel retries produced `a2ui-intro-wechat2/3/4` work
+dirs; voice3 runs in the `kk-daily-ai-voice2` namespace; the operator API lives in `scripts/daily-ai-news.ts`
+and `scripts/publish-article.ts`; ~70 `kk stage run <name>` bodies take untyped positionals and most resolve
+from the installed package; a checkout holding a pre-f7a964e2 scheduler job line ran a quota-dead pinned
+executor on 11-11 and 11-12 and failed 7/7 while a second machine ran the real schedule.
 
 ## History
 

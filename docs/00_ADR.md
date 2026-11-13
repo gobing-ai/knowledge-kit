@@ -5,7 +5,7 @@ owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
 version: 1.45.0
 created_at: 2026-05-28
-updated_at: 2026-11-10
+updated_at: 2026-11-13
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -1101,6 +1101,19 @@ Result; a failed follow-up never fails the run. Rejected: a second `xhs-pub` cal
 by the cap by design) and a second `KK_XHS_AUTOMATION_STATE` file to dodge it (that override is
 for a deliberate second profile). Residual risk accepted: one visit now spends longer in the
 console and saves two drafts instead of one.
+
+**Amendment (2026-11-13, one headed visit and out-of-page capture; task 0370).** A publish now
+opens the console exactly once, headed, with the bounded session-readiness gate as its first step;
+there is no separate headless probe or headed fallback. A dead session refuses without composing
+anything and names `kk bot login xhs`. The publish budget counts that launch even if readiness
+refuses, because a console visit happened. `check` is offline by default: an absent profile,
+expired estimated session, or unreadable metadata refuses; otherwise it reports the recorded
+expiry or `expiry unknown`. Cookie expiry is an estimate, and the publish visit's readiness gate
+remains authoritative. `check --headed` retains the headed probe and check budget; `login` and
+`open` use the shared profile CLI and remain uncapped. Outcome capture uses browser-context
+responses, page console events, and read-only DOM risk-text deltas; it never patches page globals.
+These changes remove unnecessary visits and in-page modifications; they do not establish the
+cause of the account warning or authorize re-enabling XHS, which remains off in publish presets.
 
 **Detail:** `docs/design/xhs-image-cards.md` → Automation risk policy.
 

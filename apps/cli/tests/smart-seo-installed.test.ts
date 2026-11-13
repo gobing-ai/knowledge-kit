@@ -38,7 +38,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO = resolve(import.meta.dir, '../../..');
@@ -87,6 +87,22 @@ let configBeforeAppend = '';
 let configAfterAppend = '';
 let preAppendRun: { status: number; output: string } = { status: -1, output: '' };
 let preAppendStage: { status: number; output: string } = { status: -1, output: '' };
+
+/** Resolve the globally installed Spur package when Bun's test resolver cannot see NODE_PATH. */
+function resolveSpurPackageRoot(): string {
+    try {
+        return dirname(fileURLToPath(import.meta.resolve('@gobing-ai/spur/package.json')));
+    } catch {
+        const which = Bun.which('spur');
+        if (which === null) throw new Error('cannot resolve the installed spur CLI; set SPUR_BIN to spur.js');
+        let current = dirname(realpathSync(which));
+        while (current !== dirname(current)) {
+            if (basename(current) === 'spur' && basename(dirname(current)) === '@gobing-ai') return current;
+            current = dirname(current);
+        }
+        throw new Error(`cannot locate the @gobing-ai/spur package behind ${which}`);
+    }
+}
 
 /** A fresh realpath'd temp dir the suite removes afterwards. */
 function realTempDir(prefix: string): string {
@@ -180,14 +196,7 @@ function withBuildLock<T>(fn: () => T): T {
 function resolveSpur(): string[] {
     const override = process.env.SPUR_BIN;
     if (override !== undefined && override !== '') return [process.execPath, override];
-    try {
-        const pkg = import.meta.resolve('@gobing-ai/spur/package.json');
-        return [process.execPath, join(dirname(fileURLToPath(pkg)), 'spur.js')];
-    } catch {
-        const which = Bun.which('spur');
-        if (which !== null) return [which];
-        throw new Error('cannot resolve the installed spur CLI; set SPUR_BIN to spur.js');
-    }
+    return [process.execPath, join(resolveSpurPackageRoot(), 'spur.js')];
 }
 
 /**
@@ -201,8 +210,7 @@ function resolveSpur(): string[] {
  * `Cannot resolve package schema` error, which is what the documented setup must prevent.
  */
 function linkOrchestratorPackage(): void {
-    const pkg = import.meta.resolve('@gobing-ai/spur/package.json');
-    const target = dirname(fileURLToPath(pkg));
+    const target = resolveSpurPackageRoot();
     const link = join(project, 'node_modules/@gobing-ai/spur');
     mkdirSync(dirname(link), { recursive: true });
     symlinkSync(target, link, 'dir');

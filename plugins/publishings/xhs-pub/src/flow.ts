@@ -248,119 +248,84 @@ async function invokeHostSave(page: XhsPage): Promise<string | null> {
     }
 }
 
-/**
- * Layered server-response capture (task 0350 R1, vendor-proven from
- * `vendors/xiaohongshu-skills/scripts/xhs/publish.py`): the save/publish response is the only
- * truth about whether a note persisted — the console toast has lied while the API returned
- * `HTTPBizError` (2026-11-09/10 runs). Four layers race for the first matching payload — XHR
- * `loadend`, wrapped `fetch`, console output, and a DOM toast observer — and the first capture
- * wins. Signatures are content-based, not URL-based: `HTTPBizError`, a −913x code, `note_id`,
- * or a short toast naming 禁止发笔记 / 违反 / 违规 / 审核未通过 / 账号异常 / 无法发布.
- * Arming is idempotent; a page that refused injection degrades to the legacy UI signals. The
- * sentinel markers keep a mocked evaluate from ever reading as a real capture.
- */
-export const CAPTURE_INJECT_EXPR = `/* kk-capture-inject */ (() => {
-    const w = window;
-    if (w.__kkXhsArmed) return 'kk-capture-armed';
-    w.__kkXhsArmed = true;
-    w.__kkXhsOutcome = null;
-    const signatures = [
-        /HTTPBizError/,
-        /"code"\\s*:\\s*-913\\d/,
-        /禁止发笔记/,
-        /note_id/,
-        /违反|违规|审核未通过|账号异常|无法发布/,
-    ];
-    const matches = (text) => signatures.some((re) => re.test(text));
-    const record = (source, text) => {
-        if (w.__kkXhsOutcome) return;
-        const asString = String(text || '');
-        if (!asString || !matches(asString)) return;
-        w.__kkXhsOutcome = { source: source, text: asString.slice(0, 800) };
-    };
-    const proto = XMLHttpRequest.prototype;
-    if (!proto.__kkPatched) {
-        proto.__kkPatched = true;
-        const open = proto.open;
-        const send = proto.send;
-        proto.open = function (method, url) { this.__kkUrl = url; return open.apply(this, arguments); };
-        proto.send = function () {
-            this.addEventListener('loadend', () => {
-                try { record('xhr', (this.__kkUrl || '') + ' ' + this.responseText); } catch (e) {}
-            });
-            return send.apply(this, arguments);
-        };
-    }
-    if (typeof w.fetch === 'function' && !w.fetch.__kkPatched) {
-        const original = w.fetch;
-        w.fetch = function () {
-            return original.apply(this, arguments).then((response) => {
-                try {
-                    response.clone().text().then((text) => record('fetch', (response.url || '') + ' ' + text)).catch(() => {});
-                } catch (e) {}
-                return response;
-            });
-        };
-        w.fetch.__kkPatched = true;
-    }
-    if (!console.__kkPatched) {
-        console.__kkPatched = true;
-        for (const key of ['error', 'warn', 'log']) {
-            const original = console[key].bind(console);
-            console[key] = function () {
-                try { record('console', Array.prototype.map.call(arguments, String).join(' ')); } catch (e) {}
-                original.apply(console, arguments);
-            };
-        }
-    }
-    if (typeof MutationObserver === 'function' && document.body && !w.__kkXhsToastObs) {
-        const toastRisk = /违反|违规|禁止发笔记|审核未通过|账号异常|无法发布/;
-        const obs = new MutationObserver((muts) => {
-            if (w.__kkXhsOutcome) return;
-            for (const m of muts) {
-                for (const n of m.addedNodes || []) {
-                    if (!n || n.nodeType !== 1) continue;
-                    const txt = String(n.textContent || '').trim();
-                    if (txt.length === 0 || txt.length > 300) continue;
-                    if (!toastRisk.test(txt)) continue;
-                    record('toast', txt);
-                }
-            }
-        });
-        obs.observe(document.body, { childList: true, subtree: true });
-        w.__kkXhsToastObs = true;
-    }
-    return 'kk-capture-armed';
-})()`;
-const CAPTURE_READ_EXPR = `/* kk-capture-read */ (() => {
-    const captured = window.__kkXhsOutcome;
-    return captured ? JSON.stringify(captured) : 'kk-capture-none';
-})()`;
+/** Read short risk-text leaves without changing the console or mistaking an existing body for a toast. */
+export const RISK_LEAVES_EXPR = `/* kk-risk-leaves */ (() => JSON.stringify(
+    Array.from(document.querySelectorAll('body *')).filter((el) => el.children.length === 0)
+        .map((el) => String(el.textContent || '').trim())
+        .filter((text) => text.length > 0 && text.length <= 300 && /禁止发笔记|违反|违规|审核未通过|账号异常|无法发布/.test(text))
+))()`;
 
 interface OutcomeCapture {
     source: string;
     text: string;
 }
 
-async function armOutcomeCapture(page: XhsPage): Promise<void> {
-    try {
-        await page.evaluate(CAPTURE_INJECT_EXPR);
-    } catch {
-        // No injection, no capture: the legacy UI signals remain the only outcome evidence.
-    }
-}
-
-async function readOutcomeCapture(page: XhsPage): Promise<OutcomeCapture | null> {
-    try {
-        const read = await page.evaluate(CAPTURE_READ_EXPR);
-        if (typeof read !== 'string' || !read.startsWith('{')) return null;
-        const parsed = JSON.parse(read) as Partial<OutcomeCapture>;
-        return typeof parsed.source === 'string' && typeof parsed.text === 'string'
-            ? { source: parsed.source, text: parsed.text }
-            : null;
-    } catch {
-        return null;
-    }
+async function armOutcomeCapture(
+    page: XhsPage,
+    timeoutMs: number,
+): Promise<{ read(): Promise<OutcomeCapture | null>; dispose(): void }> {
+    const riskLeaves = async (): Promise<string[]> => {
+        try {
+            const value: unknown = JSON.parse(String(await page.evaluate(RISK_LEAVES_EXPR)));
+            return Array.isArray(value) ? value.filter((text): text is string => typeof text === 'string') : [];
+        } catch {
+            return [];
+        }
+    };
+    const baseline = new Set(await riskLeaves());
+    let capture: OutcomeCapture | null = null;
+    const pending = new Set<Promise<void>>();
+    const record = (source: string, text: string): void => {
+        if (
+            capture === null &&
+            /HTTPBizError|"code"\s*:\s*-913\d|note_id|禁止发笔记|违反|违规|审核未通过|账号异常|无法发布/.test(text)
+        ) {
+            capture = { source, text: text.slice(0, 800) };
+        }
+    };
+    const responseHandler = (payload: unknown): void => {
+        const read = (async () => {
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            try {
+                const response = payload as { request?(): { resourceType(): string }; text(): Promise<string> };
+                const source = response.request?.().resourceType();
+                if (source !== 'xhr' && source !== 'fetch') return;
+                const text = await Promise.race([
+                    response.text(),
+                    new Promise<string>((resolve) => {
+                        timer = setTimeout(() => resolve(''), timeoutMs);
+                    }),
+                ]);
+                record(source, text);
+            } catch {
+                // A response without a readable body leaves the existing UI evidence authoritative.
+            } finally {
+                clearTimeout(timer);
+            }
+        })();
+        pending.add(read);
+        void read.finally(() => pending.delete(read));
+    };
+    const consoleHandler = (payload: unknown): void => {
+        try {
+            record('console', (payload as { text(): string }).text());
+        } catch {
+            /* A detached message has no evidence. */
+        }
+    };
+    page.onContextResponse?.(responseHandler);
+    page.on?.('console', consoleHandler);
+    return {
+        read: async () => {
+            await Promise.all(pending);
+            for (const text of await riskLeaves()) if (!baseline.has(text)) record('toast', text);
+            return capture;
+        },
+        dispose: () => {
+            page.offContextResponse?.(responseHandler);
+            page.off?.('console', consoleHandler);
+        },
+    };
 }
 
 const RISK_SIGNATURE = /禁止发笔记|违反|违规|审核未通过|账号异常|无法发布/;
@@ -735,9 +700,10 @@ async function enterImageMode(deps: ModeRunDeps, label: string): Promise<void> {
  */
 async function settleConsole(deps: ModeRunDeps): Promise<void> {
     let lastResponseAt = Date.now();
-    deps.page.onContextResponse?.(() => {
+    const handler = (): void => {
         lastResponseAt = Date.now();
-    });
+    };
+    deps.page.onContextResponse?.(handler);
     try {
         const start = Date.now();
         while (Date.now() - start < CONSOLE_SETTLE_MS) {
@@ -745,9 +711,7 @@ async function settleConsole(deps: ModeRunDeps): Promise<void> {
             await new Promise((resolve) => setTimeout(resolve, POLL_MS));
         }
     } finally {
-        deps.page.offContextResponse?.(() => {
-            lastResponseAt = Date.now();
-        });
+        deps.page.offContextResponse?.(handler);
     }
 }
 
@@ -1156,64 +1120,68 @@ async function saveDraft(input: ModeInput, deps: ModeRunDeps): Promise<Result> {
     let signal: string | null = null;
     let attempts = 0;
     let capture: OutcomeCapture | null = null;
-    await armOutcomeCapture(deps.page);
-    while (signal === null && attempts < deps.submitAttempts) {
-        attempts += 1;
-        await sleep(deps.submitSettleMs);
-        // Host-method save first: the closed-shadow bar swallows synthetic coordinate clicks.
-        const method = await invokeHostSave(deps.page);
-        const control: Awaited<ReturnType<typeof clickActionControl>> =
-            method !== null
-                ? { ok: true, path: 'shadow', label: `_onSave:${method}`, click: 'shadow-host-method' }
-                : await clickActionControl(input.operation, deps, DRAFT_LABELS, 'draft control');
-        if (!control.ok) return fail(control.error);
-        clicked = control;
-        // The capture is refreshed inside the probe (expectOutcome swallows probe throws by
-        // design — the refusal is classified OUTSIDE, so it propagates as a typed error).
-        const outcome = await expectOutcome(
-            async () => {
-                if (capture === null) capture = await readOutcomeCapture(deps.page);
-                return draftSignalEvidence(deps.page, deps.draftBaseline);
-            },
-            {
-                timeoutMs: deps.submitSettleMs,
-                label: `draft confirmation '${control.label}'`,
-                pollMs: POLL_MS,
-            },
-        );
-        if (outcome.ok) signal = outcome.evidence;
-        else {
-            // A captured refusal must not be retried: refresh and re-check before another click.
-            capture = capture ?? (await readOutcomeCapture(deps.page));
-            assertCapturedOutcome(capture);
+    const outcomeCapture = await armOutcomeCapture(deps.page, deps.stepTimeoutMs);
+    try {
+        while (signal === null && attempts < deps.submitAttempts) {
+            attempts += 1;
+            await sleep(deps.submitSettleMs);
+            // Host-method save first: the closed-shadow bar swallows synthetic coordinate clicks.
+            const method = await invokeHostSave(deps.page);
+            const control: Awaited<ReturnType<typeof clickActionControl>> =
+                method !== null
+                    ? { ok: true, path: 'shadow', label: `_onSave:${method}`, click: 'shadow-host-method' }
+                    : await clickActionControl(input.operation, deps, DRAFT_LABELS, 'draft control');
+            if (!control.ok) return fail(control.error);
+            clicked = control;
+            // The capture is refreshed inside the probe (expectOutcome swallows probe throws by
+            // design — the refusal is classified OUTSIDE, so it propagates as a typed error).
+            const outcome = await expectOutcome(
+                async () => {
+                    if (capture === null) capture = await outcomeCapture.read();
+                    return draftSignalEvidence(deps.page, deps.draftBaseline);
+                },
+                {
+                    timeoutMs: deps.submitSettleMs,
+                    label: `draft confirmation '${control.label}'`,
+                    pollMs: POLL_MS,
+                },
+            );
+            if (outcome.ok) signal = outcome.evidence;
+            else {
+                // A captured refusal must not be retried: refresh and re-check before another click.
+                capture = capture ?? (await outcomeCapture.read());
+                assertCapturedOutcome(capture);
+            }
         }
+        if (capture === null) capture = await outcomeCapture.read();
+        // The captured server response outranks every UI signal — a toast can lie while the API
+        // refused (2026-11-09/10 runs) — so it is classified before any success is reported.
+        assertCapturedOutcome(capture);
+        const draftCountAfter = await readDraftCount(deps.page);
+        if (signal === null || clicked === null) {
+            return fail(
+                `draft confirmation: '${clicked?.label ?? DRAFT_LABELS[0]}' was clicked ${attempts}× but neither a fresh ${TARGET} save timestamp, a moved draft counter, nor a scoped '${DRAFT_TOASTS[0]}' toast was observed within ${deps.submitSettleMs}ms (before=${String(deps.draftBaseline.count)}, after=${String(draftCountAfter)})`,
+            );
+        }
+        return ResultSchema.parse({
+            ok: true,
+            target: TARGET,
+            message: `${TARGET} draft saved (unpublished) in profile ${deps.profileDir} via '${clicked.label}' (${input.operation})`,
+            metadata: {
+                ...baseMetadata(input, deps),
+                draftControl: clicked.label,
+                draftClick: clicked.click,
+                draftPath: clicked.path,
+                draftAttempts: attempts,
+                draftSignal: signal,
+                draftCountBefore: deps.draftBaseline.count,
+                draftCountAfter,
+                ...captureMetadata(capture),
+            },
+        });
+    } finally {
+        outcomeCapture.dispose();
     }
-    if (capture === null) capture = await readOutcomeCapture(deps.page);
-    // The captured server response outranks every UI signal — a toast can lie while the API
-    // refused (2026-11-09/10 runs) — so it is classified before any success is reported.
-    assertCapturedOutcome(capture);
-    const draftCountAfter = await readDraftCount(deps.page);
-    if (signal === null || clicked === null) {
-        return fail(
-            `draft confirmation: '${clicked?.label ?? DRAFT_LABELS[0]}' was clicked ${attempts}× but neither a fresh ${TARGET} save timestamp, a moved draft counter, nor a scoped '${DRAFT_TOASTS[0]}' toast was observed within ${deps.submitSettleMs}ms (before=${String(deps.draftBaseline.count)}, after=${String(draftCountAfter)})`,
-        );
-    }
-    return ResultSchema.parse({
-        ok: true,
-        target: TARGET,
-        message: `${TARGET} draft saved (unpublished) in profile ${deps.profileDir} via '${clicked.label}' (${input.operation})`,
-        metadata: {
-            ...baseMetadata(input, deps),
-            draftControl: clicked.label,
-            draftClick: clicked.click,
-            draftPath: clicked.path,
-            draftAttempts: attempts,
-            draftSignal: signal,
-            draftCountBefore: deps.draftBaseline.count,
-            draftCountAfter,
-            ...captureMetadata(capture),
-        },
-    });
 }
 
 /**
@@ -1225,44 +1193,48 @@ async function saveDraft(input: ModeInput, deps: ModeRunDeps): Promise<Result> {
 async function publishNote(input: ModeInput, deps: ModeRunDeps): Promise<Result> {
     await sleep(deps.submitSettleMs);
     let capture: OutcomeCapture | null = null;
-    await armOutcomeCapture(deps.page);
-    const submitted = await clickActionControl(input.operation, deps, PUBLISH_LABELS, 'publish control');
-    if (!submitted.ok) return fail(submitted.error);
+    const outcomeCapture = await armOutcomeCapture(deps.page, deps.stepTimeoutMs);
+    try {
+        const submitted = await clickActionControl(input.operation, deps, PUBLISH_LABELS, 'publish control');
+        if (!submitted.ok) return fail(submitted.error);
 
-    const urlBeforeSubmit = deps.page.url();
-    const confirmed = await waitUntil(async () => {
-        // The captured refusal aborts immediately — waitUntil propagates the typed throw, and a
-        // publish click is never retried (unlike the draft loop there is no next attempt).
-        if (capture === null) capture = await readOutcomeCapture(deps.page);
-        assertCapturedOutcome(capture);
-        // The console rewrites its URL to `…published=true` once the post is accepted; the toast is
-        // the fallback, read scoped (never from the document at large).
-        if (deps.page.url().includes(PUBLISHED_MARKER)) return true;
-        return (await readScopedSignal(asPlaywrightPage(deps.page), PUBLISH_CONFIRM)) !== null;
-    }, deps.stepTimeoutMs);
-    if (!confirmed) {
-        // A refusal that lands late still outranks the "state unknown" timeout message.
-        capture = capture ?? (await readOutcomeCapture(deps.page));
-        assertCapturedOutcome(capture);
-        return fail(
-            `publish submission: state unknown — the '${submitted.label}' click (${submitted.click}) was sent from ${urlBeforeSubmit} but no success state was observed (now ${deps.page.url()}). Check the ${TARGET} creator note manager before retrying: a retry could duplicate the post.`,
-        );
+        const urlBeforeSubmit = deps.page.url();
+        const confirmed = await waitUntil(async () => {
+            // The captured refusal aborts immediately — waitUntil propagates the typed throw, and a
+            // publish click is never retried (unlike the draft loop there is no next attempt).
+            if (capture === null) capture = await outcomeCapture.read();
+            assertCapturedOutcome(capture);
+            // The console rewrites its URL to `…published=true` once the post is accepted; the toast is
+            // the fallback, read scoped (never from the document at large).
+            if (deps.page.url().includes(PUBLISHED_MARKER)) return true;
+            return (await readScopedSignal(asPlaywrightPage(deps.page), PUBLISH_CONFIRM)) !== null;
+        }, deps.stepTimeoutMs);
+        if (!confirmed) {
+            // A refusal that lands late still outranks the "state unknown" timeout message.
+            capture = capture ?? (await outcomeCapture.read());
+            assertCapturedOutcome(capture);
+            return fail(
+                `publish submission: state unknown — the '${submitted.label}' click (${submitted.click}) was sent from ${urlBeforeSubmit} but no success state was observed (now ${deps.page.url()}). Check the ${TARGET} creator note manager before retrying: a retry could duplicate the post.`,
+            );
+        }
+        const url = deps.page.url();
+        return ResultSchema.parse({
+            ok: true,
+            target: TARGET,
+            ...(url !== PUBLISH_URL ? { url } : {}),
+            message: `${TARGET} ${input.operation} post published`,
+            metadata: {
+                ...baseMetadata(input, deps),
+                publishControl: submitted.label,
+                publishPath: submitted.path,
+                publishClick: submitted.click,
+                publishSignal: url.includes(PUBLISHED_MARKER) ? `url:${PUBLISHED_MARKER}` : 'toast',
+                ...captureMetadata(capture),
+            },
+        });
+    } finally {
+        outcomeCapture.dispose();
     }
-    const url = deps.page.url();
-    return ResultSchema.parse({
-        ok: true,
-        target: TARGET,
-        ...(url !== PUBLISH_URL ? { url } : {}),
-        message: `${TARGET} ${input.operation} post published`,
-        metadata: {
-            ...baseMetadata(input, deps),
-            publishControl: submitted.label,
-            publishPath: submitted.path,
-            publishClick: submitted.click,
-            publishSignal: url.includes(PUBLISHED_MARKER) ? `url:${PUBLISHED_MARKER}` : 'toast',
-            ...captureMetadata(capture),
-        },
-    });
 }
 
 /** What the reopened draft must show for the save to count as server-side complete (R3). */

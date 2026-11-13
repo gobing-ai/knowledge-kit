@@ -33,7 +33,7 @@ import {
 /**
  * The xhs publish CHANNEL (ADR-029): one plugin, four mode `operations`.
  *
- * This module owns what is channel-level — the profile dir, the session preflight and its
+ * This module owns what is channel-level — the profile dir, the session readiness gate and its
  * ADR-025 automation guard, the ADR-029 operation dispatch and pre-browser validation, the
  * browser launch seam and the `Content → Result` mapping. The modes themselves (entry, artifacts,
  * selectors, save/publish flow) live in `./modes` and `./flow`.
@@ -42,18 +42,8 @@ import {
 export const CHANNEL = 'xhs';
 export { PUBLISH_URL };
 export const LOGIN_TIMEOUT_MS = 120_000;
-/**
- * Headless session-preflight deadline (ADR-025): the step scale, not the 120s interactive login
- * wait. A preflight must fail fast — the point is to avoid a headed visit entirely.
- */
-/**
- * Publish-path session budget. 30s refused profiles that the read-only probe verifies in 60-90s
- * (`kk plugin check xhs-pub --timeout 90000` verified the same profile 40min after a publish
- * preflight refused at 30s on 2026-11-12), and the check retries a headless pass headed — so the
- * probe's budget is two passes, not one. A genuinely expired session still refuses; it just takes
- * the same time the operator's own check takes.
- */
-const PREFLIGHT_TIMEOUT_MS = 90_000;
+/** Bounded readiness inside the single headed visit; interactive login has its own longer wait. */
+export const PREFLIGHT_TIMEOUT_MS = 90_000;
 /** The console drops a submit click that lands while the note is still settling (live run 2026-09-25). */
 const SUBMIT_SETTLE_MS = 2_500;
 const SUBMIT_ATTEMPTS = 3;
@@ -242,24 +232,12 @@ export interface SessionCheckOptions {
     profileDir: string;
     timeoutMs?: number;
     launcher?: BrowserLauncher;
-    /** 0216: skip the headless pass and probe headed only (manual `check --headed`). */
+    /** Compatibility option; XHS session probes always run headed. */
     headedOnly?: boolean;
 }
 
-/**
- * Read-only login gate over the shared session check: XHS owns the console URL and the readiness
- * predicate, `@gobing-ai/publish-harness/browser` owns the single headless probe, the headed retry
- * and the verdict text. `withProfilePage` closes the context on every exit path, and the upstream
- * launcher never creates a profile headless, so a check can neither fabricate a session nor leave a
- * browser behind.
- *
- * ADR-025: this is the publish preflight. The headed visit is only attempted once it says
- * `verified`, which is what turns "no session" from a 120s headed login wait into a fast refusal.
- */
+/** The explicit `check --headed` probe; ordinary checks read bot metadata without a browser. */
 export async function checkXhsProfileSession(opts: SessionCheckOptions): Promise<ProfileSessionCheck> {
-    // XHS bot-walls and slow-walls headless loads (observed 2026-09-29: headless auth never
-    // confirms while the same profile reads ready in 27s headed), which is why the shared check
-    // retries a headless refusal once headed — still read-only, before any publish action.
     return checkChannelSession(
         {
             channel: CHANNEL,
@@ -270,7 +248,7 @@ export async function checkXhsProfileSession(opts: SessionCheckOptions): Promise
             profileDir: opts.profileDir,
             launcher: opts.launcher,
             timeoutMs: opts.timeoutMs ?? PREFLIGHT_TIMEOUT_MS,
-            headedOnly: opts.headedOnly === true,
+            headedOnly: true,
         },
     );
 }
@@ -278,13 +256,12 @@ export async function checkXhsProfileSession(opts: SessionCheckOptions): Promise
 export class XhsBrowserTransport implements PublishTransport {
     public readonly kind = 'browser';
     public readonly driver: BrowserDriverName;
-    private readonly loginTimeoutMs: number;
+    private readonly readinessTimeoutMs: number;
     private readonly stepTimeoutMs: number;
     private readonly submitSettleMs: number;
     private readonly submitAttempts: number;
     private readonly openPage: OpenPage;
     private readonly automation: AutomationGuard;
-    private readonly preflight: (profileDir: string) => Promise<ProfileSessionCheck>;
 
     constructor(
         driver: BrowserDriverName = 'script',
@@ -296,23 +273,20 @@ export class XhsBrowserTransport implements PublishTransport {
             openPage?: OpenPage;
             /** ADR-025 automation-risk guard; defaults to the real 2h-capped state file. */
             automation?: AutomationGuard;
-            /** ADR-025 headless session preflight; defaults to `checkXhsProfileSession`. */
-            preflight?: (profileDir: string) => Promise<ProfileSessionCheck>;
         },
     ) {
         this.driver = driver;
-        this.loginTimeoutMs = opts?.loginTimeoutMs ?? LOGIN_TIMEOUT_MS;
+        this.readinessTimeoutMs = Math.min(opts?.loginTimeoutMs ?? PREFLIGHT_TIMEOUT_MS, PREFLIGHT_TIMEOUT_MS);
         this.stepTimeoutMs = opts?.stepTimeoutMs ?? STEP_TIMEOUT_MS;
         this.submitSettleMs = opts?.submitSettleMs ?? SUBMIT_SETTLE_MS;
         this.submitAttempts = opts?.submitAttempts ?? SUBMIT_ATTEMPTS;
         this.openPage = opts?.openPage ?? defaultOpenPage;
         this.automation = opts?.automation ?? createAutomationGuard();
-        this.preflight = opts?.preflight ?? ((profileDir) => checkXhsProfileSession({ profileDir }));
     }
 
     /**
      * Publish through the console. Everything that can be decided without a browser is decided
-     * first (driver, operation, artifacts, limits, publishStatus, budget, session), so an
+     * first (driver, operation, artifacts, limits, publishStatus, budget), so an
      * impossible or misrouted run never opens — let alone touches — a real console.
      */
     public async publish(payload: PublishTransportPayload): Promise<Result> {
@@ -343,22 +317,12 @@ export class XhsBrowserTransport implements PublishTransport {
         const override = typeof payload.options?.profileDir === 'string' ? payload.options.profileDir : undefined;
         const profileDir = resolveChannelProfileDir(CHANNEL, override);
 
-        // ADR-025 automation guard — both gates run before any browser opens.
+        // ADR-025 automation guard runs before the single headed visit.
         // 1. Frequency cap: the operator's platform warning makes a repeated console visit an
         //    account-level risk, not merely a failed run. The cap counts VISITS: one allow/record
         //    per visit covers every note the visit composes.
         const cap = this.automation.allow('publish');
         if (!cap.allowed) return refuse(`automation cap: ${cap.reason}`);
-        // 2. Headless session preflight: an unauthenticated profile must never produce a headed
-        //    visit. The upstream launcher refuses a missing profile headless, so this replaces the
-        //    previous behaviour — a headed window waiting out the 120s login gate.
-        const session = await this.preflight(profileDir);
-        if (session.status !== 'verified') {
-            return refuse(`session preflight refused (no headed visit attempted): ${session.detail}`);
-        }
-        // Consumed at the headed launch, not at the attempt: a refusal above leaves the window
-        // intact so the operator can log in and retry the same day.
-        this.automation.record('publish');
 
         let opened: OpenedPage;
         try {
@@ -366,6 +330,9 @@ export class XhsBrowserTransport implements PublishTransport {
         } catch (error) {
             return refuse(error instanceof Error ? error.message : String(error));
         }
+        // A readiness refusal still costs a visit; recovery uses the uncapped `kk bot login xhs`.
+        // Record only after the opener succeeds: a failed browser launch made no console visit.
+        this.automation.record('publish');
         const { page, close } = opened;
         try {
             // The visit's own Result is the primary operation's: a failed primary ends the visit, as
@@ -402,21 +369,31 @@ export class XhsBrowserTransport implements PublishTransport {
      * a failed follow-up from failing the visit (ADR-025 amendment 2026-10-09).
      */
     private async runStep(input: ModeInput, content: Content, page: XhsPage, profileDir: string): Promise<Result> {
-        const act = async <T>(what: string, fn: () => Promise<T>): Promise<T> => {
-            try {
-                return await fn();
-            } catch (error) {
-                throw new Error(`${what}: ${error instanceof Error ? error.message : String(error)}`);
-            }
-        };
         try {
-            await act('creator page goto', () => page.goto(PUBLISH_URL, { timeout: this.loginTimeoutMs }));
-
-            const gated = await waitUntil(() => isXhsConsoleReady(page), this.loginTimeoutMs);
-            if (!gated) {
+            const started = Date.now();
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            try {
+                const ready = async (): Promise<boolean> => {
+                    await page.goto(PUBLISH_URL, { timeout: this.readinessTimeoutMs });
+                    return waitUntil(
+                        () => isXhsConsoleReady(page),
+                        Math.max(0, this.readinessTimeoutMs - (Date.now() - started)),
+                        Math.min(500, this.readinessTimeoutMs),
+                    );
+                };
+                const gated = await Promise.race([
+                    ready(),
+                    new Promise<boolean>((resolve) => {
+                        timer = setTimeout(() => resolve(false), this.readinessTimeoutMs);
+                    }),
+                ]);
+                if (!gated) throw new Error(`no authenticated console after ${this.readinessTimeoutMs}ms`);
+            } catch (error) {
                 return refuse(
-                    `login timeout after ${this.loginTimeoutMs}ms: no authenticated ${CHANNEL} creator console in ${profileDir}`,
+                    `session readiness refused: ${error instanceof Error ? error.message : String(error)} in ${profileDir} — run kk bot login xhs`,
                 );
+            } finally {
+                clearTimeout(timer);
             }
 
             const publishStatus = content.metadata?.publishStatus === 'public' ? 'public' : 'draft';
