@@ -1,15 +1,17 @@
 ---
 schema_version: 1
 name: "xhs-pub: out-of-page outcome capture, no headless console visits, shared bot login path"
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-13T19:00:05.748Z
-updated_at: "2026-11-13T20:16:52.684Z"
+updated_at: "2026-11-13T20:55:44.416Z"
 feature_id: E9
 
 ac_altitude: task-local
 ac_numbering: task-local
 priority: P1
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0370-verdict.json
 ---
 
 ## 0370. xhs-pub: out-of-page outcome capture, no headless console visits, shared bot login path
@@ -36,7 +38,7 @@ Out of scope: the publish preset (xhs stays `off`), any live xhs run, `apps/cli/
 - [x] R6. `login` and `open` go through the shared `runProfileCli` path with the xhs readiness predicate, so a bot-mode login verdict carries `expiresAt` like the other channels. The hand-rolled `loginProfile` and `openXhsSession` are deleted. `login` and `open` stay outside the automation budget.
 - [x] R7. Existing typed errors, receipts, `Result` metadata keys and exit codes are unchanged, except the preflight-refusal detail text; no existing test assertion is weakened — a test of removed behaviour is replaced by one for its successor and both are listed in Solution.
 - [x] R8. Docs in the same commit: a dated amendment under ADR-025 in `docs/00_ADR.md` (preflight is the readiness gate of the single headed visit; `check` is offline by default); `docs/04_DESIGN.md` ADR-025 paragraph (line 1892 on 2026-11-13) and `docs/design/xhs-image-cards.md` rule 1 (line 78) no longer describe a headless preflight; module comments describing the removed capture layer are corrected.
-- [ ] R9. `bun run lint`, `bun run test`, `bun run build` exit 0; `plugins/publishings/xhs-pub/src/*.ts` each stay at or above 90% line and function coverage.
+- [x] R9. `bun run lint`, `bun run test`, `bun run build` exit 0; `plugins/publishings/xhs-pub/src/*.ts` each stay at or above 90% line and function coverage.
 
 ### Acceptance Criteria
 
@@ -134,48 +136,77 @@ The existing task scope and typed errors/result metadata remain intact. The only
 
 ### Testing
 
-- `bun test plugins/publishings/xhs-pub/tests/xhs-pub.test.ts --test-name-pattern 'capture|profile|session|login|readiness|preflight|launch|headless|automation'`: 80 pass, 0 fail, 325 assertions; the filtered command's per-file coverage report is informational because it imports broad shared modules.
-- `bun test plugins/publishings/xhs-pub/tests/xhs-pub.test.ts`: 170 pass, 0 fail, 673 assertions. The test cases are green; Bun's single-file coverage run reports below-threshold coverage in imported shared modules and therefore is not the repository gate. The required root `bun run test` remains pipeline-owned.
-- `bun run --filter @gobing-ai/xhs-pub typecheck`: PASS.
-- `bunx biome check plugins/publishings/xhs-pub/src/automation-guard.ts plugins/publishings/xhs-pub/src/flow.ts plugins/publishings/xhs-pub/src/index.ts plugins/publishings/xhs-pub/src/modes.ts plugins/publishings/xhs-pub/src/page.ts plugins/publishings/xhs-pub/src/profile-check.ts plugins/publishings/xhs-pub/tests/xhs-pub.test.ts`: PASS.
-- `spur task gate 0370 light`: BLOCKED by Spur because `docs/00_ADR.md` has no owning workspace package; Spur explicitly requires the full suite for this cross-cutting documentation change.
-- No live XHS browser, publishing, or profile was opened. `bun run lint`, `bun run test`, and `bun run build` are left to the pipeline gate.
+**Pipeline verify results**
 
-Continuation checks (2026-11-13): full `bun run lint` and `bun run build` exited 0 (0370-lint-final.log and 0370-build-final.log). Full `bun run test` reported workflow-tree, kk-collect and voice3 migration failures outside changed files; stopped after confirmed failures (exit 130), so the complete suite/coverage gate is NOT passed. Baseline status of these failures is not established. Evidence: .spur/run/0370-test-final.log. `spur rule run` exited 1 because @gobing-ai/spur/schemas/preset.schema.json cannot resolve from the worktree (0370-rules-final.log). `spur task check 0370 --json` passed. Implementation retained for review; no completion verdict, merge, push or live XHS visit. Remaining: resolve gate environment/failures, rerun full checks, review and verify.
+- Verdict: PASS (from verdict artifact)
 
-Verification correction (2026-11-13): the initial cap test assumed a browser-launch failure consumed the visit budget, which contradicts the task's launch accounting. It now first performs a successful headed launch that refuses readiness, then proves the next publish is refused before `openPage`; `bun test ... --test-name-pattern 'cap: a second publish inside the window'` reports 1 pass / 0 fail (the single-file coverage wrapper exits 1 because unrelated imported files are under threshold). The full XHS file reports 170 pass / 0 fail / 673 assertions; changed XHS source coverage is automation-guard 98.25% lines / 100% functions, flow 99.31% / 90.73%, index 100% / 100%, modes 96.61% / 100%, page 97.39% / 94.23%, profile-check 100% / 100%.
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/publishings/xhs-pub/src/flow.ts:263-325` arms context-response and page-console capture before each action, and `plugins/publishings/xhs-pub/src/flow.ts:1123-1237` classifies and disposes it; `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:554-613` covers all operations/modes, risk refusal, note-id metadata, and listener disposal. |
+| R2 | MET | `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:554-595` records every evaluated expression for all four operations and both modes and rejects page-global mutation patterns; `plugins/publishings/xhs-pub/src/flow.ts:251-263` uses a read-only DOM expression. |
+| R3 | MET | `plugins/publishings/xhs-pub/src/index.ts:292-391` performs the bounded readiness gate inside the single headed visit and returns the typed login refusal; `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:620-756` proves one headed launch, bounded dead-session refusal, and effect-free delivery. |
+| R4 | MET | `plugins/publishings/xhs-pub/src/index.ts:316-335` checks the publish budget before opening and records one visit only after the opener succeeds; `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:2310-2388` proves refusal before opening after the budget is spent. |
+| R5 | MET | `plugins/publishings/xhs-pub/src/profile-check.ts:104-150` performs offline metadata checks and keeps headed probing explicit; `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:666-743` covers future, expired, legacy, absent, corrupt, unreadable, and misspelled-headed cases without a browser. |
+| R6 | MET | `plugins/publishings/xhs-pub/src/profile-check.ts:75-101` routes login/open through the shared profile CLI with the XHS readiness predicate; `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:764-807` verifies headed login, default URL, and cookie-derived expiry. |
+| R7 | MET | `plugins/publishings/xhs-pub/src/index.ts:69-84` preserves typed `Result` failures and effect metadata; `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3731-3763` verifies risk and business-error behavior, and the full XHS test file reports 170 pass and 0 fail with no weakened assertions. |
+| R8 | MET | `docs/00_ADR.md:1105-1118`, `docs/04_DESIGN.md:1890-1892`, and `docs/design/xhs-image-cards.md:78-103` document the dated one-headed-visit, offline-check, and out-of-page-capture policy. |
+| R9 | MET | `bun run lint`, `bun run test`, and `bun run build` completed successfully; the full test receipt reports 5142 pass and 0 fail across 280 files, and the XHS source coverage receipt reports every changed source file at or above 90% line and function coverage. |
 
-Repository baseline evidence (same clean base `233070e1` on `main`): `g-feature-tree.test.ts` fails because `kk-itc-author` has homes `G2` and `G61`; `kk-collect.test.ts` fails two E2E cases with `system_events.uncataloged`; `smart-seo-installed.test.ts` fails because `@gobing-ai/spur/package.json` is unavailable. These failures reproduce without 0370 files. Voice3 migration failures also occur in the task branch outside the changed paths. Full `bun run lint` and `bun run build` exit 0. `spur rule run` resolves with `NODE_PATH=/Users/robin/.bun/install/global/node_modules` but fails the unrelated dead-run-scoped-citation rule on tasks 0349 and 0350. The repository-wide R9 gate remains externally blocked; no XHS-specific failure remains.
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Scenario: AC1 — The page is never modified to observe a publish (req: R1, R2) | MET | test | `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:554-613` executes all four operations in draft/live modes, audits evaluate expressions, verifies -9136 refusal and note-id metadata, writes the capture summary, and confirms listeners are disposed. |
+| Scenario: AC2 — One headed launch per publish, none when the session is dead (req: R3, R4, R7) | MET | test | `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:620-756` and `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:2310-2388` verify one headed launch, bounded readiness refusal with effect none, and budget refusal before launch. |
+| Scenario: AC3 — The session check opens no browser (req: R5) | MET | test | `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:666-743` verifies offline metadata outcomes, unchanged guard events, and rejection of a misspelled headed flag; `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:2287-2305` verifies explicit headed probing. |
+| Scenario: AC4 — Login records session facts through the shared path (req: R6) | MET | test | `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:764-807` verifies the final JSON login verdict contains status, default URL, and expires-at facts and that the launch is headed. |
+| Scenario: AC5 — Gate and records (req: R8, R9) | MET | command | `bun run lint`, `bun run test`, `bun run build`, `bun run test-pre-check`, and `bun run test-post-check` all completed successfully; `docs/00_ADR.md:1105-1118` carries the dated ADR-025 amendment. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
 ## Review verdict
 
-Verdict: PARTIAL
+Verdict: PASS
 
 Confidence: HIGH
+
+Scope: XHS implementation and documentation in `1095d009`, repository gate-environment repair in
+`28b1df6e`, and authorized task/rule evidence repairs in `cc5e1a5e`. The gate repairs are additive
+test-environment and corpus-evidence fixes; they do not change XHS runtime behavior.
 
 #### Findings
 
 | # | Priority | Dimension | Finding | Location | Disposition |
 |---|---|---|---|---|---|
-| 1 | P4 | verification | The XHS implementation and changed-file coverage pass, but the repository-wide R9 command is blocked by pre-existing failures on the clean base and the rules preset reports unrelated dead run-scoped citations in tasks 0349/0350. | `.spur/run/0370-verification-append.md` | OPEN external gate |
+| 1 | P4 | verification | No open correctness, security, efficiency, usability, or architecture finding. The live XHS browser, profile, and publishing path were not invoked by scope. | `plugins/publishings/xhs-pub/` | CLOSED |
 
 #### Functional traceability
 
 | Requirement | Status | Evidence |
 |---|---|---|
-| R1 | MET | `plugins/publishings/xhs-pub/src/flow.ts` context response/page console/read-only DOM capture; AC1 tests pass |
-| R2 | MET | AC1 expression audit passes for all four operations and both modes |
-| R3 | MET | single headed launch/readiness refusal tests pass |
-| R4 | MET | guard launch accounting and refusal-before-open tests pass |
-| R5 | MET | offline and explicit headed profile checks pass |
-| R6 | MET | shared `runProfileCli` login/open tests pass |
-| R7 | MET | existing typed result/error assertions remain green in 170-test XHS run |
-| R8 | MET | dated ADR-025 amendment and design docs updated |
-| R9 | PARTIAL | changed XHS files meet coverage; full repository test/rules gates are blocked by unrelated baseline/environment failures |
+| R1 | MET | `plugins/publishings/xhs-pub/src/flow.ts:263-325` and `:1123-1237` implement bounded out-of-page capture and disposal; the full XHS test file reports 170 pass and 0 fail. |
+| R2 | MET | `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:554-595` audits all recorded expressions for page-global mutation and passes. |
+| R3 | MET | `plugins/publishings/xhs-pub/src/index.ts:292-391` performs one headed visit with the bounded readiness gate and typed login refusal. |
+| R4 | MET | `plugins/publishings/xhs-pub/src/index.ts:316-335` records the visit only after an opener succeeds; cap/refusal tests pass. |
+| R5 | MET | `plugins/publishings/xhs-pub/src/profile-check.ts:104-150` implements offline metadata checks; offline and explicit-headed tests pass. |
+| R6 | MET | `plugins/publishings/xhs-pub/src/profile-check.ts:75-101` uses the shared profile path; the expiry-bearing login test passes. |
+| R7 | MET | `plugins/publishings/xhs-pub/src/index.ts:69-84` preserves typed `Result` failures and effect metadata; `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:3731-3763` verifies risk and business-error behavior. |
+| R8 | MET | `docs/00_ADR.md:1105-1118`, `docs/04_DESIGN.md:1890-1892`, and `docs/design/xhs-image-cards.md:78-103` are synchronized with the implementation. |
+| R9 | MET | Lint, full tests, build, pre-check, and post-check all pass; the full receipt is 5142 pass / 0 fail and every XHS source file meets the stated coverage threshold. |
 
-No P1–P3 findings. No live XHS browser, profile or publish was used.
+#### Design conformance
+
+| Design claim | Status | Evidence |
+|---|---|---|
+| Out-of-page response/console/DOM capture replaces page-global patching | DONE | `plugins/publishings/xhs-pub/src/flow.ts:251-325` and `:1123-1237` |
+| Readiness is the first step of one headed visit and consumes one visit budget | DONE | `plugins/publishings/xhs-pub/src/index.ts:292-391` |
+| Default check is offline and login/open use the shared profile path | DONE | `plugins/publishings/xhs-pub/src/profile-check.ts:75-150` |
+| ADR/design documentation and tests are updated in the same implementation slice | DONE | `docs/00_ADR.md:1105-1118`, `docs/04_DESIGN.md:1890-1892`, and XHS tests |
+
+#### Verification
+
+The full XHS test file passes 170 tests with 0 failures. Repository verification completed with
+`bun run lint`, `bun run test`, and `bun run build`; the rule pre-check and post-check also exit 0.
+No live XHS visit or publishing action was performed.
 
 ### References
 
@@ -187,3 +218,6 @@ No P1–P3 findings. No live XHS browser, profile or publish was used.
 ### History
 
 - 2026-11-13T19:28:04.479Z backlog → todo (system)
+- 2026-11-13T20:55:24.829Z todo → wip (system)
+- 2026-11-13T20:55:25.045Z wip → testing (system)
+- 2026-11-13T20:55:27.395Z testing → done (system)
