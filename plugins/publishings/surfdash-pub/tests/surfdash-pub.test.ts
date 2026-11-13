@@ -1971,6 +1971,9 @@ describe('publishPost cover validation (Item 2)', () => {
             expect(result.ok).toBe(false);
             expect(result.error).toContain('metadata.coverImage not found:');
             expect(result.metadata?.deliveryState).toBe('not-sent');
+            // The publish-matrix receipt only reads the reserved itcDelivery evidence: without it a
+            // pre-dispatch refusal is effect-unknown and can never be retried (2026-11-12 dogfood).
+            expect(result.metadata?.itcDelivery).toEqual({ schemaVersion: 1, effect: 'none' });
             expect(existsSync(join(tmpDir, 'content', 'posts', 'articles', 'zh'))).toBe(false);
         } finally {
             delete process.env.POSTSURFING_BIN;

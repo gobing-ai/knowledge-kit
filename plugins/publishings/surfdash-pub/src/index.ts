@@ -218,9 +218,24 @@ function fail(error: string): Result {
 
 type DeliveryState = 'not-sent' | 'uncertain';
 
-/** A failed publish is replay-safe only when it was rejected before postsurfing was invoked. */
+/**
+ * A failed publish is replay-safe only when it was rejected before postsurfing was invoked.
+ *
+ * Both keys are emitted on purpose: the voice2 daily stages read `deliveryState`, while the publish
+ * matrix receipts only accept the reserved `metadata.itcDelivery` evidence (task 0302, docs/04 §itc).
+ * Without the second key a pre-dispatch refusal was recorded as `effect: unknown`, so the row could
+ * never be retried even after the operator fixed the cause (2026-11-12 daily publish dogfood).
+ */
 function failWithDeliveryState(error: string, deliveryState: DeliveryState): Result {
-    return ResultSchema.parse({ ok: false, target: TARGET, error, metadata: { deliveryState } });
+    return ResultSchema.parse({
+        ok: false,
+        target: TARGET,
+        error,
+        metadata: {
+            deliveryState,
+            itcDelivery: { schemaVersion: 1, effect: deliveryState === 'not-sent' ? 'none' : 'unknown' },
+        },
+    });
 }
 
 function failNotSent(error: string): Result {
