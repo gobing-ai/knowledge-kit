@@ -67,7 +67,7 @@
             "operation": "上传图文",
             "variant": "cards",
             "tier": 3,
-            "window": "after-generate",
+            "window": "cn-peak",
             "mode": "off"
         },
         {

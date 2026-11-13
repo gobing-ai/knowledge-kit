@@ -100,6 +100,9 @@ function fixture(name: string): Fixture {
             '      - name: kk-daily-publish3',
             "        cron: '0 7 * * *'",
             '        command: bun scripts/daily-ai-news.ts publish --window overseas-rss --unattended',
+            '      - name: kk-daily-publish3-cn-peak',
+            "        cron: '0 17 * * *'",
+            '        command: bun scripts/daily-ai-news.ts publish --window cn-peak --unattended',
             '',
         ].join('\n'),
     );

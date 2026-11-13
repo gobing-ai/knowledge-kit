@@ -866,8 +866,12 @@ async function validate(args: string[]): Promise<number> {
         const jobs = Array.isArray(scheduler.jobs) ? scheduler.jobs : [];
         const daily = jobs.find((job) => job.name === 'kk-daily-ai-voice');
         const publishJob = jobs.find((job) => job.name === 'kk-daily-publish3');
+        // The cn-peak window (微博 头条文章) had no entry until 2026-11-12, so its live rows only
+        // shipped on a manual launch; the posture check now requires the job, not just the template.
+        const cnPeakJob = jobs.find((job) => job.name === 'kk-daily-publish3-cn-peak');
         const dailyCommand = typeof daily?.command === 'string' ? daily.command : '';
         const publishCommand = typeof publishJob?.command === 'string' ? publishJob.command : '';
+        const cnPeakCommand = typeof cnPeakJob?.command === 'string' ? cnPeakJob.command : '';
         const activeWindowLine = (window: string): boolean => {
             const path = join(
                 REPO,
@@ -889,6 +893,8 @@ async function validate(args: string[]): Promise<number> {
             dailyCommand.includes('bun scripts/daily-ai-news.ts generate --full') &&
             publishJob?.cron === '0 7 * * *' &&
             publishCommand.includes('bun scripts/daily-ai-news.ts publish --window overseas-rss --unattended') &&
+            cnPeakJob?.cron === '0 17 * * *' &&
+            cnPeakCommand.includes('bun scripts/daily-ai-news.ts publish --window cn-peak --unattended') &&
             activeWindowLine('cn-peak') &&
             activeWindowLine('overseas-rss');
     } catch {

@@ -157,9 +157,7 @@ bootstrap:
 
       # 07:00 daily: the publish3 `overseas-rss` window (design kk-daily-ai-voice3 §5a) — X/Threads
       # overseas targets behind the podcast RSS gate, the first of the two scheduled windows to ship
-      # (after-generate is nested in the 04:30 voice3 run; cn-peak at 09:00 Asia/Shanghai is
-      # deliberately NOT here — firing it at 07:00 would make its wait-until node sleep ~10h inside
-      # this job; it gets its own ~17:00-local entry when its rows go live). The window launcher is
+      # (after-generate is nested in the 04:30 voice3 run). The window launcher is
       # plugins/kk/scripts/voice3-publish-window.ts (cron-safe LA date math: overseas reads YESTERDAY's
       # generation bundle, per R1). Unattended-safe because every overseas row is dummy/off in the
       # pinned daily-ai-voice preset — no live row means the send-confirm pause never fires.
@@ -176,6 +174,18 @@ bootstrap:
         cron: "0 7 * * *"
         timeoutMs: 21600000
         command: bun scripts/daily-ai-news.ts publish --window overseas-rss --unattended
+
+      # 17:00 local daily: the publish3 `cn-peak` window (design kk-daily-ai-voice3 §5a) — the
+      # domestic rows with no draftable rail (微博 头条文章). 17:00 America/Los_Angeles is 09:00
+      # Asia/Shanghai in PST and 08:00 in PDT, so the window's own `wait-until 09:00 Asia/Shanghai`
+      # node sleeps at most 1h and the entry never needs editing twice a year. Until 2026-11-12 this
+      # entry did not exist: the preset's cn-peak rows were live but nothing ever fired the window,
+      # so the 微博 article only published when an operator launched it by hand (the 11-12 run at
+      # 16:53 local was exactly that).
+      - name: kk-daily-publish3-cn-peak
+        cron: "0 17 * * *"
+        timeoutMs: 21600000
+        command: bun scripts/daily-ai-news.ts publish --window cn-peak --unattended
 
       # 04:05, 10:05, 16:05, 22:05 daily: kk-collect standalone 6-hourly collection
       # into the kk store (aihot + last30days + horizon -> store ingest -> label).

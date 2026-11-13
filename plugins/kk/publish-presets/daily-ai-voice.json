@@ -64,18 +64,18 @@
             "mode": "off"
         },
         {
-            "plugin": "xhs-pub",
-            "operation": "上传图文",
-            "variant": "cards",
-            "tier": 3,
-            "window": "after-generate",
-            "mode": "live"
-        },
-        {
             "plugin": "weibo-pub",
             "operation": "article",
             "variant": "article",
             "tier": 2,
+            "window": "cn-peak",
+            "mode": "live"
+        },
+        {
+            "plugin": "xhs-pub",
+            "operation": "上传图文",
+            "variant": "cards",
+            "tier": 3,
             "window": "cn-peak",
             "mode": "live"
         },
