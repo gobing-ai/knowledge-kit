@@ -20,6 +20,7 @@ import type { Browser } from 'playwright';
 import {
     assertEligibleCgiDraft,
     buildCreateArticlePayload,
+    certifyCgiDraft,
     createWechatArticleDraft,
     extractWechatCgiSession,
     WechatCgiDraftError,
@@ -118,6 +119,21 @@ describe('CGI draft eligibility gate (pure)', () => {
             const caught = captureDraft(() => assertEligibleCgiDraft(cgiContent({ [key]: {} })));
             expect(caught?.code, `metadata key ${key}`).toBe('ineligible');
         }
+    });
+
+    test('the repo-wide coverImage and a brief description stay eligible', () => {
+        // `itc-materialize-plan` writes coverImage; a brief carries description. Rejecting either one
+        // dropped a plain pipeline article onto the DOM flow, where the cover is only resolvable from
+        // a 图片库 material the daily audio rail seeded — so the article lost its cover (2026-11-12).
+        expect(() =>
+            assertEligibleCgiDraft(cgiContent({ coverImage: '/tmp/cover.png', description: 'Google 发布 A2UI 1.0' })),
+        ).not.toThrow();
+    });
+
+    test('a description fills the 摘要 when no digest is set', () => {
+        expect(certifyCgiDraft(cgiContent({ description: 'brief 摘要' })).digest).toBe('brief 摘要');
+        expect(certifyCgiDraft(cgiContent({ digest: '显式摘要', description: 'brief 摘要' })).digest).toBe('显式摘要');
+        expect(certifyCgiDraft(cgiContent({})).digest).toBe('');
     });
 
     test('a non-string digest or author refuses as ineligible', () => {

@@ -74,6 +74,12 @@ const ALLOWED_METADATA_KEYS: ReadonlySet<string> = new Set([
     'categories',
     'coverPath',
     'images',
+    // Repo-wide single-cover convention (`itc-materialize-plan` writes it; surfdash and xhs read the
+    // same key) and the excerpt a brief carries. Without these two a plain pipeline article was
+    // ineligible, fell to the DOM flow, and lost its cover: the DOM flow's default `coverSource:
+    // 'library'` only resolves a material that the daily audio rail already seeded (2026-11-12).
+    'coverImage',
+    'description',
 ]);
 
 function isNonemptyString(value: unknown): value is string {
@@ -85,7 +91,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Deterministic certification of the plain-article shape; never mutates content. */
-function certifyCgiDraft(content: Content): CgiDraftEligibility {
+export function certifyCgiDraft(content: Content): CgiDraftEligibility {
     const metadata = content.metadata ?? {};
     function refuse(detail: string): never {
         throw new WechatCgiDraftError(
@@ -122,7 +128,13 @@ function certifyCgiDraft(content: Content): CgiDraftEligibility {
         publishStatus: 'draft',
         title: content.title,
         body: content.body,
-        digest: typeof metadata.digest === 'string' ? metadata.digest : '',
+        // 摘要 is 选填; a brief's `description` is the same role, so it fills an absent digest.
+        digest:
+            typeof metadata.digest === 'string' && metadata.digest.length > 0
+                ? metadata.digest
+                : typeof metadata.description === 'string'
+                  ? metadata.description
+                  : '',
         author: typeof metadata.author === 'string' ? metadata.author : '',
     };
 }

@@ -1,4 +1,5 @@
-import { dirname } from 'node:path';
+import { existsSync } from 'node:fs';
+import { dirname, isAbsolute } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import {
@@ -65,6 +66,11 @@ export const SELECTORS = {
     title: ['input[placeholder="请输入标题"]', 'input[placeholder*="标题"]'],
     body: ['.ProseMirror[contenteditable="true"]', '[contenteditable="true"]'],
     live: ['div.submit-btn'],
+    /** 封面 is the draft's own upload control (measured 2026-11-12: `.upload-action` 上传封面 + a
+     *  visible `input[type=file][accept="image/*"]`), so an article can carry a cover here. */
+    coverUpload: ['.upload-action', 'text=上传封面'],
+    coverFile: ['input[type="file"][accept="image/*"]', 'input.Upload_file_EkxQo'],
+    coverPreview: ['.upload-action img', '[class*="cover" i] img', '[class*="Cover" i] img'],
 } as const;
 
 /**
@@ -208,6 +214,36 @@ export function resolveOperation(
     return { operation: raw as InfoqOperation };
 }
 
+/**
+ * Attach the draft's 封面; a warning string instead of a throw, because a cover improves the post
+ * rather than gating it. Returns `null` when nothing was requested and when the upload visibly
+ * landed (a cover image appears in the upload block).
+ */
+async function attachCover(page: Page, content: Content, timeoutMs: number): Promise<string | null> {
+    const coverPath = content.metadata?.coverImage;
+    if (coverPath === undefined) return null;
+    if (typeof coverPath !== 'string' || coverPath.trim() === '') {
+        return `cover: metadata.coverImage must be a non-empty local path, got '${String(coverPath)}'`;
+    }
+    if (!isAbsolute(coverPath) || !existsSync(coverPath)) {
+        return `cover: metadata.coverImage is not a readable absolute path: ${coverPath}`;
+    }
+    const input = await trySelectors(page, SELECTORS.coverFile, { visible: false });
+    if (!input.found || input.selector === null) {
+        const opener = await trySelectors(page, SELECTORS.coverUpload, { visible: true });
+        if (!opener.found || opener.selector === null) {
+            return 'cover: the editor exposed no 上传封面 control — cover not attached';
+        }
+    }
+    const fileSelector = input.selector ?? SELECTORS.coverFile[0];
+    await page.locator(fileSelector).first().setInputFiles(coverPath);
+    const shown = await waitUntil(
+        async () => (await page.locator(SELECTORS.coverPreview[0]).count()) > 0,
+        Math.min(timeoutMs, 20_000),
+    );
+    return shown ? null : 'cover: the upload landed but the editor shows no cover preview';
+}
+
 export class InfoqBrowserTransport implements PublishTransport {
     public readonly kind = 'browser';
     public readonly driver: BrowserDriver;
@@ -326,6 +362,10 @@ export class InfoqBrowserTransport implements PublishTransport {
                 bodySelector,
             )
             .catch(() => {});
+
+        // 封面 rides the same draft: set it before the save signal so one save covers both.
+        const coverWarning = await attachCover(page, content, this.stepTimeoutMs);
+        if (coverWarning !== null) Object.assign(metadata, { warnings: [coverWarning] });
 
         // Signal = the autosave 已保存 indicator, measured within ~6 s of paste (0201 walk);
         // the 30 s default window is the 5× margin (see STEP_TIMEOUT_MS).
