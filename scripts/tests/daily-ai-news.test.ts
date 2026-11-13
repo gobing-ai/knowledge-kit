@@ -59,6 +59,8 @@ interface Fixture {
     works: string;
     bin: string;
     config: string;
+    /** Pinned `.spur/config.yaml` twin: the posture check must not read the operator's live switch. */
+    spurConfig: string;
     dayDir: string;
     actions: string;
 }
@@ -84,7 +86,24 @@ function fixture(name: string): Fixture {
         config,
         `works_dir: ${JSON.stringify(works)}\nstore:\n  db_path: ${JSON.stringify(join(root, 'kk.db'))}\n  labels:\n    priority: ['*', heuristic]\n    min_confidence: 0.8\n    decisions:\n      kk-item-china-politics:\n        priority: [keyword, '*', heuristic]\n`,
     );
-    return { root, works, bin, config, dayDir, actions: join(root, 'actions.jsonl') };
+    const spurConfig = join(root, 'spur-config.yaml');
+    writeFileSync(
+        spurConfig,
+        [
+            'bootstrap:',
+            '  scheduler:',
+            '    enabled: true',
+            '    jobs:',
+            '      - name: kk-daily-ai-voice',
+            "        cron: '30 4 * * *'",
+            '        command: bun scripts/daily-ai-news.ts generate --full',
+            '      - name: kk-daily-publish3',
+            "        cron: '0 7 * * *'",
+            '        command: bun scripts/daily-ai-news.ts publish --window overseas-rss --unattended',
+            '',
+        ].join('\n'),
+    );
+    return { root, works, bin, config, spurConfig, dayDir, actions: join(root, 'actions.jsonl') };
 }
 
 function executable(dir: string, name: string, body: string): string {
@@ -851,6 +870,7 @@ describe('0344 validation evidence and dogfood', () => {
         }
         const result = runCli(fx, ['validate', '--run-date', RUN_DATE, '--mode', 'full'], {
             PATH: `${fx.bin}:/usr/bin:/bin`,
+            KK_SPUR_CONFIG: fx.spurConfig,
         });
         expect({ status: result.status, stdout: result.stdout, stderr: result.stderr }).toMatchObject({ status: 0 });
         const { report } = latestValidationReport(fx);

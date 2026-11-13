@@ -851,7 +851,11 @@ async function validate(args: string[]): Promise<number> {
 
     let schedulerReady = false;
     try {
-        const config = readConfig(join(REPO, '.spur/config.yaml'));
+        // The posture check reads the PROJECT's Spur config (not the kk config above).
+        // `KK_SPUR_CONFIG` lets the validation tests pin a configured posture instead of
+        // asserting whatever scheduler switch the operator currently has set — a suite that
+        // reads the live switch goes red whenever someone disables the scheduler on purpose.
+        const config = readConfig(process.env.KK_SPUR_CONFIG ?? join(REPO, '.spur/config.yaml'));
         const bootstrap = (config.bootstrap ?? {}) as {
             scheduler?: {
                 enabled?: unknown;
