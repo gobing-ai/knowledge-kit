@@ -4,7 +4,7 @@ name: Unified bundle and plan schema with the five publish step verbs
 status: done
 template: feature-impl
 created_at: 2026-11-13T18:13:39.337Z
-updated_at: "2026-11-14T06:58:44.467Z"
+updated_at: "2026-11-14T07:14:21.656Z"
 feature_id: G61
 
 ac_altitude: task-local
@@ -213,6 +213,8 @@ Final integrated gate PASS at git tree 45fa9f14fb47a2ec0ea61183eed3505cc8476316:
 - Design: `docs/design/content-pipeline-consolidation.md` §1.2, §4.1, §4.2. Decision: ADR-053 §1, §2; ADR-043.
 - Depends on: 0361, 0363. Blocks: 0365, 0366.
 - Parent feature: G61, scenario "Both content types publish through one workflow" (schema half; the workflow half is 0366 and 0368).
+
+- Final batch verification, reproducible acceptance runner, and wrap learnings: `.spur/memory/evidence/0362-0364/`. The learning capture is retained as `wrap-learnings.md`; runtime metrics and final gate evidence are stored alongside it.
 
 ### History
 
