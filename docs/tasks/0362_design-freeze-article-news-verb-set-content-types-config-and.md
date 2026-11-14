@@ -4,7 +4,7 @@ name: "Design freeze: article/news verb set, content_types config, and the simpl
 status: done
 template: feature-impl
 created_at: 2026-11-13T17:31:14.228Z
-updated_at: "2026-11-14T06:58:42.837Z"
+updated_at: "2026-11-14T07:17:08.711Z"
 feature_id: G61
 
 ac_altitude: task-local
@@ -126,7 +126,7 @@ Constraints the design must respect: `kk` owns steps, the workflow owns sequenci
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — The design document is complete and checkable (req: R1, R2, R3, R4, R5, R6, R7) | MET | command | .spur/memory/evidence/0362-0364/design-acceptance.log:1 — eight contract sections and all 99 existing nodes covered |
+| AC1 — The design document is complete and checkable (req: R1, R2, R3, R4, R5, R6, R7) | MET | command | .spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/design-acceptance.log:1 — eight contract sections and all 99 existing nodes covered |
 | AC2 — The planned surface is recorded (req: R8) | MET | command | docs/04_DESIGN.md:1409 — planned launch/generation surface retained; new/status and publish steps correctly superseded by 0363/0364 |
 | AC3 — Phase 2–4 tasks are ready for delegation (req: R9) | MET | command | docs/design/content-pipeline-consolidation.md:572 — task checks 0363–0369 and G61 feature check pass; remaining warnings concern later unverified feature scenarios |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
@@ -157,7 +157,7 @@ Scope: integrated batch 0362–0364, retained commit 365011c8 plus the reviewed 
 
 | AC | Status | Evidence Type | Evidence |
 | --- | --- | --- | --- |
-| AC1 — The design document is complete and checkable (req: R1, R2, R3, R4, R5, R6, R7) | MET | command | .spur/memory/evidence/0362-0364/design-acceptance.log:1 — eight contract sections and all 99 existing nodes covered |
+| AC1 — The design document is complete and checkable (req: R1, R2, R3, R4, R5, R6, R7) | MET | command | .spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/design-acceptance.log:1 — eight contract sections and all 99 existing nodes covered |
 | AC2 — The planned surface is recorded (req: R8) | MET | command | docs/04_DESIGN.md:1409 — planned launch/generation surface retained; new/status and publish steps correctly superseded by 0363/0364 |
 | AC3 — Phase 2–4 tasks are ready for delegation (req: R9) | MET | command | docs/design/content-pipeline-consolidation.md:572 — task checks 0363–0369 and G61 feature check pass; remaining warnings concern later unverified feature scenarios |
 
@@ -167,7 +167,7 @@ No open P1–P4 findings. New command composition reuses the matrix, stage, file
 
 #### Verification
 
-Final integrated gate PASS at git tree 45fa9f14fb47a2ec0ea61183eed3505cc8476316: lint, 5178 tests passed / 0 failed, coverage thresholds, build, 58 pre-check and 2 post-check rules. Evidence: .spur/memory/evidence/0362-0364/integrated-gate.log:1 and integrated-check-receipt.json. Prior failed attempts remain historical, not passing evidence.
+Final integrated gate PASS at git tree 45fa9f14fb47a2ec0ea61183eed3505cc8476316: lint, 5178 tests passed / 0 failed, coverage thresholds, build, 58 pre-check and 2 post-check rules. Evidence: .spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/integrated-gate.log:1 and integrated-check-receipt.json. Prior failed attempts remain historical, not passing evidence.
 
 #### Findings
 

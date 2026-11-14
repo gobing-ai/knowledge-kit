@@ -4,7 +4,7 @@ name: content_types config and the kk article / kk news nouns with new and statu
 status: done
 template: feature-impl
 created_at: 2026-11-13T18:13:39.059Z
-updated_at: "2026-11-14T06:58:43.651Z"
+updated_at: "2026-11-14T07:17:09.780Z"
 feature_id: G61
 
 ac_altitude: task-local
@@ -130,7 +130,7 @@ Review corrections (2026-11-14): CLI registration uses the post-0361 owner `apps
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
 | AC1 — A content type resolves through config with a stated order (req: R1, R2, R3, R9) | MET | test | apps/cli/tests/content-types.test.ts:14 — precedence, strict schema, skill fingerprint, paths and malformed channel refusal |
-| AC2 — Both nouns expose the same new and status verbs (req: R4, R5, R6, R7) | MET | test | apps/cli/tests/content-nouns.e2e.test.ts:19 — idempotency, copied source, JSON output and usage codes; .spur/memory/evidence/0362-0364/content-summary.json:1 |
+| AC2 — Both nouns expose the same new and status verbs (req: R4, R5, R6, R7) | MET | test | apps/cli/tests/content-nouns.e2e.test.ts:19 — idempotency, copied source, JSON output and usage codes; .spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/content-summary.json:1 |
 | AC3 — The surface doc matches the binary (req: R8) | MET | test | apps/cli/tests/main.test.ts:71 — exact visible inventory includes both nouns and all shipped steps; docs/04_DESIGN.md:1409 |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
@@ -161,7 +161,7 @@ Scope: integrated batch 0362–0364, retained commit 365011c8 plus the reviewed 
 | AC | Status | Evidence Type | Evidence |
 | --- | --- | --- | --- |
 | AC1 — A content type resolves through config with a stated order (req: R1, R2, R3, R9) | MET | test | apps/cli/tests/content-types.test.ts:14 — precedence, strict schema, skill fingerprint, paths and malformed channel refusal |
-| AC2 — Both nouns expose the same new and status verbs (req: R4, R5, R6, R7) | MET | test | apps/cli/tests/content-nouns.e2e.test.ts:19 — idempotency, copied source, JSON output and usage codes; .spur/memory/evidence/0362-0364/content-summary.json:1 |
+| AC2 — Both nouns expose the same new and status verbs (req: R4, R5, R6, R7) | MET | test | apps/cli/tests/content-nouns.e2e.test.ts:19 — idempotency, copied source, JSON output and usage codes; .spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/content-summary.json:1 |
 | AC3 — The surface doc matches the binary (req: R8) | MET | test | apps/cli/tests/main.test.ts:71 — exact visible inventory includes both nouns and all shipped steps; docs/04_DESIGN.md:1409 |
 
 #### SECUA and Architecture Review
@@ -170,7 +170,7 @@ No open P1–P4 findings. New command composition reuses the matrix, stage, file
 
 #### Verification
 
-Final integrated gate PASS at git tree 45fa9f14fb47a2ec0ea61183eed3505cc8476316: lint, 5178 tests passed / 0 failed, coverage thresholds, build, 58 pre-check and 2 post-check rules. Evidence: .spur/memory/evidence/0362-0364/integrated-gate.log:1 and integrated-check-receipt.json. Prior failed attempts remain historical, not passing evidence.
+Final integrated gate PASS at git tree 45fa9f14fb47a2ec0ea61183eed3505cc8476316: lint, 5178 tests passed / 0 failed, coverage thresholds, build, 58 pre-check and 2 post-check rules. Evidence: .spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/integrated-gate.log:1 and integrated-check-receipt.json. Prior failed attempts remain historical, not passing evidence.
 
 #### Findings
 

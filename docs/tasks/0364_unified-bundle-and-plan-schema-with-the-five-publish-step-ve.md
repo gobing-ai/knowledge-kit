@@ -4,7 +4,7 @@ name: Unified bundle and plan schema with the five publish step verbs
 status: done
 template: feature-impl
 created_at: 2026-11-13T18:13:39.337Z
-updated_at: "2026-11-14T07:14:21.656Z"
+updated_at: "2026-11-14T07:17:11.714Z"
 feature_id: G61
 
 ac_altitude: task-local
@@ -154,9 +154,9 @@ The named commands still accept the legacy root bundle location used by existing
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Both content types publish through one workflow: one schema carries both (req: R1, R2, R3) | MET | command | .spur/memory/evidence/0362-0364/publish-summary.json:1 — both nouns and browser metadata; parity after removing only additive modeSource |
-| AC2 — The five step verbs complete a dummy window end to end (req: R4, R5, R6, R7, R8) | MET | command | .spur/memory/evidence/0362-0364/publish-summary.json:1 — both dummy windows, receipts, report, bundle runs and invalid channel/no writes |
-| AC3 — Settlement fails the step when a required row is unsettled (req: R6) | MET | command | .spur/memory/evidence/0362-0364/publish-summary.json:1 — required live row marked failed gives exit 1 and outcome none without sending |
+| AC1 — Both content types publish through one workflow: one schema carries both (req: R1, R2, R3) | MET | command | .spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/publish-summary.json:1 — both nouns and browser metadata; parity after removing only additive modeSource |
+| AC2 — The five step verbs complete a dummy window end to end (req: R4, R5, R6, R7, R8) | MET | command | .spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/publish-summary.json:1 — both dummy windows, receipts, report, bundle runs and invalid channel/no writes |
+| AC3 — Settlement fails the step when a required row is unsettled (req: R6) | MET | command | .spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/publish-summary.json:1 — required live row marked failed gives exit 1 and outcome none without sending |
 | AC5 — One config line turns a channel off (req: R8) | MET | test | apps/cli/tests/content-publish.e2e.test.ts:91 — config-off exclusions, variant precedence and flag promotion; retained acceptance covers invalid config keys |
 | AC4 — Old stage spellings are untouched (req: R9, R10) | MET | test | apps/cli/tests/voice3-dag.test.ts:70 — old bundle bytes retained; existing matrix/stage assertions preserved, new command inventories explicitly expanded |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
@@ -188,9 +188,9 @@ Scope: integrated batch 0362–0364, retained commit 365011c8 plus the reviewed 
 
 | AC | Status | Evidence Type | Evidence |
 | --- | --- | --- | --- |
-| AC1 — Both content types publish through one workflow: one schema carries both (req: R1, R2, R3) | MET | command | .spur/memory/evidence/0362-0364/publish-summary.json:1 — both nouns and browser metadata; parity after removing only additive modeSource |
-| AC2 — The five step verbs complete a dummy window end to end (req: R4, R5, R6, R7, R8) | MET | command | .spur/memory/evidence/0362-0364/publish-summary.json:1 — both dummy windows, receipts, report, bundle runs and invalid channel/no writes |
-| AC3 — Settlement fails the step when a required row is unsettled (req: R6) | MET | command | .spur/memory/evidence/0362-0364/publish-summary.json:1 — required live row marked failed gives exit 1 and outcome none without sending |
+| AC1 — Both content types publish through one workflow: one schema carries both (req: R1, R2, R3) | MET | command | .spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/publish-summary.json:1 — both nouns and browser metadata; parity after removing only additive modeSource |
+| AC2 — The five step verbs complete a dummy window end to end (req: R4, R5, R6, R7, R8) | MET | command | .spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/publish-summary.json:1 — both dummy windows, receipts, report, bundle runs and invalid channel/no writes |
+| AC3 — Settlement fails the step when a required row is unsettled (req: R6) | MET | command | .spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/publish-summary.json:1 — required live row marked failed gives exit 1 and outcome none without sending |
 | AC5 — One config line turns a channel off (req: R8) | MET | test | apps/cli/tests/content-publish.e2e.test.ts:91 — config-off exclusions, variant precedence and flag promotion; retained acceptance covers invalid config keys |
 | AC4 — Old stage spellings are untouched (req: R9, R10) | MET | test | apps/cli/tests/voice3-dag.test.ts:70 — old bundle bytes retained; existing matrix/stage assertions preserved, new command inventories explicitly expanded |
 
@@ -200,7 +200,7 @@ No open P1–P4 findings. New command composition reuses the matrix, stage, file
 
 #### Verification
 
-Final integrated gate PASS at git tree 45fa9f14fb47a2ec0ea61183eed3505cc8476316: lint, 5178 tests passed / 0 failed, coverage thresholds, build, 58 pre-check and 2 post-check rules. Evidence: .spur/memory/evidence/0362-0364/integrated-gate.log:1 and integrated-check-receipt.json. Prior failed attempts remain historical, not passing evidence.
+Final integrated gate PASS at git tree 45fa9f14fb47a2ec0ea61183eed3505cc8476316: lint, 5178 tests passed / 0 failed, coverage thresholds, build, 58 pre-check and 2 post-check rules. Evidence: .spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/integrated-gate.log:1 and integrated-check-receipt.json. Prior failed attempts remain historical, not passing evidence.
 
 #### Findings
 
@@ -214,7 +214,7 @@ Final integrated gate PASS at git tree 45fa9f14fb47a2ec0ea61183eed3505cc8476316:
 - Depends on: 0361, 0363. Blocks: 0365, 0366.
 - Parent feature: G61, scenario "Both content types publish through one workflow" (schema half; the workflow half is 0366 and 0368).
 
-- Final batch verification, reproducible acceptance runner, and wrap learnings: `.spur/memory/evidence/0362-0364/`. The learning capture is retained as `wrap-learnings.md`; runtime metrics and final gate evidence are stored alongside it.
+- Final batch verification, reproducible acceptance runner, and wrap learnings: `.spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/`. The learning capture is retained as `wrap-learnings.md`; runtime metrics and final gate evidence are stored alongside it.
 
 ### History
 
