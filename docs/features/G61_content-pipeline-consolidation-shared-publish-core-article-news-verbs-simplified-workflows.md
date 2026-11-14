@@ -15,7 +15,8 @@ updated_at: "2026-11-13T21:35:41.126Z"
 
 Make the daily-news and article (ITC and later types) pipelines reliable enough for unattended daily use by
 removing the boundary drift between them: one neutral publish core, one publish workflow, operator verbs on
-`kk article` / `kk news`, and workflows reduced to the nodes that earn a retry boundary. Decision record:
+`kk article` / `kk news`, and workflows reduced to the nodes that earn a retry boundary. The one publish
+workflow is `kk-publish.yaml` (nine nodes, both content nouns; shipped by task 0366). Decision record:
 ADR-053 (accepted 2026-11-13). Supersedes the remaining scope of G21 where they overlap.
 
 ## Scope

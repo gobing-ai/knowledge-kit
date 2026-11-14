@@ -1412,7 +1412,7 @@ runBotCollection(profileName: string, plan: BotCollectionPlan, options?: BotColl
   emulation, and live-site compatibility. Acceptance evidence is loopback-only:
   `apps/cli/tests/e2e-bot-collection.ts` (not part of the default unit gate).
 
-### 1.14 `article` / `news` — Shipped (0363–0365, G61, ADR-053)
+### 1.14 `article` / `news` — Shipped (0363–0366, G61, ADR-053)
 
 **Shipped (0363–0365).** The shared `new`, `status`, `generate` and `publish` verbs are registered
 for both nouns. They resolve `content_types`, create/read the canonical run directory, and keep
@@ -1423,6 +1423,8 @@ for both nouns. They resolve `content_types`, create/read the canonical run dire
 - `kk article new` / `kk news new` and `kk article status` / `kk news status` are shipped (0363).
 - `generate` and `publish` are shipped (0365): lock → preflight → receipt → one `spur workflow run`
   child → cleanup, with `--dry-run` running the preflight only.
+- `publish` launches the shipped `kk-publish` workflow (0366) for both nouns and passes `noun`
+  (`news` | `article`), which selects the step verbs its nodes call.
 - `content_types.<type>` is shipped with built-in `itc` and `news` resolution; the five publish-step
   verbs are available on both nouns with named flags only.
 
@@ -1462,7 +1464,10 @@ Every line marked planned is accepted design, not surface: do not invoke it as i
   `off | dummy | draft | live` and is the operator switch for a channel; the preset supplies
   structure and the default mode; `--channels` / `--live-channels` override one run.
 - Run directories: `<works>/<workflow>/<run>` (`kk-news-generate/<YYYYMMDD>`,
-  `kk-article-generate/<slug>`); `kk-publish` writes inside the bundle's run directory.
+  `kk-article-generate/<slug>`); `kk-publish` writes inside the bundle's run directory. The frozen
+  bundle is `<workDir>/4-publish/bundle.json`; the publish-step verbs and the RSS gate read it
+  first and fall back to the root-level `<workDir>/bundle.json`, so a pre-cut-over run directory
+  stays publishable with `--work-dir` (design §4.3, task 0366).
 - Receipts: `generate` writes `<workDir>/schedule-receipt.json`; `publish` writes
   `<workDir>/4-publish/schedule-receipt.<window>.json`, so a publish window never overwrites the
   generation receipt it was admitted on. Both carry `schemaVersion`, `workflow`, `type`, `run`,
@@ -1471,8 +1476,20 @@ Every line marked planned is accepted design, not surface: do not invoke it as i
 - `generate --publish` prints the generation receipt with the publish receipt nested under
   `publish`; a refused chained publish reports its exit code and message and leaves the green
   generation receipt on disk.
-- Planned workflows: `kk-news-generate`, `kk-article-generate`, `kk-publish` (0366–0368); until they
-  ship, tests supply stub YAMLs through `workflows_dir`.
+- **`kk-publish` is shipped** (0366): `plugins/kk/workflows/kk-publish.yaml`, a nine-node DAG
+  (`plan`, `check`, `send-confirm`, `send`, `send-retry`, `diagnose`, `repair`, `settle`, `report`)
+  over one frozen bundle, for both content nouns. Each non-agent, non-pause node is one
+  `kk ${vars.noun} publish-<step>` call. Vars: `work_dir`, `run_date`, `window`, `preset`,
+  `channels`, `live_channels`, `live_confirm`, `dummy`, `retry`, `feed`, `noun`, `agent`.
+  `dummy` carries the flag word (`--dummy`) rather than `true`/`false`: it is the one optional
+  boolean switch a node command must add without a shell conditional (the engine rejects
+  `${vars.x:+…}` as an undeclared reference), and `feed` pins the RSS gate's feed URL. Its bundle
+  locator is `4-publish/bundle.json` with the pre-cut-over root-level `bundle.json` as a fallback
+  (see "Run directories" below). `kk-daily-publish3.yaml` remains the installed scheduled path until
+  0369 cuts the scheduler over; both produce the same `4-publish/` file set and outcome per window
+  (proven by `apps/cli/tests/kk-publish.e2e.test.ts`, AC3).
+- Planned workflows: `kk-news-generate`, `kk-article-generate` (0367–0368); until they ship, tests
+  supply stub YAMLs through `workflows_dir`.
 - Planned hidden routes (ADR-037) once shipped: `kk itc …`, `kk daily …`, and the `kk stage run`
   names listed in the design's stage migration table.
 

@@ -3,6 +3,10 @@
 > **Status:** SHIPPED as designed (ADR-043; tasks 0321–0327 closed 2026-10-22/23 — T-a…T-e, publish3 and voice3).
 > voice2 (`kk-daily-ai-voice2.yaml`) is untouched by the batch and remains the installed daily path until
 > the operator installs the two publish3 schedules (§8 step 3); nothing in this design auto-flips that.
+>
+> **Superseded, pending task 0369:** `kk-daily-publish3.yaml` is replaced by the nine-node
+> `plugins/kk/workflows/kk-publish.yaml` (G61, task 0366); publish3 stays the installed scheduled path
+> until the scheduler cut-over moves it, and both produce the same `4-publish/` outcome per window.
 
 ## 1. Why a voice3
 

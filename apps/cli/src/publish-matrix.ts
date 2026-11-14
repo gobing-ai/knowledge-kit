@@ -131,6 +131,21 @@ export const PublishPlanSchema = z
     })
     .strict();
 
+/**
+ * Where a run directory's frozen bundle lives — `4-publish/bundle.json` (design §4.3), with the
+ * root-level `bundle.json` of a pre-cut-over run directory as the fallback.
+ *
+ * Task 0366 needs both spellings at once: the launching verb admits only the frozen path (§3.2),
+ * while a run directory produced before the layout moved "remains publishable with `--work-dir`"
+ * (§4.3), and `kk-daily-publish3.yaml` still names the root path. Reading is additive — a directory
+ * with both files keeps using the frozen one.
+ */
+export async function resolveBundlePath(fs: FileSystem, workDir: string): Promise<string> {
+    const frozen = join(workDir, '4-publish', 'bundle.json');
+    if (await fs.exists(frozen)) return frozen;
+    return join(workDir, 'bundle.json');
+}
+
 /** Parsed plan. The public type accepts legacy rows without additive defaulted fields. */
 export type PublishPlan = Omit<z.input<typeof PublishPlanSchema>, 'rows' | 'excluded'> & {
     excluded: PublishPlanExcluded[];
@@ -408,7 +423,7 @@ export async function runPublishMatrixValidate(args: string[], deps: PublishMatr
     let candidate = raw === undefined || raw.trim() === '' ? undefined : raw;
     if (candidate === undefined) {
         source = 'bundle.json';
-        const bundlePath = join(workDir, 'bundle.json');
+        const bundlePath = await resolveBundlePath(fs, workDir);
         if (!(await fs.exists(bundlePath))) {
             echoError(`publish-matrix-validate: no --run-date and no bundle at ${bundlePath} to derive one from`);
             return 1;
@@ -1596,7 +1611,7 @@ export async function runPublishMatrixRssGate(args: string[], deps: RssGateDeps 
     }
     const publishDir = join(workDir, '4-publish');
 
-    const bundlePath = join(workDir, 'bundle.json');
+    const bundlePath = await resolveBundlePath(fs, workDir);
     const hasBundle = await fs.exists(bundlePath);
     if (hasBundle) {
         try {

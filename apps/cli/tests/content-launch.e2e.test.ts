@@ -2,18 +2,25 @@
  * `kk <noun> generate` / `kk <noun> publish` end to end (task 0365 AC1–AC4, design §1.1 §3).
  *
  * Everything the launch touches outside this process is stubbed and throwaway: a temp project root
- * (`KK_WORKS_DIR`/`works_dir`, a temp SQLite store), a `spur` shell stub that answers `agent run`,
- * `workflow run`, `workflow cancel` and `workflow trace`, a `kk` shim so the checkout-vs-install
- * probe finds a package root, and the stub workflow YAMLs under `tests/fixtures/workflows/` reached
- * through the existing `workflows_dir` override (R6).
+ * (`works_dir`, a temp SQLite store), a `spur` shell stub that answers `agent run`, `workflow run`,
+ * `workflow cancel` and `workflow trace`, and the stub workflow YAMLs under
+ * `tests/fixtures/workflows/` reached through the existing `workflows_dir` override (R6).
  *
- * Posture: `generate` cases pass `--allow-dirty` because a checkout under active development is
- * normally dirty; `publish` has no such flag (design §1.1), so its cases rely on the harness paths
- * this preflight reads (`plugins/kk`, `.spur/workflows`) being clean. The dirty refusal itself, and
- * every other preflight reason, is proven without the environment in `launch.test.ts`.
+ * The temp root is also the launcher's *package root* while a case runs (`process.chdir`, `plugins`
+ * symlinked at the checkout): `resolvePackageRoot` reads the cwd first, so without this the launch
+ * preflight would read the checkout's own harness paths — and a task that adds a workflow file (as
+ * 0366 did with `plugins/kk/workflows/kk-publish.yaml`) leaves them dirty. `publish` has no
+ * `--allow-dirty` (design §1.1), so such a tree would refuse the launch for reasons that have
+ * nothing to do with the case under test. The root is a real one-commit repository, so
+ * `checkoutCommit` (R8) keeps a real sha; `git status` on `plugins/kk`/`.spur/workflows` is empty
+ * because git does not descend into the `plugins` symlink, and the checkout-vs-install diff compares
+ * the symlinked tree with itself. Same isolation 0366's `kk-publish.e2e.test.ts` uses.
+ *
+ * The dirty refusal itself, and every other preflight reason, is proven without the environment in
+ * `launch.test.ts` (fake deps, no checkout involved).
  */
 import { describe, expect, it } from 'bun:test';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { openStore } from '@gobing-ai/kk-store';
@@ -110,6 +117,15 @@ function project(options: ProjectOptions = {}): Project {
             '',
         ].join('\n'),
     );
+    // The launcher's package root = this temp dir while the case runs: `plugins` rides a symlink to
+    // the checkout, so presets, the writer skill and the workflow YAMLs still resolve, while the
+    // preflight's dirty-path check reads this repository instead of the mid-task checkout.
+    symlinkSync(join(repoRoot, 'plugins'), join(root, 'plugins'));
+    runGit(root, ['init', '-q', '.']);
+    runGit(root, ['add', '-A']);
+    runGit(root, ['commit', '-q', '-m', 'harness root', '--no-verify']);
+    const previousCwd = process.cwd();
+    process.chdir(root);
     const saved = {
         PATH: process.env.PATH,
         KK_CONFIG: process.env.KK_CONFIG,
@@ -139,12 +155,33 @@ function project(options: ProjectOptions = {}): Project {
         workflowRuns: () => log().filter((line) => line.includes('workflow run')),
         count: (needle: string) => log().filter((line) => line.includes(needle)).length,
         restore: () => {
+            process.chdir(previousCwd);
             for (const [key, value] of Object.entries(saved)) {
                 if (value === undefined) delete process.env[key];
                 else process.env[key] = value;
             }
         },
     };
+}
+
+/** One deterministic `git` call inside the throwaway root (the harness repository). */
+function runGit(cwd: string, args: string[]): void {
+    const result = Bun.spawnSync({
+        cmd: [
+            'git',
+            '-c',
+            'user.name=kk-harness',
+            '-c',
+            'user.email=kk-harness@example.invalid',
+            '-c',
+            'commit.gpgsign=false',
+            ...args,
+        ],
+        cwd,
+        stdout: 'pipe',
+        stderr: 'pipe',
+    });
+    if (result.exitCode !== 0) throw new Error(`git ${args.join(' ')}: ${result.stderr.toString()}`);
 }
 
 async function runCli(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
@@ -279,7 +316,9 @@ describe('content launch — AC3 every exit path cleans up (0365 R1, R4, R5)', (
                     '--timeout-ms',
                     '60000',
                 ],
-                cwd: repoRoot,
+                // Same harness root as the in-process cases: the child's preflight reads the
+                // throwaway repository, not this checkout.
+                cwd: sandbox.root,
                 env: process.env as Record<string, string>,
                 stdout: 'ignore',
                 stderr: 'ignore',
@@ -710,6 +749,8 @@ describe('content launch — usage guards and refusals (0365 R3, R4, R7)', () =>
                 live_channels: 'weibo-pub',
                 live_confirm: 'true',
                 retry: 'true',
+                // 0366 R4: the noun the workflow's step verbs are registered on.
+                noun: 'news',
                 run_id: expect.any(String),
                 agent: 'codex',
             });

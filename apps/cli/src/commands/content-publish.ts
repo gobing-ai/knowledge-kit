@@ -21,6 +21,7 @@ import {
     PublishOutcomeSchema,
     PublishPlanSchema,
     planPublishMatrix,
+    resolveBundlePath,
     runPublishMatrixClassify,
     runPublishMatrixRssGate,
     runPublishMatrixSettle,
@@ -194,7 +195,7 @@ async function planAction(type: string, options: PublishOptions): Promise<void> 
         }
     })();
     const workDir = context.workDir;
-    const bundlePath = join(workDir, 'bundle.json');
+    const bundlePath = await resolveBundlePath(fs, workDir);
     const runDate = options.runDate;
     let wait: JsonObject | undefined;
     let gate: JsonObject | undefined;
@@ -321,7 +322,7 @@ async function sendAction(type: string, options: PublishOptions): Promise<void> 
 }
 
 async function appendBundleRun(fs: FileSystem, workDir: string): Promise<void> {
-    const path = join(workDir, 'bundle.json');
+    const path = await resolveBundlePath(fs, workDir);
     if (!(await fs.exists(path))) throw new Error(`bundle.json not found at ${path}`);
     const parsed = BundleSchema.parse.bind(BundleSchema)(parseJson(await fs.readFile(path)));
     const runId = parsed.runId;

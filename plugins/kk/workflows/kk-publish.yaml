@@ -1,0 +1,232 @@
+---
+name: kk-publish
+kind: dag
+version: "1"
+description: >-
+  The one publish workflow for every content noun (G61 / ADR-053 §1, design
+  `docs/design/content-pipeline-consolidation.md` §5.3, task 0366): nine nodes over one frozen
+  `4-publish/bundle.json`, launched by `kk news publish` / `kk article publish`. Each node is an
+  agent call, the live-send pause, or a boundary that runs exactly one `kk <noun> publish-<step>`
+  verb — the eighteen nodes of `kk-daily-publish3.yaml` and the seven-node `kk-itc-publish-tail.yaml`
+  fold into these nine. The channel matrix lives in the publish preset, never here.
+  Re-enter a failed window with
+  `spur workflow run plugins/kk/workflows/kk-publish.yaml --vars '{"work_dir":"<run dir>","window":"after-generate"}'`
+  — receipts make the rerun a no-op for anything already delivered, and `--retry` resends only
+  `effect: none` failures.
+
+# ADR-022: live is launch-only. A workflow file never yields a live send; the operator's launch var
+# (or the installed schedule entry that carries it) is the consent.
+#
+# Two var shapes, both forced by the engine (probe-verified against spur 0.4.33, not by preference):
+#  * a var the node command needs as a *word* always has a non-empty default (`window`, `preset`,
+#    `noun`, `agent`);
+#  * an optional flag is spelled by its own var: `--preset=${vars.preset}` style for flags that take
+#    a value (an empty value is tolerated by the verb), and a whole-word var for the two switches
+#    that take none — `dummy` holds `--dummy` or nothing, so the unquoted expansion adds the word
+#    only in a rehearsal. The engine rejects `${vars.x:+…}` conditionals as an undeclared reference,
+#    and R2 forbids a multi-command shell here, so assembling the flag list any other way would cost
+#    the single-call node. `live_confirm`/`retry` stay `true`/`false` because only conditions read
+#    them.
+vars:
+  work_dir: ""
+  run_date: ""
+  window: after-generate
+  # The compiled default preset (`apps/cli/src/publish-matrix.ts` DEFAULT_PUBLISH_PRESET). The
+  # launching verb always overrides it with `content_types.<type>.publish_preset`.
+  preset: daily-ai-voice
+  channels: ""
+  live_channels: ""
+  live_confirm: "false"
+  dummy: ""
+  retry: "false"
+  # `publish-plan --feed`: the RSS gate's feed URL. Empty means the shipped podcast feed; a test or
+  # operator pins a fixture through it (`data:` URLs are a legal fetch target).
+  feed: ""
+  noun: news
+  agent: inline
+
+nodes:
+  # ── 1. plan: the one node that waits, gates and freezes the window ───────────────────────────
+  - id: plan
+    description: >-
+      `publish-plan` — sleeps to the window's wall clock when the window is `cn-peak`, runs the RSS
+      gate when it is `overseas-rss`, binds the bundle's calendar day, then freezes this window's
+      rows and payloads into `4-publish/plan.<window>.json`. `onError: continue` is what keeps a
+      gated miss inside the graph: `publish-plan` exits 1 when the feed lacks the episode (after
+      writing `rss-gate.json` + the deterministic incident floor), and a *failing* node would skip
+      every successor by the all-deps-skipped rule — taking the `diagnose`/`repair` path with it.
+      A plan failure that is NOT a gated miss still fails the run at `check`, which needs the plan.
+    action:
+      kind: shell
+      onError: continue
+      options:
+        command: >-
+          kk ${vars.noun} publish-plan --work-dir "${vars.work_dir}" --window "${vars.window}"
+          --preset=${vars.preset} --run-date=${vars.run_date} --channels=${vars.channels}
+          --live-channels=${vars.live_channels} --feed=${vars.feed} ${vars.dummy}
+
+  # ── 2. check: readiness probes, before the human approval that reads them ────────────────────
+  - id: check
+    description: >-
+      `publish-check` — warn-only probes for the planned non-dummy channels, recorded in
+      `4-publish/check.<window>.json`. Skipped on a gated miss (there is no plan to probe), which is
+      also why it is the node that fails a plan failure the graph must not swallow: with a plan it
+      cannot read, `publish-check` exits 1 and the run stops before any dispatch.
+    dependsOn: [plan]
+    condition:
+      kind: shell
+      options:
+        # Run unless this is an overseas window whose feed gate missed. A missing rss-gate.json is
+        # not a miss (the gate never ran), so check still runs and fails loud on the absent plan.
+        command: >-
+          test "${vars.window}" != "overseas-rss"
+          || ! grep -q '"hit": false' "${vars.work_dir}/4-publish/rss-gate.json" 2>/dev/null
+
+    action:
+      kind: shell
+      options:
+        command: 'kk ${vars.noun} publish-check --work-dir "${vars.work_dir}" --window "${vars.window}"'
+
+  # ── 3. send-confirm: the only human pause in the publish half ────────────────────────────────
+  - id: send-confirm
+    description: >-
+      Operator approval of a LIVE send: `pause: true` stops the run and RESUME is the approval;
+      cancelling is the rejection. Requires `live_confirm=true` AND a live row in the frozen plan,
+      so a scheduled posture (the preset owns live/draft, ADR-022 amendment) and a draft-only or
+      dummy window proceed without a human — and a pause can never appear for a send that will not
+      happen.
+    dependsOn: [check]
+    pause: true
+    condition:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.live_confirm}" = "true"
+          && grep -q '"mode": "live"' "${vars.work_dir}/4-publish/plan.${vars.window}.json" 2>/dev/null
+
+  # ── 4. send: tier order, receipts keyed per target ──────────────────────────────────────────
+  - id: send
+    description: >-
+      `publish-send` — tier 0 serial and blocking, later tiers once the tier-0 links resolve.
+      Receipts key every target, so a rerun never resends what was delivered, and a dummy row never
+      spawns a plugin. `check` sits beside `send-confirm` on purpose: the engine skips a node only
+      when ALL its dependencies were skipped, so a draft window (no live row → `send-confirm`
+      skipped) still sends, while a gated plan (both ancestors skipped) still stops here. A failing
+      target does NOT end the run here — `onError: continue` lets the bounded retry and the
+      settlement decide, so the evidence always survives to the operator.
+    dependsOn: [check, send-confirm]
+    action:
+      kind: shell
+      onError: continue
+      options:
+        command: 'kk ${vars.noun} publish-send --work-dir "${vars.work_dir}" --window "${vars.window}"'
+
+  # ── 5. send-retry: the ONE bounded retry ────────────────────────────────────────────────────
+  - id: send-retry
+    description: >-
+      `publish-send --retry` — resends only rows whose receipt is a failure with `effect: none`
+      (a succeeded row is skipped, a live row with an unknown effect is never resent, a dummy row
+      never spawns a plugin). No back-edge: one retry node, then the settlement rules. Runs when
+      `send` left a failed receipt, and unconditionally when the operator asked for `--retry` (an
+      explicit re-send is the operator's call, even when every visible receipt reads succeeded).
+    dependsOn: [send]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.retry}" = "true"
+          || grep -q '"status": "failed"' "${vars.work_dir}/4-publish/receipts/"*.json 2>/dev/null
+
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk ${vars.noun} publish-send --work-dir "${vars.work_dir}" --window "${vars.window}" --retry
+
+  # ── 6. diagnose: a gated miss is explained, never silently dropped ──────────────────────────
+  - id: diagnose
+    description: >-
+      overseas-rss only, on a feed-gate miss: classify why the episode is not in the feed
+      (`no-run | generation-failed@<node> | no-content | t0-failed | rss-lag`) and write
+      `4-publish/incident.json` / `incident.md`. The gate already wrote its deterministic incident
+      floor, so this agent refines it and never invents one. `dependsOn: [plan]` (not the row above)
+      is what makes the miss path reachable at all: `plan` runs even when it exits 1, and the plan
+      chain between them is skipped. `onError: continue` — a diagnosis must never mask the miss it
+      is describing.
+    dependsOn: [plan]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.window}" = "overseas-rss"
+          && grep -q '"hit": false' "${vars.work_dir}/4-publish/rss-gate.json" 2>/dev/null
+
+    action:
+      kind: agent.run
+      onError: continue
+      options:
+        role: scribe
+        agent: ${vars.agent}
+        timeoutMs: 600000
+        input: |
+          Diagnose a missed overseas publish window. Read only these paths:
+          - ${vars.work_dir}/4-publish/rss-gate.json (the miss reason)
+          - ${vars.work_dir}/bundle.json (absent = no generation ran)
+          - ${vars.work_dir}/4-publish/outcome.after-generate.json and receipts/ (tier-0 evidence)
+          Run `spur workflow trace --json` for the generation run named in bundle.json if it exists.
+          Write ${vars.work_dir}/4-publish/incident.json with exactly
+          {"schemaVersion":1,"date":"<run_date>","class":"<one of no-run|generation-failed|<node>|no-content|t0-failed|rss-lag>","reason":"<one line>","evidence":["<paths>"]}
+          and ${vars.work_dir}/4-publish/incident.md with 3 sentences of operator prose: what is missing,
+          which class, and the one action that would fix it. Never regenerate content.
+        expectFile: ${vars.work_dir}/4-publish/incident.json
+
+  # ── 7. repair: the one safe automatic fix for a gated miss ─────────────────────────────────
+  - id: repair
+    description: >-
+      overseas-rss only, on a gate miss (its only edge is `diagnose`): resend the tier-0 rows whose
+      receipt is `effect: none` in the `after-generate` window. It never regenerates content and
+      never resends an uncertain live send (the shared `--retry` rules), so a lost generation stays
+      an operator decision.
+    dependsOn: [diagnose]
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk ${vars.noun} publish-send --work-dir "${vars.work_dir}" --window after-generate --retry --tier 0
+
+  # ── 8. settle: classify, settle the store, the run's honest exit ───────────────────────────
+  - id: settle
+    description: >-
+      `publish-settle` — one verb for the six publish3 nodes `classify`, `patch-surfdash`,
+      `partial-marker`, `settle`, `bundle-runs` and `outcome-assert`: it writes
+      `4-publish/outcome.<window>.json`, the status and settlement files, the partial marker when
+      the window is not full, appends this run to `bundle.json` `runs[]`, and exits 1 when a
+      required non-dummy row did not succeed. No `onError`, so that exit 1 is the run's failure
+      (design §5.3: the only node that writes the store). Skipped on a gated miss: nothing was
+      planned, so there is no window to classify and the incident path already owns the day.
+    dependsOn: [send, repair]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.window}" != "overseas-rss"
+          || ! grep -q '"hit": false' "${vars.work_dir}/4-publish/rss-gate.json" 2>/dev/null
+
+    action:
+      kind: shell
+      options:
+        command: 'kk ${vars.noun} publish-settle --work-dir "${vars.work_dir}" --window "${vars.window}"'
+
+  # ── 9. report: the operator's page, on every path that reached a window ─────────────────────
+  - id: report
+    description: >-
+      `publish-report` — per-window status and every receipt on one page (`5-report/publish-<w>.md`,
+      plus the SEO export for types that ask for one), then the ledger sync. Depends on `settle`
+      so a report can never race an unfinished settlement, and on `diagnose` so a gated-miss day
+      (settle skipped, diagnose ran) still writes its page. A report failure cannot undo a
+      settlement: the settlement files are already on disk when this node starts.
+    dependsOn: [settle, diagnose]
+    action:
+      kind: shell
+      options:
+        command: 'kk ${vars.noun} publish-report --work-dir "${vars.work_dir}" --window "${vars.window}"'

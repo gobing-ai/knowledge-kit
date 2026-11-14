@@ -9,6 +9,13 @@
  *
  * Exit codes (design §1): `0` done, `1` the step ran and failed, `2` usage, `5` refused by
  * preflight/admission, `6` another launch holds `<workflow>-<run>`.
+ *
+ * Task 0366 R4: the publish launch passes `noun` and `dummy` in the shape `kk-publish.yaml` declares.
+ * `noun` selects the step verbs (`kk news publish-plan` vs `kk article publish-plan`) of the one
+ * shared workflow. `dummy` carries the rehearsal *flag word* (`--dummy`, or nothing) rather than
+ * `true`/`false`: the workflow must add an optional boolean flag to a single-call node command, the
+ * engine rejects `${vars.x:+…}` conditionals as an undeclared reference (probe: spur 0.4.33), and R2
+ * forbids assembling it with a multi-command shell.
  */
 import { basename, join, resolve } from 'node:path';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
@@ -253,7 +260,7 @@ async function readPreset(
  * `--publish` launches `publish --window after-generate` in this same process after the generation
  * workflow exits 0 (R8): two sequential `launchWorkflow` calls, each with its own lock and receipt.
  */
-async function generateAction(defaultType: string, options: GenerateOptions): Promise<void> {
+async function generateAction(noun: string, defaultType: string, options: GenerateOptions): Promise<void> {
     const fs = createNodeFileSystem();
     const type = options.type ?? defaultType;
     const { config, configFile } = await loadConfig(fs, 'generate');
@@ -304,6 +311,7 @@ async function generateAction(defaultType: string, options: GenerateOptions): Pr
         config,
         configFile,
         type,
+        noun,
         resolved,
         worksDir,
         run,
@@ -328,6 +336,8 @@ interface PublishRunSettings {
     config: ContentConfigDocument;
     configFile: string;
     type: string;
+    /** The CLI noun the workflow's step verbs are registered on (`news` | `article`). */
+    noun: string;
     resolved: ResolvedContentType;
     worksDir: string;
     run: { run: string; workDir: string };
@@ -419,13 +429,14 @@ async function publishRun(settings: PublishRunSettings): Promise<LaunchReceipt> 
         );
     }
 
-    const vars: Record<string, string> = { preset: presetName, window: settings.window };
+    const vars: Record<string, string> = { preset: presetName, window: settings.window, noun: settings.noun };
     if (requestedDate !== undefined) vars.run_date = requestedDate;
     else if (bundleDate !== undefined) vars.run_date = bundleDate;
     if (settings.channels !== undefined) vars.channels = settings.channels;
     if (tokens !== undefined) vars.live_channels = tokens;
     if (settings.liveConfirm === true) vars.live_confirm = 'true';
-    if (settings.dummy === true) vars.dummy = 'true';
+    // A rehearsal is a word in the node command, not a boolean the workflow would have to test.
+    if (settings.dummy === true) vars.dummy = '--dummy';
     if (settings.retry === true) vars.retry = 'true';
 
     const receipt = await launchWorkflow({
@@ -450,7 +461,7 @@ async function publishRun(settings: PublishRunSettings): Promise<LaunchReceipt> 
 }
 
 /** `kk <noun> publish` — window/consent validation, admission, then one supervised `kk-publish`. */
-async function publishAction(defaultType: string, options: PublishOptions): Promise<void> {
+async function publishAction(noun: string, defaultType: string, options: PublishOptions): Promise<void> {
     const fs = createNodeFileSystem();
     const type = options.type ?? defaultType;
     const { config, configFile } = await loadConfig(fs, 'publish');
@@ -489,6 +500,7 @@ async function publishAction(defaultType: string, options: PublishOptions): Prom
         config,
         configFile,
         type,
+        noun,
         resolved,
         worksDir,
         run,
@@ -525,7 +537,7 @@ function configureGenerate(command: Command, noun: string, defaultType: string):
         .option('--timeout-ms <n>', 'deadline for the workflow child in milliseconds')
         .option('--allow-dirty', 'launch even when harness paths are dirty')
         .option('--dry-run', 'run the preflight and print the planned launch without taking the lock')
-        .action((options: GenerateOptions) => generateAction(defaultType, options));
+        .action((options: GenerateOptions) => generateAction(noun, defaultType, options));
 }
 
 function configurePublish(command: Command, noun: string, defaultType: string): void {
@@ -551,7 +563,7 @@ function configurePublish(command: Command, noun: string, defaultType: string): 
         .option('--yes', 'consent to that one generate without --unattended')
         .option('--timeout-ms <n>', 'deadline for the workflow child in milliseconds')
         .option('--dry-run', 'run the preflight and print the planned launch without taking the lock')
-        .action((options: PublishOptions) => publishAction(defaultType, options));
+        .action((options: PublishOptions) => publishAction(noun, defaultType, options));
 }
 
 /** Register the plain `generate` and `publish` verbs for one content noun (design §1.1). */
