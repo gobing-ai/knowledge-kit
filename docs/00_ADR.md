@@ -1961,3 +1961,18 @@ preset. (c) A run directory is `<works>/<workflow>/<run>` for the new workflow n
 the `kk-daily-ai-voice2` and `kk-itc` trees are not migrated, and phase directory names inside a run are
 unchanged. Production schedule host: the Mac mini; the laptop is the test host.
 **Detail:** `docs/design/content-pipeline-consolidation.md`, tasks 0363–0369.
+
+**Amendment 2026-11-13 (Phase 2 surface shipped, tasks 0363–0364).** No decision changes; records what exists.
+(a) Decision 1's publish core is one file today — `apps/cli/src/publish-core.ts` (receipt contract,
+publish preset schema and resolver, plugin probe, send loop). The `publish-core/` split remains a
+later refactor; `itc-publish.ts` re-exports the moved symbols under their old names, and nothing in
+the core imports `./itc-*`.
+(b) Decision 2's single registration function is `registerContentVerbs(program, noun, defaultType)` in
+`apps/cli/src/commands/content.ts`, called twice from `apps/cli/src/cli.ts`. Shipped: `new`, `status`
+and the five `publish-*` step verbs; `kk news` rejects `--type` (exit 2).
+(c) Decision 4's registry is live: `content_types.<type>` resolves flag → config → workflow preset →
+built-in, and `channels` is applied only by the named `publish-plan`, whose rows record `modeSource`.
+(d) Decisions 1 and 3 are not fully built: the split into `kk-publish`, the launching `generate` /
+`publish` verbs with `launchWorkflow()`, the three workflows, and the retirement of
+`kk-daily-publish3` / `kk-itc-publish-tail` are tasks 0365–0369.
+**Detail:** `docs/design/content-pipeline-consolidation.md`, tasks 0363–0364.

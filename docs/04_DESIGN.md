@@ -3,7 +3,7 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.63.0
+version: 2.64.0
 created_at: 2026-07-22
 updated_at: 2026-11-13
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
@@ -21,6 +21,7 @@ sync: [T3]
 | Satellite | Area | Status |
 | ----------- | ------ | -------- |
 | [kk-itc-refactor.md](design/kk-itc-refactor.md) | DAG/child authoring, config/workspaces, publication presets, recovery and SEO handoffs | shipped (G21, ADR-040; tasks 0298–0303) |
+| [content-pipeline-consolidation.md](design/content-pipeline-consolidation.md) | `content_types` registry, one bundle/plan schema, one publish core, the `article`/`news` verb set and simplified workflow node maps | accepted design (G61, ADR-053); surface shipped in part — 0362 design freeze, 0363–0364 `new`/`status`, `content_types` and the five `publish-*` steps; launch verbs, the three workflows and retirement are 0365–0369 |
 | [kk-smart-seo.md](design/kk-smart-seo.md) | SEO/GEO audit workflow, decision catalogs, stages and one skill | partially shipped (G9, ADR-039; 0281-0284 collection, assessments, typed catalogs and enrichment shipped, 0285 the `kk-smart-seo` workflow + validated narrative + terminal status, 0286 the one `smart-seo` skill + its installed acceptance and documented consumer setup; a live-site audit and feature-level verification remain) |
 | [kk-noun-verb-bots.md](design/kk-noun-verb-bots.md) | Strict noun/verb operations + named browser sessions | shipped (A22, ADR-037/038; tasks 0275–0278; surface §1.8/§1.12) |
 | [kk-cli-surface.md](design/kk-cli-surface.md) | Operator `kk` binary + two-noun tree | shipped (A2/A21) |
@@ -76,6 +77,8 @@ kk plugin status [--kind <kind>] [--json] [--plugins-root <dir>] [--plugins-path
 kk plugin check [<name>…] [--kind <kind>] [--json] [--headed] [--timeout <ms>]
                  [--plugins-root <dir>] [--plugins-path <dir> …]
 kk plugin login <name> [--plugins-root <dir>] [--plugins-path <dir> …]
+kk article <verb> …                    # new|status|publish-plan|publish-check|publish-send|publish-settle|publish-report (§1.14)
+kk news    <verb> …                    # same verbs; --type fixed to news, --run-date <YYYYMMDD> instead of --slug
 kk stage run <stage> [args…]
 kk lock acquire --name <lock> --run <id> [--ttl <ms>] [--db <path>]
 kk lock release --name <lock> --run <id> [--db <path>]
@@ -125,6 +128,8 @@ kk board serve --board-origin <origin> [--port <n>]
 | `plugin status` | List discovered plugins grouped by kind with per-plugin health (`--kind` filter, `--json` report) | shipped (A21) |
 | `plugin check` | Run each plugin's live readiness probe (`check` field, ADR-032; verdicts `verified`/`refused`/`error`/`unsupported`; §`plugin check`) | shipped (E93, 0215+0216) |
 | `plugin login <name>` | Run the probe in `login` mode with inherited stdio; propagates the probe exit code | shipped (E93, 0215+0216) |
+| `article <verb>` | Content-type operator entry points and workflow steps: `new`, `status`, `publish-plan`, `publish-check`, `publish-send`, `publish-settle`, `publish-report`; `--type` resolves `content_types` (§1.14) | shipped (0363–0364, G61) |
+| `news <verb>` | `article` with `--type` fixed to `news` and `--run-date <YYYYMMDD>` instead of `--slug`; same shipped verbs (§1.14) | shipped (0363–0364, G61) |
 | `store migrate` | Apply pending `@gobing-ai/kk-store` migrations; prints `{db, applied}` (§1.9) | shipped (task 0206) |
 | `stage run <stage> [args…]` | Run one stage of the shared workflow stage runner with positional pass-through; the legacy `kk stage <stage>` spelling is normalized into this verb in `main()` before Commander parses (A22 R1/R2) | shipped (task 0275) |
 | `lock acquire\|release` | Single-flight lock over the store for the scheduled collector; prints `{acquired}` / `{skipped, holder}` / `{released}` (§1.9). Canonical spelling; `kk store lock …` remains a hidden compatibility route on the same engines | shipped (task 0208; lifted from `store lock` by 0275) |
@@ -145,7 +150,8 @@ kk board serve --board-origin <origin> [--port <n>]
 > **Surface status.** Rows marked *shipped* are live in `apps/cli` (transcribed from the code
 > registrations). The first-layer nouns are `executor` and `plugin` (ADR-011, feature **A21**),
 > extended by `stage` (§1.8, ADR-011 amendment 2026-09-18) and `store` (§1.9, task 0206) and
-`ledger` (§1.10, task 0207) and `schedule` (§1.11, task 0208) and `lock` (ADR-037, task 0275); the
+> `ledger` (§1.10, task 0207) and `schedule` (§1.11, task 0208) and `lock` (ADR-037, task 0275), and
+> by the content nouns `article` / `news` (§1.14, ADR-053, shipped 0363–0364); the
 > engines shipped with **A2** / **B6** keep their flags and exit codes, only the
 > canonical paths changed. Hidden one-release aliases `invoke` / `fanin` / `fanout` / `plugins *`
 > still reach the same engines but are not listed in `kk --help`; the same holds for the legacy
@@ -1418,18 +1424,21 @@ Frozen contract (flags, exit codes, stdout, files): `docs/design/content-pipelin
 
 ```text
 kk article new       --type <t> (--topic <text> | --from <file.md>) --slug <s> [--locale …] [--work-dir <dir>]
-kk article generate  --type <t> --slug <s> [--agent <executor>] [--auto] [--publish] [--dry-run]
-kk article publish   --type <t> (--slug <s> | --work-dir <dir>) [--window <w>] [--preset <name>]
+kk article generate  --type <t> --slug <s> [--agent <executor>] [--auto] [--publish] [--dry-run]   # planned (0365)
+kk article publish   --type <t> (--slug <s> | --work-dir <dir>) [--window <w>] [--preset <name>]   # planned (0365)
                      [--channels <a,b>] [--live-channels <a,b>] [--live-confirm] [--dummy] [--retry]
                      [--unattended] [--yes] [--dry-run]
 kk article status    --type <t> (--slug <s> | --work-dir <dir>) [--window <w>]
 kk article publish-plan | publish-check | publish-send | publish-settle | publish-report
                      --work-dir <dir> [--window <w>] …            # workflow steps, named flags only
-kk article generate-check | generate-bundle --work-dir <dir> …    # workflow steps
+kk article generate-check | generate-bundle --work-dir <dir> …    # planned (0367–0368)
 
 kk news <same verbs, --type fixed to news, --run-date <YYYYMMDD> instead of --slug>
-kk news prepare | generate-render | generate-voice | generate-cards | report --work-dir <dir> …
+kk news prepare | generate-render | generate-voice | generate-cards | report --work-dir <dir> …   # planned (0367)
 ```
+
+Only `new`, `status` and the five `publish-*` verbs are registered (0363–0364). Every line marked
+planned is accepted design, not surface: do not invoke it as if it exists.
 
 - Exit codes: `0` done, `1` failed, `2` usage, `5` launch refused by preflight, `6` lock held.
 - Shipped config key `content_types.<type>` = `{workflow, writer_skill, publish_preset, channels}`;
@@ -2114,6 +2123,7 @@ File: `.spur/config.yaml`
 | Article & publish fan-out brief | `docs/design/article-publish-fanout-brief.md` | content-gen home, podcast show notes, and single-state fan-out brief (F61 task 0091) |
 | kk-itc end-to-end | `docs/design/kk-itc-end-to-end.md` | kk-itc auto/HITL path, `kk stage itc-*` publish tail, target profile table, draft-default switch per target (F41 **shipped** 2026-09-22, ADR-021/ADR-022) |
 | XHS image cards | `docs/design/xhs-image-cards.md` | XHS card series skill (`kk:xhs-images`), format `xhs-card`, style `xhs-knowledge`, ordered Content images, `xhs-pub` script-driver draft/public (E8 **shipped** 2026-09-25, ADR-024) |
+| Content pipeline consolidation | `docs/design/content-pipeline-consolidation.md` | Frozen surface for G61/ADR-053: `content_types` registry, one bundle/plan schema for every content type, the `article`/`news` verb set and the simplified workflow node maps (status in §0) |
 
 ## 7. Workflow resolution (run-anywhere) and `/workflow-run` surface
 
@@ -2356,6 +2366,19 @@ single row for an ad-hoc window. A preset row that says `live` is what a schedul
 `targetId(row)` = `id` ?? `${plugin}.${slug(operation)}` ?? `plugin`; the slug keeps CJK and maps
 whitespace and `/` to `-`, so voice3's four xhs operations and two wechatmp operations get distinct
 receipt/payload keys while itc rows keep their plugin key (feature G211 adopts this key).
+
+**Content-type generalization (0364).** One schema carries both content types. `BundleSchema` gains
+`contentType` (string, parsed default `news`) and optional `title`; `episode` becomes optional;
+`schemaVersion` stays `1` because every change is additive or a relaxation, so a legacy bundle still
+parses and the stage writers keep their bytes. Code that needs `episode`
+(`runPublishMatrixRssGate`, podcast rows in `planPublishMatrix`) fails with an actionable error
+naming the field instead of a `TypeError`. `PublishPlanRowSchema` gains `transport`
+(`fanout` default | `browser`), `metadata` (record, forwarded to the shared `sendRows`) and
+`modeSource` (`flag` | `config` | `preset`). `modeSource` is written only by the named
+`publish-plan`, whose `applyChannelModes(preset, channels, liveChannels)` applies
+`content_types.<type>.channels` (`<plugin>/<variant>` key beats `<plugin>`), records excluded rows in
+`excluded[]` with reason `mode off (config)`, and rejects a key matching no preset row (exit 2,
+nothing written). `kk stage run publish-matrix-plan` does not read `channels`.
 
 **`publish-matrix-plan <workDir> --bundle <bundle.json> --preset <slug> --window <w> [--channels a,b] [--live-channels a,b] [--dummy]`**
 writes `4-publish/plan.<window>.json` and `4-publish/payloads/content.<id>.json`, and appends a

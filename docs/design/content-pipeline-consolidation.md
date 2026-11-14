@@ -2,6 +2,10 @@
 
 **Status:** accepted 2026-11-13 · **Authority:** ADR-053 (`docs/00_ADR.md`) · **Feature:** G61
 
+Shipped in part: 0363–0364 register `new`, `status`, the `content_types` registry and the five
+`publish-*` step verbs (surface: `docs/04_DESIGN.md` §1.14). The launch verbs, the three workflows
+and the retirement list below remain accepted design (tasks 0365–0369).
+
 This document freezes the surface that Phases 2–4 of G61 implement. It does not change ADR-053.
 The points that extend the ADR's pattern were accepted by the operator on 2026-11-13 and are
 recorded as an amendment under ADR-053; see [Decisions](#decisions-2026-11-13).
@@ -26,8 +30,9 @@ Every verb prints exactly one JSON object on stdout; diagnostics go to stderr.
 
 ## 1. Verb table
 
-One registration function, `registerContentVerbs(noun, defaultType)` in
-`apps/cli/src/commands/content.ts`, attaches the shared verbs to both nouns (ADR-053 §2).
+One registration function, `registerContentVerbs(program, noun, defaultType)` in
+`apps/cli/src/commands/content.ts`, attaches the shared verbs to both nouns (ADR-053 §2); both calls
+live in `apps/cli/src/cli.ts`.
 `kk news` is `kk article` with `--type news` fixed, plus two news-only verbs.
 Plain verbs are operator entry points; hyphenated verbs are workflow steps and take **named flags
 only** — no positional arguments.
@@ -576,8 +581,8 @@ standard in the task corpus. Dependencies are the only allowed sharing of an own
 
 | Phase | Task | Owns | Depends on | Covers feature scenario |
 | --- | --- | --- | --- | --- |
-| 2 | **0363** `content_types` config + `kk article`/`kk news` nouns with `new` and `status` | `apps/cli/src/content-types.ts`, `apps/cli/src/commands/content.ts`, `apps/cli/src/index.ts` | 0361 | — |
-| 2 | **0364** Unified bundle/plan schema and the five `publish-*` step verbs | `apps/cli/src/publish-matrix.ts`, `apps/cli/src/commands/content-publish.ts` | 0361, 0363 | 5 (schema half) |
+| 2 | **0363** `content_types` config + `kk article`/`kk news` nouns with `new` and `status` — **shipped** | `apps/cli/src/content-types.ts`, `apps/cli/src/commands/content.ts`, `apps/cli/src/cli.ts` | 0361 | — |
+| 2 | **0364** Unified bundle/plan schema and the five `publish-*` step verbs — **shipped** | `apps/cli/src/publish-matrix.ts`, `apps/cli/src/commands/content-publish.ts` | 0361, 0363 | 5 (schema half) |
 | 2 | **0365** `launchWorkflow()` and the plain verbs `generate` / `publish` | `apps/cli/src/launch.ts`, `apps/cli/src/commands/content-launch.ts` | 0360, 0363, 0364 | 2, 3 (re-proved in-binary) |
 | 3 | **0366** `kk-publish.yaml` and news publish through it | `plugins/kk/workflows/kk-publish.yaml` | 0364, 0365 | 5, 6 |
 | 3 | **0367** News generate step verbs and `kk-news-generate.yaml` | `apps/cli/src/commands/content-generate.ts`, `plugins/kk/workflows/kk-news-generate.yaml` | 0365, 0366 | 1 (re-proved) |

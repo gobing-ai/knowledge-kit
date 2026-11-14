@@ -3,9 +3,9 @@ name: Features
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state
 authority: derived
-version: 2.31.0
+version: 2.32.0
 created_at: 2026-07-22
-updated_at: 2026-11-10
+updated_at: 2026-11-13
 derived_from: [01_PRD, 02_ROADMAP]
 edit_rules: 99 §6.6
 sync: [T4]
@@ -105,7 +105,7 @@ sync: [T4]
 | G4 | kk-solo-podcast | ⏳ planned | — | home node; historical: F5 |
 | G5 | kk-storm-research | ⏳ planned | — | home node; historical: C3–C5 |
 | G6 | kk-ingest-generate-publish | ⏳ planned | — | home node; historical: B5 |
-| G61 | Content pipeline consolidation: shared publish core, article/news verbs, simplified workflows | ⏳ planned | P1 | ADR-053 (accepted 2026-11-13); tasks `0360` (launch safety), `0361` (publish core), `0362` (design freeze → Phase 2–4 tasks); overlaps the remaining scope of G21 |
+| G61 | Content pipeline consolidation: shared publish core, article/news verbs, simplified workflows | 🔶 partial | P1 | `0360`–`0364` shipped: launch safety, shared core, design, content types and named publish steps. Verify both nouns' dummy publish lifecycle; launch/workflow migration remains `0365`–`0369` (ADR-053). |
 | G7 | kk workflow run ledger | ⏳ planned | — | cross-workflow capabilities |
 | G71 | Per-workflow run ledger from spur action_runs | ⏳ ready | — | task `0207` |
 | G8 | Workflow visibility in Spur Board: Collect, Daily AI Voice, IT Content | 🔧 active | 3 | tasks `0252`–`0254` done; `0255` adds the separately-packed-install acceptance (`apps/board/tests/installed-board.test.ts`, `scripts/tests/board-package.test.ts`), four tabs per module, operator setup in `docs/04_DESIGN.md`; 0319 adds the Collect channel-yield aggregate and 0320 the Daily episode funnel + supply-context panel (ADR-035 amendments 2026-10-16/22); [satellite](design/workflow-board-modules.md) |
