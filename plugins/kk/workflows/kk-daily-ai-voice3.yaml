@@ -87,9 +87,9 @@ vars:
   # QC pins — lockstep with episode-plan-gen's DEFAULT_FILTER_CONFIG (env wins), same as voice1.
   qc_categories: "ai-news,ai-technical,ai-research,ai-industry"
   qc_min_quality: "2"
-  qc_min_importance: "2"
-  qc_min_urgency: "1"
-  qc_min_impact: "0"
+  qc_min_importance: "3"
+  qc_min_urgency: "2"
+  qc_min_impact: "1"
   qc_min_episode_items: "8"
   episode_min_minutes: "15"
   # 2026-10-09 operator decision: ingest bodies are spoken in full and today's pools render 22-46
