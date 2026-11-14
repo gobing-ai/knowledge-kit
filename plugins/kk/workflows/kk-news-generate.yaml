@@ -1,0 +1,410 @@
+---
+name: kk-news-generate
+kind: dag
+version: "1"
+description: >-
+  The news generation workflow (G61 / ADR-053 §5, design
+  `docs/design/content-pipeline-consolidation.md` §5.1, task 0367): twenty nodes, launched by
+  `kk news generate`. It replaces the forty-three nodes of `kk-daily-ai-voice3.yaml` — the ten
+  deterministic nodes that composed and gated the run are one `kk news prepare`, the fifteen
+  generation nodes are four step verbs, and the publish tail is gone (`generate --publish` launches
+  `kk news publish` after this workflow exits 0). It publishes nothing: the channel matrix lives in
+  the publish preset and `kk-publish`.
+  Re-enter a failed run with
+  `spur workflow run plugins/kk/workflows/kk-news-generate.yaml --vars '{"work_dir":"<run dir>","run_date":"<YYYYMMDD>"}'`
+  — every boundary node is a verb whose stages are cached or idempotent, and the pool gate says
+  whether there is anything to generate at all.
+
+# ADR-053 §5: ONE executor variable drives every agent node. `agent` arrives from the launching verb
+# (`kk news generate --agent`), defaults to `inline`, and every retry node resolves by `role:
+# reviewer` instead of carrying a second executor pin (0360 R2).
+#
+# The run identity arrives from `kk news generate` (`work_dir`, `run_date`, `run_id`, `skill_dir`),
+# so no node reads a work directory out of a token file and no shell action sets a var (shell actions
+# cannot: the engine's only var writers are the launching verb and `file.read.into-var`, which AC1
+# forbids here). `preset` names the publish preset the freeze validates against; `skip_review` turns
+# the operator's review pause off.
+vars:
+  work_dir: ""
+  run_date: ""
+  run_id: ""
+  agent: inline
+  # The writer skill, read in place (design §2.2): `<package>/plugins/kk/skills/news-editorial`. No
+  # `20-editorial/` copy and no style-contract copy exist in a new run — the prompts cite this path.
+  skill_dir: ""
+  skip_review: "false"
+  preset: ""
+
+# Node policy (unchanged from voice3 where it earns its place):
+#  * a node whose dependencies were ALL skipped is skipped; a done+skipped mix still runs;
+#  * any failed node fails the run unless its action says `onError: continue`, which is how the
+#    bounded voice chain and the advisory nodes keep a day alive;
+#  * nodes are declared in topological order — the engine settles skips in one pass over this list;
+#  * every node after `prepare` conditions on `pool-gate.json`, so an empty pool (a no-content day)
+#    skips the whole content subtree and the run still closes `done`.
+nodes:
+  # ── 1. executor-probe: one real prompt, before any spend (0360 R4) ───────────────────────────
+  - id: executor-probe
+    description: "One real prompt to the resolved executor; a dead executor fails the run here (ADR-053 §5)"
+    action:
+      kind: agent.run
+      options:
+        role: scribe
+        agent: ${vars.agent}
+        timeoutMs: 120000
+        input: "Reply with exactly: OK"
+
+  # ── 2. prepare: workspace, pool, QC, selection, the pool gate ────────────────────────────────
+  - id: prepare
+    description: >-
+      `kk news prepare` — one verb for voice3's ten composition nodes: `daily-preflight` (the stage
+      roster check: this checkout's YAML against the installed stage runner), the warn-only session
+      probe, `daily-extract`, `daily-plan`, `daily-qc-content`, `kk store select` (the cross-day
+      selection ledger) and the pool gate, written as `pool-gate.json` `{status: PASS|EMPTY}` inside
+      the run directory instead of a token under `.spur/run/`. It exits 0 on an empty pool: a thin
+      day is a verdict, not a failure, and every later node reads the gate.
+    dependsOn: [executor-probe]
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk news prepare --work-dir "${vars.work_dir}" --run-date "${vars.run_date}" --ledger-sync
+
+  # ── 3–6. curate: the agent call, its two guards and the documented fallback ──────────────────
+  - id: curate
+    description: "Curate the QC candidates into a translated plan + exclusion list via the writer skill's `curate` mode (10 min behind, so it is guarded below)"
+    dependsOn: [prepare]
+    condition:
+      kind: shell
+      options:
+        command: 'grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null'
+    action:
+      kind: agent.run
+      onError: continue
+      options:
+        role: scribe
+        agent: ${vars.agent}
+        timeoutMs: 600000
+        # ADR-115 error tier: keep this prompt <= 1000 chars.
+        input: |
+          Follow mode `curate` in ${vars.skill_dir}/SKILL.md (read references/selection.md and references/style-contract.zh.md first).
+          --in ${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json (metadata.docs is the candidate Doc[]; don't edit it)
+          --out-plan ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json
+          --out-excluded ${vars.work_dir}/21-plan/${vars.run_date}_03_curate_excluded.json
+          Deliver both JSON files with your file-write tool (a headless sandbox may block shell writes).
+        expectFile: ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json
+        allowAppend: false
+
+  - id: curate-check
+    description: "`generate-check --step curate`: validate the split, unwrap a Content envelope, dedup near-duplicate titles; a fix verdict writes _03_curate_errors.json"
+    dependsOn: [curate]
+    condition:
+      kind: shell
+      options:
+        command: 'grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null'
+    action:
+      kind: shell
+      options:
+        command: 'kk news generate-check --work-dir "${vars.work_dir}" --step curate'
+
+  - id: curate-fix
+    description: "One targeted `curate --fix` pass on the check's errors — the reviewer rung, so a dead operator pin still has a second attempt"
+    dependsOn: [curate-check]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          test -s "${vars.work_dir}/21-plan/${vars.run_date}_03_curate_errors.json"
+          && grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null
+    action:
+      kind: agent.run
+      onError: continue
+      options:
+        role: reviewer
+        agent: ${vars.agent}
+        timeoutMs: 600000
+        # ADR-115 error tier: keep this prompt <= 1000 chars.
+        input: |
+          Follow mode `curate --fix` in ${vars.skill_dir}/SKILL.md (read references/selection.md and references/style-contract.zh.md first).
+          --in ${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json (metadata.docs is the candidate Doc[]; don't edit it)
+          --fix ${vars.work_dir}/21-plan/${vars.run_date}_03_curate_errors.json
+          --out-plan ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json
+          --out-excluded ${vars.work_dir}/21-plan/${vars.run_date}_03_curate_excluded.json
+          Deliver both corrected JSON files with your file-write tool.
+        expectFile: ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json
+        allowAppend: false
+
+  - id: curate-final
+    description: "`generate-check --step curate --final`: the documented fallback — untranslated candidates with `[]` exclusions — when the fix pass still fails"
+    dependsOn: [curate-check, curate-fix]
+    condition:
+      kind: shell
+      options:
+        command: 'grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null'
+    action:
+      kind: shell
+      options:
+        command: 'kk news generate-check --work-dir "${vars.work_dir}" --step curate --final'
+
+  # ── 7–10. script-write: the master script plan, its guards, the advisory judge ───────────────
+  - id: script-write
+    description: "Author the master script plan (intro/outro, lead/insight/card per doc id, cover, cards, social, excluded); a rejected plan falls back to templates inside `generate-render` (F613)"
+    dependsOn: [curate-final]
+    condition:
+      kind: shell
+      options:
+        command: 'grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null'
+    action:
+      kind: agent.run
+      onError: continue
+      options:
+        role: scribe
+        agent: ${vars.agent}
+        timeoutMs: 600000
+        # ADR-115 error tier: keep this prompt <= 1000 chars.
+        input: |
+          Follow mode `write` in ${vars.skill_dir}/SKILL.md (read its references first: the skill owns selection, balance, style contract and the master output shape).
+          --in ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json (don't edit it)
+          --excluded ${vars.work_dir}/21-plan/${vars.run_date}_03_curate_excluded.json
+          --out ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json
+          Output only the JSON file.
+        expectFile: ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json
+        allowAppend: false
+
+  - id: script-check
+    description: "`generate-check --step script`: dry-run the script validator; a fix verdict writes _08_script-write_errors.json beside the plan"
+    dependsOn: [script-write]
+    condition:
+      kind: shell
+      options:
+        command: 'grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null'
+    action:
+      kind: shell
+      options:
+        command: 'kk news generate-check --work-dir "${vars.work_dir}" --step script'
+
+  - id: script-fix
+    description: "One targeted `write --fix` pass on the validator's errors (reviewer rung); still-rejected plans fall back to templates"
+    dependsOn: [script-check, curate-final]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          test -s "${vars.work_dir}/24-script/${vars.run_date}_08_script-write_errors.json"
+          && grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null
+    action:
+      kind: agent.run
+      onError: continue
+      options:
+        role: reviewer
+        agent: ${vars.agent}
+        timeoutMs: 600000
+        # ADR-115 error tier: keep this prompt <= 1000 chars.
+        input: |
+          Follow mode `write --fix` in ${vars.skill_dir}/SKILL.md (read its references first).
+          --in ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json (don't edit it)
+          --excluded ${vars.work_dir}/21-plan/${vars.run_date}_03_curate_excluded.json
+          Previous plan (may be absent): ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json
+          --fix ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_errors.json
+          --out ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json (overwrite it with the full corrected plan)
+          Output only the JSON file.
+        expectFile: ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json
+        allowAppend: false
+
+  - id: editorial-judge
+    description: "Advisory kk:content-judge evaluation of the script plan under the news-balance rubric; nothing depends on it for control flow (0345 R11)"
+    dependsOn: [script-check, script-fix]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          test -s "${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json"
+          && grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null
+    action:
+      kind: agent.run
+      onError: continue
+      options:
+        role: reviewer
+        agent: ${vars.agent}
+        timeoutMs: 600000
+        # ADR-115 error tier: keep this prompt <= 1000 chars.
+        input: |
+          You are an LLM-as-judge evaluating a daily news script plan for the knowledge-kit pipeline.
+          Content to evaluate: ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json
+          Plan docs reference: ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json
+          Rubric: news-balance
+          Load the rubric definition from plugins/kk/skills/content-judge/references/rubrics.md (section: news-balance) and the contract from plugins/kk/skills/content-judge/SKILL.md.
+          Evaluate the script plan against every criterion in news-balance (news-first, commentary-share, no-restatement, tech-depth, ordering).
+          Write the verdict JSON (with confidence HIGH | MEDIUM | LOW) to ${vars.work_dir}/24-script/${vars.run_date}_08_editorial-judge_verdict.json.
+        expectFile: ${vars.work_dir}/24-script/${vars.run_date}_08_editorial-judge_verdict.json
+        allowAppend: false
+
+  # ── 11. render: everything deterministic between the agents and TTS ─────────────────────────
+  - id: render
+    description: >-
+      `kk news generate-render` — voice3's `script`, `editorial-render`, `article`, `cover`,
+      `cover-normalize` and `wrap-docs` in one process. Roughly half a minute itself; it separates
+      the agent output behind it from the 141-minute voice step, and it is the node that renders the
+      article and the TTS input `generate-voice` reads.
+    dependsOn: [curate-final, script-check, script-fix]
+    condition:
+      kind: shell
+      options:
+        command: 'grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null'
+    action:
+      kind: shell
+      options:
+        command: 'kk news generate-render --work-dir "${vars.work_dir}"'
+
+  # ── 12–13. content safety (nested state machine) and the operator review pause ──────────────
+  - id: safety
+    description: >-
+      Content safety as a nested state machine (`kk-daily-safety.yaml`, unchanged by G61): review →
+      judge → bounded revise → clean|block. It blocks here and only here, so a non-zero exit means
+      the drafts must not publish. The launcher vars the parent run exports are stripped at the
+      nested-spur boundary, exactly as voice3 does.
+    dependsOn: [render]
+    condition:
+      kind: shell
+      options:
+        command: 'grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null'
+    action:
+      kind: shell
+      options:
+        command: >-
+          env -u SPUR_WORKFLOW_RUN_ACTIVE -u SPUR_EXPECTED_DEFINITION_DIGEST
+          spur workflow run plugins/kk/workflows/kk-daily-safety.yaml
+          --vars "{\"work_dir\":\"${vars.work_dir}\",\"run_date\":\"${vars.run_date}\",\"agent\":\"${vars.agent}\"}"
+          --quiet --no-plan
+
+  - id: review
+    description: >-
+      Operator review of the safety-gated drafts: `pause: true` stops the run and RESUME is the
+      approval (the engine marks a paused node done on resume); cancelling is the rejection. Skipped
+      when `skip_review=true`, so a scheduled day runs unattended without losing the audit pause.
+    dependsOn: [safety]
+    pause: true
+    condition:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.skip_review}" != "true"
+          && grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null
+
+  # ── 14–16. voice: one engine per attempt, the fallback chain visible in the graph ───────────
+  - id: voice
+    description: >-
+      `generate-voice --engine voxcpm` — the primary driver, and the longest step in the run
+      (141 min measured). `generate-voice` never falls back internally: the workflow owns the chain,
+      so a resume restarts at the engine that failed, not at engine one. onError: continue — the
+      siblings below are the loud second and third attempts.
+    dependsOn: [render, review]
+    condition:
+      kind: shell
+      options:
+        command: 'grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null'
+    action:
+      kind: shell
+      onError: continue
+      options:
+        command: 'kk news generate-voice --work-dir "${vars.work_dir}" --engine voxcpm'
+
+  - id: voice-fallback
+    description: "Fallback 1: gemini — runs when no engine has left a passing audio verdict (the content JSON is the evidence; `grep` keeps `jq` out of the graph)"
+    dependsOn: [voice]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          ! grep -q '"passed": true' "${vars.work_dir}/30-audio/${vars.run_date}_11_generate_content.json" 2>/dev/null
+          && grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null
+    action:
+      kind: shell
+      onError: continue
+      options:
+        command: 'kk news generate-voice --work-dir "${vars.work_dir}" --engine gemini'
+
+  - id: voice-fallback2
+    description: "Fallback 2 (last, loud): omnivoice — the run fails here if three engines could not render the script"
+    dependsOn: [voice-fallback]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          ! grep -q '"passed": true' "${vars.work_dir}/30-audio/${vars.run_date}_11_generate_content.json" 2>/dev/null
+          && grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null
+    action:
+      kind: shell
+      options:
+        command: 'kk news generate-voice --work-dir "${vars.work_dir}" --engine omnivoice'
+
+  # ── 17. cards: 46 minutes measured, and a missing series must not fail the episode ──────────
+  - id: cards
+    description: "`kk news generate-cards` — the card series through the pinned xhs presets; continue on failure, the publish plan names a missing series and stays soft"
+    dependsOn: [render, review]
+    condition:
+      kind: shell
+      options:
+        command: 'grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null'
+    action:
+      kind: shell
+      onError: continue
+      options:
+        command: 'kk news generate-cards --work-dir "${vars.work_dir}"'
+
+  # ── 18–20. the frozen bundle: variants, the nested variants review, then the freeze ─────────
+  - id: variants
+    description: >-
+      `kk news generate-bundle --stage variants` — voice3's `publish-prep`, `bundle-variants` and
+      `daily-safety-manifest` in one process: `31-publish/` prep, `30-variants/*` payloads and the
+      manifest the nested variants review registers. Two stages, because the review of those
+      variants has to run between them and a nested workflow call cannot live inside a verb.
+    dependsOn: [voice, voice-fallback, voice-fallback2, cards]
+    condition:
+      kind: shell
+      options:
+        command: 'grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null'
+    action:
+      kind: shell
+      options:
+        command: 'kk news generate-bundle --work-dir "${vars.work_dir}" --run-id "${vars.run_id}" --run-date "${vars.run_date}" --stage variants'
+
+  - id: safety-variants
+    description: >-
+      The final-variant safety review (0331) through the same nested machine, re-rooted by
+      `safety_scope_dir=4-safety-variants`. It leaves `4-safety-variants/safety.json` — status,
+      exclusion record and the sha256 of every reviewed variant — which the freeze carries into the
+      bundle, so live launches and social edits are gated on exactly the reviewed bytes. Fails
+      closed: a block fails this node and the run never freezes.
+    dependsOn: [variants]
+    condition:
+      kind: shell
+      options:
+        command: 'grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null'
+    action:
+      kind: shell
+      options:
+        command: >-
+          env -u SPUR_WORKFLOW_RUN_ACTIVE -u SPUR_EXPECTED_DEFINITION_DIGEST
+          spur workflow run plugins/kk/workflows/kk-daily-safety.yaml
+          --vars "{\"work_dir\":\"${vars.work_dir}\",\"run_date\":\"${vars.run_date}\",\"agent\":\"${vars.agent}\",\"safety_scope_dir\":\"4-safety-variants\"}"
+          --quiet --no-plan
+
+  - id: freeze
+    description: >-
+      `generate-bundle --stage freeze` then `kk news report` — the bundle is frozen over exactly the
+      reviewed bytes, and the generation report plus the ledger sync are the run's own last write.
+      Two commands, because a report failure must not cost three hours of generation a re-run: the
+      freeze has already landed when the report starts. A second freeze of a frozen bundle exits 1
+      without rewriting it.
+    dependsOn: [safety-variants]
+    condition:
+      kind: shell
+      options:
+        command: 'grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null'
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk news generate-bundle --work-dir "${vars.work_dir}" --run-id "${vars.run_id}" --run-date "${vars.run_date}" --preset "${vars.preset}" --stage freeze
+          && kk news report --work-dir "${vars.work_dir}"

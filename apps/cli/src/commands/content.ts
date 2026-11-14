@@ -13,6 +13,7 @@ import {
 import { runItcStage } from '../itc-stage';
 import { consoleOutput } from '../output';
 import { resolveConfigPath } from '../publish-core';
+import { registerContentGenerateVerbs } from './content-generate';
 import { registerContentLaunchVerbs } from './content-launch';
 import { registerContentPublishVerbs } from './content-publish';
 
@@ -44,6 +45,8 @@ export interface ContentConfigDocument extends ContentTypeConfig {
     works_dir?: unknown;
     /** User-override root for workflow YAMLs (design §1.1 R6, `04_DESIGN` §2). */
     workflows_dir?: unknown;
+    /** Per-workflow settings (design §2: everything `content_types` does not answer). */
+    workflows?: unknown;
 }
 
 const parseJson = JSON.parse.bind(JSON);
@@ -450,6 +453,7 @@ export function registerContentVerbs(program: Command, noun: string, defaultType
     configureStatus(group.command('status').description('inspect a content run'), noun, defaultType);
     registerContentLaunchVerbs(group, noun, defaultType);
     registerContentPublishVerbs(group, defaultType);
+    registerContentGenerateVerbs(group, noun, defaultType);
 }
 
 /** Command-module registration seam used by the CLI surface rule and host integrations. */

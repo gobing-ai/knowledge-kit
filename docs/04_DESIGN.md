@@ -1438,14 +1438,16 @@ kk article publish   --type <t> (--slug <s> | --run-date <YYYYMMDD> | --work-dir
 kk article status    --type <t> (--slug <s> | --work-dir <dir>) [--window <w>]
 kk article publish-plan | publish-check | publish-send | publish-settle | publish-report
                      --work-dir <dir> [--window <w>] …            # workflow steps, named flags only
-kk article generate-check | generate-bundle --work-dir <dir> …    # planned (0367–0368)
+kk article generate-check | generate-bundle --work-dir <dir> …    # generate-bundle shipped (0367), generate-check (0368)
 
 kk news <same verbs, --type fixed to news, --run-date <YYYYMMDD> instead of --slug>
-kk news prepare | generate-render | generate-voice | generate-cards | report --work-dir <dir> …   # planned (0367)
+kk news prepare | generate-render | generate-voice | generate-cards | report --work-dir <dir> …   # shipped (0367)
 ```
 
-`new`, `status`, `generate`, `publish` and the five `publish-*` verbs are registered (0363–0365).
-Every line marked planned is accepted design, not surface: do not invoke it as if it exists.
+`new`, `status`, `generate`, `publish`, the five `publish-*` verbs (0363–0365) and the six news
+step verbs `prepare`, `generate-check`, `generate-render`, `generate-voice`, `generate-cards` and
+`report` plus the shared `generate-bundle` (0367) are registered. Every line still marked planned
+is accepted design, not surface: do not invoke it as if it exists.
 
 - Exit codes: `0` done, `1` failed (the workflow ran and failed, or exited non-zero through
   `generate --publish`), `2` usage, `5` launch refused (preflight, missing bundle, window/CN-consent
@@ -1488,8 +1490,9 @@ Every line marked planned is accepted design, not surface: do not invoke it as i
   (see "Run directories" below). `kk-daily-publish3.yaml` remains the installed scheduled path until
   0369 cuts the scheduler over; both produce the same `4-publish/` file set and outcome per window
   (proven by `apps/cli/tests/kk-publish.e2e.test.ts`, AC3).
-- Planned workflows: `kk-news-generate`, `kk-article-generate` (0367–0368); until they ship, tests
-  supply stub YAMLs through `workflows_dir`.
+- Shipped workflows: `kk-publish` (0366) and `kk-news-generate` (0367, twenty nodes, one executor
+  var). Planned: `kk-article-generate` (0368); until it ships, tests supply a stub YAML through
+  `workflows_dir`.
 - Planned hidden routes (ADR-037) once shipped: `kk itc …`, `kk daily …`, and the `kk stage run`
   names listed in the design's stage migration table.
 
