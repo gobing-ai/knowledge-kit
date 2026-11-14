@@ -285,7 +285,14 @@ function runWorkflow(
     writeFileSync(logPath, '');
     const result = Bun.spawnSync(
         [REAL_SPUR, 'workflow', 'run', workflow, '--run-id', runId, '--json', '--vars', JSON.stringify(vars)],
-        { cwd: process.cwd(), env: { ...env, KK_LOG: logPath }, stdout: 'pipe', stderr: 'pipe' },
+        // `KK_WINDOW_WAIT=skip` is the documented seam: the cn-peak window's 09:00 Shanghai wait
+        // would otherwise sleep hours and blow the test budget (it flips with the wall clock).
+        {
+            cwd: process.cwd(),
+            env: { ...env, KK_LOG: logPath, KK_WINDOW_WAIT: 'skip' },
+            stdout: 'pipe',
+            stderr: 'pipe',
+        },
     );
     return {
         code: result.exitCode ?? 1,

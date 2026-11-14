@@ -1787,6 +1787,13 @@ export async function runPublishMatrixWaitUntil(
         echoError(`publish-matrix-wait-until: '${target}' is not a valid wall-clock time`);
         return 1;
     }
+    // Parity/rehearsal seam: an offline test drives the real workflow stack, so a window whose
+    // target is hours away would otherwise sleep through the test's budget. Documented and
+    // never set by a shipped job; the production path always waits.
+    if (process.env.KK_WINDOW_WAIT === 'skip') {
+        echo(`publish-matrix-wait-until: ${target} ${zone} skipped (KK_WINDOW_WAIT=skip)`);
+        return 0;
+    }
     const now = deps.now ?? Date.now;
     const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 
