@@ -1,15 +1,17 @@
 ---
 schema_version: 1
 name: "wechatmp-pub: route login and open through the shared bot session path"
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-13T19:00:06.213Z
-updated_at: "2026-11-14T07:38:54.484Z"
+updated_at: "2026-11-14T08:39:07.319Z"
 feature_id: E9
 
 ac_altitude: task-local
 ac_numbering: task-local
 dependencies: ["0370"]
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0371-verdict.json
 ---
 
 ## 0371. wechatmp-pub: route login and open through the shared bot session path
@@ -22,11 +24,11 @@ WeChat is not flagged and its publish path (same-origin CGI draft with an export
 
 ### Requirements
 
-- [ ] R1. `login` and `open` in `plugins/publishings/wechatmp-pub/src/profile-check.ts` run through the shared `runProfileCli` path with the WeChat readiness predicate; the bot-mode login verdict carries `expiresAt` like the other channels.
-- [ ] R2. The `storage-state.json` export after a successful login is preserved byte-for-byte in shape and location (`storageStatePath`), including its atomic temp-file write.
-- [ ] R3. `check` behaviour, output and exit codes are unchanged; no existing test assertion is edited.
-- [ ] R4. After the change, `rg -n "openPersistentBrowser" plugins/publishings/wechatmp-pub/src` prints only call sites the publish flow itself needs; each remaining one is listed in Solution with the reason.
-- [ ] R5. A harness change is allowed only as an additive optional hook (for the storage-state export) and must leave the other channels' tests untouched. `bun run lint`, `bun run test`, `bun run build` exit 0.
+- [x] R1. `login` and `open` in `plugins/publishings/wechatmp-pub/src/profile-check.ts` run through the shared `runProfileCli` path with the WeChat readiness predicate; the bot-mode login verdict carries `expiresAt` like the other channels.
+- [x] R2. The `storage-state.json` export after a successful login is preserved byte-for-byte in shape and location (`storageStatePath`), including its atomic temp-file write.
+- [x] R3. `check` behaviour, output and exit codes are unchanged; no existing test assertion is edited.
+- [x] R4. After the change, `rg -n "openPersistentBrowser" plugins/publishings/wechatmp-pub/src` prints only call sites the publish flow itself needs; each remaining one is listed in Solution with the reason.
+- [x] R5. A harness change is allowed only as an additive optional hook (for the storage-state export) and must leave the other channels' tests untouched. `bun run lint`, `bun run test`, `bun run build` exit 0.
 
 ### Acceptance Criteria
 
@@ -67,15 +69,70 @@ Scenario: AC2 — Check and the publish flow are unchanged (req: R3, R4, R5)
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change map (one anchor per row; R1–R5). `login` and `open` now run through the shared
+`runProfileCli`; the channel's `storage-state.json` artifact survives through two additive optional
+harness hooks.
+
+| Requirement | Change |
+| --- | --- |
+| R1 | `plugins/publishings/wechatmp-pub/src/profile-check.ts:85` — the `login`/`open` branch calls `runProfileCli(wechatSessionConfig, argv, …)` with an injectable launcher and a stdout adapter that mirrors refusals to stderr |
+| R1 | `plugins/publishings/wechatmp-pub/src/index.ts:273` — `wechatSessionConfig` carries the console readiness predicate, the canonical home URL and the session hooks; bot-mode `expiresAt` now comes from the shared `captureSessionFacts` |
+| R1 | `plugins/publishings/wechatmp-pub/src/index.ts:259` — `wechatBrowserLauncher` is the single launch seam the shared CLI and the publish flow open through |
+| R2 | `plugins/publishings/wechatmp-pub/src/index.ts:279` — `onAuthenticated` settles then calls the unchanged `persistWechatSessionState`, so `storageStatePath` and the atomic temp-file + rename write are preserved byte-for-byte |
+| R2 | `plugins/publishings/wechatmp-pub/src/index.ts:220` — `restoreWechatSessionState` is the extracted cookie + localStorage replay that `open` runs through `onOpen` |
+| R3 | `plugins/publishings/wechatmp-pub/src/profile-check.ts:110` — `check` keeps the channel-owned `checkWechatSession` branch with its verdict shape, output and exit codes untouched |
+| R4 | `plugins/publishings/wechatmp-pub/src/index.ts:199` — remaining `openPersistentBrowser` call in `openWithState`, needed by the read-only `check` probe because the shared check cannot re-inject a captured state |
+| R4 | `plugins/publishings/wechatmp-pub/src/index.ts:261` — the other remaining call seeds `wechatBrowserLauncher.launch`, the seam every shared login/open and the publish flow launch through (not a second login routine) |
+| R5 | `packages/publish-harness/src/browser.ts:95` — additive optional `sessionState` hooks on `ChannelBrowserConfig`; no existing channel sets them, so its behavior is unchanged |
+| R5 | `packages/publish-harness/src/browser.ts:525` — `loginWithAuthenticatedPage` runs the capture hook on the page the readiness predicate accepted and keeps a landed capture a success when the context close then fails |
+| R5 | `packages/publish-harness/src/browser.ts:495` — `openChannelSession` runs `onOpen` before navigation and closes + refuses when the hook cannot restore the session |
+
+Deleted: `openWechatSession` (its re-injection now runs inside the shared `open` path) and the
+direct `openPersistentBrowser` login in `openWechatLogin` (now a programmatic entry over
+`runProfileCli`, kept because the publish flow and tests call it). Runtime-written evidence:
+`.spur/run/0371-test-gate.status` (gate), `.spur/run/0371-verdict.json` (review).
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/publishings/wechatmp-pub/src/profile-check.ts:85` delegates `login` and `open` to `runProfileCli(wechatSessionConfig, …)`; the bot-mode verdict gains `expiresAt` from the shared `captureSessionFacts` (`packages/publish-harness/src/browser.ts:561`), asserted in `plugins/publishings/wechatmp-pub/tests/wechatmp-profile-check-shared-session.test.ts:88` |
+| R2 | MET | `plugins/publishings/wechatmp-pub/src/index.ts:279` calls the unchanged `persistWechatSessionState` (`plugins/publishings/wechatmp-pub/src/index.ts:120`), preserving `storageStatePath` and the exclusive temp-file + rename write; the AC1 test asserts the state file exists at `storageStatePath(profileDir)` and no temp file is left beside it |
+| R3 | MET | `plugins/publishings/wechatmp-pub/src/profile-check.ts:110` keeps the channel-owned `checkWechatSession` branch and its verdict/exit contract; 12 pre-existing profile-check assertions, 137 `wechatmp-pub.test.ts` assertions and 10 `wechatmp-default-launcher.test.ts` assertions pass unmodified in the full-tier gate run |
+| R4 | MET | `rg -n openPersistentBrowser plugins/publishings/wechatmp-pub/src` now prints exactly two call sites — `plugins/publishings/wechatmp-pub/src/index.ts:199` (the read-only `check` probe) and `:261` (the `wechatBrowserLauncher` seam) — each named with its reason in `## Solution` |
+| R5 | MET | The harness change is additive and optional (`packages/publish-harness/src/browser.ts:95` adds `sessionState?`; no other channel sets it) and leaves their tests untouched: `bun run lint` and `bun run test` exit 0 inside the full gate (`spur task gate 0371 recheck` PASS, 1120373 ms), `bun run build` exit 0 |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — Login records session facts and still exports storage state (req: R1, R2) | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-profile-check-shared-session.test.ts:88` runs `login --url <console url>` against a recording launcher whose console-home page passes the predicate and whose jar holds one persistent httpOnly cookie: exit 0, last stdout line carries `status: verified`, `defaultUrl: https://mp.weixin.qq.com/` and `expiresAt`, and `storage-state.json` is written by the atomic writer with the profile dir holding only that file |
+| AC2 — Check and the publish flow are unchanged (req: R3, R4, R5) | MET | test | `git status --porcelain -- plugins/publishings/wechatmp-pub/tests` reports only the added `wechatmp-profile-check-shared-session.test.ts` (no existing assertion edited); `spur task gate 0371 recheck` = `bun run spur-check` PASS at tree `c323861a` (`.spur/run/0371-test-gate.log`), `bun run lint` PASS inside it, and `bun run build` exit 0 after the final edits |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+Re-review of the 0371 diff after the remediation visit (full tier green again: `spur task gate 0371
+recheck` PASS in 1120373 ms at git tree `c323861a`, `.spur/run/0371-test-gate.log`). Dimensions:
+functional traceability (R → `file:line`), SECUA, and architecture depth. Every finding from the
+first pass was re-checked against the fixed tree instead of being copied forward.
+
+| Priority | Location | Finding | Disposition |
+| --- | --- | --- | --- |
+| P2 (major) | `docs/04_DESIGN.md:1624` | T3 surface drift found in pass 1: the `ChannelBrowserConfig`, `runProfileCli` and wechatmp rows described a surface without the `sessionState` hooks. Fixed — `docs/04_DESIGN.md:1624` documents `sessionState?` (`onAuthenticated`/`onOpen`), `docs/04_DESIGN.md:1631` documents the page-scoped login and the `open` restore seam, `docs/04_DESIGN.md:1757` documents the shared `login\|open` routing with the channel-owned `check`. | RESOLVED |
+| P3 (minor) | `packages/publish-harness/src/browser.ts:527` | Close-error tolerance was keyed on the login shape, so a bot-mode login with no hook silently swallowed a shutdown error and reported a capture it never made. Fixed — `sessionCaptured` is derived from `config.sessionState?.onAuthenticated`, so only a real hook capture excuses a close failure and every other channel keeps `withProfilePage` semantics. | RESOLVED |
+| P4 (advisory) | `plugins/publishings/wechatmp-pub/src/profile-check.ts:90` | An `open` refusal printed twice on stderr. Fixed — only `profile login failed:` is mirrored; the `open` refusal reaches the operator once, through its composed verdict detail. | RESOLVED |
+
+Residual risk carried by this review: the login/open path is exercised with recording launchers, not a
+live WeChat console visit (the task's out-of-scope line forbids a live publish, and the QR scan is
+operator-interactive). `check` remains the only verb whose session comes from the re-injected
+state, so a state file that parses but no longer authenticates still reports `refused` at `check`
+time rather than at `login` time — unchanged from before this task.
+
+Confidence: HIGH
+Verdict: PASS
 
 ### References
 
@@ -84,4 +141,7 @@ Scenario: AC2 — Check and the publish flow are unchanged (req: R3, R4, R5)
 ### History
 
 - 2026-11-14T07:38:54.484Z backlog → todo (system)
+- 2026-11-14T07:55:16.801Z todo → wip (system)
+- 2026-11-14T08:39:06.162Z wip → testing (system)
+- 2026-11-14T08:39:07.315Z testing → done (system)
 

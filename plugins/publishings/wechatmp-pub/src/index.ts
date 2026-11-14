@@ -7,8 +7,19 @@ import {
     type PublishTransportPayload,
     resolveBrowserProfileDir,
 } from '@gobing-ai/publish-harness';
-import { chmod, createExclusiveFile, kkBrowserLauncher, waitUntil } from '@gobing-ai/publish-harness/browser';
-import { BrowserProfileMissingError, openPersistentBrowser } from '@gobing-ai/ts-browser-automation';
+import type { ChannelBrowserConfig } from '@gobing-ai/publish-harness/browser';
+import {
+    chmod,
+    createExclusiveFile,
+    kkBrowserLauncher,
+    runProfileCli,
+    waitUntil,
+} from '@gobing-ai/publish-harness/browser';
+import {
+    type BrowserLauncher,
+    BrowserProfileMissingError,
+    openPersistentBrowser,
+} from '@gobing-ai/ts-browser-automation';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 import type { BrowserContext, Cookie, Page } from 'playwright';
@@ -49,6 +60,10 @@ export { CONSOLE_URL, markdownToWechatHtml, runMode, WECHATMP_OPERATIONS };
 
 /** Console readiness deadline: the headless-visit scale, not the 180s interactive login wait. */
 const CONSOLE_READY_TIMEOUT_MS = 30_000;
+/** Interactive QR-scan wait, shared by the CLI's `login` verb and the programmatic entry (0216). */
+export const LOGIN_TIMEOUT_MS = 180_000;
+/** Post-auth settle before the storage-state snapshot: the console finishes its Set-Cookies here. */
+const POST_AUTH_SETTLE_MS = 10_000;
 /** Settle before the save click: the editor must have registered the paste before it can be saved. */
 const SUBMIT_SETTLE_MS = 1_500;
 /** The observed-draft-signal window after a save click (the pre-ADR-029 toast deadline was 15s). */
@@ -154,70 +169,25 @@ async function pollLogin(page: Page, timeoutMs?: number): Promise<void> {
     );
 }
 
-/** Headed one-time login: open the console, wait for the QR scan to land on `/cgi-bin/home`, let
- *  the console finish its post-auth Set-Cookies, then capture the durable storageState file —
- *  mp.weixin.qq.com grant cookies do not survive a Chromium restart, so the saved state (not the
- *  profile cookie store) is the session artifact the publish flow re-injects. Shared by the CLI
- *  (`profile-check login`, 0216) so the publish flow and the probe use one login path. */
+/** Headed one-time login through the shared profile CLI: open the console, wait for the QR scan to
+ *  land on `/cgi-bin/home`, let the console finish its post-auth Set-Cookies, then capture the
+ *  durable storageState file — mp.weixin.qq.com grant cookies do not survive a Chromium restart, so
+ *  the saved state (not the profile cookie store) is the session artifact the publish flow
+ *  re-injects. A programmatic entry over the same `runProfileCli` path the CLI uses (0371), kept
+ *  because the publish flow and tests call it; it throws on refusal where the CLI returns a code. */
 export async function openWechatLogin(opts: { profileDir: string; timeoutMs?: number }): Promise<void> {
-    const timeoutMs = opts.timeoutMs ?? 180_000;
-    const context = await openPersistentBrowser({
-        profileDir: opts.profileDir,
-        headless: false,
-        launcher: kkBrowserLauncher,
+    const argv = ['login', '--profile', opts.profileDir];
+    if (opts.timeoutMs !== undefined) argv.push('--timeout', String(Math.round(opts.timeoutMs)));
+    const lines: string[] = [];
+    const code = await runProfileCli(wechatSessionConfig, argv, {
+        launcher: wechatBrowserLauncher,
+        stdout: (line) => void lines.push(line),
     });
-    let failed = false;
-    let failure: unknown;
-    try {
-        const page = context.pages()[0] ?? (await context.newPage());
-        await page.goto(CONSOLE_URL);
-        const ready = await waitUntil(
-            () => Promise.resolve(page.url().includes(CONSOLE_HOME_FRAGMENT)),
-            timeoutMs,
-            1000,
-        );
-        if (!ready) throw new Error(`QR scan not completed within ${timeoutMs / 1000}s`);
-        await page.waitForTimeout(10_000); // settle: let the console finish its post-auth Set-Cookies
-        try {
-            await persistWechatSessionState(context, opts.profileDir);
-        } catch {
-            // Storage-state errors can contain cookie values. Keep the profile-check surface
-            // actionable without relaying an exception that may include session material.
-            throw new Error('wechatmp authenticated session snapshot failed');
-        }
-    } catch (error: unknown) {
-        failed = true;
-        failure = error;
-    }
-    try {
-        await context.close();
-    } catch {
-        // A successful atomic snapshot is already durable; a close failure must not turn it into
-        // a retryable login. Keep the diagnostic generic because browser errors may contain session
-        // material, and never replace an authentication or snapshot failure with shutdown noise.
-        if (!failed)
-            echoError(
-                'wechatmp browser context close failed after authenticated session snapshot; saved state preserved',
-            );
-    }
-    if (failed) throw failure;
-}
-
-/**
- * Bot-mode open (0277): restore the durable storage state, land on the console (or `url`), and
- * resolve once the operator closes the browser — no auth assertion, the `check` verb owns that.
- */
-export async function openWechatSession(
-    profileDir: string,
-    opts: { headless?: boolean; url?: string } = {},
-): Promise<void> {
-    const { context } = await openWithState(profileDir, opts.headless ?? false, opts.url ?? CONSOLE_URL);
-    // Structural cast (this plugin's tsconfig resolves a playwright build whose context event map
-    // omits 'close'); the runtime context always emits it.
-    const closable = context as unknown as { once(event: 'close', listener: () => void): unknown };
-    await new Promise<void>((resolveClose) => {
-        closable.once('close', resolveClose);
-    });
+    if (code === 0) return;
+    const failure = lines.find((line) => line.includes('profile login failed: '));
+    throw new Error(
+        failure === undefined ? 'wechatmp login failed' : failure.replace(/^.*profile login failed: /, '').trim(),
+    );
 }
 
 /** Launch, inject the saved login cookies, and land on the console (or `url`). Caller owns closing the context. */
@@ -228,40 +198,8 @@ async function openWithState(
 ): Promise<{ page: Page; context: BrowserContext }> {
     const context = await openPersistentBrowser({ profileDir, headless, launcher: kkBrowserLauncher });
     try {
-        const stateFile = storageStatePath(profileDir);
-        let state:
-            | { cookies?: Cookie[]; origins?: { origin?: string; localStorage?: { name: string; value: string }[] }[] }
-            | undefined;
-        try {
-            state = JSON.parse(await createNodeFileSystem().readFile(stateFile));
-        } catch {
-            state = undefined; // absent or corrupt session state — reported below
-        }
-        const cookies = state?.cookies;
-        if (!cookies || cookies.length === 0) {
-            throw new BrowserProfileMissingError(
-                `no saved console session state (${stateFile}) — run \`bun src/profile-check.ts login\` once`,
-            );
-        }
-        await context.addCookies(cookies);
         const page = context.pages()[0] ?? (await context.newPage());
-        // `addCookies` alone is NOT the session: the captured state also carries localStorage for
-        // mp.weixin.qq.com (its `origins` half), and discarding it lands the console on its login page
-        // even though every cookie was accepted — observed live 2026-10-05, where `check` reported OK
-        // while the flow sat on a QR page. Replay each origin's storage before the console navigation.
-        const origins = state?.origins ?? [];
-        for (const entry of origins) {
-            const items = entry.localStorage ?? [];
-            if (entry.origin === undefined || entry.origin.length === 0 || items.length === 0) continue;
-            await page.goto(entry.origin).catch(() => undefined);
-            await page
-                .evaluate(
-                    // A string expression, not a callback: this plugin's tsconfig has no DOM lib.
-                    '(pairs) => { for (const pair of pairs) { window.localStorage.setItem(pair.name, pair.value); } }',
-                    items,
-                )
-                .catch(() => undefined);
-        }
+        await restoreWechatSessionState(context, page, profileDir);
         await page.goto(url);
         return { page, context };
     } catch (error: unknown) {
@@ -269,6 +207,89 @@ async function openWithState(
         throw error;
     }
 }
+
+/**
+ * Re-inject the durable login captured at login time onto a freshly launched context. A missing or
+ * corrupt `storage-state.json` refuses with `BrowserProfileMissingError` — nothing is fabricated.
+ *
+ * `addCookies` alone is NOT the session: the captured state also carries localStorage for
+ * mp.weixin.qq.com (its `origins` half), and discarding it lands the console on its login page even
+ * though every cookie was accepted — observed live 2026-10-05, where `check` reported OK while the
+ * flow sat on a QR page. Replay each origin's storage before the caller navigates.
+ */
+export async function restoreWechatSessionState(
+    context: BrowserContext,
+    page: Page,
+    profileDir: string,
+): Promise<void> {
+    const stateFile = storageStatePath(profileDir);
+    let state:
+        | { cookies?: Cookie[]; origins?: { origin?: string; localStorage?: { name: string; value: string }[] }[] }
+        | undefined;
+    try {
+        state = JSON.parse(await createNodeFileSystem().readFile(stateFile));
+    } catch {
+        state = undefined; // absent or corrupt session state — reported below
+    }
+    const cookies = state?.cookies;
+    if (!cookies || cookies.length === 0) {
+        throw new BrowserProfileMissingError(
+            `no saved console session state (${stateFile}) — run \`bun src/profile-check.ts login\` once`,
+        );
+    }
+    await context.addCookies(cookies);
+    for (const entry of state?.origins ?? []) {
+        const items = entry.localStorage ?? [];
+        if (entry.origin === undefined || entry.origin.length === 0 || items.length === 0) continue;
+        await page.goto(entry.origin).catch(() => undefined);
+        await page
+            .evaluate(
+                // A string expression, not a callback: this plugin's tsconfig has no DOM lib.
+                '(pairs) => { for (const pair of pairs) { window.localStorage.setItem(pair.name, pair.value); } }',
+                items,
+            )
+            .catch(() => undefined);
+    }
+}
+
+/**
+ * This channel's launcher: upstream's persistent-profile opener driven by kk's stealth launcher
+ * (the same seam the publish flow opens with), so one launch path serves the flow and the CLI.
+ */
+export const wechatBrowserLauncher: BrowserLauncher = {
+    launch: (request) =>
+        openPersistentBrowser({
+            profileDir: request.profileDir,
+            headless: request.headless,
+            launcher: kkBrowserLauncher,
+        }),
+};
+
+/**
+ * The channel's shared profile-session config (0371): `login` and `open` run through
+ * `runProfileCli`, and the hooks are what keep the durable storage-state artifact alive on that
+ * path — capture on the page the readiness predicate accepted, re-inject before `open` navigates.
+ */
+export const wechatSessionConfig: ChannelBrowserConfig = {
+    channel: CHANNEL,
+    homeUrl: CONSOLE_URL,
+    loginTimeoutMs: LOGIN_TIMEOUT_MS,
+    isAuthenticated: (page) => isConsoleReady(page),
+    sessionState: {
+        onAuthenticated: async ({ context, page, profileDir }) => {
+            // Settle first: let the console finish its post-auth Set-Cookies before the snapshot.
+            await page.waitForTimeout(POST_AUTH_SETTLE_MS);
+            try {
+                await persistWechatSessionState(context, profileDir);
+            } catch {
+                // Storage-state errors can contain cookie values. Keep the operator surface
+                // actionable without relaying an exception that may include session material.
+                throw new Error('wechatmp authenticated session snapshot failed');
+            }
+        },
+        onOpen: ({ context, page, profileDir }) => restoreWechatSessionState(context, page, profileDir),
+    },
+};
 
 /**
  * Default launcher: the console home wrapped as the `OpenConsole` seam (entry page + the sibling
