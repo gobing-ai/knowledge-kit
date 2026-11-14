@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "wechatmp-pub: route login and open through the shared bot session path"
-status: backlog
+status: todo
 template: feature-impl
 created_at: 2026-11-13T19:00:06.213Z
-updated_at: "2026-11-13T19:01:14.964Z"
+updated_at: "2026-11-14T07:38:54.484Z"
 feature_id: E9
 
 ac_altitude: task-local
@@ -82,3 +82,6 @@ Scenario: AC2 — Check and the publish flow are unchanged (req: R3, R4, R5)
 - Task 0370 (same alignment for xhs), 0305 (session facts), 0277 (bot channel binding). `docs/04_DESIGN.md` §1.12.
 
 ### History
+
+- 2026-11-14T07:38:54.484Z backlog → todo (system)
+
