@@ -57,6 +57,10 @@ describe('content type resolution (0363)', () => {
         expect(BUILTIN_CONTENT_TYPES.news?.channels).toEqual({});
     });
 
+    it('refuses malformed channel overrides instead of discarding them', async () => {
+        await expect(resolveContentType('news', { content_types: { news: { channels: 'off' } } })).rejects.toThrow();
+    });
+
     it('keeps the four-field schema strict and validates channel modes', () => {
         expect(() =>
             ContentTypeSchema.parse({

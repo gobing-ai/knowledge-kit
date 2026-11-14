@@ -7,6 +7,7 @@ import { resolveConfigPath } from './publish-core';
 
 const ChannelModeSchema = z.enum(['off', 'dummy', 'draft', 'live']);
 
+/** Validated workflow, writer, preset, and channel settings for one content type. */
 export const ContentTypeSchema = z.strictObject({
     workflow: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
     writer_skill: z.string().regex(/^[a-z0-9-]+:[a-z0-9-]+$/),
@@ -14,11 +15,15 @@ export const ContentTypeSchema = z.strictObject({
     channels: z.record(z.string().min(1), ChannelModeSchema).default({}),
 });
 
+/** Registry keyed by the public content-type identifier. */
 export const ContentTypesSchema = z.record(z.string().regex(/^[a-z][a-z0-9-]*$/), ContentTypeSchema);
 
+/** Settings for one validated content type. */
 export type ContentType = z.infer<typeof ContentTypeSchema>;
+/** Validated content-type registry. */
 export type ContentTypes = z.infer<typeof ContentTypesSchema>;
 
+/** Defaults used when the operator has no content-type override. */
 export const BUILTIN_CONTENT_TYPES: ContentTypes = {
     news: {
         workflow: 'kk-news-generate',
@@ -34,11 +39,13 @@ export const BUILTIN_CONTENT_TYPES: ContentTypes = {
     },
 };
 
+/** Configuration blocks consumed by content-type resolution. */
 export interface ContentTypeConfig {
     content_types?: unknown;
     workflows?: unknown;
 }
 
+/** Explicit overrides and dependencies for content-type resolution. */
 export interface ResolveContentTypeFlags {
     preset?: string;
     packageRoot?: string;
@@ -46,12 +53,14 @@ export interface ResolveContentTypeFlags {
     fileSystem?: FileSystem;
 }
 
+/** Resolved settings with the writer skill's location and content fingerprint. */
 export interface ResolvedContentType extends ContentType {
     type: string;
     skillDir: string;
     skillSha256: string;
 }
 
+/** Names an unknown type and the configuration path that can define it. */
 export class ContentTypeUnknownError extends Error {
     constructor(
         type: string,
@@ -65,6 +74,7 @@ export class ContentTypeUnknownError extends Error {
     }
 }
 
+/** Reports a configured writer skill without its required entry file. */
 export class ContentTypeSkillMissingError extends Error {
     constructor(path: string) {
         super(`content type writer skill is missing SKILL.md: ${path}`);
@@ -91,7 +101,7 @@ function mergeType(base: ContentType, override: Record<string, unknown>): Conten
     const candidate = {
         ...base,
         ...override,
-        channels: { ...base.channels, ...asMapping(override.channels) },
+        channels: { ...base.channels, ...ContentTypeSchema.shape.channels.parse(override.channels) },
     };
     return ContentTypeSchema.parse(candidate);
 }
@@ -151,6 +161,7 @@ export async function resolveContentType(
     return { ...resolved, type, skillDir, skillSha256: await hashSkill(skillDir, fs) };
 }
 
+/** Inputs used to select a content run's workflow and directory. */
 export interface ResolveRunInput {
     type: string;
     slug?: string;
@@ -163,6 +174,7 @@ export interface ResolveRunInput {
     config?: ContentTypeConfig;
 }
 
+/** Canonical workflow, run identifier, and absolute directory. */
 export interface ResolvedRun {
     workDir: string;
     run: string;

@@ -56,16 +56,21 @@ export const BundleSchema = z
         schemaVersion: z.literal(1).default(1),
         runId: z.string().min(1),
         runDate: z.string().min(1),
+        contentType: z.string().min(1).default('news'),
+        title: z.string().min(1).optional(),
         parentRunId: z.string().min(1).optional(),
         runs: z.array(z.string()).default([]),
-        episode: z.object({ title: z.string().min(1), guid: z.string().optional() }).strict(),
+        episode: z
+            .object({ title: z.string().min(1), guid: z.string().optional() })
+            .strict()
+            .optional(),
         variants: z.record(z.string(), BundleVariantSchema),
         safety: BundleSafetySchema.optional(),
     })
     .strict();
 
 /** Parsed bundle. */
-export type Bundle = z.infer<typeof BundleSchema>;
+export type Bundle = z.input<typeof BundleSchema>;
 
 /** One planned publish target: everything a send needs, plus the console's approval flag. */
 export const PublishPlanRowSchema = z
@@ -80,6 +85,9 @@ export const PublishPlanRowSchema = z
         required: z.boolean(),
         approval: z.enum(['none', 'required']),
         status: z.literal('planned'),
+        transport: z.enum(['fanout', 'browser']).default('fanout'),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+        modeSource: z.enum(['flag', 'config', 'preset']).optional(),
         profile: z.string().min(1).optional(),
         payloadPath: z.string().min(1),
         payloadDigest: z.string().min(1),
@@ -89,8 +97,8 @@ export const PublishPlanRowSchema = z
     })
     .strict();
 
-/** Parsed plan row. */
-export type PublishPlanRow = z.infer<typeof PublishPlanRowSchema>;
+/** Parsed plan row. The public type keeps additive fields optional for legacy callers. */
+export type PublishPlanRow = z.input<typeof PublishPlanRowSchema>;
 
 /**
  * One preset target dropped from the plan for a policy reason (0333): safety exclusion, `mode: off`,
@@ -123,8 +131,11 @@ export const PublishPlanSchema = z
     })
     .strict();
 
-/** Parsed plan. */
-export type PublishPlan = z.infer<typeof PublishPlanSchema>;
+/** Parsed plan. The public type accepts legacy rows without additive defaulted fields. */
+export type PublishPlan = Omit<z.input<typeof PublishPlanSchema>, 'rows' | 'excluded'> & {
+    excluded: PublishPlanExcluded[];
+    rows: PublishPlanRow[];
+};
 
 /** One classified plan row: the receipt's own words, plus `missing` when none was written. */
 export const PublishOutcomeRowSchema = z
@@ -232,6 +243,8 @@ export interface PublishMatrixDeps {
     executor?: ProcessExecutor;
     /** Injected preset (tests); a live call resolves it from the `--preset` slug instead. */
     preset?: PublishPreset;
+    /** Preset plus digest after applying a content-type switchboard (new content verbs only). */
+    presetOverride?: { preset: PublishPreset; digest: string };
 }
 
 /**
@@ -252,6 +265,75 @@ export function targetId(target: PublishPresetTarget): string {
     if (target.id) return target.id;
     if (target.operation) return `${target.plugin}.${slugify(target.operation)}`;
     return target.plugin;
+}
+
+/** Modes accepted by the content-type channel switchboard. */
+export type ChannelMode = 'off' | 'dummy' | 'draft' | 'live';
+
+/** Raised before any publish artifact is written when a switchboard key is a configuration typo. */
+export class UnknownChannelModeError extends Error {
+    constructor(key: string, preset: string) {
+        super(`channel '${key}' is not listed in preset '${preset}'`);
+        this.name = 'UnknownChannelModeError';
+    }
+}
+
+function targetMatchesChannel(target: PublishPresetTarget, token: string): boolean {
+    return (
+        target.plugin === token ||
+        target.id === token ||
+        (target.variant !== undefined && `${target.plugin}/${target.variant}` === token)
+    );
+}
+
+/** Validate per-run channel selectors without touching the work directory. */
+export function validatePublishChannelTokens(preset: PublishPreset, tokens: readonly string[]): void {
+    for (const token of tokens) {
+        if (!preset.targets.some((target) => targetMatchesChannel(target, token))) {
+            throw new UnknownChannelModeError(token, preset.name);
+        }
+    }
+}
+
+/**
+ * Apply the content-type channel switchboard to a preset copy.
+ *
+ * The returned preset carries `modeSource` as an additive internal field. Legacy stage callers do
+ * not invoke this helper, so their plan bytes remain unchanged; the content verbs use the field to
+ * explain an operator-configured mode and to distinguish `mode off (config)` from a preset opt-out.
+ */
+export function applyChannelModes(
+    preset: PublishPreset,
+    channels: Readonly<Record<string, ChannelMode>>,
+    liveChannels: readonly string[],
+): PublishPreset {
+    validatePublishChannelTokens(preset, Object.keys(channels));
+
+    return {
+        ...preset,
+        targets: preset.targets.map((target) => {
+            const specificKey = target.variant === undefined ? undefined : `${target.plugin}/${target.variant}`;
+            const configKey =
+                specificKey !== undefined && channels[specificKey] !== undefined
+                    ? specificKey
+                    : channels[target.plugin] !== undefined
+                      ? target.plugin
+                      : undefined;
+            const configMode = configKey === undefined ? undefined : channels[configKey];
+            const live = liveChannels.some((token) => targetMatchesChannel(target, token));
+            const mode = live ? 'live' : (configMode ?? target.mode ?? 'draft');
+            const modeSource: PublishPlanRow['modeSource'] = live
+                ? 'flag'
+                : configMode !== undefined
+                  ? 'config'
+                  : 'preset';
+            return {
+                ...target,
+                mode,
+                modeSource,
+            };
+        }),
+    };
 }
 
 /** Value of a `--flag value` pair, or undefined when the flag is absent. */
@@ -394,6 +476,7 @@ async function composePlan(
         liveChannels: readonly string[];
         dummy: boolean;
         projectRoot?: string;
+        presetOverride?: { preset: PublishPreset; digest: string };
     },
 ): Promise<{ plan: PublishPlan; omitted: OmittedTarget[] }> {
     const bundleAbs = resolve(input.bundlePath);
@@ -413,11 +496,13 @@ async function composePlan(
     }
     const bundleDir = dirname(bundleAbs);
 
-    const { preset, digest } = await loadPublishPreset(
-        input.preset,
-        { ...(input.projectRoot ? { projectRoot: input.projectRoot } : {}) },
-        fs,
-    );
+    const { preset, digest } =
+        input.presetOverride ??
+        (await loadPublishPreset(
+            input.preset,
+            { ...(input.projectRoot ? { projectRoot: input.projectRoot } : {}) },
+            fs,
+        ));
 
     const inWindow = preset.targets.filter(
         (target) => (target.window ?? 'after-generate') === input.window && (target.mode ?? 'draft') !== 'off',
@@ -456,8 +541,7 @@ async function composePlan(
 
     // Launch vars may only narrow or promote what the preset already lists. A token that matches no
     // preset target at all is a typo, so it fails instead of silently planning nothing.
-    const matches = (target: PublishPresetTarget, token: string): boolean =>
-        target.plugin === token || target.id === token;
+    const matches = (target: PublishPresetTarget, token: string): boolean => targetMatchesChannel(target, token);
     for (const token of [...input.channels, ...input.liveChannels]) {
         if (!preset.targets.some((target) => matches(target, token))) {
             throw new Error(`channel '${token}' is not listed in preset '${preset.name}'`);
@@ -486,7 +570,11 @@ async function composePlan(
         if (excludedPlugins.has(target.plugin)) {
             excluded.push({ id, plugin: target.plugin, reason: 'excluded by bundle safety' });
         } else if ((target.mode ?? 'draft') === 'off') {
-            excluded.push({ id, plugin: target.plugin, reason: 'mode off' });
+            excluded.push({
+                id,
+                plugin: target.plugin,
+                reason: target.modeSource === 'config' ? 'mode off (config)' : 'mode off',
+            });
         } else if (input.channels.length > 0 && !input.channels.some((token) => matches(target, token))) {
             excluded.push({ id, plugin: target.plugin, reason: 'not in --channels list' });
         }
@@ -541,6 +629,10 @@ async function composePlan(
         const id = targetId(target);
         if (seen.has(id)) throw new Error(`duplicate target id '${id}' in preset '${preset.name}'`);
         seen.add(id);
+
+        if (target.plugin === 'podcast-pub' && bundle.episode === undefined) {
+            throw new Error(`bundle is missing required field 'episode' for podcast target '${id}'`);
+        }
 
         const liveToken = input.liveChannels.find((token) => matches(target, token));
         if (liveToken !== undefined && target.mode === 'dummy') {
@@ -601,7 +693,11 @@ async function composePlan(
                 );
             }
         }
-        const inherited = { ...(parsedContent.data.metadata ?? {}), ...(target.options ?? {}) };
+        const inherited = {
+            ...(parsedContent.data.metadata ?? {}),
+            ...(target.metadata ?? {}),
+            ...(target.options ?? {}),
+        };
         delete inherited.publishStatus;
         delete inherited.published;
         delete inherited.status;
@@ -637,6 +733,9 @@ async function composePlan(
             // console attaches through this field (design §5b).
             approval: mode === 'live' ? 'required' : 'none',
             status: 'planned',
+            ...(target.transport !== undefined ? { transport: target.transport } : {}),
+            ...(target.metadata !== undefined ? { metadata: target.metadata } : {}),
+            ...(target.modeSource !== undefined ? { modeSource: target.modeSource } : {}),
             ...(target.profile !== undefined ? { profile: target.profile } : {}),
             payloadPath: payloadRelative,
             payloadDigest: createHash('sha256').update(payloadText).digest('hex'),
@@ -721,6 +820,7 @@ export async function planPublishMatrix(args: string[], deps: PublishMatrixDeps 
             liveChannels,
             dummy,
             ...(deps.projectRoot ? { projectRoot: deps.projectRoot } : {}),
+            ...(deps.presetOverride ? { presetOverride: deps.presetOverride } : {}),
         });
         const publishDir = join(workDir, '4-publish');
         await fs.ensureDir(publishDir);
@@ -1351,7 +1451,8 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
                 profile: row.profile ?? 'article',
                 mode: row.mode,
                 payloadPath: join(workDir, row.payloadPath),
-                transport: 'fanout',
+                transport: row.transport ?? 'fanout',
+                ...(row.metadata !== undefined ? { metadata: row.metadata } : {}),
                 receiptExtras: { target: row.id, window: plan.window },
             }));
 
@@ -1495,6 +1596,23 @@ export async function runPublishMatrixRssGate(args: string[], deps: RssGateDeps 
     }
     const publishDir = join(workDir, '4-publish');
 
+    const bundlePath = join(workDir, 'bundle.json');
+    const hasBundle = await fs.exists(bundlePath);
+    if (hasBundle) {
+        try {
+            const parsed = BundleSchema.safeParse(JSON.parse(await fs.readFile(bundlePath)));
+            if (!parsed.success) throw new Error(parsed.error.message);
+            if (parsed.data.episode === undefined) {
+                throw new Error("bundle is missing required field 'episode' for RSS gating");
+            }
+        } catch (err: unknown) {
+            echoError(
+                `publish-matrix-rss-gate: malformed bundle at ${bundlePath}: ${err instanceof Error ? err.message : String(err)}`,
+            );
+            return 1;
+        }
+    }
+
     // The gate's day is the bundle's own calendar day (0332 R1/R5): a provided date must normalize
     // and must not disagree with the plans it is gating — a wrong date never authorizes a send.
     let date = dateRaw !== undefined && dateRaw.trim() !== '' ? normalizeRunDate(dateRaw) : undefined;
@@ -1583,6 +1701,19 @@ export async function runPublishMatrixRssGate(args: string[], deps: RssGateDeps 
         }
         return result.hit ? 0 : 3;
     };
+
+    // An empty QC pool deliberately has no bundle. Record a conservative miss so the workflow can
+    // classify the day as no-content; absence of a bundle must never authorize an RSS send.
+    if (!hasBundle) {
+        return write({
+            schemaVersion: 1,
+            date,
+            feedUrl,
+            hit: false,
+            reason: 'missing',
+            detail: `bundle.json is absent at ${bundlePath}; no episode was generated`,
+        });
+    }
 
     let xml: string;
     try {
@@ -1871,7 +2002,8 @@ export async function runPublishMatrixBundle(args: string[], deps: PublishMatrix
             }
         }
         if (!validated.runs.includes(parentRunId)) validated.runs.push(parentRunId);
-        await fs.writeFile(bundlePath, `${JSON.stringify(validated, null, 2)}\n`);
+        // Preserve legacy stage bytes; schema defaults are interpreted only when reading.
+        await fs.writeFile(bundlePath, `${JSON.stringify({ ...bundle, runs: validated.runs }, null, 2)}\n`);
         echo(`bundle frozen: ${Object.keys(variants).length} variant(s) -> ${bundlePath}`);
         return 0;
     } catch (err: unknown) {

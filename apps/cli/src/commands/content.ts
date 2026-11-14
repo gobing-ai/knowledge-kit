@@ -1,6 +1,6 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path';
+import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { type Command, CommanderError } from 'commander';
 import {
@@ -13,6 +13,7 @@ import {
 import { runItcStage } from '../itc-stage';
 import { consoleOutput } from '../output';
 import { resolveConfigPath } from '../publish-core';
+import { registerContentPublishVerbs } from './content-publish';
 
 interface NewOptions {
     type?: string;
@@ -37,9 +38,13 @@ interface StatusOptions {
     workDir?: string;
 }
 
-interface ContentConfigDocument extends ContentTypeConfig {
+/** Config fields needed by the shared content commands. */
+export interface ContentConfigDocument extends ContentTypeConfig {
     works_dir?: unknown;
 }
+
+const parseJson = JSON.parse.bind(JSON);
+const parseYaml = Bun.YAML.parse.bind(Bun.YAML);
 
 interface JsonObject {
     [key: string]: unknown;
@@ -49,14 +54,19 @@ function isObject(value: unknown): value is JsonObject {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function configPath(): string {
+/** Resolve the operator's active configuration file. */
+export function configPath(): string {
     return resolveConfigPath(process.env, homedir());
 }
 
-function readConfig(path: string): ContentConfigDocument {
-    if (!existsSync(path)) return {};
+/** Read the content configuration, using defaults when no file exists. */
+export async function readConfig(
+    path: string,
+    fs: FileSystem = createNodeFileSystem(),
+): Promise<ContentConfigDocument> {
+    if (!(await fs.exists(path))) return {};
     try {
-        const parsed: unknown = Bun.YAML.parse(readFileSync(path, 'utf8'));
+        const parsed: unknown = parseYaml(await fs.readFile(path));
         if (!isObject(parsed)) throw new Error('expected a YAML mapping');
         return parsed as ContentConfigDocument;
     } catch (error) {
@@ -72,7 +82,8 @@ function expandHome(value: string): string {
     return value;
 }
 
-function resolveWorksDir(config: ContentConfigDocument, path: string): string {
+/** Resolve the works root relative to the configuration file. */
+export function resolveWorksDir(config: ContentConfigDocument, path: string): string {
     const fromEnv = process.env.KK_WORKS_DIR;
     if (fromEnv !== undefined && fromEnv.trim() !== '') return resolve(expandHome(fromEnv.trim()));
     if (typeof config.works_dir === 'string' && config.works_dir.trim() !== '') {
@@ -116,7 +127,11 @@ function parseTags(raw: string | undefined): string[] | undefined {
         .filter((tag) => tag !== '');
 }
 
-function parseVariants(raw: string[] | undefined, command: string): Record<string, string> | undefined {
+async function parseVariants(
+    raw: string[] | undefined,
+    command: string,
+    fs: FileSystem,
+): Promise<Record<string, string> | undefined> {
     if (raw === undefined || raw.length === 0) return undefined;
     const variants: Record<string, string> = {};
     for (const entry of raw) {
@@ -125,8 +140,9 @@ function parseVariants(raw: string[] | undefined, command: string): Record<strin
         const name = entry.slice(0, split).trim();
         const path = entry.slice(split + 1).trim();
         if (!/^[a-z][a-z0-9-]*$/.test(name)) fail(2, command, `invalid variant name '${name}'`);
-        if (!existsSync(resolve(expandHome(path)))) fail(2, command, `variant source not found: ${path}`);
-        variants[name] = resolve(expandHome(path));
+        const absolutePath = resolve(expandHome(path));
+        if (!(await fs.exists(absolutePath))) fail(2, command, `variant source not found: ${path}`);
+        variants[name] = absolutePath;
     }
     return variants;
 }
@@ -176,10 +192,16 @@ function splitMarkdown(
     return { title, body };
 }
 
-function writeSeededContent(workDir: string, locale: string, markdown: string, options: NewOptions): void {
+async function writeSeededContent(
+    fs: FileSystem,
+    workDir: string,
+    locale: string,
+    markdown: string,
+    options: NewOptions,
+): Promise<void> {
     const contentDir = join(workDir, 'content', locale);
-    mkdirSync(contentDir, { recursive: true });
-    writeFileSync(join(contentDir, 'article.md'), markdown);
+    await fs.ensureDir(contentDir);
+    await fs.writeFile(join(contentDir, 'article.md'), markdown);
 
     const fallbackTitle = options.slug?.replaceAll('-', ' ') ?? 'article';
     const article = splitMarkdown(markdown, fallbackTitle, options.title);
@@ -195,11 +217,12 @@ function writeSeededContent(workDir: string, locale: string, markdown: string, o
         },
     };
     const publishDir = join(workDir, '4-publish');
-    mkdirSync(publishDir, { recursive: true });
-    writeFileSync(join(publishDir, 'content.json'), `${JSON.stringify(content, null, 2)}\n`);
+    await fs.ensureDir(publishDir);
+    await fs.writeFile(join(publishDir, 'content.json'), `${JSON.stringify(content, null, 2)}\n`);
 }
 
 async function seedItcPreparation(
+    fs: FileSystem,
     workDir: string,
     run: ReturnType<typeof resolveRun>,
     options: NewOptions,
@@ -214,23 +237,24 @@ async function seedItcPreparation(
         ...(options.runDate !== undefined ? { runDate: options.runDate } : {}),
         force: true,
     };
-    writeFileSync(launchPath, `${JSON.stringify(launch, null, 2)}\n`);
+    await fs.writeFile(launchPath, `${JSON.stringify(launch, null, 2)}\n`);
     const restore = setDefaultOutputTargets({ stdout: { write() {} }, stderr: { write() {} } });
     try {
-        const code = await runItcStage(['itc-prepare', '--request', launchPath]);
+        const code = await runItcStage(['itc-prepare', '--request', launchPath], fs);
         if (code !== 0) fail(1, 'kk.content.new', `itc-prepare failed for ${workDir}`);
     } finally {
         restore();
-        rmSync(launchPath, { force: true });
+        if (await fs.exists(launchPath)) await fs.deleteFile(launchPath);
     }
 }
 
 async function newAction(defaultType: string, options: NewOptions, article: boolean): Promise<void> {
+    const fs = createNodeFileSystem();
     const type = options.type ?? defaultType;
     const configFile = configPath();
     let config: ContentConfigDocument;
     try {
-        config = readConfig(configFile);
+        config = await readConfig(configFile, fs);
     } catch (error) {
         fail(2, 'kk.content.config', error instanceof Error ? error.message : String(error));
     }
@@ -257,28 +281,28 @@ async function newAction(defaultType: string, options: NewOptions, article: bool
         config,
     });
     const requestPath = join(run.workDir, 'request.json');
-    if (existsSync(requestPath)) {
+    if (await fs.exists(requestPath)) {
         consoleOutput.write(JSON.stringify({ workDir: run.workDir, run: run.run, type, created: false }));
         return;
     }
     const fromPath = options.from === undefined ? undefined : resolve(expandHome(options.from));
-    if (fromPath !== undefined && !existsSync(fromPath))
+    if (fromPath !== undefined && !(await fs.exists(fromPath)))
         fail(2, 'kk.content.new', `source file not found: ${fromPath}`);
-    const variants = parseVariants(options.variant, 'kk.content.new');
-    if (options.cover !== undefined && !existsSync(resolve(expandHome(options.cover)))) {
+    const variants = await parseVariants(options.variant, 'kk.content.new', fs);
+    if (options.cover !== undefined && !(await fs.exists(resolve(expandHome(options.cover))))) {
         fail(2, 'kk.content.new', `cover file not found: ${options.cover}`);
     }
-    mkdirSync(run.workDir, { recursive: true });
-    if (article) await seedItcPreparation(run.workDir, run, options);
-    if (fromPath !== undefined) writeSeededContent(run.workDir, locale, readFileSync(fromPath, 'utf8'), options);
+    await fs.ensureDir(run.workDir);
+    if (article) await seedItcPreparation(fs, run.workDir, run, options);
+    if (fromPath !== undefined) await writeSeededContent(fs, run.workDir, locale, await fs.readFile(fromPath), options);
     if (options.cover !== undefined) {
         const coverPath = resolve(expandHome(options.cover));
         const coverDir = join(run.workDir, '4-illustrations');
-        mkdirSync(coverDir, { recursive: true });
-        copyFileSync(coverPath, join(coverDir, `cover${extname(coverPath) || '.png'}`));
+        await fs.ensureDir(coverDir);
+        await fs.copy(coverPath, join(coverDir, `cover${extname(coverPath) || '.png'}`));
     }
     const request = requestObject(type, resolved, run, options, locale, variants, run.workDir);
-    writeFileSync(requestPath, `${JSON.stringify(request, null, 2)}\n`);
+    await fs.writeFile(requestPath, `${JSON.stringify(request, null, 2)}\n`);
     consoleOutput.write(JSON.stringify({ workDir: run.workDir, run: run.run, type, created: true }));
 }
 
@@ -286,18 +310,23 @@ function optionalString(value: unknown): string | null {
     return typeof value === 'string' ? value : null;
 }
 
-function readJson(path: string): JsonObject | null {
-    if (!existsSync(path)) return null;
+async function readJson(fs: FileSystem, path: string): Promise<JsonObject | null> {
+    if (!(await fs.exists(path))) return null;
     try {
-        const value: unknown = JSON.parse(readFileSync(path, 'utf8'));
+        const value: unknown = parseJson(await fs.readFile(path));
         return isObject(value) ? value : null;
     } catch {
         return null;
     }
 }
 
-function statusPayload(workDir: string, type: string, selectedWindow?: string): JsonObject {
-    const receipt = readJson(join(workDir, 'schedule-receipt.json'));
+async function statusPayload(
+    fs: FileSystem,
+    workDir: string,
+    type: string,
+    selectedWindow?: string,
+): Promise<JsonObject> {
+    const receipt = await readJson(fs, join(workDir, 'schedule-receipt.json'));
     const generate =
         receipt === null
             ? null
@@ -307,7 +336,7 @@ function statusPayload(workDir: string, type: string, selectedWindow?: string): 
                   executor: optionalString(receipt.executor),
                   checkoutCommit: optionalString(receipt.checkoutCommit),
               };
-    const bundle = readJson(join(workDir, '4-publish', 'bundle.json'));
+    const bundle = await readJson(fs, join(workDir, '4-publish', 'bundle.json'));
     const bundleSummary =
         bundle === null
             ? null
@@ -318,11 +347,11 @@ function statusPayload(workDir: string, type: string, selectedWindow?: string): 
               };
     const windows: JsonObject = {};
     const publishDir = join(workDir, '4-publish');
-    if (existsSync(publishDir)) {
-        for (const name of readdirSync(publishDir)
+    if (await fs.exists(publishDir)) {
+        for (const name of (await fs.readDir(publishDir))
             .filter((entry) => /^outcome\.[^.]+\.json$/.test(entry))
             .sort()) {
-            const outcome = readJson(join(publishDir, name));
+            const outcome = await readJson(fs, join(publishDir, name));
             if (outcome === null) continue;
             const window = optionalString(outcome.window) ?? name.slice('outcome.'.length, -'.json'.length);
             if (selectedWindow !== undefined && selectedWindow !== window) continue;
@@ -343,11 +372,12 @@ function statusPayload(workDir: string, type: string, selectedWindow?: string): 
 }
 
 async function statusAction(defaultType: string, options: StatusOptions): Promise<void> {
+    const fs = createNodeFileSystem();
     const type = options.type ?? defaultType;
     const configFile = configPath();
     let config: ContentConfigDocument;
     try {
-        config = readConfig(configFile);
+        config = await readConfig(configFile, fs);
     } catch (error) {
         fail(2, 'kk.content.config', error instanceof Error ? error.message : String(error));
     }
@@ -368,9 +398,9 @@ async function statusAction(defaultType: string, options: StatusOptions): Promis
         workflow: resolved.workflow,
         config,
     });
-    const payload = statusPayload(run.workDir, type, options.window);
+    const payload = await statusPayload(fs, run.workDir, type, options.window);
     consoleOutput.write(JSON.stringify(payload));
-    if (!existsSync(run.workDir))
+    if (!(await fs.exists(run.workDir)))
         fail(1, 'kk.content.status.missing', `content run directory does not exist: ${run.workDir}`);
 }
 
@@ -411,4 +441,10 @@ export function registerContentVerbs(program: Command, noun: string, defaultType
     const group = program.command(noun).description(`${noun} content operations`);
     configureNew(group.command('new').description('create a content run request'), noun, defaultType);
     configureStatus(group.command('status').description('inspect a content run'), noun, defaultType);
+    registerContentPublishVerbs(group, defaultType);
+}
+
+/** Command-module registration seam used by the CLI surface rule and host integrations. */
+export function registerContentCommand(program: Command, noun: string, defaultType: string): void {
+    registerContentVerbs(program, noun, defaultType);
 }

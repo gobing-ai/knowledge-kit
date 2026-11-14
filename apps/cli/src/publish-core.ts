@@ -142,6 +142,9 @@ export const PublishPresetTargetSchema = z
         window: PublishWindowSchema.optional(),
         mode: z.enum(['off', 'dummy', 'draft', 'live']).optional(),
         required: z.boolean().optional(),
+        transport: z.enum(['fanout', 'browser']).optional(),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+        modeSource: z.enum(['flag', 'config', 'preset']).optional(),
         options: z.record(z.string(), z.unknown()).optional(),
     })
     .strict();
@@ -290,6 +293,8 @@ export interface SendRow {
     /** Absolute payload path handed to `--content`. */
     payloadPath: string;
     transport: 'fanout' | 'browser';
+    /** Opaque per-target metadata already shaped into the payload by the caller. */
+    metadata?: Record<string, unknown>;
     /** Caller-owned receipt fields (the matrix writes `target` and `window`). */
     receiptExtras?: Partial<Receipt>;
 }

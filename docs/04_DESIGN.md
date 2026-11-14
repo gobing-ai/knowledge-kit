@@ -1406,15 +1406,15 @@ runBotCollection(profileName: string, plan: BotCollectionPlan, options?: BotColl
   emulation, and live-site compatibility. Acceptance evidence is loopback-only:
   `apps/cli/tests/e2e-bot-collection.ts` (not part of the default unit gate).
 
-### 1.14 `article` / `news` — Shipped (0363, G61, ADR-053)
+### 1.14 `article` / `news` — Shipped (0363–0364, G61, ADR-053)
 
 **Shipped (0363).** The shared `new` and `status` verbs are registered for both nouns. They
 resolve `content_types`, create/read the canonical run directory, and keep `new --from` idempotent.
 Frozen contract (flags, exit codes, stdout, files): `docs/design/content-pipeline-consolidation.md`.
 
 - `kk article new` / `kk news new` and `kk article status` / `kk news status` are shipped.
-- `content_types.<type>` is shipped with built-in `itc` and `news` resolution; generation and
-  publish verbs remain planned follow-up work.
+- `content_types.<type>` is shipped with built-in `itc` and `news` resolution; the five publish-step
+  verbs are available on both nouns with named flags only.
 
 ```text
 kk article new       --type <t> (--topic <text> | --from <file.md>) --slug <s> [--locale …] [--work-dir <dir>]
@@ -2332,6 +2332,10 @@ feature verification runs through the bundled `feature-lifecycle` FSM — enteri
 a project workflow of that name.
 
 ## publish-matrix stages: plan | check | send | classify | bundle | rss-gate | wait-until (2026-10-22, tasks 0321–0327, ADR-043)
+
+The shipped `article|news publish-plan|publish-check|publish-send|publish-settle|publish-report`
+verbs are the named-flag operator surface for these stages; the `kk stage run publish-matrix-*`
+spellings below remain compatibility routes.
 
 `kk stage run publish-matrix-*` — new stages, not a new noun (ADR-037 inventory
 unchanged), dispatched from `apps/cli/src/publish-matrix-stage.ts` through

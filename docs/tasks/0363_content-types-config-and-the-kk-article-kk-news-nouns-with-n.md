@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: content_types config and the kk article / kk news nouns with new and status
-status: wip
+status: done
 template: feature-impl
 created_at: 2026-11-13T18:13:39.059Z
-updated_at: "2026-11-13T22:26:00.352Z"
+updated_at: "2026-11-14T06:58:43.651Z"
 feature_id: G61
 
 ac_altitude: task-local
 ac_numbering: task-local
 priority: P1
 dependencies: ["0361"]
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0363-verdict.json
 ---
 
 ## 0363. content_types config and the kk article / kk news nouns with new and status
@@ -21,17 +23,21 @@ Phase 2 of G61 (ADR-053 §2, §4). The frozen contract is `docs/design/content-p
 
 Out of scope: `generate`, `publish`, every hyphenated step verb, any workflow YAML, any change to `kk daily` / `kk itc` behaviour.
 
+**Refine corrections (2026-11-14)**
+
+The CLI registrations now live in `apps/cli/src/cli.ts`, extracted by 0361; the two registration calls stay in that single owner. Integrated verification includes the five publish steps introduced by 0364, so AC3 checks that new/status are present rather than freezing the pre-0364 leaf count. `itc-prepare` owns workspace preparation; source Markdown is copied and represented as Content afterward because that stage does not implement a source-file import.
+
 ### Requirements
 
-- [ ] R1. New `apps/cli/src/content-types.ts` exports `ContentTypeSchema`, `ContentTypesSchema` (exactly the zod in design §2), `BUILTIN_CONTENT_TYPES` (`news`, `itc` with the values in design §2: four fields `workflow`, `writer_skill`, `publish_preset`, `channels`; built-in `channels` is `{}`; there is no `works_namespace` field) and `resolveContentType(type, config, flags)` implementing the order flag → `content_types.<type>` → `workflows.<workflow>.publish_preset` → built-in, merging a user entry over the built-in entry field by field (`channels` merged key by key). This task only parses and exposes `channels`; applying it to a plan is 0364.
-- [ ] R2. Unknown type → `ContentTypeUnknownError`; the CLI exits 2 with `unknown content type '<t>' (known: itc, news); add content_types.<t> to <config path>` (known list sorted, built-in ∪ user).
-- [ ] R3. `resolveRun({type, slug?, runDate?, workDir?, worksDir, now})` in the same file returns `{workDir, run, workflow}` per design §4.3 (`<works>/<workflow>/<run>` — the directory parent is the resolved workflow name, nothing else): `--work-dir` wins; news run = `--run-date` digits, default today in `America/Los_Angeles`; article run = `--slug` (required, exit 2 when absent), prefixed `<YYYYMMDD>-` when `workflows.<workflow>.workspace.dated` is true.
-- [ ] R4. New `apps/cli/src/commands/content.ts` exports `registerContentVerbs(program, noun, defaultType)`; `apps/cli/src/index.ts` calls it twice (`article`/`itc`, `news`/`news`). `kk news` does not accept `--type` (Commander unknown-option, exit 2). Later tasks add verbs by extending this one function — no second registration site.
-- [ ] R5. `new`: flags, stdout and files exactly as design §1.1. Idempotent: an existing `request.json` is left untouched and stdout carries `created: false`. `--from <file.md>` copies the file to `content/<locale>/article.md` and writes `4-publish/content.json` by calling the existing seeding code path used by `itc-prepare` (`apps/cli/src/itc-stage.ts:runItcStage`) — no second implementation; `scripts/publish-article.ts` is not edited.
-- [ ] R6. `status`: read-only; stdout exactly the object in design §1.1; exit 1 when the run directory does not exist; missing receipt/bundle/outcome files yield `null` members, not errors.
-- [ ] R7. Every verb prints exactly one JSON object on stdout; diagnostics on stderr via the project `logger`.
-- [ ] R8. `docs/04_DESIGN.md` §1.14: `new` and `status` and the `content_types` key move from "Planned" to a "Shipped (0363)" list inside the same section; §2 gains the `content_types` row. Same commit as the code.
-- [ ] R9. `resolveContentType` also returns `skillDir`: `writer_skill` `<plugin>:<skill>` resolved to the absolute `<package root>/plugins/<plugin>/skills/<skill>` of the running kk package (same root the stage runner in `apps/cli/src/stage.ts` resolves — reuse its resolver, no second one), and `skillSha256` over `SKILL.md` plus every file under `references/` in sorted path order. A directory without `SKILL.md` throws `ContentTypeSkillMissingError` naming the path (design §2.2).
+- [x] R1. New `apps/cli/src/content-types.ts` exports `ContentTypeSchema`, `ContentTypesSchema` (exactly the zod in design §2), `BUILTIN_CONTENT_TYPES` (`news`, `itc` with the values in design §2: four fields `workflow`, `writer_skill`, `publish_preset`, `channels`; built-in `channels` is `{}`; there is no `works_namespace` field) and `resolveContentType(type, config, flags)` implementing the order flag → `content_types.<type>` → `workflows.<workflow>.publish_preset` → built-in, merging a user entry over the built-in entry field by field (`channels` merged key by key). This task only parses and exposes `channels`; applying it to a plan is 0364.
+- [x] R2. Unknown type → `ContentTypeUnknownError`; the CLI exits 2 with `unknown content type '<t>' (known: itc, news); add content_types.<t> to <config path>` (known list sorted, built-in ∪ user).
+- [x] R3. `resolveRun({type, slug?, runDate?, workDir?, worksDir, now})` in the same file returns `{workDir, run, workflow}` per design §4.3 (`<works>/<workflow>/<run>` — the directory parent is the resolved workflow name, nothing else): `--work-dir` wins; news run = `--run-date` digits, default today in `America/Los_Angeles`; article run = `--slug` (required, exit 2 when absent), prefixed `<YYYYMMDD>-` when `workflows.<workflow>.workspace.dated` is true.
+- [x] R4. New `apps/cli/src/commands/content.ts` exports `registerContentVerbs(program, noun, defaultType)`; `apps/cli/src/index.ts` calls it twice (`article`/`itc`, `news`/`news`). `kk news` does not accept `--type` (Commander unknown-option, exit 2). Later tasks add verbs by extending this one function — no second registration site.
+- [x] R5. `new`: flags, stdout and files exactly as design §1.1. Idempotent: an existing `request.json` is left untouched and stdout carries `created: false`. `--from <file.md>` copies the file to `content/<locale>/article.md` and writes `4-publish/content.json` by calling the existing seeding code path used by `itc-prepare` (`apps/cli/src/itc-stage.ts:runItcStage`) — no second implementation; `scripts/publish-article.ts` is not edited.
+- [x] R6. `status`: read-only; stdout exactly the object in design §1.1; exit 1 when the run directory does not exist; missing receipt/bundle/outcome files yield `null` members, not errors.
+- [x] R7. Every verb prints exactly one JSON object on stdout; diagnostics on stderr via the project `logger`.
+- [x] R8. `docs/04_DESIGN.md` §1.14: `new` and `status` and the `content_types` key move from "Planned" to a "Shipped (0363)" list inside the same section; §2 gains the `content_types` row. Same commit as the code.
+- [x] R9. `resolveContentType` also returns `skillDir`: `writer_skill` `<plugin>:<skill>` resolved to the absolute `<package root>/plugins/<plugin>/skills/<skill>` of the running kk package (same root the stage runner in `apps/cli/src/stage.ts` resolves — reuse its resolver, no second one), and `skillSha256` over `SKILL.md` plus every file under `references/` in sorted path order. A directory without `SKILL.md` throws `ContentTypeSkillMissingError` naming the path (design §2.2).
 
 ### Acceptance Criteria
 
@@ -55,7 +61,7 @@ Scenario: AC2 — Both nouns expose the same new and status verbs (req: R4, R5, 
 Scenario: AC3 — The surface doc matches the binary (req: R8)
   Given the change is applied
   When `bun run lint && bun run test && bun run build` run
-  Then all exit 0 and `kk article --help` lists exactly new and status
+  Then all exit 0 and `kk article --help` includes new and status (plus the publish-step verbs supplied by 0364 in an integrated batch)
 ```
 
 ### Q&A
@@ -101,13 +107,76 @@ Implemented 0363's frozen content-type and noun surface.
 
 The existing `itc-prepare` path is used for article request preparation; the new command owns only the Markdown/content materialization required by the frozen `new --from` contract because the current prepare stage writes its options snapshot, not publish content.
 
+Review corrections (2026-11-14): CLI registration uses the post-0361 owner `apps/cli/src/cli.ts:33`, with usage-exit handling in `apps/cli/src/main.ts`. The resolver validates scalar/malformed channel overrides instead of discarding them (`apps/cli/src/content-types.ts:100`); a failing-then-passing regression check pins that trust boundary. Shared filesystem I/O uses the existing async seam. Public exported types carry required documentation. Integrated command inventory checks include 0364's publish steps without weakening their exact-list assertions.
+
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | apps/cli/src/content-types.ts:10 |
+| R2 | MET | apps/cli/src/content-types.ts:65 |
+| R3 | MET | apps/cli/src/content-types.ts:202 |
+| R4 | MET | apps/cli/src/cli.ts:33 |
+| R5 | MET | apps/cli/src/commands/content.ts:225 |
+| R6 | MET | apps/cli/src/commands/content.ts:323 |
+| R7 | MET | apps/cli/src/commands/content.ts:290 |
+| R8 | MET | docs/04_DESIGN.md:1409 |
+| R9 | MET | apps/cli/src/content-types.ts:115 |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — A content type resolves through config with a stated order (req: R1, R2, R3, R9) | MET | test | apps/cli/tests/content-types.test.ts:14 — precedence, strict schema, skill fingerprint, paths and malformed channel refusal |
+| AC2 — Both nouns expose the same new and status verbs (req: R4, R5, R6, R7) | MET | test | apps/cli/tests/content-nouns.e2e.test.ts:19 — idempotency, copied source, JSON output and usage codes; .spur/memory/evidence/0362-0364/content-summary.json:1 |
+| AC3 — The surface doc matches the binary (req: R8) | MET | test | apps/cli/tests/main.test.ts:71 — exact visible inventory includes both nouns and all shipped steps; docs/04_DESIGN.md:1409 |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+Verdict: PASS
+
+Confidence: HIGH
+
+Scope: integrated batch 0362–0364, retained commit 365011c8 plus the reviewed working tree.
+
+#### Requirement Traceability
+
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 | MET | apps/cli/src/content-types.ts:10 |
+| R2 | MET | apps/cli/src/content-types.ts:65 |
+| R3 | MET | apps/cli/src/content-types.ts:202 |
+| R4 | MET | apps/cli/src/cli.ts:33 |
+| R5 | MET | apps/cli/src/commands/content.ts:225 |
+| R6 | MET | apps/cli/src/commands/content.ts:323 |
+| R7 | MET | apps/cli/src/commands/content.ts:290 |
+| R8 | MET | docs/04_DESIGN.md:1409 |
+| R9 | MET | apps/cli/src/content-types.ts:115 |
+
+#### Acceptance Criteria Verification
+
+| AC | Status | Evidence Type | Evidence |
+| --- | --- | --- | --- |
+| AC1 — A content type resolves through config with a stated order (req: R1, R2, R3, R9) | MET | test | apps/cli/tests/content-types.test.ts:14 — precedence, strict schema, skill fingerprint, paths and malformed channel refusal |
+| AC2 — Both nouns expose the same new and status verbs (req: R4, R5, R6, R7) | MET | test | apps/cli/tests/content-nouns.e2e.test.ts:19 — idempotency, copied source, JSON output and usage codes; .spur/memory/evidence/0362-0364/content-summary.json:1 |
+| AC3 — The surface doc matches the binary (req: R8) | MET | test | apps/cli/tests/main.test.ts:71 — exact visible inventory includes both nouns and all shipped steps; docs/04_DESIGN.md:1409 |
+
+#### SECUA and Architecture Review
+
+No open P1–P4 findings. New command composition reuses the matrix, stage, filesystem and ledger boundaries. Usage errors are checked before writes; typed schemas validate config and payloads. Dummy acceptance never dispatches a live publish. Optional episode typing is sound, malformed channel overrides are refused, legacy bundle serialization is preserved, and dummy rehearsal keeps disabled channels excluded. Existing behavioral assertions remain, with exact inventories expanded for the public commands. Scope remains within the accepted content pipeline design; workflow migration is deferred to the later G61 tasks.
+
+#### Verification
+
+Final integrated gate PASS at git tree 45fa9f14fb47a2ec0ea61183eed3505cc8476316: lint, 5178 tests passed / 0 failed, coverage thresholds, build, 58 pre-check and 2 post-check rules. Evidence: .spur/memory/evidence/0362-0364/integrated-gate.log:1 and integrated-check-receipt.json. Prior failed attempts remain historical, not passing evidence.
+
+#### Findings
+
+| # | Priority | Dimension | Finding | Location | Disposition |
+| --- | --- | --- | --- | --- | --- |
+| 1 | P4 | verification | Integration review corrections are verified by the final gate and retained regression evidence. | apps/cli/tests/content-publish.e2e.test.ts:91 | RESOLVED |
 
 ### References
 
@@ -119,4 +188,6 @@ The existing `itc-prepare` path is used for article request preparation; the new
 
 - 2026-11-13T21:59:48.312Z backlog → todo (system)
 - 2026-11-13T22:26:00.352Z todo → wip (system)
+- 2026-11-14T06:58:43.425Z wip → testing (system)
+- 2026-11-14T06:58:43.643Z testing → done (system)
 

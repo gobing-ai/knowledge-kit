@@ -67,9 +67,11 @@ describe('publish-matrix-bundle (0324 R2)', () => {
         }
         const bundlePath = join(workDir, 'bundle.json');
         expect(existsSync(bundlePath)).toBe(true);
+        expect(JSON.parse(readFileSync(bundlePath, 'utf-8'))).not.toHaveProperty('contentType');
         const parsed = BundleSchema.parse(JSON.parse(readFileSync(bundlePath, 'utf-8')));
         expect(parsed.runDate).toBe('2026-10-22');
         expect(parsed.parentRunId).toBe('run-abc');
+        if (parsed.episode === undefined) throw new Error('news bundle is missing its episode');
         expect(parsed.episode.title).toBe('每日AI乱炖 · 2026-10-22');
         // `_` maps back to `:`: the file name is filesystem-safe, the key is the bundle contract.
         expect(Object.keys(parsed.variants).sort()).toEqual(['article', 'article@wechatmp-pub', 'episode', 'social:x']);

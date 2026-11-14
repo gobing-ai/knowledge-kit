@@ -4,7 +4,7 @@ name: "Launch safety: single executor var, traffic probe first, single-flight lo
 status: done
 template: feature-impl
 created_at: 2026-11-13T17:31:13.660Z
-updated_at: "2026-11-13T19:32:59.820Z"
+updated_at: "2026-11-13T23:23:23.056Z"
 feature_id: G61
 
 ac_altitude: task-local
@@ -251,7 +251,7 @@ receipt-field checks; `safety-reviewer-failure.test.ts`, `voice3-dag.test.ts`,
 
 ### Review
 
-Reviewed the 0360 diff against base `901a4fe1` (3 workflows, `daily-scheduled-run.ts`, `daily-triage-core.ts`, `scripts/daily-ai-news.ts`, 5 updated test files, 1 new DAG test, 2 docs) against R1–R9 and AC1–AC3. Full artifact: `.spur/run/b7ebf603-473a-4688-8151-3322be94aee8-review-cert.md`.
+Reviewed the 0360 diff against base `901a4fe1` (3 workflows, `daily-scheduled-run.ts`, `daily-triage-core.ts`, `scripts/daily-ai-news.ts`, 5 updated test files, 1 new DAG test, 2 docs) against R1–R9 and AC1–AC3. Canonical verdict artifact: `.spur/memory/evidence/0360-verdict.json`.
 
 | Priority | ID | Finding | Evidence | Disposition |
 | --- | --- | --- | --- | --- |

@@ -59,6 +59,8 @@ describe('kk main exit seam', () => {
             expect(out).toContain('daily');
             expect(out).toContain('executor');
             expect(out).toContain('itc');
+            expect(out).toContain('article');
+            expect(out).toContain('news');
             expect(out).toContain('plugin');
             expect(out).toContain('stage');
             expect(out).toContain('store');
@@ -69,6 +71,7 @@ describe('kk main exit seam', () => {
             // (add/invoke/fanin/fanout/plugins) and no alias rendering such as
             // `plugin|plugins` — the loose line-start regex could not see that.
             expect(visibleCommandNames(out).sort()).toEqual([
+                'article',
                 'board',
                 'bot',
                 'daily',
@@ -77,6 +80,7 @@ describe('kk main exit seam', () => {
                 'itc',
                 'ledger',
                 'lock',
+                'news',
                 'plugin',
                 'schedule',
                 'stage',
@@ -199,6 +203,13 @@ describe('kk command tree shape (0275 AC1 — A22 R1)', () => {
             .map((n) => n.path)
             .sort();
         expect(visibleLeaves).toEqual([
+            'article new',
+            'article publish-check',
+            'article publish-plan',
+            'article publish-report',
+            'article publish-send',
+            'article publish-settle',
+            'article status',
             'board capture',
             'board serve',
             'bot exec',
@@ -219,6 +230,13 @@ describe('kk command tree shape (0275 AC1 — A22 R1)', () => {
             'ledger sync',
             'lock acquire',
             'lock release',
+            'news new',
+            'news publish-check',
+            'news publish-plan',
+            'news publish-report',
+            'news publish-send',
+            'news publish-settle',
+            'news status',
             'plugin check',
             'plugin login',
             'plugin status',
