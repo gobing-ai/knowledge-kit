@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Scheduler cut-over and retirement of launcher scripts and old workflows
-status: backlog
+status: blocked
 template: feature-impl
 created_at: 2026-11-13T18:13:40.688Z
-updated_at: "2026-11-13T18:32:58.306Z"
+updated_at: "2026-11-14T21:53:49.613Z"
 feature_id: G61
 
 ac_altitude: task-local
@@ -110,3 +110,34 @@ Three commits, in order: (1) schedule lines + e2e; (2) deletions; (3) hidden nou
 - Parent feature: G61, scenario "The scheduler runs without padding scripts".
 
 ### History
+
+- 2026-11-14T21:53:49.456Z backlog → todo (system)
+- 2026-11-14T21:53:49.613Z todo → blocked (system)
+
+### Notes
+
+Blocked on operator-gated steps (batch `dev-runall-g61-9beb`, 2026-11-14). Nothing destructive was done.
+
+| Req | State | Why it cannot land unattended |
+| --- | --- | --- |
+| R1 — three scheduler `command` lines in `.spur/config.yaml` | NOT APPLIED | the task's own Plan step 2 requires operator approval to edit `.spur/config.yaml` and to sync the built CLI into the installed package (`AGENTS.md` → "Editing `apps/cli`"); until that sync happens the scheduled job would run a stale bundle |
+| R2 — `apps/cli/tests/schedule-no-scripts.e2e.test.ts` | NOT WRITTEN | its assertions target the post-R1 commands; adding it before R1 lands would leave the gate red |
+| R3 — one full scheduled day on the production host (Mac mini) | OWED | it is production evidence; the laptop rehearsal explicitly does not count |
+| R4 — delete 5 scripts + 5 workflows and their orphan tests | NOT APPLIED | destructive, and gated on operator acceptance of R3 |
+| R5 — `kk itc` / `kk daily` hidden nouns | READY | safe to land independently, but shipping it alone leaves the advertised surface ahead of the cut-over |
+| R6/R7 — the `rg` sweep, docs, `package.json` script removals | DEPENDENT | they describe the retired paths; before R4 they would be wrong |
+| R8 — Board `WORKFLOW_NAMES` + run-dir resolution | READY | same argument as R5: safe alone, but only meaningful with the cut-over |
+| R9 — `gate` + `spur feature check G61` | NOT MET | depends on the above |
+
+**What the operator needs to do, in order**
+
+1. Approve editing `.spur/config.yaml` (three job `command` values from design §7) and syncing the built
+   `apps/cli/dist/index.js` + `plugins/kk/workflows/` into the installed package that the scheduler runs.
+2. Land R1 + R2 + R5 + R8 (one commit each is fine; R5/R8 are independent).
+3. Let one full scheduled day run on the Mac mini and save the three receipts + `kk news status` under
+   `docs/tasks/evidence/0369/`.
+4. Accept that evidence, then authorize R4's deletions and finish R6/R7.
+
+Everything rows 0365–0368 shipped is already in place and green on this branch, so the cut-over above is
+the only thing standing between the scheduler and the new verbs.
+
