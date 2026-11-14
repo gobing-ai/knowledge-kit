@@ -72,7 +72,15 @@ import {
     type ShipinhaoRootSnapshot,
 } from './selectors';
 
+/** Steps (fill, upload, dialog) keep the shared 30s rail. */
 const STEP_TIMEOUT_MS = 30_000;
+/**
+ * The read-only session preflight is a cold headless launch plus a readiness poll; the shipped
+ * probe verifies the same profile with a 120s budget (`profile-check check --timeout 120000`) while
+ * this call was capped at the 30s STEP budget, so a healthy session that takes 40-60s to paint read
+ * as `Authentication was not confirmed` (2026-11-13: check verified, publish refused).
+ */
+const PREFLIGHT_TIMEOUT_MS = 180_000;
 /**
  * KK v1 local-media size bound (task 0296 Design freeze): 2 GiB, applied to every media kind. A
  * project-scoped product bound, not a platform limit — Channels' own ceiling is unpinned.
@@ -830,15 +838,17 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
     private readonly operation: ShipinhaoOperationName;
     private readonly launcher: BrowserLauncher;
     private readonly stepTimeoutMs: number;
+    private readonly preflightTimeoutMs: number;
     constructor(
         operation: ShipinhaoOperationName = 'shortVideo',
         driver: BrowserDriver = 'script',
-        deps: { launcher?: BrowserLauncher; stepTimeoutMs?: number } = {},
+        deps: { launcher?: BrowserLauncher; stepTimeoutMs?: number; preflightTimeoutMs?: number } = {},
     ) {
         this.operation = operation;
         this.driver = driver;
         this.launcher = deps.launcher ?? kkBrowserLauncher;
         this.stepTimeoutMs = deps.stepTimeoutMs ?? STEP_TIMEOUT_MS;
+        this.preflightTimeoutMs = deps.preflightTimeoutMs ?? PREFLIGHT_TIMEOUT_MS;
     }
 
     /**
@@ -930,15 +940,24 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
         const session = await checkChannelSession(SHP_CONFIG, {
             profileDir,
             launcher: this.launcher,
-            headedFallback: false,
-            timeoutMs: this.stepTimeoutMs,
+            // Headless first, then one read-only headed pass (same rail as xhs-pub): shipinhao's
+            // dashboard regularly paints past a 30-90s headless poll on a healthy session, and the
+            // shipped probe (`profile-check check`) has always used this fallback — the publish
+            // preflight was the only caller that disabled it, so `check` verified what `publish`
+            // refused (2026-11-13).
+            timeoutMs: this.preflightTimeoutMs,
         });
         if (session.status !== 'verified') {
             // The recovery command leads the message: `fail()` bounds the line, and the operator's
-            // next action must never be the part that gets truncated.
-            return fail(
+            // next action must never be the part that gets truncated. Effect none: no console visit
+            // happened, so the bounded retry may resend it.
+            return stageFail(
                 SHP_TARGET,
                 `${SHP_TARGET} session preflight refused — run: ${SHP_LOGIN_INSTRUCTION} — detail: ${session.detail}`,
+                'session-preflight',
+                { operation: this.operation, publishStatus: 'draft' },
+                undefined,
+                'none',
             );
         }
 

@@ -431,7 +431,11 @@ const transport = (
     driver: 'script' | 'agent' = 'script',
     operation: 'shortVideo' | 'audio' | 'music' | 'image' = 'shortVideo',
 ): ShipinhaoBrowserTransport =>
-    new ShipinhaoBrowserTransport(operation, driver, { launcher: fake.launcher, stepTimeoutMs: 250 });
+    new ShipinhaoBrowserTransport(operation, driver, {
+        launcher: fake.launcher,
+        stepTimeoutMs: 250,
+        preflightTimeoutMs: 250,
+    });
 
 /** Fails unless the comment block directly above `anchor` carries the Provisional label. */
 const expectProvisionalLabel = (source: string, anchor: string): void => {
@@ -1066,14 +1070,19 @@ describe('4. payload/IO + main() exit semantics', () => {
 });
 
 describe('5. session preflight', () => {
-    test('a login redirect refuses before any flow work with a single headless pass', async () => {
+    test('a login redirect refuses before any flow work after one headless and one headed pass', async () => {
         const fake = makeFakeLauncher({ groundedMissing: true, landedUrl: SIGNIN_URL });
         const result = await transport(fake).publish({ content: draftContent({ videoPath: VIDEO_PATH }) });
         expect(result.ok).toBe(false);
         expect(result.error).toContain('shipinhao session preflight refused — run:');
         expect(result.error).toContain(SHP_LOGIN_INSTRUCTION);
-        expect(fake.requests).toEqual([{ profileDir: DEFAULT_DIR, headless: true }]);
-        expect(fake.close()).toBe(1);
+        // Two read-only passes (headless, then the headed fallback the shipped probe has always
+        // used); still no flow work, no click, and both contexts closed.
+        expect(fake.requests).toEqual([
+            { profileDir: DEFAULT_DIR, headless: true },
+            { profileDir: DEFAULT_DIR, headless: false },
+        ]);
+        expect(fake.close()).toBe(2);
         expect(fake.calls.some((call) => call.startsWith('click:'))).toBe(false);
     });
 
