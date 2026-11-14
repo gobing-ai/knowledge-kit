@@ -203,7 +203,9 @@ describe('kk command tree shape (0275 AC1 — A22 R1)', () => {
             .map((n) => n.path)
             .sort();
         expect(visibleLeaves).toEqual([
+            'article generate',
             'article new',
+            'article publish',
             'article publish-check',
             'article publish-plan',
             'article publish-report',
@@ -230,7 +232,9 @@ describe('kk command tree shape (0275 AC1 — A22 R1)', () => {
             'ledger sync',
             'lock acquire',
             'lock release',
+            'news generate',
             'news new',
+            'news publish',
             'news publish-check',
             'news publish-plan',
             'news publish-report',

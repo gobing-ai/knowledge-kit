@@ -13,6 +13,7 @@ import {
 import { runItcStage } from '../itc-stage';
 import { consoleOutput } from '../output';
 import { resolveConfigPath } from '../publish-core';
+import { registerContentLaunchVerbs } from './content-launch';
 import { registerContentPublishVerbs } from './content-publish';
 
 interface NewOptions {
@@ -41,6 +42,8 @@ interface StatusOptions {
 /** Config fields needed by the shared content commands. */
 export interface ContentConfigDocument extends ContentTypeConfig {
     works_dir?: unknown;
+    /** User-override root for workflow YAMLs (design §1.1 R6, `04_DESIGN` §2). */
+    workflows_dir?: unknown;
 }
 
 const parseJson = JSON.parse.bind(JSON);
@@ -74,7 +77,8 @@ export async function readConfig(
     }
 }
 
-function expandHome(value: string): string {
+/** Expand a leading `~` or `$HOME` so a config path may be written either way. */
+export function expandHome(value: string): string {
     if (value === '~') return homedir();
     if (value.startsWith('~/')) return join(homedir(), value.slice(2));
     if (value === '$HOME') return homedir();
@@ -436,11 +440,15 @@ function configureStatus(command: Command, noun: string, defaultType: string): v
     command.action((options: StatusOptions) => statusAction(defaultType, options));
 }
 
-/** Register the shared `new` and `status` verbs for one content noun. */
+/**
+ * Register the plain verbs (`new`, `status`, `generate`, `publish`) and the `publish-*` step verbs
+ * for one content noun (design §1.1–1.2, ADR-053 §2).
+ */
 export function registerContentVerbs(program: Command, noun: string, defaultType: string): void {
     const group = program.command(noun).description(`${noun} content operations`);
     configureNew(group.command('new').description('create a content run request'), noun, defaultType);
     configureStatus(group.command('status').description('inspect a content run'), noun, defaultType);
+    registerContentLaunchVerbs(group, noun, defaultType);
     registerContentPublishVerbs(group, defaultType);
 }
 

@@ -9,7 +9,9 @@ describe('content command module', () => {
 
         const noun = program.commands.find((command) => command.name() === 'article');
         expect(noun?.commands.map((command) => command.name()).sort()).toEqual([
+            'generate',
             'new',
+            'publish',
             'publish-check',
             'publish-plan',
             'publish-report',

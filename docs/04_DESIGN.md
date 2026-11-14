@@ -77,7 +77,7 @@ kk plugin status [--kind <kind>] [--json] [--plugins-root <dir>] [--plugins-path
 kk plugin check [<name>…] [--kind <kind>] [--json] [--headed] [--timeout <ms>]
                  [--plugins-root <dir>] [--plugins-path <dir> …]
 kk plugin login <name> [--plugins-root <dir>] [--plugins-path <dir> …]
-kk article <verb> …                    # new|status|publish-plan|publish-check|publish-send|publish-settle|publish-report (§1.14)
+kk article <verb> …                    # new|status|generate|publish|publish-plan|publish-check|publish-send|publish-settle|publish-report (§1.14)
 kk news    <verb> …                    # same verbs; --type fixed to news, --run-date <YYYYMMDD> instead of --slug
 kk stage run <stage> [args…]
 kk lock acquire --name <lock> --run <id> [--ttl <ms>] [--db <path>]
@@ -128,8 +128,8 @@ kk board serve --board-origin <origin> [--port <n>]
 | `plugin status` | List discovered plugins grouped by kind with per-plugin health (`--kind` filter, `--json` report) | shipped (A21) |
 | `plugin check` | Run each plugin's live readiness probe (`check` field, ADR-032; verdicts `verified`/`refused`/`error`/`unsupported`; §`plugin check`) | shipped (E93, 0215+0216) |
 | `plugin login <name>` | Run the probe in `login` mode with inherited stdio; propagates the probe exit code | shipped (E93, 0215+0216) |
-| `article <verb>` | Content-type operator entry points and workflow steps: `new`, `status`, `publish-plan`, `publish-check`, `publish-send`, `publish-settle`, `publish-report`; `--type` resolves `content_types` (§1.14) | shipped (0363–0364, G61) |
-| `news <verb>` | `article` with `--type` fixed to `news` and `--run-date <YYYYMMDD>` instead of `--slug`; same shipped verbs (§1.14) | shipped (0363–0364, G61) |
+| `article <verb>` | Content-type operator entry points and workflow steps: `new`, `status`, `generate`, `publish`, `publish-plan`, `publish-check`, `publish-send`, `publish-settle`, `publish-report`; `--type` resolves `content_types` (§1.14) | shipped (0363–0364 plain+step verbs, 0365 launch verbs, G61) |
+| `news <verb>` | `article` with `--type` fixed to `news` and `--run-date <YYYYMMDD>` instead of `--slug`; same shipped verbs (§1.14) | shipped (0363–0364 plain+step verbs, 0365 launch verbs, G61) |
 | `store migrate` | Apply pending `@gobing-ai/kk-store` migrations; prints `{db, applied}` (§1.9) | shipped (task 0206) |
 | `stage run <stage> [args…]` | Run one stage of the shared workflow stage runner with positional pass-through; the legacy `kk stage <stage>` spelling is normalized into this verb in `main()` before Commander parses (A22 R1/R2) | shipped (task 0275) |
 | `lock acquire\|release` | Single-flight lock over the store for the scheduled collector; prints `{acquired}` / `{skipped, holder}` / `{released}` (§1.9). Canonical spelling; `kk store lock …` remains a hidden compatibility route on the same engines | shipped (task 0208; lifted from `store lock` by 0275) |
@@ -151,7 +151,7 @@ kk board serve --board-origin <origin> [--port <n>]
 > registrations). The first-layer nouns are `executor` and `plugin` (ADR-011, feature **A21**),
 > extended by `stage` (§1.8, ADR-011 amendment 2026-09-18) and `store` (§1.9, task 0206) and
 > `ledger` (§1.10, task 0207) and `schedule` (§1.11, task 0208) and `lock` (ADR-037, task 0275), and
-> by the content nouns `article` / `news` (§1.14, ADR-053, shipped 0363–0364); the
+> by the content nouns `article` / `news` (§1.14, ADR-053, shipped 0363–0365); the
 > engines shipped with **A2** / **B6** keep their flags and exit codes, only the
 > canonical paths changed. Hidden one-release aliases `invoke` / `fanin` / `fanout` / `plugins *`
 > still reach the same engines but are not listed in `kk --help`; the same holds for the legacy
@@ -1412,22 +1412,27 @@ runBotCollection(profileName: string, plan: BotCollectionPlan, options?: BotColl
   emulation, and live-site compatibility. Acceptance evidence is loopback-only:
   `apps/cli/tests/e2e-bot-collection.ts` (not part of the default unit gate).
 
-### 1.14 `article` / `news` — Shipped (0363–0364, G61, ADR-053)
+### 1.14 `article` / `news` — Shipped (0363–0365, G61, ADR-053)
 
-**Shipped (0363).** The shared `new` and `status` verbs are registered for both nouns. They
-resolve `content_types`, create/read the canonical run directory, and keep `new --from` idempotent.
-Frozen contract (flags, exit codes, stdout, files): `docs/design/content-pipeline-consolidation.md`.
+**Shipped (0363–0365).** The shared `new`, `status`, `generate` and `publish` verbs are registered
+for both nouns. They resolve `content_types`, create/read the canonical run directory, and keep
+`new --from` idempotent; `generate`/`publish` supervise exactly one workflow each through
+`launchWorkflow` (`apps/cli/src/launch.ts`). Frozen contract (flags, exit codes, stdout, files):
+`docs/design/content-pipeline-consolidation.md`.
 
-- `kk article new` / `kk news new` and `kk article status` / `kk news status` are shipped.
+- `kk article new` / `kk news new` and `kk article status` / `kk news status` are shipped (0363).
+- `generate` and `publish` are shipped (0365): lock → preflight → receipt → one `spur workflow run`
+  child → cleanup, with `--dry-run` running the preflight only.
 - `content_types.<type>` is shipped with built-in `itc` and `news` resolution; the five publish-step
   verbs are available on both nouns with named flags only.
 
 ```text
 kk article new       --type <t> (--topic <text> | --from <file.md>) --slug <s> [--locale …] [--work-dir <dir>]
-kk article generate  --type <t> --slug <s> [--agent <executor>] [--auto] [--publish] [--dry-run]   # planned (0365)
-kk article publish   --type <t> (--slug <s> | --work-dir <dir>) [--window <w>] [--preset <name>]   # planned (0365)
-                     [--channels <a,b>] [--live-channels <a,b>] [--live-confirm] [--dummy] [--retry]
-                     [--unattended] [--yes] [--dry-run]
+kk article generate  --type <t> --slug <s> [--agent <executor>] [--auto] [--skip-review] [--publish]
+                     [--channels <a,b>] [--live-channels <a,b>] [--timeout-ms <n>] [--allow-dirty] [--dry-run]
+kk article publish   --type <t> (--slug <s> | --run-date <YYYYMMDD> | --work-dir <dir>) [--window <w>]
+                     [--preset <name>] [--channels <a,b>] [--live-channels <a,b>] [--live-confirm]
+                     [--dummy] [--retry] [--agent <executor>] [--unattended] [--yes] [--timeout-ms <n>] [--dry-run]
 kk article status    --type <t> (--slug <s> | --work-dir <dir>) [--window <w>]
 kk article publish-plan | publish-check | publish-send | publish-settle | publish-report
                      --work-dir <dir> [--window <w>] …            # workflow steps, named flags only
@@ -1437,19 +1442,37 @@ kk news <same verbs, --type fixed to news, --run-date <YYYYMMDD> instead of --sl
 kk news prepare | generate-render | generate-voice | generate-cards | report --work-dir <dir> …   # planned (0367)
 ```
 
-Only `new`, `status` and the five `publish-*` verbs are registered (0363–0364). Every line marked
-planned is accepted design, not surface: do not invoke it as if it exists.
+`new`, `status`, `generate`, `publish` and the five `publish-*` verbs are registered (0363–0365).
+Every line marked planned is accepted design, not surface: do not invoke it as if it exists.
 
-- Exit codes: `0` done, `1` failed, `2` usage, `5` launch refused by preflight, `6` lock held.
+- Exit codes: `0` done, `1` failed (the workflow ran and failed, or exited non-zero through
+  `generate --publish`), `2` usage, `5` launch refused (preflight, missing bundle, window/CN-consent
+  refusal), `6` another launch holds `<workflow>-<run>`.
 - Shipped config key `content_types.<type>` = `{workflow, writer_skill, publish_preset, channels}`;
   built-in types `news` and `itc` (0363). Resolution: flag → `content_types` →
   `workflows.<workflow>.publish_preset` → built-in.
+- `generate` launches `content_types.<type>.workflow`, `publish` launches the literal `kk-publish`;
+  the YAML path is `<workflows_dir>/<workflow>.yaml` when that override carries it, else
+  `<package root>/plugins/kk/workflows/<workflow>.yaml`.
+- Workflow vars: `work_dir`, `run_date` or `slug`, `run_id`, `agent` (only when `--agent` is given),
+  `skill_dir` (generate only, from `writer_skill`), plus the per-verb vars of the design's §5;
+  `publish` forwards `window`, `preset`, `channels`, `live_channels`, `live_confirm`, `dummy`,
+  `retry`.
 - `content_types.<type>.channels` maps `<plugin>` or `<plugin>/<variant>` to
   `off | dummy | draft | live` and is the operator switch for a channel; the preset supplies
   structure and the default mode; `--channels` / `--live-channels` override one run.
 - Run directories: `<works>/<workflow>/<run>` (`kk-news-generate/<YYYYMMDD>`,
   `kk-article-generate/<slug>`); `kk-publish` writes inside the bundle's run directory.
-- Planned workflows: `kk-news-generate`, `kk-article-generate`, `kk-publish`.
+- Receipts: `generate` writes `<workDir>/schedule-receipt.json`; `publish` writes
+  `<workDir>/4-publish/schedule-receipt.<window>.json`, so a publish window never overwrites the
+  generation receipt it was admitted on. Both carry `schemaVersion`, `workflow`, `type`, `run`,
+  `runId`, `status`, `executor`, `checkoutCommit`, `startedAt`, `finishedAt?`, `workDir`,
+  `window?`, `reason?`, `exitCode` (and `writerSkill` on a generate, `dryRun` on a dry run).
+- `generate --publish` prints the generation receipt with the publish receipt nested under
+  `publish`; a refused chained publish reports its exit code and message and leaves the green
+  generation receipt on disk.
+- Planned workflows: `kk-news-generate`, `kk-article-generate`, `kk-publish` (0366–0368); until they
+  ship, tests supply stub YAMLs through `workflows_dir`.
 - Planned hidden routes (ADR-037) once shipped: `kk itc …`, `kk daily …`, and the `kk stage run`
   names listed in the design's stage migration table.
 
