@@ -6,7 +6,7 @@ status: active
 priority: P1
 tags: []
 created_at: "2026-11-13T17:30:35.983Z"
-updated_at: "2026-11-14T16:18:31.413Z"
+updated_at: "2026-11-14T19:41:41.862Z"
 ---
 
 # G61: Content pipeline consolidation: shared publish core, article/news verbs, simplified workflows
@@ -17,7 +17,8 @@ Make the daily-news and article (ITC and later types) pipelines reliable enough 
 removing the boundary drift between them: one neutral publish core, one publish workflow, operator verbs on
 `kk article` / `kk news`, and workflows reduced to the nodes that earn a retry boundary. The one publish
 workflow is `kk-publish.yaml` (nine nodes, both content nouns; shipped by task 0366); the news
-generate side is `kk-news-generate.yaml` (twenty nodes, one executor var; shipped by task 0367). Decision record:
+generate side is `kk-news-generate.yaml` (twenty nodes, one executor var; shipped by task 0367); the article
+generate side is `kk-article-generate.yaml` (thirteen states, one executor var; shipped by task 0368). Decision record:
 ADR-053 (accepted 2026-11-13). Supersedes the remaining scope of G21 where they overlap.
 
 ## Scope

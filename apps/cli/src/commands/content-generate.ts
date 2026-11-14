@@ -25,9 +25,11 @@
  * Exit codes (design §1): `0` done (including an empty pool — "nothing to do" is a verdict, not a
  * failure), `1` the step ran and failed, `2` usage.
  *
- * Task 0367 implements the news steps (`curate`, `script`, both bundle stages). The article steps
- * (`outline`, `judge`, `adapt`) and the article bundle are 0368's; the two shared verbs are
- * registered on `kk article` and refuse an unimplemented step with exit 2 rather than pretending.
+ * The row table is per-type: `generate-check` and `generate-bundle` are the two verbs both nouns
+ * share, and 0368 plugs the article column in as two more step executors
+ * (`apps/cli/src/commands/content-generate-article.ts`) rather than forking the verbs. `--step`
+ * validates against the noun's own enum, so `kk article generate-check --step curate` is a usage
+ * error and `kk news generate-check --step outline` is one too.
  */
 import { join, resolve } from 'node:path';
 import { createNodeFileSystem, type FileSystem, NodeProcessExecutor } from '@gobing-ai/ts-runtime';
@@ -39,6 +41,14 @@ import { resolvePackageRoot } from '../package-root';
 import { BundleSchema, checkPublishMatrix, resolveBundlePath, runPublishMatrixBundle } from '../publish-matrix';
 import { runStage } from '../stage';
 import { type ContentConfigDocument, configPath, expandHome, readConfig, resolveWorksDir } from './content';
+import {
+    ARTICLE_CHECK_STEPS,
+    ArticleStepFailure,
+    type ArticleStepOutcome,
+    resolveArticleMaxRevisions,
+    runArticleBundle,
+    runArticleCheck,
+} from './content-generate-article';
 import { generateRunReport } from './daily';
 import { syncLedger } from './ledger';
 
@@ -62,9 +72,8 @@ type VoiceEngine = (typeof VOICE_ENGINES)[number];
  */
 const ENGINE_DRIVERS: Record<VoiceEngine, string> = { voxcpm: 'voxcpm', gemini: 'gemini', omnivoice: 'ominivoice' };
 
-/** The steps `generate-check --step` accepts for the two nouns (design §1.3). */
+/** The steps `generate-check --step` accepts for the news noun (design §1.3; the article column lives in `content-generate-article.ts`). */
 const NEWS_CHECK_STEPS = ['curate', 'script'] as const;
-const ARTICLE_CHECK_STEPS = ['outline', 'judge', 'adapt'] as const;
 
 /** Bundle stages (design §1.3, §5.1 nodes 18 and 20). */
 const BUNDLE_STAGES = ['variants', 'freeze'] as const;
@@ -174,6 +183,10 @@ export interface GenerateContext {
     warnings: string[];
     /** `generate-check`: did the step's fix-verdict file exist before this run (`--final` decides). */
     priorErrors: boolean;
+    /** `workflows.kk-article-generate.max_revisions` — the article rewrite bound (0368 R5). */
+    maxRevisions: number;
+    /** What the article step that just ran produced, so the row's summary prints it (0368). */
+    article?: ArticleStepOutcome;
 }
 
 /** One stage of a row: what to run, with which argv, and how strictly. */
@@ -300,7 +313,11 @@ export async function resolveRunId(
     if (explicit !== undefined && explicit.trim() !== '') return explicit.trim();
     const receipt = await readJsonFile(fs, join(workDir, 'schedule-receipt.json'));
     const recorded = receipt?.runId;
-    return typeof recorded === 'string' && recorded.trim() !== '' ? recorded.trim() : `news-generate-${runDate}`;
+    if (typeof recorded === 'string' && recorded.trim() !== '') return recorded.trim();
+    // No receipt (a workflow-step invocation): the run directory names itself. A news run is its day;
+    // an article run is its slug (design §4.3), so an empty run date falls back to the leaf.
+    if (runDate === '') return workDir.replace(/\/+$/, '').split('/').at(-1) ?? 'kk-content-run';
+    return `news-generate-${runDate}`;
 }
 
 /** `<workDir>/21-plan/<date>_04_quality-control-content_candidates.json` — the pool gate's input. */
@@ -360,6 +377,9 @@ const STORE_PICK = 'store-select';
 const GENERATION_REPORT = 'generation-report';
 const POOL_GATE = 'pool-gate';
 const BUNDLE_CONTENT_TYPE = 'bundle-content-type';
+/** The article column's two step ids (0368): one executor per shared verb. */
+const ARTICLE_CHECK = 'article-check';
+const ARTICLE_BUNDLE = 'article-bundle';
 
 /**
  * Stamp the frozen bundle with its content type (design §4.1: `contentType` is an additive,
@@ -528,9 +548,40 @@ async function executeStep(ctx: GenerateContext, step: RowStage, argv: string[])
     if (step.name === GENERATION_REPORT) return runGenerationReport(ctx);
     if (step.name === POOL_GATE) return writePoolGate(ctx);
     if (step.name === BUNDLE_CONTENT_TYPE) return stampContentType(ctx);
+    if (step.name === ARTICLE_CHECK || step.name === ARTICLE_BUNDLE)
+        return quietStdout(() => runArticleStep(ctx, step.name));
     const matrix = deps.matrix[step.name];
     if (matrix !== undefined) return quietStdout(() => matrix(argv));
     return quietStdout(() => deps.runStage([step.name, ...argv]));
+}
+
+/**
+ * Run one article step and keep its outcome for the row's summary: the article column owns WHAT the
+ * step does, this runner owns WHEN and how its failure is reported (design §1.3).
+ */
+async function runArticleStep(ctx: GenerateContext, name: string): Promise<number> {
+    const input = {
+        workDir: ctx.workDir,
+        type: ctx.type,
+        runId: ctx.runId,
+        preset: ctx.preset,
+        maxRevisions: ctx.maxRevisions,
+        step: ctx.step,
+        bundleStage: ctx.bundleStage,
+    };
+    let outcome: Awaited<ReturnType<typeof runArticleBundle>>;
+    try {
+        outcome = name === ARTICLE_CHECK ? await runArticleCheck(input, ctx.fs) : await runArticleBundle(input, ctx.fs);
+    } catch (error) {
+        // A missing variant file is a refusal, not a crash: the verb still prints its one JSON object
+        // (design §1.3) and exits with the refusal's code.
+        if (!(error instanceof ArticleStepFailure)) throw error;
+        consoleOutput.error((error as ArticleStepFailure).message);
+        return (error as ArticleStepFailure).code;
+    }
+    const { code, ...step } = outcome;
+    ctx.article = step;
+    return code;
 }
 
 /** `kk daily run-report`'s inputs, resolved from the run directory (design §1.3 `report`). */
@@ -824,13 +875,21 @@ export const GENERATE_ROWS: GenerateVerbRow[] = [
     },
     {
         verb: 'generate-check',
-        // One row, two stages: `--step` selects which of design §6's check stages runs
-        // (`daily-curate-check` or `daily-script-check`).
+        // One row, one stage per `--step`: design §6's news checks (`daily-curate-check`,
+        // `daily-script-check`) and the article column's single executor (0368).
         stages: [
-            { ...STEP.curateCheck(), when: (ctx: GenerateContext) => ctx.step === 'curate' },
-            { ...STEP.scriptCheck(), when: (ctx: GenerateContext) => ctx.step === 'script' },
+            {
+                ...STEP.curateCheck(),
+                when: (ctx: GenerateContext) => ctx.noun === 'news' && ctx.step === 'curate',
+            },
+            {
+                ...STEP.scriptCheck(),
+                when: (ctx: GenerateContext) => ctx.noun === 'news' && ctx.step === 'script',
+            },
+            { name: ARTICLE_CHECK, args: (ctx: GenerateContext) => [ctx.step], when: (ctx) => ctx.noun === 'article' },
         ],
         summary: async (ctx) => {
+            if (ctx.noun === 'article') return articleOutcome(ctx, 'generate-check');
             const errors = ctx.step === 'curate' ? curateErrorsPath(ctx) : scriptErrorsPath(ctx);
             const written = await ctx.fs.exists(errors);
             if (ctx.final) {
@@ -896,17 +955,25 @@ export const GENERATE_ROWS: GenerateVerbRow[] = [
     {
         verb: 'generate-bundle',
         stages: [
-            STEP.publishPrep(),
-            STEP.bundleVariants(),
-            STEP.safetyManifest(),
-            STEP.bundleFreeze(),
+            { ...STEP.publishPrep(), when: (ctx: GenerateContext) => ctx.noun === 'news' },
+            { ...STEP.bundleVariants(), when: (ctx: GenerateContext) => ctx.noun === 'news' },
+            { ...STEP.safetyManifest(), when: (ctx: GenerateContext) => ctx.noun === 'news' },
+            { ...STEP.bundleFreeze(), when: (ctx: GenerateContext) => ctx.noun === 'news' },
             {
                 name: BUNDLE_CONTENT_TYPE,
                 args: () => [],
-                when: (ctx: GenerateContext) => ctx.bundleStage === 'freeze',
+                when: (ctx: GenerateContext) => ctx.noun === 'news' && ctx.bundleStage === 'freeze',
+            },
+            // The article bundle is not the matrix freeze: design §4.1 gives it `contentType`,
+            // `title`, no `episode`, and one `{path, sha256}` per adapted file (0368 R2).
+            {
+                name: ARTICLE_BUNDLE,
+                args: (ctx: GenerateContext) => [ctx.bundleStage],
+                when: (ctx) => ctx.noun === 'article',
             },
         ],
         summary: async (ctx) => {
+            if (ctx.noun === 'article') return articleOutcome(ctx, 'generate-bundle');
             const bundle = await bundleSummary(ctx);
             return {
                 bundle: bundle.path,
@@ -922,6 +989,28 @@ export const GENERATE_ROWS: GenerateVerbRow[] = [
         summary: async (ctx) => ({ report: join(ctx.workDir, '5-report', 'generation.md') }),
     },
 ];
+
+/**
+ * The article column's stdout (design §1.3): `generate-check` prints `{step, verdict, errors?}`, the
+ * bundle prints `{bundle, runId, variants, safety}`. What the step produced is what it returns — the
+ * runner never re-derives a verdict from files the step already read.
+ */
+function articleOutcome(ctx: GenerateContext, verb: string): JsonObject {
+    const outcome = ctx.article ?? {};
+    if (verb === 'generate-check') {
+        return {
+            step: ctx.step,
+            verdict: outcome.verdict ?? 'pass',
+            ...(outcome.errors === undefined ? {} : { errors: outcome.errors }),
+        };
+    }
+    return {
+        bundle: outcome.bundle ?? join(ctx.workDir, '4-publish', 'bundle.json'),
+        runId: outcome.runId ?? ctx.runId,
+        variants: outcome.variants ?? [],
+        safety: outcome.safety ?? null,
+    };
+}
 
 // ---------------------------------------------------------------------------
 // The one runner
@@ -1079,7 +1168,10 @@ async function buildContext(noun: string, type: string, verb: string, options: V
     // The marker `prepare` wrote wins over the directory name, so a run whose `--run-date` was
     // resolved at prepare time keeps that date for every later verb.
     const runDate = await resolveRunDate(fs, run.workDir, runDateFlag);
-    if (runDate === undefined) {
+    // A news artefact's name carries the day, so news cannot proceed without one. An article run is
+    // identified by its slug (design §4.3) and its own artefacts are undated, so the article column
+    // never reads this value.
+    if (runDate === undefined && noun === 'news') {
         return fail(2, `kk.content.${verb}`, `kk ${verb}: cannot resolve the run date for ${run.workDir}`);
     }
     const priorErrors = await fs.exists(
@@ -1087,14 +1179,24 @@ async function buildContext(noun: string, type: string, verb: string, options: V
             ? join(run.workDir, '24-script', `${runDate}_08_script-write_errors.json`)
             : join(run.workDir, '21-plan', `${runDate}_03_curate_errors.json`),
     );
+    // Only the two shared verbs reach the article column. A news run never reads the ITC block, so an
+    // invalid `workflows.kk-itc` cannot fail a news verb it has nothing to do with.
+    let maxRevisions = 0;
+    if (noun === 'article' && (verb === 'generate-check' || verb === 'generate-bundle')) {
+        try {
+            maxRevisions = await resolveArticleMaxRevisions(configFile, fs);
+        } catch (error) {
+            return fail(2, `kk.content.${verb}`, error instanceof Error ? error.message : String(error));
+        }
+    }
     return {
         fs,
         noun,
         type,
         workflow: resolved.workflow,
         workDir: run.workDir,
-        runDate,
-        runId: await resolveRunId(fs, run.workDir, runDate, options.runId),
+        runDate: runDate ?? '',
+        runId: await resolveRunId(fs, run.workDir, runDate ?? '', options.runId),
         settings: resolveNewsSettings(config),
         engine: parseEngine(options.engine, verb),
         step: options.step ?? '',
@@ -1104,6 +1206,7 @@ async function buildContext(noun: string, type: string, verb: string, options: V
         worksDir,
         warnings: [],
         priorErrors,
+        maxRevisions,
     };
 }
 
@@ -1132,13 +1235,6 @@ async function runAction(noun: string, defaultType: string, verb: string, option
     // `--run-date` (design §1.3), because that is the verb that creates the directory.
     if (verb !== 'prepare') requireWorkDir(options, verb);
     const ctx = await buildContext(noun, type, verb, options);
-    if (noun === 'article') {
-        return fail(
-            2,
-            `kk.content.${verb}`,
-            `kk article ${verb}: the article steps are not part of this release (task 0368); news only`,
-        );
-    }
     if (verb === 'prepare') {
         await composeWorkspace(ctx);
         // The ledger backfill runs before the summary is printed, so the row's one JSON object is
@@ -1157,11 +1253,17 @@ async function runAction(noun: string, defaultType: string, verb: string, option
                 `kk ${noun} generate-check: --step must be one of ${allowed.join('|')}, got '${ctx.step}'`,
             );
         }
-        await requireStepInput(ctx);
+        // The news steps read their input here; the article steps own their input guard (exit 1 with
+        // the path, design §1.3), because what counts as input differs per step there.
+        if (noun === 'news') await requireStepInput(ctx);
     }
     if (verb === 'generate-bundle' && ctx.bundleStage === 'freeze') {
+        // "Frozen" is the freeze step's own mark (`contentType`, design §4.1), not the file's
+        // existence: the variants step writes the same `4-publish/bundle.json` before the freeze,
+        // so an existence check would refuse the very freeze that completes it.
         const frozen = await resolveBundlePath(ctx.fs, ctx.workDir);
-        if (await ctx.fs.exists(frozen)) {
+        const existing = await readJsonFile(ctx.fs, frozen);
+        if (existing !== null && typeof existing.contentType === 'string') {
             return fail(
                 1,
                 'kk.content.generate-bundle',

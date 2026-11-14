@@ -1,0 +1,485 @@
+---
+"$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
+name: kk-article-generate
+kind: state-machine
+version: "1"
+description: >-
+  The article generation FSM (G61 / ADR-053 §1, §6; design
+  `docs/design/content-pipeline-consolidation.md` §5.2, task 0368): thirteen states, launched by
+  `kk article generate`. It replaces `kk-itc.yaml`'s author half — one node that shelled out to
+  supervise the child `kk-itc-author.yaml` — with the same authoring states inlined, because with
+  publishing moved to `kk-publish` the parent had nothing left but the author flow (design §3.3).
+  The run ends in a frozen `4-publish/bundle.json`; `kk article publish` then runs the shared
+  nine-node `kk-publish.yaml`, which has no article-specific node (R7).
+  Re-enter a failed run with
+  `spur workflow run plugins/kk/workflows/kk-article-generate.yaml --vars '{"work_dir":"<run dir>","slug":"<slug>","auto":"true"}'`
+  — the outline is committed before the draft and the bundle is frozen once, so a resume from
+  `freeze` never re-authors anything.
+
+# ADR-053 §5: ONE executor variable drives every agent node. `agent` arrives from the launching verb
+# (`kk article generate --agent`), defaults to `inline`, and every retry state resolves by
+# `role: reviewer` instead of carrying a second executor pin (0360 R2). `skill_dir` is the writer
+# skill's directory inside the running kk package (design §2.2: read in place, never copied into the
+# run); `auto` turns the three human gates off; `preset` is the publish preset the freeze validates
+# the bundle against.
+initialState: executor-probe
+terminalStates:
+  - done
+  - failed
+failureStates:
+  - failed
+
+vars:
+  work_dir: ""
+  slug: ""
+  run_id: ""
+  agent: inline
+  skill_dir: ""
+  auto: "false"
+  preset: ""
+  __hitlAnswer: ""
+
+states:
+  # ── 1. executor-probe: one real prompt, before any spend (0360 R4) ──────────────────────────
+  - id: executor-probe
+    description: "One real prompt to the resolved executor; a dead executor fails the run here (ADR-053 §5)"
+    onEnter:
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          timeoutMs: 120000
+          # ADR-115 / 1233 R1: an agent step declares the artifact it produces, so even the probe
+          # leaves one — the same word it is asked to reply with, written where the run can read it.
+          input: "Reply with exactly: OK, then write that same word to ${vars.work_dir}/.executor-probe.ok"
+          expectFile: ${vars.work_dir}/.executor-probe.ok
+
+  # ── 2. outline-write: the options, and the deterministic pick when nobody is watching ──────
+  - id: outline-write
+    description: >-
+      Author outline options a (and b, optionally c) from the brief through the content type's writer
+      skill. `auto` runs the bounded pick in the same state: the engine cannot condition an action on
+      a var, so the guard expression — `test … != true || kk article generate-check --step outline` —
+      is the one-line spelling of design §5.2's "skipped when auto; generate-check picks instead".
+      That verb validates the recommendation, binds the catalog decision and commits
+      `2-outline/outline-approved.md`, which is the file every later state reads.
+    onEnter:
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          timeoutMs: 600000
+          # ADR-115 error tier: keep this prompt <= 1000 chars.
+          input: |
+            Follow the writer skill ${vars.skill_dir}/SKILL.md (read its references first).
+            Write outline options a and b (optionally c) for the brief ${vars.work_dir}/brief.md into ${vars.work_dir}/2-outline/ as outline-option-a.md, outline-option-b.md (and outline-option-c.md).
+            Operator feedback from the last review, if any: ${vars.work_dir}/.itc/feedback.md
+            When auto mode is on (auto=${vars.auto}), also write ${vars.work_dir}/2-outline/outline-recommendation.json as {"pick":"a|b|c","rationale":"<why>"}.
+            Do not wait for a selection; write the option files.
+          expectFile: ${vars.work_dir}/2-outline/outline-option-a.md
+      - kind: shell
+        options:
+          # Auto only: the interactive modes pick at `outline-select` (design §5.2).
+          command: >-
+            test "${vars.auto}" != "true" ||
+            kk article generate-check --work-dir "${vars.work_dir}" --step outline
+
+  # ── 3. outline-select: the operator's pick (interactive only) ───────────────────────────────
+  - id: outline-select
+    description: >-
+      Operator selection of an outline option. Reached only when `auto` is off — the auto path took
+      its pick in `outline-write` — so this gate always asks (design §5.2: a human pause).
+    pause: true
+    onEnter:
+      - kind: hitl.select
+        options:
+          prompt: "Select an approved outline option from ${vars.work_dir}/2-outline/ (a, b or c):"
+          options:
+            - a
+            - b
+            - c
+          var: __hitlAnswer
+          decision:
+            mode: never
+
+  # ── 4. outline-review: commit the pick, then the operator's approval ───────────────────────
+  - id: outline-review
+    description: >-
+      Commit the operator's selection to `2-outline/outline-approved.md`, then ask for approval
+      (`hitl.confirm`). A paused state's enter actions are skipped on resume, so the commit is the
+      FIRST action here — the selection is already in `${vars.__hitlAnswer}` when the run wakes.
+      Declining loops back to `outline-write` while the round budget lasts (design §5.2 folds
+      `outline-revise` into this state; the human round cap stays the ITC three, while the JUDGE
+      loop is the one bound to `workflows.kk-article-generate.max_revisions` — R5).
+    pause: true
+    onEnter:
+      - kind: shell
+        options:
+          # Shell expansions use `$name`, never `${name}`: the engine reads `${…}` as a template
+          # reference to a declared var.
+          command: |
+            n=$(cat "${vars.work_dir}/.outline-review-count" 2>/dev/null || echo 0)
+            echo $((n + 1)) > "${vars.work_dir}/.outline-review-count"
+            sel="${vars.__hitlAnswer}"
+            src="${vars.work_dir}/2-outline/outline-option-$sel.md"
+            if [ ! -f "$src" ]; then echo "selected outline option not found: $src" >&2; exit 1; fi
+            cp "$src" "${vars.work_dir}/2-outline/outline-approved.md"
+      - kind: hitl.confirm
+        options:
+          prompt: "Review the approved outline at ${vars.work_dir}/2-outline/outline-approved.md. Approve?"
+          var: __hitlAnswer
+          decision:
+            mode: never
+
+  # ── 5–6. draft-write and the de-slop pass ──────────────────────────────────────────────────
+  - id: draft-write
+    description: >-
+      Author (or rewrite) `3-draft-draft-article.md` from the approved outline. Every entry bumps
+      `.draft-count`, which is the ONLY revision counter: `generate-check --step judge` reads
+      drafts-1 as the rewrites performed and bounds them by `max_revisions`, so the judge loop and
+      the operator loop cannot double-count (design §5.2: `draft-autorevise` is gone — this state is
+      the judge's fail edge target).
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            n=$(cat "${vars.work_dir}/.draft-count" 2>/dev/null || echo 0);
+            echo $((n + 1)) > "${vars.work_dir}/.draft-count"
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          timeoutMs: 900000
+          # ADR-115 error tier: keep this prompt <= 1000 chars.
+          input: |
+            Follow the writer skill ${vars.skill_dir}/SKILL.md (read its references first).
+            Author the full draft at ${vars.work_dir}/3-draft-draft-article.md from the approved outline ${vars.work_dir}/2-outline/outline-approved.md and the brief ${vars.work_dir}/brief.md.
+            When ${vars.work_dir}/.itc-verdict.json exists, apply every item of its feedback[]; when ${vars.work_dir}/.itc/feedback.md exists, apply that too.
+            Overwrite the draft with the complete article.
+          expectFile: ${vars.work_dir}/3-draft-draft-article.md
+
+  - id: unslop
+    description: "De-slop pass — kk:taste-unslop line-edits the draft in place (design §5.2, gated by workflows.kk-article-generate.unslop)"
+    onEnter:
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          timeoutMs: 600000
+          # ADR-115 error tier: keep this prompt <= 1000 chars.
+          input: |
+            Invoke the kk:taste-unslop skill.
+            Read ${vars.work_dir}/3-draft-draft-article.md and write the line-edited version to ${vars.work_dir}/3-draft-draft-article.new.md, removing slop (AI-tell phrasing, filler, hedging) while preserving the technical claims, code blocks, links and the approved outline's structure. Do not modify the original file.
+          expectFile: ${vars.work_dir}/3-draft-draft-article.new.md
+      - kind: shell
+        options:
+          command: mv -f "${vars.work_dir}/3-draft-draft-article.new.md" "${vars.work_dir}/3-draft-draft-article.md"
+
+  # ── 7. draft-review: the operator's gate on the draft ──────────────────────────────────────
+  - id: draft-review
+    description: >-
+      Operator review of the draft (design §5.2: `draft-review`, `hitl.confirm`/`hitl.input`). One
+      gate carries both answers because a paused state resumes by skipping its enter actions: YES
+      approves and the run goes to the judge, anything else is a rewrite request and the operator
+      writes specifics to `.itc/feedback.md` for `draft-write` to apply. Skipped when `auto`.
+    pause: true
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            n=$(cat "${vars.work_dir}/.draft-review-count" 2>/dev/null || echo 0);
+            echo $((n + 1)) > "${vars.work_dir}/.draft-review-count"
+      - kind: hitl.confirm
+        options:
+          prompt: >-
+            Review the draft at ${vars.work_dir}/3-draft-draft-article.md. Approve? (No asks for a
+            rewrite; write specifics to ${vars.work_dir}/.itc/feedback.md)
+          var: __hitlAnswer
+          decision:
+            mode: never
+
+  # ── 8. judge: the reviewer agent, then the deterministic disposition ───────────────────────
+  - id: judge
+    description: >-
+      kk:content-judge writes `.itc-verdict.json`; `generate-check --step judge` turns it into ONE
+      disposition word (`finish` | `autorevise` | `fail`) through `itc-author-verdict`, with the
+      revision budget bound to `workflows.kk-article-generate.max_revisions` (R5, AC3). The verdict
+      scale is HIGH/MEDIUM/LOW: a PASS without one never cleared the gate.
+    onEnter:
+      - kind: agent.run
+        options:
+          role: reviewer
+          agent: ${vars.agent}
+          timeoutMs: 600000
+          # ADR-115 error tier: keep this prompt <= 1000 chars.
+          input: |
+            Invoke the kk:content-judge skill.
+            Evaluate the draft at ${vars.work_dir}/3-draft-draft-article.md against the tech-accuracy rubric.
+            Evidence: read ${vars.work_dir}/docs.json when it exists and weigh it.
+            Write the verdict JSON to ${vars.work_dir}/.itc-verdict.json per the skill's verdict contract (verdict PASS|NEEDS_REVISION|FAIL, confidence HIGH|MEDIUM|LOW, feedback[]).
+          expectFile: ${vars.work_dir}/.itc-verdict.json
+      - kind: shell
+        options:
+          command: >-
+            kk article generate-check --work-dir "${vars.work_dir}" --step judge
+
+  # ── 9. illustrate: optional cover/inline art, entered only when a spend var is on ──────────
+  - id: illustrate
+    description: "Optional cover/inline illustrations via kk:image-authoring — entered only when the frozen options turn a spend switch on (design §5.2, conditional)"
+    onEnter:
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          timeoutMs: 900000
+          # ADR-115 error tier: keep this prompt <= 1000 chars.
+          input: |
+            Invoke the kk:image-authoring skill with KK_NONINTERACTIVE=1 and KK_IMAGE_AUTO_CONFIRM=1 (the operator approved spend via cover_enabled/inline_images).
+            Create ${vars.work_dir}/4-illustrations/ and generate the cover illustration into it as cover.png, sized for an article hero image.
+            Print each written path as the last line of stdout.
+          expectFile: ${vars.work_dir}/4-illustrations/cover.png
+
+  # ── 10. adapt: the plan, the adapted variants, and the deterministic check ─────────────────
+  - id: adapt
+    description: >-
+      `generate-bundle --stage variants` (design §6: `itc-materialize-plan`) materializes
+      `4-publish/content.json` and the ITC variant plan, kk:article-adapt writes every `adapt:true`
+      variant file, and `generate-check --step adapt` verifies them (`itc-adapt-verify`). The plan is
+      the adapt agent's input, so it is materialized here and removed by `freeze`; from then on
+      `kk-publish` plans from the bundle and the preset (design §4.1, §4.2).
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk article generate-bundle --work-dir "${vars.work_dir}" --run-id "${vars.run_id}" --preset "${vars.preset}" --stage variants
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          timeoutMs: 900000
+          # ADR-115 error tier: keep this prompt <= 1000 chars.
+          input: |
+            Invoke the kk:article-adapt skill.
+            Read ${vars.work_dir}/4-publish/publish-plan.json and, for each entry in variants with adapt=true, read ${vars.work_dir}/4-publish/content.json and write the variant Content file to ${vars.work_dir}/4-publish/<variant.file>.
+            Apply the plan's variant limits and translate title and body into the variant's locale. Never set metadata.published.
+            Record what you wrote in ${vars.work_dir}/4-publish/adapted.json as {"variants":[{"key":"<variant key>","file":"<variant.file>"}]}.
+            Print each written variant file path as the last line of stdout.
+          expectFile: ${vars.work_dir}/4-publish/adapted.json
+      - kind: shell
+        options:
+          command: >-
+            kk article generate-check --work-dir "${vars.work_dir}" --step adapt
+
+  # ── 11. freeze: the frozen bundle is the run's product ─────────────────────────────────────
+  - id: freeze
+    description: >-
+      `generate-bundle --stage variants` then `--stage freeze` (design §5.2): re-materializing first
+      makes this state self-sufficient on a resume, and the freeze — `itc-author-complete` plus the
+      design §4.1 article bundle (contentType, title, no episode, one {path, sha256} per adapted
+      file) — protects the whole authoring session behind it.
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk article generate-bundle --work-dir "${vars.work_dir}" --run-id "${vars.run_id}" --preset "${vars.preset}" --stage variants
+            && kk article generate-bundle --work-dir "${vars.work_dir}" --run-id "${vars.run_id}" --preset "${vars.preset}" --stage freeze
+
+  # ── 12–13. terminal states ─────────────────────────────────────────────────────────────────
+  - id: done
+    description: "Terminal — the article is frozen and publishable"
+
+  - id: failed
+    description: "Terminal — the run was rejected, the judge failed, or a revision budget ran out"
+
+transitions:
+  - from: executor-probe
+    to: outline-write
+    guard:
+      kind: always
+
+  - from: outline-write
+    to: draft-write
+    description: "Auto mode: the pick already committed outline-approved.md, so there is nothing to select or review"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.auto}" = "true" && test -s "${vars.work_dir}/2-outline/outline-approved.md"
+
+  - from: outline-write
+    to: failed
+    terminalReason: failed-check
+    description: "Auto mode with no approved outline (a deferred decision has no operator to ask)"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.auto}" = "true" && test ! -s "${vars.work_dir}/2-outline/outline-approved.md"
+
+  - from: outline-write
+    to: outline-select
+    description: "Interactive mode: the operator picks the outline"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.auto}" != "true"'
+
+  - from: outline-select
+    to: outline-review
+    guard:
+      kind: always
+
+  - from: outline-review
+    to: draft-write
+    description: "Operator approved the committed outline"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.__hitlAnswer}" = "true" -o "${vars.__hitlAnswer}" = "yes"'
+
+  - from: outline-review
+    to: outline-write
+    description: "Operator asked for another outline round and the round budget remains"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.__hitlAnswer}" != "true" -a "${vars.__hitlAnswer}" != "yes" &&
+          test "$(cat "${vars.work_dir}/.outline-review-count" 2>/dev/null || echo 0)" -lt 3
+
+  - from: outline-review
+    to: failed
+    terminalReason: failed-guard
+    description: "Operator rejected the outline and the round budget is spent"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.__hitlAnswer}" != "true" -a "${vars.__hitlAnswer}" != "yes" &&
+          test "$(cat "${vars.work_dir}/.outline-review-count" 2>/dev/null || echo 0)" -ge 3
+
+  - from: draft-write
+    to: unslop
+    description: "The de-slop pass is on (`workflows.kk-article-generate.unslop`, frozen into the run's options)"
+    guard:
+      kind: shell
+      options:
+        command: 'grep -qE "\"unslop\": *true" "${vars.work_dir}/itc-options.json" 2>/dev/null'
+
+  - from: draft-write
+    to: draft-review
+    description: "No de-slop pass and an operator is watching"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          ! grep -qE "\"unslop\": *true" "${vars.work_dir}/itc-options.json" 2>/dev/null &&
+          test "${vars.auto}" != "true"
+
+  - from: draft-write
+    to: judge
+    description: "No de-slop pass, auto mode: straight to the reviewer"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          ! grep -qE "\"unslop\": *true" "${vars.work_dir}/itc-options.json" 2>/dev/null &&
+          test "${vars.auto}" = "true"
+
+  - from: unslop
+    to: draft-review
+    description: "De-slopped draft, operator watching"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.auto}" != "true"'
+
+  - from: unslop
+    to: judge
+    description: "De-slopped draft, auto mode"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.auto}" = "true"'
+
+  - from: draft-review
+    to: judge
+    description: "Operator approved the draft"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.__hitlAnswer}" = "true" -o "${vars.__hitlAnswer}" = "yes"'
+
+  - from: draft-review
+    to: draft-write
+    description: "Operator asked for a rewrite and the human round budget remains (the judge's own bound is max_revisions)"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.__hitlAnswer}" != "true" -a "${vars.__hitlAnswer}" != "yes" &&
+          test "$(cat "${vars.work_dir}/.draft-review-count" 2>/dev/null || echo 0)" -lt 3
+
+  - from: draft-review
+    to: failed
+    terminalReason: failed-guard
+    description: "Operator rejected the draft and the human round budget is spent"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.__hitlAnswer}" != "true" -a "${vars.__hitlAnswer}" != "yes" &&
+          test "$(cat "${vars.work_dir}/.draft-review-count" 2>/dev/null || echo 0)" -ge 3
+
+  - from: judge
+    to: illustrate
+    description: "Judge PASS and a spend switch is on"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          grep -qx finish "${vars.work_dir}/.itc/disposition.txt" &&
+          grep -qE "\"(coverEnabled|inlineImages)\": *true" "${vars.work_dir}/itc-options.json" 2>/dev/null
+
+  - from: judge
+    to: adapt
+    description: "Judge PASS with no illustration spend"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          grep -qx finish "${vars.work_dir}/.itc/disposition.txt" &&
+          ! grep -qE "\"(coverEnabled|inlineImages)\": *true" "${vars.work_dir}/itc-options.json" 2>/dev/null
+
+  - from: judge
+    to: draft-write
+    description: "NEEDS_REVISION inside the budget: the verdict file IS the rewrite's input (design §5.2)"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          grep -qxE "autorevise|revise" "${vars.work_dir}/.itc/disposition.txt"
+
+  - from: judge
+    to: failed
+    terminalReason: failed-check
+    description: "FAIL, an out-of-contract verdict, or max_revisions exhausted (R5)"
+    guard:
+      kind: shell
+      options:
+        command: 'grep -qx fail "${vars.work_dir}/.itc/disposition.txt"'
+
+  - from: illustrate
+    to: adapt
+    guard:
+      kind: always
+
+  - from: adapt
+    to: freeze
+    guard:
+      kind: always
+
+  - from: freeze
+    to: done
+    guard:
+      kind: always

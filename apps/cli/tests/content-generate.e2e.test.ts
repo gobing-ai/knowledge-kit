@@ -564,10 +564,11 @@ describe('kk news generate step verbs — AC2: the nine design invocations', () 
         expect(kk(fx, ['news', 'generate-voice', '--work-dir', workDir, '--engine', 'nope']).code).toBe(2);
         expect(kk(fx, ['news', 'generate-render', 'positional', '--work-dir', workDir]).code).toBe(2);
         expect(kk(fx, ['news', 'generate-render']).code).toBe(2);
-        // The article noun shares the two verbs but its steps are 0368's.
+        // The article noun shares the two verbs; since 0368 its steps are implemented, so the refusal
+        // here is the article input guard (exit 1) rather than the old "not part of this release".
         const article = kk(fx, ['article', 'generate-check', '--work-dir', workDir, '--step', 'outline']);
-        expect(article.code).toBe(2);
-        expect(article.err).toContain('0368');
+        expect(article.code).toBe(1);
+        expect(article.err).toContain('outline-recommendation.json');
     });
 });
 

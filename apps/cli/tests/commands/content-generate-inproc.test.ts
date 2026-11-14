@@ -22,6 +22,8 @@ let root: string;
 let works: string;
 let restoreDeps: () => void;
 let restoreDepsBackup: () => void;
+/** The config each call runs under; a case may point it elsewhere. */
+let configFileForCases: string;
 
 interface Run {
     code: number;
@@ -41,12 +43,18 @@ let selectedRows = 0;
 
 async function run(args: string[]): Promise<Run> {
     const captured = captureOutput();
+    // The config is read at call time, so it is applied (and restored) per call: a file-level
+    // assignment leaks into every other suite sharing this process.
+    const saved = process.env.KK_CONFIG;
+    process.env.KK_CONFIG = configFileForCases;
     const { main } = await import('../../src/commands/../main');
     try {
         const code = await main(['node', 'kk', ...args]);
         return { code, out: captured.read(), err: captured.readErr() };
     } finally {
         captured.restore();
+        if (saved === undefined) delete process.env.KK_CONFIG;
+        else process.env.KK_CONFIG = saved;
     }
 }
 
@@ -64,7 +72,7 @@ beforeAll(async () => {
     mkdirSync(works, { recursive: true });
     const configFile = join(root, 'config.yaml');
     writeFileSync(configFile, [`works_dir: ${works}`, 'store:', `  db_path: ${join(root, 'kk.db')}`, ''].join('\n'));
-    process.env.KK_CONFIG = configFile;
+    configFileForCases = configFile;
     const module = await import('../../src/commands/content-generate');
     restoreDepsBackup = module.setGenerateDeps({
         runStage: async (argv) => {
@@ -246,12 +254,15 @@ describe('generate step verbs — in-process rows', () => {
 });
 
 describe('generate step verbs — refusals shared by every verb', () => {
-    it('refuses the article noun until 0368', async () => {
+    // 0368 closed the article noun's refusal: the same verb now accepts the article column's own
+    // `--step` values, so a NEWS step name is the usage error (the article column is proved by
+    // `commands/content-generate-article.test.ts`).
+    it('refuses a news step name on the article noun', async () => {
         reset();
         const dir = workDir('article-refusal');
         const result = await run(['article', 'generate-check', '--work-dir', dir, '--step', 'curate']);
         expect(result.code).toBe(2);
-        expect(result.err).toContain('the article steps are not part of this release');
+        expect(result.err).toContain('--step must be one of outline|judge|adapt');
     });
 
     it('rejects positionals with exit 2', async () => {
@@ -327,14 +338,14 @@ describe('generate step verbs — refusals shared by every verb', () => {
 
     it('falls back to the builtin content types when no config file exists', async () => {
         reset();
-        const previous = process.env.KK_CONFIG;
-        process.env.KK_CONFIG = join(root, 'nope', 'missing.yaml');
+        const previous = configFileForCases;
+        configFileForCases = join(root, 'nope', 'missing.yaml');
         try {
             const result = await run(['news', 'generate-render', '--work-dir', workDir('config-missing')]);
             expect(result.code).toBe(0);
             expect(result.out).toContain('config-missing');
         } finally {
-            process.env.KK_CONFIG = previous;
+            configFileForCases = previous;
         }
     });
 });

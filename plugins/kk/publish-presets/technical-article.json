@@ -4,11 +4,17 @@
     "targets": [
         {
             "plugin": "zenn-pub",
-            "profile": "article"
+            "profile": "article",
+            "variant": "article",
+            "tier": 0,
+            "required": true
         },
         {
             "plugin": "qiita-pub",
-            "profile": "article"
+            "profile": "article",
+            "variant": "article",
+            "tier": 0,
+            "required": true
         }
     ]
 }

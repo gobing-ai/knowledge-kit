@@ -9,6 +9,13 @@ updated_at: 2026-11-03
 
 # kk-itc refactor
 
+> **Superseded (G61, task 0368).** The article pipeline this document designs is replaced by
+> `docs/design/content-pipeline-consolidation.md` (§4.1, §4.2, §5.2, §6) and ADR-053: one
+> `kk-article-generate.yaml` state machine (the author half inlined, no child workflow) ending in a
+> frozen `4-publish/bundle.json`, and publishing through the shared nine-node `kk-publish.yaml`. The
+> `kk-itc*.yaml` files and the stage names below stay shipped until the Phase 4 cut-over (0369); this
+> file remains as the record of why the DAG-plus-child-FSM shape was chosen at the time.
+
 ## Intent and preservation contract
 Refactor kk-itc into a top-level dependency DAG with a bounded authoring FSM. Preserve direct topic/file entry, authoring files, bounded revision loops, existing command aliases, image spending opt-ins, live-send confirmation and Board capture. Default empty publishing targets still means author only. Ingestion remains optional. The original discovery and source findings are in [the brainstorm](../plans/2026-10-15-kk-itc-refactor-brainstorm.md); G21 scenarios are the observable contract.
 

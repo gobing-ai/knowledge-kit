@@ -233,11 +233,16 @@ async function seedItcPreparation(
     workDir: string,
     run: ReturnType<typeof resolveRun>,
     options: NewOptions,
+    preset: string,
 ): Promise<void> {
     const launchPath = join(workDir, '.content-itc-prepare.json');
+    // 0368: the frozen snapshot carries the content type's publish preset, so the generate steps plan
+    // against exactly the channel set this run was created for (`itc-options.json` is the single
+    // source every downstream stage reads, and the article freeze validates the bundle against it).
     const launch = {
         topic: options.slug ?? run.run,
         sourceLocale: options.locale ?? 'en',
+        publishPreset: preset,
         workDir,
         projectRoot: process.cwd(),
         parentRunId: `kk-content-${run.run}`,
@@ -300,7 +305,7 @@ async function newAction(defaultType: string, options: NewOptions, article: bool
         fail(2, 'kk.content.new', `cover file not found: ${options.cover}`);
     }
     await fs.ensureDir(run.workDir);
-    if (article) await seedItcPreparation(fs, run.workDir, run, options);
+    if (article) await seedItcPreparation(fs, run.workDir, run, options, resolved.publish_preset);
     if (fromPath !== undefined) await writeSeededContent(fs, run.workDir, locale, await fs.readFile(fromPath), options);
     if (options.cover !== undefined) {
         const coverPath = resolve(expandHome(options.cover));

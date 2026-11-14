@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { type Content, ContentSchema, discoverAllPlugins, type PluginRecord } from '@gobing-ai/kk-core';
 import {
     createNodeFileSystem,
@@ -754,7 +754,12 @@ async function composePlan(
             ...(target.profile !== undefined ? { profile: target.profile } : {}),
             payloadPath: payloadRelative,
             payloadDigest: createHash('sha256').update(payloadText).digest('hex'),
-            variantPath: entry.path,
+            // Bundle variant paths resolve against the BUNDLE's directory (design §4.1), while this
+            // plan's own paths (`payloadPath`, and the settle revalidation that reads `variantPath`
+            // with `join(workDir, …)`) resolve against the run directory. They coincide for a bundle
+            // at the run root (news) and differ for `4-publish/bundle.json` (the article layout), so
+            // the plan records the run-relative form.
+            variantPath: relative(input.workDir, resolve(bundleDir, entry.path)),
             variantDigest: entry.sha256,
         });
         await fs.ensureDir(join(input.workDir, '4-publish', 'payloads'));
