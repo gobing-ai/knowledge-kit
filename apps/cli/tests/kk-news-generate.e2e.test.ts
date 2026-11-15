@@ -265,7 +265,7 @@ case "\${1:-} \${2:-}" in
 esac
 exec "` +
             SPUR +
-            String.raw`" "$@"
+            `" "$@"
 `,
     );
     chmodSync(spur, 0o755);
