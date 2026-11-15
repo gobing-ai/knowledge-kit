@@ -4,7 +4,7 @@ name: Retire the old daily launchers and ITC workflows after a proven production
 status: done
 template: standard
 created_at: 2026-11-15T02:54:16.825Z
-updated_at: "2026-11-15T07:20:30.288Z"
+updated_at: "2026-11-15T07:20:54.659Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -82,7 +82,7 @@ Use the existing shared applyChannelModes helper: resolve variant/plugin config 
 3. [x] Reproduce live-channel promotion of disabled rows with regression-first CLI checks.
 4. [x] Fix the shared helper/window token validation and synchronize design/help documentation.
 5. [x] Pass the final repository quality gate and review the final diff.
-6. [ ] Record the canonical PASS verdict and close task 0372 without claiming production readiness.
+6. [x] Record the canonical PASS verdict and close task 0372 without claiming production readiness.
 
 ### Solution
 
