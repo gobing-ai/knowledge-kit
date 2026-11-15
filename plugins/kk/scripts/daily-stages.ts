@@ -385,7 +385,9 @@ function applyFloorGate(
             estimatedMinutes,
             minMinutes: floor,
             candidateChars: chars,
-            expansion: SPEAK_CHAR_EXPANSION,
+            // The ratio this refusal actually used — reporting SPEAK_CHAR_EXPANSION here made the
+            // artifact disagree with its own minutes (0377).
+            expansion: SPEAK_CHAR_EXPANSION_FLOOR,
             charRate: spokenCharRate(vdriver),
             ids,
             reason: `a ${docs.length}-item pool estimates ${estimatedMinutes} min of speech, below the ${floor} min floor — refusing before any TTS spend`,
