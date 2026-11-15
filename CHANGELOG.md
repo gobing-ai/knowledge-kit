@@ -1,5 +1,36 @@
 ## [Unreleased]
 
+## [0.1.19] - 2026-11-14
+
+### Fixed
+
+- fix(publish): let an effective off mode veto --live-channels (068ccb68)
+<!-- src: apps/cli/src/publish-matrix.ts:339 · confidence: HIGH -->
+
+### Changed
+
+- feat(cli): cut the scheduler and board over to the G61 verbs (7cbcc781)
+<!-- src: .spur/config.yaml:150 · confidence: HIGH -->
+
+### Removed
+
+- chore(workflows): retire the daily launchers and the ITC/publish3 workflows (86ec3def)
+<!-- src: plugins/kk/schedules/kk-daily-ai-voice3.cron.tmpl:17 · confidence: HIGH -->
+
+### Other
+
+- docs(surface): point the schedules, templates and design docs at the kk news verbs (b47ace5a)
+<!-- src: plugins/kk/schedules/kk-daily-publish3-cn-peak.cron.tmpl:24 · confidence: HIGH -->
+- fix(publish): record flag-wins precedence for `--live-channels` (7fcb0c13)
+  <!-- borderline: no current-behaviour claim — 068ccb68 reversed this the same day -->
+- test(publish): cover a failing store mark-published at settlement (b9d9e6d6)
+<!-- src: apps/cli/tests/publish-matrix-0333.test.ts:358 · confidence: HIGH -->
+- docs(code): drop references to the retired launcher and DAG filenames (e3f768ba)
+- docs(corpus): refresh the 0369 evidence and file the 0372 retirement (9df2cd24)
+- docs(task): record the 0372 retirement evidence (R2-R6 landed, R1 outstanding) (1f2360fe)
+- docs(corpus): refresh the E9 evidence to the shipped offline check (54339f44)
+- docs(task): record how 0372 landed on main (c9a1d6a8)
+
 ## [0.1.18] - 2026-11-14
 
 ### Added
