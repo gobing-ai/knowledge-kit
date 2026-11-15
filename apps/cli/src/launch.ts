@@ -35,6 +35,7 @@ import { syncLedger } from './commands/ledger';
 import { resolveKkConfigPath } from './invoke';
 import { consoleOutput } from './output';
 import { findPackageRoot } from './package-root';
+import { resolveBundlePath } from './publish-matrix';
 
 /** Wall-clock deadline for one workflow child: 13 500 000 ms (3 h 45 m) — the legacy default. */
 export const DEFAULT_TIMEOUT_MS = 13_500_000;
@@ -616,7 +617,12 @@ export async function launchWorkflow(options: LaunchWorkflowOptions): Promise<La
         }
         // Only a launch that cannot have sent anything recycles reservations: `kk-publish` sends, and a
         // send may have landed, so its rows are `publish-settle`'s to reconcile (design §5.3 node 8).
-        if (status !== 'done' && status !== 'no-content' && options.workflow !== PUBLISH_WORKFLOW) {
+        // A green generate that froze no bundle is the same case — nothing a later publish window could
+        // settle. 2026-11-13 finished `done` with the duration gate refusing, and its 13 selected rows
+        // kept 20 of the next day's 26 moderated stories out of every pool.
+        const greenWithBundle =
+            status === 'done' && (await deps.fs.exists(await resolveBundlePath(deps.fs, options.workDir)));
+        if (status !== 'no-content' && options.workflow !== PUBLISH_WORKFLOW && !greenWithBundle) {
             try {
                 await deps.recycleRun(runId);
             } catch (error) {

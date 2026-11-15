@@ -19,6 +19,7 @@
  *  13. dry run            — steps 1+3 only: no lock, no write, planned argv under `dryRun`, exit 0 (R9).
  *  14. no content         — the run report says `no-content:`: status `no-content`, exit 0 (R5).
  *  15. publish launch     — a `kk-publish` launch never recycles store selections a send may own (R5, §3.2).
+ *  16. done without bundle — a green generate that froze no bundle recycles: nothing could settle it.
  */
 import { describe, expect, it } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -350,6 +351,9 @@ describe('launchWorkflow — preflight refusals (0365 R3, AC2)', () => {
 describe('launchWorkflow — child lifecycle and cleanup (0365 R4, R5, AC3)', () => {
     it('records one workflow child, the vars, and a done receipt with executor and checkout commit', async () => {
         const space = scratch();
+        // A genuinely green generate froze its bundle; without one the launch now recycles (case 16).
+        mkdirSync(join(space.workDir, '4-publish'), { recursive: true });
+        writeFileSync(join(space.workDir, '4-publish', 'bundle.json'), '{}\n');
         const stub = harness();
         try {
             const receipt = await launchWorkflow({
@@ -705,6 +709,24 @@ describe('launchWorkflow — dry run and no-content (0365 R9, R5)', () => {
             expect(receipt.status).toBe('no-content');
             expect(receipt.exitCode).toBe(0);
             expect(stub.recycled).toEqual([]);
+        } finally {
+            stub.restore();
+        }
+    });
+});
+
+describe('launchWorkflow — a green generate owns nothing it cannot settle', () => {
+    it('recycles the selections of a done run that froze no bundle', async () => {
+        const space = scratch();
+        const stub = harness();
+        try {
+            const receipt = await launchWorkflow({ ...baseOptions(space), deps: stub.deps });
+
+            expect(receipt.status).toBe('done');
+            expect(receipt.exitCode).toBe(0);
+            expect(stub.recycled).toEqual([receipt.runId]);
+            expect(stub.ledgers).toHaveLength(1);
+            expect(stub.releases).toHaveLength(1);
         } finally {
             stub.restore();
         }
