@@ -4,7 +4,7 @@ name: Retire the old daily launchers and ITC workflows after a proven production
 status: wip
 template: standard
 created_at: 2026-11-15T02:54:16.825Z
-updated_at: "2026-11-15T06:06:51.729Z"
+updated_at: "2026-11-15T06:14:56.878Z"
 
 ---
 
@@ -151,4 +151,10 @@ their own e2e suites and by `kk schedule render`, not by a production tick.
 ### History
 
 - 2026-11-15T06:06:51.729Z backlog → wip (system)
+
+- 2026-11-15 — landed on `main`: the six retirement commits (`86ec3def`, `e3f768ba`, `b47ace5a`,
+  `7fcb0c13`, `b9d9e6d6`, `1f2360fe`) merged linearly. `main` had advanced to `ea7200c4` (E9 docs)
+  after the branch was cut, so `git merge --ff-only` refused; the divergence was resolved by replaying
+  that one commit on top of the branch, which rewrote it as `54339f44`. Nothing was pushed, so no
+  published history changed. Branch and worktree removed. R1 stays open.
 
