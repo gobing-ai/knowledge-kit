@@ -6,7 +6,7 @@ status: blocked
 priority: P1
 tags: []
 created_at: "2026-11-13T17:30:35.983Z"
-updated_at: "2026-11-14T21:54:01.624Z"
+updated_at: "2026-11-15T02:55:00.229Z"
 ---
 
 # G61: Content pipeline consolidation: shared publish core, article/news verbs, simplified workflows
@@ -40,14 +40,16 @@ ADR-053 (accepted 2026-11-13). Supersedes the remaining scope of G21 where they 
 - Phase 3 — workflows: one shared `kk-publish.yaml`; `kk-article-generate.yaml` (author FSM as child) and
   `kk-news-generate.yaml` in their own namespaces; ITC adopts the frozen `bundle.json` + matrix plan; a node
   survives only if it is an agent call, a human pause, or a retry boundary worth minutes.
-- Phase 4 — retire `scripts/daily-ai-news.ts`, `scripts/publish-article.ts` and the script-resolved stage
-  bodies still in use; scheduler lines call `kk news generate|publish`.
+- Phase 4 (task 0369) — scheduler lines call `kk news generate|publish` and start no entry script; `kk itc`
+  and `kk daily` become hidden routes; Board and triage accept the new workflow names. Deleting
+  `scripts/daily-ai-news.ts`, `scripts/publish-article.ts`, the old launchers and the old workflows waits for
+  one proven production day and is task 0372, outside this feature (operator decision 2026-11-14).
 
 **Out of scope**
 
 - Spur Board modules (G8x) — only the single bundle/receipt schema they will read.
 - New publish channels and per-channel UI repairs (E9x).
-- `kk-daily-ai-voice.yaml` and `kk-daily-ai-voice2.yaml`: not edited by any G61 task; deleted in Phase 4 once
+- `kk-daily-ai-voice.yaml` and `kk-daily-ai-voice2.yaml`: not edited by any G61 task; deleted later, once
   nothing references them.
 - Moving agent authoring into `plugins/generations`; generation plugins stay deterministic renderers.
 

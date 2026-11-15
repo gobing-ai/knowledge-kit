@@ -4,7 +4,7 @@ name: Extract a neutral publish core from itc-publish, itc-plan and publish-matr
 status: done
 template: feature-impl
 created_at: 2026-11-13T17:31:13.967Z
-updated_at: "2026-11-13T20:10:30.324Z"
+updated_at: "2026-11-15T04:01:16.938Z"
 feature_id: G61
 
 ac_altitude: task-local
@@ -157,7 +157,7 @@ test-source change from this task.
 | R3 | MET | `publish-matrix.ts` imports from `./publish-core` (`apps/cli/src/publish-matrix.ts:12`); the two config resolvers are NOT behaviour-equivalent (untrimmed `process.env` read, no `~` expansion at `apps/cli/src/invoke.ts:52`), so `resolveItcConfigPath` moved as `resolveConfigPath` (`apps/cli/src/publish-core.ts:271`) and `itc-config` re-exports it (`apps/cli/src/itc-config.ts:9`). |
 | R4 | MET | `rg -n "from '\./itc-" apps/cli/src/publish-matrix.ts apps/cli/src/publish-core.ts` prints nothing; every ITC-only function stayed in `itc-publish.ts` (`itcMaterializePlan` `:75` … `itcAuthorVerdict` `:702`). |
 | R5 | MET | `itcDelivery` occurrences in `apps/cli/src` are `4` before and after; file names, error codes and log events unchanged; the existing suites pass with no edit. |
-| R6 | MET | `plugins/kk/config.example.yaml:12` now states a preset target may carry `mode: live` (ADR-022 amendment 2026-11-12); the anatomy clause is N/A (see G3). |
+| R6 | MET | `plugins/kk/config.example.yaml:15` — a preset target may carry `mode: live` (ADR-022 amendment 2026-11-12) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|

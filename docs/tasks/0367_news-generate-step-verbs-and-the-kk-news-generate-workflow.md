@@ -4,7 +4,7 @@ name: News generate step verbs and the kk-news-generate workflow
 status: done
 template: feature-impl
 created_at: 2026-11-13T18:13:40.143Z
-updated_at: "2026-11-14T19:12:20.397Z"
+updated_at: "2026-11-15T04:01:18.092Z"
 feature_id: G61
 
 ac_altitude: task-local
@@ -164,7 +164,7 @@ those and still requires exactly one real dispatch — the executor probe.
 | R7 | MET | Twenty nodes in design §5.1 order, `executor-probe` the only node without `dependsOn`, one `agent` var, seven vars, every node after `prepare` conditioned on `pool-gate.json`, one `kk news <verb>` per non-agent non-pause non-nested node (freeze is the designed two-command node), no publish node (`plugins/kk/workflows/kk-news-generate.yaml:47-410`; asserted `apps/cli/tests/kk-news-generate-dag.test.ts:82-266`). `kk stage`, `jq ` and `file.read` appear in no node command (the single `file.read` hit is the prose comment at `plugins/kk/workflows/kk-news-generate.yaml:24`). |
 | R8 | MET | `apps/cli/tests/kk-news-generate-dag.test.ts:82-266` asserts the node ids and order, the single `agent` var, `executor-probe` as the only entry node, the pool-gate condition on every later node and the absence of `kk stage`; 12 pass this round. |
 | R9 | MET | Offline equivalence: the AC3 rehearsal reproduces voice3's own bundle node sequence over the same fixture — same variant keys, same safety status, same variant payloads — and writes `summary.json` (`apps/cli/tests/kk-news-generate.e2e.test.ts:419-492`, 3 pass this round). Launcher clause now asserted and stable at `apps/cli/tests/commands/content-generate-inproc.test.ts:314-328`: a real `kk news generate --run-date 20260101 --dry-run` whose receipt `dryRun.workflowPath` is `plugins/kk/workflows/kk-news-generate.yaml` — the same value the spawn consumes (`apps/cli/src/launch.ts:474`, `:507`) — under an explicit `}, 30_000)` budget. Three full-file runs this round: 22 pass / 0 fail each, the case at 4853–4905 ms (previously it flipped at the 5000 ms default); `bunx biome check` clean on the file; `spur task verdict --replay` reports 0 findings. |
-| R10 | MET | `docs/04_DESIGN.md:1444` marks the news step verbs `# shipped (0367)`, `:1441` marks `generate-bundle shipped (0367)`, `:1446-1450` lists the six news step verbs and the shared `generate-bundle` as registered, and `:1493-1495` reads `Shipped workflows: kk-publish (0366) and kk-news-generate (0367, twenty nodes, one executor var)`. No `planned (0367)` and no `Planned workflows: kk-news-generate` remain; `git diff -- docs/04_DESIGN.md` is non-empty (15 lines). |
+| R10 | MET | `docs/04_DESIGN.md:1445` marks the news step verbs `# shipped (0367)`, `docs/04_DESIGN.md:1442` marks `generate-bundle` shipped, `docs/04_DESIGN.md:1448-1451` lists the six news step verbs and the shared `generate-bundle` as registered, `docs/04_DESIGN.md:1494` reads `Shipped workflows: kk-publish (0366), kk-news-generate (0367 …)` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|

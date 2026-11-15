@@ -4,7 +4,7 @@ name: launchWorkflow and the plain generate / publish verbs
 status: done
 template: feature-impl
 created_at: 2026-11-13T18:13:39.602Z
-updated_at: "2026-11-14T10:21:34.998Z"
+updated_at: "2026-11-15T04:01:17.742Z"
 feature_id: G61
 
 ac_altitude: task-local
@@ -175,22 +175,22 @@ stay for 0369); no real `kk-news-generate`/`kk-article-generate`/`kk-publish` YA
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
 | R1 | MET | `apps/cli/src/launch.ts:460` — lock `:510` → preflight `:535` → running receipt `:552` → one child `:564` → cleanup `:598` → terminal receipt `:635`; seam `apps/cli/src/launch.ts:102`; receipt type carries `executor`/`checkoutCommit` at `apps/cli/src/launch.ts:53` |
-| R2 | MET | `apps/cli/src/launch.ts:510` builds `<workflow>-<run>`, `:362` claims it on the same store DAO as `kk lock acquire` (`apps/cli/src/commands/lock.ts:62`); lost claim returns 6 with no write `apps/cli/src/launch.ts:512-519`; byte-identical proof `apps/cli/tests/content-launch.e2e.test.ts:188` |
+| R2 | MET | `apps/cli/src/launch.ts:510` builds `<workflow>-<run>`, `apps/cli/src/launch.ts:511` claims it through the lock seam; a lost claim returns 6 with no write `apps/cli/src/launch.ts:512-516`; unit `apps/cli/tests/launch.test.ts:227`; byte-identical proof `apps/cli/tests/content-launch.e2e.test.ts:60` |
 | R3 | MET | `apps/cli/src/launch.ts:291` ports `runPreflight`: dirty harness `:302-309` (skipped by `--allow-dirty`), divergence `:311-329`, probe with `inline`→`scribe` `:331-333`; refused receipt + exit 5 `apps/cli/src/launch.ts:539`; no `--skip-probe` in `apps/cli/src/commands/content-launch.ts:512-529` |
-| R4 | MET | `apps/cli/src/launch.ts:340` one `spur workflow run` argv; agent var only when given `apps/cli/tests/launch.test.ts:395`; `skill_dir` + `writerSkill` generate-only `apps/cli/src/commands/content-launch.ts:275`, `:289`, missing skill exits 5 at `:168`; per-verb vars `apps/cli/tests/content-launch.e2e.test.ts:634` |
-| R5 | MET | four postures clean up `apps/cli/tests/content-launch.e2e.test.ts:231` and `apps/cli/tests/launch.test.ts:350`; handler outlives cleanup `apps/cli/src/launch.ts:533`, `:559`, `:639` with `apps/cli/tests/launch.test.ts:527`; re-probed by firing SIGTERM from `store release` — handler live, cleanup continued, one lock release |
+| R4 | MET | `apps/cli/src/launch.ts:340` one `spur workflow run` argv; agent var only when given `apps/cli/tests/launch.test.ts:395`; `skill_dir` `apps/cli/src/commands/content-launch.ts:279` + `writerSkill` `apps/cli/src/commands/content-launch.ts:293` generate-only; a missing skill exits 5 (`apps/cli/tests/launch.test.ts:331`, `apps/cli/tests/content-launch.e2e.test.ts:462`); per-verb vars `apps/cli/tests/content-launch.e2e.test.ts:275` |
+| R5 | MET | four postures clean up `apps/cli/tests/content-launch.e2e.test.ts:103` and `apps/cli/tests/launch.test.ts:351`; the handler outlives cleanup and the lock is still freed `apps/cli/tests/launch.test.ts:534`; release at `apps/cli/src/launch.ts:646` |
 | R6 | MET | `apps/cli/src/commands/content-launch.ts:558` registered from `apps/cli/src/commands/content.ts:451`; workflow `content_types.<type>.workflow` `:272`, literal `kk-publish` `:433`; existing `workflows_dir` override `:107`; stub `apps/cli/tests/fixtures/workflows/kk-publish.yaml:1` |
-| R7 | MET | `apps/cli/src/commands/content-launch.ts:360-364` running receipt → 5, `:404` missing bundle → 5, `:365-401` exactly one auto-generate (`apps/cli/tests/content-launch.e2e.test.ts:356`); validation `:409` precedes the publish lock at `:431` |
-| R8 | MET | `apps/cli/src/commands/content-launch.ts:296` gate + `:302` chained `publishRun` for window `after-generate`, two sequential launches with own locks/receipts — `apps/cli/tests/content-launch.e2e.test.ts:396` |
-| R9 | MET | `apps/cli/src/launch.ts:499` dry run = preflight only, planned argv, no lock/write/child (`apps/cli/tests/content-launch.e2e.test.ts:466`); the auto-generate leg now inherits the posture `apps/cli/src/commands/content-launch.ts:387` and is reported under `dryRun.chained` `:449` (`apps/cli/tests/content-launch.e2e.test.ts:311`); re-probed: 0 children, receipt byte-identical, no bundle |
+| R7 | MET | `apps/cli/src/commands/content-launch.ts:376` running receipt → refusal, `apps/cli/src/commands/content-launch.ts:424` missing bundle → 5, `apps/cli/src/commands/content-launch.ts:389-393` exactly one auto-generate (`apps/cli/tests/content-launch.e2e.test.ts:235`); validation `apps/cli/src/commands/content-launch.ts:386` runs before the publish lock (`apps/cli/src/commands/content-launch.ts:382`) |
+| R8 | MET | `apps/cli/src/commands/content-launch.ts:306` chained `publishRun` for window `after-generate` (`apps/cli/src/commands/content-launch.ts:315`), two sequential launches with own locks/receipts — `apps/cli/tests/content-launch.e2e.test.ts:275` |
+| R9 | MET | `apps/cli/src/launch.ts:499` dry run = preflight only, planned argv, no lock/write/child (`apps/cli/tests/launch.test.ts:660`, `apps/cli/tests/content-launch.e2e.test.ts:415`); the auto-generate leg inherits the posture `apps/cli/src/commands/content-launch.ts:408` and is reported under `dryRun.chained` `apps/cli/src/commands/content-launch.ts:475` (`apps/cli/tests/content-launch.e2e.test.ts:190`) |
 | R10 | MET | `docs/04_DESIGN.md:1415` §1.14 lists `generate`/`publish` as shipped (0365), flags `:1429-1438`, exit codes `:1448`, same change set |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — A launch is refused while another holds the lock (req: R1, R2) | MET | test | `apps/cli/tests/content-launch.e2e.test.ts:188` — exit 6, holder receipt byte-identical; `apps/cli/tests/launch.test.ts:226` |
-| AC2 — A dead executor refuses the launch before any spend (req: R1, R3, R9) | MET | test | `apps/cli/tests/content-launch.e2e.test.ts:210` — both runs exit 5, no workflow child, refused receipt naming the probe |
-| AC3 — Every exit path cleans up (req: R1, R4, R5) | MET | test | `apps/cli/tests/content-launch.e2e.test.ts:231` — green/failed/timeout/SIGTERM, one child each, lock free, `.works/tmp/test-launch/summary.json` |
-| AC4 — Publish finds or refuses the bundle (req: R6, R7, R8) | MET | test | `apps/cli/tests/content-launch.e2e.test.ts:356` — exit 5 naming `4-publish/bundle.json`, then exactly one generate before `kk-publish.yaml` |
+| AC1 — A launch is refused while another holds the lock (req: R1, R2) | MET | test | `apps/cli/tests/content-launch.e2e.test.ts:60` — exit 6, holder receipt byte-identical; `apps/cli/tests/launch.test.ts:226` |
+| AC2 — A dead executor refuses the launch before any spend (req: R1, R3, R9) | MET | test | `apps/cli/tests/content-launch.e2e.test.ts:82` — both runs exit 5, no workflow child, refused receipt naming the probe |
+| AC3 — Every exit path cleans up (req: R1, R4, R5) | MET | test | `apps/cli/tests/content-launch.e2e.test.ts:103` — green/failed/timeout/SIGTERM, one child each, lock free, `.works/tmp/test-launch/summary.json` |
+| AC4 — Publish finds or refuses the bundle (req: R6, R7, R8) | MET | test | `apps/cli/tests/content-launch.e2e.test.ts:235` — exit 5 naming `4-publish/bundle.json`, then exactly one generate before `kk-publish.yaml` |
 | AC5 — Gate (req: R10) | MET | command | `.spur/run/0365-check-receipt.json:1` status PASS tier full runId cd3f64cf…; `spur task gate 0365 status` → reuse true / ok for git tree fd8782f… |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 

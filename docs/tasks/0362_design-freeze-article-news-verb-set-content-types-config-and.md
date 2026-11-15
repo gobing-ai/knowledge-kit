@@ -4,7 +4,7 @@ name: "Design freeze: article/news verb set, content_types config, and the simpl
 status: done
 template: feature-impl
 created_at: 2026-11-13T17:31:14.228Z
-updated_at: "2026-11-14T07:17:08.711Z"
+updated_at: "2026-11-15T04:01:17.133Z"
 feature_id: G61
 
 ac_altitude: task-local
@@ -121,13 +121,13 @@ Constraints the design must respect: `kk` owns steps, the workflow owns sequenci
 | R5 | MET | docs/design/content-pipeline-consolidation.md:258 |
 | R6 | MET | docs/design/content-pipeline-consolidation.md:341 |
 | R7 | MET | docs/design/content-pipeline-consolidation.md:465 |
-| R8 | MET | docs/04_DESIGN.md:1409 |
+| R8 | MET | `docs/04_DESIGN.md:1415` — §1.14 exists; the Planned (G61) marker was superseded by the Shipped (0363–0368) heading as 0363–0368 landed |
 | R9 | MET | docs/design/content-pipeline-consolidation.md:572 |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
 | AC1 — The design document is complete and checkable (req: R1, R2, R3, R4, R5, R6, R7) | MET | command | .spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/design-acceptance.log:1 — eight contract sections and all 99 existing nodes covered |
-| AC2 — The planned surface is recorded (req: R8) | MET | command | docs/04_DESIGN.md:1409 — planned launch/generation surface retained; new/status and publish steps correctly superseded by 0363/0364 |
+| AC2 — The planned surface is recorded (req: R8) | MET | command | `docs/04_DESIGN.md:1415` — §1.14 carries the verb table; `docs/04_DESIGN.md:1456` the `content_types` block (now marked shipped) |
 | AC3 — Phase 2–4 tasks are ready for delegation (req: R9) | MET | command | docs/design/content-pipeline-consolidation.md:572 — task checks 0363–0369 and G61 feature check pass; remaining warnings concern later unverified feature scenarios |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 

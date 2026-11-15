@@ -4,7 +4,7 @@ name: Unified bundle and plan schema with the five publish step verbs
 status: done
 template: feature-impl
 created_at: 2026-11-13T18:13:39.337Z
-updated_at: "2026-11-14T07:17:11.714Z"
+updated_at: "2026-11-15T04:01:17.535Z"
 feature_id: G61
 
 ac_altitude: task-local
@@ -142,15 +142,15 @@ The named commands still accept the legacy root bundle location used by existing
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
 | R1 | MET | apps/cli/src/publish-matrix.ts:54 |
-| R2 | MET | apps/cli/src/publish-matrix.ts:633 |
-| R3 | MET | apps/cli/src/publish-matrix.ts:1454 |
-| R4 | MET | apps/cli/src/commands/content-publish.ts:449 |
-| R5 | MET | apps/cli/src/commands/content-publish.ts:176 |
-| R6 | MET | apps/cli/src/commands/content-publish.ts:335 |
-| R7 | MET | apps/cli/src/commands/content-publish.ts:409 |
-| R8 | MET | apps/cli/src/publish-matrix.ts:305 |
+| R2 | MET | `apps/cli/src/publish-matrix.ts:648` podcast row without `episode` → named error; `apps/cli/src/publish-matrix.ts:1625` RSS gate → named error |
+| R3 | MET | `apps/cli/src/publish-matrix.ts:88` `transport`, `apps/cli/src/publish-matrix.ts:89` `metadata`; passed to `sendRows` at `apps/cli/src/publish-matrix.ts:1474` |
+| R4 | MET | `apps/cli/src/commands/content-publish.ts:484` `registerContentPublishVerbs`; five verbs `apps/cli/src/commands/content-publish.ts:491`, `apps/cli/src/commands/content-publish.ts:507`, `apps/cli/src/commands/content-publish.ts:519`, `apps/cli/src/commands/content-publish.ts:529`, `apps/cli/src/commands/content-publish.ts:537` |
+| R5 | MET | `apps/cli/src/commands/content-publish.ts:178` `planAction`: token validation `apps/cli/src/commands/content-publish.ts:184` → wait-until `apps/cli/src/commands/content-publish.ts:209` → rss-gate `apps/cli/src/commands/content-publish.ts:219` → validate `apps/cli/src/commands/content-publish.ts:226` → plan `apps/cli/src/commands/content-publish.ts:242` |
+| R6 | MET | `apps/cli/src/commands/content-publish.ts:338` `settleAction`; stage runner calls `apps/cli/src/commands/content-publish.ts:349`, `apps/cli/src/commands/content-publish.ts:355`; `runs[]` append `apps/cli/src/commands/content-publish.ts:334` |
+| R7 | MET | `apps/cli/src/commands/content-publish.ts:414` `reportAction`; ledger sync warning path `apps/cli/src/commands/content-publish.ts:431` |
+| R8 | MET | `apps/cli/src/publish-matrix.ts:320` `applyChannelModes` (specific key beats plugin key `apps/cli/src/publish-matrix.ts:331`, `modeSource` `apps/cli/src/publish-matrix.ts:340`); unknown key → `apps/cli/src/publish-matrix.ts:305` |
 | R9 | MET | apps/cli/tests/voice3-dag.test.ts:70 |
-| R10 | MET | docs/04_DESIGN.md:1409 |
+| R10 | MET | `docs/04_DESIGN.md:1439` five verbs listed under §1.14; `docs/04_DESIGN.md:2406` pointer in the publish-matrix stages section |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|

@@ -4,7 +4,7 @@ name: content_types config and the kk article / kk news nouns with new and statu
 status: done
 template: feature-impl
 created_at: 2026-11-13T18:13:39.059Z
-updated_at: "2026-11-14T07:17:09.780Z"
+updated_at: "2026-11-15T04:01:17.334Z"
 feature_id: G61
 
 ac_altitude: task-local
@@ -117,21 +117,21 @@ Review corrections (2026-11-14): CLI registration uses the post-0361 owner `apps
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | apps/cli/src/content-types.ts:10 |
-| R2 | MET | apps/cli/src/content-types.ts:65 |
+| R1 | MET | `apps/cli/src/content-types.ts:11` `ContentTypeSchema`, `apps/cli/src/content-types.ts:19` `ContentTypesSchema`, `apps/cli/src/content-types.ts:27` `BUILTIN_CONTENT_TYPES`, `apps/cli/src/content-types.ts:135` `resolveContentType` |
+| R2 | MET | `apps/cli/src/content-types.ts:64` `ContentTypeUnknownError`, message at `apps/cli/src/content-types.ts:71` |
 | R3 | MET | apps/cli/src/content-types.ts:202 |
-| R4 | MET | apps/cli/src/cli.ts:33 |
-| R5 | MET | apps/cli/src/commands/content.ts:225 |
-| R6 | MET | apps/cli/src/commands/content.ts:323 |
-| R7 | MET | apps/cli/src/commands/content.ts:290 |
-| R8 | MET | docs/04_DESIGN.md:1409 |
-| R9 | MET | apps/cli/src/content-types.ts:115 |
+| R4 | MET | `apps/cli/src/commands/content.ts:455` `registerContentVerbs`; called twice at `apps/cli/src/cli.ts:33` and `apps/cli/src/cli.ts:34` |
+| R5 | MET | `apps/cli/src/commands/content.ts:263` `newAction`; idempotent `created: false` at `apps/cli/src/commands/content.ts:297` |
+| R6 | MET | `apps/cli/src/commands/content.ts:386` `statusAction`, single JSON write at `apps/cli/src/commands/content.ts:414` |
+| R7 | MET | one `consoleOutput.write(JSON.stringify(…))` per verb: `apps/cli/src/commands/content.ts:297`, `apps/cli/src/commands/content.ts:318`, `apps/cli/src/commands/content.ts:414` |
+| R8 | MET | `docs/04_DESIGN.md:1415` §1.14 shipped list; `docs/04_DESIGN.md:1456` shipped config key; `docs/04_DESIGN.md:1527` config table row |
+| R9 | MET | `apps/cli/src/content-types.ts:109` `hashSkill` (SKILL.md + references), result fields `apps/cli/src/content-types.ts:59`, `apps/cli/src/content-types.ts:60` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
 | AC1 — A content type resolves through config with a stated order (req: R1, R2, R3, R9) | MET | test | apps/cli/tests/content-types.test.ts:14 — precedence, strict schema, skill fingerprint, paths and malformed channel refusal |
 | AC2 — Both nouns expose the same new and status verbs (req: R4, R5, R6, R7) | MET | test | apps/cli/tests/content-nouns.e2e.test.ts:19 — idempotency, copied source, JSON output and usage codes; .spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/content-summary.json:1 |
-| AC3 — The surface doc matches the binary (req: R8) | MET | test | apps/cli/tests/main.test.ts:71 — exact visible inventory includes both nouns and all shipped steps; docs/04_DESIGN.md:1409 |
+| AC3 — The surface doc matches the binary (req: R8) | MET | test | `apps/cli/tests/main.test.ts:64` (first-layer nouns visible), `apps/cli/tests/main.test.ts:206` (visible leaf inventory); `docs/04_DESIGN.md:1415` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

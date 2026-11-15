@@ -4,7 +4,7 @@ name: "Launch safety: single executor var, traffic probe first, single-flight lo
 status: done
 template: feature-impl
 created_at: 2026-11-13T17:31:13.660Z
-updated_at: "2026-11-13T23:23:23.056Z"
+updated_at: "2026-11-15T04:01:16.390Z"
 feature_id: G61
 
 ac_altitude: task-local
@@ -237,10 +237,10 @@ receipt-field checks; `safety-reviewer-failure.test.ts`, `voice3-dag.test.ts`,
 | R3 | MET | Primaries keep `${vars.agent}`; every nested launch forwards it: `plugins/kk/workflows/kk-daily-ai-voice3.yaml:587`, `:846`, `:901`; `temp/dag` assertion in `apps/cli/tests/launch-safety-dag.test.ts:95`. |
 | R4 | MET | `executor-probe` is the sole root and `prepare` depends on it: `plugins/kk/workflows/kk-daily-ai-voice3.yaml:119`, `plugins/kk/workflows/kk-itc.yaml:42`; asserted by `apps/cli/tests/launch-safety-dag.test.ts:110` and `apps/cli/tests/kk-itc-dag.test.ts:41`. |
 | R5 | MET | `--retry-agent`, its probe, both `agent_retry` vars and the receipt field are gone; the probe always runs and targets `scribe` for the `inline` posture: `plugins/kk/scripts/daily-scheduled-run.ts:235`. |
-| R6 | MET | `PRODUCTION` carries no executor and the argv appends no `--agent`: `scripts/daily-ai-news.ts:28`, `:258`; `TriageReceipt` no longer has `retryAgent` (`plugins/kk/scripts/daily-triage-core.ts:22`). An operator `--agent X` after `--` still wins (test "generate --full accepts explicit agent overrides"). |
-| R7 | MET | `acquireLock()` / `releaseLock()` in `plugins/kk/scripts/daily-scheduled-run.ts:92` and `plugins/kk/scripts/daily-scheduled-run.ts:111`, wired at `plugins/kk/scripts/daily-scheduled-run.ts:119`; the held-lock refusal and its receipt-untouched guarantee are asserted by `plugins/kk/tests/daily-scheduled-run.test.ts:442`. |
+| R6 | MET | `PRODUCTION` carries no executor and the argv appends no `--agent`: `scripts/daily-ai-news.ts:28`, `scripts/daily-ai-news.ts:258`; `TriageReceipt` has no `retryAgent` (`plugins/kk/scripts/daily-triage-core.ts:23`). An operator `--agent X` after `--` still wins (test "generate --full accepts explicit agent overrides"). |
+| R7 | MET | Acquire before preflight, release on refusal, on signal and before the final exit: `plugins/kk/scripts/daily-scheduled-run.ts:119`, `:262`, `:351`, `:641`; held-lock path prints the contract line and exits 6 without writing the receipt (`:120`). |
 | R8 | MET | `checkoutCommit` + `executor` on the preflight-refused, running, inspecting and terminal receipts: `plugins/kk/scripts/daily-scheduled-run.ts:251`, `:273`, `:547`, `:628`. |
-| R9 | MET | `docs/04_DESIGN.md:1095` (single executor selector, lock, exit 6, probe, receipt fields) and `docs/design/kk-daily-ai-voice3.md:102`, `:264` (probe node, one-var contract); see F3 for the voice2 row. |
+| R9 | MET | `docs/04_DESIGN.md:1101` (single-flight lock, exit 6), `docs/04_DESIGN.md:1108` (`checkoutCommit`); `docs/design/kk-daily-ai-voice3.md:106` (`executor-probe` sole root), `docs/design/kk-daily-ai-voice3.md:272` (one-var contract) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
