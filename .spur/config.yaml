@@ -59,7 +59,10 @@ bootstrap:
     driver: bun-sqlite
     url: .spur/spur.db
   scheduler:
-    enabled: false
+    # true, not false (2026-11-15, task 0373): commit 6a1713ea turned the tick loop off, but the
+    # running server kept scheduling anyway, so the flag only documented a behaviour that was not
+    # real. These jobs are the production kk news schedule; the flag now says so.
+    enabled: true
     # Periodic executions live here and nowhere else (task 0750). A tick
     # enqueues `scheduler.custom`, which the server's job worker runs through
     # /bin/sh -c in the project root. Use the repo-local CLI, never a global
@@ -147,7 +150,12 @@ bootstrap:
       - name: kk-daily-ai-voice
         cron: "30 4 * * *"
         timeoutMs: 14400000
-        command: kk news generate --publish
+        # --agent pinned 2026-11-15 (task 0373): the cost-first ladder resolves to a free
+        # executor that dies at dispatch — opencode `-free` returns "Invalid credential",
+        # agy-gemini needs an expired Google login, and pi-dsv4.1-flash-volc is 429 until
+        # 2026-11-18. pi-dsv4.1-flash-cc answered a probe on this host, so pin it rather than
+        # let every 04:30 tick fail in the executor probe.
+        command: kk news generate --publish --agent pi-dsv4.1-flash-cc
       # Morning runs stay draft-only (ADR-022: live is launch-only) — podcast-pub items land
       # microfeed-unpublished and are invisible on podcast.salty.vip until go-live. Operator
       # routine mid-morning: `kk news publish --window after-generate --live-channels
@@ -172,7 +180,7 @@ bootstrap:
       - name: kk-daily-publish3
         cron: "0 7 * * *"
         timeoutMs: 21600000
-        command: kk news publish --window overseas-rss --unattended
+        command: kk news publish --window overseas-rss --unattended --agent pi-dsv4.1-flash-cc
 
       # 17:00 local daily: the `cn-peak` window (design content-pipeline-consolidation §5a) — the
       # domestic rows with no draftable rail (微博 头条文章). 17:00 America/Los_Angeles is 09:00
@@ -184,7 +192,7 @@ bootstrap:
       - name: kk-daily-publish3-cn-peak
         cron: "0 17 * * *"
         timeoutMs: 21600000
-        command: kk news publish --window cn-peak --unattended
+        command: kk news publish --window cn-peak --unattended --agent pi-dsv4.1-flash-cc
 
       # 04:05, 10:05, 16:05, 22:05 daily: kk-collect standalone 6-hourly collection
       # into the kk store (aihot + last30days + horizon -> store ingest -> label).
