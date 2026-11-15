@@ -42,7 +42,7 @@ ADR-053 (accepted 2026-11-13). Supersedes the remaining scope of G21 where they 
   survives only if it is an agent call, a human pause, or a retry boundary worth minutes.
 - Phase 4 (task 0369) — scheduler lines call `kk news generate|publish` and start no entry script; `kk itc`
   and `kk daily` become hidden routes; Board and triage accept the new workflow names. Deleting
-  `scripts/daily-ai-news.ts`, `scripts/publish-article.ts`, the old launchers and the old workflows waits for
+  the old launcher and publisher scripts, the old launchers and the old workflows waits for
   one proven production day and is task 0372, outside this feature (operator decision 2026-11-14).
 
 **Out of scope**
@@ -114,10 +114,10 @@ Feature: Content pipeline consolidation: shared publish core, article/news verbs
 ## Notes
 
 Evidence (review 2026-11-12/13): `publish-matrix.ts` imports its send loop, plugin probe, receipt type, preset
-schemas and config path from `itc-publish.ts`, `itc-plan.ts`, `itc-config.ts`; `kk-itc-publish-tail.yaml` is a
+schemas and config path from `itc-publish.ts`, `itc-plan.ts`, `itc-config.ts`; the ITC publish-tail DAG is a
 byte-identical copy of seven `kk-itc.yaml` nodes; ITC channel retries produced `a2ui-intro-wechat2/3/4` work
-dirs; voice3 runs in the `kk-daily-ai-voice2` namespace; the operator API lives in `scripts/daily-ai-news.ts`
-and `scripts/publish-article.ts`; ~70 `kk stage run <name>` bodies take untyped positionals and most resolve
+dirs; voice3 runs in the `kk-daily-ai-voice2` namespace; the operator API lives in the retired daily launcher
+and the article publisher; ~70 `kk stage run <name>` bodies take untyped positionals and most resolve
 from the installed package; a checkout holding a pre-f7a964e2 scheduler job line ran a quota-dead pinned
 executor on 11-11 and 11-12 and failed 7/7 while a second machine ran the real schedule.
 

@@ -212,7 +212,7 @@ If a check fails, fix the root cause. **Never** bypass with `--no-verify`, `--fo
 `kk stage <name>` resolves its runner from the **installed** package that the `kk` on PATH belongs
 to, not from this checkout — product *plugins* resolve the opposite way (the project root shadows the
 install). A stage edit is therefore live for `kk executor run` but invisible to `kk stage`, and every
-scheduled workflow (the 04:30 daily voice run included) keeps executing the old body. Resolve the
+scheduled workflow (the 04:30 `kk news generate` run included) keeps executing the old body. Resolve the
 package root from the CLI instead of assuming a location: this machine carries two installs, the live
 bun-global one (`~/.bun/install/global/node_modules/@gobing-ai/knowledge-kit`) and a stale
 `~/node_modules/@gobing-ai/knowledge-kit`, and on 2026-10-21 two merged daily-run fixes sat inert behind

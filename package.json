@@ -45,12 +45,7 @@
         "check:full": "bun run lint && bun run test:full",
         "load-history": "DATABASE_URL='.spur/spur.db' spur history import && DATABASE_URL='.spur/spur.db' spur history analyze",
         "tools:fresh": "bun scripts/check-tool-freshness.ts",
-        "audio:quality": "bun plugins/kk/scripts/audio-quality.ts",
-        "publish:article": "bun scripts/publish-article.ts",
-        "daily-news:generate": "bun scripts/daily-ai-news.ts generate",
-        "daily-news:publish": "bun scripts/daily-ai-news.ts publish",
-        "daily-news:live": "bun scripts/daily-ai-news.ts publish --window after-generate --live-channels surfdash-pub,podcast-pub",
-        "daily-news:validate": "bun scripts/daily-ai-news.ts validate"
+        "audio:quality": "bun plugins/kk/scripts/audio-quality.ts"
     },
     "devDependencies": {
         "@biomejs/biome": "2.5.15",

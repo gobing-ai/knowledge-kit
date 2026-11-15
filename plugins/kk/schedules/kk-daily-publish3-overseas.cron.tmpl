@@ -1,17 +1,19 @@
-# kk-daily-publish3-overseas — overseas window behind the podcast RSS gate (tasks 0323 R5, 0334 R1-R2).
+# kk-daily-publish3-overseas — overseas window behind the podcast RSS gate (tasks 0323 R5,
+# 0334 R1-R2; kk news verbs since 0369).
 #
 # 07:00 America/Los_Angeles, which needs no DST adjustment: the entry is defined in the zone the
 # machine already runs in. The gated date is the PREVIOUS day, because the observed episodes land
-# 13:43–15:22 PDT (after this tick) — the launcher derives yesterday's LA date for `run_date`.
+# 13:43–15:22 PDT (after this tick) — `kk news publish` derives yesterday's LA date for
+# `run_date` for this window.
 #
 # The gate decides whether anything publishes: a miss cancels the overseas targets and runs
-# `diagnose` + the tier-0-only repair. This line carries no live consent; the overseas channels
-# in the shipped preset are `draft`, so a live overseas post stays an operator launch.
+# `diagnose` + the tier-0-only repair. This line carries no live consent; the overseas rows in the
+# shipped preset are `draft`/`off`, so a live overseas post stays an operator launch.
 #
-# plugins/kk/scripts/voice3-publish-window.ts (task 0334) owns the date math because a crontab
-# command ends at the first UNESCAPED percent sign — the old inline `date -v-1d +%Y%m%d` shell
-# truncated silently. The launcher resolves the GENERATION bundle (voice2 namespace, effective
-# works root) and refuses a missing/mismatched bundle before any spur process starts.
+# `kk news publish` owns the date math because a crontab command ends at the first UNESCAPED
+# percent sign — an inline `date -v-1d +%Y%m%d` would truncate silently. The verb resolves the
+# generation bundle from the effective works root and refuses a missing or mismatched bundle
+# before it touches a channel.
 #
 # Rendered by `kk schedule render kk-daily-publish3-overseas --platform cron --repo <checkout>`;
 # kk never edits the operator's crontab. MERGE, never replace:
@@ -19,4 +21,4 @@
 #     crontab -l > /tmp/kk-overseas.cron 2>/dev/null || :
 #     kk schedule render kk-daily-publish3-overseas --platform cron --repo "$PWD" >> /tmp/kk-overseas.cron
 #     crontab /tmp/kk-overseas.cron
-0 7 * * * cd {{repo}} && mkdir -p .works/kk-daily-publish3 && PATH="{{home}}/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" TZ=America/Los_Angeles bun {{repo}}/plugins/kk/scripts/voice3-publish-window.ts --window overseas-rss >> {{repo}}/.works/kk-daily-publish3/overseas.log 2>&1
+0 7 * * * cd {{repo}} && mkdir -p .works/kk-news-publish && PATH="{{home}}/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" TZ=America/Los_Angeles kk news publish --window overseas-rss --unattended >> {{repo}}/.works/kk-news-publish/overseas.log 2>&1

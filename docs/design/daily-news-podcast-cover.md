@@ -83,7 +83,7 @@ Deconstruction of the reference samples:
 
 ## 4. Pipeline & Workflow Integration
 
-### Stage Updates in `kk-daily-ai-voice3.yaml`:
+### Stage Updates in the generation DAG (now `kk-news-generate.yaml`, 0369):
 1. **`script-write` (via `kk:news-editorial`)**:
    - Master script plan schema extended:
      ```json

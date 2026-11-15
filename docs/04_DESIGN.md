@@ -1085,92 +1085,35 @@ future ones — gets authoritative timing and token figures without kk-owned tim
 
 ### 1.11 `schedule` — shipped (task 0208)
 
-**Daily supervision (task 0338).** `bun plugins/kk/scripts/daily-scheduled-run.ts --repo <checkout>
---works-dir <works-root> --agent <executor>` launches the existing voice2 workflow with explicit
-`publish_enabled=true` and `skip_review=true`. There is one executor selector (0360): every retry
-node resolves by role, so a pinned executor that dies still has a live second attempt. WeChat defaults to draft;
-the explicit `--wechat-live` boolean opts into public publication. The optional `--run-id`, `--receipt`, and positive `--timeout-ms` (default 13,500,000 ms,
-below the scheduler's four-hour limit) support repeatable diagnostics and bounded execution. Owned
-process groups are stopped on timeout/signals; the parent and `<run-id>-safety` run records are
-cancelled by id, and the ledger is synced after termination. The default receipt is
-`<works-root>/kk-daily-ai-voice2/<local YYYYMMDD>/schedule-receipt.json`.
-Failed and terminal no-content runs release their store reservations only when their own identified trace proves no
-channel-send action began. An attempted or uncertain send, unreadable trace or failed release
-retains reservations; the receipt records that distinction.
+**Daily supervision.** `kk news generate` and `kk news publish` are the supervised entries. The
+daily scheduler wrapper under `plugins/kk/scripts/` and the `daily-news:*` / `publish:article`
+package scripts it fronted were retired in 0372 (see
+`docs/design/content-pipeline-consolidation.md`); the invariants they carried survive in the verbs
+and the workflows:
 
-The wrapper is single-flight per workflow and run day (0360): it takes `kk lock acquire --name
-<workflow>-<stamp>` before the preflight and releases it on every exit. A launch that finds the lock
-held by another run prints `daily-scheduled-run: <workflow> <stamp> already running (holder <run>)`
-and exits **6** without writing the receipt — the incumbent's receipt stays byte-identical. The
-preflight probe is always a real one-line agent round-trip: it targets `--agent <name>` when the
-operator pinned an executor and the `scribe` role otherwise (the default `inline` posture), so a
-quota-dead executor is refused at minute 0 instead of mid-window. Every receipt carries `executor`
-and `checkoutCommit` (the `git rev-parse HEAD` of the tree that ran, or `null`).
+- **Single-flight per workflow and run day.** A launch takes a `kk lock acquire` name scoped to the
+  workflow and its run stamp before the preflight and releases it on every exit. A launch that
+  finds the lock held by another run says so and exits **6** without touching the incumbent's
+  receipt.
+- **One executor selector** (0360). Every retry node resolves by role, so a pinned executor that
+  dies still has a live second attempt. The preflight probe is a real one-line agent round-trip,
+  so a quota-dead executor is refused at minute 0 instead of mid-window.
+- **Typed outcomes.** Generation and each publish window write their own receipt, and a run
+  distinguishes process failure, interruption, timeout, no-content and incomplete delivery.
+  `--unattended` is the scheduled posture: it never prompts, it diagnoses a gated miss, and it
+  repairs tier 0 rather than silently dropping a window.
 
-The receipt distinguishes process failure, interruption, timeout, no-content and incomplete
-delivery. `--required-channels` is a comma-separated enabled tail-channel list (default
-`wechat,locales,cms-resync`, matching the installed voice2 configuration; disabled XHS is excluded).
-Exit 0 requires a successful workflow, a `full` primary publication marker and exactly one `done`
-completeness row for each required channel; exit 4
-denotes no-content/incomplete delivery, 124 a timeout and 143 interruption. Underlying nonzero
-workflow exit codes are retained. The receipt includes `channelCompleteness` and
-`missingRequiredChannels`; primary settlement remains separate from tail-channel completion.
-Installing this launcher requires operator approval. It was activated on November 1 following
-Robin's approval; evidence is in `docs/report/2026-11-01-daily-ai-news-recovery.md`.
-
-**Daily AI-news operator entries (0344).** Three root package scripts wrap the active voice3 path;
-the two scheduled jobs in `.spur/config.yaml` are one-line delegates to the same script (see below):
+**Retired operator entries (0372).** `bun run daily-news:generate|publish|live|validate` and
+`bun run publish:article` are gone with their scripts. Their replacements:
 
 ```bash
-bun run daily-news:generate                       # supervised generation only; auto_publish=false, 72h pool
-                                                  # the workflow resolves the executor by role; `-- --agent <name>` still pins one
-bun run daily-news:generate -- --full             # the 04:30 scheduled posture: auto_publish=true, whole voice3 workflow
-                                                  # per-dispatch overrides still win (parseArgs last-wins)
-bun run daily-news:publish                        # valid today's bundle -> after-generate
-bun run daily-news:publish -- --window overseas-rss --unattended  # the 07:00 scheduled posture: receipt-gated regen, no prompts
-bun run daily-news:publish -- --live-confirm true # the same window with the send-confirm pause restored
-                                                  # (approve with `spur workflow continue`); since the ADR-022 amendment of
-                                                  # 2026-11-12 the preset's rows are live, so the plain publish and both cron
-                                                  # entries send without a pause.
-bun run daily-news:validate                       # quick: required files + dated bundle/variants only
-bun run daily-news:validate -- --mode full         # live read-only diagnosis + offline voice3 dogfood
-bun run daily-news:validate -- --mode full --skip-dogfood  # full diagnosis without dogfood
+kk news generate --publish                          # the 04:30 scheduled posture
+kk news publish --window after-generate             # today's bundle -> the first window
+kk news publish --window overseas-rss --unattended  # the 07:00 scheduled posture
+kk news publish --window cn-peak --unattended       # the 17:00 scheduled posture
 ```
 
-`generate` adds the supervisor's voice3-only `--generate-only` mode: a terminal run with a bundle is
-`done`, the existing summary can close as `no-content`, and a green DAG with no bundle is
-`incomplete` (exit 4); it never launches publish3. `--full` drops `--generate-only` and pins the
-production pair (executor-pair history lives beside the script's `PRODUCTION` constant). `publish`
-validates bundle schema/date, variant hashes and final-variant safety before invoking
-`voice3-publish-window.ts`; empty-variant bundles and `--dummy` do not bypass that admission. If
-generation is missing, a TTY asks before running the generate entry (`--yes` is the explicit
-non-interactive consent); a non-TTY without `--yes` refuses with the exact command. Invalid existing
-bundles, running or no-content runs, and historical/foreign-day gaps never trigger automatic
-generation. The default window is `after-generate`; `--window cn-peak|overseas-rss` and the
-launcher's preset/live/dummy flags pass through without bypassing its RSS or send-confirm gates.
-`--unattended` replaces the bundle-inspection + consent flow with the scheduled 07:00 contract:
-today's voice3 receipt gates a full production regeneration (done/no-content/incomplete/running
-skip; missing/hard-failed re-run) and the window launcher owns bundle admission, exactly like the
-inline shell it replaced. `--work-dir` is refused so generation and publishing cannot silently use
-different roots; use `KK_WORKS_DIR` or `KK_CONFIG` consistently.
-
-`validate` defaults to **quick mode**: it checks the workflow/config/launcher files plus the dated
-`bundle.json` and its declared variant files for presence only. It does not inspect bundle quality,
-hashes, safety evidence, tools, store supply, scheduler state, publish outcomes, or dogfood, and it
-starts no validation subprocess. `--mode full` preserves the complete diagnosis: tools/required files,
-the **installed** `kk stage daily-preflight`, the read-only AI-news supply report, scheduler wiring,
-the dated receipt/bundle/draft-safety state, all three publish outcomes, and dogfood (unless
-`--skip-dogfood` is present). Full mode writes `validation.json`, `stage-preflight.log`,
-`supply-report.{json,log}` and (when enabled) `dogfood.log`; quick mode writes only `validation.json`,
-with `mode` recorded in either report. Evidence lives under
-`<works>/tmp/test-daily-ai-news/<timestamp>-<pid>/`; dogfood is the existing offline
-`apps/cli/tests/voice3-migration.e2e.test.ts`, not a real generation or publication.
-A nonzero dogfood exit always fails, even when its summary contains passes and zero failures; summary
-counts are read from both output streams and its coverage is isolated from the project's `.coverage/`.
-Live failures stay separate from dogfood and produce exit 1; warnings for
-pending/not-applicable artifacts do not. Validation never migrates the store, changes schedules,
-syncs the installed package, calls a paid generator, or publishes.
-
+**Planning caches (task 0338).**
 **Planning caches (task 0338).** `daily-plan` and `daily-qc-content` write adjacent SHA-256 cache
 fingerprints over decisive input bytes and settings. A changed pool, item cap, QC threshold,
 duration floor or driver invalidates the relevant cache. A successful reevaluation removes an old
@@ -1235,9 +1178,9 @@ value is XML-escaped (`&`/`<`/`>`), because one raw `&` makes `launchctl bootstr
 | `kk-serve` | `grok-bot` | refused: `schedule 'kk-serve' has no grok-bot template — cloud routines run store-free, browser-free work only (ADR-044)` — a keepalive server is Mac-local by definition (task 0343 R4) |
 | `kk-collect` | `grok-bot` | routine definition (`kk-collect.grok-bot.md.tmpl`): Owner Bot `{{bot}}`, Schedule `{{cron}}` in `{{tz}}`, store-free collect-prepare + fan-in steps pushing `sync/kk-collect/<stamp>.json` to branch `kk-cloud-sync`, ADR-044 missing/stale policy and the `kk store ingest --run cloud-<stamp>` Mac import (task 0343) |
 | `kk-serve` | `launchd` | plist for `ai.gobing.spur-serve` (`kk-serve.launchd.plist.tmpl`): `RunAtLoad` + `KeepAlive` true, `ThrottleInterval` 10, `ProgramArguments` = `spur serve --cwd <repo> --host 127.0.0.1 --port 3003 --no-open`, `WorkingDirectory` = `--repo`, `EnvironmentVariables` = `PATH` + `TYPESAFE_API_KEY`, stdout+stderr = `<repo>/.works/spur-serve/serve.log` |
-| `kk-daily-publish3-cn-peak` | `cron` | `0 17 * * *` local (`kk-daily-publish3-cn-peak.cron.tmpl`, task 0334/F09+): `bun {{repo}}/plugins/kk/scripts/voice3-publish-window.ts --window cn-peak --preset daily-ai-voice --live-channels weibo-pub,x-pub`, `PATH` + `TZ=America/Los_Angeles`, log `<repo>/.works/kk-daily-publish3/cn-peak.log`. The launcher (below) derives `work_dir`/`run_date` from the window date and validates the live tokens against the pinned preset's `cn-peak` rows before spawning the workflow — the baked `--live-channels` list **is** the ADR-022 consent for this window, and every entry line stays free of cron's `%` grammar |
-| `kk-daily-publish3-overseas` | `cron` | `0 7 * * *` America/Los_Angeles (`kk-daily-publish3-overseas.cron.tmpl`): `bun {{repo}}/plugins/kk/scripts/voice3-publish-window.ts --window overseas-rss` — **yesterday** `run_date`, no live consent (draft/dummy rows only), log `<repo>/.works/kk-daily-publish3/overseas.log` |
-| `kk-daily-ai-voice3` | `cron` | `30 4 * * *` local, task 0334 R1/R6 (`kk-daily-ai-voice3.cron.tmpl`): `spur workflow run plugins/kk/workflows/kk-daily-ai-voice3.yaml --vars '{auto_publish: "false"}'`, `PATH` + `TZ=America/Los_Angeles`, log `<repo>/.works/kk-daily-ai-voice3/generation.log`. The shadow-generation tick: cron only (the DAG has its own review pause, so launchd's fire-and-forget adds nothing), publish-inert by default because `auto_publish` is `false` |
+| `kk-daily-publish3-cn-peak` | `cron` | `0 17 * * *` local (`kk-daily-publish3-cn-peak.cron.tmpl`, task 0334/F09+): `kk news publish --window cn-peak --unattended`, `PATH` + `TZ=America/Los_Angeles`, log `<repo>/.works/kk-news-publish/cn-peak.log`. `kk news publish` derives `work_dir`/`run_date` from the window date. The live/draft matrix is the pinned preset's `cn-peak` rows (ADR-022 amendment), so the entry carries no `--live-channels`; a live row still stops at `send-confirm`, and every entry line stays free of cron's `%` grammar |
+| `kk-daily-publish3-overseas` | `cron` | `0 7 * * *` America/Los_Angeles (`kk-daily-publish3-overseas.cron.tmpl`): `kk news publish --window overseas-rss --unattended` — **yesterday** `run_date`, no live consent (draft/dummy rows only), log `<repo>/.works/kk-news-publish/overseas.log` |
+| `kk-daily-ai-voice3` | `cron` | `30 4 * * *` local, task 0334 R1/R6 (`kk-daily-ai-voice3.cron.tmpl`; the schedule name survives the 0369 cut-over, the payload does not): `kk news generate --publish`, `PATH` + `TZ=America/Los_Angeles`, log `<repo>/.works/kk-news-generate/generation.log`. The generation tick: cron only (the DAG has its own review pause, so launchd's fire-and-forget adds nothing). It publishes nothing — the two windows below are the only senders |
 
 `kk-serve` is **launchd only**: cron has no keepalive semantics, so `--platform cron` for it exits 1
 with `schedule 'kk-serve' has no cron template (expected launchd)` and prints nothing (task 0265 R3);
@@ -1488,7 +1431,7 @@ is accepted design, not surface: do not invoke it as if it exists.
   boolean switch a node command must add without a shell conditional (the engine rejects
   `${vars.x:+…}` as an undeclared reference), and `feed` pins the RSS gate's feed URL. Its bundle
   locator is `4-publish/bundle.json` with the pre-cut-over root-level `bundle.json` as a fallback
-  (see "Run directories" below). `kk-daily-publish3.yaml` was the scheduled path until
+  (see "Run directories" below). The retired publish3 DAG was the scheduled path until
   0369 cut the scheduler over to `kk news publish`; both produce the same `4-publish/` file set and outcome per window
   (proven by `apps/cli/tests/kk-publish.e2e.test.ts`, AC3).
 - Shipped workflows: `kk-publish` (0366), `kk-news-generate` (0367, twenty nodes, one executor var)
@@ -2248,17 +2191,17 @@ Native ITC stages (all through the `kk stage run` dispatcher; `apps/cli/src/`): 
 
 **`kk-itc` publish tail (0150/0151):** four launch vars extend the pipeline when publishing is in scope: `publish_targets` (empty = no publish tail), `publish_live` (`false`; live is never implied by auto), `source_locale` (`en`) and `browser_target` (internal file-cursor var). With targets set, judge PASS and draft-review yes route into `publish-entry` → `materialize` → `publish-plan` → `publish-gate`, and four more `itc-stages.ts` helpers own the work: `itc-materialize` writes the final draft to `4-publish/content.json` (`metadata.published` always a boolean); `itc-publish-plan` splits the targets into `kk executor fan-out` groups and browser targets in `4-publish/publish-plan.json` — the `<source_locale>-article` variant shares `content.json`, every other locale/format variant gets `content.<variant>.json`, and `itc-publish-fanout` stamps each variant's draft/live switches into the file metadata at send time (V3) and spawns one `kk executor fan-out --content <variant> --target … --out 4-publish/fanout-result.<variant>.json` per group — per-target failures stay data (`ok:false` aggregate rows plus the `.fanout-failed` marker), and `--retry` re-sends only failed groups once via `--retry-from` (`.publish-retry-count` caps at 1); `itc-publish-next` writes the `4-publish/.next-browser` cursor and the `publish-agent` self-loop runs one `agent.run kk:publish` per pending browser target (`4-publish/result.<target>.json`), bounded by the plan's browser list. `publish-gate` pauses at the `publish-confirm` HITL unless `auto ∧ ¬publish_live` (ADR-022); a declined answer routes to report with outcome `declined` and no publish call. `itc-report` then adds each target's ok/url/error plus the exact `kk executor fan-out --retry-from …` command for failed groups; any `ok:false` makes the outcome `failed`.
 
-**Per-target payloads are re-derived at send time (2026-11, dogfood of `kk-itc-publish-tail`):** `itc-send-targets` now rebuilds every `4-publish/content.<plugin>.json` from the plan's variant files (`prepareTargetPayloads`) immediately before dispatch, and warns when an `adapt:true` variant has no file and therefore falls back to the source article. Before this, payloads were snapshotted only by `itc-materialize-plan`, which in `kk-itc.yaml` runs **before** `adapt` — so a translated `content.<variant>.json` never reached the wire (measured 2026-11-12: a `ja-article` plan dispatched the Chinese original). The plan file is re-saved only when a payload actually changed, because the plan digest is a receipt-identity input and a byte-identical rewrite would re-key prior receipts.
+**Per-target payloads are re-derived at send time (2026-11, dogfood of the retired ITC publish tail):** `itc-send-targets` now rebuilds every `4-publish/content.<plugin>.json` from the plan's variant files (`prepareTargetPayloads`) immediately before dispatch, and warns when an `adapt:true` variant has no file and therefore falls back to the source article. Before this, payloads were snapshotted only by `itc-materialize-plan`, which in the retired `kk-itc` DAG runs **before** `adapt` — so a translated `content.<variant>.json` never reached the wire (measured 2026-11-12: a `ja-article` plan dispatched the Chinese original). The plan file is re-saved only when a payload actually changed, because the plan digest is a receipt-identity input and a byte-identical rewrite would re-key prior receipts.
 
 **`kk-itc` readiness probes are data, not a gate (2026-11, ADR-049):** `itc-check-targets` no longer exits 1 on a refusing channel probe. It probes each distinct planned plugin once, writes `4-publish/check-targets.json` (`{schemaVersion, plugins:[{plugin, ok, detail?}]}`), prints every refusal and exits 0 — the `publish-matrix-check` warn-only contract (0332) for the same reason: a nine-channel fan-out must not be vetoed by one stale browser session, and the per-target receipt stays the authority on whether a channel could publish. Exit 1 is reserved for an unreadable plan or an unwritable probe file; a planned plugin missing from the tree is recorded as `{ok:false, detail:'plugin not installed'}` rather than skipped.
 
-**`bun run publish:article` — publish a finished article (2026-11):** `scripts/publish-article.ts` (`package.json` script `publish:article`) turns any Markdown file into a publishing run without re-authoring: it seeds `<works_dir>/kk-itc/<slug>/3-draft-draft-article.md` (frontmatter → `brief.md`; `--cover` → `4-illustrations/cover.<ext>`), freezes `itc-options.json` under its own pre-generated run id (`parentRunId`, which `itc-send-targets` requires), runs `itc-materialize-plan`, then drives `kk-itc-publish-tail` and answers `send-confirm` with `--yes`. `itc-materialize-plan` runs twice: per-target payloads (`content.<plugin>.json`) are snapshotted from whichever variant files existed at plan time, so a translation written afterwards would otherwise never reach the wire. Variant files follow the same rule in the script: a variant sharing the source locale is copied from `content.json`; a cross-locale variant must be supplied with `--variant <name>=<file.md>` (title from its H1, body from the rest, `metadata` inherited from `content.json`) or accepted as source-locale text with `--copy-source`. `--tags`/`--description` write `brief.md`, which `itc-materialize-plan` carries into `content.json` metadata — a channel with a strict site schema (`surfdash-pub`) refuses a post without them. Flags: `--slug`, `--locale en|zh|ja` (default detected), `--preset`, `--targets`, `--variant`, `--tags`, `--description`, `--cover`, `--title`, `--work-dir`, `--live`, `--plan-only`, `--copy-source`, `--yes`, `--dry-run`.
+**Publishing a finished article (2026-11; the `publish:article` entry was retired in 0372 — use `kk article-generate` plus `plugins/kk/workflows/kk-publish.yaml`):** the retired script turned any Markdown file into a publishing run without re-authoring: it seeds `<works_dir>/kk-itc/<slug>/3-draft-draft-article.md` (frontmatter → `brief.md`; `--cover` → `4-illustrations/cover.<ext>`), freezes `itc-options.json` under its own pre-generated run id (`parentRunId`, which `itc-send-targets` requires), runs `itc-materialize-plan`, then drove the retired ITC publish tail and answered `send-confirm` with `--yes`. `itc-materialize-plan` runs twice: per-target payloads (`content.<plugin>.json`) are snapshotted from whichever variant files existed at plan time, so a translation written afterwards would otherwise never reach the wire. Variant files follow the same rule in the script: a variant sharing the source locale is copied from `content.json`; a cross-locale variant must be supplied with `--variant <name>=<file.md>` (title from its H1, body from the rest, `metadata` inherited from `content.json`) or accepted as source-locale text with `--copy-source`. `--tags`/`--description` write `brief.md`, which `itc-materialize-plan` carries into `content.json` metadata — a channel with a strict site schema (`surfdash-pub`) refuses a post without them. Flags: `--slug`, `--locale en|zh|ja` (default detected), `--preset`, `--targets`, `--variant`, `--tags`, `--description`, `--cover`, `--title`, `--work-dir`, `--live`, `--plan-only`, `--copy-source`, `--yes`, `--dry-run`.
 
 **`kk-itc` illustrations + per-variant adaptation (0152):** two spend vars extend the tail: `cover_enabled` (`false`) and `inline_images` (`false`) — image generation is billed work, so it runs only when a var turns it on (R7). With either on, `publish-entry` routes into the `illustrate` state, whose `agent.run` invokes `kk:image-authoring` with `KK_NONINTERACTIVE=1 KK_IMAGE_AUTO_CONFIRM=1` to write `4-illustrations/cover.*` (plus `inline-*` figures when `inline_images=true`); a follow-up shell step fails when `cover_enabled=true` yielded no cover, and `itc-materialize` then picks the cover up into `metadata.coverImage`. After `publish-plan`, the `adapt` state runs only when the plan has an `adapt:true` variant (shell guard on `publish-plan.json`): its `agent.run` invokes the new thin skill `kk:article-adapt` (`plugins/kk/skills/article-adapt/`), which writes one Content file per `adapt:true` variant — translating `title`/`body` to the variant locale, applying the plan's `limits`, and keeping code blocks, URLs and `references` unchanged. The skill holds no platform table (the plan is the single SSOT) and never sets draft/live switch keys — `itc-publish-fanout` stamps them at send time (V3). A follow-up `kk stage itc-adapt-verify` step fails by name when a variant file is missing or lacks a non-empty `title`/`body`; the plan-time rejection of 0151 moved there, since `adapt` runs after `publish-plan` (design §3).
 
 **`kk-itc` end-to-end profile flags (0153):** the `/workflow-run` kk-itc profile gains `--auto`, `--unslop true|false`, `--max-revisions <N>`, `--cover`, `--inline-images`, `--targets <a,b>`, `--live` and `--source-locale en|zh|ja`, binding the 0149–0152 vars end to end: `--auto` also defaults `research`, `judge` and `unslop` to `true` unless passed; `--live` binds `publish_live=true` only when passed explicitly (ADR-022 — `--auto` alone leaves `publish_live` false); `--playbook wechat` without `--source-locale` implies `zh`; the rest bind their same-named vars (`publish_targets`, `cover_enabled`, `inline_images`, `max_revisions`, `source_locale`).
 
-**`kk-itc` UX enhancements (2026-11, itc-ux):** topic candidates widen from three to five slots `a`–`e` (`ItcTopicCandidateSchema`, `ItcTopicCandidatesArtifactSchema.candidates` `.max(5)`, `selectedCandidateId`), the `kk-itc-topic-choice` decision criteria cover all five slots, and the general IT extraction profile `plugins/kk/decisions/extract/it-topics.yaml` (modeled on `ai-news.yaml`; not category-scoped so general-IT pools draw from every `kk-item-category` value) collects them. The new canonical `kk itc candidates` verb (`apps/cli/src/commands/itc.ts` + `apps/cli/src/itc-candidates.ts`) runs one collected-topic sweep — `itc-topic-extract` → deterministic `topic-candidates.json` (one candidate per pool doc, slots `a`–`e`, each citing exactly its doc's id and source URI; a pool doc without a source URI is skipped rather than producing an unverifiable candidate) → `itc-topic-validate` → `itc-decision` — printing the shortlist and the served decision; `defer` is an outcome (exit 0), never an error. In the child FSM, `outline-select` now routes into an `outline-review` (`hitl.confirm`) → `outline-revise` (`hitl.input`) loop capped at 3 rounds exactly like `draft-revise` (`.outline-revise-count`); each round returns through `outline-write` (regenerating with the recorded feedback) back to selection, and an exhausted budget fails the child rather than silently committing the rejected outline. The `outline_bullets_only` var (`""` default) is passed from the DAG parent's child-var binding into `outline-write` and makes the writer produce bullet-only outline skeletons (H1 + bullets, no prose). The DAG gains a `plan_only` var (default `""`): when `"true"`, `send-confirm`, `fanout-send`, `fanout-recovery` and `reconcile-settle` are skipped by node condition so the run stops after the plan is materialized and checked, without any send and with the store selection retained for a later `kk-itc-publish-tail` re-entry. `send-confirm` also gates draft-only plans now: the condition pauses any plan with >0 targets (draft saves create real remote artifacts), not just a live one, so the copied tail node carries the same condition. Shipped-asset resolution is cwd-independent: `apps/cli/src/package-root.ts` (`resolvePackageRoot`) walks the cwd's kk tree first — a project checkout still shadows the installed package (ADR-012) — then the runtime script's real path, and `resolveTopicProfilePath` plus the DAG's `child-author` node (`kk binary realpath` fallback per the AGENTS.md convention) resolve their shipped files through it, failing loud when neither tree carries the asset.
+**`kk-itc` UX enhancements (2026-11, itc-ux):** topic candidates widen from three to five slots `a`–`e` (`ItcTopicCandidateSchema`, `ItcTopicCandidatesArtifactSchema.candidates` `.max(5)`, `selectedCandidateId`), the `kk-itc-topic-choice` decision criteria cover all five slots, and the general IT extraction profile `plugins/kk/decisions/extract/it-topics.yaml` (modeled on `ai-news.yaml`; not category-scoped so general-IT pools draw from every `kk-item-category` value) collects them. The new canonical `kk itc candidates` verb (`apps/cli/src/commands/itc.ts` + `apps/cli/src/itc-candidates.ts`) runs one collected-topic sweep — `itc-topic-extract` → deterministic `topic-candidates.json` (one candidate per pool doc, slots `a`–`e`, each citing exactly its doc's id and source URI; a pool doc without a source URI is skipped rather than producing an unverifiable candidate) → `itc-topic-validate` → `itc-decision` — printing the shortlist and the served decision; `defer` is an outcome (exit 0), never an error. In the child FSM, `outline-select` now routes into an `outline-review` (`hitl.confirm`) → `outline-revise` (`hitl.input`) loop capped at 3 rounds exactly like `draft-revise` (`.outline-revise-count`); each round returns through `outline-write` (regenerating with the recorded feedback) back to selection, and an exhausted budget fails the child rather than silently committing the rejected outline. The `outline_bullets_only` var (`""` default) is passed from the DAG parent's child-var binding into `outline-write` and makes the writer produce bullet-only outline skeletons (H1 + bullets, no prose). The DAG gains a `plan_only` var (default `""`): when `"true"`, `send-confirm`, `fanout-send`, `fanout-recovery` and `reconcile-settle` are skipped by node condition so the run stops after the plan is materialized and checked, without any send and with the store selection retained for a later publish-tail re-entry. `send-confirm` also gates draft-only plans now: the condition pauses any plan with >0 targets (draft saves create real remote artifacts), not just a live one, so the copied tail node carries the same condition. Shipped-asset resolution is cwd-independent: `apps/cli/src/package-root.ts` (`resolvePackageRoot`) walks the cwd's kk tree first — a project checkout still shadows the installed package (ADR-012) — then the runtime script's real path, and `resolveTopicProfilePath` plus the DAG's `child-author` node (`kk binary realpath` fallback per the AGENTS.md convention) resolve their shipped files through it, failing loud when neither tree carries the asset.
 
 Workspaces default to `$works_dir/<workflow-name>/<run-id>` per profile (`--dir` overrides). Existing `.works/`-era trees (flat `<kebab>`/`<topic-id>` dirs under `$works_dir`) are **not** migrated — rerunning against an old workspace requires an explicit `--dir`.
 
@@ -2593,8 +2536,13 @@ receipts' `aggregatePath` bytes into the legacy `31-publish/<runDate>_14_publish
 bridge is the documented legacy seam and disappears with voice2. `kk daily publish-classify
 [--fold-tail]` and its tests are untouched.
 
-**`kk-daily-ai-voice3` — the generate half (task 0324).** `plugins/kk/workflows/kk-daily-ai-voice3.yaml`
-(`kind: dag`) carries voice2's generation graph — `prepare` → read chain → `extract` → `plan` →
+> **Retired in 0372.** The three sections below document the voice3 / publish3 DAGs as they were
+> before the 0369 `kk news` consolidation. They are kept as the design record; the shipped surface is
+> `plugins/kk/workflows/kk-news-generate.yaml`, `kk-publish.yaml` and `kk-article-generate.yaml`, and
+> `docs/design/content-pipeline-consolidation.md` owns the mapping.
+
+**The generate half (task 0324).** The retired voice3 DAG
+(`kind: dag`) carried voice2's generation graph — `prepare` → read chain → `extract` → `plan` →
 `qc-content` → `select` → translate → article/cover/script drafts → nested `safety` → `review` pause →
 audio (split/generate/fallbacks/intro/audit/duration) → `pool-gate` → `quality` → `show-notes` →
 `publish-prep` → card `cards-write`/`cards-render` — and then the generate-side tail this feature
@@ -2629,7 +2577,7 @@ live send, only an operator launch that sets it, with tokens the plan stage vali
 window, promotes rows — and `publish_dummy=true` plus a non-empty list refuse each other at plan time.
 
 **Migration rehearsal surface (0334).** Three artifacts, all shipped but none installed:
-`plugins/kk/scripts/voice3-publish-window.ts` — the publish-window launcher the cron entries call;
+the retired publish-window launcher — the script the cron entries used to call;
 `plugins/kk/publish-presets/daily-ai-voice-migration.json` — the shipped matrix with explicit stable
 row ids so rehearsal receipts and plan rows diff cleanly against preset edits; and the
 `kk-daily-ai-voice3` schedule above. The launcher resolves `work_dir`/`run_date` in
@@ -2638,7 +2586,7 @@ at `<works>/kk-daily-ai-voice2/<digits>/bundle.json` (never the publish3 output 
 missing or differently-dated bundle naming the expected path, refuses `--dummy` with `--live-channels`,
 validates every token against the pinned preset's window rows (the legacy
 `wechatmp-pub,xhs-pub,weibo-pub,x-pub` cn-peak list is refused by name — out-of-window tokens never
-reach spur), and only then execs `spur workflow run plugins/kk/workflows/kk-daily-publish3.yaml`.
+reach spur), and only then execs the retired publish3 DAG.
 Rehearsal launch (generation + after-generate publish in one throwaway run, nothing installed, no
 live tokens): `--vars '{"auto_publish":"true","publish_preset":"daily-ai-voice-migration","publish_dummy":"true"}'`.
 The rehearsal surface is preparation only — installing any schedule, or promoting rows to
@@ -2689,8 +2637,8 @@ A re-freeze **dedups**
 `runs[]` (a double append must not multiply) and appends its own run id **last**, so the bundle always
 names the run that produced the frozen bytes; an unreadable prior bundle is replaced, not merged.
 
-**`kk-daily-publish3` — the publish half (task 0323).** `plugins/kk/workflows/kk-daily-publish3.yaml`
-(`kind: dag`) runs one **window** per launch; the channel matrix is never in the YAML. Vars:
+**The publish half (task 0323).** The retired publish3 DAG
+(`kind: dag`) ran one **window** per launch; the channel matrix is never in the YAML. Vars:
 `work_dir` (the voice3 day dir holding `bundle.json`), `run_date`, `window`
 (`after-generate|cn-peak|overseas-rss`), `preset` (empty = the operator's selector), `channels`,
 `live_channels`, `dummy`, `agent`.
@@ -2763,7 +2711,7 @@ automation-cap failure. 小红书 上传图文 therefore belongs in `cn-peak`, 1
 plan row with its own receipt — independently retryable, unlike a note carried inside another row's
 `metadata.followUps`. That placement is kept while both rows are `off` (2026-11-13), so re-enabling
 the channel restores one visit per window instead of reinstating the guaranteed cap collision. The
-plugin's follow-up contract stays available to callers that really want one visit. The selector is `workflows.kk-daily-ai-voice3.publish_preset` (default `daily-ai-voice`,
+plugin's follow-up contract stays available to callers that really want one visit. The selector is `workflows.kk-news-generate.publish_preset` (default `daily-ai-voice`,
 `plugins/kk/config.example.yaml`), resolved with the itc contract: a missing file/block means the
 compiled default, an unknown key or a non-slug value is refused by name.
 
@@ -2771,7 +2719,7 @@ compiled default, an unknown key or a non-slug value is refused by name.
 --repo <checkout>` renders the two windows' cron entries; kk never installs them. The spur scheduler
 also carries both as jobs (`kk-daily-publish3` at 07:00 and `kk-daily-publish3-cn-peak` at 17:00
 local, each `publish --window … --unattended`), and the scheduled-posture check in
-`scripts/daily-ai-news.ts` requires both. cn-peak fires
+the 04:30 preflight used to require both. cn-peak fires
 `0 17 * * *` local and carries `live_channels` in the rendered line — that installed line **is** the
 operator's ADR-022 consent. overseas fires `0 7 * * *` and passes yesterday's `run_date`, because the
 observed episodes land after 07:00. Neither has a launchd template (no keepalive semantics needed).

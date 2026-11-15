@@ -128,13 +128,12 @@ bootstrap:
       # clientOverride path, so voice-gen's local-server auto-start never fires.
       # cover_enabled stays at its workflow default (true, minimax/image-01).
       #
-      # The command is a one-line delegate (2026-11-12 consolidation): production flags
-      # (KK_BROWSER_CHANNEL=chrome, kk-daily-ai-voice3, 72h window, pi-deepseek +
-      # agy-gemini pair, works root, internal 3h45m deadline) live once in
-      # scripts/daily-ai-news.ts's PRODUCTION constant — executor-pair history (why retry
-      # must be a different binary family, the 11-08 volc switch, the 11-10 quota death
-      # and 0347 F1 preflight) is documented beside that constant, and a local
-      # `bun scripts/daily-ai-news.ts generate --full` reproduces this job exactly.
+      # The command is one verb (0369 consolidation): `kk news generate --publish` owns the
+      # production flags (browser channel, the 72h window, the executor pair, the works root
+      # and the internal deadline) instead of a launcher script, so the cron line and a local
+      # run are the same code path. Executor-pair history (why a retry must be a different
+      # binary family, the 11-08 volc switch, the 11-10 quota death and 0347 F1 preflight)
+      # lives with the workflow's executor vars.
       #
       # 04:30 and not 06:00, because the pool must already be in the store:
       # `kk store extract` only sees what the preceding 04:00 kk-collect tick has
@@ -151,31 +150,31 @@ bootstrap:
         command: kk news generate --publish
       # Morning runs stay draft-only (ADR-022: live is launch-only) — podcast-pub items land
       # microfeed-unpublished and are invisible on podcast.salty.vip until go-live. Operator
-      # routine mid-morning: `bun run daily-news:live` then approve the send-confirm pause with
-      # `spur workflow continue` (surfdash publishes publicly in draft, podcast does not —
-      # 2026-11-10 lesson: the episode stayed hidden all day).
+      # routine mid-morning: `kk news publish --window after-generate --live-channels
+      # surfdash-pub,podcast-pub`, then approve the send-confirm pause with `spur workflow
+      # continue` (surfdash publishes publicly in draft, podcast does not — 2026-11-10 lesson:
+      # the episode stayed hidden all day).
 
-      # 07:00 daily: the publish3 `overseas-rss` window (design kk-daily-ai-voice3 §5a) — X/Threads
-      # overseas targets behind the podcast RSS gate, the first of the two scheduled windows to ship
-      # (after-generate is nested in the 04:30 voice3 run). The window launcher is
-      # plugins/kk/scripts/voice3-publish-window.ts (cron-safe LA date math: overseas reads YESTERDAY's
-      # generation bundle, per R1). Unattended-safe because every overseas row is dummy/off in the
-      # pinned daily-ai-voice preset — no live row means the send-confirm pause never fires.
+      # 07:00 daily: the `overseas-rss` window (design content-pipeline-consolidation §5a) — X/Threads
+      # overseas targets behind the podcast RSS gate. `kk news publish` owns the cron-safe LA date
+      # math: overseas reads YESTERDAY's generation bundle, per R1. Unattended-safe because every
+      # overseas row is dummy/off in the pinned daily-ai-voice preset — no live row means the
+      # send-confirm pause never fires.
       #
       # --unattended (2026-11-12 consolidation) implements the second trigger (operator request
       # 2026-11-05) that used to be an inline case/jq shell here: if today's voice3 receipt is
       # missing or a hard failure (failed/timed-out/interrupted — NOT 'running', the 04:30 job can
       # legally still be executing until ~08:30, and a duplicate run would fight it for the store
-      # lock), re-run voice3 first with the same production flags as the 04:30 job (one definition,
-      # the script's PRODUCTION constant), then publish either way — receipts make the window a
-      # no-op for what is already delivered, and a gated miss is diagnosed, not silently dropped.
+      # lock), re-run the generation first with the same flags as the 04:30 job (one definition,
+      # the verb), then publish either way — receipts make the window a no-op for what is already
+      # delivered, and a gated miss is diagnosed, not silently dropped.
       # 6h timeout = one 3h45m retrigger budget plus the window.
       - name: kk-daily-publish3
         cron: "0 7 * * *"
         timeoutMs: 21600000
         command: kk news publish --window overseas-rss --unattended
 
-      # 17:00 local daily: the publish3 `cn-peak` window (design kk-daily-ai-voice3 §5a) — the
+      # 17:00 local daily: the `cn-peak` window (design content-pipeline-consolidation §5a) — the
       # domestic rows with no draftable rail (微博 头条文章). 17:00 America/Los_Angeles is 09:00
       # Asia/Shanghai in PST and 08:00 in PDT, so the window's own `wait-until 09:00 Asia/Shanghai`
       # node sleeps at most 1h and the entry never needs editing twice a year. Until 2026-11-12 this

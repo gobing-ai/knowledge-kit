@@ -235,7 +235,7 @@ Spur 0.4.x offers no engine-side way to start a DAG run at a chosen node: `start
 DAG node key (`spur workflow validate` refuses `nodes.N: Unrecognized key: "startable"`) and
 `--from <node>` is refused for `kind: dag` (`not supported for kind: "dag" workflows — DAG runs
 resume at node level instead`). The verified re-entry seam is therefore the separate
-`plugins/kk/workflows/kk-itc-publish-tail.yaml` definition (task 0310), not a marker on the main
+the retired ITC publish-tail DAG definition (task 0310), not a marker on the main
 DAG. If the engine later ships fresh-start support, the tail definition can be retired in favor of
 it; until then this note is the standing record (operator directive 2026-10-18: no deferred corpus
 task for this item).

@@ -612,7 +612,7 @@ per-type workflows only sequence steps.
 
 **Not built (accepted design).** The launching `generate` / `publish` verbs with
 `launchWorkflow()`, the workflows `kk-news-generate` / `kk-article-generate` / `kk-publish`, the
-generation step verbs, and the retirement of `kk-daily-publish3` / `kk-itc-publish-tail` are tasks
+generation step verbs, and the retirement of the publish3 / ITC publish-tail DAGs are tasks
 0365–0369. Shapes: `docs/design/content-pipeline-consolidation.md`; `docs/04_DESIGN.md` §1.14.
 
 ## Multi-root discovery (ADR-012)
