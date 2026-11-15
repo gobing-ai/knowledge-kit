@@ -22,7 +22,7 @@ import { project, repoRoot, runCli } from './launch-sandbox';
  * unchanged by the suffix.
  */
 const JOBS: Record<string, string> = {
-    'kk-daily-ai-voice': 'kk news generate --publish --agent pi-dsv4.1-flash-cc',
+    'kk-daily-ai-voice': 'kk news generate --publish --skip-review --agent pi-dsv4.1-flash-cc',
     'kk-daily-publish3': 'kk news publish --window overseas-rss --unattended --agent pi-dsv4.1-flash-cc',
     'kk-daily-publish3-cn-peak': 'kk news publish --window cn-peak --unattended --agent pi-dsv4.1-flash-cc',
 };

@@ -155,7 +155,12 @@ bootstrap:
         # agy-gemini needs an expired Google login, and pi-dsv4.1-flash-volc is 429 until
         # 2026-11-18. pi-dsv4.1-flash-cc answered a probe on this host, so pin it rather than
         # let every 04:30 tick fail in the executor probe.
-        command: kk news generate --publish --agent pi-dsv4.1-flash-cc
+        # --skip-review (2026-11-15): the workflow's `review` node is `pause: true` unless
+        # skip_review=true, so an unattended 04:30 run stopped there and the launch recorded
+        # "workflow paused: kk-news-generate -> review" as a failure. The retired launcher passed
+        # the same switch as vars.skip_review=true. The safety machine still runs; this skips the
+        # editorial approval pause, not a gate.
+        command: kk news generate --publish --skip-review --agent pi-dsv4.1-flash-cc
       # Morning runs stay draft-only (ADR-022: live is launch-only) — podcast-pub items land
       # microfeed-unpublished and are invisible on podcast.salty.vip until go-live. Operator
       # routine mid-morning: `kk news publish --window after-generate --live-channels
