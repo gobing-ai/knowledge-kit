@@ -3,9 +3,9 @@ name: Features
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state
 authority: derived
-version: 2.32.0
+version: 2.33.0
 created_at: 2026-07-22
-updated_at: 2026-11-13
+updated_at: 2026-11-15
 derived_from: [01_PRD, 02_ROADMAP]
 edit_rules: 99 §6.6
 sync: [T4]
@@ -114,6 +114,9 @@ sync: [T4]
 | **I** | LLM wiki (umbrella) | ⏳ planned | 3 | Committed 2026-11-10 by the operator specs; implementation lives in child **I1**; the treasury Quartz repository is a follow-on run |
 | **I1** | kk wiki vault CLI | ⏳ planned | 1 | `kk wiki` verb family over `@gobing-ai/kk-wiki` (ADR-048): raw snapshots, wikilink graph, link/lint, merge with redirect, index/MAP compile, gc, `user_edited` guard, Quartz publish projection; model-bearing summarize/synthesize/query authoring in a `kk` skill; 24 AC scenarios; [design](design/kk-wiki.md) |
 | **J** | Reposition knowledge-kit as an ingest-create-publish platform (wayfinder map) | ✅ done | 2 | ADR-007, PRD v3, contract designs (0032–0034), tree realignment (0035), doc sync (0036) — feature verified done |
+| **K** | kk image pipeline — TypeScript image-gen + agent surface | ✅ done | 3 | Completed wayfinder map: provider matrix, format × style presets, image skills and slash command; see the [feature record](features/K_kk-image-pipeline-migrate-wt-image-skills-to-a-typescript-generator-plugin-wayfinder-map.md) |
+| K1 | image-gen preset sample gallery README | ✅ done | 3 | Task `0340` done; repeatable real-provider preset gallery and README generator; see the [feature record](features/K1_image-gen-preset-sample-gallery-readme.md) |
+| K2 | Local H3 image generation for image-gen | ⏳ active | 3 | Task `0379` todo; explicit `h3-local` provider, deterministic adapter tests, then real-render and scheduler gates before daily migration; cover remains pinned pending A/B approval; see the [feature record](features/K2_local-h3-image-generation-for-image-gen.md) |
 | **L** | kk-daily-ai-voice — daily AI voice news pipeline (umbrella) | 🔧 active | — | umbrella node for the daily AI voice pipeline use cases; child L1 |
 | **L1** | Redesign kk-daily-ai-voice workflow (was K) | 🔧 active | — | idea-pipeline run `idea-1788701858`: eval → design D1–D5 approved → 7 tasks `0092`–`0098` batch-created with deps (0094←0093, 0097←0092+0094+0095+0096, 0098←0097) |
 | **L2** | daily-ai-voice quasi-news podcast cover | 🔧 active | P2 | tasks `0347`–`0349` **done 2026-11-10** (`441f3d2`, `6ab49e1`, `b18b4aa`): quasi-news podcast presets + lead-story Hook brief (0347), deterministic CJK headline compositing + podcast logo badge with `daily-cover-normalize` (0348), pin flip to `daily-news-podcast-cover` x `quasi-news-podcast` + standalone `daily-cover-mock.ts` verification runner (0349); each task verdict PASS / review Confidence HIGH / residual blocking=0; see `docs/features/L2_daily-ai-voice-quasi-news-podcast-cover.md` |
