@@ -1,60 +1,48 @@
 # Migration: scheduled jobs from laptop → mac mini
 
-## Current handoff — kk news migration deferred from task 0372 (2026-11-14)
+## Current handoff — same-host cutover on the production Mac mini (2026-11-15, task 0373)
 
-**Owner: the coding agent on the production Mac mini. Follow-up: task 0373. Not executed.**
-The operator deferred production migration and the full scheduled-day proof, and explicitly approved
-retaining retirement commit `86ec3def` with a sequencing exception. Task 0372 can close on the code
-and this handoff; production readiness remains unverified until task 0373 supplies real evidence.
-The sections below describe the October deployment and its evidence; their old workflow/job commands
-are historical context. Use this handoff for the new rollout and inspect the target before changing it.
+**Owner: the coding agent running on the production host. Supersedes the 2026-11-14 deferred handoff.**
+The earlier text in this section described a remote migration over `ssh homelab` (`mac.lan`) from a
+laptop. That premise was wrong: `mac.lan` / `HomeServer` — Mac16,10 Mac mini, Apple M4, 16 GB,
+macOS 27.0.1, arm64, `America/Los_Angeles` — **is** the production host. It runs
+`ai.gobing.spur-serve`, holds the live `.works/kk.db`, and needs no migration onto it. The remaining
+work is a same-host cutover plus the defects that inspection exposed. `git revert 86ec3def` is no
+longer the rollback plan; the deployed bundle is.
 
-1. **Inspect read-only.** The recorded target is `ssh homelab` (`mac.lan`), account `/Users/robin`;
-   re-confirm its identity and locate the actual checkout. Read its applicable agent instructions,
-   task 0373, effective config, scheduler jobs and last run receipts. Resolve the `kk` executable's
-   real package root; compare its built `dist/index.js`, shipped scripts, workflows and presets to
-   the intended checkout. Do not assume the source tree is the installed CLI or that this old target
-   record is still current. Record non-secret versions/build identity only.
-2. **Prepare the approved rollout.** Pin an absolute persistent `works_dir` (ADR-042), preserve
-   `kk.db`, browser profiles, credentials and unrelated scheduler jobs, and resolve any `workflows_dir`
-   override that could shadow the shipped workflows. Preserve private backups on the target rather
-   than putting them in Git. Check the writer/executor, TTS assets, publishing dependencies and
-   channel readiness using the existing checks. Keep every xhs row effectively `off` while flagged;
-   `--live-channels` cannot override `off` (0372 operator decision). Obtain explicit approval for
-   the concrete installation, scheduler changes and any live sends before performing them.
-3. **Install and enable only what was approved.** Update the CLI bundle and shipped scripts/workflows
-   together; verify the installed CLI answers the news verbs. Use the existing target scheduler
-   (`bootstrap.scheduler.jobs` inside `spur serve`, unless inspection proves otherwise); do not
-   install a parallel cron/launchd schedule. Preserve unrelated jobs and ensure exactly one active
-   host for each news job. Intended entries, in `America/Los_Angeles`:
+### What inspection found and what was changed (2026-11-15)
 
-   | Local time | Command |
-   | --- | --- |
-   | 04:30 | `kk news generate --publish` |
-   | 07:00 | `kk news publish --window overseas-rss --unattended` |
-   | 17:00 | `kk news publish --window cn-peak --unattended` |
+| Defect | Evidence | Resolution |
+| --- | --- | --- |
+| Two servers fought over port 3003; the supervised one crash-looped | `launchctl` `runs = 165`, last exit 1, while a shell-owned `spur self serve` held `*:3003` | Duplicate retired; `ai.gobing.spur-serve` now owns `127.0.0.1:3003` and stays up |
+| `bootstrap.scheduler.enabled: false` while ticks kept firing | commit `6a1713ea` vs live `scheduler.custom` rows | Set `true`; the flag now matches behaviour |
+| Scheduled ticks carried retired commands (`bun scripts/daily-ai-news.ts …`, deleted by `86ec3def`) | `queue_jobs` 2026-11-12 → 2026-11-15 all `Module not found` | Current config uses the `kk news` verbs; a fresh tick enqueued the current command |
+| Cost-first executor resolution picked dead executors | `opencode -free` → `Invalid credential`; `agy-gemini` → OAuth login; `pi-dsv4.1-flash-volc` → 429 until 2026-11-18 | The two opencode `-free` entries are disabled; the three kk news jobs pin `--agent pi-dsv4.1-flash-cc`, which answered a probe here |
+| Installed `dist/index.js` lacked the `greenWithBundle` fix from `99be5d14` | bundle diff vs a fresh `bun run build` | Rebuilt bundle deployed over the installed copy; `plugins/kk/scripts` and workflows already matched |
+| Stuck `kk bot open` windows held the weibo and shipinhao profile leases | lease `owner.json` pids 18359 / 40202, 14–17 h idle | Closed with operator approval; the two stale lease dirs were moved to `.works/tmp/rollback-20261115/leases/` |
 
-   Successful generation launches the `after-generate` publish window. `overseas-rss` selects the
-   previous Los Angeles day; generation and `cn-peak` select the current day. Inspect actual resolved
-   work directories rather than treating the three ticks as one date. A live row sends without a
-   confirmation pause unless `--live-confirm` is set, so approval must cover the effective plan.
-4. **Observe one full scheduled day on the Mac mini.** Generation must settle `done` or `no-content`,
-   and both publish windows must settle according to their required targets and gate conditions.
-   A local rehearsal, manual dummy run, fabricated receipt or laptop run is not production proof.
-   Investigate failed/ambiguous outcomes; do not weaken checks or enable xhs to obtain PASS.
-5. **Save the evidence and verify task 0373.** Under `docs/tasks/evidence/0369/<YYYYMMDD>/`, save
-   redacted copies of the generate launch receipt, overseas launch receipt, cn-peak launch receipt,
-   and the corresponding `kk news status --run-date <YYYYMMDD>` outputs. For overseas, also capture
-   status for its previous-day run. Include an evidence index with host identity, checkout/build,
-   timezone, effective works root, approved scheduler command lines, observed timestamps and exact
-   source receipt paths. Review all copies for secrets, cookies and credentials; never save env
-   dumps or authentication state. Required evidence is the scheduled runs, not the repository gate.
-6. **Keep rollback explicit.** Before applying rollout changes, identify the known-good installed
-   package/config and scheduler backups. If rollout fails, restore only the approved deployment and
-   scheduler state, leave `kk.db` intact, and verify a second host has not been re-armed. Restoring
-   the removed source artifacts is available via `git revert 86ec3def`, subject to explicit approval;
-   that alone does not restore the installed bundle or scheduler. Record failures in task 0373 and
-   leave production readiness open until its verification passes.
+### Still open — generation settles `no-content`
+
+The launch, executor-probe and prepare paths now run on this host, but `kk news prepare` extracts a
+non-empty pool and then never runs `daily-plan`/`daily-qc-content`, so the pool gate writes `EMPTY`
+and the run closes `no-content`. Tracked as **task 0374** with a 90-second reproduction. Until it is
+fixed the daily job cannot produce an episode on any day, thin pool or not — do not read the current
+`no-content` settle as an editorial supply verdict.
+
+### Remaining sequence
+
+1. Fix task 0374, then re-run `kk news generate --run-date <today> --agent pi-dsv4.1-flash-cc` and
+   confirm a bundle instead of `no-content`.
+2. Observe one complete scheduled day: the 04:30 generate, the 07:00 `overseas-rss` window and the
+   17:00 `cn-peak` window must settle. `xhs` stays `off` in `plugins/kk/publish-presets/daily-ai-voice.json`
+   and `--live-channels` cannot promote an `off` row.
+3. Save the three redacted launch receipts plus `kk news status --run-date <YYYYMMDD>` under
+   `docs/tasks/evidence/0369/<YYYYMMDD>/`, with an index recording host, build, timezone, works root,
+   timestamps and the previous-day overseas selection. Never save env dumps or authentication state.
+4. Keep rollback explicit: pre-change copies live in `.works/tmp/rollback-20261115/`
+   (`config.yaml.bak`, the launchd plist, `installed-dist-index.js.bak`, `spur-config.yaml.bak`,
+   the two lease dirs). Restore by re-enabling exactly one scheduler host, never two, and never by
+   dropping `kk.db`.
 
 ## Historical October deployment
 
