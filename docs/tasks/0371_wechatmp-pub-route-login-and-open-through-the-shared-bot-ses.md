@@ -4,7 +4,7 @@ name: "wechatmp-pub: route login and open through the shared bot session path"
 status: done
 template: feature-impl
 created_at: 2026-11-13T19:00:06.213Z
-updated_at: "2026-11-14T08:39:07.319Z"
+updated_at: "2026-11-15T04:57:25.295Z"
 feature_id: E9
 
 ac_altitude: task-local
@@ -100,16 +100,16 @@ direct `openPersistentBrowser` login in `openWechatLogin` (now a programmatic en
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `plugins/publishings/wechatmp-pub/src/profile-check.ts:85` delegates `login` and `open` to `runProfileCli(wechatSessionConfig, …)`; the bot-mode verdict gains `expiresAt` from the shared `captureSessionFacts` (`packages/publish-harness/src/browser.ts:561`), asserted in `plugins/publishings/wechatmp-pub/tests/wechatmp-profile-check-shared-session.test.ts:88` |
-| R2 | MET | `plugins/publishings/wechatmp-pub/src/index.ts:279` calls the unchanged `persistWechatSessionState` (`plugins/publishings/wechatmp-pub/src/index.ts:120`), preserving `storageStatePath` and the exclusive temp-file + rename write; the AC1 test asserts the state file exists at `storageStatePath(profileDir)` and no temp file is left beside it |
-| R3 | MET | `plugins/publishings/wechatmp-pub/src/profile-check.ts:110` keeps the channel-owned `checkWechatSession` branch and its verdict/exit contract; 12 pre-existing profile-check assertions, 137 `wechatmp-pub.test.ts` assertions and 10 `wechatmp-default-launcher.test.ts` assertions pass unmodified in the full-tier gate run |
-| R4 | MET | `rg -n openPersistentBrowser plugins/publishings/wechatmp-pub/src` now prints exactly two call sites — `plugins/publishings/wechatmp-pub/src/index.ts:199` (the read-only `check` probe) and `:261` (the `wechatBrowserLauncher` seam) — each named with its reason in `## Solution` |
-| R5 | MET | The harness change is additive and optional (`packages/publish-harness/src/browser.ts:95` adds `sessionState?`; no other channel sets it) and leaves their tests untouched: `bun run lint` and `bun run test` exit 0 inside the full gate (`spur task gate 0371 recheck` PASS, 1120373 ms), `bun run build` exit 0 |
+| R1 | MET | `plugins/publishings/wechatmp-pub/src/profile-check.ts:85` `runProfileCli(wechatSessionConfig, …)` for `login`/`open` (`plugins/publishings/wechatmp-pub/src/profile-check.ts:83`); test `plugins/publishings/wechatmp-pub/tests/wechatmp-profile-check-shared-session.test.ts:75` asserts `expiresAt` (`plugins/publishings/wechatmp-pub/tests/wechatmp-profile-check-shared-session.test.ts:94`). |
+| R2 | MET | `plugins/publishings/wechatmp-pub/src/index.ts:125` `persistWechatSessionState`: target `storageStatePath` `plugins/publishings/wechatmp-pub/src/index.ts:129`, temp file `plugins/publishings/wechatmp-pub/src/index.ts:130`, atomic rename `plugins/publishings/wechatmp-pub/src/index.ts:138`; wired as the `onAuthenticated` hook `plugins/publishings/wechatmp-pub/src/index.ts:279`; test `plugins/publishings/wechatmp-pub/tests/wechatmp-profile-check-shared-session.test.ts:103` (only `storage-state.json` left). |
+| R3 | MET | `check` still goes through `checkWechatSession` `plugins/publishings/wechatmp-pub/src/profile-check.ts:110`; `bun test plugins/publishings/wechatmp-pub/tests/wechatmp-profile-check.test.ts` → 12 pass / 0 fail (this run), e.g. `plugins/publishings/wechatmp-pub/tests/wechatmp-profile-check.test.ts:96`, `plugins/publishings/wechatmp-pub/tests/wechatmp-profile-check.test.ts:150`. |
+| R4 | MET | `rg -n openPersistentBrowser plugins/publishings/wechatmp-pub/src` → `plugins/publishings/wechatmp-pub/src/index.ts:21` (import), `plugins/publishings/wechatmp-pub/src/index.ts:199`, `plugins/publishings/wechatmp-pub/src/index.ts:261` — publish-flow call sites only; none in `profile-check.ts`. |
+| R5 | MET | additive optional hook `packages/publish-harness/src/browser.ts:95` `sessionState?: ChannelSessionStateHooks`; `spur --no-logo feature verify E9` (lint + rule checks + full test suite) → PASS, exit 0, 2026-11-14: 5341 pass / 0 fail across 303 files; log `.spur/run/run_a3d0d834-9156-4182-9aa8-1b3acfdb6700-feature-verification.log` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Login records session facts and still exports storage state (req: R1, R2) | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-profile-check-shared-session.test.ts:88` runs `login --url <console url>` against a recording launcher whose console-home page passes the predicate and whose jar holds one persistent httpOnly cookie: exit 0, last stdout line carries `status: verified`, `defaultUrl: https://mp.weixin.qq.com/` and `expiresAt`, and `storage-state.json` is written by the atomic writer with the profile dir holding only that file |
-| AC2 — Check and the publish flow are unchanged (req: R3, R4, R5) | MET | test | `git status --porcelain -- plugins/publishings/wechatmp-pub/tests` reports only the added `wechatmp-profile-check-shared-session.test.ts` (no existing assertion edited); `spur task gate 0371 recheck` = `bun run spur-check` PASS at tree `c323861a` (`.spur/run/0371-test-gate.log`), `bun run lint` PASS inside it, and `bun run build` exit 0 after the final edits |
+| AC1 — Login records session facts and still exports storage state (req: R1, R2) | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-profile-check-shared-session.test.ts:75` — 1 pass / 0 fail (this run) |
+| AC2 — Check and the publish flow are unchanged (req: R3, R4, R5) | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-profile-check.test.ts:96`, `plugins/publishings/wechatmp-pub/tests/wechatmp-profile-check.test.ts:150` (12 pass / 0 fail); full suite: `spur --no-logo feature verify E9` (lint + rule checks + full test suite) → PASS, exit 0, 2026-11-14: 5341 pass / 0 fail across 303 files; log `.spur/run/run_a3d0d834-9156-4182-9aa8-1b3acfdb6700-feature-verification.log` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

@@ -44,10 +44,12 @@ headed login, then verify reuse read-only:
 
 ```bash
 kk bot login xhs                                             # headed; sign in once in the window (adapter-verified)
-bun plugins/publishings/xhs-pub/src/profile-check.ts check   # headless; exit 0 = session verified (underlying probe)
+bun plugins/publishings/xhs-pub/src/profile-check.ts check   # offline: reads the recorded expiry, opens no browser; exit 0 = no known refusal
 ```
 
-`check` never signs in — with no saved profile it refuses (exit 1) instead of reporting success.
+`check` never signs in and never opens a browser (ADR-025 amendment 2026-11-13) — an absent or
+expired profile refuses (exit 1). The recorded expiry is an estimate; `check --headed` runs the
+real readiness probe and draws on the 2 h check budget.
 Overrides: `--profile <dir>`, `--timeout <ms>`; env fallback `XHS_PROFILE_DIR` / `KK_BROWSER_PROFILE_DIR`.
 
 **ADR-025 (2026-09-28, after an XHS warning about automated activity).** Publish now runs this same
