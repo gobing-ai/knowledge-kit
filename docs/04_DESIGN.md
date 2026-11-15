@@ -387,7 +387,7 @@ ownership marker `<work-dir>/.kk-board-owner.json` atomically, revoking the prev
 
 | Flag | Meaning |
 | -------- | --------- |
-| `--workflow <name>` | one of `kk-collect`, `kk-daily-ai-voice2`, `kk-itc` |
+| `--workflow <name>` | one of `kk-collect`, `kk-daily-ai-voice2`, `kk-itc`, `kk-news-generate`, `kk-article-generate`; the two G61 successors share their predecessor's artifact set and settings (`workflowFamily`, 0369 R8) |
 | `--run <id>` | single safe path segment |
 | `--work-dir <dir>` | run workspace below a works root (`.works/` or `works/`), or a canonical child of the configured works root when the caller passes it as a trusted binding (`kk daily prepare`); a relative path resolves against the project. `/`, the home tree, the project root, an ancestor of the project, the config tree and a works root itself are refused |
 | `--stamp <stamp>` | alphanumerics, dash, underscore, `T`/`Z` |
@@ -1488,8 +1488,8 @@ is accepted design, not surface: do not invoke it as if it exists.
   boolean switch a node command must add without a shell conditional (the engine rejects
   `${vars.x:+…}` as an undeclared reference), and `feed` pins the RSS gate's feed URL. Its bundle
   locator is `4-publish/bundle.json` with the pre-cut-over root-level `bundle.json` as a fallback
-  (see "Run directories" below). `kk-daily-publish3.yaml` remains the installed scheduled path until
-  0369 cuts the scheduler over; both produce the same `4-publish/` file set and outcome per window
+  (see "Run directories" below). `kk-daily-publish3.yaml` was the scheduled path until
+  0369 cut the scheduler over to `kk news publish`; both produce the same `4-publish/` file set and outcome per window
   (proven by `apps/cli/tests/kk-publish.e2e.test.ts`, AC3).
 - Shipped workflows: `kk-publish` (0366), `kk-news-generate` (0367, twenty nodes, one executor var)
   and `kk-article-generate` (0368, thirteen states, one executor var, `executor-probe` first). The
@@ -1503,8 +1503,15 @@ is accepted design, not surface: do not invoke it as if it exists.
   the article `4-publish/bundle.json` (`contentType`, `title`, no `episode`, one `{path, sha256}` per
   adapted file) and removes the ITC plan, whose last consumer was `adapt`. Publishing the article
   bundle is `kk article publish` over the shared `kk-publish` (no article-specific node).
-- Planned hidden routes (ADR-037) once shipped: `kk itc …`, `kk daily …`, and the `kk stage run`
-  names listed in the design's stage migration table.
+- Hidden compatible routes (ADR-037, 0369 R5): `kk itc …` and `kk daily …` are registered
+  `hidden: true` — absent from `--help`, still answering for existing callers. Still planned: the
+  `kk stage run` names listed in the design's stage migration table.
+- **Scheduler lines (0369 R1/R2).** The three daily jobs in `.spur/config.yaml` call the verbs
+  directly — `kk news generate --publish`, `kk news publish --window overseas-rss --unattended`,
+  `kk news publish --window cn-peak --unattended` — and start no entry script
+  (`apps/cli/tests/schedule-no-scripts.e2e.test.ts`). The old launchers and workflows stay in the
+  tree until a production day on the new lines is evidenced; the `kk schedule` cron templates above
+  still render the old launcher commands until that retirement.
 
 ## 2. Configuration keys
 

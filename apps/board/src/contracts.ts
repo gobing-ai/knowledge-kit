@@ -8,7 +8,7 @@
  */
 
 /** The three workflow definitions a KK Board module may inspect. */
-export type WorkflowName = 'kk-collect' | 'kk-daily-ai-voice2' | 'kk-itc';
+export type WorkflowName = 'kk-collect' | 'kk-daily-ai-voice2' | 'kk-itc' | 'kk-news-generate' | 'kk-article-generate';
 
 /**
  * Truthful per-artifact state. `available` is the only state that permits content;

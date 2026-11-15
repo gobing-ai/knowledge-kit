@@ -276,6 +276,32 @@ describe('daily-triage (0347 F2/F3)', () => {
         expect(latestFailedRun(repo)?.runId).toBe('newer-run');
         expect(latestFailedRun(join(repo, 'nowhere'))).toBeNull();
         expect(findReceiptByRunId(join(repo, 'nowhere'), 'x')).toBeNull();
+        // 0369 AC5: runs of the configured news workflow are found beside the pre-cut-over directory.
+        const writeNews = (workflow: string, stamp: string, receipt: Record<string, unknown>): void => {
+            const dir = join(repo, '.works', workflow, stamp);
+            mkdirSync(dir, { recursive: true });
+            writeFileSync(join(dir, 'schedule-receipt.json'), JSON.stringify(receipt));
+        };
+        const savedConfig = process.env.KK_CONFIG;
+        try {
+            process.env.KK_CONFIG = join(repo, 'absent.yaml');
+            writeNews('kk-news-generate', '20261111', {
+                runId: 'cutover-run',
+                status: 'failed',
+                finishedAt: '2026-11-11T12:00:00.000Z',
+            });
+            expect(latestFailedRun(repo)?.runId).toBe('cutover-run');
+            expect(findReceiptByRunId(repo, 'cutover-run')).toContain(join('kk-news-generate', '20261111'));
+            expect(findReceiptByRunId(repo, 'newer-run')).toContain(join('kk-daily-ai-voice2', '20261109'));
+            process.env.KK_CONFIG = join(repo, 'config.yaml');
+            writeFileSync(process.env.KK_CONFIG, 'content_types:\n  news:\n    workflow: my-news\n');
+            writeNews('my-news', '20261112', { runId: 'custom-run', status: 'failed' });
+            expect(findReceiptByRunId(repo, 'custom-run')).toContain(join('my-news', '20261112'));
+            expect(findReceiptByRunId(repo, 'cutover-run')).toBeNull();
+        } finally {
+            if (savedConfig === undefined) delete process.env.KK_CONFIG;
+            else process.env.KK_CONFIG = savedConfig;
+        }
         // collectTriage without opts.receipt discovers it from the stamps walk instead.
         const discovered = collectTriage(repo, 'newer-run');
         expect(discovered.receipt?.status).toBe('timed-out');

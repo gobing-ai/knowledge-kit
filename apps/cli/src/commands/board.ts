@@ -1,7 +1,7 @@
 import type { RunCaptureInput, WorkflowName } from '@gobing-ai/kk-board/contracts';
 import { type Command, CommanderError } from 'commander';
 import { captureRun, parseSetting } from '../board/capture';
-import { WORKFLOW_NAMES } from '../board/manifest';
+import { WORKFLOW_NAMES, workflowFamily } from '../board/manifest';
 import { createBoardReader, DEFAULT_BOARD_PORT } from '../board/reader';
 import { consoleOutput } from '../output';
 import { resolveWorksDir } from './daily';
@@ -99,7 +99,8 @@ async function captureAction(options: CaptureOptions): Promise<void> {
         // §9: an external ITC workspace must be a canonical child of a trusted works root. The ITC
         // default lives under the configured works dir (`$works_dir/kk-itc/<kebab>`), so that root is
         // the binding unless the caller names one explicitly; broad roots are still refused.
-        const trustedRoot = options.trustedRoot ?? (workflow === 'kk-itc' ? resolveWorksDir() : undefined);
+        const trustedRoot =
+            options.trustedRoot ?? (workflowFamily(workflow) === 'kk-itc' ? resolveWorksDir() : undefined);
         const outcome = await captureRun(input, trustedRoot === undefined ? {} : { trustedWorksRoot: trustedRoot });
         consoleOutput.write(
             JSON.stringify({

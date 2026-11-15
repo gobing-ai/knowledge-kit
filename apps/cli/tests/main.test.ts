@@ -51,14 +51,22 @@ function visibleCommandNames(out: string): string[] {
 }
 
 describe('kk main exit seam', () => {
+    it('0369 R5 — `itc` and `daily` are hidden from help and still answer', async () => {
+        const names = visibleCommandNames((await run(['--help'])).out);
+        expect(names).toContain('article');
+        expect(names).toContain('news');
+        expect(names).not.toContain('itc');
+        expect(names).not.toContain('daily');
+        expect((await run(['itc', 'candidates', '--help'])).code).toBe(0);
+        expect((await run(['daily', 'prepare', '--help'])).code).toBe(0);
+    });
+
     it('R1 — bare invocation and --help/-h exit 0 and list every first-layer noun as a visible command', async () => {
         for (const args of [[], ['--help'], ['-h']]) {
             const { code, out } = await run(args);
             expect(code).toBe(0);
             expect(out).toContain('bot');
-            expect(out).toContain('daily');
             expect(out).toContain('executor');
-            expect(out).toContain('itc');
             expect(out).toContain('article');
             expect(out).toContain('news');
             expect(out).toContain('plugin');
@@ -74,10 +82,8 @@ describe('kk main exit seam', () => {
                 'article',
                 'board',
                 'bot',
-                'daily',
                 'executor',
                 'help',
-                'itc',
                 'ledger',
                 'lock',
                 'news',
@@ -222,13 +228,9 @@ describe('kk command tree shape (0275 AC1 — A22 R1)', () => {
             'bot logout',
             'bot open',
             'bot plan',
-            'daily prepare',
-            'daily publish-classify',
-            'daily run-report',
             'executor fan-in',
             'executor fan-out',
             'executor run',
-            'itc candidates',
             'ledger append',
             'ledger cutover-check',
             'ledger sync',
@@ -286,9 +288,15 @@ describe('kk command tree shape (0275 AC1 — A22 R1)', () => {
             .map((n) => n.path)
             .sort();
         expect(hidden).toEqual([
+            'daily',
+            'daily prepare',
+            'daily publish-classify',
+            'daily run-report',
             'fanin',
             'fanout',
             'invoke',
+            'itc',
+            'itc candidates',
             'plugin doctor',
             'plugin list',
             'plugins',

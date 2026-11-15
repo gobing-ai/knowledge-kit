@@ -627,10 +627,12 @@ if (args.includes('run')) {
         expect(actions(fx)).toEqual([]);
     });
 
-    it('asserts the scheduler delegates both daily jobs to the operator script', () => {
+    it('asserts the scheduler no longer delegates the daily jobs to this operator script (0369 R1)', () => {
+        // The cut-over moved the jobs to the `kk news` verbs; schedule-no-scripts.e2e.test.ts runs them.
         const config = readFileSync(join(REPO, '.spur/config.yaml'), 'utf-8');
-        expect(config).toContain('bun scripts/daily-ai-news.ts generate --full');
-        expect(config).toContain('bun scripts/daily-ai-news.ts publish --window overseas-rss --unattended');
+        expect(config).not.toContain('command: bun scripts/daily-ai-news.ts');
+        expect(config).toContain('command: kk news generate --publish');
+        expect(config).toContain('command: kk news publish --window overseas-rss --unattended');
     });
 });
 

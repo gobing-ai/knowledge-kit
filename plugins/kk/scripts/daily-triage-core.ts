@@ -17,6 +17,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 
 export interface TriageReceipt {
@@ -69,7 +70,41 @@ const RECEIPTS_DIR = join('.spur', 'run');
 /** When the failed-node text names no nested workflow, assume the daily safety machine. */
 const WORKFLOW_NESTED_FALLBACK = 'kk-daily-safety';
 const RUNS_DIR = join('.spur', 'memory', 'runs');
-const WORKS_FLOW_DIR = join('.works', 'kk-daily-ai-voice2');
+/** Run directories before the 0369 cut-over; kept so historical runs still triage. */
+const LEGACY_NEWS_WORKFLOW = 'kk-daily-ai-voice2';
+
+/**
+ * The works sub-directories that hold daily news runs, newest naming first: the workflow named by
+ * `content_types.news.workflow` (default `kk-news-generate`), then the pre-cut-over directory.
+ */
+export function newsFlowDirs(): string[] {
+    let workflow = 'kk-news-generate';
+    try {
+        const configPath = process.env.KK_CONFIG || join(homedir(), '.config/kk/config.yaml');
+        const parsed = Bun.YAML.parse(readFileSync(configPath, 'utf-8')) as {
+            content_types?: { news?: { workflow?: unknown } };
+        } | null;
+        const configured = parsed?.content_types?.news?.workflow;
+        if (typeof configured === 'string' && configured !== '') workflow = configured;
+    } catch {
+        // no readable config: the built-in workflow name stands
+    }
+    return [...new Set([workflow, LEGACY_NEWS_WORKFLOW])].map((name) => join('.works', name));
+}
+
+/** Every `<stamp>/schedule-receipt.json` under the news run roots, newest stamp first per root. */
+function receiptPaths(repo: string): { stamp: string; receiptPath: string }[] {
+    return newsFlowDirs().flatMap((dir) => {
+        try {
+            return readdirSync(join(repo, dir))
+                .filter((name) => /^\d{8}$/.test(name))
+                .reverse()
+                .map((stamp) => ({ stamp, receiptPath: join(repo, dir, stamp, 'schedule-receipt.json') }));
+        } catch {
+            return [];
+        }
+    });
+}
 const FAILED_RECEIPT_STATUSES = new Set(['failed', 'timed-out', 'interrupted', 'incomplete', 'preflight-refused']);
 /** Receipt statuses that mean the supervisor is mid-flight, not failed. */
 const ACTIVE_RECEIPT_STATUSES = new Set(['running', 'inspecting']);
@@ -399,40 +434,25 @@ export function summarizeTriage(report: TriageReport): string[] {
     return [line1, line2, line3, line4, `suggestion: ${report.suggestions[0] ?? '?'}`];
 }
 
-/** Locate the schedule receipt for a run id across the voice2 works root (stamps newest first). */
+/** Locate the schedule receipt for a run id across the news run roots (stamps newest first). */
 export function findReceiptByRunId(repo: string, runId: string): string | null {
-    const root = join(repo, WORKS_FLOW_DIR);
-    let stamps: string[] = [];
-    try {
-        stamps = readdirSync(root).filter((name) => /^\d{8}$/.test(name));
-    } catch {
-        return null;
-    }
-    for (const stamp of stamps.reverse()) {
-        const receiptPath = join(root, stamp, 'schedule-receipt.json');
+    for (const { receiptPath } of receiptPaths(repo)) {
         const receipt = readTriageJson(receiptPath);
         if (receipt !== null && receipt.runId === runId) return receiptPath;
     }
     return null;
 }
 
-/** Newest failed daily-run receipt across the voice2 works root, for `daily-triage --latest`. */
+/** Newest failed daily-run receipt across the news run roots, for `daily-triage --latest`. */
 export function latestFailedRun(repo: string): { runId: string; receiptPath: string } | null {
-    const root = join(repo, WORKS_FLOW_DIR);
-    let stamps: string[] = [];
-    try {
-        stamps = readdirSync(root).filter((name) => /^\d{8}$/.test(name));
-    } catch {
-        return null;
-    }
     const candidates: { runId: string; receiptPath: string; completedAt: number }[] = [];
-    for (const stamp of stamps.reverse()) {
-        const receiptPath = join(root, stamp, 'schedule-receipt.json');
+    for (const { stamp, receiptPath } of receiptPaths(repo)) {
         const receipt = readTriageJson(receiptPath);
         if (receipt === null || typeof receipt.status !== 'string') continue;
         if (!FAILED_RECEIPT_STATUSES.has(receipt.status)) continue;
-        const completedAt =
-            typeof receipt.completedAt === 'string' ? Date.parse(receipt.completedAt) : statSync(receiptPath).mtimeMs;
+        // `finishedAt` is the launchWorkflow receipt's spelling (0365); `completedAt` the legacy launcher's.
+        const stampedAt = receipt.completedAt ?? receipt.finishedAt;
+        const completedAt = typeof stampedAt === 'string' ? Date.parse(stampedAt) : statSync(receiptPath).mtimeMs;
         candidates.push({
             runId: typeof receipt.runId === 'string' ? receipt.runId : `${stamp}-unknown`,
             receiptPath,

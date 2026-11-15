@@ -681,7 +681,10 @@ export async function generateRunReport(options: RunReportOptions): Promise<Gene
  * DAG node needs as a single `kk` command (R7/AC4).
  */
 export function registerDailyCommand(program: Command): void {
-    const daily = program.command('daily').description('Run the daily AI-voice pipeline steps');
+    const daily = program
+        // Hidden compatibility route (ADR-037, task 0369 R5): `kk news` is the visible noun.
+        .command('daily', { hidden: true })
+        .description('Run the daily AI-voice pipeline steps');
 
     daily
         .command('prepare')

@@ -32,6 +32,7 @@ import {
     resolveAvailability,
     resolveWithin,
     WORKFLOW_NAMES,
+    workflowFamily,
 } from './manifest';
 
 /**
@@ -464,10 +465,11 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         if (!authorized.ok) return authorized.response;
         const { record, detail } = authorized;
         const baseSpecs = artifactsFor(workflow);
+        const family = workflowFamily(workflow);
         // §9: ITC target names are open-ended, so the run's own plan names the per-target result
         // files. Deriving them from the plan (never a client path) keeps the manifest fixed while
         // still exposing real publisher results.
-        const resultSpecs = workflow === 'kk-itc' ? itcResultSpecs(await planTextOf(record, baseSpecs)) : [];
+        const resultSpecs = family === 'kk-itc' ? itcResultSpecs(await planTextOf(record, baseSpecs)) : [];
         const allSpecs = [...baseSpecs, ...resultSpecs.map((entry) => entry.spec)];
         const evidence = await producerEvidence(workflow, runId, allSpecs);
         const observations = new Map<string, ArtifactObservation>();
@@ -488,9 +490,9 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         };
         // The DAG projection also consumes the run-detail action rows (node attempts + retries).
         let results: RunResults;
-        if (workflow === 'kk-daily-ai-voice2') {
+        if (family === 'kk-daily-ai-voice2') {
             results = projectDailyResults({ ...projection, actions: evidence.actions });
-        } else if (workflow === 'kk-itc') {
+        } else if (family === 'kk-itc') {
             results = projectItcResults({ ...projection, resultSpecs, progress: evidence.progress });
         } else {
             results = projectCollectResults(projection);

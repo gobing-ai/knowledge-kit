@@ -46,7 +46,7 @@ export function main(args: string[]): void {
     if (values.latest) {
         const found = latestFailedRun(repo);
         if (found === null) {
-            console.log('daily-triage: no failed daily run found in .works/kk-daily-ai-voice2 — nothing to triage');
+            console.log('daily-triage: no failed daily run found under .works — nothing to triage');
             process.exit(0);
         }
         runId = found.runId;

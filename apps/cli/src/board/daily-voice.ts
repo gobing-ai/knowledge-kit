@@ -23,6 +23,7 @@ import {
     type MarkerState,
     type ProducerState,
     resolveAvailability,
+    workflowFamily,
 } from './manifest';
 
 /**
@@ -679,7 +680,7 @@ export function sanitizeFunnelArtifact(
     artifactId: string,
     raw: string | undefined,
 ): Record<string, unknown> | null {
-    if (workflow !== 'kk-daily-ai-voice2') return null;
+    if (workflowFamily(workflow) !== 'kk-daily-ai-voice2') return null;
     const parsed = parseAnyJson(raw);
     if (parsed === null && raw !== undefined) return { note: 'malformed' };
     const record = asRecord(parsed);

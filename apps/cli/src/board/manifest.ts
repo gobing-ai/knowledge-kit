@@ -10,8 +10,28 @@ import type { ArtifactDescriptor, Availability, WorkflowName } from '@gobing-ai/
  * success (docs/design/workflow-board-modules.md §9).
  */
 
-/** The three workflow definitions this reader may inspect. */
-export const WORKFLOW_NAMES: readonly WorkflowName[] = ['kk-collect', 'kk-daily-ai-voice2', 'kk-itc'];
+/**
+ * The workflow definitions this reader may inspect. `kk-news-generate` and `kk-article-generate`
+ * (G61, task 0369 R8) are the successors of `kk-daily-ai-voice2` and `kk-itc`; the old names stay so
+ * historical runs still render.
+ */
+export const WORKFLOW_NAMES: readonly WorkflowName[] = [
+    'kk-collect',
+    'kk-daily-ai-voice2',
+    'kk-itc',
+    'kk-news-generate',
+    'kk-article-generate',
+];
+
+/** The manifest family a workflow belongs to: a G61 successor reuses its predecessor's manifest. */
+export type WorkflowFamily = 'kk-collect' | 'kk-daily-ai-voice2' | 'kk-itc';
+
+/** Map a workflow name to the family whose settings, artifacts and projection it shares. */
+export function workflowFamily(workflow: WorkflowName): WorkflowFamily {
+    if (workflow === 'kk-news-generate') return 'kk-daily-ai-voice2';
+    if (workflow === 'kk-article-generate') return 'kk-itc';
+    return workflow;
+}
 
 /** How one allowlisted setting value is validated at capture time. */
 export type SettingRule =
@@ -25,7 +45,7 @@ export type SettingRule =
  * The per-workflow allowlisted settings (§9). Every key absent from this table — free text,
  * provider blocks, paths, prompts — is uncapturable by construction.
  */
-export const WORKFLOW_SETTINGS: Readonly<Record<WorkflowName, Readonly<Record<string, SettingRule>>>> = {
+const FAMILY_SETTINGS: Readonly<Record<WorkflowFamily, Readonly<Record<string, SettingRule>>>> = {
     'kk-collect': {
         limit: { kind: 'integer' },
         horizon_hours: { kind: 'integer' },
@@ -78,6 +98,16 @@ export const WORKFLOW_SETTINGS: Readonly<Record<WorkflowName, Readonly<Record<st
         publish_targets: { kind: 'string' } as never,
         seo: { kind: 'choice', values: ['off', 'handoff'] },
     },
+};
+
+/**
+ * The per-workflow allowlisted settings (§9). Every key absent from this table — free text,
+ * provider blocks, paths, prompts — is uncapturable by construction.
+ */
+export const WORKFLOW_SETTINGS: Readonly<Record<WorkflowName, Readonly<Record<string, SettingRule>>>> = {
+    ...FAMILY_SETTINGS,
+    'kk-news-generate': FAMILY_SETTINGS['kk-daily-ai-voice2'],
+    'kk-article-generate': FAMILY_SETTINGS['kk-itc'],
 };
 
 /** One fixed artifact an allowlisted relative pattern maps to, with its producer identity. */
@@ -452,8 +482,9 @@ export const ITC_ARTIFACTS: readonly ArtifactSpec[] = [
 
 /** The fixed artifact manifest for a workflow (empty until 0253/0254 register their entries). */
 export function artifactsFor(workflow: WorkflowName): readonly ArtifactSpec[] {
-    if (workflow === 'kk-collect') return COLLECT_ARTIFACTS;
-    if (workflow === 'kk-daily-ai-voice2') return DAILY_VOICE_ARTIFACTS;
+    const family = workflowFamily(workflow);
+    if (family === 'kk-collect') return COLLECT_ARTIFACTS;
+    if (family === 'kk-daily-ai-voice2') return DAILY_VOICE_ARTIFACTS;
     return ITC_ARTIFACTS;
 }
 
