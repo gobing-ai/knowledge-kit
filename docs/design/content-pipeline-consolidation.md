@@ -196,8 +196,10 @@ entries shown; a user entry merges over the built-in entry field by field.
 already drops non-listed rows into `plan.excluded[]` with `reason: 'not in --channels list'` (`publish-matrix.ts:488`)
 (`apps/cli/src/publish-matrix.ts:planPublishMatrix`, `PublishPlanExcludedSchema`). The plan file
 is therefore the record of the selection; nothing else stores it. An id that matches no preset row
-exits 2 before the plan is written. `--live-channels` promotes listed rows from `draft` to `live`
-the same way and is recorded as each row's `mode`.
+exits 2 before the plan is written. `--live-channels` **overrides the config switchboard** for the
+listed rows: a row whose config mode is `off` (or `dummy`, or `draft`) is promoted to `live`, and the
+row's `modeSource` records `flag` (0372 R5 — the flag is per-run consent, so `off` does not silence a
+channel the operator names on the command line).
 
 ---
 

@@ -36,6 +36,19 @@ describe('content publish verbs (0364)', () => {
         ]);
     });
 
+    it('a config `off` does not silence a channel the operator names in --live-channels (0372 R5)', () => {
+        const preset = {
+            schemaVersion: 1 as const,
+            name: 'fixture',
+            targets: [{ plugin: 'xhs-pub', mode: 'draft' as const }],
+        };
+
+        const applied = applyChannelModes(preset, { 'xhs-pub': 'off' }, ['xhs-pub']);
+
+        // Precedence: per-run consent (flag) > config switchboard > preset. `off` is not a veto.
+        expect(applied.targets[0]).toMatchObject({ plugin: 'xhs-pub', mode: 'live', modeSource: 'flag' });
+    });
+
     it('rejects a switchboard key that is absent from the selected preset', () => {
         expect(() =>
             applyChannelModes(
