@@ -27,7 +27,7 @@ describe('daily-triage (0347 F2/F3)', () => {
 
     it('parseTrace — extracts the LAST failed action, skips done/skipped, tolerates garbage', () => {
         const payload = JSON.stringify({
-            run: { workflowName: 'kk-daily-ai-voice3', status: 'failed', startedAt, finalizedAt },
+            run: { workflowName: 'kk-news-generate', status: 'failed', startedAt, finalizedAt },
             events: [
                 { kind: 'state', node: 'generate', status: 'entered' },
                 {
@@ -41,7 +41,7 @@ describe('daily-triage (0347 F2/F3)', () => {
             ],
         });
         const parsed = parseTrace(payload);
-        expect(parsed.workflow).toBe('kk-daily-ai-voice3');
+        expect(parsed.workflow).toBe('kk-news-generate');
         expect(parsed.failedNode?.id).toBe('safety');
         expect(parsed.failedNode?.stderrTail).toBe('exit 1');
         expect(parseTrace('not json at all').failedNode).toBeNull();
@@ -128,7 +128,7 @@ describe('daily-triage (0347 F2/F3)', () => {
         const dirty = suggestionsFor({
             ...base,
             executed: {
-                workflow: 'kk-daily-ai-voice3',
+                workflow: 'kk-news-generate',
                 path: 'trace.json',
                 sha256: 'ab',
                 gitDirty: ['plugins/kk/scripts/new.ts'],
@@ -148,7 +148,7 @@ describe('daily-triage (0347 F2/F3)', () => {
                 exitCode: 1,
                 error: 'weekly limit',
             },
-            workflow: 'kk-daily-ai-voice3',
+            workflow: 'kk-news-generate',
         });
         const lines = summarizeTriage(report);
         expect(lines.length).toBe(5);
@@ -190,7 +190,7 @@ describe('daily-triage (0347 F2/F3)', () => {
         const runId = 'daily-ai-voice-20261109-1794292648364';
         const nestedId = '1460a334-e9e9-4398-a0ef-52c455d66063';
         mkdirSync(join(repo, 'plugins', 'kk', 'workflows'), { recursive: true });
-        writeFileSync(join(repo, 'plugins', 'kk', 'workflows', 'kk-daily-ai-voice3.yaml'), 'nodes: []\n');
+        writeFileSync(join(repo, 'plugins', 'kk', 'workflows', 'kk-news-generate.yaml'), 'nodes: []\n');
         const receipts = join(repo, '.spur', 'run', nestedId, 'receipts');
         mkdirSync(receipts, { recursive: true });
         writeFileSync(
@@ -217,7 +217,7 @@ describe('daily-triage (0347 F2/F3)', () => {
         writeFileSync(join(receipts, 'review.json'), JSON.stringify({ outcome: 'succeeded' }));
         writeFileSync(join(receipts, 'judge-primary.json'), JSON.stringify({ outcome: 'failed', reason: '429 quota' }));
         const trace = JSON.stringify({
-            run: { workflowName: 'kk-daily-ai-voice3', status: 'failed', startedAt, finalizedAt },
+            run: { workflowName: 'kk-news-generate', status: 'failed', startedAt, finalizedAt },
             events: [
                 {
                     kind: 'action',
@@ -242,14 +242,14 @@ describe('daily-triage (0347 F2/F3)', () => {
                 error: 'timeout after 2700000ms',
             },
         });
-        expect(report.executed?.workflow).toBe('kk-daily-ai-voice3');
+        expect(report.executed?.workflow).toBe('kk-news-generate');
         expect(report.executed?.sha256).toBeString();
         expect(report.failedNode?.id).toBe('generate');
         expect(report.nestedRuns.length).toBe(1);
         expect(report.nestedRuns[0]?.receipts.length).toBe(2);
         expect(report.escalation?.decision).toBe('retry');
         const lines = summarizeTriage(report);
-        expect(lines[1]).toContain('executed: kk-daily-ai-voice3 sha256=');
+        expect(lines[1]).toContain('executed: kk-news-generate sha256=');
         expect(lines[2]).toContain('failed node: generate (failed)');
         expect(lines[3]).toContain('kk-daily-safety:done receipts 1/2 ok');
         rmSync(repo, { recursive: true, force: true });
@@ -276,6 +276,32 @@ describe('daily-triage (0347 F2/F3)', () => {
         expect(latestFailedRun(repo)?.runId).toBe('newer-run');
         expect(latestFailedRun(join(repo, 'nowhere'))).toBeNull();
         expect(findReceiptByRunId(join(repo, 'nowhere'), 'x')).toBeNull();
+        // 0369 AC5: runs of the configured news workflow are found beside the pre-cut-over directory.
+        const writeNews = (workflow: string, stamp: string, receipt: Record<string, unknown>): void => {
+            const dir = join(repo, '.works', workflow, stamp);
+            mkdirSync(dir, { recursive: true });
+            writeFileSync(join(dir, 'schedule-receipt.json'), JSON.stringify(receipt));
+        };
+        const savedConfig = process.env.KK_CONFIG;
+        try {
+            process.env.KK_CONFIG = join(repo, 'absent.yaml');
+            writeNews('kk-news-generate', '20261111', {
+                runId: 'cutover-run',
+                status: 'failed',
+                finishedAt: '2026-11-11T12:00:00.000Z',
+            });
+            expect(latestFailedRun(repo)?.runId).toBe('cutover-run');
+            expect(findReceiptByRunId(repo, 'cutover-run')).toContain(join('kk-news-generate', '20261111'));
+            expect(findReceiptByRunId(repo, 'newer-run')).toContain(join('kk-daily-ai-voice2', '20261109'));
+            process.env.KK_CONFIG = join(repo, 'config.yaml');
+            writeFileSync(process.env.KK_CONFIG, 'content_types:\n  news:\n    workflow: my-news\n');
+            writeNews('my-news', '20261112', { runId: 'custom-run', status: 'failed' });
+            expect(findReceiptByRunId(repo, 'custom-run')).toContain(join('my-news', '20261112'));
+            expect(findReceiptByRunId(repo, 'cutover-run')).toBeNull();
+        } finally {
+            if (savedConfig === undefined) delete process.env.KK_CONFIG;
+            else process.env.KK_CONFIG = savedConfig;
+        }
         // collectTriage without opts.receipt discovers it from the stamps walk instead.
         const discovered = collectTriage(repo, 'newer-run');
         expect(discovered.receipt?.status).toBe('timed-out');
@@ -322,12 +348,12 @@ describe('daily-triage (0347 F2/F3)', () => {
         // exercises the readText miss.
         const workflows = join(repo, 'plugins', 'kk', 'workflows');
         mkdirSync(workflows, { recursive: true });
-        writeFileSync(join(workflows, 'kk-daily-ai-voice3.yaml'), 'nodes: []\n');
+        writeFileSync(join(workflows, 'kk-news-generate.yaml'), 'nodes: []\n');
         mkdirSync(join(repo, '.spur', 'run'), { recursive: true });
         writeFileSync(join(repo, '.spur', 'run', 'run-p1-generate-partial.md'), '\u001b[31mboom\u001b[0m\n');
         const trace = (): string =>
             JSON.stringify({
-                run: { workflowName: 'kk-daily-ai-voice3', status: 'failed' },
+                run: { workflowName: 'kk-news-generate', status: 'failed' },
                 events: [{ kind: 'action', node: 'generate', status: 'failed' }],
             });
         const env: NodeJS.ProcessEnv = { ...process.env };
@@ -345,8 +371,8 @@ describe('daily-triage (0347 F2/F3)', () => {
         expect(withoutPartial.failedNode?.stderrTail).toBeUndefined();
 
         // sha256File: a workflow "file" that is a directory fails the read and hashes to null.
-        rmSync(join(workflows, 'kk-daily-ai-voice3.yaml'));
-        mkdirSync(join(workflows, 'kk-daily-ai-voice3.yaml'));
+        rmSync(join(workflows, 'kk-news-generate.yaml'));
+        mkdirSync(join(workflows, 'kk-news-generate.yaml'));
         env.FAKE_TRACE = trace();
         expect(collectTriage(repo, 'run-p3', { env }).executed?.sha256).toBeNull();
         rmSync(repo, { recursive: true, force: true });

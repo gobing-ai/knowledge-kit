@@ -4,39 +4,66 @@
     "targets": [
         {
             "plugin": "surfdash-pub",
-            "profile": "article"
+            "profile": "article",
+            "variant": "article",
+            "tier": 0,
+            "required": true
         },
         {
             "plugin": "infoq-pub",
-            "profile": "article"
+            "profile": "article",
+            "variant": "article",
+            "tier": 0,
+            "required": true
         },
         {
             "plugin": "juejin-pub",
-            "profile": "article"
+            "profile": "article",
+            "variant": "article",
+            "tier": 0,
+            "required": true
         },
         {
             "plugin": "wechatmp-pub",
-            "profile": "article"
+            "profile": "article",
+            "variant": "article",
+            "tier": 0,
+            "required": true
         },
         {
             "plugin": "x-pub",
-            "profile": "article-zh"
+            "profile": "article-zh",
+            "variant": "zh-article",
+            "tier": 0,
+            "required": true
         },
         {
             "plugin": "zenn-pub",
-            "profile": "article"
+            "profile": "article",
+            "variant": "article",
+            "tier": 0,
+            "required": true
         },
         {
             "plugin": "qiita-pub",
-            "profile": "article"
+            "profile": "article",
+            "variant": "article",
+            "tier": 0,
+            "required": true
         },
         {
             "plugin": "medium-pub",
-            "profile": "article"
+            "profile": "article",
+            "variant": "article",
+            "tier": 0,
+            "required": true
         },
         {
             "plugin": "substack-pub",
-            "profile": "article"
+            "profile": "article",
+            "variant": "article",
+            "tier": 0,
+            "required": true
         }
     ]
 }

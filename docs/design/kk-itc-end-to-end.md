@@ -208,7 +208,7 @@ explicitly. `--live` is never implied (V4). `--playbook wechat` without `--sourc
 | Stage unit | `apps/cli/tests/itc-stages.test.ts` | every §4 helper and failure row, the §5 table, V3 per target. Validates the materialized Content with `ContentSchema` (tests may import kk-core). |
 | YAML structure | `apps/cli/tests/kk-itc-workflow.test.ts` (extended) | the §3 edge table; the V1 default path is unchanged; V5 caps are present |
 | Dry-run walk | same file | `spur workflow run --dry-run` over `{auto:true, publish_targets:…}` reaches `done` |
-| Tail integration | `apps/cli/tests/kk-itc-publish-tail.test.ts` | seeded work_dir → materialize → plan → real `kk executor fan-out` with `KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake` (zenn-pub, qiita-pub, surfdash-pub) → report. Asserts drafts plus per-target Results. |
+| Tail integration (test retired in 0372 with the publish-tail DAG) | the ITC publish-tail integration test | seeded work_dir → materialize → plan → real `kk executor fan-out` with `KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake` (zenn-pub, qiita-pub, surfdash-pub) → report. Asserts drafts plus per-target Results. |
 | Profile | `apps/cli/tests/workflow-run-command.test.ts` (extended) | §7 binding |
 
 Agent-bearing states are not executed in CI. This follows the kk-daily-ai-voice integration

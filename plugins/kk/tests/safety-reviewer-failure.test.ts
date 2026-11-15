@@ -130,7 +130,9 @@ describe('kk-daily-safety reviewer steps — a failed reviewer reaches the gate,
         if (SPLIT_MACHINE) {
             const retry = reviewerStep('review-retry', '_09_safety-review_report.json');
             expect(retry.onError, 'the split retry must still hand its failure to the gate').toBe('continue');
-            expect(String(retry.options?.agent)).toContain('vars.agent_retry');
+            // 0360 R2: the second attempt resolves by role (agent: inline + role: reviewer) instead of
+            // a second executor var, so a dead operator pin still has a live fallback.
+            expect(retry.options).toMatchObject({ agent: 'inline', role: 'reviewer' });
             expect(outbound.map((transition) => transition.to)).toEqual(['review-retry', 'judge-primary']);
             expect(outbound.at(0)?.command).toContain('report-valid');
             expect(outbound.at(0)?.command).toContain('! bun');
@@ -153,7 +155,7 @@ describe('kk-daily-safety reviewer steps — a failed reviewer reaches the gate,
         if (SPLIT_MACHINE) {
             const retry = reviewerStep('judge-retry', '_09_safety-judge_verdict.json');
             expect(retry.onError).toBe('continue');
-            expect(String(retry.options?.agent)).toContain('vars.agent_retry');
+            expect(retry.options).toMatchObject({ agent: 'inline', role: 'reviewer' });
         }
     });
 
@@ -167,9 +169,10 @@ describe('kk-daily-safety reviewer steps — a failed reviewer reaches the gate,
                 const retry = reviewerStep(retryStateId, fragment);
                 expect(primary.onError, `${stateId}'s primary must hand failure to its guarded retry`).toBe('continue');
                 expect(retry.onError, `${retryStateId} must still hand failure to the gate`).toBe('continue');
-                expect(String(retry.options?.agent), `${retryStateId} must retry on vars.agent_retry`).toContain(
-                    'vars.agent_retry',
-                );
+                expect(retry.options, `${retryStateId} must resolve its retry by role`).toMatchObject({
+                    agent: 'inline',
+                    role: 'reviewer',
+                });
             }
             const reviseAgents = (machine.states.find((state) => state.id === 'revise')?.onEnter ?? [])
                 .filter((action) => action.kind === 'agent.run')
@@ -178,7 +181,7 @@ describe('kk-daily-safety reviewer steps — a failed reviewer reaches the gate,
             const reviseRetryAgents = (machine.states.find((state) => state.id === 'revise-retry')?.onEnter ?? [])
                 .filter((action) => action.kind === 'agent.run')
                 .map((action) => String(action.options?.agent));
-            expect(reviseRetryAgents).toEqual([varRef('agent_retry')]);
+            expect(reviseRetryAgents).toEqual(['inline']);
             expect(
                 (machine.states.find((state) => state.id === 'revise-retry')?.onEnter ?? []).filter(
                     (action) => action.kind === 'agent.run',
@@ -207,9 +210,10 @@ describe('kk-daily-safety reviewer steps — a failed reviewer reaches the gate,
         ] as const) {
             const retry = reviewerRetryStep(stateId, fragment);
             expect(retry.onError, `${stateId}'s retry must still hand its failure to the gate`).toBe('continue');
-            expect(String(retry.options?.agent), `${stateId} must retry on vars.agent_retry`).toContain(
-                'vars.agent_retry',
-            );
+            expect(retry.options, `${stateId} must resolve its retry by role`).toMatchObject({
+                agent: 'inline',
+                role: 'reviewer',
+            });
         }
         // `revise` edits the drafts in place (requireDiff), so it has no expectFile pin — match on
         // that option instead: a failed remediation spends a budget unit and re-reviews UNCHANGED
@@ -219,7 +223,7 @@ describe('kk-daily-safety reviewer steps — a failed reviewer reaches the gate,
             .map((action) => String(action.options?.agent));
         expect(reviseAgents).toHaveLength(2);
         expect(reviseAgents.at(0)).toContain('vars.agent');
-        expect(reviseAgents.at(1)).toContain('vars.agent_retry');
+        expect(reviseAgents.at(1)).toBe('inline');
     });
 
     it('only the reviewer steps and the tolerated decide are survivable: the deterministic shells fail closed', () => {

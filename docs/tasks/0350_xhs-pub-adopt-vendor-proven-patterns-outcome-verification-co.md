@@ -4,7 +4,7 @@ name: "xhs-pub: adopt vendor-proven patterns (outcome verification, counter limi
 status: done
 template: standard
 created_at: 2026-11-10T22:48:43.838Z
-updated_at: "2026-11-11T04:09:46.823Z"
+updated_at: "2026-11-13T20:29:25.702Z"
 
 done_forced: "false"
 done_reason: unforced close
@@ -151,6 +151,8 @@ Verdict: PASS
 | P4 | plugins/publishings/xhs-pub/src/flow.ts:1200 | After verifyDraft the flow re-navigates to PUBLISH_URL and the runMode caller closes the page — a deliberate single extra navigation so a re-verify never re-saves (a 暂存离开 would shift the draft counter the next run baselines against) | resolved — deliberate, documented in the code comment |
 
 Re-verify note (2026-11-11, after the body-counter fix): the deliberate post-verify navigation cited above at plugins/publishings/xhs-pub/src/flow.ts:1200 is plugins/publishings/xhs-pub/src/flow.ts:1280. Both body probes scan only the edit container at plugins/publishings/xhs-pub/src/flow.ts:577 and plugins/publishings/xhs-pub/src/flow.ts:1196. Current requirement anchors are in Testing.
+
+**Evidence correction (2026-11-13):** The historical run-scoped pointers `.spur/run/fc9e752d-2098-4072-ad69-dda15615e9fe-review-cert.md` and `.spur/run/0350-check-receipt.json` were LOST when their disposable pipeline worktree was removed. The durable verdict is recorded at `.spur/memory/evidence/0350-verdict.json`.
 
 ### References
 

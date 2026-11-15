@@ -1,0 +1,20 @@
+---
+# Stub stand-in for the real `kk-news-generate` workflow (task 0365, design §1.1 R6).
+#
+# 0366–0368 ship the real workflows. Until then `kk <noun> generate|publish` resolves its YAML
+# through the existing `workflows_dir` config override, so a test points that key at this fixture
+# directory. The launcher's contract — lock, preflight, one argv, cleanup — does not depend on the
+# node list, so this stub is the smallest valid DAG: one shell node that echoes its name. The e2e
+# suite stubs `spur` too, so this file is never executed by the engine.
+name: kk-news-generate
+kind: dag
+description: "Launch-contract stub for kk-news-generate (0365)."
+vars:
+  work_dir: ""
+nodes:
+  - id: stub
+    description: "The launch contract only needs a workflow the engine accepts."
+    action:
+      kind: shell
+      options:
+        command: echo "kk-news-generate stub"

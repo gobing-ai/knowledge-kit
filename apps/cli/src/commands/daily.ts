@@ -558,6 +558,35 @@ function noContentReason(workDir: string, runDate: string, poolCount: number | u
     return fallback;
 }
 
+/** `kk daily run-report`'s outcome: what it wrote, and whether the day had content at all. */
+export interface GenerationReportResult {
+    /** The report markdown path ('' when there was nothing to report on). */
+    report: string;
+    noContent: boolean;
+    /** `no-content:` line when the day closed without content (design §3: the receipt's own words). */
+    reason?: string;
+    /** The report already existed and was reused. */
+    cached?: boolean;
+}
+
+async function runReportAction(options: RunReportOptions): Promise<void> {
+    try {
+        const result = await generateRunReport(options);
+        consoleOutput.write(
+            JSON.stringify({
+                runDate: options.runDate,
+                noContent: result.noContent,
+                ...(result.reason === undefined ? {} : { reason: result.reason }),
+                report: result.report,
+                ...(result.cached === true ? { cached: true } : {}),
+            }),
+        );
+    } catch (error) {
+        if (error instanceof CommanderError) throw error;
+        failLoud('kk.daily.run-report.failed', error);
+    }
+}
+
 /**
  * `kk daily run-report --work-dir <dir> --run-date <stamp> …` — assemble the per-run report from the
  * artifacts that exist, and record the pool outcome next to it.
@@ -566,90 +595,85 @@ function noContentReason(workDir: string, runDate: string, poolCount: number | u
  * report says so and `<work_dir>/run-report.summary.txt` carries the one-line `no-content` result
  * the ledger's Result cell reads. The report itself is `news-report-gen`'s output, invoked through
  * the same plugin-entry seam every other kk command uses.
+ *
+ * Exported (task 0367) so `kk news report` calls this same function instead of keeping a second
+ * implementation (design §1.4); the hidden `kk daily run-report` route is a thin printer over it.
  */
-async function runReportAction(options: RunReportOptions): Promise<void> {
-    try {
-        const { workDir, runDate } = options;
-        const reportMd = join(workDir, `${runDate}_19_run-report_report.md`);
-        const summary = join(workDir, 'run-report.summary.txt');
-        const poolCount = countItems(options.pool);
-        const candidateCount = countItems(options.candidates);
-        mkdirSync(workDir, { recursive: true });
-        if (poolCount === 0 || candidateCount === 0) {
-            const reason = noContentReason(workDir, runDate, poolCount);
-            const body = `# Daily run ${runDate} — no content\n\n${reason}\n\nNo article, audio or publish\nartifact was produced; nothing was marked used.\n`;
-            writeFileSync(reportMd, body);
-            writeFileSync(summary, `${reason}\n`);
-            consoleOutput.write(JSON.stringify({ runDate, noContent: true, reason, report: reportMd }));
-            return;
-        }
-        if (existsSync(reportMd) && !reportIsNoContent(summary)) {
-            consoleOutput.write(JSON.stringify({ runDate, noContent: false, report: reportMd, cached: true }));
-            return;
-        }
-        if (candidateCount === undefined) {
-            const reason = 'run-report: no candidates.json and no pool count — nothing to report';
-            writeFileSync(summary, `${reason}\n`);
-            consoleOutput.write(JSON.stringify({ runDate, noContent: true, reason, report: '' }));
-            return;
-        }
-        const cands = join(workDir, '21-plan', `${runDate}_19_run-report_episode-plan.json`);
-        const reportJson = join(workDir, `${runDate}_19_run-report_report.json`);
-        mkdirSync(dirname(cands), { recursive: true });
-        const candidates = options.candidates as string;
-        const parsed = parseJson(readFileSync(candidates, 'utf-8')) as { metadata?: { docs?: unknown } };
-        writeFileSync(cands, `${JSON.stringify((parsed.metadata?.docs ?? []) as unknown, null, 2)}`);
-        // Plugin env paths must be absolute: plugins run with cwd = their package dir, so a relative
-        // workDir silently misses every best-effort read.
-        const absWorkDir = resolve(workDir);
-        const env: Record<string, string> = {
-            QC_MIN_QUALITY: options.qcMinQuality ?? '',
-            QC_MIN_IMPORTANCE: options.qcMinImportance ?? '',
-            QC_MIN_URGENCY: options.qcMinUrgency ?? '',
-            QC_MIN_IMPACT: options.qcMinImpact ?? '',
-            NEWS_REPORT_REJECTED_FILE: join(
-                absWorkDir,
-                '21-plan',
-                `${runDate}_04_quality-control-content_candidates.rejected.json`,
-            ),
-            NEWS_REPORT_TIMING_FILE: join(absWorkDir, 'step-timing.json'),
-            NEWS_REPORT_QC_FILE: join(absWorkDir, '30-audio', `${runDate}_11_generate_content.json`),
-            NEWS_REPORT_PLAN_AUDIT_FILE: join(absWorkDir, '21-plan', `${runDate}_03_plan_plan.json.audit.json`),
-            NEWS_REPORT_BLENDED_FILE: join(absWorkDir, '10-ingest', `${runDate}_02_collect_blended.json`),
-            NEWS_REPORT_SCRIPT_FILE: join(absWorkDir, '24-script', `${runDate}_08_script_content.json`),
-            NEWS_REPORT_DATE: runDate,
-        };
-        const previous = new Map<string, string | undefined>();
-        for (const [key, value] of Object.entries(env)) {
-            previous.set(key, process.env[key]);
-            process.env[key] = value;
-        }
-        let code: number;
-        try {
-            code = await runInvoke({
-                plugin: NEWS_REPORT_PLUGIN,
-                inPath: cands,
-                outPath: reportJson,
-                ...(options.pluginsPath === undefined || options.pluginsPath === ''
-                    ? {}
-                    : { pluginsPath: [options.pluginsPath] }),
-            });
-        } finally {
-            for (const [key, value] of previous) {
-                if (value === undefined) delete process.env[key];
-                else process.env[key] = value;
-            }
-        }
-        if (code !== 0) throw new Error(`${NEWS_REPORT_PLUGIN} exited ${code}`);
-        const parsedReport = parseJson(readFileSync(reportJson, 'utf-8')) as { body?: unknown };
-        if (typeof parsedReport.body !== 'string') throw new Error(`${reportJson} has no string body`);
-        writeFileSync(reportMd, parsedReport.body);
-        writeFileSync(summary, `${candidateCount} items planned\n`);
-        consoleOutput.write(JSON.stringify({ runDate, noContent: false, report: reportMd }));
-    } catch (error) {
-        if (error instanceof CommanderError) throw error;
-        failLoud('kk.daily.run-report.failed', error);
+export async function generateRunReport(options: RunReportOptions): Promise<GenerationReportResult> {
+    const { workDir, runDate } = options;
+    const reportMd = join(workDir, `${runDate}_19_run-report_report.md`);
+    const summary = join(workDir, 'run-report.summary.txt');
+    const poolCount = countItems(options.pool);
+    const candidateCount = countItems(options.candidates);
+    mkdirSync(workDir, { recursive: true });
+    if (poolCount === 0 || candidateCount === 0) {
+        const reason = noContentReason(workDir, runDate, poolCount);
+        const body = `# Daily run ${runDate} — no content\n\n${reason}\n\nNo article, audio or publish\nartifact was produced; nothing was marked used.\n`;
+        writeFileSync(reportMd, body);
+        writeFileSync(summary, `${reason}\n`);
+        return { noContent: true, reason, report: reportMd };
     }
+    if (existsSync(reportMd) && !reportIsNoContent(summary)) {
+        return { noContent: false, report: reportMd, cached: true };
+    }
+    if (candidateCount === undefined) {
+        const reason = 'run-report: no candidates.json and no pool count — nothing to report';
+        writeFileSync(summary, `${reason}\n`);
+        return { noContent: true, reason, report: '' };
+    }
+    const cands = join(workDir, '21-plan', `${runDate}_19_run-report_episode-plan.json`);
+    const reportJson = join(workDir, `${runDate}_19_run-report_report.json`);
+    mkdirSync(dirname(cands), { recursive: true });
+    const candidates = options.candidates as string;
+    const parsed = parseJson(readFileSync(candidates, 'utf-8')) as { metadata?: { docs?: unknown } };
+    writeFileSync(cands, `${JSON.stringify((parsed.metadata?.docs ?? []) as unknown, null, 2)}`);
+    // Plugin env paths must be absolute: plugins run with cwd = their package dir, so a relative
+    // workDir silently misses every best-effort read.
+    const absWorkDir = resolve(workDir);
+    const env: Record<string, string> = {
+        QC_MIN_QUALITY: options.qcMinQuality ?? '',
+        QC_MIN_IMPORTANCE: options.qcMinImportance ?? '',
+        QC_MIN_URGENCY: options.qcMinUrgency ?? '',
+        QC_MIN_IMPACT: options.qcMinImpact ?? '',
+        NEWS_REPORT_REJECTED_FILE: join(
+            absWorkDir,
+            '21-plan',
+            `${runDate}_04_quality-control-content_candidates.rejected.json`,
+        ),
+        NEWS_REPORT_TIMING_FILE: join(absWorkDir, 'step-timing.json'),
+        NEWS_REPORT_QC_FILE: join(absWorkDir, '30-audio', `${runDate}_11_generate_content.json`),
+        NEWS_REPORT_PLAN_AUDIT_FILE: join(absWorkDir, '21-plan', `${runDate}_03_plan_plan.json.audit.json`),
+        NEWS_REPORT_BLENDED_FILE: join(absWorkDir, '10-ingest', `${runDate}_02_collect_blended.json`),
+        NEWS_REPORT_SCRIPT_FILE: join(absWorkDir, '24-script', `${runDate}_08_script_content.json`),
+        NEWS_REPORT_DATE: runDate,
+    };
+    const previous = new Map<string, string | undefined>();
+    for (const [key, value] of Object.entries(env)) {
+        previous.set(key, process.env[key]);
+        process.env[key] = value;
+    }
+    let code: number;
+    try {
+        code = await runInvoke({
+            plugin: NEWS_REPORT_PLUGIN,
+            inPath: cands,
+            outPath: reportJson,
+            ...(options.pluginsPath === undefined || options.pluginsPath === ''
+                ? {}
+                : { pluginsPath: [options.pluginsPath] }),
+        });
+    } finally {
+        for (const [key, value] of previous) {
+            if (value === undefined) delete process.env[key];
+            else process.env[key] = value;
+        }
+    }
+    if (code !== 0) throw new Error(`${NEWS_REPORT_PLUGIN} exited ${code}`);
+    const parsedReport = parseJson(readFileSync(reportJson, 'utf-8')) as { body?: unknown };
+    if (typeof parsedReport.body !== 'string') throw new Error(`${reportJson} has no string body`);
+    writeFileSync(reportMd, parsedReport.body);
+    writeFileSync(summary, `${candidateCount} items planned\n`);
+    return { noContent: false, report: reportMd };
 }
 
 /**
@@ -657,7 +681,10 @@ async function runReportAction(options: RunReportOptions): Promise<void> {
  * DAG node needs as a single `kk` command (R7/AC4).
  */
 export function registerDailyCommand(program: Command): void {
-    const daily = program.command('daily').description('Run the daily AI-voice pipeline steps');
+    const daily = program
+        // Hidden compatibility route (ADR-037, task 0369 R5): `kk news` is the visible noun.
+        .command('daily', { hidden: true })
+        .description('Run the daily AI-voice pipeline steps');
 
     daily
         .command('prepare')

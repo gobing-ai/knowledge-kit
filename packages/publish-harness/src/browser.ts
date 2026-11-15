@@ -87,6 +87,32 @@ export interface ChannelBrowserConfig {
      * fact. No channel implements it yet.
      */
     readIdentity?: (page: Page) => Promise<string | null>;
+    /**
+     * Optional session-artifact hooks for channels whose session lives in a captured
+     * `storageState` file rather than the profile's own cookie store (`wechatmp-pub`, 0371).
+     * Both are no-ops when absent, so a channel that keeps its session in the profile is untouched.
+     */
+    sessionState?: ChannelSessionStateHooks;
+}
+
+/**
+ * The two points a `storageState` channel needs inside {@link runProfileCli}'s session verbs: the
+ * authenticated page (to capture the state the profile cannot keep) and the freshly restored
+ * context (to re-inject it before navigation). A hook throw fails the verb: a capture that did not
+ * land must never report a verified login.
+ */
+export interface ChannelSessionStateHooks {
+    /** Runs on the page the readiness predicate accepted, before the context closes. */
+    onAuthenticated?: (handle: ChannelSessionHandle) => Promise<void>;
+    /** Runs on the launched context before `open` navigates; a throw closes it and refuses. */
+    onOpen?: (handle: ChannelSessionHandle) => Promise<void>;
+}
+
+/** One session hook's handle: the live context, its page, and the profile the verb resolved. */
+export interface ChannelSessionHandle {
+    context: BrowserContext;
+    page: Page;
+    profileDir: string;
 }
 
 /** Outcome of a channel session check: what was observed, or the refusal reason. */
@@ -466,6 +492,18 @@ export async function openChannelSession(
         return 1;
     }
     const page = context.pages()[0] ?? (await context.newPage());
+    const onOpen = config.sessionState?.onOpen;
+    if (onOpen !== undefined) {
+        try {
+            await onOpen({ context, page, profileDir: request.profileDir });
+        } catch (error) {
+            // A channel whose session lives outside the profile cannot restore one it does not
+            // have: close the fresh context and refuse instead of showing a signed-out window.
+            await context.close().catch(() => {});
+            stdout(`${config.channel} profile open failed: ${errorMessage(error)}`);
+            return 1;
+        }
+    }
     try {
         await page.goto(request.url, { waitUntil: 'commit', timeout: DEFAULT_OPEN_NAV_TIMEOUT_MS });
     } catch (error) {
@@ -476,6 +514,64 @@ export async function openChannelSession(
     });
     stdout(`${config.channel} profile open closed: ${request.profileDir}`);
     return 0;
+}
+
+/**
+ * Headed login for a caller that needs the authenticated page (bot-mode facts, or a channel whose
+ * session lives in a captured `storageState` — 0371). The readiness predicate gates the capture
+ * hook, and a close failure after a landed capture stays a success: the captured state is already
+ * durable, so a shutdown error must not turn a verified login into a retryable failure.
+ */
+async function loginWithAuthenticatedPage(
+    config: ChannelBrowserConfig,
+    opts: {
+        profileDir: string;
+        url: string;
+        timeoutMs: number;
+        launcher: BrowserLauncher;
+        /** Bot mode also records the session facts the `kk bot` parent persists. */
+        captureFacts: boolean;
+    },
+): Promise<{ expiresAt?: string; identity?: string }> {
+    const context = await opts.launcher.launch({ profileDir: opts.profileDir, headless: false });
+    // Only a channel hook capture is durable enough to excuse a close failure; a bot-mode login
+    // with no hook keeps upstream's behavior, where a shutdown error fails the login.
+    const sessionCaptured = config.sessionState?.onAuthenticated !== undefined;
+    let captured = false;
+    let facts: { expiresAt?: string; identity?: string } = {};
+    try {
+        const page = context.pages()[0] ?? (await context.newPage());
+        await page.goto(opts.url);
+        if (!(await waitUntil(() => Promise.resolve(config.isAuthenticated(page)), opts.timeoutMs))) {
+            throw new Error(
+                `Authentication was not confirmed within ${opts.timeoutMs}ms — the profile's site session has likely ` +
+                    'expired or the sign-in was not completed: run the login command again to sign in again.',
+            );
+        }
+        await config.sessionState?.onAuthenticated?.({ context, page, profileDir: opts.profileDir });
+        captured = sessionCaptured;
+        if (opts.captureFacts) {
+            facts = {
+                ...(await captureSessionFacts(context, config.homeUrl)),
+                ...(config.readIdentity === undefined
+                    ? {}
+                    : { identity: await readIdentityOrUndefined(config.readIdentity, page) }),
+            };
+        }
+    } finally {
+        try {
+            await context.close();
+        } catch {
+            // Before the capture landed the original failure is the operator's answer, so a shutdown
+            // error is dropped rather than masking it.
+            if (captured) {
+                echoError(
+                    `${config.channel} browser context close failed after the authenticated session capture; saved state preserved`,
+                );
+            }
+        }
+    }
+    return facts;
 }
 
 /**
@@ -563,11 +659,14 @@ export async function runProfileCli(
             )}s for the signed-in state`,
         );
         try {
-            // Bot mode (--url given by the `kk bot` parent) needs the context after the readiness
-            // predicate passes: `withProfilePage` is the same package's scoped opener, one headed
-            // launch, callback before the guaranteed close — `loginWithProfile` returns void and
-            // closes internally, so the parent would never see the cookie jar.
-            if (url === undefined) {
+            // Bot mode (--url given by the `kk bot` parent) and a channel that captures its own
+            // session state both need the context after the readiness predicate passes. Bot mode
+            // cannot use `loginWithProfile` (it returns void and closes internally, so the parent
+            // would never see the cookie jar), and a capture hook must run on the accepted page
+            // and survive a shutdown error once it landed — `openPersistentBrowser` gives that
+            // caller-owned scope.
+            const captureFacts = url !== undefined;
+            if (!captureFacts && config.sessionState?.onAuthenticated === undefined) {
                 await loginWithProfile({
                     profileDir,
                     url: config.homeUrl,
@@ -578,23 +677,15 @@ export async function runProfileCli(
                 stdout(`${config.channel} profile login verified: ${profileDir}`);
                 return 0;
             }
-            const facts = await withProfilePage(
-                {
-                    profileDir,
-                    headless: false,
-                    url,
-                    isAuthenticated: config.isAuthenticated,
-                    timeoutMs: loginTimeoutMs,
-                    launcher,
-                },
-                async ({ context, page }) => ({
-                    ...(await captureSessionFacts(context, config.homeUrl)),
-                    ...(config.readIdentity === undefined
-                        ? {}
-                        : { identity: await readIdentityOrUndefined(config.readIdentity, page) }),
-                }),
-            );
+            const facts = await loginWithAuthenticatedPage(config, {
+                profileDir,
+                url: url ?? config.homeUrl,
+                timeoutMs: loginTimeoutMs,
+                launcher,
+                captureFacts,
+            });
             stdout(`${config.channel} profile login verified: ${profileDir}`);
+            if (url === undefined) return 0;
             // The canonical, plugin-owned default URL is the configured home page — never the
             // supplied URL, whose query must not persist. The optional facts are the parent's only
             // source for a bot's expiry and identity; invalid values are dropped by its parser.

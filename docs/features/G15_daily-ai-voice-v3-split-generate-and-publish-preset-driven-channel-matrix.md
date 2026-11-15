@@ -13,7 +13,7 @@ updated_at: "2026-11-05T08:27:21.806Z"
 
 ## Goal
 
-Replace the monolithic `kk-daily-ai-voice2` DAG with two workflows joined by a frozen `bundle.json`: `kk-daily-ai-voice3` (`plugins/kk/workflows/kk-daily-ai-voice3.yaml` — generate: topic → QC/translate → drafts → audio/images → bundle) and `kk-daily-publish3` (`plugins/kk/workflows/kk-daily-publish3.yaml` — publish: plan → check → send per window → classify → report). The channel matrix moves into a publish preset selected from `~/.config/kk/config.yaml`, every target can run `off | dummy | draft | live`, and publishing follows three windows (D4). The two publish windows are installed as `kk schedule render` templates (`kk-daily-publish3-cn-peak`, `kk-daily-publish3-overseas`). Design: `docs/design/kk-daily-ai-voice3.md` (operator decisions D1–D4, 2026-10-22). voice2 stays production until shadow cut-over.
+Replace the monolithic `kk-daily-ai-voice2` DAG with two workflows joined by a frozen `bundle.json`: `kk-daily-ai-voice3` (retired in 0372; now `kk-news-generate`, generate: topic → QC/translate → drafts → audio/images → bundle) and `kk-daily-publish3` (retired in 0372; now `kk-publish`, publish: plan → check → send per window → classify → report). The channel matrix moves into a publish preset selected from `~/.config/kk/config.yaml`, every target can run `off | dummy | draft | live`, and publishing follows three windows (D4). The two publish windows are installed as `kk schedule render` templates (`kk-daily-publish3-cn-peak`, `kk-daily-publish3-overseas`). Design: `docs/design/kk-daily-ai-voice3.md` (operator decisions D1–D4, 2026-10-22). voice2 stays production until shadow cut-over.
 
 ## Scope
 
@@ -21,8 +21,8 @@ Replace the monolithic `kk-daily-ai-voice2` DAG with two workflows joined by a f
 
 - `kk publish plan|check|send` generalized from the kk-itc machinery (`itc-publish.ts`, `itc-plan.ts`), preset targets with `operation`, `variant`, `tier`, `window`, `mode`, `required`.
 - Dispatcher-level `dummy` mode: synthetic receipt `{ ok: true, effect: "none", dummy: true }`, no plugin spawn.
-- `kk-daily-publish3.yaml` with three windows: `after-generate` (drafts + owned T0), `cn-peak` (09:00 Asia/Shanghai, no-draft domestic live), `overseas-rss` (07:00 PDT behind the podcast RSS gate, with `diagnose` on a miss).
-- `kk-daily-ai-voice3.yaml` generate workflow emitting `bundle.json`; zh variants for every channel (D3).
+- The publish workflow (retired in 0372) with three windows: `after-generate` (drafts + owned T0), `cn-peak` (09:00 Asia/Shanghai, no-draft domestic live), `overseas-rss` (07:00 PDT behind the podcast RSS gate, with `diagnose` on a miss).
+- The generate workflow (retired in 0372) emitting `bundle.json`; zh variants for every channel (D3).
 - Session-preflight probes derived from enabled targets; `publish-classify --fold-tail` split.
 - Stable approval/monitoring surface: `publish-plan.json` approval/status, receipt schema, `publish-events.jsonl`, `bundle.runs[]`.
 - Schedule templates for the cn-peak and overseas windows (rendered by `kk schedule render`; installing them stays an operator action).
@@ -97,7 +97,7 @@ Feature: Daily AI Voice v3: split generate and publish, preset-driven channel ma
     Then their payload files are byte-identical to before
 
   Scenario: R11 — Channel enablement no longer lives in the generate workflow
-    Given kk-daily-ai-voice3.yaml
+    Given the daily generate workflow
     When its nodes are inspected
     Then no node names a publish plugin and only pool-gate carries the pool-count guard
 

@@ -2,6 +2,12 @@ import { createHash } from 'node:crypto';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 
+// 0361 R3: the config-path convention (with its `~` expansion) is neutral — it lives in the publish
+// core and is re-exported here under the ITC name the existing callers use.
+import { expandHome, resolveConfigPath as resolveItcConfigPath } from './publish-core';
+
+export { resolveItcConfigPath };
+
 /**
  * ITC configuration, workspace composition and the frozen effective-options snapshot (0303 / G21).
  *
@@ -11,7 +17,16 @@ import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
  * before any workspace mutation, naming the key without echoing values.
  */
 
-/** The workflows.kk-itc block this task owns. Anything else in the config is left untouched. */
+/**
+ * The two block names this task reads: the article workflow's own block (0368) and the older
+ * `workflows.kk-itc` it replaces. The older name is not renamed or migrated — a config that only
+ * carries it is read exactly as before (R6).
+ */
+export const ARTICLE_WORKFLOW_BLOCK = 'kk-article-generate';
+/** The pre-0368 block name: read as a fallback when the article block is absent, never renamed. */
+export const ITC_WORKFLOW_BLOCK = 'kk-itc';
+
+/** The `workflows.<name>` block this task owns. Anything else in the config is left untouched. */
 export interface ItcConfigBlock {
     writer?: 'itc-generating' | 'topic';
     playbook?: 'generic' | 'english' | 'wechat';
@@ -177,17 +192,6 @@ export function slugifyTopicName(name: string): string | null {
     return slug;
 }
 
-/**
- * Expand ONLY a leading `~`/`$HOME` prefix (the forms the kk config examples use); any other
- * `$`/backtick sequence — including an embedded or `$HOME`-containing literal — stays as data.
- */
-function expandHome(value: string, homeDir: string): string {
-    if (value === '~' || value === '$HOME') return homeDir;
-    if (value.startsWith('~/')) return join(homeDir, value.slice(2));
-    if (value.startsWith('$HOME/')) return join(homeDir, value.slice('$HOME/'.length));
-    return value;
-}
-
 /** Canonical JSON with recursively sorted keys, so the digest never depends on insertion order. */
 function canonicalJson(value: unknown): string {
     if (value === null || typeof value !== 'object') return JSON.stringify(value ?? null);
@@ -203,15 +207,9 @@ export function digestItcOptions(options: Omit<ItcEffectiveOptions, 'optionsDige
     return createHash('sha256').update(canonicalJson(options)).digest('hex');
 }
 
-/** `KK_CONFIG` or `$HOME/.config/kk/config.yaml` — the ONE kk config path convention. */
-export function resolveItcConfigPath(env: Record<string, string | undefined>, homeDir: string): string {
-    const explicit = env.KK_CONFIG;
-    if (explicit !== undefined && explicit.trim() !== '') return expandHome(explicit.trim(), homeDir);
-    return join(homeDir, '.config', 'kk', 'config.yaml');
-}
-
 /**
- * Parse and strictly validate the `workflows.kk-itc` block.
+ * Parse and strictly validate the article workflow's block — `workflows.kk-article-generate`, falling
+ * back to `workflows.kk-itc` when the new name is absent (0368 R6).
  *
  * A missing file is an empty block (compiled defaults). A malformed file, an unknown declared key,
  * or a wrong-typed value throws {@link ItcConfigInvalidError} naming the key — never the value.
@@ -247,19 +245,27 @@ export async function readItcConfigBlock(
     if (workflows === null || typeof workflows !== 'object' || Array.isArray(workflows)) {
         throw new ItcConfigInvalidError("config key 'workflows' must be a mapping");
     }
-    const block = (workflows as Record<string, unknown>)['kk-itc'];
+    // 0368 R6: `workflows.kk-article-generate` is read first and falls back to `workflows.kk-itc`
+    // when the new block is absent, so an existing user config keeps working byte for byte. No key
+    // is renamed, and a config that declares the new block never has the old one read beside it.
+    const byName = workflows as Record<string, unknown>;
+    const blockName = byName[ARTICLE_WORKFLOW_BLOCK] !== undefined ? ARTICLE_WORKFLOW_BLOCK : ITC_WORKFLOW_BLOCK;
+    const block = byName[blockName];
     if (block === undefined) return {};
     if (block === null || typeof block !== 'object' || Array.isArray(block)) {
-        throw new ItcConfigInvalidError("config key 'workflows.kk-itc' must be a mapping");
+        throw new ItcConfigInvalidError(`config key 'workflows.${blockName}' must be a mapping`);
     }
-    return validateItcBlock(block as Record<string, unknown>);
+    return validateItcBlock(block as Record<string, unknown>, blockName);
 }
 
-function validateItcBlock(raw: Record<string, unknown>): ItcConfigBlock {
+function validateItcBlock(
+    raw: Record<string, unknown>,
+    block: typeof ITC_WORKFLOW_BLOCK | typeof ARTICLE_WORKFLOW_BLOCK = ITC_WORKFLOW_BLOCK,
+): ItcConfigBlock {
     for (const key of Object.keys(raw)) {
         if (!ITC_KEYS.has(key)) {
             throw new ItcConfigInvalidError(
-                `config key 'workflows.kk-itc.${key}' is not a declared ITC setting (allowed: ${[...ITC_KEYS].join(', ')})`,
+                `config key 'workflows.${block}.${key}' is not a declared ITC setting (allowed: ${[...ITC_KEYS].join(', ')})`,
             );
         }
     }
@@ -269,7 +275,7 @@ function validateItcBlock(raw: Record<string, unknown>): ItcConfigBlock {
         if (value === undefined) return undefined;
         if (typeof value !== 'string' || !allowed.has(value)) {
             throw new ItcConfigInvalidError(
-                `config key 'workflows.kk-itc.${key}' must be one of ${[...allowed].join('|')}`,
+                `config key 'workflows.${block}.${key}' must be one of ${[...allowed].join('|')}`,
             );
         }
         return value as T;
@@ -278,7 +284,7 @@ function validateItcBlock(raw: Record<string, unknown>): ItcConfigBlock {
         const value = raw[key];
         if (value === undefined) return undefined;
         if (typeof value !== 'boolean') {
-            throw new ItcConfigInvalidError(`config key 'workflows.kk-itc.${key}' must be a boolean`);
+            throw new ItcConfigInvalidError(`config key 'workflows.${block}.${key}' must be a boolean`);
         }
         return value;
     };
@@ -286,7 +292,9 @@ function validateItcBlock(raw: Record<string, unknown>): ItcConfigBlock {
         const value = raw[key];
         if (value === undefined) return undefined;
         if (typeof value !== 'string' || !isSafeSlug(value)) {
-            throw new ItcConfigInvalidError(`config key 'workflows.kk-itc.${key}' must be a lowercase hyphenated slug`);
+            throw new ItcConfigInvalidError(
+                `config key 'workflows.${block}.${key}' must be a lowercase hyphenated slug`,
+            );
         }
         return value;
     };
@@ -310,7 +318,7 @@ function validateItcBlock(raw: Record<string, unknown>): ItcConfigBlock {
             maxRevisions > 10
         ) {
             throw new ItcConfigInvalidError(
-                "config key 'workflows.kk-itc.max_revisions' must be an integer from 0 to 10",
+                `config key 'workflows.${block}.max_revisions' must be an integer from 0 to 10`,
             );
         }
         out.max_revisions = maxRevisions;
@@ -323,16 +331,16 @@ function validateItcBlock(raw: Record<string, unknown>): ItcConfigBlock {
     const workspace = raw.workspace;
     if (workspace !== undefined) {
         if (workspace === null || typeof workspace !== 'object' || Array.isArray(workspace)) {
-            throw new ItcConfigInvalidError("config key 'workflows.kk-itc.workspace' must be a mapping");
+            throw new ItcConfigInvalidError(`config key 'workflows.${block}.workspace' must be a mapping`);
         }
         const ws = workspace as Record<string, unknown>;
         for (const key of Object.keys(ws)) {
             if (key !== 'dated') {
-                throw new ItcConfigInvalidError(`config key 'workflows.kk-itc.workspace.${key}' is not declared`);
+                throw new ItcConfigInvalidError(`config key 'workflows.${block}.workspace.${key}' is not declared`);
             }
         }
         if (ws.dated !== undefined && typeof ws.dated !== 'boolean') {
-            throw new ItcConfigInvalidError("config key 'workflows.kk-itc.workspace.dated' must be a boolean");
+            throw new ItcConfigInvalidError(`config key 'workflows.${block}.workspace.dated' must be a boolean`);
         }
         out.workspace = ws.dated === undefined ? {} : { dated: ws.dated };
     }
@@ -340,18 +348,18 @@ function validateItcBlock(raw: Record<string, unknown>): ItcConfigBlock {
     const seo = raw.seo;
     if (seo !== undefined) {
         if (seo === null || typeof seo !== 'object' || Array.isArray(seo)) {
-            throw new ItcConfigInvalidError("config key 'workflows.kk-itc.seo' must be a mapping");
+            throw new ItcConfigInvalidError(`config key 'workflows.${block}.seo' must be a mapping`);
         }
         const seoRecord = seo as Record<string, unknown>;
         for (const key of Object.keys(seoRecord)) {
             if (key !== 'mode') {
-                throw new ItcConfigInvalidError(`config key 'workflows.kk-itc.seo.${key}' is not declared`);
+                throw new ItcConfigInvalidError(`config key 'workflows.${block}.seo.${key}' is not declared`);
             }
         }
         const mode = seoRecord.mode;
         if (mode !== undefined) {
             if (typeof mode !== 'string' || !SEO_MODES.has(mode)) {
-                throw new ItcConfigInvalidError("config key 'workflows.kk-itc.seo.mode' must be one of off|handoff");
+                throw new ItcConfigInvalidError(`config key 'workflows.${block}.seo.mode' must be one of off|handoff`);
             }
             out.seo = { mode: mode as 'off' | 'handoff' };
         } else {

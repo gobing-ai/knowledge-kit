@@ -4,11 +4,17 @@
     "targets": [
         {
             "plugin": "juejin-pub",
-            "profile": "article"
+            "profile": "article",
+            "variant": "article",
+            "tier": 0,
+            "required": true
         },
         {
             "plugin": "infoq-pub",
-            "profile": "article"
+            "profile": "article",
+            "variant": "article",
+            "tier": 0,
+            "required": true
         }
     ]
 }

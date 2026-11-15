@@ -12,7 +12,7 @@ import { waitUntil } from '@gobing-ai/publish-harness/browser';
 
 /**
  * Connect faults this origin produces intermittently (2026-10-16: `net::ERR_TIMED_OUT` at the
- * publish page; 2026-10-13: the preflight's `Timeout 30000ms exceeded — waiting until "load"`).
+ * publish page; 2026-10-13: the readiness visit's `Timeout 30000ms exceeded — waiting until "load"`).
  * One retry absorbs the flake; a second failure is reported as it is, so a real outage still fails.
  */
 const TRANSIENT_NAVIGATION =
@@ -201,7 +201,7 @@ export function wrapPlaywrightPage(raw: unknown, shadow?: ShadowProbe): XhsPage 
     return {
         // `domcontentloaded`, never Playwright's `load` default: the console keeps long-lived
         // subresources open, so a `load` wait turns a healthy visit into a timeout (2026-10-13
-        // preflight). Pinned here once, the way wechatmp-pub/src/page.ts already pins it.
+        // readiness visit). Pinned here once, the way wechatmp-pub/src/page.ts already pins it.
         goto: async (url, options) => {
             const navigate = (): Promise<unknown> => pw.goto(url, { waitUntil: 'domcontentloaded', ...options });
             try {

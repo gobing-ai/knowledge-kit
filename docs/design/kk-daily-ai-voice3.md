@@ -3,6 +3,13 @@
 > **Status:** SHIPPED as designed (ADR-043; tasks 0321–0327 closed 2026-10-22/23 — T-a…T-e, publish3 and voice3).
 > voice2 (`kk-daily-ai-voice2.yaml`) is untouched by the batch and remains the installed daily path until
 > the operator installs the two publish3 schedules (§8 step 3); nothing in this design auto-flips that.
+>
+> **Superseded (0369 → retired 0372):** the publish3 DAG is replaced by the nine-node
+> `plugins/kk/workflows/kk-publish.yaml` (G61, task 0366) and the voice3 DAG by
+> `plugins/kk/workflows/kk-news-generate.yaml`. The scheduled lines are now
+> `kk news generate --publish` and `kk news publish --window <w> --unattended`; the retired launchers
+> and workflows were deleted in 0372 (`docs/design/content-pipeline-consolidation.md` owns the
+> mapping). Both pairs produce the same `4-publish/` outcome per window.
 
 ## 1. Why a voice3
 
@@ -36,10 +43,10 @@ kk-daily-ai-voice3 (generate, kind: dag, fail-fast)          kk-daily-publish3 (
 | Publish timing | generate 04:30, publish at audience peak or chained | same run, same moment |
 | Failure semantics | generate = fail-fast; publish = per-target receipts, exit 0 unless the bundle is invalid | one DAG mixes both; needs `onError: continue` + soft stages everywhere |
 | Testability | publish3 runs against a fixture bundle with `mode: dummy` targets in CI | needs a full generation to reach any publish node |
-| Live approval | one `pause` node in publish3 only when a target is `live` (kk-itc-publish-tail pattern) | review pause mixes content approval and send approval |
+| Live approval | one `pause` node in publish3 only when a target is `live` (the retired ITC publish-tail pattern) | review pause mixes content approval and send approval |
 | Cost | a versioned bundle contract; two runs to trace (linked by `parentRunId`) | none |
 
-The cost is real but already paid once: `kk-itc` + `kk-itc-publish-tail` use exactly this seam
+The cost is real but already paid once: the retired `kk-itc` DAG used exactly this seam
 (`4-publish/publish-plan.json`, `itc-check-targets`, `itc-send-targets --retry`, frozen
 `parentRunId`, "never resend an `uncertain` live receipt"). voice3 should **reuse and generalize that
 machinery, not invent a second one** (task T-a, §10).
@@ -99,7 +106,7 @@ Changes against the proposed flow are marked ▲.
 
 | Phase | Nodes (one `kk` command or one `agent.run` each) | Output in the bundle |
 | --- | --- | --- |
-| 0 prepare | `preflight` (stages exist in the installed runner) · `prepare` · read work_dir/run_date | — |
+| 0 prepare | `executor-probe` (one real prompt; a dead executor fails here, ADR-053 §5 — the sole root node) · `preflight` (stages exist in the installed runner) · `prepare` · read work_dir/run_date | — |
 | 1 选题 | `extract` → `plan` → `qc-content` → `select` (ledger at QC, unchanged) | `plan.json` |
 | 2 选题精选 (curate) ▲ | `script-style` (snapshot skill) → `curate` (editorial select + title dedup) → `curate-check` → `curate-fix` (if errors) → `curate-final` (final validation / fallback) | `21-plan/plan.json`, `curate_excluded.json` |
 | 3 初稿与渲染 ▲ | `script-write` (master plan with speech, cover brief, card plan, social) → `script-check` → `script-write-fix` (if errors) → `script` (dailynews-gen) → `editorial-render` (deterministic article body, cover brief, cards, social) · `show-notes` · advisory `editorial-judge` (news-balance rubric) | `24-script/script-write_plan.json`, `22-article/*`, `23-cover/*`, `25-xhs/*`, `26-social/*` |
@@ -261,6 +268,14 @@ Tracked as feature **G15** (under G1): T-a → 0321, T-b → 0322, T-c → 0325,
   new `linkedin-pub`, `facebook-pub`, `instagram-pub`.
 - **T-g** agent.run retry in spur, then delete every `-retry` sibling.
 
+**Shipped in 0360 (2026-11-13).** One executor var: `agent` is the single source for every primary
+`agent.run` node, and the retry siblings (`curate-fix`, `script-write-fix`, and the safety machine's
+three retries) declare the literal `agent: inline` with `role: reviewer`, so they resolve by role
+above the primary's rung instead of pinning a second executor. Both nested safety launches and the
+nested publish3 launch forward `agent`. The first node is `executor-probe` — `role: scribe`,
+`agent: ${vars.agent}`, a 120 s bound and the prompt `Reply with exactly: OK`, with no `onError`, so
+a dead executor fails the run at minute 0 instead of at first spend.
+
 ## 11. Migration rehearsal (task 0334) — prepared surface, nothing installed
 
 The voice2→voice3 cutover keeps voice2's production scheduling untouched (D1: voice2 stays
@@ -271,7 +286,7 @@ operator's separate cutover action.
 
 **What ships:**
 
-- **`plugins/kk/scripts/voice3-publish-window.ts`** — the launcher both publish-window cron entries
+- **The retired publish-window launcher** — the script both publish-window cron entries used to
   call. Owns the problems the old inline entries had (F08/F09/F10): the LA date math lives in
   TypeScript because a crontab command ends at the first unescaped `%` (`date +%F` silently
   truncated the old entry); the bundle is the GENERATION artifact at
@@ -295,13 +310,10 @@ operator's separate cutover action.
 **Rehearsal run:**
 
 ```bash
-# generation + after-generate publish in one throwaway run — dummy receipts, nothing live,
-# nothing installed; workspace stays under the kk-daily-ai-voice2 namespace (F08 admission)
-spur workflow run plugins/kk/workflows/kk-daily-ai-voice3.yaml \
-  --vars '{"auto_publish":"true","publish_preset":"daily-ai-voice-migration","publish_dummy":"true"}'
+# generation preflight — print the planned launch without starting the workflow
+kk news generate --dry-run
 # window rehearsal without a generation run — point --run-date at a recorded day dir
-bun plugins/kk/scripts/voice3-publish-window.ts --window cn-peak --run-date <YYYYMMDD> \
-  --preset daily-ai-voice-migration --dry-run
+kk news publish --window cn-peak --run-date <YYYYMMDD> --preset daily-ai-voice-migration --dry-run
 ```
 
 **Scope and locale loss (D3 reaffirmed).** The accepted scope stays zh-only: the audio is zh, so
@@ -330,8 +342,8 @@ variant bytes and safety hashes still match; empty variants and `--dummy` never 
 `--yes` explicitly accepts that dependency, while a non-TTY without it stops and prints the generate
 command. An invalid existing bundle is never regenerated automatically. Select another existing
 window with `--window cn-peak` or `--window overseas-rss`; their date, RSS and live-confirmation
-rules remain in `voice3-publish-window.ts` and publish3. Historical gaps never cause today's content
-to be substituted.
+rules stayed in the retired publish-window launcher and publish3; `kk news publish` owns them now.
+Historical gaps never cause today's content to be substituted.
 
 Validation defaults to quick mode: only the required workflow/config/launcher files, the dated
 `bundle.json`, and every variant path it declares must exist. Quick mode performs no schema/hash/

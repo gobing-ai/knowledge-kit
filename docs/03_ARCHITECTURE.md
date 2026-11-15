@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.44.0
+version: 2.45.0
 created_at: 2026-07-22
-updated_at: 2026-11-10
+updated_at: 2026-11-13
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -121,8 +121,10 @@ ADR-009); `plugins/kk` is skipped. Default runtime discovery is a **multi-root m
 - **Lint / format:** Biome **2.5.15** (root `devDependency` + `.prototools`).
 - **CLI entry:** `apps/cli/src/index.ts` → `process.exit(await main())` when `import.meta.main`.
   `main(argv) → number` (ADR-010 R3). `createProgram()` stays side-effect-free.
-- **Command tree:** `apps/cli/src/commands/<noun>.ts` exports `registerXCommand`; `createProgram()`
-  only wires name (`kk`), version, global `--verbose`, and those register calls (ADR-010 R2).
+- **Command tree:** `apps/cli/src/commands/<noun>.ts` exports `registerXCommand`; `createProgram()` in
+  `apps/cli/src/cli.ts` only wires name (`kk`), version, global `--verbose`, and those register calls
+  (ADR-010 R2). `article` and `news` attach from one `registerContentVerbs(program, noun, defaultType)`
+  call each (`apps/cli/src/commands/content.ts`, 0363).
 - **Output:** product messages go through the ts-utils seam (`echo` / `echoError`, adapted by
   `apps/cli/src/output.ts`); structured diagnostics use ts-infra (`initializeLogger` once per
   diagnostic-emitting process, `getLogger` at call sites) (ADR-015).
@@ -362,6 +364,8 @@ Canonical paths are `kk executor run` / `kk executor fan-in` / `kk executor fan-
 `kk --help`. ADR-011's "exactly two first-layer nouns" was amended 2026-09-18: `kk stage <stage>
 [args…]` is a **third** first-layer noun that runs a `kk-workflow-stages.ts` stage for workflow
 shell steps (`docs/04_DESIGN.md` §1.8). It is a deterministic step runner, not a plugin operation.
+ADR-053 adds the content nouns `article` and `news` (the shared verbs, one registration function);
+`kk itc` / `kk daily` stay their routes until the G61 cut-over retires them.
 
 ### Output and diagnostics foundation (ADR-014/ADR-015)
 
@@ -513,8 +517,8 @@ publish-agent → publish-retry → report`.
   profile table, fan-out groups and the report.
 - API and file-cli targets go through `kk executor fan-out` (`--retry-from` once). Browser targets
   loop over `agent.run kk:publish`.
-- `itc-materialize` is the future split point if a second generator ever needs a generic publish
-  workflow.
+- `itc-materialize` is the split point ADR-053 adopts for the generic publish workflow (see
+  Content pipeline consolidation below — accepted design, not yet built).
 - Drafts are the default, and every target's own draft switch is written explicitly (ADR-022).
 
 Full design: `docs/design/kk-itc-end-to-end.md`.
@@ -554,13 +558,14 @@ Invariants, each mechanically checkable:
 
 **Module boundary.** `apps/cli/src/publish-matrix.ts` owns the `publish-matrix-*` stage family
 (plan, check, send, classify, bundle, rss-gate, wait-until), dispatched by
-`apps/cli/src/publish-matrix-stage.ts` beside `itc-stage.ts` and reachable only as
-`kk stage run publish-matrix-*` — no new noun (ADR-037). The send loop is **shared with itc, not
-forked**: `sendRows` in `apps/cli/src/itc-publish.ts` owns resend rules, effect classification and
-receipt writing, and the two callers differ only in receipt key (plugin for itc, target id here),
-where `targetId = id ?? ${plugin}.${slugify(operation)} ?? plugin` lets one plugin hold several
-concurrent receipt keys. `ItcReceiptSchema` is extended additively (`target`, `window`, `dummy`,
-`error`, timestamps), so an itc receipt never changes shape.
+`apps/cli/src/publish-matrix-stage.ts` beside `itc-stage.ts` through `kk stage run
+publish-matrix-*` — the compatibility route; the five named `publish-*` step verbs on `kk article` /
+`kk news` (0364) call the same functions with named flags. The send loop is **shared with itc, not
+forked**: `sendRows` in `apps/cli/src/publish-core.ts` (0361) owns resend rules, effect
+classification and receipt writing, and the two callers differ only in receipt key (plugin for itc,
+target id here), where `targetId = id ?? ${plugin}.${slugify(operation)} ?? plugin` lets one plugin
+hold several concurrent receipt keys. `ItcReceiptSchema` is extended additively (`target`, `window`,
+`dummy`, `error`, timestamps), so an itc receipt never changes shape.
 
 **Engine constraint this layout is shaped around** (§Execution substrate): a DAG node is skipped
 only when *all* its dependencies were skipped, so a conditional node can never gate a chain alone.
@@ -577,6 +582,38 @@ rejected plan gets one `write --fix` pass before the template fallback.
 
 Full design and rollout: `docs/design/kk-daily-ai-voice3.md`; shapes: `docs/04_DESIGN.md`
 §publish-matrix stages.
+
+## Content pipeline consolidation (G61 — ADR-053; surface shipped 0363–0364, workflows accepted design — not yet built)
+
+One content-type registry, one bundle, one plan and one publish core serve every content type; the
+per-type workflows only sequence steps.
+
+- `apps/cli/src/content-types.ts` owns the registry: `ContentTypeSchema` (`workflow`, `writer_skill`,
+  `publish_preset`, `channels`) with built-ins `news` and `itc`, resolution flag →
+  `content_types.<type>` → `workflows.<workflow>.publish_preset` → built-in (per-field merge,
+  `channels` key by key), the writer-skill directory plus `SKILL.md`/`references` digest, and
+  `resolveRun` for `<works>/<workflow>/<run>` (ADR-042/ADR-053 amdt).
+- Nothing in `apps/cli/src/publish-core.ts` imports `./itc-*`; it owns `ReceiptSchema`, the preset
+  dialect and resolver, the plugin probe and `sendRows`. `apps/cli/src/publish-matrix.ts` owns the
+  `publish-matrix-*` plan/check/send/classify family; the five named `publish-*` verbs are thin
+  compositions over it.
+- One `BundleSchema` carries both types (`contentType`, optional `title`/`episode`) and
+  `PublishPlanRowSchema` carries `transport`, `metadata` and `modeSource`; `schemaVersion` stays `1`
+  because every change is additive or a relaxation.
+
+**Invariants**
+
+1. `kk news` rejects `--type` (Commander unknown-option, exit 2); `kk article` resolves it.
+2. An unknown type exits 2 naming the known set and the config path; a `writer_skill` without
+   `SKILL.md` fails by that path.
+3. Every content verb prints exactly one JSON object on stdout; diagnostics go to stderr.
+4. `content_types.<type>.channels` is applied only by the named `publish-plan`; a key matching no
+   preset row exits 2 before any file is written, and `kk stage run publish-matrix-plan` ignores it.
+
+**Not built (accepted design).** The launching `generate` / `publish` verbs with
+`launchWorkflow()`, the workflows `kk-news-generate` / `kk-article-generate` / `kk-publish`, the
+generation step verbs, and the retirement of the publish3 / ITC publish-tail DAGs are tasks
+0365–0369. Shapes: `docs/design/content-pipeline-consolidation.md`; `docs/04_DESIGN.md` §1.14.
 
 ## Multi-root discovery (ADR-012)
 

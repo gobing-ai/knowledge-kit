@@ -47,7 +47,10 @@ async function candidatesAction(options: ItcCandidatesCliOptions): Promise<void>
 
 /** Register the `itc` noun: kk-itc operator helpers that are not workflow stage bodies. */
 export function registerItcCommand(program: Command): void {
-    const itc = program.command('itc').description('IT content authoring (kk-itc) operator helpers');
+    const itc = program
+        // Hidden compatibility route (ADR-037, task 0369 R5): `kk article` is the visible noun.
+        .command('itc', { hidden: true })
+        .description('IT content authoring (kk-itc) operator helpers');
 
     itc.command('candidates')
         .description(

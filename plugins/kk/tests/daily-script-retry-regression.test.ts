@@ -21,25 +21,11 @@ import { expectedItemSections } from '../../../plugins/kk/scripts/daily-stages';
 describe('script/article exclusion divergence regression (0347 F5)', () => {
     const runner = resolve(import.meta.dir, '../scripts/kk-workflow-stages.ts');
     const stagesSource = readFileSync(resolve(import.meta.dir, '../scripts/daily-stages.ts'), 'utf-8');
-    const voice3 = readFileSync(resolve(import.meta.dir, '../workflows/kk-daily-ai-voice3.yaml'), 'utf-8');
 
     it('both script call sites pass DAILYNEWS_CURATE_EXCLUDED to the dailynews-gen validator', () => {
         // script write (4041) + script check (4124) — exactly two: the retry path revalidates
         // through daily-script-check, so a third (or missing) site is the divergence risk again.
         expect(stagesSource.match(/DAILYNEWS_CURATE_EXCLUDED:/g)?.length).toBe(2);
-    });
-
-    it('voice3 script-write-fix pins the exclusion record and revalidates the plan', () => {
-        const fixBlock = voice3.slice(voice3.indexOf('id: script-write-fix'), voice3.indexOf('id: editorial-judge'));
-        const varsLit = (name: string): string => `\${vars.${name}}`;
-        expect(fixBlock).toContain(
-            `--excluded ${varsLit('work_dir')}/21-plan/${varsLit('run_date')}_03_curate_excluded.json`,
-        );
-        expect(fixBlock).toContain(
-            `expectFile: ${varsLit('work_dir')}/24-script/${varsLit('run_date')}_08_script-write_plan.json`,
-        );
-        // The corrected plan is re-checked (editorial-judge and downstream nodes sit behind script-check).
-        expect(voice3).toContain('kk stage daily-script-check');
     });
 
     it('expectedItemSections — article-excluded items drop out of the expected section count', () => {

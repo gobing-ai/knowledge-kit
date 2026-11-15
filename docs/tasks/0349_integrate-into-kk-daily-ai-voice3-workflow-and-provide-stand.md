@@ -4,7 +4,7 @@ name: Integrate into kk-daily-ai-voice3 workflow and provide standalone mock tes
 status: done
 template: feature-impl
 created_at: 2026-11-10T04:05:28.049Z
-updated_at: "2026-11-11T00:20:41.824Z"
+updated_at: "2026-11-13T20:29:25.358Z"
 feature_id: L2
 priority: P1
 
@@ -128,6 +128,8 @@ Rationale: R4 needs no code — downstream consumers (daily-stages.ts:1993/:2270
 | R5 — 集成接入 kk-daily-ai-voice3 生成工作流 | MET | test | The daily-cover envelope asserts format daily-news-podcast-cover and style quasi-news-podcast at apps/cli/tests/kk-workflow-stages.test.ts:3934-3942. bun test apps/cli/tests/kk-workflow-stages.test.ts exited 0 with 163 pass and 0 fail. The output name downstream consumers read is unchanged at plugins/kk/scripts/kk-workflow-stages.ts:1043 and plugins/kk/scripts/daily-stages.ts:2270. |
 | R6 — 独立 Mock 新闻驱动封面生成测试与验收 | MET | command | bun plugins/kk/scripts/daily-cover-mock.ts --mock-bg --headline "测试大标题：模型推理能力爆发" --out /tmp/mock-out.png printed composited /tmp/mock-out.png (1344x576, background=mock). sips reported pixelWidth 1344, pixelHeight 576, format png. The same headline is asserted at plugins/kk/tests/daily-cover-mock.test.ts:30-40. bun run gate exited 0 with 4863 pass and 0 fail. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+
+**Evidence correction (2026-11-13):** The historical run-scoped pointer `.spur/run/0349-verify-answer.txt` was LOST when its disposable pipeline worktree was removed. The durable verdict is recorded at `.spur/memory/evidence/0349-verdict.json`.
 
 ### Review
 

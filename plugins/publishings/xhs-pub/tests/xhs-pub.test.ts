@@ -9,7 +9,6 @@ import { kkBrowserLauncher } from '@gobing-ai/publish-harness/browser';
 import {
     type BrowserLauncher,
     BrowserProfileMissingError,
-    LoginTimeoutError,
     type ProfileLaunchRequest,
 } from '@gobing-ai/ts-browser-automation';
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
@@ -17,9 +16,9 @@ import { runInvoke } from '../../../../apps/cli/src/invoke';
 import { type AutomationGuard, CAP_WINDOW_MS, createAutomationGuard } from '../src/automation-guard';
 import {
     BODY_COUNTER_EXPR,
-    CAPTURE_INJECT_EXPR,
     collectionProbeExpr,
     derivePodcastBody,
+    RISK_LEAVES_EXPR,
     VERIFY_BODY_EXPR,
 } from '../src/flow';
 import {
@@ -31,7 +30,6 @@ import {
     main,
     makeDefaultOpenPage,
     type OpenPage,
-    type ProfileSessionCheck,
     processPublishIO,
     validatePublishInput,
     wrapPlaywrightPage,
@@ -41,11 +39,10 @@ import {
     type XhsPage,
 } from '../src/index';
 import { findAttachedSelector, findSelector } from '../src/page';
-import { checkProfileSession, loginProfile, main as profileCheckMain } from '../src/profile-check';
+import { checkProfileSession, main as profileCheckMain } from '../src/profile-check';
 
-// ADR-025: publish runs a 2h-capped automation guard and a headless session preflight, and the
-// CLI `check` command uses the same guard. Both are real side effects, so:
-//  - `makeTransport` stubs them for the flow tests (a default preflight would open a browser);
+// ADR-025: publish and explicit headed checks draw on a 2h-capped automation guard.
+// `makeTransport` stubs the guard for flow tests; every browser is a scripted seam.
 //  - the guard's state file is redirected to a temp path cleared before every test, so the caps
 //    never leak between tests or write into the operator's ~/.config/kk.
 const AUTOMATION_STATE = join(mkdtempSync(join(tmpdir(), 'kk-xhs-guard-')), 'state.json');
@@ -58,22 +55,14 @@ beforeEach(() => {
 /** The allow-all guard for tests that are not exercising the cap itself. */
 const ALLOW_ALL: AutomationGuard = { allow: () => ({ allowed: true, reason: '' }), record: () => undefined };
 
-/** A `verified` preflight: tests not exercising the preflight must never open a browser. */
-const VERIFIED_PREFLIGHT = async (profileDir: string): Promise<ProfileSessionCheck> => ({
-    status: 'verified',
-    profileDir,
-    detail: 'test stub',
-});
-
 /**
- * ADR-025: the publish path is guarded, so every construction goes through here and stubs both
- * seams. A test that wants the real guard or preflight passes them explicitly.
+ * The publish path is guarded; tests opt into the real guard only when exercising its budget.
  */
 function makeTransport(
     driver: 'script' | 'agent' = 'script',
     opts: ConstructorParameters<typeof XhsBrowserTransport>[1] = {},
 ): XhsBrowserTransport {
-    return new XhsBrowserTransport(driver, { automation: ALLOW_ALL, preflight: VERIFIED_PREFLIGHT, ...opts });
+    return new XhsBrowserTransport(driver, { automation: ALLOW_ALL, ...opts });
 }
 
 const tmpRoot = join(process.cwd(), '.works/tmp/test-xhs');
@@ -139,6 +128,8 @@ interface FakeState {
     editorBodyUnits: number | null;
     /** A scripted server response the capture layer reports (risk-control / biz-error scripting). */
     serverCapture: { source: string; text: string } | null;
+    captureBodyNeverEnds?: boolean;
+    captureBodyThrows?: boolean;
     /** Scripted platform-counter reads; null derives from the editor state. */
     counterTitleOverride: string | null;
     counterBodyOverride: string | null;
@@ -183,7 +174,31 @@ function makeFakePage(initial: FakeState) {
     let savedStamp = state.draftSavedStamp ? saveTimestamp() : null;
     const calls: Array<{ op: string; args: unknown[] }> = [];
     let lastShadowLabel: string | null = null;
-    let contextResponseHandler: ((payload: { status(): number; url(): string }) => void) | null = null;
+    const contextResponseHandlers = new Set<(payload: unknown) => void>();
+    const consoleHandlers = new Set<(payload: unknown) => void>();
+    let submitted = false;
+    const emitOutcome = () => {
+        submitted = true;
+        const capture = state.serverCapture;
+        if (capture === null || capture.source === 'toast') return;
+        if (capture.source === 'console') {
+            for (const handler of consoleHandlers) handler({ text: () => capture.text });
+            return;
+        }
+        for (const handler of contextResponseHandlers) {
+            handler({
+                status: () => 200,
+                url: () => 'https://creator.xiaohongshu.com/api/save',
+                request: () => ({ resourceType: () => capture.source }),
+                text: async () => {
+                    if (state.captureBodyNeverEnds) await new Promise(() => {});
+                    if (state.captureBodyThrows) throw new Error('response body unavailable');
+                    await Bun.sleep(1);
+                    return capture.text;
+                },
+            });
+        }
+    };
     let bodyTyped = false;
     // The counter lives on the landing view; the editor replaces the header.
     const counterAttached = () =>
@@ -243,6 +258,7 @@ function makeFakePage(initial: FakeState) {
      * registers, which is what makes the counter/stamp delta the only usable signal.
      */
     const applySaveClick = (label: string) => {
+        if (label === '发布' || DRAFT_LABELS.has(label)) emitOutcome();
         if (!DRAFT_LABELS.has(label)) return;
         state.draftClicked = true;
         // Nothing to persist (an untyped TipTap body, an empty article) leaves the editor open.
@@ -285,6 +301,7 @@ function makeFakePage(initial: FakeState) {
                         // and 写长文's own `暂存离开` (which is NOT in the shadow bar).
                         const draftLabel = [...DRAFT_LABELS].find((label) => selector.includes(label));
                         if (draftLabel !== undefined) applySaveClick(draftLabel);
+                        else if (selector.includes('发布') && !selector.includes('去发布')) emitOutcome();
                         if (selector.includes('新的创作')) state.articleOpen = true;
                         if (selector.includes('上传音频')) state.podcastModal = true;
                         if (selector.includes('去发布')) state.podcastModal = false;
@@ -313,22 +330,27 @@ function makeFakePage(initial: FakeState) {
             if (state.podcastModal && isPodcastAudioInput(selector)) state.podcastAudioAttached = true;
             if (state.podcastModal && isPodcastCoverInput(selector)) state.podcastCoverAttached = true;
             // uploads land on the wire unless a test scripts a missed drop (uploadNeverStarts).
-            if (state.uploadNeverStarts !== true && contextResponseHandler) {
+            if (state.uploadNeverStarts !== true) {
                 for (let i = 0; i < files.length; i += 1) {
-                    contextResponseHandler({
-                        status: () => 200,
-                        url: () => `https://ros-upload.xiaohongshu.com/spectrum/${i}`,
-                    });
+                    for (const handler of contextResponseHandlers) {
+                        handler({ status: () => 200, url: () => `https://ros-upload.xiaohongshu.com/spectrum/${i}` });
+                    }
                 }
             }
         },
         onContextResponse: (handler) => {
             calls.push({ op: 'onContextResponse', args: [] });
-            contextResponseHandler = handler;
+            contextResponseHandlers.add(handler);
         },
-        offContextResponse: () => {
+        offContextResponse: (handler) => {
             calls.push({ op: 'offContextResponse', args: [] });
-            contextResponseHandler = null;
+            contextResponseHandlers.delete(handler);
+        },
+        on: (event, handler) => {
+            if (event === 'console') consoleHandlers.add(handler);
+        },
+        off: (event, handler) => {
+            if (event === 'console') consoleHandlers.delete(handler);
         },
         waitForEvent: async (event, opts) => {
             calls.push({ op: 'waitForEvent', args: [event, opts?.timeout ?? null] });
@@ -350,12 +372,13 @@ function makeFakePage(initial: FakeState) {
             },
         },
         evaluate: async (expression) => {
-            calls.push({ op: 'evaluate', args: [] });
-            // Task 0350: the flow's own read-back probes, dispatched by their sentinel markers.
-            if (expression.includes('kk-capture-inject')) return 'kk-capture-armed';
-            if (expression.includes('kk-capture-read')) {
-                return state.serverCapture === null ? 'kk-capture-none' : JSON.stringify(state.serverCapture);
+            calls.push({ op: 'evaluate', args: [expression] });
+            if (expression.includes('kk-risk-leaves')) {
+                return JSON.stringify(
+                    submitted && state.serverCapture?.source === 'toast' ? [state.serverCapture.text] : [],
+                );
             }
+            // Task 0350: the flow's own read-back probes, dispatched by their sentinel markers.
             if (expression.includes('kk-counter-title')) {
                 if (state.counterTitleOverride !== null) return state.counterTitleOverride;
                 return state.editorTitle === null ? 'kk-counter-none' : `${Math.ceil(state.editorTitle.length / 2)}/20`;
@@ -446,7 +469,7 @@ function makeFakePage(initial: FakeState) {
             return [];
         },
     };
-    return { page, calls };
+    return { page, calls, contextResponseHandlers, consoleHandlers };
 }
 
 function makeOpenPage(state: FakeState) {
@@ -528,6 +551,293 @@ const happy: FakeState = {
     draftNavMissing: false,
     draftEditMissing: false,
 };
+
+describe('0370 — out-of-page capture and one headed visit', () => {
+    test('AC1: every operation and mode leaves page globals untouched and disposes listeners', async () => {
+        await seedImages();
+        await seedMedia();
+        const summary: Array<{ operation: string; mode: string; expressions: number; verdict: boolean }> = [];
+        for (const operation of ['上传图文', '上传视频', '写长文', '发播客'] as const) {
+            for (const mode of ['draft', 'public'] as const) {
+                const fake = makeFakePage({
+                    ...happy,
+                    serverCapture: { source: 'xhr', text: '{"code":0,"note_id":"0370"}' },
+                });
+                const content = modeContent({
+                    images: [{ path: img(0) }, { path: img(1) }],
+                    video: { path: video },
+                    audio: { path: audio },
+                    coverImage: cover,
+                    publishStatus: mode,
+                });
+                const result = await makeTransport('script', {
+                    openPage: async () => ({ page: fake.page, close: async () => {} }),
+                    stepTimeoutMs: 100,
+                    submitSettleMs: 2,
+                    submitAttempts: 1,
+                }).publish({ content, options: { operation } });
+                const expressions = fake.calls
+                    .filter((entry) => entry.op === 'evaluate')
+                    .map((entry) => String(entry.args[0]));
+                summary.push({ operation, mode, expressions: expressions.length, verdict: result.ok });
+                await Bun.write(
+                    join(process.cwd(), '.works/tmp/test-xhs-capture/summary.json'),
+                    JSON.stringify(summary, null, 2),
+                );
+                expect(expressions.join('\n')).not.toMatch(
+                    /XMLHttpRequest|\.fetch\s*=|console\.\w+\s*=|prototype\.(open|send)/,
+                );
+                expect(result.ok).toBe(true);
+                expect(result.metadata?.serverCapture).toEqual({
+                    source: 'xhr',
+                    verdict: 'ok',
+                    code: '0',
+                    noteId: '0370',
+                });
+                expect(fake.contextResponseHandlers.size).toBe(0);
+                expect(fake.consoleHandlers.size).toBe(0);
+            }
+        }
+        expect(summary).toHaveLength(8);
+    }, 30_000);
+
+    test('AC1: context responses delivered at the click override a successful UI and body reads settle', async () => {
+        await seedImages();
+        const fake = makeFakePage({ ...happy, serverCapture: { source: 'fetch', text: '{"code":-9136}' } });
+        const result = await makeTransport('script', {
+            openPage: async () => ({ page: fake.page, close: async () => {} }),
+            stepTimeoutMs: 100,
+            submitSettleMs: 1,
+        }).publish({ content: cardContent() });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('AccountRiskControlError');
+        expect(fake.contextResponseHandlers.size).toBe(0);
+        expect(fake.consoleHandlers.size).toBe(0);
+    });
+
+    test('AC2: one headed launch gates readiness with no preflight and consumes one visit', async () => {
+        await seedImages();
+        const requests: Array<{ profileDir: string; headless: boolean }> = [];
+        const records: string[] = [];
+        const fake = makeFakePage(happy);
+        const launched = makeDefaultOpenPage(async (request) => {
+            requests.push(request);
+            return { pages: () => [{}], close: async () => {} };
+        });
+        const options = {
+            openPage: async (profileDir: string) => {
+                const visit = await launched(profileDir);
+                return { ...visit, page: fake.page };
+            },
+            automation: {
+                allow: () => ({ allowed: true, reason: '' }),
+                record: (event: string) => {
+                    records.push(event);
+                },
+            },
+            preflight: async () => ({
+                status: 'refused' as const,
+                profileDir: PROFILE,
+                detail: 'removed preflight must not run',
+            }),
+            stepTimeoutMs: 100,
+            submitSettleMs: 1,
+        };
+        const result = await new XhsBrowserTransport('script', options).publish({ content: cardContent() });
+        expect(result.ok).toBe(true);
+        expect(requests).toEqual([{ profileDir: PROFILE, headless: false }]);
+        expect(records).toEqual(['publish']);
+    });
+
+    test('AC1: an unfinished body cannot hold a completed UI save past the capture budget', async () => {
+        const fake = makeFakePage({
+            ...happy,
+            captureBodyNeverEnds: true,
+            serverCapture: { source: 'fetch', text: '{"note_id":"never"}' },
+        });
+        const result = await Promise.race([
+            makeTransport('script', {
+                openPage: async () => ({ page: fake.page, close: async () => {} }),
+                stepTimeoutMs: 20,
+                submitSettleMs: 2,
+            }).publish({ content: modeContent({ operation: '写长文' }), options: { operation: '写长文' } }),
+            Bun.sleep(400).then(() => 'body-read-hung'),
+        ]);
+        expect(result).not.toBe('body-read-hung');
+        expect((result as Result).ok).toBe(true);
+        expect(fake.contextResponseHandlers.size).toBe(0);
+    });
+
+    test('AC3: offline checks read expiry without launching or spending the check budget', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-xhs-offline-'));
+        const never: BrowserLauncher = {
+            launch: async () => {
+                throw new Error('offline must not launch');
+            },
+        };
+        const events: string[] = [];
+        const guard: AutomationGuard = {
+            allow: () => {
+                events.push('allow');
+                return { allowed: false, reason: 'spent' };
+            },
+            record: () => {
+                events.push('record');
+            },
+        };
+        const out = createBufferTarget();
+        const err = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stdout: out, stderr: err });
+        try {
+            for (const [name, expiresAt, expected] of [
+                ['future', '2099-01-01T00:00:00.000Z', 'verified'],
+                ['past', '2000-01-01T00:00:00.000Z', 'refused'],
+                ['legacy', undefined, 'verified'],
+                ['absent', undefined, 'refused'],
+            ] as const) {
+                const profileDir = join(dir, name);
+                if (name !== 'absent') {
+                    await mkdir(profileDir);
+                    if (expiresAt)
+                        await Bun.write(
+                            join(profileDir, 'bot.json'),
+                            JSON.stringify({
+                                schemaVersion: 1,
+                                authenticationEvidence: 'site-verified',
+                                defaultUrl: 'https://creator.xiaohongshu.com/publish/publish',
+                                expiresAt,
+                            }),
+                        );
+                }
+                const code = await profileCheckMain(['check', '--profile', profileDir], never, guard);
+                const verdict = JSON.parse(out.text().trim().split('\n').at(-1) ?? '');
+                expect(verdict.status).toBe(expected);
+                expect(code).toBe(expected === 'verified' ? 0 : 1);
+                if (expected === 'verified') expect(verdict.detail).toStartWith('offline:');
+                expect(verdict.detail).toContain(expiresAt ?? (name === 'legacy' ? 'expiry unknown' : profileDir));
+            }
+            const corrupt = join(dir, 'corrupt');
+            await mkdir(corrupt);
+            await Bun.write(join(corrupt, 'bot.json'), 'bad json');
+            expect(await profileCheckMain(['check', '--profile', corrupt], never, guard)).toBe(1);
+            expect(out.text()).toContain('corrupt bot metadata');
+            const unreadable = join(dir, 'unreadable');
+            await mkdir(join(unreadable, 'bot.json'), { recursive: true });
+            expect(await profileCheckMain(['check', '--profile', unreadable], never, guard)).toBe(1);
+            expect(out.text()).toContain('cannot read bot metadata');
+            const fileProfile = join(dir, 'regular-file');
+            await Bun.write(fileProfile, 'not a profile directory');
+            expect(await profileCheckMain(['check', '--profile', fileProfile], never, guard)).toBe(1);
+            expect(out.text()).toContain('not a directory');
+            expect(await profileCheckMain(['check', '--heade'], never, guard)).toBe(2);
+            expect(events).toEqual([]);
+        } finally {
+            restore();
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    test('AC2: a dead console refuses inside the visit, closes it and spends the publish budget', async () => {
+        await seedImages();
+        const { open, closed, calls } = makeOpenPage({ ...happy, loggedIn: false });
+        const records: string[] = [];
+        const result = await makeTransport('script', {
+            openPage: open,
+            loginTimeoutMs: 20,
+            automation: {
+                allow: () => ({ allowed: true, reason: '' }),
+                record: (event) => {
+                    records.push(event);
+                },
+            },
+        }).publish({ content: cardContent() });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('session readiness refused');
+        expect(result.error).toContain('kk bot login xhs');
+        expect(result.metadata?.itcDelivery).toEqual({ schemaVersion: 1, effect: 'none' });
+        expect(records).toEqual(['publish']);
+        expect(calls).toHaveLength(1);
+        expect(closed).toHaveLength(1);
+        expect(calls[0]?.find((call) => call.op === 'goto')?.args).toHaveLength(1);
+    });
+
+    test('AC4: shared bot login reports the persistent cookie expiry', async () => {
+        const out = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stdout: out });
+        const requests: Array<{ profileDir: string; headless: boolean }> = [];
+        const expiry = Math.floor(Date.parse('2099-01-01T00:00:00Z') / 1000);
+        const context = {
+            ...(consoleContext(true) as object),
+            cookies: async () => [
+                {
+                    domain: '.xiaohongshu.com',
+                    path: '/',
+                    expires: expiry,
+                    httpOnly: true,
+                    secure: true,
+                    name: 'session',
+                    value: 'fake',
+                },
+            ],
+        };
+        try {
+            expect(
+                await profileCheckMain(
+                    [
+                        'login',
+                        '--profile',
+                        '/tmp/xhs-0370-login',
+                        '--url',
+                        'https://creator.xiaohongshu.com/publish/publish',
+                    ],
+                    fakeLauncher(context, requests),
+                ),
+            ).toBe(0);
+            expect(JSON.parse(out.text().trim().split('\n').at(-1) ?? '')).toMatchObject({
+                status: 'verified',
+                defaultUrl: 'https://creator.xiaohongshu.com/publish/publish',
+                expiresAt: '2099-01-01T00:00:00.000Z',
+            });
+            expect(requests.map((request) => request.headless)).toEqual([false]);
+        } finally {
+            restore();
+        }
+    });
+
+    test('AC2: navigation refusal and stalled navigation are bounded effect-free session refusals', async () => {
+        await seedImages();
+        for (const goto of [
+            async () => {
+                throw new Error('navigation timed out');
+            },
+            async () => {
+                await new Promise(() => {});
+            },
+        ]) {
+            const fake = makeFakePage(happy);
+            fake.page.goto = goto;
+            let closed = 0;
+            const result = await Promise.race([
+                makeTransport('script', {
+                    openPage: async () => ({
+                        page: fake.page,
+                        close: async () => {
+                            closed += 1;
+                        },
+                    }),
+                    loginTimeoutMs: 20,
+                }).publish({ content: cardContent() }),
+                Bun.sleep(300).then(() => 'readiness-hung'),
+            ]);
+            expect(result).not.toBe('readiness-hung');
+            expect((result as Result).error).toContain('session readiness refused');
+            expect((result as Result).error).toContain('kk bot login xhs');
+            expect((result as Result).metadata?.itcDelivery).toEqual({ schemaVersion: 1, effect: 'none' });
+            expect(fake.calls.some((entry) => entry.op === 'setInputFiles')).toBe(false);
+            expect(closed).toBe(1);
+        }
+    });
+});
 
 describe('xhs-pub validation (no browser opens)', () => {
     test('default driver is script, kind browser', () => {
@@ -813,7 +1123,7 @@ describe('xhs-pub script flow (fake page)', () => {
         const t = makeTransport('script', { openPage: open, loginTimeoutMs: 40, stepTimeoutMs: 40 });
         const result = await t.publish({ content: cardContent() });
         expect(result.ok).toBe(false);
-        expect(result.error).toContain('login timeout');
+        expect(result.error).toContain('session readiness refused');
         expect(result.error).toContain(PROFILE);
         expect(closed).toHaveLength(1);
     });
@@ -1793,28 +2103,28 @@ function consoleContext(authenticated: boolean, closed: string[] = []): unknown 
     };
 }
 
-describe('xhs-pub headless profile-session check (0177, read-only)', () => {
-    test('verified: reopens the profile headless, read-only, and closes the context', async () => {
+describe('xhs-pub headed profile-session check (0177, read-only)', () => {
+    test('verified: reopens the profile headed once, read-only, and closes the context', async () => {
         const closed: string[] = [];
         const requests: Array<{ profileDir: string; headless: boolean }> = [];
         const launcher = fakeLauncher(consoleContext(true, closed), requests);
         const outcome = await checkProfileSession({ profileDir: '/tmp/kk-xhs-check', timeoutMs: 500, launcher });
         expect(outcome.status).toBe('verified');
         expect(outcome.detail).toContain('authenticated');
-        expect(requests).toEqual([{ profileDir: '/tmp/kk-xhs-check', headless: true }]);
+        expect(requests).toEqual([{ profileDir: '/tmp/kk-xhs-check', headless: false }]);
         expect(closed).toEqual(['closed']);
     });
 
-    test('refused: headless and headed refusals (no authenticated console) are an explicit failure', async () => {
+    test('refused: the single headed readiness refusal is an explicit failure', async () => {
         const closed: string[] = [];
         const launcher = fakeLauncher(consoleContext(false, closed));
         const outcome = await checkProfileSession({ profileDir: '/tmp/kk-xhs-check', timeoutMs: 60, launcher });
         expect(outcome.status).toBe('refused');
         expect(outcome.detail).toContain('readiness refused');
-        expect(closed).toEqual(['closed', 'closed']);
+        expect(closed).toEqual(['closed']);
     });
 
-    test('refused: a missing profile headless never fabricates a session', async () => {
+    test('refused: the headed check reports a missing-profile launch refusal', async () => {
         const launcher: BrowserLauncher = {
             launch: async () => {
                 throw new BrowserProfileMissingError('/tmp/kk-xhs-absent');
@@ -1825,20 +2135,22 @@ describe('xhs-pub headless profile-session check (0177, read-only)', () => {
         expect(outcome.detail).toContain('/tmp/kk-xhs-absent');
     });
 
-    test('loginProfile: headed recovery resolves once authenticated and closes the context', async () => {
+    test('shared login: headed recovery resolves once authenticated and closes the context', async () => {
         const closed: string[] = [];
         const requests: Array<{ profileDir: string; headless: boolean }> = [];
         const launcher = fakeLauncher(consoleContext(true, closed), requests);
-        await loginProfile({ profileDir: '/tmp/kk-xhs-login', timeoutMs: 500, launcher });
+        expect(await profileCheckMain(['login', '--profile', '/tmp/kk-xhs-login', '--timeout', '500'], launcher)).toBe(
+            0,
+        );
         expect(requests).toEqual([{ profileDir: '/tmp/kk-xhs-login', headless: false }]);
         expect(closed).toEqual(['closed']);
     });
 
-    test('loginProfile: expired session times out with the context closed', async () => {
+    test('shared login: expired session times out with the context closed', async () => {
         const closed: string[] = [];
         const launcher = fakeLauncher(consoleContext(false, closed));
-        await expect(loginProfile({ profileDir: '/tmp/kk-xhs-login', timeoutMs: 60, launcher })).rejects.toBeInstanceOf(
-            LoginTimeoutError,
+        expect(await profileCheckMain(['login', '--profile', '/tmp/kk-xhs-login', '--timeout', '60'], launcher)).toBe(
+            1,
         );
         expect(closed).toEqual(['closed']);
     });
@@ -1851,7 +2163,7 @@ describe('xhs-pub profile-check CLI (0177)', () => {
         const restore = setDefaultOutputTargets({ stdout: out, stderr: err });
         try {
             const code = await profileCheckMain(
-                ['check', '--profile', '/tmp/kk-xhs-check', '--timeout', '50'],
+                ['check', '--headed', '--profile', '/tmp/kk-xhs-check', '--timeout', '50'],
                 fakeLauncher(consoleContext(true)),
             );
             expect(code).toBe(0);
@@ -1869,7 +2181,7 @@ describe('xhs-pub profile-check CLI (0177)', () => {
         const restore = setDefaultOutputTargets({ stdout: out, stderr: err });
         try {
             const code = await profileCheckMain(
-                ['check', '--profile', '/tmp/kk-xhs-check', '--timeout', '50'],
+                ['check', '--headed', '--profile', '/tmp/kk-xhs-check', '--timeout', '50'],
                 fakeLauncher(consoleContext(false)),
             );
             expect(code).toBe(1);
@@ -2005,7 +2317,11 @@ describe('xhs-pub profile-check CLI (0177)', () => {
             const out = createBufferTarget();
             const restore = setDefaultOutputTargets({ stdout: out });
             try {
-                const code = await profileCheckMain(['check', '--profile', '/tmp/kk-xhs-budget'], spentLauncher, guard);
+                const code = await profileCheckMain(
+                    ['check', '--headed', '--profile', '/tmp/kk-xhs-budget'],
+                    spentLauncher,
+                    guard,
+                );
                 expect(code).toBe(1);
                 const verdict = JSON.parse(out.text()) as { status: string; detail: string };
                 expect(verdict.status).toBe('refused');
@@ -2021,17 +2337,6 @@ describe('xhs-pub profile-check CLI (0177)', () => {
 
 describe('xhs-pub automation guard (ADR-025, XHS platform warning 2026-09-28)', () => {
     const NOW = () => new Date('2026-09-28T10:00:00Z');
-    const verified = async (profileDir: string): Promise<ProfileSessionCheck> => ({
-        status: 'verified',
-        profileDir,
-        detail: 'stub',
-    });
-    const refused = async (profileDir: string): Promise<ProfileSessionCheck> => ({
-        status: 'refused',
-        profileDir,
-        detail: 'no authenticated console in the saved profile',
-    });
-
     async function withGuardDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
         const dir = mkdtempSync(join(tmpdir(), 'kk-xhs-guard-'));
         try {
@@ -2045,16 +2350,17 @@ describe('xhs-pub automation guard (ADR-025, XHS platform warning 2026-09-28)', 
         await seedImages();
         await withGuardDir(async (dir) => {
             const guard = createAutomationGuard({ statePath: join(dir, 'state.json'), now: NOW });
-            // The page is never reached: the budget is consumed at the headed launch, and this
-            // openPage proves it by throwing if it is ever called.
+            // A successful headed launch that refuses readiness consumes the visit budget. A
+            // browser-launch failure itself does not consume it because no console was visited.
+            const { open } = makeOpenPage({ ...happy, loggedIn: false });
             const never = async () => {
                 throw new Error('openPage must not be reached');
             };
-            const first = makeTransport('script', { automation: guard, preflight: verified, openPage: never });
+            const first = makeTransport('script', { automation: guard, openPage: open, loginTimeoutMs: 20 });
             const firstResult = await first.publish({ content: cardContent() });
             expect(firstResult.ok).toBe(false);
 
-            const second = makeTransport('script', { automation: guard, preflight: verified, openPage: never });
+            const second = makeTransport('script', { automation: guard, openPage: never });
             const secondResult = await second.publish({ content: cardContent() });
             expect(secondResult.ok).toBe(false);
             expect(secondResult.error).toContain('automation cap');
@@ -2065,27 +2371,22 @@ describe('xhs-pub automation guard (ADR-025, XHS platform warning 2026-09-28)', 
         });
     });
 
-    test('preflight: a refused session blocks the headed visit and leaves the budget intact', async () => {
+    test('readiness: a refused session consumes the single headed visit and closes it', async () => {
         await seedImages();
         await withGuardDir(async (dir) => {
             const guard = createAutomationGuard({ statePath: join(dir, 'state.json'), now: NOW });
-            let opened = 0;
-            const transport = makeTransport('script', {
+            const { open, closed } = makeOpenPage({ ...happy, loggedIn: false });
+            const result = await makeTransport('script', {
                 automation: guard,
-                preflight: refused,
-                openPage: async () => {
-                    opened += 1;
-                    throw new Error('unreachable');
-                },
-            });
-            const result = await transport.publish({ content: cardContent() });
+                openPage: open,
+                loginTimeoutMs: 20,
+            }).publish({ content: cardContent() });
             expect(result.ok).toBe(false);
-            expect(result.error).toContain('session preflight refused');
-            expect(result.error).toContain('no authenticated console');
+            expect(result.error).toContain('session readiness refused');
+            expect(result.error).toContain('kk bot login xhs');
             expect(result.metadata?.itcDelivery).toEqual({ schemaVersion: 1, effect: 'none' });
-            expect(opened).toBe(0);
-            // The operator can log in and retry the same day: the cap bounds headed visits, not attempts.
-            expect(guard.allow('publish').allowed).toBe(true);
+            expect(closed).toHaveLength(1);
+            expect(guard.allow('publish').allowed).toBe(false);
         });
     });
 
@@ -2097,7 +2398,6 @@ describe('xhs-pub automation guard (ADR-025, XHS platform warning 2026-09-28)', 
             const guard = createAutomationGuard({ statePath: path, now: NOW });
             const transport = makeTransport('script', {
                 automation: guard,
-                preflight: verified,
                 openPage: async () => {
                     throw new Error('unreachable');
                 },
@@ -2173,13 +2473,13 @@ describe('xhs-pub automation guard (ADR-025, XHS platform warning 2026-09-28)', 
             const guard = createAutomationGuard({ statePath: join(dir, 'state.json'), now: NOW });
             try {
                 const first = await profileCheckMain(
-                    ['check', '--profile', '/tmp/kk-xhs-check', '--timeout', '50'],
+                    ['check', '--headed', '--profile', '/tmp/kk-xhs-check', '--timeout', '50'],
                     fakeLauncher(consoleContext(true)),
                     guard,
                 );
                 expect(first).toBe(0);
                 const second = await profileCheckMain(
-                    ['check', '--profile', '/tmp/kk-xhs-check', '--timeout', '50'],
+                    ['check', '--headed', '--profile', '/tmp/kk-xhs-check', '--timeout', '50'],
                     fakeLauncher(consoleContext(true)),
                     guard,
                 );
@@ -2197,13 +2497,6 @@ describe('xhs-pub automation guard (ADR-025, XHS platform warning 2026-09-28)', 
  * Every case here is offline (fake launcher + fake page): no browser, no network, no publish.
  */
 describe('xhs-pub operations (ADR-029 mode dispatch)', () => {
-    /** A refused preflight witness: reaching it is provable, because its wording is unique. */
-    const REFUSED_PREFLIGHT = async (profileDir: string): Promise<ProfileSessionCheck> => ({
-        status: 'refused',
-        profileDir,
-        detail: 'preflight witness',
-    });
-
     /** `findShadowControl`/`click` evidence that a publish control was TOUCHED at all. */
     const publishTouches = (log: Array<{ op: string; args: unknown[] }>): string[] => [
         ...log
@@ -2301,7 +2594,7 @@ describe('xhs-pub operations (ADR-029 mode dispatch)', () => {
     test('an undeclared operation fails by name, with zero launches and no profile work', async () => {
         await seedImages();
         const { open, closed, calls } = makeOpenPage(happy);
-        const t = makeTransport('script', { openPage: open, preflight: REFUSED_PREFLIGHT });
+        const t = makeTransport('script', { openPage: open });
         const result = await t.publish({ content: cardContent({ operation: '发视频' }) });
         expect(result.ok).toBe(false);
         expect(result.error).toContain("unsupported operation '发视频'");
@@ -2389,7 +2682,7 @@ describe('xhs-pub operations (ADR-029 mode dispatch)', () => {
         test(`${mode.operation}: an unknown publishStatus fails before any launch`, async () => {
             await mode.seed();
             const { open, closed, calls } = makeOpenPage(happy);
-            const t = makeTransport('script', { openPage: open, preflight: REFUSED_PREFLIGHT });
+            const t = makeTransport('script', { openPage: open });
             const result = await t.publish({
                 content: mode.content({ metadata: { ...mode.content().metadata, publishStatus: 'friends' } }),
                 options: { operation: mode.operation },
@@ -2404,7 +2697,7 @@ describe('xhs-pub operations (ADR-029 mode dispatch)', () => {
         test(`${mode.operation}: a missing artifact fails before any launch, naming it`, async () => {
             await mode.seed();
             const { open, closed, calls } = makeOpenPage(happy);
-            const t = makeTransport('script', { openPage: open, preflight: REFUSED_PREFLIGHT });
+            const t = makeTransport('script', { openPage: open });
             const result = await t.publish({ content: mode.missing(), options: { operation: mode.operation } });
             expect(result.ok).toBe(false);
             expect(result.error).toContain(mode.missingError);
@@ -2428,7 +2721,7 @@ describe('xhs-pub operations (ADR-029 mode dispatch)', () => {
 
     test('上传图文: the 图文 grid cap (18) fails before any launch', async () => {
         const { open, closed, calls } = makeOpenPage(happy);
-        const t = makeTransport('script', { openPage: open, preflight: REFUSED_PREFLIGHT });
+        const t = makeTransport('script', { openPage: open });
         const result = await t.publish({ content: cardContent({}, 19) });
         expect(result.ok).toBe(false);
         expect(result.error).toContain('≤18');
@@ -2438,7 +2731,7 @@ describe('xhs-pub operations (ADR-029 mode dispatch)', () => {
 
     test('上传图文: an over-limit body (1000) fails before any launch', async () => {
         const { open, closed } = makeOpenPage(happy);
-        const t = makeTransport('script', { openPage: open, preflight: REFUSED_PREFLIGHT });
+        const t = makeTransport('script', { openPage: open });
         const result = await t.publish({
             content: modeContent({ images: [{ path: img(0) }] }, { body: 'x'.repeat(1001) }),
         });
@@ -2450,7 +2743,7 @@ describe('xhs-pub operations (ADR-029 mode dispatch)', () => {
 
     test('上传图文: an over-limit title (20) fails before any launch', async () => {
         const { open, closed } = makeOpenPage(happy);
-        const t = makeTransport('script', { openPage: open, preflight: REFUSED_PREFLIGHT });
+        const t = makeTransport('script', { openPage: open });
         const result = await t.publish({
             content: modeContent({ images: [{ path: img(0) }] }, { title: 'x'.repeat(21) }),
         });
@@ -3470,71 +3763,21 @@ describe('task 0350 — layered capture, counter gate, reopen verify, podcast fi
         expect(result.error).toContain('not retryable');
     });
 
-    test('R1: the inject script records a short DOM risk toast and ignores a long node', () => {
-        const g = globalThis as unknown as {
-            window?: unknown;
-            XMLHttpRequest?: { prototype: Record<string, unknown> };
-            fetch?: ((...args: unknown[]) => Promise<unknown>) & { __kkPatched?: boolean };
-            console: Record<string, unknown>;
-            MutationObserver?: new (cb: (muts: Array<{ addedNodes: unknown[] }>) => void) => { observe: () => void };
-            document?: { body: Record<string, unknown> };
-            __kkXhsArmed?: boolean;
-            __kkXhsOutcome?: { source: string; text: string } | null;
-            __kkXhsToastObs?: boolean;
-        };
-        const saved = {
-            window: g.window,
-            XMLHttpRequest: g.XMLHttpRequest,
-            fetch: g.fetch,
-            console: g.console,
-            MutationObserver: g.MutationObserver,
-            document: g.document,
-        };
-        const callbacks: Array<(muts: Array<{ addedNodes: unknown[] }>) => void> = [];
-        try {
-            g.window = g;
-            g.XMLHttpRequest = function XHR(this: unknown) {} as unknown as { prototype: Record<string, unknown> };
-            g.XMLHttpRequest.prototype = { open() {}, send() {}, addEventListener() {} };
-            g.fetch = (() =>
-                Promise.resolve({ clone: () => ({ text: () => Promise.resolve('') }), url: '' })) as typeof g.fetch;
-            g.console = { error() {}, warn() {}, log() {} };
-            g.MutationObserver = class {
-                constructor(cb: (muts: Array<{ addedNodes: unknown[] }>) => void) {
-                    callbacks.push(cb);
-                }
-                observe(): void {}
-            } as unknown as typeof g.MutationObserver;
-            g.document = { body: {} };
-            delete g.__kkXhsArmed;
-            delete g.__kkXhsOutcome;
-            delete g.__kkXhsToastObs;
-            const runPageScript = new Function(`return ${CAPTURE_INJECT_EXPR}`) as () => string;
-            const armed = runPageScript();
-            expect(armed).toBe('kk-capture-armed');
-            expect(callbacks.length).toBe(1);
-            callbacks[0]?.([
-                {
-                    addedNodes: [
-                        { nodeType: 1, textContent: 'x'.repeat(301) },
-                        { nodeType: 3, textContent: '审核未通过' },
-                        { nodeType: 1, textContent: ' 审核未通过 ' },
+    test('R1: the read-only DOM probe keeps short risk leaves and ignores long nodes and ancestors', () => {
+        const run = new Function('document', `return ${RISK_LEAVES_EXPR}`) as (document: unknown) => string;
+        const node = (textContent: string, children: unknown[] = []) => ({ textContent, children });
+        expect(
+            JSON.parse(
+                run({
+                    querySelectorAll: () => [
+                        node('x'.repeat(301)),
+                        node('审核未通过', [{}]),
+                        node(' 审核未通过 '),
+                        node('ordinary text'),
                     ],
-                },
-            ]);
-            // delete narrows the optional field to undefined; the page script writes it back.
-            const outcome = g.__kkXhsOutcome as { source: string; text: string } | null | undefined;
-            expect(outcome).toEqual({ source: 'toast', text: '审核未通过' });
-        } finally {
-            g.window = saved.window;
-            g.XMLHttpRequest = saved.XMLHttpRequest;
-            g.fetch = saved.fetch;
-            g.console = saved.console;
-            g.MutationObserver = saved.MutationObserver;
-            g.document = saved.document;
-            delete g.__kkXhsArmed;
-            delete g.__kkXhsOutcome;
-            delete g.__kkXhsToastObs;
-        }
+                }),
+            ),
+        ).toEqual(['审核未通过']);
     });
 
     test('R3: a collection name with a quote stays inside the probe string', () => {

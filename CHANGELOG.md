@@ -1,5 +1,111 @@
 ## [Unreleased]
 
+## [0.1.19] - 2026-11-14
+
+### Fixed
+
+- fix(publish): let an effective off mode veto --live-channels (068ccb68)
+<!-- src: apps/cli/src/publish-matrix.ts:339 · confidence: HIGH -->
+
+### Changed
+
+- feat(cli): cut the scheduler and board over to the G61 verbs (7cbcc781)
+<!-- src: .spur/config.yaml:150 · confidence: HIGH -->
+
+### Removed
+
+- chore(workflows): retire the daily launchers and the ITC/publish3 workflows (86ec3def)
+<!-- src: plugins/kk/schedules/kk-daily-ai-voice3.cron.tmpl:17 · confidence: HIGH -->
+
+### Other
+
+- docs(surface): point the schedules, templates and design docs at the kk news verbs (b47ace5a)
+<!-- src: plugins/kk/schedules/kk-daily-publish3-cn-peak.cron.tmpl:24 · confidence: HIGH -->
+- fix(publish): record flag-wins precedence for `--live-channels` (7fcb0c13)
+  <!-- borderline: no current-behaviour claim — 068ccb68 reversed this the same day -->
+- test(publish): cover a failing store mark-published at settlement (b9d9e6d6)
+<!-- src: apps/cli/tests/publish-matrix-0333.test.ts:358 · confidence: HIGH -->
+- docs(code): drop references to the retired launcher and DAG filenames (e3f768ba)
+- docs(corpus): refresh the 0369 evidence and file the 0372 retirement (9df2cd24)
+- docs(task): record the 0372 retirement evidence (R2-R6 landed, R1 outstanding) (1f2360fe)
+- docs(corpus): refresh the E9 evidence to the shipped offline check (54339f44)
+- docs(task): record how 0372 landed on main (c9a1d6a8)
+
+## [0.1.18] - 2026-11-14
+
+### Added
+
+- feat(daily): schedule the cn-peak window every afternoon (6be59a91)
+<!-- src: .spur/config.yaml:186 · confidence: HIGH -->
+- feat(content): retain article and news commands pending verification (365011c8)
+<!-- src: apps/cli/src/commands/content.ts:465 · confidence: HIGH -->
+- feat(cli): 0365 in-binary launch supervisor and the plain generate/publish verbs (16ee9fcc)
+<!-- src: apps/cli/src/launch.ts:460 · confidence: HIGH -->
+- feat(content): unify publish steps and verify tasks 0362-0364 (caf06957)
+<!-- src: apps/cli/src/commands/content-publish.ts:484 · confidence: HIGH -->
+- feat(publish): route wechatmp login and open through the shared bot session path (473263d6)
+<!-- src: packages/publish-harness/src/browser.ts:1348 · confidence: HIGH -->
+- feat(publish): 0366 one kk-publish workflow for both content nouns (baa53705)
+<!-- src: plugins/kk/workflows/kk-publish.yaml:2 · confidence: HIGH -->
+- feat(generate): 0367 news generate step verbs and the kk-news-generate workflow (2e0ccde7)
+<!-- src: plugins/kk/workflows/kk-news-generate.yaml:2 · confidence: HIGH -->
+- feat(generate): 0368 article step verbs and the kk-article-generate FSM (c027bcd6)
+<!-- src: apps/cli/src/commands/content-generate-article.ts:585 · confidence: HIGH -->
+- feat(launch): one executor var, a traffic probe first, and a single-flight daily lock (d9dd08db)
+<!-- src: plugins/kk/scripts/daily-scheduled-run.ts:90 · confidence: HIGH -->
+
+### Fixed
+
+- fix(publish): keep every planned row reachable in a window (e68c93ac)
+<!-- src: apps/cli/src/publish-matrix.ts:1457 · confidence: HIGH -->
+- fix(publish): mark pre-send refusals as effect none (8f3f7225)
+<!-- src: plugins/publishings/wechatmp-pub/src/index.ts:75 · confidence: HIGH -->
+- fix(weibo-pub): drive the v5 article rail through 下一步 (a162854d)
+<!-- src: plugins/publishings/weibo-pub/src/index.ts:99 · confidence: HIGH -->
+- fix(daily): turn off xhs publishing after risk control (d1d1ca0e)
+<!-- src: plugins/kk/publish-presets/daily-ai-voice.json:37 · confidence: HIGH -->
+- fix(xhs-pub): capture outcomes outside the page (1095d009)
+<!-- src: plugins/publishings/xhs-pub/src/flow.ts:353 · confidence: HIGH -->
+- fix(test): resolve global spur schemas in gates (28b1df6e)
+<!-- src: scripts/with-spur-env.ts:51 · confidence: HIGH -->
+- fix(publish): skip the wall-clock window wait in the AC3 parity rehearsal (cff35112)
+<!-- src: apps/cli/src/publish-matrix.ts:1793 · confidence: HIGH -->
+- fix(content): close the 0365 and 0366 residual findings (cf78fde8)
+<!-- src: apps/cli/src/commands/content-launch.ts:386 · confidence: HIGH -->
+- fix(tooling): resolve Spur by package name so a checkout on PATH works (1be670e5)
+<!-- src: scripts/spur-env.ts:38 · confidence: HIGH -->
+
+### Changed
+
+- refactor(publish): extract the neutral publish core from the itc modules (687dc5b8)
+<!-- src: apps/cli/src/publish-core.ts:347 · confidence: HIGH -->
+
+### Other
+
+- chore(tasks): retire the 0365 and 0366 residual tasks (872d8f8c)
+- chore: merge cdbda2d6 into sp/runall-g61-9beb (701d0d93)
+- chore(project): add history anatomy (cdbda2d6)
+- chore(0370): merge xhs-pub safety fixes (3cc82d19)
+- chore(spur): record task 0370 verification (dd84e4a1)
+- chore(spur): repair stale task evidence ownership (cc5e1a5e)
+- chore(spur): disable the project scheduler (6a1713ea)
+<!-- src: .spur/config.yaml:62 · confidence: HIGH -->
+- chore(0371): promote the task to todo for its pipeline run (fd9f6a00)
+- test(news): drop the useless String.raw in the spur stub (2846845e)
+<!-- src: apps/cli/tests/kk-news-generate.e2e.test.ts:265 · confidence: HIGH -->
+- test(generate): spell the workflow var literals as escaped templates (a7aaccca)
+<!-- src: apps/cli/tests/kk-article-generate-fsm.test.ts:102 · confidence: HIGH -->
+- docs(features): G61 status after the content-pipeline batch (cba03879)
+- docs(tasks): 0369 blocked on the operator-gated cut-over (b5604c1d)
+- docs(tasks): retain batch evidence under its wrap run (312356fa)
+- docs(tasks): link durable batch wrap evidence (3527185b)
+- docs(content): wrap completed tasks 0362-0364 (7e64934f)
+- docs(corpus): refresh G61 after the rebase (9617426c)
+- docs(corpus): record the 0360-0361 batch learnings and pitfalls (512c1edb)
+- docs(corpus): record G61 as active and retire three dead run-scoped citations (f9d9b39f)
+- docs(publish): freeze the G61 surface and file tasks 0363-0371 (233070e1)
+- docs(publish): plan the shared publish core and article/news verbs (901a4fe1)
+
 ## [0.1.17] - 2026-11-12
 
 ### Added

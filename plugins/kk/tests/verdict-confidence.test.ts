@@ -33,9 +33,6 @@ import { join } from 'node:path';
 const REPO = join(import.meta.dir, '../../..');
 const WORKFLOWS = join(REPO, 'plugins/kk/workflows');
 
-/** 0302/0303: the ITC root is a DAG; the judge now lives in the extracted authoring child FSM. */
-const ITC_AUTHOR = 'plugins/kk/workflows/kk-itc-author.yaml';
-const ITC_STAGE_ENTRY = 'apps/cli/src/index.ts';
 const EXAMPLE = 'plugins/kk/workflows/judge-gated-publish-example.yaml';
 const COLLECT = 'plugins/kk/workflows/kk-collect.yaml';
 /** The live daily DAG, and the nested machine its `safety` node shells out (20261012). */
@@ -72,7 +69,13 @@ interface RawTransition {
 interface Workflow {
     rel: string;
     vars: Record<string, string>;
-    transitions: { from: string; to: string; description: string; command: string | null }[];
+    transitions: {
+        from: string;
+        to: string;
+        description: string;
+        command: string | null;
+        guardKind: string | undefined;
+    }[];
 }
 
 /**
@@ -101,6 +104,7 @@ function load(rel: string): Workflow {
                 to: t.to,
                 description: t.description ?? '',
                 command: command(t.guard),
+                guardKind: t.guard?.kind,
             })),
             // A `kind: dag` workflow (task 0211) has no top-level transitions: its guards are the
             // node `condition`s, unwrapped here as `<node>->condition` so a DAG verdict read cannot
@@ -111,6 +115,7 @@ function load(rel: string): Workflow {
                 to: 'condition',
                 description: `condition of ${n.id ?? '?'}`,
                 command: command(n.condition),
+                guardKind: n.condition?.kind,
             })),
         ],
     };
@@ -196,156 +201,6 @@ function tempDir(prefix: string): string {
 const tempDirs: string[] = [];
 afterAll(() => {
     for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
-});
-
-describe('kk-itc-author judge verdict → confidence routing (0302 extraction)', () => {
-    const author = load(ITC_AUTHOR);
-
-    /** The child FSM's own var defaults + the fixture work dir (vars are templated or env-exported). */
-    const itcVariables = (dir: string, extra: Record<string, string> = {}): Record<string, string> => ({
-        ...author.vars,
-        auto: 'false',
-        judge: 'true',
-        max_revisions: '2',
-        work_dir: dir,
-        ...extra,
-    });
-
-    /**
-     * Run the REAL disposition stage — `kk stage run itc-author-verdict` — so the routing asserted
-     * below is produced by shipped code, not by a fixture standing in for it. The stage collapses
-     * verdict + revision budget into one word the guards then read.
-     */
-    function runDisposition(dir: string, vars: Record<string, string>): void {
-        const result = Bun.spawnSync(
-            [process.execPath, join(REPO, ITC_STAGE_ENTRY), 'stage', 'run', 'itc-author-verdict', dir],
-            {
-                cwd: dir,
-                env: {
-                    ...process.env,
-                    KK_ITC_AUTO: vars.auto ?? 'false',
-                    KK_ITC_MAX_REVISIONS: vars.max_revisions ?? '2',
-                },
-                stdout: 'pipe',
-                stderr: 'pipe',
-            },
-        );
-        expect(result.exitCode, `itc-author-verdict failed: ${result.stderr.toString()}`).toBe(0);
-    }
-
-    it.each([
-        ['PASS + HIGH', { verdict: 'PASS', confidence: 'HIGH' }, ['judge->author-finish']],
-        ['PASS + MEDIUM', { verdict: 'PASS', confidence: 'MEDIUM' }, ['judge->author-finish']],
-        ['PASS + LOW', { verdict: 'PASS', confidence: 'LOW' }, ['judge->author-finish']],
-        // The contract violation fails the run instead of deadlocking the machine.
-        ['PASS without confidence', { verdict: 'PASS' }, ['judge->failed']],
-        ['PASS + out-of-enum confidence', { verdict: 'PASS', confidence: 'SURE' }, ['judge->failed']],
-        ['PASS + lowercase confidence', { verdict: 'PASS', confidence: 'high' }, ['judge->failed']],
-        ['FAIL', { verdict: 'FAIL' }, ['judge->failed']],
-        ['NEEDS_REVISION with budget left', { verdict: 'NEEDS_REVISION' }, ['judge->draft-revise']],
-    ])('%s routes exactly one transition', (name, verdict, expected) => {
-        const dir = tempDir('kk-itc-confidence-');
-        scenarioVerdict(dir, verdict);
-        const vars = itcVariables(dir);
-        runDisposition(dir, vars);
-        const taken = route(author, 'judge', vars, dir);
-        expect(record(`itc:${name}`, JSON.stringify(taken) === JSON.stringify(expected), taken.join(','))).toBe(true);
-        expect(taken).toEqual(expected);
-    });
-
-    it('an exhausted revision budget fails instead of looping', () => {
-        const dir = tempDir('kk-itc-confidence-budget-');
-        scenarioVerdict(dir, { verdict: 'NEEDS_REVISION', confidence: 'HIGH' });
-        writeFileSync(join(dir, '.revise-count'), '3');
-        const vars = itcVariables(dir);
-        runDisposition(dir, vars);
-        expect(route(author, 'judge', vars, dir)).toEqual(['judge->failed']);
-    });
-
-    it('a contract-violating PASS never reaches author-finish or a publish handoff', () => {
-        const dir = tempDir('kk-itc-confidence-publish-');
-        const verdict = scenarioVerdict(dir, { verdict: 'PASS', confidence: 'SURE' });
-        const vars = itcVariables(dir);
-        runDisposition(dir, vars);
-        const taken = route(author, 'judge', vars, dir);
-        expect(record('itc:invalid-pass-blocks-publish', taken.join(',') === 'judge->failed', taken.join(','))).toBe(
-            true,
-        );
-        expect(taken).not.toContain('judge->author-finish');
-        expect(readFileSync(verdict, 'utf-8')).toContain('SURE'); // the evidence is never rewritten
-    });
-
-    it('auto mode keeps a valid PASS and routes an in-budget NEEDS_REVISION to the auto reviser', () => {
-        const passDir = tempDir('kk-itc-confidence-auto-pass-');
-        scenarioVerdict(passDir, { verdict: 'PASS', confidence: 'HIGH' });
-        const passVars = itcVariables(passDir, { auto: 'true' });
-        runDisposition(passDir, passVars);
-        expect(route(author, 'judge', passVars, passDir)).toEqual(['judge->author-finish']);
-
-        const failDir = tempDir('kk-itc-confidence-auto-fail-');
-        scenarioVerdict(failDir, { verdict: 'FAIL' });
-        const failVars = itcVariables(failDir, { auto: 'true' });
-        runDisposition(failDir, failVars);
-        const failTaken = route(author, 'judge', failVars, failDir);
-        expect(record('itc:auto-fail-unchanged', failTaken.join(',') === 'judge->failed', failTaken.join(','))).toBe(
-            true,
-        );
-        expect(failTaken).toEqual(['judge->failed']);
-
-        const reviseDir = tempDir('kk-itc-confidence-auto-revise-');
-        scenarioVerdict(reviseDir, { verdict: 'NEEDS_REVISION' });
-        const reviseVars = itcVariables(reviseDir, { auto: 'true' });
-        runDisposition(reviseDir, reviseVars);
-        expect(route(author, 'judge', reviseVars, reviseDir)).toEqual(['judge->draft-autorevise']);
-
-        const invalidDir = tempDir('kk-itc-confidence-auto-invalid-');
-        scenarioVerdict(invalidDir, { verdict: 'PASS', confidence: 'SURE' });
-        const invalidVars = itcVariables(invalidDir, { auto: 'true' });
-        runDisposition(invalidDir, invalidVars);
-        expect(route(author, 'judge', invalidVars, invalidDir)).toEqual(['judge->failed']);
-    });
-
-    /**
-     * The confidence level contract on the AUTO path: every accepted level (HIGH | MEDIUM | LOW)
-     * must survive the auto disposition exactly as it does interactively, and a PASS outside the
-     * enum — or carrying no level at all — must still fail closed. Auto mode is a second code path
-     * through `itc-author-verdict` (`KK_ITC_AUTO=true`), so the three levels are asserted there too
-     * rather than inferred from the interactive table above.
-     */
-    it.each([
-        ['auto PASS + HIGH', { verdict: 'PASS', confidence: 'HIGH' }, ['judge->author-finish']],
-        ['auto PASS + MEDIUM', { verdict: 'PASS', confidence: 'MEDIUM' }, ['judge->author-finish']],
-        ['auto PASS + LOW', { verdict: 'PASS', confidence: 'LOW' }, ['judge->author-finish']],
-        ['auto PASS without confidence', { verdict: 'PASS' }, ['judge->failed']],
-        ['auto PASS + out-of-enum confidence', { verdict: 'PASS', confidence: 'SURE' }, ['judge->failed']],
-    ])('%s routes exactly one transition', (name, verdict, expected) => {
-        const dir = tempDir('kk-itc-confidence-auto-level-');
-        scenarioVerdict(dir, verdict);
-        const vars = itcVariables(dir, { auto: 'true' });
-        runDisposition(dir, vars);
-        const taken = route(author, 'judge', vars, dir);
-        expect(record(`itc:${name}`, JSON.stringify(taken) === JSON.stringify(expected), taken.join(','))).toBe(true);
-        expect(taken).toEqual(expected);
-    });
-
-    it('an absent disposition fails closed: the judge routes nowhere without the stage receipt', () => {
-        const dir = tempDir('kk-itc-confidence-absent-');
-        // No disposition stage run at all — a missing receipt must not imply finish (ba672145).
-        const taken = route(author, 'judge', itcVariables(dir), dir);
-        expect(record('itc:absent-disposition-fails-closed', taken.length === 0, taken.join(','))).toBe(true);
-        expect(taken).toEqual([]);
-    });
-
-    it('the disposition stage is the SOLE judge reader in the child FSM (no inline verdict parsing)', () => {
-        const judge = author.transitions.filter((t) => t.from === 'judge' && t.command !== null);
-        const inline = judge.filter((t) => /jq -r .*verdict/.test(t.command ?? ''));
-        expect(record('itc:single-disposition-reader', inline.length === 0, `${inline.length} inline readers`)).toBe(
-            true,
-        );
-        expect(inline).toEqual([]);
-        // Every judge exit reads the one disposition file the stage writes.
-        for (const t of judge) expect(t.command).toContain('.itc/disposition.txt');
-    });
 });
 
 describe('judge-gated-publish-example verdict → confidence routing', () => {
@@ -589,7 +444,7 @@ describe('every judge-verdict consumer verifies confidence', () => {
         );
         const ids = conditions.map((c) => `${c.rel}:${c.id}`).sort();
         // The live-send approval is the re-entry seam's only guard (task 0310).
-        expect(ids).toContain('plugins/kk/workflows/kk-itc-publish-tail.yaml:send-confirm');
+        expect(ids).toContain('plugins/kk/workflows/kk-publish.yaml:send-confirm');
         // Non-vacuous: the scan's own predicates flag a DAG condition that accepts a bare PASS.
         const unguarded = 'jq -r .verdict "$v" | grep -q \'= PASS\'';
         const offender = acceptsPass(unguarded) && !/confidence/.test(unguarded);
@@ -655,11 +510,14 @@ describe('every judge-verdict consumer verifies confidence', () => {
     it('the judge-state guards are the ones the scan covers (no silent parser gap)', () => {
         // Guard the parser: a judge state whose transitions lost their command would make the
         // consumer scan above vacuous.
-        for (const workflow of [load(ITC_AUTHOR), load(EXAMPLE)]) {
-            const judge = workflow.transitions.filter((t) => t.from === 'judge');
+        for (const workflow of [load(EXAMPLE), load(SAFETY_MACHINE)]) {
+            const judge = workflow.transitions.filter((t) => t.from === 'judge' || t.from.startsWith('judge-'));
+            const shell = judge.filter((t) => t.guardKind === 'shell');
             const extracted = judge.filter((t) => t.command !== null).length;
-            const ok = judge.length > 0 && extracted === judge.length;
-            expect(record(`parser:${workflow.rel}`, ok, `${extracted}/${judge.length}`)).toBe(true);
+            // `kind: always` is the only legitimate command-less guard; a shell guard that lost its
+            // command would make the consumer scan above blind to it.
+            const ok = judge.length > 0 && shell.length > 0 && extracted === shell.length;
+            expect(record(`parser:${workflow.rel}`, ok, `${extracted} extracted / ${shell.length} shell`)).toBe(true);
             expect(ok).toBe(true);
         }
     });

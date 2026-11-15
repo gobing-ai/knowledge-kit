@@ -51,14 +51,24 @@ function visibleCommandNames(out: string): string[] {
 }
 
 describe('kk main exit seam', () => {
+    it('0369 R5 — `itc` and `daily` are hidden from help and still answer', async () => {
+        const names = visibleCommandNames((await run(['--help'])).out);
+        expect(names).toContain('article');
+        expect(names).toContain('news');
+        expect(names).not.toContain('itc');
+        expect(names).not.toContain('daily');
+        expect((await run(['itc', 'candidates', '--help'])).code).toBe(0);
+        expect((await run(['daily', 'prepare', '--help'])).code).toBe(0);
+    });
+
     it('R1 — bare invocation and --help/-h exit 0 and list every first-layer noun as a visible command', async () => {
         for (const args of [[], ['--help'], ['-h']]) {
             const { code, out } = await run(args);
             expect(code).toBe(0);
             expect(out).toContain('bot');
-            expect(out).toContain('daily');
             expect(out).toContain('executor');
-            expect(out).toContain('itc');
+            expect(out).toContain('article');
+            expect(out).toContain('news');
             expect(out).toContain('plugin');
             expect(out).toContain('stage');
             expect(out).toContain('store');
@@ -69,14 +79,14 @@ describe('kk main exit seam', () => {
             // (add/invoke/fanin/fanout/plugins) and no alias rendering such as
             // `plugin|plugins` — the loose line-start regex could not see that.
             expect(visibleCommandNames(out).sort()).toEqual([
+                'article',
                 'board',
                 'bot',
-                'daily',
                 'executor',
                 'help',
-                'itc',
                 'ledger',
                 'lock',
+                'news',
                 'plugin',
                 'schedule',
                 'stage',
@@ -199,6 +209,17 @@ describe('kk command tree shape (0275 AC1 — A22 R1)', () => {
             .map((n) => n.path)
             .sort();
         expect(visibleLeaves).toEqual([
+            'article generate',
+            'article generate-bundle',
+            'article generate-check',
+            'article new',
+            'article publish',
+            'article publish-check',
+            'article publish-plan',
+            'article publish-report',
+            'article publish-send',
+            'article publish-settle',
+            'article status',
             'board capture',
             'board serve',
             'bot exec',
@@ -207,18 +228,30 @@ describe('kk command tree shape (0275 AC1 — A22 R1)', () => {
             'bot logout',
             'bot open',
             'bot plan',
-            'daily prepare',
-            'daily publish-classify',
-            'daily run-report',
             'executor fan-in',
             'executor fan-out',
             'executor run',
-            'itc candidates',
             'ledger append',
             'ledger cutover-check',
             'ledger sync',
             'lock acquire',
             'lock release',
+            'news generate',
+            'news generate-bundle',
+            'news generate-cards',
+            'news generate-check',
+            'news generate-render',
+            'news generate-voice',
+            'news new',
+            'news prepare',
+            'news publish',
+            'news publish-check',
+            'news publish-plan',
+            'news publish-report',
+            'news publish-send',
+            'news publish-settle',
+            'news report',
+            'news status',
             'plugin check',
             'plugin login',
             'plugin status',
@@ -255,9 +288,15 @@ describe('kk command tree shape (0275 AC1 — A22 R1)', () => {
             .map((n) => n.path)
             .sort();
         expect(hidden).toEqual([
+            'daily',
+            'daily prepare',
+            'daily publish-classify',
+            'daily run-report',
             'fanin',
             'fanout',
             'invoke',
+            'itc',
+            'itc candidates',
             'plugin doctor',
             'plugin list',
             'plugins',

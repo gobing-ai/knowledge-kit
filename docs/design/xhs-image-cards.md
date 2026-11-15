@@ -10,7 +10,7 @@
 2. Resolve `image-gen` format `xhs-card` (`job: free`, portrait `3:4`) and an existing or shipped XHS style. Save each card's `image-gen` envelope (`cards/NN.in.json`) and its exact composed prompt (the `KK_IMAGE_DRY_RUN=1` `Content.body`, `cards/NN.prompt.txt`) before spending. The cover is rendered first; when the selected provider supports reference images, subsequent cards use its artifact as their reference. Otherwise the plan keeps one style/palette and the preview discloses the weaker consistency path. Explicit user reference images keep the existing provider-capability refusal rule.
 3. The series total N must not exceed the resolved `KK_IMAGE_MAX_IMAGES` / `image.max_images`. The skill enforces this, because `image-gen`'s cap is per invocation. After one series spend preview and the existing confirmation policy, invoke `kk executor run image-gen` once per card with `maxImages: 1` and a unique output stem. Each call retains its own output and cleanup boundary; the skill stops at the first failed card; rerunning on the same `--out` reuses the saved plan and envelopes and renders only cards without an image.
 4. Write `cards.json` and a `Content` payload. `Content.title` and `body` are the XHS title and Chinese note. `Content.metadata.images` is an array of the existing `ImageArtifact` objects in card order; the publisher reads each `.path`. `Content.metadata.publishStatus` is `draft` by default or `public` only for an explicit live request. Prompt paths, source points, and layout stay in `cards.json`, not in the publish DTO.
-5. The skill hands `content.json` to `kk:publish xhs`, which owns the live confirmation; the skill never spawns `xhs-pub` directly. `xhs-pub` validates the ordered paths and image files before opening the browser. Its default driver is `script` (ADR-024; `agent` fails loud for this channel). The script driver opens the persistent profile through `@gobing-ai/ts-browser-automation` (typed `openPersistentBrowser` default; existing injectable launcher function and `OpenPage` seam, 0177), attaches files in order, fills the note, and saves a real draft or submits only when `publishStatus: public`. Browser-observed completion determines the `Result`; no synthetic draft ID or session-ready success. An ambiguous UI state yields `ok: false` with the action named. `Result.metadata.publishStatus` distinguishes `draft` from `public`; platform ID/URL appears only when observed.
+5. The skill hands `content.json` to `kk:publish xhs`, which owns the live confirmation; the skill never spawns `xhs-pub` directly. `xhs-pub` validates the ordered paths and image files before opening the browser. Its default driver is `script` (ADR-024; `agent` fails loud for this channel). The script driver opens the persistent profile through `@gobing-ai/ts-browser-automation` (harness `kkBrowserLauncher` default since 0214; existing injectable launcher function and `OpenPage` seam, 0177), attaches files in order, fills the note, and saves a real draft or submits only when `publishStatus: public`. Browser-observed completion determines the `Result`; no synthetic draft ID or session-ready success. An ambiguous UI state yields `ok: false` with the action named. `Result.metadata.publishStatus` distinguishes `draft` from `public`; platform ID/URL appears only when observed.
 
 ### Profile reuse (dogfood recipe, 0177)
 
@@ -20,11 +20,11 @@ The publish run reuses the signed-in session from `~/.config/kk/browser-profiles
 # 1. Headed one-time login — sign in interactively in the opened window, then it exits.
 bun plugins/publishings/xhs-pub/src/profile-check.ts login
 
-# 2. Read-only headless reuse check — exit 0 = session verified, exit 1 = refused (never a false success).
+# 2. Offline profile/expiry check — exit 0 = no known refusal, exit 1 = absent, expired or unreadable.
 bun plugins/publishings/xhs-pub/src/profile-check.ts check
 ```
 
-Both commands accept `--profile <dir>` and `--timeout <ms>`; profile dir precedence is `--profile` > `XHS_PROFILE_DIR` > `KK_BROWSER_PROFILE_DIR` > `~/.config/kk/browser-profiles/xhs`. Headless never signs in or fabricates a session — without a profile it refuses (`BrowserProfileMissingError`).
+Both commands accept `--profile <dir>` and `--timeout <ms>`; profile dir precedence is `--profile` > `XHS_PROFILE_DIR` > `KK_BROWSER_PROFILE_DIR` > `~/.config/kk/browser-profiles/xhs`. Default `check` opens no browser; `check --headed` probes the saved session explicitly. Offline expiry is an estimate, and the publish visit still verifies readiness.
 
 ## Surface
 
@@ -75,23 +75,20 @@ repo that drives an interactive creator console from a headed browser, so a runa
 account-level risk rather than a failed run. Four rules, enforced in the plugin so every surface
 (workflow, skill, manual `kk executor run`) inherits them:
 
-1. **No headed visit without a verified session.** Every publish runs a **headless preflight**
-   (`checkXhsProfileSession`) before opening anything: one `goto` of the creator console and
-   selector reads, no upload and no click. A refusal returns `ok: false` with the preflight reason
-   and the headed browser is never opened. Because the upstream launcher never creates a profile
-   headless, a missing profile is refused outright — this is what replaced the old behaviour, a
-   headed window sitting on the login gate for the full `LOGIN_TIMEOUT_MS` (120 s). Verified
-   2026-09-28 against the real launcher: `openPersistentBrowser({ headless: true })` on an absent
-   profile directory throws `BrowserProfileMissingError` and creates nothing.
-2. **One headed publish cycle and one session check per 2 h.** Both are capped in
-   `automation-guard.ts` against a state file (`~/.config/kk/xhs-automation.json`, override
-   `KK_XHS_AUTOMATION_STATE`). A manual `profile-check check` draws on the same `check` budget as the
-   preflight's own console visit. The `publish` budget is consumed **at the headed launch, not at
-   the attempt**, so a refused preflight leaves the window intact and the operator can log in and
-   retry the same day.
-3. **`login` is never automated and never capped.** Recovery is a headed, operator-interactive
-   session (`loginWithProfile`); a human types the credentials. Capping it would only block recovery
-   from an expired session.
+1. **One headed visit, readiness first.** Publish opens the console once and waits only for the
+   authenticated mode bar within `PREFLIGHT_TIMEOUT_MS` (90 s across navigation and readiness).
+   Failure returns an effect-free session refusal naming `kk bot login xhs`, without composing
+   a note or waiting for interactive login. No plugin path launches headless.
+2. **One headed publish cycle and one headed session check per 2 h.** Both are capped in
+   `automation-guard.ts` (`~/.config/kk/xhs-automation.json`, override `KK_XHS_AUTOMATION_STATE`).
+   The publish budget is consumed at the single launch, including a visit whose session refuses.
+   Default `check` reads the profile and `bot.json` offline without consuming a budget: an absent
+   profile, expired estimate or unreadable metadata refuses; other profiles report `offline:`
+   with expiry or `expiry unknown`. Cookie expiry is only an estimate; the publish readiness gate
+   is authoritative. `check --headed` opts into one real probe and consumes the check budget.
+3. **`login` and `open` are operator-interactive and uncapped.** Both use `runProfileCli` with
+   the XHS readiness predicate. A bot-mode login reports estimated cookie expiry for `kk bot list`;
+   legacy profiles without expiry remain usable. A human signs in inside the opened window.
 4. **A corrupt or unreadable state file fails closed.** The guard cannot prove the window is clean,
    so it refuses with an actionable message instead of silently granting a fresh budget. Delete the
    file to reset deliberately.
@@ -100,9 +97,10 @@ Also unchanged and load-bearing: a live `发布` submit is **single-click** (an 
 never retried, because a retry risks a second public post), while draft saves keep a bounded retry
 because drafts are cheap and deletable.
 
-Operator recipe: run `bun plugins/publishings/xhs-pub/src/profile-check.ts check` (headless, one
-console visit, draws on the `check` budget) before a publish; if it refuses, `login` once, then
-publish. Expect at most one publish per day.
+Operator recipe: run `bun plugins/publishings/xhs-pub/src/profile-check.ts check` offline before
+publishing. If it refuses, use `kk bot login xhs`; use `check --headed` only for an explicit
+console probe. A dead-session publish already spent its visit budget, so recovery does not permit
+another publish until the next window. The channel remains off pending operator follow-up.
 
 ## Checks and limits
 

@@ -24,7 +24,6 @@ import { join } from 'node:path';
 
 const REPO = join(import.meta.dir, '../../..');
 const ACTIVE_SAFETY_WORKFLOW = join(REPO, 'plugins/kk/workflows/kk-daily-safety.yaml');
-const SAFETY_WORKFLOW = process.env.KK_SAFETY_WORKFLOW ?? ACTIVE_SAFETY_WORKFLOW;
 const STAGE_RUNNER = join(REPO, 'plugins/kk/scripts/kk-workflow-stages.ts');
 const SAFETY_CHECKER = join(REPO, 'plugins/kk/scripts/safety-artifact-check.ts');
 const VOICESCRIPT_VALIDATOR = join(REPO, 'plugins/kk/scripts/validate-voicescript.ts');
@@ -55,6 +54,22 @@ function writeExecutable(path: string, body: string): void {
     writeFileSync(path, `${body}\n`);
     chmodSync(path, 0o755);
 }
+
+/**
+ * The shipped retries resolve by role (`agent: inline` + `role: reviewer`) since 0360, so a PATH
+ * double cannot stand in for them. This fixture pins those three retries to the `claude` stub and
+ * leaves everything else byte-identical, keeping the artifact-preservation regression deterministic.
+ */
+function pinnedRetryWorkflow(): string {
+    const source = readFileSync(ACTIVE_SAFETY_WORKFLOW, 'utf-8');
+    const pinned = source.replaceAll('          agent: inline', '          agent: claude');
+    if (pinned === source) throw new Error('the safety machine no longer declares role-resolved retries');
+    const path = join(tempDir('safety-workflow-'), 'kk-daily-safety.yaml');
+    writeFileSync(path, pinned);
+    return path;
+}
+
+const SAFETY_WORKFLOW = process.env.KK_SAFETY_WORKFLOW ?? pinnedRetryWorkflow();
 
 /** Test agents cover valid artifacts, invalid/repaired retries, and no-op remediation. */
 function writeAgentStubs(binDir: string, calls: string, mode: AgentStubMode): void {
@@ -245,7 +260,6 @@ function runSafety(
                 safety_max_revise: maxRevise,
                 safety_platforms: 'xiaoyuzhou',
                 agent: 'pi',
-                agent_retry: 'claude',
                 unattended,
             }),
         ],

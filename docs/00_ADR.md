@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.45.0
+version: 1.46.0
 created_at: 2026-05-28
-updated_at: 2026-11-10
+updated_at: 2026-11-14
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -1102,6 +1102,19 @@ by the cap by design) and a second `KK_XHS_AUTOMATION_STATE` file to dodge it (t
 for a deliberate second profile). Residual risk accepted: one visit now spends longer in the
 console and saves two drafts instead of one.
 
+**Amendment (2026-11-13, one headed visit and out-of-page capture; task 0370).** A publish now
+opens the console exactly once, headed, with the bounded session-readiness gate as its first step;
+there is no separate headless probe or headed fallback. A dead session refuses without composing
+anything and names `kk bot login xhs`. The publish budget counts that launch even if readiness
+refuses, because a console visit happened. `check` is offline by default: an absent profile,
+expired estimated session, or unreadable metadata refuses; otherwise it reports the recorded
+expiry or `expiry unknown`. Cookie expiry is an estimate, and the publish visit's readiness gate
+remains authoritative. `check --headed` retains the headed probe and check budget; `login` and
+`open` use the shared profile CLI and remain uncapped. Outcome capture uses browser-context
+responses, page console events, and read-only DOM risk-text deltas; it never patches page globals.
+These changes remove unnecessary visits and in-page modifications; they do not establish the
+cause of the account warning or authorize re-enabling XHS, which remains off in publish presets.
+
 **Detail:** `docs/design/xhs-image-cards.md` → Automation risk policy.
 
 ---
@@ -1686,6 +1699,12 @@ renderers. The style contract moves from `plugins/kk/scripts/daily-voice-style.z
 a run never relies on skill discovery. `daily-script-style` snapshots `SKILL.md` and the style contract into the
 work dir, and prompts cite those snapshot paths. That also freezes the exact policy a run was written against.
 
+**Amendment 2026-11-13 (G61, ADR-053).** The new workflows (`kk-news-generate`, `kk-article-generate`) do not
+snapshot the skill. The launching verb resolves the writer skill inside the running kk package and passes its
+directory as workflow var `skill_dir`; prompts cite `${vars.skill_dir}/SKILL.md`, so skill discovery is still not
+relied on. The run's `schedule-receipt.json` records the directory and a content hash in place of the copy.
+`daily-script-style` and the snapshot remain for `kk-daily-ai-voice.yaml` / `kk-daily-ai-voice2.yaml` only.
+
 **Shape.** One editorial pass feeds many renders. `curate` keeps or drops items, orders them and writes the
 Chinese facts. `write` adds lead, insight, intro and outro, plus later card, social and cover lines. `write --fix`
 repairs a plan using the validator's error list instead of silently falling back to the template. The article,
@@ -1883,3 +1902,85 @@ visible. Re-enable only after the restriction clears, one headed visit per windo
 `plugins/publishings/{xhs,wechatmp,weibo,shipinhao}-pub/src/*`,
 `.spur/config.yaml` (`kk-daily-publish3-cn-peak`), `scripts/daily-ai-news.ts` (posture check),
 `docs/03_ARCHITECTURE.md`, `docs/04_DESIGN.md`.
+
+---
+
+## ADR-053: News and article pipelines share one publish core and workflow; operator verbs live on `kk article` / `kk news`
+
+**Status:** Accepted · **Date:** 2026-11-13 · **Feature:** G61 · **Amends:** the `AGENTS.md` product-model rule ("kk owns steps; spur workflow owns orchestration"), ADR-040, ADR-043.
+
+**Decision.**
+
+1. **One publish core, one publish workflow.** Plan, check, send, classify, settle and receipts live in a
+   neutral `apps/cli/src/publish-core/` module with one plan schema and one preset dialect. A single
+   `kk-publish.yaml` publishes a frozen `bundle.json` for every content type; `kk-daily-publish3.yaml`
+   and `kk-itc-publish-tail.yaml` are retired. ITC is split into generate and publish the way ADR-043
+   split the daily voice product.
+2. **No `kk publish`, `kk run`, `kk itc` or `kk daily` noun.** `kk article` and `kk news` carry both
+   layers: plain verbs (`new`, `generate`, `publish`, `status`) are operator entry points, and
+   hyphenated verbs (`publish-plan`, `publish-check`, `publish-send`, `publish-settle`,
+   `publish-report`) are the steps a workflow calls. One registration function puts the shared verbs on
+   both nouns. Older spellings stay hidden compatibility routes (ADR-037).
+3. **A plain verb may launch and supervise exactly one workflow.** `generate` and `publish` take the
+   single-flight lock, probe the executor, start one `spur workflow run`, enforce the timeout, and on
+   exit cancel, release reservations and write the receipt. They never sequence steps; that stays with
+   the workflow. This is the only exception to "kk owns steps; spur workflow owns orchestration".
+4. **`--type` resolves through config.** `content_types.<type>` names the generate workflow, the writer
+   skill and the publish preset. `--channels` narrows a publish launch and is recorded in the plan.
+5. **One executor var per workflow.** `agent`, default `inline`, is the single source for every agent
+   node and every nested launch. Retry nodes resolve by role instead of a second pinned name. A
+   real-traffic probe is the first node.
+6. **Authoring stays in skills; generation plugins stay deterministic.** One writer skill per content
+   type (ADR-045 pattern); `plugins/generations` renders (TTS, image, cards) and never dispatches an
+   agent.
+7. **A workflow node must earn its place.** It survives only as an agent call, a human pause, or a
+   retry boundary worth minutes. Everything else folds into a `kk` verb.
+
+**Why.** The shared publish code is owned by `itc-*` modules and imported by the daily matrix; the ITC
+publish tail is a duplicated YAML held by a drift test; a channel retry on ITC costs a new topic
+directory; the operator API (executor pair, preflight, cleanup, publish-only path) lives in
+`scripts/`, outside the product; and a checkout with a stale job line ran a quota-dead pinned executor
+for two days. Each is a boundary in the wrong place rather than a channel defect.
+
+**Rejected.** A `kk publish` noun (the operator thinks in content, not transport); a generic `kk run`
+supervisor noun (the launch belongs to the content verb); moving authoring into generation plugins
+(plugins run without an agent).
+
+**Detail:** feature G61, tasks 0360–0362.
+
+**Amendment 2026-11-13 (design freeze, task 0362).** Three extensions, none reversing a decision above.
+(a) Decision 2's hyphenated step-verb pattern also covers generation: `generate-check`,
+`generate-render`, `generate-voice`, `generate-cards`, `generate-bundle`, beside `prepare` and `report`
+— decision 7 cannot be met for generation without them. (b) Decision 4's `content_types.<type>` gains
+`channels`: a map of `<plugin>` or `<plugin>/<variant>` to `off | dummy | draft | live`, the single
+operator switch for a channel. The publish preset keeps structure and the default mode; `--channels` /
+`--live-channels` stay per-run; the plan records each row's mode source. Per-channel `enable_*` workflow
+variables were rejected: the publish workflow is shared across types and never branches per channel, so
+they would be pass-through, and a shipped workflow has the same installed-copy staleness as a shipped
+preset. (c) A run directory is `<works>/<workflow>/<run>` for the new workflow names (ADR-042 unchanged);
+the `kk-daily-ai-voice2` and `kk-itc` trees are not migrated, and phase directory names inside a run are
+unchanged. Production schedule host: the Mac mini; the laptop is the test host.
+**Detail:** `docs/design/content-pipeline-consolidation.md`, tasks 0363–0369.
+
+**Amendment 2026-11-13 (Phase 2 surface shipped, tasks 0363–0364).** No decision changes; records what exists.
+(a) Decision 1's publish core is one file today — `apps/cli/src/publish-core.ts` (receipt contract,
+publish preset schema and resolver, plugin probe, send loop). The `publish-core/` split remains a
+later refactor; `itc-publish.ts` re-exports the moved symbols under their old names, and nothing in
+the core imports `./itc-*`.
+(b) Decision 2's single registration function is `registerContentVerbs(program, noun, defaultType)` in
+`apps/cli/src/commands/content.ts`, called twice from `apps/cli/src/cli.ts`. Shipped: `new`, `status`
+and the five `publish-*` step verbs; `kk news` rejects `--type` (exit 2).
+(c) Decision 4's registry is live: `content_types.<type>` resolves flag → config → workflow preset →
+built-in, and `channels` is applied only by the named `publish-plan`, whose rows record `modeSource`.
+(d) Decisions 1 and 3 are not fully built: the split into `kk-publish`, the launching `generate` /
+`publish` verbs with `launchWorkflow()`, the three workflows, and the retirement of
+`kk-daily-publish3` / `kk-itc-publish-tail` are tasks 0365–0369.
+**Detail:** `docs/design/content-pipeline-consolidation.md`, tasks 0363–0364.
+
+**Amendment 2026-11-14 (task 0372, operator decision).** An effective channel mode of `off`
+vetoes `--live-channels`: resolve the specific/plugin config over the preset default first, then
+promote only enabled rows. Disabled rows remain excluded with their config/preset mode source.
+The operator approved retaining the already-landed retirement with a sequencing exception:
+production migration and full scheduled-day validation are deferred to task 0373, whose handoff
+is in `docs/migration.md`. Task 0372 readiness covers the retirement and handoff, not production
+cut-over readiness; the latter still requires real Mac mini evidence.

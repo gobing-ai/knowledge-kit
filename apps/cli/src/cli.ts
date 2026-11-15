@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { registerBoardCommand } from './commands/board';
 import { registerBotCommand } from './commands/bot';
+import { registerContentVerbs } from './commands/content';
 import { registerDailyCommand } from './commands/daily';
 import { registerExecutorCommand } from './commands/executor';
 import { registerItcCommand } from './commands/itc';
@@ -29,6 +30,8 @@ export function createProgram(): Command {
 
     registerBoardCommand(program);
     registerBotCommand(program);
+    registerContentVerbs(program, 'article', 'itc');
+    registerContentVerbs(program, 'news', 'news');
     registerDailyCommand(program);
     registerExecutorCommand(program);
     registerItcCommand(program);

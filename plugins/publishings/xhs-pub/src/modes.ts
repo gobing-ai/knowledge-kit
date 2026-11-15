@@ -9,7 +9,7 @@ import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
  * `operations` of this plugin — selected from `options.operation ?? content.metadata.operation`,
  * resolved against {@link XHS_OPERATIONS}, and refused by name **before** a browser is launched or
  * a profile is resolved. Each operation owns its own entry step, artifact set, limits and flow
- * (`./flow`); the channel owns the profile dir, session, preflight and `Content → Result` mapping
+ * (`./flow`); the channel owns the profile dir, session readiness and `Content → Result` mapping
  * (`./index`).
  *
  * Labels and constraints come from the live console walk (`docs/design/xhs-ui-discovery.md`).

@@ -33,7 +33,7 @@ import { captureOutput } from './capture';
 // 17. missing optional variant plans the rest and writes a failed effect-none receipt (R6)
 // 18. missing required variant still refuses planning (R6)
 // 19. failed dummy payload preparation stays dummy in accounting (R6)
-// 20. publish3 workflow validates run_date before send and classify no longer needs the late guard (F13)
+// 20. the publish workflow normalizes run_date once before send and needs no late guard (F13)
 
 interface Fixture {
     root: string;
@@ -821,16 +821,16 @@ describe('optional variant omission (0332 R6)', () => {
     });
 });
 
-describe('publish3 workflow run_date guard (0332 R1, F13)', () => {
-    it('validates run_date before any send and drops the after-send classify guard', () => {
-        const yaml = readFileSync(
-            resolve(import.meta.dir, '../../../plugins/kk/workflows/kk-daily-publish3.yaml'),
-            'utf-8',
-        );
-        const validatePos = yaml.indexOf('publish-matrix-validate');
-        const sendPos = yaml.indexOf('publish-matrix-send');
-        expect(validatePos).toBeGreaterThan(-1);
-        expect(validatePos).toBeLessThan(sendPos);
+describe('publish workflow run_date guard (0332 R1, F13)', () => {
+    it('normalizes run_date once, in the plan node before any send', () => {
+        const yaml = readFileSync(resolve(import.meta.dir, '../../../plugins/kk/workflows/kk-publish.yaml'), 'utf-8');
+        // One normalization point. A second `--run-date` anywhere would let a send node authorize
+        // on an unnormalized date, which is what F13 retired.
+        expect(yaml.match(/--run-date=/g)?.length).toBe(1);
+        const normalizePos = yaml.indexOf('--run-date=');
+        const sendPos = yaml.indexOf('  - id: send\n');
+        expect(normalizePos).toBeGreaterThan(-1);
+        expect(normalizePos).toBeLessThan(sendPos);
         expect(yaml).not.toContain('classify needs run_date');
     });
 });

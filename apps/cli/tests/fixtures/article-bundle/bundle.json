@@ -1,0 +1,14 @@
+{
+    "schemaVersion": 1,
+    "runId": "article-run-1",
+    "runDate": "2026-11-13",
+    "runs": [],
+    "contentType": "itc",
+    "title": "A hand-built article bundle",
+    "variants": {
+        "article": {
+            "path": "variants/article.json",
+            "sha256": "28194f725a2e837d644e4cc960f08683ced0b4d5d104373464e6dc1b4ab57d5f"
+        }
+    }
+}

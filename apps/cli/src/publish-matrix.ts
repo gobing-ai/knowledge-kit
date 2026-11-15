@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { type Content, ContentSchema, discoverAllPlugins, type PluginRecord } from '@gobing-ai/kk-core';
 import {
     createNodeFileSystem,
@@ -9,15 +9,18 @@ import {
 } from '@gobing-ai/ts-runtime';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import { z } from 'zod';
-import { resolveItcConfigPath } from './itc-config';
 import {
     loadPublishPreset,
     type PublishPreset,
     type PublishPresetTarget,
     type PublishWindow,
     PublishWindowSchema,
-} from './itc-plan';
-import { type ItcReceipt, probePlugin, type SendRow, sendRows } from './itc-publish';
+    probePlugin,
+    type Receipt,
+    resolveConfigPath,
+    type SendRow,
+    sendRows,
+} from './publish-core';
 
 /** One frozen asset a bundle ships: a `Content` JSON path plus its sha256. */
 export const BundleVariantSchema = z
@@ -53,16 +56,21 @@ export const BundleSchema = z
         schemaVersion: z.literal(1).default(1),
         runId: z.string().min(1),
         runDate: z.string().min(1),
+        contentType: z.string().min(1).default('news'),
+        title: z.string().min(1).optional(),
         parentRunId: z.string().min(1).optional(),
         runs: z.array(z.string()).default([]),
-        episode: z.object({ title: z.string().min(1), guid: z.string().optional() }).strict(),
+        episode: z
+            .object({ title: z.string().min(1), guid: z.string().optional() })
+            .strict()
+            .optional(),
         variants: z.record(z.string(), BundleVariantSchema),
         safety: BundleSafetySchema.optional(),
     })
     .strict();
 
 /** Parsed bundle. */
-export type Bundle = z.infer<typeof BundleSchema>;
+export type Bundle = z.input<typeof BundleSchema>;
 
 /** One planned publish target: everything a send needs, plus the console's approval flag. */
 export const PublishPlanRowSchema = z
@@ -77,6 +85,9 @@ export const PublishPlanRowSchema = z
         required: z.boolean(),
         approval: z.enum(['none', 'required']),
         status: z.literal('planned'),
+        transport: z.enum(['fanout', 'browser']).default('fanout'),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+        modeSource: z.enum(['flag', 'config', 'preset']).optional(),
         profile: z.string().min(1).optional(),
         payloadPath: z.string().min(1),
         payloadDigest: z.string().min(1),
@@ -86,8 +97,8 @@ export const PublishPlanRowSchema = z
     })
     .strict();
 
-/** Parsed plan row. */
-export type PublishPlanRow = z.infer<typeof PublishPlanRowSchema>;
+/** Parsed plan row. The public type keeps additive fields optional for legacy callers. */
+export type PublishPlanRow = z.input<typeof PublishPlanRowSchema>;
 
 /**
  * One preset target dropped from the plan for a policy reason (0333): safety exclusion, `mode: off`,
@@ -120,8 +131,26 @@ export const PublishPlanSchema = z
     })
     .strict();
 
-/** Parsed plan. */
-export type PublishPlan = z.infer<typeof PublishPlanSchema>;
+/**
+ * Where a run directory's frozen bundle lives — `4-publish/bundle.json` (design §4.3), with the
+ * root-level `bundle.json` of a pre-cut-over run directory as the fallback.
+ *
+ * Task 0366 needs both spellings at once: the launching verb admits only the frozen path (§3.2),
+ * while a run directory produced before the layout moved "remains publishable with `--work-dir`"
+ * (§4.3), and the retired publish3 DAG still named the root path. Reading is additive — a directory
+ * with both files keeps using the frozen one.
+ */
+export async function resolveBundlePath(fs: FileSystem, workDir: string): Promise<string> {
+    const frozen = join(workDir, '4-publish', 'bundle.json');
+    if (await fs.exists(frozen)) return frozen;
+    return join(workDir, 'bundle.json');
+}
+
+/** Parsed plan. The public type accepts legacy rows without additive defaulted fields. */
+export type PublishPlan = Omit<z.input<typeof PublishPlanSchema>, 'rows' | 'excluded'> & {
+    excluded: PublishPlanExcluded[];
+    rows: PublishPlanRow[];
+};
 
 /** One classified plan row: the receipt's own words, plus `missing` when none was written. */
 export const PublishOutcomeRowSchema = z
@@ -163,10 +192,10 @@ export type PublishOutcome = z.infer<typeof PublishOutcomeSchema>;
  */
 export function classifyPublishMatrix(
     plan: PublishPlan,
-    receipts: readonly ItcReceipt[],
+    receipts: readonly Receipt[],
     runDate: string,
 ): PublishOutcome {
-    const byTarget = new Map<string, ItcReceipt>();
+    const byTarget = new Map<string, Receipt>();
     for (const receipt of receipts) {
         const key = receipt.target ?? receipt.plugin;
         byTarget.set(key, receipt);
@@ -229,6 +258,8 @@ export interface PublishMatrixDeps {
     executor?: ProcessExecutor;
     /** Injected preset (tests); a live call resolves it from the `--preset` slug instead. */
     preset?: PublishPreset;
+    /** Preset plus digest after applying a content-type switchboard (new content verbs only). */
+    presetOverride?: { preset: PublishPreset; digest: string };
 }
 
 /**
@@ -249,6 +280,77 @@ export function targetId(target: PublishPresetTarget): string {
     if (target.id) return target.id;
     if (target.operation) return `${target.plugin}.${slugify(target.operation)}`;
     return target.plugin;
+}
+
+/** Modes accepted by the content-type channel switchboard. */
+export type ChannelMode = 'off' | 'dummy' | 'draft' | 'live';
+
+/** Raised before any publish artifact is written when a switchboard key is a configuration typo. */
+export class UnknownChannelModeError extends Error {
+    constructor(key: string, preset: string) {
+        super(`channel '${key}' is not listed in preset '${preset}'`);
+        this.name = 'UnknownChannelModeError';
+    }
+}
+
+function targetMatchesChannel(target: PublishPresetTarget, token: string): boolean {
+    return (
+        target.plugin === token ||
+        target.id === token ||
+        (target.variant !== undefined && `${target.plugin}/${target.variant}` === token)
+    );
+}
+
+/** Validate per-run channel selectors without touching the work directory. */
+export function validatePublishChannelTokens(preset: PublishPreset, tokens: readonly string[]): void {
+    for (const token of tokens) {
+        if (!preset.targets.some((target) => targetMatchesChannel(target, token))) {
+            throw new UnknownChannelModeError(token, preset.name);
+        }
+    }
+}
+
+/**
+ * Apply the content-type channel switchboard to a preset copy.
+ *
+ * The returned preset carries `modeSource` as an additive internal field. Legacy stage callers do
+ * not invoke this helper, so their plan bytes remain unchanged; the content verbs use the field to
+ * explain an operator-configured mode and to distinguish `mode off (config)` from a preset opt-out.
+ */
+export function applyChannelModes(
+    preset: PublishPreset,
+    channels: Readonly<Record<string, ChannelMode>>,
+    liveChannels: readonly string[],
+): PublishPreset {
+    validatePublishChannelTokens(preset, Object.keys(channels));
+
+    return {
+        ...preset,
+        targets: preset.targets.map((target) => {
+            const specificKey = target.variant === undefined ? undefined : `${target.plugin}/${target.variant}`;
+            const configKey =
+                specificKey !== undefined && channels[specificKey] !== undefined
+                    ? specificKey
+                    : channels[target.plugin] !== undefined
+                      ? target.plugin
+                      : undefined;
+            const configMode = configKey === undefined ? undefined : channels[configKey];
+            const live =
+                (configMode ?? target.mode) !== 'off' &&
+                liveChannels.some((token) => targetMatchesChannel(target, token));
+            const mode = live ? 'live' : (configMode ?? target.mode ?? 'draft');
+            const modeSource: PublishPlanRow['modeSource'] = live
+                ? 'flag'
+                : configMode !== undefined
+                  ? 'config'
+                  : 'preset';
+            return {
+                ...target,
+                mode,
+                modeSource,
+            };
+        }),
+    };
 }
 
 /** Value of a `--flag value` pair, or undefined when the flag is absent. */
@@ -323,7 +425,7 @@ export async function runPublishMatrixValidate(args: string[], deps: PublishMatr
     let candidate = raw === undefined || raw.trim() === '' ? undefined : raw;
     if (candidate === undefined) {
         source = 'bundle.json';
-        const bundlePath = join(workDir, 'bundle.json');
+        const bundlePath = await resolveBundlePath(fs, workDir);
         if (!(await fs.exists(bundlePath))) {
             echoError(`publish-matrix-validate: no --run-date and no bundle at ${bundlePath} to derive one from`);
             return 1;
@@ -391,6 +493,7 @@ async function composePlan(
         liveChannels: readonly string[];
         dummy: boolean;
         projectRoot?: string;
+        presetOverride?: { preset: PublishPreset; digest: string };
     },
 ): Promise<{ plan: PublishPlan; omitted: OmittedTarget[] }> {
     const bundleAbs = resolve(input.bundlePath);
@@ -410,11 +513,13 @@ async function composePlan(
     }
     const bundleDir = dirname(bundleAbs);
 
-    const { preset, digest } = await loadPublishPreset(
-        input.preset,
-        { ...(input.projectRoot ? { projectRoot: input.projectRoot } : {}) },
-        fs,
-    );
+    const { preset, digest } =
+        input.presetOverride ??
+        (await loadPublishPreset(
+            input.preset,
+            { ...(input.projectRoot ? { projectRoot: input.projectRoot } : {}) },
+            fs,
+        ));
 
     const inWindow = preset.targets.filter(
         (target) => (target.window ?? 'after-generate') === input.window && (target.mode ?? 'draft') !== 'off',
@@ -453,15 +558,18 @@ async function composePlan(
 
     // Launch vars may only narrow or promote what the preset already lists. A token that matches no
     // preset target at all is a typo, so it fails instead of silently planning nothing.
-    const matches = (target: PublishPresetTarget, token: string): boolean =>
-        target.plugin === token || target.id === token;
+    const matches = (target: PublishPresetTarget, token: string): boolean => targetMatchesChannel(target, token);
     for (const token of [...input.channels, ...input.liveChannels]) {
         if (!preset.targets.some((target) => matches(target, token))) {
             throw new Error(`channel '${token}' is not listed in preset '${preset.name}'`);
         }
     }
     for (const token of [...input.channels, ...input.liveChannels]) {
-        if (!inWindow.some((target) => matches(target, token))) {
+        if (
+            !preset.targets.some(
+                (target) => (target.window ?? 'after-generate') === input.window && matches(target, token),
+            )
+        ) {
             throw new Error(`channel '${token}' has no target in window '${input.window}'`);
         }
     }
@@ -483,7 +591,11 @@ async function composePlan(
         if (excludedPlugins.has(target.plugin)) {
             excluded.push({ id, plugin: target.plugin, reason: 'excluded by bundle safety' });
         } else if ((target.mode ?? 'draft') === 'off') {
-            excluded.push({ id, plugin: target.plugin, reason: 'mode off' });
+            excluded.push({
+                id,
+                plugin: target.plugin,
+                reason: target.modeSource === 'config' ? 'mode off (config)' : 'mode off',
+            });
         } else if (input.channels.length > 0 && !input.channels.some((token) => matches(target, token))) {
             excluded.push({ id, plugin: target.plugin, reason: 'not in --channels list' });
         }
@@ -538,6 +650,10 @@ async function composePlan(
         const id = targetId(target);
         if (seen.has(id)) throw new Error(`duplicate target id '${id}' in preset '${preset.name}'`);
         seen.add(id);
+
+        if (target.plugin === 'podcast-pub' && bundle.episode === undefined) {
+            throw new Error(`bundle is missing required field 'episode' for podcast target '${id}'`);
+        }
 
         const liveToken = input.liveChannels.find((token) => matches(target, token));
         if (liveToken !== undefined && target.mode === 'dummy') {
@@ -598,7 +714,11 @@ async function composePlan(
                 );
             }
         }
-        const inherited = { ...(parsedContent.data.metadata ?? {}), ...(target.options ?? {}) };
+        const inherited = {
+            ...(parsedContent.data.metadata ?? {}),
+            ...(target.metadata ?? {}),
+            ...(target.options ?? {}),
+        };
         delete inherited.publishStatus;
         delete inherited.published;
         delete inherited.status;
@@ -634,10 +754,18 @@ async function composePlan(
             // console attaches through this field (design §5b).
             approval: mode === 'live' ? 'required' : 'none',
             status: 'planned',
+            ...(target.transport !== undefined ? { transport: target.transport } : {}),
+            ...(target.metadata !== undefined ? { metadata: target.metadata } : {}),
+            ...(target.modeSource !== undefined ? { modeSource: target.modeSource } : {}),
             ...(target.profile !== undefined ? { profile: target.profile } : {}),
             payloadPath: payloadRelative,
             payloadDigest: createHash('sha256').update(payloadText).digest('hex'),
-            variantPath: entry.path,
+            // Bundle variant paths resolve against the BUNDLE's directory (design §4.1), while this
+            // plan's own paths (`payloadPath`, and the settle revalidation that reads `variantPath`
+            // with `join(workDir, …)`) resolve against the run directory. They coincide for a bundle
+            // at the run root (news) and differ for `4-publish/bundle.json` (the article layout), so
+            // the plan records the run-relative form.
+            variantPath: relative(input.workDir, resolve(bundleDir, entry.path)),
             variantDigest: entry.sha256,
         });
         await fs.ensureDir(join(input.workDir, '4-publish', 'payloads'));
@@ -718,6 +846,7 @@ export async function planPublishMatrix(args: string[], deps: PublishMatrixDeps 
             liveChannels,
             dummy,
             ...(deps.projectRoot ? { projectRoot: deps.projectRoot } : {}),
+            ...(deps.presetOverride ? { presetOverride: deps.presetOverride } : {}),
         });
         const publishDir = join(workDir, '4-publish');
         await fs.ensureDir(publishDir);
@@ -727,7 +856,7 @@ export async function planPublishMatrix(args: string[], deps: PublishMatrixDeps 
         // from the same file, so it is hashed from the exact bytes written above.
         const planDigest = createHash('sha256').update(planText).digest('hex');
         for (const target of omitted) {
-            const receipt: ItcReceipt = {
+            const receipt: Receipt = {
                 schemaVersion: 1,
                 parentRunId: plan.parentRunId,
                 planDigest,
@@ -965,14 +1094,14 @@ export async function runPublishMatrixClassify(args: string[], deps: PublishMatr
     }
 
     const receiptsDir = join(publishDir, 'receipts');
-    const receipts: ItcReceipt[] = [];
+    const receipts: Receipt[] = [];
     // Every receipt in the dir is evidence (0332 R6): omitted variants' failed-effect-none receipts
     // carry the dummy accounting even though no plan row references them.
     if (await fs.exists(receiptsDir)) {
         for (const name of await fs.readDir(receiptsDir)) {
             if (!name.endsWith('.json')) continue;
             try {
-                receipts.push(JSON.parse(await fs.readFile(join(receiptsDir, name))) as ItcReceipt);
+                receipts.push(JSON.parse(await fs.readFile(join(receiptsDir, name))) as Receipt);
             } catch {
                 // an unreadable receipt is a row with no evidence: it stays `missing`
             }
@@ -1052,11 +1181,11 @@ export async function runPublishMatrixSettle(args: string[], deps: PublishMatrix
     }
     const parentRunId = plan.parentRunId;
     const receiptsDir = join(publishDir, 'receipts');
-    const receiptFor = async (id: string): Promise<ItcReceipt | undefined> => {
+    const receiptFor = async (id: string): Promise<Receipt | undefined> => {
         const path = join(receiptsDir, `${id}.json`);
         if (!(await fs.exists(path))) return undefined;
         try {
-            return JSON.parse(await fs.readFile(path)) as ItcReceipt;
+            return JSON.parse(await fs.readFile(path)) as Receipt;
         } catch {
             return undefined;
         }
@@ -1150,8 +1279,8 @@ async function writeDummyReceipt(
     fs: FileSystem,
     row: SendRow,
     context: { payloadPath: string; payloadDigest: string; startedAt: string; parentRunId: string; planDigest: string },
-): Promise<ItcReceipt> {
-    const base: ItcReceipt = {
+): Promise<Receipt> {
+    const base: Receipt = {
         ...(row.receiptExtras ?? {}),
         schemaVersion: 1,
         parentRunId: context.parentRunId,
@@ -1225,7 +1354,7 @@ async function readLinkMap(
         const path = join(publishDir, 'receipts', `${entry.rowId}.json`);
         if (!(await fs.exists(path))) continue;
         try {
-            const receipt = JSON.parse(await fs.readFile(path)) as ItcReceipt & { guid?: string };
+            const receipt = JSON.parse(await fs.readFile(path)) as Receipt & { guid?: string };
             if (receipt.status !== 'succeeded' || !receipt.url) continue;
             if (receipt.parentRunId !== plan.parentRunId) continue;
             all[source.receipt] = receipt.url;
@@ -1348,7 +1477,8 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
                 profile: row.profile ?? 'article',
                 mode: row.mode,
                 payloadPath: join(workDir, row.payloadPath),
-                transport: 'fanout',
+                transport: row.transport ?? 'fanout',
+                ...(row.metadata !== undefined ? { metadata: row.metadata } : {}),
                 receiptExtras: { target: row.id, window: plan.window },
             }));
 
@@ -1492,6 +1622,23 @@ export async function runPublishMatrixRssGate(args: string[], deps: RssGateDeps 
     }
     const publishDir = join(workDir, '4-publish');
 
+    const bundlePath = await resolveBundlePath(fs, workDir);
+    const hasBundle = await fs.exists(bundlePath);
+    if (hasBundle) {
+        try {
+            const parsed = BundleSchema.safeParse(JSON.parse(await fs.readFile(bundlePath)));
+            if (!parsed.success) throw new Error(parsed.error.message);
+            if (parsed.data.episode === undefined) {
+                throw new Error("bundle is missing required field 'episode' for RSS gating");
+            }
+        } catch (err: unknown) {
+            echoError(
+                `publish-matrix-rss-gate: malformed bundle at ${bundlePath}: ${err instanceof Error ? err.message : String(err)}`,
+            );
+            return 1;
+        }
+    }
+
     // The gate's day is the bundle's own calendar day (0332 R1/R5): a provided date must normalize
     // and must not disagree with the plans it is gating — a wrong date never authorizes a send.
     let date = dateRaw !== undefined && dateRaw.trim() !== '' ? normalizeRunDate(dateRaw) : undefined;
@@ -1523,7 +1670,7 @@ export async function runPublishMatrixRssGate(args: string[], deps: RssGateDeps 
             if (row.plugin !== 'podcast-pub') continue;
             const receiptPath = join(receiptsDir, `${row.id}.json`);
             if (!(await fs.exists(receiptPath))) continue;
-            const receipt = JSON.parse(await fs.readFile(receiptPath)) as ItcReceipt & { guid?: string };
+            const receipt = JSON.parse(await fs.readFile(receiptPath)) as Receipt & { guid?: string };
             if (typeof receipt.guid === 'string') guid = receipt.guid;
         }
     }
@@ -1581,6 +1728,19 @@ export async function runPublishMatrixRssGate(args: string[], deps: RssGateDeps 
         return result.hit ? 0 : 3;
     };
 
+    // An empty QC pool deliberately has no bundle. Record a conservative miss so the workflow can
+    // classify the day as no-content; absence of a bundle must never authorize an RSS send.
+    if (!hasBundle) {
+        return write({
+            schemaVersion: 1,
+            date,
+            feedUrl,
+            hit: false,
+            reason: 'missing',
+            detail: `bundle.json is absent at ${bundlePath}; no episode was generated`,
+        });
+    }
+
     let xml: string;
     try {
         const read =
@@ -1632,6 +1792,13 @@ export async function runPublishMatrixWaitUntil(
     if (hours > 23 || minutes > 59) {
         echoError(`publish-matrix-wait-until: '${target}' is not a valid wall-clock time`);
         return 1;
+    }
+    // Parity/rehearsal seam: an offline test drives the real workflow stack, so a window whose
+    // target is hours away would otherwise sleep through the test's budget. Documented and
+    // never set by a shipped job; the production path always waits.
+    if (process.env.KK_WINDOW_WAIT === 'skip') {
+        echo(`publish-matrix-wait-until: ${target} ${zone} skipped (KK_WINDOW_WAIT=skip)`);
+        return 0;
     }
     const now = deps.now ?? Date.now;
     const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
@@ -1712,7 +1879,7 @@ export async function readPublishPresetSelector(
     // The ONE kk config path convention (`itc-config.ts`): `$KK_CONFIG` (with `~` expanded) or
     // `$HOME/.config/kk/config.yaml`. Hand-rolling it here resolved `~` against the cwd instead, so a
     // `KK_CONFIG=~/.config/kk/config.yaml` launch read a different file than every itc stage.
-    const configPath = resolveItcConfigPath(env, env.HOME ?? '');
+    const configPath = resolveConfigPath(env, env.HOME ?? '');
     if (!(await fs.exists(configPath))) return DEFAULT_PUBLISH_PRESET;
     let parsed: unknown;
     try {
@@ -1868,7 +2035,8 @@ export async function runPublishMatrixBundle(args: string[], deps: PublishMatrix
             }
         }
         if (!validated.runs.includes(parentRunId)) validated.runs.push(parentRunId);
-        await fs.writeFile(bundlePath, `${JSON.stringify(validated, null, 2)}\n`);
+        // Preserve legacy stage bytes; schema defaults are interpreted only when reading.
+        await fs.writeFile(bundlePath, `${JSON.stringify({ ...bundle, runs: validated.runs }, null, 2)}\n`);
         echo(`bundle frozen: ${Object.keys(variants).length} variant(s) -> ${bundlePath}`);
         return 0;
     } catch (err: unknown) {

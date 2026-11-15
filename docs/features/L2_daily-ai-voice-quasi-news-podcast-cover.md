@@ -13,7 +13,7 @@ updated_at: "2026-11-10T06:30:58.271Z"
 
 ## Goal
 
-将 Daily AI News 现有抽象扁平封面升级为准新闻类 Podcast 视觉体系：从每日 curated 新闻中自动提取最具悬念冲击力的 Hook 汉字大标题与视觉画面，采用“无字新闻底图生成 + 确定性中文大标题与节目Logo徽章图层合成”双层渲染管线，在保持既定尺寸与分辨率下彻底杜绝中文乱码并统一节目视觉识别度，无缝集成至 `kk-daily-ai-voice3.yaml`，并提供独立 Mock 测试验证与逻辑模块化封装。
+将 Daily AI News 现有抽象扁平封面升级为准新闻类 Podcast 视觉体系：从每日 curated 新闻中自动提取最具悬念冲击力的 Hook 汉字大标题与视觉画面，采用“无字新闻底图生成 + 确定性中文大标题与节目Logo徽章图层合成”双层渲染管线，在保持既定尺寸与分辨率下彻底杜绝中文乱码并统一节目视觉识别度，无缝集成至当时的 generate 工作流（0372 后为 `kk-news-generate.yaml`），并提供独立 Mock 测试验证与逻辑模块化封装。
 
 ## Scope
 
@@ -23,7 +23,7 @@ updated_at: "2026-11-10T06:30:58.271Z"
 - 升级 `news-editorial` / `editorial-render` 封面元数据提取机制，自动从领衔新闻提炼最具传播张力的 Hook 汉字大标题与具象英文画面 scene。
 - 构建抗乱码排版合成方案：新闻底图生成后，以确定性方式渲染高对比度中文汉字大标题与固定角标节目 Logo，杜绝模型直出汉字形变乱码。
 - 保持现有封面尺寸、分辨率及下游消费契约完全一致（兼容 podcast-pub, surfdash-pub, xhs card 挂载）。
-- 更新 `plugins/kk/workflows/kk-daily-ai-voice3.yaml` 及相关 stage 接入点。
+- 更新 generate 工作流（0372 后为 `plugins/kk/workflows/kk-news-generate.yaml`）及相关 stage 接入点。
 - 提供独立 Mock 测试验证工具/命令，可脱离每日全量流程直接输入模拟新闻项生成封面。
 - 将封面生成与合成逻辑合理收敛到清晰的模块或 Agent Skill 架构中。
 
@@ -68,7 +68,7 @@ Feature: daily-ai-voice-quasi-news-podcast-cover
 
   Scenario: R5 — 集成接入 kk-daily-ai-voice3 生成工作流
     # covers: I6
-    Given the daily generate workflow kk-daily-ai-voice3.yaml
+    Given the daily generate workflow (now kk-news-generate.yaml)
     When the cover and normalization nodes execute during a daily pipeline run
     Then the new quasi-news cover replaces the legacy abstract cover seamlessly
     And downstream consumers including podcast-pub, surfdash-pub, and card packaging receive the normalized cover path

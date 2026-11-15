@@ -22,7 +22,18 @@ import {
 
 describe('workflow allowlists', () => {
     it('names the three workflows and their capturable keys only', () => {
-        expect([...WORKFLOW_NAMES]).toEqual(['kk-collect', 'kk-daily-ai-voice2', 'kk-itc']);
+        expect([...WORKFLOW_NAMES]).toEqual([
+            'kk-collect',
+            'kk-daily-ai-voice2',
+            'kk-itc',
+            'kk-news-generate',
+            'kk-article-generate',
+        ]);
+        // 0369 R8 / AC5: a G61 successor reuses its predecessor's manifest and settings.
+        expect(artifactsFor('kk-news-generate')).toBe(artifactsFor('kk-daily-ai-voice2'));
+        expect(artifactsFor('kk-article-generate')).toBe(artifactsFor('kk-itc'));
+        expect(allowlistedKeys('kk-news-generate')).toEqual(allowlistedKeys('kk-daily-ai-voice2'));
+        expect(allowlistedKeys('kk-article-generate')).toEqual(allowlistedKeys('kk-itc'));
         expect(allowlistedKeys('kk-collect')).toEqual(['limit', 'horizon_hours']);
         expect(WORKFLOW_SETTINGS['kk-collect'].limit).toEqual({ kind: 'integer' });
         // Free text and provider blocks are uncapturable by construction.

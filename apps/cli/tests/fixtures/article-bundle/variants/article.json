@@ -1,0 +1,8 @@
+{
+    "title": "A hand-built article bundle",
+    "format": "markdown",
+    "body": "Publish-half fixture for task 0366: article generation does not write a bundle until 0368.\n",
+    "metadata": {
+        "description": "0366 kk-publish fixture"
+    }
+}
