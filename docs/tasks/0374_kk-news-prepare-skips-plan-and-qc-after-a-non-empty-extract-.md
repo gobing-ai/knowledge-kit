@@ -1,14 +1,16 @@
 ---
 schema_version: 1
 name: kk news prepare skips plan and QC after a non-empty extract, so every generation settles no-content
-status: wip
+status: done
 template: standard
 created_at: 2026-11-15T19:02:56.385Z
-updated_at: "2026-11-15T19:13:47.685Z"
+updated_at: "2026-11-15T19:57:30.183Z"
 parent_wbs: "0373"
 
 ac_altitude: task-local
 ac_numbering: task-local
+done_forced: "true"
+done_reason: "Batch driver /sp-dev-runall --tasks 0373,0374 --agent inline --worktree. Implement, gate, review and verdict ran in this worktree (branch sp/runall-0374-0373-90de0e): RED->GREEN regression test, bun run lint clean, bun run build 0, bun run test 5173 pass/0 fail, spur task verdict 0374 --from-answer=PASS. No spur workflow run was started because the batch ran inline; the verdict artifact .spur/run/0374-verdict.json is present."
 ---
 
 ## 0374. kk news prepare skips plan and QC after a non-empty extract, so every generation settles no-content
@@ -156,7 +158,33 @@ and an EMPTY gate (R3)` case still passes without modification.
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+Disposition: **pass on behaviour, one pre-existing gate failure noted below.**
+
+Findings:
+
+- **P1 (fixed) — object-only reader applied to array payloads.** `readJsonFile` returns `null` for a
+  non-object JSON document by design, and five `itemCount(await readJsonFile(...))` sites fed it a bare
+  `Doc[]`. Switching those five to `readJsonValue` is the root-cause fix, not a per-caller patch: the
+  predicate, the gate's own counts and the row summary all read the same payload.
+- **P2 — the E2E suite stubbed the wrong shape.** The stage double wrote `{metadata:{docs}}` for the
+  pool while `dailyExtract` writes `writeJsonText(picked.docs)`. That divergence is why a broken
+  production path kept a green suite. The new case pins the real shape; worth applying the same check
+  anywhere a double stands in for a stage body.
+- **P3 — the gate's `spur rule run` step fails for a pre-existing reason.** `no-dead-run-scoped-citation`
+  reports 26 misses in tasks 0363–0367 and 0372, all present on `main` before this change and none in
+  0373/0374 (`sh .spur/rules/structure/scratch-citation-existence.sh` → 26 lines on both trees, 0 for
+  this batch). Not repaired here: clearing it means editing six historical task files, which is a
+  separate corpus decision. The rest of the gate passes — `bun run lint` clean and `bun run test`
+  5173 pass / 0 fail.
+
+Residual risk: `readJsonValue` tolerates any JSON shape, so a malformed candidates file now counts as
+0 items rather than surfacing a parse error — the same silent-empty verdict the gate already gives a
+missing file. Acceptable because an empty pool is a legitimate verdict by design (R2), but it means a
+corrupt candidates file closes a day as `no-content` instead of failing loudly.
+
+Confirmed against production: the same store and window that produced `{"pool":"empty","candidates":0}`
+now produce `{"pool":"ok","candidates":4,"selected":4}` with a `PASS` gate, and the live generation
+launched against the deployed bundle is authoring from those candidates.
 
 ### References
 
@@ -166,4 +194,6 @@ and an EMPTY gate (R3)` case still passes without modification.
 
 - 2026-11-15T19:13:47.365Z backlog → todo (system)
 - 2026-11-15T19:13:47.685Z todo → wip (system)
+- 2026-11-15T19:56:46.404Z wip → testing (system)
+- 2026-11-15T19:57:30.176Z testing → done (system)
 

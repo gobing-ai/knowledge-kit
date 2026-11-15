@@ -4,7 +4,7 @@ name: Migrate the kk news schedule to the production Mac mini and capture a comp
 status: wip
 template: standard
 created_at: 2026-11-15T06:57:07.172Z
-updated_at: "2026-11-15T19:03:53.363Z"
+updated_at: "2026-11-15T19:57:42.896Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -193,6 +193,22 @@ Run on the production host (`mac.lan`, macOS 27.0.1, arm64, America/Los_Angeles)
 Repository gate (`bun run lint`, `bun run test`, `bun run build`) was NOT re-run to completion for
 this task: the change set is `.spur/config.yaml`, `docs/migration.md` and task corpus, plus the
 bundle rebuild that `bun run build` already produced. `bun run build` passed.
+
+Batch follow-up 2026-11-15 11:55 PST (task 0374 landed, bundle redeployed):
+
+- The `no-content` settle recorded above was **not** an editorial supply verdict. 0374 fixed the real
+  cause — `kk news prepare` counted a bare `Doc[]` pool as zero items, so plan and QC never ran.
+- The fixed bundle (`apps/cli/dist/index.js` from batch worktree `kk-runall-90de0e`, commit
+  `72894080`) is deployed to `~/.bun/install/global/node_modules/@gobing-ai/knowledge-kit/dist/`.
+  The pre-fix bundle is at `.works/tmp/rollback-20261115/installed-dist-index.prerefram.bak`.
+- Live proof on the real store: `kk news prepare` now prints
+  `{"pool":"ok","candidates":4,"selected":4}` and writes `pool-gate.json {"status":"PASS"}`; the gate
+  earlier returned `{"pool":"empty","candidates":0}` on the same store and window.
+- A real generation is running against that gate (`kk news generate --run-date 20261115 --agent
+  pi-dsv4.1-flash-cc`, run `kk-news-generate-20261115-1794772431516`), authoring from the 4 admitted
+  candidates. Its receipt is `.works/kk-news-generate/20261115/schedule-receipt.json`.
+- R4 is still NOT met: this is a manual recovery run, not a scheduled day. The 17:00 `cn-peak` tick
+  and the next 04:30 generate are what must settle before R4/R5 can be claimed.
 
 ### Review
 
