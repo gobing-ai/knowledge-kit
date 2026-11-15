@@ -355,6 +355,40 @@ describe('publish-matrix-settle (0333 R4)', () => {
         rmSync(fx.root, { recursive: true, force: true });
     });
 
+    it('F11: a failing store mark-published holds settlement and names the store error', async () => {
+        const fx = makeFixture();
+        seedPublishArtifacts(fx, PLAN_ROWS, {
+            'flip-pub.post': liveReceipt('voice3-run-1', '/tmp/unused.json'),
+            'stub-pub.post': liveReceipt('voice3-run-1', '/tmp/unused.json'),
+        });
+        let markCalls = 0;
+        const code = await runPublishMatrixSettle([fx.workDir, '--window', 'after-generate', '--topic', 'ai-news'], {
+            executor: {
+                // Settlement must fail closed: a store refusal is not a delivery verdict.
+                run: async (options: { command: string; args: string[] }) => {
+                    markCalls += 1;
+                    return {
+                        command: options.command,
+                        args: options.args,
+                        exitCode: 1,
+                        stdout: '',
+                        stderr: 'db is locked',
+                        durationMs: 1,
+                    };
+                },
+                runStreaming: () => {
+                    throw new Error('not used');
+                },
+            } as never,
+        });
+        expect(code).toBe(1);
+        expect(markCalls).toBe(1);
+        const settlement = readJson(join(fx.workDir, '4-publish', 'settlement.after-generate.json'));
+        expect(settlement.marked).toBe(false);
+        expect(JSON.stringify(settlement.unresolved)).toContain('store mark-published failed: db is locked');
+        rmSync(fx.root, { recursive: true, force: true });
+    });
+
     it('F3: a real owned partial failure holds with the exact failed target named', async () => {
         const fx = makeFixture();
         seedPublishArtifacts(
