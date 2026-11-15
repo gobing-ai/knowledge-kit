@@ -11,11 +11,20 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { project, repoRoot, runCli } from './launch-sandbox';
 
-/** design §7: job name → the exact replacement command. */
+/**
+ * design §7: job name → the exact replacement command.
+ *
+ * Each command also pins `--agent pi-dsv4.1-flash-cc` (task 0373, 2026-11-15). Cost-first executor
+ * resolution on the production host landed on executors that die at dispatch — opencode `-free`
+ * answers "Invalid credential", `agy-gemini` needs an expired Google login and `pi-dsv4.1-flash-volc`
+ * is 429 until 2026-11-18 — so every 04:30 run failed in the executor probe. Pin what answers here;
+ * the assertion this file exists for (a `kk` verb, no `scripts/` entry point, no bare `bun`) is
+ * unchanged by the suffix.
+ */
 const JOBS: Record<string, string> = {
-    'kk-daily-ai-voice': 'kk news generate --publish',
-    'kk-daily-publish3': 'kk news publish --window overseas-rss --unattended',
-    'kk-daily-publish3-cn-peak': 'kk news publish --window cn-peak --unattended',
+    'kk-daily-ai-voice': 'kk news generate --publish --agent pi-dsv4.1-flash-cc',
+    'kk-daily-publish3': 'kk news publish --window overseas-rss --unattended --agent pi-dsv4.1-flash-cc',
+    'kk-daily-publish3-cn-peak': 'kk news publish --window cn-peak --unattended --agent pi-dsv4.1-flash-cc',
 };
 
 /** The `command:` of one scheduler job, as written in the checked-in config. */
