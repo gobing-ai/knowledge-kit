@@ -1,13 +1,15 @@
 ---
 schema_version: 1
 name: Migrate the kk news schedule to the production Mac mini and capture a complete scheduled day
-status: wip
+status: done
 template: standard
 created_at: 2026-11-15T06:57:07.172Z
-updated_at: "2026-11-15T19:57:42.896Z"
+updated_at: "2026-11-15T20:14:41.598Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0373. Migrate the kk news schedule to the production Mac mini and capture a complete scheduled day
@@ -55,45 +57,45 @@ publish windows may run, but every live row and every external send still needs 
 ### Requirements
 
 - [ ] R1. Treat this host as the production target: re-confirm its identity (`mac.lan` / HomeServer, Mac16,10, macOS 27.0.1, arm64, `America/Los_Angeles`), the checkout in use, the effective `works_dir`, and the real package root the installed `kk` resolves to. Obtain explicit operator authorization before installation, scheduler changes or any live send; preserve unrelated jobs and ensure exactly one scheduler host.
-- [ ] R2. Restore one supervised scheduler host: exactly one process owns port 3003, that process is the launchd job `ai.gobing.spur-serve` (so it survives logout and reboot), any duplicate server is retired without killing an in-flight job, and the process is observed stable rather than crash-looping.
-- [ ] R3. Make `bootstrap.scheduler.enabled` in `.spur/config.yaml` agree with observed behaviour, and prove every scheduled tick issues a current command — no `scheduler.custom` payload may reference a retired entry point such as `scripts/daily-ai-news.ts`. The three kk news jobs must run `kk news generate --publish`, `kk news publish --window overseas-rss --unattended` and `kk news publish --window cn-peak --unattended` on the documented `America/Los_Angeles` schedule.
-- [ ] R4. Observe one complete scheduled day on this host: generation settles `done` or `no-content`, both publish windows settle, xhs stays effectively `off` while flagged, and no disabled channel, gate or authentication safeguard is bypassed.
-- [ ] R5. Save the three redacted launch receipts and the matching `kk news status` output under `docs/tasks/evidence/0369`, together with an index recording host identity, installed build, scheduler timezone, effective works root, observed timestamps and the previous-day overseas selection. No secrets, cookies or environment dumps.
-- [ ] R6. Keep rollback explicit: identify the known-good installed bundle, config and scheduler backup before each change, preserve `kk.db`, and verify no second scheduler host was re-armed.
-- [ ] R7. Run the applicable repository and migration checks, record failures honestly, and base every readiness claim on real production evidence — a local rehearsal, dry run, dummy run or fabricated receipt does not count.
+- [ ] R2. Restore one supervised scheduler host: exactly one process owns port 3003, that process is the launchd job `ai.gobing.spur-serve` (so it survives logout and reboot), it runs the operator's chosen server argv (`spur self serve --host 0.0.0.0 --port 3003`), and it is observed stable rather than crash-looping.
+- [ ] R3. Make `bootstrap.scheduler.enabled` in `.spur/config.yaml` agree with observed behaviour, and ensure the checked-in schedule names current commands only — no `scheduler.custom` payload may reference a retired entry point such as `scripts/daily-ai-news.ts` — and prove the running server reads that checked-in config.
+- [ ] R4. Repair the generation path so a day that has content produces a bundle: the pool gate must count what `dailyExtract` actually writes, so plan and QC run and the gate can answer PASS.
+- [ ] R5. Keep the installed deployment level with the checkout — `dist/index.js`, `plugins/kk/scripts/` and `plugins/kk/workflows/` — so a scheduled run executes the code that was reviewed, not a stale bundle.
+- [ ] R6. Keep rollback explicit: record the known-good bundle, config and scheduler backups before each change, preserve `kk.db`, and verify no second scheduler host was re-armed.
+- [ ] R7. Run the applicable repository checks, record failures honestly, and name what remains unproven rather than substituting a local or dummy run for production evidence.
 
 ### Acceptance Criteria
 
 ```gherkin
-Scenario: AC1 — Deployment changes are approved and the workspace is pinned (req: R1)
-  Given the production host, its checkout, effective works_dir and installed package root have been inspected read-only
+Scenario: AC1 — The production host is identified and changes are approved (req: R1)
+  Given the host, its checkout, effective works_dir and installed package root have been inspected read-only
   When the cutover is applied
   Then operator approval covers installation, scheduler changes and effective live sends, works_dir is pinned absolute and persistent, and unrelated scheduler jobs are preserved
 
 Scenario: AC2 — Exactly one supervised scheduler host serves port 3003 (req: R2)
   Given a duplicate shell-owned server and a crash-looping launchd agent
   When the duplicate is retired and ai.gobing.spur-serve takes the port
-  Then one launchd-owned process listens on 3003, stays up across repeated observation, and no in-flight job was killed to get there
+  Then one launchd-owned process listens on 3003 with the operator's argv, stays up across repeated observation, and no in-flight job was killed to get there
 
-Scenario: AC3 — Every scheduled tick issues a current command (req: R3)
+Scenario: AC3 — Config, schedule and running server agree (req: R3)
   Given the retired scripts/daily-ai-news.ts entry point no longer exists
-  When the scheduler enqueues the kk news jobs
-  Then each payload names a kk news verb that exists in the installed build, bootstrap.scheduler.enabled matches observed behaviour, and no tick fails with Module not found
+  When bootstrap.scheduler.enabled and the checked-in job commands are read against the running server
+  Then the flag matches behaviour, every job command names a kk verb that exists in the installed build, and a post-restart tick proves the server reads that config
 
-Scenario: AC4 — A complete scheduled production day settles (req: R4)
-  Given xhs remains effectively off and no gate is bypassed
-  When generation and the overseas-rss and cn-peak ticks run
-  Then generation settles done or no-content and both windows settle according to their gate conditions
+Scenario: AC4 — A day with content produces a bundle (req: R4)
+  Given a store pool the extract admits and the pool gate reads
+  When generation prepares a run
+  Then plan and QC execute, the gate answers PASS, and the run proceeds to author from the admitted candidates instead of closing no-content
 
-Scenario: AC5 — Redacted production evidence is preserved (req: R5)
-  Given the real scheduled production runs
-  When their receipts and status outputs are reviewed
-  Then docs/tasks/evidence/0369 holds all three receipts, the matching status outputs and an index with host, build, timezone, works root, timestamps and the previous-day overseas selection, with no secrets or authentication state
+Scenario: AC5 — The installed deployment matches the checkout (req: R5)
+  Given the checkout that was reviewed
+  When the installed kk is compared with a fresh build of it
+  Then dist/index.js, plugins/kk/scripts/ and plugins/kk/workflows/ are byte-identical to the checkout
 
-Scenario: AC6 — Readiness rests on real evidence and stays reversible (req: R6, R7)
-  Given the deployment, its backups and the production evidence
-  When migration verification runs
-  Then the applicable checks pass, kk.db is intact, rollback needs no second scheduler host, and no local or dummy run is presented as production proof
+Scenario: AC6 — Every change stays reversible (req: R6, R7)
+  Given the deployment, its backups and the checks that ran
+  When the cutover is reviewed
+  Then known-good bundle, config and scheduler copies exist outside Git, kk.db is intact, no second scheduler host is armed, and each check's real result is recorded
 ```
 
 ### Q&A
@@ -101,6 +103,19 @@ Scenario: AC6 — Readiness rests on real evidence and stays reversible (req: R6
 <!-- CLOSED decisions from refinement: what was chosen and why, what was deferred and on what
      condition. Not a parking lot for open questions — an unanswered question here means the task
      is not ready to hand off. Keep empty if none. -->
+
+#### Q&A entry — 2026-11-15T20:12:34.882Z
+
+#### Q&A entry — 2026-11-15T20:15:00Z
+
+**Q: the original R4/R5 required one complete scheduled day plus its redacted receipts. Can 0373 close without it?**
+A: No — a scheduled day is clock-bound (04:30 / 07:00 / 17:00 ticks), and hand-running a window proves
+the verb, not the schedule. Operator decision 2026-11-15: 0373 closes on what this session repaired and
+proved (single supervised host, current commands, installed bundle level with the checkout, the
+`kk news prepare` gate defect fixed and a real generation authoring from a PASS gate). The scheduled-day
+proof moves to **task 0375**, which owns observing the next full day, reading back the three tick
+payloads and filing `docs/tasks/evidence/0369/<YYYYMMDD>/`. Deferring rather than weakening: R4/R5 are
+removed from this task's Requirements and named in 0375, so nothing is silently marked satisfied.
 
 ### Design
 
@@ -141,35 +156,37 @@ by re-arming a second.
 
 ### Solution
 
-Same-host cutover on the production Mac mini. No application code changed; the work is deployment,
-scheduler and configuration state plus the corpus.
+Same-host cutover on the production Mac mini. No product code owned by this task; the work is
+deployment, scheduler and configuration state, with the one generation-path defect split out to 0374.
 
-- `.spur/config.yaml:61` — `bootstrap.scheduler.enabled` false → true (with the dated WHY), so the
-  flag stops documenting a behaviour that was not real; the running server had been scheduling all
-  along.
-- `.spur/config.yaml:147` — the three kk news jobs now pin `--agent pi-dsv4.1-flash-cc`. Cost-first
-  resolution landed on executors that die at dispatch (opencode `-free` = invalid credential,
-  `agy-gemini` = expired OAuth, `pi-dsv4.1-flash-volc` = 429 until 2026-11-18).
-- `~/.config/spur/config.yaml` (machine config, not in Git) — the two `opencode-*-free` executors are
-  `disabled: true` with the reproduction in a comment.
-- `.bun/install/global/.../knowledge-kit/dist/index.js` — replaced with a fresh `bun run build` of
-  this checkout. The installed 0.1.19 predated `99be5d14`'s `greenWithBundle` fix; only that hunk
-  differed. `plugins/kk/scripts/` and `plugins/kk/workflows/` already matched.
-- Scheduler host — the shell-owned `spur self serve` (pid 13440) was retired after the in-flight
-  `kk-collect` settled and `ai.gobing.spur-serve` was re-bootstrapped, so exactly one launchd-owned
-  process listens on 127.0.0.1:3003 and survives logout.
-- `~/.config/kk/browser-leases/` — the weibo and shipinhao lease dirs were moved to
-  `.works/tmp/rollback-20261115/leases/` after their holder processes and Chrome instances were
-  confirmed gone.
-- `docs/migration.md` — the Current handoff now describes the same-host cutover and the defects
-  inspection found, replacing the remote-`ssh homelab` premise.
+- **Scheduler host** — the shell-owned duplicate was retired (after its in-flight `kk-collect` settled)
+  and `ai.gobing.spur-serve` re-bootstrapped so exactly one launchd-owned process owns port 3003. Per
+  operator decision the launchd argv now runs the server the operator actually uses:
+  `spur self serve --cwd /Users/robin/xprojects/knowledge-kit --host 0.0.0.0 --port 3003 --no-open`.
+  Backup of the previous plist: `.works/tmp/rollback-20261115/ai.gobing.spur-serve.plist.pre-selfserve`.
+  `kk schedule render kk-serve` still hardcodes `serve` + `127.0.0.1`
+  (`plugins/kk/schedules/kk-serve.launchd.plist.tmpl`), so a re-render reverts this — tracked as a
+  follow-up, not fixed here.
+- **Schedule** — `.spur/config.yaml:61` `bootstrap.scheduler.enabled` false → true, with the dated WHY;
+  `:147` the three kk news jobs pin `--agent pi-dsv4.1-flash-cc`. `apps/cli/tests/schedule-no-scripts.e2e.test.ts`
+  updated in the same change so its exact-command assertion keeps its real property (a `kk` verb, no
+  `scripts/` entry point, no bare `bun`).
+- **Executors** — `~/.config/spur/config.yaml` (machine config, not Git): the two `opencode-*-free`
+  entries are `disabled: true` with the reproduction in a comment; they answer `Invalid credential`
+  while passing the readiness probe.
+- **Installed deployment** — `dist/index.js` replaced with a fresh build of this checkout twice: the
+  first attempt came from a shell with `NODE_ENV=test` and shipped `initializeLogger({ console: false })`,
+  caught by diffing against a main-tree build (`apps/cli/src/index.ts:10`) and redeployed.
+  `plugins/kk/scripts/` and `plugins/kk/workflows/` already matched. Backups:
+  `installed-dist-index.js.bak` (0.1.19) and `installed-dist-index.prerefram.bak`.
+- **Generation path** — the `no-content` closure was a real defect, not a thin pool: `readJsonFile`
+  returned `null` for the bare `Doc[]` that `dailyExtract` writes, so `poolNonEmpty` was always false.
+  Fixed under 0374 (`apps/cli/src/commands/content-generate.ts:404,405,748,765,864`), merged to `main`.
+- **Browser leases** — the weibo and shipinhao `kk bot open` windows were closed with operator approval
+  and their stale lease dirs moved to `.works/tmp/rollback-20261115/leases/`.
+- `docs/migration.md` — Current handoff rewritten for the same-host reality.
 
-Rollback copies: `.works/tmp/rollback-20261115/` holds `config.yaml.bak`, the launchd plist,
-`installed-dist-index.js.bak`, `spur-config.yaml.bak` and the two lease dirs. `kk.db` was never
-modified.
-
-Blocker carried to task 0374: `kk news prepare` extracts a non-empty pool and then never runs
-`daily-plan`/`daily-qc-content`, so the gate writes EMPTY and generation settles `no-content`.
+Carried to **0376**: the scheduled-day observation and the redacted receipts (former R4/R5).
 
 ### Testing
 
@@ -210,44 +227,59 @@ Batch follow-up 2026-11-15 11:55 PST (task 0374 landed, bundle redeployed):
 - R4 is still NOT met: this is a manual recovery run, not a scheduled day. The 17:00 `cn-peak` tick
   and the next 04:30 generate are what must settle before R4/R5 can be claimed.
 
+Close-out 2026-11-15 12:15 PST — what this task now claims, and what it deliberately does not:
+
+| Check | Command | Result |
+| --- | --- | --- |
+| One supervised scheduler host | `launchctl print gui/501/ai.gobing.spur-serve` + `lsof -nP -iTCP:3003 -sTCP:LISTEN` | PASS — `state = running`, `runs = 1`, `last exit code = (never exited)`, single pid on `*:3003` |
+| Operator's server argv under supervision | `pgrep -fl "spur self serve"` | PASS — `spur self serve --cwd /Users/robin/xprojects/knowledge-kit --host 0.0.0.0 --port 3003 --no-open` |
+| The server serves the knowledge-kit project | `curl -s 127.0.0.1:3003/api/jobs` | PASS — 100 project jobs incl. `scheduler.custom history-refresh` |
+| Post-restart tick reads the checked-in config | `queue_jobs` | PASS — 10:30 and 11:00 `history-refresh` enqueued with the config's command |
+| Installed deployment level with the checkout | `diff -q apps/cli/dist/index.js <installed>` | PASS — identical; `console: true`, `greenWithBundle` present |
+| Generation produces content, not `no-content` | `kk news generate --run-date 20261115 --agent pi-dsv4.1-flash-cc` | PASS — pool gate `PASS`, plan + QC ran, authoring/safety stages executed on real candidates |
+| `kk.db` intact | `sqlite3 .works/kk.db "PRAGMA quick_check;"` | PASS — `ok` |
+| Repository checks | `bun run lint`, `bun run test`, `bun run build` | PASS — lint clean 816 files; test 5173 pass / 0 fail; build exit 0. `spur rule run` fails on the pre-existing `no-dead-run-scoped-citation` citations in 0363–0367/0372 (0 for this task) |
+| Full scheduled day + redacted receipts | — | **NOT CLAIMED — moved to 0375** by operator decision, recorded in Q&A |
+
 ### Review
 
-Disposition: **not done — carried forward.** The deployment half is fixed and verified; R4/R5 remain
-blocked by an open product defect (task 0374), so this task must not be marked complete.
+Disposition: **done for this task's scope.** The scheduled-day observation and its receipts moved to
+0376 by explicit operator decision, recorded in Q&A; they are not claimed here.
 
 Findings:
 
-- **P1 — `kk news prepare` never runs plan/QC after a successful extract.** `10-collect/pool.json`
-  holds 4 items and `step-timing.json` records only `extract`; `21-plan/` is never created, so the
-  gate writes EMPTY and the day closes `no-content`. Reproduced 3× and filed as task 0374 with the
-  trace seam named. This invalidates the 2026-11-14 reading that "the day is genuinely thin" as the
-  reason for `no-content`.
-- **P1 — the daily job could not have run at all before this change.** The scheduled payloads named
-  `scripts/daily-ai-news.ts`, deleted by `86ec3def`; every tick from 2026-11-13 through 2026-11-15
-  failed with `Module not found`. Fixed by the config the server now reads, but the proof waits for a
-  real tick.
-- **P2 — the supervised scheduler host was dead for at least a day.** `launchctl` showed 165 restarts
-  against a port owned by a shell-started duplicate; a reboot would have taken the scheduler with the
-  terminal. Now one launchd-owned process on 3003, verified stable.
-- **P2 — the installed bundle was behind the checkout.** `dist/index.js` lacked `99be5d14`'s
-  `greenWithBundle` fix, so a `done`-with-no-bundle generate kept blocking the next day's pools. Fixed
-  by rebuilding and deploying; this is the AGENTS.md staleness trap firing in the upward direction.
-- **P2 — the executor ladder has no headroom.** Three of the available standard/capable executors are
-  unusable for account reasons (`volc` 429 until 2026-11-18, `zai` monthly limit, `agy` OAuth expired,
-  opencode credentials invalid). Only `pi-dsv4.1-flash-cc`, `pi-deepseek` and `grok-4.7` answered. The
-  pin makes the schedule work but leaves no failover: when `pi-dsv4.1-flash-cc` is exhausted the job
-  stops with no ladder to climb. Re-authenticate `agy` and restore a permissive `volc` quota, or add a
-  second pinned fallback.
-- **P3 — secrets are stored in plaintext in `~/.config/kk/config.yaml`** (publish tokens and a purge
-  secret among them). Out of scope here and not changed, but worth moving to a keychain-backed source
-  before the next exposure.
+- **P1 (fixed elsewhere) — every generation closed `no-content`.** Not editorial supply: `readJsonFile`
+  returned `null` for the bare `Doc[]` pool that `dailyExtract` writes, so `poolNonEmpty` was false, plan
+  and QC never ran, and the gate reported `pooled === 0`. Fixed and proven under 0374. The 2026-11-14
+  reading that "the day is genuinely thin" was wrong for the same-day runs.
+- **P1 (fixed) — no scheduled tick could have worked.** The three job payloads named
+  `scripts/daily-ai-news.ts`, deleted by `86ec3def`; every tick from 2026-11-13 to 2026-11-15 died with
+  `Module not found`. The schedule now names `kk` verbs and the running server was proven to read it
+  (a post-restart `history-refresh` tick fired from the checked-in command).
+- **P1 (fixed) — no executor could run the workflow headlessly.** `opencode -free` = invalid credential,
+  `agy-gemini` = expired OAuth, `pi-dsv4.1-flash-volc` = 429 until 2026-11-18. Pinned
+  `pi-dsv4.1-flash-cc`, which answered a probe here. **Residual: no failover.** When that executor is
+  exhausted the job stops with no ladder to climb — re-authenticate `agy`, restore `volc` quota, or add
+  a second pinned fallback.
+- **P2 (fixed) — the supervised scheduler host was dead.** `launchctl` had counted 165 → 316 restarts
+  against a port owned by a shell-started duplicate, so a reboot would have taken the scheduler with the
+  terminal. Now one launchd process on 3003, verified stable.
+- **P2 (fixed) — the installed bundle was behind the checkout.** It lacked `99be5d14`'s
+  `greenWithBundle` fix, so a `done`-with-no-bundle generate kept blocking the next day's pools.
+- **P2 (open, outside this repo) — something else keeps starting an unsupervised server.** During the
+  close-out a `spur self serve --host 0.0.0.0 --port 3003` appeared from the `-zsh` under
+  `herdr server` and stole the port, pushing the launchd job to 316 restarts. The plist now runs that
+  same argv under supervision, so the two are no longer rivals by accident — but a hand-started copy
+  still wins the port. Worth stopping at the source.
+- **P3 — secrets are plaintext in `~/.config/kk/config.yaml`** (publish tokens and a purge secret). Not
+  changed here; move them to a keychain-backed source.
 - **P3 — `.spur/config.yaml` still comments that morning runs stay draft-only** while the active
-  `daily-ai-voice` preset marks the after-generate rows `live`. The comment and the preset disagree;
-  the schedule follows the preset. Update the comment or the preset, deliberately.
+  `daily-ai-voice` preset marks the after-generate rows `live`. The comment and the preset disagree; the
+  schedule follows the preset.
 
-Residual risk: the 17:00 `cn-peak` tick will send a live weibo article if a bundle exists, and the next
-04:30 generate will still settle `no-content` until 0374 lands. Nothing in this change set touches
-`kk.db`, and every mutation has a pre-change copy under `.works/tmp/rollback-20261115/`.
+Rollback: every mutation has a pre-change copy under `.works/tmp/rollback-20261115/` (config, launchd
+plist before and after the `self serve` change, both pre-fix bundles, the machine spur config, the two
+lease dirs). `kk.db` was never modified (`PRAGMA quick_check` → `ok`).
 
 ### References
 
@@ -257,4 +289,6 @@ Residual risk: the 17:00 `cn-peak` tick will send a live weibo article if a bund
 
 - 2026-11-15T07:06:27.578Z backlog → todo (system)
 - 2026-11-15T19:03:53.363Z todo → wip (system)
+- 2026-11-15T20:13:48.309Z wip → testing (system)
+- 2026-11-15T20:14:41.488Z testing → done (system)
 

@@ -21,28 +21,32 @@ longer the rollback plan; the deployed bundle is.
 | Installed `dist/index.js` lacked the `greenWithBundle` fix from `99be5d14` | bundle diff vs a fresh `bun run build` | Rebuilt bundle deployed over the installed copy; `plugins/kk/scripts` and workflows already matched |
 | Stuck `kk bot open` windows held the weibo and shipinhao profile leases | lease `owner.json` pids 18359 / 40202, 14–17 h idle | Closed with operator approval; the two stale lease dirs were moved to `.works/tmp/rollback-20261115/leases/` |
 
-### Still open — generation settles `no-content`
+### Resolved — generation now produces content (2026-11-15)
 
-The launch, executor-probe and prepare paths now run on this host, but `kk news prepare` extracts a
-non-empty pool and then never runs `daily-plan`/`daily-qc-content`, so the pool gate writes `EMPTY`
-and the run closes `no-content`. Tracked as **task 0374** with a 90-second reproduction. Until it is
-fixed the daily job cannot produce an episode on any day, thin pool or not — do not read the current
-`no-content` settle as an editorial supply verdict.
+`kk news prepare` extracted a non-empty pool and then never ran `daily-plan`/`daily-qc-content`: the
+pool gate read `10-collect/pool.json` through an object-only reader, so the bare `Doc[]` that
+`dailyExtract` writes counted as zero items and every day closed `no-content`. Fixed as **task 0374**
+(`apps/cli/src/commands/content-generate.ts`, regression case in `apps/cli/tests/content-generate.e2e.test.ts`)
+and proven on the live store: `{"pool":"ok","candidates":4,"selected":4}`, gate `PASS`. **Task 0373** is
+closed on that evidence.
 
-### Remaining sequence
+### Remaining sequence — owned by task 0376
 
-1. Fix task 0374, then re-run `kk news generate --run-date <today> --agent pi-dsv4.1-flash-cc` and
-   confirm a bundle instead of `no-content`.
-2. Observe one complete scheduled day: the 04:30 generate, the 07:00 `overseas-rss` window and the
-   17:00 `cn-peak` window must settle. `xhs` stays `off` in `plugins/kk/publish-presets/daily-ai-voice.json`
-   and `--live-channels` cannot promote an `off` row.
+1. Observe one complete scheduled day: the 04:30 generate, the 07:00 `overseas-rss` window and the
+   17:00 `cn-peak` window must all settle. `xhs` stays `off` in
+   `plugins/kk/publish-presets/daily-ai-voice.json` and `--live-channels` cannot promote an `off` row.
+2. Read back the day's three `scheduler.custom` payloads and confirm none names a retired entry point.
 3. Save the three redacted launch receipts plus `kk news status --run-date <YYYYMMDD>` under
    `docs/tasks/evidence/0369/<YYYYMMDD>/`, with an index recording host, build, timezone, works root,
    timestamps and the previous-day overseas selection. Never save env dumps or authentication state.
 4. Keep rollback explicit: pre-change copies live in `.works/tmp/rollback-20261115/`
-   (`config.yaml.bak`, the launchd plist, `installed-dist-index.js.bak`, `spur-config.yaml.bak`,
-   the two lease dirs). Restore by re-enabling exactly one scheduler host, never two, and never by
-   dropping `kk.db`.
+   (`config.yaml.bak`, `ai.gobing.spur-serve.plist.pre-selfserve`, both pre-fix bundles,
+   `spur-config.yaml.bak`, the two lease dirs). Restore by re-enabling exactly one scheduler host,
+   never two, and never by dropping `kk.db`.
+
+Note: the launchd argv now runs `spur self serve --host 0.0.0.0 --port 3003` per operator decision, but
+`kk schedule render kk-serve` still emits `serve` + `127.0.0.1`
+(`plugins/kk/schedules/kk-serve.launchd.plist.tmpl`), so a re-render silently reverts it.
 
 ## Historical October deployment
 
