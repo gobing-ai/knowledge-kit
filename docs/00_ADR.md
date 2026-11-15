@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.45.0
+version: 1.46.0
 created_at: 2026-05-28
-updated_at: 2026-11-13
+updated_at: 2026-11-14
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -1976,3 +1976,11 @@ built-in, and `channels` is applied only by the named `publish-plan`, whose rows
 `publish` verbs with `launchWorkflow()`, the three workflows, and the retirement of
 `kk-daily-publish3` / `kk-itc-publish-tail` are tasks 0365–0369.
 **Detail:** `docs/design/content-pipeline-consolidation.md`, tasks 0363–0364.
+
+**Amendment 2026-11-14 (task 0372, operator decision).** An effective channel mode of `off`
+vetoes `--live-channels`: resolve the specific/plugin config over the preset default first, then
+promote only enabled rows. Disabled rows remain excluded with their config/preset mode source.
+The operator approved retaining the already-landed retirement with a sequencing exception:
+production migration and full scheduled-day validation are deferred to task 0373, whose handoff
+is in `docs/migration.md`. Task 0372 readiness covers the retirement and handoff, not production
+cut-over readiness; the latter still requires real Mac mini evidence.

@@ -310,8 +310,8 @@ operator's separate cutover action.
 **Rehearsal run:**
 
 ```bash
-# generation rehearsal — dummy receipts, nothing live, nothing installed
-kk news generate --dummy
+# generation preflight — print the planned launch without starting the workflow
+kk news generate --dry-run
 # window rehearsal without a generation run — point --run-date at a recorded day dir
 kk news publish --window cn-peak --run-date <YYYYMMDD> --preset daily-ai-voice-migration --dry-run
 ```

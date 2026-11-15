@@ -8,7 +8,7 @@
 #
 # The gate decides whether anything publishes: a miss cancels the overseas targets and runs
 # `diagnose` + the tier-0-only repair. This line carries no live consent; the overseas rows in the
-# shipped preset are `draft`/`off`, so a live overseas post stays an operator launch.
+# shipped preset are `dummy`/`off`, so a live overseas post stays an operator launch.
 #
 # `kk news publish` owns the date math because a crontab command ends at the first UNESCAPED
 # percent sign — an inline `date -v-1d +%Y%m%d` would truncate silently. The verb resolves the

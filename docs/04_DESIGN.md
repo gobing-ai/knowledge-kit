@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.64.0
+version: 2.65.0
 created_at: 2026-07-22
-updated_at: 2026-11-13
+updated_at: 2026-11-14
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -1178,9 +1178,9 @@ value is XML-escaped (`&`/`<`/`>`), because one raw `&` makes `launchctl bootstr
 | `kk-serve` | `grok-bot` | refused: `schedule 'kk-serve' has no grok-bot template — cloud routines run store-free, browser-free work only (ADR-044)` — a keepalive server is Mac-local by definition (task 0343 R4) |
 | `kk-collect` | `grok-bot` | routine definition (`kk-collect.grok-bot.md.tmpl`): Owner Bot `{{bot}}`, Schedule `{{cron}}` in `{{tz}}`, store-free collect-prepare + fan-in steps pushing `sync/kk-collect/<stamp>.json` to branch `kk-cloud-sync`, ADR-044 missing/stale policy and the `kk store ingest --run cloud-<stamp>` Mac import (task 0343) |
 | `kk-serve` | `launchd` | plist for `ai.gobing.spur-serve` (`kk-serve.launchd.plist.tmpl`): `RunAtLoad` + `KeepAlive` true, `ThrottleInterval` 10, `ProgramArguments` = `spur serve --cwd <repo> --host 127.0.0.1 --port 3003 --no-open`, `WorkingDirectory` = `--repo`, `EnvironmentVariables` = `PATH` + `TYPESAFE_API_KEY`, stdout+stderr = `<repo>/.works/spur-serve/serve.log` |
-| `kk-daily-publish3-cn-peak` | `cron` | `0 17 * * *` local (`kk-daily-publish3-cn-peak.cron.tmpl`, task 0334/F09+): `kk news publish --window cn-peak --unattended`, `PATH` + `TZ=America/Los_Angeles`, log `<repo>/.works/kk-news-publish/cn-peak.log`. `kk news publish` derives `work_dir`/`run_date` from the window date. The live/draft matrix is the pinned preset's `cn-peak` rows (ADR-022 amendment), so the entry carries no `--live-channels`; a live row still stops at `send-confirm`, and every entry line stays free of cron's `%` grammar |
+| `kk-daily-publish3-cn-peak` | `cron` | `0 17 * * *` local (`kk-daily-publish3-cn-peak.cron.tmpl`, task 0334/F09+): `kk news publish --window cn-peak --unattended`, `PATH` + `TZ=America/Los_Angeles`, log `<repo>/.works/kk-news-publish/cn-peak.log`. `kk news publish` derives `work_dir`/`run_date` from the window date. The live/draft matrix is the pinned preset's `cn-peak` rows (ADR-022 amendment), so the entry carries no `--live-channels`; a live row pauses at `send-confirm` only with `--live-confirm`, and every entry line stays free of cron's `%` grammar |
 | `kk-daily-publish3-overseas` | `cron` | `0 7 * * *` America/Los_Angeles (`kk-daily-publish3-overseas.cron.tmpl`): `kk news publish --window overseas-rss --unattended` — **yesterday** `run_date`, no live consent (draft/dummy rows only), log `<repo>/.works/kk-news-publish/overseas.log` |
-| `kk-daily-ai-voice3` | `cron` | `30 4 * * *` local, task 0334 R1/R6 (`kk-daily-ai-voice3.cron.tmpl`; the schedule name survives the 0369 cut-over, the payload does not): `kk news generate --publish`, `PATH` + `TZ=America/Los_Angeles`, log `<repo>/.works/kk-news-generate/generation.log`. The generation tick: cron only (the DAG has its own review pause, so launchd's fire-and-forget adds nothing). It publishes nothing — the two windows below are the only senders |
+| `kk-daily-ai-voice3` | `cron` | `30 4 * * *` local, task 0334 R1/R6 (`kk-daily-ai-voice3.cron.tmpl`; the schedule name survives the 0369 cut-over, the payload does not): `kk news generate --publish`, `PATH` + `TZ=America/Los_Angeles`, log `<repo>/.works/kk-news-generate/generation.log`. The generation tick: cron only (the DAG has its own review pause, so launchd's fire-and-forget adds nothing). After successful generation, `--publish` launches the `after-generate` publish window |
 
 `kk-serve` is **launchd only**: cron has no keepalive semantics, so `--platform cron` for it exits 1
 with `schedule 'kk-serve' has no cron template (expected launchd)` and prints nothing (task 0265 R3);
@@ -2381,7 +2381,8 @@ naming the field instead of a `TypeError`. `PublishPlanRowSchema` gains `transpo
 `publish-plan`, whose `applyChannelModes(preset, channels, liveChannels)` applies
 `content_types.<type>.channels` (`<plugin>/<variant>` key beats `<plugin>`), records excluded rows in
 `excluded[]` with reason `mode off (config)`, and rejects a key matching no preset row (exit 2,
-nothing written). `kk stage run publish-matrix-plan` does not read `channels`.
+nothing written). An effective config/preset mode of `off` vetoes `--live-channels`; named disabled
+rows stay excluded instead of being promoted. `kk stage run publish-matrix-plan` does not read `channels`.
 
 **`publish-matrix-plan <workDir> --bundle <bundle.json> --preset <slug> --window <w> [--channels a,b] [--live-channels a,b] [--dummy]`**
 writes `4-publish/plan.<window>.json` and `4-publish/payloads/content.<id>.json`, and appends a

@@ -7,7 +7,7 @@
 #
 # Which rows go live is the preset's decision, not this line's (ADR-022 amendment): the shipped
 # `daily-ai-voice` preset owns the live/draft matrix for `cn-peak`, so the entry carries no
-# `--live-channels`. A live row still stops at the `send-confirm` gate — `--unattended` keeps the
+# `--live-channels`. A live row pauses only with `--live-confirm`; `--unattended` keeps the
 # window honest about a gated miss (diagnose, tier-0 repair) instead of silently dropping it.
 #
 # `kk news publish` owns the LA date math. A crontab command ends at the first UNESCAPED percent

@@ -494,7 +494,7 @@ export function registerContentPublishVerbs(parent: Command, type: string): void
             base(command)
                 .option('--preset <name>', 'publish preset')
                 .option('--channels <a,b>', 'narrow channels')
-                .option('--live-channels <a,b>', 'promote channels to live')
+                .option('--live-channels <a,b>', 'promote enabled rows to live; off rows stay disabled')
                 .option('--dummy', 'rehearse without dispatch')
                 .option('--run-date <date>', 'bundle run date')
                 .option('--feed <url>', 'RSS feed URL');

@@ -335,7 +335,9 @@ export function applyChannelModes(
                       ? target.plugin
                       : undefined;
             const configMode = configKey === undefined ? undefined : channels[configKey];
-            const live = liveChannels.some((token) => targetMatchesChannel(target, token));
+            const live =
+                (configMode ?? target.mode) !== 'off' &&
+                liveChannels.some((token) => targetMatchesChannel(target, token));
             const mode = live ? 'live' : (configMode ?? target.mode ?? 'draft');
             const modeSource: PublishPlanRow['modeSource'] = live
                 ? 'flag'
@@ -563,7 +565,11 @@ async function composePlan(
         }
     }
     for (const token of [...input.channels, ...input.liveChannels]) {
-        if (!inWindow.some((target) => matches(target, token))) {
+        if (
+            !preset.targets.some(
+                (target) => (target.window ?? 'after-generate') === input.window && matches(target, token),
+            )
+        ) {
             throw new Error(`channel '${token}' has no target in window '${input.window}'`);
         }
     }

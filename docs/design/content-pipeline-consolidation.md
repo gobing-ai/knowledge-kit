@@ -140,7 +140,8 @@ Who owns what:
 
 - A key is a plugin name (`xhs-pub`, applies to every row of that plugin) or `<plugin>/<variant>`
   (`wechatmp-pub/article`, one row). The more specific key wins.
-- Row mode = `--live-channels` promotion → `content_types.<type>.channels` → preset `mode`.
+- Resolve `content_types.<type>.channels` over preset `mode` first. If that mode is `off`,
+  the row stays disabled even when named in `--live-channels`; otherwise the flag promotes it to live.
   `--channels` then narrows the result. A key that matches no preset row is a config error
   (exit 2 naming the key and the preset) — a typo must not silently leave a channel on.
 - The plan records where each row's mode came from: `rows[].modeSource: 'flag' | 'config' | 'preset'`,
@@ -196,10 +197,9 @@ entries shown; a user entry merges over the built-in entry field by field.
 already drops non-listed rows into `plan.excluded[]` with `reason: 'not in --channels list'` (`publish-matrix.ts:488`)
 (`apps/cli/src/publish-matrix.ts:planPublishMatrix`, `PublishPlanExcludedSchema`). The plan file
 is therefore the record of the selection; nothing else stores it. An id that matches no preset row
-exits 2 before the plan is written. `--live-channels` **overrides the config switchboard** for the
-listed rows: a row whose config mode is `off` (or `dummy`, or `draft`) is promoted to `live`, and the
-row's `modeSource` records `flag` (0372 R5 — the flag is per-run consent, so `off` does not silence a
-channel the operator names on the command line).
+exits 2 before the plan is written. `--live-channels` promotes only enabled rows to `live`, with
+`modeSource: flag`. An effective config/preset mode of `off` always wins: the row stays excluded
+and retains its config/preset mode source (0372 R5, operator decision 2026-11-14).
 
 ---
 
@@ -537,7 +537,10 @@ deleted is the stage *name* as a public spelling, one release after cut-over (§
 
 ## 7. Retirement list
 
-Deleted at Phase 4 cut-over, after one green scheduled day on the new jobs:
+Original sequencing required one green scheduled day before deletion. **Operator exception
+2026-11-14 (0372):** retain the already-landed retirement in `86ec3def`; production migration and
+scheduled-day proof are deferred to task 0373, with the current coding-agent handoff in
+`docs/migration.md`. Retirement readiness does not certify production cut-over.
 
 | Path | Replaced by |
 | --- | --- |

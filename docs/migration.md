@@ -1,5 +1,63 @@
 # Migration: scheduled jobs from laptop → mac mini
 
+## Current handoff — kk news migration deferred from task 0372 (2026-11-14)
+
+**Owner: the coding agent on the production Mac mini. Follow-up: task 0373. Not executed.**
+The operator deferred production migration and the full scheduled-day proof, and explicitly approved
+retaining retirement commit `86ec3def` with a sequencing exception. Task 0372 can close on the code
+and this handoff; production readiness remains unverified until task 0373 supplies real evidence.
+The sections below describe the October deployment and its evidence; their old workflow/job commands
+are historical context. Use this handoff for the new rollout and inspect the target before changing it.
+
+1. **Inspect read-only.** The recorded target is `ssh homelab` (`mac.lan`), account `/Users/robin`;
+   re-confirm its identity and locate the actual checkout. Read its applicable agent instructions,
+   task 0373, effective config, scheduler jobs and last run receipts. Resolve the `kk` executable's
+   real package root; compare its built `dist/index.js`, shipped scripts, workflows and presets to
+   the intended checkout. Do not assume the source tree is the installed CLI or that this old target
+   record is still current. Record non-secret versions/build identity only.
+2. **Prepare the approved rollout.** Pin an absolute persistent `works_dir` (ADR-042), preserve
+   `kk.db`, browser profiles, credentials and unrelated scheduler jobs, and resolve any `workflows_dir`
+   override that could shadow the shipped workflows. Preserve private backups on the target rather
+   than putting them in Git. Check the writer/executor, TTS assets, publishing dependencies and
+   channel readiness using the existing checks. Keep every xhs row effectively `off` while flagged;
+   `--live-channels` cannot override `off` (0372 operator decision). Obtain explicit approval for
+   the concrete installation, scheduler changes and any live sends before performing them.
+3. **Install and enable only what was approved.** Update the CLI bundle and shipped scripts/workflows
+   together; verify the installed CLI answers the news verbs. Use the existing target scheduler
+   (`bootstrap.scheduler.jobs` inside `spur serve`, unless inspection proves otherwise); do not
+   install a parallel cron/launchd schedule. Preserve unrelated jobs and ensure exactly one active
+   host for each news job. Intended entries, in `America/Los_Angeles`:
+
+   | Local time | Command |
+   | --- | --- |
+   | 04:30 | `kk news generate --publish` |
+   | 07:00 | `kk news publish --window overseas-rss --unattended` |
+   | 17:00 | `kk news publish --window cn-peak --unattended` |
+
+   Successful generation launches the `after-generate` publish window. `overseas-rss` selects the
+   previous Los Angeles day; generation and `cn-peak` select the current day. Inspect actual resolved
+   work directories rather than treating the three ticks as one date. A live row sends without a
+   confirmation pause unless `--live-confirm` is set, so approval must cover the effective plan.
+4. **Observe one full scheduled day on the Mac mini.** Generation must settle `done` or `no-content`,
+   and both publish windows must settle according to their required targets and gate conditions.
+   A local rehearsal, manual dummy run, fabricated receipt or laptop run is not production proof.
+   Investigate failed/ambiguous outcomes; do not weaken checks or enable xhs to obtain PASS.
+5. **Save the evidence and verify task 0373.** Under `docs/tasks/evidence/0369/<YYYYMMDD>/`, save
+   redacted copies of the generate launch receipt, overseas launch receipt, cn-peak launch receipt,
+   and the corresponding `kk news status --run-date <YYYYMMDD>` outputs. For overseas, also capture
+   status for its previous-day run. Include an evidence index with host identity, checkout/build,
+   timezone, effective works root, approved scheduler command lines, observed timestamps and exact
+   source receipt paths. Review all copies for secrets, cookies and credentials; never save env
+   dumps or authentication state. Required evidence is the scheduled runs, not the repository gate.
+6. **Keep rollback explicit.** Before applying rollout changes, identify the known-good installed
+   package/config and scheduler backups. If rollout fails, restore only the approved deployment and
+   scheduler state, leave `kk.db` intact, and verify a second host has not been re-armed. Restoring
+   the removed source artifacts is available via `git revert 86ec3def`, subject to explicit approval;
+   that alone does not restore the installed bundle or scheduler. Record failures in task 0373 and
+   leave production readiness open until its verification passes.
+
+## Historical October deployment
+
 Operational runbook. **Source** = `macbook` (`/Users/robin`, laptop, macOS 26, arm64).
 **Target** = `mac.lan` (reachable as `ssh homelab`, Apple M4, 16 GB, macOS 27.0.1, arm64,
 `/Users/robin`, America/Los_Angeles).

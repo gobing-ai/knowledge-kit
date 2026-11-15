@@ -31,22 +31,32 @@ describe('content publish verbs (0364)', () => {
         const applied = applyChannelModes(preset, { 'xhs-pub': 'off', 'wechatmp-pub/article': 'draft' }, ['xhs-pub']);
 
         expect(applied.targets).toEqual([
-            expect.objectContaining({ plugin: 'xhs-pub', mode: 'live', modeSource: 'flag' }),
+            expect.objectContaining({ plugin: 'xhs-pub', mode: 'off', modeSource: 'config' }),
             expect.objectContaining({ plugin: 'wechatmp-pub', mode: 'draft', modeSource: 'config' }),
         ]);
     });
 
-    it('a config `off` does not silence a channel the operator names in --live-channels (0372 R5)', () => {
+    it('off wins over plugin-wide or variant-specific --live-channels tokens (0372 R5)', () => {
         const preset = {
             schemaVersion: 1 as const,
             name: 'fixture',
-            targets: [{ plugin: 'xhs-pub', mode: 'draft' as const }],
+            targets: [{ plugin: 'xhs-pub', variant: 'article', mode: 'draft' as const }],
         };
 
-        const applied = applyChannelModes(preset, { 'xhs-pub': 'off' }, ['xhs-pub']);
-
-        // Precedence: per-run consent (flag) > config switchboard > preset. `off` is not a veto.
-        expect(applied.targets[0]).toMatchObject({ plugin: 'xhs-pub', mode: 'live', modeSource: 'flag' });
+        for (const token of ['xhs-pub', 'xhs-pub/article']) {
+            for (const key of ['xhs-pub', 'xhs-pub/article']) {
+                const applied = applyChannelModes(preset, { [key]: 'off' }, [token]);
+                expect(applied.targets[0]).toMatchObject({ mode: 'off', modeSource: 'config' });
+            }
+            const disabledPreset = {
+                ...preset,
+                targets: [{ plugin: 'xhs-pub', variant: 'article', mode: 'off' as const }],
+            };
+            expect(applyChannelModes(disabledPreset, {}, [token]).targets[0]).toMatchObject({
+                mode: 'off',
+                modeSource: 'preset',
+            });
+        }
     });
 
     it('rejects a switchboard key that is absent from the selected preset', () => {
@@ -204,22 +214,31 @@ describe('content publish verbs (0364)', () => {
             } finally {
                 Date.now = priorNow;
             }
-            writeFileSync(config, 'content_types:\n  itc:\n    channels:\n      browser-pub: off\n');
-            const disabled = await runCli([
-                'article',
-                'publish-plan',
-                '--work-dir',
-                workDir,
-                '--preset',
-                'fixture',
-                '--dummy',
-            ]);
-            expect(disabled.code).toBe(0);
-            const disabledPlan = JSON.parse(
-                readFileSync(join(workDir, '4-publish', 'plan.after-generate.json'), 'utf8'),
+            writeFileSync(
+                config,
+                'content_types:\n  itc:\n    channels:\n      browser-pub: off\n  news:\n    channels:\n      browser-pub: off\n',
             );
-            expect(disabledPlan.rows).toHaveLength(0);
-            expect(disabledPlan.excluded).toContainEqual(expect.objectContaining({ reason: 'mode off (config)' }));
+            for (const noun of ['article', 'news']) {
+                for (const flags of [['--dummy'], ['--live-channels', 'browser-pub']]) {
+                    const disabled = await runCli([
+                        noun,
+                        'publish-plan',
+                        '--work-dir',
+                        workDir,
+                        '--preset',
+                        'fixture',
+                        ...flags,
+                    ]);
+                    expect(disabled.code).toBe(0);
+                    const disabledPlan = JSON.parse(
+                        readFileSync(join(workDir, '4-publish', 'plan.after-generate.json'), 'utf8'),
+                    );
+                    expect(disabledPlan.rows).toHaveLength(0);
+                    expect(disabledPlan.excluded).toContainEqual(
+                        expect.objectContaining({ reason: 'mode off (config)' }),
+                    );
+                }
+            }
         } finally {
             process.chdir(priorCwd);
             if (priorConfig === undefined) delete process.env.KK_CONFIG;

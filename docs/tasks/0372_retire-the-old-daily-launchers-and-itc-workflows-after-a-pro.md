@@ -1,31 +1,65 @@
 ---
 schema_version: 1
 name: Retire the old daily launchers and ITC workflows after a proven production day on the kk news schedule
-status: wip
+status: done
 template: standard
 created_at: 2026-11-15T02:54:16.825Z
-updated_at: "2026-11-15T06:14:56.878Z"
+updated_at: "2026-11-15T07:20:30.288Z"
 
+ac_altitude: task-local
+ac_numbering: task-local
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0372. Retire the old daily launchers and ITC workflows after a proven production day on the kk news schedule
 
 ### Background
 
-Captured from the creation title: "Retire the old daily launchers and ITC workflows after a proven production day on the kk news schedule".
+Retire the superseded launchers/workflows while preserving successor behavior. Operator update 2026-11-14: production migration and its scheduled-day proof are deferred to standalone task 0373; retain the already-landed retirement with an explicit sequencing exception; off vetoes live-channel flags. Task 0372 readiness covers the code, retirement and documented handoff. Production readiness remains unverified until 0373 passes. This task remains outside G61 by the existing operator scope decision.
 
 ### Requirements
 
-- [ ] R1. Cut-over evidence before any deletion (moved from 0369 R3): one full scheduled day on the new job lines (`kk news generate --publish`, `kk news publish --window overseas-rss --unattended`, `kk news publish --window cn-peak --unattended`) on the production host (the operator's Mac mini; a laptop rehearsal does not count) — generate receipt `done` or `no-content`, both publish windows settled — with the three receipts and `kk news status` output saved under `docs/tasks/evidence/0369/` (no secrets, no cookies, no env dumps). xhs stays off while the account is flagged.
-- [ ] R2. After the operator accepts R1 and explicitly approves the deletions (moved from 0369 R4), delete: `scripts/daily-ai-news.ts`, `scripts/publish-article.ts`, `plugins/kk/scripts/daily-scheduled-run.ts`, `plugins/kk/scripts/voice3-publish-window.ts`, `plugins/kk/workflows/kk-daily-ai-voice3.yaml`, `kk-daily-publish3.yaml`, `kk-itc.yaml`, `kk-itc-author.yaml`, `kk-itc-publish-tail.yaml`, and the tests that exist only to test them (list each deleted test with the new test covering the same behaviour; a test with no successor is kept and repointed). One commit, separate from everything else, so rollback is a single `git revert`.
-- [ ] R3. `rg -n "daily-ai-news\.ts|publish-article\.ts|daily-scheduled-run|voice3-publish-window|kk-daily-publish3\.yaml|kk-itc-publish-tail|kk-daily-ai-voice3\.yaml" --glob '!docs/tasks/**' --glob '!docs/00_ADR.md' --glob '!.spur/context/**' .` prints only lines inside `docs/design/content-pipeline-consolidation.md` and dated history notes (moved from 0369 R6).
-- [ ] R4. Post-deletion doc and template cleanup: the `kk schedule` cron templates (`kk-daily-ai-voice3.cron.tmpl`, `kk-daily-publish3-*.cron.tmpl`) and their rows in `docs/04_DESIGN.md` §1.13 render the `kk news` verbs; `docs/04_DESIGN.md` daily-supervision and `publish:article` passages, `AGENTS.md` "Editing `plugins/kk/scripts/`" example, `docs/design/kk-daily-ai-voice3.md` and the stale comments above the three jobs in `.spur/config.yaml` point at the new verbs; `package.json` scripts referencing deleted files are removed.
-- [ ] R5. Decide and record (operator): `--live-channels` currently overrides a config channel mode of `off` (`apps/cli/src/publish-matrix.ts` `applyChannelModes`), which matches the design precedence table but not the wording "from `draft` to `live`" in `docs/design/content-pipeline-consolidation.md`. Either make `off` win or fix the wording; add one test for the chosen behaviour.
-- [ ] R6. `bun run gate` exits 0.
+- [x] R1. Per operator rescope (2026-11-14), defer the production Mac mini rollout and full scheduled-day validation to task 0373. Update docs/migration.md with a concrete coding-agent handoff covering target discovery, package/build synchronization, persistent works_dir, one scheduler host, xhs remaining off, the three news job lines, approval boundaries, genuine receipt/status evidence under docs/tasks/evidence/0369, and rollback. Current task readiness certifies this handoff, not production cut-over.
+- [x] R2. The operator explicitly approved retaining the already-landed retirement on 2026-11-14 with a documented sequencing exception: production validation follows in task 0373. Record that approval and retain the deletions in commit 86ec3def: `scripts/daily-ai-news.ts`, `scripts/publish-article.ts`, `plugins/kk/scripts/daily-scheduled-run.ts`, `plugins/kk/scripts/voice3-publish-window.ts`, `plugins/kk/workflows/kk-daily-ai-voice3.yaml`, `kk-daily-publish3.yaml`, `kk-itc.yaml`, `kk-itc-author.yaml`, `kk-itc-publish-tail.yaml`, and the tests that exist only to test them (list each deleted test with the new test covering the same behaviour; a test with no successor is kept and repointed). One commit, separate from everything else, so rollback is a single `git revert`.
+- [x] R3. `rg -n "daily-ai-news\.ts|publish-article\.ts|daily-scheduled-run|voice3-publish-window|kk-daily-publish3\.yaml|kk-itc-publish-tail|kk-daily-ai-voice3\.yaml" --glob '!docs/tasks/**' --glob '!docs/00_ADR.md' --glob '!.spur/context/**' .` prints only lines inside `docs/design/content-pipeline-consolidation.md` and dated history notes (moved from 0369 R6).
+- [x] R4. Post-deletion doc and template cleanup: the `kk schedule` cron templates (`kk-daily-ai-voice3.cron.tmpl`, `kk-daily-publish3-*.cron.tmpl`) and their rows in `docs/04_DESIGN.md` §1.13 render the `kk news` verbs; `docs/04_DESIGN.md` daily-supervision and `publish:article` passages, `AGENTS.md` "Editing `plugins/kk/scripts/`" example, `docs/design/kk-daily-ai-voice3.md` and the stale comments above the three jobs in `.spur/config.yaml` point at the new verbs; `package.json` scripts referencing deleted files are removed.
+- [x] R5. Operator decision (2026-11-14): off always wins over --live-channels. Resolve the existing specific/plugin config precedence over the preset default first; an effective off row stays excluded even when named by a plugin-wide or variant-specific live token. Preserve config/preset modeSource and the mode off (config) reason. Enabled rows may still be promoted, and invalid or wrong-window tokens still fail. Update design/help wording and prove the behavior through the article/news publish-plan CLI and regression checks.
+- [x] R6. `bun run gate` exits 0.
 
 ### Acceptance Criteria
 
-<!-- Number items AC1, AC2, … (never R<n> — that is the Requirements namespace). Preferred: `Scenario: AC1 — <concrete outcome> (req: R1)` blocks with Given/When/Then, declaring both `ac_altitude: task-local` and `ac_numbering: task-local` for task-local regression criteria (altitude skips only the feature-subset check; numbering makes `(req: R<n>)` count toward requirement coverage). Parsed checkbox rows `- [ ] AC1 — <title>` are supported but never bind requirements — only `Scenario:` titles read `(req: R<n>)`. Bare `- AC1` bullets are legacy unparsed records, not a traceability bypass. Requirements use `- [ ] R1. <text>`, checked at close. Keep empty if this task has no objective AC yet. -->
+```gherkin
+Scenario: AC1 — Deferred production migration has an actionable handoff (req: R1)
+  Given the operator deferred production migration and scheduled-day validation
+  When the current runbook and follow-up task 0373 are inspected
+  Then target discovery, installation and approval boundaries, all three jobs, persistent storage, disabled xhs, real evidence and rollback are documented without claiming production readiness
+
+Scenario: AC2 — Retirement is explicitly approved and independently reversible (req: R2)
+  Given the operator approved retaining the retirement with a documented sequencing exception
+  When the nine listed legacy artifact deletions and successor test mapping are inspected
+  Then the retirement is one separate commit and every deleted test has a recorded successor or is retained and repointed
+
+Scenario: AC3 — Legacy reference sweep has only permitted matches (req: R3)
+  Given the retired artifacts
+  When the exact R3 ripgrep command runs
+  Then every match belongs to the consolidation design or dated history notes
+
+Scenario: AC4 — Current schedules and documentation use the news verbs (req: R4)
+  Given the retired launchers and workflows
+  When the cron templates, package scripts and named documentation passages are inspected
+  Then scheduled entries invoke kk news and no package script references a deleted entry
+
+Scenario: AC5 — Off vetoes explicit live-channel promotion (req: R5)
+  Given an effective off channel and a plugin-wide or variant-specific live-channel token
+  When article or news publish-plan applies the channel switchboard
+  Then the channel stays excluded with its config mode source and no live payload row is planned
+
+Scenario: AC6 — Repository quality gate passes (req: R6)
+  Given the final retirement tree
+  When bun run gate runs
+  Then it exits zero without bypassing any check
+```
 
 ### Q&A
 
@@ -33,28 +67,33 @@ Captured from the creation title: "Retire the old daily launchers and ITC workfl
      condition. Not a parking lot for open questions — an unanswered question here means the task
      is not ready to hand off. Keep empty if none. -->
 
+#### Q&A entry — 2026-11-15T06:58:09.879Z
+
+Operator decisions, 2026-11-14: (1) defer production migration and scheduled-day proof, with a coding-agent handoff; (2) approve retaining the landed retirement with a documented sequencing exception; (3) off always wins. The operator numbered the last item R3 in the message; it resolves this task's R5 channel-precedence decision. The R3 reference sweep is unchanged. Follow-up task: 0373; runbook: docs/migration.md.
+
 ### Design
 
-<!-- Chosen approach, key tradeoffs, invariants, and impacted surfaces. Keep snippets short. -->
+Use the existing shared applyChannelModes helper: resolve variant/plugin config over preset defaults and allow live promotion only when the effective mode is not off. Validate channel tokens against all rows in the selected window, including disabled rows; selection still excludes off rows. Preserve source attribution, unknown/wrong-window refusal and enabled-row promotion. Update owning ADR/design/help projections together. Reuse docs/migration.md and create standalone deferred task 0373; perform no production installation, schedule changes or sends. Retain the existing retirement commit rather than rewriting history.
 
 ### Plan
 
-1. Operator installs the build on the Mac mini (pin `works_dir`, ADR-042), enables the schedule there, waits one full day; collect R1 evidence from that host.
-2. Ask the operator to approve the deletions. Apply R2 as one commit.
-3. R3 sweep, R4 docs/templates, R5 decision.
-4. `bun run gate`.
+1. [x] Record the operator rescope, sequencing exception and off-veto decision.
+2. [x] Create deferred task 0373 and update docs/migration.md for the production coding agent.
+3. [x] Reproduce live-channel promotion of disabled rows with regression-first CLI checks.
+4. [x] Fix the shared helper/window token validation and synchronize design/help documentation.
+5. [x] Pass the final repository quality gate and review the final diff.
+6. [ ] Record the canonical PASS verdict and close task 0372 without claiming production readiness.
 
 ### Solution
 
-Work landed on branch `sp/run-0372-d27f` (worktree `../knowledge-kit-run-0372-d27f`) in five commits; the tree
-stays unmerged because R1 cannot be satisfied from this host.
+The retirement commits are on main and are retained with Robin's explicit sequencing exception (2026-11-14). Production migration and its real scheduled-day proof are deferred to standalone task 0373. The current task certifies the retirement, off-veto behavior and actionable handoff, not production cut-over readiness. It remains outside G61 by the operator scope decision.
 
 **R2 — the retirement (commit `86ec3def`, one commit, single `git revert`).**
 
 | Deleted | Successor |
 | --- | --- |
 | `scripts/daily-ai-news.ts` | `kk news generate` / `kk news publish` (`apps/cli/src/commands/content-generate.ts`, `content-launch.ts`) |
-| `scripts/publish-article.ts` | `kk article-generate` + `plugins/kk/workflows/kk-publish.yaml` |
+| `scripts/publish-article.ts` | `kk article generate` + `plugins/kk/workflows/kk-publish.yaml` |
 | `plugins/kk/scripts/daily-scheduled-run.ts` | `apps/cli/src/launch.ts` (the `kk news` launcher) |
 | `plugins/kk/scripts/voice3-publish-window.ts` | `apps/cli/src/commands/content-launch.ts` |
 | `plugins/kk/workflows/kk-daily-ai-voice3.yaml` | `plugins/kk/workflows/kk-news-generate.yaml` |
@@ -97,56 +136,55 @@ the daily-supervision passage and the `publish:article` passage describe the cur
 `.spur/config.yaml` job comments, `docs/design/kk-daily-ai-voice3.md`, `docs/03_ARCHITECTURE.md`, the
 G2/G15/G61/L2 feature docs and `AGENTS.md` no longer point at deleted files.
 
-**R5 — the `--live-channels` decision (commit `7fcb0c13`).** The shipped precedence stands
-(`apps/cli/src/publish-matrix.ts:339`: flag beats config mode), so the wording in
-`docs/design/content-pipeline-consolidation.md` §2 now says the flag overrides the config
-switchboard, and `apps/cli/tests/content-publish.e2e.test.ts` pins it: a config `off` row named in
-`--live-channels` plans `live` with `modeSource: flag`.
+**R5 — off always wins (operator decision 2026-11-14).** `apps/cli/src/publish-matrix.ts:339` now guards promotion with the effective config/preset mode. Disabled rows retain their config/preset mode source and stay excluded even when named by --live-channels. Window token validation recognizes disabled rows as legitimate selections without promoting them. `apps/cli/tests/content-publish.e2e.test.ts:39` covers plugin/variant tokens, config/preset off and both article/news CLI plans, including the existing dummy exclusion path. Help in both launch and publish-plan verbs names the off veto.
 
-**Not done — R1.** No production-day evidence exists: `docs/tasks/evidence/0369/` does not exist,
-`.works/` holds no `kk-news-*` run directory, and this host is the laptop (`MBP-2026`, no crontab)
-while ADR-053 names the Mac mini as the production schedule host. The operator confirmed R1 is
-outstanding, so the run stops here and the branch is retained for review.
+**R1 — production deliberately deferred.** Task 0373 owns the production migration and genuine scheduled-day receipts. `docs/migration.md:3` is the current coding-agent handoff: re-confirm the historical target ssh homelab, inspect the installed build, require approval for concrete production mutations, pin persistent works_dir, preserve kk.db, keep one scheduler host and xhs off, run the three news jobs, save redacted receipts/status and preserve rollback. No production changes or sends were performed.
+
+Verification repair (2026-11-14): added six task-local acceptance scenarios directly from R1-R6 and corrected the merged-state summary. Corrected the cron/template and Design schedule descriptions: generation with --publish starts after-generate publishing, live-confirm is opt-in, and overseas preset rows are dummy/off. The voice3 design rehearsal now uses the supported news generate --dry-run flag instead of --dummy. Those earlier documentation repairs did not change runtime behavior; the later operator-approved off-veto change is described under R5 above. Production configuration remains untouched.
+
+
+Final verification: bun run gate exits 0 with 5171 pass, 0 fail, 26211 assertions across 294 files; coverage accepted; all 58 pre-check and 2 post-check rules pass. Focused regression-first proof and migration-handoff checks are saved under .spur/run/0372-*. Task 0373 remains deferred and unstarted (the harness advanced it to todo). Production execution is not claimed.
 
 ### Testing
 
-Worktree `../knowledge-kit-run-0372-d27f` on branch `sp/run-0372-d27f` (base `main` @ `9df2cd24`).
+**Pipeline verify results**
 
-- `bun run lint` — PASS (Biome 2.5.15 `Checked 816 files`, every workspace `typecheck: Exited with code 0`).
-- `bun run build` — PASS (all workspaces; `apps/cli/dist/index.js` bundled, 2.22 MB).
-- `bun run gate` — **PASS, exit 0**: format + build + lint + `spur rule run --preset
-  recommended-pre-check` (2 rules) + `bun run test` → `5171 pass, 0 fail, 26212 expect() calls,
-  Ran 5171 tests across 294 files`, followed by `spur rule run --preset recommended-post-check`
-  → `All 2 rules passed`.
+- Verdict: PASS (from verdict artifact)
 
-Coverage: the retirement initially dropped `apps/cli/src/publish-matrix.ts` to 89.77% line coverage,
-which fails the per-file 90% threshold and exits the run 1 while printing `0 fail`. Commit
-`b9d9e6d6` adds the settlement failure case that restores it; the final gate run is green.
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `docs/migration.md:3` is the current production coding-agent handoff. Task 0373 captures the deferred work. Repeatable handoff checks confirm target, approvals, storage, one scheduler, xhs off, all jobs, real receipts/status and rollback; 0373 remains unstarted (todo). Receipt: knowledge-kit verification run `.spur/run/0372-handoff-check.log` line 1. |
+| R2 | MET | Robin explicitly approved retaining retirement with a sequencing exception, recorded in task Q&A and ADR-053. git show 86ec3def confirms one separate deletion commit and nine test-successor mappings; `docs/tasks/0372_retire-the-old-daily-launchers-and-itc-workflows-after-a-pro.md:89` preserves them. Static checks confirm all nine artifacts are absent. No approval-before-deletion claim is made. |
+| R3 | MET | Exact R3 sweep plus allowlist assertions finds only 41 permitted matches in the consolidation design and dated history. Receipt: knowledge-kit verification run `.spur/run/0372-static-check.log` line 1. |
+| R4 | MET | Three cron render commands and package-script checks pass; `plugins/kk/schedules/kk-daily-ai-voice3.cron.tmpl:17`, `plugins/kk/schedules/kk-daily-publish3-overseas.cron.tmpl:24`, `plugins/kk/schedules/kk-daily-publish3-cn-peak.cron.tmpl:24`, `docs/04_DESIGN.md:1088`, `docs/04_DESIGN.md:1181`. Schedule descriptions now match after-generate publishing and opt-in live confirmation; the rehearsal uses the supported dry-run flag. |
+| R5 | MET | `apps/cli/src/publish-matrix.ts:338` guards promotion with effective config/preset mode. Window validation recognizes disabled tokens without selecting their targets. `apps/cli/tests/content-publish.e2e.test.ts:39` covers plugin/variant tokens and config/preset off; its CLI flow drives both article/news with dummy/live flags, keeping rows empty and mode off (config). Regression-first run reproduced 3 failures; focused final run has 9 pass, 0 fail, 65 assertions; related suites have 61 pass, 0 fail. ADR/design/help match the operator decision. |
+| R6 | MET | bun run gate exits 0: format, build, lint/typecheck, all 58 pre-check rules, 5171 tests across 294 files (0 failures, 26211 assertions), coverage thresholds accepted, all 2 post-check rules. Receipt: knowledge-kit verification run `.spur/run/0372-final-gate.log` line 1. Fix-pass artifact disclosure: .spur/run/0372-ac.md:1-31; .spur/run/0372-background.md:1-1; .spur/run/0372-requirements.md:1-6; .spur/run/0372-design.md:1-1; .spur/run/0372-plan.md:1-6; .spur/run/0372-qa.md:1-1; .spur/run/0372-solution.md:1-59; .spur/run/0372-references.md:1-3; .spur/run/0372-followup.json:1-15; .spur/run/0372-fix-created.json:1-8; .spur/run/0372-static-check.ts:1-38; .spur/run/0372-static-check.log:1-1; .spur/run/0372-generation.cron:1-17; .spur/run/0372-overseas.cron:1-24; .spur/run/0372-cn-peak.cron:1-24; .spur/run/0372-handoff-check.ts:1-24; .spur/run/0372-handoff-check.log:1-1; .spur/run/0372-off-red.log:1-193; .spur/run/0372-off-green.log:1-126; .spur/run/0372-related-tests.log:1-183; .spur/run/0372-typecheck.log:1-1; .spur/run/0372-final-format.log:1-2; .spur/run/0372-final-gate.log:1-345; .spur/run/0373-ac.md:1-21; .spur/run/0373-background.md:1-1; .spur/run/0373-design.md:1-1; .spur/run/0372-final-verify-answer.txt:1-45; .spur/run/0372-verify-answer.txt:1-45; .spur/run/0372-verdict.json:1-122 (created or replaced during this verification). |
 
-Repro of the R3 sweep (expect only `docs/design/content-pipeline-consolidation.md` and dated
-history notes):
-
-```bash
-rg -n "daily-ai-news\.ts|publish-article\.ts|daily-scheduled-run|voice3-publish-window|kk-daily-publish3\.yaml|kk-itc-publish-tail|kk-daily-ai-voice3\.yaml" \
-  --glob '!docs/tasks/**' --glob '!docs/00_ADR.md' --glob '!.spur/context/**' .
-```
-
-Two worktree-only notes: `.spur/run/` and `.spur/memory/` are untracked per-tree planes, so the
-`no-dead-run-scoped-citation` rule failed until the cited `0365/0366/0367` receipts and the
-`0362-0364` batch artifacts were copied in from the main tree; and `proto trust .prototools` is
-required once per fresh worktree before its hooks can commit.
-
-Not verified: no scheduled run has executed the rewritten cron lines (R1 is the missing evidence),
-so the `kk news generate --publish` / `kk news publish --window … --unattended` entries are proven by
-their own e2e suites and by `kk schedule render`, not by a production tick.
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — Deferred production migration has an actionable handoff | MET | command | `docs/migration.md:3` and task 0373 pass the handoff checks; knowledge-kit verification run `.spur/run/0372-handoff-check.log` line 1. |
+| AC2 — Retirement is explicitly approved and independently reversible | MET | command | Explicit operator sequencing exception is in task Q&A and ADR-053; git show 86ec3def proves the separate deletion commit and successor mappings; `docs/tasks/0372_retire-the-old-daily-launchers-and-itc-workflows-after-a-pro.md:89`. |
+| AC3 — Legacy reference sweep has only permitted matches | MET | command | Exact sweep and allowlist pass: knowledge-kit verification run `.spur/run/0372-static-check.log` line 1. |
+| AC4 — Current schedules and documentation use the news verbs | MET | command | Rendered cron and package-script checks pass; `docs/04_DESIGN.md:1181`, `plugins/kk/schedules/kk-daily-ai-voice3.cron.tmpl:17`; knowledge-kit verification run `.spur/run/0372-static-check.log` line 1. |
+| AC5 — Off vetoes explicit live-channel promotion | MET | test | `apps/cli/tests/content-publish.e2e.test.ts:39` and its article/news CLI flow pass: disabled rows stay excluded with mode off (config). Focused receipt: knowledge-kit verification run `.spur/run/0372-off-green.log` line 1; 9 pass, 0 fail, 65 assertions. |
+| AC6 — Repository quality gate passes | MET | command | bun run gate exits 0: format, build, lint/typecheck, all 58 pre-check rules, 5171 tests across 294 files (0 failures, 26211 assertions), coverage thresholds accepted, all 2 post-check rules. Receipt: knowledge-kit verification run `.spur/run/0372-final-gate.log` line 1. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
-<!-- Links to features, docs, ADRs, related tasks, or external references. -->
+- Current production coding-agent handoff: `docs/migration.md:3`.
+- Deferred work: task 0373, `docs/tasks/0373_migrate-the-kk-news-schedule-to-the-production-mac-mini-and-.md:15`.
+- Operator scope/precedence amendment: ADR-053 in `docs/00_ADR.md`.
 
 ### History
 
@@ -157,4 +195,6 @@ their own e2e suites and by `kk schedule render`, not by a production tick.
   after the branch was cut, so `git merge --ff-only` refused; the divergence was resolved by replaying
   that one commit on top of the branch, which rewrote it as `54339f44`. Nothing was pushed, so no
   published history changed. Branch and worktree removed. R1 stays open.
+- 2026-11-15T06:38:29.966Z wip → testing (system)
+- 2026-11-15T07:20:30.206Z testing → done (system)
 

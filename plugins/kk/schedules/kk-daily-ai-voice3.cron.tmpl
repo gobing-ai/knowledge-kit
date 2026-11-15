@@ -5,7 +5,7 @@
 #
 # `kk news generate --publish` is the whole job: prepare, curate, script, render, safety, voice,
 # cards, variants, the variants-scope safety review and the freeze, then the generation receipt.
-# The generate DAG publishes nothing on its own — the publish windows below are the only senders.
+# After successful generation, `--publish` launches the after-generate publish window.
 # The run directory is <works>/kk-news-generate/<run>; the log below is the tick's own stdout.
 #
 # Rendered by `kk schedule render kk-daily-ai-voice3 --platform cron --repo <checkout>`;
