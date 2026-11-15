@@ -8,8 +8,11 @@
 #
 # Keys are decision ids from the sibling catalog (plugins/kk/decisions/kk-items.yaml);
 # an unknown key or decision id fails loud with `kk.store.profile.invalid`.
-# `limit` is omitted: the compiler's episode-cap default (20) applies unless
-# `kk store extract --limit` overrides it.
+# `limit` 32 (2026-11-15, task 0377): the omitted default of 20 capped a week-wide pool at 20
+# items, which after QC admitted ~11.4k chars = 10.3 min against the 15 min floor, so a thin week
+# could never clear it however far the ladder widened. 32 items keeps the estimate inside the
+# 15-25 min window (measured: 45,163 raw chars -> ~16.4 min) instead of refusing the day.
+limit: 32
 topic: ai-news
 where:
   # 2026-10-21: the allowlist is the whole AI taxonomy, in lockstep with the workflow's
