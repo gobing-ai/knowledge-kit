@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Make the pre-spend floor ladder use the authored script's measure so a thin day widens instead of dying at TTS
-status: backlog
+status: wip
 template: standard
 created_at: 2026-11-15T21:08:47.145Z
-updated_at: "2026-11-15T21:09:05.129Z"
+updated_at: "2026-11-15T22:32:55.714Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -107,7 +107,29 @@ Scenario: AC5 — The regression is covered (req: R4)
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Three stacked defects, each found by running the real path and fixed in place:
+
+1. **`apps/cli/plugins` ratio** — `plugins/kk/scripts/daily-stages.ts` `estimateSpokenMinutes` now takes
+   an `expansion` argument. The widen decision and the pre-spend gate pass the new
+   `SPEAK_CHAR_EXPANSION_FLOOR = 0.28` (worst measured spoken/raw ratio; earlier measurements 0.71 and
+   1.38), while the post-TTS duration artifact keeps `SPEAK_CHAR_EXPANSION = 1.4` as the reported
+   arithmetic — the same opposite-safe-direction argument `scriptFloorCharRate` already makes about the
+   char rate. Commit `c6414ff3`.
+2. **Stale refusal field** — `applyFloorGate` computed with the conservative ratio but stamped
+   `expansion: 1.4` into its refusal artifact, so the artifact's minutes and ratio disagreed. It now
+   records the ratio it used. Commit `56390fc8`.
+3. **Pool cap vs QC attrition** — with the ladder finally widening, QC admitted ~0.32 of the raw pool
+   chars, so a 20-item cap landed at 10.3 min whatever window the ladder reached. `plugins/kk/decisions/extract/ai-news.yaml`
+   pins `limit: 40` (measured: 20 → 11.4 min, 32 → 13.2 min, 40 → PASS) and the machine config sets
+   `workflows.kk-news-generate.plan_max_items: 40` + `window: 168h`. Commits `a024ed28`, and the cap-40
+   follow-up.
+
+Tests: `plugins/kk/tests/daily-extract-ladder.test.ts` (new; RED before fix 1, GREEN after) and
+`apps/cli/tests/kk-workflow-stages.test.ts` (two floor fixtures moved onto the measured ratio rather
+than relaxed). `bun run test` 5175 pass / 0 fail, `bun run lint` clean, `bun run build` exit 0.
+
+Not yet done: R2's bounded re-authoring loop is still implicit (the ladder decides once, at extract);
+the durable fix is to let the QC refusal feed a bounded widen instead of a fixed `window: 168h`.
 
 ### Testing
 
@@ -122,3 +144,7 @@ Scenario: AC5 — The regression is covered (req: R4)
 <!-- Links to features, docs, ADRs, related tasks, or external references. -->
 
 ### History
+
+- 2026-11-15T22:32:55.340Z backlog → todo (system)
+- 2026-11-15T22:32:55.714Z todo → wip (system)
+
