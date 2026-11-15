@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { captureOutput } from '../capture';
@@ -14,7 +14,9 @@ import { captureOutput } from '../capture';
  * e2e suite). `setGenerateDeps` is the seam that lets one verb run end to end here: the three
  * out-of-process shapes — a `daily-*` stage body, a `kk` CLI route, a publish-matrix step — are
  * replaced, while everything the verb owns (option parsing, the row table, the summaries, the
- * work-dir composition) executes for real against a temp root.
+ * work-dir composition) executes for real against a temp root. A fourth shape, the launcher's
+ * executor probe (a real `spur agent run`, 0360 R5), is stubbed through `KK_SPUR_BIN`: the dry-run
+ * plan must not depend on a live executor, and CI has none (an unstubbed probe refuses with exit 5).
  */
 
 const REPO = join(import.meta.dir, '..', '..', '..');
@@ -24,6 +26,8 @@ let restoreDeps: () => void;
 let restoreDepsBackup: () => void;
 /** The config each call runs under; a case may point it elsewhere. */
 let configFileForCases: string;
+/** A `spur` stand-in that answers the launcher's executor probe without a live executor. */
+let spurStub: string;
 
 interface Run {
     code: number;
@@ -46,7 +50,9 @@ async function run(args: string[]): Promise<Run> {
     // The config is read at call time, so it is applied (and restored) per call: a file-level
     // assignment leaks into every other suite sharing this process.
     const saved = process.env.KK_CONFIG;
+    const savedSpur = process.env.KK_SPUR_BIN;
     process.env.KK_CONFIG = configFileForCases;
+    process.env.KK_SPUR_BIN = spurStub;
     const { main } = await import('../../src/commands/../main');
     try {
         const code = await main(['node', 'kk', ...args]);
@@ -55,6 +61,8 @@ async function run(args: string[]): Promise<Run> {
         captured.restore();
         if (saved === undefined) delete process.env.KK_CONFIG;
         else process.env.KK_CONFIG = saved;
+        if (savedSpur === undefined) delete process.env.KK_SPUR_BIN;
+        else process.env.KK_SPUR_BIN = savedSpur;
     }
 }
 
@@ -73,6 +81,12 @@ beforeAll(async () => {
     const configFile = join(root, 'config.yaml');
     writeFileSync(configFile, [`works_dir: ${works}`, 'store:', `  db_path: ${join(root, 'kk.db')}`, ''].join('\n'));
     configFileForCases = configFile;
+    const bin = join(root, 'bin');
+    mkdirSync(bin, { recursive: true });
+    spurStub = join(bin, 'spur');
+    // The probe reads only the exit code; a dry run never reaches `workflow run`.
+    writeFileSync(spurStub, '#!/bin/sh\nexit 0\n');
+    chmodSync(spurStub, 0o755);
     const module = await import('../../src/commands/content-generate');
     restoreDepsBackup = module.setGenerateDeps({
         runStage: async (argv) => {
