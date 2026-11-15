@@ -41,9 +41,10 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, type Page } from 'playwright';
+import { spurPackageRootOf } from '../../../scripts/spur-env';
 import { classifyStoreChange, type StoreFilePrint, storeFiles } from './store-digest';
 
 const REPO = resolve(import.meta.dir, '../../..');
@@ -691,13 +692,11 @@ function spurCommand(): string[] {
     } catch {
         const which = Bun.which('spur');
         if (which === null) throw new Error('cannot resolve the installed spur CLI; set SPUR_BIN to spur.js');
-        let current = dirname(realpathSync(which));
-        while (current !== dirname(current)) {
-            if (basename(current) === 'spur' && basename(dirname(current)) === '@gobing-ai')
-                return [process.execPath, join(current, 'spur.js')];
-            current = dirname(current);
-        }
-        throw new Error(`cannot locate the @gobing-ai/spur package behind ${which}`);
+        // `scripts/spur-env.ts` is the canonical resolver: a published install and a source
+        // checkout whose `spur` on PATH is a working copy both resolve there.
+        const packageRoot = spurPackageRootOf(dirname(realpathSync(which)));
+        if (packageRoot === undefined) throw new Error(`cannot locate the @gobing-ai/spur package behind ${which}`);
+        return [process.execPath, join(packageRoot, 'spur.js')];
     }
 }
 
