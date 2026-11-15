@@ -24,7 +24,7 @@
  */
 
 import { afterAll, describe, expect, it } from 'bun:test';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { openStore } from '@gobing-ai/kk-store';
@@ -34,7 +34,6 @@ import { silenceOutputPerTest } from './capture';
 
 const REPO = resolve(import.meta.dir, '../../..');
 const STAGES = join(REPO, 'plugins/kk/scripts/kk-workflow-stages.ts');
-const WORKFLOW = join(REPO, 'plugins/kk/workflows/kk-daily-publish3.yaml');
 
 // The settle verb echoes its decision; the suite asserts the persisted state, not the stream.
 silenceOutputPerTest();
@@ -800,196 +799,6 @@ writeFileSync(out, JSON.stringify({ ok: false, target: 'stub-pub', error: 'timeo
     });
 });
 
-// ── R1/R2: the workflow graph — retries, assertion, evidence survives failure ───────────────
-
-interface RunOutcome {
-    code: number;
-    runId: string;
-    calls: string[];
-    /** The engine's own account of the run, as the assertion message for an unexpected rc. */
-    detail: string;
-}
-
-/** `kk` shim: real `publish-matrix-*` stages, recorded tails, no wait-until sleep. */
-function writeKkShim(binDir: string, logPath: string): void {
-    const script = `#!/usr/bin/env bash
-set -u
-STAGE="$3"
-printf '%s\\n' "kk $*" >> "${logPath}"
-if [ "$1" = "stage" ] && [ "$2" = "run" ]; then
-  case "$STAGE" in
-    publish-matrix-wait-until)
-      echo "shim: wait-until recorded, not slept"
-      exit 0
-      ;;
-    publish-matrix-check)
-      echo "shim: check recorded, not probed"
-      exit 0
-      ;;
-    publish-matrix-*)
-      shift 3
-      exec bun "${REPO}/apps/cli/src/index.ts" stage run "$STAGE" "$@"
-      ;;
-  esac
-fi
-echo "shim: recorded kk $*"
-exit 0
-`;
-    writeFileSync(join(binDir, 'kk'), script);
-    chmodSync(join(binDir, 'kk'), 0o755);
-}
-
-function runWindow(
-    cwd: string,
-    workDir: string,
-    window: string,
-    env: Record<string, string> = {},
-    varsOverride: Record<string, string> = {},
-): RunOutcome {
-    const binDir = tempDir('publish3-bin-0333-');
-    const logPath = join(cwd, `kk-calls-${window}.log`);
-    writeFileSync(logPath, '');
-    writeKkShim(binDir, logPath);
-    const vars = {
-        work_dir: workDir,
-        run_date: '',
-        window,
-        preset: '',
-        channels: '',
-        live_channels: '',
-        dummy: 'false',
-        agent: 'inline',
-        ...varsOverride,
-    };
-    const result = Bun.spawnSync(
-        [
-            'spur',
-            'workflow',
-            'run',
-            WORKFLOW,
-            '--run-id',
-            `publish3-0333-${window}-${Date.now()}`,
-            '--json',
-            '--vars',
-            JSON.stringify(vars),
-        ],
-        {
-            cwd,
-            env: {
-                ...process.env,
-                ...env,
-                PATH: `${binDir}:${process.env.PATH ?? ''}`,
-                SPUR_WORKFLOW_RUN_ACTIVE: undefined,
-                SPUR_EXPECTED_DEFINITION_DIGEST: undefined,
-            },
-        },
-    );
-    const stdout = result.stdout?.toString() ?? '';
-    const match = /"runId":\s*"([^"]+)"/.exec(stdout);
-    // Returned, not written: E3 expects a nonzero rc, so dumping it here leaked into every run.
-    const detail = `runWindow(${window}) rc=${result.exitCode}\n${result.stderr?.toString() ?? ''}\n${stdout.slice(-2000)}\n`;
-    return {
-        code: result.exitCode ?? 1,
-        runId: match?.[1] ?? '',
-        detail,
-        calls: readFileSync(logPath, 'utf-8').split('\n').filter(Boolean),
-    };
-}
-
-describe('kk-daily-publish3 outcome assertion (0333 R1/R2)', () => {
-    it('E2: one effect-none retry succeeds — attempt-1 failed, retry-1 succeeded, run exits 0', () => {
-        const fx = makeFixture(['flip-pub', 'flip2-pub']);
-        const flipBody = `import { existsSync, rmSync, writeFileSync } from 'node:fs';
-const state = process.env.FLIP_STATE ?? '/tmp/kk-flip-state-0333';
-const out = process.argv[process.argv.indexOf('--out') + 1];
-if (existsSync(state)) {
-  rmSync(state);
-  writeFileSync(out, JSON.stringify({ ok: false, target: 'flip-pub', error: 'first attempt fails', metadata: { itcDelivery: { effect: 'none' } } }, null, 2));
-} else {
-  writeFileSync(out, JSON.stringify({ ok: true, target: 'flip-pub', status: 'published', url: 'https://flip.test/1', metadata: {} }, null, 2));
-}
-`;
-        const pluginRoot = writePlugin(fx.root, 'flip-pub', flipBody);
-        // Distinct plugin ids (a preset cannot repeat `flip-pub.post`), same fail-once behavior.
-        const pluginRoot2 = writePlugin(
-            fx.root,
-            'flip2-pub',
-            flipBody.replace("process.env.FLIP_STATE ?? '/tmp/kk-flip-state-0333'", 'process.env.FLIP_STATE + ".2"'),
-        );
-        void pluginRoot2;
-        const state = join(fx.root, 'flip-state');
-        writeFileSync(state, 'fail-once\n');
-        const run = runWindow(fx.root, fx.workDir, 'after-generate', {
-            KK_PLUGIN_PATH: `${pluginRoot}:${pluginRoot2}`,
-            KK_SURFDASH_PATCH_OFFLINE: '1',
-            FLIP_STATE: state,
-        });
-        expect(run.code, run.detail).toBe(0);
-        const receipt = readJson(join(fx.workDir, '4-publish', 'receipts', 'flip-pub.post.json'));
-        expect(receipt.attemptId).toBe('retry-1');
-        expect(receipt.status).toBe('succeeded');
-        const outcome = readJson(join(fx.workDir, '4-publish', 'outcome.after-generate.json'));
-        expect(outcome.status).toBe('full');
-        expect(existsSync(join(fx.workDir, '5-report', 'publish-after-generate.md'))).toBe(true);
-        rmSync(fx.root, { recursive: true, force: true });
-    });
-
-    it('E3: second failure is recorded and the run exits nonzero with the report intact', () => {
-        const fx = makeFixture(['stub-pub', 'stub2-pub']);
-        const stubBody = `import { writeFileSync } from 'node:fs';
-const out = process.argv[process.argv.indexOf('--out') + 1];
-writeFileSync(out, JSON.stringify({ ok: false, target: 'stub-pub', error: 'always fails', metadata: { itcDelivery: { effect: 'none' } } }, null, 2));
-`;
-        const pluginRoot = writePlugin(fx.root, 'stub-pub', stubBody);
-        const pluginRoot2 = writePlugin(fx.root, 'stub2-pub', stubBody);
-        void pluginRoot2;
-        const run = runWindow(fx.root, fx.workDir, 'after-generate', {
-            KK_PLUGIN_PATH: `${pluginRoot}:${pluginRoot2}`,
-            KK_SURFDASH_PATCH_OFFLINE: '1',
-        });
-        expect(run.code).not.toBe(0);
-        const receiptsDir = join(fx.workDir, '4-publish', 'receipts');
-        expect(existsSync(join(receiptsDir, 'stub-pub.post.json'))).toBe(true);
-        const receipt = JSON.parse(readFileSync(join(receiptsDir, 'stub-pub.post.json'), 'utf-8')) as Record<
-            string,
-            unknown
-        >;
-        expect(receipt.attemptId).toBe('retry-1');
-        expect(receipt.status).toBe('failed');
-        expect(existsSync(join(fx.workDir, '5-report', 'publish-after-generate.md'))).toBe(true);
-        const outcome = readJson(join(fx.workDir, '4-publish', 'outcome.after-generate.json'));
-        expect(outcome.status).toBe('none');
-        rmSync(fx.root, { recursive: true, force: true });
-    });
-
-    it('E1: all-dummy rehearsal succeeds, settlement holds, report lists every row including excluded', () => {
-        const fx = makeFixture();
-        const run = runWindow(fx.root, fx.workDir, 'after-generate', {}, { dummy: 'true' });
-        // dummy rehearsal: no dispatch at all; the run must be a clean success.
-        expect(run.code, run.detail).toBe(0);
-        expect(run.calls.some((call) => call.includes('store mark-published'))).toBe(false);
-        const settlement = readJson(join(fx.workDir, '4-publish', 'settlement.after-generate.json'));
-        expect(settlement.marked).toBe(false);
-        const report = readFileSync(join(fx.workDir, '5-report', 'publish-after-generate.md'), 'utf-8');
-        // The off-mode xhs row never planned, but it must stay visible in the report.
-        expect(report).toContain('x-pub.post');
-        expect(existsSync(join(fx.workDir, '5-report', 'publish-after-generate.md'))).toBe(true);
-        rmSync(fx.root, { recursive: true, force: true });
-    });
-
-    it('E5: the yaml pins send to onError-continue and asserts the outcome after report/ledger', () => {
-        const yaml = readFileSync(WORKFLOW, 'utf-8');
-        expect(yaml).toMatch(/id: send[\s\S]{0,600}?onError: continue/);
-        expect(yaml).toContain('publish-matrix-send');
-        expect(yaml).toMatch(/--retry/);
-        expect(yaml).toContain('outcome-assert');
-        expect(yaml).toContain('publish-matrix-settle');
-        expect(yaml).toContain('publish-matrix-patch-surfdash');
-        expect(yaml).toContain('publish-matrix-partial');
-        expect(yaml).not.toContain('KK_SURFDASH_ROOT');
-    });
-});
-
 // ── evidence artifact derived from assertions (task contract) ───────────────────────────────
 
 describe('0333 evidence summary', () => {
@@ -1008,11 +817,9 @@ describe('0333 evidence summary', () => {
             { id: 'F9', requirement: 'R3', assertion: 'missing podcast receipt patches with empty links' },
             { id: 'F10', requirement: 'R3', assertion: 'no KK_SURFDASH_ROOT dependency in the stage' },
             { id: 'F5b', requirement: 'R4', assertion: 'native dispatcher routes publish-matrix-settle' },
-            { id: 'E1', requirement: 'R2', assertion: 'dummy rehearsal succeeds; settlement holds; excluded visible' },
-            { id: 'E2', requirement: 'R1', assertion: 'one effect-none retry succeeds; run exits 0' },
-            { id: 'E3', requirement: 'R1', assertion: 'second failure recorded; run exits nonzero with report' },
             { id: 'E4', requirement: 'R1', assertion: 'uncertain live receipt never resent' },
-            { id: 'E5', requirement: 'R1/R2', assertion: 'yaml pins onError-continue send + outcome-assert' },
+            // E1/E2/E3/E5 asserted the retired kk-daily-publish3 graph; their successors are
+            // kk-publish.e2e.test.ts (AC1 dummy outcome, AC2 bounded --retry) after 0372.
         ];
         writeFileSync(
             join(dir, 'summary.json'),

@@ -9,7 +9,7 @@ test('daily script authoring waits for article exclusions in voice2 and voice3',
     const root = await mkdtemp(join(tmpdir(), 'kk-script-ordering-'));
     const results: Record<string, unknown>[] = [];
     try {
-        for (const version of ['2', '3']) {
+        for (const version of ['2']) {
             const path = resolve(import.meta.dir, `../../../plugins/kk/workflows/kk-daily-ai-voice${version}.yaml`);
             const workflow = Bun.YAML.parse(await Bun.file(path).text()) as {
                 nodes: Array<{ id: string; dependsOn?: string[] }>;
@@ -68,7 +68,7 @@ test('daily script authoring waits for article exclusions in voice2 and voice3',
 test('daily voice fallback runs after primary failure using the shipped error policy', async () => {
     const root = await mkdtemp(join(tmpdir(), 'kk-voice-fallback-'));
     try {
-        for (const version of ['2', '3']) {
+        for (const version of ['2']) {
             const path = resolve(import.meta.dir, `../../../plugins/kk/workflows/kk-daily-ai-voice${version}.yaml`);
             const workflow = Bun.YAML.parse(await Bun.file(path).text()) as {
                 nodes: Array<{

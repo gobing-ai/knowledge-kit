@@ -32,7 +32,6 @@ import { captureOutput } from './capture';
 
 const REPO = resolve(import.meta.dir, '../../..');
 const CLI = join(REPO, 'apps/cli/src/index.ts');
-const PUBLISH3 = join(REPO, 'plugins/kk/workflows/kk-daily-publish3.yaml');
 const PUBLISH = join(REPO, 'plugins/kk/workflows/kk-publish.yaml');
 const ARTICLE_FIXTURE = join(import.meta.dir, 'fixtures/article-bundle');
 const SUMMARY = join(REPO, '.works/tmp/test-kk-publish/summary.json');
@@ -309,9 +308,9 @@ function sha256(text: string): string {
  * Where a fixture writes its bundle.
  *
  * `frozen` is the layout a real run directory has after the cut-over (`4-publish/bundle.json`, design
- * §4.3) and the only one the launching verb admits; `legacy` is the root-level `bundle.json` that
- * `kk-daily-publish3.yaml` still names and that a pre-cut-over directory keeps (§4.3: "history is not
- * migrated"). AC1/AC2 use the frozen path, AC3 the legacy one, so both are exercised.
+ * §4.3) and the only one the launching verb admits; `legacy` is the root-level `bundle.json` a
+ * pre-cut-over directory keeps (§4.3: "history is not migrated"). AC1/AC2/AC3 use the frozen path;
+ * the legacy layout stays covered so an old run directory keeps working.
  */
 type Layout = 'frozen' | 'legacy';
 
@@ -407,25 +406,6 @@ function mtimes(workDir: string): Map<string, number> {
     };
     walk(workDir);
     return map;
-}
-
-/**
- * A plan read as data, with the one intended difference normalised away.
- *
- * `publish-plan` applies the config switchboard in TypeScript and records each row's
- * `modeSource: 'flag'` (design §2.1, task 0364); publish3's node calls the raw
- * `publish-matrix-plan` stage, which has no switchboard and no mode source. Everything else about
- * the two plans — payloads, digests, tiers, modes, exclusions — must be identical.
- */
-function normalisedPlan(path: string): unknown {
-    const parsed = normalisedJson(path) as { rows?: Array<Record<string, unknown>> };
-    if (Array.isArray(parsed.rows)) {
-        parsed.rows = parsed.rows.map(({ modeSource, ...row }) => {
-            void modeSource;
-            return row;
-        });
-    }
-    return parsed;
 }
 
 /** A plan/outcome read as data, with the row and excluded order normalised. */
@@ -601,40 +581,22 @@ describe('kk-publish — AC2 one channel is re-sent without regenerating (0366 R
     }, 240_000);
 });
 
-describe('kk-publish — AC3 the nine-node workflow matches the eighteen-node one (0366 R7)', () => {
-    it('produces the same 4-publish file set and the same outcome per window in dummy mode', () => {
+describe('kk-publish — AC3 the nine-node workflow covers a full three-window day (0366 R7)', () => {
+    it('produces the 4-publish file set and an outcome per window in dummy mode', () => {
         const sandbox = project();
         try {
             const summary: Array<Record<string, unknown>> = [];
-            // One work dir per workflow, the three windows in the order a real day runs them: the
-            // cn-peak and overseas rows resolve their tier-2/3 links from the tier-0 receipts the
-            // after-generate window left in the same directory, which is what parity must cover.
-            const legacyDir = join(sandbox.root, 'publish3-day');
-            const nextDir = join(sandbox.root, 'kk-publish-day');
-            seedNewsBundle(legacyDir);
-            seedNewsBundle(nextDir);
+            // One work dir, the three windows in the order a real day runs them: the cn-peak and
+            // overseas rows resolve their tier-2/3 links from the tier-0 receipts the
+            // after-generate window left in the same directory.
+            const workDir = join(sandbox.root, 'kk-publish-day');
+            seedNewsBundle(workDir);
             for (const window of ['after-generate', 'cn-peak', 'overseas-rss']) {
-                const legacy = runWorkflow(
-                    PUBLISH3,
-                    `p3-${window}-1`,
-                    {
-                        work_dir: legacyDir,
-                        run_date: RUN_DATE,
-                        window,
-                        preset: 'daily-ai-voice',
-                        dummy: 'true',
-                        live_confirm: 'false',
-                        feed: FEED_URL,
-                        // No gate miss in this comparison: a hit plans, sends and settles a window.
-                        agent: 'no-such-executor',
-                    },
-                    join(sandbox.root, `p3-${window}.log`),
-                );
-                const next = runWorkflow(
+                const run = runWorkflow(
                     PUBLISH,
                     `kkp-${window}-1`,
                     {
-                        work_dir: nextDir,
+                        work_dir: workDir,
                         run_date: RUN_DATE,
                         window,
                         preset: 'daily-ai-voice',
@@ -644,41 +606,22 @@ describe('kk-publish — AC3 the nine-node workflow matches the eighteen-node on
                     },
                     join(sandbox.root, `kkp-${window}.log`),
                 );
-                expect({ window, code: legacy.code, stderr: legacy.stderr.slice(-400) }).toEqual({
+                expect({ window, code: run.code, stderr: run.stderr.slice(-400) }).toEqual({
                     window,
                     code: 0,
-                    stderr: legacy.stderr.slice(-400),
-                });
-                expect({ window, code: next.code, stderr: next.stderr.slice(-400) }).toEqual({
-                    window,
-                    code: 0,
-                    stderr: next.stderr.slice(-400),
+                    stderr: run.stderr.slice(-400),
                 });
 
-                const legacyFiles = filesUnder(join(legacyDir, '4-publish'));
-                const nextFiles = filesUnder(join(nextDir, '4-publish'));
-                expect(nextFiles).toEqual(legacyFiles);
-
+                const files = filesUnder(join(workDir, '4-publish'));
                 const outcomePath = `outcome.${window}.json`;
-                expect(nextFiles).toContain(outcomePath);
-                expect(normalisedJson(join(nextDir, '4-publish', outcomePath))).toEqual(
-                    normalisedJson(join(legacyDir, '4-publish', outcomePath)),
-                );
-                // The plan is the frozen contract both graphs feed the same send loop.
-                expect(normalisedPlan(join(nextDir, '4-publish', `plan.${window}.json`))).toEqual(
-                    normalisedPlan(join(legacyDir, '4-publish', `plan.${window}.json`)),
-                );
-                // Both pages exist and name the window's rows.
-                expect(existsSync(join(legacyDir, '5-report', `publish-${window}.md`))).toBe(true);
-                expect(existsSync(join(nextDir, '5-report', `publish-${window}.md`))).toBe(true);
+                expect(files).toContain(outcomePath);
+                expect(existsSync(join(workDir, '4-publish', `plan.${window}.json`))).toBe(true);
+                expect(existsSync(join(workDir, '5-report', `publish-${window}.md`))).toBe(true);
 
                 summary.push({
                     window,
-                    publish3: {
-                        files: legacyFiles,
-                        outcome: normalisedJson(join(legacyDir, '4-publish', outcomePath)),
-                    },
-                    kkPublish: { files: nextFiles, outcome: normalisedJson(join(nextDir, '4-publish', outcomePath)) },
+                    files,
+                    outcome: normalisedJson(join(workDir, '4-publish', outcomePath)),
                     steps: dispatchedSteps(join(sandbox.root, `kkp-${window}.log`)),
                 });
             }

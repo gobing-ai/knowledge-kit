@@ -15,14 +15,7 @@ import { join, resolve } from 'node:path';
 
 const REPO = resolve(import.meta.dir, '../../..');
 const WORKFLOWS = join(REPO, 'plugins/kk/workflows');
-const IN_SCOPE = [
-    'kk-daily-ai-voice3',
-    'kk-daily-safety',
-    'kk-daily-publish3',
-    'kk-itc',
-    'kk-itc-author',
-    'kk-itc-publish-tail',
-] as const;
+const IN_SCOPE = ['kk-news-generate', 'kk-daily-safety', 'kk-publish', 'kk-article-generate'] as const;
 
 interface WorkflowAction {
     kind?: string;
@@ -59,10 +52,17 @@ function actionsOf(node: WorkflowNode): WorkflowAction[] {
 
 /** The `--vars "{…}"` payload of every nested `spur workflow run` in a workflow's source. */
 function nestedInvocations(raw: string): string[] {
-    return raw
-        .split('spur workflow run plugins/kk/workflows/')
-        .slice(1)
-        .map((invocation) => invocation.slice(0, invocation.indexOf('--quiet')));
+    return (
+        raw
+            .split('spur workflow run plugins/kk/workflows/')
+            .slice(1)
+            // A description may quote the invocation form; only a real command carries `--quiet`.
+            .map((invocation) => {
+                const end = invocation.indexOf('--quiet');
+                return end === -1 ? null : invocation.slice(0, end);
+            })
+            .filter((invocation): invocation is string => invocation !== null)
+    );
 }
 
 /** A `${vars.<name>}` reference as the workflow source spells it (built, not a template literal). */
@@ -96,10 +96,11 @@ describe('launch safety: one executor var (0360 R1, R2, R3)', () => {
         }
     });
 
-    it('forwards the single agent var to every nested workflow launched from voice3', () => {
-        const { raw } = load('kk-daily-ai-voice3');
+    it('forwards the single agent var to every nested workflow launched from the generate DAG', () => {
+        const { raw } = load('kk-news-generate');
         const invocations = nestedInvocations(raw);
-        expect(invocations.length).toBe(3);
+        // Two real nested launches today: the drafts safety review and the variants-scope review.
+        expect(invocations.length).toBe(2);
         for (const invocation of invocations) {
             expect(invocation).toContain(`\\"agent\\":\\"${AGENT_REF}\\"`);
             expect(invocation).not.toContain('agent_retry');
@@ -108,7 +109,7 @@ describe('launch safety: one executor var (0360 R1, R2, R3)', () => {
 });
 
 describe('launch safety: traffic probe first (0360 R4)', () => {
-    for (const name of ['kk-daily-ai-voice3', 'kk-itc'] as const) {
+    for (const name of ['kk-news-generate'] as const) {
         it(`${name} starts with a real-traffic executor probe that every other node waits on`, () => {
             const { parsed } = load(name);
             const nodes = nodesOf(parsed);

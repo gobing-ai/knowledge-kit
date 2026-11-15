@@ -18,7 +18,7 @@
  *
  * The reference bundle is produced by running voice3's own bundle node sequence —
  * `daily-publish-prep` → `daily-bundle-variants` → `daily-safety-manifest` →
- * `kk stage run publish-matrix-bundle`, the exact stages `kk-daily-ai-voice3.yaml` nodes 39–42
+ * `kk stage run publish-matrix-bundle`, the exact stages the retired voice3 DAG's nodes 39–42
  * call — over the same fixture, then comparing variant keys and safety status.
  */
 import { afterAll, describe, expect, it } from 'bun:test';

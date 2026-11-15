@@ -110,7 +110,7 @@ describe('buildBoard', () => {
         // `.spur/workflows` is the relative symlink to the canonical directory, not a copy.
         expect(lstatSync(legacy).isSymbolicLink()).toBe(true);
         expect(readlinkSync(legacy)).toBe('../plugins/kk/workflows');
-        for (const name of ['kk-collect', 'kk-daily-ai-voice2', 'kk-itc']) {
+        for (const name of ['kk-collect', 'kk-daily-ai-voice2', 'kk-news-generate']) {
             expect(existsSync(join(canonical, `${name}.yaml`))).toBe(true);
             expect(existsSync(join(legacy, `${name}.yaml`))).toBe(true);
         }

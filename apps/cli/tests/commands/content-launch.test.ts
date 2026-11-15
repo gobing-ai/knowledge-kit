@@ -1,7 +1,7 @@
 /**
  * `content-launch` unit surface (task 0365 R6, R7): the two pure rules the plain launch verbs own —
  * the run-date normalizer and the CN-consent/window validation ported from
- * `plugins/kk/scripts/voice3-publish-window.ts` — plus the workflow-path resolution the
+ * the retired publish-window launcher — plus the workflow-path resolution the
  * `workflows_dir` override feeds.
  */
 import { describe, expect, it } from 'bun:test';

@@ -24,7 +24,7 @@ const REPO = join(import.meta.dir, '../../..');
 const SAFETY_MACHINE = resolve(
     process.env.KK_SAFETY_WORKFLOW ?? join(REPO, 'plugins/kk/workflows/kk-daily-safety.yaml'),
 );
-const VOICE3 = join(REPO, 'plugins/kk/workflows/kk-daily-ai-voice3.yaml');
+const VOICE3 = join(REPO, 'plugins/kk/workflows/kk-news-generate.yaml');
 const STAGE_RUNNER = join(import.meta.dir, '../scripts/kk-workflow-stages.ts');
 const CHECK = join(import.meta.dir, '../scripts/safety-artifact-check.ts');
 const STAMP = '20261022';
@@ -144,21 +144,22 @@ describe('0331 authored machines — one scope var, drafts paths untouched by de
         );
     });
 
-    it('AC: voice3 wires safety-variants before bundle-freeze and runs the nested machine in the variants scope', () => {
+    it('AC: the generate DAG wires safety-variants before freeze and runs the nested machine in the variants scope', () => {
         const dag = Bun.YAML.parse(readFileSync(VOICE3, 'utf-8')) as {
             nodes: { id: string; dependsOn?: string[]; action?: { kind: string; options?: { command?: string } } }[];
         };
         const byId = new Map(dag.nodes.map((node) => [node.id, node]));
+        // `variants` is the one verb that writes the payloads and the manifest the review registers.
+        expect(String(byId.get('variants')?.action?.options?.command ?? '')).toContain('--stage variants');
         const node = byId.get('safety-variants');
-        expect(node?.dependsOn).toEqual(['bundle-variants', 'pool-gate']);
+        expect(node?.dependsOn).toEqual(['variants']);
         const command = String(node?.action?.options?.command ?? '');
-        expect(command).toContain('daily-safety-manifest');
         expect(command).toContain('kk-daily-safety.yaml');
         expect(command).toContain('safety_scope_dir');
         expect(command).toContain(VARIANTS_SCOPE);
         // The drafts review keeps its own nested machine with NO scope var (defaults to 24-script).
         expect(String(byId.get('safety')?.action?.options?.command ?? '')).not.toContain('safety_scope_dir');
-        expect(byId.get('bundle-freeze')?.dependsOn).toContain('safety-variants');
+        expect(byId.get('freeze')?.dependsOn).toContain('safety-variants');
     });
 });
 
