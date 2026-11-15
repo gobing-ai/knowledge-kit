@@ -168,6 +168,7 @@ process.exit(0);
         for (const scenario of [
             'success',
             'no-content',
+            'done-no-bundle',
             'no-content-after-send',
             'partial',
             'missing-result',
@@ -195,7 +196,7 @@ const args = process.argv.slice(2);
 appendFileSync(process.env.PROBE_ACTIONS, JSON.stringify(args) + '\\n');
 if (args.includes('trace')) {
     const startedAt = new Date(Number(readFileSync(process.env.PROBE_STARTTIME, 'utf8')) - (process.env.PROBE_SCENARIO === 'failure-stale-trace' ? 86400000 : 0)).toISOString();
-    const status = process.env.PROBE_SCENARIO === 'failure-inflight-trace' ? 'running' : process.env.PROBE_SCENARIO.startsWith('no-content') ? 'done' : 'failed';
+    const status = process.env.PROBE_SCENARIO === 'failure-inflight-trace' ? 'running' : process.env.PROBE_SCENARIO.startsWith('no-content') || process.env.PROBE_SCENARIO === 'done-no-bundle' ? 'done' : 'failed';
     const sendNode = ['failure-after-send','no-content-after-send'].includes(process.env.PROBE_SCENARIO) ? 'publish-surfdash' : process.env.PROBE_SCENARIO === 'failure-classify' ? 'publish-classify' : 'safety';
     console.log(JSON.stringify({run:{runId:args[args.indexOf('trace')+1],workflowName:'kk-daily-ai-voice2',startedAt,status},events:[{kind:'action',node:sendNode,status:'failed'}]}));
 }
@@ -318,8 +319,16 @@ if (args.includes('run')) {
             const cancelled = actions.filter((args) => args.includes('cancel'));
             expect(cancelled.length).toBe(scenario.startsWith('failure') || scenario.startsWith('timeout') ? 2 : 0);
             expect(actions.some((args) => args.includes('release'))).toBe(
-                scenario === 'failure' || scenario.startsWith('timeout') || scenario === 'no-content',
+                scenario === 'failure' ||
+                    scenario.startsWith('timeout') ||
+                    scenario === 'no-content' ||
+                    scenario === 'done-no-bundle',
             );
+            // A green workflow that wrote no publication artifact has nothing to settle its
+            // reservations: 2026-11-13's done/no-bundle run kept 13 stories selected forever.
+            if (scenario === 'done-no-bundle') {
+                expect(row.reservationRecovery).toMatchObject({ status: 'released', released: 3 });
+            }
             if (scenario.startsWith('timeout')) {
                 for (const path of ['started', 'child']) {
                     const pid = Number(readFileSync(join(dir, path), 'utf-8'));

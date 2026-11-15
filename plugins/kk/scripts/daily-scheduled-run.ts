@@ -354,12 +354,18 @@ const primaryPublishStatus = isVoice3
     ? readOptional(join(workDir, '4-publish', 'publish-status.after-generate.txt'))
     : readOptional(join(workDir, '31-publish', `${stamp}_17_publish_publish-status.txt`));
 const runSummary = readOptional(join(workDir, 'run-report.summary.txt'));
+// A green workflow is not proof of a publication: 2026-11-13 finished `done` with exit 0 while
+// writing neither a run report nor a bundle (the measured duration gate had refused), so the
+// reservations were "retained for publication settlement" that never came and 13 stories stayed
+// selected — blocking 20 of the next day's 26 moderated stories from every pool. Release when the
+// run left nothing a later publish window could settle.
+const publicationArtifact = primaryPublishStatus !== null || existsSync(join(workDir, 'bundle.json'));
 const cleanup: { command: string; exitCode: number | null }[] = [];
 let reservationRecovery: { status: string; reason: string; released?: number } = {
     status: 'retained',
     reason: 'workflow completed; publication settlement owns its reservations',
 };
-if (workflowStatus !== 'done' || runSummary?.startsWith('no-content:')) {
+if (workflowStatus !== 'done' || !publicationArtifact || runSummary?.startsWith('no-content:')) {
     // The caller gives the nested safety run this exact id. Unknown/already-terminal ids are
     // harmless cleanup failures; they never override the original workflow failure.
     if (workflowStatus !== 'done') {
