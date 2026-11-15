@@ -3,7 +3,7 @@
  *
  * One plain verb launches and supervises exactly one `spur workflow run` child. This module is that
  * supervisor: resolve → lock → preflight → receipt → spawn → cleanup. It is a port of
- * `plugins/kk/scripts/daily-scheduled-run.ts` (kept running until 0369), minus the parts the design's
+ * the retired daily-scheduler runner (kept running until 0369), minus the parts the design's
  * line map moves elsewhere (the generation inspection becomes `status`, the publish heuristics are
  * replaced by the separate `publish` verb).
  *
@@ -555,7 +555,7 @@ export async function launchWorkflow(options: LaunchWorkflowOptions): Promise<La
         const controller = new AbortController();
         // Installed for the whole run — through cleanup, lock release and the terminal receipt — so a
         // signal in that window cannot take the default disposition and strand the lock for its TTL
-        // with the receipt still `running` (the ported `daily-scheduled-run.ts:294-325` posture).
+        // with the receipt still `running` (the ported daily-scheduler posture).
         unsubscribe = deps.signals.subscribe((signal) => {
             interrupted = true;
             consoleOutput.error(`  ! ${signal} received; stopping run ${runId}`);

@@ -6,7 +6,7 @@
  * `generate-bundle` and `report` — are compositions of stage bodies that live in
  * `plugins/kk/scripts/daily-stages.ts`. **No stage body is copied or edited here.** Every verb is one
  * table row, `{verb, stages: [{name, args(ctx)}], summary(ctx)}`, and ONE runner executes any row: it
- * walks the row's stages in today's `kk-daily-ai-voice3.yaml` order through the shared stage runner
+ * walks the row's stages in the retired daily-voice DAG's order through the shared stage runner
  * (`apps/cli/src/stage.ts` → `runStage`) in this process, stops at the first failing stage and names
  * that stage on stderr (design §1.3).
  *
@@ -83,7 +83,7 @@ const STORE_SELECT_TIMEOUT_MS = 120_000;
 
 /**
  * The stage settings the stage bodies take as positional arguments, with the values today's
- * `kk-daily-ai-voice3.yaml` carries as vars (design §2: everything past `content_types` lives under
+ * the retired daily-voice DAG carried as vars (design §2: everything past `content_types` lives under
  * `workflows.<name>`). A user entry in `workflows.kk-news-generate` merges over these field by field.
  */
 export interface NewsStageSettings {
@@ -122,7 +122,7 @@ export interface NewsStageSettings {
     qc_min_episode_items: string;
 }
 
-/** The compiled defaults: `kk-daily-ai-voice3.yaml`'s vars, verbatim. */
+/** The compiled defaults: the retired daily-voice DAG's vars, verbatim. */
 export const NEWS_STAGE_DEFAULTS: NewsStageSettings = {
     window: '24h',
     language: 'zh',
@@ -845,7 +845,7 @@ async function countFiles(ctx: GenerateContext, dir: string, suffix: string): Pr
 
 /**
  * The seven verbs of design §1.3, in the design's own order. Every row runs the stages design §6
- * assigns it, in today's `kk-daily-ai-voice3.yaml` node order.
+ * assigns it, in the retired daily-voice DAG's node order.
  */
 export const GENERATE_ROWS: GenerateVerbRow[] = [
     {

@@ -137,7 +137,7 @@ export const PublishPlanSchema = z
  *
  * Task 0366 needs both spellings at once: the launching verb admits only the frozen path (§3.2),
  * while a run directory produced before the layout moved "remains publishable with `--work-dir`"
- * (§4.3), and `kk-daily-publish3.yaml` still names the root path. Reading is additive — a directory
+ * (§4.3), and the retired publish3 DAG still named the root path. Reading is additive — a directory
  * with both files keeps using the frozen one.
  */
 export async function resolveBundlePath(fs: FileSystem, workDir: string): Promise<string> {

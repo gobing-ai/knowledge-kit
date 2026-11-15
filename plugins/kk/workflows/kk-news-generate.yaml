@@ -5,7 +5,7 @@ version: "1"
 description: >-
   The news generation workflow (G61 / ADR-053 §5, design
   `docs/design/content-pipeline-consolidation.md` §5.1, task 0367): twenty nodes, launched by
-  `kk news generate`. It replaces the forty-three nodes of `kk-daily-ai-voice3.yaml` — the ten
+  `kk news generate`. It replaces the forty-three nodes of the retired voice3 DAG — the ten
   deterministic nodes that composed and gated the run are one `kk news prepare`, the fifteen
   generation nodes are four step verbs, and the publish tail is gone (`generate --publish` launches
   `kk news publish` after this workflow exits 0). It publishes nothing: the channel matrix lives in

@@ -5,7 +5,7 @@
  * workflow. Both hand straight over to `launchWorkflow` (`apps/cli/src/launch.ts`), which owns the
  * six supervised steps; this module owns the verb surface: flag parsing, run and workflow
  * resolution, the two publish admission rules of design §3.2, and the window/CN-consent validation
- * ported from `plugins/kk/scripts/voice3-publish-window.ts` (design §3.3).
+ * ported from the retired publish-window launcher (design §3.3).
  *
  * Exit codes (design §1): `0` done, `1` the step ran and failed, `2` usage, `5` refused by
  * preflight/admission, `6` another launch holds `<workflow>-<run>`.
@@ -212,7 +212,7 @@ function reportReceipt(receipt: LaunchReceipt): number {
 
 /**
  * Validate `--live-channels` against the pinned preset's rows for this window (design §3.3, ported
- * from `voice3-publish-window.ts` R3/F10). Runs before the lock: a consent mismatch is a refusal.
+ * from the retired publish-window launcher, R3/F10). Runs before the lock: a consent mismatch is a refusal.
  */
 export function validateLiveTokens(
     preset: { targets?: Array<{ plugin?: string; id?: string; mode?: string; window?: string }> } | null,
@@ -495,7 +495,7 @@ async function publishAction(noun: string, defaultType: string, options: Publish
     const worksDir = resolveWorksDir(config, configFile);
     // An explicit --run-date wins; then the bundle's own day when --work-dir archives a finished run;
     // otherwise the window's Los Angeles day (overseas reads the episode that landed after the 07:00
-    // tick, i.e. yesterday) — the voice3-publish-window rule.
+    // tick, i.e. yesterday) — the retired publish-window rule.
     let runDate =
         selector.runDate ?? (type === 'news' ? losAngelesDate(window === 'overseas-rss' ? -1 : 0) : undefined);
     if (type === 'news' && selector.runDate === undefined && selector.workDir !== undefined) {

@@ -7,7 +7,7 @@ description: >-
   `docs/design/content-pipeline-consolidation.md` §5.3, task 0366): nine nodes over one frozen
   `4-publish/bundle.json`, launched by `kk news publish` / `kk article publish`. Each node is an
   agent call, the live-send pause, or a boundary that runs exactly one `kk <noun> publish-<step>`
-  verb — the eighteen nodes of `kk-daily-publish3.yaml` and the seven-node `kk-itc-publish-tail.yaml`
+  verb — the eighteen nodes of the retired publish3 DAG and the seven-node retired ITC publish tail
   fold into these nine. The channel matrix lives in the publish preset, never here.
   Re-enter a failed window with
   `spur workflow run plugins/kk/workflows/kk-publish.yaml --vars '{"work_dir":"<run dir>","window":"after-generate"}'`
