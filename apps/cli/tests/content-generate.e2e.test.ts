@@ -84,7 +84,13 @@ switch (stage) {
     case 'daily-preflight':
         break;
     case 'daily-extract':
-        writeJson(join(workDir, '10-collect', 'pool.json'), { metadata: { docs } });
+        // 0374: the real dailyExtract writes a bare Doc[] (writeJsonText(picked.docs)); the
+        // metadata.docs envelope is the retired shape. KK_STUB_POOL_SHAPE=array exercises
+        // what production actually writes.
+        writeJson(
+            join(workDir, '10-collect', 'pool.json'),
+            process.env.KK_STUB_POOL_SHAPE === 'array' ? docs : { metadata: { docs } },
+        );
         break;
     case 'daily-plan':
         writeJson(join(workDir, '21-plan', runDate + '_03_plan_content.json'), {
@@ -320,6 +326,23 @@ function payload(result: RunResult): Record<string, unknown> {
 }
 
 describe('kk news generate step verbs — AC2: the nine design invocations', () => {
+    // 0374: a real run writes `10-collect/pool.json` as a bare `Doc[]` (dailyExtract calls
+    // writeJsonText(picked.docs)), not the `{metadata:{docs}}` envelope the rest of this suite
+    // stubs. Reading only the envelope left poolNonEmpty false, so daily-plan and
+    // daily-qc-content never ran and every generation settled no-content on real data.
+    it('reads the bare Doc[] pool.json that dailyExtract writes', async () => {
+        const fx = makeFixture();
+        await seedStore(fx);
+        const workDir = join(fx.works, 'kk-news-generate', DIGITS);
+        const prepare = kk(fx, ['news', 'prepare', '--work-dir', workDir, '--run-date', DIGITS], {
+            KK_STUB_POOL_SHAPE: 'array',
+        });
+        expect(prepare.code).toBe(0);
+        const prepared = payload(prepare);
+        expect(prepared.pool).toBe('ok');
+        expect(prepared.candidates).toBe(2);
+        expect(JSON.parse(readFileSync(join(workDir, 'pool-gate.json'), 'utf-8'))).toEqual({ status: 'PASS' });
+    });
     it('runs prepare → … → report in order and prints one JSON object each', async () => {
         const fx = makeFixture();
         await seedStore(fx);

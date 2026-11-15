@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: kk news prepare skips plan and QC after a non-empty extract, so every generation settles no-content
-status: backlog
+status: wip
 template: standard
 created_at: 2026-11-15T19:02:56.385Z
-updated_at: "2026-11-15T19:03:18.074Z"
+updated_at: "2026-11-15T19:13:47.685Z"
 parent_wbs: "0373"
 
 ac_altitude: task-local
@@ -106,11 +106,53 @@ Scenario: AC3 — The regression is covered (req: R3)
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Root cause: `readJsonFile` is an object-shaped reader — `return isObject(parsed) ? parsed : null` — and
+`dailyExtract` writes `10-collect/pool.json` as a **bare `Doc[]`** (`writeJsonText(poolPath, picked.docs)`).
+Every `itemCount(await readJsonFile(...))` over the pool therefore counted 0 items, so
+`STEP.plan()`/`STEP.qcContent()` (guarded by `when: poolNonEmpty`) never ran, `21-plan/…_candidates.json`
+was never written, and `writePoolGate` reported `EMPTY` with `pooled === 0`. The suite missed it
+because its stage double wrote the `{metadata:{docs}}` envelope instead of the array production writes.
+
+Change map:
+
+- `apps/cli/src/commands/content-generate.ts:404-405` — `writePoolGate` reads the pool and the
+  candidates through `readJsonValue` (array-tolerant) so `pooled` and `items` count real files.
+- `apps/cli/src/commands/content-generate.ts:748` — `poolNonEmpty` uses `readJsonValue`, which is the
+  predicate that had to be true for plan/QC to run at all.
+- `apps/cli/src/commands/content-generate.ts:765,864` — the same swap for the candidate-count guard and
+  the `prepare` row summary, so `candidates` reports the real count.
+- `apps/cli/src/commands/content-generate.ts:219` — documented WHY `readJsonFile` stays strict, so the
+  next payload-shaped read does not repeat the mistake.
+- `apps/cli/tests/content-generate.e2e.test.ts` — the stage double gains `KK_STUB_POOL_SHAPE=array`,
+  and a new case prepares a fresh fixture with a bare `Doc[]` pool and asserts
+  `pool: ok` / `candidates: 2` / gate `PASS`. It failed before the fix and passes after.
+
+No behaviour change for a genuinely empty pool: `readJsonValue` returns `undefined` → `itemCount` 0 →
+`EMPTY`, exit 0, plan and QC still skipped (the existing R3 case still passes unchanged).
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+Run in the batch worktree `kk-runall-90de0e` (branch `sp/runall-0374-0373-90de0e`) on 2026-11-15.
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Red: new regression case fails pre-fix | `bun test apps/cli/tests/content-generate.e2e.test.ts` | PASS (red observed) — `reads the bare Doc[] pool.json that dailyExtract writes` failed on `expect(prepared.pool).toBe('ok')` |
+| Green: same case after the fix | same | PASS — 7 pass, 0 fail, 87 expectations |
+| Related news suites | `bun test apps/cli/tests/kk-news-generate.e2e.test.ts apps/cli/tests/kk-news-generate-dag.test.ts apps/cli/tests/daily-cache-recovery.test.ts` | PASS — 18 pass, 0 fail |
+| Lint + typecheck | `bun run lint` | PASS — 816 files checked, no fixes |
+| Build | `bun run build` | PASS — `index.js` 2.22 MB |
+| Real production data, real store | `bun apps/cli/dist/index.js news prepare --work-dir .works/tmp/prepare-fix/20261115 --run-date 20261115` | PASS — `{"pool":"ok","candidates":4,"selected":4}` and `pool-gate.json {"status":"PASS"}`; `step-timing.json` now lists `extract`, `plan`, `quality-control-content` |
+
+Production evidence, before vs after the fix on the same store and the same 24h window:
+
+```
+before: {"pool":"empty","candidates":0,"selected":0}   step-timing: extract only
+after:  {"pool":"ok","candidates":4,"selected":4}      step-timing: extract, plan, quality-control-content
+        floor gate: estimated 32.6 min from 7244 chars — above the 15 min floor
+```
+
+The empty-pool contract is unchanged: the pre-existing `closes an empty pool as exit 0 with pool empty
+and an EMPTY gate (R3)` case still passes without modification.
 
 ### Review
 
@@ -121,3 +163,7 @@ Scenario: AC3 — The regression is covered (req: R3)
 <!-- Links to features, docs, ADRs, related tasks, or external references. -->
 
 ### History
+
+- 2026-11-15T19:13:47.365Z backlog → todo (system)
+- 2026-11-15T19:13:47.685Z todo → wip (system)
+

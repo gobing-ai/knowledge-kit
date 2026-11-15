@@ -216,6 +216,12 @@ function isObject(value: unknown): value is JsonObject {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+/**
+ * Object-shaped payload reader: a bare JSON array comes back `null`, deliberately, so a caller that
+ * expects a `{…}` envelope cannot silently receive a list. Any payload that may legitimately be an
+ * array (a `Doc[]` pool or candidate file) must go through {@link readJsonValue} + {@link itemCount}
+ * instead — 0374 was exactly that mistake, and it closed every real generation as `no-content`.
+ */
 async function readJsonFile(fs: FileSystem, path: string): Promise<JsonObject | null> {
     if (!(await fs.exists(path))) return null;
     try {
@@ -401,8 +407,8 @@ async function stampContentType(ctx: GenerateContext): Promise<number> {
  * and it drops a stale same-day bundle so a refused pool cannot republish yesterday's freeze.
  */
 async function writePoolGate(ctx: GenerateContext): Promise<number> {
-    const pooled = itemCount(await readJsonFile(ctx.fs, join(ctx.workDir, '10-collect', 'pool.json')));
-    const items = itemCount(await readJsonFile(ctx.fs, candidatesPath(ctx)));
+    const pooled = itemCount(await readJsonValue(ctx.fs, join(ctx.workDir, '10-collect', 'pool.json')));
+    const items = itemCount(await readJsonValue(ctx.fs, candidatesPath(ctx)));
     const status = items > 0 ? 'PASS' : 'EMPTY';
     await ctx.fs.writeFile(poolGatePath(ctx.workDir), `${JSON.stringify({ status }, null, 2)}\n`);
     const summary = join(ctx.workDir, 'run-report.summary.txt');
@@ -745,7 +751,7 @@ const ARGS = {
 
 /** `10-collect/pool.json` holds at least one item — voice3's `plan`/`qc-content` node condition. */
 async function poolNonEmpty(ctx: GenerateContext): Promise<boolean> {
-    return itemCount(await readJsonFile(ctx.fs, join(ctx.workDir, '10-collect', 'pool.json'))) > 0;
+    return itemCount(await readJsonValue(ctx.fs, join(ctx.workDir, '10-collect', 'pool.json'))) > 0;
 }
 
 /**
@@ -762,7 +768,7 @@ async function sessionWarnings(ctx: GenerateContext): Promise<string[]> {
 }
 
 async function candidatesNonEmpty(ctx: GenerateContext): Promise<boolean> {
-    return itemCount(await readJsonFile(ctx.fs, candidatesPath(ctx))) > 0;
+    return itemCount(await readJsonValue(ctx.fs, candidatesPath(ctx))) > 0;
 }
 
 const STEP = {
@@ -861,7 +867,7 @@ export const GENERATE_ROWS: GenerateVerbRow[] = [
         ],
         summary: async (ctx) => {
             const gate = await readJsonFile(ctx.fs, poolGatePath(ctx.workDir));
-            const candidates = itemCount(await readJsonFile(ctx.fs, candidatesPath(ctx)));
+            const candidates = itemCount(await readJsonValue(ctx.fs, candidatesPath(ctx)));
             const pass = gate?.status === 'PASS';
             return {
                 pool: pass ? 'ok' : 'empty',
