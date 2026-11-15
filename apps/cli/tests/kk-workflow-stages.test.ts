@@ -865,7 +865,10 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                 '默认分词器切换',
                 '边缘运行时路线',
             ];
-            const fat = titles.map((title, i) => ({ id: `d${i}`, title, body: 'y'.repeat(900) }));
+            // 0377: the floor gate now uses the worst measured spoken/raw ratio (0.28), not the
+            // typical 1.4, so "clears the floor" needs ~2.3k chars/doc at 15 min / gemini (4.95 cps):
+            // 7 x 2,310 = 16,170 chars -> 16,170 * 0.28 / 4.95 = 915 s = 15.2 min.
+            const fat = titles.map((title, i) => ({ id: `d${i}`, title, body: 'y'.repeat(2300) }));
             const env = fakeKk(
                 dir,
                 [
@@ -948,8 +951,10 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
     it('daily-extract widens the store window only while the pool misses the floor (2026-10-19)', () => {
         withTempDir((dir) => {
             const calls = join(dir, 'calls.log');
-            // 24h answers three 600-char items (~8 min of speech); every wider window answers eight
-            // 1.2k-char items (~43 min). The stage must stop at the first window that clears 15 min.
+            // 24h answers three 600-char items; every wider window answers eight 2.1k-char items.
+            // 0377: the widen decision uses the worst measured ratio (0.28) at voxcpm's 5.2 cps, so the
+            // rich rung is 8 x 2,110 = 16,880 chars -> 909 s = 15.1 min, just over the 15 min floor.
+            // The stage must stop at the first window that clears it.
             const env = fakeKk(
                 dir,
                 [
@@ -959,7 +964,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                     "const out = args[args.indexOf('--out') + 1];",
                     'fs.appendFileSync(process.env.CALLS, win + "\\n");',
                     'const thin = win === "24h";',
-                    'const docs = Array.from({ length: thin ? 3 : 8 }, (_, i) => ({ id: win + i, title: "T" + i, body: (thin ? "x" : "y").repeat(thin ? 600 : 1200) }));',
+                    'const docs = Array.from({ length: thin ? 3 : 8 }, (_, i) => ({ id: win + i, title: "T" + i, body: (thin ? "x" : "y").repeat(thin ? 600 : 2100) }));',
                     'fs.writeFileSync(out, JSON.stringify(docs));',
                 ].join('\n'),
             );

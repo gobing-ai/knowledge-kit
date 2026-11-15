@@ -305,17 +305,36 @@ function authoredPlanDescendants(workDir: string, runDate: string): string[] {
 const SPEAK_CHAR_EXPANSION = 1.4;
 
 /**
+ * The expansion the PRE-SPEND widen decision uses, and it is deliberately not 1.4.
+ *
+ * The two consumers need opposite safe directions (the same argument `scriptFloorCharRate` makes
+ * about the char rate): the reported arithmetic wants the typical ratio, while the widen gate wants
+ * the *worst measured* ratio, because its cheap error is widening to the backlog and its expensive
+ * error is authoring a script the TTS gate then refuses.
+ *
+ * Measured spoken/raw ratios: 2026-10-11 1,270/1,800 = 0.71 and 5,925/4,300 = 1.38; 2026-11-15 run
+ * `kk-news-generate-20261115-1794773860762` 2,053/7,244 = 0.28. Treating 1.4 as the floor ratio let
+ * that day pass the gate at 32.6 min, spend a full authoring pass, then refuse at 6.2 min — and the
+ * ladder that exists to fill a thin day from the backlog never climbed a rung (0377).
+ */
+const SPEAK_CHAR_EXPANSION_FLOOR = 0.28;
+
+/**
  * The calibrated pre-spend estimate over a kept pool (title+body characters × the 1.4 expansion,
  * over the driver's measured char rate, plus the 8 s intro sting) — shared by the pre-spend floor
  * gate (applyFloorGate) and the post-spend duration refusal (dailyEpisodeDuration, 0266), so both
  * artifacts report the same arithmetic. `seconds` is unrounded: the floor gate compares seconds.
  */
-function estimateSpokenMinutes(docs: unknown[], vdriver: string): { minutes: number; seconds: number; chars: number } {
+function estimateSpokenMinutes(
+    docs: unknown[],
+    vdriver: string,
+    expansion: number = SPEAK_CHAR_EXPANSION,
+): { minutes: number; seconds: number; chars: number } {
     const chars = docs.reduce((sum, doc) => {
         const entry = (doc ?? {}) as Record<string, unknown>;
         return sum + `${String(entry.title ?? '')}`.length + String(entry.body ?? '').length;
     }, 0);
-    const seconds = 8 + (chars * SPEAK_CHAR_EXPANSION) / spokenCharRate(vdriver);
+    const seconds = 8 + (chars * expansion) / spokenCharRate(vdriver);
     return { minutes: Math.round((seconds / 60) * 10) / 10, seconds, chars };
 }
 
@@ -350,7 +369,11 @@ function applyFloorGate(
         if (clearStaleRefusal && isFile(refusal)) unlinkSync(refusal);
         return;
     }
-    const { minutes: estimatedMinutes, seconds: estimatedSeconds, chars } = estimateSpokenMinutes(docs, vdriver);
+    const {
+        minutes: estimatedMinutes,
+        seconds: estimatedSeconds,
+        chars,
+    } = estimateSpokenMinutes(docs, vdriver, SPEAK_CHAR_EXPANSION_FLOOR);
     if (estimatedSeconds >= floor * 60) {
         if (clearStaleRefusal && isFile(refusal)) unlinkSync(refusal);
         console.log(`floor gate: estimated ${estimatedMinutes} min from ${chars} chars — above the ${floor} min floor`);
@@ -452,7 +475,7 @@ export function dailyExtract(args: string[]): void {
             kk(['store', 'extract', '--topic', topic, '--window', label, '--out', attempt]);
             const parsed = readJson(attempt);
             const docs = Array.isArray(parsed) ? (parsed as unknown[]) : [];
-            const estimate = estimateSpokenMinutes(docs, vdriver);
+            const estimate = estimateSpokenMinutes(docs, vdriver, SPEAK_CHAR_EXPANSION_FLOOR);
             chosen = { window: label, docs };
             const verdict = gated
                 ? `estimated ${estimate.minutes} min — ${estimate.seconds >= floor * 60 ? 'clears' : 'below'} the ${floor} min floor`
