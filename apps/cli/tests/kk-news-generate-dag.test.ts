@@ -113,18 +113,18 @@ describe('kk-news-generate — AC1: twenty nodes, one executor variable, no padd
         // executor roster entry or a second agent var.
         expect(doc.vars.agent).toBe('inline');
         const text = readFileSync(WORKFLOW, 'utf-8');
-        expect(text).not.toContain('${vars.executor}');
-        expect(text).not.toContain('${vars.model}');
+        expect(text).not.toContain(`\${vars.executor}`);
+        expect(text).not.toContain(`\${vars.model}`);
         // Every agent node resolves through the one var; the only literal is the var's own default.
         const literalAgents = [...text.matchAll(/agent: (.+)/g)].map((match) => match[1]?.trim());
-        expect(literalAgents).toEqual(['inline', ...Array(6).fill('${vars.agent}')]);
+        expect(literalAgents).toEqual(['inline', ...Array(6).fill(`\${vars.agent}`)]);
     });
 
     it('runs the 0360 executor probe first: the shared real-traffic prompt', () => {
         const probe = byId.get('executor-probe') as Node;
         expect(probe.action?.kind).toBe('agent.run');
         expect(probe.action?.options?.role).toBe('scribe');
-        expect(probe.action?.options?.agent).toBe('${vars.agent}');
+        expect(probe.action?.options?.agent).toBe(`\${vars.agent}`);
         expect(probe.action?.options?.timeoutMs).toBe(120000);
         expect(probe.action?.options?.input).toBe('Reply with exactly: OK');
     });
@@ -144,15 +144,15 @@ describe('kk-news-generate — R7: the node bodies', () => {
     it('calls exactly one `kk news <verb>` per non-agent, non-pause, non-nested node', () => {
         const verbs: Record<string, string> = {
             prepare: 'kk news prepare',
-            'curate-check': 'kk news generate-check --work-dir "${vars.work_dir}" --step curate',
-            'curate-final': 'kk news generate-check --work-dir "${vars.work_dir}" --step curate --final',
-            'script-check': 'kk news generate-check --work-dir "${vars.work_dir}" --step script',
-            render: 'kk news generate-render --work-dir "${vars.work_dir}"',
-            voice: 'kk news generate-voice --work-dir "${vars.work_dir}" --engine voxcpm',
-            'voice-fallback': 'kk news generate-voice --work-dir "${vars.work_dir}" --engine gemini',
-            'voice-fallback2': 'kk news generate-voice --work-dir "${vars.work_dir}" --engine omnivoice',
-            cards: 'kk news generate-cards --work-dir "${vars.work_dir}"',
-            variants: 'kk news generate-bundle --work-dir "${vars.work_dir}"',
+            'curate-check': `kk news generate-check --work-dir "\${vars.work_dir}" --step curate`,
+            'curate-final': `kk news generate-check --work-dir "\${vars.work_dir}" --step curate --final`,
+            'script-check': `kk news generate-check --work-dir "\${vars.work_dir}" --step script`,
+            render: `kk news generate-render --work-dir "\${vars.work_dir}"`,
+            voice: `kk news generate-voice --work-dir "\${vars.work_dir}" --engine voxcpm`,
+            'voice-fallback': `kk news generate-voice --work-dir "\${vars.work_dir}" --engine gemini`,
+            'voice-fallback2': `kk news generate-voice --work-dir "\${vars.work_dir}" --engine omnivoice`,
+            cards: `kk news generate-cards --work-dir "\${vars.work_dir}"`,
+            variants: `kk news generate-bundle --work-dir "\${vars.work_dir}"`,
         };
         for (const [id, expected] of Object.entries(verbs)) {
             expect(command(byId.get(id) as Node)).toContain(expected);
@@ -188,8 +188,8 @@ describe('kk-news-generate — R7: the node bodies', () => {
         for (const node of agents.filter((entry) => entry.id !== 'executor-probe')) {
             const input = String(node.action?.options?.input);
             expect(input).not.toContain('20-editorial');
-            expect(String(node.action?.options?.agent)).toBe('${vars.agent}');
-            if (writerNodes.includes(node.id)) expect(input).toContain('${vars.skill_dir}/SKILL.md');
+            expect(String(node.action?.options?.agent)).toBe(`\${vars.agent}`);
+            if (writerNodes.includes(node.id)) expect(input).toContain(`\${vars.skill_dir}/SKILL.md`);
         }
         for (const node of agents.filter((entry) => entry.id !== 'executor-probe')) {
             expect(String(node.action?.options?.input)).toContain('SKILL.md');
@@ -204,7 +204,7 @@ describe('kk-news-generate — R7: the node bodies', () => {
         const review = byId.get('review') as Node;
         expect(review.pause).toBe(true);
         expect(review.action).toBeUndefined();
-        expect(condition(review)).toContain('"${vars.skip_review}" != "true"');
+        expect(condition(review)).toContain(`"\${vars.skip_review}" != "true"`);
         // Publishing is `kk news generate --publish` after the workflow exits 0.
         expect(order).not.toContain('publish');
         for (const node of doc.nodes) {
@@ -258,7 +258,7 @@ describe('kk-news-generate — R7: the pool gate is the only routing token', () 
     it('carries the run identity as vars instead of reading token files back', () => {
         // R7/design §4.3: work_dir, run_date and run_id arrive from the launching verb.
         for (const node of verbNodes()) {
-            expect(command(node)).toContain('--work-dir "${vars.work_dir}"');
+            expect(command(node)).toContain(`--work-dir "\${vars.work_dir}"`);
         }
         const text = readFileSync(WORKFLOW, 'utf-8');
         expect(text).not.toContain('work-dir.txt');

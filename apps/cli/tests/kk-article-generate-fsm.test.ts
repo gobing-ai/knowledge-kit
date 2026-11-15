@@ -99,13 +99,13 @@ describe('kk-article-generate — R4: thirteen states, one executor var, no padd
             'work_dir',
         ]);
         expect(doc.vars.agent).toBe('inline');
-        expect(TEXT).not.toContain('${vars.executor}');
-        expect(TEXT).not.toContain('${vars.model}');
+        expect(TEXT).not.toContain(`\${vars.executor}`);
+        expect(TEXT).not.toContain(`\${vars.model}`);
         // Every agent action resolves through the one var; the only literals are the var's default
         // and the role-resolved retry inside the YAML file's own schema.
         const literals = [...TEXT.matchAll(/^\s+agent: (.+)$/gm)].map((match) => match[1]?.trim());
         expect(literals[0]).toBe('inline');
-        for (const literal of literals.slice(1)) expect(literal).toBe('${vars.agent}');
+        for (const literal of literals.slice(1)) expect(literal).toBe(`\${vars.agent}`);
     });
 
     it('runs the 0360 probe first, and gives it an artifact so validation accepts the state', () => {
@@ -113,10 +113,10 @@ describe('kk-article-generate — R4: thirteen states, one executor var, no padd
         const action = probe.onEnter?.[0] as Action;
         expect(action.kind).toBe('agent.run');
         expect(action.options?.role).toBe('scribe');
-        expect(action.options?.agent).toBe('${vars.agent}');
+        expect(action.options?.agent).toBe(`\${vars.agent}`);
         expect(action.options?.timeoutMs).toBe(120000);
         expect(String(action.options?.input)).toContain('Reply with exactly: OK');
-        expect(action.options?.expectFile).toBe('${vars.work_dir}/.executor-probe.ok');
+        expect(action.options?.expectFile).toBe(`\${vars.work_dir}/.executor-probe.ok`);
     });
 
     it('never nests a workflow, spawns a supervisor, or names a stage (R4)', () => {
@@ -160,10 +160,10 @@ describe('kk-article-generate — R5: the gates, the auto bypass and the bound',
     it('skips every pause when `auto` is on, and picks the outline instead', () => {
         // The auto path never enters a paused state …
         expect(String(edge('outline-write', 'outline-select')?.guard?.options?.command)).toContain(
-            '"${vars.auto}" != "true"',
+            `"\${vars.auto}" != "true"`,
         );
         for (const from of ['draft-write', 'unslop']) {
-            expect(String(edge(from, 'draft-review')?.guard?.options?.command)).toContain('"${vars.auto}" != "true"');
+            expect(String(edge(from, 'draft-review')?.guard?.options?.command)).toContain(`"\${vars.auto}" != "true"`);
         }
         // … and the pick that replaces `outline-select` is the verb, behind a one-line guard
         // expression (the engine cannot condition an action on a var).
@@ -172,17 +172,17 @@ describe('kk-article-generate — R5: the gates, the auto bypass and the bound',
             .filter((action) => action.kind === 'shell')
             .map(command)
             .join('\n');
-        expect(pick).toContain('test "${vars.auto}" != "true" ||');
-        expect(pick).toContain('kk article generate-check --work-dir "${vars.work_dir}" --step outline');
+        expect(pick).toContain(`test "\${vars.auto}" != "true" ||`);
+        expect(pick).toContain(`kk article generate-check --work-dir "\${vars.work_dir}" --step outline`);
     });
 
     it('bounds the judge loop through the verb, and ends a spent budget in `failed` (R5)', () => {
         const judge = byId.get('judge') as State;
         const actions = judge.onEnter ?? [];
         // The judge agent writes the verdict file, the verb turns it into the disposition word.
-        expect(actions[0]?.options?.expectFile).toBe('${vars.work_dir}/.itc-verdict.json');
+        expect(actions[0]?.options?.expectFile).toBe(`\${vars.work_dir}/.itc-verdict.json`);
         expect(command(actions[1] as Action)).toContain(
-            'kk article generate-check --work-dir "${vars.work_dir}" --step judge',
+            `kk article generate-check --work-dir "\${vars.work_dir}" --step judge`,
         );
         // NEEDS_REVISION returns to draft-write — the design's replacement for draft-autorevise.
         expect(String(edge('judge', 'draft-write')?.guard?.options?.command)).toContain('autorevise|revise');
@@ -214,9 +214,9 @@ describe('kk-article-generate — R4: the designed state bodies', () => {
     it('reads the writer skill in place from `skill_dir` and never copies it', () => {
         const write = (byId.get('outline-write') as State).onEnter?.[0] as Action;
         const writer = String(write.options?.input);
-        expect(writer).toContain('${vars.skill_dir}/SKILL.md');
+        expect(writer).toContain(`\${vars.skill_dir}/SKILL.md`);
         expect(TEXT).not.toContain('20-editorial');
-        expect(write.options?.expectFile).toBe('${vars.work_dir}/2-outline/outline-option-a.md');
+        expect(write.options?.expectFile).toBe(`\${vars.work_dir}/2-outline/outline-option-a.md`);
     });
 
     it('commits the outline before the draft and gates the draft on the judge', () => {
@@ -228,7 +228,7 @@ describe('kk-article-generate — R4: the designed state bodies', () => {
         expect(command(reviewFirst)).toContain('2-outline/outline-approved.md');
         // The interactive draft gate routes through the judge, and the auto path goes straight there.
         expect(edge('draft-review', 'judge')).toBeDefined();
-        expect(String(edge('draft-write', 'judge')?.guard?.options?.command)).toContain('"${vars.auto}" = "true"');
+        expect(String(edge('draft-write', 'judge')?.guard?.options?.command)).toContain(`"\${vars.auto}" = "true"`);
         // The de-slop pass is conditional on the run's frozen options, and it re-joins the same gates.
         expect(String(edge('draft-write', 'unslop')?.guard?.options?.command)).toContain('unslop');
         expect(edge('unslop', 'judge')).toBeDefined();

@@ -124,7 +124,7 @@ function makeFixture(maxRevisions: number | null = 1, judgeVerdict: Fixture['jud
         [
             '#!/usr/bin/env bash',
             'set -u',
-            'if [ "${1:-}" = "decision" ] && [ "${2:-}" = "run" ]; then',
+            `if [ "\${1:-}" = "decision" ] && [ "\${2:-}" = "run" ]; then`,
             '  printf \'{"value":"a","source":"model","reason":"stub decision","maker":"stub"}\\n\'',
             '  exit 0',
             'fi',
