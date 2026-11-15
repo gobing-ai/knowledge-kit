@@ -331,7 +331,12 @@ describe('content launch — AC3 every exit path cleans up (0365 R1, R4, R5)', (
 
             expect(exitCode).toBe(143);
             expect(written.status).toBe('failed');
-            expect(sandbox.count('workflow cancel')).toBe(1);
+            // The generation workflow may start the nested `<runId>-safety` review (design §5.1
+            // nodes 12/19), so cleanup cancels both: the parent and that nested run.
+            expect(sandbox.count('workflow cancel')).toBe(2);
+            expect(sandbox.log().some((line) => line.includes('workflow cancel') && line.includes('-safety'))).toBe(
+                true,
+            );
             expect(await lockHolder(sandbox, 'kk-article-generate-term')).toBeUndefined();
             outcomes.push({ posture: 'sigterm', code: exitCode, receipt: written });
         } finally {
@@ -497,6 +502,76 @@ describe('content launch — the verb surface (0365 R4, R6, R8)', () => {
             expect(result.code).toBe(5);
             expect(result.stderr).toContain("have no active row in window 'cn-peak'");
             expect(sandbox.workflowRuns()).toHaveLength(0);
+        } finally {
+            sandbox.restore();
+        }
+    });
+
+    it('refuses a consent mismatch BEFORE paying for the chained generate (0372)', async () => {
+        const sandbox = project();
+        try {
+            // No bundle and no generate receipt: `--unattended` would launch a full generation —
+            // unless the window/consent validation refuses first, which design §3.3 requires
+            // because it is a pre-lock check.
+            const result = await runCli([
+                'news',
+                'publish',
+                '--run-date',
+                '20260106',
+                '--window',
+                'cn-peak',
+                '--live-channels',
+                'no-such-pub',
+                '--unattended',
+            ]);
+            expect(result.code).toBe(5);
+            expect(result.stderr).toContain("have no active row in window 'cn-peak'");
+            // The regression: not one generate child was spawned, so nothing was paid for.
+            expect(sandbox.workflowRuns()).toHaveLength(0);
+            expect(existsSync(join(newsDir(sandbox, '20260106'), 'schedule-receipt.json'))).toBe(false);
+        } finally {
+            sandbox.restore();
+        }
+    });
+
+    it("launches with the RESOLVED type's noun and refuses a bundle of another type (0373)", async () => {
+        const sandbox = project({ child: 'ok' });
+        try {
+            const workDir = newsDir(sandbox, '20260107');
+            mkdirSync(join(workDir, '4-publish'), { recursive: true });
+            writeFileSync(
+                join(workDir, '4-publish', 'bundle.json'),
+                `${JSON.stringify({ schemaVersion: 1, runId: 'r7', runDate: '2026-01-07', contentType: 'news' })}\n`,
+            );
+            // `--type news` on the article noun is a NEWS run: every node command must say `kk news`.
+            const result = await runCli([
+                'article',
+                'publish',
+                '--type',
+                'news',
+                '--run-date',
+                '20260107',
+                '--window',
+                'cn-peak',
+            ]);
+            expect(`${result.code}|${result.stderr}`).toBe('0|');
+            const launched = sandbox.workflowRuns().at(-1) ?? '';
+            expect(launched).toContain('"noun":"news"');
+
+            // A bundle that names its own type refuses a mismatched request instead of silently
+            // applying the other type's channel switchboard.
+            const mismatch = await runCli([
+                'article',
+                'publish',
+                '--type',
+                'itc',
+                '--work-dir',
+                workDir,
+                '--window',
+                'cn-peak',
+            ]);
+            expect(mismatch.code).toBe(5);
+            expect(mismatch.stderr).toContain("is a 'news' bundle, not 'itc'");
         } finally {
             sandbox.restore();
         }

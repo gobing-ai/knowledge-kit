@@ -598,14 +598,20 @@ export async function launchWorkflow(options: LaunchWorkflowOptions): Promise<La
         // Cleanup (design §3.1 lines 294–423): each step is isolated so one failure cannot skip the
         // next, and the lock release in `finally` still runs when all three throw.
         if (status === 'failed' || status === 'timeout') {
-            const cancel = await deps.spawn
-                .run({ command: spurBin, args: ['workflow', 'cancel', runId, '--json'], timeout: 20_000 })
-                .catch((error: unknown) => {
-                    notes.push(`workflow cancel failed: ${errorText(error)}`);
-                    return null;
-                });
-            if (cancel !== null && cancel.exitCode !== 0) {
-                notes.push(`workflow cancel exited ${cancel.exitCode ?? '?'}`);
+            // The generation workflow starts the safety review as a nested run named `<runId>-safety`
+            // (design §5.1 nodes 12/19), and a failed parent leaves it running: cancel both, the
+            // nested one best-effort because most workflows never create it.
+            for (const target of [runId, `${runId}-safety`]) {
+                const cancel = await deps.spawn
+                    .run({ command: spurBin, args: ['workflow', 'cancel', target, '--json'], timeout: 20_000 })
+                    .catch((error: unknown) => {
+                        notes.push(`workflow cancel ${target} failed: ${errorText(error)}`);
+                        return null;
+                    });
+                const missing = target !== runId && cancel !== null && cancel.exitCode !== 0;
+                if (cancel !== null && cancel.exitCode !== 0 && !missing) {
+                    notes.push(`workflow cancel ${target} exited ${cancel.exitCode ?? '?'}`);
+                }
             }
         }
         // Only a launch that cannot have sent anything recycles reservations: `kk-publish` sends, and a

@@ -179,7 +179,10 @@ describe('kk-publish — conditions and error policy (0366 R3)', () => {
 
     it('fails the run at settle and still writes the report on every path that reached a window', () => {
         const settle = byId.get('settle') as Node;
-        expect(settle.action?.onError).toBeUndefined();
+        // settle continues so `report` always runs (design §5.3 R3, the ported publish3 order:
+        // outcome-assert sat AFTER report and ledger); `report`'s verb owns the honest exit — it
+        // re-reads outcome.<window>.json and exits 1 when a required non-dummy row did not succeed.
+        expect(settle.action?.onError).toBe('continue');
         expect(settle.action?.kind).toBe('shell');
         expect(command(settle)).toContain('publish-settle');
         // settle runs on both real paths (a clean window has no send-retry, a gated day has repair).

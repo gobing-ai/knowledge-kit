@@ -359,7 +359,10 @@ describe('content publish verbs (0364)', () => {
                 '--window',
                 'after-generate',
             ]);
-            expect(malformedReport.code).toBe(0);
+            // A corrupt outcome cannot certify the window: the page is still written (it is rendered
+            // before the assert), and the verb exits 1 naming the unreadable file.
+            expect(malformedReport.code).toBe(1);
+            expect(malformedReport.stderr).toContain('is unreadable or malformed');
             expect(readFileSync(reportPath, 'utf8')).toContain('# Publish report — after-generate —');
             expect(readFileSync(reportPath, 'utf8')).not.toContain('| surfdash-pub.post |');
 
@@ -381,6 +384,53 @@ describe('content publish verbs (0364)', () => {
             ]);
             expect(excludedReport.code).toBe(0);
             expect(readFileSync(reportPath, 'utf8')).toContain('- excluded: closed-target (surfdash-pub) — mode off');
+
+            // 0373: the run's honest exit lives in this verb (publish3's `outcome-assert` sat after
+            // report + ledger). A failed REQUIRED real row fails the report, and the page survives.
+            writeFileSync(
+                join(workDir, '4-publish', 'outcome.after-generate.json'),
+                JSON.stringify({
+                    runDate: '2026-11-13',
+                    rows: [
+                        { id: 'wechatmp-pub', plugin: 'wechatmp-pub', required: true, dummy: false, status: 'failed' },
+                        { id: 'podcast-pub', plugin: 'podcast-pub', required: true, dummy: false, status: 'succeeded' },
+                    ],
+                    excluded: [],
+                }),
+            );
+            const failedRequired = await runCli([
+                'news',
+                'publish-report',
+                '--work-dir',
+                workDir,
+                '--window',
+                'after-generate',
+            ]);
+            expect(failedRequired.code).toBe(1);
+            expect(failedRequired.stderr).toContain('required targets failed');
+            expect(readFileSync(reportPath, 'utf8')).toContain('# Publish report — after-generate —');
+
+            // A dummy or non-required failure is a rehearsal/optional row: the report still certifies.
+            writeFileSync(
+                join(workDir, '4-publish', 'outcome.after-generate.json'),
+                JSON.stringify({
+                    runDate: '2026-11-13',
+                    rows: [
+                        { id: 'wechatmp-pub', plugin: 'wechatmp-pub', required: true, dummy: true, status: 'failed' },
+                        { id: 'xhs-pub', plugin: 'xhs-pub', required: false, dummy: false, status: 'failed' },
+                    ],
+                    excluded: [],
+                }),
+            );
+            const tolerated = await runCli([
+                'news',
+                'publish-report',
+                '--work-dir',
+                workDir,
+                '--window',
+                'after-generate',
+            ]);
+            expect(tolerated.code).toBe(0);
         } finally {
             process.chdir(priorCwd);
             if (priorConfig === undefined) delete process.env.KK_CONFIG;

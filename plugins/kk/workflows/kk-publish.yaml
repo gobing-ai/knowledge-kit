@@ -197,13 +197,14 @@ nodes:
   # ── 8. settle: classify, settle the store, the run's honest exit ───────────────────────────
   - id: settle
     description: >-
-      `publish-settle` — one verb for the six publish3 nodes `classify`, `patch-surfdash`,
-      `partial-marker`, `settle`, `bundle-runs` and `outcome-assert`: it writes
-      `4-publish/outcome.<window>.json`, the status and settlement files, the partial marker when
-      the window is not full, appends this run to `bundle.json` `runs[]`, and exits 1 when a
-      required non-dummy row did not succeed. No `onError`, so that exit 1 is the run's failure
-      (design §5.3: the only node that writes the store). Skipped on a gated miss: nothing was
-      planned, so there is no window to classify and the incident path already owns the day.
+      `publish-settle` — one verb for the five publish3 nodes `classify`, `patch-surfdash`,
+      `partial-marker`, `settle` and `bundle-runs`: it writes `4-publish/outcome.<window>.json`,
+      the status and settlement files, the partial marker when the window is not full, and appends
+      this run to `bundle.json` `runs[]`. `onError: continue`, so a window with a failed required
+      row still reaches `report`: publish3's `outcome-assert` sat AFTER report and ledger, and
+      `report` now owns that honest exit (design §5.3 R3 — the page and the ledger row survive a
+      partial window). Skipped on a gated miss: nothing was planned, so there is no window to
+      classify and the incident path already owns the day.
     dependsOn: [send, repair]
     condition:
       kind: shell
@@ -214,6 +215,7 @@ nodes:
 
     action:
       kind: shell
+      onError: continue
       options:
         command: 'kk ${vars.noun} publish-settle --work-dir "${vars.work_dir}" --window "${vars.window}"'
 
@@ -221,10 +223,12 @@ nodes:
   - id: report
     description: >-
       `publish-report` — per-window status and every receipt on one page (`5-report/publish-<w>.md`,
-      plus the SEO export for types that ask for one), then the ledger sync. Depends on `settle`
-      so a report can never race an unfinished settlement, and on `diagnose` so a gated-miss day
-      (settle skipped, diagnose ran) still writes its page. A report failure cannot undo a
-      settlement: the settlement files are already on disk when this node starts.
+      plus the SEO export for types that ask for one), then the ledger sync, and then the run's
+      honest exit: the verb re-reads `outcome.<window>.json` and exits 1 when a required non-dummy
+      row did not succeed (design §5.3 R3 — the page and the ledger row are already written, so a
+      partial window keeps its report and still fails). Depends on `settle` so a report can never
+      race an unfinished settlement, and on `diagnose` so a gated-miss day (settle skipped, diagnose
+      ran) still writes its page and stays done (no outcome file).
     dependsOn: [settle, diagnose]
     action:
       kind: shell

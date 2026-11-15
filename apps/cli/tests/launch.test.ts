@@ -429,7 +429,9 @@ describe('launchWorkflow — child lifecycle and cleanup (0365 R4, R5, AC3)', ()
             expect(receipt.reason).toContain('node voice failed');
             expect(receipt.executor).toBe('inline');
             expect(receipt.checkoutCommit).toBe('abc123');
-            expect(stub.calls.filter((call) => call.args.includes('cancel'))).toHaveLength(1);
+            // Cleanup cancels the run AND the nested `<runId>-safety` review design §5.1 may have started.
+            expect(stub.calls.filter((call) => call.args.includes('cancel'))).toHaveLength(2);
+            expect(stub.calls.filter((call) => call.args.join(' ').includes('-safety'))).toHaveLength(1);
             expect(stub.recycled).toEqual([receipt.runId]);
             expect(stub.ledgers).toHaveLength(1);
             expect(stub.releases).toHaveLength(1);
@@ -475,7 +477,9 @@ describe('launchWorkflow — child lifecycle and cleanup (0365 R4, R5, AC3)', ()
 
             expect(receipt.status).toBe('timeout');
             expect(receipt.exitCode).toBe(124);
-            expect(stub.calls.filter((call) => call.args.includes('cancel'))).toHaveLength(1);
+            // Cleanup cancels the run AND the nested `<runId>-safety` review design §5.1 may have started.
+            expect(stub.calls.filter((call) => call.args.includes('cancel'))).toHaveLength(2);
+            expect(stub.calls.filter((call) => call.args.join(' ').includes('-safety'))).toHaveLength(1);
             expect(stub.releases).toHaveLength(1);
         } finally {
             stub.restore();
@@ -499,7 +503,9 @@ describe('launchWorkflow — child lifecycle and cleanup (0365 R4, R5, AC3)', ()
 
                 expect(receipt.status).toBe('failed');
                 expect(receipt.exitCode).toBe(143);
-                expect(stub.calls.filter((call) => call.args.includes('cancel'))).toHaveLength(1);
+                // Cleanup cancels the run AND the nested `<runId>-safety` review design §5.1 may have started.
+                expect(stub.calls.filter((call) => call.args.includes('cancel'))).toHaveLength(2);
+                expect(stub.calls.filter((call) => call.args.join(' ').includes('-safety'))).toHaveLength(1);
                 expect(stub.recycled).toEqual([receipt.runId]);
                 expect(stub.releases).toHaveLength(1);
             } finally {

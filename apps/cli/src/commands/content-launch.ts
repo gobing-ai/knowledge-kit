@@ -179,16 +179,12 @@ async function loadType(
 }
 
 /** The run identity flags shared by both verbs: `--slug` (article) or `--run-date` (news). */
-function runSelector(
-    defaultType: string,
-    options: { slug?: string; runDate?: string; workDir?: string },
-    verb: string,
-) {
+function runSelector(type: string, options: { slug?: string; runDate?: string; workDir?: string }, verb: string) {
     const suppliedWorkDir = options.workDir === undefined ? undefined : resolve(expandHome(options.workDir));
     if (options.runDate !== undefined && normalizeRunDate(options.runDate) === undefined) {
         fail(2, `kk.content.${verb}`, '--run-date must be a real calendar date as YYYYMMDD');
     }
-    if (defaultType !== 'news' && options.slug === undefined && suppliedWorkDir === undefined) {
+    if (type !== 'news' && options.slug === undefined && suppliedWorkDir === undefined) {
         fail(2, `kk.content.${verb}`, '--slug is required for article content and must be a lowercase slug');
     }
     return {
@@ -265,7 +261,8 @@ async function generateAction(noun: string, defaultType: string, options: Genera
     const type = options.type ?? defaultType;
     const { config, configFile } = await loadConfig(fs, 'generate');
     const resolved = await loadType(type, config, configFile, 'generate');
-    const selector = runSelector(defaultType, options, 'generate');
+    // 0373: the selector follows the resolved type — `kk article generate --type news` is a news run.
+    const selector = runSelector(type, options, 'generate');
     const timeoutMs = parseTimeout(options.timeoutMs, 'generate');
     const worksDir = resolveWorksDir(config, configFile);
     const run = resolveRun({
@@ -358,6 +355,15 @@ interface PublishRunSettings {
 }
 
 /**
+ * The CLI noun that registers a content type's step verbs (`news` → `news`, everything else →
+ * `article`, whose own default type is `itc`). The workflow's node commands are `kk <noun>
+ * publish-<step>`, so this — not the operator's word — is what the launch records.
+ */
+function nounForType(type: string): string {
+    return type === 'news' ? 'news' : 'article';
+}
+
+/**
  * Publish admission (design §3.2, ported as the two rules): a `running` generate receipt refuses;
  * a missing bundle refuses unless `--unattended`/`--yes` authorizes exactly one `generate` first.
  */
@@ -373,6 +379,11 @@ async function publishRun(settings: PublishRunSettings): Promise<LaunchReceipt> 
     if (running) {
         fail(5, 'kk.content.publish', `generation for ${run.run} is still running (${run.workDir})`);
     }
+    // Design §3.3: window and CN-consent validation is a pre-lock refusal, so it runs BEFORE the
+    // auto-generate leg — a consent mismatch must not pay for a full generation first.
+    const presetName = settings.preset ?? resolved.publish_preset;
+    const tokens = channelList(settings.liveChannels);
+    validateLiveTokens(await readPreset(presetName, fs), settings.window, tokens?.split(',') ?? [], presetName);
     /** The chained `generate` a dry run planned instead of launching (R9). */
     const planned: PlannedLaunch[] = [];
     if (bundle === null && (settings.unattended || settings.allowGenerate)) {
@@ -413,10 +424,11 @@ async function publishRun(settings: PublishRunSettings): Promise<LaunchReceipt> 
     if (bundle === null && settings.dryRun !== true) {
         fail(5, 'kk.content.publish', `no publishable bundle at ${bundlePath}`);
     }
-
-    const presetName = settings.preset ?? resolved.publish_preset;
-    const tokens = channelList(settings.liveChannels);
-    validateLiveTokens(await readPreset(presetName, fs), settings.window, tokens?.split(',') ?? [], presetName);
+    // A frozen bundle names its own type (0367/0368 stamp `contentType`); a mismatch is a wrong-run
+    // refusal, never a silent switchboard swap.
+    if (bundle !== null && typeof bundle.contentType === 'string' && bundle.contentType !== type) {
+        fail(5, 'kk.content.publish', `bundle at ${bundlePath} is a '${bundle.contentType}' bundle, not '${type}'`);
+    }
 
     const bundleDate =
         bundle !== null && typeof bundle.runDate === 'string' ? normalizeRunDate(bundle.runDate) : undefined;
@@ -429,7 +441,10 @@ async function publishRun(settings: PublishRunSettings): Promise<LaunchReceipt> 
         );
     }
 
-    const vars: Record<string, string> = { preset: presetName, window: settings.window, noun: settings.noun };
+    // 0373: `noun` selects the step verbs, so it must follow the RESOLVED content type rather than
+    // the CLI word the operator typed — `kk article publish --type news` is a news run, and its
+    // switchboard block is `content_types.news.channels`.
+    const vars: Record<string, string> = { preset: presetName, window: settings.window, noun: nounForType(type) };
     if (requestedDate !== undefined) vars.run_date = requestedDate;
     else if (bundleDate !== undefined) vars.run_date = bundleDate;
     if (settings.channels !== undefined) vars.channels = settings.channels;
@@ -466,7 +481,9 @@ async function publishAction(noun: string, defaultType: string, options: Publish
     const type = options.type ?? defaultType;
     const { config, configFile } = await loadConfig(fs, 'publish');
     const resolved = await loadType(type, config, configFile, 'publish', options.preset);
-    const selector = runSelector(defaultType, options, 'publish');
+    // 0373: the selector follows the resolved type, so `--type news` on the article noun takes
+    // `--run-date`/`--work-dir`, not the article `--slug`.
+    const selector = runSelector(type, options, 'publish');
     const window = options.window ?? 'after-generate';
     if (!PUBLISH_WINDOWS.includes(window as (typeof PUBLISH_WINDOWS)[number])) {
         fail(2, 'kk.content.publish', `--window must be one of ${PUBLISH_WINDOWS.join('|')}, got '${window}'`);

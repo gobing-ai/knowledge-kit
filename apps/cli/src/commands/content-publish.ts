@@ -102,6 +102,11 @@ function commandFailure(command: string, code: number, message: string): never {
     throw new CommanderError(code, command, message);
 }
 
+/** Does this parsed file carry a `rows` array (the outcome shape this verb asserts on)? */
+function isOutcomeRows(value: unknown): boolean {
+    return typeof value === 'object' && value !== null && Array.isArray((value as { rows?: unknown }).rows);
+}
+
 function quietStdout<T>(action: () => Promise<T>): Promise<T> {
     const restore = setDefaultOutputTargets({ stdout: { write() {} } });
     return action().finally(restore);
@@ -416,7 +421,7 @@ async function reportAction(type: string, options: PublishOptions): Promise<void
     try {
         await quietStdout(() =>
             syncLedger({
-                workflow: 'kk-daily-publish3',
+                workflow: 'kk-publish',
                 worksDir: resolveWorksDir(context.config, context.configFile),
                 workDir: context.workDir,
             }),
@@ -427,6 +432,30 @@ async function reportAction(type: string, options: PublishOptions): Promise<void
         );
     }
     consoleOutput.write(JSON.stringify({ report: reportPath }));
+    // The run's honest exit (ported from publish3's `outcome-assert`, which sat AFTER report and
+    // ledger): the page and the ledger row are already written when this node fails, so a partial
+    // window keeps its report and still fails the run. A gated-miss day has no outcome file and
+    // stays done — the diagnose/repair path already classified it.
+    const outcomePath = join(context.workDir, '4-publish', `outcome.${context.window}.json`);
+    if (await fs.exists(outcomePath)) {
+        let rows: Array<{ required?: unknown; dummy?: unknown; status?: unknown }>;
+        try {
+            const parsed: unknown = parseJson(await fs.readFile(outcomePath));
+            rows = isOutcomeRows(parsed) ? (parsed as { rows: typeof rows }).rows : [];
+        } catch {
+            // A corrupt outcome cannot certify the window. The page above is already written, so the
+            // failure is reported, not hidden — publish3's `jq` assert failed the same way.
+            return commandFailure(command, 1, `publish-report: ${outcomePath} is unreadable or malformed`);
+        }
+        const failed = rows.some((row) => row.required === true && row.dummy !== true && row.status !== 'succeeded');
+        if (failed) {
+            return commandFailure(
+                command,
+                1,
+                `publish-report: required targets failed — see outcome.${context.window}.json and the page`,
+            );
+        }
+    }
 }
 
 function rejectPositionals(command: string, positionals: string[]): void {
