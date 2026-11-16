@@ -52,7 +52,7 @@ enhancement.** Field-by-field:
 | `typography` | no | Only when the image evidences it. Omit rather than guess. |
 | `visualElements` | no | Array of strings naming recurring visual devices (borders, banding, grain, iconography). Only what the image shows. |
 | `bestFor` | no | The content types this look suits. Inferred from the image's own subject matter. |
-| `negative` | no | What this look must avoid — inferred from what is conspicuously absent. |
+| `negative` | no | What this look must avoid — inferred from what is conspicuously absent. Rendered as one `avoid: …` segment after `modifiers` in the composed provider prompt (K3). |
 | `source` | yes for extraction | `kind: extracted`, `refImages` = the absolute input paths **in the order given**, `extractedAt` = ISO-8601 timestamp, `confidence` = the judgement below. |
 
 ### The `confidence` decision rule (human-judged, not computed)

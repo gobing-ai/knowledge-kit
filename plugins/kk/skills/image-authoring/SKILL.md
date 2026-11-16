@@ -69,9 +69,13 @@ Sequence: **resolve preferences** (Preference chain) → **resolve the format** 
    - `illustration` — detect insertion positions and author captions per
      [references/illustration-positions.md](references/illustration-positions.md);
      the chosen anchors cross as `metadata.positions`, one image per anchor.
-3. Resolve the style: `--style`, else the preference `image.style`, else the format's
-   `defaultStyle`. Without an explicit choice the skill may propose an auto-detected
-   style — taste, this skill's — shown in the preview for approval.
+3. Resolve the visual direction before locking the style: `--style`, else the preference `image.style`, else the format's
+   `defaultStyle`. Use each preset's `description` and `bestFor` as routing evidence. If the direction is unclear,
+   offer **two or three visibly different styles** with one-sentence tradeoffs — do not force a weak third — and wait
+   for the user's choice before writing a long prompt. Commit to **one primary style**; never blend style presets or
+   mixed reference bundles automatically. Explicit user constraints (subject, aspect ratio, text, people, brand,
+   forbidden content) override preset defaults. When the direction is clear or the user delegates the choice, the
+   skill may auto-detect one style — taste, this skill's — shown in the preview for approval.
 4. Resolve the provider and model per Preference chain; the credential and
    reference-image facts per provider live in
    [references/providers.md](references/providers.md).
