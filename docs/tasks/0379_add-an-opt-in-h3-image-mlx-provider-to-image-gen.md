@@ -4,7 +4,7 @@ name: Add an opt-in h3-image-mlx provider to image-gen
 status: done
 template: feature-impl
 created_at: 2026-11-15T22:44:30.594Z
-updated_at: "2026-11-16T02:17:11.773Z"
+updated_at: "2026-11-16T18:10:49.614Z"
 
 ac_altitude: graduating
 ac_numbering: task-local
@@ -163,6 +163,15 @@ readiness facts.
 
 Correction after K3 (0380): the "ignored negatives" limit above no longer holds — `composePrompt` now appends a style's `negative` as one `avoid: …` segment for every provider, so H3 receives it as prompt text. What remains true is that H3 has no native negative-prompt parameter.
 
+**Quality and rollout close (2026-11-16).** The first forced re-audit failed the real-render quality gate, so the initial minimax pins stayed in place. Strengthened same-brief retries then passed both independent vision reviews:
+
+- XHS: 315 s, 768×1024 illustration composed to 1080×1440; `textFree=true`, `compositionPass=true`, including the required key ring.
+- Cover: 268 s, exact 1344×576; `textFree=true`, `subjectPass=true`, `compositionPass=true`, and the local plate won the blind A/B. The cover pin nevertheless stays `minimax/image-01` because changing it needs a separate explicit A/B approval.
+
+`kk-daily-ai-voice2` now explicitly pins `xhs_provider: h3-local` / `xhs_model: h3` with cloud fallback; rollback is `minimax/image-01`. The consolidated `kk news` path carries the same opt-in only in machine-local `workflows.kk-news-generate` config, not as a compiled default. The retired `kk-daily-ai-voice` workflow remains behaviorally frozen on MiniMax. Installed direct image-gen dry-run exits 0 with `metadata.dryRun=true`, and the installed stage composes an H3 XHS envelope.
+
+Two unrelated gate defects also had to be repaired for R8: the WeChat tests now assert both the default enrichment refusal and the explicitly allowed capability success, and G61 now declares its owning `- In: news` scope through the feature CLI. Final `bun run gate`: 5247 pass / 0 fail, no skipped tests or new suppressions.
+
 ### Testing
 
 **Pipeline verify results**
@@ -171,39 +180,26 @@ Correction after K3 (0380): the "ignored negatives" limit above no longer holds 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 add `h3-local` to the existing image-gen plugin; no second plugin/package | MET | `plugins/generations/image-gen/src/providers/h3-local.ts:123`; registry row `plugins/generations/image-gen/src/providers/types.ts:174`; no new directory under `plugins/generations/` |
-| R2 spawn `H3_IMAGE_MLX_BIN`, one image per call, refs forwarded, temp cleanup both paths | MET | `h3-local.ts:136` (`n>1` pre-spawn), `:141` generate, `:158-169` argv, `:192` cleanup; `tests/providers/h3-local.test.ts:120,148,163` |
-| R3 exact canvases when legal, else aspect→legal canvas; timeout/non-zero carry stderr; fallback-eligible | MET | `h3-local.ts:49,60,135,174-189`; real cover run recorded `sizeRequest: exact` at 1344×576 (task Testing); `plugins/generations/image-gen/src/providers/errors.ts:104` makes those classes fallback-eligible |
-| R4 explicit opt-in only, no auto-select, env-only readiness, order/fallback unchanged | MET | `types.ts:115` (`NEVER_AUTO`), `:176` (env), `h3-local.ts:133` (no probe); `AUTO_ORDER` untouched; `h3-local.test.ts:79`, `tests/providers.test.ts:45` |
-| R5 deterministic fake-wrapper tests, no weights or cloud | MET | `tests/providers/h3-local.test.ts` (15 tests); plugin suite 460 pass / 0 fail |
-| R6 real local renders recorded; XHS passes text-free/composition path; cover look needs A/B | MET | task Testing → 338 s cover (1344×576 exact, 879 KB), 378 s card (768×1024 illustration → composed 1080×1440, 392 KB) |
-| R7 scheduler context validated; opt-in/rollback documented; cloud pins retained | MET | task Testing → launchd `ai.gobing.spur-serve` → `spur self serve` (`kk-daily-ai-voice`, `.spur/config.yaml:151`); stripped-env smoke 184 s; pins still `minimax` (`plugins/kk/workflows/kk-daily-ai-voice.yaml:53,74`) |
-| R8 docs + config references + repository gates | MET | `docs/04_DESIGN.md:2338,1504`; `plugins/kk/skills/image-authoring/references/providers.md:21,43`; `plugins/generations/image-gen/config.example.yaml:74`; `plugins/kk/config.example.yaml:105`; gate commands below |
+| R1 | MET | `plugins/generations/image-gen/src/providers/h3-local.ts:123` lives in the existing plugin and `types.ts:175` registers it; no second plugin/package exists. |
+| R2 | MET | `h3-local.ts:123` implements the provider; fake-wrapper tests cover argv, references, one-image validation, returned bytes, and cleanup on success/failure. |
+| R3 | MET | `h3-local.ts:49,:60` enforce legal H3 canvases; timeout/nonzero/no-output errors preserve diagnostics. The fresh cover used exact 1344×576 and XHS used a legal aspect-derived 768×1024 illustration. |
+| R4 | MET | `types.ts:115` includes h3-local in NEVER_AUTO and leaves AUTO_ORDER unchanged; env-only readiness and explicit-selection tests passed. |
+| R5 | MET | Focused image suites passed 135/135, including 15 fake-wrapper tests and fallback/registry coverage without weights or cloud calls. |
+| R6 | MET | Strengthened same-brief retries passed both vision gates: XHS 315s (768×1024 → 1080×1440), `textFree=true` and `compositionPass=true` including the key ring; cover 268s exact 1344×576, `textFree=true`, `subjectPass=true`, `compositionPass=true`, and local B won the blind A/B. Artifacts, dimensions, timings, and comparisons are recorded. |
+| R7 | MET | `kk-daily-ai-voice2` explicitly pins h3-local/h3 with cloud fallback; consolidated `kk news` resolves the same values from machine-local config. Retired voice1 and cover remain minimax. Installed direct image-gen dry-run exits 0 and the installed stage composes the H3 XHS envelope. Rollback is documented. |
+| R8 | MET | Docs/config examples and focused image tests are green. `bun run gate` completed successfully: format/build/lint/typecheck, 58+2 rules, and 5247 tests with zero failures or skips. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | test | `plugins/generations/image-gen/tests/providers.test.ts:27` asserts the registry holds `h3-local`; `tests/providers/h3-local.test.ts:79` drives it through `PROVIDERS['h3-local']` |
-| AC2 | MET | test | `tests/providers/h3-local.test.ts:120` (argv: prompt/output/width/height/refs), `:148` (cleanup on success), `:163` (cleanup + stderr on non-zero exit), `:79` (`n>1` before spawn) |
-| AC3 | MET | test | `tests/providers/h3-local.test.ts:63` (illegal canvases fall to aspect), `:79` (`h3Canvas` legality across 7 ratios), `:174` (timeout), `:186` (non-zero exit) |
-| AC4 | MET | test | `tests/providers/h3-local.test.ts:79` (never auto, env-only explicit, no probe), `:96` (`AUTO_ORDER` excludes it); `tests/providers.test.ts:45` (order coverage) |
-| AC5 | MET | test | `tests/providers/h3-local.test.ts` — 15 tests, fake `#!/bin/sh` wrapper, no model load and no provider network call |
-| AC6 | MET | command | `kk stage daily-cover <works> 2026-11-15 <plugins> h3-local h3 ""` → 338 s, 1344×576 exact; `kk executor run image-gen` on the xhs-card envelope → 378 s, composed 1080×1440 (task Testing) |
-| AC7 | MET | command | `launchctl list \| grep spur-serve` + `.spur/config.yaml:151`; `env -i PATH=… HOME=… h3gen.sh --width 256 --height 256` rendered in 184 s off `/Volumes/RTK9210-FLASH`; `plugins/kk/workflows/kk-daily-ai-voice.yaml:53,74` still pins minimax |
-| AC8 | MET | command | `bun run lint` 0, `bun run build` 0, `bun run test` 5190 pass / 0 fail, `bun run test-pre-check` 58 rules pass, `bun run test-post-check` 2 rules pass; docs at `docs/04_DESIGN.md:2338` |
+| AC1 | MET | test | Registry and adapter tests pass inside the existing image-gen plugin. |
+| AC2 | MET | test | `plugins/generations/image-gen/tests/providers/h3-local.test.ts` covers exact argv, refs, n>1 pre-spawn rejection, bytes, and both cleanup paths. |
+| AC3 | MET | test | Size, timeout, nonzero exit, missing output, and fallback-registry cases pass; real cover confirms exact sizing. |
+| AC4 | MET | test | NEVER_AUTO, env-only readiness, explicit selection, and unchanged AUTO_ORDER tests pass. |
+| AC5 | MET | test | 135/135 focused image tests pass with fake wrappers and no provider spend. |
+| AC6 | MET | command | Both strengthened real renders pass independent vision review. XHS is text-free with complete composition; cover is text-free with subject/composition pass and wins blind A/B. Cover pin remains unchanged pending separate explicit approval. |
+| AC7 | MET | command | Scheduler and H3 executable are present; XHS now explicitly uses h3-local/h3 with cloud fallback in voice2 and consolidated config, the installed runtime resolves it, and rollback plus unchanged cover pin are documented. |
+| AC8 | MET | command | Focused tests and all static gates pass; final `bun run gate` is green at 5247 pass / 0 fail. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
-
-**Local provider readiness (2026-11-15, post-landing)** — `H3_IMAGE_MLX_BIN` now lives in
-`plugins.generations.image-gen.env` (`~/.config/kk/config.yaml`), so no shell export is needed. Verified
-end to end with the installed `kk` from the repo root and the shell var unset: `free` × `editorial` at
-1024² returned `provider: h3-local`, `model: h3`, `sizeRequest: exact`, a 1.0 MB PNG, ~7 min wall, and
-an empty `$TMPDIR/kk-image-gen-h3-local` afterwards.
-
-**Quality probe — the adapter is fine, the prompt decides text.** The same subject/canvas/format
-through the real pipeline twice: `editorial` (no `negative`) came back with the prompt's quality tags
-painted into the frame as gibberish lettering ("8K, high-quality, masterpiece…"), while `daily-news`
-(whose `avoid: text, letters, words, …` segment K3 appends) produced a clean, text-free image. Guidance
-for local renders: use a style that declares `negative`, or add one; the earlier "TOP" fragment on the
-xhs-card rehearsal is the same effect, not an adapter defect.
 
 ### Review
 

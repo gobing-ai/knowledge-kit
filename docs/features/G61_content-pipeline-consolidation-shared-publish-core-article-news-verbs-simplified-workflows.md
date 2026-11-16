@@ -6,7 +6,7 @@ status: blocked
 priority: P1
 tags: []
 created_at: "2026-11-13T17:30:35.983Z"
-updated_at: "2026-11-15T02:55:00.229Z"
+updated_at: "2026-11-16T17:47:01.166Z"
 ---
 
 # G61: Content pipeline consolidation: shared publish core, article/news verbs, simplified workflows
@@ -22,6 +22,8 @@ generate side is `kk-article-generate.yaml` (thirteen states, one executor var; 
 ADR-053 (accepted 2026-11-13). Supersedes the remaining scope of G21 where they overlap.
 
 ## Scope
+
+- In: news — the consolidated `kk news` generate/publish commands and their owning workflows.
 
 **In scope**
 

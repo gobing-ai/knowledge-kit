@@ -4,7 +4,7 @@ name: kk plugin check reports a refused publish probe as malformed output instea
 status: done
 template: standard
 created_at: 2026-11-16T01:39:53.909Z
-updated_at: "2026-11-16T04:04:21.406Z"
+updated_at: "2026-11-16T09:07:04.682Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -123,17 +123,17 @@ be reproduced live today.
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 report the probe's own verdict even when non-verdict lines follow it | MET | `apps/cli/src/invoke.ts:296` scans back over the tail; incident-shape test `apps/cli/tests/invoke.test.ts:929` |
-| R2 the last parseable verdict line decides | MET | `apps/cli/src/invoke.ts:308`; test `apps/cli/tests/invoke.test.ts:943` |
-| R3 malformed stays malformed, no raw line text in detail | MET | `apps/cli/src/invoke.ts:335` unchanged; test `apps/cli/tests/invoke.test.ts:948` |
-| R4 a regression test pins the incident shape | MET | `apps/cli/tests/invoke.test.ts:929` reproduces progress line + `refused` verdict + trailing `browser closed` |
+| R1 | MET | `apps/cli/src/invoke.ts:296` scans backward for a parseable verdict; `apps/cli/tests/invoke.test.ts:929` proves refused + detail survives trailing output. |
+| R2 | MET | `apps/cli/tests/invoke.test.ts:943` proves the last parseable verdict wins across multiple verdict lines. |
+| R3 | MET | `apps/cli/src/invoke.ts:328-335` preserves the malformed-output shape without raw line text; `apps/cli/tests/invoke.test.ts:948` passed. |
+| R4 | MET | Pre-fix archive run → incident and last-parseable cases both failed (1 pass / 2 fail); current focused CLI suite → 50/50 pass, including all invoke and plugin-check tests. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | test | `apps/cli/tests/invoke.test.ts:929` (refused + profileDir + detail, never "malformed") |
-| AC2 | MET | test | `apps/cli/tests/invoke.test.ts:943` (two parseable verdicts, last wins) |
-| AC3 | MET | test | `apps/cli/tests/invoke.test.ts:948` (`probe exit 2 (malformed probe output)`, no line text) |
-| AC4 | MET | command | `bun test apps/cli/tests/invoke.test.ts` → 30 pass / 0 fail; `bun test apps/cli/tests/commands/plugin-check.test.ts` → 12 pass / 0 fail; `bunx tsc --noEmit` in `apps/cli` clean |
+| AC1 | MET | test | `apps/cli/tests/invoke.test.ts:929` returns status refused with the original detail, never malformed. |
+| AC2 | MET | test | `apps/cli/tests/invoke.test.ts:943` proves last parseable verdict selection. |
+| AC3 | MET | test | `apps/cli/tests/invoke.test.ts:948` returns `probe exit 2 (malformed probe output)` and leaks no raw line text. |
+| AC4 | MET | command | Pre-fix focused tests → 1 pass / 2 fail; current `invoke.test.ts` and `plugin-check.test.ts` are green in the 50-test focused suite. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

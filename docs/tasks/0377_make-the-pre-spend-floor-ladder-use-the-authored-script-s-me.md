@@ -4,7 +4,7 @@ name: Make the pre-spend floor ladder use the authored script's measure so a thi
 status: done
 template: standard
 created_at: 2026-11-15T21:08:47.145Z
-updated_at: "2026-11-16T07:31:09.746Z"
+updated_at: "2026-11-16T18:09:40.071Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -146,6 +146,8 @@ decision now judges a pool by what the writer actually delivered on the previous
   (a 27,704-char pool that cleared at 0.28 keeps `24h` there and widens here), plus the artifact-shape case; the two
   original cases still pass.
 
+**AC4 close (2026-11-16).** The forced re-audit found that `ladder.json` held the per-rung estimates but `kk news status` and the run report omitted them. `apps/cli/src/status-progress.ts` now exposes `ratioSource` and `rungs` additively, and `apps/cli/src/commands/daily.ts` appends the ratio, chosen rung, and per-rung table to both content and no-content reports. No-ladder report output is unchanged. RED-first tests failed on the missing fields, then passed; the final full gate is 5247 pass / 0 fail.
+
 ### Testing
 
 **Pipeline verify results**
@@ -154,18 +156,18 @@ decision now judges a pool by what the writer actually delivered on the previous
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 the widen-or-refuse decision uses the authored script's measure | MET | `plugins/kk/scripts/daily-stages.ts:336` (`estimateSpokenMinutes` fed by `readSpokenRatio`), ladder wired at `daily-stages.ts` `dailyExtract`; test `plugins/kk/tests/daily-extract-ladder.test.ts:105` |
-| R2 bounded and idempotent; frozen-pool guard honoured; estimate accounts for measured attrition with a drift warning | MET | ceiling `LADDER_MAX_MS` untouched, single pass over 4 rungs, `plan already authored` guard above the ladder; `recordSpokenRatio` writes `21-plan/<date>_09_spoken-ratio.json` and warns past 25% |
-| R3 the decision is recorded (measure, rung, per-rung estimates) | MET | `10-collect/ladder.json` written by `dailyExtract` (`floorMinutes`, `ratioUsed`, `ratioSource`, `chosen`, `rungs[]`); test `daily-extract-ladder.test.ts:118` |
-| R4 a regression test that fails on the old behaviour | MET | RED→GREEN proven: with `git stash push plugins/kk/scripts/daily-stages.ts` the recorded-ratio and ladder-artifact cases fail (2 pass / 2 fail), after restore 4 pass / 0 fail |
+| R1 | MET | `plugins/kk/scripts/daily-stages.ts:346` reads the last delivered spoken/raw ratio into the ladder; `plugins/kk/tests/daily-extract-ladder.test.ts:77,:90` prove thin pools widen and sufficient pools stay at 24h. |
+| R2 | MET | The 168h ceiling and single-pass ladder remain; `plugins/kk/tests/daily-extract-freeze.test.ts` passed both frozen-pool cases. `recordSpokenRatio` at `daily-stages.ts:385` writes the measured ratio and warns past 25% drift. |
+| R3 | MET | `daily-stages.ts:591` writes all rungs. Fixed verification gap: `apps/cli/src/status-progress.ts:113-114` now exposes ratioSource/rungs and `apps/cli/src/commands/daily.ts:591` appends them to content and no-content run reports; focused RED→GREEN tests passed. |
+| R4 | MET | Pre-fix isolated plugin run → 1 pass / 3 fail, including the missing ladder and no widening; current ladder/status suites → 19/19 pass before the report fix and 4/4 focused report/status assertions after it. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | test | `plugins/kk/tests/daily-extract-ladder.test.ts:80` — the 7,244-char 2026-11-15 pool widens past `24h` |
-| AC2 | MET | test | `daily-extract-ladder.test.ts:95` — the rich pool stays at `['24h']` |
-| AC3 | MET | command | `bun test plugins/kk/tests/daily-extract-ladder.test.ts -t "artifact"` shows the ladder ending at `chosen` (its ceiling here); `bun test` on the same file covers the frozen-pool guard path via the unchanged `dailyExtract` early return |
-| AC4 | MET | test | `daily-extract-ladder.test.ts:118` — `ladder.json` names `ratioUsed`, `ratioSource`, `chosen` and one row per rung |
-| AC5 | MET | command | `bun test plugins/kk/tests/daily-extract-ladder.test.ts` — 2 fail with the source change stashed, 4 pass restored |
+| AC1 | MET | test | `plugins/kk/tests/daily-extract-ladder.test.ts:77` widens the measured thin pool. |
+| AC2 | MET | test | `plugins/kk/tests/daily-extract-ladder.test.ts:90` keeps a sufficient pool at exactly 24h. |
+| AC3 | MET | test | `plugins/kk/tests/daily-extract-freeze.test.ts` preserves the authored pool byte-for-byte; the ladder test bounds the run at its chosen ceiling. |
+| AC4 | MET | test | `apps/cli/tests/status-progress.test.ts:77`, `apps/cli/tests/content-status-progress.test.ts:102`, and `apps/cli/tests/commands/daily.test.ts:281` now prove ratioSource, chosen rung, and per-rung estimates in status and run reports. |
+| AC5 | MET | command | Pre-fix `bun test` on `daily-extract-ladder.test.ts` → 1 pass / 3 fail; current file → 4 pass / 0 fail. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

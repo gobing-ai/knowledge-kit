@@ -4,7 +4,7 @@ name: kk news prepare skips plan and QC after a non-empty extract, so every gene
 status: done
 template: standard
 created_at: 2026-11-15T19:02:56.385Z
-updated_at: "2026-11-15T23:42:49.601Z"
+updated_at: "2026-11-16T09:07:03.121Z"
 parent_wbs: "0373"
 
 ac_altitude: task-local
@@ -62,9 +62,9 @@ day with content. This is the blocking defect behind task 0373 R4; a thin pool i
 
 ### Requirements
 
-- [ ] R1. Make `kk news prepare` run `daily-plan` and `daily-qc-content` whenever `10-collect/pool.json` holds at least one item, so the pool gate reads real candidates instead of reporting EMPTY after a successful extract.
-- [ ] R2. Keep the existing empty-pool contract intact: a genuinely empty extract must still short-circuit to `{"status":"EMPTY"}` with exit 0, and must not invoke plan or QC.
-- [ ] R3. Add a regression test that fails on today's behaviour — a non-empty `10-collect/pool.json` must produce `21-plan/<date>_04_quality-control-content_candidates.json` and a `PASS` gate — and prove it fails before the fix.
+- [x] R1. Make `kk news prepare` run `daily-plan` and `daily-qc-content` whenever `10-collect/pool.json` holds at least one item, so the pool gate reads real candidates instead of reporting EMPTY after a successful extract.
+- [x] R2. Keep the existing empty-pool contract intact: a genuinely empty extract must still short-circuit to `{"status":"EMPTY"}` with exit 0, and must not invoke plan or QC.
+- [x] R3. Add a regression test that fails on today's behaviour — a non-empty `10-collect/pool.json` must produce `21-plan/<date>_04_quality-control-content_candidates.json` and a `PASS` gate — and prove it fails before the fix.
 
 ### Acceptance Criteria
 
@@ -134,27 +134,22 @@ No behaviour change for a genuinely empty pool: `readJsonValue` returns `undefin
 
 ### Testing
 
-Run in the batch worktree `kk-runall-90de0e` (branch `sp/runall-0374-0373-90de0e`) on 2026-11-15.
+**Pipeline verify results**
 
-| Check | Command | Result |
-| --- | --- | --- |
-| Red: new regression case fails pre-fix | `bun test apps/cli/tests/content-generate.e2e.test.ts` | PASS (red observed) — `reads the bare Doc[] pool.json that dailyExtract writes` failed on `expect(prepared.pool).toBe('ok')` |
-| Green: same case after the fix | same | PASS — 7 pass, 0 fail, 87 expectations |
-| Related news suites | `bun test apps/cli/tests/kk-news-generate.e2e.test.ts apps/cli/tests/kk-news-generate-dag.test.ts apps/cli/tests/daily-cache-recovery.test.ts` | PASS — 18 pass, 0 fail |
-| Lint + typecheck | `bun run lint` | PASS — 816 files checked, no fixes |
-| Build | `bun run build` | PASS — `index.js` 2.22 MB |
-| Real production data, real store | `bun apps/cli/dist/index.js news prepare --work-dir .works/tmp/prepare-fix/20261115 --run-date 20261115` | PASS — `{"pool":"ok","candidates":4,"selected":4}` and `pool-gate.json {"status":"PASS"}`; `step-timing.json` now lists `extract`, `plan`, `quality-control-content` |
+- Verdict: PASS (from verdict artifact)
 
-Production evidence, before vs after the fix on the same store and the same 24h window:
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `apps/cli/src/commands/content-generate.ts:753` uses array-tolerant `readJsonValue`; `apps/cli/tests/content-generate.e2e.test.ts:333` passed with plan/QC and a PASS gate. |
+| R2 | MET | `apps/cli/tests/content-generate.e2e.test.ts:498` passed: an empty pool exits 0, writes EMPTY, and skips plan/QC. |
+| R3 | MET | Pre-fix archive run failed the new case as `Expected: "ok" / Received: "empty"` (exit 1); current focused CLI suite passed 50/50 with the regression green. |
 
-```
-before: {"pool":"empty","candidates":0,"selected":0}   step-timing: extract only
-after:  {"pool":"ok","candidates":4,"selected":4}      step-timing: extract, plan, quality-control-content
-        floor gate: estimated 32.6 min from 7244 chars — above the 15 min floor
-```
-
-The empty-pool contract is unchanged: the pre-existing `closes an empty pool as exit 0 with pool empty
-and an EMPTY gate (R3)` case still passes without modification.
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | `apps/cli/tests/content-generate.e2e.test.ts:333` — bare `Doc[]` drives plan/QC and PASS. |
+| AC2 | MET | test | `apps/cli/tests/content-generate.e2e.test.ts:498` — genuinely empty pool remains EMPTY with exit 0. |
+| AC3 | MET | command | Pre-fix `bun test … --test-name-pattern 'reads the bare Doc'` → 0 pass / 1 fail; current run → regression pass, 50/50 focused CLI assertions green. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
