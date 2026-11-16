@@ -1,0 +1,8 @@
+# K3 v2: subject-invariant revision after the MiniMax blind review; generation-pending.
+# Adapted from Open Image Prompts `minimalist-ink-wash-negative-space` (MIT). See presets/SOURCE.md.
+name: minimalist-ink-wash-negative-space
+description: Restrained ink-wash imagery with a few expressive strokes and expansive untouched paper.
+modifiers: preserve the literal subject, entity count, setting, and requested use, changing only rendering, composition, material, light, and palette, minimalist ink-wash painting, asymmetric composition with expansive untouched warm-white paper, a few confident brush strokes, pale wet-ink washes, controlled dry-brush focal detail, black ink with at most one muted mineral accent, depth through ink value and dissolving edges, poetic restraint
+bestFor: contemplative editorial illustrations, poetic landscapes, animals, plants, tea objects, quiet covers
+negative: subject substitution, changed entity count, unrelated narrative, pseudo-text, letters, watermarks, red seal marks, decorative borders, invented calligraphy, seal stamps, text, logos, full-frame gray fog, random splatter, rainbow watercolor washes, uniform digital outlines, cluttered detail
+source: { kind: extracted }

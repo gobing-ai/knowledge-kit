@@ -1,0 +1,8 @@
+# K3 v2: subject-invariant revision after the MiniMax blind review; generation-pending.
+# Adapted from Open Image Prompts `limited-ink-risograph-editorial` (MIT). See presets/SOURCE.md.
+name: limited-ink-risograph-editorial
+description: Tactile limited-ink editorial printing with bold silhouettes, halftone volume, and restrained registration drift.
+modifiers: preserve the literal subject, entity count, setting, and requested use, changing only rendering, composition, material, light, and palette, limited-ink risograph editorial illustration, one bold readable silhouette, one to three restrained spot inks on warm uncoated paper, solid ink shapes and one consistent halftone screen, subtle paper tooth, slight edge-only registration drift, intentional overprint, strong thumbnail hierarchy
+bestFor: independent posters, zines, editorial illustrations, cultural programs, simple brand graphics
+negative: subject substitution, changed entity count, unrelated narrative, pseudo-text, letters, watermarks, rainbow palette, continuous gradients, glossy 3D, general blur, photographic texture, dense microcopy, invented text, logos, fake vintage stains, mixed watercolor or chrome effects
+source: { kind: extracted }

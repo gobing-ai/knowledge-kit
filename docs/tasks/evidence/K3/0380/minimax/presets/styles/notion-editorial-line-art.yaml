@@ -1,0 +1,9 @@
+# Adapted from Open Image Prompts `notion-editorial-line-art` (MIT).
+# K3 evidence status: authored-unverified / generation-pending; the upstream reference section is empty.
+# See plugins/generations/image-gen/presets/SOURCE.md. No upstream image or source prompt is bundled.
+name: notion-editorial-line-art
+description: Minimal editorial monoline illustration with friendly gestures, sparse fills, and active white space.
+modifiers: minimalist editorial line-art illustration, one instantly readable gesture, simplified friendly anatomy, crisp slightly imperfect black monoline, sparse black fills, pure white background with generous negative space, eye-level flat composition, at most one muted accent detail, modern knowledge-product aesthetic
+bestFor: product explainers, onboarding illustrations, blog headers, workplace stories, concept metaphors
+negative: shadows, gradients, dense scenery, photorealistic faces, thick comic outlines, emoji-like icons, random decoration, multiple competing actions, text, logos
+source: { kind: extracted }

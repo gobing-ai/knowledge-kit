@@ -1,0 +1,24 @@
+{
+  "body": "highly detailed depiction of a request flowing through an API gateway to three microservices.\nMood: peaceful and contemplative — evoking calm contemplation.\nComposition: balanced with clear focal point and visual breathing room.\nColor palette: harmonious and balanced, context-appropriate.\nLighting: natural and flattering with gentle shadows.\nDrawing from provided context, \nrender with artistic precision, rich textures, and professional color grading., 8K, high-quality, masterpiece, professional, rule of thirds, rich textures, crisp details, preserve the literal subject, entity count, setting, and requested use, changing only rendering, composition, material, light, and palette, handcrafted layered matte paper planes, readable foreground subject and background bands, visible paper fibers and clean cut edges, one soft directional light, consistent shallow shadows between layers, restrained palette, clear focal opening, avoid: subject substitution, changed entity count, unrelated narrative, pseudo-text, letters, watermarks, glossy plastic, clay surfaces, floating pieces, inconsistent light direction, excessive filigree, crowded decorative props, realistic human skin, invented text, logos",
+  "title": "free",
+  "format": "image",
+  "references": [],
+  "metadata": {
+    "generator": "kk:image-gen",
+    "job": "free",
+    "images": [
+      {
+        "path": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P05/candidate/content-free-01.png",
+        "format": "free",
+        "style": "layered-papercraft-diorama",
+        "provider": "h3-local",
+        "model": "h3",
+        "prompt": "highly detailed depiction of a request flowing through an API gateway to three microservices.\nMood: peaceful and contemplative — evoking calm contemplation.\nComposition: balanced with clear focal point and visual breathing room.\nColor palette: harmonious and balanced, context-appropriate.\nLighting: natural and flattering with gentle shadows.\nDrawing from provided context, \nrender with artistic precision, rich textures, and professional color grading., 8K, high-quality, masterpiece, professional, rule of thirds, rich textures, crisp details, preserve the literal subject, entity count, setting, and requested use, changing only rendering, composition, material, light, and palette, handcrafted layered matte paper planes, readable foreground subject and background bands, visible paper fibers and clean cut edges, one soft directional light, consistent shallow shadows between layers, restrained palette, clear focal opening, avoid: subject substitution, changed entity count, unrelated narrative, pseudo-text, letters, watermarks, glossy plastic, clay surfaces, floating pieces, inconsistent light direction, excessive filigree, crowded decorative props, realistic human skin, invented text, logos",
+        "bytes": 1708883,
+        "sizeRequest": "exact",
+        "width": 1024,
+        "height": 1024
+      }
+    ]
+  }
+}

@@ -1,0 +1,22 @@
+[
+  {
+    "id": "P08-baseline",
+    "title": "Inside Modern Semiconductors",
+    "body": "",
+    "metadata": {
+      "imageGen": {
+        "job": "cover",
+        "format": "cover",
+        "style": "sketch",
+        "provider": "minimax",
+        "model": "image-01",
+        "maxImages": 1,
+        "vars": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      }
+    }
+  }
+]

@@ -1,0 +1,8 @@
+# K3 v2: subject-invariant revision after the MiniMax blind review; generation-pending.
+# Adapted from Open Image Prompts `product-exploded-identity` (MIT). See presets/SOURCE.md.
+name: product-exploded-identity
+description: Precision exploded views that explain product structure through engineering alignment and material accuracy.
+modifiers: preserve the literal subject, entity count, setting, and requested use, changing only rendering, composition, material, light, and palette, precision exploded-view technical illustration, outer shell and functional components separated along one clear engineering axis, exact alignment and believable part hierarchy, one highlighted hero core, orthographic three-quarter view, controlled spacing, material-accurate metal plastic and glass, original product silhouette remains readable
+bestFor: product architecture, engineering explainers, technical illustrations, design campaigns
+negative: subject substitution, changed entity count, unrelated narrative, pseudo-text, letters, watermarks, random fragments, incorrect mechanical structure, chaotic spacing, unrecognizable product silhouette, decorative fantasy gears, illegible annotations, text, logos
+source: { kind: extracted }

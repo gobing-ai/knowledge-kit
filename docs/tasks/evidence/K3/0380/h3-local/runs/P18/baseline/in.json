@@ -1,0 +1,22 @@
+[
+  {
+    "id": "P18-baseline",
+    "title": "Building Reliable AI Agents",
+    "body": "",
+    "metadata": {
+      "imageGen": {
+        "job": "cover",
+        "format": "cover",
+        "style": "technical-diagram",
+        "provider": "h3-local",
+        "model": "h3",
+        "maxImages": 1,
+        "vars": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      }
+    }
+  }
+]

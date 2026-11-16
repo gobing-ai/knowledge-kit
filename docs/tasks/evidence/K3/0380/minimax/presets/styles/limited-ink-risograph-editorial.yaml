@@ -1,0 +1,9 @@
+# Adapted from Open Image Prompts `limited-ink-risograph-editorial` (MIT).
+# Upstream: corpus-reviewed / generation-pending; one explicit reference tweet: 2065135532875645242.
+# See plugins/generations/image-gen/presets/SOURCE.md. No upstream image or source prompt is bundled.
+name: limited-ink-risograph-editorial
+description: Tactile limited-ink editorial printing with bold silhouettes, halftone volume, and restrained registration drift.
+modifiers: limited-ink risograph editorial illustration, one bold readable silhouette, one to three restrained spot inks on warm uncoated paper, solid ink shapes and one consistent halftone screen, subtle paper tooth, slight edge-only registration drift, intentional overprint, strong thumbnail hierarchy
+bestFor: independent posters, zines, editorial illustrations, cultural programs, simple brand graphics
+negative: rainbow palette, continuous gradients, glossy 3D, general blur, photographic texture, dense microcopy, invented text, logos, fake vintage stains, mixed watercolor or chrome effects
+source: { kind: extracted }

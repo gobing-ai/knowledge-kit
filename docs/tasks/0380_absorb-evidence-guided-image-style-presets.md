@@ -4,7 +4,7 @@ name: Absorb evidence-guided image style presets
 status: done
 template: feature-impl
 created_at: 2026-11-15T23:58:33.894Z
-updated_at: "2026-11-16T07:45:57.208Z"
+updated_at: "2026-11-16T08:30:25.001Z"
 feature_id: K3
 
 estimate_hours: 12
@@ -169,7 +169,7 @@ H3 completed all four cells for all six and rejected all six:
 | R2 styles without `negative` keep byte-identical prompts | MET | no-negative golden in `tests/image-gen.test.ts` (unchanged prompt assertion) |
 | R3 six portable, attributed, subject-neutral evaluation presets, dry-run | MET | `.works/tmp/k3-style-eval/presets-v2` + provenance table in `plugins/generations/image-gen/presets/SOURCE.md`; `dry`/`dry-v2` run dirs |
 | R4 image-authoring explores two or three directions, then one primary style | MET | `plugins/kk/skills/image-authoring/SKILL.md:72-78` |
-| R5 blind A/B gate run, promote only qualifying, reports preserved, no cross-provider claim | MET | `docs/tasks/evidence/K3/0380/minimax-image-01.evaluation.json` and `h3-local-h3.evaluation.json` — both 0 accepted / 5 rejected / 1 pending, `crossProviderClaim: false` |
+| R5 blind A/B gate run, promote only qualifying, reports preserved, no cross-provider claim | MET | `docs/tasks/evidence/K3/0380/minimax-image-01.evaluation.json` and `h3-local-h3.evaluation.json` — MiniMax 0 accepted / 5 rejected / 1 blocked; H3 0 accepted / 6 rejected, `crossProviderClaim: false` |
 | R6 presets provider-independent, runner defaults from the registry, work dirs and provenance cannot mix providers | MET | `plugins/generations/image-gen/tests/presets.test.ts` (no provider/model keys), `scripts/eval-style-presets.ts` (`--provider`, provider-namespaced work dir), `assets/sample/provenance.json` + `tests/sample-gallery.test.ts` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |

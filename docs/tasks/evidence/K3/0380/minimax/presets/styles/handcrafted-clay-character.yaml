@@ -1,0 +1,9 @@
+# Adapted from Open Image Prompts `handcrafted-clay-character` (MIT).
+# Upstream: corpus-reviewed / generation-pending; reference tweets: 2031792275765047546, 2042595606670004459.
+# See plugins/generations/image-gen/presets/SOURCE.md. No upstream image or source prompt is bundled.
+name: handcrafted-clay-character
+description: Handmade stop-motion clay forms with simplified proportions, subtle tool marks, and believable contact.
+modifiers: handcrafted stop-motion-style matte kneaded clay, simplified rounded proportions, one expressive facial cue, subtle fingerprints and sculpting marks, physically believable weight and contact, centered full-body composition, soft diffused studio light, restrained earthy or pastel palette, simple tactile backdrop
+bestFor: mascots, educational characters, gentle miniature storytelling, tactile collectible figures
+negative: glossy plastic, mixed materials on every body part, floating feet, hyperreal fur, crowded toy shelf, generic imitation characters, text, logos
+source: { kind: extracted }

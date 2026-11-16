@@ -1,0 +1,25 @@
+{
+  "body": "Cinematic wide-format cover illustration for \"Building Reliable AI Agents\", subtitled \"Patterns for production\".\nTheme: AI agents, API gateways, microservices.\nVisual approach: abstract geometric with clean modern lines.\nComposition: strong central focal point, negative space in upper third for text overlay.\nColor palette: deep navy transitioning to electric blue with warm amber accents.\nAtmosphere: professional, aspirational, forward-looking, modern and aspirational sensibility.\nInspired by the article's core concepts, \ncreate a visually striking hero image with dramatic volumetric lighting,\nfine detail textures, and cinematic depth of field.\nMagazine-quality digital art with strong visual hierarchy., 8K, ultra-high-quality, masterpiece, cinematic composition, rule of thirds, volumetric lighting, dramatic shadows, fine detail textures, professional color grading, hand-drawn sketch style, artistic, pencil drawing feel, organic lines, paper texture, warm tones, cross-hatching, warm paper background",
+  "title": "cover",
+  "format": "image",
+  "references": [],
+  "metadata": {
+    "generator": "kk:image-gen",
+    "job": "cover",
+    "images": [
+      {
+        "path": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P06/baseline/content-cover-01.png",
+        "format": "cover",
+        "style": "sketch",
+        "provider": "h3-local",
+        "model": "h3",
+        "prompt": "Cinematic wide-format cover illustration for \"Building Reliable AI Agents\", subtitled \"Patterns for production\".\nTheme: AI agents, API gateways, microservices.\nVisual approach: abstract geometric with clean modern lines.\nComposition: strong central focal point, negative space in upper third for text overlay.\nColor palette: deep navy transitioning to electric blue with warm amber accents.\nAtmosphere: professional, aspirational, forward-looking, modern and aspirational sensibility.\nInspired by the article's core concepts, \ncreate a visually striking hero image with dramatic volumetric lighting,\nfine detail textures, and cinematic depth of field.\nMagazine-quality digital art with strong visual hierarchy., 8K, ultra-high-quality, masterpiece, cinematic composition, rule of thirds, volumetric lighting, dramatic shadows, fine detail textures, professional color grading, hand-drawn sketch style, artistic, pencil drawing feel, organic lines, paper texture, warm tones, cross-hatching, warm paper background",
+        "bytes": 1395812,
+        "sizeRequest": "exact",
+        "width": 1344,
+        "height": 576
+      }
+    ],
+    "sourceDocId": "P06-baseline"
+  }
+}

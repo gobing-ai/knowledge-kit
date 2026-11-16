@@ -1,0 +1,20 @@
+[
+  {
+    "id": "P15-candidate",
+    "title": "Inside Modern Semiconductors",
+    "body": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+    "metadata": {
+      "imageGen": {
+        "job": "free",
+        "format": "free",
+        "style": "notion-editorial-line-art",
+        "provider": "h3-local",
+        "model": "h3",
+        "maxImages": 1,
+        "vars": {
+          "subject": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom"
+        }
+      }
+    }
+  }
+]

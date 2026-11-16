@@ -1,0 +1,22 @@
+[
+  {
+    "id": "P04-candidate",
+    "title": "Inside Modern Semiconductors",
+    "body": "",
+    "metadata": {
+      "imageGen": {
+        "job": "cover",
+        "format": "cover",
+        "style": "limited-ink-risograph-editorial",
+        "provider": "minimax",
+        "model": "image-01",
+        "maxImages": 1,
+        "vars": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      }
+    }
+  }
+]

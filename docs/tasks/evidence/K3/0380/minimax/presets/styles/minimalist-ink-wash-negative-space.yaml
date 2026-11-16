@@ -1,0 +1,9 @@
+# Adapted from Open Image Prompts `minimalist-ink-wash-negative-space` (MIT).
+# Upstream: corpus-reviewed / generation-pending; reference tweets: 2062404916174569621, 2066447081980473664.
+# See plugins/generations/image-gen/presets/SOURCE.md. No upstream image or source prompt is bundled.
+name: minimalist-ink-wash-negative-space
+description: Restrained ink-wash imagery with a few expressive strokes and expansive untouched paper.
+modifiers: minimalist ink-wash painting, asymmetric composition with expansive untouched warm-white paper, a few confident brush strokes, pale wet-ink washes, controlled dry-brush focal detail, black ink with at most one muted mineral accent, depth through ink value and dissolving edges, poetic restraint
+bestFor: contemplative editorial illustrations, poetic landscapes, animals, plants, tea objects, quiet covers
+negative: decorative borders, invented calligraphy, seal stamps, text, logos, full-frame gray fog, random splatter, rainbow watercolor washes, uniform digital outlines, cluttered detail
+source: { kind: extracted }

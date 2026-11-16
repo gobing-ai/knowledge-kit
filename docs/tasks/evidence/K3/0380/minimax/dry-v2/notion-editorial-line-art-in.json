@@ -1,0 +1,17 @@
+[
+  {
+    "id": "k3-candidate-v2",
+    "title": "Candidate v2",
+    "body": "a request flowing through an API gateway to three microservices",
+    "metadata": {
+      "imageGen": {
+        "job": "free",
+        "format": "free",
+        "style": "notion-editorial-line-art",
+        "provider": "minimax",
+        "model": "image-01",
+        "maxImages": 1
+      }
+    }
+  }
+]

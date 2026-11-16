@@ -1,0 +1,9 @@
+# Adapted from Open Image Prompts `layered-papercraft-diorama` (MIT).
+# Upstream: corpus-reviewed / generation-pending; reference tweets: 2059228200841232771, 2066752996499927074.
+# See plugins/generations/image-gen/presets/SOURCE.md. No upstream image or source prompt is bundled.
+name: layered-papercraft-diorama
+description: Tactile hand-cut paper scenes with readable depth bands, clean edges, and consistent shallow shadows.
+modifiers: handcrafted layered matte paper planes, readable foreground subject and background bands, visible paper fibers and clean cut edges, one soft directional light, consistent shallow shadows between layers, restrained palette, clear focal opening
+bestFor: editorial illustrations, storybook covers, warm campaign imagery, nature scenes, window displays
+negative: glossy plastic, clay surfaces, floating pieces, inconsistent light direction, excessive filigree, crowded decorative props, realistic human skin, invented text, logos
+source: { kind: extracted }

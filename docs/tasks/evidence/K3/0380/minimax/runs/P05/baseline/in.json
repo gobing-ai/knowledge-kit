@@ -1,0 +1,20 @@
+[
+  {
+    "id": "P05-baseline",
+    "title": "Building Reliable AI Agents",
+    "body": "a request flowing through an API gateway to three microservices",
+    "metadata": {
+      "imageGen": {
+        "job": "free",
+        "format": "free",
+        "style": "sketch",
+        "provider": "minimax",
+        "model": "image-01",
+        "maxImages": 1,
+        "vars": {
+          "subject": "a request flowing through an API gateway to three microservices"
+        }
+      }
+    }
+  }
+]

@@ -1,0 +1,508 @@
+{
+  "reviewer": "grok-4.7 via spur agent run; blind images only",
+  "reviewedAt": "2026-11-16T00:39:20.009Z",
+  "pairs": [
+    {
+      "pair": "P01",
+      "preferred": "B",
+      "scores": {
+        "A": {
+          "subjectFidelity": 1,
+          "composition": 4,
+          "visualCoherence": 5,
+          "constraintAdherence": 1,
+          "artifactControl": 5
+        },
+        "B": {
+          "subjectFidelity": 4,
+          "composition": 3,
+          "visualCoherence": 4,
+          "constraintAdherence": 4,
+          "artifactControl": 3
+        }
+      },
+      "critical": {
+        "A": [
+          "Wrong subject: cloudscape and a glowing path, with no visible request, API gateway, or three microservices."
+        ],
+        "B": [
+          "Garbled pseudo-text on the faces of the central hub and the two rectangular nodes."
+        ]
+      },
+      "notes": "A is a clean sky scene whose light trail never reads as a gateway or three services. B shows a central hub with arrows linking three nodes, so the requested flow is visible, though the landscape and crossing lines weaken the diagram."
+    },
+    {
+      "pair": "P02",
+      "preferred": "B",
+      "scores": {
+        "A": {
+          "subjectFidelity": 2,
+          "composition": 4,
+          "visualCoherence": 5,
+          "constraintAdherence": 2,
+          "artifactControl": 5
+        },
+        "B": {
+          "subjectFidelity": 3,
+          "composition": 5,
+          "visualCoherence": 4,
+          "constraintAdherence": 3,
+          "artifactControl": 4
+        }
+      },
+      "critical": {
+        "A": [
+          "Wrong subject: a glowing circuit/semiconductor plane, with no AI agents, API gateway, or microservice subject."
+        ],
+        "B": []
+      },
+      "notes": "Both are clean wide tech images with no readable text, logo, or watermark. A is a sharp blue-orange macro of inlaid traces and chip-like blocks. B is a receding field of small illuminated modules with open space on the left, closer to networked services, still without a visible agent or gateway."
+    },
+    {
+      "pair": "P03",
+      "preferred": "A",
+      "scores": {
+        "A": {
+          "subjectFidelity": 3,
+          "composition": 4,
+          "visualCoherence": 3,
+          "constraintAdherence": 3,
+          "artifactControl": 4
+        },
+        "B": {
+          "subjectFidelity": 3,
+          "composition": 4,
+          "visualCoherence": 3,
+          "constraintAdherence": 2,
+          "artifactControl": 3
+        }
+      },
+      "critical": {
+        "A": [
+          "Wrong subject detail: the workpiece is a featureless white square in a metal frame, not a visible semiconductor wafer."
+        ],
+        "B": [
+          "Wrong subject: a fixed vertical probe over a square glitter-textured pad with a yellow disc, not an articulated robotic arm inspecting a semiconductor wafer."
+        ]
+      },
+      "notes": "A shows an articulated arm entering from the upper right and hovering over a brightly lit square in a dark room; the end effector is busy but intact, and cleanroom cues are absent. B is dark and centered on a process head, but the tip reads as a stylus and the sparkling square surface does not read as a wafer. Neither image has readable text or a watermark."
+    },
+    {
+      "pair": "P04",
+      "preferred": "B",
+      "scores": {
+        "A": {
+          "subjectFidelity": 4,
+          "composition": 5,
+          "visualCoherence": 5,
+          "constraintAdherence": 3,
+          "artifactControl": 5
+        },
+        "B": {
+          "subjectFidelity": 4,
+          "composition": 4,
+          "visualCoherence": 4,
+          "constraintAdherence": 4,
+          "artifactControl": 4
+        }
+      },
+      "critical": {
+        "A": [],
+        "B": []
+      },
+      "notes": "A is a clean macro of a packaged die on a pin-field substrate in blue and amber light, with no readable text or broken geometry; manufacturing and robotic inspection are not shown. B places a descending machine head and an orange filament over a glowing packaged die amid board-level components, covering manufacturing and packaging more fully. The filament is physically ambiguous and the traces are highly regular, without severe breakage, text, or watermark."
+    },
+    {
+      "pair": "P05",
+      "preferred": "B",
+      "scores": {
+        "A": {
+          "subjectFidelity": 1,
+          "composition": 4,
+          "visualCoherence": 5,
+          "constraintAdherence": 1,
+          "artifactControl": 5
+        },
+        "B": {
+          "subjectFidelity": 2,
+          "composition": 3,
+          "visualCoherence": 4,
+          "constraintAdherence": 2,
+          "artifactControl": 2
+        }
+      },
+      "critical": {
+        "A": [
+          "wrong subject: garden diorama with flowers, arches, and a bird; no request, API gateway, or microservices"
+        ],
+        "B": [
+          "wrong subject: seated person and bench-like frames instead of a request, API gateway, and microservices",
+          "unwanted pseudo-text labels beside the figure and the three frames"
+        ]
+      },
+      "notes": "B alone shows one origin linked by arrows to three endpoints. Both miss the specified subjects; B’s labels are illegible."
+    },
+    {
+      "pair": "P06",
+      "preferred": "B",
+      "scores": {
+        "A": {
+          "subjectFidelity": 2,
+          "composition": 4,
+          "visualCoherence": 5,
+          "constraintAdherence": 2,
+          "artifactControl": 5
+        },
+        "B": {
+          "subjectFidelity": 3,
+          "composition": 5,
+          "visualCoherence": 5,
+          "constraintAdherence": 3,
+          "artifactControl": 5
+        }
+      },
+      "critical": {
+        "A": [
+          "wrong subject: abstract machined slabs and light traces, with no AI agents, API gateway, or distinct microservices"
+        ],
+        "B": []
+      },
+      "notes": "B’s central portal and radiating circuit network read as a gateway with connected services. Neither image shows agents or a title."
+    },
+    {
+      "pair": "P07",
+      "preferred": "A",
+      "scores": {
+        "A": {
+          "subjectFidelity": 4,
+          "composition": 4,
+          "visualCoherence": 4,
+          "constraintAdherence": 4,
+          "artifactControl": 3
+        },
+        "B": {
+          "subjectFidelity": 3,
+          "composition": 4,
+          "visualCoherence": 3,
+          "constraintAdherence": 2,
+          "artifactControl": 3
+        }
+      },
+      "critical": {
+        "A": [
+          "unwanted readable characters on the yellow robot housing"
+        ],
+        "B": [
+          "wrong setting: rubble and debris surround the tool instead of a dark cleanroom"
+        ]
+      },
+      "notes": "Both show a robot over a glowing rectangular wafer. A fits the dark inspection bay; its gripper is crowded but intact."
+    },
+    {
+      "pair": "P08",
+      "preferred": "B",
+      "scores": {
+        "A": {
+          "subjectFidelity": 4,
+          "composition": 5,
+          "visualCoherence": 5,
+          "constraintAdherence": 4,
+          "artifactControl": 5
+        },
+        "B": {
+          "subjectFidelity": 5,
+          "composition": 4,
+          "visualCoherence": 5,
+          "constraintAdherence": 5,
+          "artifactControl": 5
+        }
+      },
+      "critical": {
+        "A": [],
+        "B": []
+      },
+      "notes": "Both are clean cover frames of a robotic tool over a packaged die. B makes inspection and leaded packaging more explicit; neither has a title."
+    },
+    {
+      "pair": "P09",
+      "preferred": "B",
+      "scores": {
+        "A": {
+          "subjectFidelity": 1,
+          "composition": 4,
+          "visualCoherence": 5,
+          "constraintAdherence": 1,
+          "artifactControl": 4
+        },
+        "B": {
+          "subjectFidelity": 1,
+          "composition": 4,
+          "visualCoherence": 5,
+          "constraintAdherence": 1,
+          "artifactControl": 5
+        }
+      },
+      "critical": {
+        "A": [
+          "wrong subject: monochrome mountain landscape with trees and birds, no request, API gateway, or microservices",
+          "unwanted red seal/stamp mark in the lower right"
+        ],
+        "B": [
+          "wrong subject: a single white structure and walkway above clouds, no request, API gateway, or three microservices"
+        ]
+      },
+      "notes": "Both miss the scene. B is a clean render with no marks; A adds an unrequested corner seal. Neither shows a flow splitting toward three services."
+    },
+    {
+      "pair": "P10",
+      "preferred": "A",
+      "scores": {
+        "A": {
+          "subjectFidelity": 2,
+          "composition": 5,
+          "visualCoherence": 4,
+          "constraintAdherence": 2,
+          "artifactControl": 4
+        },
+        "B": {
+          "subjectFidelity": 1,
+          "composition": 4,
+          "visualCoherence": 5,
+          "constraintAdherence": 2,
+          "artifactControl": 5
+        }
+      },
+      "critical": {
+        "A": [
+          "wrong subject: abstract converging light lanes, no AI agents, API gateway, or microservices"
+        ],
+        "B": [
+          "wrong subject: abstract particles and light streaks, no AI agents, API gateway, or microservices"
+        ]
+      },
+      "notes": "Neither shows the title or the named subjects. A’s routed lanes are a closer infrastructure image and a stronger wide cover frame; B is cleaner but nonspecific."
+    },
+    {
+      "pair": "P11",
+      "preferred": "B",
+      "scores": {
+        "A": {
+          "subjectFidelity": 4,
+          "composition": 4,
+          "visualCoherence": 4,
+          "constraintAdherence": 4,
+          "artifactControl": 4
+        },
+        "B": {
+          "subjectFidelity": 4,
+          "composition": 5,
+          "visualCoherence": 5,
+          "constraintAdherence": 4,
+          "artifactControl": 5
+        }
+      },
+      "critical": {
+        "A": [],
+        "B": []
+      },
+      "notes": "A has a clearer jointed arm over a plain glowing square panel in a dim gray room. B has a boom-mounted inspection head over a die-grid wafer in a darker setting, with cleaner geometry and light."
+    },
+    {
+      "pair": "P12",
+      "preferred": "A",
+      "scores": {
+        "A": {
+          "subjectFidelity": 3,
+          "composition": 4,
+          "visualCoherence": 4,
+          "constraintAdherence": 3,
+          "artifactControl": 4
+        },
+        "B": {
+          "subjectFidelity": 2,
+          "composition": 5,
+          "visualCoherence": 5,
+          "constraintAdherence": 2,
+          "artifactControl": 5
+        }
+      },
+      "critical": {
+        "A": [],
+        "B": []
+      },
+      "notes": "Neither shows the title, a manufacturing line, or advanced packaging. A places an overhead inspection head above a chip; B is a clean single-chip macro with no inspection."
+    },
+    {
+      "pair": "P13",
+      "preferred": "tie",
+      "scores": {
+        "A": {
+          "subjectFidelity": 1,
+          "composition": 4,
+          "visualCoherence": 4,
+          "constraintAdherence": 1,
+          "artifactControl": 4
+        },
+        "B": {
+          "subjectFidelity": 1,
+          "composition": 3,
+          "visualCoherence": 4,
+          "constraintAdherence": 1,
+          "artifactControl": 4
+        }
+      },
+      "critical": {
+        "A": [
+          "Wrong subject: a sunlit river valley with cliffs and a waterfall, with no request, API gateway, or microservices."
+        ],
+        "B": [
+          "Wrong subject: three small cartoon figures among outline clouds, with no request flow, API gateway, or microservices."
+        ]
+      },
+      "notes": "Neither image shows a request moving through a gateway to three services. A is a coherent landscape; B is a sparse line drawing whose only countable group is three figures."
+    },
+    {
+      "pair": "P14",
+      "preferred": "A",
+      "scores": {
+        "A": {
+          "subjectFidelity": 2,
+          "composition": 4,
+          "visualCoherence": 4,
+          "constraintAdherence": 2,
+          "artifactControl": 4
+        },
+        "B": {
+          "subjectFidelity": 1,
+          "composition": 4,
+          "visualCoherence": 5,
+          "constraintAdherence": 1,
+          "artifactControl": 5
+        }
+      },
+      "critical": {
+        "A": [
+          "Wrong subject: a human profile portrait with decorative lines; no AI agent, API gateway, or microservices are visible."
+        ],
+        "B": [
+          "Wrong subject: an abstract radial light tunnel; no AI agent, API gateway, or microservices are visible."
+        ]
+      },
+      "notes": "A leaves a large clear field and uses a figure plus connective lines, so it works better as cover art, but the pictured subject is still a person. B is visually clean and has no readable text, yet it depicts none of the stated topics."
+    },
+    {
+      "pair": "P15",
+      "preferred": "B",
+      "scores": {
+        "A": {
+          "subjectFidelity": 3,
+          "composition": 4,
+          "visualCoherence": 4,
+          "constraintAdherence": 3,
+          "artifactControl": 4
+        },
+        "B": {
+          "subjectFidelity": 4,
+          "composition": 5,
+          "visualCoherence": 4,
+          "constraintAdherence": 4,
+          "artifactControl": 4
+        }
+      },
+      "critical": {
+        "A": [
+          "Subject mismatch: a pointed nozzle hovers over a decorative glowing square plate, not a visible inspection of a semiconductor wafer; the room is not a cleanroom."
+        ],
+        "B": []
+      },
+      "notes": "B shows a multi-lens head aimed at a glowing semiconductor device in a dark fab-like room. The device is a square die on a board rather than a round wafer. A has the arm and glow, but the tool reads as machining and the plate surface is a painted swirl."
+    },
+    {
+      "pair": "P16",
+      "preferred": "B",
+      "scores": {
+        "A": {
+          "subjectFidelity": 3,
+          "composition": 4,
+          "visualCoherence": 5,
+          "constraintAdherence": 2,
+          "artifactControl": 5
+        },
+        "B": {
+          "subjectFidelity": 4,
+          "composition": 4,
+          "visualCoherence": 4,
+          "constraintAdherence": 3,
+          "artifactControl": 4
+        }
+      },
+      "critical": {
+        "A": [
+          "Subject gap: only a chip close-up is shown; robotic inspection, manufacturing action, and advanced packaging are absent."
+        ],
+        "B": [
+          "Tiny bottom-right watermark."
+        ]
+      },
+      "notes": "A is a coherent semiconductor macro with no robot or packaging scene. B shows a robotic arm over a lit chip and circuit graphics, with open space at the left; advanced packaging is not distinctly shown."
+    },
+    {
+      "pair": "P17",
+      "preferred": "A",
+      "scores": {
+        "A": {
+          "subjectFidelity": 1,
+          "composition": 4,
+          "visualCoherence": 4,
+          "constraintAdherence": 2,
+          "artifactControl": 4
+        },
+        "B": {
+          "subjectFidelity": 1,
+          "composition": 5,
+          "visualCoherence": 4,
+          "constraintAdherence": 1,
+          "artifactControl": 4
+        }
+      },
+      "critical": {
+        "A": [
+          "wrong subject: vertical exploded mechanical stack above clouds, with no visible request, API gateway, or three microservices"
+        ],
+        "B": [
+          "wrong subject: mountain lake landscape with rainbow, temple, and flying creatures, with no visible request, API gateway, or three microservices"
+        ]
+      },
+      "notes": "Neither side shows a request moving through a gateway into three services. A remains a technical assembly; B leaves that subject entirely. No readable text, logo, watermark, or severe structural breakage is visible on either side."
+    },
+    {
+      "pair": "P18",
+      "preferred": "B",
+      "scores": {
+        "A": {
+          "subjectFidelity": 1,
+          "composition": 4,
+          "visualCoherence": 5,
+          "constraintAdherence": 2,
+          "artifactControl": 5
+        },
+        "B": {
+          "subjectFidelity": 2,
+          "composition": 4,
+          "visualCoherence": 4,
+          "constraintAdherence": 2,
+          "artifactControl": 4
+        }
+      },
+      "critical": {
+        "A": [
+          "wrong subject: abstract blue-orange light tunnel, with no visible AI agents, API gateway, microservices, or cover title"
+        ],
+        "B": [
+          "wrong subject: horizontal exploded mechanical parts, with no visible AI agents, API gateway, microservices, or cover title"
+        ]
+      },
+      "notes": "Both are wide and unlettered, so neither carries the title Building Reliable AI Agents. A is cleaner but only a central streak of light. B shows signal lines feeding a row of distinct parts, which is closer to a system, without depicting the requested subjects. No readable text, logo, watermark, or severe structural breakage is visible."
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+# K3 v2: subject-invariant revision after the MiniMax blind review; generation-pending.
+# Adapted from Open Image Prompts `handcrafted-clay-character` (MIT). See presets/SOURCE.md.
+name: handcrafted-clay-character
+description: Handmade stop-motion clay forms with simplified proportions, subtle tool marks, and believable contact.
+modifiers: preserve the literal subject, entity count, setting, and requested use, changing only rendering, composition, material, light, and palette, handcrafted stop-motion-style matte kneaded clay, simplified rounded proportions, one expressive facial cue, subtle fingerprints and sculpting marks, physically believable weight and contact, centered full-body composition, soft diffused studio light, restrained earthy or pastel palette, simple tactile backdrop
+bestFor: mascots, educational characters, gentle miniature storytelling, tactile collectible figures
+negative: subject substitution, changed entity count, unrelated narrative, pseudo-text, letters, watermarks, glossy plastic, mixed materials on every body part, floating feet, hyperreal fur, crowded toy shelf, generic imitation characters, text, logos
+source: { kind: extracted }

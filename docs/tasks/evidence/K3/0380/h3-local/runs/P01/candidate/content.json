@@ -1,0 +1,24 @@
+{
+  "body": "highly detailed depiction of a request flowing through an API gateway to three microservices.\nMood: peaceful and contemplative — evoking calm contemplation.\nComposition: balanced with clear focal point and visual breathing room.\nColor palette: harmonious and balanced, context-appropriate.\nLighting: natural and flattering with gentle shadows.\nDrawing from provided context, \nrender with artistic precision, rich textures, and professional color grading., 8K, high-quality, masterpiece, professional, rule of thirds, rich textures, crisp details, preserve the literal subject, entity count, setting, and requested use, changing only rendering, composition, material, light, and palette, limited-ink risograph editorial illustration, one bold readable silhouette, one to three restrained spot inks on warm uncoated paper, solid ink shapes and one consistent halftone screen, subtle paper tooth, slight edge-only registration drift, intentional overprint, strong thumbnail hierarchy, avoid: subject substitution, changed entity count, unrelated narrative, pseudo-text, letters, watermarks, rainbow palette, continuous gradients, glossy 3D, general blur, photographic texture, dense microcopy, invented text, logos, fake vintage stains, mixed watercolor or chrome effects",
+  "title": "free",
+  "format": "image",
+  "references": [],
+  "metadata": {
+    "generator": "kk:image-gen",
+    "job": "free",
+    "images": [
+      {
+        "path": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P01/candidate/content-free-01.png",
+        "format": "free",
+        "style": "limited-ink-risograph-editorial",
+        "provider": "h3-local",
+        "model": "h3",
+        "prompt": "highly detailed depiction of a request flowing through an API gateway to three microservices.\nMood: peaceful and contemplative — evoking calm contemplation.\nComposition: balanced with clear focal point and visual breathing room.\nColor palette: harmonious and balanced, context-appropriate.\nLighting: natural and flattering with gentle shadows.\nDrawing from provided context, \nrender with artistic precision, rich textures, and professional color grading., 8K, high-quality, masterpiece, professional, rule of thirds, rich textures, crisp details, preserve the literal subject, entity count, setting, and requested use, changing only rendering, composition, material, light, and palette, limited-ink risograph editorial illustration, one bold readable silhouette, one to three restrained spot inks on warm uncoated paper, solid ink shapes and one consistent halftone screen, subtle paper tooth, slight edge-only registration drift, intentional overprint, strong thumbnail hierarchy, avoid: subject substitution, changed entity count, unrelated narrative, pseudo-text, letters, watermarks, rainbow palette, continuous gradients, glossy 3D, general blur, photographic texture, dense microcopy, invented text, logos, fake vintage stains, mixed watercolor or chrome effects",
+        "bytes": 2309462,
+        "sizeRequest": "exact",
+        "width": 1024,
+        "height": 1024
+      }
+    ]
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "body": "highly detailed depiction of a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom.\nMood: peaceful and contemplative — evoking calm contemplation.\nComposition: balanced with clear focal point and visual breathing room.\nColor palette: harmonious and balanced, context-appropriate.\nLighting: natural and flattering with gentle shadows.\nDrawing from provided context, \nrender with artistic precision, rich textures, and professional color grading., 8K, high-quality, masterpiece, professional, rule of thirds, rich textures, crisp details, limited-ink risograph editorial illustration, one bold readable silhouette, one to three restrained spot inks on warm uncoated paper, solid ink shapes and one consistent halftone screen, subtle paper tooth, slight edge-only registration drift, intentional overprint, strong thumbnail hierarchy, avoid: rainbow palette, continuous gradients, glossy 3D, general blur, photographic texture, dense microcopy, invented text, logos, fake vintage stains, mixed watercolor or chrome effects",
+  "title": "free",
+  "format": "image",
+  "references": [],
+  "metadata": {
+    "generator": "kk:image-gen",
+    "job": "free",
+    "images": [
+      {
+        "path": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval/runs/P03/candidate/content-free-01.jpg",
+        "format": "free",
+        "style": "limited-ink-risograph-editorial",
+        "provider": "minimax",
+        "model": "image-01",
+        "prompt": "highly detailed depiction of a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom.\nMood: peaceful and contemplative — evoking calm contemplation.\nComposition: balanced with clear focal point and visual breathing room.\nColor palette: harmonious and balanced, context-appropriate.\nLighting: natural and flattering with gentle shadows.\nDrawing from provided context, \nrender with artistic precision, rich textures, and professional color grading., 8K, high-quality, masterpiece, professional, rule of thirds, rich textures, crisp details, limited-ink risograph editorial illustration, one bold readable silhouette, one to three restrained spot inks on warm uncoated paper, solid ink shapes and one consistent halftone screen, subtle paper tooth, slight edge-only registration drift, intentional overprint, strong thumbnail hierarchy, avoid: rainbow palette, continuous gradients, glossy 3D, general blur, photographic texture, dense microcopy, invented text, logos, fake vintage stains, mixed watercolor or chrome effects",
+        "bytes": 399047,
+        "sizeRequest": "exact",
+        "width": 1024,
+        "height": 1024
+      }
+    ]
+  }
+}

@@ -1,0 +1,1063 @@
+{
+  "schema_version": "k3-mapping-v1",
+  "provider": "h3-local",
+  "model": "h3",
+  "jobs": [
+    {
+      "pair": "P01",
+      "candidate": "limited-ink-risograph-editorial",
+      "baseline": "editorial",
+      "format": "free",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "baseline",
+      "side": "A",
+      "style": "editorial",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P01/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P01/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P01/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P01/A.jpg"
+    },
+    {
+      "pair": "P01",
+      "candidate": "limited-ink-risograph-editorial",
+      "baseline": "editorial",
+      "format": "free",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "candidate",
+      "side": "B",
+      "style": "limited-ink-risograph-editorial",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P01/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P01/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P01/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P01/B.jpg"
+    },
+    {
+      "pair": "P02",
+      "candidate": "limited-ink-risograph-editorial",
+      "baseline": "editorial",
+      "format": "cover",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "baseline",
+      "side": "A",
+      "style": "editorial",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P02/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P02/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P02/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P02/A.jpg"
+    },
+    {
+      "pair": "P02",
+      "candidate": "limited-ink-risograph-editorial",
+      "baseline": "editorial",
+      "format": "cover",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "candidate",
+      "side": "B",
+      "style": "limited-ink-risograph-editorial",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P02/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P02/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P02/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P02/B.jpg"
+    },
+    {
+      "pair": "P03",
+      "candidate": "limited-ink-risograph-editorial",
+      "baseline": "editorial",
+      "format": "free",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "baseline",
+      "side": "A",
+      "style": "editorial",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P03/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P03/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P03/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P03/A.jpg"
+    },
+    {
+      "pair": "P03",
+      "candidate": "limited-ink-risograph-editorial",
+      "baseline": "editorial",
+      "format": "free",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "candidate",
+      "side": "B",
+      "style": "limited-ink-risograph-editorial",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P03/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P03/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P03/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P03/B.jpg"
+    },
+    {
+      "pair": "P04",
+      "candidate": "limited-ink-risograph-editorial",
+      "baseline": "editorial",
+      "format": "cover",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "baseline",
+      "side": "B",
+      "style": "editorial",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P04/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P04/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P04/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P04/B.jpg"
+    },
+    {
+      "pair": "P04",
+      "candidate": "limited-ink-risograph-editorial",
+      "baseline": "editorial",
+      "format": "cover",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "candidate",
+      "side": "A",
+      "style": "limited-ink-risograph-editorial",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P04/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P04/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P04/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P04/A.jpg"
+    },
+    {
+      "pair": "P05",
+      "candidate": "layered-papercraft-diorama",
+      "baseline": "sketch",
+      "format": "free",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "baseline",
+      "side": "B",
+      "style": "sketch",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P05/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P05/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P05/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P05/B.jpg"
+    },
+    {
+      "pair": "P05",
+      "candidate": "layered-papercraft-diorama",
+      "baseline": "sketch",
+      "format": "free",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "candidate",
+      "side": "A",
+      "style": "layered-papercraft-diorama",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P05/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P05/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P05/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P05/A.jpg"
+    },
+    {
+      "pair": "P06",
+      "candidate": "layered-papercraft-diorama",
+      "baseline": "sketch",
+      "format": "cover",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "baseline",
+      "side": "B",
+      "style": "sketch",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P06/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P06/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P06/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P06/B.jpg"
+    },
+    {
+      "pair": "P06",
+      "candidate": "layered-papercraft-diorama",
+      "baseline": "sketch",
+      "format": "cover",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "candidate",
+      "side": "A",
+      "style": "layered-papercraft-diorama",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P06/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P06/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P06/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P06/A.jpg"
+    },
+    {
+      "pair": "P07",
+      "candidate": "layered-papercraft-diorama",
+      "baseline": "sketch",
+      "format": "free",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "baseline",
+      "side": "A",
+      "style": "sketch",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P07/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P07/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P07/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P07/A.jpg"
+    },
+    {
+      "pair": "P07",
+      "candidate": "layered-papercraft-diorama",
+      "baseline": "sketch",
+      "format": "free",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "candidate",
+      "side": "B",
+      "style": "layered-papercraft-diorama",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P07/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P07/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P07/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P07/B.jpg"
+    },
+    {
+      "pair": "P08",
+      "candidate": "layered-papercraft-diorama",
+      "baseline": "sketch",
+      "format": "cover",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "baseline",
+      "side": "B",
+      "style": "sketch",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P08/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P08/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P08/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P08/B.jpg"
+    },
+    {
+      "pair": "P08",
+      "candidate": "layered-papercraft-diorama",
+      "baseline": "sketch",
+      "format": "cover",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "candidate",
+      "side": "A",
+      "style": "layered-papercraft-diorama",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P08/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P08/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P08/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P08/A.jpg"
+    },
+    {
+      "pair": "P09",
+      "candidate": "minimalist-ink-wash-negative-space",
+      "baseline": "minimalist",
+      "format": "free",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "baseline",
+      "side": "B",
+      "style": "minimalist",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P09/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P09/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P09/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P09/B.jpg"
+    },
+    {
+      "pair": "P09",
+      "candidate": "minimalist-ink-wash-negative-space",
+      "baseline": "minimalist",
+      "format": "free",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "candidate",
+      "side": "A",
+      "style": "minimalist-ink-wash-negative-space",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P09/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P09/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P09/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P09/A.jpg"
+    },
+    {
+      "pair": "P10",
+      "candidate": "minimalist-ink-wash-negative-space",
+      "baseline": "minimalist",
+      "format": "cover",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "baseline",
+      "side": "A",
+      "style": "minimalist",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P10/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P10/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P10/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P10/A.jpg"
+    },
+    {
+      "pair": "P10",
+      "candidate": "minimalist-ink-wash-negative-space",
+      "baseline": "minimalist",
+      "format": "cover",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "candidate",
+      "side": "B",
+      "style": "minimalist-ink-wash-negative-space",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P10/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P10/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P10/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P10/B.jpg"
+    },
+    {
+      "pair": "P11",
+      "candidate": "minimalist-ink-wash-negative-space",
+      "baseline": "minimalist",
+      "format": "free",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "baseline",
+      "side": "B",
+      "style": "minimalist",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P11/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P11/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P11/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P11/B.jpg"
+    },
+    {
+      "pair": "P11",
+      "candidate": "minimalist-ink-wash-negative-space",
+      "baseline": "minimalist",
+      "format": "free",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "candidate",
+      "side": "A",
+      "style": "minimalist-ink-wash-negative-space",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P11/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P11/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P11/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P11/A.jpg"
+    },
+    {
+      "pair": "P12",
+      "candidate": "minimalist-ink-wash-negative-space",
+      "baseline": "minimalist",
+      "format": "cover",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "baseline",
+      "side": "B",
+      "style": "minimalist",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P12/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P12/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P12/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P12/B.jpg"
+    },
+    {
+      "pair": "P12",
+      "candidate": "minimalist-ink-wash-negative-space",
+      "baseline": "minimalist",
+      "format": "cover",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "candidate",
+      "side": "A",
+      "style": "minimalist-ink-wash-negative-space",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P12/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P12/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P12/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P12/A.jpg"
+    },
+    {
+      "pair": "P13",
+      "candidate": "notion-editorial-line-art",
+      "baseline": "technical-diagram",
+      "format": "free",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "baseline",
+      "side": "A",
+      "style": "technical-diagram",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P13/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P13/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P13/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P13/A.jpg"
+    },
+    {
+      "pair": "P13",
+      "candidate": "notion-editorial-line-art",
+      "baseline": "technical-diagram",
+      "format": "free",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "candidate",
+      "side": "B",
+      "style": "notion-editorial-line-art",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P13/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P13/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P13/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P13/B.jpg"
+    },
+    {
+      "pair": "P14",
+      "candidate": "notion-editorial-line-art",
+      "baseline": "technical-diagram",
+      "format": "cover",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "baseline",
+      "side": "B",
+      "style": "technical-diagram",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P14/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P14/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P14/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P14/B.jpg"
+    },
+    {
+      "pair": "P14",
+      "candidate": "notion-editorial-line-art",
+      "baseline": "technical-diagram",
+      "format": "cover",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "candidate",
+      "side": "A",
+      "style": "notion-editorial-line-art",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P14/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P14/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P14/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P14/A.jpg"
+    },
+    {
+      "pair": "P15",
+      "candidate": "notion-editorial-line-art",
+      "baseline": "technical-diagram",
+      "format": "free",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "baseline",
+      "side": "B",
+      "style": "technical-diagram",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P15/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P15/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P15/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P15/B.jpg"
+    },
+    {
+      "pair": "P15",
+      "candidate": "notion-editorial-line-art",
+      "baseline": "technical-diagram",
+      "format": "free",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "candidate",
+      "side": "A",
+      "style": "notion-editorial-line-art",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P15/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P15/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P15/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P15/A.jpg"
+    },
+    {
+      "pair": "P16",
+      "candidate": "notion-editorial-line-art",
+      "baseline": "technical-diagram",
+      "format": "cover",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "baseline",
+      "side": "A",
+      "style": "technical-diagram",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P16/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P16/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P16/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P16/A.jpg"
+    },
+    {
+      "pair": "P16",
+      "candidate": "notion-editorial-line-art",
+      "baseline": "technical-diagram",
+      "format": "cover",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "candidate",
+      "side": "B",
+      "style": "notion-editorial-line-art",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P16/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P16/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P16/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P16/B.jpg"
+    },
+    {
+      "pair": "P17",
+      "candidate": "product-exploded-identity",
+      "baseline": "technical-diagram",
+      "format": "free",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "baseline",
+      "side": "B",
+      "style": "technical-diagram",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P17/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P17/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P17/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P17/B.jpg"
+    },
+    {
+      "pair": "P17",
+      "candidate": "product-exploded-identity",
+      "baseline": "technical-diagram",
+      "format": "free",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "candidate",
+      "side": "A",
+      "style": "product-exploded-identity",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P17/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P17/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P17/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P17/A.jpg"
+    },
+    {
+      "pair": "P18",
+      "candidate": "product-exploded-identity",
+      "baseline": "technical-diagram",
+      "format": "cover",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "baseline",
+      "side": "A",
+      "style": "technical-diagram",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P18/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P18/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P18/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P18/A.jpg"
+    },
+    {
+      "pair": "P18",
+      "candidate": "product-exploded-identity",
+      "baseline": "technical-diagram",
+      "format": "cover",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "candidate",
+      "side": "B",
+      "style": "product-exploded-identity",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P18/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P18/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P18/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P18/B.jpg"
+    },
+    {
+      "pair": "P19",
+      "candidate": "product-exploded-identity",
+      "baseline": "technical-diagram",
+      "format": "free",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "baseline",
+      "side": "B",
+      "style": "technical-diagram",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P19/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P19/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P19/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P19/B.jpg"
+    },
+    {
+      "pair": "P19",
+      "candidate": "product-exploded-identity",
+      "baseline": "technical-diagram",
+      "format": "free",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "candidate",
+      "side": "A",
+      "style": "product-exploded-identity",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P19/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P19/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P19/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P19/A.jpg"
+    },
+    {
+      "pair": "P20",
+      "candidate": "product-exploded-identity",
+      "baseline": "technical-diagram",
+      "format": "cover",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "baseline",
+      "side": "A",
+      "style": "technical-diagram",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P20/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P20/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P20/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P20/A.jpg"
+    },
+    {
+      "pair": "P20",
+      "candidate": "product-exploded-identity",
+      "baseline": "technical-diagram",
+      "format": "cover",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "candidate",
+      "side": "B",
+      "style": "product-exploded-identity",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P20/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P20/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P20/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P20/B.jpg"
+    },
+    {
+      "pair": "P21",
+      "candidate": "handcrafted-clay-character",
+      "baseline": "cute",
+      "format": "free",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "baseline",
+      "side": "A",
+      "style": "cute",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P21/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P21/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P21/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P21/A.jpg"
+    },
+    {
+      "pair": "P21",
+      "candidate": "handcrafted-clay-character",
+      "baseline": "cute",
+      "format": "free",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "candidate",
+      "side": "B",
+      "style": "handcrafted-clay-character",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P21/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P21/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P21/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P21/B.jpg"
+    },
+    {
+      "pair": "P22",
+      "candidate": "handcrafted-clay-character",
+      "baseline": "cute",
+      "format": "cover",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "baseline",
+      "side": "A",
+      "style": "cute",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P22/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P22/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P22/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P22/A.jpg"
+    },
+    {
+      "pair": "P22",
+      "candidate": "handcrafted-clay-character",
+      "baseline": "cute",
+      "format": "cover",
+      "subject": {
+        "id": "microservices",
+        "free": "a request flowing through an API gateway to three microservices",
+        "cover": {
+          "title": "Building Reliable AI Agents",
+          "subtitle": "Patterns for production",
+          "topics": "AI agents, API gateways, microservices"
+        }
+      },
+      "arm": "candidate",
+      "side": "B",
+      "style": "handcrafted-clay-character",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P22/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P22/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P22/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P22/B.jpg"
+    },
+    {
+      "pair": "P23",
+      "candidate": "handcrafted-clay-character",
+      "baseline": "cute",
+      "format": "free",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "baseline",
+      "side": "B",
+      "style": "cute",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P23/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P23/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P23/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P23/B.jpg"
+    },
+    {
+      "pair": "P23",
+      "candidate": "handcrafted-clay-character",
+      "baseline": "cute",
+      "format": "free",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "candidate",
+      "side": "A",
+      "style": "handcrafted-clay-character",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P23/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P23/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P23/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P23/A.jpg"
+    },
+    {
+      "pair": "P24",
+      "candidate": "handcrafted-clay-character",
+      "baseline": "cute",
+      "format": "cover",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "baseline",
+      "side": "A",
+      "style": "cute",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P24/baseline",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P24/baseline/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P24/baseline/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P24/A.jpg"
+    },
+    {
+      "pair": "P24",
+      "candidate": "handcrafted-clay-character",
+      "baseline": "cute",
+      "format": "cover",
+      "subject": {
+        "id": "semiconductor",
+        "free": "a robotic arm inspecting a glowing semiconductor wafer in a dark cleanroom",
+        "cover": {
+          "title": "Inside Modern Semiconductors",
+          "subtitle": "From wafer to package",
+          "topics": "semiconductor manufacturing, robotic inspection, advanced packaging"
+        }
+      },
+      "arm": "candidate",
+      "side": "B",
+      "style": "handcrafted-clay-character",
+      "runDir": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P24/candidate",
+      "input": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P24/candidate/in.json",
+      "output": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/runs/P24/candidate/content.json",
+      "blindImage": "/Users/robin/xprojects/knowledge-kit/.works/tmp/k3-style-eval-h3-local/blind/P24/B.jpg"
+    }
+  ]
+}

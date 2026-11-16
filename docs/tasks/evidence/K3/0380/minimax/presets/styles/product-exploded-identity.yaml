@@ -1,0 +1,9 @@
+# Adapted from Open Image Prompts `product-exploded-identity` (MIT).
+# Upstream: corpus-reviewed / generation-pending; reference tweets: 2071674030998933562, 2039274904843960366, 2073026525243310084.
+# See plugins/generations/image-gen/presets/SOURCE.md. No upstream image or source prompt is bundled.
+name: product-exploded-identity
+description: Precision exploded views that explain product structure through engineering alignment and material accuracy.
+modifiers: precision exploded-view technical illustration, outer shell and functional components separated along one clear engineering axis, exact alignment and believable part hierarchy, one highlighted hero core, orthographic three-quarter view, controlled spacing, material-accurate metal plastic and glass, original product silhouette remains readable
+bestFor: product architecture, engineering explainers, technical illustrations, design campaigns
+negative: random fragments, incorrect mechanical structure, chaotic spacing, unrecognizable product silhouette, decorative fantasy gears, illegible annotations, text, logos
+source: { kind: extracted }

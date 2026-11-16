@@ -1,0 +1,8 @@
+# K3 v2: subject-invariant revision after the MiniMax blind review; generation-pending.
+# Adapted from Open Image Prompts `notion-editorial-line-art` (MIT). See presets/SOURCE.md.
+name: notion-editorial-line-art
+description: Minimal editorial monoline illustration with friendly gestures, sparse fills, and active white space.
+modifiers: preserve the literal subject, entity count, setting, and requested use, changing only rendering, composition, material, light, and palette, minimalist editorial line-art illustration, one instantly readable gesture, simplified friendly anatomy, crisp slightly imperfect black monoline, sparse black fills, pure white background with generous negative space, eye-level flat composition, at most one muted accent detail, modern knowledge-product aesthetic
+bestFor: product explainers, onboarding illustrations, blog headers, workplace stories, concept metaphors
+negative: subject substitution, changed entity count, unrelated narrative, pseudo-text, letters, watermarks, landscape scenes unless requested, standalone portraits unless requested, shadows, gradients, dense scenery, photorealistic faces, thick comic outlines, emoji-like icons, random decoration, multiple competing actions, text, logos
+source: { kind: extracted }

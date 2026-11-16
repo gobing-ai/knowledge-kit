@@ -1,0 +1,173 @@
+{
+  "schema_version": "k3-blind-v1",
+  "pairs": [
+    {
+      "pair": "P01",
+      "format": "free",
+      "subject": "microservices",
+      "A": "P01/A.jpg",
+      "B": "P01/B.jpg"
+    },
+    {
+      "pair": "P02",
+      "format": "cover",
+      "subject": "microservices",
+      "A": "P02/A.jpg",
+      "B": "P02/B.jpg"
+    },
+    {
+      "pair": "P03",
+      "format": "free",
+      "subject": "semiconductor",
+      "A": "P03/A.jpg",
+      "B": "P03/B.jpg"
+    },
+    {
+      "pair": "P04",
+      "format": "cover",
+      "subject": "semiconductor",
+      "A": "P04/A.jpg",
+      "B": "P04/B.jpg"
+    },
+    {
+      "pair": "P05",
+      "format": "free",
+      "subject": "microservices",
+      "A": "P05/A.jpg",
+      "B": "P05/B.jpg"
+    },
+    {
+      "pair": "P06",
+      "format": "cover",
+      "subject": "microservices",
+      "A": "P06/A.jpg",
+      "B": "P06/B.jpg"
+    },
+    {
+      "pair": "P07",
+      "format": "free",
+      "subject": "semiconductor",
+      "A": "P07/A.jpg",
+      "B": "P07/B.jpg"
+    },
+    {
+      "pair": "P08",
+      "format": "cover",
+      "subject": "semiconductor",
+      "A": "P08/A.jpg",
+      "B": "P08/B.jpg"
+    },
+    {
+      "pair": "P09",
+      "format": "free",
+      "subject": "microservices",
+      "A": "P09/A.jpg",
+      "B": "P09/B.jpg"
+    },
+    {
+      "pair": "P10",
+      "format": "cover",
+      "subject": "microservices",
+      "A": "P10/A.jpg",
+      "B": "P10/B.jpg"
+    },
+    {
+      "pair": "P11",
+      "format": "free",
+      "subject": "semiconductor",
+      "A": "P11/A.jpg",
+      "B": "P11/B.jpg"
+    },
+    {
+      "pair": "P12",
+      "format": "cover",
+      "subject": "semiconductor",
+      "A": "P12/A.jpg",
+      "B": "P12/B.jpg"
+    },
+    {
+      "pair": "P13",
+      "format": "free",
+      "subject": "microservices",
+      "A": "P13/A.jpg",
+      "B": "P13/B.jpg"
+    },
+    {
+      "pair": "P14",
+      "format": "cover",
+      "subject": "microservices",
+      "A": "P14/A.jpg",
+      "B": "P14/B.jpg"
+    },
+    {
+      "pair": "P15",
+      "format": "free",
+      "subject": "semiconductor",
+      "A": "P15/A.jpg",
+      "B": "P15/B.jpg"
+    },
+    {
+      "pair": "P16",
+      "format": "cover",
+      "subject": "semiconductor",
+      "A": "P16/A.jpg",
+      "B": "P16/B.jpg"
+    },
+    {
+      "pair": "P17",
+      "format": "free",
+      "subject": "microservices",
+      "A": "P17/A.jpg",
+      "B": "P17/B.jpg"
+    },
+    {
+      "pair": "P18",
+      "format": "cover",
+      "subject": "microservices",
+      "A": "P18/A.jpg",
+      "B": "P18/B.jpg"
+    },
+    {
+      "pair": "P19",
+      "format": "free",
+      "subject": "semiconductor",
+      "A": "P19/A.jpg",
+      "B": "P19/B.jpg"
+    },
+    {
+      "pair": "P20",
+      "format": "cover",
+      "subject": "semiconductor",
+      "A": "P20/A.jpg",
+      "B": "P20/B.jpg"
+    },
+    {
+      "pair": "P21",
+      "format": "free",
+      "subject": "microservices",
+      "A": "P21/A.jpg",
+      "B": "P21/B.jpg"
+    },
+    {
+      "pair": "P22",
+      "format": "cover",
+      "subject": "microservices",
+      "A": "P22/A.jpg",
+      "B": "P22/B.jpg"
+    },
+    {
+      "pair": "P23",
+      "format": "free",
+      "subject": "semiconductor",
+      "A": "P23/A.jpg",
+      "B": "P23/B.jpg"
+    },
+    {
+      "pair": "P24",
+      "format": "cover",
+      "subject": "semiconductor",
+      "A": "P24/A.jpg",
+      "B": "P24/B.jpg"
+    }
+  ]
+}

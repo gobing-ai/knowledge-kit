@@ -1,0 +1,8 @@
+# K3 v2: subject-invariant revision after the MiniMax blind review; generation-pending.
+# Adapted from Open Image Prompts `layered-papercraft-diorama` (MIT). See presets/SOURCE.md.
+name: layered-papercraft-diorama
+description: Tactile hand-cut paper scenes with readable depth bands, clean edges, and consistent shallow shadows.
+modifiers: preserve the literal subject, entity count, setting, and requested use, changing only rendering, composition, material, light, and palette, handcrafted layered matte paper planes, readable foreground subject and background bands, visible paper fibers and clean cut edges, one soft directional light, consistent shallow shadows between layers, restrained palette, clear focal opening
+bestFor: editorial illustrations, storybook covers, warm campaign imagery, nature scenes, window displays
+negative: subject substitution, changed entity count, unrelated narrative, pseudo-text, letters, watermarks, glossy plastic, clay surfaces, floating pieces, inconsistent light direction, excessive filigree, crowded decorative props, realistic human skin, invented text, logos
+source: { kind: extracted }
