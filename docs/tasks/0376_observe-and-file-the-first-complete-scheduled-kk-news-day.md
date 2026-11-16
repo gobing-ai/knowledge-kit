@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Observe and file the first complete scheduled kk news day
-status: backlog
+status: wip
 template: standard
 created_at: 2026-11-15T20:14:20.385Z
-updated_at: "2026-11-15T20:14:26.756Z"
+updated_at: "2026-11-16T03:28:56.939Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -95,11 +95,50 @@ requirements are identical; 0376 is the live one.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+**Outcome: blocked on the clock — no valid scheduled day exists yet.** The observation ran against the production
+host (`mac.lan`) for 2026-11-15 and today's day cannot satisfy R1/R2. Recording it rather than weakening the
+requirement (R4).
+
+**What the scheduler actually did today** (`queue_jobs`, `type='scheduler.custom'`):
+
+| Tick | Command the scheduler issued | Status | `last_error` |
+| --- | --- | --- | --- |
+| 04:30 `kk-daily-ai-voice` | `bun scripts/daily-ai-news.ts generate --full` | failed | `scheduler job "kk-daily-ai-voice" exited 1: error: Module not found "scripts/daily-ai-news.ts"` |
+| 07:00 `kk-daily-publish3` | `bun scripts/daily-ai-news.ts publish --window overseas-rss --unattended` | failed | same `Module not found` |
+| 17:00 `kk-daily-publish3-cn-peak` | — never issued | — | paused on purpose by `efe2a197 chore(schedule): pause the 17:00 cn-peak tick while a generation is in flight` |
+
+**R2 is refuted by today's evidence, not satisfied.** Both ticks that fired named the retired
+`scripts/daily-ai-news.ts` entry point (the file no longer exists — `ls scripts/daily-ai-news.ts` → ENOENT) and died
+before doing any work, so there was no generation and no window to publish.
+
+**Root cause (measured):** the `spur self serve` process that served those ticks was running the *pre-0373*
+schedule. The server now running started at **16:16:30** (`ps -o lstart`), which is also `.spur/config.yaml`'s mtime,
+so the `kk news` verbs 0373 checked in are loaded — but no daily tick has exercised them yet. 16:05's `kk-collect` row
+records the handover: `Process terminated: server restarted while job was in flight`.
+
+**Environment recorded for R3:** host `mac.lan` (`LocalHostName HomeServer`), macOS 27.0.1, arm64 M4, installed `kk`
+0.1.19, scheduler timezone `America/Los_Angeles`, works root `/Users/robin/xprojects/knowledge-kit/.works`, store
+`/Users/robin/xprojects/knowledge-kit/.works/kk.db`, spur db `.spur/spur.db`.
+
+**Why no receipts were filed under `docs/tasks/evidence/0369/20261115/`:** the two fired ticks produced no launch
+receipt (they died at module resolution) and the cn-peak tick produced nothing at all, so a receipts directory would
+have been fabrication. The payload rows quoted above are the honest record.
+
+**Next step (the whole remaining work):** the first valid day is the one whose three ticks fire on the current server
+— 2026-11-16 04:30 / 07:00 / 17:00 `America/Los_Angeles`, after confirming the cn-peak resume. Re-run this task then;
+R1/R2/R3 read off that day's `queue_jobs` payloads, launch receipts and `kk news status --run-date 20261116`.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+Read-only observation queries against the production scheduler, run 2026-11-15 ~19:30 PST:
+
+- `sqlite3 .spur/spur.db "select datetime(created_at/1000,'unixepoch','-8 hours'), status, payload, last_error from queue_jobs where type='scheduler.custom' and json_extract(payload,'$.name') in ('kk-daily-ai-voice','kk-daily-publish3','kk-daily-publish3-cn-peak')"` — two failed ticks, both `Module not found "scripts/daily-ai-news.ts"`; no cn-peak row after 2026-11-14.
+- `ls scripts/daily-ai-news.ts` → `No such file or directory`, so the retired entry point cannot have been current.
+- `ps -o lstart= -p $(pgrep -f "spur self serve")` → `Sun Nov 15 16:16:30 2026`; `ls -la .spur/config.yaml` → same 16:16 mtime, i.e. the `kk news` verbs are loaded only from that restart onward.
+- `git log --oneline -1 -- .spur/config.yaml` context: the 17:00 pause is `efe2a197`, so a missing cn-peak row is expected behaviour, not a scheduler fault.
+- `kk --version` → `0.1.19`; `date` → `Sun Nov 15 19:26:52 PST 2026`.
+
+Not run, deliberately: no manual `kk news generate`, no dry run, no dummy receipt — R4 forbids substituting a hand-run for scheduled production evidence, and the scheduled evidence for a complete day does not exist yet.
 
 ### Review
 
@@ -110,3 +149,7 @@ requirements are identical; 0376 is the live one.
 <!-- Links to features, docs, ADRs, related tasks, or external references. -->
 
 ### History
+
+- 2026-11-16T03:25:27.025Z backlog → todo (system)
+- 2026-11-16T03:28:56.939Z todo → wip (system)
+
