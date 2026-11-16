@@ -93,7 +93,7 @@
             "variant": "social:x",
             "tier": 3,
             "window": "overseas-rss",
-            "mode": "live"
+            "mode": "dummy"
         },
         {
             "plugin": "weibo-pub",
@@ -101,7 +101,7 @@
             "variant": "social:weibo",
             "tier": 3,
             "window": "overseas-rss",
-            "mode": "live"
+            "mode": "dummy"
         },
         {
             "plugin": "threads-pub",
@@ -109,7 +109,7 @@
             "variant": "social:threads",
             "tier": 3,
             "window": "overseas-rss",
-            "mode": "live"
+            "mode": "dummy"
         },
         {
             "plugin": "linkedin-pub",
@@ -117,7 +117,7 @@
             "variant": "social:linkedin",
             "tier": 3,
             "window": "overseas-rss",
-            "mode": "live"
+            "mode": "dummy"
         },
         {
             "plugin": "shipinhao-pub",
