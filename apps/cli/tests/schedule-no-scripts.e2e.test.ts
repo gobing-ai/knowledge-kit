@@ -27,24 +27,49 @@ const JOBS: Record<string, string> = {
     'kk-daily-publish3-cn-peak': 'kk news publish --window cn-peak --unattended --agent pi-dsv4.1-flash-cc',
 };
 
-/** The `command:` of one scheduler job, as written in the checked-in config. */
-function jobCommand(name: string): string {
+/**
+ * One scheduler job's state in the checked-in config. A job may be deliberately DISABLED (commented
+ * out with a dated reason — `kk-daily-publish3-cn-peak` was, while generation still overran the
+ * 17:00 tick), and that is not the silent deletion this file exists to catch: a disabled job must
+ * still be present as a commented block carrying its DISABLED reason.
+ */
+type JobState = { enabled: true; command: string } | { enabled: false; reason: string };
+
+function jobState(name: string): JobState {
     const lines = readFileSync(join(repoRoot, '.spur', 'config.yaml'), 'utf8').split('\n');
     const start = lines.findIndex((line) => line.trim() === `- name: ${name}`);
-    if (start < 0) throw new Error(`scheduler job '${name}' not found in .spur/config.yaml`);
-    for (const line of lines.slice(start + 1)) {
-        const trimmed = line.trim();
-        if (trimmed.startsWith('- name:')) break;
-        if (trimmed.startsWith('command:')) return trimmed.slice('command:'.length).trim();
+    if (start >= 0) {
+        for (const line of lines.slice(start + 1)) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('- name:')) break;
+            if (trimmed.startsWith('command:'))
+                return { enabled: true, command: trimmed.slice('command:'.length).trim() };
+        }
+        throw new Error(`scheduler job '${name}' has no command`);
     }
-    throw new Error(`scheduler job '${name}' has no command`);
+    const disabled = lines.findIndex((line) => line.trim() === `# - name: ${name}`);
+    if (disabled < 0) throw new Error(`scheduler job '${name}' is neither enabled nor disabled in .spur/config.yaml`);
+    const reason = lines
+        .slice(0, disabled)
+        .filter((line) => line.trim().startsWith('#'))
+        .reverse()
+        .find((line) => /DISABLED/i.test(line));
+    if (reason === undefined) throw new Error(`scheduler job '${name}' is commented out without a DISABLED reason`);
+    return { enabled: false, reason: reason.trim() };
 }
 
 describe('scheduler job commands start no entry script (0369 R1, R2)', () => {
     it('runs each of the three jobs as kk verbs with one workflow run per launch', async () => {
         const summary: Array<Record<string, unknown>> = [];
         for (const [name, expected] of Object.entries(JOBS)) {
-            const command = jobCommand(name);
+            const state = jobState(name);
+            if (!state.enabled) {
+                // Disabled on purpose: nothing to exercise, but the reason must survive in the config.
+                expect(state.reason).toMatch(/DISABLED/i);
+                summary.push({ job: name, enabled: false, reason: state.reason });
+                continue;
+            }
+            const command = state.command;
             expect(command).toBe(expected);
             const argv = command.split(/\s+/);
             expect(argv[0]).toBe('kk');
