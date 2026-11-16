@@ -86,7 +86,7 @@ export interface StylePreset {
     typography?: string;
     visualElements?: string[];
     bestFor?: string;
-    /** Provider negative prompt when supported, else appended as 'avoid: …'. */
+    /** Appended as `avoid: …` to every composed provider prompt (K3). */
     negative?: string;
     source?: PresetSource;
 }
@@ -248,9 +248,9 @@ export function renderTemplate(template: string, vars: Record<string, string>, f
 /**
  * R2 — the frozen composition rule, wt's order as built
  * (`template_engine.py:174-190`): rendered body → keywords → style modifiers
- * → caller extra, empty segments dropped. Keeping wt's order makes the ported
- * presets render byte-identically to their wt originals; the extra segment is
- * the only addition (0105's ref-derived traits land there).
+ * → optional `avoid: …` (K3) → caller extra, empty segments dropped. The
+ * negative segment implements 0102's provider-independent fallback without
+ * changing prompts for styles that declare none.
  */
 export function composePrompt(
     format: FormatPreset,
@@ -259,7 +259,8 @@ export function composePrompt(
     extra?: string,
 ): string {
     const body = renderTemplate(format.template, mergeVars(format.variables, vars), format.name);
-    return [body, format.keywords.join(', '), style.modifiers, extra].filter(Boolean).join(', ');
+    const negative = style.negative ? `avoid: ${style.negative}` : undefined;
+    return [body, format.keywords.join(', '), style.modifiers, negative, extra].filter(Boolean).join(', ');
 }
 
 /** Discovery diagnostic, mirroring kk-core's `DiscoveryDiagnostic` shape. */

@@ -490,6 +490,32 @@ describe('0182 — the preset canvas reaches the provider, or the delivery is re
         return ((content.metadata as Record<string, unknown>).images ?? []) as Array<Record<string, unknown>>;
     }
 
+    test('K3: a declared style negative reaches the real provider request after modifiers and before extra', async () => {
+        const stubby = recordingStub('minimax', { model: 'image-01', bytes: pngBytes(1344, 576) });
+        const doc = {
+            id: 'negative-prompt',
+            title: 'Negative prompt',
+            body: '',
+            metadata: {
+                imageGen: {
+                    job: 'cover',
+                    format: 'daily-news-cover',
+                    style: 'daily-news',
+                    vars: { subject: 'a satellite above a city at dawn' },
+                    extra: 'caller-extra',
+                },
+            },
+        } as Doc;
+
+        await runOut('out-k3-negative', [doc], stubby.provider);
+
+        const prompt = stubby.requests[0]?.prompt ?? '';
+        expect(prompt).toContain(
+            'limited palette, avoid: text, letters, words, numbers, captions, watermark, logo, brand marks, flags, real people, recognizable faces, photorealism, clutter, caller-extra',
+        );
+        expect(prompt.match(/avoid:/g)).toHaveLength(1);
+    });
+
     test('an aspect-only provider on xhs-card keeps the aspect request and records sizeRequest aspect (R2)', async () => {
         const stubby = recordingStub('minimax', { model: 'image-01', bytes: pngBytes(864, 1152) });
         const content = await runOut('out-0182-aspect', [xhsCardDoc()], stubby.provider, cardComposer());
