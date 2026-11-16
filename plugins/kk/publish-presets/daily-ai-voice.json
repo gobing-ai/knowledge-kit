@@ -26,7 +26,7 @@
             "variant": "episode",
             "tier": 1,
             "window": "after-generate",
-            "mode": "live"
+            "mode": "off"
         },
         {
             "plugin": "xhs-pub",
