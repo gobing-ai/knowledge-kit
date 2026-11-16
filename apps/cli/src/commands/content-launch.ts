@@ -31,6 +31,7 @@ import { type LaunchReceipt, launchWorkflow, type PlannedLaunch, PUBLISH_WORKFLO
 import { consoleOutput } from '../output';
 import { resolvePackageRoot } from '../package-root';
 import { PublishWindowSchema } from '../publish-core';
+import { resolveBundlePath } from '../publish-matrix';
 import { type ContentConfigDocument, configPath, expandHome, readConfig, resolveWorksDir } from './content';
 
 /** Windows `publish` accepts (design §1.1; the matrix's own enum from 0364). */
@@ -370,7 +371,10 @@ function nounForType(type: string): string {
 async function publishRun(settings: PublishRunSettings): Promise<LaunchReceipt> {
     const { fs, type, resolved, worksDir, run } = settings;
     const publishDir = join(run.workDir, '4-publish');
-    const bundlePath = join(publishDir, 'bundle.json');
+    // `generate` freezes the bundle at the run root and records every variant path relative to it,
+    // so publish must resolve through the same helper the plan side uses. A hardcoded
+    // `4-publish/bundle.json` made a freshly generated run unpublishable (0382).
+    const bundlePath = await resolveBundlePath(fs, run.workDir);
     const receiptPath = join(publishDir, `schedule-receipt.${settings.window}.json`);
     const generateReceipt = await readJson(fs, join(run.workDir, 'schedule-receipt.json'));
     const running = typeof generateReceipt?.status === 'string' && generateReceipt.status === 'running';

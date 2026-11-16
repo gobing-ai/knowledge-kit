@@ -141,9 +141,14 @@ export const PublishPlanSchema = z
  * with both files keeps using the frozen one.
  */
 export async function resolveBundlePath(fs: FileSystem, workDir: string): Promise<string> {
-    const frozen = join(workDir, '4-publish', 'bundle.json');
-    if (await fs.exists(frozen)) return frozen;
-    return join(workDir, 'bundle.json');
+    // The run root first (0382): `generate-bundle --stage freeze` writes the news bundle there and
+    // records every variant path relative to that directory (`30-variants/…`), so a bundle read from
+    // `4-publish/` would resolve those paths against the wrong base and fail with
+    // "variant file not found: 4-publish/30-variants/…". The `4-publish/` copy stays the fallback for
+    // the article layout, whose bundle and payloads do live there.
+    const root = join(workDir, 'bundle.json');
+    if (await fs.exists(root)) return root;
+    return join(workDir, '4-publish', 'bundle.json');
 }
 
 /** Parsed plan. The public type accepts legacy rows without additive defaulted fields. */
@@ -2007,6 +2012,22 @@ export async function runPublishMatrixBundle(args: string[], deps: PublishMatrix
             // 'block' is unrepresentable in BundleSafetySchema: a raw block verdict fails the parse
             // above and refuses the freeze with the malformed-evidence error (0331 R2/R3).
             safety = safetyParsed.data;
+            // 0382: the evidence must describe the bytes being frozen. A safety pass that reviewed one
+            // revision and a freeze that hashed a later one produced a bundle whose `safety.variants`
+            // and `variants[].sha256` disagreed, which only surfaced at publish time as "changed after
+            // review". Refusing here turns that into a freeze-time error with the fix in the message.
+            const disagreed = Object.entries(safety.variants)
+                .filter(([key, reviewed]) => {
+                    const frozen = variants[key]?.sha256;
+                    return frozen !== undefined && frozen !== reviewed;
+                })
+                .map(([key]) => key);
+            if (disagreed.length > 0) {
+                echoError(
+                    `publish-matrix-bundle: final-variant safety evidence is stale for ${disagreed.join(', ')} — the reviewed digest differs from the variant being frozen; re-run the variants safety gate (kk-daily-safety scope=variants) and freeze again`,
+                );
+                return 1;
+            }
         }
 
         const bundle: Bundle = {
