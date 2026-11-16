@@ -7,22 +7,45 @@
  *   bun plugins/generations/image-gen/scripts/gen-samples.ts --force         # re-render every pair
  *   bun plugins/generations/image-gen/scripts/gen-samples.ts --readme-only   # README from samples on disk
  *   bun plugins/generations/image-gen/scripts/gen-samples.ts --provider gemini --model <m>
+ *   bun plugins/generations/image-gen/scripts/gen-samples.ts --provider google --concurrency 1
+ * Provider/model defaults come from the provider registry. assets/sample/provenance.json records
+ * the actual provider/model for every thumbnail, so mixed-provider galleries remain truthful.
  *
  * Only the builtin presets/ root is read — user/project preset roots never leak
  * into the shipped index. A finished sample is never overwritten without --force,
  * so a run that dies on pair 37 resumes from pair 37. Failed pairs are named and
  * the script exits 1.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type FormatPreset, FormatPresetSchema, type StylePreset, StylePresetSchema } from '../src/presets';
+import { PROVIDERS } from '../src/providers/types';
 
 const PLUGIN_DIR = join(import.meta.dir, '..');
 const SAMPLE_DIR = join(PLUGIN_DIR, 'assets', 'sample');
 const README = join(PLUGIN_DIR, 'README.md');
 const WORK_DIR = join(process.cwd(), '.works', 'tmp', 'test-samples');
 const THUMB_PX = 640;
-const CONCURRENCY = 3;
+const PROVENANCE_PATH = join(SAMPLE_DIR, 'provenance.json');
+
+interface SampleOrigin {
+    provider: string;
+    model: string;
+}
+
+const provenance: Record<string, SampleOrigin> = existsSync(PROVENANCE_PATH)
+    ? (JSON.parse(readFileSync(PROVENANCE_PATH, 'utf8')) as Record<string, SampleOrigin>)
+    : {};
+
+function saveProvenance(): void {
+    mkdirSync(SAMPLE_DIR, { recursive: true });
+    writeFileSync(PROVENANCE_PATH, `${JSON.stringify(provenance, null, 4)}\n`);
+}
+
+/** Existing K1 samples predate the sidecar and were all MiniMax image-01 (task 0340). */
+function originFor(file: string): SampleOrigin {
+    return provenance[file] ?? { provider: 'minimax', model: 'image-01' };
+}
 
 /** Fixed per-job inputs so every style is compared on the same subject. */
 const SAMPLE_SUBJECT = 'a request flowing through an API gateway to three microservices';
@@ -39,7 +62,15 @@ const option = (name: string, fallback: string): string => {
     return index >= 0 && args[index + 1] !== undefined ? args[index + 1] : fallback;
 };
 const provider = option('--provider', 'minimax');
-const model = option('--model', 'image-01');
+const registration = PROVIDERS[provider];
+if (registration === undefined) {
+    throw new Error(`Unknown provider '${provider}'. Valid providers: ${Object.keys(PROVIDERS).sort().join(', ')}`);
+}
+const model = option('--model', registration.defaultModel);
+const concurrency = Number(option('--concurrency', '3'));
+if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 10) {
+    throw new Error('--concurrency must be an integer from 1 to 10');
+}
 
 function loadBuiltin<T>(axis: string, schema: { parse(value: unknown): T }): T[] {
     const dir = join(PLUGIN_DIR, 'presets', axis);
@@ -94,7 +125,11 @@ async function render(format: FormatPreset, style: StylePreset): Promise<void> {
     if (code !== 0) {
         throw new Error(`kk exited ${code}: ${stderr.trim().split('\n').slice(-3).join(' | ')}`);
     }
-    const image = (await Bun.file(output).json())?.metadata?.images?.[0]?.path as string | undefined;
+    const content = (await Bun.file(output).json()) as {
+        metadata?: { images?: Array<{ path?: string; provider?: string; model?: string }> };
+    };
+    const artifact = content.metadata?.images?.[0];
+    const image = artifact?.path;
     if (image === undefined) {
         throw new Error('executor output carries no metadata.images[0].path');
     }
@@ -117,6 +152,11 @@ async function render(format: FormatPreset, style: StylePreset): Promise<void> {
     if (sips.exitCode !== 0) {
         throw new Error(`sips failed: ${sips.stderr.toString().trim()}`);
     }
+    provenance[sampleName(format.name, style.name)] = {
+        provider: artifact?.provider ?? provider,
+        model: artifact?.model ?? model,
+    };
+    saveProvenance();
 }
 
 async function renderAll(): Promise<string[]> {
@@ -140,7 +180,7 @@ async function renderAll(): Promise<string[]> {
             }
         }
     };
-    await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+    await Promise.all(Array.from({ length: concurrency }, worker));
     return failed;
 }
 
@@ -159,7 +199,7 @@ function readme(): string {
         "`--format` / `--style` to the `kk:image-generate` skill. Omitting the style uses the format's",
         'default (★ below).',
         '',
-        `Samples: provider \`${provider}\`, model \`${model}\`, downscaled to ${THUMB_PX}px JPEG. Inputs are fixed per`,
+        `Samples: provider/model shown per cell, downscaled to ${THUMB_PX}px JPEG. Inputs are fixed per`,
         `job — subject “${SAMPLE_SUBJECT}”; cover title “${COVER_VARS.title}”. Regenerate with`,
         '`bun plugins/generations/image-gen/scripts/gen-samples.ts` (see its header for flags).',
         '',
@@ -189,8 +229,9 @@ function readme(): string {
             const cells = styles.slice(i, i + columns).map((style) => {
                 const file = sampleName(format.name, style.name);
                 const label = `\`${style.name}\`${style.name === format.defaultStyle ? ' ★' : ''}`;
+                const origin = originFor(file);
                 return existsSync(join(SAMPLE_DIR, file))
-                    ? `<img src="assets/sample/${file}" alt="${format.name} × ${style.name}" width="260"><br>${label}`
+                    ? `<img src="assets/sample/${file}" alt="${format.name} × ${style.name}" width="260"><br>${label}<br><small>${origin.provider}/${origin.model}</small>`
                     : `_not rendered_<br>${label}`;
             });
             lines.push(`| ${cells.join(' | ')} |`);
@@ -200,6 +241,15 @@ function readme(): string {
 }
 
 const failed = flag('--readme-only') ? [] : await renderAll();
+for (const format of formats) {
+    for (const style of styles) {
+        const file = sampleName(format.name, style.name);
+        if (existsSync(join(SAMPLE_DIR, file)) && provenance[file] === undefined) {
+            provenance[file] = originFor(file);
+        }
+    }
+}
+saveProvenance();
 await Bun.write(README, readme());
 console.log(`wrote ${README}`);
 if (failed.length > 0) {

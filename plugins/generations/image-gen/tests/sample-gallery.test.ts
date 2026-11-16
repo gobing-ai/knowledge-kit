@@ -18,7 +18,24 @@ describe('preset sample gallery', () => {
 
     test('every shipped format × style pair has exactly one sample on disk', () => {
         expect(pairs.filter((file) => !existsSync(join(SAMPLE_DIR, file)))).toEqual([]);
-        expect(readdirSync(SAMPLE_DIR).sort()).toEqual([...pairs].sort());
+        expect(
+            readdirSync(SAMPLE_DIR)
+                .filter((file) => file.endsWith('.jpg'))
+                .sort(),
+        ).toEqual([...pairs].sort());
+    });
+
+    test('every sample records its actual provider and model', () => {
+        const provenance = JSON.parse(readFileSync(join(SAMPLE_DIR, 'provenance.json'), 'utf8')) as Record<
+            string,
+            { provider?: string; model?: string }
+        >;
+        for (const file of pairs) {
+            expect(provenance[file]?.provider).toBeString();
+            expect(provenance[file]?.provider).not.toBe('');
+            expect(provenance[file]?.model).toBeString();
+            expect(provenance[file]?.model).not.toBe('');
+        }
     });
 
     test('the README embeds every sample and links nothing missing', () => {

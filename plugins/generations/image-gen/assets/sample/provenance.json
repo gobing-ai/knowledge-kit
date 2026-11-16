@@ -1,0 +1,314 @@
+{
+    "cover__clean-webapp-ui.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "cover__cute.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "cover__daily-news.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "cover__editorial.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "cover__fresh.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "cover__minimalist.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "cover__photorealistic.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "cover__quasi-news-podcast.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "cover__sketch.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "cover__technical-diagram.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "cover__vibrant.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "cover__warm.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "cover__xhs-knowledge.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-cover__clean-webapp-ui.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-cover__cute.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-cover__daily-news.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-cover__editorial.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-cover__fresh.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-cover__minimalist.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-cover__photorealistic.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-cover__quasi-news-podcast.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-cover__sketch.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-cover__technical-diagram.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-cover__vibrant.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-cover__warm.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-cover__xhs-knowledge.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-podcast-cover__clean-webapp-ui.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-podcast-cover__cute.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-podcast-cover__daily-news.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-podcast-cover__editorial.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-podcast-cover__fresh.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-podcast-cover__minimalist.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-podcast-cover__photorealistic.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-podcast-cover__quasi-news-podcast.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-podcast-cover__sketch.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-podcast-cover__technical-diagram.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-podcast-cover__vibrant.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-podcast-cover__warm.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "daily-news-podcast-cover__xhs-knowledge.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "free__clean-webapp-ui.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "free__cute.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "free__daily-news.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "free__editorial.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "free__fresh.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "free__minimalist.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "free__photorealistic.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "free__quasi-news-podcast.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "free__sketch.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "free__technical-diagram.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "free__vibrant.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "free__warm.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "free__xhs-knowledge.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "illustration__clean-webapp-ui.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "illustration__cute.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "illustration__daily-news.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "illustration__editorial.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "illustration__fresh.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "illustration__minimalist.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "illustration__photorealistic.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "illustration__quasi-news-podcast.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "illustration__sketch.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "illustration__technical-diagram.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "illustration__vibrant.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "illustration__warm.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "illustration__xhs-knowledge.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "xhs-card__clean-webapp-ui.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "xhs-card__cute.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "xhs-card__daily-news.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "xhs-card__editorial.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "xhs-card__fresh.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "xhs-card__minimalist.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "xhs-card__photorealistic.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "xhs-card__quasi-news-podcast.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "xhs-card__sketch.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "xhs-card__technical-diagram.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "xhs-card__vibrant.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "xhs-card__warm.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    },
+    "xhs-card__xhs-knowledge.jpg": {
+        "provider": "minimax",
+        "model": "image-01"
+    }
+}
