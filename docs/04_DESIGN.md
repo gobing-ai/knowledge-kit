@@ -2254,6 +2254,15 @@ component tree / file tree / Mermaid / diff / copyable block, with one focused H
 last resort — lives in the skill body + `references/views.md`. No alias commands, no subagent, no
 first-layer `kk` noun (F9; ADR-009 / ADR-011).
 
+## image-gen style negative constraints (2026-11-15, task 0380, K3)
+
+`StylePreset.negative` is rendered into the provider-visible prompt as one `avoid: …` segment. Composition order is
+rendered format body → format keywords → style modifiers → optional `avoid: <negative>` → caller `extra`. Undefined
+or empty negatives are omitted, so existing styles without the field keep byte-identical prompts. This is the
+provider-independent fallback from task 0102: no native negative-prompt capability negotiation is introduced and
+provider adapters are unchanged. The real `processGeneratorIO` path is pinned by a recording-provider regression in
+`plugins/generations/image-gen/tests/image-gen.test.ts`.
+
 ## image-gen compose block + composed-card artifact (2026-10-01, task 0180, ADR-028)
 
 Compose formats are format presets carrying a `compose` block. Schema (zod-validated in
