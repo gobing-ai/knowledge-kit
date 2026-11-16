@@ -197,13 +197,11 @@ bootstrap:
       # entry did not exist: the preset's cn-peak rows were live but nothing ever fired the window,
       # so the 微博 article only published when an operator launched it by hand (the 11-12 run at
       # 16:53 local was exactly that).
-      # DISABLED 2026-11-15 (operator instruction) while the daily generation still runs into the
-      # 17:00 tick: the tick would find no bundle, try to regenerate, and contend with the live run
-      # for the store lock. Re-enable once generation settles well before 17:00 again.
-      # - name: kk-daily-publish3-cn-peak
-      #   cron: "0 17 * * *"
-      #   timeoutMs: 21600000
-      #   command: kk news publish --window cn-peak --unattended --agent pi-dsv4.1-flash-cc
+      # Re-enabled 2026-11-15 (it was paused only for the day the generation overran into 17:00).
+      - name: kk-daily-publish3-cn-peak
+        cron: "0 17 * * *"
+        timeoutMs: 21600000
+        command: kk news publish --window cn-peak --unattended --agent pi-dsv4.1-flash-cc
 
       # 04:05, 10:05, 16:05, 22:05 daily: kk-collect standalone 6-hourly collection
       # into the kk store (aihot + last30days + horizon -> store ingest -> label).

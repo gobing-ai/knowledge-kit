@@ -2622,6 +2622,19 @@ export async function runMode(input: ModeInput, deps: ModeRunDeps): Promise<Resu
         if (!result.ok && diagnostics.length > 0) {
             return { ...result, error: `${result.error} — compose diagnostics: ${diagnostics.join(' | ')}` };
         }
+        // Requested enrichment that did not take is a FAILURE, not a warning (2026-11-15). The daily
+        // draft was saved 原创/赞赏/原文链接-free and the row still reported ok:true, so the receipt
+        // said 'succeeded' while the article was incomplete and only a human noticed. The draft
+        // exists — that is a real, visible effect — so the operator is told exactly what is missing
+        // and where it is. WECHATMP_ALLOW_PARTIAL_ENRICH=1 restores the old warn-and-continue shape
+        // for an account that genuinely cannot offer one of these fields.
+        if (result.ok && composed.enrichWarnings.length > 0 && process.env.WECHATMP_ALLOW_PARTIAL_ENRICH !== '1') {
+            return {
+                ...result,
+                ok: false,
+                error: `draft saved but enrichment did not apply — ${composed.enrichWarnings.join(' | ')} (set WECHATMP_ALLOW_PARTIAL_ENRICH=1 to accept a partial draft)`,
+            };
+        }
         return result;
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
