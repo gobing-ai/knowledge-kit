@@ -94,4 +94,42 @@ writeFileSync(outPath, process.env.KK_SHIM_POOL ?? '[]');
         expect(windows()).toEqual(['24h']);
         rmSync(root, { recursive: true, force: true });
     });
+
+    it('judges the pool by the ratio a previous run recorded, not by the calibrated constant (R2)', () => {
+        // A rich pool by the 0.28 default (27,704 x 0.28 = 7,757 chars ≈ 27 min) but a thin one for a
+        // workflow whose last run delivered 0.10x of its pool (≈ 2,770 chars ≈ 9.6 min < 15).
+        const fixture = withFixture(pool(20, 27704));
+        const previous = join(fixture.root, 'kk-news-generate-20261114-1', '21-plan');
+        mkdirSync(previous, { recursive: true });
+        writeFileSync(
+            join(previous, '20261114_09_spoken-ratio.json'),
+            JSON.stringify({ runDate: '20261114', poolChars: 20000, spokenChars: 2000, ratio: 0.1 }),
+        );
+        const res = fixture.run();
+        expect(res.status, res.stderr).toBe(0);
+        // Today's behaviour would keep 24h; the recorded ratio makes the same pool a thin day.
+        expect(fixture.windows().length).toBeGreaterThan(1);
+        rmSync(fixture.root, { recursive: true, force: true });
+    });
+
+    it('writes the ladder decision as an artifact the run report can explain (R3)', () => {
+        const fixture = withFixture(pool(4, 7244));
+        const res = fixture.run();
+        expect(res.status, res.stderr).toBe(0);
+        const ladder = JSON.parse(readFileSync(join(fixture.workDir, '10-collect', 'ladder.json'), 'utf-8')) as {
+            ratioUsed: number;
+            ratioSource: string;
+            chosen: string;
+            rungs: Array<{ window: string; chars: number; minutes: number; clears: boolean }>;
+        };
+        expect(ladder.ratioUsed).toBeGreaterThan(0);
+        expect(ladder.ratioSource).toContain('default');
+        expect(ladder.chosen).not.toBe('24h');
+        expect(ladder.rungs.length).toBeGreaterThan(1);
+        expect(ladder.rungs[0]?.clears).toBe(false);
+        // The shim returns the same pool at every rung, so the ladder walks to its ceiling and keeps
+        // the widest attempt: the artifact must name the rung it actually chose.
+        expect(ladder.rungs.at(-1)?.window).toBe(ladder.chosen);
+        rmSync(fixture.root, { recursive: true, force: true });
+    });
 });

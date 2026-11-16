@@ -320,6 +320,99 @@ const SPEAK_CHAR_EXPANSION = 1.4;
 const SPEAK_CHAR_EXPANSION_FLOOR = 0.28;
 
 /**
+ * Where a run records the ratio it actually delivered: spoken script characters over raw pool
+ * characters (0377 R2/R3). The widen decision reads the newest one of these from the sibling run
+ * directories, so the ladder judges today's pool by what the writer really produced last time
+ * instead of a constant that was calibrated once.
+ */
+const SPOKEN_RATIO_SUFFIX = '_09_spoken-ratio.json';
+
+/** The measured ratio one run delivered, and where it came from. */
+interface SpokenRatio {
+    ratio: number;
+    source: string;
+}
+
+/** Clamp a recorded ratio into a plausible band: a corrupt file must not freeze or flood the ladder. */
+function clampRatio(value: number): number {
+    return Math.min(2, Math.max(0.05, value));
+}
+
+/**
+ * The newest recorded spoken/raw ratio across this workflow's run directories, or the calibrated
+ * floor constant when no run has recorded one yet. `workDir` is one run directory, so its parent is
+ * the workflow directory the sibling runs live in.
+ */
+function readSpokenRatio(workDir: string): SpokenRatio {
+    const base = resolve(workDir, '..');
+    let newest: { at: number; ratio: number; from: string } | null = null;
+    let entries: string[] = [];
+    try {
+        entries = readdirSync(base);
+    } catch {
+        return { ratio: SPEAK_CHAR_EXPANSION_FLOOR, source: 'default 0.28 (no sibling runs)' };
+    }
+    for (const entry of entries) {
+        const dir = join(base, entry, '21-plan');
+        let files: string[] = [];
+        try {
+            files = readdirSync(dir).filter((file) => file.endsWith(SPOKEN_RATIO_SUFFIX));
+        } catch {
+            continue;
+        }
+        for (const file of files) {
+            const path = join(dir, file);
+            try {
+                const parsed = readJson(path) as Record<string, unknown> | null;
+                const ratio = Number(parsed?.ratio);
+                if (!Number.isFinite(ratio) || ratio <= 0) continue;
+                const at = statSync(path).mtimeMs;
+                if (newest === null || at > newest.at) newest = { at, ratio, from: path };
+            } catch {
+                // A malformed record is not evidence; the next run overwrites it.
+            }
+        }
+    }
+    if (newest === null) return { ratio: SPEAK_CHAR_EXPANSION_FLOOR, source: 'default 0.28 (no recorded run)' };
+    return { ratio: clampRatio(newest.ratio), source: `${newest.from} (${newest.ratio.toFixed(2)}x)` };
+}
+
+/**
+ * Record what this run delivered — spoken script chars over raw pool chars — and warn when it drifted
+ * from the ratio the widen decision used. A refused script records too: a thin day teaches the ladder
+ * even though it produced no episode.
+ */
+function recordSpokenRatio(workDir: string, runDate: string, spokenChars: number): void {
+    const poolPath = join(workDir, '10-collect', 'pool.json');
+    if (!isFile(poolPath)) return;
+    const pool = readJson(poolPath);
+    const poolChars = (Array.isArray(pool) ? pool : []).reduce((sum, doc) => {
+        const entry = (doc ?? {}) as Record<string, unknown>;
+        return sum + `${String(entry.title ?? '')}`.length + String(entry.body ?? '').length;
+    }, 0);
+    if (poolChars <= 0) return;
+    const ratio = Math.round((spokenChars / poolChars) * 1000) / 1000;
+    const out = join(workDir, '21-plan', `${runDate}${SPOKEN_RATIO_SUFFIX}`);
+    mkdirSync(join(workDir, '21-plan'), { recursive: true });
+    writeJsonText(out, { runDate, poolChars, spokenChars, ratio });
+    // Drift warning: the ladder judged this pool with some ratio; the writer just delivered a
+    // different one. A wide gap means the next run's ladder is working from a stale measure.
+    let used: number | null = null;
+    try {
+        const ladder = readJson(join(workDir, '10-collect', 'ladder.json')) as Record<string, unknown> | null;
+        const candidate = Number(ladder?.ratioUsed);
+        if (Number.isFinite(candidate) && candidate > 0) used = candidate;
+    } catch {
+        used = null;
+    }
+    if (used !== null && Math.abs(ratio / used - 1) > 0.25) {
+        console.error(
+            `spoken ratio drifted: this run delivered ${ratio.toFixed(2)}x of the pool, the ladder widened on ${used.toFixed(2)}x (see ${out})`,
+        );
+    }
+}
+
+/**
  * The calibrated pre-spend estimate over a kept pool (title+body characters × the 1.4 expansion,
  * over the driver's measured char rate, plus the 8 s intro sting) — shared by the pre-spend floor
  * gate (applyFloorGate) and the post-spend duration refusal (dailyEpisodeDuration, 0266), so both
@@ -470,23 +563,40 @@ export function dailyExtract(args: string[]): void {
             console.error(`extract: plan already authored — keeping the frozen pool (${poolPath})`);
             return;
         }
+        // 0377 R2: judge the pool by what the writer actually delivered last time. The calibrated
+        // 0.28 constant is only the fallback for a workflow that has never recorded a ratio.
+        const ratio = readSpokenRatio(workDir);
         let chosen: { window: string; docs: unknown[] } | null = null;
+        const rungs: Array<{ window: string; items: number; chars: number; minutes: number; clears: boolean }> = [];
         for (const ms of windows) {
             const label = formatWindowMs(ms);
             const attempt = join(workDir, '10-collect', `.pool-${label}.json`);
             kk(['store', 'extract', '--topic', topic, '--window', label, '--out', attempt]);
             const parsed = readJson(attempt);
             const docs = Array.isArray(parsed) ? (parsed as unknown[]) : [];
-            const estimate = estimateSpokenMinutes(docs, vdriver, SPEAK_CHAR_EXPANSION_FLOOR);
+            const estimate = estimateSpokenMinutes(docs, vdriver, ratio.ratio);
+            const clears = estimate.seconds >= floor * 60;
+            rungs.push({ window: label, items: docs.length, chars: estimate.chars, minutes: estimate.minutes, clears });
             chosen = { window: label, docs };
             const verdict = gated
-                ? `estimated ${estimate.minutes} min — ${estimate.seconds >= floor * 60 ? 'clears' : 'below'} the ${floor} min floor`
+                ? `estimated ${estimate.minutes} min at ${ratio.ratio.toFixed(2)}x — ${clears ? 'clears' : 'below'} the ${floor} min floor`
                 : 'floor gate off';
             console.error(`extract: ${label} pool ${docs.length} item(s), ${verdict}`);
-            if (!gated || estimate.seconds >= floor * 60) break;
+            if (!gated || clears) break;
             rmSync(attempt, { force: true });
         }
         const picked = chosen ?? { window: formatWindowMs(base), docs: [] as unknown[] };
+        // 0377 R3: the decision is an artifact, not just a stderr line — the run report and
+        // `kk news status` read which measure drove it, the rung chosen and the estimate at each rung.
+        sted('write', join(workDir, '10-collect', 'ladder.json'), () =>
+            writeJsonText(join(workDir, '10-collect', 'ladder.json'), {
+                floorMinutes: gated ? floor : null,
+                ratioUsed: ratio.ratio,
+                ratioSource: ratio.source,
+                chosen: picked.window,
+                rungs,
+            }),
+        );
         sted('write', poolPath, () => writeJsonText(poolPath, picked.docs));
         for (const ms of windows)
             rmSync(join(workDir, '10-collect', `.pool-${formatWindowMs(ms)}.json`), { force: true });
@@ -1097,6 +1207,9 @@ export function dailyGenerate(args: string[]): void {
             );
             const charRate = scriptFloorCharRate(vdriver);
             const seconds = 8 + chars / charRate;
+            // Record what the writer delivered before judging it: a refused day still teaches the
+            // next run's ladder what this pool really yielded (0377 R2/R3).
+            recordSpokenRatio(workDir, runDate, chars);
             if (seconds < minMinutes * 60) {
                 refuseScriptBelowFloor(workDir, runDate, { chars, charRate, seconds, minMinutes });
                 return;

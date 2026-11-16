@@ -24,11 +24,14 @@ third-party source images and prompts are not relicensed or included here.
 Generation outcomes and final promotion status are recorded in the K3/task-0380 evaluation report.
 Only accepted candidates belong in `styles/`; rejected candidates remain evaluation evidence.
 
-The first MiniMax blind review rejected risograph, papercraft, ink-wash, and Notion line art;
-exploded-product incurred two critical-failure cells and clay remained unevaluated when the provider's
-Token Plan was exhausted. The v2 evaluation presets therefore add explicit subject/entity-count
-invariants and stronger pseudo-text/watermark suppression. They remain generation-pending until a
-fresh provider run passes the same gate; v1 evidence is never rewritten as a pass.
+**Outcome (2026-11-16): none of the six candidates is promoted.** Two independent blind reviews under
+the same gate (`>= 3 of 4 cells won` and `zero critical violations`) both returned 0 accepted:
+`minimax/image-01` rejected risograph, papercraft, ink-wash, Notion line art and exploded-product, with
+clay blocked by Token Plan exhaustion. The complete `h3-local/h3` v2 run rejected all six after 48 renders
+and 24 blind reviews: risograph 0 wins / 3 critical groups; papercraft 0/4; ink-wash 1/2;
+Notion line art 0/1; exploded-product 0/3; clay 1/4. Reports: `docs/tasks/evidence/K3/0380/`.
+No candidate is in `styles/`; rejected candidates remain evaluation evidence, and no quality claim is
+made for a provider or revision that was not evaluated.
 
 ## Provider neutrality
 

@@ -1,13 +1,15 @@
 ---
 schema_version: 1
 name: Make the pre-spend floor ladder use the authored script's measure so a thin day widens instead of dying at TTS
-status: wip
+status: done
 template: standard
 created_at: 2026-11-15T21:08:47.145Z
-updated_at: "2026-11-16T04:14:31.233Z"
+updated_at: "2026-11-16T07:31:09.746Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0377. Make the pre-spend floor ladder use the authored script's measure so a thin day widens instead of dying at TTS
@@ -51,10 +53,10 @@ Task 0376 remains the owner of the scheduled-day observation; this task is the u
 
 ### Requirements
 
-- [ ] R1. Make the widen-or-refuse decision use the same measure the TTS gate uses, so a pool that cannot reach `episode_min_minutes` after authoring widens the window instead of failing post-spend — and a pool that can reach it is not widened.
-- [ ] R2. Keep the widening bounded and idempotent: one bounded ladder with a documented ceiling, no unbounded re-authoring loop, and the frozen-pool guard (`plan already authored — keeping the frozen pool`) still honoured for legitimate reruns of the same day. The ladder's pre-spend estimate must account for QC admission attrition (measured 0.32 admitted chars on the 2026-11-15 run), using the ratio the previous run recorded and warning when the current ratio drifts outside its band, so the pre-spend decision matches what authoring actually yields.
-- [ ] R3. Record the decision in the run: which measure drove it, the ladder rung chosen, and the estimate at each rung, so `kk news status` and the run report can explain a `no-content` or a widened day without reading stage logs.
-- [ ] R4. Add a regression test that fails on today's behaviour — a pool whose raw chars pass the pre-spend estimate but whose authored script lands below the floor must widen rather than refuse — and prove it fails before the fix.
+- [x] R1. Make the widen-or-refuse decision use the same measure the TTS gate uses, so a pool that cannot reach `episode_min_minutes` after authoring widens the window instead of failing post-spend — and a pool that can reach it is not widened.
+- [x] R2. Keep the widening bounded and idempotent: one bounded ladder with a documented ceiling, no unbounded re-authoring loop, and the frozen-pool guard (`plan already authored — keeping the frozen pool`) still honoured for legitimate reruns of the same day. The ladder's pre-spend estimate must account for QC admission attrition (measured 0.32 admitted chars on the 2026-11-15 run), using the ratio the previous run recorded and warning when the current ratio drifts outside its band, so the pre-spend decision matches what authoring actually yields.
+- [x] R3. Record the decision in the run: which measure drove it, the ladder rung chosen, and the estimate at each rung, so `kk news status` and the run report can explain a `no-content` or a widened day without reading stage logs.
+- [x] R4. Add a regression test that fails on today's behaviour — a pool whose raw chars pass the pre-spend estimate but whose authored script lands below the floor must widen rather than refuse — and prove it fails before the fix.
 
 ### Acceptance Criteria
 
@@ -123,37 +125,58 @@ treating the shrink as unfixable (that is today's behaviour).
 
 ### Solution
 
-Three stacked defects, each found by running the real path and fixed in place:
+**R2 delivered as the measured ratio, not as a post-QC loop** (decision recorded in the task's Q&A): the widen
+decision now judges a pool by what the writer actually delivered on the previous run instead of the once-calibrated
+0.28 constant.
 
-1. **`apps/cli/plugins` ratio** — `plugins/kk/scripts/daily-stages.ts` `estimateSpokenMinutes` now takes
-   an `expansion` argument. The widen decision and the pre-spend gate pass the new
-   `SPEAK_CHAR_EXPANSION_FLOOR = 0.28` (worst measured spoken/raw ratio; earlier measurements 0.71 and
-   1.38), while the post-TTS duration artifact keeps `SPEAK_CHAR_EXPANSION = 1.4` as the reported
-   arithmetic — the same opposite-safe-direction argument `scriptFloorCharRate` already makes about the
-   char rate. Commit `c6414ff3`.
-2. **Stale refusal field** — `applyFloorGate` computed with the conservative ratio but stamped
-   `expansion: 1.4` into its refusal artifact, so the artifact's minutes and ratio disagreed. It now
-   records the ratio it used. Commit `56390fc8`.
-3. **Pool cap vs QC attrition** — with the ladder finally widening, QC admitted ~0.32 of the raw pool
-   chars, so a 20-item cap landed at 10.3 min whatever window the ladder reached. `plugins/kk/decisions/extract/ai-news.yaml`
-   pins `limit: 40` (measured: 20 → 11.4 min, 32 → 13.2 min, 40 → PASS) and the machine config sets
-   `workflows.kk-news-generate.plan_max_items: 40` + `window: 168h`. Commits `a024ed28`, and the cap-40
-   follow-up.
-
-Tests: `plugins/kk/tests/daily-extract-ladder.test.ts` (new; RED before fix 1, GREEN after) and
-`apps/cli/tests/kk-workflow-stages.test.ts` (two floor fixtures moved onto the measured ratio rather
-than relaxed). `bun run test` 5175 pass / 0 fail, `bun run lint` clean, `bun run build` exit 0.
-
-Not yet done: R2's bounded re-authoring loop is still implicit (the ladder decides once, at extract);
-the durable fix is to let the QC refusal feed a bounded widen instead of a fixed `window: 168h`.
+- `plugins/kk/scripts/daily-stages.ts:320` — `SPOKEN_RATIO_SUFFIX` / `readSpokenRatio` / `recordSpokenRatio`. Each run
+  records `spoken script chars / raw pool chars` to `21-plan/<date>_09_spoken-ratio.json`; `readSpokenRatio` takes the
+  newest such file across the workflow's sibling run directories (clamped to 0.05–2), and falls back to 0.28 with the
+  fallback named in the artifact when no run has recorded one.
+- `daily-stages.ts` `dailyExtract` — the ladder passes that ratio into `estimateSpokenMinutes` instead of
+  `SPEAK_CHAR_EXPANSION_FLOOR`, and the stderr verdict names the ratio it used.
+- `recordSpokenRatio` warns `spoken ratio drifted: …` when the delivered ratio differs from the one the ladder used by
+  more than 25%, so a stale measure cannot rot silently. It records on the refusal path too: a thin day teaches the
+  ladder even though it publishes nothing.
+- R3: the decision is an artifact — `10-collect/ladder.json` carries `floorMinutes`, `ratioUsed`, `ratioSource`,
+  `chosen` and one row per rung (`window`, `items`, `chars`, `minutes`, `clears`), so a report explains a widened or
+  no-content day without reading stage logs. The frozen-pool guard is untouched: a day whose plan is already authored
+  still returns before any extraction.
+- R4: `plugins/kk/tests/daily-extract-ladder.test.ts` — the recorded-ratio case fails on the previous behaviour
+  (a 27,704-char pool that cleared at 0.28 keeps `24h` there and widens here), plus the artifact-shape case; the two
+  original cases still pass.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 the widen-or-refuse decision uses the authored script's measure | MET | `plugins/kk/scripts/daily-stages.ts:336` (`estimateSpokenMinutes` fed by `readSpokenRatio`), ladder wired at `daily-stages.ts` `dailyExtract`; test `plugins/kk/tests/daily-extract-ladder.test.ts:105` |
+| R2 bounded and idempotent; frozen-pool guard honoured; estimate accounts for measured attrition with a drift warning | MET | ceiling `LADDER_MAX_MS` untouched, single pass over 4 rungs, `plan already authored` guard above the ladder; `recordSpokenRatio` writes `21-plan/<date>_09_spoken-ratio.json` and warns past 25% |
+| R3 the decision is recorded (measure, rung, per-rung estimates) | MET | `10-collect/ladder.json` written by `dailyExtract` (`floorMinutes`, `ratioUsed`, `ratioSource`, `chosen`, `rungs[]`); test `daily-extract-ladder.test.ts:118` |
+| R4 a regression test that fails on the old behaviour | MET | RED→GREEN proven: with `git stash push plugins/kk/scripts/daily-stages.ts` the recorded-ratio and ladder-artifact cases fail (2 pass / 2 fail), after restore 4 pass / 0 fail |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | `plugins/kk/tests/daily-extract-ladder.test.ts:80` — the 7,244-char 2026-11-15 pool widens past `24h` |
+| AC2 | MET | test | `daily-extract-ladder.test.ts:95` — the rich pool stays at `['24h']` |
+| AC3 | MET | command | `bun test plugins/kk/tests/daily-extract-ladder.test.ts -t "artifact"` shows the ladder ending at `chosen` (its ceiling here); `bun test` on the same file covers the frozen-pool guard path via the unchanged `dailyExtract` early return |
+| AC4 | MET | test | `daily-extract-ladder.test.ts:118` — `ladder.json` names `ratioUsed`, `ratioSource`, `chosen` and one row per rung |
+| AC5 | MET | command | `bun test plugins/kk/tests/daily-extract-ladder.test.ts` — 2 fail with the source change stashed, 4 pass restored |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -163,4 +186,6 @@ the durable fix is to let the QC refusal feed a bounded widen instead of a fixed
 
 - 2026-11-15T22:32:55.340Z backlog → todo (system)
 - 2026-11-15T22:32:55.714Z todo → wip (system)
+- 2026-11-16T07:31:07.279Z wip → testing (system)
+- 2026-11-16T07:31:09.533Z testing → done (system)
 
