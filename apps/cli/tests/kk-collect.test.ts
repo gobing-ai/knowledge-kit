@@ -281,6 +281,37 @@ describe('kk store lock (0208 R1)', () => {
     });
 });
 
+describe('kk-collect lock TTL vs tick cadence', () => {
+    /**
+     * The claim TTL is the only thing that frees a lock left by a run killed between `lock` and
+     * `release`: a `spur serve` restart aborts the tick in the queue, so `release-failed` never runs
+     * and the claim outlives its owner. A TTL at or above the tick cadence therefore makes the NEXT
+     * tick skip instead of steal — on 2026-11-15 the 16:05 tick was killed at 16:16, the 22:05 tick
+     * answered `{"skipped":"locked"}` and 12 h of collection were lost instead of one tick.
+     */
+    it('keeps the claim TTL below the tick interval so a killed run costs one tick, not two', () => {
+        const ttlMs = Number(/--ttl (\d+)/.exec(readFileSync(WORKFLOW, 'utf-8'))?.[1]);
+        expect(ttlMs).toBeGreaterThan(0);
+
+        const config = Bun.YAML.parse(readFileSync(join(REPO, '.spur/config.yaml'), 'utf-8')) as {
+            bootstrap?: { scheduler?: { jobs?: { name?: string; cron?: string }[] } };
+        };
+        const job = config.bootstrap?.scheduler?.jobs?.find((entry) => entry.name === 'kk-collect');
+        expect(job?.cron).toBeDefined();
+
+        // `5 4,10,16,22 * * *` → the shortest gap between two tick hours, wrapping midnight.
+        const hours = (job?.cron ?? '').split(/\s+/)[1]?.split(',').map(Number) ?? [];
+        expect(hours.length).toBeGreaterThan(1);
+        const gaps = hours.map((hour, index) => {
+            const next = hours[(index + 1) % hours.length] ?? 0;
+            return index === hours.length - 1 ? next + 24 - hour : next - hour;
+        });
+        const shortestGapMs = Math.min(...gaps) * 3_600_000;
+
+        expect(ttlMs).toBeLessThan(shortestGapMs);
+    });
+});
+
 describe('kk store ingest (0208 R2)', () => {
     it('persists a Doc[] into items + collect_runs and reports {inserted, updated, unchanged}', async () => {
         const dir = tempDir('kk-collect-ingest-');

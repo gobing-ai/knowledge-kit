@@ -71,12 +71,16 @@ states:
       - kind: shell
         options:
           # The claim is re-entrant for the same run and is stolen once its TTL has
-          # passed, so a crashed holder costs at most one tick (the TTL below covers the
-          # 6 h cadence and every plausible collect duration, so a slow run is never overtaken). stdout
-          # IS the lock contract, and the guard below reads it back:
+          # passed. The TTL must stay BELOW the 6 h tick cadence (incident 2026-11-15): a run
+          # killed between `lock` and `release` — a `spur serve` restart aborts the tick in the
+          # queue, so `release-failed` never runs — leaves its claim behind, and a cadence-sized
+          # TTL made the very next tick skip instead of steal: the 16:05 tick was killed at
+          # 16:16 and the 22:05 tick reported `{"skipped":"locked"}`, costing 12 h of collection
+          # instead of one tick. 4 h is still ~20x the observed collect (12-15 min), so a live run
+          # is never overtaken. stdout IS the lock contract, and the guard below reads it back:
           # `{"acquired":true}` or `{"skipped":"locked","holder":<run>}` (R1).
           command: >-
-            kk lock acquire --name collect --run "${vars.__runId}" --ttl 21600000 > "${vars.work_dir}/lock.json"
+            kk lock acquire --name collect --run "${vars.__runId}" --ttl 14400000 > "${vars.work_dir}/lock.json"
 
   - id: collect
     description: >-
