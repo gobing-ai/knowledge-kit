@@ -2265,6 +2265,20 @@ provider-independent fallback from task 0102: no native negative-prompt capabili
 provider adapters are unchanged. The real `processGeneratorIO` path is pinned by a recording-provider regression in
 `plugins/generations/image-gen/tests/image-gen.test.ts`.
 
+## image-gen provider-neutral presets and evaluation (2026-11-15, task 0380, K3)
+
+Format/style YAML never declares `provider`, `model`, or provider-specific options; provider/model selection belongs to
+the job envelope and runner flags. `scripts/eval-style-presets.ts` accepts `--provider`, `--model`, `--candidates`,
+`--work`, and `--concurrency`; defaults come from the existing `PROVIDERS` registry, evaluation work directories are
+provider-namespaced by default, and each blind mapping/report records one provider/model. Use a separate candidate root
+for each prompt revision and never reuse scores across providers or revisions. `--report --allow-partial` records
+rejected and not-evaluated candidates without treating incomplete evidence as a pass.
+
+`scripts/gen-samples.ts` accepts the same provider/model/concurrency controls. `assets/sample/provenance.json` records
+the actual provider/model for every generated thumbnail and each README cell displays it; existing K1 samples retain
+their documented MiniMax `image-01` origin. Switching providers therefore requires no preset edit and cannot silently
+mix provider provenance.
+
 ## image-gen compose block + composed-card artifact (2026-10-01, task 0180, ADR-028)
 
 Compose formats are format presets carrying a `compose` block. Schema (zod-validated in

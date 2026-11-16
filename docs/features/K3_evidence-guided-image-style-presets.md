@@ -6,7 +6,7 @@ status: active
 priority: P2
 tags: []
 created_at: "2026-11-15T23:48:02.500Z"
-updated_at: "2026-11-16T00:01:04.165Z"
+updated_at: "2026-11-16T00:56:32.025Z"
 ---
 
 # K3: Evidence-guided image style presets
@@ -21,14 +21,15 @@ Improve image-gen presets with traceable art-direction rules and enforce their n
 - Make `StylePreset.negative` reach the actual provider prompt without changing prompts for styles that declare none.
 - Convert six selected Open Image Prompts cards into subject-neutral evaluation presets with MIT attribution and generation-pending provenance.
 - Add two-phase style-direction guidance to `image-authoring`.
-- Run a bounded blind A/B comparison on MiniMax `image-01` (the only configured provider, explicitly approved by the operator) and promote only accepted styles with real sample-gallery artifacts and contract tests.
+- Run bounded blind A/B comparisons: MiniMax `image-01` for v1 and the operator-enabled provider for v2, with provider/model runner flags and per-provider evidence directories.
+- Record actual provider/model provenance per gallery sample and per evaluation artifact.
 - Update `plugins/generations/image-gen/README.md`, `docs/04_DESIGN.md`, and related owning guidance.
 
 **Out of scope**
 - Bulk-importing all 39 cards, new format presets, new providers, or a new preset schema.
 - Importing Open Image Prompts' Python/SQLite/React stack, corpus, source images, or third-party source prompts.
 - Diffusion-rendered exact typography, unrelated provider refactors, and unrelated rewrites of existing styles.
-- Cross-provider quality or portability claims until a second provider is configured and evaluated.
+- Claims that a preset generalizes across providers unless independently evaluated on each; MiniMax v1 results are not evidence for v2 or another provider.
 - Publishing generated images or changing production workflow configuration.
 
 ## Acceptance Criteria
@@ -65,11 +66,20 @@ Feature: Evidence-guided image style presets
   @core
   Scenario: R5 — Only generation-reviewed candidates join the shipped gallery
     Given the six candidates and their closest existing-style baselines
-    When each pair is compared on two formats and two subjects with MiniMax image-01 using randomized blind review
+    When each pair is compared on two formats and two subjects with the configured provider for that revision using randomized blind review
     Then every promoted style has zero critical constraint violations and wins at least three of four pairwise cells
     And the evaluation report records exact prompts, provider, model, images, scores, and rejected candidates
     And every promoted style has one real sample for each of the six shipped formats
-    And cross-provider quality remains explicitly unclaimed
+    And provider/model provenance is recorded for every sample and evaluation run
+    And quality is claimed only for the provider and revision actually evaluated
+
+  @core
+  Scenario: R6 — Presets and evaluation artifacts are provider independent
+    Given format and style YAML plus the sample and evaluation runners
+    When a supported provider and optional model are selected through runner flags
+    Then no preset file requires a provider or model key or provider-specific prompt syntax
+    And provider defaults resolve through the existing provider registry
+    And evaluation work directories and gallery provenance cannot mix different providers
 ```
 
 ## Tasks
