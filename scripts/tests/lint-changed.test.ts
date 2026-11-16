@@ -9,8 +9,6 @@
  */
 
 import { describe, expect, it } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
 import { checkable, existing, main, runBiome } from '../lint-changed';
 
 describe('lint-changed (0383 R2)', () => {
