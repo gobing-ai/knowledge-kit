@@ -51,6 +51,7 @@ import {
     withProfilePage,
 } from '@gobing-ai/ts-browser-automation';
 import type { Locator, Page } from 'playwright';
+import { runAudioPostFlow } from './audio-flow';
 import {
     isShipinhaoAuthenticated,
     readRootSnapshot,
@@ -81,6 +82,11 @@ const STEP_TIMEOUT_MS = 30_000;
  * as `Authentication was not confirmed` (2026-11-13: check verified, publish refused).
  */
 const PREFLIGHT_TIMEOUT_MS = 180_000;
+/**
+ * Per-poll budget for the 合集 control probe inside the selection loop: the row either exists or
+ * does not, so a long wait per attempt only delays the typed refusal (2026-11-16).
+ */
+const COLLECTION_PROBE_MS = 2_000;
 /**
  * KK v1 local-media size bound (task 0296 Design freeze): 2 GiB, applied to every media kind. A
  * project-scoped product bound, not a platform limit — Channels' own ceiling is unpinned.
@@ -576,6 +582,22 @@ function resolveOriginal(
 }
 
 /**
+ * Pre-browser 合集 gate (2026-11-16): an optional non-empty collection title, applied to the AUDIO
+ * post only. A collection that cannot be committed is a typed failure *before* the submit click —
+ * the operator asked for the episode to live in 合集 `每日AI乱炖`, so publishing without it is not
+ * a degraded success, it is the wrong result.
+ */
+function resolveCollection(
+    raw: unknown,
+): { collection?: string; error?: undefined } | { collection?: undefined; error: string } {
+    if (raw === undefined) return {};
+    if (typeof raw !== 'string' || raw.trim().length === 0) {
+        return { error: `collection must be a nonempty string when present, got '${bounded(raw)}'` };
+    }
+    return { collection: raw.trim() };
+}
+
+/**
  * Unsupported requested fields, per operation: fields that mean nothing to the requested flow —
  * images/videoPath outside their own operation, coverPath for 图文 — are typed unsupported-field
  * refusals, never silently ignored. categories and publishTime/scheduling are refused for every
@@ -583,11 +605,14 @@ function resolveOriginal(
  * `coverPath` (except on image) are implemented and validated in their resolvers.
  */
 function unsupportedFields(payload: PublishTransportPayload, operation: ShipinhaoOperationName): readonly string[] {
+    // `collection` is implemented for AUDIO only (2026-11-16): the other three kinds must keep
+    // their exact current behaviour, so a collection request on them is refused by name instead of
+    // silently ignored.
     const perOperation: Record<ShipinhaoOperationName, readonly string[]> = {
-        shortVideo: ['images', 'categories', 'publishTime', 'scheduling'],
+        shortVideo: ['images', 'categories', 'publishTime', 'scheduling', 'collection'],
         audio: ['videoPath', 'images', 'categories', 'publishTime', 'scheduling'],
-        music: ['videoPath', 'images', 'categories', 'publishTime', 'scheduling'],
-        image: ['videoPath', 'coverPath', 'categories', 'publishTime', 'scheduling'],
+        music: ['videoPath', 'images', 'categories', 'publishTime', 'scheduling', 'collection'],
+        image: ['videoPath', 'coverPath', 'categories', 'publishTime', 'scheduling', 'collection'],
     };
     const refused: string[] = [];
     for (const [container, source] of [
@@ -625,6 +650,55 @@ function editingFormReadyScript(mode: 'wujie' | 'direct', titleSelector: string,
     const title = root === null ? null : root.querySelector(${JSON.stringify(titleSelector)});
     const editor = root === null ? null : root.querySelector(${JSON.stringify(editorSelector)});
     return JSON.stringify({ ready: title !== null && editor !== null });
+})()`;
+}
+
+/**
+ * 合集 (collection) control, one parameterised page script (2026-11-16).
+ *
+ * The audio form's collection row ships without a stable class, so this works from text alone:
+ * `click-entry` finds the rendered row whose own text starts with the 合集 label and clicks it,
+ * `click-option` picks the option whose own text equals the requested collection (exact, never by
+ * index) — a native `<select>` is served by assigning the matching option's value — and `read`
+ * re-reads the row afterwards so a click that did not commit is never mistaken for a selection.
+ */
+function collectionScript(
+    mode: 'wujie' | 'direct',
+    action: 'click-entry' | 'click-option' | 'read',
+    label: string,
+    name: string,
+): string {
+    return `${rootScriptPrefix(mode)} // kk-shp-collection
+    const label = ${JSON.stringify(label)};
+    const name = ${JSON.stringify(name)};
+    const action = ${JSON.stringify(action)};
+    const roots = [document, root].filter(Boolean);
+    const ownText = (el) => Array.from(el.childNodes).filter((n) => n.nodeType === 3).map((n) => (n.textContent || '').trim()).join(' ').trim();
+    const rendered = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+    const all = [];
+    for (const scope of roots) {
+        if (!scope || !scope.querySelectorAll) continue;
+        for (const el of scope.querySelectorAll('*')) all.push(el);
+    }
+    const row = all.find((el) => rendered(el) && ownText(el).startsWith(label));
+    if (action === 'click-entry') {
+        if (!row) return JSON.stringify({ ok: false, reason: 'entry-absent' });
+        const target = row.closest('button, div, li, label') || row;
+        target.click();
+        return JSON.stringify({ ok: true, text: String(row.textContent || '').trim().slice(0, 80) });
+    }
+    if (action === 'click-option') {
+        const exact = all.filter((el) => rendered(el) && ownText(el) === name);
+        if (exact.length > 0) {
+            const option = exact[exact.length - 1];
+            (option.closest('li, div, label, button') || option).click();
+            return JSON.stringify({ ok: true, how: 'text' });
+        }
+        const near = all.filter((el) => rendered(el) && ownText(el).includes(name)).map((el) => ownText(el).slice(0, 40));
+        return JSON.stringify({ ok: false, reason: 'option-absent', seen: [...new Set(near)].slice(0, 8) });
+    }
+    const state = row === undefined ? '' : String(row.textContent || '').trim().slice(0, 120);
+    return JSON.stringify({ ok: state.includes(name), text: state });
 })()`;
 }
 
@@ -912,7 +986,14 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
             const audio = await resolveAudioPath(metadataRecord.audio ?? metadataRecord.audioFile);
             if (audio.error !== undefined) return fail(SHP_TARGET, audio.error);
             media = [audio.path as string];
-            const cover = await resolveCoverPath(payload.content.metadata?.coverPath ?? payload.options?.coverPath);
+            // 封面 source ladder: an explicit coverPath, else the bundle's own cover image. WHY the
+            // fallback (2026-11-16): the publish matrix builds the payload through ContentSchema,
+            // which strips the variant's top-level `options` block, so a daily episode arrives with
+            // `metadata.coverImage` only — and the 音频 form REFUSES to submit without a 封面
+            // (「请上传封面」), which is how every earlier audio publish ended `unknown`.
+            const cover = await resolveCoverPath(
+                payload.content.metadata?.coverPath ?? payload.options?.coverPath ?? metadataRecord.coverImage,
+            );
             if (cover.error !== undefined) return fail(SHP_TARGET, cover.error);
             coverPath = cover.path;
         } else {
@@ -924,6 +1005,8 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
         if (tags.error !== undefined) return fail(SHP_TARGET, tags.error);
         const original = resolveOriginal(payload.content.metadata?.original);
         if (original.error !== undefined) return fail(SHP_TARGET, original.error);
+        const collection = resolveCollection(payload.options?.collection ?? payload.content.metadata?.collection);
+        if (collection.error !== undefined) return fail(SHP_TARGET, collection.error);
         const unsupported = unsupportedFields(payload, this.operation);
         if (unsupported.length > 0) {
             return fail(
@@ -975,19 +1058,39 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
                     // bounded step like every other one, not the 180s interactive login wait.
                     timeoutMs: this.stepTimeoutMs,
                 },
-                async ({ page }) =>
-                    this.runPostFlow(
+                async ({ page }) => {
+                    // 音频 has its own surface (`/platform/post/createAudio`); driving it through the
+                    // video rails is what made every audio publish end `uncertain` (2026-11-15).
+                    // shortVideo/image/music keep the flow below untouched.
+                    if (this.operation === 'audio') {
+                        return runAudioPostFlow({
+                            page,
+                            title,
+                            body,
+                            tags: tags.tags as readonly string[],
+                            media,
+                            coverPath,
+                            collection: collection.collection,
+                            publishPublic: requested === 'public',
+                            operation: this.operation,
+                            profileDir,
+                            stepTimeoutMs: this.stepTimeoutMs,
+                        });
+                    }
+                    return this.runPostFlow(
                         page,
                         POST_FLOW_SPECS[this.operation],
                         title,
                         body,
                         tags.tags as readonly string[],
                         original.original === true,
+                        collection.collection,
                         media,
                         coverPath,
                         requested === 'public',
                         profileDir,
-                    ),
+                    );
+                },
             );
         } catch (error) {
             // Same ordering rule as the preflight refusal: the recovery command is never the tail
@@ -1018,6 +1121,7 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
         body: string,
         tags: readonly string[],
         declareOriginal: boolean,
+        collection: string | undefined,
         media: readonly string[],
         coverPath: string | undefined,
         publishPublic: boolean,
@@ -1030,6 +1134,7 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
             publishStatus,
             profileDir,
             ...(declareOriginal ? { original: true } : {}),
+            ...(collection !== undefined ? { collection } : {}),
         };
 
         // Dashboard click-through: the entry button opens the unified /platform/post/create
@@ -1247,6 +1352,15 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
             );
         }
 
+        // 合集: AUDIO only, and only when requested (2026-11-16). Ordered after the description —
+        // the row renders with the rest of the post-upload rails on that form — and before the
+        // declaration/cover/submit so a collection that cannot be committed refuses while nothing
+        // has been published yet.
+        if (collection !== undefined) {
+            const collected = await this.selectCollectionFlow(page, mode, spec, collection, metadata);
+            if (collected !== undefined) return collected;
+        }
+
         // 声明原创: ONLY on the explicit operator assertion (metadata.original === true); the
         // vendor's unconditional run and log-only degradation (shipinhao.js:10-14, 2270-2310) are
         // deliberately not mirrored. Ordering matches the vendor: after description, before cover
@@ -1384,6 +1498,88 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
             message: `shipinhao ${this.operation} ${publishStatus} confirmed in profile ${profileDir}`,
             metadata: { ...metadata, confirmedBy: receiptStage },
         });
+    }
+
+    /**
+     * 合集 selection for the AUDIO post (2026-11-16): open the row, click the option by exact text,
+     * then require the row to read back the requested collection. Every step type-fails — a missing
+     * row, an absent option or a click that did not commit — because the operator's requirement is
+     * that the episode lives in that collection: publishing without it is the wrong result, not a
+     * degraded one.
+     */
+    private async selectCollectionFlow(
+        page: Page,
+        mode: 'wujie' | 'direct',
+        spec: PostFlowSpec,
+        collection: string,
+        metadata: Record<string, unknown>,
+    ): Promise<Result | undefined> {
+        const failCollection = (message: string, stage: string, evidence?: string): Result =>
+            stageFail(SHP_TARGET, message, stage, metadata, evidence);
+        const label = spec.selectors.collectionLabel;
+        const read = (raw: string): { ok: boolean; reason?: string; text?: string; seen?: string[] } => {
+            try {
+                return JSON.parse(raw) as { ok: boolean; reason?: string; text?: string; seen?: string[] };
+            } catch {
+                return { ok: false, reason: 'unreadable-probe' };
+            }
+        };
+        const entry = read(String(await page.evaluate(collectionScript(mode, 'click-entry', label, collection))));
+        if (!entry.ok) {
+            return failCollection(
+                `shipinhao 合集 (collection) row not found on the ${this.operation} form — refusing to publish outside the requested 合集 '${collection}'`,
+                'collection-select',
+                entry.reason,
+            );
+        }
+        const option = await expectOutcome(
+            async () => {
+                const picked = read(
+                    String(await page.evaluate(collectionScript(mode, 'click-option', label, collection))),
+                );
+                if (picked.ok) return 'option clicked';
+                // A native `<select>` renders no clickable option node: Playwright's own selectOption
+                // is the write path for it (no page-script value assignment — the flow never writes
+                // `.value`). It pierces open shadow roots, and a select without that label throws, so
+                // a missing collection stays a typed refusal.
+                const selects = page.locator('select');
+                const count = await selects.count();
+                for (let i = 0; i < count; i++) {
+                    try {
+                        await selects.nth(i).selectOption({ label: collection }, { timeout: COLLECTION_PROBE_MS });
+                        return 'option selected';
+                    } catch {
+                        // Not this select — keep looking; the refusal below still fires.
+                    }
+                }
+                return null;
+            },
+            { timeoutMs: this.stepTimeoutMs, label: 'shipinhao 合集 option' },
+        );
+        if (!option.ok) {
+            const seen = read(String(await page.evaluate(collectionScript(mode, 'click-option', label, collection))));
+            return failCollection(
+                `shipinhao 合集 '${collection}' is not among the collections the account offers — refusing to publish outside it`,
+                'collection-select',
+                `${option.error}; seen: ${(seen.seen ?? []).join(' | ')}`,
+            );
+        }
+        const commit = await expectOutcome(
+            async () => {
+                const state = read(String(await page.evaluate(collectionScript(mode, 'read', label, collection))));
+                return state.ok ? 'collection read back' : null;
+            },
+            { timeoutMs: this.stepTimeoutMs, label: 'shipinhao 合集 readback' },
+        );
+        if (!commit.ok) {
+            const state = read(String(await page.evaluate(collectionScript(mode, 'read', label, collection))));
+            return failCollection(
+                `shipinhao 合集 '${collection}' was clicked but the form does not show it committed — refusing to submit`,
+                'collection-readback',
+                `row text: ${state.text ?? '<absent>'} — ${commit.error}`,
+            );
+        }
+        return undefined;
     }
 
     /**

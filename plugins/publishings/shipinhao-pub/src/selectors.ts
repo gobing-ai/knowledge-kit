@@ -243,6 +243,19 @@ export const SHP_VIDEO_SELECTORS = {
      * on an explicit `publishStatus: 'public'`.
      */
     publishButton: ['button:text-is("发表")', '[role="button"]:text-is("发表")'],
+    /**
+     * The 合集 (collection) entry on the AUDIO post form (2026-11-16, operator requirement: the daily
+     * episode belongs to 合集 `每日AI乱炖`). Matched by its own visible text, because the row ships
+     * without a stable class in the creator form; the flow then opens it and picks the option by
+     * exact text (`collectionOptionText`), never by index.
+     *
+     * Audio-only by contract: `collection` is listed in `unsupportedFields` for the other three
+     * post kinds, so 视频/图文/音乐 keep their exact current behaviour and a collection request on
+     * them is refused before a browser opens.
+     */
+    collectionEntry: ['button:has-text("合集")', 'div:has-text("合集")', 'span:has-text("合集")'],
+    /** Label the entry row is expected to carry once a collection is committed (readback gate). */
+    collectionLabel: '合集',
 } as const;
 
 /** Keys of the selector map, for typed probes. */

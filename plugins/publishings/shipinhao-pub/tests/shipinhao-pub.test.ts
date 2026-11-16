@@ -36,6 +36,7 @@ import {
     type ProfileLaunchRequest,
 } from '@gobing-ai/ts-browser-automation';
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
+import { buildAudioDescription, clipAudioTitle } from '../src/audio-flow';
 import {
     buildShipinhaoDescription,
     SHP_LOGIN_INSTRUCTION,
@@ -476,6 +477,8 @@ describe('1. declared surface (selectors, constants, config, operations, manifes
     test('selector table keys and pinned leading candidates', () => {
         expect(Object.keys(SHP_VIDEO_SELECTORS).sort()).toEqual(
             [
+                'collectionEntry',
+                'collectionLabel',
                 'coverConfirmFooter',
                 'coverConfirmLabels',
                 'coverDialog',
@@ -808,6 +811,39 @@ describe('2. pre-browser refusals (zero browser launches)', () => {
         expect(result.error).toContain('metadata.images');
         expect(result.error).toContain('metadata.publishTime');
         expect(result.error).toContain('scheduling/publishTime is an unported vendor enhancement');
+        expect(fake.requests).toHaveLength(0);
+    });
+
+    test('合集 (collection) is implemented for audio only; the other three kinds refuse it by name', async () => {
+        // 2026-11-16 operator requirement: the daily episode belongs to 合集 每日AI乱炖 — AUDIO only,
+        // so 视频/图文/音乐 keep their exact current behaviour and a collection request on them is a
+        // typed unsupported field, never a silent drop.
+        const cases = [
+            { operation: 'shortVideo' as const, media: { videoPath: VIDEO_PATH }, format: 'video' as const },
+            { operation: 'music' as const, media: { audio: AUDIO_PATH }, format: 'audio' as const },
+            { operation: 'image' as const, media: { images: IMAGE_PATHS }, format: 'image' as const },
+        ];
+        for (const entry of cases) {
+            const fake = makeFakeLauncher();
+            const result = await transport(fake, 'script', entry.operation).publish({
+                content: draftContent(entry.media, { format: entry.format }),
+                options: { collection: '每日AI乱炖' },
+            });
+            expect(result.ok, entry.operation).toBe(false);
+            expect(result.error, entry.operation).toContain('options.collection');
+            expect(fake.requests, entry.operation).toHaveLength(0);
+        }
+    });
+
+    test('合集: a non-string collection refuses for audio before any browser work', async () => {
+        const fake = makeFakeLauncher();
+        const t = transport(fake, 'script', 'audio');
+        const result = await t.publish({
+            content: draftContent({ audio: AUDIO_PATH }, { format: 'audio' }),
+            options: { collection: 42 },
+        });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain("collection must be a nonempty string when present, got '42'");
         expect(fake.requests).toHaveLength(0);
     });
 
@@ -1456,42 +1492,71 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
         expect(result.metadata?.evidence).toContain('2 disagreeing fresh works ids');
     });
 
-    test('an audio post (音频) rides the shared rails with the audio ladder — draft with a cover', async () => {
+    test('音频 has no draft rail: a draft request is refused by name, not approximated', async () => {
+        // Recon 2026-11-16: /platform/post/createAudio offers exactly one submit — 发表音频. The old
+        // behaviour drove the VIDEO form (发表视频) and could never persist an audio post.
         const fake = makeFakeLauncher({ onSaveClick: 'draftReceipt' });
         const result = await transport(fake, 'script', 'audio').publish({
-            content: draftContent({ audio: AUDIO_PATH, coverPath: COVER_PATH }, { format: 'audio' }),
+            content: draftContent({ audio: AUDIO_PATH }, { format: 'audio' }),
         });
-        expect(result.ok).toBe(true);
-        expect(result.metadata).toMatchObject({
-            operation: 'audio',
-            publishStatus: 'draft',
-            confirmedBy: 'draft-receipt',
-        });
-        expect(result.message).toContain('shipinhao audio draft confirmed in profile');
-        expect(fake.calls).toContain(`setInputFiles:wujie-app ${AUDIO_INPUT}|${AUDIO_PATH}`);
-        expect(fake.calls).toContain(`fill:wujie-app ${TITLE_INPUT}|Fixture 短标题`);
-        expect(fake.calls).toContain(`click:wujie-app ${SAVE}`);
-        expect(fake.calls).toContain('cover:confirm');
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('shipinhao 音频 has no draft rail');
     });
 
-    test('the audio payload may spell the file as metadata.audioFile (publish-prep contract)', async () => {
-        const fake = makeFakeLauncher({ onSaveClick: 'draftReceipt' });
-        const result = await transport(fake, 'script', 'audio').publish({
-            content: draftContent({ audioFile: AUDIO_PATH }, { format: 'audio' }),
-        });
-        expect(result.ok).toBe(true);
-        expect(fake.calls).toContain(`setInputFiles:wujie-app ${AUDIO_INPUT}|${AUDIO_PATH}`);
-    });
-
-    test('a public audio post clicks 发表 and confirms on the same fresh-receipt contract', async () => {
+    test('音频 requires a cover: the form refuses to submit without one (「请上传封面」)', async () => {
+        // Live recon 2026-11-16: submitting the 音频 form with no 封面 fails client-side validation
+        // and produces no works row — the trap that made every earlier audio publish `unknown`.
         const fake = makeFakeLauncher();
         const result = await transport(fake, 'script', 'audio').publish({
             content: draftContent({ audio: AUDIO_PATH, publishStatus: 'public' }, { format: 'audio' }),
         });
-        expect(result.ok).toBe(true);
-        expect(result.url).toBe(PUBLISH_URL);
-        expect(result.message).toContain('shipinhao audio public confirmed in profile');
-        expect(fake.calls).toContain(`click:wujie-app ${PUBLISH}`);
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('shipinhao 音频 requires a cover');
+        expect(result.error).toContain('请上传封面');
+    });
+
+    test('the audio payload may spell the file as metadata.audioFile (publish-prep contract)', async () => {
+        // The resolver still honours both spellings: the request must get past the media gate and
+        // fail only where the (fake) page cannot serve the audio surface.
+        const fake = makeFakeLauncher();
+        const result = await transport(fake, 'script', 'audio').publish({
+            content: draftContent({ audioFile: AUDIO_PATH, publishStatus: 'public' }, { format: 'audio' }),
+        });
+        expect(result.ok).toBe(false);
+        expect(result.error ?? '').not.toContain('must be a non-empty local audio file path');
+    });
+
+    test('音频 takes its 封面 from metadata.coverImage when the matrix stripped options (daily wiring)', async () => {
+        // The publish matrix builds the payload through ContentSchema, which drops the variant's
+        // top-level `options` (audioFile/coverPath). A daily episode therefore arrives with
+        // metadata.coverImage only — and the 音频 form refuses to submit without a 封面, so this
+        // fallback is what lets `kk news generate --publish` ship the episode without a preset path.
+        const fake = makeFakeLauncher();
+        const result = await transport(fake, 'script', 'audio').publish({
+            content: {
+                body: 'episode body',
+                title: '每日AI乱炖 · 2026-11-16',
+                format: 'audio',
+                metadata: {
+                    publishStatus: 'public',
+                    audioFile: AUDIO_PATH,
+                    coverImage: COVER_PATH,
+                    collection: '每日AI乱炖',
+                },
+            },
+        });
+        // It must get past the media/cover gates and fail only on the (fake) page not serving the
+        // real 音频 surface — never on a missing cover.
+        expect(result.error ?? '').not.toContain('requires a cover');
+        expect(result.error ?? '').not.toContain('coverPath does not resolve');
+    });
+
+    test('音频 helpers: the 标题 is clipped to 40 and the 描述 carries the topic tags inside 3000', () => {
+        expect(clipAudioTitle('每日AI乱炖 · 2026-11-15')).toBe('每日AI乱炖 · 2026-11-15');
+        expect(clipAudioTitle('字'.repeat(60))).toHaveLength(40);
+        const description = buildAudioDescription('body text', ['ai-news', '#daily']);
+        expect(description).toBe('body text\n\n#ai-news #daily');
+        expect(buildAudioDescription('x'.repeat(4_000), []).length).toBe(3_000);
     });
 
     test('a music post (音乐) uses the same audio ladder plus cover rails', async () => {

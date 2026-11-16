@@ -42,7 +42,10 @@
             "variant": "episode",
             "tier": 1,
             "window": "after-generate",
-            "mode": "live"
+            "mode": "live",
+            "options": {
+                "collection": "每日AI乱炖"
+            }
         },
         {
             "plugin": "wechatmp-pub",
