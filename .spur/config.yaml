@@ -256,6 +256,10 @@ builder:
     # languages Biome handles and passes `--no-errors-on-unmatched`, so "nothing to check" is a pass
     # while a real finding still fails the gate.
     lint-changed: bun scripts/lint-changed.ts {files}
+    # The changed-scope test run. Bound so its coverage goes to a scratch directory: the light gate's
+    # own run otherwise overwrote the repo-wide `.coverage/lcov.info` with one workspace's numbers, and
+    # the NEXT gate's coverage rule then failed every file that run had not touched (task 0383).
+    test-changed: bun scripts/test-changed.ts {workspace} {paths}
   bump-ver:
     # Needs spur >= 0.3.83 (released 2026-09-16); older spur silently ignores the key.
     aggregatePackage: knowledge-kit

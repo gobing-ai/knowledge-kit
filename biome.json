@@ -15,7 +15,8 @@
             "!**/node_modules",
             "!**/vendors",
             "!**/.works",
-            "!**/*.generated.mjs"
+            "!**/*.generated.mjs",
+            "!**/docs/tasks/evidence"
         ]
     },
     "formatter": {
