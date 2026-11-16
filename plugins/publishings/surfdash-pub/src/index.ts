@@ -435,6 +435,46 @@ export function digestCheckGate(filePath: string, locale: DigestLocale): string 
 }
 
 /**
+ * Every locale file of one post that exists on disk, in `PATCH_LOCALES` order.
+ * The locale is the last `zh`/`en`/`ja` directory in the path; no such segment → []
+ * (a path outside the locale tree has no set to check).
+ */
+function localeSiblings(postPath: string): Array<{ filePath: string; locale: DigestLocale }> {
+    const segments = postPath.split(sep);
+    let index = -1;
+    for (let i = segments.length - 1; i >= 0; i--) {
+        if (segments[i] === 'zh' || segments[i] === 'en' || segments[i] === 'ja') {
+            index = i;
+            break;
+        }
+    }
+    if (index < 0) return [];
+    return PATCH_LOCALES.map((locale) => ({
+        filePath: [...segments.slice(0, index), locale, ...segments.slice(index + 1)].join(sep),
+        locale,
+    }));
+}
+
+/**
+ * Digest gate over the whole locale set instead of the primary file alone (2026-11-16, GH #191).
+ *
+ * An untranslated sibling — the zh title, description and key points sitting under `/en/` or `/ja/`
+ * — passes a zh-only check here and then fails the site's check-digest three ways: the locale's own
+ * series name, the body language, and the regenerated-frontmatter drift. `sync` hands all three
+ * locales to the CMS and a prepared publish commits all three, so every existing file is checked.
+ * Missing files stay skipped (the pre-translation `prepare` path has no siblings yet), and
+ * `SURFDASH_DIGEST_CHECK` keeps governing the gate itself.
+ */
+export function digestCheckLocaleSet(postPath: string): string | undefined {
+    for (const { filePath, locale } of localeSiblings(postPath)) {
+        if (!existsSync(filePath)) continue;
+        const problem = digestCheckGate(filePath, locale);
+        if (problem) return `${locale}: ${problem}`;
+    }
+    return undefined;
+}
+
+/**
  * Helper to parse file paths from `git status --porcelain` output.
  */
 function parsePorcelainPaths(stdout: string): string[] {
@@ -560,10 +600,20 @@ export async function runDailyTopicsSync(surfdashRoot: string, zhPostPath: strin
 /** Outcome of {@link runSiteGate}. */
 export type SiteGateOutcome = { ok: true } | { ok: false; error: string };
 
-/** Commands executed by the surfdash site gate before commit and push to main. */
+/**
+ * Commands executed by the surfdash site gate before commit and push to main.
+ *
+ * This list must stay equal to the content suite surfdash's own deploy gate runs
+ * (`bun run check:all` = check:content + check:body + check:seo) plus the digest reporter.
+ * It used to stop at `check:content`, so a body-rule violation or a localized cover asset that
+ * `check:seo` reports as `image-asset-missing` passed here and failed the site's CI right after
+ * the push (GH #191, `docs(articles): add more articles`, 2026-11-15).
+ */
 const SITE_GATE_COMMANDS: readonly (readonly string[])[] = [
     ['bun', 'run', 'sd', 'check', 'digest'],
     ['bun', 'run', 'check:content'],
+    ['bun', 'run', 'check:body'],
+    ['bun', 'run', 'check:seo'],
 ];
 
 /**
@@ -932,11 +982,11 @@ async function syncPost(options: SurfdashPubOptions): Promise<Result> {
                 `publish-orchestrator sync failed (exit ${spawned.exitCode}): ${withEmdashTokenHint(cliErrorText(spawned))}`,
             );
         }
-        // Digest contract (2026-10-24): verify the synced post's frontmatter for its own locale;
-        // paths outside content/posts/articles/<zh|en|ja>/ carry no digest series to check.
-        const localeInPath = postPath.postPath.match(/[\\/]content[\\/]posts[\\/]articles[\\/](zh|en|ja)[\\/]/);
-        if (localeInPath) {
-            const digestProblem = digestCheckGate(postPath.postPath, localeInPath[1] as DigestLocale);
+        // Digest contract (2026-10-24; locale set 2026-11-16): the orchestrator syncs all three
+        // locale files to the CMS, so verify the synced post AND its siblings. Paths outside
+        // content/posts/articles/<zh|en|ja>/ carry no digest series to check.
+        if (/[\\/]content[\\/]posts[\\/]articles[\\/](?:zh|en|ja)[\\/]/.test(postPath.postPath)) {
+            const digestProblem = digestCheckLocaleSet(postPath.postPath);
             if (digestProblem) return fail(digestProblem);
         }
         return ResultSchema.parse({
@@ -1389,8 +1439,9 @@ async function publishPreparedFile(
         // Contract check (ADR-008): the site, not this plugin, owns SEO metadata.
         const notRefined = requireRefined(filePath);
         if (notRefined) return failUncertain(notRefined);
-        // Digest contract (2026-10-24): the refined values themselves must hold, before any push.
-        const digestProblem = digestCheckGate(filePath, locale);
+        // Digest contract (2026-10-24; locale set 2026-11-16): the refined values themselves must
+        // hold for every locale this publish commits, before any push.
+        const digestProblem = digestCheckLocaleSet(filePath);
         if (digestProblem) return failUncertain(digestProblem);
         const refined = readRefinedSnapshot(filePath);
 

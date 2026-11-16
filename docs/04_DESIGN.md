@@ -1687,6 +1687,14 @@ locale identities before and after the remote orchestration, and scopes its cont
 to all three dated locale directories. Validation receipts and successful cache reuse bind the
 same paths, input bytes and locale fingerprint; a missing or changed identity blocks dispatch.
 
+Before committing and pushing to `main` the transport runs the site's own gate in the checkout —
+`bun run sd check digest` plus `check:content`, `check:body` and `check:seo`, i.e. the same content
+suite surfdash's `deploy.yml` runs — and the digest frontmatter gate covers **every existing locale
+file** of the post, not only the zh primary. Both close the 2026-11-15 gap (surfdash GH #191): the
+gate stopped at `check:content`, so `check:body` / `check:seo` findings (a localized cover asset the
+build would 404, body-rule violations) surfaced only in the site's CI after the push, and a zh-only
+digest check passed an untranslated en/ja sibling that `sync` had already handed to the CMS.
+
 ### `@gobing-ai/zenn-pub` (`plugins/publishings/zenn-pub`, kind `publish`)
 
 | Export | Kind | Notes |

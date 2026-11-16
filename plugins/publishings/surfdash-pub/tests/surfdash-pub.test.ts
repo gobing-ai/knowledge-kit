@@ -732,7 +732,12 @@ describe('surfdash-pub operations (0096)', () => {
             JSON.stringify({
                 name: 'fake-surfdash',
                 private: true,
-                scripts: { sd: 'bun scripts/sd.ts', 'check:content': 'bun scripts/sd.ts check content' },
+                scripts: {
+                    sd: 'bun scripts/sd.ts',
+                    'check:content': 'bun scripts/sd.ts check content',
+                    'check:body': 'bun scripts/sd.ts check body',
+                    'check:seo': 'bun scripts/sd.ts check seo',
+                },
             }),
         );
         const zhPostPath = await writeFixtureZhPost(root, '20260906-prepared-all-locales');
@@ -813,6 +818,8 @@ describe('surfdash-pub operations (0096)', () => {
                     ['seo', 'listen-link', '--backfill', '--write'],
                     ['check', 'digest'],
                     ['check', 'content'],
+                    ['check', 'body'],
+                    ['check', 'seo'],
                 ]);
                 const pushedPaths = Bun.spawnSync(
                     ['git', '--git-dir', origin, 'diff-tree', '--no-commit-id', '--name-only', '-r', 'main'],
@@ -2118,6 +2125,50 @@ describe('digest frontmatter check wiring in publishPost and syncPost (Item 4)',
         }
     });
 
+    test('syncPost rejects an untranslated locale sibling, not only the zh primary', async () => {
+        const root = join(process.cwd(), '.works/tmp/test-sync-locale-set');
+        await writeSurfdashFixture(root);
+
+        const digestFrontmatter = [
+            '---',
+            'title: "每日AI乱炖 · 2026-11-15：英伟达、DeepMind"',
+            'tags: ["sub-category:ai-daily"]',
+            'publishDate: "2026-11-15"',
+            'description: "英伟达宣布黄仁勋卸任首席执行官一职，资本市场的反应是即时的，公司股价当日收跌而大盘略有上涨，接下来要看正式继任者是谁、何时交接。董事会与财务口径将主导过渡期的决策。"',
+            'draft: false',
+            'refined: true',
+            'key_points:',
+            '  - "英伟达 — 黄仁勋宣布立即卸任 CEO 并离开董事会。"',
+            '  - "DeepMind — Google DeepMind 公开了机器人平台 Gemini Robotics 2.5。"',
+            '---',
+            '',
+            '正文。',
+            '',
+        ].join('\n');
+        const zhDir = join(root, 'content', 'posts', 'articles', 'zh', '20261115-ai-2026-11-15');
+        const jaDir = join(root, 'content', 'posts', 'articles', 'ja', '20261115-ai-2026-11-15');
+        await mkdir(zhDir, { recursive: true });
+        await mkdir(jaDir, { recursive: true });
+        const zhPostPath = join(zhDir, 'index.md');
+        await writeFile(zhPostPath, digestFrontmatter, 'utf-8');
+        // The 2026-11-15 shape: the ja file is a byte-copy of the zh post (no translation).
+        await writeFile(join(jaDir, 'index.md'), digestFrontmatter, 'utf-8');
+
+        process.env.SURFDASH_ROOT = root;
+        try {
+            const result = await new PostsurfingFileCliTransport().publish({
+                content: { title: 'unused', body: 'unused', format: 'markdown' },
+                options: { operation: 'sync', postPath: zhPostPath },
+            });
+            expect(result.ok).toBe(false);
+            expect(result.error).toContain('ja: digest frontmatter check failed:');
+            expect(result.error).toContain('デイリーAIシチュー');
+        } finally {
+            delete process.env.SURFDASH_ROOT;
+            await rm(root, { recursive: true, force: true });
+        }
+    });
+
     describe('surfdash site gate before commit/push', () => {
         interface GateFixture {
             base: string;
@@ -2164,6 +2215,8 @@ describe('digest frontmatter check wiring in publishPost and syncPost (Item 4)',
                     scripts: {
                         sd: 'bun scripts/sd.ts',
                         'check:content': 'bun scripts/check-content.ts',
+                        'check:body': 'bun scripts/check-extra.ts body',
+                        'check:seo': 'bun scripts/check-extra.ts seo',
                     },
                 }),
                 'utf-8',
@@ -2209,6 +2262,17 @@ console.log('check:content ok');
 process.exit(0);
 `;
             await writeFile(join(work, 'scripts', 'check-content.ts'), `${checkContentScript.trim()}\n`, 'utf-8');
+
+            const checkExtraScript = `
+const rule = process.argv[2];
+if (process.env[\`TEST_CHECK_\${rule.toUpperCase()}_FAIL\`] === '1') {
+    console.error(\`check:\${rule} error in content/posts/articles/en/20261024-test/index.md: localized cover missing\`);
+    process.exit(1);
+}
+console.log(\`check:\${rule} ok\`);
+process.exit(0);
+`;
+            await writeFile(join(work, 'scripts', 'check-extra.ts'), `${checkExtraScript.trim()}\n`, 'utf-8');
 
             const bin = join(work, 'postsurfing');
             await writeFile(
@@ -2322,6 +2386,37 @@ process.exit(0);
             } finally {
                 restoreFetch();
                 delete process.env.TEST_CHECK_CONTENT_FAIL;
+                delete process.env.POSTSURFING_BIN;
+                delete process.env.SURFDASH_ROOT;
+                process.env.SURFDASH_AUTO_PUSH = '0';
+                await rm(fx.base, { recursive: true, force: true });
+            }
+        });
+
+        test('check:seo fails -> no commit/push and error text contains output', async () => {
+            const fx = await setupGateFixture('test-seo-fail');
+            const restoreFetch = mockLiveFetch();
+
+            process.env.POSTSURFING_BIN = join(fx.work, 'postsurfing');
+            process.env.SURFDASH_ROOT = fx.work;
+            process.env.SURFDASH_AUTO_PUSH = '1';
+            process.env.TEST_CHECK_SEO_FAIL = '1';
+            try {
+                const transport = new PostsurfingFileCliTransport();
+                const result = await transport.publish({ content: makeContent(fx.coverSrc) });
+                expect(result.ok).toBe(false);
+                // The site's deploy gate runs check:content + check:body + check:seo; our gate must
+                // fail on the same suites or a missing localized asset ships (GH #191).
+                expect(result.error).toContain('bun run check:seo');
+                expect(result.error).toContain('localized cover missing');
+
+                const pushed = await new Response(
+                    Bun.spawn(['git', '--git-dir', fx.origin, 'log', '-1', '--format=%s', 'main']).stdout,
+                ).text();
+                expect(pushed.trim()).toBe('seed');
+            } finally {
+                restoreFetch();
+                delete process.env.TEST_CHECK_SEO_FAIL;
                 delete process.env.POSTSURFING_BIN;
                 delete process.env.SURFDASH_ROOT;
                 process.env.SURFDASH_AUTO_PUSH = '0';
