@@ -50,7 +50,7 @@
             "variant": "article",
             "tier": 2,
             "window": "after-generate",
-            "mode": "live",
+            "mode": "draft",
             "options": {
                 "collection": "每日AI资讯"
             }

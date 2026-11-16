@@ -252,6 +252,12 @@ builder:
   # feature completion at a narrower command.
   actions:
     check-feature: bun run spur-check
+    # The light gate's changed-file check. Biome cannot process Markdown and skips gitignored
+    # paths, so a docs-only change set left it with nothing to check and it exited 1 with "No files
+    # were processed" — every docs-only task was ungateable (task 0383). The wrapper filters to the
+    # languages Biome handles and passes `--no-errors-on-unmatched`, so "nothing to check" is a pass
+    # while a real finding still fails the gate.
+    lint-changed: bun scripts/lint-changed.ts {files}
   bump-ver:
     # Needs spur >= 0.3.83 (released 2026-09-16); older spur silently ignores the key.
     aggregatePackage: knowledge-kit
