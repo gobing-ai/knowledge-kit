@@ -27,6 +27,23 @@ are read by `invoke.ts` at spawn, never by this skill.
   provider; seeds cannot be set (the wrapper's default 42 applies); and only
   multiples of 32 in 256–4096 are accepted per edge — every other preset falls
   back to an aspect-only canvas (0379).
+- **Running or verifying it locally.** `H3_IMAGE_MLX_BIN` can live in
+  `plugins.generations.image-gen.env` in `~/.config/kk/config.yaml`, so no shell
+  export is needed. `KK_IMAGE_DRY_RUN=1` proves prompt composition and provider
+  selection in about a second; one real `free` render is ~6 min because model
+  load dominates (a smaller canvas saves nothing). `scripts/gen-samples.ts` and
+  `scripts/eval-style-presets.ts` both accept `--provider h3-local` (the model
+  defaults to `h3`) and need `--concurrency 1` — three concurrent model loads
+  thrash a 16 GB machine. A reference edit costs ~28 min: never use one as a
+  smoke test.
+- **H3 paints prompt tags as text unless the style declares a `negative`.** Same
+  subject, canvas and format at 1024²: with `editorial` (no `negative`) the model
+  rendered "8K, high-quality, masterpiece…" as gibberish lettering in the frame;
+  with `daily-news` (whose `avoid: text, letters, words, …` segment K3 now
+  appends) the identical request came back clean. When rendering locally, use a
+  style that declares `negative` (`daily-news`, `quasi-news-podcast`,
+  `xhs-knowledge`, `clean-webapp-ui`) or add one — never compare a local sample
+  against a cloud one from a style that leaves text unconstrained.
 - **Reference images** ride `--ref` only when `supportsReferenceImages(model)`
   is true for the resolved model — a substring test over the registry's
   `refModels` fragments (no `refModels` = every model; empty list = none).

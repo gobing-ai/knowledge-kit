@@ -4,7 +4,7 @@ name: Add an opt-in h3-image-mlx provider to image-gen
 status: done
 template: feature-impl
 created_at: 2026-11-15T22:44:30.594Z
-updated_at: "2026-11-16T00:49:09.535Z"
+updated_at: "2026-11-16T02:17:11.773Z"
 
 ac_altitude: graduating
 ac_numbering: task-local
@@ -191,6 +191,19 @@ Correction after K3 (0380): the "ignored negatives" limit above no longer holds 
 | AC7 | MET | command | `launchctl list \| grep spur-serve` + `.spur/config.yaml:151`; `env -i PATH=… HOME=… h3gen.sh --width 256 --height 256` rendered in 184 s off `/Volumes/RTK9210-FLASH`; `plugins/kk/workflows/kk-daily-ai-voice.yaml:53,74` still pins minimax |
 | AC8 | MET | command | `bun run lint` 0, `bun run build` 0, `bun run test` 5190 pass / 0 fail, `bun run test-pre-check` 58 rules pass, `bun run test-post-check` 2 rules pass; docs at `docs/04_DESIGN.md:2338` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+
+**Local provider readiness (2026-11-15, post-landing)** — `H3_IMAGE_MLX_BIN` now lives in
+`plugins.generations.image-gen.env` (`~/.config/kk/config.yaml`), so no shell export is needed. Verified
+end to end with the installed `kk` from the repo root and the shell var unset: `free` × `editorial` at
+1024² returned `provider: h3-local`, `model: h3`, `sizeRequest: exact`, a 1.0 MB PNG, ~7 min wall, and
+an empty `$TMPDIR/kk-image-gen-h3-local` afterwards.
+
+**Quality probe — the adapter is fine, the prompt decides text.** The same subject/canvas/format
+through the real pipeline twice: `editorial` (no `negative`) came back with the prompt's quality tags
+painted into the frame as gibberish lettering ("8K, high-quality, masterpiece…"), while `daily-news`
+(whose `avoid: text, letters, words, …` segment K3 appends) produced a clean, text-free image. Guidance
+for local renders: use a style that declares `negative`, or add one; the earlier "TOP" fragment on the
+xhs-card rehearsal is the same effect, not an adapter defect.
 
 ### Review
 
