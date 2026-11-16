@@ -4,7 +4,7 @@ name: kk-publish workflow and news publish cut-over
 status: done
 template: feature-impl
 created_at: 2026-11-13T18:13:39.870Z
-updated_at: "2026-11-14T12:04:08.545Z"
+updated_at: "2026-11-15T23:42:15.744Z"
 feature_id: G61
 
 ac_altitude: task-local
@@ -224,6 +224,8 @@ no live send anywhere (every test and probe runs `--dummy`); the stage bodies in
 | AC3 — The nine-node workflow matches the eighteen-node one (req: R7) | MET | test | `apps/cli/tests/kk-publish.e2e.test.ts:597` |
 | AC4 — Gate (req: R8) | MET | command | `spur self exec check` — `.spur/run/0366-check-receipt.json` PASS (digest `82bdbc81…` = gate log `git-tree`); `.spur/run/0366-test-gate.log:378-383` 5234 pass / 0 fail |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+
+- Evidence-plane repair (2026-11-15, ADR-131): the `.spur/run/0366-check-receipt.json` cited above is **LOST** — it lived in the run's disposable `.spur/` plane and no copy survived that run. The receipt bound the tree-hash gate PASS for that day; the durable statement of the same fact is this section's test evidence.
 
 ### Review
 

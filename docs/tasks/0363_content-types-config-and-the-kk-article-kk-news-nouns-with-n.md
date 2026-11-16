@@ -4,7 +4,7 @@ name: content_types config and the kk article / kk news nouns with new and statu
 status: done
 template: feature-impl
 created_at: 2026-11-13T18:13:39.059Z
-updated_at: "2026-11-15T04:01:17.334Z"
+updated_at: "2026-11-15T23:42:14.625Z"
 feature_id: G61
 
 ac_altitude: task-local
@@ -133,6 +133,8 @@ Review corrections (2026-11-14): CLI registration uses the post-0361 owner `apps
 | AC2 — Both nouns expose the same new and status verbs (req: R4, R5, R6, R7) | MET | test | apps/cli/tests/content-nouns.e2e.test.ts:19 — idempotency, copied source, JSON output and usage codes; .spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/content-summary.json:1 |
 | AC3 — The surface doc matches the binary (req: R8) | MET | test | `apps/cli/tests/main.test.ts:64` (first-layer nouns visible), `apps/cli/tests/main.test.ts:206` (visible leaf inventory); `docs/04_DESIGN.md:1415` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+
+- Evidence-plane repair (2026-11-15, ADR-131): the run-scoped `.spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/content-summary.json` and `.spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/integrated-gate.log` cited above are **LOST** — the batch ran in a worktree whose disposable `.spur/` plane was removed at teardown and no durable copy survived. The citations stay as the historical record of what was checked; they are not resolvable pointers.
 
 ### Review
 

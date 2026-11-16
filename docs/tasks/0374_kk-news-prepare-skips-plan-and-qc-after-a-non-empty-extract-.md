@@ -4,13 +4,13 @@ name: kk news prepare skips plan and QC after a non-empty extract, so every gene
 status: done
 template: standard
 created_at: 2026-11-15T19:02:56.385Z
-updated_at: "2026-11-15T19:57:30.183Z"
+updated_at: "2026-11-15T23:42:49.601Z"
 parent_wbs: "0373"
 
 ac_altitude: task-local
 ac_numbering: task-local
 done_forced: "true"
-done_reason: "Batch driver /sp-dev-runall --tasks 0373,0374 --agent inline --worktree. Implement, gate, review and verdict ran in this worktree (branch sp/runall-0374-0373-90de0e): RED->GREEN regression test, bun run lint clean, bun run build 0, bun run test 5173 pass/0 fail, spur task verdict 0374 --from-answer=PASS. No spur workflow run was started because the batch ran inline; the verdict artifact .spur/run/0374-verdict.json is present."
+done_reason: "Batch driver /sp-dev-runall --tasks 0373,0374 --agent inline --worktree. Implement, gate, review and verdict ran in this worktree (branch sp/runall-0374-0373-90de0e): RED->GREEN regression test, bun run lint clean, bun run build 0, bun run test 5173 pass/0 fail, spur task verdict 0374 --from-answer=PASS. No spur workflow run was started because the batch ran inline; the verdict artifact was run-scoped and did not survive that worktree's disposable plane (ADR-131)."
 ---
 
 ## 0374. kk news prepare skips plan and QC after a non-empty extract, so every generation settles no-content
@@ -196,4 +196,7 @@ launched against the deployed bundle is authoring from those candidates.
 - 2026-11-15T19:13:47.685Z todo → wip (system)
 - 2026-11-15T19:56:46.404Z wip → testing (system)
 - 2026-11-15T19:57:30.176Z testing → done (system)
+- 2026-11-15T23:42:45.340Z done → wip (system)
+- 2026-11-15T23:42:49.090Z wip → testing (system)
+- 2026-11-15T23:42:49.590Z testing → done (system)
 

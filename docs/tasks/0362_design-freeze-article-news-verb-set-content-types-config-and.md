@@ -4,7 +4,7 @@ name: "Design freeze: article/news verb set, content_types config, and the simpl
 status: done
 template: feature-impl
 created_at: 2026-11-13T17:31:14.228Z
-updated_at: "2026-11-15T04:01:17.133Z"
+updated_at: "2026-11-15T23:42:14.263Z"
 feature_id: G61
 
 ac_altitude: task-local
@@ -130,6 +130,8 @@ Constraints the design must respect: `kk` owns steps, the workflow owns sequenci
 | AC2 — The planned surface is recorded (req: R8) | MET | command | `docs/04_DESIGN.md:1415` — §1.14 carries the verb table; `docs/04_DESIGN.md:1456` the `content_types` block (now marked shipped) |
 | AC3 — Phase 2–4 tasks are ready for delegation (req: R9) | MET | command | docs/design/content-pipeline-consolidation.md:572 — task checks 0363–0369 and G61 feature check pass; remaining warnings concern later unverified feature scenarios |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+
+- Evidence-plane repair (2026-11-15, ADR-131): the run-scoped `.spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/design-acceptance.log` and `.spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/integrated-gate.log` cited above are **LOST** — the batch ran in a worktree whose disposable `.spur/` plane was removed at teardown and no durable copy survived. The citations stay as the historical record of what was checked; they are not resolvable pointers.
 
 ### Review
 

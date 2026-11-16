@@ -4,7 +4,7 @@ name: Retire the old daily launchers and ITC workflows after a proven production
 status: done
 template: standard
 created_at: 2026-11-15T02:54:16.825Z
-updated_at: "2026-11-15T07:20:54.659Z"
+updated_at: "2026-11-15T23:42:16.444Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -169,6 +169,8 @@ Final verification: bun run gate exits 0 with 5171 pass, 0 fail, 26211 assertion
 | AC5 — Off vetoes explicit live-channel promotion | MET | test | `apps/cli/tests/content-publish.e2e.test.ts:39` and its article/news CLI flow pass: disabled rows stay excluded with mode off (config). Focused receipt: knowledge-kit verification run `.spur/run/0372-off-green.log` line 1; 9 pass, 0 fail, 65 assertions. |
 | AC6 — Repository quality gate passes | MET | command | bun run gate exits 0: format, build, lint/typecheck, all 58 pre-check rules, 5171 tests across 294 files (0 failures, 26211 assertions), coverage thresholds accepted, all 2 post-check rules. Receipt: knowledge-kit verification run `.spur/run/0372-final-gate.log` line 1. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+
+- Evidence-plane repair (2026-11-15, ADR-131): the `.spur/run/0372-verify-answer.txt` cited above is **LOST** — it lived in the run's disposable `.spur/` plane and no copy survived that run. The verify verdict it carried is stated in this section in prose, which is the record that remains.
 
 ### Review
 

@@ -4,7 +4,7 @@ name: News generate step verbs and the kk-news-generate workflow
 status: done
 template: feature-impl
 created_at: 2026-11-13T18:13:40.143Z
-updated_at: "2026-11-15T04:01:18.092Z"
+updated_at: "2026-11-15T23:42:16.104Z"
 feature_id: G61
 
 ac_altitude: task-local
@@ -173,6 +173,8 @@ those and still requires exactly one real dispatch — the executor probe.
 | AC3 — The new workflow freezes the same bundle as voice3 (req: R9) | MET | test | `apps/cli/tests/kk-news-generate.e2e.test.ts:419-492` — the twenty nodes close `done`, bundle variants `['article','episode','xhs-article']` and safety `pass` equal the voice3 reference freeze run over the same fixture, and `.works/tmp/test-news-generate/summary.json` is written; the empty-pool run closes done with `no-content:` and exactly one real dispatch, the executor probe (`:494-512`); 3 pass this round. |
 | AC4 — Gate (req: R10) | MET | command | `.spur/run/0367-check-receipt.json:5-17` — tier full, runId 8208f517, status PASS over `bun run lint && bun run test-pre-check && bun run test && bun run test-post-check` (`.spur/run/0367-test-gate.log:8`, `:578` 5284 pass 0 fail, `:583` both post-check rules passed); `bun run build` run on this tree by this visit exited 0; `git diff --stat -- plugins/kk/scripts plugins/kk/workflows/kk-daily-ai-voice3.yaml plugins/kk/workflows/kk-daily-safety.yaml` is empty. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+
+- Evidence-plane repair (2026-11-15, ADR-131): the `.spur/run/0367-check-receipt.json` cited above is **LOST** — it lived in the run's disposable `.spur/` plane and no copy survived that run. The receipt bound the tree-hash gate PASS for that day; the durable statement of the same fact is this section's test evidence.
 
 ### Review
 

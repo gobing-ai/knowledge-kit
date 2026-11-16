@@ -4,7 +4,7 @@ name: Unified bundle and plan schema with the five publish step verbs
 status: done
 template: feature-impl
 created_at: 2026-11-13T18:13:39.337Z
-updated_at: "2026-11-15T04:01:17.535Z"
+updated_at: "2026-11-15T23:42:14.980Z"
 feature_id: G61
 
 ac_altitude: task-local
@@ -160,6 +160,8 @@ The named commands still accept the legacy root bundle location used by existing
 | AC5 — One config line turns a channel off (req: R8) | MET | test | apps/cli/tests/content-publish.e2e.test.ts:91 — config-off exclusions, variant precedence and flag promotion; retained acceptance covers invalid config keys |
 | AC4 — Old stage spellings are untouched (req: R9, R10) | MET | test | apps/cli/tests/voice3-dag.test.ts:70 — old bundle bytes retained; existing matrix/stage assertions preserved, new command inventories explicitly expanded |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+
+- Evidence-plane repair (2026-11-15, ADR-131): the run-scoped `.spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/` directory and its `.spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/integrated-gate.log` / `.spur/memory/runs/da3edc13-c57c-46cb-8493-82ad1b410167/artifacts/batch-0362-0364/publish-summary.json` files, cited above, are **LOST** — the batch ran in a worktree whose disposable `.spur/` plane was removed at teardown and no durable copy survived. The citations stay as the historical record of what was checked; they are not resolvable pointers.
 
 ### Review
 

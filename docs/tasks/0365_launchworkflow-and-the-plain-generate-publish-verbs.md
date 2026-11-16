@@ -4,7 +4,7 @@ name: launchWorkflow and the plain generate / publish verbs
 status: done
 template: feature-impl
 created_at: 2026-11-13T18:13:39.602Z
-updated_at: "2026-11-15T04:01:17.742Z"
+updated_at: "2026-11-15T23:42:15.376Z"
 feature_id: G61
 
 ac_altitude: task-local
@@ -193,6 +193,8 @@ stay for 0369); no real `kk-news-generate`/`kk-article-generate`/`kk-publish` YA
 | AC4 — Publish finds or refuses the bundle (req: R6, R7, R8) | MET | test | `apps/cli/tests/content-launch.e2e.test.ts:235` — exit 5 naming `4-publish/bundle.json`, then exactly one generate before `kk-publish.yaml` |
 | AC5 — Gate (req: R10) | MET | command | `.spur/run/0365-check-receipt.json:1` status PASS tier full runId cd3f64cf…; `spur task gate 0365 status` → reuse true / ok for git tree fd8782f… |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+
+- Evidence-plane repair (2026-11-15, ADR-131): the `.spur/run/0365-check-receipt.json` cited above is **LOST** — it lived in the run's disposable `.spur/` plane and no copy survived that run. The receipt bound the tree-hash gate PASS for that day; the durable statement of the same fact is this section's test evidence.
 
 ### Review
 
