@@ -1364,6 +1364,12 @@ for both nouns. They resolve `content_types`, create/read the canonical run dire
 `docs/design/content-pipeline-consolidation.md`.
 
 - `kk article new` / `kk news new` and `kk article status` / `kk news status` are shipped (0363).
+- `kk news status` reports the day's progress additively (0378): `progress` (`stages`, `completed`, `current`,
+  `state` = `not-started|running|settled`, `startedAt`, `lastEndedAt`, `elapsedMs`, read from the run's JSONL
+  `step-timing.json`), and `gate` (`pool` = `PASS|EMPTY|null`, `floorRefusal` with `estimatedMinutes`/`minMinutes`/
+  `expansion`/`reason`, and `ladder` with the widen decision's `chosen` rung and `ratioUsed`). The pre-existing keys
+  (`workDir`, `type`, `generate`, `bundle`, `windows`) keep their shapes; the stage total is what the run recorded, not
+  a workflow-wide denominator, because a day spans several verbs.
 - `generate` and `publish` are shipped (0365): lock → preflight → receipt → one `spur workflow run`
   child → cleanup, with `--dry-run` running the preflight only.
 - `publish` launches the shipped `kk-publish` workflow (0366) for both nouns and passes `noun`

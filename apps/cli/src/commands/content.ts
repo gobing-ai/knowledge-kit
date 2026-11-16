@@ -13,6 +13,7 @@ import {
 import { runItcStage } from '../itc-stage';
 import { consoleOutput } from '../output';
 import { resolveConfigPath } from '../publish-core';
+import { gatePayload, progressPayload } from '../status-progress';
 import { registerContentGenerateVerbs } from './content-generate';
 import { registerContentLaunchVerbs } from './content-launch';
 import { registerContentPublishVerbs } from './content-publish';
@@ -378,8 +379,12 @@ async function statusPayload(
         workDir,
         type,
         generate,
+        // 0378 keeps every existing key's shape: `bundle` stays the summary or null, and the new
+        // `progress` / `gate` keys answer the questions a caller used to re-derive from the logs.
         bundle: bundleSummary,
         windows: Object.keys(windows).length === 0 ? null : windows,
+        progress: await progressPayload(fs, workDir),
+        gate: await gatePayload(fs, workDir),
     };
 }
 

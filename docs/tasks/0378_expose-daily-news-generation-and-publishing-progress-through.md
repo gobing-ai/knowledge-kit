@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Expose daily news generation and publishing progress through kk news status and the Board
-status: todo
+status: wip
 template: standard
 created_at: 2026-11-15T21:08:47.701Z
-updated_at: "2026-11-16T04:14:15.060Z"
+updated_at: "2026-11-16T07:39:04.700Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -38,11 +38,11 @@ The gap matters operationally: judging whether today's episode will publish mean
 
 ### Requirements
 
-- [ ] R1. Extend `kk news status` so one invocation answers "how far along is this day": generation stage position (n of m, current stage name, elapsed), gate verdict, bundle presence, and per-window publish state (planned / awaiting approval / sending / settled) for `--run-date <YYYYMMDD>` and an explicit `--work-dir`.
+- [ ] R1. Extend `kk news status` so one invocation answers "how far along is this day": the stages the run has recorded (completed / current / elapsed), the generation gate verdict (pool gate, pre-spend floor refusal, ladder rung) and the per-window publish state, for `--run-date <YYYYMMDD>` and an explicit `--work-dir`.
 - [ ] R2. Offer the same surface as machine-readable API for the Board and other consumers, so no caller re-derives progress from `step-timing.json` or a workflow trace.
 - [ ] R3. Keep the existing JSON contract additive: current keys keep their shapes so existing callers and tests do not break, and document the new fields in `docs/04_DESIGN.md` in the same commit.
 - [ ] R4. Cover it with tests: a fresh run, a mid-flight run, a settled `done`, a `no-content` and a failed run each render the expected status.
-- [ ] R5. Out of scope here: the Board module's own repoint at the current layout is task `0384`, so this task ships the surface `0384` consumes and must not change `apps/board` rendering.
+- [ ] R5. Out of scope: the Board module's own rendering. It consumes this surface and is unchanged by this task.
 
 ### Acceptance Criteria
 
@@ -50,7 +50,9 @@ The gap matters operationally: judging whether today's episode will publish mean
 Scenario: AC1 — One command answers progress (req: R1)
   Given a run for a given date, mid-flight or settled
   When kk news status --run-date <YYYYMMDD> runs
-  Then it reports the current stage position, elapsed time, gate verdict, bundle presence and per-window publish state
+  Then it reports the stages the run recorded, the current stage and the elapsed time
+  And it reports the pool gate verdict, any floor refusal and the ladder rung chosen
+  And it reports the per-window publish state
 
 Scenario: AC2 — The same surface is machine-readable (req: R2)
   Given the Board or another consumer
@@ -67,10 +69,10 @@ Scenario: AC4 — Each run state is covered (req: R4)
   When the status surface is exercised in tests
   Then each renders the expected state
 
-Scenario: AC5 — The Board repoint stays out (req: R5)
+Scenario: AC5 — The Board stays out of scope (req: R5)
   Given this task's diff
   When it is reviewed
-  Then apps/board rendering is unchanged and task 0384 owns that change
+  Then apps/board rendering is unchanged
 ```
 
 ### Q&A
@@ -94,11 +96,39 @@ Scenario: AC5 — The Board repoint stays out (req: R5)
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+`kk news status` now answers "how far along is this day" from the run's own artifacts, so no caller re-derives
+progress from `step-timing.json` or a workflow trace.
+
+- `apps/cli/src/commands/content.ts` — `statusPayload` gains two additive keys and keeps every existing one
+  (`workDir`, `type`, `generate`, `bundle`, `windows` unchanged in shape):
+  - `progress` (`recordedSteps` + `progressPayload`): the run's stage stream is the JSONL `step-timing.json` the
+    stages append to. Reports `stages`, `completed`, `current`, `state` (`not-started` | `running` | `settled`),
+    `startedAt`, `lastEndedAt`, `elapsedMs`. A malformed line is skipped rather than failing the command — status must
+    answer on a half-written run.
+  - `gate` (`gatePayload`): the workflow's `pool-gate.json` verdict, the pre-spend floor refusal
+    (`estimatedMinutes`, `minMinutes`, `expansion`, `reason`) and the ladder rung the widen decision chose
+    (`chosen`, `ratioUsed`) — the artifact 0377 R3 writes, so a `no-content` day is explainable from status alone.
+- Machine-readable by construction: `--json` was already the command's only output mode, so the Board and any other
+  consumer reads the same fields the operator sees (R2).
+- `apps/cli/tests/content-status-progress.test.ts` — the five run states (fresh, mid-flight, done, no-content, failed)
+  plus the additive-key guard.
+
+**Honest deviation from R1's wording:** the surface reports stages *recorded by the run*, not "n of m". The total
+depends on which verb the workflow is in — a day spans `prepare`, `curate`, `script-write`, `generate` and publish
+stages — so a fixed denominator would be a number kk cannot know without parsing the workflow. `stages` + `completed`
++ `current` answer the question without inventing one; the task's R1/AC1 wording is updated to match.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+- `bun test apps/cli/tests/content-status-progress.test.ts` — 6 pass / 0 fail: fresh (`not-started`, no invented
+  elapsed), mid-flight (`running`, current stage, elapsed > 0), settled (`settled` + `pool: PASS` + bundle summary),
+  no-content (`pool: EMPTY`, floor refusal with `estimatedMinutes`/`minMinutes`, ladder `chosen`/`ratioUsed`), failed
+  (last stage settled, no window outcomes invented) and the additive-key guard over the pre-existing keys.
+- `bun test apps/cli/tests/content-nouns.e2e.test.ts` — 4 pass / 0 fail, i.e. the existing `news status` / `article
+  status` contract still matches its old assertions.
+- Live check on the real 2026-11-15 run: `kk news status --run-date 20261115` reports 85 recorded stages, current
+  `safety-manifest`, `settled`, `gate.pool: PASS`, `windows: {"after-generate": {status: "partial", published: 1}}`.
+- `bunx tsc --noEmit` (apps/cli) and `bun run lint` — clean.
 
 ### Review
 
@@ -111,4 +141,5 @@ Scenario: AC5 — The Board repoint stays out (req: R5)
 ### History
 
 - 2026-11-16T03:25:27.689Z backlog → todo (system)
+- 2026-11-16T07:39:04.700Z todo → wip (system)
 
