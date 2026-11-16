@@ -838,11 +838,27 @@ describe('publish3 stage surface (0323 R2, R3, R5)', () => {
         // DRAFTLESS row (no draft mode in its plugin profile — the social `post` rails) stays
         // `dummy`, because there is no reversible state to fall back to.
         const draftless = new Set(['x-pub.post', 'weibo-pub.post', 'threads-pub.post', 'linkedin-pub.post']);
+        // ...an operator may still want a draftless row live for one run: that needs a recorded
+        // override (plugin + operation + a reason), never a silent flip of the row's mode.
+        const overridden = new Set(
+            (
+                (shipped as { overrides?: Array<{ plugin: string; operation?: string; mode: string; reason: string }> })
+                    .overrides ?? []
+            ).map((row) => `${row.plugin}.${row.operation ?? ''}`),
+        );
         const enabled = shipped.targets.filter((target) => target.mode !== 'off');
         expect(enabled.length).toBeGreaterThan(0);
         for (const target of enabled) {
             const key = `${target.plugin}.${(target as { operation?: string }).operation ?? ''}`;
-            expect(target.mode).toBe(draftless.has(key) ? 'dummy' : 'live');
+            // A draftable row may ship `draft` (the reversible mode, ADR-022); a draftless row may
+            // only leave `dummy` under a recorded override.
+            const expectedMode = draftless.has(key) ? (overridden.has(key) ? 'live' : 'dummy') : target.mode;
+            expect(`${key}: ${target.mode}`).toBe(`${key}: ${expectedMode}`);
+            if (!draftless.has(key)) expect(['live', 'draft']).toContain(String(target.mode));
+        }
+        // Every draftless row that ships live must be covered by an override carrying a reason.
+        for (const row of (shipped as { overrides?: Array<{ reason: string }> }).overrides ?? []) {
+            expect(row.reason.length).toBeGreaterThan(0);
         }
         // The owned publication contract is required and live on after-generate.
         const tier0 = shipped.targets.filter((target) => target.window === 'after-generate');

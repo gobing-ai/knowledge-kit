@@ -135,5 +135,35 @@
             "window": "overseas-rss",
             "mode": "off"
         }
+    ],
+    "overrides": [
+        {
+            "plugin": "x-pub",
+            "operation": "post",
+            "mode": "live",
+            "reason": "operator instruction 2026-11-15: publish to all available platforms for the dogfood run; no draftable rail exists, so this is a recorded exception to ADR-022",
+            "until": "2026-11-16 dogfood run"
+        },
+        {
+            "plugin": "weibo-pub",
+            "operation": "post",
+            "mode": "live",
+            "reason": "operator instruction 2026-11-15: publish to all available platforms for the dogfood run; no draftable rail exists, so this is a recorded exception to ADR-022",
+            "until": "2026-11-16 dogfood run"
+        },
+        {
+            "plugin": "threads-pub",
+            "operation": "post",
+            "mode": "live",
+            "reason": "operator instruction 2026-11-15: publish to all available platforms for the dogfood run; no draftable rail exists, so this is a recorded exception to ADR-022",
+            "until": "2026-11-16 dogfood run"
+        },
+        {
+            "plugin": "linkedin-pub",
+            "operation": "post",
+            "mode": "live",
+            "reason": "operator instruction 2026-11-15: publish to all available platforms for the dogfood run; no draftable rail exists, so this is a recorded exception to ADR-022",
+            "until": "2026-11-16 dogfood run"
+        }
     ]
 }

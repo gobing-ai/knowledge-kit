@@ -369,10 +369,24 @@ describe('publish-matrix send boundaries (0330 R2, R4, R5)', () => {
             { plugin: 'weibo-pub', operation: 'post' },
             { plugin: 'threads-pub', operation: 'post' },
         ];
+        // A draftless row ships `dummy` unless the preset records an operator override for it — the
+        // override is the only way a live post on a rail with no draft can be intended (ADR-022).
+        const overridden = new Set((preset.overrides ?? []).map((row) => `${row.plugin}/${row.operation ?? ''}`));
         for (const { plugin, operation } of draftless) {
             const target = preset.targets.find((t) => t.plugin === plugin && t.operation === operation);
             if (target === undefined) throw new Error(`preset lost ${plugin} ${operation}`);
-            expect(`${plugin}/${operation}: ${target.mode}`).toBe(`${plugin}/${operation}: dummy`);
+            const expected = overridden.has(`${plugin}/${operation}`) ? 'live' : 'dummy';
+            expect(`${plugin}/${operation}: ${target.mode}`).toBe(`${plugin}/${operation}: ${expected}`);
+        }
+        // Every override names a row that exists and carries a reason.
+        for (const override of preset.overrides ?? []) {
+            expect(override.reason.length).toBeGreaterThan(0);
+            const target = preset.targets.find(
+                (t) => t.plugin === override.plugin && t.operation === override.operation,
+            );
+            expect(`${override.plugin}/${override.operation ?? ''}: ${String(target !== undefined)}`).toBe(
+                `${override.plugin}/${override.operation ?? ''}: true`,
+            );
         }
     });
 

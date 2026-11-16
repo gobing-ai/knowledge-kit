@@ -155,12 +155,34 @@ export type PublishPresetTarget = z.infer<typeof PublishPresetTargetSchema>;
 /** Parsed publish window. */
 export type PublishWindow = z.infer<typeof PublishWindowSchema>;
 
+/**
+ * One operator override of a draftless row's mode.
+ *
+ * ADR-022 keeps a row with no draftable rail at `dummy`, because live posting there cannot be undone.
+ * An operator may still want it live for a run — that is a deliberate, recorded exception rather than
+ * a silent divergence, so it needs a reason and an owner (`until` is free text: the window it applies
+ * to). `PublishPresetSchema` accepts a `live` draftless row only when an override here names it.
+ */
+export const PublishPresetOverrideSchema = z
+    .object({
+        plugin: z.string().min(1),
+        operation: z.string().min(1).optional(),
+        mode: z.enum(['off', 'dummy', 'draft', 'live']),
+        reason: z.string().min(1),
+        until: z.string().min(1).optional(),
+    })
+    .strict();
+
+/** One preset override row. */
+export type PublishPresetOverride = z.infer<typeof PublishPresetOverrideSchema>;
+
 /** Preset v1 definition schema (task 0300). */
 export const PublishPresetSchema = z
     .object({
         schemaVersion: z.literal(1).default(1),
         name: z.string().min(1),
         targets: z.array(PublishPresetTargetSchema).min(1),
+        overrides: z.array(PublishPresetOverrideSchema).optional(),
     })
     .strict();
 
