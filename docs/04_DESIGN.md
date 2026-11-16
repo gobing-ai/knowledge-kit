@@ -2363,8 +2363,10 @@ pass.
 preset declaring a legal canvas forwards `width`/`height` unchanged (`xhs-card`'s 1080×1440 does
 not qualify and keeps the aspect path). An aspect-only request is translated to a 1024-short-side
 canvas snapped to the same grid; an unparseable ratio falls back to 1024×1024. H3's `--seed`
-defaults to 42 and style-preset negatives are ignored (no negative-prompt capability) — both are
-documented limitations, not bugs.
+defaults to 42, so a run is reproducible only by leaving it alone. A style's `negative` reaches H3 the
+same way it reaches every other provider — as the composed `avoid: …` prompt segment (K3, 0380) —
+because H3 has no native negative-prompt parameter to negotiate; both are documented limits, not
+bugs.
 
 **Failures stay actionable.** Timeout and non-zero exit raise with the wrapper's stderr tail, which
 the D6 classifier reads as `transient`/`unknown` and therefore can fall back on; a run that exits 0

@@ -4,7 +4,7 @@ name: Add an opt-in h3-image-mlx provider to image-gen
 status: done
 template: feature-impl
 created_at: 2026-11-15T22:44:30.594Z
-updated_at: "2026-11-16T00:25:25.872Z"
+updated_at: "2026-11-16T00:49:09.535Z"
 
 ac_altitude: graduating
 ac_numbering: task-local
@@ -160,6 +160,8 @@ Deliberate limits: H3 has no negative-prompt capability so `StylePreset.negative
 wrapper's seed default (42) is not plumbed through `ImageRequest`, and nothing probes the venv,
 weights or external volume at selection time — those stay rehearsal/scheduler checks (R6/R7), not
 readiness facts.
+
+Correction after K3 (0380): the "ignored negatives" limit above no longer holds — `composePrompt` now appends a style's `negative` as one `avoid: …` segment for every provider, so H3 receives it as prompt text. What remains true is that H3 has no native negative-prompt parameter.
 
 ### Testing
 

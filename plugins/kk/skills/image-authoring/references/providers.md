@@ -22,7 +22,9 @@ are read by `invoke.ts` at spawn, never by this skill.
   Silicon MLX runtime through `h3gen.sh`, and one render costs minutes of wall
   time (3 min floor, ~7 min for 1024², up to ~28 min for a two-reference edit).
   Pin it with `--provider h3-local`; the cloud defaults stay until the K2
-  rollout gates pass. H3 ignores style negatives, seeds cannot be set, and only
+  rollout gates pass. H3 has no native negative-prompt parameter, so a style's
+  `negative` travels as the composed `avoid: …` segment like every other
+  provider; seeds cannot be set (the wrapper's default 42 applies); and only
   multiples of 32 in 256–4096 are accepted per edge — every other preset falls
   back to an aspect-only canvas (0379).
 - **Reference images** ride `--ref` only when `supportsReferenceImages(model)`
