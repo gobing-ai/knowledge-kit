@@ -1391,8 +1391,12 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
     const windowArg = flagValue(args, '--window');
     const tierArg = flagValue(args, '--tier');
     const retry = args.includes('--retry');
+    // 0382: a live row whose effect is unknown is never resent unless the operator asserts, after
+    // checking the channel, that the earlier attempt published nothing. Recorded in the receipt's
+    // diagnostics by sendRows.
+    const confirmNone = args.includes('--confirm-none');
     if (!workDir || windowArg === undefined) {
-        echoError('usage: publish-matrix-send <work_dir> --window <w> [--retry] [--tier <n>]');
+        echoError('usage: publish-matrix-send <work_dir> --window <w> [--retry] [--tier <n>] [--confirm-none]');
         return 1;
     }
     const parsedWindow = PublishWindowSchema.safeParse(windowArg);
@@ -1494,6 +1498,7 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
                 parentRunId: plan.parentRunId,
                 planDigest,
                 retry,
+                ...(confirmNone ? { confirmNone } : {}),
                 label: 'publish-matrix-send',
                 fs,
                 ...(deps.dispatch ? { dispatch: deps.dispatch } : {}),

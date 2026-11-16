@@ -317,6 +317,14 @@ export interface SendRowsOptions {
     parentRunId: string;
     planDigest: string;
     retry: boolean;
+    /**
+     * Operator-confirmed re-attempt of a live row whose previous attempt left its effect unknown
+     * (0373-era dogfood, 2026-11-15). The harness cannot prove nothing was published, so the caller
+     * must assert it after checking the channel; the assertion is echoed and recorded with the send
+     * so the audit trail names who decided it. Without this the row stays skipped, which is the
+     * safe default.
+     */
+    confirmNone?: boolean;
     /** Operator-facing label for diagnostics and usage lines. */
     label: string;
     fs?: FileSystem;
@@ -450,12 +458,17 @@ export async function sendRows(options: SendRowsOptions): Promise<SendRowsOutcom
                 const mayAlreadyBeLive =
                     (prior.status === 'uncertain' || prior.effect === 'unknown') &&
                     (row.mode === 'live' || prior.mode === 'live');
-                if (mayAlreadyBeLive) {
+                if (mayAlreadyBeLive && options.confirmNone !== true) {
                     echoError(
                         `${label}: ${row.key} has an unknown-effect live receipt (may already be published) — resolve it before resending; skipped`,
                     );
                     result.skipped.push(row.key);
                     continue;
+                }
+                if (mayAlreadyBeLive) {
+                    echoError(
+                        `${label}: ${row.key} re-attempted on the operator's confirmation that the unknown-effect attempt published nothing (--confirm-none)`,
+                    );
                 }
                 reattempt = true;
             }

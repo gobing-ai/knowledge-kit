@@ -46,6 +46,8 @@ interface PublishOptions {
     feed?: string;
     retry?: boolean;
     tier?: string;
+    /** Operator assertion that an unknown-effect live attempt published nothing (0382). */
+    confirmNone?: boolean;
     allWindows?: boolean;
     topic?: string;
     db?: string;
@@ -312,6 +314,7 @@ async function sendAction(type: string, options: PublishOptions): Promise<void> 
         context.window,
         ...(options.retry ? ['--retry'] : []),
         ...(options.tier ? ['--tier', options.tier] : []),
+        ...(options.confirmNone ? ['--confirm-none'] : []),
     ];
     const code = await quietStdout(() => sendPublishMatrix(args));
     if (code !== 0) return commandFailure(command, 1, 'publish-send failed');
@@ -519,7 +522,13 @@ export function registerContentPublishVerbs(parent: Command, type: string): void
         'publish-send',
         'dispatch a frozen publish plan',
         (command) => {
-            base(command).option('--retry', 'retry effect-none failures').option('--tier <n>', 'send one tier');
+            base(command)
+                .option('--retry', 'retry effect-none failures')
+                .option('--tier <n>', 'send one tier')
+                .option(
+                    '--confirm-none',
+                    're-attempt a live row whose effect is unknown, after verifying it published nothing',
+                );
         },
         sendAction,
         type,
