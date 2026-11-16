@@ -1,11 +1,15 @@
 ---
 schema_version: 1
 name: kk plugin check reports a refused publish probe as malformed output instead of the refusal detail
-status: backlog
+status: done
 template: standard
 created_at: 2026-11-16T01:39:53.909Z
-updated_at: "2026-11-16T01:40:13.388Z"
+updated_at: "2026-11-16T04:04:21.406Z"
 
+ac_altitude: task-local
+ac_numbering: task-local
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0381. kk plugin check reports a refused publish probe as malformed output instead of the refusal detail
@@ -42,11 +46,37 @@ child's stdout.
 
 ### Requirements
 
-<!-- One R-item per line, exactly `- [ ] R1. <text>` (checkbox + `R<n>.`); `spur task check` flags any other form. Keep empty until requirements are known. -->
+- [x] R1. `kk plugin check` reports the probe's own verdict (`verified`/`refused`/`error`) whenever the probe printed a parseable verdict line, even when non-verdict lines follow it on stdout — an expired site session must read `refused` with its detail, never `probe exit 1 (malformed probe output)`.
+- [x] R2. Classification uses the last *parseable* verdict line: unparseable trailing output and human progress lines are skipped rather than mistaken for the verdict.
+- [x] R3. No raw unparsed line text enters the verdict detail; when no parseable verdict exists at all, the detail keeps the `probe exit <code> (malformed probe output)` shape.
+- [x] R4. A regression test pins the incident's stdout shape (a human line, a `refused` verdict, a trailing line) and fails against the last-line-only classification it replaces.
 
 ### Acceptance Criteria
 
-<!-- Number items AC1, AC2, … (never R<n> — that is the Requirements namespace). Preferred: `Scenario: AC1 — <concrete outcome> (req: R1)` blocks with Given/When/Then, declaring both `ac_altitude: task-local` and `ac_numbering: task-local` for task-local regression criteria (altitude skips only the feature-subset check; numbering makes `(req: R<n>)` count toward requirement coverage). Parsed checkbox rows `- [ ] AC1 — <title>` are supported but never bind requirements — only `Scenario:` titles read `(req: R<n>)`. Bare `- AC1` bullets are legacy unparsed records, not a traceability bypass. Requirements use `- [ ] R1. <text>`, checked at close. Keep empty if this task has no objective AC yet. -->
+```gherkin
+Scenario: AC1 — A refused probe reads as refused (req: R1)
+  Given a readiness probe that prints its {status: refused, profileDir, detail} verdict and exits 1
+  And a non-verdict line follows that verdict on stdout
+  When kk plugin check classifies the probe output
+  Then the row reads refused with the probe's own detail
+  And it never reads "malformed probe output"
+
+Scenario: AC2 — The last parseable verdict wins (req: R2)
+  Given probe stdout with human progress lines, then a verdict line, then unparseable trailing output
+  When kk plugin check classifies the probe output
+  Then the verdict line decides the status
+
+Scenario: AC3 — Malformed output stays malformed and leaks nothing (req: R3)
+  Given probe stdout whose every line fails to parse as a verdict
+  When kk plugin check classifies the probe output
+  Then the status is error with detail "probe exit <code> (malformed probe output)"
+  And no raw line text appears in the detail
+
+Scenario: AC4 — The incident is pinned (req: R4)
+  Given the 2026-11-15 shipinhao stdout shape from task 0381
+  When the invoke regression suite runs
+  Then the classification test fails if only the final line is considered
+```
 
 ### Q&A
 
@@ -64,18 +94,66 @@ child's stdout.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+**Root cause:** `probeVerdict` classified only the **last** stdout line. A channel probe prints human progress
+lines before its verdict and can append a line after it, so a probe that had already printed
+`{"status":"refused", …}` was read as `status === undefined` and the row became
+`probe exit 1 (malformed probe output)` — hiding the one fact the operator needed (the site session expired).
+
+- `apps/cli/src/invoke.ts:290` — `probeVerdict` now scans the last `VERDICT_SCAN_LINES` (20) non-empty lines
+  backwards and takes the last line that **parses** to an object with a string `status`. Human lines, unparseable
+  trailing output and JSON without a `status` are skipped instead of being mistaken for the verdict.
+- `apps/cli/src/invoke.ts:283` — the bound, so stale output from an earlier phase can never decide a verdict.
+- The exit-code/status agreement rule is untouched (`refused` still requires exit 1, `verified` exit 0, anything
+  else is `error`), and no unparsed line text can reach `detail` — that property is re-pinned by the malformed case.
+
+**Tests:** `apps/cli/tests/invoke.test.ts` — the incident's exact stdout shape (progress line, `refused` verdict,
+trailing `browser closed`) now yields `refused` with its detail; a two-verdict case proves the *last parseable*
+line wins; the old last-line-only expectation became the malformed-when-nothing-parses case, so the safety property
+is asserted rather than relaxed.
+
+**Not fixed here:** why a channel appends a line after its verdict. The classifier no longer depends on it, and
+shipinhao's session is currently `verified` (re-authenticated since the incident), so the trailing writer could not
+be reproduced live today.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 report the probe's own verdict even when non-verdict lines follow it | MET | `apps/cli/src/invoke.ts:296` scans back over the tail; incident-shape test `apps/cli/tests/invoke.test.ts:929` |
+| R2 the last parseable verdict line decides | MET | `apps/cli/src/invoke.ts:308`; test `apps/cli/tests/invoke.test.ts:943` |
+| R3 malformed stays malformed, no raw line text in detail | MET | `apps/cli/src/invoke.ts:335` unchanged; test `apps/cli/tests/invoke.test.ts:948` |
+| R4 a regression test pins the incident shape | MET | `apps/cli/tests/invoke.test.ts:929` reproduces progress line + `refused` verdict + trailing `browser closed` |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | `apps/cli/tests/invoke.test.ts:929` (refused + profileDir + detail, never "malformed") |
+| AC2 | MET | test | `apps/cli/tests/invoke.test.ts:943` (two parseable verdicts, last wins) |
+| AC3 | MET | test | `apps/cli/tests/invoke.test.ts:948` (`probe exit 2 (malformed probe output)`, no line text) |
+| AC4 | MET | command | `bun test apps/cli/tests/invoke.test.ts` → 30 pass / 0 fail; `bun test apps/cli/tests/commands/plugin-check.test.ts` → 12 pass / 0 fail; `bunx tsc --noEmit` in `apps/cli` clean |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
 <!-- Links to features, docs, ADRs, related tasks, or external references. -->
 
 ### History
+
+- 2026-11-16T03:25:28.248Z backlog → todo (system)
+- 2026-11-16T03:36:15.145Z todo → wip (system)
+- 2026-11-16T04:04:20.514Z wip → testing (system)
+- 2026-11-16T04:04:21.303Z testing → done (system)
+

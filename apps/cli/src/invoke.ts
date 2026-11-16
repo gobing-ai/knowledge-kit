@@ -282,27 +282,47 @@ export interface ProbeVerdict {
 }
 
 /**
+ * How far back a verdict line may sit. A browser probe prints at most a handful of progress lines
+ * before its verdict, and a bounded scan keeps stale output from an earlier phase out of the answer.
+ */
+const VERDICT_SCAN_LINES = 20;
+
+/**
  * Map a probe spawn outcome to its verdict (ADR-032 R3): `verified` (exit 0),
  * `refused` (exit 1) or `error` (exit 2, another code, a crash, a timeout, or a
  * no/malformed final JSON line). Only status/profileDir/detail survive; raw
  * probe stdout/stderr — which can carry page text or tokens — never does.
  */
 export function probeVerdict(exitCode: number, stdout: string): ProbeVerdict {
-    const last = stdout
+    // The verdict is the last line the probe PRINTED, which is not the last line it WROTE: a browser
+    // probe emits progress lines, and a channel's own writer can append a trailing line after the
+    // verdict. Reading only the final line therefore reported `malformed probe output` for a probe
+    // that had already said `refused — session expired` (0381), which is the one text that tells the
+    // operator the fix is a re-login. Scan back over the tail for the last line that PARSES as a
+    // verdict; unparsed lines never reach the detail (they can carry page text or tokens).
+    const lines = stdout
         .split('\n')
         .map((line) => line.trim())
         .filter((line) => line !== '')
-        .at(-1);
-    let parsed: unknown;
-    try {
-        parsed = last === undefined ? undefined : JSON.parse(last);
-    } catch {
-        parsed = undefined;
+        .slice(-VERDICT_SCAN_LINES);
+    let fields: { status?: unknown; profileDir?: unknown; detail?: unknown } | undefined;
+    for (const line of [...lines].reverse()) {
+        if (!line.startsWith('{')) continue;
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(line);
+        } catch {
+            continue;
+        }
+        if (
+            typeof parsed === 'object' &&
+            parsed !== null &&
+            typeof (parsed as { status?: unknown }).status === 'string'
+        ) {
+            fields = parsed as { status?: unknown; profileDir?: unknown; detail?: unknown };
+            break;
+        }
     }
-    const fields =
-        typeof parsed === 'object' && parsed !== null
-            ? (parsed as { status?: unknown; profileDir?: unknown; detail?: unknown })
-            : undefined;
     const status = typeof fields?.status === 'string' ? fields.status : undefined;
     if ((status === 'verified' && exitCode === 0) || (status === 'refused' && exitCode === 1)) {
         return {

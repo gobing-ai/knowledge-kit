@@ -926,8 +926,27 @@ describe('probeVerdict (ADR-032 probe contract)', () => {
         expect(probeVerdict(2, '{"status":"verified"}')).toEqual({ status: 'error', detail: 'probe exit 2' });
     });
 
-    it('keeps the line text out of the detail when the final line is not JSON', () => {
-        expect(probeVerdict(2, '{"status":"error"}\npage text with a token')).toEqual({
+    it('ignores a trailing non-verdict line instead of calling the probe malformed (0381)', () => {
+        // The 2026-11-15 shape: the probe printed its refusal, then a channel writer appended a line.
+        const out = [
+            'shipinhao profile check: reusing profile /Users/robin/.config/kk/browser-profiles/shipinhao',
+            '{"status":"refused","profileDir":"/p/shipinhao","detail":"headed shipinhao readiness refused: Authentication was not confirmed within 30000ms"}',
+            'browser closed',
+        ].join('\n');
+        expect(probeVerdict(1, out)).toEqual({
+            status: 'refused',
+            profileDir: '/p/shipinhao',
+            detail: 'headed shipinhao readiness refused: Authentication was not confirmed within 30000ms',
+        });
+    });
+
+    it('takes the last parseable verdict when several lines parse', () => {
+        const out = '{"status":"error","detail":"early"}\n{"status":"refused","detail":"late"}\ntrailing';
+        expect(probeVerdict(1, out)).toEqual({ status: 'refused', detail: 'late' });
+    });
+
+    it('keeps the line text out of the detail when no line is a verdict', () => {
+        expect(probeVerdict(2, 'page text with a token\n{"notavverdict":true}')).toEqual({
             status: 'error',
             detail: 'probe exit 2 (malformed probe output)',
         });
