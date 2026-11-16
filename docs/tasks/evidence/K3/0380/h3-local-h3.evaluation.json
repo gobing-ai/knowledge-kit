@@ -1,0 +1,933 @@
+{
+  "schema_version": "k3-evaluation-v1",
+  "provider": "h3-local",
+  "model": "h3",
+  "reviewer": "grok-4.7 via spur agent run; blind images only",
+  "reviewedAt": "2026-11-16T07:43:22.353Z",
+  "gate": "candidate wins >= 3 of 4 cells and zero candidate critical violations",
+  "crossProviderClaim": false,
+  "acceptedCandidates": [],
+  "rejectedCandidates": [
+    "limited-ink-risograph-editorial",
+    "layered-papercraft-diorama",
+    "minimalist-ink-wash-negative-space",
+    "notion-editorial-line-art",
+    "product-exploded-identity",
+    "handcrafted-clay-character"
+  ],
+  "pendingCandidates": [],
+  "results": [
+    {
+      "candidate": "limited-ink-risograph-editorial",
+      "baseline": "editorial",
+      "decision": "rejected",
+      "reviewed": 4,
+      "wins": 0,
+      "baselineWins": 4,
+      "ties": 0,
+      "critical": [
+        {
+          "pair": "P01",
+          "format": "free",
+          "subject": "microservices",
+          "violations": [
+            "Wrong subject: one large head silhouette and three smaller head silhouettes, with no request, gateway, or services."
+          ]
+        },
+        {
+          "pair": "P03",
+          "format": "free",
+          "subject": "semiconductor",
+          "violations": [
+            "Wrong added subject: a large human face dominates the frame.",
+            "The glowing object is a blank disc rather than a semiconductor wafer, and the scene is not a dark cleanroom."
+          ]
+        },
+        {
+          "pair": "P04",
+          "format": "cover",
+          "subject": "semiconductor",
+          "violations": [
+            "Unwanted garbled footer watermark at lower left, approximately \"Htoe lina 8K\"."
+          ]
+        }
+      ],
+      "candidateAverage": {
+        "subjectFidelity": 2.25,
+        "composition": 4.5,
+        "visualCoherence": 4.5,
+        "constraintAdherence": 2.75,
+        "artifactControl": 4.25
+      },
+      "baselineAverage": {
+        "subjectFidelity": 4,
+        "composition": 4.75,
+        "visualCoherence": 4.5,
+        "constraintAdherence": 4.25,
+        "artifactControl": 4.25
+      },
+      "cells": [
+        {
+          "pair": "P01",
+          "format": "free",
+          "subject": "microservices",
+          "preferred": "baseline",
+          "candidateScores": {
+            "subjectFidelity": 1,
+            "composition": 5,
+            "visualCoherence": 5,
+            "constraintAdherence": 1,
+            "artifactControl": 5
+          },
+          "baselineScores": {
+            "subjectFidelity": 2,
+            "composition": 4,
+            "visualCoherence": 3,
+            "constraintAdherence": 2,
+            "artifactControl": 2
+          },
+          "candidateCritical": [
+            "Wrong subject: one large head silhouette and three smaller head silhouettes, with no request, gateway, or services."
+          ],
+          "baselineCritical": [
+            "Wrong subject: three stacked cards in one vertical line, not a request passing through an API gateway and out to three microservices.",
+            "Unwanted garbled text on every card: \"Requeet highly detiled depictiion\", \"Conterpiece BK Dur-e8l\", and \"Redattiert high-togral masterpuality\"."
+          ],
+          "notes": "A is the only process diagram, but the path is linear and the labels are nonsense. B is visually clean and depicts unrelated people."
+        },
+        {
+          "pair": "P02",
+          "format": "cover",
+          "subject": "microservices",
+          "preferred": "baseline",
+          "candidateScores": {
+            "subjectFidelity": 3,
+            "composition": 5,
+            "visualCoherence": 5,
+            "constraintAdherence": 5,
+            "artifactControl": 5
+          },
+          "baselineScores": {
+            "subjectFidelity": 4,
+            "composition": 5,
+            "visualCoherence": 5,
+            "constraintAdherence": 5,
+            "artifactControl": 5
+          },
+          "candidateCritical": [],
+          "baselineCritical": [],
+          "notes": "Both covers render \"Building Reliable AI Agents\" and the same readable subtitle cleanly. A's linked hardware modules better fit gateways and microservices. B's single head only suggests an agent."
+        },
+        {
+          "pair": "P03",
+          "format": "free",
+          "subject": "semiconductor",
+          "preferred": "baseline",
+          "candidateScores": {
+            "subjectFidelity": 2,
+            "composition": 4,
+            "visualCoherence": 4,
+            "constraintAdherence": 2,
+            "artifactControl": 4
+          },
+          "baselineScores": {
+            "subjectFidelity": 5,
+            "composition": 5,
+            "visualCoherence": 5,
+            "constraintAdherence": 5,
+            "artifactControl": 5
+          },
+          "candidateCritical": [
+            "Wrong added subject: a large human face dominates the frame.",
+            "The glowing object is a blank disc rather than a semiconductor wafer, and the scene is not a dark cleanroom."
+          ],
+          "baselineCritical": [],
+          "notes": "A shows a coherent robotic arm poised over a glowing, die-patterned circular wafer in a dark tool setting. B keeps a gripper and a glow but changes the subject and setting."
+        },
+        {
+          "pair": "P04",
+          "format": "cover",
+          "subject": "semiconductor",
+          "preferred": "baseline",
+          "candidateScores": {
+            "subjectFidelity": 3,
+            "composition": 4,
+            "visualCoherence": 4,
+            "constraintAdherence": 3,
+            "artifactControl": 3
+          },
+          "baselineScores": {
+            "subjectFidelity": 5,
+            "composition": 5,
+            "visualCoherence": 5,
+            "constraintAdherence": 5,
+            "artifactControl": 5
+          },
+          "candidateCritical": [
+            "Unwanted garbled footer watermark at lower left, approximately \"Htoe lina 8K\"."
+          ],
+          "baselineCritical": [],
+          "notes": "Both covers render \"Inside Modern Semiconductors\" and a relevant subtitle. B shows a robotic arm handling a small die beside a large semiconductor frame. A uses abstract equipment and a human silhouette."
+        }
+      ]
+    },
+    {
+      "candidate": "layered-papercraft-diorama",
+      "baseline": "sketch",
+      "decision": "rejected",
+      "reviewed": 4,
+      "wins": 0,
+      "baselineWins": 4,
+      "ties": 0,
+      "critical": [
+        {
+          "pair": "P05",
+          "format": "free",
+          "subject": "microservices",
+          "violations": [
+            "Subject is not a request flowing through one gateway to three services: three icons are disconnected, and the only cable ends on a lettered plate.",
+            "Unwanted readable letters AP and TG on the gold plate."
+          ]
+        },
+        {
+          "pair": "P06",
+          "format": "cover",
+          "subject": "microservices",
+          "violations": [
+            "No AI agent, API gateway, or microservice is visible; the picture is only layered blue, black, and gold bands."
+          ]
+        },
+        {
+          "pair": "P07",
+          "format": "free",
+          "subject": "semiconductor",
+          "violations": [
+            "Two robotic arms inspect the wafer; the request is for one arm."
+          ]
+        },
+        {
+          "pair": "P08",
+          "format": "cover",
+          "subject": "semiconductor",
+          "violations": [
+            "No wafer fabrication, robotic wafer inspection, or advanced package is visible; the image is a small lens device on color bands."
+          ]
+        }
+      ],
+      "candidateAverage": {
+        "subjectFidelity": 2.25,
+        "composition": 4,
+        "visualCoherence": 4.5,
+        "constraintAdherence": 2.75,
+        "artifactControl": 4.25
+      },
+      "baselineAverage": {
+        "subjectFidelity": 3.75,
+        "composition": 4,
+        "visualCoherence": 4,
+        "constraintAdherence": 4,
+        "artifactControl": 3.75
+      },
+      "cells": [
+        {
+          "pair": "P05",
+          "format": "free",
+          "subject": "microservices",
+          "preferred": "baseline",
+          "candidateScores": {
+            "subjectFidelity": 2,
+            "composition": 4,
+            "visualCoherence": 4,
+            "constraintAdherence": 2,
+            "artifactControl": 3
+          },
+          "baselineScores": {
+            "subjectFidelity": 4,
+            "composition": 4,
+            "visualCoherence": 4,
+            "constraintAdherence": 4,
+            "artifactControl": 2
+          },
+          "candidateCritical": [
+            "Subject is not a request flowing through one gateway to three services: three icons are disconnected, and the only cable ends on a lettered plate.",
+            "Unwanted readable letters AP and TG on the gold plate."
+          ],
+          "baselineCritical": [
+            "Unwanted readable gibberish captions: \"Request Restépierd\", \"Poclued Cyghfit\", and \"Kiyron Marydialy\"."
+          ],
+          "notes": "B shows one upper node branching by three cables to three distinct machines. A is a tidy paper arrangement with a broken flow and stray letters."
+        },
+        {
+          "pair": "P06",
+          "format": "cover",
+          "subject": "microservices",
+          "preferred": "baseline",
+          "candidateScores": {
+            "subjectFidelity": 2,
+            "composition": 4,
+            "visualCoherence": 5,
+            "constraintAdherence": 3,
+            "artifactControl": 5
+          },
+          "baselineScores": {
+            "subjectFidelity": 3,
+            "composition": 4,
+            "visualCoherence": 4,
+            "constraintAdherence": 4,
+            "artifactControl": 5
+          },
+          "candidateCritical": [
+            "No AI agent, API gateway, or microservice is visible; the picture is only layered blue, black, and gold bands."
+          ],
+          "baselineCritical": [],
+          "notes": "Both render \"Building Reliable AI Agents\" and \"Patterns for production\" cleanly. B adds a central block linked to surrounding modules; A does not picture the topic."
+        },
+        {
+          "pair": "P07",
+          "format": "free",
+          "subject": "semiconductor",
+          "preferred": "baseline",
+          "candidateScores": {
+            "subjectFidelity": 3,
+            "composition": 3,
+            "visualCoherence": 4,
+            "constraintAdherence": 3,
+            "artifactControl": 4
+          },
+          "baselineScores": {
+            "subjectFidelity": 4,
+            "composition": 4,
+            "visualCoherence": 4,
+            "constraintAdherence": 4,
+            "artifactControl": 4
+          },
+          "candidateCritical": [
+            "Two robotic arms inspect the wafer; the request is for one arm."
+          ],
+          "baselineCritical": [],
+          "notes": "A shows one arm over a glowing gridded plate in a dark field. B has a clearer round die-patterned wafer and glow, but two arms and a large beige upper band."
+        },
+        {
+          "pair": "P08",
+          "format": "cover",
+          "subject": "semiconductor",
+          "preferred": "baseline",
+          "candidateScores": {
+            "subjectFidelity": 2,
+            "composition": 5,
+            "visualCoherence": 5,
+            "constraintAdherence": 3,
+            "artifactControl": 5
+          },
+          "baselineScores": {
+            "subjectFidelity": 4,
+            "composition": 4,
+            "visualCoherence": 4,
+            "constraintAdherence": 4,
+            "artifactControl": 4
+          },
+          "candidateCritical": [
+            "No wafer fabrication, robotic wafer inspection, or advanced package is visible; the image is a small lens device on color bands."
+          ],
+          "baselineCritical": [],
+          "notes": "Both render \"Inside Modern Semiconductors\" and \"From wafer to package\" cleanly. B shows a robotic head over a glowing layered substrate; A stays on an abstract device."
+        }
+      ]
+    },
+    {
+      "candidate": "minimalist-ink-wash-negative-space",
+      "baseline": "minimalist",
+      "decision": "rejected",
+      "reviewed": 4,
+      "wins": 1,
+      "baselineWins": 3,
+      "ties": 0,
+      "critical": [
+        {
+          "pair": "P10",
+          "format": "cover",
+          "subject": "microservices",
+          "violations": [
+            "Right half is an unrelated ink wash, not AI agents, an API gateway, or microservices."
+          ]
+        },
+        {
+          "pair": "P12",
+          "format": "cover",
+          "subject": "semiconductor",
+          "violations": [
+            "Right half is an unrelated ink wash rather than semiconductor manufacturing, robotic inspection, or advanced packaging."
+          ]
+        }
+      ],
+      "candidateAverage": {
+        "subjectFidelity": 3,
+        "composition": 3,
+        "visualCoherence": 3.5,
+        "constraintAdherence": 3.5,
+        "artifactControl": 5
+      },
+      "baselineAverage": {
+        "subjectFidelity": 3.5,
+        "composition": 4.5,
+        "visualCoherence": 4.25,
+        "constraintAdherence": 4.25,
+        "artifactControl": 4.25
+      },
+      "cells": [
+        {
+          "pair": "P09",
+          "format": "free",
+          "subject": "microservices",
+          "preferred": "candidate",
+          "candidateScores": {
+            "subjectFidelity": 3,
+            "composition": 4,
+            "visualCoherence": 5,
+            "constraintAdherence": 5,
+            "artifactControl": 5
+          },
+          "baselineScores": {
+            "subjectFidelity": 2,
+            "composition": 4,
+            "visualCoherence": 3,
+            "constraintAdherence": 2,
+            "artifactControl": 2
+          },
+          "candidateCritical": [],
+          "baselineCritical": [
+            "Wrong structure: four nodes in one vertical chain, with no visible request entering a gateway and fanning out to three microservices.",
+            "Unwanted readable gibberish on every card: MaCoey / highly depiction, Ploltrel / Retllay depiction, HeLLloluk / Mapiequaltty, Namsss Icare / wrtlert begroic."
+          ],
+          "notes": "A shows four linked blocks and a downward arrow, so the service-flow idea is present but the gateway-to-three topology is not legible. B is a tidy stack ruined by nonsense lettering and a single sequential path."
+        },
+        {
+          "pair": "P10",
+          "format": "cover",
+          "subject": "microservices",
+          "preferred": "baseline",
+          "candidateScores": {
+            "subjectFidelity": 2,
+            "composition": 2,
+            "visualCoherence": 2,
+            "constraintAdherence": 2,
+            "artifactControl": 5
+          },
+          "baselineScores": {
+            "subjectFidelity": 3,
+            "composition": 5,
+            "visualCoherence": 5,
+            "constraintAdherence": 5,
+            "artifactControl": 5
+          },
+          "candidateCritical": [
+            "Right half is an unrelated ink wash, not AI agents, an API gateway, or microservices."
+          ],
+          "baselineCritical": [],
+          "notes": "Both render the title Building Reliable AI Agents and the subtitle Patterns for production cleanly. A is one coherent cover whose picture is only a generic device; B splits the canvas with an off-topic ink panel."
+        },
+        {
+          "pair": "P11",
+          "format": "free",
+          "subject": "semiconductor",
+          "preferred": "baseline",
+          "candidateScores": {
+            "subjectFidelity": 4,
+            "composition": 4,
+            "visualCoherence": 5,
+            "constraintAdherence": 5,
+            "artifactControl": 5
+          },
+          "baselineScores": {
+            "subjectFidelity": 5,
+            "composition": 5,
+            "visualCoherence": 5,
+            "constraintAdherence": 5,
+            "artifactControl": 5
+          },
+          "candidateCritical": [],
+          "baselineCritical": [],
+          "notes": "Both show one robotic arm over a glowing circular wafer and neither adds text. B places that inspection in a dark room with a tiled floor; A keeps the same subjects on a light field with dark washes around them."
+        },
+        {
+          "pair": "P12",
+          "format": "cover",
+          "subject": "semiconductor",
+          "preferred": "baseline",
+          "candidateScores": {
+            "subjectFidelity": 3,
+            "composition": 2,
+            "visualCoherence": 2,
+            "constraintAdherence": 2,
+            "artifactControl": 5
+          },
+          "baselineScores": {
+            "subjectFidelity": 4,
+            "composition": 4,
+            "visualCoherence": 4,
+            "constraintAdherence": 5,
+            "artifactControl": 5
+          },
+          "candidateCritical": [
+            "Right half is an unrelated ink wash rather than semiconductor manufacturing, robotic inspection, or advanced packaging."
+          ],
+          "baselineCritical": [],
+          "notes": "Both carry the title Inside Modern Semiconductors and the subtitle From wafer to package. A shows an arm over a glowing package only on the left half. B keeps a package-like stack and a separate robotic arm in one scene, without the arm inspecting the stack."
+        }
+      ]
+    },
+    {
+      "candidate": "notion-editorial-line-art",
+      "baseline": "technical-diagram",
+      "decision": "rejected",
+      "reviewed": 4,
+      "wins": 0,
+      "baselineWins": 4,
+      "ties": 0,
+      "critical": [
+        {
+          "pair": "P13",
+          "format": "free",
+          "subject": "microservices",
+          "violations": [
+            "Wrong subject: a standing person holding a paint roller, with no request, gateway, or three services"
+          ]
+        }
+      ],
+      "candidateAverage": {
+        "subjectFidelity": 2.5,
+        "composition": 3.25,
+        "visualCoherence": 3.5,
+        "constraintAdherence": 2.5,
+        "artifactControl": 4.25
+      },
+      "baselineAverage": {
+        "subjectFidelity": 4,
+        "composition": 4.25,
+        "visualCoherence": 3.75,
+        "constraintAdherence": 3.75,
+        "artifactControl": 3.5
+      },
+      "cells": [
+        {
+          "pair": "P13",
+          "format": "free",
+          "subject": "microservices",
+          "preferred": "baseline",
+          "candidateScores": {
+            "subjectFidelity": 1,
+            "composition": 3,
+            "visualCoherence": 3,
+            "constraintAdherence": 1,
+            "artifactControl": 4
+          },
+          "baselineScores": {
+            "subjectFidelity": 3,
+            "composition": 4,
+            "visualCoherence": 3,
+            "constraintAdherence": 2,
+            "artifactControl": 2
+          },
+          "candidateCritical": [
+            "Wrong subject: a standing person holding a paint roller, with no request, gateway, or three services"
+          ],
+          "baselineCritical": [
+            "Unwanted readable gibberish, including the prompt-like line \"8K, high-quality, masterpiece\" and nonsense labels on the top panel and three nodes",
+            "Fragmented, disconnected symbol inside the top panel"
+          ],
+          "notes": "A shows one panel branching to three nodes. B is a clean line drawing of an unrelated person, with non-text glyphs on the shirt and thigh."
+        },
+        {
+          "pair": "P14",
+          "format": "cover",
+          "subject": "microservices",
+          "preferred": "baseline",
+          "candidateScores": {
+            "subjectFidelity": 3,
+            "composition": 4,
+            "visualCoherence": 4,
+            "constraintAdherence": 3,
+            "artifactControl": 5
+          },
+          "baselineScores": {
+            "subjectFidelity": 4,
+            "composition": 4,
+            "visualCoherence": 4,
+            "constraintAdherence": 4,
+            "artifactControl": 4
+          },
+          "candidateCritical": [],
+          "baselineCritical": [],
+          "notes": "Both render the title cleanly. B’s module, interlocked frames, and cutaway rack relate more clearly to gateways and services. A is a coherent block path into a glowing frame, with no literal agent."
+        },
+        {
+          "pair": "P15",
+          "format": "free",
+          "subject": "semiconductor",
+          "preferred": "baseline",
+          "candidateScores": {
+            "subjectFidelity": 3,
+            "composition": 4,
+            "visualCoherence": 4,
+            "constraintAdherence": 3,
+            "artifactControl": 4
+          },
+          "baselineScores": {
+            "subjectFidelity": 5,
+            "composition": 5,
+            "visualCoherence": 4,
+            "constraintAdherence": 5,
+            "artifactControl": 4
+          },
+          "candidateCritical": [],
+          "baselineCritical": [],
+          "notes": "B shows a robotic gripper over a patterned, brightly glowing wafer in a dark setting. A has an arm above a simple glowing disc, drawn on a white background rather than a dark cleanroom."
+        },
+        {
+          "pair": "P16",
+          "format": "cover",
+          "subject": "semiconductor",
+          "preferred": "baseline",
+          "candidateScores": {
+            "subjectFidelity": 3,
+            "composition": 2,
+            "visualCoherence": 3,
+            "constraintAdherence": 3,
+            "artifactControl": 4
+          },
+          "baselineScores": {
+            "subjectFidelity": 4,
+            "composition": 4,
+            "visualCoherence": 4,
+            "constraintAdherence": 4,
+            "artifactControl": 4
+          },
+          "candidateCritical": [],
+          "baselineCritical": [],
+          "notes": "Both titles and the wafer-to-package subtitle are clean. A is a full-bleed cover with two inspection-style arms and a held chip. B’s probe heads suggest packaging, but a large blank white band occupies the left of the canvas."
+        }
+      ]
+    },
+    {
+      "candidate": "product-exploded-identity",
+      "baseline": "technical-diagram",
+      "decision": "rejected",
+      "reviewed": 4,
+      "wins": 0,
+      "baselineWins": 4,
+      "ties": 0,
+      "critical": [
+        {
+          "pair": "P17",
+          "format": "free",
+          "subject": "microservices",
+          "violations": [
+            "Wrong subject: a bisected mechanical device, with no visible request, API gateway, or three microservices.",
+            "Small garbled label text on the lower plaque."
+          ]
+        },
+        {
+          "pair": "P18",
+          "format": "cover",
+          "subject": "microservices",
+          "violations": [
+            "Wrong pictured subject: a cutaway motor and gearbox, not AI agents, an API gateway, or microservices."
+          ]
+        },
+        {
+          "pair": "P20",
+          "format": "cover",
+          "subject": "semiconductor",
+          "violations": [
+            "Wrong pictured subject: a cutaway motor assembly, not semiconductor manufacturing, robotic inspection, or advanced packaging."
+          ]
+        }
+      ],
+      "candidateAverage": {
+        "subjectFidelity": 2,
+        "composition": 4.5,
+        "visualCoherence": 4.5,
+        "constraintAdherence": 2.5,
+        "artifactControl": 4.25
+      },
+      "baselineAverage": {
+        "subjectFidelity": 3.5,
+        "composition": 4.25,
+        "visualCoherence": 4,
+        "constraintAdherence": 3.75,
+        "artifactControl": 3.25
+      },
+      "cells": [
+        {
+          "pair": "P17",
+          "format": "free",
+          "subject": "microservices",
+          "preferred": "baseline",
+          "candidateScores": {
+            "subjectFidelity": 1,
+            "composition": 4,
+            "visualCoherence": 4,
+            "constraintAdherence": 1,
+            "artifactControl": 3
+          },
+          "baselineScores": {
+            "subjectFidelity": 3,
+            "composition": 4,
+            "visualCoherence": 3,
+            "constraintAdherence": 2,
+            "artifactControl": 1
+          },
+          "candidateCritical": [
+            "Wrong subject: a bisected mechanical device, with no visible request, API gateway, or three microservices.",
+            "Small garbled label text on the lower plaque."
+          ],
+          "baselineCritical": [
+            "Unwanted readable text, including the prompt fragment \"8K, high-quality, masterpiece,\" and gibberish on the hub and all three nodes."
+          ],
+          "notes": "B shows one hub linked to three nodes. A is an unrelated device. B’s hub symbol is an incoherent shape."
+        },
+        {
+          "pair": "P18",
+          "format": "cover",
+          "subject": "microservices",
+          "preferred": "baseline",
+          "candidateScores": {
+            "subjectFidelity": 2,
+            "composition": 5,
+            "visualCoherence": 5,
+            "constraintAdherence": 3,
+            "artifactControl": 5
+          },
+          "baselineScores": {
+            "subjectFidelity": 3,
+            "composition": 5,
+            "visualCoherence": 5,
+            "constraintAdherence": 5,
+            "artifactControl": 4
+          },
+          "candidateCritical": [
+            "Wrong pictured subject: a cutaway motor and gearbox, not AI agents, an API gateway, or microservices."
+          ],
+          "baselineCritical": [],
+          "notes": "Both render the title correctly and add the readable subtitle \"Patterns for production.\" A uses modules and a server interior; B depicts a drivetrain."
+        },
+        {
+          "pair": "P19",
+          "format": "free",
+          "subject": "semiconductor",
+          "preferred": "baseline",
+          "candidateScores": {
+            "subjectFidelity": 3,
+            "composition": 4,
+            "visualCoherence": 4,
+            "constraintAdherence": 3,
+            "artifactControl": 4
+          },
+          "baselineScores": {
+            "subjectFidelity": 4,
+            "composition": 5,
+            "visualCoherence": 4,
+            "constraintAdherence": 4,
+            "artifactControl": 4
+          },
+          "candidateCritical": [],
+          "baselineCritical": [],
+          "notes": "Both show one arm over a patterned wafer on a dark ground. B’s wafer carries the glow; A’s orange glow is in the machine beneath a largely unlit wafer, and no cleanroom is visible."
+        },
+        {
+          "pair": "P20",
+          "format": "cover",
+          "subject": "semiconductor",
+          "preferred": "baseline",
+          "candidateScores": {
+            "subjectFidelity": 2,
+            "composition": 5,
+            "visualCoherence": 5,
+            "constraintAdherence": 3,
+            "artifactControl": 5
+          },
+          "baselineScores": {
+            "subjectFidelity": 4,
+            "composition": 3,
+            "visualCoherence": 4,
+            "constraintAdherence": 4,
+            "artifactControl": 4
+          },
+          "candidateCritical": [
+            "Wrong pictured subject: a cutaway motor assembly, not semiconductor manufacturing, robotic inspection, or advanced packaging."
+          ],
+          "baselineCritical": [],
+          "notes": "Both render the title and the readable subtitle \"From wafer to package.\" A shows two arms, a wafer grid, and a chip, with a wide empty center. B shows a motor."
+        }
+      ]
+    },
+    {
+      "candidate": "handcrafted-clay-character",
+      "baseline": "cute",
+      "decision": "rejected",
+      "reviewed": 4,
+      "wins": 1,
+      "baselineWins": 3,
+      "ties": 0,
+      "critical": [
+        {
+          "pair": "P21",
+          "format": "free",
+          "subject": "microservices",
+          "violations": [
+            "Wrong subject: a standing person, with no request, gateway, or microservices."
+          ]
+        },
+        {
+          "pair": "P22",
+          "format": "cover",
+          "subject": "microservices",
+          "violations": [
+            "Wrong subject: unrelated child figure, with no visible agent, gateway, or microservice scene.",
+            "Unwanted readable mark at lower left: AA BS, a small symbol, and M."
+          ]
+        },
+        {
+          "pair": "P23",
+          "format": "free",
+          "subject": "semiconductor",
+          "violations": [
+            "Wrong subject emphasis: a child and a small claw present a glowing gridded disc on a plain dark backdrop, not a robotic arm inspecting a wafer in a cleanroom."
+          ]
+        },
+        {
+          "pair": "P24",
+          "format": "cover",
+          "subject": "semiconductor",
+          "violations": [
+            "Wrong subject: child portrait only, with no manufacturing, inspection, or packaging imagery."
+          ]
+        }
+      ],
+      "candidateAverage": {
+        "subjectFidelity": 2,
+        "composition": 4,
+        "visualCoherence": 4.5,
+        "constraintAdherence": 2,
+        "artifactControl": 4.25
+      },
+      "baselineAverage": {
+        "subjectFidelity": 2.5,
+        "composition": 4,
+        "visualCoherence": 4.25,
+        "constraintAdherence": 2.75,
+        "artifactControl": 4
+      },
+      "cells": [
+        {
+          "pair": "P21",
+          "format": "free",
+          "subject": "microservices",
+          "preferred": "baseline",
+          "candidateScores": {
+            "subjectFidelity": 1,
+            "composition": 4,
+            "visualCoherence": 5,
+            "constraintAdherence": 1,
+            "artifactControl": 5
+          },
+          "baselineScores": {
+            "subjectFidelity": 2,
+            "composition": 4,
+            "visualCoherence": 4,
+            "constraintAdherence": 2,
+            "artifactControl": 2
+          },
+          "candidateCritical": [
+            "Wrong subject: a standing person, with no request, gateway, or microservices."
+          ],
+          "baselineCritical": [
+            "Wrong subject: three stacked cards in a single downward sequence, with no API gateway or fan-out to three microservices.",
+            "Unwanted garbled readable text on every card."
+          ],
+          "notes": "A at least shows a three-stage flow, but the topology is linear and the lettering is nonsense. B is a clean figure with none of the requested system."
+        },
+        {
+          "pair": "P22",
+          "format": "cover",
+          "subject": "microservices",
+          "preferred": "baseline",
+          "candidateScores": {
+            "subjectFidelity": 2,
+            "composition": 4,
+            "visualCoherence": 4,
+            "constraintAdherence": 2,
+            "artifactControl": 3
+          },
+          "baselineScores": {
+            "subjectFidelity": 3,
+            "composition": 5,
+            "visualCoherence": 5,
+            "constraintAdherence": 4,
+            "artifactControl": 5
+          },
+          "candidateCritical": [
+            "Wrong subject: unrelated child figure, with no visible agent, gateway, or microservice scene.",
+            "Unwanted readable mark at lower left: AA BS, a small symbol, and M."
+          ],
+          "baselineCritical": [],
+          "notes": "Both render the title and a relevant subtitle cleanly. A’s abstract connected hardware supports the topic; B’s portrait does not, and it adds a stray mark."
+        },
+        {
+          "pair": "P23",
+          "format": "free",
+          "subject": "semiconductor",
+          "preferred": "candidate",
+          "candidateScores": {
+            "subjectFidelity": 3,
+            "composition": 4,
+            "visualCoherence": 4,
+            "constraintAdherence": 3,
+            "artifactControl": 4
+          },
+          "baselineScores": {
+            "subjectFidelity": 2,
+            "composition": 4,
+            "visualCoherence": 5,
+            "constraintAdherence": 2,
+            "artifactControl": 5
+          },
+          "candidateCritical": [
+            "Wrong subject emphasis: a child and a small claw present a glowing gridded disc on a plain dark backdrop, not a robotic arm inspecting a wafer in a cleanroom."
+          ],
+          "baselineCritical": [
+            "Wrong subject: a large arm suspends a cartoon character over a rainbow disc, with no cleanroom or recognizable wafer inspection."
+          ],
+          "notes": "A shows a convincing glowing die-pattern wafer beside a gripper. B has the clearer articulated arm, but the mascot and toy disc replace the inspection."
+        },
+        {
+          "pair": "P24",
+          "format": "cover",
+          "subject": "semiconductor",
+          "preferred": "baseline",
+          "candidateScores": {
+            "subjectFidelity": 2,
+            "composition": 4,
+            "visualCoherence": 5,
+            "constraintAdherence": 2,
+            "artifactControl": 5
+          },
+          "baselineScores": {
+            "subjectFidelity": 3,
+            "composition": 3,
+            "visualCoherence": 3,
+            "constraintAdherence": 3,
+            "artifactControl": 4
+          },
+          "candidateCritical": [
+            "Wrong subject: child portrait only, with no manufacturing, inspection, or packaging imagery."
+          ],
+          "baselineCritical": [
+            "Wrong-subject intrusion: two cartoon characters crowd the cover, and robotic inspection and advanced packaging are not shown."
+          ],
+          "notes": "Both carry the correct title and a relevant subtitle. A includes process equipment but clashes with mascots; B is visually clean and off-topic."
+        }
+      ]
+    }
+  ]
+}
