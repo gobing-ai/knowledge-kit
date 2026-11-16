@@ -1519,6 +1519,27 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
                         resolved = resolved.split(source.placeholder).join(JSON.stringify(url).slice(1, -1));
                     }
                     if (LINK_SOURCES.some((source) => resolved.includes(source.placeholder))) {
+                        // A draft may proceed without the cross-link (0383 follow-up): WeChat's
+                        // `originalUrl` is optional and a draft is reviewed before it publishes, so
+                        // a missing surfdash URL must not block the draft. A live row keeps refusing —
+                        // a published article carrying an unresolved placeholder is worse than none.
+                        const unresolved = LINK_SOURCES.filter((source) => resolved.includes(source.placeholder)).map(
+                            (source) => source.placeholder,
+                        );
+                        const draftMayDropLink =
+                            row.mode === 'draft' &&
+                            unresolved.every((placeholder) => placeholder === '{{article_url}}');
+                        if (draftMayDropLink) {
+                            resolved = resolved.replace(
+                                /"originalUrl"\s*:\s*"\{\{article_url\}\}"/,
+                                '"originalUrl": ""',
+                            );
+                            echo(
+                                `publish-matrix-send: ${row.key} is a draft — dropped the unresolved {{article_url}} cross-link`,
+                            );
+                        }
+                    }
+                    if (LINK_SOURCES.some((source) => resolved.includes(source.placeholder))) {
                         return { error: 'unresolved-link' };
                     }
                     const resolvedPath = join(workDir, '4-publish', 'payloads', `content.${row.key}.resolved.json`);
