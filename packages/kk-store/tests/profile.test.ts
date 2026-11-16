@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-    compileProfile,
-    DEFAULT_EXTRACT_LIMIT,
-    ITEM_DECISION_IDS,
-    ProfileInvalidError,
-    parseProfile,
-} from '../src/profile';
+import { compileProfile, ITEM_DECISION_IDS, ProfileInvalidError, parseProfile } from '../src/profile';
 import { REPO_ROOT } from './helpers';
 
 /**
@@ -55,7 +49,8 @@ describe('parseProfile', () => {
             { decisionId: 'kk-item-impact', direction: 'desc' },
             { column: 'first_seen_at', direction: 'desc' },
         ]);
-        expect(profile.limit).toBe(DEFAULT_EXTRACT_LIMIT);
+        // The shipped profile pins its own cap (0377: 40), so it is deliberately NOT the default.
+        expect(profile.limit).toBe(40);
     });
 
     it('parses lte, an explicit limit and a first_seen_at-only order', () => {
@@ -171,7 +166,7 @@ describe('compileProfile', () => {
         expect(query.order).toEqual(profile.order);
         expect(query.windowMs).toBe(86_400_000);
         expect(query.now).toBe(1_000_000);
-        expect(query.limit).toBe(DEFAULT_EXTRACT_LIMIT);
+        expect(query.limit).toBe(40);
         expect(query.excludeTopic).toBeUndefined();
     });
 
