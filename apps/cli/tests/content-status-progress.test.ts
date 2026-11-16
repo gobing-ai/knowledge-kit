@@ -102,7 +102,15 @@ describe('kk news status progress surface (0378)', () => {
     it('explains a no-content day through the pool gate and the floor refusal (with the ladder rung)', async () => {
         const fx = fixture();
         fx.write('pool-gate.json', JSON.stringify({ status: 'EMPTY' }));
-        fx.write('10-collect/ladder.json', JSON.stringify({ chosen: '96h', ratioUsed: 0.28, rungs: [] }));
+        fx.write(
+            '10-collect/ladder.json',
+            JSON.stringify({
+                chosen: '96h',
+                ratioUsed: 0.28,
+                ratioSource: 'previous-run',
+                rungs: [{ window: '24h', items: 4, chars: 7244, minutes: 6.2, clears: false }],
+            }),
+        );
         fx.write(
             '21-plan/20261116_04_quality-control-content_floor-refusal.json',
             JSON.stringify({ estimatedMinutes: 9.4, minMinutes: 15, expansion: 0.28, reason: 'thin day' }),
@@ -111,7 +119,10 @@ describe('kk news status progress surface (0378)', () => {
         const gate = payload.gate as Record<string, unknown>;
         expect(gate.pool).toBe('EMPTY');
         expect(gate.floorRefusal).toMatchObject({ estimatedMinutes: 9.4, minMinutes: 15 });
-        expect(gate.ladder).toMatchObject({ chosen: '96h', ratioUsed: 0.28 });
+        expect(gate.ladder).toMatchObject({ chosen: '96h', ratioUsed: 0.28, ratioSource: 'previous-run' });
+        expect(gate.ladder).toMatchObject({
+            rungs: [{ window: '24h', items: 4, chars: 7244, minutes: 6.2, clears: false }],
+        });
         fx.cleanup();
     });
 

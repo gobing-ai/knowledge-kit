@@ -110,6 +110,8 @@ export async function gatePayload(fs: FileSystem, workDir: string): Promise<Stat
                 : {
                       chosen: optionalString(ladder.chosen),
                       ratioUsed: typeof ladder.ratioUsed === 'number' ? ladder.ratioUsed : null,
+                      ratioSource: optionalString(ladder.ratioSource),
+                      rungs: Array.isArray(ladder.rungs) ? ladder.rungs : [],
                   },
     };
 }

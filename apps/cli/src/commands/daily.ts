@@ -587,6 +587,42 @@ async function runReportAction(options: RunReportOptions): Promise<void> {
     }
 }
 
+/** Append the ladder's own measure and per-rung estimates (0377 R3) without disturbing report-free runs. */
+function appendLadderReport(body: string, workDir: string): string {
+    const path = join(workDir, '10-collect', 'ladder.json');
+    if (!existsSync(path)) return body;
+    try {
+        const ladder = parseJson(readFileSync(path, 'utf-8')) as {
+            ratioUsed?: unknown;
+            ratioSource?: unknown;
+            chosen?: unknown;
+            rungs?: unknown;
+        };
+        const rungs = Array.isArray(ladder.rungs) ? ladder.rungs : [];
+        const rows = rungs.flatMap((value) => {
+            if (value === null || typeof value !== 'object' || Array.isArray(value)) return [];
+            const rung = value as Record<string, unknown>;
+            const cell = (key: string): string => String(rung[key] ?? '').replaceAll('|', '\\|');
+            return [
+                `| ${cell('window')} | ${cell('items')} | ${cell('chars')} | ${cell('minutes')} | ${cell('clears')} |`,
+            ];
+        });
+        const section = [
+            '## Pool ladder',
+            '',
+            `- Driving measure: ${String(ladder.ratioUsed ?? 'unknown')} spoken/raw ratio (${String(ladder.ratioSource ?? 'unknown source')})`,
+            `- Chosen window: ${String(ladder.chosen ?? 'unknown')}`,
+            '',
+            '| Window | Items | Characters | Estimated minutes | Clears floor |',
+            '| --- | ---: | ---: | ---: | --- |',
+            ...rows,
+        ].join('\n');
+        return `${body.trimEnd()}\n\n${section}\n`;
+    } catch {
+        return body;
+    }
+}
+
 /**
  * `kk daily run-report --work-dir <dir> --run-date <stamp> …` — assemble the per-run report from the
  * artifacts that exist, and record the pool outcome next to it.
@@ -608,7 +644,10 @@ export async function generateRunReport(options: RunReportOptions): Promise<Gene
     mkdirSync(workDir, { recursive: true });
     if (poolCount === 0 || candidateCount === 0) {
         const reason = noContentReason(workDir, runDate, poolCount);
-        const body = `# Daily run ${runDate} — no content\n\n${reason}\n\nNo article, audio or publish\nartifact was produced; nothing was marked used.\n`;
+        const body = appendLadderReport(
+            `# Daily run ${runDate} — no content\n\n${reason}\n\nNo article, audio or publish\nartifact was produced; nothing was marked used.\n`,
+            workDir,
+        );
         writeFileSync(reportMd, body);
         writeFileSync(summary, `${reason}\n`);
         return { noContent: true, reason, report: reportMd };
@@ -671,7 +710,7 @@ export async function generateRunReport(options: RunReportOptions): Promise<Gene
     if (code !== 0) throw new Error(`${NEWS_REPORT_PLUGIN} exited ${code}`);
     const parsedReport = parseJson(readFileSync(reportJson, 'utf-8')) as { body?: unknown };
     if (typeof parsedReport.body !== 'string') throw new Error(`${reportJson} has no string body`);
-    writeFileSync(reportMd, parsedReport.body);
+    writeFileSync(reportMd, appendLadderReport(parsedReport.body, workDir));
     writeFileSync(summary, `${candidateCount} items planned\n`);
     return { noContent: false, report: reportMd };
 }

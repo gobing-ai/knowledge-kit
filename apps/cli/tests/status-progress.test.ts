@@ -77,7 +77,19 @@ describe('gatePayload (0378)', () => {
     it('carries the pool verdict, the floor refusal and the ladder rung', async () => {
         const dir = workDir();
         write(dir, 'pool-gate.json', JSON.stringify({ status: 'EMPTY' }));
-        write(dir, '10-collect/ladder.json', JSON.stringify({ chosen: '96h', ratioUsed: 0.28, rungs: [] }));
+        write(
+            dir,
+            '10-collect/ladder.json',
+            JSON.stringify({
+                chosen: '96h',
+                ratioUsed: 0.28,
+                ratioSource: 'previous-run',
+                rungs: [
+                    { window: '24h', items: 4, chars: 7244, minutes: 6.2, clears: false },
+                    { window: '96h', items: 20, chars: 27704, minutes: 23.1, clears: true },
+                ],
+            }),
+        );
         write(
             dir,
             '21-plan/20261116_04_quality-control-content_floor-refusal.json',
@@ -86,7 +98,15 @@ describe('gatePayload (0378)', () => {
         expect(await gatePayload(fs, dir)).toMatchObject({
             pool: 'EMPTY',
             floorRefusal: { estimatedMinutes: 9.4, minMinutes: 15, expansion: 0.28, reason: 'thin day' },
-            ladder: { chosen: '96h', ratioUsed: 0.28 },
+            ladder: {
+                chosen: '96h',
+                ratioUsed: 0.28,
+                ratioSource: 'previous-run',
+                rungs: [
+                    { window: '24h', items: 4, chars: 7244, minutes: 6.2, clears: false },
+                    { window: '96h', items: 20, chars: 27704, minutes: 23.1, clears: true },
+                ],
+            },
         });
         rmSync(dir, { recursive: true, force: true });
     });

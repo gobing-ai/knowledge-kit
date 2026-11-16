@@ -297,6 +297,19 @@ describe('kk daily run-report', () => {
                 reason: 'fixture',
             }),
         );
+        mkdirSync(join(dir, '10-collect'), { recursive: true });
+        writeFileSync(
+            join(dir, '10-collect', 'ladder.json'),
+            JSON.stringify({
+                chosen: '96h',
+                ratioUsed: 0.28,
+                ratioSource: 'previous-run',
+                rungs: [
+                    { window: '24h', items: 3, chars: 2400, minutes: 2.1, clears: false },
+                    { window: '96h', items: 9, chars: 9000, minutes: 7.8, clears: false },
+                ],
+            }),
+        );
         const result = await run([
             'daily',
             'run-report',
@@ -315,6 +328,10 @@ describe('kk daily run-report', () => {
         expect(summary).toContain('a 3-item pool estimated 9.4 min of speech');
         expect(summary).toContain('below the 15 min floor');
         expect(summary).toContain('pre-spend refusal (pool 3, kept 3)');
+        const report = readFileSync(join(dir, '20261007_19_run-report_report.md'), 'utf-8');
+        expect(report).toContain('previous-run');
+        expect(report).toContain('| 24h | 3 | 2400 | 2.1 | false |');
+        expect(report).toContain('| 96h | 9 | 9000 | 7.8 | false |');
     });
 
     it('0266 R2/R3 — names the post-spend duration refusal, which wins over the floor artifact', async () => {
