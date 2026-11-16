@@ -181,3 +181,7 @@ plugins/*/*/.spur/
 # Agent-tool session state (oh-my-openagent run continuation); never tracked or linted.
 /.omo
 plugins/generations/image-gen/.spur/
+
+# Test scratch fixtures written into the repo root (`.tmp-<suite>-<...>`); a crashed or
+# concurrent suite can leave one behind — never track or commit them.
+/.tmp-*/

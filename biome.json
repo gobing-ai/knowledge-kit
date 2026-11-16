@@ -16,7 +16,8 @@
             "!**/vendors",
             "!**/.works",
             "!**/*.generated.mjs",
-            "!**/docs/tasks/evidence"
+            "!**/docs/tasks/evidence",
+            "!**/.tmp-*"
         ]
     },
     "formatter": {
