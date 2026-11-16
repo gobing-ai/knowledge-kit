@@ -226,6 +226,13 @@ grep -c expectedItemSections "$KK_PKG/plugins/kk/scripts/daily-stages.ts"   # co
 
 Until this repo is released and reinstalled, that copy is the one the cron actually runs.
 
+**Check the sync before the next tick, not at it.** `kk news generate`'s launch preflight refuses
+(exit 5) when the checkout's `plugins/kk/{workflows,scripts}` differ from the install, because the
+executed stage body is the installed one — on 2026-11-16 the 04:30 tick was refused and the day
+produced no episode, 4.5 h after commit `5fd38638` changed `daily-stages.ts` with no re-sync.
+`bun run tools:fresh` runs the same comparison, names every drifted file and prints the rsync
+lines (warn-only; `--strict` exits nonzero, including the unrelated stale-shadow warnings).
+
 ### Editing `apps/cli` / `packages` (the `kk` binary itself)
 
 The same staleness applies one layer up: `kk` runs `dist/index.js` from that package, so a CLI or
