@@ -305,25 +305,32 @@ function authoredPlanDescendants(workDir: string, runDate: string): string[] {
 const SPEAK_CHAR_EXPANSION = 1.4;
 
 /**
- * The expansion the PRE-SPEND widen decision uses, and it is deliberately not 1.4.
+ * The cold-start ratio the PRE-SPEND widen decision uses, and it is deliberately not 1.4.
  *
- * The two consumers need opposite safe directions (the same argument `scriptFloorCharRate` makes
- * about the char rate): the reported arithmetic wants the typical ratio, while the widen gate wants
- * the *worst measured* ratio, because its cheap error is widening to the backlog and its expensive
- * error is authoring a script the TTS gate then refuses.
+ * The consumers need opposite safe directions (the same argument `scriptFloorCharRate` makes about
+ * the char rate): the reported arithmetic wants the typical ratio, while the pre-spend gates want
+ * the *worst measured* ratio, because a cheap error is a rung too many and the expensive one is an
+ * authoring pass the TTS gate then refuses.
  *
- * Measured spoken/raw ratios: 2026-10-11 1,270/1,800 = 0.71 and 5,925/4,300 = 1.38; 2026-11-15 run
- * `kk-news-generate-20261115-1794773860762` 2,053/7,244 = 0.28. Treating 1.4 as the floor ratio let
- * that day pass the gate at 32.6 min, spend a full authoring pass, then refuse at 6.2 min — and the
- * ladder that exists to fill a thin day from the backlog never climbed a rung (0377).
+ * Measured spoken/kept-candidate ratios: 2026-10-11 1,270/1,800 = 0.71 and 5,925/4,300 = 1.38;
+ * 2026-11-15 run `kk-news-generate-20261115-1794773860762` 2,053/7,244 = 0.28. Treating 1.4 as the
+ * floor ratio let that day pass the gate at 32.6 min, spend a full authoring pass, then refuse at
+ * 6.2 min — and the ladder that exists to fill a thin day from the backlog never climbed a rung
+ * (0377).
+ *
+ * This constant is only the fallback: both gates prefer the ratio a previous run recorded, and the
+ * two records carry DIFFERENT denominators (see `readKeptRatio` — using one ratio for both was the
+ * 2026-11-16 refusal of a 23-min episode).
  */
 const SPEAK_CHAR_EXPANSION_FLOOR = 0.28;
 
 /**
- * Where a run records the ratio it actually delivered: spoken script characters over raw pool
- * characters (0377 R2/R3). The widen decision reads the newest one of these from the sibling run
- * directories, so the ladder judges today's pool by what the writer really produced last time
- * instead of a constant that was calibrated once.
+ * Where a run records the ratios it actually delivered (0377 R2/R3). Two denominators, because the
+ * two pre-spend consumers measure different sets: `ratio` is spoken/pool (the ladder, which judges
+ * the raw extracted pool) and `keptRatio` is spoken/kept-candidate chars (the floor gate, which
+ * judges what QC actually admitted). The gates read the newest record from the sibling run
+ * directories, so they judge today's material by what the writer really produced last time instead
+ * of a constant that was calibrated once.
  */
 const SPOKEN_RATIO_SUFFIX = '_09_spoken-ratio.json';
 
@@ -378,23 +385,77 @@ function readSpokenRatio(workDir: string): SpokenRatio {
 }
 
 /**
- * Record what this run delivered — spoken script chars over raw pool chars — and warn when it drifted
- * from the ratio the widen decision used. A refused script records too: a thin day teaches the ladder
- * even though it produced no episode.
+ * The newest recorded spoken/KEPT ratio across sibling runs, or the cold-start constant.
+ *
+ * WHY this is separate from `readSpokenRatio` (2026-11-16): one constant was applied to two
+ * different denominators. The ladder multiplies the raw pool (38,241 chars that day) while this gate
+ * multiplies the kept candidates (13,963 chars — planning admitted 37% of the pool), so the same
+ * 0.28 read as a 34.5 min "clears" in the ladder and a 12.7 min "refusing" at the gate, and the run
+ * paid for the planning pass to discover it. The writer then delivered 7,194 spoken chars ≈ 23 min:
+ * the refusal discounted the planning shrink twice. `keptRatio` for that run is 0.515.
+ */
+function readKeptRatio(workDir: string): SpokenRatio {
+    const base = resolve(workDir, '..');
+    let newest: { at: number; ratio: number; from: string } | null = null;
+    let entries: string[] = [];
+    try {
+        entries = readdirSync(base);
+    } catch {
+        return { ratio: SPEAK_CHAR_EXPANSION_FLOOR, source: 'default 0.28 (no sibling runs)' };
+    }
+    for (const entry of entries) {
+        const dir = join(base, entry, '21-plan');
+        let files: string[] = [];
+        try {
+            files = readdirSync(dir).filter((file) => file.endsWith(SPOKEN_RATIO_SUFFIX));
+        } catch {
+            continue;
+        }
+        for (const file of files) {
+            const path = join(dir, file);
+            try {
+                const parsed = readJson(path) as Record<string, unknown> | null;
+                // A pre-2026-11-16 record carries no kept ratio at all: skip it rather than divide by
+                // its pool figure, which is what produced the double discount.
+                const ratio = Number(parsed?.keptRatio);
+                if (!Number.isFinite(ratio) || ratio <= 0) continue;
+                const at = statSync(path).mtimeMs;
+                if (newest === null || at > newest.at) newest = { at, ratio, from: path };
+            } catch {
+                // A malformed record is not evidence; the next run overwrites it.
+            }
+        }
+    }
+    if (newest === null) return { ratio: SPEAK_CHAR_EXPANSION_FLOOR, source: 'default 0.28 (no recorded kept ratio)' };
+    return { ratio: clampRatio(newest.ratio), source: `${newest.from} (${newest.ratio.toFixed(2)}x)` };
+}
+
+/**
+ * Record what this run delivered — spoken script chars over raw pool chars, and over the kept
+ * candidates — and warn when it drifted from the ratio the widen decision used. A refused script
+ * records too: a thin day teaches the ladder even though it produced no episode.
  */
 function recordSpokenRatio(workDir: string, runDate: string, spokenChars: number): void {
     const poolPath = join(workDir, '10-collect', 'pool.json');
     if (!isFile(poolPath)) return;
     const pool = readJson(poolPath);
-    const poolChars = (Array.isArray(pool) ? pool : []).reduce((sum, doc) => {
-        const entry = (doc ?? {}) as Record<string, unknown>;
-        return sum + `${String(entry.title ?? '')}`.length + String(entry.body ?? '').length;
-    }, 0);
+    const poolChars = rawChars(Array.isArray(pool) ? pool : []);
     if (poolChars <= 0) return;
-    const ratio = Math.round((spokenChars / poolChars) * 1000) / 1000;
+    // The admitted set the floor gate measures, so the next pre-spend estimate discounts the planning
+    // shrink once instead of twice (2026-11-16).
+    const keptPath = join(workDir, '21-plan', `${runDate}_04_quality-control-content_candidates.json`);
+    const keptChars = isFile(keptPath) ? rawChars(metadataOf(readJson(keptPath)).docs ?? []) : 0;
+    const round3 = (value: number): number => Math.round(value * 1000) / 1000;
+    const ratio = round3(spokenChars / poolChars);
     const out = join(workDir, '21-plan', `${runDate}${SPOKEN_RATIO_SUFFIX}`);
     mkdirSync(join(workDir, '21-plan'), { recursive: true });
-    writeJsonText(out, { runDate, poolChars, spokenChars, ratio });
+    writeJsonText(out, {
+        runDate,
+        poolChars,
+        ...(keptChars > 0 ? { keptChars, keptRatio: round3(spokenChars / keptChars) } : {}),
+        spokenChars,
+        ratio,
+    });
     // Drift warning: the ladder judged this pool with some ratio; the writer just delivered a
     // different one. A wide gap means the next run's ladder is working from a stale measure.
     let used: number | null = null;
@@ -412,6 +473,14 @@ function recordSpokenRatio(workDir: string, runDate: string, spokenChars: number
     }
 }
 
+/** Title+body characters of a Doc[] — the raw measure every spoken ratio here divides into. */
+function rawChars(docs: unknown[]): number {
+    return docs.reduce((sum, doc) => {
+        const entry = (doc ?? {}) as Record<string, unknown>;
+        return sum + `${String(entry.title ?? '')}`.length + String(entry.body ?? '').length;
+    }, 0);
+}
+
 /**
  * The calibrated pre-spend estimate over a kept pool (title+body characters × the 1.4 expansion,
  * over the driver's measured char rate, plus the 8 s intro sting) — shared by the pre-spend floor
@@ -423,10 +492,7 @@ function estimateSpokenMinutes(
     vdriver: string,
     expansion: number = SPEAK_CHAR_EXPANSION,
 ): { minutes: number; seconds: number; chars: number } {
-    const chars = docs.reduce((sum, doc) => {
-        const entry = (doc ?? {}) as Record<string, unknown>;
-        return sum + `${String(entry.title ?? '')}`.length + String(entry.body ?? '').length;
-    }, 0);
+    const chars = rawChars(docs);
     const seconds = 8 + (chars * expansion) / spokenCharRate(vdriver);
     return { minutes: Math.round((seconds / 60) * 10) / 10, seconds, chars };
 }
@@ -441,6 +507,10 @@ function estimateSpokenMinutes(
  * `pool-count --min 1` guard then skips the content, audio, publish and XHS subtrees, and the run
  * closes through run-report and the ledger exactly like an empty pool. The estimate and its inputs
  * land in a refusal artifact next to the candidates.
+ *
+ * The ratio comes from `readKeptRatio`, NOT the pool-denominated one the ladder uses: this gate
+ * measures the admitted set, and applying the pool ratio to it discounted the planning shrink twice
+ * (2026-11-16: estimated 12.7 min, the writer delivered 23).
  */
 function applyFloorGate(
     candidates: string,
@@ -462,11 +532,12 @@ function applyFloorGate(
         if (clearStaleRefusal && isFile(refusal)) unlinkSync(refusal);
         return;
     }
+    const keptRatio = readKeptRatio(workDir);
     const {
         minutes: estimatedMinutes,
         seconds: estimatedSeconds,
         chars,
-    } = estimateSpokenMinutes(docs, vdriver, SPEAK_CHAR_EXPANSION_FLOOR);
+    } = estimateSpokenMinutes(docs, vdriver, keptRatio.ratio);
     if (estimatedSeconds >= floor * 60) {
         if (clearStaleRefusal && isFile(refusal)) unlinkSync(refusal);
         console.log(`floor gate: estimated ${estimatedMinutes} min from ${chars} chars — above the ${floor} min floor`);
@@ -478,9 +549,10 @@ function applyFloorGate(
             estimatedMinutes,
             minMinutes: floor,
             candidateChars: chars,
-            // The ratio this refusal actually used — reporting SPEAK_CHAR_EXPANSION here made the
-            // artifact disagree with its own minutes (0377).
-            expansion: SPEAK_CHAR_EXPANSION_FLOOR,
+            // The ratio this refusal actually used, and where it came from (0377; 2026-11-16): the
+            // gate measures the KEPT set, so a pool-denominated ratio under-predicts it badly.
+            expansion: keptRatio.ratio,
+            expansionSource: keptRatio.source,
             charRate: spokenCharRate(vdriver),
             ids,
             reason: `a ${docs.length}-item pool estimates ${estimatedMinutes} min of speech, below the ${floor} min floor — refusing before any TTS spend`,
