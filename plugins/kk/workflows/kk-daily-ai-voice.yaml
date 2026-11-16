@@ -70,7 +70,8 @@ vars:
   xhs_cards: "4"
   xhs_style: "xhs-knowledge"
   # Same credential surface as the cover pin: the provider/model must be one this machine can
-  # actually reach, and each provider renders its own look.
+  # actually reach, and each provider renders its own look. This retired workflow stays frozen;
+  # the 0379 H3 XHS opt-in lives in kk-daily-ai-voice2 and the consolidated kk news config.
   xhs_provider: "minimax"
   xhs_model: "image-01"
   # ADR-022 rail: draft-box only. "true" posts live and stays a launch-time opt-in.
