@@ -101,6 +101,9 @@ plugins:
         BAOYU_CODEX_IMAGEGEN_BIN: ""           # optional — wrapper entrypoint override
         BAOYU_CODEX_IMAGEGEN_TIMEOUT_MS: ""    # optional — per-call timeout (ms)
         BAOYU_CODEX_IMAGEGEN_RETRIES: ""       # optional — retry count
+        # -- h3-local (local Apple Silicon MLX runtime; NEVER auto-selected — pin explicitly) --
+        H3_IMAGE_MLX_BIN: ""                   # absolute path to ../gitops/apps/h3-image-mlx/h3gen.sh — its presence IS readiness (0379)
+        H3_LOCAL_TIMEOUT_MS: ""                # optional — per-render bound in ms; default 1800000 (30 min: a 2-reference edit measured 27m46s)
         # -- 0104 R6 runtime seams (behavior, not credentials; placeholder values only) --
         KK_IMAGE_MAX_IMAGES: ""                # optional — per-run budget cap; default 4 (OPEN for the operator to set)
         KK_IMAGE_DRY_RUN: ""                   # optional — "1" composes every prompt, selects the provider, spends nothing

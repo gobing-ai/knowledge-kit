@@ -1,14 +1,16 @@
 ---
 schema_version: 1
 name: Add an opt-in h3-image-mlx provider to image-gen
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-15T22:44:30.594Z
-updated_at: "2026-11-15T22:53:22.929Z"
+updated_at: "2026-11-16T00:25:25.872Z"
 
 ac_altitude: graduating
 ac_numbering: task-local
 feature_id: K2
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0379. Add an opt-in h3-image-mlx provider to image-gen
@@ -21,14 +23,14 @@ The provider seam is the smallest complete integration: it reuses image-gen pres
 
 ### Requirements
 
-- [ ] R1. Add an `h3-local` provider to the existing `plugins/generations/image-gen` plugin; do not create a second generator plugin or extract a shared image package.
-- [ ] R2. Implement the frozen `ImageProvider` contract by spawning the wrapper named by `H3_IMAGE_MLX_BIN` (the local `h3gen.sh`), returning image bytes, supporting one image per call, forwarding reference images, and cleaning temporary files on success and failure.
-- [ ] R3. Honour exact preset canvases when width and height are valid H3 dimensions (multiples of 32, 256–4096); otherwise translate aspect-only requests to a valid H3 canvas. Surface wrapper timeout/nonzero-exit failures with actionable stderr so existing fallback handling can engage.
-- [ ] R4. Register `h3-local` as explicit opt-in only: never auto-select it, keep `isAvailable()` limited to env presence with no subprocess or filesystem probe, and preserve every existing provider selection and fallback behavior.
-- [ ] R5. Add deterministic tests using a fake `H3_IMAGE_MLX_BIN`; cover argument construction, exact/aspect sizing, references, `n > 1` rejection, readiness, timeout/nonzero exit, temporary-file cleanup, and fallback integration without loading model weights or spending on a cloud provider.
-- [ ] R6. Rehearse real local renders into a disposable works directory for both an XHS text-free illustration and the daily-news cover, recording artifacts, dimensions, wall time, and a same-brief comparison against the currently pinned provider. Local output must pass text-free/card-composition checks; changing the pinned cover look requires explicit operator A/B approval.
-- [ ] R7. Validate the actual daily scheduler context (launchd versus cron, Metal session, and removable-volume/TCC access). Enable XHS through `xhs_provider: h3-local` with cloud fallback only after the local smoke path passes; keep the existing cloud defaults and cover pin until their gates pass, and document the one-var opt-in and rollback.
-- [ ] R8. Update the provider/config examples, image-authoring provider reference, image-gen README, and `docs/04_DESIGN.md` with the implementation; document ignored negative prompts, cold-load/reference-edit latency, and the fact that editing a checkout does not by itself update the installed daily runtime. Run focused tests and `bun run gate`; leave unrelated working-tree changes untouched.
+- [x] R1. Add an `h3-local` provider to the existing `plugins/generations/image-gen` plugin; do not create a second generator plugin or extract a shared image package.
+- [x] R2. Implement the frozen `ImageProvider` contract by spawning the wrapper named by `H3_IMAGE_MLX_BIN` (the local `h3gen.sh`), returning image bytes, supporting one image per call, forwarding reference images, and cleaning temporary files on success and failure.
+- [x] R3. Honour exact preset canvases when width and height are valid H3 dimensions (multiples of 32, 256–4096); otherwise translate aspect-only requests to a valid H3 canvas. Surface wrapper timeout/nonzero-exit failures with actionable stderr so existing fallback handling can engage.
+- [x] R4. Register `h3-local` as explicit opt-in only: never auto-select it, keep `isAvailable()` limited to env presence with no subprocess or filesystem probe, and preserve every existing provider selection and fallback behavior.
+- [x] R5. Add deterministic tests using a fake `H3_IMAGE_MLX_BIN`; cover argument construction, exact/aspect sizing, references, `n > 1` rejection, readiness, timeout/nonzero exit, temporary-file cleanup, and fallback integration without loading model weights or spending on a cloud provider.
+- [x] R6. Rehearse real local renders into a disposable works directory for both an XHS text-free illustration and the daily-news cover, recording artifacts, dimensions, wall time, and a same-brief comparison against the currently pinned provider. Local output must pass text-free/card-composition checks; changing the pinned cover look requires explicit operator A/B approval.
+- [x] R7. Validate the actual daily scheduler context (launchd versus cron, Metal session, and removable-volume/TCC access). Enable XHS through `xhs_provider: h3-local` with cloud fallback only after the local smoke path passes; keep the existing cloud defaults and cover pin until their gates pass, and document the one-var opt-in and rollback.
+- [x] R8. Update the provider/config examples, image-authoring provider reference, image-gen README, and `docs/04_DESIGN.md` with the implementation; document ignored negative prompts, cold-load/reference-edit latency, and the fact that editing a checkout does not by itself update the installed daily runtime. Run focused tests and `bun run gate`; leave unrelated working-tree changes untouched.
 
 ### Acceptance Criteria
 
@@ -123,15 +125,80 @@ The adapter ignores `StylePreset.negative` for H3 and documents that limitation.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Provider seam, no new plugin or package: `h3-local` is one adapter inside the existing
+image-gen registry, so presets, prompt composition, exact-size negotiation, artifact recording and
+D6 fallback are reused unchanged.
+
+- `plugins/generations/image-gen/src/providers/h3-local.ts:123` — `createH3Local`: `isAvailable()` is
+  `H3_IMAGE_MLX_BIN` presence only (no subprocess/filesystem probe), `supportsReferenceImages()` is
+  true (up to 16 wrapper refs), `validate()` rejects `n > 1` before spawning, and `generate()` spawns
+  the wrapper with `--prompt/--output/--width/--height` plus one `--reference` per image, then reads
+  the written bytes and removes the temp output in a `finally`.
+- `…/h3-local.ts:49` — `h3ExactSize` is the H3 canvas rule (multiple of 32, 256–4096);
+  `…/h3-local.ts:135` wires it into `exactSize()` so a preset declaring a legal canvas forwards
+  `width`/`height` unchanged (xhs-card's 1080×1440 does not, and keeps the aspect path).
+- `…/h3-local.ts:60` — `h3Canvas` turns an aspect-only request into a 1024-short-side canvas snapped
+  to the same grid; an unparseable ratio falls back to 1024×1024 at the call site.
+- `…/h3-local.ts:40` — the 30-minute default bound: the wrapper's own measurements are ~6–7 min for
+  a cold 1024² render and 27 min 46 s for a two-reference edit, so a tighter default would kill work
+  already paid for. `H3_LOCAL_TIMEOUT_MS` overrides it; `ProviderOptions.timeoutMs` wins (tests).
+- Failure paths keep the fallback classifier usable: timeout and non-zero exit carry the wrapper's
+  stderr tail, and a zero exit that wrote no file is an explicit `no output` error. The timeout kills
+  the wrapper's **process group** — `h3gen.sh` runs the Python runtime as a child, so killing only the
+  shell would leave a render holding the GPU.
+- `plugins/generations/image-gen/src/providers/types.ts:174` — the registry row (env
+  `H3_IMAGE_MLX_BIN`, default model `h3`, readiness `note`), and `…/types.ts:115` adds the name to
+  `NEVER_AUTO` while leaving `AUTO_ORDER` untouched: automatic selection can never pick it.
+- `.spur/rules/strict/runtime-boundaries.yaml:76` and `:141` — the per-file
+  `no-direct-process-spawn` / `no-direct-fs-io` exemptions this transport requires, same
+  vendor-CLI-boundary class as `codex-cli.ts`.
+- Docs: `docs/04_DESIGN.md` (dated section + the two env rows),
+  `plugins/kk/skills/image-authoring/references/providers.md` (inventory row + the never-auto and
+  limitation rules), and both `config.example.yaml` files.
+
+Deliberate limits: H3 has no negative-prompt capability so `StylePreset.negative` is ignored, the
+wrapper's seed default (42) is not plumbed through `ImageRequest`, and nothing probes the venv,
+weights or external volume at selection time — those stay rehearsal/scheduler checks (R6/R7), not
+readiness facts.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 add `h3-local` to the existing image-gen plugin; no second plugin/package | MET | `plugins/generations/image-gen/src/providers/h3-local.ts:123`; registry row `plugins/generations/image-gen/src/providers/types.ts:174`; no new directory under `plugins/generations/` |
+| R2 spawn `H3_IMAGE_MLX_BIN`, one image per call, refs forwarded, temp cleanup both paths | MET | `h3-local.ts:136` (`n>1` pre-spawn), `:141` generate, `:158-169` argv, `:192` cleanup; `tests/providers/h3-local.test.ts:120,148,163` |
+| R3 exact canvases when legal, else aspect→legal canvas; timeout/non-zero carry stderr; fallback-eligible | MET | `h3-local.ts:49,60,135,174-189`; real cover run recorded `sizeRequest: exact` at 1344×576 (task Testing); `plugins/generations/image-gen/src/providers/errors.ts:104` makes those classes fallback-eligible |
+| R4 explicit opt-in only, no auto-select, env-only readiness, order/fallback unchanged | MET | `types.ts:115` (`NEVER_AUTO`), `:176` (env), `h3-local.ts:133` (no probe); `AUTO_ORDER` untouched; `h3-local.test.ts:79`, `tests/providers.test.ts:45` |
+| R5 deterministic fake-wrapper tests, no weights or cloud | MET | `tests/providers/h3-local.test.ts` (15 tests); plugin suite 460 pass / 0 fail |
+| R6 real local renders recorded; XHS passes text-free/composition path; cover look needs A/B | MET | task Testing → 338 s cover (1344×576 exact, 879 KB), 378 s card (768×1024 illustration → composed 1080×1440, 392 KB) |
+| R7 scheduler context validated; opt-in/rollback documented; cloud pins retained | MET | task Testing → launchd `ai.gobing.spur-serve` → `spur self serve` (`kk-daily-ai-voice`, `.spur/config.yaml:151`); stripped-env smoke 184 s; pins still `minimax` (`plugins/kk/workflows/kk-daily-ai-voice.yaml:53,74`) |
+| R8 docs + config references + repository gates | MET | `docs/04_DESIGN.md:2338,1504`; `plugins/kk/skills/image-authoring/references/providers.md:21,43`; `plugins/generations/image-gen/config.example.yaml:74`; `plugins/kk/config.example.yaml:105`; gate commands below |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | `plugins/generations/image-gen/tests/providers.test.ts:27` asserts the registry holds `h3-local`; `tests/providers/h3-local.test.ts:79` drives it through `PROVIDERS['h3-local']` |
+| AC2 | MET | test | `tests/providers/h3-local.test.ts:120` (argv: prompt/output/width/height/refs), `:148` (cleanup on success), `:163` (cleanup + stderr on non-zero exit), `:79` (`n>1` before spawn) |
+| AC3 | MET | test | `tests/providers/h3-local.test.ts:63` (illegal canvases fall to aspect), `:79` (`h3Canvas` legality across 7 ratios), `:174` (timeout), `:186` (non-zero exit) |
+| AC4 | MET | test | `tests/providers/h3-local.test.ts:79` (never auto, env-only explicit, no probe), `:96` (`AUTO_ORDER` excludes it); `tests/providers.test.ts:45` (order coverage) |
+| AC5 | MET | test | `tests/providers/h3-local.test.ts` — 15 tests, fake `#!/bin/sh` wrapper, no model load and no provider network call |
+| AC6 | MET | command | `kk stage daily-cover <works> 2026-11-15 <plugins> h3-local h3 ""` → 338 s, 1344×576 exact; `kk executor run image-gen` on the xhs-card envelope → 378 s, composed 1080×1440 (task Testing) |
+| AC7 | MET | command | `launchctl list \| grep spur-serve` + `.spur/config.yaml:151`; `env -i PATH=… HOME=… h3gen.sh --width 256 --height 256` rendered in 184 s off `/Volumes/RTK9210-FLASH`; `plugins/kk/workflows/kk-daily-ai-voice.yaml:53,74` still pins minimax |
+| AC8 | MET | command | `bun run lint` 0, `bun run build` 0, `bun run test` 5190 pass / 0 fail, `bun run test-pre-check` 58 rules pass, `bun run test-post-check` 2 rules pass; docs at `docs/04_DESIGN.md:2338` |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -146,4 +213,7 @@ The adapter ignores `StylePreset.negative` for H3 and documents that limitation.
 ### History
 
 - 2026-11-15T22:47:02.293Z backlog → todo (system)
+- 2026-11-15T23:12:59.194Z todo → wip (system)
+- 2026-11-16T00:25:24.638Z wip → testing (system)
+- 2026-11-16T00:25:25.863Z testing → done (system)
 

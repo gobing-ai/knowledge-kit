@@ -73,6 +73,9 @@ rules:
             # wrapper/output files for it; google shells to curl only when a proxy
             # is set because Bun fetch drops long-lived proxied sockets (0115 port).
             - "plugins/generations/image-gen/src/providers/codex-cli.ts"
+            # h3-local spawns Robin's local h3gen.sh (python/MLX runtime) — the local render
+            # backend's transport by contract (0379, feature K2).
+            - "plugins/generations/image-gen/src/providers/h3-local.ts"
             - "plugins/generations/image-gen/src/providers/google.ts"
             # The stage executor's transport IS spawning the stages runner script
             # (spawnSync with inherited stdio, exit-code passthrough) — same
@@ -135,6 +138,9 @@ rules:
             # needs access/mkdir/writeFile/rm around it — same vendor-CLI-transport
             # class as the spawn exclusion above (0115 port).
             - "plugins/generations/image-gen/src/providers/codex-cli.ts"
+            # h3-local stages one temp output file for the wrapper and removes it on success and
+            # failure — same vendor-CLI-transport class (0379, feature K2).
+            - "plugins/generations/image-gen/src/providers/h3-local.ts"
             # Binary audio bytes read for the presigned-URL PUT upload
             # (podcast-pub); the FileSystem seam is text-only.
             - "plugins/publishings/podcast-pub/src/index.ts"

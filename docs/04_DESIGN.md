@@ -1501,6 +1501,8 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `QC_MIN_EPISODE_ITEMS` | no (episode-plan-gen `--mode filter`) | Episode floor (20261002, default `8`): when fewer docs survive the filter, rejects that failed ONLY the importance minimum (source-tier base — the softest dimension on a thin news day; quality/urgency/impact/category stay hard) backfill strongest-first (importance desc → planScore desc → plan order), each stamped `metadata.backfilled: true` and removed from the `.rejected.json` audit; best-effort when the eligible pool is short. Floor exceeds the spoken target because the prompt-layer 选题边界 drops policy items after this gate. Positive integer, non-integer or `0` → exit 1. Workflow pin: `qc_min_episode_items` (kk-daily-ai-voice) |
 | `CONTENT_LANGUAGE` | no (content-gen) | Writing language directive for STORM outline/article/polish (`zh` = Simplified Chinese incl. title); the daily workflow passes `language` through |
 | `KK_IMAGE_MAX_IMAGES` | no (image-gen) | Per-run image budget cap (compiled default `4`). Precedence `spec.maxImages` → this → default; non-integer or `< 1` → exit 1 naming the value |
+| `H3_IMAGE_MLX_BIN` | no (image-gen) | Absolute path to the local `h3gen.sh` wrapper (default: unset). Its presence is the `h3-local` provider's whole readiness test — a venv, weights or mounted volume are NOT probed at selection time (0379, feature K2) |
+| `H3_LOCAL_TIMEOUT_MS` | no (image-gen) | Per-call bound for one local H3 render (default `1800000`, 30 min): a cold 1024² text-to-image run measured 6–7 min and a two-reference edit 27 min 46 s, so a tighter default would kill paid-for local work. `ProviderOptions.timeoutMs` (tests) outranks it |
 | MiniMax image retry | adapter behavior (0339) | Explicit generation failures with business code `1000`, `1001`, `1024`, `1033`, or transient HTTP status receive at most three same-provider/model attempts with 1s/2s backoff, sharing the existing 300s request deadline. Backoff aborts at that deadline. Numeric policy/auth/quota/parameter errors remain terminal even with vague messages or HTTP 5xx; diagnostics preserve `status_code`. Ambiguous transport errors and image-download failures do not regenerate. Cross-provider fallback remains opt-in. [Provider code reference](https://platform.minimax.io/docs/api-reference/errorcode). |
 | `KK_IMAGE_DRY_RUN` | no (image-gen) | `1` composes every prompt and selects the provider but spends nothing (`metadata.dryRun: true`). The illustration anchor-plan check still runs on this branch (0169) |
 | `KK_IMAGE_PRESET_PATH` | no (image-gen) | `path.delimiter`-separated extra preset roots, lowest → highest after builtin → `~/.config/kk/image-presets` → `<KNOWLEDGE_KIT_PROJECT_ROOT>/.kk/image-presets` (ADR-012 root order); non-directory entries are skipped |
@@ -2341,6 +2343,34 @@ bytes omit the dimensions and emit one WARN instead. Both warn only — the byte
 for, and failing would delete them through the cleanup path. On the compose path the card keeps
 0180's canvas assertion (an unparseable composed card still fails loud); the raw provider delivery
 lands on `illustration.width/height` beside the card.
+
+## image-gen local H3 provider (2026-11-15, task 0379, feature K2)
+
+Robin's local Apple Silicon MLX runtime (`../gitops/apps/h3-image-mlx`, reached through its
+`h3gen.sh` wrapper) is now an **opt-in** image-gen provider named `h3-local`. It reuses image-gen's
+presets, prompt composition, exact-size negotiation, artifact recording and D6 fallback instead of
+forking a second generator plugin — the runtime is a Python venv, so the adapter's transport is
+spawning the wrapper (`src/providers/h3-local.ts`, the codex-cli precedent).
+
+**Selection is never automatic.** `h3-local` is a member of `NEVER_AUTO` and stays out of
+`AUTO_ORDER`: a render costs 3–28 minutes of wall time, and its real readiness (venv, 49 GB of
+weights, a mounted external volume) is not env-expressible. `H3_IMAGE_MLX_BIN` only says where the
+wrapper is; `isAvailable()` performs no subprocess or filesystem probe. Pin it with `--provider
+h3-local` or `IMAGE_GEN_PROVIDER=h3-local`, and keep the cloud defaults until the K2 rollout gates
+pass.
+
+**Sizes.** `exactSize()` accepts only canvases H3 can render (multiples of 32 within 256–4096), so a
+preset declaring a legal canvas forwards `width`/`height` unchanged (`xhs-card`'s 1080×1440 does
+not qualify and keeps the aspect path). An aspect-only request is translated to a 1024-short-side
+canvas snapped to the same grid; an unparseable ratio falls back to 1024×1024. H3's `--seed`
+defaults to 42 and style-preset negatives are ignored (no negative-prompt capability) — both are
+documented limitations, not bugs.
+
+**Failures stay actionable.** Timeout and non-zero exit raise with the wrapper's stderr tail, which
+the D6 classifier reads as `transient`/`unknown` and therefore can fall back on; a run that exits 0
+without writing its output is an explicit `no output` error rather than empty bytes. The temp
+output is removed on success and on failure, and a timeout kills the wrapper's whole process group
+so an orphaned Python render cannot keep holding the GPU.
 
 ## Repository workflow discovery
 

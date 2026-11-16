@@ -24,13 +24,14 @@ const throwingFetch: typeof fetch = () => {
 };
 
 describe('PROVIDERS registry (R1/R2)', () => {
-    test('registers exactly the 12 baoyu adapters plus huggingface (0116)', () => {
+    test('registers exactly the 12 baoyu adapters plus huggingface (0116) and h3-local (0379)', () => {
         expect(ALL_NAMES).toEqual([
             'agnes',
             'azure',
             'codex-cli',
             'dashscope',
             'google',
+            'h3-local',
             'huggingface',
             'jimeng',
             'minimax',
@@ -42,9 +43,10 @@ describe('PROVIDERS registry (R1/R2)', () => {
         ]);
     });
 
-    test('AUTO_ORDER is frozen, excludes codex-cli, and covers the other 12', () => {
+    test('AUTO_ORDER is frozen, excludes the never-auto providers, and covers the rest', () => {
         expect(AUTO_ORDER).not.toContain('codex-cli');
-        expect([...AUTO_ORDER].sort()).toEqual(ALL_NAMES.filter((name) => name !== 'codex-cli'));
+        expect(AUTO_ORDER).not.toContain('h3-local');
+        expect([...AUTO_ORDER].sort()).toEqual(ALL_NAMES.filter((name) => name !== 'codex-cli' && name !== 'h3-local'));
     });
 
     test('ImageRequest accepts referenceImages without a cast and providers satisfy ImageProvider', () => {
@@ -284,8 +286,8 @@ describe('resolveFallbackOrder (0165, feature D6 R3)', () => {
  * A stalled peer would otherwise hang the workflow step until someone killed the run.
  */
 describe('every provider fetch carries an abort signal (R5)', () => {
-    // codex-cli shells out to a CLI instead of making HTTP calls.
-    const FETCHING = ALL_NAMES.filter((name) => name !== 'codex-cli');
+    // codex-cli and h3-local shell out to a local runtime instead of making HTTP calls.
+    const FETCHING = ALL_NAMES.filter((name) => name !== 'codex-cli' && name !== 'h3-local');
 
     // The registry names credentials only; these are endpoint/deployment config an adapter needs
     // before it can build a request URL at all.

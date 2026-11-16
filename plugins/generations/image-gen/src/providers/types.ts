@@ -14,6 +14,7 @@ import { createAzure } from './azure';
 import { createCodexCli } from './codex-cli';
 import { createDashscope } from './dashscope';
 import { createGoogle } from './google';
+import { createH3Local } from './h3-local';
 import { createHuggingface } from './huggingface';
 import { createJimeng } from './jimeng';
 import { createMinimax } from './minimax';
@@ -111,7 +112,7 @@ export type ProviderFactory = (options?: ProviderOptions) => ImageProvider;
 const IMAGE_GEN_PROVIDER_ENV = 'IMAGE_GEN_PROVIDER';
 
 /** Providers that may never be auto-selected, even if listed in AUTO_ORDER later (task 0103 R3). */
-const NEVER_AUTO: ReadonlySet<string> = new Set(['codex-cli']);
+const NEVER_AUTO: ReadonlySet<string> = new Set(['codex-cli', 'h3-local']);
 
 /** Registry row: the availability facts an adapter must honour, verbatim from its baoyu source. */
 interface ProviderSpec {
@@ -169,6 +170,15 @@ export const PROVIDERS: Readonly<Record<string, ProviderRegistration>> = {
             'gemini-3.1-flash-image-preview',
         ],
         create: createGoogle,
+    },
+    'h3-local': {
+        name: 'h3-local',
+        env: ['H3_IMAGE_MLX_BIN'],
+        defaultModel: 'h3',
+        // Local MLX runtime: readiness is the env var, but a render costs minutes of wall time,
+        // so it stays opt-in (never auto-selected) unless the operator pins it (0379, feature K2).
+        note: 'requires H3_IMAGE_MLX_BIN pointing at the local h3gen.sh wrapper (never auto-selected)',
+        create: createH3Local,
     },
     huggingface: {
         name: 'huggingface',

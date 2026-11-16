@@ -18,6 +18,13 @@ are read by `invoke.ts` at spawn, never by this skill.
   `--provider` outranks it.
 - **`codex-cli` is never auto-selected.** Its readiness (the `codex` CLI on
   PATH with an active login) is not env-expressible; pin it explicitly.
+- **`h3-local` is never auto-selected either.** It drives Robin's local Apple
+  Silicon MLX runtime through `h3gen.sh`, and one render costs minutes of wall
+  time (3 min floor, ~7 min for 1024², up to ~28 min for a two-reference edit).
+  Pin it with `--provider h3-local`; the cloud defaults stay until the K2
+  rollout gates pass. H3 ignores style negatives, seeds cannot be set, and only
+  multiples of 32 in 256–4096 are accepted per edge — every other preset falls
+  back to an aspect-only canvas (0379).
 - **Reference images** ride `--ref` only when `supportsReferenceImages(model)`
   is true for the resolved model — a substring test over the registry's
   `refModels` fragments (no `refModels` = every model; empty list = none).
@@ -33,6 +40,7 @@ are read by `invoke.ts` at spawn, never by this skill.
 | codex-cli | not env-expressible — `codex` CLI + login | `codex-image-gen` | never auto-selected |
 | dashscope | `DASHSCOPE_API_KEY` | `qwen-image-2.0-pro` | only `wan2.7` models |
 | google | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | `gemini-3-pro-image` | the gemini image models (`gemini-3-pro-image`, `*-flash-image`, previews) |
+| h3-local | `H3_IMAGE_MLX_BIN` (path to the local `h3gen.sh`) | `h3` | yes (up to 16, `<Picture N>` in prompt order) — never auto-selected |
 | jimeng | `JIMENG_ACCESS_KEY_ID` **and** `JIMENG_SECRET_ACCESS_KEY` (both halves) | `jimeng_t2i_v40` | yes |
 | minimax | `MINIMAX_API_KEY` | `image-01` | yes (jpg/png <10MB, subject reference) |
 | openai | `OPENAI_API_KEY` | `gpt-image-2` | `gpt-image` models |
