@@ -1,6 +1,7 @@
 import type { RunResults } from '../contracts';
 import type { ResultFact } from '../shared/collect';
 import { formatElapsed, formatTimestamp } from '../shared/format';
+import type { RunListRow } from '../shared/run-selection';
 
 /**
  * The Daily AI Voice module's read-only view model.
@@ -444,4 +445,50 @@ export function supplyContextOf(
         fromLabel: formatTimestamp(new Date(started - windowMs).toISOString()),
         untilLabel: formatTimestamp(new Date(started).toISOString()),
     };
+}
+
+/**
+ * The workflow family the module reads today. `kk-daily-ai-voice2` (and its `kk-daily-ai-voice`
+ * predecessor) are retired: their runs stay readable, but a day that only ran under them is shown
+ * as a retired-layout day rather than as "no run" (0384).
+ */
+export const DAILY_WORKFLOW = 'kk-news-generate';
+
+/** Retired families, newest first, consulted only when the current family has no runs. */
+export const RETIRED_DAILY_WORKFLOWS: readonly string[] = ['kk-daily-ai-voice2', 'kk-daily-ai-voice'];
+
+/** One family's run list, as the reader answered it. */
+export interface DailyRunSource {
+    family: string;
+    rows: RunListRow[];
+}
+
+/** Which family answers for this Board module, and whether that answer is a retired layout. */
+export interface DailyFamilyChoice {
+    family: string;
+    rows: RunListRow[];
+    retired: boolean;
+}
+
+/**
+ * Pick the family that answers this module: the current family whenever it recorded any run,
+ * otherwise the first retired family that did. Both empty keeps the current family selected, so the
+ * empty state names the family the operator is expected to run — never a retired one.
+ */
+export function pickDailyFamily(current: RunListRow[], retired: readonly DailyRunSource[]): DailyFamilyChoice {
+    if (current.length > 0) return { family: DAILY_WORKFLOW, rows: current, retired: false };
+    const hit = retired.find((source) => source.rows.length > 0);
+    if (hit !== undefined) return { family: hit.family, rows: hit.rows, retired: true };
+    return { family: DAILY_WORKFLOW, rows: current, retired: false };
+}
+
+/**
+ * The banner text for a retired-layout answer, or null when the current family answered. It names
+ * the family and the day count: an operator looking at old runs must not read them as this
+ * workflow's output.
+ */
+export function retiredLayoutNotice(choice: DailyFamilyChoice): string | null {
+    if (!choice.retired) return null;
+    const days = choice.rows.length === 1 ? '1 run' : `${choice.rows.length} runs`;
+    return `Showing ${days} recorded under the retired ${choice.family} layout. New runs are recorded as ${DAILY_WORKFLOW}, so this list stops growing until that workflow runs.`;
 }

@@ -28,6 +28,7 @@ import {
     syncSelectionUrl,
 } from '../shared/run-selection';
 import {
+    DAILY_WORKFLOW,
     type DailyChannelView,
     type DailyFunnelView,
     type DailyProgressView,
@@ -35,6 +36,9 @@ import {
     dailySummary,
     dailySummaryFacts,
     funnelView,
+    pickDailyFamily,
+    RETIRED_DAILY_WORKFLOWS,
+    retiredLayoutNotice,
     supplyContextOf,
 } from './view';
 
@@ -46,8 +50,7 @@ import {
  * React state, the two polling loops and the four tab panels.
  */
 
-/** The workflow this module inspects. */
-const WORKFLOW = 'kk-daily-ai-voice2';
+/** The workflow this module inspects today; retired families are read only as a fallback. */
 
 /** The host route the module is mounted at. */
 const MODULE_PATH = '/board/modules/kk-daily-ai-voice2';
@@ -145,15 +148,35 @@ export function DailyVoiceModule() {
     const readerBusy = useRef(false);
     const selectionRef = useRef(selection);
     selectionRef.current = selection;
+    // The family the selected rows came from: results/config must be asked of THAT family, or a
+    // retired-layout run would be requested from the current one and answer 404 (0384).
+    const [family, setFamily] = useState<string>(DAILY_WORKFLOW);
+    const familyRef = useRef<string>(DAILY_WORKFLOW);
 
     const loadHistory = useCallback(async () => {
         if (historyBusy.current) return;
         historyBusy.current = true;
         setHistoryRefresh((state) => tick(state));
         try {
-            const page = await client.runs(WORKFLOW);
-            setRows((existing) => mergeRunPages(existing, page).runs);
-            setCursor(page.nextCursor);
+            // The current family answers whenever it has runs. Only when it has none do the retired
+            // families get asked — their days stay readable, flagged as a retired layout (0384).
+            const current = await client.runs(DAILY_WORKFLOW);
+            let chosen = { family: DAILY_WORKFLOW, page: current };
+            if (current.runs.length === 0) {
+                const retiredPages = await Promise.all(
+                    RETIRED_DAILY_WORKFLOWS.map(async (family) => ({ family, page: await client.runs(family) })),
+                );
+                const choice = pickDailyFamily(
+                    current.runs,
+                    retiredPages.map((entry) => ({ family: entry.family, rows: entry.page.runs })),
+                );
+                const hit = retiredPages.find((entry) => entry.family === choice.family);
+                if (choice.retired && hit !== undefined) chosen = { family: hit.family, page: hit.page };
+            }
+            familyRef.current = chosen.family;
+            setFamily(chosen.family);
+            setRows((existing) => mergeRunPages(existing, chosen.page).runs);
+            setCursor(chosen.page.nextCursor);
             setHistoryRefresh(() => succeeded(Date.now(), HISTORY_POLL_MS));
         } catch (error) {
             setDiagnostics((existing) => [
@@ -177,8 +200,8 @@ export function DailyVoiceModule() {
         let stale = false;
         try {
             const [nextResults, nextConfig] = await Promise.all([
-                client.results(WORKFLOW, runId),
-                client.config(WORKFLOW, runId),
+                client.results(familyRef.current, runId),
+                client.config(familyRef.current, runId),
             ]);
             if (selectionRef.current.runId !== runId) {
                 stale = true;
@@ -341,9 +364,14 @@ export function DailyVoiceModule() {
                     </button>
                 ))}
             </nav>
+            {family === DAILY_WORKFLOW ? null : (
+                <p className="kk-board-empty kk-board-retired-layout">
+                    {retiredLayoutNotice({ family, rows, retired: true })}
+                </p>
+            )}
             {rows.length === 0 ? (
                 <p className="kk-board-empty">
-                    No runs recorded for kk-daily-ai-voice2. Configure the workflow in{' '}
+                    No runs recorded for {DAILY_WORKFLOW}. Configure the workflow in{' '}
                     <a href="/board/settings/workflows">Settings → Workflows</a>.
                 </p>
             ) : null}
