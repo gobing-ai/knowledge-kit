@@ -4,7 +4,7 @@ name: Make the pre-spend floor ladder use the authored script's measure so a thi
 status: wip
 template: standard
 created_at: 2026-11-15T21:08:47.145Z
-updated_at: "2026-11-15T22:32:55.714Z"
+updated_at: "2026-11-16T04:14:31.233Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -52,7 +52,7 @@ Task 0376 remains the owner of the scheduled-day observation; this task is the u
 ### Requirements
 
 - [ ] R1. Make the widen-or-refuse decision use the same measure the TTS gate uses, so a pool that cannot reach `episode_min_minutes` after authoring widens the window instead of failing post-spend — and a pool that can reach it is not widened.
-- [ ] R2. Keep the widening bounded and idempotent: one bounded ladder with a documented ceiling, no unbounded re-authoring loop, and the frozen-pool guard (`plan already authored — keeping the frozen pool`) still honoured for legitimate reruns of the same day.
+- [ ] R2. Keep the widening bounded and idempotent: one bounded ladder with a documented ceiling, no unbounded re-authoring loop, and the frozen-pool guard (`plan already authored — keeping the frozen pool`) still honoured for legitimate reruns of the same day. The ladder's pre-spend estimate must account for QC admission attrition (measured 0.32 admitted chars on the 2026-11-15 run), using the ratio the previous run recorded and warning when the current ratio drifts outside its band, so the pre-spend decision matches what authoring actually yields.
 - [ ] R3. Record the decision in the run: which measure drove it, the ladder rung chosen, and the estimate at each rung, so `kk news status` and the run report can explain a `no-content` or a widened day without reading stage logs.
 - [ ] R4. Add a regression test that fails on today's behaviour — a pool whose raw chars pass the pre-spend estimate but whose authored script lands below the floor must widen rather than refuse — and prove it fails before the fix.
 
@@ -90,6 +90,22 @@ Scenario: AC5 — The regression is covered (req: R4)
 <!-- CLOSED decisions from refinement: what was chosen and why, what was deferred and on what
      condition. Not a parking lot for open questions — an unanswered question here means the task
      is not ready to hand off. Keep empty if none. -->
+
+#### Q&A entry — 2026-11-16T04:14:31.231Z
+
+**Q (2026-11-16, batch re-scope).** R2's original wording — "let the QC refusal feed a bounded widen" — implies a
+loop that re-extracts *after* QC, inside `kk news prepare`, and it collides with `dailyExtract`'s frozen-pool guard,
+which exists to keep an authored day frozen for legitimate reruns. Re-running extract → plan → QC after authoring also
+re-runs the agent curation stage, which is the expensive half.
+
+**Decision: recalibrate the pre-spend estimate instead, and keep the ladder single-pass.** The loss being fixed is
+paying for authoring a script the TTS gate then refuses. QC admission is stable and measurable (~0.32 admitted chars
+on the 2026-11-15 run), so the estimate should spend that ratio *before* authoring: the ladder then climbs rungs while
+it has no spend to lose, and the frozen-pool guard keeps its single meaning. The recorded ratio comes from the previous
+run's artifact and the current run warns when it drifts outside a band, so the constant cannot rot silently.
+
+**Rejected:** a widen-after-QC loop (more stage surface, guard carve-out, marginal gain over a calibrated estimate);
+treating the shrink as unfixable (that is today's behaviour).
 
 ### Design
 

@@ -4,7 +4,7 @@ name: Expose daily news generation and publishing progress through kk news statu
 status: todo
 template: standard
 created_at: 2026-11-15T21:08:47.701Z
-updated_at: "2026-11-16T03:25:27.689Z"
+updated_at: "2026-11-16T04:14:15.060Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -40,9 +40,9 @@ The gap matters operationally: judging whether today's episode will publish mean
 
 - [ ] R1. Extend `kk news status` so one invocation answers "how far along is this day": generation stage position (n of m, current stage name, elapsed), gate verdict, bundle presence, and per-window publish state (planned / awaiting approval / sending / settled) for `--run-date <YYYYMMDD>` and an explicit `--work-dir`.
 - [ ] R2. Offer the same surface as machine-readable API for the Board and other consumers, so no caller re-derives progress from `step-timing.json` or a workflow trace.
-- [ ] R3. Point the Board's daily-voice module at the current workflow family and run layout (`kk-news-generate`, phase directories `10-collect`…`5-report`, `pool-gate.json`, `schedule-receipt.json`), replacing the `kk-daily-ai-voice2` gate and artifact map, and show a retired-layout day without claiming it has no run.
-- [ ] R4. Keep the existing JSON contract additive: current keys keep their shapes so existing callers and tests do not break, and document the new fields in `docs/04_DESIGN.md` in the same commit.
-- [ ] R5. Cover it with tests: a fresh run, a mid-flight run, a settled `done`, a `no-content` and a failed run each render the expected status, and the Board module returns the current-layout tree for today's run.
+- [ ] R3. Keep the existing JSON contract additive: current keys keep their shapes so existing callers and tests do not break, and document the new fields in `docs/04_DESIGN.md` in the same commit.
+- [ ] R4. Cover it with tests: a fresh run, a mid-flight run, a settled `done`, a `no-content` and a failed run each render the expected status.
+- [ ] R5. Out of scope here: the Board module's own repoint at the current layout is task `0384`, so this task ships the surface `0384` consumes and must not change `apps/board` rendering.
 
 ### Acceptance Criteria
 
@@ -57,20 +57,20 @@ Scenario: AC2 — The same surface is machine-readable (req: R2)
   When it asks for a day's news progress
   Then it receives the same fields as JSON without reading stage logs or a workflow trace
 
-Scenario: AC3 — The Board shows the current layout (req: R3)
-  Given a day that ran under kk-news-generate
-  When /board/daily-voice renders
-  Then it lists that run with its phases, and a day that only ran under the retired layout is shown as retired rather than missing
-
-Scenario: AC4 — Existing consumers keep working (req: R4)
+Scenario: AC3 — Existing consumers keep working (req: R3)
   Given the current JSON keys
   When the new fields ship
   Then every existing key keeps its shape and docs/04_DESIGN.md documents the additions
 
-Scenario: AC5 — Each run state is covered (req: R5)
+Scenario: AC4 — Each run state is covered (req: R4)
   Given fresh, mid-flight, done, no-content and failed runs
   When the status surface is exercised in tests
-  Then each renders the expected state and the Board module resolves today's run directory
+  Then each renders the expected state
+
+Scenario: AC5 — The Board repoint stays out (req: R5)
+  Given this task's diff
+  When it is reviewed
+  Then apps/board rendering is unchanged and task 0384 owns that change
 ```
 
 ### Q&A
