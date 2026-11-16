@@ -2658,26 +2658,38 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
         expect(ops.filter((op) => op === 'open-audio-menu')).toHaveLength(2); // toolbar trigger + menu item
     });
 
-    test('0272 measured: a 赏-blocked account warns instead of stalling the rail', async () => {
+    test('0272 measured: a 赏-blocked account fails by default and warns when partial enrichment is allowed', async () => {
         await seedMedia();
-        const console = makeConsole(happyState({ rewardBlocked: true }));
-        const result = await makeTransport(console).publish({
+        const input = {
             content: {
                 ...ARTICLE,
                 metadata: { ...ARTICLE.metadata, wechatmp: { coverPath: bodyImage, reward: true } },
             },
-        });
-        expect(result.ok).toBe(true);
-        expect(result.metadata?.enrichWarnings).toEqual([expect.stringContaining('需要赞赏账户')]);
-        // No 赏-account fill attempt; the rail still finished (the rest of the metadata is unset).
-        const fills = console.calls.editor.filter((call) => call.op === 'fill').map((call) => String(call.args[0]));
-        expect(fills.some((selector) => selector.includes('js_reward_'))).toBe(false);
+        };
+        const refused = await makeConsole(happyState({ rewardBlocked: true }));
+        const refusal = await makeTransport(refused).publish(input);
+        expect(refusal.ok).toBe(false);
+        expect(refusal.error).toContain('draft saved but enrichment did not apply');
+
+        const previous = process.env.WECHATMP_ALLOW_PARTIAL_ENRICH;
+        process.env.WECHATMP_ALLOW_PARTIAL_ENRICH = '1';
+        try {
+            const console = makeConsole(happyState({ rewardBlocked: true }));
+            const result = await makeTransport(console).publish(input);
+            expect(result.ok).toBe(true);
+            expect(result.metadata?.enrichWarnings).toEqual([expect.stringContaining('需要赞赏账户')]);
+            // No 赏-account fill attempt; the rail still finished (the rest of the metadata is unset).
+            const fills = console.calls.editor.filter((call) => call.op === 'fill').map((call) => String(call.args[0]));
+            expect(fills.some((selector) => selector.includes('js_reward_'))).toBe(false);
+        } finally {
+            if (previous === undefined) delete process.env.WECHATMP_ALLOW_PARTIAL_ENRICH;
+            else process.env.WECHATMP_ALLOW_PARTIAL_ENRICH = previous;
+        }
     });
 
-    test('0272 measured: a missing 原文链接 row degrades to a warning, never the composer link row', async () => {
+    test('0272 measured: a missing 原文链接 row fails by default and warns when explicitly allowed', async () => {
         await seedMedia();
-        const console = makeConsole(happyState({ urlRowMissing: true }));
-        const result = await makeTransport(console).publish({
+        const input = {
             content: {
                 ...ARTICLE,
                 metadata: {
@@ -2685,13 +2697,27 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
                     wechatmp: { coverPath: bodyImage, originalUrl: 'https://example.com/post' },
                 },
             },
-        });
-        expect(result.ok).toBe(true);
-        expect(result.metadata?.enrichWarnings).toEqual([expect.stringContaining('原文链接: 行不存在')]);
-        const clicks = selectorsOf(console.calls.editor, 'click');
-        expect(clicks.some((selector) => selector.includes('js_url_checkbox'))).toBe(false);
-        expect(clicks.some((selector) => selector.includes('btm-card-link__switch'))).toBe(false);
-    });
+        };
+        const refused = await makeConsole(happyState({ urlRowMissing: true }));
+        const refusal = await makeTransport(refused).publish(input);
+        expect(refusal.ok).toBe(false);
+        expect(refusal.error).toContain('draft saved but enrichment did not apply');
+
+        const previous = process.env.WECHATMP_ALLOW_PARTIAL_ENRICH;
+        process.env.WECHATMP_ALLOW_PARTIAL_ENRICH = '1';
+        try {
+            const console = makeConsole(happyState({ urlRowMissing: true }));
+            const result = await makeTransport(console).publish(input);
+            expect(result.ok).toBe(true);
+            expect(result.metadata?.enrichWarnings).toEqual([expect.stringContaining('原文链接: 行不存在')]);
+            const clicks = selectorsOf(console.calls.editor, 'click');
+            expect(clicks.some((selector) => selector.includes('js_url_checkbox'))).toBe(false);
+            expect(clicks.some((selector) => selector.includes('btm-card-link__switch'))).toBe(false);
+        } finally {
+            if (previous === undefined) delete process.env.WECHATMP_ALLOW_PARTIAL_ENRICH;
+            else process.env.WECHATMP_ALLOW_PARTIAL_ENRICH = previous;
+        }
+    }, 15000); // Two full fake-console publishes exceed Bun's 5s default.
 
     test('0272 measured: an absent 一键排版 control is skipped silently', async () => {
         await seedMedia();
