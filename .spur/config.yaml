@@ -149,7 +149,10 @@ bootstrap:
       # the run a fresh pool (extract window 24h against a 6h collect cadence).
       - name: kk-daily-ai-voice
         cron: "30 4 * * *"
-        timeoutMs: 14400000
+        # 6h, not 4h (2026-11-15, measured): a real 2026-11-15 run needed >3h45m and was killed by
+        # the launcher's own deadline one section short of a bundle. At ~17 min per voiced section
+        # the TTS alone costs ~3h, before ~16 min of safety and the render/combine steps.
+        timeoutMs: 21600000
         # --agent pinned 2026-11-15 (task 0373): the cost-first ladder resolves to a free
         # executor that dies at dispatch — opencode `-free` returns "Invalid credential",
         # agy-gemini needs an expired Google login, and pi-dsv4.1-flash-volc is 429 until
