@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Expose daily news generation and publishing progress through kk news status and the Board
-status: backlog
+status: todo
 template: standard
 created_at: 2026-11-15T21:08:47.701Z
-updated_at: "2026-11-15T21:09:23.594Z"
+updated_at: "2026-11-16T03:25:27.689Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -109,3 +109,6 @@ Scenario: AC5 — Each run state is covered (req: R5)
 <!-- Links to features, docs, ADRs, related tasks, or external references. -->
 
 ### History
+
+- 2026-11-16T03:25:27.689Z backlog → todo (system)
+
