@@ -2032,11 +2032,22 @@ export function dailyBundleVariants(args: string[]): void {
 
         // Generic variants first: a channel-specific variant wins over the shared one, so the
         // shared copy must exist for the channels the preset does not specialise.
+        const firstArticleLine =
+            article !== null && typeof (article as Record<string, unknown>).title === 'string'
+                ? String((article as Record<string, unknown>).title)
+                : '';
         if (article === null) skipped.push('article (no 22-article content)');
         else {
             write('article', buildSurfdashContent(article, links, { coverPath: cover }));
             write('article@surfdash-pub', buildSurfdashContent(article, links, { coverPath: cover }));
             write('article@xhs-pub', buildXhsArticleContent(article, { publishStatus: 'draft' }));
+            // The article carries the episode audio at the top (operator request 2026-11-15): the
+            // 公众号 播客 row is off, so without this the MP draft had no player at all. Same source
+            // as the episode variant — `publish-prep`'s rendered mp3 — so one episode has one audio.
+            const articleAudio =
+                prep !== null && typeof metadataOf(prep).audioFile === 'string'
+                    ? String(metadataOf(prep).audioFile)
+                    : undefined;
             write(
                 'article@wechatmp-pub',
                 buildWechatArticleContent(article, {
@@ -2044,6 +2055,7 @@ export function dailyBundleVariants(args: string[]): void {
                     publishStatus: 'draft',
                     collection: '每日AI资讯',
                     ...(cover === undefined ? {} : { coverPath: cover }),
+                    ...(articleAudio === undefined ? {} : { audioPath: articleAudio, audioTitle: firstArticleLine }),
                 }),
             );
         }
