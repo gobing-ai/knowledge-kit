@@ -24,6 +24,19 @@ third-party source images and prompts are not relicensed or included here.
 Generation outcomes and final promotion status are recorded in the K3/task-0380 evaluation report.
 Only accepted candidates belong in `styles/`; rejected candidates remain evaluation evidence.
 
+The first MiniMax blind review rejected risograph, papercraft, ink-wash, and Notion line art;
+exploded-product incurred two critical-failure cells and clay remained unevaluated when the provider's
+Token Plan was exhausted. The v2 evaluation presets therefore add explicit subject/entity-count
+invariants and stronger pseudo-text/watermark suppression. They remain generation-pending until a
+fresh provider run passes the same gate; v1 evidence is never rewritten as a pass.
+
+## Provider neutrality
+
+Preset YAML declares only portable format/style data. Provider and model selection never belongs in
+`formats/*.yaml` or `styles/*.yaml`; runners resolve them from CLI flags and the existing provider
+registry. Each evaluation run uses a provider-specific work directory and records actual provider/model
+provenance, so switching providers never mixes images or scores from different runs.
+
 ## MIT License notice for adapted Skill instructions
 
 MIT License

@@ -6,16 +6,21 @@
  * Run from the repo root:
  *   bun plugins/generations/image-gen/scripts/eval-style-presets.ts --dry-run
  *   bun plugins/generations/image-gen/scripts/eval-style-presets.ts
- *   bun plugins/generations/image-gen/scripts/eval-style-presets.ts --report
+ *   bun plugins/generations/image-gen/scripts/eval-style-presets.ts --provider google \
+ *     --candidates .works/tmp/k3-style-eval/presets-v2 --concurrency 1
+ *   bun plugins/generations/image-gen/scripts/eval-style-presets.ts --provider google \
+ *     --candidates .works/tmp/k3-style-eval/presets-v2 --report
+ *   bun plugins/generations/image-gen/scripts/eval-style-presets.ts --provider h3-local \
+ *     --candidates .works/tmp/k3-style-eval/presets-v2 --only handcrafted-clay-character --concurrency 1
+ * Provider/model defaults come from the registry. Work dirs are provider-namespaced by default.
  */
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { StylePresetSchema } from '../src/presets';
+import { PROVIDERS } from '../src/providers/types';
 
-const PROVIDER = 'minimax';
-const MODEL = 'image-01';
 const DIMENSIONS = [
     'subjectFidelity',
     'composition',
@@ -108,10 +113,26 @@ const option = (name: string, fallback: string): string => {
 };
 const REPO_ROOT = join(import.meta.dir, '..', '..', '..', '..');
 const PLUGIN_DIR = join(import.meta.dir, '..');
-const WORK = option('--work', join(REPO_ROOT, '.works', 'tmp', 'k3-style-eval'));
-const CANDIDATE_ROOT = option('--candidates', join(WORK, 'presets'));
+const PROVIDER = option('--provider', 'minimax');
+const registration = PROVIDERS[PROVIDER];
+if (registration === undefined) {
+    throw new Error(`Unknown provider '${PROVIDER}'. Valid providers: ${Object.keys(PROVIDERS).sort().join(', ')}`);
+}
+const MODEL = option('--model', registration.defaultModel);
+const CONCURRENCY = Number(option('--concurrency', '3'));
+if (!Number.isInteger(CONCURRENCY) || CONCURRENCY < 1 || CONCURRENCY > 10) {
+    throw new Error('--concurrency must be an integer from 1 to 10');
+}
+const WORK = resolve(option('--work', join(REPO_ROOT, '.works', 'tmp', `k3-style-eval-${PROVIDER}`)));
+const CANDIDATE_ROOT = resolve(option('--candidates', join(REPO_ROOT, '.works', 'tmp', 'k3-style-eval', 'presets')));
 const BLIND = join(WORK, 'blind');
-const SCORES = option('--scores', join(BLIND, 'scores.json'));
+const SCORES = resolve(option('--scores', join(BLIND, 'scores.json')));
+const ONLY = option('--only', '');
+if (ONLY !== '' && !CANDIDATES.some((candidate) => candidate.name === ONLY)) {
+    throw new Error(
+        `Unknown candidate '${ONLY}'. Valid candidates: ${CANDIDATES.map((candidate) => candidate.name).join(', ')}`,
+    );
+}
 
 function readYaml(path: string): unknown {
     return Bun.YAML.parse(readFileSync(path, 'utf8'));
@@ -262,10 +283,18 @@ async function render(job: Job): Promise<void> {
 }
 
 async function writeReviewPackage(jobs: Job[]): Promise<number> {
-    const pairs = [...new Set(jobs.map((job) => job.pair))].sort();
+    const mappingPath = join(WORK, 'mapping.json');
+    let allJobs = [...jobs];
+    if (existsSync(mappingPath)) {
+        const previous = JSON.parse(readFileSync(mappingPath, 'utf8')) as { jobs?: Job[] };
+        const incoming = new Set(jobs.map((job) => `${job.pair}/${job.arm}`));
+        allJobs = [...(previous.jobs ?? []).filter((job) => !incoming.has(`${job.pair}/${job.arm}`)), ...jobs];
+    }
+    allJobs.sort((left, right) => left.pair.localeCompare(right.pair) || left.arm.localeCompare(right.arm));
+    const pairs = [...new Set(allJobs.map((job) => job.pair))].sort();
     const ready = pairs.filter((pair) => ['A', 'B'].every((side) => existsSync(join(BLIND, pair, `${side}.jpg`))));
     const manifest = ready.map((pair) => {
-        const jobsForPair = jobs.filter((job) => job.pair === pair);
+        const jobsForPair = allJobs.filter((job) => job.pair === pair);
         return {
             pair,
             format: jobsForPair[0]?.format,
@@ -275,26 +304,29 @@ async function writeReviewPackage(jobs: Job[]): Promise<number> {
         };
     });
     await writeJson(join(BLIND, 'manifest.json'), { schema_version: 'k3-blind-v1', pairs: manifest });
-    await writeJson(join(WORK, 'mapping.json'), {
+    await writeJson(mappingPath, {
         schema_version: 'k3-mapping-v1',
         provider: PROVIDER,
         model: MODEL,
-        jobs,
+        jobs: allJobs,
     });
-    if (!existsSync(SCORES)) {
-        const scores: ScoreFile = {
-            reviewer: '',
-            reviewedAt: '',
-            pairs: ready.map((pair) => ({
+    const scores: ScoreFile = existsSync(SCORES)
+        ? (JSON.parse(readFileSync(SCORES, 'utf8')) as ScoreFile)
+        : { reviewer: '', reviewedAt: '', pairs: [] };
+    const present = new Set(scores.pairs.map((score) => score.pair));
+    for (const pair of ready) {
+        if (!present.has(pair)) {
+            scores.pairs.push({
                 pair,
                 preferred: null,
                 scores: { A: blankArm(), B: blankArm() },
                 critical: { A: [], B: [] },
                 notes: '',
-            })),
-        };
-        await writeJson(SCORES, scores);
+            });
+        }
     }
+    scores.pairs.sort((left, right) => left.pair.localeCompare(right.pair));
+    await writeJson(SCORES, scores);
     return ready.length;
 }
 
@@ -327,12 +359,26 @@ async function report(jobs: Job[]): Promise<void> {
         let wins = 0;
         let baselineWins = 0;
         let ties = 0;
+        let reviewed = 0;
         const critical: object[] = [];
         const candidateScores: CompleteScoreArm[] = [];
         const baselineScores: CompleteScoreArm[] = [];
         for (const candidateJob of candidateJobs) {
             const score = scoreByPair.get(candidateJob.pair);
+            if (!score?.preferred && flag('--allow-partial')) {
+                cells.push({
+                    pair: candidateJob.pair,
+                    format: candidateJob.format,
+                    subject: candidateJob.subject.id,
+                    preferred: 'not-evaluated',
+                    candidateCritical: [],
+                    baselineCritical: [],
+                    notes: 'generation or blind review not completed',
+                });
+                continue;
+            }
             if (!score?.preferred) throw new Error(`${candidateJob.pair}: missing preferred A/B/tie`);
+            reviewed++;
             const candidateSide = candidateJob.side;
             const baselineSide: Side = candidateSide === 'A' ? 'B' : 'A';
             const candidateScore = completeArm(score.scores[candidateSide], score.pair, candidateSide);
@@ -364,22 +410,26 @@ async function report(jobs: Job[]): Promise<void> {
                 notes: score.notes,
             });
         }
-        const accepted = wins >= 3 && critical.length === 0;
+        const complete = reviewed === candidateJobs.length;
+        const accepted = complete && wins >= 3 && critical.length === 0;
+        const rejected = critical.length > 0 || (complete && wins < 3);
         rows.push({
             candidate: candidate.name,
             baseline: candidate.baseline,
-            decision: accepted ? 'generation-reviewed / accepted' : 'rejected',
+            decision: accepted ? 'generation-reviewed / accepted' : rejected ? 'rejected' : 'not-evaluated / blocked',
+            reviewed,
             wins,
             baselineWins,
             ties,
             critical,
-            candidateAverage: average(candidateScores),
-            baselineAverage: average(baselineScores),
+            candidateAverage: candidateScores.length > 0 ? average(candidateScores) : null,
+            baselineAverage: baselineScores.length > 0 ? average(baselineScores) : null,
             cells,
         });
     }
     const accepted = rows.filter((row) => row.decision.includes('accepted')).map((row) => row.candidate);
-    const rejected = rows.filter((row) => !row.decision.includes('accepted')).map((row) => row.candidate);
+    const rejected = rows.filter((row) => row.decision === 'rejected').map((row) => row.candidate);
+    const pending = rows.filter((row) => row.decision.startsWith('not-evaluated')).map((row) => row.candidate);
     const payload = {
         schema_version: 'k3-evaluation-v1',
         provider: PROVIDER,
@@ -390,20 +440,21 @@ async function report(jobs: Job[]): Promise<void> {
         crossProviderClaim: false,
         acceptedCandidates: accepted,
         rejectedCandidates: rejected,
+        pendingCandidates: pending,
         results: rows,
     };
     const markdown = [
         '# K3 image-style evaluation',
         '',
-        `- Provider/model: \`${PROVIDER}/${MODEL}\` (only configured provider; no cross-provider claim)`,
+        `- Provider/model: \`${PROVIDER}/${MODEL}\` (single-provider run; no cross-provider claim)`,
         `- Reviewer: ${scoreFile.reviewer || 'unrecorded'}; reviewed at: ${scoreFile.reviewedAt || 'unrecorded'}`,
         '- Gate: candidate wins at least 3 of 4 pairwise cells and has zero critical violations.',
         '',
-        '| Candidate | Baseline | Wins | Baseline wins | Ties | Critical groups | Decision |',
-        '| --- | --- | ---: | ---: | ---: | ---: | --- |',
+        '| Candidate | Baseline | Reviewed | Wins | Baseline wins | Ties | Critical groups | Decision |',
+        '| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |',
         ...rows.map(
             (row) =>
-                `| \`${row.candidate}\` | \`${row.baseline}\` | ${row.wins} | ${row.baselineWins} | ${row.ties} | ${row.critical.length} | ${row.decision} |`,
+                `| \`${row.candidate}\` | \`${row.baseline}\` | ${row.reviewed}/4 | ${row.wins} | ${row.baselineWins} | ${row.ties} | ${row.critical.length} | ${row.decision} |`,
         ),
         '',
         '## Cell details',
@@ -422,18 +473,22 @@ async function report(jobs: Job[]): Promise<void> {
     ].join('\n');
     await writeJson(join(WORK, 'evaluation-report.json'), payload);
     await Bun.write(join(WORK, 'evaluation-report.md'), markdown);
-    for (const row of rows) console.log(`${row.decision}: ${row.candidate} (${row.wins}/4 wins)`);
+    for (const row of rows)
+        console.log(`${row.decision}: ${row.candidate} (${row.wins}/4 wins; ${row.reviewed}/4 reviewed)`);
     console.log(`wrote ${join(WORK, 'evaluation-report.md')}`);
 }
 
-const jobs = buildJobs();
+const jobs = buildJobs().filter((job) => ONLY === '' || job.candidate === ONLY);
+if (ONLY !== '' && jobs.length !== 8) throw new Error(`${ONLY}: expected eight jobs / four pairs`);
 if (flag('--dry-run')) {
     console.log(
         `evaluation plan OK: ${jobs.length} provider calls / ${new Set(jobs.map((job) => job.pair)).size} blind pairs`,
     );
-    for (const candidate of CANDIDATES)
+    console.log(`provider/model: ${PROVIDER}/${MODEL}; work: ${WORK}; candidates: ${CANDIDATE_ROOT}`);
+    for (const candidate of CANDIDATES.filter((candidate) => ONLY === '' || candidate.name === ONLY))
         console.log(`${candidate.name} vs ${candidate.baseline}: free + cover × microservices + semiconductor`);
 } else if (flag('--report')) {
+    if (ONLY !== '') throw new Error('--report cannot be combined with --only');
     await report(jobs);
 } else {
     const queue = [...jobs];
@@ -448,7 +503,7 @@ if (flag('--dry-run')) {
             }
         }
     };
-    await Promise.all(Array.from({ length: 3 }, worker));
+    await Promise.all(Array.from({ length: CONCURRENCY }, worker));
     const ready = await writeReviewPackage(jobs);
     console.log(`${ready}/24 blind pairs ready; scores: ${SCORES}`);
     if (failed.length > 0) {

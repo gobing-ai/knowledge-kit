@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import {
@@ -145,6 +145,20 @@ describe('R1 — preset schemas', () => {
         const invalid = diagnostics.filter((d) => d.code === 'invalid');
         expect(invalid).toHaveLength(1);
         expect(invalid[0]?.path).toBe(brokenPath);
+    });
+
+    test('shipped presets declare no provider or model selection', async () => {
+        for (const axis of ['formats', 'styles']) {
+            for (const entry of readdirSync(join(BUILTIN_ROOT, axis)).filter((file) => file.endsWith('.yaml'))) {
+                const raw = Bun.YAML.parse(await Bun.file(join(BUILTIN_ROOT, axis, entry)).text()) as Record<
+                    string,
+                    unknown
+                >;
+                expect(Object.keys(raw)).not.toContain('provider');
+                expect(Object.keys(raw)).not.toContain('model');
+                expect(Object.keys(raw)).not.toContain('providerOptions');
+            }
+        }
     });
 
     test('a style file with only name, description and modifiers parses; optional fields stay undefined', () => {
