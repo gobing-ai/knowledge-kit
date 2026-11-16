@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { main, planSeed, seedCoverage } from '../seed-worktree-coverage';
+import { captureMain } from './capture-output';
 
 const SCRIPT = join(import.meta.dir, '..', 'seed-worktree-coverage.ts');
 let root = '';
@@ -140,9 +141,16 @@ describe('seed-worktree-coverage main (0383 R3)', () => {
     it('returns 0 when it seeded, 1 when refused and 2 on usage', () => {
         const seeded = cloneOf('main-source');
         writeCorpus(seeded);
-        expect(main([seeded, '--root', cloneOf('main-target')])).toBe(0);
-        expect(main([seeded, '--root', cloneOf('main-target-refused')])).toBe(0);
-        expect(main(['/nonexistent/source', '--root', cloneOf('main-target-missing')])).toBe(1);
-        expect(main([])).toBe(2);
+        const copied = captureMain(() => main([seeded, '--root', cloneOf('main-target')]));
+        expect(copied.code).toBe(0);
+        expect(copied.stdout).toContain('copied');
+        const refused = captureMain(() => main([seeded, '--root', cloneOf('main-target-refused')]));
+        expect(refused.code).toBe(0);
+        const missing = captureMain(() => main(['/nonexistent/source', '--root', cloneOf('main-target-missing')]));
+        expect(missing.code).toBe(1);
+        expect(missing.stderr).toContain('refused');
+        const usage = captureMain(() => main([]));
+        expect(usage.code).toBe(2);
+        expect(usage.stderr).toContain('usage:');
     });
 });

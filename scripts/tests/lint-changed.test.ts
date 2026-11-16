@@ -10,11 +10,14 @@
 
 import { describe, expect, it } from 'bun:test';
 import { checkable, existing, main, runBiome } from '../lint-changed';
+import { captureMain, captureSpawn } from './capture-output';
 
 describe('lint-changed (0383 R2)', () => {
     it('skips everything Biome cannot process instead of failing the gate', () => {
         expect(checkable(['docs/tasks/a.md', 'docs/04_DESIGN.md'])).toEqual([]);
-        expect(main(['docs/tasks/a.md', 'docs/04_DESIGN.md'])).toBe(0);
+        const skipped = captureMain(() => main(['docs/tasks/a.md', 'docs/04_DESIGN.md']));
+        expect(skipped.code).toBe(0);
+        expect(skipped.stdout).toContain('nothing Biome can check');
     });
 
     it('keeps every checkable extension', () => {
@@ -32,16 +35,20 @@ describe('lint-changed (0383 R2)', () => {
 
     it('does not invoke the checker at all when nothing is checkable', () => {
         let called = false;
-        expect(
+        const skipped = captureMain(() =>
             main(['docs/a.md'], () => {
                 called = true;
                 return 1;
             }),
-        ).toBe(0);
+        );
+        expect(skipped.code).toBe(0);
+        expect(skipped.stdout).toContain('nothing Biome can check');
         expect(called).toBe(false);
     });
 
     it('runs the real checker over a clean file that Biome can see', () => {
-        expect(runBiome(['scripts/lint-changed.ts'])).toBe(0);
+        const output = { stdout: '', stderr: '' };
+        expect(runBiome(['scripts/lint-changed.ts'], captureSpawn(output))).toBe(0);
+        expect(output.stdout).toContain('Checked 1 file');
     }, 60_000);
 });

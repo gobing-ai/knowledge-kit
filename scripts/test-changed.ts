@@ -24,7 +24,7 @@ export function testArgv(paths: readonly string[], coverageDir: string): string[
 }
 
 /** Run the changed scope from one workspace; the scratch dir is cleared first so numbers never mix. */
-export function main(argv: string[], root = process.cwd()): number {
+export function main(argv: string[], root = process.cwd(), spawn: typeof Bun.spawnSync = Bun.spawnSync): number {
     const workspace = argv[0];
     if (workspace === undefined || workspace.trim() === '') {
         process.stderr.write('usage: bun scripts/test-changed.ts <workspace> [<path>...]\n');
@@ -33,7 +33,7 @@ export function main(argv: string[], root = process.cwd()): number {
     const coverageDir = resolve(root, SCOPED_COVERAGE_DIR);
     rmSync(coverageDir, { recursive: true, force: true });
     mkdirSync(coverageDir, { recursive: true });
-    const result = Bun.spawnSync(testArgv(argv.slice(1), coverageDir), {
+    const result = spawn(testArgv(argv.slice(1), coverageDir), {
         cwd: resolve(root, workspace),
         stdout: 'inherit',
         stderr: 'inherit',

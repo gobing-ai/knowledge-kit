@@ -18,6 +18,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { main } from '../check-scheduler-drift';
+import { captureMain } from './capture-output';
 
 const SCRIPT = join(import.meta.dir, '..', 'check-scheduler-drift.ts');
 let root = '';
@@ -138,13 +139,19 @@ describe('check-scheduler-drift main (0382 R3)', () => {
             [{ name: 'kk-daily-ai-voice', command: 'kk news generate' }],
             [{ name: 'kk-daily-ai-voice', command: 'bun scripts/daily-ai-news.ts generate' }],
         );
-        expect(main(['--root', root, '--config', drift.config, '--db', drift.db])).toBe(1);
+        const driftResult = captureMain(() => main(['--root', root, '--config', drift.config, '--db', drift.db]));
+        expect(driftResult.code).toBe(1);
+        expect(driftResult.stdout).toContain('drift');
+        expect(driftResult.stdout).toContain('1 needing attention');
 
         const aligned = scenario(
             [{ name: 'kk-daily-ai-voice', command: 'kk news generate' }],
             [{ name: 'kk-daily-ai-voice', command: 'kk news generate' }],
         );
-        expect(main(['--root', root, '--config', aligned.config, '--db', aligned.db])).toBe(0);
+        const alignedResult = captureMain(() => main(['--root', root, '--config', aligned.config, '--db', aligned.db]));
+        expect(alignedResult.code).toBe(0);
+        expect(alignedResult.stdout).toContain('in-sync');
+        expect(alignedResult.stdout).toContain('0 needing attention');
     });
 
     it('covers every verdict branch in-process (missing-entry, never-issued, unreadable, json)', () => {
@@ -152,13 +159,23 @@ describe('check-scheduler-drift main (0382 R3)', () => {
             [{ name: 'kk-legacy', command: 'bun scripts/deleted-thing.ts' }],
             [{ name: 'kk-legacy', command: 'bun scripts/deleted-thing.ts' }],
         );
-        expect(main(['--root', root, '--config', missing.config, '--db', missing.db, '--json'])).toBe(1);
+        const missingResult = captureMain(() =>
+            main(['--root', root, '--config', missing.config, '--db', missing.db, '--json']),
+        );
+        expect(missingResult.code).toBe(1);
+        expect(missingResult.stdout).toContain('missing-entry');
 
         const never = scenario([{ name: 'kk-fresh', command: 'kk news generate' }], []);
-        expect(main(['--root', root, '--config', never.config, '--db', never.db])).toBe(0);
+        const neverResult = captureMain(() => main(['--root', root, '--config', never.config, '--db', never.db]));
+        expect(neverResult.code).toBe(0);
+        expect(neverResult.stdout).toContain('never-issued');
 
         const unreadable = scenario([{ name: 'kk-fresh', command: 'kk news generate' }], []);
-        expect(main(['--root', root, '--config', unreadable.config, '--db', join(root, '.spur', 'gone.db')])).toBe(1);
+        const unreadableResult = captureMain(() =>
+            main(['--root', root, '--config', unreadable.config, '--db', join(root, '.spur', 'gone.db')]),
+        );
+        expect(unreadableResult.code).toBe(1);
+        expect(unreadableResult.stdout).toContain('unreadable');
     });
 
     it('reads the real config shape (bootstrap.scheduler.jobs) and ignores malformed entries', () => {

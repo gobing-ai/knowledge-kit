@@ -31,8 +31,8 @@ export function existing(paths: readonly string[]): string[] {
 }
 
 /** The real check: Biome over the given paths, its exit code passed through unchanged. */
-export function runBiome(targets: string[]): number {
-    const result = Bun.spawnSync(['bunx', 'biome', 'check', '--no-errors-on-unmatched', ...targets], {
+export function runBiome(targets: string[], spawn: typeof Bun.spawnSync = Bun.spawnSync): number {
+    const result = spawn(['bunx', 'biome', 'check', '--no-errors-on-unmatched', ...targets], {
         stdout: 'inherit',
         stderr: 'inherit',
     });

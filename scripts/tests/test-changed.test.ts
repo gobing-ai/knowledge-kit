@@ -13,6 +13,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { main, SCOPED_COVERAGE_DIR, testArgv } from '../test-changed';
+import { captureMain, captureSpawn } from './capture-output';
 
 describe('test-changed (0383 R3)', () => {
     it('sends coverage to a scratch directory, never to the repo-wide corpus', () => {
@@ -23,8 +24,12 @@ describe('test-changed (0383 R3)', () => {
     });
 
     it('refuses an empty workspace instead of running the whole suite', () => {
-        expect(main([''])).toBe(2);
-        expect(main([])).toBe(2);
+        const empty = captureMain(() => main(['']));
+        expect(empty.code).toBe(2);
+        expect(empty.stderr).toContain('usage:');
+        const missing = captureMain(() => main([]));
+        expect(missing.code).toBe(2);
+        expect(missing.stderr).toContain('usage:');
     });
 
     it('clears a previous scoped corpus so two scopes never mix, then runs in the workspace', () => {
@@ -39,8 +44,11 @@ describe('test-changed (0383 R3)', () => {
         mkdirSync(stale, { recursive: true });
         writeFileSync(join(stale, 'lcov.info'), 'stale\n');
 
-        const code = main(['w', 'tests/ok.test.ts'], root);
+        const output = { stdout: '', stderr: '' };
+        const code = main(['w', 'tests/ok.test.ts'], root, captureSpawn(output));
         expect(code).toBe(0);
+        expect(output.stdout + output.stderr).toContain('1 pass');
+        expect(output.stdout + output.stderr).toContain('0 fail');
         rmSync(root, { recursive: true, force: true });
     }, 60_000);
 });
