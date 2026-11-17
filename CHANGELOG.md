@@ -1,5 +1,175 @@
 ## [Unreleased]
 
+## [0.1.20] - 2026-11-17
+
+### Added
+
+- feat(kk): record bot sessions and generate channel rails from them (999bc8e9)
+<!-- src: packages/publish-harness/src/bot-record.ts:2 -->
+- feat(kk): add 即刻 (jike) to the daily social promotion set (e95b2507)
+<!-- src: plugins/kk/publish-presets/daily-ai-voice.json:144 -->
+- feat(x-pub): post through the signed-in web composer (50d69bb9)
+<!-- src: plugins/publishings/x-pub/src/post-rail.ts:2 -->
+- feat(threads-pub): post through the signed-in web composer (442fcd81)
+<!-- src: plugins/publishings/threads-pub/src/post-rail.ts:2 -->
+- feat(xhs): opt voice2's cards into the local H3 provider (42b11754)
+<!-- src: plugins/kk/workflows/kk-daily-ai-voice2.yaml:58 -->
+- feat(tools): report a checkout-vs-install divergence before the next tick (2a32182f)
+<!-- src: scripts/check-tool-freshness.ts:16 -->
+- feat(shipinhao): publish 音频 on its own createAudio surface (806b13b6)
+<!-- src: plugins/publishings/shipinhao-pub/src/audio-flow.ts:2 -->
+- feat(news): explain a news day's pool ladder in the report and status (075b3a26)
+<!-- src: apps/cli/src/commands/daily.ts:590 -->
+- feat(news): judge the pool by the ratio the last run actually delivered (5fd38638)
+<!-- src: plugins/kk/scripts/daily-stages.ts:323 -->
+- feat(cli): report a news day's stage progress and gate verdict from status (cd0c8b2c)
+<!-- src: apps/cli/src/status-progress.ts:53 -->
+- feat(wechatmp): embed the episode audio in the 公众号 article (122c1951)
+<!-- src: plugins/kk/scripts/daily-stages.ts:2044 -->
+- feat(publish): require a recorded override before a draftless row goes live (6ac3dc8a)
+<!-- src: apps/cli/src/publish-core.ts:164 -->
+- feat(scripts): seed a fresh worktree's coverage corpus from its base tree (6bac8bbc)
+<!-- src: scripts/seed-worktree-coverage.ts:2 -->
+- feat(scripts): report when the running scheduler's payloads drifted from config (c2e14960)
+<!-- src: scripts/check-scheduler-drift.ts:2 -->
+- feat(board): read kk-news-generate and show retired-layout days as retired (9033e844)
+<!-- src: apps/board/src/daily-voice/view.ts:493 -->
+- feat(image-gen): parameterise the style evaluation by provider (108afe76)
+<!-- src: plugins/generations/image-gen/scripts/eval-style-presets.ts:9 -->
+- feat(image-gen): record each sample's provider and model (26dc6ce7)
+<!-- src: plugins/generations/image-gen/scripts/gen-samples.ts:11 -->
+- feat(image-gen): add an opt-in local H3 provider (d6c3c069)
+<!-- src: plugins/generations/image-gen/src/providers/h3-local.ts:123 -->
+- feat(image-gen): append a style's negative as an avoid prompt segment (9bac376a)
+<!-- src: plugins/generations/image-gen/src/presets.ts:89 -->
+
+### Fixed
+
+- fix(x-pub): scale the composer waits to the step timeout (cc955b67)
+<!-- src: plugins/publishings/x-pub/src/post-rail.ts:240 -->
+- fix(threads-pub): cap the new-thread entry wait to the step timeout (d49f8b9b)
+<!-- src: plugins/publishings/threads-pub/src/post-rail.ts:233 -->
+- fix(publishings): resolve channel profile dirs from the channel id (b2b4fe92)
+<!-- src: plugins/publishings/x-pub/src/post-rail.ts:141 -->
+- fix(shipinhao-pub): let the 音频 rail reach its measured steps (8d31e85d)
+<!-- src: plugins/publishings/shipinhao-pub/src/audio-flow.ts:40 -->
+- fix(surfdash-pub): stop overriding curated daily-topics entries (70f0c3a4)
+<!-- src: plugins/publishings/surfdash-pub/src/topic-claims.ts:190 -->
+- fix(weibo-pub): read the image id from the upload response (ef88293c)
+<!-- src: plugins/publishings/weibo-pub/src/index.ts:559 -->
+- fix(linkedin-pub): address the redesigned feed instead of the old share box (c354c7d6)
+<!-- src: plugins/publishings/linkedin-pub/src/index.ts:80 -->
+- fix(news): measure the floor gate against the set it estimates (361e67e4)
+<!-- src: plugins/kk/scripts/daily-stages.ts:444 -->
+- fix(kk-collect): keep the lock TTL inside the tick cadence (1e219d82)
+<!-- src: plugins/kk/workflows/kk-collect.yaml:74 -->
+- fix(gate): keep a changed-scope test run out of the repo-wide coverage corpus (d9f4dbaf)
+<!-- src: scripts/test-changed.ts:9 -->
+- fix(surfdash): run the site's full content gate and check every locale digest (434ecacd)
+<!-- src: plugins/publishings/surfdash-pub/src/index.ts:462 -->
+- fix(wechatmp): fail the row when requested enrichment did not apply (bec762a2)
+<!-- src: plugins/publishings/wechatmp-pub/src/flow.ts:2625 -->
+- fix(publish): let a draft drop an unresolved cross-link (2e4a9f03)
+<!-- src: apps/cli/src/publish-matrix.ts:1538 -->
+- fix(gate): stop failing the changed-file check when Biome has nothing to check (b3958ac0)
+<!-- src: scripts/lint-changed.ts:4 -->
+- fix(publish): let an operator-confirmed unknown-effect row be re-sent (4835e394)
+<!-- src: apps/cli/src/publish-core.ts:321 -->
+- fix(publish): read the bundle and its variants where generation froze them (bf7fc527)
+<!-- src: apps/cli/src/publish-matrix.ts:145 -->
+- revert(preset): return the draftless social rows to dummy (aed9a3a1)
+<!-- src: plugins/kk/publish-presets/daily-ai-voice.json:96 -->
+- fix(cli): classify the probe verdict by its last parseable line (38cb0aaa)
+<!-- src: apps/cli/src/invoke.ts:297 -->
+- fix(schedule): give the 04:30 generate six hours, not four (dfeb88c5)
+<!-- src: .spur/config.yaml:152 -->
+- fix(news): raise the ai-news pool cap to 40 after measuring admission (236547f9)
+<!-- src: plugins/kk/decisions/extract/ai-news.yaml:15 -->
+- fix(news): raise the pool cap to 32 so a week-wide day can clear the floor (a024ed28)
+<!-- src: plugins/kk/decisions/extract/ai-news.yaml:11 -->
+- fix(news): report the floor ratio the refusal actually used (56390fc8)
+<!-- src: plugins/kk/scripts/daily-stages.ts:388 -->
+- fix(news): widen the floor ladder on the measured spoken ratio (c6414ff3)
+<!-- src: plugins/kk/scripts/daily-stages.ts:312 -->
+- fix(schedule): pass --skip-review to the 04:30 generate (ad334f16)
+<!-- src: .spur/config.yaml:160 -->
+- fix(news): count a bare Doc[] pool so plan and QC run (72894080)
+<!-- src: apps/cli/src/commands/content-generate.ts:222 -->
+- fix(schedule): run the kk news verbs under one supervised host (0b1095f5)
+<!-- src: .spur/config.yaml:63 -->
+- fix(launch): recycle a green generate that froze no bundle (99be5d14)
+<!-- src: apps/cli/src/launch.ts:620 -->
+- fix(daily): release reservations when a done run published nothing (f18b52e9)
+  <!-- borderline: every file this touched (plugins/kk/tests/daily-scheduled-run.test.ts, plugins/kk/scripts/daily-scheduled-run.ts) was retired in 86ec3def; no surviving anchor -->
+- fix(shipinhao-pub): give the session preflight the probe's own budget (71097588)
+<!-- src: plugins/publishings/shipinhao-pub/src/flow.ts:78 -->
+- fix(daily): resolve the operator kk past Bun's node_modules shadow (840b4c2b)
+  <!-- borderline: every file this touched (plugins/kk/tests/daily-scheduled-run.test.ts, plugins/kk/scripts/daily-scheduled-run.ts) was retired in 86ec3def; no surviving anchor -->
+
+### Changed
+
+- test(shipinhao-pub): cover the audio flow's uncovered branches (0d51973e)
+<!-- src: plugins/publishings/shipinhao-pub/tests/audio-flow.test.ts:368 -->
+- test(wechatmp): pin the reward-blocked default and its opt-in (ffb07f61)
+<!-- src: plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:2661 -->
+- test(scripts): make the changed-scope runners injectable and cover them (6d4cc470)
+<!-- src: scripts/test-changed.ts:36 -->
+- test(schedule): treat a deliberately disabled job as present-and-disabled (09a3827e)
+<!-- src: apps/cli/tests/schedule-no-scripts.e2e.test.ts:31 -->
+- test(kk-store): align the profile fixtures with the pinned ai-news limit (e9a66a5b)
+<!-- src: packages/kk-store/tests/profile.test.ts:53 -->
+- test(schedule): expect the pinned --agent on the three kk news jobs (56472d58)
+<!-- src: apps/cli/tests/schedule-no-scripts.e2e.test.ts:25 -->
+
+### Other
+
+- docs(task): correct 0382 against the 2026-11-16 recordings (5fc1b159)
+- docs(features): register 0382 in the A22 feature tree (ad5c639f)
+- docs(corpus): file 0382 — record bot sessions into channel rails (daf1abfe)
+- docs(context): record the social-channel measurement sessions (27866c80)
+- docs: sync the design surface and task corpus with the shipped changes (f8300ee8)
+- chore(gate): keep test scratch fixtures out of lint and the index (155c01bc)
+<!-- src: biome.json:19 -->
+- docs(image-gen): record rejected K3 style evaluations (6396c861)
+- docs(evidence): preserve the K3 style evaluation reports (0685ace6)
+- chore(preset): restore the overseas social rows to live (d3fa70af)
+<!-- src: plugins/kk/publish-presets/daily-ai-voice.json:96 -->
+- docs(learnings): record how the two task-pipeline gate defects were fixed (2b2a3203)
+<!-- src: scripts/tests/lint-changed.test.ts:1 -->
+- chore(preset): stop sending the wechatmp episode row (28ae93ad)
+<!-- src: plugins/kk/publish-presets/daily-ai-voice.json:29 -->
+- docs(tasks): rescope 0377, split 0378, file the 0382/0383 gaps (1d5ca1ec)
+- chore(tasks): promote 0378 to todo for the batch run (5e5e706b)
+- docs(task): record the 0376 observation and the clock blocker (05637501)
+- docs(task): file 0381 for the plugin-check refusal message (a4bcbb9a)
+- docs(feature): record K3 preset neutrality and the v1 evaluation outcome (ca125aa7)
+- chore(preset): send the overseas social rows live for the 2026-11-15 test (c5dc1057)
+<!-- src: plugins/kk/publish-presets/daily-ai-voice.json:96 -->
+- docs(image-gen): record how to run the local provider and its text constraint (c959c085)
+- docs(image-gen): correct the h3-local negative-prompt note after K3 (75c22500)
+- docs(learnings): record the h3-local and gate-repair lessons from 0379 (2b3fecc0)
+- docs(tasks): mark the lost run-scoped citations and repair 0374's done_reason (9bc4bf51)
+- docs(feature): file K3 with task 0380 and the negative-segment design note (869e9e6c)
+- docs(skill): resolve the image style from preset evidence before prompting (9fa1bc31)
+- chore(image-gen): record preset provenance and add the A/B eval script (a37bf42c)
+<!-- src: plugins/generations/image-gen/scripts/eval-style-presets.ts:7 -->
+- chore(schedule): pause the 17:00 cn-peak tick while a generation is in flight (efe2a197)
+<!-- src: .spur/config.yaml:197 -->
+- docs(feature): file K2 local H3 image generation with task 0379 (1974c515)
+- docs(task): move 0377 to wip with the three-defect solution notes (2fe70a65)
+- docs(task): file 0377 (floor-gate measure) and 0378 (progress surface) (de2dd057)
+- docs(task): close 0373 on the cutover and defer the scheduled day to 0376 (243eddbc)
+- docs(task): close 0374 as done and record the live proof on 0373 (fa9e6207)
+- docs(task): re-scope 0373 to the same-host cutover and file 0374 (61df898c)
+- chore: merge 01ae0e87 into main (6e743ac5)
+<!-- src: .claude-plugin/marketplace.json:1 -->
+- chore: merge 100fbd1e into main (e3352256)
+<!-- src: apps/cli/src/commands/content-generate.ts:1 -->
+- chore(daily): restore the production QC gates (71913652)
+  <!-- borderline: every file this touched (plugins/kk/workflows/kk-daily-ai-voice3.yaml) was retired in 86ec3def; no surviving anchor -->
+- chore(daily): widen today's QC gates for the 2026-11-13 episode (384cc9b2)
+  <!-- borderline: every file this touched (plugins/kk/workflows/kk-daily-ai-voice3.yaml) was retired in 86ec3def; no surviving anchor -->
+
 ## [0.1.19] - 2026-11-14
 
 ### Fixed
