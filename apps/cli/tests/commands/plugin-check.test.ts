@@ -174,7 +174,7 @@ describe('plugin status stays static with the check field (AC5 / R6)', () => {
     });
 });
 
-describe('fifteen browser channels declare probes (0216 + 0291 + 0292 + 0293 + 0294 + 0295 + 0296 + 0297, AC1)', () => {
+describe('sixteen browser channels declare probes (0216 + 0291 + 0292 + 0293 + 0294 + 0295 + 0296 + 0297, AC1)', () => {
     const REAL_ROOT = join(import.meta.dir, '../../../../plugins');
     const CHANNELS = [
         'bilibili-pub',
@@ -192,9 +192,10 @@ describe('fifteen browser channels declare probes (0216 + 0291 + 0292 + 0293 + 0
         'xiaoyuzhou-pub',
         'shipinhao-pub',
         'linkedin-pub',
+        'threads-pub',
     ];
 
-    it('plugin status --json lists check for exactly the fifteen browser publish channels, no others (0216 + 0291 + 0292 + 0293 + 0294 + 0295 + 0296 + 0297)', async () => {
+    it('plugin status --json lists check for exactly the sixteen browser publish channels, no others (0216 + 0291 + 0292 + 0293 + 0294 + 0295 + 0296 + 0297)', async () => {
         const { code, out } = await runCaptured(['plugin', 'status', '--json', '--plugins-root', REAL_ROOT]);
         const report = JSON.parse(out) as StatusJson;
         expect(code).toBe(0);

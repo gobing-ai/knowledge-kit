@@ -25,7 +25,7 @@
     },
     "apps/cli": {
       "name": "@gobing-ai/knowledge-kit",
-      "version": "0.1.15",
+      "version": "0.1.19",
       "bin": {
         "kk": "./dist/index.js",
         "knowledge-kit": "./dist/index.js",
@@ -485,8 +485,10 @@
       "dependencies": {
         "@gobing-ai/kk-core": "workspace:*",
         "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-browser-automation": "catalog:",
         "@gobing-ai/ts-runtime": "catalog:",
         "@gobing-ai/ts-utils": "catalog:",
+        "playwright": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "1.4.3",

@@ -13,6 +13,7 @@ import {
     THREADS_API_BASE,
     THREADS_OPERATIONS,
     ThreadsPostApiTransport,
+    ThreadsPostBrowserTransport,
 } from '../src/index';
 
 const TOKEN = 'THREADS-TOKEN-value-9';
@@ -416,7 +417,15 @@ describe('threads-pub fake transport and IO (R6)', () => {
         } finally {
             delete process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT;
         }
-        expect(getPublishTransport()).toBeInstanceOf(ThreadsPostApiTransport);
+        // 2026-11-16 operator decision: the default is the `kk bot` web composer; the official Graph
+        // API stays reachable through THREADS_POST_TRANSPORT=api.
+        expect(getPublishTransport()).toBeInstanceOf(ThreadsPostBrowserTransport);
+        process.env.THREADS_POST_TRANSPORT = 'api';
+        try {
+            expect(getPublishTransport()).toBeInstanceOf(ThreadsPostApiTransport);
+        } finally {
+            delete process.env.THREADS_POST_TRANSPORT;
+        }
     });
 
     test('processPublishIO posts offline on the fake transport and writes a schema-valid Result', async () => {

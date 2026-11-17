@@ -3,5 +3,10 @@
     "kind": "publish",
     "entry": "./src/index.ts",
     "version": "1.0.0",
-    "description": "post text via the official Threads two-step publishing API (no browser path)"
+    "description": "post text via the web composer (script browser transport, `kk bot` route) or the official Threads two-step publishing API (`THREADS_POST_TRANSPORT=api`)",
+    "check": "./src/profile-check.ts",
+    "browserSession": {
+        "profileName": "threads",
+        "homeUrl": "https://www.threads.net"
+    }
 }

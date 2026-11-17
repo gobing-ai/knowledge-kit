@@ -8,8 +8,10 @@
     "dependencies": {
         "@gobing-ai/kk-core": "workspace:*",
         "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-browser-automation": "catalog:",
         "@gobing-ai/ts-runtime": "catalog:",
-        "@gobing-ai/ts-utils": "catalog:"
+        "@gobing-ai/ts-utils": "catalog:",
+        "playwright": "catalog:"
     },
     "devDependencies": {
         "@types/bun": "1.4.3"

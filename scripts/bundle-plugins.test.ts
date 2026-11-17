@@ -43,6 +43,7 @@ const CHECK_DECLARING_PLUGINS = [
     'shipinhao-pub',
     'sspai-pub',
     'substack-pub',
+    'threads-pub',
     'xiaoyuzhou-pub',
     'wechatmp-pub',
     'weibo-pub',

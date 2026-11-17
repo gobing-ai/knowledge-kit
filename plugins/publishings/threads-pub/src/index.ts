@@ -4,6 +4,9 @@ import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-
 import { FakeFileCliTransport, type PublishTransport, type PublishTransportPayload } from '@gobing-ai/publish-harness';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
+import { ThreadsPostBrowserTransport } from './post-rail';
+
+export { ThreadsPostBrowserTransport } from './post-rail';
 
 /** Per-request timeout (ms) for the Threads Graph call — Bun's `fetch` has no default deadline. */
 const REQUEST_TIMEOUT_MS = 120_000;
@@ -273,7 +276,11 @@ export class ThreadsPostApiTransport implements PublishTransport {
  */
 export function getPublishTransport(): PublishTransport {
     if (process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT === 'fake') return new FakeFileCliTransport();
-    return new ThreadsPostApiTransport();
+    // kk bot first (2026-11-16 operator decision): the web composer rides the `threads` profile, so no
+    // Graph API credentials are needed. `THREADS_POST_TRANSPORT=api` keeps the official API path.
+    return process.env.THREADS_POST_TRANSPORT === 'api'
+        ? new ThreadsPostApiTransport()
+        : new ThreadsPostBrowserTransport();
 }
 
 /** Writes the Result to `--out`, creating its directory when the caller named a nested path. */
