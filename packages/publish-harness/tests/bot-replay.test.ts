@@ -3,11 +3,12 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { type BotTranscript, emptyTranscript } from '../src/bot-record';
+import { selectorFor } from '../src/bot-record-normalize';
 import { replayBot, replayBotSession, submitStepIndex } from '../src/bot-replay';
 
-/** Replay narrows every recorded selector to visible nodes; the fakes key on the recorded form. */
+/** Replay narrows every recorded selector to visible, reachable nodes; the fakes key on the recorded form. */
 function recorded(selector: string): string {
-    return selector.replace(/ >> visible=true$/, '');
+    return selector.replace(/ >> visible=true( >> nth=\d+)?$/, '');
 }
 
 const testid = (value: string) => ({ selector: `[data-testid="${value}"]`, rank: 'testid' as const });
@@ -29,8 +30,8 @@ describe('replayBotSession', () => {
                     return null;
                 },
                 locator: (selector: string) => ({
-                    count: async () => (known.includes(recorded(selector)) ? 1 : 0),
                     first: () => ({ waitFor: async () => {} }),
+                    evaluateAll: async () => (known.includes(recorded(selector)) ? [true] : []),
                 }),
                 click: async (selector: string) => {
                     clicks.push(recorded(selector));
@@ -87,11 +88,15 @@ describe('replayBotSession', () => {
     test('a step whose selector resolves to no node fails that step and stops the run', async () => {
         const fake = fakePage(['[data-testid="compose"]']);
 
-        const result = await replayBotSession('x', transcript(), { page: fake.page as never, submitText: 'Post' });
+        const result = await replayBotSession('x', transcript(), {
+            page: fake.page as never,
+            submitText: 'Post',
+            stepTimeoutMs: 50,
+        });
 
         const failed = result.rows.at(-1);
         expect(failed).toMatchObject({ step: 2, ok: false });
-        expect(failed?.detail).toMatch(/0 visible nodes/);
+        expect(failed?.detail).toMatch(/0 visible, reachable nodes/);
         expect(fake.typed).toEqual([]);
     });
 
@@ -184,8 +189,8 @@ describe('replayBot', () => {
         const page = {
             goto: async () => null,
             locator: (selector: string) => ({
-                count: async () => (known.includes(recorded(selector)) ? 1 : 0),
                 first: () => ({ waitFor: async () => {} }),
+                evaluateAll: async () => (known.includes(recorded(selector)) ? [true] : []),
             }),
             click: async () => {},
             keyboard: { press: async () => {}, type: async () => {} },
@@ -251,6 +256,7 @@ describe('replayBot', () => {
                 outDir: join(bot.dir, 'evidence'),
                 submitText: 'Post',
                 launcher: session.launcher as never,
+                stepTimeoutMs: 50,
             });
 
             expect(result.rows.at(-1)).toMatchObject({ step: 1, ok: false });
@@ -332,6 +338,82 @@ describe('replay waits for a target a live page renders late', () => {
 
             expect(result.rows[0]).toMatchObject({ ok: true, selectorCount: 1 });
             expect(await page.title()).toBe('clicked');
+        } finally {
+            await browser.close();
+        }
+    }, 30_000);
+
+    test('a visible aria-hidden twin does not end the wait before the reachable target renders', async () => {
+        // X: the background composer is visible under aria-hidden while the compose modal is still
+        // mounting; waiting on the first visible match counted before the modal editor existed (2026-11-17).
+        const { chromium } = await import('playwright');
+        const browser = await chromium.launch({ headless: true });
+        try {
+            const page = await browser.newPage();
+            await page.setContent(
+                `<!doctype html><main aria-hidden="true"><button data-testid="editor">bg</button></main><script>setTimeout(() => { const d = document.createElement('div'); d.setAttribute('role', 'dialog'); d.innerHTML = '<button data-testid="editor" onclick="document.title=\\'modal\\'">modal</button>'; document.body.append(d); }, 400);</script>`,
+            );
+            const t = {
+                ...emptyTranscript({ bot: 'fixture', startUrl: 'about:blank', redacted: true }),
+                startUrl: 'about:blank',
+            };
+            t.steps.push({ i: 0, t: 0, kind: 'click', url: 'about:blank', target: testid('editor') });
+
+            const result = await replayBotSession('fixture', t, { page, submit: true, stepTimeoutMs: 5_000 });
+
+            expect(result.rows[0]).toMatchObject({ ok: true, selectorCount: 1 });
+            expect(await page.title()).toBe('modal');
+        } finally {
+            await browser.close();
+        }
+    }, 30_000);
+
+    test('a role-text selector resolves a control whose label sits in a child span', async () => {
+        // Threads wraps every button label in spans; a `:text-is` role selector resolved 0 (2026-11-17).
+        const { chromium } = await import('playwright');
+        const browser = await chromium.launch({ headless: true });
+        try {
+            const page = await browser.newPage();
+            await page.setContent(
+                `<!doctype html><div role="button" onclick="document.title='post'"><div><span>Post</span></div></div><div role="button"><span>Post</span> Options</div>`,
+            );
+            const target = selectorFor('div[role="button"]', 'Post');
+            const t = {
+                ...emptyTranscript({ bot: 'fixture', startUrl: 'about:blank', redacted: true }),
+                startUrl: 'about:blank',
+            };
+            if (!('selector' in target)) throw new Error('expected a resolved selector');
+            t.steps.push({ i: 0, t: 0, kind: 'click', url: 'about:blank', target });
+
+            const result = await replayBotSession('fixture', t, { page, submit: true, stepTimeoutMs: 1_000 });
+
+            expect(target.rank).toBe('role-text');
+            expect(result.rows[0]).toMatchObject({ ok: true, selectorCount: 1 });
+            expect(await page.title()).toBe('post');
+        } finally {
+            await browser.close();
+        }
+    }, 30_000);
+
+    test('a twin under aria-hidden or inert does not count, and the reachable node is the one clicked', async () => {
+        // X keeps its background composer under aria-hidden behind the compose modal (2026-11-17).
+        const { chromium } = await import('playwright');
+        const browser = await chromium.launch({ headless: true });
+        try {
+            const page = await browser.newPage();
+            await page.setContent(
+                `<!doctype html><main aria-hidden="true"><button data-testid="editor" onclick="document.title='hidden'">E</button></main><section inert><button data-testid="editor" onclick="document.title='inert'">E</button></section><div role="dialog"><button data-testid="editor" onclick="document.title='modal'">E</button></div>`,
+            );
+            const t = {
+                ...emptyTranscript({ bot: 'fixture', startUrl: 'about:blank', redacted: true }),
+                startUrl: 'about:blank',
+            };
+            t.steps.push({ i: 0, t: 0, kind: 'click', url: 'about:blank', target: testid('editor') });
+
+            const result = await replayBotSession('fixture', t, { page, submit: true, stepTimeoutMs: 1_000 });
+
+            expect(result.rows[0]).toMatchObject({ ok: true, selectorCount: 1 });
+            expect(await page.title()).toBe('modal');
         } finally {
             await browser.close();
         }

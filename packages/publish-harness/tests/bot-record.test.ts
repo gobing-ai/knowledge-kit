@@ -10,12 +10,14 @@ import {
     type BotTranscript,
     defaultTranscriptPath,
     emptyTranscript,
+    RECORDER_INIT_SCRIPT,
     readTranscript,
     recordBotSession,
     redactJson,
     redactUrl,
     writeTranscript,
 } from '../src/bot-record';
+import { type DomTargetSnapshot, normalizeTarget } from '../src/bot-record-normalize';
 
 function human(testid: string, text = ''): { nodes: unknown[]; targetIndex: number } {
     return {
@@ -520,6 +522,32 @@ describe('response bodies that cannot be read', () => {
         expect(t.steps.at(-1)).toMatchObject({ kind: 'response', url: 'https://x.com/i/api/1.1/media/upload.json' });
         expect(t.steps.at(-1)).not.toHaveProperty('body');
     });
+
+    test('an oversized body with no content-length is still dropped as truncated', async () => {
+        // Live x (2026-11-17): HomeTimeline is compressed with no content-length, so a header-only cap
+        // let 300 KB of other users' timeline into the committed fixture.
+        const t = transcript();
+        type ResponseHandler = (response: unknown) => void;
+        const handlers: ResponseHandler[] = [];
+        const context = {
+            on: (event: string, handler: ResponseHandler) => {
+                if (event === 'response') handlers.push(handler);
+            },
+        } as unknown as BrowserContext;
+
+        attachTranscriptRecorder({ context, transcript: t, fileSystem: createNodeFileSystem() });
+        handlers[0]?.({
+            request: () => ({ method: () => 'POST' }),
+            url: () => 'https://x.com/i/api/graphql/q/HomeTimeline',
+            status: () => 200,
+            headerValue: async (name: string) => (name === 'content-type' ? 'application/json' : null),
+            json: async () => ({ data: { timeline: 'x'.repeat(70 * 1024) } }),
+        });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(t.steps.at(-1)).toMatchObject({ kind: 'response', truncated: true });
+        expect(t.steps.at(-1)).not.toHaveProperty('body');
+    });
 });
 
 describe('recordBotSession in real headless Chromium (AC1, AC2)', () => {
@@ -657,4 +685,35 @@ describe('recordBotSession in real headless Chromium (AC1, AC2)', () => {
             rmSync(dir, { recursive: true, force: true });
         }
     }, 60_000);
+});
+
+describe('RECORDER_INIT_SCRIPT in real headless Chromium', () => {
+    test('a twin under aria-hidden or inert is unreachable, so the clicked node keeps its testid tier', async () => {
+        // X renders its background composer under aria-hidden behind the compose modal (2026-11-17).
+        const { chromium } = await import('playwright');
+        const browser = await chromium.launch({ headless: true });
+        try {
+            const page = await browser.newPage();
+            const events: { snapshot: DomTargetSnapshot }[] = [];
+            await page.exposeFunction(
+                '__kkRecord',
+                (event: { snapshot: DomTargetSnapshot }) => void events.push(event),
+            );
+            await page.setContent(
+                `<!doctype html><main aria-hidden="true"><div role="textbox" data-testid="editor">E</div></main><section inert><div role="textbox" data-testid="editor">E</div></section><div role="dialog"><div role="textbox" data-testid="editor" id="modal">E</div></div>`,
+            );
+            await page.evaluate(RECORDER_INIT_SCRIPT);
+
+            await page.click('#modal');
+            await Bun.sleep(100);
+
+            expect(events).toHaveLength(1);
+            expect(normalizeTarget(events[0]?.snapshot as DomTargetSnapshot)).toEqual({
+                selector: '[data-testid="editor"]',
+                rank: 'testid',
+            });
+        } finally {
+            await browser.close();
+        }
+    }, 30_000);
 });

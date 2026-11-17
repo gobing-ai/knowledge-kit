@@ -2,104 +2,283 @@
     "schemaVersion": 1,
     "bot": "x",
     "startUrl": "https://x.com/home",
-    "recordedAt": "2026-11-16T00:00:00.000Z",
+    "recordedAt": "2026-11-17T22:44:56.178Z",
     "redacted": true,
     "steps": [
         {
-            "i": 0,
-            "t": 1794887157486,
+            "t": 1794955497268,
+            "kind": "navigate",
+            "url": "https://x.com/home",
+            "i": 0
+        },
+        {
+            "t": 1794955498661,
+            "kind": "navigate",
+            "url": "https://x.com/home",
+            "i": 1
+        },
+        {
+            "t": 1794955499107,
+            "kind": "response",
+            "method": "POST",
+            "url": "https://x.com/i/api/graphql/KmJCeZ__ef1fNos7tKN_fg/HomeTimeline",
+            "status": 200,
+            "i": 2,
+            "truncated": true
+        },
+        {
+            "t": 1794955500022,
+            "kind": "response",
+            "method": "POST",
+            "url": "https://x.com/i/api/1.1/promoted_content/log.json",
+            "status": 200,
+            "body": {},
+            "i": 3
+        },
+        {
+            "t": 1794955500129,
+            "kind": "response",
+            "method": "POST",
+            "url": "https://api.x.com/1.1/live_pipeline/update_subscriptions",
+            "status": 200,
+            "body": {
+                "subscriptions": {
+                    "errors": []
+                }
+            },
+            "i": 4
+        },
+        {
+            "t": 1794955503528,
             "kind": "click",
             "url": "https://x.com/home",
             "target": {
                 "selector": "[data-testid=\"SideNav_NewTweet_Button\"]",
                 "rank": "testid"
             },
-            "text": "Post"
+            "text": "Post",
+            "i": 5
         },
         {
-            "i": 1,
-            "t": 1794887159794,
+            "t": 1794955528823,
             "kind": "click",
             "url": "https://x.com/compose/post",
             "target": {
                 "selector": "[data-testid=\"tweetTextarea_0\"]",
                 "rank": "testid"
-            }
+            },
+            "i": 6
         },
         {
-            "i": 2,
-            "t": 1794887162196,
-            "kind": "key",
+            "t": 1794955530743,
+            "kind": "type",
             "url": "https://x.com/compose/post",
             "target": {
                 "selector": "[data-testid=\"tweetTextarea_0\"]",
                 "rank": "testid"
             },
-            "key": "Backspace"
-        },
-        {
-            "i": 3,
-            "t": 1794887162345,
-            "kind": "key",
-            "url": "https://x.com/compose/post",
-            "target": {
-                "selector": "[data-testid=\"tweetTextarea_0\"]",
-                "rank": "testid"
+            "text": {
+                "redacted": true,
+                "length": 11
             },
-            "key": "Backspace"
+            "i": 7
         },
         {
-            "i": 4,
-            "t": 1794887169693,
-            "kind": "key",
-            "url": "https://x.com/compose/post",
-            "target": {
-                "selector": "[data-testid=\"tweetTextarea_0\"]",
-                "rank": "testid"
-            },
-            "key": "Meta"
-        },
-        {
-            "i": 5,
-            "t": 1794887169872,
-            "kind": "key",
-            "url": "https://x.com/compose/post",
-            "target": {
-                "selector": "[data-testid=\"tweetTextarea_0\"]",
-                "rank": "testid"
-            },
-            "key": "a"
-        },
-        {
-            "i": 6,
-            "t": 1794887177070,
-            "kind": "click",
-            "url": "https://x.com/compose/post",
-            "target": {
-                "selector": "[aria-label=\"Add photos or video\"]",
-                "rank": "aria"
-            }
-        },
-        {
-            "i": 7,
-            "t": 1794887177071,
-            "kind": "click",
-            "url": "https://x.com/compose/post",
-            "target": {
-                "selector": "[data-testid=\"fileInput\"]",
-                "rank": "testid"
-            }
-        },
-        {
-            "i": 8,
-            "t": 1794887233732,
+            "t": 1794955566705,
             "kind": "click",
             "url": "https://x.com/compose/post",
             "target": {
                 "selector": "[data-testid=\"tweetButton\"]",
                 "rank": "testid"
             },
-            "text": "Post"
+            "text": "Post",
+            "i": 8
+        },
+        {
+            "t": 1794955567205,
+            "kind": "response",
+            "method": "POST",
+            "url": "https://x.com/i/api/graphql/l4hk8uVGvR-a8kzQ4nOhPA/CreateTweet",
+            "status": 200,
+            "body": {
+                "data": {
+                    "create_tweet": {
+                        "tweet_results": {
+                            "result": {
+                                "cashtag_attachments": [],
+                                "core": {
+                                    "user_results": {
+                                        "result": {
+                                            "__typename": "User",
+                                            "action_counts": {
+                                                "favorites_count": 129
+                                            },
+                                            "affiliates_highlighted_label": {},
+                                            "avatar": {
+                                                "image_url": "https://pbs.twimg.com/profile_images/2077467638146711552/I2CAaJYD_normal.jpg"
+                                            },
+                                            "banner": {
+                                                "image_url": "https://pbs.twimg.com/profile_banners/51645948/1792712052"
+                                            },
+                                            "core": {
+                                                "created_at": "Sun Jun 28 04:05:42 +0000 2009",
+                                                "name": "咸话咸说",
+                                                "screen_name": "tangmian"
+                                            },
+                                            "follow_request_sent": false,
+                                            "has_graduated_access": true,
+                                            "id": "VXNlcjo1MTY0NTk0OA==",
+                                            "is_blue_verified": true,
+                                            "location": {
+                                                "location": ""
+                                            },
+                                            "media_permissions": {
+                                                "can_media_tag": true
+                                            },
+                                            "notifications_settings": {
+                                                "notifications_enabled": false
+                                            },
+                                            "parody_commentary_fan_label": "None",
+                                            "pinned_items": {},
+                                            "possibly_sensitive": false,
+                                            "privacy": {
+                                                "protected": false
+                                            },
+                                            "professional": {
+                                                "category": [
+                                                    {
+                                                        "display": false,
+                                                        "icon_name": "IconBriefcaseStroke",
+                                                        "id": 920,
+                                                        "name": "Other"
+                                                    }
+                                                ],
+                                                "professional_type": "Creator",
+                                                "rest_id": "1523268285671739392"
+                                            },
+                                            "profile_bio": {
+                                                "description": "美食运动龙门阵，科技人文白日梦",
+                                                "entities": {
+                                                    "description": {},
+                                                    "url": {
+                                                        "urls": [
+                                                            {
+                                                                "display_url": "surfing.salty.vip",
+                                                                "expanded_url": "https://surfing.salty.vip/",
+                                                                "indices": [0, 23],
+                                                                "url": "https://t.co/FKjqeJyIKy"
+                                                            }
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "profile_description_language": "zh",
+                                            "profile_image_shape": "Circle",
+                                            "profile_metadata": {
+                                                "profile_interstitial_type": ""
+                                            },
+                                            "profile_translation": {
+                                                "translator_type": "none"
+                                            },
+                                            "relationship_counts": {
+                                                "followers": 176,
+                                                "following": 856
+                                            },
+                                            "relationship_perspectives": {
+                                                "blocked_by": false,
+                                                "blocking": false,
+                                                "followed_by": false,
+                                                "following": false,
+                                                "live_following": false,
+                                                "muting": false
+                                            },
+                                            "rest_id": "51645948",
+                                            "super_follow_eligible": false,
+                                            "super_followed_by": false,
+                                            "super_following": false,
+                                            "tweet_counts": {
+                                                "media_tweets": 157,
+                                                "tweets": 2800
+                                            },
+                                            "verification": {
+                                                "verified": false
+                                            },
+                                            "verified_user_profiles": {
+                                                "super_follows_user_profile": {
+                                                    "is_active": false
+                                                }
+                                            },
+                                            "website": {
+                                                "url": "https://t.co/FKjqeJyIKy"
+                                            }
+                                        }
+                                    }
+                                },
+                                "edit_control": {
+                                    "edit_tweet_ids": ["2122823624054960456"],
+                                    "editable_until_msecs": "1794959166000",
+                                    "edits_remaining": "5",
+                                    "is_edit_eligible": true
+                                },
+                                "grok_analysis_button": true,
+                                "grok_annotations": {},
+                                "grok_translated_post_with_availability": {
+                                    "is_available": false
+                                },
+                                "is_translatable": false,
+                                "legacy": {
+                                    "bookmark_count": 0,
+                                    "bookmarked": false,
+                                    "conversation_id_str": "2122823624054960456",
+                                    "created_at": "Tue Nov 17 22:46:06 +0000 2026",
+                                    "display_text_range": [0, 12],
+                                    "entities": {},
+                                    "favorite_count": 0,
+                                    "favorited": false,
+                                    "full_text": "another test",
+                                    "id_str": "2122823624054960456",
+                                    "is_quote_status": false,
+                                    "lang": "en",
+                                    "quote_count": 0,
+                                    "reply_count": 0,
+                                    "retweet_count": 0,
+                                    "retweeted": false,
+                                    "user_id_str": "51645948"
+                                },
+                                "rest_id": "2122823624054960456",
+                                "unmention_data": {},
+                                "unmention_info": {},
+                                "views": {
+                                    "state": "Enabled"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "i": 9
+        },
+        {
+            "t": 1794955567756,
+            "kind": "response",
+            "method": "POST",
+            "url": "https://x.com/i/api/graphql/KmJCeZ__ef1fNos7tKN_fg/HomeTimeline",
+            "status": 200,
+            "i": 10,
+            "truncated": true
+        },
+        {
+            "t": 1794955568166,
+            "kind": "response",
+            "method": "POST",
+            "url": "https://api.x.com/1.1/live_pipeline/update_subscriptions",
+            "status": 200,
+            "body": {
+                "subscriptions": {
+                    "errors": []
+                }
+            },
+            "i": 11
         }
     ]
 }

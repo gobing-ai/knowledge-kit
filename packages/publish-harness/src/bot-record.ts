@@ -245,7 +245,10 @@ async function readResponseBody(response: Response): Promise<{ body?: unknown; t
         const length = Number.parseInt((await response.headerValue('content-length')) ?? '', 10);
         const truncated = Number.isFinite(length) && length > MAX_RESPONSE_BODY_BYTES;
         if (truncated) return { truncated: true };
-        return { body: redactJson(await response.json()) };
+        // Compressed/chunked responses carry no content-length, so measure the parsed body too.
+        const body: unknown = await response.json();
+        if (Buffer.byteLength(JSON.stringify(body)) > MAX_RESPONSE_BODY_BYTES) return { truncated: true };
+        return { body: redactJson(body) };
     } catch {
         return {};
     }
@@ -318,7 +321,8 @@ export const RECORDER_INIT_SCRIPT = `(() => {
         ...(attr(el, 'aria-label') ? { ariaLabel: attr(el, 'aria-label') } : {}),
         ...(attr(el, 'role') ? { role: attr(el, 'role') } : {}),
         text: (el.textContent ?? '').trim().replace(/\\s+/g, ' ').slice(0, 120),
-        visible: el.checkVisibility ? el.checkVisibility() : el.offsetParent !== null,
+        // Rendered under aria-hidden or inert is unreachable (X's background composer behind its modal).
+        visible: (el.checkVisibility ? el.checkVisibility() : el.offsetParent !== null) && !el.closest('[aria-hidden="true"], [inert]'),
         path: pathOf(el),
     });
     function snapshot(el) {

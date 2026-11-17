@@ -92,7 +92,12 @@ const TIERS: readonly Tier[] = [
             node.role === undefined || node.role === '' || node.text === undefined || node.text === ''
                 ? undefined
                 : {
-                      selector: `[role="${quoteValue(node.role)}"]:text-is("${quoteValue(node.text)}")`,
+                      // `:text-is` on the role node matches only a direct text child, so Threads' span-wrapped
+                      // labels resolved 0 (measured 2026-11-17). The role engine's exact accessible name is
+                      // the descendant text for a node without aria-label — the only kind that reaches here.
+                      // ponytail: name and textContent can still differ (svg titles, block joins); replay
+                      // then fails that step loudly, so add a name snapshot to the recorder if that bites.
+                      selector: `role=${node.role}[name="${quoteValue(node.text)}" s]`,
                       matches: (candidate) => candidate.role === node.role && candidate.text === node.text,
                   },
     },

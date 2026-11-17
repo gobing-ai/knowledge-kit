@@ -84,21 +84,39 @@ function visibleOnly(selector: string): string {
 }
 
 /**
- * Count the visible nodes a selector resolves to; a locator error is `0`, never a pass.
- *
- * A live page renders the next control after the previous click, so the count waits for the first
- * visible match up to the step timeout — counting immediately failed steps that were merely early.
+ * Ancestors that make a rendered node unreachable. X keeps its background composer under
+ * `aria-hidden` behind the compose modal, so a visible-only count saw two editors (measured
+ * 2026-11-17); the recorder applies the same rule, so both sides agree on what one node means.
  */
-async function visibleCount(page: Page, selector: string, timeoutMs: number): Promise<number> {
+const UNREACHABLE = '[aria-hidden="true"], [inert]';
+
+/**
+ * Resolve a selector to one `nth=`-pinned selector per visible, reachable node; a locator error is
+ * none, never a pass.
+ *
+ * A live page renders the next control after the previous click, so the count polls until a
+ * reachable match exists or the step timeout passes — counting immediately failed steps that were
+ * merely early. The wait is on a reachable node, not a visible one: X's aria-hidden background
+ * composer is visible while the modal mounts, and waiting on it counted before the modal editor
+ * existed (measured 2026-11-17).
+ */
+async function reachableTargets(page: Page, selector: string, timeoutMs: number): Promise<string[]> {
+    const narrowed = visibleOnly(selector);
+    const locator = page.locator(narrowed);
+    const deadline = Date.now() + timeoutMs;
     try {
-        const locator = page.locator(visibleOnly(selector));
-        await locator
-            .first()
-            .waitFor({ state: 'visible', timeout: timeoutMs })
-            .catch(() => {});
-        return await locator.count();
+        for (;;) {
+            const reachable = await locator.evaluateAll(
+                (nodes, unreachable) => nodes.map((node) => node.closest(unreachable) === null),
+                UNREACHABLE,
+            );
+            if (reachable.includes(true) || Date.now() >= deadline) {
+                return reachable.flatMap((ok, index) => (ok ? [`${narrowed} >> nth=${index}`] : []));
+            }
+            await new Promise((resolve) => setTimeout(resolve, 250));
+        }
     } catch {
-        return 0;
+        return [];
     }
 }
 
@@ -158,7 +176,8 @@ export async function replayBotSession(
             return { bot, rows, stoppedBeforeSubmit: false };
         }
         const selector = target.selector;
-        const count = await visibleCount(options.page, selector, timeoutMs);
+        const targets = await reachableTargets(options.page, selector, timeoutMs);
+        const count = targets.length;
         if (count !== 1) {
             rows.push({
                 step: step.i,
@@ -166,14 +185,15 @@ export async function replayBotSession(
                 url: step.url,
                 selectorCount: count,
                 ok: false,
-                detail: `selector ${selector} resolved ${count} visible nodes (expected exactly 1)`,
+                detail: `selector ${selector} resolved ${count} visible, reachable nodes (expected exactly 1)`,
             });
             await options.screenshot?.(step.i);
             return { bot, rows, stoppedBeforeSubmit: false };
         }
 
+        const resolved = targets[0] as string;
         if (step.kind === 'click') {
-            await options.page.click(visibleOnly(selector));
+            await options.page.click(resolved);
             rows.push({ step: step.i, kind: step.kind, url: step.url, selectorCount: count, ok: true });
             await options.screenshot?.(step.i);
             continue;
@@ -185,13 +205,13 @@ export async function replayBotSession(
             continue;
         }
         if (step.kind === 'file') {
-            await options.page.setInputFiles(visibleOnly(selector), options.filePath ?? step.fileName);
+            await options.page.setInputFiles(resolved, options.filePath ?? step.fileName);
             rows.push({ step: step.i, kind: step.kind, url: step.url, selectorCount: count, ok: true });
             await options.screenshot?.(step.i);
             continue;
         }
 
-        await options.page.click(visibleOnly(selector));
+        await options.page.click(resolved);
         const typed = typeof step.text === 'string' ? step.text : marker.repeat(step.text.length);
         await options.page.keyboard.type(typed);
         rows.push({

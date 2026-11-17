@@ -49,7 +49,7 @@ describe('normalizeTarget ranking', () => {
         const target = node({ path: 'main > div > div', role: 'button', text: 'New thread' });
 
         expect(normalizeTarget({ nodes: withTarget(target), targetIndex: 0 })).toEqual({
-            selector: '[role="button"]:text-is("New thread")',
+            selector: 'role=button[name="New thread" s]',
             rank: 'role-text',
         });
     });
@@ -85,7 +85,7 @@ describe('normalizeTarget rejections', () => {
         const visible = node({ path: 'main > div > div', role: 'button', text: 'New thread' });
 
         expect(normalizeTarget({ nodes: [hidden, visible], targetIndex: 1 })).toEqual({
-            selector: '[role="button"]:text-is("New thread")',
+            selector: 'role=button[name="New thread" s]',
             rank: 'role-text',
         });
     });
@@ -141,7 +141,7 @@ describe('selectorFor', () => {
 
     test('role plus recorded text resolves to the role-text tier', () => {
         expect(selectorFor('main > div[role="button"]', 'New thread')).toEqual({
-            selector: '[role="button"]:text-is("New thread")',
+            selector: 'role=button[name="New thread" s]',
             rank: 'role-text',
         });
     });

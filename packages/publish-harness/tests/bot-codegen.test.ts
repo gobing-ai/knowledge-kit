@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { generateRail } from '../src/bot-codegen';
 import { type BotTranscript, emptyTranscript, readTranscript } from '../src/bot-record';
@@ -82,6 +83,48 @@ describe('generateRail', () => {
         expect(receipt).not.toContain('media/upload.json');
     });
 
+    test('a background endpoint that also fired before the submit is never the receipt, even when it lands last', () => {
+        // Live x (2026-11-17): HomeTimeline and update_subscriptions poll before and after CreateTweet.
+        const poll = (i: number, body: unknown) => ({
+            i,
+            t: i,
+            kind: 'response' as const,
+            method: 'POST' as const,
+            url: 'https://api.x.com/1.1/live_pipeline/update_subscriptions',
+            status: 200,
+            body,
+        });
+        const transcript = composeTranscript();
+        transcript.steps.splice(1, 0, poll(0, { subscriptions: { id: 'before' } }));
+        transcript.steps.push(poll(11, { subscriptions: { id: 'after' } }));
+
+        const { source, warnings } = generateRail(transcript, { plugin: 'x-pub', operation: 'post' });
+
+        expect(warnings).toEqual([]);
+        expect(source.slice(source.indexOf('// receipt'))).toContain('CreateTweet');
+        expect(source).not.toContain('update_subscriptions');
+    });
+
+    test('the uploadFile helper is imported exactly when a file step uses it', () => {
+        const plain = generateRail(composeTranscript(), { plugin: 'x-pub', operation: 'post' }).source;
+        const transcript = composeTranscript();
+        transcript.steps.splice(3, 0, {
+            i: 5,
+            t: 4,
+            kind: 'file',
+            url: 'https://x.com/compose/post',
+            target: testid('fileInput'),
+            fileName: 'card.png',
+        });
+        const withFile = generateRail(transcript, { plugin: 'x-pub', operation: 'post' }).source;
+
+        expect(plain).toContain("import { expectOutcome, resolveSelector } from '@gobing-ai/publish-harness/browser';");
+        expect(withFile).toContain(
+            "import { expectOutcome, resolveSelector, uploadFile } from '@gobing-ai/publish-harness/browser';",
+        );
+        expect(withFile).toContain('await uploadFile(page,');
+    });
+
     test('an explicit receipt path wins over the picked one', () => {
         const { source } = generateRail(composeTranscript(), {
             plugin: 'x-pub',
@@ -135,7 +178,9 @@ describe('generateRail', () => {
 describe('generateRail over the committed fixtures', () => {
     const fixtures = join(import.meta.dir, 'fixtures', 'bot-record');
 
-    test('the recorded x session generates: 9 steps, 8 testid selectors and one aria selector', async () => {
+    // Both fixtures are live `kk bot record` sessions (2026-11-17) that replayed live, every step
+    // resolving one node, stopped before Post (.spur/run/dogfood/2026-11-17-bot-replay/{x,threads}-rec4).
+    test('the recorded x session generates testid selectors and a CreateTweet receipt past the polling endpoints', async () => {
         const transcript = await readTranscript(join(fixtures, 'x.json'));
         const { source, warnings } = generateRail(transcript, {
             plugin: 'x-pub',
@@ -143,25 +188,65 @@ describe('generateRail over the committed fixtures', () => {
             transcriptPath: 'packages/publish-harness/tests/fixtures/bot-record/x.json',
         });
 
-        expect(transcript.steps).toHaveLength(9);
-        expect(source.match(/data-testid=/g)?.length).toBe(8);
-        expect(source).toContain('aria-label=');
-        // The x recording predates response capture, so the receipt is an explicit TODO, not a guess.
-        expect(warnings).toHaveLength(1);
-        expect(source).toContain('TODO receipt');
+        expect(warnings).toEqual([]);
+        expect(source).toContain('[data-testid="SideNav_NewTweet_Button"]');
+        expect(source).toContain('[data-testid="tweetButton"]');
+        expect(source).toContain(
+            "new URL(candidate.url()).pathname === '/i/api/graphql/l4hk8uVGvR-a8kzQ4nOhPA/CreateTweet'",
+        );
+        expect(source).toContain("const receiptPath = 'data.create_tweet.tweet_results.result.rest_id';");
+        expect(source).not.toContain('update_subscriptions');
+        expect(source).not.toContain('HomeTimeline');
     });
 
-    test('the recorded threads session aborts on its one structural-only step', async () => {
+    test('the recorded threads session generates role-engine selectors and the configure_text_only_post receipt', async () => {
         const transcript = await readTranscript(join(fixtures, 'threads.json'));
-        const structural = transcript.steps.find(
-            (step) => 'target' in step && !('ambiguous' in step.target) && step.target.rank === 'path',
-        );
+        const { source, warnings } = generateRail(transcript, { plugin: 'threads-pub', operation: 'post' });
 
-        expect(structural).toBeDefined();
-        expect(() => generateRail(transcript, { plugin: 'threads-pub', operation: 'post' })).toThrow(
-            new RegExp(`step ${structural?.i}\\b.*structural`),
-        );
+        expect(warnings).toEqual([]);
+        expect(source).toContain('role=button[name="New thread" s]');
+        expect(source).toContain('role=button[name="Post" s]');
+        expect(source).toContain("new URL(candidate.url()).pathname === '/api/v1/media/configure_text_only_post/'");
+        expect(source).toContain("const receiptPath = 'media.id';");
+        expect(source).not.toContain('/graphql/query');
     });
+
+    test('every committed fixture generates a rail that type-checks under the repo compiler settings', async () => {
+        // AC4: a promoted rail must pass `bun run lint`, so check with the shared strict base
+        // (noUnusedLocals included) against the real harness exports, not a string match.
+        const root = join(import.meta.dir, '..');
+        const dir = mkdtempSync(join(root, '.codegen-typecheck-'));
+        try {
+            const files: string[] = [];
+            for (const [fixture, plugin] of [
+                ['x', 'x-pub'],
+                ['threads', 'threads-pub'],
+                ['local-post', 'local-pub'],
+            ] as const) {
+                const transcript = await readTranscript(join(fixtures, `${fixture}.json`));
+                writeFileSync(
+                    join(dir, `${fixture}.ts`),
+                    generateRail(transcript, { plugin, operation: 'post' }).source,
+                );
+                files.push(`${fixture}.ts`);
+            }
+            writeFileSync(
+                join(dir, 'tsconfig.json'),
+                JSON.stringify({
+                    extends: '../../../tooling/typescript/base.json',
+                    compilerOptions: { noEmit: true, rootDir: '..' },
+                    include: files,
+                }),
+            );
+
+            const tsc = Bun.spawnSync(['bunx', 'tsc', '-p', join(dir, 'tsconfig.json')], { cwd: root });
+
+            expect(tsc.stdout.toString()).toBe('');
+            expect(tsc.exitCode).toBe(0);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    }, 120_000);
 
     test('the synthetic local session picks the submit response, not the earlier upload', async () => {
         const transcript = await readTranscript(join(fixtures, 'local-post.json'));

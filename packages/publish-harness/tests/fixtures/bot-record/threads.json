@@ -2,370 +2,1063 @@
     "schemaVersion": 1,
     "bot": "threads",
     "startUrl": "https://www.threads.com/",
-    "recordedAt": "2026-11-16T00:00:00.000Z",
+    "recordedAt": "2026-11-17T22:46:32.343Z",
     "redacted": true,
     "steps": [
         {
-            "i": 0,
-            "t": 1794887908535,
+            "t": 1794955593301,
+            "kind": "navigate",
+            "url": "https://www.threads.com/",
+            "i": 0
+        },
+        {
+            "t": 1794955594302,
+            "kind": "response",
+            "method": "POST",
+            "url": "https://www.threads.com/graphql/query",
+            "status": 200,
+            "body": {
+                "data": {
+                    "xdt_is_aggregated_time_tracking_enabled_for_ig_user": false
+                },
+                "extensions": {
+                    "is_final": true,
+                    "server_metadata": {
+                        "request_start_time_ms": 1794955594221,
+                        "time_at_flush_ms": 1794955594244
+                    }
+                },
+                "status": "ok"
+            },
+            "i": 1
+        },
+        {
+            "t": 1794955594307,
+            "kind": "response",
+            "method": "POST",
+            "url": "https://www.threads.com/graphql/query",
+            "status": 200,
+            "body": {
+                "data": {
+                    "viewer": {
+                        "user": {
+                            "strong_id__": "63031166021",
+                            "daily_time_limit": 0,
+                            "is_daily_limit_blocking": false,
+                            "is_sleep_mode_blocking": false,
+                            "is_quiet_mode_enabled": false,
+                            "quiet_mode_windows": [
+                                {
+                                    "start_time": 79200,
+                                    "end_time": 25200,
+                                    "days": [
+                                        "SUNDAY",
+                                        "MONDAY",
+                                        "TUESDAY",
+                                        "WEDNESDAY",
+                                        "THURSDAY",
+                                        "FRIDAY",
+                                        "SATURDAY"
+                                    ]
+                                }
+                            ],
+                            "supervision_info": null,
+                            "warning_label_eligibility": null,
+                            "id": "63031166021"
+                        }
+                    }
+                },
+                "extensions": {
+                    "is_final": true,
+                    "server_metadata": {
+                        "request_start_time_ms": 1794955594223,
+                        "time_at_flush_ms": 1794955594264
+                    }
+                },
+                "status": "ok"
+            },
+            "i": 2
+        },
+        {
+            "t": 1794955594312,
+            "kind": "response",
+            "method": "POST",
+            "url": "https://www.threads.com/graphql/query",
+            "status": 200,
+            "body": {
+                "data": {
+                    "xdt_dl_extension_request_decision_actor_username": null
+                },
+                "extensions": {
+                    "is_final": true,
+                    "server_metadata": {
+                        "request_start_time_ms": 1794955594221,
+                        "time_at_flush_ms": 1794955594270
+                    }
+                },
+                "status": "ok"
+            },
+            "i": 3
+        },
+        {
+            "t": 1794955594326,
+            "kind": "response",
+            "method": "POST",
+            "url": "https://www.threads.com/graphql/query",
+            "status": 200,
+            "body": {
+                "data": {
+                    "record": {
+                        "aggregated_screen_time_per_device": [
+                            {
+                                "device_key": "BA4BA805-DA23-419C-AC45-0119FB3ADC04",
+                                "screen_time_per_day": [0, 0, 0, 0, 0, 0, 0]
+                            },
+                            {
+                                "device_key": "930B1C0D-F9B5-40A2-A015-9C9B4C641D55",
+                                "screen_time_per_day": [0, 0, 0, 0, 0, 0, 0]
+                            }
+                        ]
+                    }
+                },
+                "extensions": {
+                    "is_final": true,
+                    "server_metadata": {
+                        "request_start_time_ms": 1794955594223,
+                        "time_at_flush_ms": 1794955594288
+                    }
+                },
+                "status": "ok"
+            },
+            "i": 4
+        },
+        {
+            "t": 1794955594403,
+            "kind": "response",
+            "method": "POST",
+            "url": "https://www.threads.com/graphql/query",
+            "status": 200,
+            "body": {
+                "data": {
+                    "xdt_is_ig_user_supervised": false
+                },
+                "extensions": {
+                    "is_final": true,
+                    "server_metadata": {
+                        "request_start_time_ms": 1794955594215,
+                        "time_at_flush_ms": 1794955594312
+                    }
+                },
+                "status": "ok"
+            },
+            "i": 5
+        },
+        {
+            "t": 1794955594649,
+            "kind": "navigate",
+            "url": "https://www.threads.com/",
+            "i": 6
+        },
+        {
+            "t": 1794955595397,
+            "kind": "response",
+            "method": "POST",
+            "url": "https://www.threads.com/graphql/query",
+            "status": 200,
+            "body": {
+                "data": {
+                    "recommendedUsers": {
+                        "edges": [
+                            {
+                                "node": {
+                                    "strong_id__": "63079047075",
+                                    "profile_pic_url": "https://scontent-sjc3-1.cdninstagram.com/v/t51.2885-19/43326064_2190221554550818_754418255447195648_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby4xMDgwLmMyIn0&_nc_ht=scontent-sjc3-1.cdninstagram.com&_nc_cat=110&_nc_oc=Q6cZ2gGgf9E9vn_8jHG07m56A6bJ07bePH-e6J8OHt9R6oLkrl-UbnSldA_FgY1gouQ53go&_nc_ohc=ARmP_W4diKEQ7kNvwGoPoe8&_nc_gid=amxtZMM-BmT9l_llj8mxsQ&edm=AE-LrgUBAAAA&ccb=7-5&_nc_ct=RQAsPBUCFQIAAAA&oh=00_AQQ66vYMG8cYCpcDXjIwFHdgCFazq_I0RPQVThlMrwSRqA&oe=6B02ABF9&_nc_sid=8353fa",
+                                    "friendship_status": {
+                                        "followed_by": false,
+                                        "following": false,
+                                        "outgoing_request": false
+                                    },
+                                    "has_onboarded_to_text_post_app": true,
+                                    "pk": "63079047075",
+                                    "text_post_app_is_private": false,
+                                    "username": "networkchuck",
+                                    "follower_count": 73138,
+                                    "profile_context_facepile_users": [],
+                                    "is_verified": true,
+                                    "full_name": "NetworkChuck",
+                                    "biography": "YouTuber",
+                                    "id": "63079047075",
+                                    "__typename": "XDTUserDict"
+                                },
+                                "cursor": ""
+                            },
+                            {
+                                "node": {
+                                    "strong_id__": "63265946561",
+                                    "profile_pic_url": "https://scontent-sjc6-1.cdninstagram.com/v/t51.2885-19/358263162_1408098109988523_5398113182943213011_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby4xMDAwLmMyIn0&_nc_ht=scontent-sjc6-1.cdninstagram.com&_nc_cat=1&_nc_oc=Q6cZ2gGgf9E9vn_8jHG07m56A6bJ07bePH-e6J8OHt9R6oLkrl-UbnSldA_FgY1gouQ53go&_nc_ohc=TB-8gqfJJ18Q7kNvwFtDmbA&_nc_gid=amxtZMM-BmT9l_llj8mxsQ&edm=AE-LrgUBAAAA&ccb=7-5&_nc_ct=RQAsPBUCFQIAAAA&oh=00_AQTlzMeWV_OdpJJ_fJcxmV6_7-EU2O9z_bSMZKxwP6Xw0A&oe=6B029A96&_nc_sid=8353fa",
+                                    "friendship_status": {
+                                        "followed_by": false,
+                                        "following": false,
+                                        "outgoing_request": false
+                                    },
+                                    "has_onboarded_to_text_post_app": true,
+                                    "pk": "63265946561",
+                                    "text_post_app_is_private": false,
+                                    "username": "corporatenatalie",
+                                    "follower_count": 230715,
+                                    "profile_context_facepile_users": [],
+                                    "is_verified": true,
+                                    "full_name": "Corporate Natalie",
+                                    "biography": "CEO of Work-From-Home Jokes",
+                                    "id": "63265946561",
+                                    "__typename": "XDTUserDict"
+                                },
+                                "cursor": ""
+                            },
+                            {
+                                "node": {
+                                    "strong_id__": "63095046580",
+                                    "profile_pic_url": "https://scontent-sjc6-1.cdninstagram.com/v/t51.2885-19/315151773_422303800109791_5485973596723382717_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby4zMjAuYzIifQ&_nc_ht=scontent-sjc6-1.cdninstagram.com&_nc_cat=107&_nc_oc=Q6cZ2gGgf9E9vn_8jHG07m56A6bJ07bePH-e6J8OHt9R6oLkrl-UbnSldA_FgY1gouQ53go&_nc_ohc=8woXxf2YCmgQ7kNvwG4wWPK&_nc_gid=amxtZMM-BmT9l_llj8mxsQ&edm=AE-LrgUBAAAA&ccb=7-5&_nc_ct=RQAsPBUCFQIAAAA&oh=00_AQQLPFAcySwp1TxFxcDQyg5njgqlyiHxi0Nx5cCeGn-d5Q&oe=6B029681&_nc_sid=8353fa",
+                                    "friendship_status": {
+                                        "followed_by": false,
+                                        "following": false,
+                                        "outgoing_request": false
+                                    },
+                                    "has_onboarded_to_text_post_app": true,
+                                    "pk": "63095046580",
+                                    "text_post_app_is_private": false,
+                                    "username": "letsdodizz",
+                                    "follower_count": 523213,
+                                    "profile_context_facepile_users": [],
+                                    "is_verified": true,
+                                    "full_name": "MILAD ALEMI",
+                                    "biography": "Making Complex Tech Simple.\nTips • AI • Privacy • How-To",
+                                    "id": "63095046580",
+                                    "__typename": "XDTUserDict"
+                                },
+                                "cursor": ""
+                            },
+                            {
+                                "node": {
+                                    "strong_id__": "63291193558",
+                                    "profile_pic_url": "https://scontent-sjc6-1.cdninstagram.com/v/t51.2885-19/361409959_1682298005580053_6738165200454573692_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby43MDIuYzIifQ&_nc_ht=scontent-sjc6-1.cdninstagram.com&_nc_cat=1&_nc_oc=Q6cZ2gGgf9E9vn_8jHG07m56A6bJ07bePH-e6J8OHt9R6oLkrl-UbnSldA_FgY1gouQ53go&_nc_ohc=PqxqabknqOgQ7kNvwFblZpt&_nc_gid=amxtZMM-BmT9l_llj8mxsQ&edm=AE-LrgUBAAAA&ccb=7-5&_nc_ct=RQAsPBUCFQIAAAA&oh=00_AQSp1GzpNlZhId3wcx9KLeUF4hOhadCMo0NYEd29xDrOsw&oe=6B02A1D3&_nc_sid=8353fa",
+                                    "friendship_status": {
+                                        "followed_by": false,
+                                        "following": false,
+                                        "outgoing_request": false
+                                    },
+                                    "has_onboarded_to_text_post_app": true,
+                                    "pk": "63291193558",
+                                    "text_post_app_is_private": false,
+                                    "username": "takuwoodcraft",
+                                    "follower_count": 371929,
+                                    "profile_context_facepile_users": [],
+                                    "is_verified": true,
+                                    "full_name": "Takurou Seino",
+                                    "biography": "【プロダクトデザイン/リール/治具&Plan】\n•木工系リール投稿し続けsns総フォロワー数7M超\n•snsでほぼ毎日、動画投稿し続けて、1500日超\n•TWCDesign 代表\nNagaoka,Niigata,Japan🇯🇵",
+                                    "id": "63291193558",
+                                    "__typename": "XDTUserDict"
+                                },
+                                "cursor": ""
+                            },
+                            {
+                                "node": {
+                                    "strong_id__": "72836198002",
+                                    "profile_pic_url": "https://scontent-sjc6-1.cdninstagram.com/v/t51.82787-19/531866551_17867199195428971_4281858903664451503_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby44NTMuYzIifQ&_nc_ht=scontent-sjc6-1.cdninstagram.com&_nc_cat=107&_nc_oc=Q6cZ2gGgf9E9vn_8jHG07m56A6bJ07bePH-e6J8OHt9R6oLkrl-UbnSldA_FgY1gouQ53go&_nc_ohc=5LJJNKzORzEQ7kNvwElCH7w&_nc_gid=amxtZMM-BmT9l_llj8mxsQ&edm=AE-LrgUBAAAA&ccb=7-5&_nc_ct=RQAsPBUCFQIAAAA&oh=00_AQTY-rHUJGhJTQ4P2wrxlfv8m_3L6VGGg3HlRjLT7YjV5g&oe=6B02B249&_nc_sid=8353fa",
+                                    "friendship_status": {
+                                        "followed_by": false,
+                                        "following": false,
+                                        "outgoing_request": false
+                                    },
+                                    "has_onboarded_to_text_post_app": true,
+                                    "pk": "72836198002",
+                                    "text_post_app_is_private": false,
+                                    "username": "yourclouddude",
+                                    "follower_count": 155492,
+                                    "profile_context_facepile_users": [],
+                                    "is_verified": true,
+                                    "full_name": "Tech Expert",
+                                    "biography": "Learn AWS, Python & Cloud by building.\nProjects • Architecture • Certifications\nDm for Collab ✉️\nTrusted by 12K+ learners worldwide...",
+                                    "id": "72836198002",
+                                    "__typename": "XDTUserDict"
+                                },
+                                "cursor": ""
+                            },
+                            {
+                                "node": {
+                                    "strong_id__": "63437309318",
+                                    "profile_pic_url": "https://scontent-sjc6-1.cdninstagram.com/v/t51.82787-19/871126244_17991208179117319_2893745502776238464_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby4xMDU4LmMyIn0&_nc_ht=scontent-sjc6-1.cdninstagram.com&_nc_cat=1&_nc_oc=Q6cZ2gGgf9E9vn_8jHG07m56A6bJ07bePH-e6J8OHt9R6oLkrl-UbnSldA_FgY1gouQ53go&_nc_ohc=gZcf5FUXW2sQ7kNvwEeB8gL&_nc_gid=amxtZMM-BmT9l_llj8mxsQ&edm=AE-LrgUBAAAA&ccb=7-5&_nc_ct=RQAsPBUCFQIAAAA&oh=00_AQQx55cEgJhWQF58vfFpJNzplY7v_H5gT4VIuAF-wpBHtg&oe=6B029E36&_nc_sid=8353fa",
+                                    "friendship_status": {
+                                        "followed_by": false,
+                                        "following": false,
+                                        "outgoing_request": false
+                                    },
+                                    "has_onboarded_to_text_post_app": true,
+                                    "pk": "63437309318",
+                                    "text_post_app_is_private": false,
+                                    "username": "davidgokhshtein",
+                                    "follower_count": 3636,
+                                    "profile_context_facepile_users": [],
+                                    "is_verified": true,
+                                    "full_name": "David Gokhshtein",
+                                    "biography": "Founder @ Gokhshtein Media | Seen on @FoxBusiness | Host of The Breakdown",
+                                    "id": "63437309318",
+                                    "__typename": "XDTUserDict"
+                                },
+                                "cursor": ""
+                            },
+                            {
+                                "node": {
+                                    "strong_id__": "74859435070",
+                                    "profile_pic_url": "https://scontent-sjc6-1.cdninstagram.com/v/t51.2885-19/504123691_17847939477484159_8214240479325303443_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby4xMDI0LmMyIn0&_nc_ht=scontent-sjc6-1.cdninstagram.com&_nc_cat=107&_nc_oc=Q6cZ2gGgf9E9vn_8jHG07m56A6bJ07bePH-e6J8OHt9R6oLkrl-UbnSldA_FgY1gouQ53go&_nc_ohc=8aaybDJvMCUQ7kNvwHqa5Zd&_nc_gid=amxtZMM-BmT9l_llj8mxsQ&edm=AE-LrgUBAAAA&ccb=7-5&_nc_ct=RQAsPBUCFQIAAAA&oh=00_AQQW-NpyN_1M0JhvRFnmE7LeH5Dta6Hv7mH__NHz5zDQWQ&oe=6B02AF1F&_nc_sid=8353fa",
+                                    "friendship_status": {
+                                        "followed_by": false,
+                                        "following": false,
+                                        "outgoing_request": false
+                                    },
+                                    "has_onboarded_to_text_post_app": true,
+                                    "pk": "74859435070",
+                                    "text_post_app_is_private": false,
+                                    "username": "ai.lanrenbao",
+                                    "follower_count": 37149,
+                                    "profile_context_facepile_users": [
+                                        {
+                                            "profile_pic_url": "https://scontent-sjc3-1.cdninstagram.com/v/t51.82787-19/843167859_18128697721882186_4330245501420770988_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby4xMDgwLmMyIn0&_nc_ht=scontent-sjc3-1.cdninstagram.com&_nc_cat=110&_nc_oc=Q6cZ2gGgf9E9vn_8jHG07m56A6bJ07bePH-e6J8OHt9R6oLkrl-UbnSldA_FgY1gouQ53go&_nc_ohc=q-du9HxuhjoQ7kNvwHb6kjZ&_nc_gid=amxtZMM-BmT9l_llj8mxsQ&edm=AE-LrgUBAAAA&ccb=7-5&_nc_ct=RQAsPBUCFQIAAAA&oh=00_AQQ9ujiAeiwMT3O2tpiLvUGiIr6dKv9xpaWwDriJV-BJ4A&oe=6B0299DB&_nc_sid=8353fa",
+                                            "id": "26600266185"
+                                        }
+                                    ],
+                                    "is_verified": false,
+                                    "full_name": "AI懶人報",
+                                    "biography": "🎙️《AI懶人報》製作人｜Tommy  🦥\n🇺🇸 ex-Tesla\n📩 合作聯絡：ailanrenbao@gmail.com",
+                                    "id": "74859435070",
+                                    "__typename": "XDTUserDict"
+                                },
+                                "cursor": ""
+                            },
+                            {
+                                "node": {
+                                    "strong_id__": "63418325466",
+                                    "profile_pic_url": "https://scontent-sjc6-1.cdninstagram.com/v/t51.2885-19/358019241_1486026662199922_6155620613670895170_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby4xMDgwLmMyIn0&_nc_ht=scontent-sjc6-1.cdninstagram.com&_nc_cat=1&_nc_oc=Q6cZ2gGgf9E9vn_8jHG07m56A6bJ07bePH-e6J8OHt9R6oLkrl-UbnSldA_FgY1gouQ53go&_nc_ohc=Y9YRndGc6kkQ7kNvwExJKPD&_nc_gid=amxtZMM-BmT9l_llj8mxsQ&edm=AE-LrgUBAAAA&ccb=7-5&_nc_ct=RQAsPBUCFQIAAAA&oh=00_AQRIRdjbkmrl1QPuTxKq9V0GuNYRTyGf_0RNgSV_OeelSg&oe=6B02B29F&_nc_sid=8353fa",
+                                    "friendship_status": {
+                                        "followed_by": false,
+                                        "following": false,
+                                        "outgoing_request": false
+                                    },
+                                    "has_onboarded_to_text_post_app": true,
+                                    "pk": "63418325466",
+                                    "text_post_app_is_private": false,
+                                    "username": "thedailybeast",
+                                    "follower_count": 564573,
+                                    "profile_context_facepile_users": [
+                                        {
+                                            "profile_pic_url": "https://scontent-sjc6-1.cdninstagram.com/v/t51.2885-19/358018617_2352642224919085_8413650723157712334_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby4xMDgwLmMyIn0&_nc_ht=scontent-sjc6-1.cdninstagram.com&_nc_cat=101&_nc_oc=Q6cZ2gGgf9E9vn_8jHG07m56A6bJ07bePH-e6J8OHt9R6oLkrl-UbnSldA_FgY1gouQ53go&_nc_ohc=_krB4vXmd8cQ7kNvwE_7zdz&_nc_gid=amxtZMM-BmT9l_llj8mxsQ&edm=AE-LrgUBAAAA&ccb=7-5&_nc_ct=RQAsPBUCFQIAAAA&oh=00_AQQgA2HR_RX-Kq7MCbRRQidVuRIx68PCC0okUr2UAUfBsg&oe=6B029D17&_nc_sid=8353fa",
+                                            "id": "63085740246"
+                                        }
+                                    ],
+                                    "is_verified": true,
+                                    "full_name": "The Daily Beast",
+                                    "biography": "Independent. Intelligent. Influential. \n🚨@beastobsessed Your go-to pop culture hub\n🚨@thelookertdb Everything beauty, health and wellness",
+                                    "id": "63418325466",
+                                    "__typename": "XDTUserDict"
+                                },
+                                "cursor": ""
+                            },
+                            {
+                                "node": {
+                                    "strong_id__": "63103850557",
+                                    "profile_pic_url": "https://scontent-sjc6-1.cdninstagram.com/v/t51.2885-19/470154959_1125667092402235_6674405664526979970_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby4xMDgwLmMyIn0&_nc_ht=scontent-sjc6-1.cdninstagram.com&_nc_cat=107&_nc_oc=Q6cZ2gGgf9E9vn_8jHG07m56A6bJ07bePH-e6J8OHt9R6oLkrl-UbnSldA_FgY1gouQ53go&_nc_ohc=7fhjIS77hDMQ7kNvwE72kXV&_nc_gid=amxtZMM-BmT9l_llj8mxsQ&edm=AE-LrgUBAAAA&ccb=7-5&_nc_ct=RQAsPBUCFQIAAAA&oh=00_AQS3-6TTvI4d8QurR3JeSnRssIw9ak263oj1r7vZlUo3iA&oe=6B02BBDF&_nc_sid=8353fa",
+                                    "friendship_status": {
+                                        "followed_by": false,
+                                        "following": false,
+                                        "outgoing_request": false
+                                    },
+                                    "has_onboarded_to_text_post_app": true,
+                                    "pk": "63103850557",
+                                    "text_post_app_is_private": false,
+                                    "username": "rammcodes_",
+                                    "follower_count": 39244,
+                                    "profile_context_facepile_users": [],
+                                    "is_verified": true,
+                                    "full_name": "RammCodes | Developer Advocate 👨‍💻",
+                                    "biography": "🔥 Sharing top AI, Coding & Web Dev insights.\n🎉 500K+ followers across social platforms.\n💎 Follow for daily high-quality content.",
+                                    "id": "63103850557",
+                                    "__typename": "XDTUserDict"
+                                },
+                                "cursor": ""
+                            },
+                            {
+                                "node": {
+                                    "strong_id__": "63415143824",
+                                    "profile_pic_url": "https://scontent-sjc3-1.cdninstagram.com/v/t51.82787-19/669847164_17956472685119825_9189336856172384684_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby4xMDAwLmMyIn0&_nc_ht=scontent-sjc3-1.cdninstagram.com&_nc_cat=105&_nc_oc=Q6cZ2gGgf9E9vn_8jHG07m56A6bJ07bePH-e6J8OHt9R6oLkrl-UbnSldA_FgY1gouQ53go&_nc_ohc=xEwXf3IS-R8Q7kNvwFBPGrI&_nc_gid=amxtZMM-BmT9l_llj8mxsQ&edm=AE-LrgUBAAAA&ccb=7-5&_nc_ct=RQAsPBUCFQIAAAA&oh=00_AQRMhjUe9646-tO2KzjFRsccutzt2sqdMii3Fedt7uC36Q&oe=6B02B138&_nc_sid=8353fa",
+                                    "friendship_status": {
+                                        "followed_by": false,
+                                        "following": false,
+                                        "outgoing_request": false
+                                    },
+                                    "has_onboarded_to_text_post_app": true,
+                                    "pk": "63415143824",
+                                    "text_post_app_is_private": false,
+                                    "username": "newtalk_news",
+                                    "follower_count": 11920,
+                                    "profile_context_facepile_users": [],
+                                    "is_verified": false,
+                                    "full_name": "Newtalk 新聞",
+                                    "biography": "Newtalk News新聞網站 一個有思考力的獨立媒體。",
+                                    "id": "63415143824",
+                                    "__typename": "XDTUserDict"
+                                },
+                                "cursor": ""
+                            },
+                            {
+                                "node": {
+                                    "strong_id__": "63441805699",
+                                    "profile_pic_url": "https://scontent-sjc6-1.cdninstagram.com/v/t51.2885-19/305581379_905634673730081_7458008877952798293_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby4xMDgwLmMyIn0&_nc_ht=scontent-sjc6-1.cdninstagram.com&_nc_cat=1&_nc_oc=Q6cZ2gGgf9E9vn_8jHG07m56A6bJ07bePH-e6J8OHt9R6oLkrl-UbnSldA_FgY1gouQ53go&_nc_ohc=t4b46LMv_jgQ7kNvwGw6HhM&_nc_gid=amxtZMM-BmT9l_llj8mxsQ&edm=AE-LrgUBAAAA&ccb=7-5&_nc_ct=RQAsPBUCFQIAAAA&oh=00_AQTtOh42ngWV36uKF0R2YKUdX9owKbaSy18mGDeMVPLARQ&oe=6B02BAF4&_nc_sid=8353fa",
+                                    "friendship_status": {
+                                        "followed_by": false,
+                                        "following": false,
+                                        "outgoing_request": false
+                                    },
+                                    "has_onboarded_to_text_post_app": true,
+                                    "pk": "63441805699",
+                                    "text_post_app_is_private": false,
+                                    "username": "watcher.guru",
+                                    "follower_count": 200461,
+                                    "profile_context_facepile_users": [],
+                                    "is_verified": true,
+                                    "full_name": "Watcher Guru",
+                                    "biography": "Watcher Guru gives you unparalleled, unbiased coverage of all-things business & finance in real-time",
+                                    "id": "63441805699",
+                                    "__typename": "XDTUserDict"
+                                },
+                                "cursor": ""
+                            },
+                            {
+                                "node": {
+                                    "strong_id__": "63273727778",
+                                    "profile_pic_url": "https://scontent-sjc6-1.cdninstagram.com/v/t51.82787-19/554673843_17925824970111779_379818637086090608_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby4xMDgwLmMyIn0&_nc_ht=scontent-sjc6-1.cdninstagram.com&_nc_cat=1&_nc_oc=Q6cZ2gGgf9E9vn_8jHG07m56A6bJ07bePH-e6J8OHt9R6oLkrl-UbnSldA_FgY1gouQ53go&_nc_ohc=XIrXdoQ8wRMQ7kNvwHjV5oW&_nc_gid=amxtZMM-BmT9l_llj8mxsQ&edm=AE-LrgUBAAAA&ccb=7-5&_nc_ct=RQAsPBUCFQIAAAA&oh=00_AQQBGZiLdOIJKibYZZKHfcMn35KVqgV-Se8ptCr2uvNN-w&oe=6B02B24B&_nc_sid=8353fa",
+                                    "friendship_status": {
+                                        "followed_by": false,
+                                        "following": false,
+                                        "outgoing_request": false
+                                    },
+                                    "has_onboarded_to_text_post_app": true,
+                                    "pk": "63273727778",
+                                    "text_post_app_is_private": false,
+                                    "username": "nownews",
+                                    "follower_count": 94017,
+                                    "profile_context_facepile_users": [],
+                                    "is_verified": false,
+                                    "full_name": "NOWnews 今日新聞",
+                                    "biography": "每天新聞千千萬\nNOWNEWS 帶你今日新聞一次看👀\n—\n⚡️今日LINE好友募集中⚡️",
+                                    "id": "63273727778",
+                                    "__typename": "XDTUserDict"
+                                },
+                                "cursor": ""
+                            },
+                            {
+                                "node": {
+                                    "strong_id__": "63448290032",
+                                    "profile_pic_url": "https://scontent-sjc6-1.cdninstagram.com/v/t51.82787-19/766124428_18338533339267125_5643887296395454221_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby4xMDgwLmMyIn0&_nc_ht=scontent-sjc6-1.cdninstagram.com&_nc_cat=109&_nc_oc=Q6cZ2gGgf9E9vn_8jHG07m56A6bJ07bePH-e6J8OHt9R6oLkrl-UbnSldA_FgY1gouQ53go&_nc_ohc=mCHya7FA4H0Q7kNvwG_jRSb&_nc_gid=amxtZMM-BmT9l_llj8mxsQ&edm=AE-LrgUBAAAA&ccb=7-5&_nc_ct=RQAsPBUCFQIAAAA&oh=00_AQSI04yBsAOZ48Y5UEY4wrAHR-jwroi4QKzBaeDh31WybA&oe=6B02ACF4&_nc_sid=8353fa",
+                                    "friendship_status": {
+                                        "followed_by": false,
+                                        "following": false,
+                                        "outgoing_request": false
+                                    },
+                                    "has_onboarded_to_text_post_app": true,
+                                    "pk": "63448290032",
+                                    "text_post_app_is_private": false,
+                                    "username": "bebravejason",
+                                    "follower_count": 14219,
+                                    "profile_context_facepile_users": [],
+                                    "is_verified": true,
+                                    "full_name": "唐 聖捷",
+                                    "biography": "黃金獵犬派🐕\n第三屆新北市議員\n前游泳國手",
+                                    "id": "63448290032",
+                                    "__typename": "XDTUserDict"
+                                },
+                                "cursor": ""
+                            },
+                            {
+                                "node": {
+                                    "strong_id__": "75361882972",
+                                    "profile_pic_url": "https://scontent-sjc3-1.cdninstagram.com/v/t51.82787-19/816737090_17909750574514973_4568176151543654413_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby45NTUuYzIifQ&_nc_ht=scontent-sjc3-1.cdninstagram.com&_nc_cat=105&_nc_oc=Q6cZ2gGgf9E9vn_8jHG07m56A6bJ07bePH-e6J8OHt9R6oLkrl-UbnSldA_FgY1gouQ53go&_nc_ohc=BiekNhTpaFsQ7kNvwHRYsko&_nc_gid=amxtZMM-BmT9l_llj8mxsQ&edm=AE-LrgUBAAAA&ccb=7-5&_nc_ct=RQAsPBUCFQIAAAA&oh=00_AQRjP2lVFvaQ6VppqVdGJgDybcdAu8grOKkpjJqmDGVn9g&oe=6B029032&_nc_sid=8353fa",
+                                    "friendship_status": {
+                                        "followed_by": false,
+                                        "following": false,
+                                        "outgoing_request": false
+                                    },
+                                    "has_onboarded_to_text_post_app": true,
+                                    "pk": "75361882972",
+                                    "text_post_app_is_private": false,
+                                    "username": "brewbytes.ai",
+                                    "follower_count": 9291,
+                                    "profile_context_facepile_users": [
+                                        {
+                                            "profile_pic_url": "https://scontent-sjc3-1.cdninstagram.com/v/t51.82787-19/843167859_18128697721882186_4330245501420770988_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby4xMDgwLmMyIn0&_nc_ht=scontent-sjc3-1.cdninstagram.com&_nc_cat=110&_nc_oc=Q6cZ2gGgf9E9vn_8jHG07m56A6bJ07bePH-e6J8OHt9R6oLkrl-UbnSldA_FgY1gouQ53go&_nc_ohc=q-du9HxuhjoQ7kNvwHb6kjZ&_nc_gid=amxtZMM-BmT9l_llj8mxsQ&edm=AE-LrgUBAAAA&ccb=7-5&_nc_ct=RQAsPBUCFQIAAAA&oh=00_AQQ9ujiAeiwMT3O2tpiLvUGiIr6dKv9xpaWwDriJV-BJ4A&oe=6B0299DB&_nc_sid=8353fa",
+                                            "id": "26600266185"
+                                        }
+                                    ],
+                                    "is_verified": false,
+                                    "full_name": "BrewBytes AI",
+                                    "biography": "現職金融機構AI工程師，講AI、講金融\n🤖 解構前沿AI 技術、論文、新聞及市場趨勢\n📩 AI 諮詢、邀約請私訊👇",
+                                    "id": "75361882972",
+                                    "__typename": "XDTUserDict"
+                                },
+                                "cursor": ""
+                            },
+                            {
+                                "node": {
+                                    "strong_id__": "67969727346",
+                                    "profile_pic_url": "https://scontent-sjc6-1.cdninstagram.com/v/t51.2885-19/451995101_399750409784404_3610778415397512957_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby4xMDgwLmMyIn0&_nc_ht=scontent-sjc6-1.cdninstagram.com&_nc_cat=1&_nc_oc=Q6cZ2gGgf9E9vn_8jHG07m56A6bJ07bePH-e6J8OHt9R6oLkrl-UbnSldA_FgY1gouQ53go&_nc_ohc=uuANvuHprdAQ7kNvwEOriet&_nc_gid=amxtZMM-BmT9l_llj8mxsQ&edm=AE-LrgUBAAAA&ccb=7-5&_nc_ct=RQAsPBUCFQIAAAA&oh=00_AQQNtWVCqb4zgyqFdBaE6EaPFaZV9XuSOjv3ewTdL-uorw&oe=6B02BA35&_nc_sid=8353fa",
+                                    "friendship_status": {
+                                        "followed_by": false,
+                                        "following": false,
+                                        "outgoing_request": false
+                                    },
+                                    "has_onboarded_to_text_post_app": true,
+                                    "pk": "67969727346",
+                                    "text_post_app_is_private": false,
+                                    "username": "f.1oo1z",
+                                    "follower_count": 27280,
+                                    "profile_context_facepile_users": [],
+                                    "is_verified": false,
+                                    "full_name": "別辜負愛意",
+                                    "biography": "很榮幸可以陪你走過情緒的低谷\n追蹤我 我會一直在✨\n文章不短 謝謝你耐心讀完 (՞•̀ω•́՞)⸝ި ʕᦏ⌎",
+                                    "id": "67969727346",
+                                    "__typename": "XDTUserDict"
+                                },
+                                "cursor": ""
+                            }
+                        ],
+                        "page_info": {
+                            "end_cursor": "15",
+                            "has_next_page": true,
+                            "has_previous_page": false,
+                            "start_cursor": null
+                        }
+                    }
+                },
+                "extensions": {
+                    "is_final": true,
+                    "server_metadata": {
+                        "request_start_time_ms": 1794955594160,
+                        "time_at_flush_ms": 1794955595355
+                    }
+                },
+                "status": "ok"
+            },
+            "i": 7
+        },
+        {
+            "t": 1794955596380,
+            "kind": "response",
+            "method": "POST",
+            "url": "https://www.threads.com/graphql/query",
+            "status": 200,
+            "body": {
+                "data": {
+                    "data": {
+                        "posts": [
+                            {
+                                "strong_id__": "4032701249337455341_63106634874",
+                                "context__": null,
+                                "pk": "4032701249337455341",
+                                "like_count": 0,
+                                "text_post_app_info": {
+                                    "direct_reply_count": 0,
+                                    "quote_count": 0,
+                                    "repost_count": 0,
+                                    "reshare_count": null,
+                                    "id": "XDTTextPostAppMediaInfo:17938566846406474"
+                                },
+                                "id": "4032701249337455341_63106634874"
+                            }
+                        ]
+                    }
+                },
+                "extensions": {
+                    "is_final": true,
+                    "server_metadata": {
+                        "request_start_time_ms": 1794955596228,
+                        "time_at_flush_ms": 1794955596339
+                    }
+                },
+                "status": "ok"
+            },
+            "i": 8
+        },
+        {
+            "t": 1794955599076,
+            "kind": "response",
+            "method": "POST",
+            "url": "https://www.threads.com/graphql/query",
+            "status": 200,
+            "body": {
+                "data": {
+                    "viewer": {
+                        "user": {
+                            "strong_id__": "63031166021",
+                            "text_post_app_has_fediverse_enabled": null,
+                            "id": "63031166021",
+                            "pk": "63031166021",
+                            "gen_ai_reply_bot_deny_reason": "UNAVAILABLE",
+                            "text_post_app_is_private": false,
+                            "is_eligible_to_create_dm_me_post": true,
+                            "profile_pic_url": "https://scontent-sjc3-1.cdninstagram.com/v/t51.82787-19/905009681_17997826197102022_4001892519747591568_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby4xMDgwLmMyIn0&_nc_ht=scontent-sjc3-1.cdninstagram.com&_nc_cat=110&_nc_oc=Q6cZ2gFI-06qzlSDNyFQyRQVEW4FR96TNxlZeU5k5GSlSMGavlH9LPHzapEoD6FYW038tWI&_nc_ohc=HhI_vFu7YgsQ7kNvwHfHRq5&_nc_gid=7eoaIxusPxpk_11GT1VN3g&edm=AHfU9cgBAAAA&ccb=7-5&_nc_ct=RQAsPBUCFQIAAAA&oh=00_AQSsTVuIlT-79dCRfp_WCxxUeXXKkhzsHT6LcdAOdxHirA&oe=6B02B477&_nc_sid=65d607",
+                            "username": "direwolf_go",
+                            "platform_podcast_info": null,
+                            "platform_podcast_episode_info": null,
+                            "show_podcast_link_on_posts": false,
+                            "can_create_sponsor_tags": false,
+                            "hide_like_and_view_counts": false,
+                            "profile_tags": {
+                                "edges": [
+                                    {
+                                        "node": {
+                                            "display_name": "aithreads",
+                                            "id": "18399895213044171"
+                                        }
+                                    },
+                                    {
+                                        "node": {
+                                            "display_name": "California",
+                                            "id": "18298156036122158"
+                                        }
+                                    },
+                                    {
+                                        "node": {
+                                            "display_name": "TechThreads",
+                                            "id": "18385410463067787"
+                                        }
+                                    },
+                                    {
+                                        "node": {
+                                            "display_name": "Podcast Threads",
+                                            "id": "18405965611032508"
+                                        }
+                                    }
+                                ]
+                            },
+                            "text_post_app_fediverse_enabled_time": null
+                        }
+                    }
+                },
+                "extensions": {
+                    "is_final": true,
+                    "server_metadata": {
+                        "request_start_time_ms": 1794955598920,
+                        "time_at_flush_ms": 1794955599038
+                    }
+                },
+                "status": "ok"
+            },
+            "i": 9
+        },
+        {
+            "t": 1794955599246,
             "kind": "click",
             "url": "https://www.threads.com/",
             "target": {
-                "selector": "[role=\"button\"]:text-is(\"New thread\")",
+                "selector": "role=button[name=\"New thread\" s]",
                 "rank": "role-text"
             },
-            "text": "New thread"
+            "text": "New thread",
+            "i": 10
         },
         {
-            "i": 1,
-            "t": 1794887911095,
+            "t": 1794955599384,
+            "kind": "response",
+            "method": "POST",
+            "url": "https://www.threads.com/graphql/query",
+            "status": 200,
+            "body": {
+                "data": {
+                    "data": {
+                        "posts": [
+                            {
+                                "strong_id__": "4032701249337455341_63106634874",
+                                "context__": null,
+                                "pk": "4032701249337455341",
+                                "like_count": 0,
+                                "text_post_app_info": {
+                                    "direct_reply_count": 0,
+                                    "quote_count": 0,
+                                    "repost_count": 0,
+                                    "reshare_count": null,
+                                    "id": "XDTTextPostAppMediaInfo:17938566846406474"
+                                },
+                                "id": "4032701249337455341_63106634874"
+                            }
+                        ]
+                    }
+                },
+                "extensions": {
+                    "is_final": true,
+                    "server_metadata": {
+                        "request_start_time_ms": 1794955599252,
+                        "time_at_flush_ms": 1794955599343
+                    }
+                },
+                "status": "ok"
+            },
+            "i": 11
+        },
+        {
+            "t": 1794955601856,
+            "kind": "type",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to compose a new post.\"]",
+                "rank": "aria"
+            },
+            "text": {
+                "redacted": true,
+                "length": 11
+            },
+            "i": 12
+        },
+        {
+            "t": 1794955606535,
             "kind": "click",
             "url": "https://www.threads.com/",
             "target": {
-                "selector": "[role=\"button\"]:text-is(\"Cancel\")",
+                "selector": "role=button[name=\"Post\" s]",
                 "rank": "role-text"
             },
-            "text": "Cancel"
+            "text": "Post",
+            "i": 13
         },
         {
-            "i": 2,
-            "t": 1794887912481,
-            "kind": "click",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[role=\"button\"]:text-is(\"New thread\")",
-                "rank": "role-text"
+            "t": 1794955607417,
+            "kind": "response",
+            "method": "POST",
+            "url": "https://www.threads.com/graphql/query",
+            "status": 200,
+            "body": {
+                "data": {
+                    "data": {
+                        "posts": [
+                            {
+                                "strong_id__": "4032701249337455341_63106634874",
+                                "context__": null,
+                                "pk": "4032701249337455341",
+                                "like_count": 0,
+                                "text_post_app_info": {
+                                    "direct_reply_count": 0,
+                                    "quote_count": 0,
+                                    "repost_count": 0,
+                                    "reshare_count": null,
+                                    "id": "XDTTextPostAppMediaInfo:17938566846406474"
+                                },
+                                "id": "4032701249337455341_63106634874"
+                            }
+                        ]
+                    }
+                },
+                "extensions": {
+                    "is_final": true,
+                    "server_metadata": {
+                        "request_start_time_ms": 1794955607277,
+                        "time_at_flush_ms": 1794955607372
+                    }
+                },
+                "status": "ok"
             },
-            "text": "New thread"
+            "i": 14
         },
         {
-            "i": 3,
-            "t": 1794887916508,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
+            "t": 1794955608479,
+            "kind": "response",
+            "method": "POST",
+            "url": "https://www.threads.com/graphql/query",
+            "status": 200,
+            "body": {
+                "data": {
+                    "data": {
+                        "posts": [
+                            {
+                                "strong_id__": "4032701249337455341_63106634874",
+                                "context__": null,
+                                "pk": "4032701249337455341",
+                                "like_count": 0,
+                                "text_post_app_info": {
+                                    "direct_reply_count": 0,
+                                    "quote_count": 0,
+                                    "repost_count": 0,
+                                    "reshare_count": null,
+                                    "id": "XDTTextPostAppMediaInfo:17938566846406474"
+                                },
+                                "id": "4032701249337455341_63106634874"
+                            }
+                        ]
+                    }
+                },
+                "extensions": {
+                    "is_final": true,
+                    "server_metadata": {
+                        "request_start_time_ms": 1794955608280,
+                        "time_at_flush_ms": 1794955608438
+                    }
+                },
+                "status": "ok"
             },
-            "key": "Backspace"
+            "i": 15
         },
         {
-            "i": 4,
-            "t": 1794887916649,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
+            "t": 1794955609708,
+            "kind": "response",
+            "method": "POST",
+            "url": "https://www.threads.com/api/v1/media/configure_text_only_post/",
+            "status": 200,
+            "body": {
+                "media": {
+                    "strong_id__": "4032702373293934869_63031166021",
+                    "id": "4032702373293934869_63031166021",
+                    "image_versions2": {
+                        "candidates": []
+                    },
+                    "music_metadata": null,
+                    "has_liked": false,
+                    "caption": {
+                        "strong_id__": "18033194018688512",
+                        "bit_flags": 0,
+                        "created_at": 1794955607,
+                        "created_at_utc": 1794955607,
+                        "did_report_as_spam": false,
+                        "is_ranked_comment": false,
+                        "pk": "18033194018688512",
+                        "share_enabled": false,
+                        "content_type": "comment",
+                        "media_id": "4032702373293934869",
+                        "status": "Active",
+                        "type": 1,
+                        "user_id": "63031166021",
+                        "text": "another test",
+                        "user": {
+                            "strong_id__": "63031166021",
+                            "pk": "63031166021",
+                            "pk_id": "63031166021",
+                            "id": "63031166021",
+                            "is_unpublished": false,
+                            "fbid_v2": "17841463060648895",
+                            "username": "direwolf_go",
+                            "full_name": "Robin Min",
+                            "is_private": false,
+                            "is_verified": false,
+                            "profile_pic_id": "4028972124966178009_63031166021",
+                            "profile_pic_url": "https://scontent-sjc3-1.cdninstagram.com/v/t51.82787-19/905009681_17997826197102022_4001892519747591568_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby4xMDgwLmMyIn0&_nc_ht=scontent-sjc3-1.cdninstagram.com&_nc_cat=110&_nc_oc=Q6cZ2gE1YS6cLEKYygcijdJisUjvwpOikPmRVG9n953DyNbO7Ds_h0424UXxYan3tbJ6zoc&_nc_ohc=HhI_vFu7YgsQ7kNvwHfHRq5&_nc_gid=fkSv4tHKDyaCkmiFnwWwBw&edm=AMl8KrABAAAA&ccb=7-5&_nc_ct=RQAsPBUCFQIAAAA&oh=00_AQS-CeDJUITCh7Rww5P0M5i0NHfd4MB0st2A9bwBvpInaA&oe=6B02B477&_nc_sid=cd9b4f",
+                            "has_onboarded_to_text_post_app": true
+                        },
+                        "is_covered": false,
+                        "private_reply_status": 0
+                    },
+                    "text_post_app_info": {
+                        "strong_id__": "XDTTextPostAppMediaInfo:18033194015688512",
+                        "id": "XDTTextPostAppMediaInfo:18033194015688512",
+                        "text_fragments": {
+                            "fragments": [
+                                {
+                                    "fragment_type": "plaintext",
+                                    "plaintext": "another test"
+                                }
+                            ]
+                        },
+                        "is_meta_ai_invocation_enabled": true,
+                        "gen_ai_reply_bot_on_media_deny_reason": "UNAVAILABLE",
+                        "caption_highlights_info": {
+                            "caption_highlights": []
+                        },
+                        "custom_feed_preview_info": null,
+                        "private_reply_partner": {
+                            "strong_id__": "63031166021",
+                            "id": "63031166021",
+                            "pk": "63031166021",
+                            "pk_id": "63031166021",
+                            "username": "direwolf_go",
+                            "full_name": "Robin Min"
+                        },
+                        "reply_facepile_users": [],
+                        "reply_to_author": "<redacted>",
+                        "root_post_author": "<redacted>",
+                        "fediverse_info": {
+                            "is_federated": false,
+                            "enqueued_for_federation": false
+                        },
+                        "show_podcast_link": false,
+                        "tappable_elements": [],
+                        "search_trend_info_from_link_preview": null,
+                        "link_preview_response": null,
+                        "share_info": {
+                            "can_quote_post": true,
+                            "can_repost": true,
+                            "can_unlink_quote": false,
+                            "is_reposted_by_viewer": false,
+                            "is_reshared_to_ig_by_viewer": false,
+                            "quoted_post_caption": null,
+                            "repost_restricted_reason": null,
+                            "quoted_attachment_usage_count": 0,
+                            "show_quoted_attachment_creation_upsell": false,
+                            "can_unlink_quoted_attachment": false,
+                            "quoted_attachment_post_unavailable": false,
+                            "quoted_attachment_author_attribution_allowed": "<redacted>",
+                            "can_quote_attachment": "not_applicable",
+                            "can_markup_post": true,
+                            "markup_post_unavailable": null,
+                            "reposted_post": null,
+                            "quoted_post": null
+                        },
+                        "direct_reply_count": 0,
+                        "is_reply": false,
+                        "repost_count": 0,
+                        "reply_control": "everyone",
+                        "can_reply": true,
+                        "quote_count": 0,
+                        "special_effects_enabled_str": "",
+                        "is_share_ufi_highlight_enabled": false,
+                        "is_post_unavailable": false,
+                        "is_meta_ai_reply_learn_more_cta_enabled": false,
+                        "is_author_community_member": "<redacted>",
+                        "can_private_reply": false,
+                        "is_parent_edited": false,
+                        "best_of_threads_info": null,
+                        "best_of_threads_attachment_info": null,
+                        "mention_count": 0,
+                        "reply_approval_info": {
+                            "ignored_reply_count": 0,
+                            "pending_at_creation": false,
+                            "pending_reply_count": 0,
+                            "pending_reply_status": null
+                        },
+                        "composed_content_attachments": [],
+                        "post_preview_caption": "another test",
+                        "reply_level": 0,
+                        "self_thread_count": 0,
+                        "will_add_author_to_mentioned_users": "<redacted>",
+                        "viewer_marked_not_interested": false,
+                        "should_prefetch_permalink": false,
+                        "is_archived": false,
+                        "caption_highlights_reactor_count": null,
+                        "caption_highlights_top_reactions": [],
+                        "caption_highlights_facepile_reactors": [],
+                        "allow_reactions": false,
+                        "coauthor_producers": "<redacted>",
+                        "invited_coauthor_producers": "<redacted>",
+                        "show_header_follow": false,
+                        "is_ultra_carousel": false,
+                        "voice_info": null,
+                        "post_style": null,
+                        "recommended_location_count": null,
+                        "recommended_location_reply_count": null,
+                        "recommended_location_revision_id": null,
+                        "magic_recs": null,
+                        "is_looking_for_recs_post": false,
+                        "looking_for_recs_kind": null,
+                        "move_overflow_to_permalink_header": true,
+                        "is_liked_by_root_author": "<redacted>",
+                        "is_markup": false,
+                        "is_most_viewed_post_this_week": false,
+                        "is_spoiler_media": false,
+                        "spoiler_particle_type": "default",
+                        "allow_highlight": false,
+                        "custom_like": null,
+                        "is_pinched": false,
+                        "is_reply_approval_enabled": false,
+                        "is_reply_pending": false,
+                        "ignored_reply_count": 0,
+                        "pending_reply_count": 0,
+                        "is_ghost_post": false,
+                        "ghost_post_approximate_reply_count_str": 0,
+                        "system_status_message": null,
+                        "is_first_post": false,
+                        "is_edited_before_interacted": false,
+                        "community_voting_progress_attachment_info": null,
+                        "is_dm_me_post": false,
+                        "is_join_me_post": false,
+                        "hush_info": null,
+                        "link_preview_attachment": null,
+                        "is_ama_post": null,
+                        "meta_ai_dm_suggested_prompts": [],
+                        "pin_meta_ai_in_sharesheet_for_post": false,
+                        "search_entity_names": [],
+                        "carousel_item_search_entity_names": []
+                    },
+                    "user": {
+                        "strong_id__": "63031166021",
+                        "id": "63031166021",
+                        "pk": "63031166021",
+                        "pk_id": "63031166021",
+                        "text_app_media_reuse_enabled": true,
+                        "hide_text_app_activation_badge_on_text_app": false,
+                        "text_app_is_low_like": true,
+                        "text_app_has_disabled_private_replies": false,
+                        "is_meta_ai_bot": false,
+                        "username": "direwolf_go",
+                        "full_name": "Robin Min",
+                        "is_private": false,
+                        "is_verified": false,
+                        "profile_pic_id": "4028972124966178009_63031166021",
+                        "profile_pic_url": "https://scontent-sjc3-1.cdninstagram.com/v/t51.82787-19/905009681_17997826197102022_4001892519747591568_n.jpg?stp=dst-jpg_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby4xMDgwLmMyIn0&_nc_ht=scontent-sjc3-1.cdninstagram.com&_nc_cat=110&_nc_oc=Q6cZ2gE1YS6cLEKYygcijdJisUjvwpOikPmRVG9n953DyNbO7Ds_h0424UXxYan3tbJ6zoc&_nc_ohc=HhI_vFu7YgsQ7kNvwHfHRq5&_nc_gid=fkSv4tHKDyaCkmiFnwWwBw&edm=AMl8KrABAAAA&ccb=7-5&_nc_ct=RQAsPBUCFQIAAAA&oh=00_AQS-CeDJUITCh7Rww5P0M5i0NHfd4MB0st2A9bwBvpInaA&oe=6B02B477&_nc_sid=cd9b4f",
+                        "has_anonymous_profile_picture": false,
+                        "has_onboarded_to_text_post_app": true,
+                        "is_active_on_text_post_app": true,
+                        "account_badges": [],
+                        "text_post_app_is_private": false,
+                        "transparency_product_enabled": false,
+                        "text_post_app_has_max_posts_pinned_to_profile": false,
+                        "text_app_last_visited_time": 1794868857,
+                        "eligible_for_text_app_activation_badge": false,
+                        "text_app_cover_photo_url": null,
+                        "should_show_full_name": false,
+                        "interop_messaging_user_fbid": "17906714754102022",
+                        "text_app_active_ama": null
+                    },
+                    "original_width": 612,
+                    "original_height": 612,
+                    "pk": "4032702373293934869",
+                    "fbid": "18033194015688512",
+                    "taken_at": 1794955606,
+                    "device_timestamp": 1794955606540,
+                    "media_type": 19,
+                    "code": "Df3CXE9D0kV",
+                    "client_cache_key": "NDAzMjcwMjM3MzI5MzkzNDg2OQ==.3",
+                    "filter_type": 0,
+                    "product_type": "text_post",
+                    "organic_tracking_token": "<redacted>",
+                    "permalink": "https://www.threads.com/@direwolf_go/post/Df3CXE9D0kV",
+                    "sharing_friction_info": {
+                        "bloks_app_url": null,
+                        "should_have_sharing_friction": false,
+                        "sharing_friction_payload": null
+                    },
+                    "like_and_view_counts_disabled": false,
+                    "can_viewer_reshare": true,
+                    "integrity_review_decision": "pending",
+                    "is_paid_partnership": false,
+                    "detected_language": "en",
+                    "gen_ai_detection_method": {
+                        "detection_method": "NONE"
+                    },
+                    "community_notes_info": {
+                        "has_viewer_submitted_note": false,
+                        "note_submission_disabled": true,
+                        "enable_submission_friction": false,
+                        "is_eligible_for_request_a_note": false
+                    },
+                    "has_high_risk_gen_ai_inform_treatment": false,
+                    "view_state_item_type": 132,
+                    "media_overlay_info": null,
+                    "like_count": 0,
+                    "crosspost_metadata": {
+                        "fb_downstream_use_xpost_metadata": {
+                            "downstream_use_xpost_deny_reason": "NONE"
+                        }
+                    },
+                    "caption_is_edited": false,
+                    "source_type": -1
+                },
+                "status": "ok"
             },
-            "key": "Backspace"
-        },
-        {
-            "i": 5,
-            "t": 1794887916842,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Control"
-        },
-        {
-            "i": 6,
-            "t": 1794887920233,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Backspace"
-        },
-        {
-            "i": 7,
-            "t": 1794887920491,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Backspace"
-        },
-        {
-            "i": 8,
-            "t": 1794887920516,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Backspace"
-        },
-        {
-            "i": 9,
-            "t": 1794887920533,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Backspace"
-        },
-        {
-            "i": 10,
-            "t": 1794887920549,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Backspace"
-        },
-        {
-            "i": 11,
-            "t": 1794887920565,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Backspace"
-        },
-        {
-            "i": 12,
-            "t": 1794887920582,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Backspace"
-        },
-        {
-            "i": 13,
-            "t": 1794887920599,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Backspace"
-        },
-        {
-            "i": 14,
-            "t": 1794887920834,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Shift"
-        },
-        {
-            "i": 15,
-            "t": 1794887922408,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Backspace"
-        },
-        {
-            "i": 16,
-            "t": 1794887922552,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Backspace"
-        },
-        {
-            "i": 17,
-            "t": 1794887922699,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Backspace"
-        },
-        {
-            "i": 18,
-            "t": 1794887922824,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Backspace"
-        },
-        {
-            "i": 19,
-            "t": 1794887923023,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Control"
-        },
-        {
-            "i": 20,
-            "t": 1794887927172,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Control"
-        },
-        {
-            "i": 21,
-            "t": 1794887929932,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Backspace"
-        },
-        {
-            "i": 22,
-            "t": 1794887930104,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Backspace"
-        },
-        {
-            "i": 23,
-            "t": 1794887930598,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Backspace"
-        },
-        {
-            "i": 24,
-            "t": 1794887930763,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Backspace"
-        },
-        {
-            "i": 25,
-            "t": 1794887932360,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Backspace"
-        },
-        {
-            "i": 26,
-            "t": 1794887932503,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Backspace"
-        },
-        {
-            "i": 27,
-            "t": 1794887932648,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Backspace"
-        },
-        {
-            "i": 28,
-            "t": 1794887932760,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Shift"
-        },
-        {
-            "i": 29,
-            "t": 1794887933855,
-            "kind": "key",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
-                "rank": "aria"
-            },
-            "key": "Shift"
-        },
-        {
-            "i": 30,
-            "t": 1794887939789,
-            "kind": "click",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[role=\"button\"]:text-is(\"Attach media\")",
-                "rank": "role-text"
-            },
-            "text": "Attach media"
-        },
-        {
-            "i": 31,
-            "t": 1794887939790,
-            "kind": "click",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "div > div > div > div > div > input",
-                "rank": "path"
-            }
-        },
-        {
-            "i": 32,
-            "t": 1794887984655,
-            "kind": "click",
-            "url": "https://www.threads.com/",
-            "target": {
-                "selector": "[role=\"button\"]:text-is(\"Post\")",
-                "rank": "role-text"
-            },
-            "text": "Post"
+            "i": 16
         }
     ]
 }
