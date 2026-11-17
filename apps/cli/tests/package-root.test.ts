@@ -73,7 +73,20 @@ describe('package-root resolution (item 6)', () => {
         });
     });
 
-    it('resolvePackageRoot from the checkout resolves this repo (bun test argv[1] is the test file)', async () => {
-        expect(await resolvePackageRoot(fs)).toBe(REPO);
+    it('resolvePackageRoot from the checkout resolves this repo (bun test argv[1] is the test file)', () => {
+        // The zero-arg default mixes two process-global inputs (cwd, argv[1]), and several suites
+        // chdir process-wide, so in-process this assertion passed or failed depending on which file
+        // ran first. A child with an explicit cwd states the contract without that coupling.
+        const entry = join(REPO, 'apps/cli/src/package-root.ts');
+        const child = Bun.spawnSync({
+            cmd: [
+                process.execPath,
+                '-e',
+                `import { resolvePackageRoot } from ${JSON.stringify(entry)}; process.stdout.write(await resolvePackageRoot());`,
+            ],
+            cwd: REPO,
+        });
+        expect(child.stderr.toString()).not.toContain('error');
+        expect(child.stdout.toString()).toBe(REPO);
     });
 });
