@@ -120,8 +120,12 @@ function buildLocaleEntry(markdown: string, locale: PatchLocale): DailyTopicsLoc
     if (!parts) {
         return `${locale}: key_points must be "label — sentence"`;
     }
-    if (parts.labels.length !== headlines.length || parts.labels.some((label, i) => label !== headlines[i])) {
-        return `${locale}: title headlines do not match key_points labels`;
+    // The title names the TOP stories; the key-point box carries up to four. The site's own
+    // generator emits exactly that shape (`scripts/commands/seo/retitle.ts`: title = "top story 1,
+    // story 2", key_points = up to four bullets), so demanding a one-to-one match made every
+    // crefitable digest fail the sync. The title must be the leading labels, in order.
+    if (headlines.length > parts.labels.length || headlines.some((headline, i) => headline !== parts.labels[i])) {
+        return `${locale}: title headlines do not match the leading key_points labels`;
     }
     const claims = parts.sentences;
     const shortClaims = splitDescriptionParts(description, headlines.length) ?? claims;
@@ -183,7 +187,34 @@ export async function upsertDailyTopicsEntry(
             existing = parsed as Record<string, unknown>;
         }
     }
-    existing[slug] = entry;
+    // A curated entry WINS. The site's runbook (docs/runbook-seo-geo-operations.md §10) sanctions
+    // editing a slug's claims/short_claims by hand, and re-deriving them from the posts on every
+    // publish silently reverted that fix (2026-11-16: a curated 20261116 entry was replaced, retitle
+    // then re-broke the descriptions, and the gate failed again on the next attempt). Derivation only
+    // fills what the map does not already state.
+    const prior = existing[slug];
+    existing[slug] =
+        prior === null || typeof prior !== 'object' || Array.isArray(prior)
+            ? entry
+            : keepCurated(prior as Record<string, unknown>, entry as unknown as Record<string, unknown>);
     await fileSystem.ensureDir(dirname(mapPath));
     await fileSystem.writeFile(mapPath, `${JSON.stringify(existing, null, '\t')}\n`);
+}
+
+/**
+ * Merges a derived entry under an existing one, keeping every non-empty curated value and taking the
+ * derived value only where the map states nothing (a missing locale, a new field).
+ */
+function keepCurated(curated: Record<string, unknown>, derived: Record<string, unknown>): Record<string, unknown> {
+    const merged: Record<string, unknown> = { ...derived, ...curated };
+    const isEmpty = (value: unknown): boolean =>
+        value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0);
+    for (const [key, value] of Object.entries(derived)) {
+        const current = curated[key];
+        if (isEmpty(current)) continue;
+        if (value !== null && typeof value === 'object' && !Array.isArray(value) && !isEmpty(current)) {
+            merged[key] = keepCurated(current as Record<string, unknown>, value as Record<string, unknown>);
+        }
+    }
+    return merged;
 }

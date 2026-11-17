@@ -137,7 +137,9 @@ describe('upsertDailyTopicsEntry', () => {
         expect(raw.endsWith('\n')).toBe(true);
     });
 
-    test('replaces an existing key in place without adding a second copy', async () => {
+    test('keeps one copy of the key in place and preserves the curated entry over a re-derivation', async () => {
+        // 2026-11-16: a hand-curated entry (the runbook's §10 remedy) was replaced by a re-derivation
+        // on the next publish, which re-broke the digest descriptions. Derivation fills gaps only.
         const dir = mkdtempSync(join(tmpdir(), 'daily-topics-'));
         const mapPath = join(dir, 'daily-topics.json');
         await upsertDailyTopicsEntry(mapPath, '20261107-ai-2026-11-07', entry);
@@ -147,7 +149,19 @@ describe('upsertDailyTopicsEntry', () => {
         expect((raw.match(/"20261108-ai-2026-11-08"/g) ?? []).length).toBe(1);
         const parsed = JSON.parse(raw) as Record<string, { en: { description: string } }>;
         expect(Object.keys(parsed)).toEqual(['20261107-ai-2026-11-07', '20261108-ai-2026-11-08']);
-        expect(parsed['20261108-ai-2026-11-08']?.en.description).toBe('replaced description from the existing key.');
+        expect(parsed['20261108-ai-2026-11-08']?.en.description).toBe(entry.en.description);
+    });
+
+    test('fills a locale the curated entry does not state yet', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'daily-topics-'));
+        const mapPath = join(dir, 'daily-topics.json');
+        const partial = { en: entry.en } as unknown as typeof entry;
+        await upsertDailyTopicsEntry(mapPath, '20261108-ai-2026-11-08', partial);
+        await upsertDailyTopicsEntry(mapPath, '20261108-ai-2026-11-08', entry);
+        const parsed = JSON.parse(readFileSync(mapPath, 'utf-8')) as Record<string, typeof entry>;
+        // The curated `en` survives, the derived `zh`/`ja` are added.
+        expect(parsed['20261108-ai-2026-11-08']?.en.description).toBe(entry.en.description);
+        expect(parsed['20261108-ai-2026-11-08']?.zh).toEqual(entry.zh);
     });
 
     test('collapses a raw file that already has the same key twice', async () => {
@@ -164,7 +178,10 @@ describe('upsertDailyTopicsEntry', () => {
         const raw = readFileSync(mapPath, 'utf-8');
         expect((raw.match(/"20261108-ai-2026-11-08"/g) ?? []).length).toBe(1);
         const parsed = JSON.parse(raw) as Record<string, unknown>;
-        expect(parsed['20261108-ai-2026-11-08']).toEqual(entry);
+        // One copy, and the pre-existing `headlines` survives while the rest of the entry is filled in.
+        expect((parsed['20261108-ai-2026-11-08'] as { en: { headlines: string[] } }).en.headlines).toEqual([
+            'Also old',
+        ]);
         expect(parsed['20261107-ai-2026-11-07']).toEqual({ en: { headlines: ['Keep'] } });
     });
 
