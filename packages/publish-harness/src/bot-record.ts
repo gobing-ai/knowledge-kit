@@ -350,6 +350,21 @@ export const RECORDER_INIT_SCRIPT = `(() => {
     }, true);
 })();`;
 
+/**
+ * Detach the SIGINT listeners added since `before` and return a function that reattaches them.
+ *
+ * Playwright's launch installs a SIGINT handler that closes the browser and then calls
+ * `process.exit(130)`, which beat the async flush-and-release and leaked the lease marker (0382 AC2,
+ * measured 2026-11-17). A caller that owns the signal for a headed session parks it for the duration.
+ */
+export function parkSigintListenersSince(before: ReadonlySet<(signal: 'SIGINT') => void>): () => void {
+    const parked = process.listeners('SIGINT').filter((listener) => !before.has(listener));
+    for (const listener of parked) process.off('SIGINT', listener);
+    return () => {
+        for (const listener of parked) process.on('SIGINT', listener);
+    };
+}
+
 /** Options for {@link recordBotSession}. */
 export interface RecordBotOptions {
     /** Transcript path; defaults to {@link defaultTranscriptPath} under the cwd. */
@@ -375,6 +390,8 @@ export interface RecordBotResult {
     startUrl: string;
     stepCount: number;
     redacted: boolean;
+    /** Set when SIGINT/SIGTERM ended the recording; the CLI maps it to exit 130/143. */
+    signal?: 'SIGINT' | 'SIGTERM';
 }
 
 /**
@@ -405,18 +422,24 @@ export async function recordBotSession(name: string, options: RecordBotOptions =
 
     const lease = await acquireProfileLease(profileDir, { leaseRoot: options.leaseRoot, fileSystem });
     let context: BrowserContext | undefined;
-    let closing = false;
-    const flushAndRelease = async (signal?: NodeJS.Signals): Promise<void> => {
-        if (closing) return;
-        closing = true;
-        await closeBotContext(context);
-        await persist();
-        await lease.release();
-        if (signal === 'SIGINT') process.exitCode = 130;
-        if (signal === 'SIGTERM') process.exitCode = 143;
+    // Memoized so the `finally` awaits a signal-started flush instead of returning while it is in flight.
+    let flushing: Promise<void> | undefined;
+    let interrupted: 'SIGINT' | 'SIGTERM' | undefined;
+    const flushAndRelease = (signal?: 'SIGINT' | 'SIGTERM'): Promise<void> => {
+        flushing ??= (async () => {
+            interrupted = signal;
+            if (signal === 'SIGINT') process.exitCode = 130;
+            if (signal === 'SIGTERM') process.exitCode = 143;
+            await closeBotContext(context);
+            await persist();
+            await lease.release();
+        })();
+        return flushing;
     };
     const onSigint = () => void flushAndRelease('SIGINT');
     const onSigterm = () => void flushAndRelease('SIGTERM');
+    const sigintBefore = new Set(process.listeners('SIGINT'));
+    let unpark: (() => void) | undefined;
 
     try {
         const launcher =
@@ -427,6 +450,7 @@ export async function recordBotSession(name: string, options: RecordBotOptions =
                 { leaseRoot: options.leaseRoot, fileSystem },
             );
         context = await launcher.launch({ profileDir, headless: false });
+        unpark = parkSigintListenersSince(sigintBefore);
         const closed = new Promise<void>((resolve) => context?.once('close', () => resolve()));
         await context.exposeBinding('__kkRecord', (_source, event: RecordedEvent) => {
             const step = applyRecordedEvent(transcript, event, { includeText: options.includeText === true });
@@ -451,10 +475,12 @@ export async function recordBotSession(name: string, options: RecordBotOptions =
             startUrl: transcript.startUrl,
             stepCount: transcript.steps.length,
             redacted: transcript.redacted,
+            ...(interrupted === undefined ? {} : { signal: interrupted }),
         };
     } finally {
         process.off('SIGINT', onSigint);
         process.off('SIGTERM', onSigterm);
         await flushAndRelease();
+        unpark?.();
     }
 }

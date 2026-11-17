@@ -1008,6 +1008,31 @@ describe('kk bot record / codegen / replay (0382)', () => {
         expect(result.out).toContain('\t3 steps\tredacted');
     });
 
+    it('an interrupted recording still prints its transcript and exits 130 on SIGINT, 143 on SIGTERM', async () => {
+        for (const [signal, code] of [
+            ['SIGINT', 130],
+            ['SIGTERM', 143],
+        ] as const) {
+            const harness = fakeRecordHarness({
+                calls: [],
+                record: () =>
+                    Promise.resolve({
+                        name: 'x',
+                        out: '.spur/run/x.json',
+                        startUrl: 'https://x.com/',
+                        stepCount: 2,
+                        redacted: true,
+                        signal,
+                    }),
+            });
+
+            const result = await runInjected(['bot', 'record', 'x'], harness);
+
+            expect(result.code).toBe(code);
+            expect(result.out).toContain('\t2 steps\tredacted');
+        }
+    });
+
     it('record passes --include-text through as verbatim recording, and -o as the path', async () => {
         const calls: unknown[] = [];
         const harness = fakeRecordHarness({
@@ -1047,12 +1072,27 @@ describe('kk bot record / codegen / replay (0382)', () => {
         expect(result.err).toContain('receipt: no mutating response');
     });
 
+    /** Run `fn` with the cwd at a temp tree holding one publish plugin, the shape `--apply` requires. */
+    async function inPluginTree(fn: (root: string) => Promise<void>): Promise<void> {
+        const root = mkdtempSync(join(tmpdir(), 'kk-codegen-apply-'));
+        mkdirSync(join(root, 'plugins', 'publishings', 'x-pub', 'src'), { recursive: true });
+        writeFileSync(join(root, 'plugins', 'publishings', 'x-pub', 'plugin.json'), '{}');
+        const cwd = process.cwd();
+        process.chdir(root);
+        try {
+            await fn(root);
+        } finally {
+            process.chdir(cwd);
+            rmSync(root, { recursive: true, force: true });
+        }
+    }
+
     it('codegen --apply refuses to overwrite an existing generated rail', async () => {
         const harness = fakeRecordHarness({ calls: [], codegen: () => ({ source: '// rail\n', warnings: [] }) });
-        const target = join(repoRoot, 'plugins', 'publishings', 'x-pub', 'src', 'post-rail.generated.ts');
-        mkdirSync(join(repoRoot, 'plugins', 'publishings', 'x-pub', 'src'), { recursive: true });
-        writeFileSync(target, '// existing\n');
-        try {
+        await inPluginTree(async (root) => {
+            const target = join(root, 'plugins', 'publishings', 'x-pub', 'src', 'post-rail.generated.ts');
+            writeFileSync(target, '// existing\n');
+
             const result = await runInjected(
                 ['bot', 'codegen', 'x.json', '--plugin', 'x-pub', '--operation', 'post', '--apply'],
                 harness,
@@ -1061,9 +1101,7 @@ describe('kk bot record / codegen / replay (0382)', () => {
             expect(result.code).toBe(2);
             expect(result.err).toContain('already exists');
             expect(readFileSync(target, 'utf8')).toBe('// existing\n');
-        } finally {
-            rmSync(target, { force: true });
-        }
+        });
     });
 
     it('codegen --apply writes the generated rail beside the plugin', async () => {
@@ -1071,18 +1109,49 @@ describe('kk bot record / codegen / replay (0382)', () => {
             calls: [],
             codegen: () => ({ source: '// generated rail\n', warnings: [] }),
         });
-        const target = join(repoRoot, 'plugins', 'publishings', 'x-pub', 'src', 'post-rail.generated.ts');
-        try {
+        await inPluginTree(async (root) => {
             const result = await runInjected(
                 ['bot', 'codegen', 'x.json', '--plugin', 'x-pub', '--operation', 'post', '--apply'],
                 harness,
             );
 
             expect(result.code).toBe(0);
+            const target = join(root, 'plugins', 'publishings', 'x-pub', 'src', 'post-rail.generated.ts');
             expect(readFileSync(target, 'utf8')).toBe('// generated rail\n');
-        } finally {
-            rmSync(target, { force: true });
-        }
+        });
+    });
+
+    it('codegen --apply refuses a plugin or operation that is not a slug, writing nothing', async () => {
+        const harness = fakeRecordHarness({ calls: [], codegen: () => ({ source: '// rail\n', warnings: [] }) });
+        await inPluginTree(async (root) => {
+            for (const [plugin, operation] of [
+                ['../../escape', 'post'],
+                ['x-pub', '../post'],
+            ] as const) {
+                const result = await runInjected(
+                    ['bot', 'codegen', 'x.json', '--plugin', plugin, '--operation', operation, '--apply'],
+                    harness,
+                );
+
+                expect(result.code).toBe(2);
+                expect(result.err).toContain('slug');
+            }
+            expect(existsSync(join(root, 'escape'))).toBe(false);
+        });
+    });
+
+    it('codegen --apply outside a tree that holds the plugin refuses instead of creating one', async () => {
+        const harness = fakeRecordHarness({ calls: [], codegen: () => ({ source: '// rail\n', warnings: [] }) });
+        await inPluginTree(async (root) => {
+            const result = await runInjected(
+                ['bot', 'codegen', 'x.json', '--plugin', 'y-pub', '--operation', 'post', '--apply'],
+                harness,
+            );
+
+            expect(result.code).toBe(2);
+            expect(result.err).toContain('no publish plugin');
+            expect(existsSync(join(root, 'plugins', 'publishings', 'y-pub'))).toBe(false);
+        });
     });
 
     it('replay prints the rows and exits 0 when every executed step resolved', async () => {

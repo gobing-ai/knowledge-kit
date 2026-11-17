@@ -20,7 +20,11 @@ kk bot replay <bot> <transcript> [--submit] [-o <dir>] [--submit-text <text>]
 ```
 
 Exit codes: `0` success · `1` operational failure (unstable/ambiguous step, refused transcript,
-replay mismatch, browser) · `2` usage · `130`/`143` interrupted recording (transcript still written).
+replay mismatch, browser) · `2` usage (including a non-slug `--plugin`/`--operation`, or `--apply`
+outside a tree holding `plugins/publishings/<name>/plugin.json`) · `130`/`143` interrupted recording
+(transcript still written, lease released). The recorder parks the SIGINT listener Playwright installs at
+launch — it exits 130 straight after closing the browser, which beat the async flush and leaked the lease
+— and the CLI leaf maps the reported signal to the exit code because `main()` returns its own.
 
 ## Where it lives
 
@@ -101,9 +105,11 @@ transcript whose `redacted` flag is false unless `--allow-unredacted`.
 
 ## Replay
 
-Same lease/launch path as the recorder (headed). Per step: `navigate` → `page.goto`; every other step
-counts visible matches and stops the run when the count is not exactly 1 (`≠1` is a finding, not a
-retry). Stops before the submit step unless `--submit`. A redacted `type` step replays as a
+Same lease/launch path as the recorder (headed). A transcript with no leading `navigate` step opens its
+`startUrl` first (unless the page is already there). Per step: `navigate` → `page.goto`; every other step
+waits up to 15 s for a first visible match (a live page renders the next control after the previous
+click), then counts visible matches and stops the run when the count is not exactly 1 (`≠1` is a
+finding, not a retry). Stops before the submit step unless `--submit`. A redacted `type` step replays as a
 placeholder of the recorded length. Evidence is one screenshot per executed step plus
 `replay.json`; both are written even when the run stops early.
 
@@ -129,9 +135,11 @@ code into live rails · auto-removing a stale lease · a second launcher or leas
 
 ## Known gaps (2026-11-17)
 
-- The recorder's live leg (a real headed browser, AC1/AC2) and the live replay of x/threads (AC9) are
-  not proven in this tree: the host's Playwright cache carries chromium 1223 while `playwright`
-  1.65.1 wants 1255, so no browser launches. Everything else — normalizer, transcript IO/redaction,
-  codegen, replay logic over an injected page, the rule — is covered by offline tests.
+- The recorder (AC1/AC2) and replay (AC6) run against local pages in real headless Chromium in
+  `bun run test`. The live replay of x/threads (AC9) on 2026-11-17 rejected both converted fixtures,
+  which is correct behavior: x's `tweetTextarea_0` now resolves two visible nodes on `/compose/post`,
+  and threads' nav "New thread" control is not visible on the web home (the live rail already uses the
+  inline composer). Both fixtures need fresh `kk bot record` sessions; evidence is under
+  `.spur/run/dogfood/2026-11-17-bot-replay/`.
 - Injection and hosted-captcha pages, cross-origin iframe events and headless recording are out of
   scope by design (ADR-038 amdt).

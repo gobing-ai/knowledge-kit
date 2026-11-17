@@ -4,7 +4,7 @@ name: Record kk bot operator sessions and generate channel rails from them
 status: wip
 template: feature-impl
 created_at: 2026-11-17T04:31:47.321Z
-updated_at: "2026-11-17T07:19:18.012Z"
+updated_at: "2026-11-17T17:21:11.226Z"
 feature_id: A22
 
 ac_altitude: task-local
@@ -222,8 +222,19 @@ host with the right cache is the one command that reopens AC1/AC2/AC9.
 - `--submit-text` selects the submit step for replay/codegen instead of the recorder marking
   `submit: true`; the recorder stays dumb, as the corrected R1 requires.
 
-**Concurrency note honoured:** the uncommitted `x-pub`/`threads-pub` post-rail edits landed before
-this run (`b2b4fe92`), so the `// transcript:` headers went on top of settled files.
+**Plan step 8 changed (corrected 2026-11-17 by verify):** no existing rail received a
+`// transcript:` header. The ten pre-0382 rail/flow modules are exempt through the `--legacy=` registry
+in `.spur/rules/structure/rail-transcript-header.yaml` instead — goal-equivalent (the rule judges every
+new rail; each exemption is one reviewable line, removed when that rail is re-measured) and it left the
+concurrently edited `x-pub`/`threads-pub` rails (`b2b4fe92`) untouched.
+
+**Verify fix pass (2026-11-17):** SIGINT during `kk bot record` leaked the profile lease because
+Playwright's own SIGINT handler exited 130 before the async flush — the recorder now parks the
+listeners its launch added (`parkSigintListenersSince`) and memoizes the flush; the CLI maps
+`RecordBotResult.signal` to exit 130/143 (it exited 0); `codegen --apply` now requires slug names and
+an existing `plugins/publishings/<p>/plugin.json` under the cwd (path traversal / stray writes); replay
+counts and acts on visible nodes only (`>> visible=true`), as the design states. AC1, AC2 and AC6 are
+now proven in real headless Chromium against loopback pages.
 
 ### Testing
 
@@ -233,26 +244,26 @@ this run (`b2b4fe92`), so the `// transcript:` headers went on top of settled fi
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 recorder verb | PARTIAL | `packages/publish-harness/src/bot-record.ts:302` — lease → borrowed launcher → headed launch → init script + `__kkRecord` binding → navigate/flush → `await closed` → flush + release; signal shape `:325-341`; atomic 0600 write `:196`; CLI leaf `apps/cli/src/commands/bot.ts:394`. Offline proof `packages/publish-harness/tests/bot-record.test.ts` (events folded, flush on close, lease released, unsafe name refused, no-saved-page refused). The real headed browser and the SIGINT child-process leg are unproven — see the AC table. |
-| R2 normalizer | MET | `packages/publish-harness/src/bot-record-normalize.ts:120` (`normalizeTarget`), rank table `:57-118`, ambiguity cap `:47`, invisible-target drop `:122`, `selectorFor` `:151`. 16 cases in `tests/bot-record-normalize.test.ts`: testid wins, class never read, hidden duplicate skipped, ambiguous with ≤5 candidates, out-of-range dropped. |
-| R3 codegen | MET | `packages/publish-harness/src/bot-codegen.ts:170` (`generateRail`), abort arms `:126-135`, selector table + harness helpers; CLI leaf `bot.ts:414` with `--apply` and an overwrite refusal. `tests/bot-codegen.test.ts`: 7 unit + 3 fixture cases, including the x fixture generating and the threads fixture aborting on its structural step. |
-| R4 receipt from the response | MET | `bot-codegen.ts:88` (`receiptResponse`: the last mutating response after the last click), `:76` (`pickReceiptPath`), matcher emitted `:186-190` armed before the submit click; no candidate → `TODO receipt` + warning. Cases: upload-before-submit excluded, `--receipt-path` override, no-response warning. |
-| R5 replay verb | PARTIAL | `packages/publish-harness/src/bot-replay.ts:96` (`replayBotSession`), stop-before-submit `:99`, per-step row + screenshot hook, ambiguous target blocked `:72`; `replayBot` lease/launcher glue `:213`. 11 cases in `tests/bot-replay.test.ts`. Headed replay against x/threads is unproven (AC9). |
-| R6 privacy | MET | `bot-record.ts:105` (`redactJson`), `:150` (`recordedText`), `:196` (0600 tmp+rename), `:230` (refuse unredacted), body cap `:31`. Cases: redaction default, verbatim opt-in, secret keys at depth; `tests/bot-record-privacy.test.ts` scans the fixtures and generated rails for credential shapes. |
-| R7 fixtures | MET | `packages/publish-harness/tests/fixtures/bot-record/{x,threads,local-post}.json` — x/threads converted from the 2026-11-16 recordings and redacted, local-post synthetic; driven by `bot-codegen.test.ts` and `bot-record-privacy.test.ts` with no live browser. |
-| R8 skill and rule wiring | MET | `plugins/kk/skills/web-automation/SKILL.md` Scenario E (record → replay → codegen → promote → name the recording), `plugins/kk/skills/publish/SKILL.md` pointer, `.spur/rules/structure/rail-transcript-header.yaml` + `scripts/check-rail-transcripts.ts` with a declared legacy registry; 16 cases in `scripts/tests/check-rail-transcripts.test.ts`, including the reasonless-`none` negative control. |
+| R1 | MET | `packages/publish-harness/src/bot-record.ts:406` (`recordBotSession`: lease → borrowed launcher → headed launch → flush on close/signal), `packages/publish-harness/src/bot-record.ts:360` (SIGINT listener parking), `packages/publish-harness/src/bot-record.ts:429` (memoized flush); CLI `apps/cli/src/commands/bot.ts:173` maps the signal to exit 130/143 `apps/cli/src/commands/bot.ts:189`; proven in real headless Chromium `packages/publish-harness/tests/bot-record.test.ts:556`, `packages/publish-harness/tests/bot-record.test.ts:629` |
+| R2 | MET | `packages/publish-harness/src/bot-record-normalize.ts:120` (`normalizeTarget`); `packages/publish-harness/tests/bot-record-normalize.test.ts` |
+| R3 | MET | `packages/publish-harness/src/bot-codegen.ts:127` (`generateRail`); CLI `apps/cli/src/commands/bot.ts:197` with slug + plugin-root guard on `--apply` `apps/cli/src/commands/bot.ts:218`; `packages/publish-harness/tests/bot-codegen.test.ts` |
+| R4 | MET | `packages/publish-harness/src/bot-codegen.ts:63` (`receiptResponse`: last mutating response after the submit click), `packages/publish-harness/src/bot-codegen.ts:42` (`pickReceiptPath`); `packages/publish-harness/tests/bot-codegen.test.ts` |
+| R5 | MET | `packages/publish-harness/src/bot-replay.ts:99` (`replayBotSession`, visible-only resolution `packages/publish-harness/src/bot-replay.ts:80`), `packages/publish-harness/src/bot-replay.ts:216` (`replayBot`: lease, screenshots, `replay.json`); real Chromium `packages/publish-harness/tests/bot-replay.test.ts:346`, `packages/publish-harness/tests/bot-replay.test.ts:365`; CLI failed-row → exit 1 `apps/cli/tests/commands/bot.test.ts:1167`. Live x/threads leg is AC9 |
+| R6 | MET | `packages/publish-harness/src/bot-record.ts:106` (`redactJson`), `packages/publish-harness/src/bot-record.ts:139` (`recordedText`), `packages/publish-harness/src/bot-record.ts:207` (0600), `packages/publish-harness/src/bot-record.ts:222` (`readTranscript` refuses unredacted); `packages/publish-harness/tests/bot-record-privacy.test.ts` |
+| R7 | MET | `packages/publish-harness/tests/fixtures/bot-record/x.json`, `packages/publish-harness/tests/fixtures/bot-record/threads.json`, `packages/publish-harness/tests/fixtures/bot-record/local-post.json`; secret scan in `packages/publish-harness/tests/bot-record-privacy.test.ts` |
+| R8 | MET | `plugins/kk/skills/web-automation/SKILL.md` (Scenario E playbook); `.spur/rules/structure/rail-transcript-header.yaml:26` + `scripts/check-rail-transcripts.ts:80`; legacy registry is a documented CHANGED plan step (Solution "Plan step 8 changed"); rule invocation exits 0 this run |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 recorder transcript | PARTIAL | test | `packages/publish-harness/tests/bot-record.test.ts` folds navigations, clicks, typed text (redaction marker), file basenames and mutating JSON responses through an injected context, and asserts mode 0600. The real-Playwright leg did not run: the host's Playwright cache carries chromium 1223 while `playwright` 1.65.1 requires 1255, so no browser launches. |
-| AC2 interrupt leaves no lease | UNMET | test | Not run. `recordBotSession` closes the context, flushes and releases the lease in the signal handler and in `finally` (`bot-record.ts:325-341`), but the spawned-child SIGINT test the AC names was not written or executed on this host. |
-| AC3 normalizer ranking | MET | test | `packages/publish-harness/tests/bot-record-normalize.test.ts` — testid tier wins, hashed class never reaches a selector, hidden duplicate skipped, duplicate-text target emitted as ambiguous with both candidates. |
-| AC4 codegen output and abort | MET | test | `packages/publish-harness/tests/bot-codegen.test.ts` — selector table, ordered harness calls and receipt block for the fixtures; the threads fixture aborts naming step 31 (its one structural-only step); the generated source type-checks via the repo typecheck gate. |
-| AC5 receipt from the submit response | MET | test | `tests/bot-codegen.test.ts` — `local-post.json` carries `{"data":{"id":"p-123"}}` and the emitted matcher reads `data.id`; the earlier upload response (`upload_id`) is never chosen. No DOM text is compared anywhere in the generated rail. |
-| AC6 replay stops before submit | PARTIAL | test | `packages/publish-harness/tests/bot-replay.test.ts` — no submit click without `--submit`, one row plus one screenshot per executed step, `replay.json` written, a removed control makes the step `ok:false` and the run exit nonzero. The page is injected; the headed run against a live site is AC9. |
-| AC7 unredacted refusal and secret scan | MET | test | `tests/bot-record.test.ts` (`readTranscript` refuses `redacted:false` without `allowUnredacted`) and `tests/bot-record-privacy.test.ts` (no bearer/JWT/cookie/auth-header/password/auth_token shape in any fixture or generated rail). |
-| AC8 CLI leaves and rule wired | MET | test | `apps/cli/tests/commands/bot.test.ts` — each new leaf prints `Usage:` with exit 0, missing/unknown arguments exit 2, `record`/`codegen`/`replay` appear in the canonical leaf inventory (`apps/cli/tests/main.test.ts`); `scripts/tests/check-rail-transcripts.test.ts` proves the rule passes on the tree and fails on a bare rail. |
-| AC9 live replay of x and threads | UNMET | test | Not run — no launchable browser on this host, and it needs operator bot sessions. The evidence directory it names (`.spur/run/dogfood/<date>-bot-replay/`) does not exist. |
+| AC1 | MET | test | `packages/publish-harness/tests/bot-record.test.ts:556` — real headless Chromium on a loopback page: steps `navigate,navigate,click,click,type,key,file,click,response`, type `{redacted,length:5}`, no `hello`/token/cookie/`set-cookie`, mode 0600 |
+| AC2 | MET | test | `packages/publish-harness/tests/bot-record.test.ts:629` — child bun process SIGINT'd mid-recording exits 130, transcript flushed, `acquireProfileLease` succeeds immediately; failed before the listener-parking fix |
+| AC3 | MET | test | `packages/publish-harness/tests/bot-record-normalize.test.ts` — testid wins, no class selector, hidden duplicate skipped, duplicate text → ambiguous with candidates |
+| AC4 | MET | test | `packages/publish-harness/tests/bot-codegen.test.ts` — snapshots for x/threads/local-post, generated source type-checks, ambiguous step aborts naming its index |
+| AC5 | MET | test | `packages/publish-harness/tests/bot-codegen.test.ts` — receipt reads `p-123` from the submit response, not DOM text; the earlier upload response is not chosen |
+| AC6 | MET | test | `packages/publish-harness/tests/bot-replay.test.ts:346` — `local-post.json` replayed in real headless Chromium against its loopback page: zero POSTs, rows 0/1/2 ok + submit skipped, three PNG screenshots in `replay.json`; `packages/publish-harness/tests/bot-replay.test.ts:365` removed Publish button → failed row (selectorCount 0) → CLI exit 1 `apps/cli/tests/commands/bot.test.ts:1167` |
+| AC7 | MET | test | `packages/publish-harness/tests/bot-record-privacy.test.ts` — unredacted transcript refused by replay/codegen without `--allow-unredacted`; fixtures/snapshots carry no cookie, token-like value or typed text |
+| AC8 | MET | test | `apps/cli/tests/commands/bot.test.ts:276` (record/codegen/replay `Usage:` exit 0, usage errors exit 2); `scripts/tests/check-rail-transcripts.test.ts` (passes tree, fails on missing header / reasonless none); `spur rule run` reports no failure this run |
+| AC9 | UNMET | manual-review | Not run: operator-live replay of x and threads needs logged-in bot sessions (`kk bot list` shows x/threads `cached`, session state `unknown`) and is excluded from `bun run test` by design (Q&A 2026-11-17). Evidence dir `.spur/run/dogfood/<date>-bot-replay/` does not exist |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

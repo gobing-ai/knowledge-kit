@@ -521,3 +521,140 @@ describe('response bodies that cannot be read', () => {
         expect(t.steps.at(-1)).not.toHaveProperty('body');
     });
 });
+
+describe('recordBotSession in real headless Chromium (AC1, AC2)', () => {
+    const PAGE = `<!doctype html><title>compose</title>
+<button data-testid="compose">Compose</button>
+<textarea aria-label="Post body"></textarea>
+<input type="file" name="media">
+<button data-testid="submit" onclick="fetch('/api/post',{method:'POST',headers:{'content-type':'application/json'},body:'{}'})">Post</button>`;
+
+    /** Loopback compose page whose submit answers with a cookie and a secret-shaped key beside the id. */
+    function startPage() {
+        return Bun.serve({
+            port: 0,
+            fetch(request) {
+                const path = new URL(request.url).pathname;
+                if (path === '/api/post') {
+                    return new Response(JSON.stringify({ data: { id: 'p-1' }, auth_token: 'live-secret' }), {
+                        headers: { 'content-type': 'application/json', 'set-cookie': 'sid=live-cookie; Path=/' },
+                    });
+                }
+                return new Response(PAGE, { headers: { 'content-type': 'text/html' } });
+            },
+        });
+    }
+
+    async function until(check: () => boolean | Promise<boolean>, what: string): Promise<void> {
+        for (let i = 0; i < 200; i += 1) {
+            if (await check()) return;
+            await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        throw new Error(`timed out waiting for ${what}`);
+    }
+
+    test('AC1: clicks, typing, a file choice and the submit response land in order, redacted, 0600', async () => {
+        const { chromium } = await import('playwright');
+        const server = startPage();
+        const dir = mkdtempSync(join(tmpdir(), 'kk-bot-live-'));
+        const upload = join(dir, 'photo.png');
+        writeFileSync(upload, 'png');
+        const out = join(dir, 'fixture.json');
+        let context: BrowserContext | undefined;
+        try {
+            const running = recordBotSession('fixture', {
+                out,
+                root: join(dir, 'profiles'),
+                leaseRoot: join(dir, 'leases'),
+                defaultUrl: server.url.href,
+                launcher: {
+                    launch: async ({ profileDir }: { profileDir: string }) => {
+                        context = await chromium.launchPersistentContext(profileDir, { headless: true });
+                        return context;
+                    },
+                } as never,
+            });
+            await until(() => context?.pages()[0]?.url() === server.url.href, 'the start page');
+            const page = context?.pages()[0];
+            if (page === undefined) throw new Error('no page');
+            await page.waitForLoadState('load');
+
+            await page.click('[data-testid=compose]');
+            await page.click('textarea');
+            await page.keyboard.type('hello');
+            await page.keyboard.press('Enter');
+            await page.setInputFiles('input[type=file]', upload);
+            const submitted = page.waitForResponse('**/api/post');
+            await page.click('[data-testid=submit]');
+            await submitted;
+            await until(async () => {
+                const raw = await Bun.file(out)
+                    .text()
+                    .catch(() => '');
+                return raw.includes('"kind": "response"') || raw.includes('"kind":"response"');
+            }, 'the response step');
+            await context?.close();
+            const result = await running;
+
+            const written = await readTranscript(out);
+            const kinds = written.steps.map((step) => step.kind);
+            expect(kinds).toEqual([
+                'navigate',
+                'navigate',
+                'click',
+                'click',
+                'type',
+                'key',
+                'file',
+                'click',
+                'response',
+            ]);
+            expect(result.stepCount).toBe(kinds.length);
+            expect(written.steps[4]).toMatchObject({ kind: 'type', text: { redacted: true, length: 5 } });
+            expect(written.steps[6]).toMatchObject({ kind: 'file', fileName: 'photo.png' });
+            expect(written.steps[8]).toMatchObject({ kind: 'response', method: 'POST', status: 200 });
+            const raw = await Bun.file(out).text();
+            expect(raw).not.toContain('hello');
+            expect(raw).not.toContain('live-secret');
+            expect(raw).not.toContain('live-cookie');
+            expect(raw.toLowerCase()).not.toContain('set-cookie');
+            expect(statSync(out).mode & 0o777).toBe(0o600);
+        } finally {
+            await context?.close().catch(() => {});
+            await server.stop(true);
+            rmSync(dir, { recursive: true, force: true });
+        }
+    }, 60_000);
+
+    test('AC2: SIGINT exits 130 with the transcript flushed and no lease marker left behind', async () => {
+        const { acquireProfileLease, resolveBotProfileDir } = await import('../src/browser');
+        const server = startPage();
+        const dir = mkdtempSync(join(tmpdir(), 'kk-bot-sigint-'));
+        const root = join(dir, 'profiles');
+        const leaseRoot = join(dir, 'leases');
+        const out = join(dir, 'fixture.json');
+        try {
+            const child = Bun.spawn(
+                ['bun', join(import.meta.dir, 'fixtures/bot-record-runner.ts'), root, leaseRoot, out, server.url.href],
+                { stdout: 'pipe', stderr: 'pipe' },
+            );
+            // Two navigate steps on disk means the browser is up and the recorder sits in `await closed`.
+            await until(async () => {
+                const raw = await Bun.file(out)
+                    .text()
+                    .catch(() => '');
+                return (raw.match(/"navigate"/g) ?? []).length >= 2;
+            }, 'the recorder to start');
+            child.kill('SIGINT');
+            const code = await child.exited;
+
+            expect(code).toBe(130);
+            expect((await readTranscript(out)).steps.map((step) => step.kind)).toEqual(['navigate', 'navigate']);
+            const lease = await acquireProfileLease(resolveBotProfileDir('fixture', { root }), { leaseRoot });
+            await lease.release();
+        } finally {
+            await server.stop(true);
+            rmSync(dir, { recursive: true, force: true });
+        }
+    }, 60_000);
+});

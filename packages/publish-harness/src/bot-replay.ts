@@ -52,6 +52,8 @@ export interface ReplayOptions {
     filePath?: string;
     /** Per-step evidence hook, called after a step ran or was skipped. */
     screenshot?: (step: number) => Promise<void>;
+    /** How long a step waits for its target to render before counting; default 15 s. */
+    stepTimeoutMs?: number;
 }
 
 /** The step index replay stops before: the last click, or the one whose text matches `submitText`. */
@@ -76,10 +78,25 @@ function selectorOf(step: TranscriptStep): StepSelector {
     return { selector: step.target.selector };
 }
 
-/** Count the visible nodes a selector resolves to; a locator error is `0`, never a pass. */
-async function visibleCount(page: Page, selector: string): Promise<number> {
+/** Narrow a recorded selector to visible nodes; the recorder dropped hidden targets, so replay must too. */
+function visibleOnly(selector: string): string {
+    return `${selector} >> visible=true`;
+}
+
+/**
+ * Count the visible nodes a selector resolves to; a locator error is `0`, never a pass.
+ *
+ * A live page renders the next control after the previous click, so the count waits for the first
+ * visible match up to the step timeout — counting immediately failed steps that were merely early.
+ */
+async function visibleCount(page: Page, selector: string, timeoutMs: number): Promise<number> {
     try {
-        return await page.locator(selector).count();
+        const locator = page.locator(visibleOnly(selector));
+        await locator
+            .first()
+            .waitFor({ state: 'visible', timeout: timeoutMs })
+            .catch(() => {});
+        return await locator.count();
     } catch {
         return 0;
     }
@@ -98,7 +115,15 @@ export async function replayBotSession(
 ): Promise<ReplayResult> {
     const marker = options.redactionMarker ?? '•';
     const stopAt = options.submit === true ? -1 : submitStepIndex(transcript, options.submitText);
+    const timeoutMs = options.stepTimeoutMs ?? 15_000;
     const rows: ReplayRow[] = [];
+
+    // A recording that started on an already-open page has no navigate step; without this the
+    // first click runs against about:blank. A page already on the start URL keeps its state.
+    const opensWithNavigate = transcript.steps.find((step) => step.kind !== 'response')?.kind === 'navigate';
+    if (!opensWithNavigate && options.page.url() !== transcript.startUrl) {
+        await options.page.goto(transcript.startUrl);
+    }
 
     for (const step of transcript.steps) {
         if (step.kind === 'response') continue;
@@ -133,7 +158,7 @@ export async function replayBotSession(
             return { bot, rows, stoppedBeforeSubmit: false };
         }
         const selector = target.selector;
-        const count = await visibleCount(options.page, selector);
+        const count = await visibleCount(options.page, selector, timeoutMs);
         if (count !== 1) {
             rows.push({
                 step: step.i,
@@ -148,7 +173,7 @@ export async function replayBotSession(
         }
 
         if (step.kind === 'click') {
-            await options.page.click(selector);
+            await options.page.click(visibleOnly(selector));
             rows.push({ step: step.i, kind: step.kind, url: step.url, selectorCount: count, ok: true });
             await options.screenshot?.(step.i);
             continue;
@@ -160,13 +185,13 @@ export async function replayBotSession(
             continue;
         }
         if (step.kind === 'file') {
-            await options.page.setInputFiles(selector, options.filePath ?? step.fileName);
+            await options.page.setInputFiles(visibleOnly(selector), options.filePath ?? step.fileName);
             rows.push({ step: step.i, kind: step.kind, url: step.url, selectorCount: count, ok: true });
             await options.screenshot?.(step.i);
             continue;
         }
 
-        await options.page.click(selector);
+        await options.page.click(visibleOnly(selector));
         const typed = typeof step.text === 'string' ? step.text : marker.repeat(step.text.length);
         await options.page.keyboard.type(typed);
         rows.push({
@@ -199,6 +224,8 @@ export interface ReplayBotOptions {
     filePath?: string;
     /** Launcher override; the default borrows this invocation's profile lease. */
     launcher?: BrowserLauncher;
+    /** Per-step render wait; see {@link ReplayOptions.stepTimeoutMs}. */
+    stepTimeoutMs?: number;
 }
 
 /**
@@ -241,6 +268,7 @@ export async function replayBot(
             submit: options.submit === true,
             ...(options.submitText === undefined ? {} : { submitText: options.submitText }),
             ...(options.filePath === undefined ? {} : { filePath: options.filePath }),
+            ...(options.stepTimeoutMs === undefined ? {} : { stepTimeoutMs: options.stepTimeoutMs }),
             screenshot: async (step) => {
                 const path = join(outDir, `${String(step).padStart(2, '0')}.png`);
                 await page.screenshot({ path });

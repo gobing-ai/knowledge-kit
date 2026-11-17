@@ -25,7 +25,7 @@ sync: [T3]
 | [kk-smart-seo.md](design/kk-smart-seo.md) | SEO/GEO audit workflow, decision catalogs, stages and one skill | partially shipped (G9, ADR-039; 0281-0284 collection, assessments, typed catalogs and enrichment shipped, 0285 the `kk-smart-seo` workflow + validated narrative + terminal status, 0286 the one `smart-seo` skill + its installed acceptance and documented consumer setup; a live-site audit and feature-level verification remain) |
 | [kk-noun-verb-bots.md](design/kk-noun-verb-bots.md) | Strict noun/verb operations + named browser sessions | shipped (A22, ADR-037/038; tasks 0275–0278; surface §1.8/§1.12) |
 | [kk-cli-surface.md](design/kk-cli-surface.md) | Operator `kk` binary + two-noun tree | shipped (A2/A21) |
-| [kk-bot-record-codegen.md](design/kk-bot-record-codegen.md) | `kk bot record` / `codegen` / `replay`: transcript schema, ranked-selector normalizer, response-derived receipt, rail-transcript rule | shipped verbs + offline coverage (0382, ADR-038 amdt 2026-11-17; live recorder/replay legs unproven — no launchable browser on the gate host) |
+| [kk-bot-record-codegen.md](design/kk-bot-record-codegen.md) | `kk bot record` / `codegen` / `replay`: transcript schema, ranked-selector normalizer, response-derived receipt, rail-transcript rule | shipped verbs (0382, ADR-038 amdt 2026-11-17); recorder proven in real headless Chromium against a loopback page, live x/threads replay pending operator sessions |
 | [kk-plugin-check.md](design/kk-plugin-check.md) | `kk plugin check` / `login` live readiness probe (ADR-032) | shipped verbs + all fifteen channels (E93, 0215+0216; E94 adds `weibo-pub`, 0291 adds `jike-pub`, 0292 adds `csdn-pub`, 0293 adds `cnblogs-pub`, 0294 adds `sspai-pub`, 0295 adds `xiaoyuzhou-pub`, 0296 adds `shipinhao-pub`, 0297 adds `bilibili-pub`, 0328 adds `linkedin-pub`) |
 | [fan-in-and-fan-out-specification.md](design/fan-in-and-fan-out-specification.md) | `executor fan-in` merge and concurrent `executor fan-out` | shipped (B6) |
 | [ingestion-plugin-specification.md](design/ingestion-plugin-specification.md) | Ingestion kind contract | shipped (C1) |
@@ -1238,9 +1238,12 @@ kk bot replay <bot> <transcript> [--submit] [-o <dir>] [--submit-text <text>]
 - `codegen` aborts (exit 1, naming the step) on an ambiguous or structural-only step, and emits its
   receipt as a `page.waitForResponse` matcher armed before the submit click, reading the id from the
   recorded response — never from rendered text. An upload response before the submit is an
-  intermediate id; no candidate yields an explicit `TODO receipt` plus a stderr warning.
-- `replay` stops before the submit click unless `--submit`; a step that does not resolve exactly one
-  visible node fails the run. Its per-step screenshots plus `replay.json` are the evidence a channel
+  intermediate id; no candidate yields an explicit `TODO receipt` plus a stderr warning. `--apply`
+  requires `--plugin`/`--operation` to be lowercase slugs and `plugins/publishings/<p>/plugin.json` to
+  exist under the cwd (run it from the repo root); otherwise it exits 2 and writes nothing.
+- `replay` stops before the submit click unless `--submit`; it opens the transcript's `startUrl` when the
+  recording has no leading navigate step, waits up to 15 s per step for the target to render, then fails
+  the run when the step does not resolve exactly one visible node. Its per-step screenshots plus `replay.json` are the evidence a channel
   repair cites.
 - `rail-transcript-header` (`.spur/rules/structure/rail-transcript-header.yaml`, checker
   `scripts/check-rail-transcripts.ts`) requires every `plugins/publishings/*/src/*rail*.ts` and

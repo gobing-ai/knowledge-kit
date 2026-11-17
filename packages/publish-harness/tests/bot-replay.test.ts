@@ -5,6 +5,11 @@ import { basename, join } from 'node:path';
 import { type BotTranscript, emptyTranscript } from '../src/bot-record';
 import { replayBot, replayBotSession, submitStepIndex } from '../src/bot-replay';
 
+/** Replay narrows every recorded selector to visible nodes; the fakes key on the recorded form. */
+function recorded(selector: string): string {
+    return selector.replace(/ >> visible=true$/, '');
+}
+
 const testid = (value: string) => ({ selector: `[data-testid="${value}"]`, rank: 'testid' as const });
 
 describe('replayBotSession', () => {
@@ -18,15 +23,17 @@ describe('replayBotSession', () => {
             typed,
             visited,
             page: {
+                url: () => 'about:blank',
                 goto: async (url: string) => {
                     visited.push(url);
                     return null;
                 },
                 locator: (selector: string) => ({
-                    count: async () => (known.includes(selector) ? 1 : 0),
+                    count: async () => (known.includes(recorded(selector)) ? 1 : 0),
+                    first: () => ({ waitFor: async () => {} }),
                 }),
                 click: async (selector: string) => {
-                    clicks.push(selector);
+                    clicks.push(recorded(selector));
                 },
                 keyboard: { type: async (text: string) => void typed.push(text) },
                 setInputFiles: async () => {},
@@ -86,6 +93,24 @@ describe('replayBotSession', () => {
         expect(failed).toMatchObject({ step: 2, ok: false });
         expect(failed?.detail).toMatch(/0 visible nodes/);
         expect(fake.typed).toEqual([]);
+    });
+
+    test('a transcript that does not open with a navigate step starts from its startUrl', async () => {
+        const midPage = transcript();
+        midPage.steps = midPage.steps.slice(1);
+        const fake = fakePage(['[data-testid="compose"]', '[data-testid="editor"]']);
+
+        await replayBotSession('x', midPage, { page: fake.page as never, submitText: 'Post' });
+
+        expect(fake.visited).toEqual(['https://x.com/home']);
+    });
+
+    test('a transcript that opens with a navigate step is not navigated twice', async () => {
+        const fake = fakePage(['[data-testid="compose"]', '[data-testid="editor"]']);
+
+        await replayBotSession('x', transcript(), { page: fake.page as never, submitText: 'Post' });
+
+        expect(fake.visited).toEqual(['https://x.com/home']);
     });
 
     test('an ambiguous target fails the step instead of narrowing to one candidate', async () => {
@@ -158,7 +183,10 @@ describe('replayBot', () => {
         const shots: string[] = [];
         const page = {
             goto: async () => null,
-            locator: (selector: string) => ({ count: async () => (known.includes(selector) ? 1 : 0) }),
+            locator: (selector: string) => ({
+                count: async () => (known.includes(recorded(selector)) ? 1 : 0),
+                first: () => ({ waitFor: async () => {} }),
+            }),
             click: async () => {},
             keyboard: { press: async () => {}, type: async () => {} },
             setInputFiles: async () => {},
@@ -232,4 +260,172 @@ describe('replayBot', () => {
             rmSync(bot.dir, { recursive: true, force: true });
         }
     });
+});
+
+describe('replay in real headless Chromium', () => {
+    const PAGE = `<!doctype html>
+<button data-testid="go" style="display:none" onclick="document.title='hidden'">Go</button>
+<button data-testid="go" onclick="document.title='visible'">Go</button>
+<button data-testid="ghost" style="display:none">Ghost</button>`;
+
+    function steps(selector: string): BotTranscript {
+        const t = {
+            ...emptyTranscript({ bot: 'fixture', startUrl: 'about:blank', redacted: true }),
+            startUrl: 'about:blank',
+        };
+        t.steps.push({ i: 0, t: 0, kind: 'click', url: 'about:blank', target: { selector, rank: 'testid' } } as never);
+        return t;
+    }
+
+    test('a hidden duplicate does not fail the step, and the click lands on the visible node', async () => {
+        const { chromium } = await import('playwright');
+        const browser = await chromium.launch({ headless: true });
+        try {
+            const page = await browser.newPage();
+            await page.setContent(PAGE);
+
+            const result = await replayBotSession('fixture', steps('[data-testid="go"]'), { page, submit: true });
+
+            expect(result.rows[0]).toMatchObject({ ok: true, selectorCount: 1 });
+            expect(await page.title()).toBe('visible');
+        } finally {
+            await browser.close();
+        }
+    }, 30_000);
+
+    test('a target that only exists hidden fails the step instead of passing', async () => {
+        const { chromium } = await import('playwright');
+        const browser = await chromium.launch({ headless: true });
+        try {
+            const page = await browser.newPage();
+            await page.setContent(PAGE);
+
+            const result = await replayBotSession('fixture', steps('[data-testid="ghost"]'), {
+                page,
+                submit: true,
+                stepTimeoutMs: 500,
+            });
+
+            expect(result.rows[0]).toMatchObject({ ok: false, selectorCount: 0 });
+        } finally {
+            await browser.close();
+        }
+    }, 30_000);
+});
+
+describe('replay waits for a target a live page renders late', () => {
+    test('a button that appears after the step starts still resolves within the step timeout', async () => {
+        const { chromium } = await import('playwright');
+        const browser = await chromium.launch({ headless: true });
+        try {
+            const page = await browser.newPage();
+            await page.setContent(
+                `<!doctype html><script>setTimeout(() => { const b = document.createElement('button'); b.dataset.testid = 'late'; b.onclick = () => { document.title = 'clicked'; }; b.textContent = 'Late'; document.body.append(b); }, 400);</script>`,
+            );
+            const t = {
+                ...emptyTranscript({ bot: 'fixture', startUrl: 'about:blank', redacted: true }),
+                startUrl: 'about:blank',
+            };
+            t.steps.push({ i: 0, t: 0, kind: 'click', url: 'about:blank', target: testid('late') });
+
+            const result = await replayBotSession('fixture', t, { page, submit: true, stepTimeoutMs: 5_000 });
+
+            expect(result.rows[0]).toMatchObject({ ok: true, selectorCount: 1 });
+            expect(await page.title()).toBe('clicked');
+        } finally {
+            await browser.close();
+        }
+    }, 30_000);
+});
+
+describe('replayBot in real headless Chromium against the local-post page (AC6)', () => {
+    const fixture = JSON.parse(
+        readFileSync(join(import.meta.dir, 'fixtures', 'bot-record', 'local-post.json'), 'utf8'),
+    ) as BotTranscript;
+
+    /** Serve the page local-post.json was recorded on; `submit: false` drops the Publish button. */
+    function serve(options: { submit: boolean }) {
+        const posts: string[] = [];
+        const server = Bun.serve({
+            port: 0,
+            hostname: '127.0.0.1',
+            fetch(request) {
+                const url = new URL(request.url);
+                if (request.method === 'POST') {
+                    posts.push(url.pathname);
+                    return Response.json({ data: { id: 'p-123' } }, { status: 201 });
+                }
+                const body =
+                    url.pathname === '/compose'
+                        ? `<textarea data-testid="editor"></textarea>${
+                              options.submit
+                                  ? `<button data-testid="submit" onclick="fetch('/api/posts?draft=1',{method:'POST'})">Publish</button>`
+                                  : ''
+                          }`
+                        : `<button data-testid="compose" onclick="location.href='/compose'">Compose</button>`;
+                return new Response(`<!doctype html>${body}`, { headers: { 'content-type': 'text/html' } });
+            },
+        });
+        // The fixture was recorded on :4319; point it at this run's port.
+        const transcript = JSON.parse(
+            JSON.stringify(fixture).replaceAll('http://127.0.0.1:4319', `http://127.0.0.1:${server.port}`),
+        ) as BotTranscript;
+        return { posts, server, transcript };
+    }
+
+    async function run(options: { submit: boolean; withSubmit?: boolean; stepTimeoutMs?: number }) {
+        const { chromium } = await import('playwright');
+        const dir = mkdtempSync(join(tmpdir(), 'kk-bot-replay-live-'));
+        const root = join(dir, 'profiles');
+        mkdirSync(join(root, 'local-post'), { recursive: true });
+        const site = serve({ submit: options.submit });
+        try {
+            const replay = await replayBot('local-post', site.transcript, {
+                root,
+                leaseRoot: join(dir, 'leases'),
+                outDir: join(dir, 'evidence'),
+                submit: options.withSubmit === true,
+                ...(options.stepTimeoutMs === undefined ? {} : { stepTimeoutMs: options.stepTimeoutMs }),
+                launcher: {
+                    launch: ({ profileDir }: { profileDir: string }) =>
+                        chromium.launchPersistentContext(profileDir, { headless: true }),
+                } as never,
+            });
+            // Give a stray submit a moment to reach the server before counting.
+            await Bun.sleep(200);
+            return { ...replay, posts: [...site.posts], dir };
+        } finally {
+            site.server.stop(true);
+        }
+    }
+
+    test('stops before Publish: no POST reaches the page, one ok row and one screenshot per executed step', async () => {
+        const { result, replayPath, posts, dir } = await run({ submit: true });
+        try {
+            expect(posts).toEqual([]);
+            expect(result.stoppedBeforeSubmit).toBe(true);
+            expect(result.rows.map((row) => [row.step, row.kind, row.ok])).toEqual([
+                [0, 'navigate', true],
+                [1, 'click', true],
+                [2, 'type', true],
+                [4, 'click', false],
+            ]);
+            const written = JSON.parse(readFileSync(replayPath, 'utf8')) as { screenshots: string[] };
+            expect(written.screenshots.map((path) => basename(path))).toEqual(['00.png', '01.png', '02.png']);
+            for (const shot of written.screenshots) expect(readFileSync(shot).subarray(1, 4).toString()).toBe('PNG');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    }, 60_000);
+
+    test('a removed button stops the run on that step with a failed row', async () => {
+        const { result, posts, dir } = await run({ submit: false, withSubmit: true, stepTimeoutMs: 1_000 });
+        try {
+            expect(posts).toEqual([]);
+            expect(result.stoppedBeforeSubmit).toBe(false);
+            expect(result.rows.at(-1)).toMatchObject({ step: 4, ok: false, selectorCount: 0 });
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    }, 60_000);
 });

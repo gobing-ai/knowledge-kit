@@ -175,13 +175,19 @@ async function botRecordAction(
     name: string,
     options: { out?: string; includeText?: boolean },
 ): Promise<void> {
+    let signal: 'SIGINT' | 'SIGTERM' | undefined;
     await runBotAction(load, async (harness) => {
         const result = await harness.recordBotSession(name, {
             ...(options.out === undefined ? {} : { out: options.out }),
             ...(options.includeText === true ? { includeText: true } : {}),
         });
+        signal = result.signal;
         consoleOutput.write(`${result.out}\t${result.stepCount} steps\t${result.redacted ? 'redacted' : 'verbatim'}`);
     });
+    // `main()` returns its own exit code, which would overwrite the harness's process.exitCode.
+    if (signal !== undefined) {
+        throw new CommanderError(signal === 'SIGINT' ? 130 : 143, 'kk.bot.interrupted', `recording ended by ${signal}`);
+    }
 }
 
 /**
@@ -208,7 +214,16 @@ async function botCodegenAction(
             consoleOutput.write(source);
             return;
         }
-        const target = join('plugins', 'publishings', options.plugin, 'src', `${options.operation}-rail.generated.ts`);
+        // Both names become path segments; a slug keeps the write inside the plugin's src/.
+        const slug = /^[a-z0-9][a-z0-9-]{0,63}$/;
+        if (!slug.test(options.plugin) || !slug.test(options.operation)) {
+            throw new harness.BotError('usage', '--plugin and --operation must each be a lowercase slug');
+        }
+        const pluginDir = join('plugins', 'publishings', options.plugin);
+        if (!(await createNodeFileSystem().exists(join(pluginDir, 'plugin.json')))) {
+            throw new harness.BotError('usage', `no publish plugin at ${pluginDir} — run --apply from the repo root`);
+        }
+        const target = join(pluginDir, 'src', `${options.operation}-rail.generated.ts`);
         if (await createNodeFileSystem().exists(target)) {
             throw new harness.BotError(
                 'usage',
