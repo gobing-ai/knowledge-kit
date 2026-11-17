@@ -542,6 +542,8 @@ export class WeiboBrowserTransport implements PublishTransport {
                 label: 'post image input',
             });
             const baseline = await this.countImages(page, composerSelector);
+            const beforeSrcs = new Set<string>(await readImageSrcs(page));
+            const picIdResponse = awaitUploadedPicId(page, this.stepTimeoutMs);
             await uploadFile(page, fileInputSelector, coverPath, { timeoutMs: this.stepTimeoutMs });
             const attached = await expectOutcome(() => this.probeCoverAttached(page, composerSelector, baseline), {
                 timeoutMs: this.stepTimeoutMs,
@@ -552,6 +554,19 @@ export class WeiboBrowserTransport implements PublishTransport {
             // whose id cannot be read is refused rather than posted as a text-only status while
             // claiming an image (R9 is fail-closed like every other rail).
             picId = String(await page.evaluate(picIdScript())).trim();
+            if (picId.length === 0) picId = await picIdResponse;
+            if (picId.length === 0) {
+                // Fall back to the uploaded image's own key, read off its fresh sinaimg URL.
+                const afterSrcs = await readImageSrcs(page);
+                for (const src of afterSrcs) {
+                    if (beforeSrcs.has(src)) continue;
+                    const derived = picIdFromImageUrl(src);
+                    if (derived !== '') {
+                        picId = derived;
+                        break;
+                    }
+                }
+            }
             if (picId.length === 0) {
                 return fail(
                     'weibo image uploaded but its id could not be read from the composer — refusing to post a text-only status while claiming an image',
@@ -841,9 +856,66 @@ function picIdScript(): string {
     for (const value of candidates) {
         if (typeof value === 'string' && value.length > 0) return value;
     }
-    const img = document.querySelector('img[src*="sinaimg"]');
-    return img === null ? '' : '';
+    return '';
 })()`;
+}
+
+/**
+ * Every `<img>` src on the page — the baseline for "which image did this upload add".
+ *
+ * MEASURED 2026-11-16: the composer keeps no pic id in `window.config`/`$render_data` (those were
+ * never observed populated), but the upload itself publishes the image under its own key —
+ * `https://wx4.sinaimg.cn/bmiddle/006pHqcMly1ij4wmw8zq6j30u0140ngx.jpg` — and that path segment IS
+ * the `pic_id` the submit API takes. So the id is derived from the NEW image's URL, by diffing
+ * against the pre-upload set; nothing is guessed from a stale page.
+ */
+function imageSrcsScript(): string {
+    return `(() => { // kk-weibo-images
+    return JSON.stringify(Array.from(document.querySelectorAll('img')).map((i) => i.getAttribute('src') || '').filter((s) => s !== ''));
+})()`;
+}
+
+/** The platform's own image-upload endpoint (measured 2026-11-16 on m.weibo.cn/compose). */
+export const WEIBO_UPLOAD_PIC_PATH = '/api/statuses/uploadPic';
+
+/**
+ * Waits for the upload's own JSON response and returns its `pic_id`.
+ *
+ * MEASURED 2026-11-16 on `m.weibo.cn/compose/`: the composer keeps no pic id in
+ * `window.config`/`$render_data` (those were the old guess and are never populated), and the
+ * uploaded thumbnail renders as a `blob:` URL — so nothing on the DOM carries the id. The upload
+ * request itself answers with it:
+ *   POST https://m.weibo.cn/api/statuses/uploadPic
+ *   {"pic_id":"006pHqcMly8ij4wpdhpzyj30u0140ngx","thumbnail_pic":"…","bmiddle_pic":"…","original_pic":"…"}
+ * Intercept the response instead of inferring the id.
+ */
+async function awaitUploadedPicId(page: Page, timeoutMs: number): Promise<string> {
+    try {
+        const response = await page.waitForResponse(
+            (res) => res.url().includes(WEIBO_UPLOAD_PIC_PATH) && res.status() === 200,
+            { timeout: timeoutMs },
+        );
+        const body = (await response.json()) as { pic_id?: unknown };
+        return typeof body.pic_id === 'string' ? body.pic_id : '';
+    } catch {
+        return '';
+    }
+}
+
+/** Every image src, tolerantly: a page that cannot answer yields none (never a throw). */
+async function readImageSrcs(page: Page): Promise<string[]> {
+    try {
+        const raw = JSON.parse(String(await page.evaluate(imageSrcsScript()))) as unknown;
+        return Array.isArray(raw) ? raw.filter((entry): entry is string => typeof entry === 'string') : [];
+    } catch {
+        return [];
+    }
+}
+
+/** The Weibo image key inside a sinaimg URL: the last path segment without its extension. */
+export function picIdFromImageUrl(url: string): string {
+    const match = /sinaimg\.cn\/[^/]+\/([0-9A-Za-z]{20,})\.(?:jpg|jpeg|png|gif|webp)/i.exec(url);
+    return match?.[1] ?? '';
 }
 
 /** The first visible dialog/modal/verification text on the page, bounded; '' when none. */

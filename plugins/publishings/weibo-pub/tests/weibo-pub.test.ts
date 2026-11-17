@@ -14,6 +14,7 @@ import {
     LOGIN_INSTRUCTION,
     LOGIN_URL_RE,
     main,
+    picIdFromImageUrl,
     processPublishIO,
     resolveOperation,
     WEIBO_ARTICLE_SELECTORS,
@@ -25,6 +26,25 @@ import {
     WEIBO_POST_SELECTORS,
     WeiboBrowserTransport,
 } from '../src/index';
+
+describe('weibo pic id from the uploaded image URL (measured 2026-11-16)', () => {
+    test('reads the image key out of a fresh sinaimg URL', () => {
+        // The composer exposes no pic id in window.config / $render_data; the upload itself names
+        // the image, and that key is what the submit API takes.
+        expect(picIdFromImageUrl('https://wx4.sinaimg.cn/bmiddle/006pHqcMly1ij4wmw8zq6j30u0140ngx.jpg')).toBe(
+            '006pHqcMly1ij4wmw8zq6j30u0140ngx',
+        );
+        expect(picIdFromImageUrl('https://tvax1.sinaimg.cn/large/006pHqcMly8iibuwp61kmj30go0go0tf.png')).toBe(
+            '006pHqcMly8iibuwp61kmj30go0go0tf',
+        );
+    });
+
+    test('refuses a URL that carries no image key', () => {
+        expect(picIdFromImageUrl('https://h5.sinaimg.cn/upload/100/1474/2023/08/14/huiyuan.png')).toBe('');
+        expect(picIdFromImageUrl('https://d.sinaimg.cn/prd/1005/891/2025/12/11/angledown.png')).toBe('');
+        expect(picIdFromImageUrl('https://example.com/a.jpg')).toBe('');
+    });
+});
 
 const TMP_DIR = join(process.cwd(), '.works/tmp/test-weibo-pub');
 const DEFAULT_DIR = join(homedir(), '.config', 'kk', 'browser-profiles', 'weibo');
