@@ -123,6 +123,22 @@ async function readSummaries(
 }
 
 /**
+ * Whether the run's own summary says it closed without content (`run-report.summary.txt` is the pool
+ * gate's verdict, the same file the launch receipt's status is read from). A missing or unreadable
+ * file is a content day: the ledger must never invent a thin-day marker.
+ */
+async function readNoContent(fs: FileSystem, workDir: string | undefined): Promise<boolean> {
+    if (workDir === undefined) return false;
+    const path = resolve(workDir, 'run-report.summary.txt');
+    if (!(await fs.exists(path))) return false;
+    try {
+        return (await fs.readFile(path)).startsWith('no-content:');
+    } catch {
+        return false;
+    }
+}
+
+/**
  * `<works-dir>/<workflow>/ledger.md`, absolute. The workflow name becomes a path segment, so it
  * must be a flat file stem: `..`, a separator or an absolute path would write outside the works dir.
  */
@@ -169,7 +185,10 @@ async function appendAction(options: LedgerAppendOptions): Promise<void> {
             return;
         }
         const summaries = await readSummaries(fs, options.workDir, trace);
-        const section = renderLedgerSection(trace, { summaries });
+        const section = renderLedgerSection(trace, {
+            summaries,
+            noContent: await readNoContent(fs, options.workDir),
+        });
         await writeLedger(fs, ledgerPath, appendLedgerSection(existing, options.workflow, section));
         report(options.workflow, ledgerPath, [options.run]);
     } catch (error) {
@@ -195,7 +214,12 @@ export async function syncLedger(options: LedgerSyncOptions): Promise<void> {
             // wrote — so only the newest missing run reads it; older backfills fall back (R5).
             const workDir = index === missing.length - 1 ? options.workDir : undefined;
             const summaries = await readSummaries(fs, workDir, trace);
-            content = appendLedgerSection(content, options.workflow, renderLedgerSection(trace, { summaries }));
+            const noContent = await readNoContent(fs, workDir);
+            content = appendLedgerSection(
+                content,
+                options.workflow,
+                renderLedgerSection(trace, { summaries, noContent }),
+            );
         }
         if (missing.length > 0) {
             await writeLedger(fs, ledgerPath, content ?? '');

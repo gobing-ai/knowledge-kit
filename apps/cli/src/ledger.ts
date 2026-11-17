@@ -95,6 +95,12 @@ export interface TraceListEntry {
 export interface LedgerRenderOptions {
     /** `<node>.summary.txt` first lines, keyed by step node — read by the command from `--work-dir`. */
     summaries?: ReadonlyMap<string, string>;
+    /**
+     * The run closed without content (`run-report.summary.txt` starts with `no-content:`). The trace
+     * still says `done` — spur's own outcome is success — so the day's thin verdict rides the
+     * heading instead (2026-11-17: two identical `done` rows for a day with no episode).
+     */
+    noContent?: boolean;
 }
 
 /** Longest rendered result cell (R5). */
@@ -282,6 +288,16 @@ function tokenCells(row: StepRow): string {
 }
 
 /**
+ * The heading's short run id. A uuid's leading block is already unique, but every
+ * `<workflow>-<runDate>-<epochMs>` id shares its workflow prefix — `kk-news-generate-…` rendered as
+ * `kk-news-`, so two same-day runs read identically (2026-11-17). Those ids keep their epoch tail.
+ */
+function shortRunId(runId: string): string {
+    const epoch = /-(\d{13})$/.exec(runId);
+    return epoch === null ? runId.slice(0, 8) : `…${(epoch[1] ?? '').slice(-8)}`;
+}
+
+/**
  * Render one run's ledger section: heading, idempotency marker, and the per-step table
  * (`| Step | Status | Duration | Tokens in/out | Result |`). Rows follow the trace's
  * first-seen node order; several actions of one node collapse into one row (R2/R3/R4/R5).
@@ -292,8 +308,18 @@ export function renderLedgerSection(trace: TraceJson, options: LedgerRenderOptio
     const inputTokens = rows.reduce((total, row) => total + (row.hasAgentAction ? row.inputTokens : 0), 0);
     const outputTokens = rows.reduce((total, row) => total + (row.hasAgentAction ? row.outputTokens : 0), 0);
 
+    // The `no-content` marker is the LAST field on purpose: `parseLedger` reads the status from
+    // field 2, so a `done (no-content)` cell would break every consumer that compares it to `done`.
+    const heading = [
+        utcMinute(trace.run.startedAt),
+        `run ${shortRunId(trace.run.runId)}`,
+        trace.run.status,
+        formatDuration(trace.run.durationMs),
+        `tokens: ${inputTokens}/${outputTokens} (+${unknownSteps} unknown)`,
+        ...(options.noContent === true ? ['no-content'] : []),
+    ].join(' · ');
     return [
-        `## ${utcMinute(trace.run.startedAt)} · run ${trace.run.runId.slice(0, 8)} · ${trace.run.status} · ${formatDuration(trace.run.durationMs)} · tokens: ${inputTokens}/${outputTokens} (+${unknownSteps} unknown)`,
+        `## ${heading}`,
         `<!-- run:${trace.run.runId} -->`,
         '',
         '| Step | Status | Duration | Tokens in/out | Result |',
