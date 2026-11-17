@@ -138,11 +138,13 @@ export class XPostBrowserTransport implements PublishTransport {
         );
         if (cover !== undefined && 'error' in cover) return fail(cover.error);
         const override = typeof payload.options?.profileDir === 'string' ? payload.options.profileDir : undefined;
-        const profileDir = resolveChannelProfileDir(TARGET, override);
+        const profileDir = resolveChannelProfileDir(POST_CONFIG.channel, override);
         const session = await checkChannelSession(POST_CONFIG, {
             profileDir,
             launcher: this.launcher,
-            headedFallback: true,
+            // X login-walls headless loads, so a headless-first ladder spends two deadlines here
+            // and gets killed by kk's probe budget (same as the article rail).
+            headedOnly: true,
             timeoutMs: this.stepTimeoutMs,
         });
         if (session.status !== 'verified') {

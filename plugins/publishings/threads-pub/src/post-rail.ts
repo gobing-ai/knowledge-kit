@@ -163,7 +163,7 @@ export class ThreadsPostBrowserTransport implements PublishTransport {
         );
         if (cover !== undefined && 'error' in cover) return fail(cover.error);
         const override = typeof payload.options?.profileDir === 'string' ? payload.options.profileDir : undefined;
-        const profileDir = resolveChannelProfileDir(TARGET, override);
+        const profileDir = resolveChannelProfileDir(THREADS_CONFIG.channel, override);
         const session = await checkChannelSession(THREADS_CONFIG, {
             profileDir,
             launcher: this.launcher,
