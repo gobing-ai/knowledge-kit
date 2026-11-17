@@ -173,18 +173,19 @@ async function botOpenAction(
 async function botRecordAction(
     load: () => Promise<BotHarness>,
     name: string,
-    options: { out?: string; includeText?: boolean },
+    options: { out?: string; includeText?: boolean; url?: string },
 ): Promise<void> {
     let signal: 'SIGINT' | 'SIGTERM' | undefined;
     await runBotAction(load, async (harness) => {
         const result = await harness.recordBotSession(name, {
             ...(options.out === undefined ? {} : { out: options.out }),
             ...(options.includeText === true ? { includeText: true } : {}),
+            ...(options.url === undefined ? {} : { defaultUrl: options.url }),
         });
         signal = result.signal;
         consoleOutput.write(`${result.out}\t${result.stepCount} steps\t${result.redacted ? 'redacted' : 'verbatim'}`);
     });
-    // `main()` returns its own exit code, which would overwrite the harness's process.exitCode.
+    // `main()` returns its own exit code, which would overwrite an exit code the harness set on the process.
     if (signal !== undefined) {
         throw new CommanderError(signal === 'SIGINT' ? 130 : 143, 'kk.bot.interrupted', `recording ended by ${signal}`);
     }
@@ -526,7 +527,9 @@ export function registerBotCommand(program: Command, deps: BotCommandDeps = {}):
         .argument('<name>', 'Bot name')
         .option('-o, --out <file>', 'Transcript path (default .spur/run/bot-record-<bot>-<stamp>.json)')
         .option('--include-text', 'Keep typed text verbatim instead of a length marker')
-        .action((name: string, options: { out?: string; includeText?: boolean }) =>
+        // Channel-script profiles (x, threads) carry no saved default page; a saved one still wins.
+        .option('--url <url>', 'Start page when the bot has no saved default page')
+        .action((name: string, options: { out?: string; includeText?: boolean; url?: string }) =>
             botRecordAction(load, name, options),
         );
 

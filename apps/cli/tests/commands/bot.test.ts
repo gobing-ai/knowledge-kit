@@ -251,7 +251,7 @@ describe('kk bot registration and argv shape (A22 R1)', () => {
             exec: ['--data', '--fail', '--header', '--include', '--location', '--max-time', '--output', '--request'],
             plan: ['--max-time', '--output'],
             // 0382: record/codegen/replay keep the same narrow surface the other verbs hold.
-            record: ['--include-text', '--out'],
+            record: ['--include-text', '--out', '--url'],
             codegen: ['--allow-unredacted', '--apply', '--operation', '--plugin', '--receipt-path'],
             replay: ['--allow-unredacted', '--file', '--output', '--submit', '--submit-text'],
         });
@@ -1049,10 +1049,13 @@ describe('kk bot record / codegen / replay (0382)', () => {
             },
         });
 
-        const result = await runInjected(['bot', 'record', 'x', '-o', 'custom.json', '--include-text'], harness);
+        const result = await runInjected(
+            ['bot', 'record', 'x', '-o', 'custom.json', '--include-text', '--url', 'https://x.com/home'],
+            harness,
+        );
 
         expect(result.code).toBe(0);
-        expect(calls).toEqual([{ out: 'custom.json', includeText: true }]);
+        expect(calls).toEqual([{ out: 'custom.json', includeText: true, defaultUrl: 'https://x.com/home' }]);
         expect(result.out).toContain('verbatim');
     });
 
