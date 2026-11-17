@@ -49,7 +49,7 @@ import {
     runArticleBundle,
     runArticleCheck,
 } from './content-generate-article';
-import { generateRunReport } from './daily';
+import { generateRunReport, noContentReason } from './daily';
 import { syncLedger } from './ledger';
 
 interface JsonObject {
@@ -416,12 +416,11 @@ async function writePoolGate(ctx: GenerateContext): Promise<number> {
         // The no-content verdict travels with the gate, because every node after `prepare` is gated
         // on PASS (R7) — the report node never runs on a thin day. The launching verb's receipt
         // status reads this file (`launchWorkflow`), and the wording is `kk daily run-report`'s own
-        // (`noContentReason`), so the ledger's Result cell says the same thing either way.
-        const reason =
-            pooled === 0
-                ? 'no-content: the store pool was empty (kk store extract found no unused items)'
-                : 'no-content: content QC admitted zero of the pooled items';
-        await ctx.fs.writeFile(summary, `${reason}\n`);
+        // (`noContentReason`), so the ledger's Result cell says the same thing either way. Calling
+        // it (not re-deriving the two fallback lines) is what keeps the two paths in agreement: a
+        // floor refusal is `EMPTY` with a non-empty pool, and the fallback line called it an empty
+        // QC admission (2026-11-17, a 8-item pool refused for 13.1 < 15 min).
+        await ctx.fs.writeFile(summary, `${noContentReason(ctx.workDir, ctx.runDate, pooled)}\n`);
         for (const stale of [join(ctx.workDir, 'bundle.json'), join(ctx.workDir, '4-publish', 'bundle.json')]) {
             if (await ctx.fs.exists(stale)) await ctx.fs.deleteFile(stale);
         }
@@ -1060,6 +1059,7 @@ interface VerbOptions {
     stage?: string;
     engine?: string;
     ledgerSync?: boolean;
+    refresh?: boolean;
 }
 
 /** The phase directories a news run owns (design §4.3; the names the stage bodies write). */
@@ -1078,6 +1078,12 @@ const NEWS_PHASE_DIRS = [
     '4-publish',
     '5-report',
 ] as const;
+
+/**
+ * Every directory a news run derives from the store — `--refresh` drops all of them. `10-collect`
+ * included: the ladder and the frozen pool are extract output, not input.
+ */
+const REFRESH_PHASE_DIRS = [...NEWS_PHASE_DIRS, '4-publish', '5-report'] as const;
 
 function requireWorkDir(options: VerbOptions, verb: string): string {
     if (options.workDir === undefined || options.workDir.trim() === '') {
@@ -1224,6 +1230,29 @@ async function composeWorkspace(ctx: GenerateContext): Promise<void> {
     await ctx.fs.writeFile(join(ctx.workDir, '.safety-revise-count'), '0\n');
 }
 
+/**
+ * `--refresh`: reset the run to its post-collect state so the episode is re-derived from the store.
+ *
+ * Two coupled reasons, both observed on 2026-11-17. `dailyExtract` keeps `10-collect/pool.json`
+ * byte-for-byte once a plan is authored (0347 F6: a frozen episode resumes the same material), which
+ * also makes a same-day retry of a *thin* day a pure replay — the pool cannot grow after later
+ * collects, so the day can never recover. And `dailyQcContent` embeds `minMinutes` in its cache
+ * fingerprint, so changing `episode_min_minutes` invalidates the candidates cache while the plan's
+ * descendants still exist — the stage then fails closed ("QC cache changed after downstream artifacts
+ * were authored") and the run cannot be re-entered at all. Deleting the derived phases clears both:
+ * nothing downstream of the plan survives to be paired with new candidates.
+ */
+async function unfreezeRun(ctx: GenerateContext): Promise<void> {
+    for (const name of REFRESH_PHASE_DIRS) {
+        const path = join(ctx.workDir, name);
+        if (await ctx.fs.exists(path)) await ctx.fs.deleteFile(path);
+    }
+    for (const stale of ['pool-gate.json', 'bundle.json', 'run-report.summary.txt']) {
+        const path = join(ctx.workDir, stale);
+        if (await ctx.fs.exists(path)) await ctx.fs.deleteFile(path);
+    }
+}
+
 /** `--ledger-sync`: bookkeeping only, never a prepare failure (the `kk daily prepare` contract). */
 async function ledgerSync(ctx: GenerateContext): Promise<void> {
     try {
@@ -1242,6 +1271,7 @@ async function runAction(noun: string, defaultType: string, verb: string, option
     if (verb !== 'prepare') requireWorkDir(options, verb);
     const ctx = await buildContext(noun, type, verb, options);
     if (verb === 'prepare') {
+        if (options.refresh === true) await unfreezeRun(ctx);
         await composeWorkspace(ctx);
         // The ledger backfill runs before the summary is printed, so the row's one JSON object is
         // the last thing on stdout (`syncLedger` narrates on its own stream).
@@ -1329,6 +1359,7 @@ export function registerContentGenerateVerbs(group: Command, noun: string, defau
     verbCommand(group, noun, defaultType, 'prepare', 'compose the run workspace and gate the pool', (command) =>
         workDir(command)
             .option('--run-date <YYYYMMDD>', 'news run date')
+            .option('--refresh', 'drop the frozen pool and plan, then re-extract from the store')
             .option('--ledger-sync', 'backfill the run ledger before the run starts'),
     );
     verbCommand(group, noun, defaultType, 'generate-check', 'validate one agent step output', (command) =>

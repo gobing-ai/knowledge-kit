@@ -517,7 +517,7 @@ function countItems(path: string | undefined): number | undefined {
  * fact), then the pre-spend floor refusal, then the pool/QC fallbacks. A missing or unparsable
  * artifact — or one without its numeric fields — falls through to today's lines unchanged.
  */
-function noContentReason(workDir: string, runDate: string, poolCount: number | undefined): string {
+export function noContentReason(workDir: string, runDate: string, poolCount: number | undefined): string {
     const fallback =
         poolCount === 0
             ? 'no-content: the store pool was empty (kk store extract found no unused items)'
