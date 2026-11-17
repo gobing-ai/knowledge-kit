@@ -137,6 +137,14 @@
             "tier": 3,
             "window": "overseas-rss",
             "mode": "off"
+        },
+        {
+            "plugin": "jike-pub",
+            "operation": "post",
+            "variant": "social:jike",
+            "tier": 3,
+            "window": "overseas-rss",
+            "mode": "live"
         }
     ],
     "overrides": [

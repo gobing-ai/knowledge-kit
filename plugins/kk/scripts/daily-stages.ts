@@ -2164,6 +2164,8 @@ const SOCIAL_LIMITS: Record<string, SocialLimit> = {
     x: { max: 280, weighted: true },
     weibo: { max: 2000 },
     threads: { max: 500 },
+    // 即刻's 动态 composer accepts long text; the shared short notice fits far below this.
+    jike: { max: 2000 },
     linkedin: { max: 3000 },
 };
 
@@ -4603,7 +4605,7 @@ const EDITORIAL_ARTICLE_OPENING = '这里是由Robin为你带来的咸话咸说�
  *  1. `22-article/<date>_06_article-write_body.md`
  *  2. `23-cover/<date>_07_cover-brief.json`
  *  3. `25-xhs/<date>_18_xhs_plan.json` (only when `cards_enabled === 'true'`)
- *  4. `26-social/{x,threads}.md` (`social.short`)
+ *  4. `26-social/{x,threads,jike}.md` (`social.short`)
  *  5. `26-social/{weibo,linkedin}.md` (`social.long`)
  * Missing master field -> skip that one artifact with a logged reason, write the others.
  */
@@ -4811,11 +4813,11 @@ export function dailyEditorialRender(args: string[]): void {
     const socialDir = join(workDir, '26-social');
     if (socialShort !== '') {
         sted('mkdir', socialDir, () => mkdirSync(socialDir, { recursive: true }));
-        for (const name of ['x.md', 'threads.md', 'weibo.md']) {
+        for (const name of ['x.md', 'threads.md', 'weibo.md', 'jike.md']) {
             const out = join(socialDir, name);
             sted('write', out, () => writeRaw(out, `${socialShort}\n`));
         }
-        console.log('editorial-render: wrote 26-social/{x,threads,weibo}.md');
+        console.log('editorial-render: wrote 26-social/{x,threads,weibo,jike}.md');
     } else if (socialLong !== '') {
         sted('mkdir', socialDir, () => mkdirSync(socialDir, { recursive: true }));
         const out = join(socialDir, 'weibo.md');
