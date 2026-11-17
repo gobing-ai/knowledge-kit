@@ -77,10 +77,33 @@ const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
  * A drifted selector is a loud typed refusal at its stage, never a silent skip or a text-only post.
  */
 export const LINKEDIN_POST_SELECTORS = {
-    shareTrigger: ['button.share-box-feed-entry__trigger', 'button[aria-label*="Start a post" i]'],
-    composer: ['div.editor-content[contenteditable="true"]', 'div[role="textbox"][contenteditable="true"]'],
-    fileInput: ['[role="dialog"] input[type="file"]'],
-    send: ['[role="dialog"] button.share-actions__primary-action', '[role="dialog"] button:has-text("Post")'],
+    // 2026-11-16 live measurement of the redesigned feed: the share trigger is a classless div and the
+    // share surface is NOT a `[role="dialog"]`, so controls are page-scoped by text, with the old
+    // class-based ladder kept as a fallback for accounts still on the previous UI.
+    shareTrigger: [
+        'text="Start a post"',
+        'button.share-box-feed-entry__trigger',
+        'button[aria-label*="Start a post" i]',
+    ],
+    composer: [
+        '.tiptap.ProseMirror div[role="textbox"]',
+        'div[role="textbox"].tiptap',
+        '.tiptap.ProseMirror',
+        '[role="dialog"] div[role="textbox"]',
+        'div.editor-content[contenteditable="true"]',
+        'div[role="textbox"][contenteditable="true"]',
+    ],
+    mediaButton: [
+        'button[aria-label="Media"]',
+        'button[aria-label*="Media" i]',
+        '[role="dialog"] button[aria-label*="Media" i]',
+    ],
+    fileInput: ['input[type="file"][accept*="image"]', 'input[type="file"]', '[role="dialog"] input[type="file"]'],
+    send: [
+        'button:text-is("Post")',
+        '[role="dialog"] button:text-is("Post")',
+        '[role="dialog"] button.share-actions__primary-action',
+    ],
 } as const;
 
 /** Failure toast words. **Provisional** (LinkedIn's artdeco toast wording). */
@@ -181,7 +204,14 @@ function resolveDriver(options?: Record<string, unknown>): BrowserDriver | { err
  */
 export const isLinkedinAuthenticated: IsAuthenticatedPredicate = async (page) => {
     if (LINKEDIN_LOGIN_URL_RE.test(page.url())) return false;
-    return (await trySelectors(page, LINKEDIN_POST_SELECTORS.shareTrigger, { visible: false })).found;
+    if ((await trySelectors(page, LINKEDIN_POST_SELECTORS.shareTrigger.slice(1), { visible: false })).found) {
+        return true;
+    }
+    try {
+        return (await page.getByText('Start a post', { exact: true }).count()) > 0;
+    } catch {
+        return false;
+    }
 };
 
 /**
@@ -380,7 +410,16 @@ export class LinkedinBrowserTransport implements PublishTransport {
                 metadata,
             );
         }
-        await page.locator(composerSelector).first().fill(text);
+        const composer = page.locator(composerSelector).first();
+        if (typeof composer.pressSequentially === 'function') {
+            // tiptap/ProseMirror (measured 2026-11-16): `fill()` writes the DOM without the editor's
+            // state, so the footer Post control never renders. Type real key events — the same trap
+            // as X's Draft.js. A page stub without pressSequentially keeps the fill path.
+            await composer.click();
+            await composer.pressSequentially(text, { delay: 3 });
+        } else {
+            await composer.fill(text);
+        }
 
         // Readback before anything else: a field the editor dropped must never be submitted.
         const readback = await this.requireReadback(page, composerSelector, text);
@@ -473,6 +512,13 @@ export class LinkedinBrowserTransport implements PublishTransport {
         image: string,
     ): Promise<{ ok: true; evidence: string } | { ok: false; error: string }> {
         try {
+            const media = await trySelectors(page, LINKEDIN_POST_SELECTORS.mediaButton);
+            if (media.found) {
+                await page
+                    .locator(media.selector ?? LINKEDIN_POST_SELECTORS.mediaButton[0])
+                    .first()
+                    .click();
+            }
             const inputSelector = await resolveSelector(page, LINKEDIN_POST_SELECTORS.fileInput, {
                 timeoutMs: this.stepTimeoutMs,
                 label: 'linkedin file input',
