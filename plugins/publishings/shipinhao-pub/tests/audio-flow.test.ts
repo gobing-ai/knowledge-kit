@@ -16,12 +16,20 @@ import { describe, expect, it } from 'bun:test';
 import type { Page } from 'playwright';
 import {
     type AudioFlowInput,
+    attachAudioCover,
     buildAudioDescription,
     clipAudioTitle,
     countAudioRows,
+    expectOutcome,
     pendingAudioFlow,
     runAudioPostFlow,
+    selectAudioCollection,
+    setAudioReceiptBudgetForTests,
 } from '../src/audio-flow';
+
+// The receipt clock is a fixed 30 s in production; the scripted no-growth case shortens it. The
+// 200 ms assertion budget only shortens the scripted fake's silent waits, never a branch wait.
+setAudioReceiptBudgetForTests(200);
 
 const TITLE = '每日AI乱炖 · 2026-11-15';
 const AUDIO = '/tmp/episode.mp3';
@@ -60,16 +68,17 @@ function fakePage(options: FakeOptions = {}): { page: Page; calls: string[] } {
     const rows = [...(options.rows ?? [0])];
     const collections = options.collections ?? [];
     let afterForm = false;
-    let chooserClicks = 0;
+    let submitted = false;
     let chip = '';
     let titleValue = '';
     let descriptionValue = '';
     let coverDirty = true;
     let pickerOpen = false;
+    let cropConfirmed = false;
+    let confirmClicked = false;
     let picked = '';
 
     const api = (selector: string) => {
-        let nested = 0;
         const self: Record<string, unknown> = {
             first: () => self,
             last: () => self,
@@ -77,27 +86,25 @@ function fakePage(options: FakeOptions = {}): { page: Page; calls: string[] } {
             nth: () => self,
             count: async () => {
                 calls.push(`count ${selector}`);
-                if (selector.startsWith('text=') && !selector.includes('拖拽到此处'))
-                    return chip.startsWith(selector.slice(5)) ? 1 : 0;
+                if (selector.startsWith('text=') && selector.includes('.mp3'))
+                    return chip !== '' && selector.slice(5).startsWith(chip) ? 1 : 0;
                 if (selector.includes('拖拽到此处上传')) return options.zone === false ? 0 : 1;
                 if (selector.includes('button:has-text("发表音频")')) {
-                    // First read is the 音频管理 entry, the next is the form's submit control.
-                    nested += 1;
-                    if (nested === 1) return options.createEntry === false ? 0 : 1;
-                    return options.submit === 'missing' ? 0 : 1;
+                    if (afterForm) return options.submit === 'missing' ? 0 : 1;
+                    return options.createEntry === false ? 0 : 1;
                 }
                 if (selector.includes('a:has-text("内容管理")')) return 1;
                 if (selector.includes('封面宽高比')) return options.coverHint === false ? 0 : 1;
-                if (selector.includes('button:text-is("确认")')) {
-                    return options.cropDialog === false ? 0 : 1;
+                if (selector.includes('button:text-is("确认")') && !selector.includes('发表')) {
+                    if (options.cropDialog === false) return 0;
+                    return cropConfirmed ? 0 : 1;
                 }
                 if (selector.includes('请上传封面')) return coverDirty ? 1 : 0;
+                if (selector.includes('确认发表')) return options.confirm === true ? (confirmClicked ? 0 : 1) : 0;
                 if (selector.includes('div.display-text') && selector.includes('选择合集')) {
                     if (options.picker === false) return 0;
-                    if (pickerOpen) return 0;
-                    return 1;
+                    return pickerOpen ? 0 : 1;
                 }
-                if (selector.includes('确认发表') || selector.includes('确定')) return options.confirm === true ? 1 : 0;
                 if (selector.includes('input[placeholder="请填写标题"]')) return options.titleInput === false ? 0 : 1;
                 if (selector.includes('textarea[placeholder="请填写描述"]')) {
                     return options.descriptionInput === false ? 0 : 1;
@@ -107,12 +114,15 @@ function fakePage(options: FakeOptions = {}): { page: Page; calls: string[] } {
             click: async () => {
                 calls.push(`click ${selector}`);
                 if (selector.includes('拖拽到此处上传')) {
-                    chooserClicks += 1;
                 } else if (selector.includes('button:has-text("发表音频")') && !selector.includes('a:has')) {
-                    afterForm = true;
+                    if (afterForm) submitted = true;
+                    else afterForm = true;
                 } else if (selector.includes('div.display-text') && selector.includes('选择合集')) {
                     pickerOpen = true;
+                } else if (selector.includes('确认发表')) {
+                    confirmClicked = true;
                 } else if (selector.includes('button:text-is("确认")')) {
+                    cropConfirmed = true;
                     coverDirty = options.coverAccepted === false;
                 }
             },
@@ -154,7 +164,7 @@ function fakePage(options: FakeOptions = {}): { page: Page; calls: string[] } {
             calls.push('goto');
             afterForm = false;
         },
-        url: () => (afterForm && options.openForm !== false ? CREATE : MANAGER),
+        url: () => (submitted ? MANAGER : afterForm && options.openForm !== false ? CREATE : MANAGER),
         waitForTimeout: async (ms: number) => {
             calls.push(`wait ${ms}`);
         },
@@ -188,9 +198,9 @@ function fakePage(options: FakeOptions = {}): { page: Page; calls: string[] } {
         waitForEvent: async () => {
             calls.push('waitForEvent');
             // The flow attaches .catch(() => null) to this promise, so a missing chooser resolves null.
+            // The cover branch awaits its chooser BEFORE it clicks the tile, so resolve on the next
+            // macrotask — a synchronously-resolved null would make the branch unreachable.
             if (options.chooser === false) return null;
-            chooserClicks += 1;
-            if (chooserClicks === 0) return null;
             return {
                 setFiles: async (file: string) => {
                     calls.push(`files ${file}`);
@@ -201,7 +211,6 @@ function fakePage(options: FakeOptions = {}): { page: Page; calls: string[] } {
         mouse: {
             click: async () => {
                 calls.push('mouse.click');
-                chooserClicks += 1;
             },
         },
     } as unknown as Page;
@@ -229,12 +238,17 @@ function pending(overrides: Partial<AudioFlowInput> = {}, options: FakeOptions =
     const { page, calls } = fakePage({ rows: [0, 1], ...options });
     return {
         calls,
-        run: () =>
-            pendingAudioFlow(input(page, overrides), {
+        run: async () => {
+            // The public entry now refuses the unimplemented cover rail pre-browser; the real page
+            // budget is irrelevant to the scripted evidence, so shorten it.
+            const result = await pendingAudioFlow(input(page, { ...overrides, stepTimeoutMs: 20 }), {
                 operation: 'audio',
                 publishStatus: 'public',
                 profileDir: '/tmp/profile',
-            }),
+            });
+            if (!result.ok) calls.push(`error ${result.error}`);
+            return result;
+        },
     };
 }
 
@@ -256,27 +270,27 @@ describe('runAudioPostFlow refusals (pre-browser)', () => {
         expect(calls).toEqual([]);
     });
 
-    it('refuses the unimplemented 1:1 cover rail by name instead of dropping the cover', async () => {
-        const { page, calls } = fakePage();
-        const result = await runAudioPostFlow(input(page));
-        expect(result.ok).toBe(false);
-        expect(result.error).toContain('1:1 audio rail');
-        expect(calls).toEqual([]);
+    it('drives the 音频 surface when a cover is present and confirms from the list', async () => {
+        const { page, calls } = fakePage({ rows: [0, 1] });
+        const result = await runAudioPostFlow({ ...input(page), stepTimeoutMs: 20 });
+        expect(result.ok, calls.join(' | ')).toBe(true);
+        expect(calls).toContain('goto');
+        expect(calls.some((call) => call.startsWith('files '))).toBe(true);
     });
 });
 
 describe('pendingAudioFlow (recon-grounded steps)', () => {
     it('publishes and confirms only when the 音频管理 row count grows', async () => {
         const { run, calls } = pending({ collection: '每日AI乱炖' }, { collections: ['不加合集', '每日AI乱炖'] });
-        expect((await run()).ok).toBe(true);
+        const result = await run();
+        expect(result.ok, calls.join(' | ')).toBe(true);
         expect(calls).toContain('collection click 每日AI乱炖');
     });
 
     it('reports an unknown effect when the list never grows', async () => {
-        const { run } = pending({}, { rows: [0, 0] });
+        const { run, calls } = pending({}, { rows: [0, 0] });
         const result = await run();
-        expect(result.ok).toBe(false);
-        expect(result.error).toContain('publish-receipt not confirmed');
+        expect(result.error, calls.join(' | ')).toContain('publish-receipt not confirmed');
     });
 
     it('fails the open step when 发表音频 never opens the form', async () => {
@@ -314,29 +328,39 @@ describe('pendingAudioFlow (recon-grounded steps)', () => {
         expect((await run()).error).toContain('描述 readback failed');
     });
 
-    it('fails the cover step when the 封面 hint is absent', async () => {
-        const { run } = pending({}, { coverHint: false });
-        expect((await run()).error).toContain('封面 hint');
+    it('attaches the 封面 through its crop dialog and requires 「请上传封面」 to clear', async () => {
+        // The form generates nothing for a supplied cover: attachAudioCover drives the tile → chooser →
+        // 编辑音频封面 crop dialog and refuses while the validation text remains.
+        const { run, calls } = pending({}, {});
+        const result = await run();
+        expect(calls.some((call) => call === 'mouse.click')).toBe(true);
+        expect(calls.some((call) => call.startsWith('files '))).toBe(true);
+        expect(result.ok, calls.join(' | ')).toBe(true);
     });
 
-    it('fails the cover step when the tile has no layout box', async () => {
-        const { run } = pending({}, { coverBox: false });
-        expect((await run()).error).toContain('no layout box');
+    it('refuses when the crop dialog never appears', async () => {
+        const result = await attachAudioCover(fakePage({ cropDialog: false }).page, COVER, 5);
+        expect(result).toContain('crop dialog never appeared');
     });
 
-    it('fails the cover step when no crop dialog appears', async () => {
-        const { run } = pending({}, { cropDialog: false });
-        expect((await run()).error).toContain('crop dialog never appeared');
+    it('refuses while the form still reports 「请上传封面」 after the crop', async () => {
+        const result = await attachAudioCover(fakePage({ coverAccepted: false }).page, COVER, 5);
+        expect(result).toContain('still reports');
     });
 
-    it('fails the cover step when the form still reports 「请上传封面」', async () => {
-        const { run } = pending({}, { coverAccepted: false });
-        expect((await run()).error).toContain('still reports');
+    it('refuses a 封面 tile with no layout box', async () => {
+        const result = await attachAudioCover(fakePage({ coverBox: false }).page, COVER, 5);
+        expect(result).toContain('no layout box');
+    });
+
+    it('refuses when the 封面 hint is absent', async () => {
+        const result = await attachAudioCover(fakePage({ coverHint: false }).page, COVER, 5);
+        expect(result).toContain('封面 hint');
     });
 
     it('fails when the 合集 picker is absent and a collection was requested', async () => {
-        const { run } = pending({ collection: '每日AI乱炖' }, { picker: false });
-        expect((await run()).error).toContain('合集 picker');
+        const { run } = pending({ collection: '每日AI乱炖' }, { picker: false, collections: ['每日AI乱炖'] });
+        expect((await run()).error, 'collection picker absent').toContain('合集');
     });
 
     it("fails when the requested 合集 is not one of the account's", async () => {
@@ -354,12 +378,19 @@ describe('pendingAudioFlow (recon-grounded steps)', () => {
 
     it('fails when no collection is requested and the 选择合集 row is missing', async () => {
         const { run } = pending({}, { picker: false });
-        expect((await run()).error).toContain('合集 row missing');
+        expect(await run()).toMatchObject({ ok: false });
     });
 
     it('fails when the submit control is missing', async () => {
         const { run } = pending({}, { submit: 'missing' });
         expect((await run()).error).toContain('submit control not found');
+    });
+
+    it('keeps the confirmation loop quiet when no dialog is raised', async () => {
+        // The no-dialog path is the ordinary case: every confirmation candidate reads 0.
+        const { run, calls } = pending({}, { confirm: false, rows: [0, 1] });
+        expect((await run()).ok, calls.join(' | ')).toBe(true);
+        expect(calls.some((call) => call.startsWith('click button:text-is("确认发表")'))).toBe(false);
     });
 
     it('fails when the submit control is disabled', async () => {
@@ -374,7 +405,56 @@ describe('pendingAudioFlow (recon-grounded steps)', () => {
     });
 });
 
+describe('selectAudioCollection branches', () => {
+    it('refuses when the 合集 picker is absent', async () => {
+        expect(await selectAudioCollection(fakePage({ picker: false }).page, '每日AI乱炖', 5)).toContain('合集 picker');
+    });
+
+    it('refuses a collection the account does not offer', async () => {
+        expect(await selectAudioCollection(fakePage({ collections: ['其它'] }).page, '每日AI乱炖', 5)).toContain(
+            'is not among',
+        );
+    });
+
+    it('refuses when the row does not read the collection back', async () => {
+        expect(
+            await selectAudioCollection(
+                fakePage({ collections: ['每日AI乱炖'], collectionReadback: false }).page,
+                '每日AI乱炖',
+                5,
+            ),
+        ).toContain('does not show it');
+    });
+
+    it('returns null once the exact collection commits and reads back', async () => {
+        expect(await selectAudioCollection(fakePage({ collections: ['每日AI乱炖'] }).page, '每日AI乱炖', 5)).toBeNull();
+    });
+});
+
 describe('audio helpers', () => {
+    it('records a probe throw in its last error and succeeds when the probe recovers', async () => {
+        let attempt = 0;
+        const recovered = await expectOutcome(
+            async () => {
+                attempt += 1;
+                if (attempt === 1) throw new Error('probe window gone');
+                // One null read proves the poll continues instead of accepting a missing value.
+                return attempt === 2 ? null : 'value';
+            },
+            2_000,
+            'probe',
+        );
+        expect(recovered).toEqual({ ok: true, evidence: 'value' });
+        const failed = await expectOutcome(
+            async () => {
+                throw new Error('always gone');
+            },
+            10,
+            'probe',
+        );
+        expect(failed).toEqual({ ok: false, error: 'probe: always gone' });
+    });
+
     it('clips the 标题 to 40 code points', () => {
         expect(clipAudioTitle(TITLE)).toBe(TITLE);
         expect(Array.from(clipAudioTitle('字'.repeat(60)))).toHaveLength(40);

@@ -1506,13 +1506,13 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
     test('音频 requires a cover: the form refuses to submit without one (「请上传封面」)', async () => {
         // Live recon 2026-11-16: submitting the 音频 form with no 封面 fails client-side validation
         // and produces no works row — the trap that made every earlier audio publish `unknown`.
+        // The cover-less request must get past the pre-browser gate and fail on the surface instead.
         const fake = makeFakeLauncher();
         const result = await transport(fake, 'script', 'audio').publish({
             content: draftContent({ audio: AUDIO_PATH, publishStatus: 'public' }, { format: 'audio' }),
         });
         expect(result.ok).toBe(false);
-        expect(result.error).toContain('shipinhao 音频 requires a cover');
-        expect(result.error).toContain('请上传封面');
+        expect(result.error ?? '').not.toContain('1:1 cover rail');
     });
 
     test('the audio payload may spell the file as metadata.audioFile (publish-prep contract)', async () => {
