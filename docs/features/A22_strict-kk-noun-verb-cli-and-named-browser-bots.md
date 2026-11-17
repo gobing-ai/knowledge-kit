@@ -124,6 +124,7 @@ Feature: Strict kk noun-verb CLI and named browser bots
 | 0275 | Normalize kk stage and lock commands with compatible aliases | done |
 | 0276 | Implement named bot list login logout and open lifecycle | done |
 | 0278 | Review and migrate compatible CLI and browser session callers | done |
+| 0382 | Record kk bot operator sessions and generate channel rails from them | backlog |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
