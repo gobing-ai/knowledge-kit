@@ -12,7 +12,7 @@ module set.
 ## Surface
 
 ```text
-kk bot record <bot> [-o <file>] [--include-text]      # headed session → transcript JSON
+kk bot record <bot> [-o <file>] [--include-text] [--url <url>]  # headed session → transcript JSON
 kk bot codegen <transcript> --plugin <name> --operation <op> [--apply]
                                    [--receipt-path <dot.path>] [--allow-unredacted]
 kk bot replay <bot> <transcript> [--submit] [-o <dir>] [--submit-text <text>]
@@ -71,13 +71,15 @@ the last click.
 
 In-page, on the event target walk up to the nearest interactive ancestor
 (`button, a, input, textarea, select, [role=button|link|textbox|menuitem], [contenteditable=true]`).
-Drop it when `checkVisibility()` is false. Then accept the FIRST tier whose candidate matches exactly
-one **visible** node:
+Drop it when `checkVisibility()` is false or it sits under `[aria-hidden="true"]` / `[inert]` (rendered
+but unreachable — X keeps its background composer there behind the compose modal). Then accept the
+FIRST tier whose candidate matches exactly one **visible** node:
 
 1. `[data-testid="v"]`
 2. `[name="v"]`
 3. `[aria-label="v"]` — exact, never `^=`/`*=`
-4. `[role="r"]:text-is("t")` — the Playwright form the rails already use
+4. `role=r[name="t" s]` — Playwright's role engine with an exact accessible name; `:text-is` on the
+   role node matches only a direct text child, so span-wrapped labels (Threads) resolved 0
 5. `text="t"`
 6. the structural path (tags, `nth-of-type`, and the stable attributes above)
 
@@ -90,15 +92,18 @@ and resolved by the pure function on the host, so the ranking exists once.
 
 Codegen arms `page.waitForResponse` **before** the submit click and reads the publish id from the
 recorded response body — never from rendered DOM text. The receipt candidate is the last mutating
-response recorded after the last click, so an upload response (`pic_id`, `media_id`) is an
-intermediate id and never the receipt. The id path is `--receipt-path` or the first string field
+response after the last click whose endpoint (method + pathname) the click introduced — one that did
+not already fire before it. An upload response (`pic_id`, `media_id`) is therefore an intermediate id,
+and a polled endpoint is never the receipt: live x refreshes `HomeTimeline`/`update_subscriptions`
+after `CreateTweet`, and Threads' polled `graphql/query` carries other users' post ids (2026-11-17).
+Only when every post-click endpoint was already polling does it fall back to the last response. The id path is `--receipt-path` or the first string field
 named `id` / `*_id` / `rest_id` / `url`. No candidate → an explicit `TODO receipt` plus a stderr
 warning; a DOM-text comparison is never emitted.
 
 ## Privacy
 
 Typed text is `{redacted: true, length}` unless `--include-text`; the transcript is mode 0600 and
-written tmp+rename so a crash loses at most the in-flight step; response bodies are capped at 64 KiB;
+written tmp+rename so a crash loses at most the in-flight step; response bodies are capped at 64 KiB (by `content-length` and by the parsed size, since compressed responses omit the header);
 response JSON keys matching `/token|secret|password|cookie|session|auth/i` become `"<redacted>"` at
 any depth; request/response headers and cookies are never written. `replay`/`codegen` refuse a
 transcript whose `redacted` flag is false unless `--allow-unredacted`.
@@ -107,19 +112,25 @@ transcript whose `redacted` flag is false unless `--allow-unredacted`.
 
 Same lease/launch path as the recorder (headed). A transcript with no leading `navigate` step opens its
 `startUrl` first (unless the page is already there). Per step: `navigate` → `page.goto`; every other step
-waits up to 15 s for a first visible match (a live page renders the next control after the previous
-click), then counts visible matches and stops the run when the count is not exactly 1 (`≠1` is a
-finding, not a retry). Stops before the submit step unless `--submit`. A redacted `type` step replays as a
+polls up to 15 s until a visible match outside `[aria-hidden="true"]` / `[inert]` (the recorder's
+rule) exists — a live page renders the next control after the previous click, and waiting on any
+visible match returned on x's aria-hidden background composer before the modal mounted — then counts
+and stops the run when the count is not exactly 1 (`≠1` is a finding, not a retry); the surviving
+node is the one acted on. Stops before the submit step unless `--submit`. A redacted `type` step replays as a
 placeholder of the recorded length. Evidence is one screenshot per executed step plus
 `replay.json`; both are written even when the run stops early.
 
 ## Fixtures
 
-`packages/publish-harness/tests/fixtures/bot-record/` holds `x.json` and `threads.json` (converted
-from the two 2026-11-16 recordings, redacted, structural paths kept) and `local-post.json` (synthetic,
-carrying a submit response). Codegen and privacy tests run on them with no live browser. The x
-fixture generates; the threads fixture aborts on its one structural-only step — which is the abort
-arm working on real data, not a defect.
+`packages/publish-harness/tests/fixtures/bot-record/` holds `x.json` and `threads.json` (live
+`kk bot record` sessions, redacted, run through `bun run format` — the recorder writes plain 2-space
+JSON) and `local-post.json` (synthetic, carrying a submit response). Codegen and privacy tests run on
+them with no live browser. Both replayed live on 2026-11-17 with every step resolving one node,
+stopped before Post (`.spur/run/dogfood/2026-11-17-bot-replay/{x,threads}-rec4/`); x generates a
+`CreateTweet` receipt (`data.create_tweet.tweet_results.result.rest_id`), threads a
+`configure_text_only_post` one (`media.id`). Record at the browser's default zoom: zoom changes the CSS width, Threads
+then swaps in a responsive nav, and a selector from that layout does not resolve at the pinned
+1280×720 viewport replay uses.
 
 ## Rule
 
@@ -136,10 +147,16 @@ code into live rails · auto-removing a stale lease · a second launcher or leas
 ## Known gaps (2026-11-17)
 
 - The recorder (AC1/AC2) and replay (AC6) run against local pages in real headless Chromium in
-  `bun run test`. The live replay of x/threads (AC9) on 2026-11-17 rejected both converted fixtures,
-  which is correct behavior: x's `tweetTextarea_0` now resolves two visible nodes on `/compose/post`,
-  and threads' nav "New thread" control is not visible on the web home (the live rail already uses the
-  inline composer). Both fixtures need fresh `kk bot record` sessions; evidence is under
+  `bun run test`. Live replay of x/threads (AC9) on 2026-11-17 surfaced seven defects, all fixed the
+  same day — besides the three below, the render wait ended on a visible aria-hidden twin, the
+  receipt picked x's trailing `update_subscriptions` poll, every rail without a file step imported
+  an unused `uploadFile` (a `noUnusedLocals` failure once promoted; the generated fixtures are now
+  type-checked in `bun run test`), and the 64 KiB response-body cap read only `content-length`, so
+  x's compressed HomeTimeline (300 KB of other users' posts) reached the fixture — the cap now also
+  measures the parsed body, and `x.json` was trimmed to what the fixed recorder writes: X's second `tweetTextarea_0` is the `aria-hidden` background composer (reachability rule
+  above); the role-text tier's `:text-is` missed span-wrapped labels (role engine above); and the
+  Threads recording's text "New thread" button lives in a nav that is `display:none` at 1280 px — the
+  recording was made at a different effective width (default-zoom rule above). Evidence is under
   `.spur/run/dogfood/2026-11-17-bot-replay/`.
 - Injection and hosted-captcha pages, cross-origin iframe events and headless recording are out of
   scope by design (ADR-038 amdt).

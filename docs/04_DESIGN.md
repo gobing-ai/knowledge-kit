@@ -1220,7 +1220,7 @@ kk bot logout <bot>                # deletes that bot's contained profile; print
 kk bot open <bot> [--login]        # reopens the saved page headed; prints `<name>\tclosed` on close
 kk bot exec <bot> <url> [curl opts] # one request with the cached cookies; body bytes to stdout/`-o`
 kk bot plan <bot> <file> [-o <dir>] [-m <sec>] # runs declarative collection plan under shared lease
-kk bot record <bot> [-o <file>] [--include-text]  # headed session → ordered transcript JSON (0600)
+kk bot record <bot> [-o <file>] [--include-text] [--url <url>]  # headed session → ordered transcript JSON (0600)
 kk bot codegen <transcript> --plugin <p> --operation <op> [--apply] [--receipt-path <path>]
                                    # rail skeleton to stdout, or <op>-rail.generated.ts with --apply
 kk bot replay <bot> <transcript> [--submit] [-o <dir>] [--submit-text <text>]
@@ -1228,7 +1228,8 @@ kk bot replay <bot> <transcript> [--submit] [-o <dir>] [--submit-text <text>]
 ```
 
 - **Recorded rails (2026-11, ADR-038 amdt):** `record` opens the bot's saved profile headed under one
-  lease and writes an ordered transcript of navigations, clicks, keystrokes, file choices and mutating
+  lease at its saved default page (`--url` supplies one for a profile made by a channel login script,
+  which saves none; without either it exits 1) and writes an ordered transcript of navigations, clicks, keystrokes, file choices and mutating
   JSON responses. Selector resolution is ranked (`data-testid` > `name` > exact `aria-label` >
   `role`+exact text > exact text > structural path), never reads a class name, drops invisible targets
   and reports a multi-match as `ambiguous` rather than narrowing it. Typed text is
@@ -1237,13 +1238,15 @@ kk bot replay <bot> <transcript> [--submit] [-o <dir>] [--submit-text <text>]
   transcript and exit 130/143, so no lease marker survives.
 - `codegen` aborts (exit 1, naming the step) on an ambiguous or structural-only step, and emits its
   receipt as a `page.waitForResponse` matcher armed before the submit click, reading the id from the
-  recorded response — never from rendered text. An upload response before the submit is an
-  intermediate id; no candidate yields an explicit `TODO receipt` plus a stderr warning. `--apply`
+  recorded response — never from rendered text. The receipt is the last post-submit response on an
+  endpoint the submit introduced (one that never fired before it), so neither an earlier upload nor a
+  polled endpoint (x `HomeTimeline`, Threads `graphql/query`) is picked; no candidate yields an explicit `TODO receipt` plus a stderr warning. `--apply`
   requires `--plugin`/`--operation` to be lowercase slugs and `plugins/publishings/<p>/plugin.json` to
   exist under the cwd (run it from the repo root); otherwise it exits 2 and writes nothing.
 - `replay` stops before the submit click unless `--submit`; it opens the transcript's `startUrl` when the
-  recording has no leading navigate step, waits up to 15 s per step for the target to render, then fails
-  the run when the step does not resolve exactly one visible node. Its per-step screenshots plus `replay.json` are the evidence a channel
+  recording has no leading navigate step, waits up to 15 s per step for a reachable target to render, then fails
+  the run when the step does not resolve exactly one visible node outside `[aria-hidden="true"]`/`[inert]`
+  (the recorder drops those targets too). Its per-step screenshots plus `replay.json` are the evidence a channel
   repair cites.
 - `rail-transcript-header` (`.spur/rules/structure/rail-transcript-header.yaml`, checker
   `scripts/check-rail-transcripts.ts`) requires every `plugins/publishings/*/src/*rail*.ts` and
