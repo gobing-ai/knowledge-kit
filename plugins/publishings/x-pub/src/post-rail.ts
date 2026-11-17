@@ -236,7 +236,8 @@ export class XPostBrowserTransport implements PublishTransport {
             await textBox.pressSequentially(text, { delay: 8 });
             const enabled = await expectOutcome(
                 async () => ((await submit.isEnabled().catch(() => false)) ? 'post enabled' : null),
-                { timeoutMs: 10_000, label: `x post enabled (attempt ${attempt})` },
+                // One step, capped at 10s: a caller may shrink the step (tests), never stretch it.
+                { timeoutMs: Math.min(10_000, this.stepTimeoutMs), label: `x post enabled (attempt ${attempt})` },
             );
             if (enabled.ok) return null;
         }
@@ -299,7 +300,8 @@ export class XPostBrowserTransport implements PublishTransport {
                         .catch(() => false))
                         ? 'post re-enabled'
                         : null,
-                { timeoutMs: 120_000, label: 'x post submit enabled after media' },
+                // Four steps: X transcodes the image and only then re-enables Post (30s step → 120s).
+                { timeoutMs: this.stepTimeoutMs * 4, label: 'x post submit enabled after media' },
             );
             if (!reEnabled.ok) return fail(`x post submit stayed disabled after the media: ${reEnabled.error}`);
         }

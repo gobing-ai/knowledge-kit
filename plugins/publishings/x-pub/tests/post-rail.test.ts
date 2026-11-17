@@ -62,6 +62,10 @@ interface FakePageOptions {
     missingMediaButton?: boolean;
     /** The uploaded image never renders in the composer. */
     mediaNeverRenders?: boolean;
+    /** Post stays disabled after the media is attached (X never finishes the upload). */
+    submitDisabledAfterMedia?: boolean;
+    /** The editor never accepts the text, so Post stays disabled through every attempt. */
+    editorNeverAccepts?: boolean;
     /** `setInputFiles` rejects with a non-login error (the no-hint branch). */
     uploadError?: string;
     /** Posting returns the page to the profile URL, so the receipt reads it via `reload`. */
@@ -82,7 +86,11 @@ function makeFakePostPage(options: FakePageOptions, calls: string[]): Page {
     let homeVisits = 0;
 
     const composerOpen = (): boolean => url.includes('/compose/post');
-    const submitEnabled = (): boolean => composerOpen() && typed.length > 0;
+    const submitEnabled = (): boolean =>
+        composerOpen() &&
+        typed.length > 0 &&
+        options.editorNeverAccepts !== true &&
+        !(mediaUploaded && options.submitDisabledAfterMedia === true);
     const statusHref = (): string | null =>
         submitted ? (options.statusHrefAfterSubmit ?? null) : (options.statusHref ?? null);
 
@@ -550,6 +558,17 @@ describe('post rail cover leg', () => {
         expect(fake.calls).not.toContain(`click:${X_POST_SUBMIT}`);
     });
 
+    test('a Post that stays disabled after the media fails before the receipt wait', async () => {
+        const fake = makeFakeLauncher({
+            pages: [{}, { submitDisabledAfterMedia: true, statusHrefAfterSubmit: '/robin/status/200' }],
+        });
+        const result = await transport(fake).publish({ content, options: { coverPath: coverPath() } });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('stayed disabled after the media');
+        expect(fake.calls).not.toContain(`click:${X_POST_SUBMIT}`);
+    });
+
     test('an upload error is reported verbatim, with no login hint', async () => {
         const fake = makeFakeLauncher({
             pages: [{}, { uploadError: 'disk went away' }],
@@ -586,6 +605,17 @@ describe('post rail composer failures', () => {
 
         expect(result.ok).toBe(false);
         expect(result.error).toContain('x composer never opened at /compose/post');
+    });
+
+    test('an editor that never accepts the text refuses to claim a publish after three attempts', async () => {
+        const fake = makeFakeLauncher({ pages: [{}, { editorNeverAccepts: true }] });
+        const result = await transport(fake).publish({ content });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('did not accept the text in three attempts');
+        expect(result.error).toContain('refusing to claim a publish');
+        expect(fake.calls.filter((call) => call.startsWith('type:')).length).toBe(3);
+        expect(fake.calls).not.toContain(`click:${X_POST_SUBMIT}`);
     });
 
     test('an editor whose forced click and focus both fail refuses to claim a publish', async () => {
