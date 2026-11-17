@@ -55,6 +55,8 @@ interface FakeOptions {
     collectionReadback?: boolean;
     submit?: 'enabled' | 'missing' | 'disabled';
     confirm?: boolean;
+    /** The confirmation dialog's click rejects (a re-render raced the click). */
+    confirmClickRejects?: boolean;
     /** Row counts returned per 音频管理 row read, in order; the last repeats. */
     rows?: number[];
 }
@@ -120,6 +122,7 @@ function fakePage(options: FakeOptions = {}): { page: Page; calls: string[] } {
                 } else if (selector.includes('div.display-text') && selector.includes('选择合集')) {
                     pickerOpen = true;
                 } else if (selector.includes('确认发表')) {
+                    if (options.confirmClickRejects === true) throw new Error('dialog detached');
                     confirmClicked = true;
                 } else if (selector.includes('button:text-is("确认")')) {
                     cropConfirmed = true;
@@ -197,10 +200,13 @@ function fakePage(options: FakeOptions = {}): { page: Page; calls: string[] } {
         },
         waitForEvent: async () => {
             calls.push('waitForEvent');
-            // The flow attaches .catch(() => null) to this promise, so a missing chooser resolves null.
-            // The cover branch awaits its chooser BEFORE it clicks the tile, so resolve on the next
-            // macrotask — a synchronously-resolved null would make the branch unreachable.
-            if (options.chooser === false) return null;
+            // Playwright's waitForEvent REJECTS on timeout and the flow attaches `.catch(() => null)`;
+            // the cover branch awaits its chooser BEFORE it clicks the tile, so resolve on the next
+            // macrotask — a synchronously-rejected null would make the branch unreachable.
+            if (options.chooser === false) {
+                await new Promise((resolve) => setTimeout(resolve, 0));
+                throw new Error('page.waitForEvent: Timeout 5ms exceeded');
+            }
             return {
                 setFiles: async (file: string) => {
                     calls.push(`files ${file}`);
@@ -356,6 +362,20 @@ describe('pendingAudioFlow (recon-grounded steps)', () => {
     it('refuses when the 封面 hint is absent', async () => {
         const result = await attachAudioCover(fakePage({ coverHint: false }).page, COVER, 5);
         expect(result).toContain('封面 hint');
+    });
+
+    it('refuses when the 封面 tile opens no file chooser', async () => {
+        const result = await attachAudioCover(fakePage({ chooser: false }).page, COVER, 5);
+        expect(result).toContain('opened no file chooser');
+    });
+
+    it('publishes even when the confirmation dialog detaches mid-click', async () => {
+        // The confirmation is opportunistic: a dialog that re-renders out from under the click must
+        // never turn a submitted post into a failure.
+        const { run, calls } = pending({}, { confirm: true, confirmClickRejects: true, rows: [0, 1] });
+        const result = await run();
+        expect(result.ok, calls.join(' | ')).toBe(true);
+        expect(calls.some((call) => call.startsWith('click button:text-is("确认发表")'))).toBe(true);
     });
 
     it('fails when the 合集 picker is absent and a collection was requested', async () => {
