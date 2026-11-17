@@ -1425,7 +1425,22 @@ kk article generate-bundle --work-dir <dir> --stage variants|freeze          # s
 
 kk news <same verbs, --type fixed to news, --run-date <YYYYMMDD> instead of --slug>
 kk news prepare | generate-render | generate-voice | generate-cards | report --work-dir <dir> …   # shipped (0367)
+kk news prepare --work-dir <dir> [--refresh] [--ledger-sync]   # --refresh: drop the frozen pool + plan
 ```
+
+`prepare --refresh` resets a same-day run to its post-collect state, because two caches otherwise make
+one unrecoverable. `daily-extract` keeps `10-collect/pool.json` byte-for-byte once a plan is authored
+(0347 F6, so a retry resumes the same material), which turned a retry of a *thin* day into a replay
+that could never recover — the pool cannot grow after later collects. And `daily-qc-content` embeds
+`episode_min_minutes` in its cache fingerprint, so changing the floor invalidates the candidates cache
+while the plan's descendants still exist; the stage then fails closed ("QC cache changed after
+downstream artifacts were authored") and no re-entry is possible at all (both 2026-11-17). `--refresh`
+deletes every derived phase (`10-collect`, `10-ingest`, `21-plan` … `5-report`, `4-publish`) plus
+`pool-gate.json`/`bundle.json`/`run-report.summary.txt`, then the verb's normal stage sequence
+re-extracts, re-plans and re-runs the QC gate in the same invocation. `run-date.txt` and the
+remediation budget stay. It is a `prepare` flag only — the workflow node keeps its frozen-replay
+posture, so a scheduled re-entry is unaffected — and it is destructive of derived artifacts, publish
+receipts included, so it belongs to a day that is being re-derived, not to a published one.
 
 `new`, `status`, `generate`, `publish`, the five `publish-*` verbs (0363–0365) and the six news
 step verbs `prepare`, `generate-check`, `generate-render`, `generate-voice`, `generate-cards` and
@@ -1460,7 +1475,11 @@ is accepted design, not surface: do not invoke it as if it exists.
   `window?`, `reason?`, `exitCode` (and `writerSkill` on a generate, `dryRun` on a dry run).
 - `generate --publish` prints the generation receipt with the publish receipt nested under
   `publish`; a refused chained publish reports its exit code and message and leaves the green
-  generation receipt on disk.
+  generation receipt on disk. When the generation leg itself is not `done` (a `no-content` thin day is
+  the normal case) the nested field is `publish: {status: "skipped", reason}` — the legacy window is
+  deliberately not launched, and the receipt says so instead of omitting `publish` (2026-11-17).
+- `generate --auto` is article-only: `itc` is the only shipped workflow that declares an `auto` var, so
+  the flag is refused for any other resolved type (exit 2) rather than setting a var nothing reads.
 - **`kk-publish` is shipped** (0366): `plugins/kk/workflows/kk-publish.yaml`, a nine-node DAG
   (`plan`, `check`, `send-confirm`, `send`, `send-retry`, `diagnose`, `repair`, `settle`, `report`)
   over one frozen bundle, for both content nouns. Each non-agent, non-pause node is one
