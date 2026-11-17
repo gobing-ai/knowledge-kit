@@ -2,11 +2,11 @@
 schema_version: 1
 id: "A22"
 name: "Strict kk noun-verb CLI and named browser bots"
-status: done
+status: active
 priority: P2
 tags: []
 created_at: "2026-10-13T22:21:11.075Z"
-updated_at: "2026-10-14T08:32:00.645Z"
+updated_at: "2026-11-17T04:31:35.626Z"
 ---
 
 # A22: Strict kk noun-verb CLI and named browser bots
@@ -133,4 +133,5 @@ Feature: Strict kk noun-verb CLI and named browser bots
 - 2026-10-14T00:01:30.232Z backlog → active (system)
 - 2026-10-14T08:31:56.786Z active → verifying (system)
 - 2026-10-14T08:32:00.645Z verifying → done (system)
+- 2026-11-17T04:31:35.626Z done → active (system)
 
