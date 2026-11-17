@@ -229,7 +229,8 @@ export class ThreadsPostBrowserTransport implements PublishTransport {
                 const found = await trySelectors(page, THREADS_POST_SELECTORS.createEntry);
                 return found.found ? (found.selector ?? THREADS_POST_SELECTORS.createEntry[0]) : null;
             },
-            { timeoutMs: 12_000, label: 'threads new-thread entry' },
+            // One step, capped at 12s: the nav entry is opportunistic, so it must not outlast a step.
+            { timeoutMs: Math.min(12_000, this.stepTimeoutMs), label: 'threads new-thread entry' },
         );
         if (entry.ok)
             await page
