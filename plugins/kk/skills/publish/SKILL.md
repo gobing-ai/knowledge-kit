@@ -108,3 +108,14 @@ the confirmed live status; otherwise fail naming the switch.
 | weibo-pub | none — its session lives in the browser profile (`WEIBO_PROFILE_DIR` overrides the dir; tier: `--profile` > `WEIBO_PROFILE_DIR` > `KK_BROWSER_PROFILE_DIR` > `~/.config/kk/browser-profiles/weibo`) |
 
 Missing env → plugin exit 1, `Result.ok false`, error names the variable.
+
+## Authoring or repairing a browser rail
+
+Do not guess a selector. A browser rail (`plugins/publishings/<plugin>/src/*rail*.ts`,
+`*flow*.ts`) is measured: `kk bot record <bot>` → `kk bot replay <bot> <transcript>` →
+`kk bot codegen <transcript> --plugin <plugin> --operation <op>`, then promote by hand. The receipt
+must come from the recorded submit response, and the rail carries a `// transcript:` header (the
+`rail-transcript-header` rule enforces it). The playbook is
+`plugins/kk/skills/web-automation/SKILL.md` § Scenario E; the contract is
+`docs/design/kk-bot-record-codegen.md`. This skill stays transport-free — it shells these verbs, it
+does not own them.

@@ -46,6 +46,10 @@ interface Fakes {
     open?: (name: string, options: { login?: boolean }) => Promise<unknown>;
     exec?: (name: string, request: ExecRequest) => Promise<unknown>;
     plan?: (name: string, plan: unknown, options?: unknown) => Promise<unknown>;
+    record?: (name: string, options: unknown) => Promise<unknown>;
+    codegen?: (transcript: unknown, options: unknown) => unknown;
+    replay?: (name: string, transcript: unknown, options: unknown) => Promise<unknown>;
+    transcript?: unknown;
     calls: string[];
 }
 
@@ -95,6 +99,46 @@ function fakeHarness(fakes: Fakes): BotHarness {
                                 url: 'https://example.com',
                             },
                         ],
+                    }),
+            ),
+    } as unknown as BotHarness;
+}
+
+/** Fake harness half for the 0382 record/codegen/replay leaves. */
+function fakeRecordHarness(fakes: Fakes): BotHarness {
+    const record = async <T>(label: string, value: T): Promise<T> => {
+        fakes.calls.push(label);
+        return value;
+    };
+    return {
+        BotError: FakeBotError,
+        readTranscript: () => Promise.resolve(fakes.transcript ?? { steps: [] }),
+        recordBotSession: (name: string, options: unknown) =>
+            record(
+                `record:${name}`,
+                fakes.record?.(name, options) ??
+                    Promise.resolve({
+                        name,
+                        out: '.spur/run/x.json',
+                        startUrl: 'https://x.com/',
+                        stepCount: 3,
+                        redacted: true,
+                    }),
+            ),
+        generateRail: (transcript: unknown, options: unknown) =>
+            fakes.codegen?.(transcript, options) ?? { source: '// generated\n', warnings: [] },
+        replayBot: (name: string, transcript: unknown, options: unknown) =>
+            record(
+                `replay:${name}`,
+                fakes.replay?.(name, transcript, options) ??
+                    Promise.resolve({
+                        result: {
+                            bot: name,
+                            rows: [{ step: 0, kind: 'navigate', url: 'https://x.com/', ok: true }],
+                            stoppedBeforeSubmit: true,
+                        },
+                        outDir: '.spur/run/bot-replay-x',
+                        replayPath: '.spur/run/bot-replay-x/replay.json',
                     }),
             ),
     } as unknown as BotHarness;
@@ -175,7 +219,7 @@ afterAll(() => {
 });
 
 describe('kk bot registration and argv shape (A22 R1)', () => {
-    it('registers one visible bot noun with exactly list/login/logout/open/exec/plan and no extra flags', () => {
+    it('registers one visible bot noun with exactly list/login/logout/open/exec/plan/record/codegen/replay', () => {
         const program = createProgram();
         const bot = program.commands.find((command) => command.name() === 'bot');
         expect(bot).toBeDefined();
@@ -186,6 +230,9 @@ describe('kk bot registration and argv shape (A22 R1)', () => {
             'open',
             'exec',
             'plan',
+            'record',
+            'codegen',
+            'replay',
         ]);
         expect(bot?.commands.every((command) => command.commands.length === 0)).toBe(true);
 
@@ -203,6 +250,10 @@ describe('kk bot registration and argv shape (A22 R1)', () => {
             // 0306: the curl subset only — anything else stays a Commander usage error.
             exec: ['--data', '--fail', '--header', '--include', '--location', '--max-time', '--output', '--request'],
             plan: ['--max-time', '--output'],
+            // 0382: record/codegen/replay keep the same narrow surface the other verbs hold.
+            record: ['--include-text', '--out'],
+            codegen: ['--allow-unredacted', '--apply', '--operation', '--plugin', '--receipt-path'],
+            replay: ['--allow-unredacted', '--file', '--output', '--submit', '--submit-text'],
         });
         const login = bot?.commands.find((command) => command.name() === 'login');
         expect(login?.registeredArguments.map((argument) => argument.name())).toEqual(['url']);
@@ -212,12 +263,36 @@ describe('kk bot registration and argv shape (A22 R1)', () => {
         expect(exec?.registeredArguments.map((argument) => argument.name())).toEqual(['name', 'url']);
         const plan = bot?.commands.find((command) => command.name() === 'plan');
         expect(plan?.registeredArguments.map((argument) => argument.name())).toEqual(['name', 'plan']);
+        const record = bot?.commands.find((command) => command.name() === 'record');
+        expect(record?.registeredArguments.map((argument) => argument.name())).toEqual(['name']);
+        const codegen = bot?.commands.find((command) => command.name() === 'codegen');
+        expect(codegen?.registeredArguments.map((argument) => argument.name())).toEqual(['transcript']);
+        const replay = bot?.commands.find((command) => command.name() === 'replay');
+        expect(replay?.registeredArguments.map((argument) => argument.name())).toEqual(['name', 'transcript']);
+    });
+
+    it('prints usage for the 0382 leaves and maps a bad argument to the usage exit code', async () => {
+        for (const [verb, usage] of [
+            ['record', 'Usage: kk bot record [options] <name>'],
+            ['codegen', 'Usage: kk bot codegen [options] <transcript>'],
+            ['replay', 'Usage: kk bot replay [options] <name> <transcript>'],
+        ] as const) {
+            const help = await run(['bot', verb, '--help']);
+            expect(help.code).toBe(0);
+            expect(help.out).toContain(usage);
+        }
+
+        // A missing required argument and an unknown flag are both usage errors (exit 2), not 1.
+        expect((await run(['bot', 'record'])).code).toBe(2);
+        expect((await run(['bot', 'codegen', 'x.json'])).code).toBe(2);
+        expect((await run(['bot', 'replay', 'x'])).code).toBe(2);
+        expect((await run(['bot', 'replay', 'x', 'y.json', '--nope'])).code).toBe(2);
     });
 
     it('documents each verb and keeps `kk bot` itself a group with no action', async () => {
         const help = await run(['bot', '--help']);
         expect(help.code).toBe(0);
-        for (const verb of ['list', 'login', 'logout', 'open', 'exec', 'plan']) {
+        for (const verb of ['list', 'login', 'logout', 'open', 'exec', 'plan', 'record', 'codegen', 'replay']) {
             expect(help.out).toContain(verb);
         }
         const verbHelp = await run(['bot', 'login', '--help']);
@@ -920,5 +995,155 @@ describe('kk bot against a throwaway profile root (end-to-end)', () => {
         const result = await runCliProcess(['bot', 'open', 'ghost'], home);
         expect(result.code).toBe(1);
         expect(result.err).toContain('kk bot login <url> --save ghost');
+    });
+});
+
+describe('kk bot record / codegen / replay (0382)', () => {
+    it('record prints the transcript path, the step count and the redaction marker', async () => {
+        const harness = fakeRecordHarness({ calls: [] });
+
+        const result = await runInjected(['bot', 'record', 'x'], harness);
+
+        expect(result.code).toBe(0);
+        expect(result.out).toContain('\t3 steps\tredacted');
+    });
+
+    it('record passes --include-text through as verbatim recording, and -o as the path', async () => {
+        const calls: unknown[] = [];
+        const harness = fakeRecordHarness({
+            calls: [],
+            record: (_name, options) => {
+                calls.push(options);
+                return Promise.resolve({
+                    name: 'x',
+                    out: 'custom.json',
+                    startUrl: 'https://x.com/',
+                    stepCount: 1,
+                    redacted: false,
+                });
+            },
+        });
+
+        const result = await runInjected(['bot', 'record', 'x', '-o', 'custom.json', '--include-text'], harness);
+
+        expect(result.code).toBe(0);
+        expect(calls).toEqual([{ out: 'custom.json', includeText: true }]);
+        expect(result.out).toContain('verbatim');
+    });
+
+    it('codegen writes the skeleton to stdout by default and surfaces warnings on stderr', async () => {
+        const harness = fakeRecordHarness({
+            calls: [],
+            codegen: () => ({ source: '// rail\n', warnings: ['receipt: no mutating response'] }),
+        });
+
+        const result = await runInjected(
+            ['bot', 'codegen', 'x.json', '--plugin', 'x-pub', '--operation', 'post'],
+            harness,
+        );
+
+        expect(result.code).toBe(0);
+        expect(result.out).toContain('// rail');
+        expect(result.err).toContain('receipt: no mutating response');
+    });
+
+    it('codegen --apply refuses to overwrite an existing generated rail', async () => {
+        const harness = fakeRecordHarness({ calls: [], codegen: () => ({ source: '// rail\n', warnings: [] }) });
+        const target = join(repoRoot, 'plugins', 'publishings', 'x-pub', 'src', 'post-rail.generated.ts');
+        mkdirSync(join(repoRoot, 'plugins', 'publishings', 'x-pub', 'src'), { recursive: true });
+        writeFileSync(target, '// existing\n');
+        try {
+            const result = await runInjected(
+                ['bot', 'codegen', 'x.json', '--plugin', 'x-pub', '--operation', 'post', '--apply'],
+                harness,
+            );
+
+            expect(result.code).toBe(2);
+            expect(result.err).toContain('already exists');
+            expect(readFileSync(target, 'utf8')).toBe('// existing\n');
+        } finally {
+            rmSync(target, { force: true });
+        }
+    });
+
+    it('codegen --apply writes the generated rail beside the plugin', async () => {
+        const harness = fakeRecordHarness({
+            calls: [],
+            codegen: () => ({ source: '// generated rail\n', warnings: [] }),
+        });
+        const target = join(repoRoot, 'plugins', 'publishings', 'x-pub', 'src', 'post-rail.generated.ts');
+        try {
+            const result = await runInjected(
+                ['bot', 'codegen', 'x.json', '--plugin', 'x-pub', '--operation', 'post', '--apply'],
+                harness,
+            );
+
+            expect(result.code).toBe(0);
+            expect(readFileSync(target, 'utf8')).toBe('// generated rail\n');
+        } finally {
+            rmSync(target, { force: true });
+        }
+    });
+
+    it('replay prints the rows and exits 0 when every executed step resolved', async () => {
+        const harness = fakeRecordHarness({ calls: [] });
+
+        const result = await runInjected(['bot', 'replay', 'x', 'x.json'], harness);
+
+        expect(result.code).toBe(0);
+        expect(result.out).toContain('replay.json');
+        expect(result.out).toContain('stoppedBeforeSubmit');
+    });
+
+    it('replay exits 1 naming the step when a step does not resolve', async () => {
+        const harness = fakeRecordHarness({
+            calls: [],
+            replay: (name) =>
+                Promise.resolve({
+                    result: {
+                        bot: name,
+                        rows: [
+                            {
+                                step: 4,
+                                kind: 'click',
+                                url: 'https://x.com/',
+                                ok: false,
+                                detail: 'resolved 0 visible nodes',
+                            },
+                        ],
+                        stoppedBeforeSubmit: false,
+                    },
+                    outDir: 'dir',
+                    replayPath: 'dir/replay.json',
+                }),
+        });
+
+        const result = await runInjected(['bot', 'replay', 'x', 'x.json'], harness);
+
+        expect(result.code).toBe(1);
+        expect(result.err).toContain('replay stopped at step 4');
+    });
+
+    it('replay forwards --submit, --submit-text, --output and --file to the harness', async () => {
+        const seen: unknown[] = [];
+        const harness = fakeRecordHarness({
+            calls: [],
+            replay: (_name, _transcript, options) => {
+                seen.push(options);
+                return Promise.resolve({
+                    result: { bot: 'x', rows: [], stoppedBeforeSubmit: false },
+                    outDir: 'dir',
+                    replayPath: 'dir/replay.json',
+                });
+            },
+        });
+
+        const result = await runInjected(
+            ['bot', 'replay', 'x', 'x.json', '--submit', '--submit-text', 'Post', '-o', 'dir', '--file', '/tmp/a.png'],
+            harness,
+        );
+
+        expect(result.code).toBe(0);
+        expect(seen).toEqual([{ submit: true, submitText: 'Post', outDir: 'dir', filePath: '/tmp/a.png' }]);
     });
 });

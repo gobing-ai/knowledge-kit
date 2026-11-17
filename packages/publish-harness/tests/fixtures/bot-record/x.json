@@ -1,0 +1,105 @@
+{
+    "schemaVersion": 1,
+    "bot": "x",
+    "startUrl": "https://x.com/home",
+    "recordedAt": "2026-11-16T00:00:00.000Z",
+    "redacted": true,
+    "steps": [
+        {
+            "i": 0,
+            "t": 1794887157486,
+            "kind": "click",
+            "url": "https://x.com/home",
+            "target": {
+                "selector": "[data-testid=\"SideNav_NewTweet_Button\"]",
+                "rank": "testid"
+            },
+            "text": "Post"
+        },
+        {
+            "i": 1,
+            "t": 1794887159794,
+            "kind": "click",
+            "url": "https://x.com/compose/post",
+            "target": {
+                "selector": "[data-testid=\"tweetTextarea_0\"]",
+                "rank": "testid"
+            }
+        },
+        {
+            "i": 2,
+            "t": 1794887162196,
+            "kind": "key",
+            "url": "https://x.com/compose/post",
+            "target": {
+                "selector": "[data-testid=\"tweetTextarea_0\"]",
+                "rank": "testid"
+            },
+            "key": "Backspace"
+        },
+        {
+            "i": 3,
+            "t": 1794887162345,
+            "kind": "key",
+            "url": "https://x.com/compose/post",
+            "target": {
+                "selector": "[data-testid=\"tweetTextarea_0\"]",
+                "rank": "testid"
+            },
+            "key": "Backspace"
+        },
+        {
+            "i": 4,
+            "t": 1794887169693,
+            "kind": "key",
+            "url": "https://x.com/compose/post",
+            "target": {
+                "selector": "[data-testid=\"tweetTextarea_0\"]",
+                "rank": "testid"
+            },
+            "key": "Meta"
+        },
+        {
+            "i": 5,
+            "t": 1794887169872,
+            "kind": "key",
+            "url": "https://x.com/compose/post",
+            "target": {
+                "selector": "[data-testid=\"tweetTextarea_0\"]",
+                "rank": "testid"
+            },
+            "key": "a"
+        },
+        {
+            "i": 6,
+            "t": 1794887177070,
+            "kind": "click",
+            "url": "https://x.com/compose/post",
+            "target": {
+                "selector": "[aria-label=\"Add photos or video\"]",
+                "rank": "aria"
+            }
+        },
+        {
+            "i": 7,
+            "t": 1794887177071,
+            "kind": "click",
+            "url": "https://x.com/compose/post",
+            "target": {
+                "selector": "[data-testid=\"fileInput\"]",
+                "rank": "testid"
+            }
+        },
+        {
+            "i": 8,
+            "t": 1794887233732,
+            "kind": "click",
+            "url": "https://x.com/compose/post",
+            "target": {
+                "selector": "[data-testid=\"tweetButton\"]",
+                "rank": "testid"
+            },
+            "text": "Post"
+        }
+    ]
+}

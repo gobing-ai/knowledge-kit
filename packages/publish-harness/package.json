@@ -5,7 +5,10 @@
     "exports": {
         ".": "./src/index.ts",
         "./browser": "./src/browser.ts",
-        "./bot-collection": "./src/bot-collection.ts"
+        "./bot-collection": "./src/bot-collection.ts",
+        "./bot-record": "./src/bot-record.ts",
+        "./bot-codegen": "./src/bot-codegen.ts",
+        "./bot-replay": "./src/bot-replay.ts"
     },
     "scripts": {
         "test": "NODE_ENV=test bun test --coverage --coverage-dir=.coverage --reporter=dots",

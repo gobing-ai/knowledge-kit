@@ -1,0 +1,52 @@
+$schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
+# Task 0382 R8 — a channel rail must name the recording it was measured from.
+#
+# Why: selector guessing is the measured failure mode of this repo's social rails. On 2026-11-16 four
+# rails were hand-measured; the two that were recorded (x, threads) had the right selectors where the
+# guessed ones were wrong. A rule cannot prove a selector is right, but it can refuse a rail whose
+# author never recorded anything at all — and it makes the omission visible in review instead of in
+# production.
+#
+# Contract, over `plugins/publishings/<plugin>/src/*rail*.ts` and `*flow*.ts` (generated rails
+# excluded): one header line within the first 20 lines, either
+#     // transcript: <repo path>      — the recording the selectors came from
+#     // transcript: none — <reason>  — no recording exists, and why
+# A bare `// transcript: none` fails: the reason is the reviewable part.
+#
+# The checker lives in scripts/check-rail-transcripts.ts so its file detail is reachable by hand —
+# the `exit-code` evaluator reports only the exit status:
+#     bun scripts/check-rail-transcripts.ts              # repo sweep, 0 = ok
+#     bun scripts/check-rail-transcripts.ts <file> …     # explicit files
+#     bun scripts/check-rail-transcripts.ts --json       # machine-readable report
+# Its falsification cases live in scripts/tests/check-rail-transcripts.test.ts, including both
+# negative controls (no header, a reasonless `none`), the header-window case, and the real sweep.
+#
+# SCOPE NOTE: `include` does not scope an `exit-code` rule (the evaluator runs whether or not the
+# globs match), so the checker's own discovery owns the scope and these globs are documentation.
+rules:
+  - id: rail-transcript-header
+    description: "Every channel rail module under plugins/publishings/*/src/ carries a `// transcript: <path>` or `// transcript: none — <reason>` header, so a rail's selectors are traceable to a recording instead of a guess (0382 R8)."
+    severity: error
+    evaluator:
+      type: exit-code
+      config:
+        command: bun
+        args:
+          - "scripts/check-rail-transcripts.ts"
+          # LEGACY REGISTRY — rails that predate 0382, exercised only against live sites. Listed so the
+          # exemption is reviewable in one place instead of implicit; a rail absent from this list is
+          # judged. Remove a line when that rail is re-measured and gains its header.
+          - "--legacy=plugins/publishings/bilibili-pub/src/flow.ts"
+          - "--legacy=plugins/publishings/cnblogs-pub/src/flow.ts"
+          - "--legacy=plugins/publishings/shipinhao-pub/src/audio-flow.ts"
+          - "--legacy=plugins/publishings/shipinhao-pub/src/flow.ts"
+          - "--legacy=plugins/publishings/sspai-pub/src/flow.ts"
+          - "--legacy=plugins/publishings/threads-pub/src/post-rail.ts"
+          - "--legacy=plugins/publishings/wechatmp-pub/src/flow.ts"
+          - "--legacy=plugins/publishings/x-pub/src/post-rail.ts"
+          - "--legacy=plugins/publishings/xhs-pub/src/flow.ts"
+          - "--legacy=plugins/publishings/xiaoyuzhou-pub/src/flow.ts"
+        message: "exit {code}: a rail module is missing its `// transcript:` header, or gave no reason for none — run `bun scripts/check-rail-transcripts.ts` for the file, and `bun test scripts/tests/check-rail-transcripts.test.ts` for the falsification cases"
+    include:
+      - "plugins/publishings/*/src/*rail*.ts"
+      - "plugins/publishings/*/src/*flow*.ts"

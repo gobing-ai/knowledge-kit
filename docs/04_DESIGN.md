@@ -25,6 +25,7 @@ sync: [T3]
 | [kk-smart-seo.md](design/kk-smart-seo.md) | SEO/GEO audit workflow, decision catalogs, stages and one skill | partially shipped (G9, ADR-039; 0281-0284 collection, assessments, typed catalogs and enrichment shipped, 0285 the `kk-smart-seo` workflow + validated narrative + terminal status, 0286 the one `smart-seo` skill + its installed acceptance and documented consumer setup; a live-site audit and feature-level verification remain) |
 | [kk-noun-verb-bots.md](design/kk-noun-verb-bots.md) | Strict noun/verb operations + named browser sessions | shipped (A22, ADR-037/038; tasks 0275–0278; surface §1.8/§1.12) |
 | [kk-cli-surface.md](design/kk-cli-surface.md) | Operator `kk` binary + two-noun tree | shipped (A2/A21) |
+| [kk-bot-record-codegen.md](design/kk-bot-record-codegen.md) | `kk bot record` / `codegen` / `replay`: transcript schema, ranked-selector normalizer, response-derived receipt, rail-transcript rule | shipped verbs + offline coverage (0382, ADR-038 amdt 2026-11-17; live recorder/replay legs unproven — no launchable browser on the gate host) |
 | [kk-plugin-check.md](design/kk-plugin-check.md) | `kk plugin check` / `login` live readiness probe (ADR-032) | shipped verbs + all fifteen channels (E93, 0215+0216; E94 adds `weibo-pub`, 0291 adds `jike-pub`, 0292 adds `csdn-pub`, 0293 adds `cnblogs-pub`, 0294 adds `sspai-pub`, 0295 adds `xiaoyuzhou-pub`, 0296 adds `shipinhao-pub`, 0297 adds `bilibili-pub`, 0328 adds `linkedin-pub`) |
 | [fan-in-and-fan-out-specification.md](design/fan-in-and-fan-out-specification.md) | `executor fan-in` merge and concurrent `executor fan-out` | shipped (B6) |
 | [ingestion-plugin-specification.md](design/ingestion-plugin-specification.md) | Ingestion kind contract | shipped (C1) |
@@ -133,7 +134,7 @@ kk board serve --board-origin <origin> [--port <n>]
 | `store migrate` | Apply pending `@gobing-ai/kk-store` migrations; prints `{db, applied}` (§1.9) | shipped (task 0206) |
 | `stage run <stage> [args…]` | Run one stage of the shared workflow stage runner with positional pass-through; the legacy `kk stage <stage>` spelling is normalized into this verb in `main()` before Commander parses (A22 R1/R2) | shipped (task 0275) |
 | `lock acquire\|release` | Single-flight lock over the store for the scheduled collector; prints `{acquired}` / `{skipped, holder}` / `{released}` (§1.9). Canonical spelling; `kk store lock …` remains a hidden compatibility route on the same engines | shipped (task 0208; lifted from `store lock` by 0275) |
-| `bot list\|login\|logout\|open\|exec\|plan` | Named local browser sessions over the fixed default profile root: tab-separated inventory (with login/expiry/identity facts recorded at login), operator-confirmed login/save through a staged transaction, idempotent containment-checked logout behind the shared lease, headed reopen with optional re-login, one authenticated request through the cached cookie session with a curl option subset, and declarative headless collection execution via plan (§1.12) | shipped (task 0276; login-time session facts 0305; `exec` 0306; `plan` 0346/ADR-038 amdt) |
+| `bot list\|login\|logout\|open\|exec\|plan\|record\|codegen\|replay` | Named local browser sessions over the fixed default profile root: tab-separated inventory (with login/expiry/identity facts recorded at login), operator-confirmed login/save through a staged transaction, idempotent containment-checked logout behind the shared lease, headed reopen with optional re-login, one authenticated request through the cached cookie session with a curl option subset, declarative headless collection execution via plan, a headed operator-session transcript recorder, a rail skeleton generator whose receipt comes from the recorded submit response, and a headed replay that stops before the submit step (§1.12) | shipped (task 0276; login-time session facts 0305; `exec` 0306; `plan` 0346/ADR-038 amdt; `record`/`codegen`/`replay` 0382/ADR-038 amdt 2026-11-17) |
 | `store ingest` | Upsert one run's collected `Doc[]` into `items` + `collect_runs` (with per-plugin `source_counts` from `metadata.sources[].file`), write `--new-ids`; prints `{inserted, updated, unchanged}` (§1.9) | shipped (task 0208) |
 | `store backfill-facts` | Recompute the typed item facts and the causal `story_id` clustering for every item (idempotent); prints `{updated}` (§1.9) | shipped (task 0227) |
 | `store label` | Label the ids `ingest` filed — one raw observation per (decision, maker) through the kk decision catalog (the `LABEL_DECISIONS` table: the heuristic's five + the three judgment decisions the heuristic cannot signal), heuristic-first for those five and in-process through `@gobing-ai/ts-ai-decision`; the four graded dimensions are consulted only in `--mode decision`; a china-politics keyword hit writes a maker `keyword` floor and the model is still consulted; `--replay` re-labels a historical pool under a `replay-<epoch>` run id. Prints `{verdict, confidence, labeled, model, fallback, consults, consultMs, refused}`, or `{replayed, labeled, consults, consultMs, refused, run}` (§1.9) | shipped (task 0209; raw observations + replay 0226; judgment decisions + china-politics gate 0229; score positions + refusals 0240; in-process hub + graded-dimension pruning 0317) |
@@ -1219,7 +1220,32 @@ kk bot logout <bot>                # deletes that bot's contained profile; print
 kk bot open <bot> [--login]        # reopens the saved page headed; prints `<name>\tclosed` on close
 kk bot exec <bot> <url> [curl opts] # one request with the cached cookies; body bytes to stdout/`-o`
 kk bot plan <bot> <file> [-o <dir>] [-m <sec>] # runs declarative collection plan under shared lease
+kk bot record <bot> [-o <file>] [--include-text]  # headed session → ordered transcript JSON (0600)
+kk bot codegen <transcript> --plugin <p> --operation <op> [--apply] [--receipt-path <path>]
+                                   # rail skeleton to stdout, or <op>-rail.generated.ts with --apply
+kk bot replay <bot> <transcript> [--submit] [-o <dir>] [--submit-text <text>]
+                                   # headed replay, stops before the submit step; screenshot + replay.json
 ```
+
+- **Recorded rails (2026-11, ADR-038 amdt):** `record` opens the bot's saved profile headed under one
+  lease and writes an ordered transcript of navigations, clicks, keystrokes, file choices and mutating
+  JSON responses. Selector resolution is ranked (`data-testid` > `name` > exact `aria-label` >
+  `role`+exact text > exact text > structural path), never reads a class name, drops invisible targets
+  and reports a multi-match as `ambiguous` rather than narrowing it. Typed text is
+  `{redacted: true, length}` unless `--include-text`; secret-shaped response keys become
+  `"<redacted>"`; headers and cookies are never written; SIGINT/SIGTERM close the context, flush the
+  transcript and exit 130/143, so no lease marker survives.
+- `codegen` aborts (exit 1, naming the step) on an ambiguous or structural-only step, and emits its
+  receipt as a `page.waitForResponse` matcher armed before the submit click, reading the id from the
+  recorded response — never from rendered text. An upload response before the submit is an
+  intermediate id; no candidate yields an explicit `TODO receipt` plus a stderr warning.
+- `replay` stops before the submit click unless `--submit`; a step that does not resolve exactly one
+  visible node fails the run. Its per-step screenshots plus `replay.json` are the evidence a channel
+  repair cites.
+- `rail-transcript-header` (`.spur/rules/structure/rail-transcript-header.yaml`, checker
+  `scripts/check-rail-transcripts.ts`) requires every `plugins/publishings/*/src/*rail*.ts` and
+  `*flow*.ts` to carry `// transcript: <path>` or `// transcript: none — <reason>`. Detail:
+  [kk-bot-record-codegen.md](design/kk-bot-record-codegen.md).
 
 - **Recovery contract (2026-11, ADR-050):** a profile is repaired, not abandoned. A `SingletonLock`
   naming this host and a pid that no longer exists is reclaimed (the three `Singleton*` entries are

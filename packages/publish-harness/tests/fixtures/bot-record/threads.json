@@ -1,0 +1,371 @@
+{
+    "schemaVersion": 1,
+    "bot": "threads",
+    "startUrl": "https://www.threads.com/",
+    "recordedAt": "2026-11-16T00:00:00.000Z",
+    "redacted": true,
+    "steps": [
+        {
+            "i": 0,
+            "t": 1794887908535,
+            "kind": "click",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[role=\"button\"]:text-is(\"New thread\")",
+                "rank": "role-text"
+            },
+            "text": "New thread"
+        },
+        {
+            "i": 1,
+            "t": 1794887911095,
+            "kind": "click",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[role=\"button\"]:text-is(\"Cancel\")",
+                "rank": "role-text"
+            },
+            "text": "Cancel"
+        },
+        {
+            "i": 2,
+            "t": 1794887912481,
+            "kind": "click",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[role=\"button\"]:text-is(\"New thread\")",
+                "rank": "role-text"
+            },
+            "text": "New thread"
+        },
+        {
+            "i": 3,
+            "t": 1794887916508,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Backspace"
+        },
+        {
+            "i": 4,
+            "t": 1794887916649,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Backspace"
+        },
+        {
+            "i": 5,
+            "t": 1794887916842,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Control"
+        },
+        {
+            "i": 6,
+            "t": 1794887920233,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Backspace"
+        },
+        {
+            "i": 7,
+            "t": 1794887920491,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Backspace"
+        },
+        {
+            "i": 8,
+            "t": 1794887920516,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Backspace"
+        },
+        {
+            "i": 9,
+            "t": 1794887920533,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Backspace"
+        },
+        {
+            "i": 10,
+            "t": 1794887920549,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Backspace"
+        },
+        {
+            "i": 11,
+            "t": 1794887920565,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Backspace"
+        },
+        {
+            "i": 12,
+            "t": 1794887920582,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Backspace"
+        },
+        {
+            "i": 13,
+            "t": 1794887920599,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Backspace"
+        },
+        {
+            "i": 14,
+            "t": 1794887920834,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Shift"
+        },
+        {
+            "i": 15,
+            "t": 1794887922408,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Backspace"
+        },
+        {
+            "i": 16,
+            "t": 1794887922552,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Backspace"
+        },
+        {
+            "i": 17,
+            "t": 1794887922699,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Backspace"
+        },
+        {
+            "i": 18,
+            "t": 1794887922824,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Backspace"
+        },
+        {
+            "i": 19,
+            "t": 1794887923023,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Control"
+        },
+        {
+            "i": 20,
+            "t": 1794887927172,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Control"
+        },
+        {
+            "i": 21,
+            "t": 1794887929932,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Backspace"
+        },
+        {
+            "i": 22,
+            "t": 1794887930104,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Backspace"
+        },
+        {
+            "i": 23,
+            "t": 1794887930598,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Backspace"
+        },
+        {
+            "i": 24,
+            "t": 1794887930763,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Backspace"
+        },
+        {
+            "i": 25,
+            "t": 1794887932360,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Backspace"
+        },
+        {
+            "i": 26,
+            "t": 1794887932503,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Backspace"
+        },
+        {
+            "i": 27,
+            "t": 1794887932648,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Backspace"
+        },
+        {
+            "i": 28,
+            "t": 1794887932760,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Shift"
+        },
+        {
+            "i": 29,
+            "t": 1794887933855,
+            "kind": "key",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[aria-label=\"Empty text field. Type to comp\"]",
+                "rank": "aria"
+            },
+            "key": "Shift"
+        },
+        {
+            "i": 30,
+            "t": 1794887939789,
+            "kind": "click",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[role=\"button\"]:text-is(\"Attach media\")",
+                "rank": "role-text"
+            },
+            "text": "Attach media"
+        },
+        {
+            "i": 31,
+            "t": 1794887939790,
+            "kind": "click",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "div > div > div > div > div > input",
+                "rank": "path"
+            }
+        },
+        {
+            "i": 32,
+            "t": 1794887984655,
+            "kind": "click",
+            "url": "https://www.threads.com/",
+            "target": {
+                "selector": "[role=\"button\"]:text-is(\"Post\")",
+                "rank": "role-text"
+            },
+            "text": "Post"
+        }
+    ]
+}

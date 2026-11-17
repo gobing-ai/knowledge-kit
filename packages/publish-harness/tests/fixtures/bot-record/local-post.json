@@ -1,0 +1,52 @@
+{
+    "schemaVersion": 1,
+    "bot": "local-post",
+    "startUrl": "http://127.0.0.1:4319/",
+    "recordedAt": "2026-11-17T00:00:00.000Z",
+    "redacted": true,
+    "steps": [
+        { "i": 0, "t": 1, "kind": "navigate", "url": "http://127.0.0.1:4319/" },
+        {
+            "i": 1,
+            "t": 2,
+            "kind": "click",
+            "url": "http://127.0.0.1:4319/",
+            "target": { "selector": "[data-testid=\"compose\"]", "rank": "testid" },
+            "text": "Compose"
+        },
+        {
+            "i": 2,
+            "t": 3,
+            "kind": "type",
+            "url": "http://127.0.0.1:4319/compose",
+            "target": { "selector": "[data-testid=\"editor\"]", "rank": "testid" },
+            "text": { "redacted": true, "length": 12 }
+        },
+        {
+            "i": 3,
+            "t": 4,
+            "kind": "response",
+            "method": "POST",
+            "url": "http://127.0.0.1:4319/api/upload",
+            "status": 200,
+            "body": { "upload_id": "u-9" }
+        },
+        {
+            "i": 4,
+            "t": 5,
+            "kind": "click",
+            "url": "http://127.0.0.1:4319/compose",
+            "target": { "selector": "[data-testid=\"submit\"]", "rank": "testid" },
+            "text": "Publish"
+        },
+        {
+            "i": 5,
+            "t": 6,
+            "kind": "response",
+            "method": "POST",
+            "url": "http://127.0.0.1:4319/api/posts?draft=1",
+            "status": 201,
+            "body": { "data": { "id": "p-123" }, "auth_token": "<redacted>" }
+        }
+    ]
+}

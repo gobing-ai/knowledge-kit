@@ -17,9 +17,13 @@ import { consoleOutput } from '../output';
  * `KK_BROWSER_PROFILE_DIR`/channel env can redirect what these verbs list, open or delete.
  */
 
-// The collection runner is a sibling sub-path, not a `browser` re-export (0346: one-way import).
+// The collection runner and the 0382 record/codegen/replay trio are sibling sub-paths, not
+// `browser` re-exports (0346: one-way import).
 type BotHarness = typeof import('@gobing-ai/publish-harness/browser') &
-    typeof import('@gobing-ai/publish-harness/bot-collection');
+    typeof import('@gobing-ai/publish-harness/bot-collection') &
+    typeof import('@gobing-ai/publish-harness/bot-record') &
+    typeof import('@gobing-ai/publish-harness/bot-codegen') &
+    typeof import('@gobing-ai/publish-harness/bot-replay');
 type BotCollectionPlan = import('@gobing-ai/publish-harness/bot-collection').BotCollectionPlan;
 
 /**
@@ -39,7 +43,16 @@ function loadBotHarness(): Promise<BotHarness> {
     botHarness ??= Promise.all([
         import('@gobing-ai/publish-harness/browser'),
         import('@gobing-ai/publish-harness/bot-collection'),
-    ]).then(([browser, collection]) => ({ ...browser, ...collection }));
+        import('@gobing-ai/publish-harness/bot-record'),
+        import('@gobing-ai/publish-harness/bot-codegen'),
+        import('@gobing-ai/publish-harness/bot-replay'),
+    ]).then(([browser, collection, record, codegen, replay]) => ({
+        ...browser,
+        ...collection,
+        ...record,
+        ...codegen,
+        ...replay,
+    }));
     return botHarness;
 }
 
@@ -149,6 +162,93 @@ async function botOpenAction(
             ...(saved === null && descriptorHomeUrl !== undefined ? { defaultUrl: descriptorHomeUrl } : {}),
         });
         consoleOutput.write(`${result.name}\tclosed`);
+    });
+}
+
+/**
+ * `kk bot record <name>` — open the bot's saved page headed under one lease and write an ordered
+ * transcript of what the operator does (0382 R1). Typed text is a length marker unless
+ * `--include-text`; the file is 0600 and its path prints on stdout.
+ */
+async function botRecordAction(
+    load: () => Promise<BotHarness>,
+    name: string,
+    options: { out?: string; includeText?: boolean },
+): Promise<void> {
+    await runBotAction(load, async (harness) => {
+        const result = await harness.recordBotSession(name, {
+            ...(options.out === undefined ? {} : { out: options.out }),
+            ...(options.includeText === true ? { includeText: true } : {}),
+        });
+        consoleOutput.write(`${result.out}\t${result.stepCount} steps\t${result.redacted ? 'redacted' : 'verbatim'}`);
+    });
+}
+
+/**
+ * `kk bot codegen <transcript>` — emit a rail skeleton to stdout, or beside the plugin with
+ * `--apply` (0382 R3/R4). Warnings go to stderr; an unusable step exits 1 and nothing is written.
+ */
+async function botCodegenAction(
+    load: () => Promise<BotHarness>,
+    transcriptPath: string,
+    options: { plugin: string; operation: string; apply?: boolean; receiptPath?: string; allowUnredacted?: boolean },
+): Promise<void> {
+    await runBotAction(load, async (harness) => {
+        const transcript = await harness.readTranscript(transcriptPath, {
+            ...(options.allowUnredacted === true ? { allowUnredacted: true } : {}),
+        });
+        const { source, warnings } = harness.generateRail(transcript, {
+            plugin: options.plugin,
+            operation: options.operation,
+            transcriptPath,
+            ...(options.receiptPath === undefined ? {} : { receiptPath: options.receiptPath }),
+        });
+        for (const warning of warnings) consoleOutput.error(`kk.bot.codegen: ${warning}`);
+        if (options.apply !== true) {
+            consoleOutput.write(source);
+            return;
+        }
+        const target = join('plugins', 'publishings', options.plugin, 'src', `${options.operation}-rail.generated.ts`);
+        if (await createNodeFileSystem().exists(target)) {
+            throw new harness.BotError(
+                'usage',
+                `${target} already exists — promoting a generated rail is a by-hand edit`,
+            );
+        }
+        writeFileBytes(target, new TextEncoder().encode(source));
+        consoleOutput.write(`${target}\twritten`);
+    });
+}
+
+/**
+ * `kk bot replay <name> <transcript>` — re-run the recorded steps headed and stop before the submit
+ * click unless `--submit` (0382 R5). One screenshot plus a `replay.json` row per step lands in
+ * `--output`; any step that does not resolve exactly one visible node exits 1.
+ */
+async function botReplayAction(
+    load: () => Promise<BotHarness>,
+    name: string,
+    transcriptPath: string,
+    options: { submit?: boolean; submitText?: string; output?: string; file?: string; allowUnredacted?: boolean },
+): Promise<void> {
+    await runBotAction(load, async (harness) => {
+        const transcript = await harness.readTranscript(transcriptPath, {
+            ...(options.allowUnredacted === true ? { allowUnredacted: true } : {}),
+        });
+        const { result, replayPath } = await harness.replayBot(name, transcript, {
+            ...(options.submit === true ? { submit: true } : {}),
+            ...(options.submitText === undefined ? {} : { submitText: options.submitText }),
+            ...(options.output === undefined ? {} : { outDir: options.output }),
+            ...(options.file === undefined ? {} : { filePath: options.file }),
+        });
+        consoleOutput.write(JSON.stringify({ ...result, replayPath }, null, 2));
+        const failed = result.rows.find((row) => !row.ok && row.skipped !== 'submit');
+        if (failed !== undefined) {
+            throw new harness.BotError(
+                'browser',
+                `replay stopped at step ${failed.step}: ${failed.detail ?? 'unresolved'}`,
+            );
+        }
     });
 }
 
@@ -405,12 +505,74 @@ export function registerBotCommand(program: Command, deps: BotCommandDeps = {}):
             botPlanAction(load, name, planPath, options),
         );
 
+    const record = bot
+        .command('record')
+        .description('Record an operator session with a named bot into a transcript')
+        .argument('<name>', 'Bot name')
+        .option('-o, --out <file>', 'Transcript path (default .spur/run/bot-record-<bot>-<stamp>.json)')
+        .option('--include-text', 'Keep typed text verbatim instead of a length marker')
+        .action((name: string, options: { out?: string; includeText?: boolean }) =>
+            botRecordAction(load, name, options),
+        );
+
+    const codegen = bot
+        .command('codegen')
+        .description('Emit a rail skeleton from a recorded transcript')
+        .argument('<transcript>', 'Transcript JSON path')
+        .requiredOption('--plugin <name>', 'Target publish plugin name under plugins/publishings/')
+        .requiredOption('--operation <op>', 'Rail operation slug (the runner is run<Operation>)')
+        .option('--apply', 'Write <operation>-rail.generated.ts beside the plugin instead of stdout')
+        .option('--receipt-path <path>', 'Dot path of the publish id inside the receipt body')
+        .option('--allow-unredacted', 'Accept a transcript recorded with --include-text')
+        .action(
+            (
+                transcriptPath: string,
+                options: {
+                    plugin: string;
+                    operation: string;
+                    apply?: boolean;
+                    receiptPath?: string;
+                    allowUnredacted?: boolean;
+                },
+            ) => botCodegenAction(load, transcriptPath, options),
+        );
+
+    const replay = bot
+        .command('replay')
+        .description('Replay a transcript headed, stopping before the submit step by default')
+        .argument('<name>', 'Bot name')
+        .argument('<transcript>', 'Transcript JSON path')
+        .option('--submit', 'Execute the submit step instead of stopping before it')
+        .option('--submit-text <text>', 'Text of the click that submits (default: the last click)')
+        .option('-o, --output <dir>', 'Evidence directory (default .spur/run/bot-replay-<bot>)')
+        .option('--file <path>', 'Local file a recorded file step re-selects')
+        .option('--allow-unredacted', 'Accept a transcript recorded with --include-text')
+        .action(
+            (
+                name: string,
+                transcriptPath: string,
+                options: {
+                    submit?: boolean;
+                    submitText?: string;
+                    output?: string;
+                    file?: string;
+                    allowUnredacted?: boolean;
+                },
+            ) => botReplayAction(load, name, transcriptPath, options),
+        );
+
     // Commander reports every parse error (unknown option, missing/excess argument) as exit 1.
     // This leaf's contract makes them usage errors (exit 2), so the callback is installed from a
     // pre-subcommand hook: `main()` re-inherits the exit callback over its children after
     // registration, which would drop one set here. Help/version (exit 0) pass straight through.
     bot.hook('preSubcommand', (_parent, subcommand) => {
-        if (subcommand === exec || subcommand === plan) {
+        if (
+            subcommand === exec ||
+            subcommand === plan ||
+            subcommand === record ||
+            subcommand === codegen ||
+            subcommand === replay
+        ) {
             subcommand.exitOverride((error) => {
                 throw error.exitCode === 1 ? new CommanderError(2, error.code, error.message) : error;
             });

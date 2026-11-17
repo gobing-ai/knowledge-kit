@@ -23,7 +23,7 @@ and never report an outcome that was not observed.
 | Operation | When | Tier & Substrate | Output |
 | --- | --- | --- | --- |
 | **discover** | New/changed site; "figure out this UI", inspect selectors/shadow roots | **Tier 3** (`kk bot open` + CDP/Playwright) | Evidence dir (`frames/`, `signals.json`) + drift list (`docs/design/<channel>-ui-discovery.md`) |
-| **enhance** | Selectors drifted; a plugin or collection plan fails on a live console | **Tier 2 / 3** (`kk bot exec`, probe script) | Root-cause fix in plugin + updated discovery doc in same commit |
+| **enhance** | Selectors drifted; a plugin or collection plan fails on a live console | **Tier 2 / 3** (`kk bot exec`, `kk bot record`/`replay`, probe script) | Root-cause fix in plugin + updated discovery doc in same commit; a rail change names its transcript |
 | **automate** | Repeatable web task (data collection, form fill, draft save, health audit) | **Tier 1 / 2** (`kk bot exec`, `runBotCollection`) | Bounded Result + captured artifacts (draft-safe by default, fail-closed) |
 
 This skill owns **method**. It does not own transport (that belongs to `kind: publish` / `ingestion` plugins) or orchestration
@@ -238,6 +238,36 @@ await withProfileLease(profileName, async () => {
 2. Inspect `error.json` / diagnostics (is it `authentication`, `empty`, or `browser`?).
 3. If selector changed, launch `kk bot open <channel>`, observe the updated DOM element.
 4. Update selector in shared helper, re-verify with probe script, commit alongside discovery doc.
+
+### Scenario E: Measured Rail Authoring — record → replay → codegen (`enhance`)
+A rail whose selectors were guessed is a rail that will fail live. Measure the session instead.
+
+1. **Record** — `kk bot record <bot> -o <file>` opens the bot's saved page headed. Perform the flow
+   by hand *up to but not including* the final submit (the transcript is evidence, not a publish).
+   Close the window to finish. Typed text is a length marker unless `--include-text`; the transcript
+   is 0600 and its URL queries are dropped.
+2. **Read the recording, not the prose** — each step carries a ranked selector
+   (`data-testid` > `name` > exact `aria-label` > `role`+exact text > exact text > structural path) or
+   an explicit `ambiguous` marker. An `ambiguous` step is a real finding: the site has two visible
+   nodes with that attribute, so the flow needs a stronger landmark — re-record after the console is
+   in the right state.
+3. **Replay before generating** — `kk bot replay <bot> <transcript>` stops before the submit click
+   unless `--submit`, and writes one screenshot plus a `replay.json` row per step. A step that does
+   not resolve exactly one visible node fails the run: fix the recording, not the assertion. Cite
+   `.spur/run/bot-replay-<bot>/` as evidence in the repair task.
+4. **Generate** — `kk bot codegen <transcript> --plugin <name> --operation <op>` prints a rail
+   skeleton; `--apply` writes `<op>-rail.generated.ts` beside the plugin. The receipt is a
+   `page.waitForResponse` matcher over the recorded submit response with the id's dot path — never a
+   DOM-text comparison. No response in the transcript ⇒ an explicit `TODO receipt` warning, because a
+   rail with no receipt reports a publish it cannot prove.
+5. **Promote by hand** — read the generated file against the recording, then move what you accept into
+   the live rail. Never ship the generated file as the live rail.
+6. **Name the recording** — the live rail keeps a `// transcript: <repo path>` (or
+   `// transcript: none — <reason>`) header; the `rail-transcript-header` rule fails the tree without
+   it. Fixtures for offline tests live under
+   `packages/publish-harness/tests/fixtures/bot-record/`.
+
+Contract detail: `docs/design/kk-bot-record-codegen.md`.
 
 ---
 

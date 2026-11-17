@@ -1561,6 +1561,31 @@ Ingestion plugins may declare the same `browserSession {profileName, homeUrl?}` 
 
 Supersedes the preceding amendment's rejection of a new `kk bot` verb. Promote declarative collection execution into the canonical single noun-verb CLI surface: `kk bot plan <bot> <plan.json> [-o <dir>] [-m <seconds>]`. This provides a first-class, scriptable CLI leaf for workflows, subagents, and operator tasks to execute declarative collection plans against existing bot profiles without depending on ad-hoc probe scripts or direct TypeScript imports. The runner retains strict boundaries: validation before execution, single profile lease acquisition, headless persistent context, fail-closed exit codes (0 = success, 1 = operational failure such as `authentication`/`empty`/`browser`, 2 = usage error), output redaction of request URLs, queries, and cookies, and 0600 artifact file containment under `-o <dir>` or JSON metadata to stdout. The CLI loads `@gobing-ai/publish-harness/bot-collection` directly; `browser.ts` still does not import or re-export it. Detail: `docs/04_DESIGN.md` §1.12/§1.13, `docs/design/kk-noun-verb-bots.md`.
 
+### Amendment — 2026-11-17 (bot record/codegen/replay: rails measured, not guessed)
+
+Adds three visible leaves to the ADR-037 tree — `kk bot record|codegen|replay` — and one harness module
+set beside `browser`/`bot-collection`: `bot-record` (transcript schema, atomic 0600 IO, redaction,
+recorder), `bot-record-normalize` (pure ranked-selector resolution), `bot-codegen` (`generateRail`) and
+`bot-replay`. `record` opens the bot's saved profile headed under one lease and writes an ordered
+transcript of navigations, clicks, keystrokes, file choices and mutating JSON responses; `codegen`
+emits a rail skeleton whose receipt is a `page.waitForResponse` matcher over the recorded submit
+response; `replay` re-runs the steps headed, stopping before the submit click by default.
+
+The recorded identity is the admission test: a step whose selector is ambiguous or structural-only
+aborts codegen, because emitting it would move the guessing into the generated file. Privacy is part
+of the format — `{redacted: true, length}` for typed text, secret-shaped response keys replaced at any
+depth, no headers or cookies, mode 0600 — and `replay`/`codegen` refuse an unredacted transcript
+without `--allow-unredacted`. A new tree-level rule `rail-transcript-header` requires every channel
+rail module to name the recording it was measured from, or say why none exists; that closes R8's
+"selector guessing cannot quietly return" without a per-commit rule (spur rules evaluate the tree).
+
+Rejected: HAR capture or response replay/persistence (ADR-038 2026-11-09 stands), DOM-text receipts,
+class-based or `nth-child`-only selectors, recording through an adapter child process (nothing can be
+instrumented there), headless recording, Playwright's own `codegen` (its browser profile carries no
+bot session or lease, and it emits class/nth selectors and no receipt), and extending
+`runBotCollection` plans with interactive steps (that runner is headless and collection-shaped).
+Detail: [kk-bot-record-codegen.md](design/kk-bot-record-codegen.md), `docs/04_DESIGN.md` §1.12.
+
 ---
 
 ## ADR-039: Smart SEO uses native KK audit stages and Spur semantic decisions
