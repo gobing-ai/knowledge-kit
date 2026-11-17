@@ -31,6 +31,16 @@ import {
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 import type { Page } from 'playwright';
+import { XPostBrowserTransport } from './post-rail';
+
+export {
+    isPostAuthenticated,
+    POST_CONFIG,
+    POST_SELECTORS,
+    X_NEW_POST_BUTTON,
+    X_POST_SUBMIT,
+    X_POST_URL,
+} from './post-rail';
 
 /** Per-request timeout (ms) for the X API call — Bun's `fetch` has no default deadline (R5). */
 const REQUEST_TIMEOUT_MS = 120_000;
@@ -463,7 +473,11 @@ export function getPublishTransport(operation: 'post' | 'article' = 'post'): Pub
     if (process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT === 'fake') {
         return operation === 'article' ? new FakeBrowserTransport('script') : new FakeFileCliTransport();
     }
-    return operation === 'article' ? new XArticleBrowserTransport() : new XPostApiTransport();
+    if (operation === 'article') return new XArticleBrowserTransport();
+    // kk bot first (2026-11-16 operator decision): the post rail drives the signed-in composer, so no
+    // X API credentials are needed. `X_POST_TRANSPORT=api` keeps the official API for callers that
+    // hold them.
+    return process.env.X_POST_TRANSPORT === 'api' ? new XPostApiTransport() : new XPostBrowserTransport();
 }
 
 async function writePublishResult(outputPath: string, result: Result): Promise<void> {
