@@ -279,7 +279,14 @@ async function generateAction(noun: string, defaultType: string, options: Genera
     const liveChannels = channelList(options.liveChannels);
     const vars: Record<string, string> = { skill_dir: resolved.skillDir, preset: resolved.publish_preset };
     if (options.skipReview === true) vars.skip_review = 'true';
-    if (options.auto === true) vars.auto = 'true';
+    // `--auto` is wired only by the article workflow (it names outline gates); the news DAG declares
+    // no `auto` var, so accepting the flag there is a silent no-op (2026-11-17).
+    if (options.auto === true) {
+        if (type !== 'itc') {
+            fail(2, 'kk.content.generate', `--auto is article-only: the '${type}' workflow declares no 'auto' var`);
+        }
+        vars.auto = 'true';
+    }
 
     const receipt = await launchWorkflow({
         type,
@@ -299,7 +306,21 @@ async function generateAction(noun: string, defaultType: string, options: Genera
     });
 
     if (receipt.status !== 'done' || options.publish !== true) {
-        const code = reportReceipt(receipt);
+        // A `--publish` request whose generation leg did not finish still reports the chained leg: the
+        // documented receipt nests `publish` (design §1.1), and "skipped because nothing was
+        // generated" must be distinguishable from "publish was never asked for" (2026-11-17, a
+        // no-content day printed no `publish` key at all).
+        const reported =
+            options.publish === true && receipt.status !== 'done'
+                ? {
+                      ...receipt,
+                      publish: {
+                          status: 'skipped' as const,
+                          reason: `generation status '${receipt.status}' — the after-generate publish window did not launch`,
+                      },
+                  }
+                : receipt;
+        const code = reportReceipt(reported);
         if (code !== 0) fail(code, 'kk.content.generate', receipt.reason ?? `${resolved.workflow} exited ${code}`);
         return;
     }
