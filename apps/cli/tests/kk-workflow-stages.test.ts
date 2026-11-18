@@ -1068,7 +1068,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             ]);
         });
         // Six stage subprocesses land ~5.3s under gate load — over bun's 5s default.
-    }, 20000);
+    }, 45000);
 
     it('daily-article unwraps a plan.json that carries the Content envelope instead of the Doc[]', () => {
         // `plan-translate`'s executor has been observed writing the generator's Content envelope

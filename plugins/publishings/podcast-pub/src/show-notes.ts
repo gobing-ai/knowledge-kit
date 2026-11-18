@@ -20,9 +20,10 @@ import {
     type TimelineStyle,
     warn,
 } from './seo';
+import { CARDS_STYLE } from './show-notes-brief';
 
 /** Escapes text content and attribute values (`&`, `<`, `>`, `"`). */
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
     return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 }
 
@@ -49,7 +50,7 @@ function normalizeForMatch(text: string): string {
 }
 
 /** `m:ss` audio offset, or `--:--` when unknown. */
-function formatOffset(seconds: number): string {
+export function formatOffset(seconds: number): string {
     if (!Number.isFinite(seconds) || seconds < 0) return '--:--';
     const m = Math.floor(seconds / 60);
     const s = Math.round(seconds % 60);
@@ -173,6 +174,21 @@ ${after}${articleTail}
 }
 
 /**
+ * 0386 R1 — the card-region counterpart of {@link isGeneratedTimeline}: a `<!--kk:cards-->` block is
+ * trusted only if it is markup {@link renderCardsRegion} (show-notes-brief.ts) could have produced.
+ * The card region is the only place an `<img>` legitimately appears in show notes, so its grammar is
+ * pinned here rather than widening the timeline grammar.
+ */
+const CARDS_TAG =
+    /^<\/?(?:div|figure|figcaption|span|p|img)(?:\s+(?:class="kk-cards"|class="kk-card"|class="kk-card-n"|src="https?:\/\/[^"<>\s]*"|alt="[^"<>]*"|loading="lazy"))*\s*\/?>$/;
+
+function isGeneratedCards(block: string): boolean {
+    const rest = block.replace(CARDS_STYLE, '');
+    if (rest.includes('<style') || rest.includes('<!--') || rest.includes('<script')) return false;
+    return (rest.match(/<[^>]*>/g) ?? []).every((tag) => CARDS_TAG.test(tag)) && !/<(?![^>]*>)/.test(rest);
+}
+
+/**
  * Renders show-notes markdown to sanitized HTML.
  * The leading `# ` heading is dropped: the episode `title` is rendered
  * separately by the page theme, so keeping it would duplicate the H1.
@@ -182,7 +198,9 @@ ${after}${articleTail}
 export function renderShowNotesHtml(markdown: string): string {
     const blocks: string[] = [];
     const timeline: string[] = [];
+    const cards: string[] = [];
     let inTimeline = false;
+    let inCards = false;
     let paragraph: string[] = [];
 
     const flush = () => {
@@ -208,6 +226,31 @@ export function renderShowNotesHtml(markdown: string): string {
         if (line === '<!--kk:timeline-->') {
             flush();
             inTimeline = true;
+            continue;
+        }
+        if (line === '<!--kk:cards-->') {
+            flush();
+            inCards = true;
+            continue;
+        }
+        if (inCards) {
+            if (line === '<!--/kk:cards-->') {
+                inCards = false;
+                // Same trust rule as the timeline markers: pass a generator-shaped card block
+                // through, escape anything else line by line (R2: never widen the HTML surface).
+                if (isGeneratedCards(cards.join('\n'))) {
+                    blocks.push(cards.join('\n'));
+                } else {
+                    for (const l of cards) {
+                        const t = l.trim();
+                        if (t.length > 0) paragraph.push(t);
+                    }
+                    flush();
+                }
+                cards.length = 0;
+                continue;
+            }
+            cards.push(rawLine);
             continue;
         }
         if (inTimeline) {
@@ -248,6 +291,14 @@ export function renderShowNotesHtml(markdown: string): string {
     flush();
     // An unclosed marker never reaches the closing branch above — escape whatever it buffered.
     if (timeline.length > 0) escapeBufferedTimeline();
+    if (cards.length > 0) {
+        for (const l of cards) {
+            const t = l.trim();
+            if (t.length > 0) paragraph.push(t);
+        }
+        cards.length = 0;
+        flush();
+    }
     return blocks.join('\n');
 }
 
@@ -308,12 +359,26 @@ export interface ShowNotesRenderOptions {
 }
 
 /** Per-item 1–2-sentence briefing: `metadata.brief` first, body sentences as fallback. */
-function itemBrief(d: Doc): string {
+export function itemBrief(d: Doc): string {
     const meta = d.metadata ?? {};
     if (typeof meta.brief === 'string' && meta.brief.trim().length > 0) return meta.brief.trim();
     return splitSentences((d.body ?? '').trim(), { cjkOnly: true })
         .slice(0, 2)
         .join('');
+}
+
+/**
+ * The 0394/0386 source label of one item: the plan's `metadata.sourceName`, else the URL host,
+ * else the bare 「来源」. One convention shared by the timeline and the brief renderer.
+ */
+export function sourceLabelFor(doc: Doc): string {
+    const metadata = doc.metadata ?? {};
+    if (typeof metadata.sourceName === 'string' && metadata.sourceName.trim()) return metadata.sourceName.trim();
+    try {
+        return new URL(doc.sourceUri ?? '').hostname.replace(/^www\./, '');
+    } catch {
+        return '来源';
+    }
 }
 
 /**
@@ -353,15 +418,6 @@ export function renderShowNotesMarkdown(docs: Doc[], opts: ShowNotesRenderOption
         warn('brief mode requested but ARTICLE_POST_PATH is empty; using legacy layout', warnings);
     }
     const briefMode = opts.briefMode === true && postSlug.length > 0;
-    const sourceLabel = (d: Doc): string => {
-        const m = d.metadata ?? {};
-        if (typeof m.sourceName === 'string' && m.sourceName.trim()) return m.sourceName.trim();
-        try {
-            return new URL(d.sourceUri ?? '').hostname.replace(/^www\./, '');
-        } catch {
-            return '来源';
-        }
-    };
     const offsets = computeAudioOffsets(docs, opts.audioSegments);
     const lines: string[] = [`# ${opts.title}`, ''];
     const summaryOn = opts.summaryParagraph !== false;
@@ -411,7 +467,7 @@ export function renderShowNotesMarkdown(docs: Doc[], opts: ShowNotesRenderOption
                 '',
                 sentences,
                 '',
-                `[来源：${sourceLabel(d)}](${d.sourceUri ?? ''})`,
+                `[来源：${sourceLabelFor(d)}](${d.sourceUri ?? ''})`,
                 '',
             );
         });

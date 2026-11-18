@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { basename, dirname, extname, join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { type Content, ContentSchema, DocListSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
+import { type Content, ContentSchema, type Doc, DocListSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeFileCliTransport, type PublishTransport, type PublishTransportPayload } from '@gobing-ai/publish-harness';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
@@ -25,6 +25,7 @@ import {
     warn,
 } from './seo';
 import { renderShowNotesMarkdown, type ShowNotesRenderOptions } from './show-notes';
+import { applyArticleReceipt, renderBriefShowNotes } from './show-notes-brief';
 import { buildTranscriptSegments, renderWebVtt, resolveTranscriptConfig, transcriptReferences } from './transcript';
 
 /** Result target name for this plugin. */
@@ -222,7 +223,71 @@ function renderShowNotesFromOptions(
     const renderOptions = resolveShowNotesRenderOptions(options);
     if ('error' in renderOptions) return { error: renderOptions.error };
     const warnings: string[] = [];
+    const brief = resolveBriefNotes(docs.data, renderOptions.renderOptions, warnings);
+    if (brief !== null) return brief;
     return { markdown: renderShowNotesMarkdown(docs.data, renderOptions.renderOptions, warnings), warnings };
+}
+
+/**
+ * 0386 R1 — the brief notes path: cards, or the explicit no-receipt review mode, switch the render
+ * from the legacy layout to the brief/timeline/card renderer ({@link renderBriefShowNotes}). The
+ * article link still comes **only** from the publish receipt's `postPath` (never from the title);
+ * a missing receipt leaves a text placeholder the notes can be reviewed with. Card problems go to
+ * the separate diagnostics file (`PODCAST_PUB_CARDS_DIAGNOSTICS`) and the warning channel, never
+ * into the markdown. Returns `null` when this is not a brief-notes render.
+ */
+function resolveBriefNotes(
+    docs: Doc[],
+    renderOptions: ShowNotesRenderOptions,
+    warnings: string[],
+): { markdown: string; warnings: string[] } | null {
+    const cardsPath = resolveOptionString(undefined, 'PODCAST_PUB_CARDS');
+    const reviewMode = process.env.PODCAST_PUB_BRIEF_WITHOUT_RECEIPT === 'true';
+    if (renderOptions.briefMode !== true || (cardsPath === undefined && !reviewMode)) return null;
+    let cards: unknown;
+    if (cardsPath !== undefined) {
+        try {
+            cards = JSON.parse(readFileSync(cardsPath, 'utf-8'));
+        } catch (error) {
+            warnings.push(`WARN podcast-pub: unreadable card manifest ${cardsPath}: ${(error as Error).message}`);
+        }
+    }
+    const rendered = renderBriefShowNotes({
+        docs,
+        ...(renderOptions.title !== undefined ? { title: renderOptions.title } : {}),
+        ...(renderOptions.audioSegments !== undefined ? { audioSegments: renderOptions.audioSegments } : {}),
+        ...(cards !== undefined ? { cards } : {}),
+    });
+    for (const diagnostic of rendered.diagnostics) {
+        warnings.push(`WARN podcast-pub: card ${diagnostic.index} ${diagnostic.reason}: ${diagnostic.detail}`);
+    }
+    const diagnosticsPath = resolveOptionString(undefined, 'PODCAST_PUB_CARDS_DIAGNOSTICS');
+    if (diagnosticsPath !== undefined) {
+        try {
+            writeFileSync(
+                diagnosticsPath,
+                `${JSON.stringify({ runDate: renderOptions.runDate, cards: rendered.diagnostics }, null, 2)}\n`,
+                'utf-8',
+            );
+        } catch (error) {
+            warnings.push(`WARN podcast-pub: cannot write card diagnostics: ${(error as Error).message}`);
+        }
+    }
+    // The receipt's postPath is the only link source; absent ⇒ the placeholder stays (R1).
+    const postPath = renderOptions.articlePostPath ?? '';
+    const enriched =
+        postPath === ''
+            ? { markdown: rendered.markdown, enriched: false }
+            : applyArticleReceipt(
+                  rendered.markdown,
+                  { ok: true, target: TARGET, metadata: { postPath } },
+                  renderOptions.articleBaseUrl,
+              );
+    if (postPath === '') {
+        warnings.push('WARN podcast-pub: no article receipt yet — notes rendered without an article link');
+    }
+    const footer = renderOptions.footerNote !== undefined ? `\n${renderOptions.footerNote}\n` : '';
+    return { markdown: `${enriched.markdown}${footer}`, warnings };
 }
 
 /** Episode-assembly options (R2): present keys make the plugin merge article + audio + cover itself. */

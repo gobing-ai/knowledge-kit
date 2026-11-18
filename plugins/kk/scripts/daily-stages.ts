@@ -5303,11 +5303,20 @@ export function dailyShowNotes(args: string[]): void {
                 }
             }
         }
+        // 0386 R1 — the card manifest (already in published order) rides along as a file path, and
+        // its problems are recorded beside the notes, never inside them. When no receipt exists yet
+        // the render is explicitly allowed to run link-free: the notes are reviewable before the
+        // article URL is known, and the article link is added only from a real receipt `postPath`.
+        const cardsManifest = join(workDir, '25-xhs', 'cards.json');
+        const cardsDiagnostics = join(workDir, '31-publish', `${runDate}_15_show-notes_cards-diagnostics.json`);
         kk(['executor', 'run', 'podcast-pub', '--in', planIn, '--out', out, ...pluginsArgs(pluginsPath)], {
             env: {
                 PODCAST_PUB_TITLE: titleArg,
                 PODCAST_PUB_RUN_DATE: runDate,
                 PODCAST_PUB_BRIEF_MODE: 'true',
+                ...(isFile(cardsManifest) ? { PODCAST_PUB_CARDS: cardsManifest } : {}),
+                PODCAST_PUB_CARDS_DIAGNOSTICS: cardsDiagnostics,
+                ...(postPath === '' ? { PODCAST_PUB_BRIEF_WITHOUT_RECEIPT: 'true' } : {}),
                 PODCAST_PUB_ARTICLE_POST_PATH: postPath,
                 // 2026-10-08: the column settings carry the AI-production note. Do not append the
                 // stock closer to show notes (or the article, or the spoken sign-off).
