@@ -20,7 +20,7 @@
  * names; the fixtures themselves live in the OS temp dir and are removed afterwards.
  */
 import { Database } from 'bun:sqlite';
-import { afterAll, describe, expect, it } from 'bun:test';
+import { afterAll, describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { createHash } from 'node:crypto';
 import {
     chmodSync,
@@ -38,6 +38,15 @@ import { itemId, openStore } from '@gobing-ai/kk-store';
 
 const REPO = resolve(import.meta.dir, '../../..');
 const EVIDENCE = join(REPO, '.works/tmp/test-news-generate');
+
+/**
+ * Every case here spawns the real binary once per verb, so the slowest one is nine child processes
+ * (~4.2 s on a workstation, over bun's 5 s default on a CI runner — run 44206669178 timed out and
+ * its killed child then read as an empty-stderr assertion failure). The budget is a liveness guard
+ * for E2E work, not an assertion: the contracts under test are the exit codes, the JSON and the
+ * files, all of which fail on their own terms.
+ */
+setDefaultTimeout(60_000);
 const DIGITS = '20261113';
 
 /** The two fixture stories: the pool, the candidates and the seeded store all carry these ids. */
@@ -308,10 +317,12 @@ function kk(fixture: Fixture, args: string[], extraEnv: Record<string, string> =
         stdout: 'pipe',
         stderr: 'pipe',
     });
+    // A killed child has no exit code; saying so keeps a timeout from reading as "exit 1, no stderr".
+    const killed = proc.exitCode === null ? `\nkk did not exit (signal ${String(proc.signalCode)})` : '';
     return {
         code: proc.exitCode ?? 1,
         out: proc.stdout?.toString() ?? '',
-        err: proc.stderr?.toString() ?? '',
+        err: `${proc.stderr?.toString() ?? ''}${killed}`,
     };
 }
 
