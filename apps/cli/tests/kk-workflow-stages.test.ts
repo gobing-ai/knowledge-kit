@@ -32,6 +32,7 @@ const sentences = join(import.meta.dir, '../../../plugins/kk/scripts/sentences.t
 // 0348: the runner imports cover-compositor at module load, so lone-runner copies ship it too.
 const coverCompositor = join(import.meta.dir, '../../../plugins/kk/scripts/cover-compositor.ts');
 const topicSelectionAttempts = join(import.meta.dir, '../../../plugins/kk/scripts/topic-selection-attempts.ts');
+const newsEditorialLedger = join(import.meta.dir, '../../../plugins/kk/scripts/news-editorial-ledger.ts');
 
 // A real 1x1 JPEG (generated once via `sips -s format jpeg` from a 1x1 png) so the jpg transcode
 // test exercises sips with data it can actually decode.
@@ -4504,6 +4505,7 @@ describe('F613 (0162) — script-write stage wiring', () => {
             // needs that sibling too — its absence would surface as the wrong "daily-stages.ts
             // not found" remediation instead of the skill-missing message under test.
             copyFileSync(topicSelectionAttempts, join(dir, 'topic-selection-attempts.ts'));
+            copyFileSync(newsEditorialLedger, join(dir, 'news-editorial-ledger.ts'));
             const result = run(
                 ['daily-script-style', dir, '20260925'],
                 { HOME: dir, KK_WORKFLOWS_DIR: '' },

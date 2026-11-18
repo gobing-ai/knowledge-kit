@@ -91,7 +91,10 @@ nodes:
           --in ${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json (metadata.docs is the candidate Doc[]; don't edit it)
           --out-plan ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json
           --out-excluded ${vars.work_dir}/21-plan/${vars.run_date}_03_curate_excluded.json
-          Deliver both JSON files with your file-write tool (a headless sandbox may block shell writes).
+          Then follow mode `align` (SKILL.md) and deliver ${vars.work_dir}/21-plan/${vars.run_date}_judgment-proposal.json:
+          evidence-backed judgments over the SAME selected ids, superseding (never rewriting) an aired one;
+          no new evidence = {"version":1,"judgments":[]}. Ledger for reference: ${vars.work_dir}/../conclusion.md
+          Deliver all three JSON files with your file-write tool (a headless sandbox may block shell writes).
         expectFile: ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json
         allowAppend: false
 
@@ -135,7 +138,7 @@ nodes:
         allowAppend: false
 
   - id: curate-final
-    description: "`generate-check --step curate --final`: the documented fallback — untranslated candidates with `[]` exclusions — when the fix pass still fails"
+    description: "`generate-check --step curate --final`: the documented fallback — untranslated candidates with `[]` exclusions — when the fix pass still fails; also commits the editorial judgment ledger (0384), the deterministic alignment entry before `script-write`"
     dependsOn: [curate-check, curate-fix]
     condition:
       kind: shell
@@ -167,6 +170,9 @@ nodes:
           --in ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json (don't edit it)
           --excluded ${vars.work_dir}/21-plan/${vars.run_date}_03_curate_excluded.json
           --out ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json
+          Draft from the frozen judgments at ${vars.work_dir}/21-plan/${vars.run_date}_judgment-snapshot.json (never the live
+          ledger): acknowledge any correction it carries openly (error, apology, corrected fact), and never restate
+          a superseded claim.
           Output only the JSON file.
         expectFile: ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json
         allowAppend: false

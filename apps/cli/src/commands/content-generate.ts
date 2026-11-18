@@ -888,6 +888,16 @@ export const GENERATE_ROWS: GenerateVerbRow[] = [
                 when: (ctx: GenerateContext) => ctx.noun === 'news' && ctx.step === 'curate',
             },
             {
+                // 0384 (L3 R4/R10): `--final` means the selection is settled, so the judgment
+                // ledger commits here — the deterministic alignment entry the design already
+                // provides between final selection and `script-write`. Drafting reads the frozen
+                // snapshot, never the live ledger. A refusal fails the row (exit 1): history is
+                // never rebuilt from a proposal.
+                name: 'news-editorial-commit',
+                args: (ctx: GenerateContext) => [ctx.workDir, ctx.runDate, ctx.runId],
+                when: (ctx: GenerateContext) => ctx.noun === 'news' && ctx.step === 'curate' && ctx.final,
+            },
+            {
                 ...STEP.scriptCheck(),
                 when: (ctx: GenerateContext) => ctx.noun === 'news' && ctx.step === 'script',
             },

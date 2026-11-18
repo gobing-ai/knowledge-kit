@@ -1922,6 +1922,12 @@ if (import.meta.main)
             dailyEditorialRender(rest);
             break;
         }
+        case 'news-editorial-commit': {
+            // 0384 R4/R10: the judgment commit is async (the ledger's LockPort is promise-shaped).
+            const { newsEditorialCommit } = await loadDailyStages();
+            await newsEditorialCommit(rest);
+            break;
+        }
         case 'daily-script': {
             const { dailyScript } = await loadDailyStages();
             dailyScript(rest);

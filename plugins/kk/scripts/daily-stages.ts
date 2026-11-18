@@ -114,6 +114,12 @@ import {
     type XhsCard,
     xhsPlan,
 } from './kk-workflow-stages.ts';
+import {
+    type AlignmentProposal,
+    commitAlignment,
+    dropReselectedJudgments,
+    type LockPort,
+} from './news-editorial-ledger.ts';
 import { splitSentences } from './sentences.ts';
 import { normalizeSeriesNames } from './series-names.ts';
 import { readSelectionAttempts, recordSelectionAttempt, selectionAttemptsPath } from './topic-selection-attempts.ts';
@@ -4617,6 +4623,175 @@ function sourceLabelForDoc(doc: Record<string, unknown>, sourceUri: string): str
         return new URL(sourceUri).hostname.replace(/^www\./, '') || '原文';
     } catch {
         return '原文';
+    }
+}
+
+/**
+ * What the `editorial-commit` stage reports instead of the ledger module's raw status: the two
+ * "nothing to fix" outcomes collapse to `committed` / `reused`, the two refusals stay verbatim.
+ */
+export type EditorialCommitSummary = 'committed' | 'reused' | 'conflict' | 'stop';
+
+/**
+ * The existing kk store single-flight claim as the ledger's `LockPort` (ADR-054/0384 R10): the
+ * same `kk lock acquire/release` the collect workflow shells, scoped to the ledger's own name. A
+ * second locking mechanism is deliberately not invented — the store's `LocksDao` owns the claim,
+ * its TTL and its re-entrancy.
+ */
+function kkLedgerLockPort(): LockPort {
+    const kkLock = (argv: string[]): { status: number; stdout: string; stderr: string } => {
+        const result = spawnSync('kk', argv, { encoding: 'utf-8' });
+        if (result.error !== undefined) failWith(127, `kk: ${result.error.message}`);
+        return { status: result.status ?? 1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+    };
+    return {
+        acquire: async (name: string, run: string) => {
+            // stdout IS the lock contract: `{"acquired":true}` or `{"skipped":"locked",…}` (exit 0).
+            const claimed = kkLock(['lock', 'acquire', '--name', name, '--run', run]);
+            if (claimed.status !== 0) failWith(claimed.status, `lock acquire failed: ${claimed.stderr.trim()}`);
+            return claimed.stdout.includes('"acquired":true');
+        },
+        release: async (name: string, run: string) => {
+            const released = kkLock(['lock', 'release', '--name', name, '--run', run]);
+            if (released.status !== 0) {
+                console.error(`editorial-commit: lock release failed: ${released.stderr.trim()}`);
+            }
+        },
+    };
+}
+
+/** Selected ids from the plan `curate-final` settled — the only ids a judgment may cite (0393). */
+function selectedIdsOf(planRaw: unknown): Set<string> {
+    const docs: Record<string, unknown>[] = Array.isArray(planRaw)
+        ? (planRaw as Record<string, unknown>[])
+        : Array.isArray(metadataOf(planRaw).docs)
+          ? (metadataOf(planRaw).docs as Record<string, unknown>[])
+          : [];
+    const ids = new Set<string>();
+    for (const doc of docs) {
+        if (doc !== null && typeof doc === 'object' && typeof doc.id === 'string' && doc.id.trim() !== '') {
+            ids.add(doc.id.trim());
+        }
+    }
+    return ids;
+}
+
+/**
+ * 0384 R4/R10 — the deterministic judgment commit between final selection and drafting: the
+ * `align` agent's proposal in, a validated ledger commit and an immutable run snapshot out.
+ *
+ *   news-editorial-commit <work_dir> <run_date> <run_id> [proposal_file] [ledger_file]
+ *
+ * `<proposal_file>` defaults to `21-plan/<date>_judgment-proposal.json` (absent file = the documented
+ * "nothing new" case, an empty proposal); `<ledger_file>` defaults to the run directory's parent
+ * `<works_dir>/kk-news-generate/conclusion.md` (ADR-054). Outputs — both beside the plan:
+ * `judgment-snapshot.json` (what 0385 drafts from and 0396 corrects from) and
+ * `judgment-commit-receipt.json` (written on every exit path, including the refusals).
+ *
+ * Reselect tolerance: the proposal is authored in `curate`, but `curate-check`/`curate-fix`/`--final`
+ * settle the plan afterwards, so a judgment may cite a selected id the settled plan no longer holds.
+ * Such judgments are dropped *here* (never inside the ledger API, whose unknown-id refusal stays) and
+ * the ids go into the receipt's `droppedByReselection` plus a printed line — the surviving judgments
+ * still commit, and a proposal with nothing committable left behaves exactly like the documented
+ * empty proposal (this run's legal snapshot is reused). Never silent, never a hard stop for reselection alone.
+ *
+ * Exit: `committed` / `reused` exit 0; `conflict` and `stop` print the recovery path and exit 1, so
+ * a refused ledger commit can never be drafted against. `KK_EDITORIAL_COMMIT_OFFLINE=1` runs the
+ * commit without the store claim (the documented `NULL_LOCK` seam; tests and offline replay).
+ */
+export async function newsEditorialCommit(args: string[]): Promise<void> {
+    const [workDir = '', runDate = '', runId = '', proposalArg = '', ledgerArg = ''] = args;
+    if (!workDir) fail('missing work_dir');
+    if (!runDate) fail('missing run_date');
+    if (!runId) fail('missing run_id');
+    // 0384: judged artifacts live beside the plan, NOT under `20-editorial/` — that directory is the
+    // per-run writer-skill snapshot (design §2.2 keeps the skill read in place, and the DAG contract
+    // forbids agent prompts naming a copy there).
+    const planDir = join(workDir, '21-plan');
+    const proposalPath = proposalArg || join(planDir, `${runDate}_judgment-proposal.json`);
+    const ledgerPath = ledgerArg || resolve(join(workDir, '..', 'conclusion.md'));
+    const snapshotPath = join(planDir, `${runDate}_judgment-snapshot.json`);
+    const receiptPath = join(planDir, `${runDate}_judgment-commit-receipt.json`);
+    const planFile = join(workDir, '21-plan', `${runDate}_03_plan_plan.json`);
+
+    const planRaw = readJson(planFile);
+    if (planRaw === null) {
+        failWith(1, `editorial-commit: no selected plan at ${planFile} — refusing to commit judgments`);
+    }
+    const selectedIds = selectedIdsOf(planRaw);
+
+    let proposal: AlignmentProposal;
+    if (isFile(proposalPath)) {
+        try {
+            const parsed = JSON.parse(readFileSync(proposalPath, 'utf-8')) as AlignmentProposal;
+            if (parsed === null || typeof parsed !== 'object' || !Array.isArray(parsed.judgments)) {
+                failWith(1, `editorial-commit: ${proposalPath} has no judgments array — re-run the align pass`);
+            }
+            proposal = parsed;
+        } catch (error) {
+            failWith(1, `editorial-commit: ${proposalPath} is not valid JSON: ${(error as Error).message}`);
+        }
+    } else {
+        // An empty proposal is the normal case (skill `align` rule 4), not a failure.
+        proposal = { version: 1, judgments: [] };
+        console.log(`editorial-commit: no proposal at ${proposalPath} — committing this run's ledger as-is`);
+    }
+
+    // The plan is settled by now (`curate-check`/`curate-fix`/`--final`), so an id the proposal cited
+    // from the pre-settlement plan may be gone: drop those judgments and record them (never silent).
+    const reselected = dropReselectedJudgments(proposal, selectedIds);
+    if (reselected.dropped.length > 0) {
+        // Same stream as the sibling drop reports (`curate-check`, `qc`): a drop is loud, not fatal.
+        console.error(
+            `editorial-commit: dropped ${reselected.dropped.length} judgment(s) the settled plan no longer carries: ${reselected.dropped.join(', ')}`,
+        );
+    }
+
+    sted('mkdir', planDir, () => mkdirSync(planDir, { recursive: true }));
+    // Offline means NO lock port at all (the ledger's documented `NULL_LOCK` default), so the
+    // receipt says `lock: none` — passing NULL_LOCK explicitly would report a claim it never took.
+    const receipt = await commitAlignment({
+        ledgerPath,
+        snapshotPath,
+        receiptPath,
+        proposal: reselected.proposal,
+        selectedIds,
+        runDate,
+        runId,
+        now: new Date().toISOString(),
+        droppedByReselection: reselected.dropped,
+        ...(process.env.KK_EDITORIAL_COMMIT_OFFLINE === '1' ? {} : { lock: kkLedgerLockPort() }),
+    });
+
+    const summary: EditorialCommitSummary =
+        receipt.status === 'applied'
+            ? 'committed'
+            : receipt.status === 'no-op'
+              ? 'reused'
+              : receipt.status === 'conflict'
+                ? 'conflict'
+                : 'stop';
+    const counts = [
+        `appended=${receipt.appended.length}`,
+        `superseded=${receipt.superseded.length}`,
+        `corrections=${receipt.correctionIds.length}`,
+        `dropped=${receipt.droppedByReselection.length}`,
+        `lock=${receipt.lock}`,
+        `snapshot=${receipt.snapshotReused ? 'reused' : 'frozen'}`,
+    ].join(' ');
+    console.log(
+        `editorial-commit: ${summary} — ${receipt.reason} (${counts}; ledger=${receipt.ledgerPath}; receipt=${receiptPath})`,
+    );
+    if (receipt.correctionIds.length > 0) {
+        console.log(`editorial-commit: corrections owed by the draft: ${receipt.correctionIds.join(', ')}`);
+    }
+    if (summary === 'conflict' || summary === 'stop') {
+        const recovery = receipt.recovery;
+        const where = recovery?.backupPath ? ` backup=${recovery.backupPath}` : '';
+        failWith(
+            1,
+            `editorial-commit: ${summary} — ${receipt.reason}${where} (${recovery?.action ?? 'see the receipt'})`,
+        );
     }
 }
 

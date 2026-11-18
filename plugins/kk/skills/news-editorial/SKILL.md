@@ -33,6 +33,7 @@ discovery.
 | `curate --fix` | QC candidates `Doc[]` + curate validator errors (`--fix`) → corrected plan + exclusions | Wired (`curate-fix`) |
 | `write` | translated plan `Doc[]` + exclusions (`--excluded`) → master script plan JSON | Wired (`script-write`) |
 | `write --fix` | plan `Doc[]` + previous script plan + validator errors → corrected master script plan | Wired (`script-write-fix`) |
+| `align` | selected items + judgment ledger snapshot → structured judgment proposal (may be empty) | Wired (`plugins/kk/scripts/news-editorial-ledger.ts` — `commitAlignment` validates and commits it, 0384) |
 
 ## Shared rules (every mode)
 
@@ -124,6 +125,50 @@ See `references/selection.md`. Reads QC candidates (`--in`) and writes two JSON 
 2. `--out-excluded` (`21-plan/<date>_03_curate_excluded.json`): `[{"id":"<Doc.id>","reason":"<具体中文原因>"}]` for every dropped candidate (`[]` when none dropped). Every candidate id must land in **exactly one** of the two files.
 
 With `--fix <errors.json>` (`missing-plan`, `invalid-json`, `unknown-id`, `missing-item`, `conflict-id`, `empty-plan`), repair the partition so every candidate id is accounted for exactly once and at least one in-scope item is kept.
+
+## Mode: align
+
+Runs once, after the final selection and before drafting (design `每日AI乱炖编辑与分发设计` §2, ADR-054).
+Inputs: the selected items with the IDs and provenance 0393's selection produced, and the current
+`conclusion.md` ledger snapshot. Output: a proposal, or `{"version":1,"judgments":[]}` when this run
+has no evidence-backed change — an empty proposal is the normal case, not a failure.
+
+Write only judgments you can source in this run's selected items. Each entry:
+
+```json
+{
+  "version": 1,
+  "judgments": [
+    {
+      "id": "j-<stable-slug>",
+      "selectedId": "<a selected item id from this run>",
+      "storyKey": "<the item's story key, when known>",
+      "date": "<YYYYMMDD>",
+      "fact": "听众需要知道的事实（一句，中文）",
+      "attribution": "谁说的 / 哪个来源",
+      "comment": "编辑判断：为什么重要或该看什么",
+      "evidence": { "url": "https://…", "checkedAt": "<ISO-8601>" },
+      "supersedes": "<judgment id, or null>"
+    }
+  ],
+  "preamble": "本期更正说明（仅当有 supersedes 时）"
+}
+```
+
+Rules the deterministic commit enforces (a violation is a failed run, not a silent drop):
+
+1. **No invention.** Every `selectedId` must be one of this run's selected ids; every `fact` must come
+   from that item. A judgment with no evidence URL and check time is rejected.
+2. **Stable ids.** Reuse the same `id` for the same judgment across runs. Re-proposing identical
+   content is a no-op; re-proposing the same `id` with different content is refused — a confirmed
+   judgment is never overwritten.
+3. **Corrections supersede, never edit.** To fix an aired error, write a new judgment whose
+   `supersedes` names the old id, with listener-facing wording ("上期说…有误，向听众致歉，以…为准")
+   in `comment` and `preamble`. The old record stays in the ledger marked superseded, and the commit
+   returns a stable correction id for the channel plugins (0396). Keep the apology, the wrong claim
+   and the corrected fact together — the draft (0385) reads them from the frozen snapshot.
+4. **Empty is legal.** No new evidence means an empty `judgments` array: the run reuses the committed
+   ledger as its legal snapshot and appends nothing.
 
 ## References
 
