@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "workflow": "kk-publish",
+  "type": "news",
+  "run": "20261116",
+  "runId": "kk-publish-20261116-1794927600552",
+  "executor": "pi-dsv4.1-flash-cc",
+  "checkoutCommit": "0d51973ee2522251d9e6fef726e93e41b5ac77a7",
+  "startedAt": "2026-11-17T15:00:00.552Z",
+  "workDir": "/Users/robin/xprojects/knowledge-kit/.works/kk-news-generate/20261116",
+  "window": "overseas-rss",
+  "status": "done",
+  "exitCode": 0,
+  "finishedAt": "2026-11-17T15:01:14.601Z"
+}

@@ -1,13 +1,15 @@
 ---
 schema_version: 1
 name: Expose daily news generation and publishing progress through kk news status and the Board
-status: wip
+status: done
 template: standard
 created_at: 2026-11-15T21:08:47.701Z
-updated_at: "2026-11-16T07:39:04.700Z"
+updated_at: "2026-11-18T03:25:45.600Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0378. Expose daily news generation and publishing progress through kk news status and the Board
@@ -38,11 +40,11 @@ The gap matters operationally: judging whether today's episode will publish mean
 
 ### Requirements
 
-- [ ] R1. Extend `kk news status` so one invocation answers "how far along is this day": the stages the run has recorded (completed / current / elapsed), the generation gate verdict (pool gate, pre-spend floor refusal, ladder rung) and the per-window publish state, for `--run-date <YYYYMMDD>` and an explicit `--work-dir`.
-- [ ] R2. Offer the same surface as machine-readable API for the Board and other consumers, so no caller re-derives progress from `step-timing.json` or a workflow trace.
-- [ ] R3. Keep the existing JSON contract additive: current keys keep their shapes so existing callers and tests do not break, and document the new fields in `docs/04_DESIGN.md` in the same commit.
-- [ ] R4. Cover it with tests: a fresh run, a mid-flight run, a settled `done`, a `no-content` and a failed run each render the expected status.
-- [ ] R5. Out of scope: the Board module's own rendering. It consumes this surface and is unchanged by this task.
+- [x] R1. Extend `kk news status` so one invocation answers "how far along is this day": the stages the run has recorded (completed / current / elapsed), the generation gate verdict (pool gate, pre-spend floor refusal, ladder rung) and the per-window publish state, for `--run-date <YYYYMMDD>` and an explicit `--work-dir`.
+- [x] R2. Offer the same surface as machine-readable API for the Board and other consumers, so no caller re-derives progress from `step-timing.json` or a workflow trace.
+- [x] R3. Keep the existing JSON contract additive: current keys keep their shapes so existing callers and tests do not break, and document the new fields in `docs/04_DESIGN.md` in the same commit.
+- [x] R4. Cover it with tests: a fresh run, a mid-flight run, a settled `done`, a `no-content` and a failed run each render the expected status.
+- [x] R5. Out of scope: the Board module's own rendering. It consumes this surface and is unchanged by this task.
 
 ### Acceptance Criteria
 
@@ -120,19 +122,36 @@ stages — so a fixed denominator would be a number kk cannot know without parsi
 
 ### Testing
 
-- `bun test apps/cli/tests/content-status-progress.test.ts` — 6 pass / 0 fail: fresh (`not-started`, no invented
-  elapsed), mid-flight (`running`, current stage, elapsed > 0), settled (`settled` + `pool: PASS` + bundle summary),
-  no-content (`pool: EMPTY`, floor refusal with `estimatedMinutes`/`minMinutes`, ladder `chosen`/`ratioUsed`), failed
-  (last stage settled, no window outcomes invented) and the additive-key guard over the pre-existing keys.
-- `bun test apps/cli/tests/content-nouns.e2e.test.ts` — 4 pass / 0 fail, i.e. the existing `news status` / `article
-  status` contract still matches its old assertions.
-- Live check on the real 2026-11-15 run: `kk news status --run-date 20261115` reports 85 recorded stages, current
-  `safety-manifest`, `settled`, `gate.pool: PASS`, `windows: {"after-generate": {status: "partial", published: 1}}`.
-- `bunx tsc --noEmit` (apps/cli) and `bun run lint` — clean.
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `apps/cli/src/status-progress.ts:59-77` progressPayload (stages/completed/current/state/elapsedMs) + `apps/cli/src/status-progress.ts:84-122` gatePayload (pool, floorRefusal, ladder); wired at `apps/cli/src/commands/content.ts:386-387`; windows at `apps/cli/src/commands/content.ts:362-377`; `--work-dir` exercised by `apps/cli/tests/content-status-progress.test.ts:52`; live `kk news status --run-date 20261117` → 75 stages, settled, pool PASS, 3 windows |
+| R2 | MET | `kk news status` emits JSON only; the same fields reach any consumer via stdout (`apps/cli/tests/content-status-progress.test.ts:52` parses it); live output saved at `docs/tasks/evidence/0369/20261117/status-20261117.json` |
+| R3 | MET | additive-key guard `apps/cli/tests/content-status-progress.test.ts:143`; `apps/cli/tests/content-nouns.e2e.test.ts` 4/4 pass; `docs/04_DESIGN.md:1403-1408` documents the additions (commit cd0c8b2c, same commit as code) |
+| R4 | MET | `apps/cli/tests/content-status-progress.test.ts:60` fresh, `:70` mid-flight, `:87` done, `:102` no-content, `:129` failed; `bun test` 3 files 17 pass / 0 fail this run |
+| R5 | MET | `git show --stat cd0c8b2c 075b3a26` touches no `apps/board/**` or `apps/cli/src/board/**` file |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Scenario: AC1 — One command answers progress (req: R1) | MET | test | `apps/cli/tests/content-status-progress.test.ts:70` + `:102`; live `kk news status --run-date 20261116` command output (51 stages, pool PASS, ladder 168h, 3 windows) |
+| Scenario: AC2 — The same surface is machine-readable (req: R2) | MET | command | `kk news status --run-date 20261117` parsed as JSON by python3 json.loads this run |
+| Scenario: AC3 — Existing consumers keep working (req: R3) | MET | test | `apps/cli/tests/content-status-progress.test.ts:143`; `apps/cli/tests/content-nouns.e2e.test.ts` pass; `docs/04_DESIGN.md:1403` |
+| Scenario: AC4 — Each run state is covered (req: R4) | MET | test | `apps/cli/tests/content-status-progress.test.ts:60-139` five states, 6 pass |
+| Scenario: AC5 — The Board stays out of scope (req: R5) | MET | command | `git diff --stat cd0c8b2c~1 075b3a26 -- apps/board apps/cli/src/board` → 0 lines this run |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -142,4 +161,6 @@ stages — so a fixed denominator would be a number kk cannot know without parsi
 
 - 2026-11-16T03:25:27.689Z backlog → todo (system)
 - 2026-11-16T07:39:04.700Z todo → wip (system)
+- 2026-11-18T03:25:44.718Z wip → testing (system)
+- 2026-11-18T03:25:45.486Z testing → done (system)
 

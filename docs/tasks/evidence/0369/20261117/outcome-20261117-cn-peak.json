@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "window": "cn-peak",
+  "runDate": "2026-11-17",
+  "status": "none",
+  "published": 0,
+  "targets": 1,
+  "excluded": [
+    {
+      "id": "xhs-pub.上传图文",
+      "plugin": "xhs-pub",
+      "reason": "mode off"
+    },
+    {
+      "id": "x-pub.article",
+      "plugin": "x-pub",
+      "reason": "mode off"
+    }
+  ],
+  "rows": [
+    {
+      "id": "weibo-pub.article",
+      "tier": 2,
+      "required": false,
+      "status": "failed",
+      "effect": "none",
+      "dummy": false
+    }
+  ]
+}

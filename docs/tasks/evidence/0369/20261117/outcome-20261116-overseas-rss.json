@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "window": "overseas-rss",
+  "runDate": "2026-11-16",
+  "status": "partial",
+  "published": 1,
+  "targets": 4,
+  "excluded": [
+    {
+      "id": "shipinhao-pub.image",
+      "plugin": "shipinhao-pub",
+      "reason": "mode off"
+    },
+    {
+      "id": "threads-pub.post-images",
+      "plugin": "threads-pub",
+      "reason": "mode off"
+    }
+  ],
+  "rows": [
+    {
+      "id": "x-pub.post",
+      "tier": 3,
+      "required": false,
+      "status": "uncertain",
+      "effect": "unknown",
+      "dummy": false
+    },
+    {
+      "id": "weibo-pub.post",
+      "tier": 3,
+      "required": false,
+      "status": "succeeded",
+      "effect": "confirmed",
+      "dummy": false
+    },
+    {
+      "id": "threads-pub.post",
+      "tier": 3,
+      "required": false,
+      "status": "uncertain",
+      "effect": "unknown",
+      "dummy": false
+    },
+    {
+      "id": "linkedin-pub.post",
+      "tier": 3,
+      "required": false,
+      "status": "uncertain",
+      "effect": "unknown",
+      "dummy": false
+    }
+  ]
+}

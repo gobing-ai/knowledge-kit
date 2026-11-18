@@ -1,0 +1,29 @@
+Run: kk-news-generate-20261117-1794918601004 — kk-news-generate (dag) — done
+Project: knowledge-kit (/Users/robin/xprojects/knowledge-kit)
+Started: 2026-11-17T12:30:13.843Z   Completed: 2026-11-17T12:31:55.637Z   Duration: 101794ms
+Outcome: success   Events: 3
+
+Run log: .spur/memory/runs/kk-news-generate-20261117-1794918601004.md (tail -f for live view)
+
+    ⚡ 30d7b5de-5efa-4fe6-8c58-83e391e8d84c  executor-probe/agent.run  done  6003ms ✓ · 51.6k in / 2 out · cache 4%
+      started=2026-11-17T12:30:13.991Z completed=2026-11-17T12:30:19.998Z outcome=success
+      result=agent=pi-dsv4.1-flash-cc exitCode=0 executor=pi-dsv4.1-flash-cc session=fresh
+      invocation=agent=pi source=explicit command=pi cwd=/Users/robin/xprojects/knowledge-kit mode=text outputMode=pipe timeoutMs=120000 continue=false stdinInteractive=false model=commandcode/deepseek/deepseek-v4.1-flash
+      error=unavailable
+      artifact=unavailable
+    ⚡ fb037a20-7c9a-4159-b6b4-e0d95b0c9cf6  prepare/shell  done  95479ms ✓
+      started=2026-11-17T12:30:20.068Z completed=2026-11-17T12:31:55.550Z outcome=success
+      result=exitCode=0 stdoutTail={"pool":"empty","candidates":0,"selected":0,"sessions":{"warnings":["shipinhao-pub: not ready"]}}
+ stderrTail=preflight: stage runner advertises every stage kk-news-generate.yaml + kk-publish.yaml + kk-daily-safety.yaml invokes
+publish-matrix-check: channel probe for 'shipinhao-pub' refused: unknown
+9 probe(s) recorded for preflight
+{"count":24}
+extract: 168h pool 24 item(s), estimated 19.2 min at 0.19x — clears the 15 min floor
+[plugin:episode-plan-gen] episode floor backfill: admitted 3 importance-only reject(s) to reach 8 items (38f667ff9a0b6f0476e94fdd4ac1d1ad6c81c0fe6f86de15bbbb41c8da74cb26, 3b3be782cef8822bc0a21c046057cc9658ccf7ce1bd09fb2b6f0077baca32b21, 4fa5640d653e5dae5c80a1cabd389156d15b3b6c6abb515d28888b9e020f8815)
+floor gate: 8 candidates estimate 13.1 min < 15 min — candidates emptied, the run closes as no-content (see /Users/robin/xprojects/knowledge-kit/.works/kk-news-generate/20261117/21-plan/20261117_04_quality-control-content_floor-refusal.json)
+{"workflow":"kk-news-generate","ledger":"/Users/robin/xprojects/knowledge-kit/.works/kk-news-generate/ledger.md","appended":[]}
+ stdoutTruncated=false stderrTruncated=false
+      invocation=command=kk news prepare --work-dir "${__WF_0}" --run-date "${__WF_1}" --ledger-sync
+      error=unavailable
+      artifact=unavailable
+  dag                  done       2026-11-17T12:31:55.634Z

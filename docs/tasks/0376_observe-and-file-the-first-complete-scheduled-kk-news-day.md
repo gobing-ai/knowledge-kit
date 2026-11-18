@@ -1,13 +1,15 @@
 ---
 schema_version: 1
 name: Observe and file the first complete scheduled kk news day
-status: wip
+status: done
 template: standard
 created_at: 2026-11-15T20:14:20.385Z
-updated_at: "2026-11-16T03:28:56.939Z"
+updated_at: "2026-11-18T03:30:23.421Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0376. Observe and file the first complete scheduled kk news day
@@ -31,10 +33,10 @@ not weakened here.
 
 ### Requirements
 
-- [ ] R1. Observe one complete scheduled day on the production host: the 04:30 generate, the 07:00 `overseas-rss` window and the 17:00 `cn-peak` window must each settle (`done` or `no-content` for generation; the windows settle per their own gate conditions) without bypassing a disabled channel, gate or authentication safeguard, with xhs effectively `off`.
-- [ ] R2. Prove each of those three ticks issued a current command — read the `scheduler.custom` payloads from `queue_jobs` for the day and confirm none references a retired entry point such as `scripts/daily-ai-news.ts`.
-- [ ] R3. Save the three redacted launch receipts plus the matching `kk news status --run-date <YYYYMMDD>` output (and the previous-day status for the overseas window) under `docs/tasks/evidence/0369/<YYYYMMDD>/`, with an index recording host identity, installed build, scheduler timezone, effective works root, observed timestamps and the previous-day overseas selection. No secrets, cookies or environment dumps.
-- [ ] R4. Record failures honestly and investigate every failed or ambiguous outcome; a local rehearsal, dry run, dummy run or fabricated receipt does not substitute for the scheduled production evidence.
+- [x] R1. Observe one complete scheduled day on the production host: the 04:30 generate, the 07:00 `overseas-rss` window and the 17:00 `cn-peak` window must each settle (`done` or `no-content` for generation; the windows settle per their own gate conditions) without bypassing a disabled channel, gate or authentication safeguard, with xhs effectively `off`.
+- [x] R2. Prove each of those three ticks issued a current command — read the `scheduler.custom` payloads from `queue_jobs` for the day and confirm none references a retired entry point such as `scripts/daily-ai-news.ts`.
+- [x] R3. Save the three redacted launch receipts plus the matching `kk news status --run-date <YYYYMMDD>` output (and the previous-day status for the overseas window) under `docs/tasks/evidence/0369/<YYYYMMDD>/`, with an index recording host identity, installed build, scheduler timezone, effective works root, observed timestamps and the previous-day overseas selection. No secrets, cookies or environment dumps.
+- [x] R4. Record failures honestly and investigate every failed or ambiguous outcome; a local rehearsal, dry run, dummy run or fabricated receipt does not substitute for the scheduled production evidence.
 
 ### Acceptance Criteria
 
@@ -76,6 +78,11 @@ A: 0375 was created with `--parent 0373` as a grouping convenience. The corpus r
 no CLI verb can clear `parent_wbs`. The operator decided 0373 closes now with this observation carried
 as a **successor**, not a sub-task, so the work was re-filed unparented as 0376 and 0375 cancelled. The
 requirements are identical; 0376 is the live one.
+
+#### Q&A entry — 2026-11-18T03:29:37.717Z
+
+**Q: the 04:30 generate launch receipt for 2026-11-17 was overwritten by the 10:46 hand-run. Does R3 still hold?**
+A: Yes, by operator decision on 2026-11-17 ("go with option 1"). The scheduled run is kept as its `queue_jobs` row (`6bd1e329…`) plus its Spur trace (`kk-news-generate-20261117-1794918601004`), both filed under `docs/tasks/evidence/0369/20261117/`. They stand in for the lost receipt and are labelled as a reconstruction, not the receipt. The underlying defect stays open: a same-day hand-run overwrites the scheduled run's `schedule-receipt.json`, `pool-gate.json` and floor-refusal file.
 
 ### Design
 
@@ -130,19 +137,34 @@ R1/R2/R3 read off that day's `queue_jobs` payloads, launch receipts and `kk news
 
 ### Testing
 
-Read-only observation queries against the production scheduler, run 2026-11-15 ~19:30 PST:
+**Pipeline verify results**
 
-- `sqlite3 .spur/spur.db "select datetime(created_at/1000,'unixepoch','-8 hours'), status, payload, last_error from queue_jobs where type='scheduler.custom' and json_extract(payload,'$.name') in ('kk-daily-ai-voice','kk-daily-publish3','kk-daily-publish3-cn-peak')"` — two failed ticks, both `Module not found "scripts/daily-ai-news.ts"`; no cn-peak row after 2026-11-14.
-- `ls scripts/daily-ai-news.ts` → `No such file or directory`, so the retired entry point cannot have been current.
-- `ps -o lstart= -p $(pgrep -f "spur self serve")` → `Sun Nov 15 16:16:30 2026`; `ls -la .spur/config.yaml` → same 16:16 mtime, i.e. the `kk news` verbs are loaded only from that restart onward.
-- `git log --oneline -1 -- .spur/config.yaml` context: the 17:00 pause is `efe2a197`, so a missing cn-peak row is expected behaviour, not a scheduler fault.
-- `kk --version` → `0.1.19`; `date` → `Sun Nov 15 19:26:52 PST 2026`.
+- Verdict: PASS (from verdict artifact)
 
-Not run, deliberately: no manual `kk news generate`, no dry run, no dummy receipt — R4 forbids substituting a hand-run for scheduled production evidence, and the scheduled evidence for a complete day does not exist yet.
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `docs/tasks/evidence/0369/20261117/queue-jobs.json` — 04:30/07:00/17:00 rows all `completed`; 04:30 run `kk-news-generate-20261117-1794918601004` settled no-content via floor gate (`docs/tasks/evidence/0369/20261117/trace-0430-generate.txt`); windows `kk-publish-20261116-1794927600552` and `kk-publish-20261117-1794963601012` done exit 0; xhs `mode off` in both outcomes |
+| R2 | MET | `docs/tasks/evidence/0369/20261117/queue-jobs.json` — all three payloads are `kk news generate |
+| R3 | MET | `docs/tasks/evidence/0369/20261117/index.md` + 07:00/17:00 receipts + status outputs; 04:30 generate receipt (overwritten by 10:46 hand-run) replaced by its queue row + Spur trace, accepted by operator decision 2026-11-17 (task Q&A) |
+| R4 | MET | `docs/tasks/evidence/0369/20261117/index.md` "Failures, named" — linkedin selector drift, x/threads uncertain, jike variant missing, weibo article cover/下一步 timeouts, no-content floor verdict |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Scenario: AC1 — A complete scheduled day settles (req: R1) | MET | command | `sqlite3 .spur/spur.db` queue_jobs + `spur workflow trace` this run → `docs/tasks/evidence/0369/20261117/queue-jobs.json` |
+| Scenario: AC2 — Every tick issued a current command (req: R2) | MET | command | `docs/tasks/evidence/0369/20261117/queue-jobs.json` payloads; installed `kk` 0.1.19 at tick time exposes `news generate`/`news publish` |
+| Scenario: AC3 — Redacted production evidence is preserved (req: R3) | MET | command | `ls docs/tasks/evidence/0369/20261117` → 2 receipts + `queue-jobs.json` + `trace-0430-generate.txt` (operator-accepted stand-in for the overwritten generate receipt) + 3 status outputs + `index.md`; secret-pattern grep → 1 hit, the index prose "Neither contains secrets" (no credential values) |
+| Scenario: AC4 — Readiness rests on real evidence (req: R4) | MET | command | `sqlite3 .spur/spur.db "select id,status from runs where id like 'kk-%-20261117%'"` this run separates scheduled run ids from the 08:23–12:30 hand-runs; `docs/tasks/evidence/0369/20261117/index.md` names every failure with cause; hand-runs explicitly excluded |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -152,4 +174,6 @@ Not run, deliberately: no manual `kk news generate`, no dry run, no dummy receip
 
 - 2026-11-16T03:25:27.025Z backlog → todo (system)
 - 2026-11-16T03:28:56.939Z todo → wip (system)
+- 2026-11-18T03:29:49.742Z wip → testing (system)
+- 2026-11-18T03:30:23.232Z testing → done (system)
 
