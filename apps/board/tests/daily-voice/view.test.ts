@@ -13,15 +13,20 @@ import { describe, expect, it } from 'bun:test';
 import type { RunResults } from '../../src/contracts';
 import {
     CONFIDENCE_LEVELS,
+    DAILY_VIEW_ALIASES,
+    DAILY_VIEWS,
     type DailySummaryView,
     dailySummary,
     dailySummaryFacts,
+    dailyViewPath,
     funnelView,
     isChannelOutcome,
     isConfidenceLevel,
     parseWindowMs,
+    resolveDailyView,
     supplyContextOf,
 } from '../../src/daily-voice/view';
+import { parseDeepLink } from '../../src/shared/run-selection';
 
 function results(summary: Record<string, unknown>, artifacts: RunResults['artifacts'] = []): RunResults {
     return {
@@ -299,5 +304,38 @@ describe('parseWindowMs / supplyContextOf', () => {
         expect(supplyContextOf(null, '2026-10-22T06:00:00.000Z')).toBeNull();
         expect(supplyContextOf('24h', null)).toBeNull();
         expect(supplyContextOf('24h', 'not-a-date')).toBeNull();
+    });
+});
+
+describe('0390 view set and deep-link aliases', () => {
+    it('exposes the three views in strip order and resolves exact ids', () => {
+        expect(DAILY_VIEWS).toEqual(['summary', 'generation', 'publishing']);
+        expect(resolveDailyView('generation')).toBe('generation');
+        expect(resolveDailyView('publishing')).toBe('publishing');
+        expect(resolveDailyView(null)).toBeNull();
+        expect(resolveDailyView('')).toBeNull();
+    });
+
+    it('maps every retired tab name onto a live view and rejects unknown ones', () => {
+        expect(resolveDailyView('results')).toBe('generation');
+        expect(resolveDailyView('progress')).toBe('generation');
+        expect(resolveDailyView('config')).toBe('summary');
+        expect(resolveDailyView('mystery')).toBeNull();
+        expect(dailyViewPath('summary')).toBe('summary');
+    });
+
+    it('parseDeepLink migrates old URLs through the alias table with no diagnostic', () => {
+        expect(parseDeepLink('?tab=results', DAILY_VIEWS, DAILY_VIEW_ALIASES)).toEqual({
+            tab: 'generation',
+            diagnostics: [],
+        });
+        expect(parseDeepLink('?tab=config&run=r1', DAILY_VIEWS, DAILY_VIEW_ALIASES)).toEqual({
+            tab: 'summary',
+            runId: 'r1',
+            diagnostics: [],
+        });
+        const unknown = parseDeepLink('?tab=overview', DAILY_VIEWS, DAILY_VIEW_ALIASES);
+        expect(unknown.tab).toBeUndefined();
+        expect(unknown.diagnostics[0]?.code).toBe('board.deeplink.unknown-tab');
     });
 });

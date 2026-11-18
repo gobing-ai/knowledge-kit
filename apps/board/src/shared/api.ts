@@ -11,6 +11,7 @@ import type {
     CollectStoreSelection,
     CollectStoreSelections,
     RunConfig,
+    RunEvidence,
     RunResults,
     StoreChannelsQuery,
     WorkflowName,
@@ -124,6 +125,11 @@ export interface BoardClient {
     results(workflow: string, runId: string): Promise<RunResults>;
     /** One run's captured-config projection. */
     config(workflow: string, runId: string): Promise<RunConfig>;
+    /**
+     * One run's evidence envelope (0391): capture identity, authorized Spur run state and the
+     * workflow projection. Answers even for uncaptured attempts (`capture`/`results` then null).
+     */
+    evidence(workflow: string, runId: string): Promise<RunEvidence>;
     /** The reader URL for one allowlisted artifact (used as a link/download target). */
     artifactUrl(workflow: string, runId: string, artifactId: string): string;
     /** The Spur run history page for a workflow (`/api/runs`). */
@@ -791,6 +797,10 @@ export function createBoardClient(options: BoardClientOptions): BoardClient {
                 `${aggregateReader}/api/workflows/kk-collect/store/channels?${storeChannelsQueryString(query)}`,
             ),
         runDetail: (runId) => getJson<unknown>(`${board}/api/runs/${encodeURIComponent(runId)}`),
+        evidence: (workflow, runId) =>
+            getJson<RunEvidence>(
+                `${reader}/api/workflows/${encodeURIComponent(workflow)}/runs/${encodeURIComponent(runId)}/evidence`,
+            ),
         progress: (runId) => getJson<unknown>(`${board}/api/runs/${encodeURIComponent(runId)}/progress`),
     };
 }

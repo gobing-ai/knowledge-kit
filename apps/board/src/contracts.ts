@@ -142,6 +142,145 @@ export interface DailyEpisodeFunnel {
 }
 
 /* ------------------------------------------------------------------------------------------------
+ * Run evidence envelope + news generation/publishing DTO (0391, docs/design/board-evidence-dto.md)
+ *
+ * `GET /api/workflows/<w>/runs/<id>/evidence` answers this envelope. `capture`/`results` are null
+ * for an attempt launched before capture binding: only authorized Spur run state plus the
+ * `board.evidence.uncaptured` diagnostic is available, and fixed artifacts stay unknown — never
+ * invented. `results.summary` for `kk-news-generate` is the typed news projection below; the
+ * voice2-family `summary` stays the workflow-specific bag its own module narrows.
+ * ---------------------------------------------------------------------------------------------- */
+
+/** The selected attempt's capture identity, present only when a capture record exists. */
+export interface RunEvidenceCapture {
+    capturedAt: string;
+    stamp: string;
+    /** Allowlisted effective settings, exactly as captured. */
+    settings: Record<string, string>;
+    definitionDigest?: string;
+}
+
+/** `GET /api/workflows/<w>/runs/<id>/evidence` — capture + authorized state + projection. */
+export interface RunEvidence {
+    schemaVersion: 1;
+    workflow: WorkflowName;
+    runId: string;
+    /** Null when the attempt predates capture binding: the projection is then null too. */
+    capture: RunEvidenceCapture | null;
+    /** Spur's own authorized run state; present for captured AND uncaptured attempts. */
+    run: { id: string; status: string; startedAt: string | null; completedAt: string | null };
+    /** The full workflow projection for captured runs; null for uncaptured attempts. */
+    results: RunResults | null;
+    diagnostics: BoardDiagnostic[];
+}
+
+/** One engine node's producer state and its bounded recorded attempts (loud fallback chains). */
+export interface NewsEngineEvidence {
+    node: string;
+    /** Resolved producer state over the recorded DAG action rows (`unknown` when unrecorded). */
+    state: string;
+    attempts: { status: string; timing: string }[];
+}
+
+/** The launch receipt as bounded evidence, flagged stale when it names another run. */
+export interface NewsLaunchEvidence {
+    status: string | null;
+    runId: string | null;
+    startedAt: string | null;
+    finishedAt: string | null;
+    reason: string | null;
+    stale: boolean;
+}
+
+/** The attempt's generation side: outcome, gate verdict, launch receipt, engines and progress. */
+export interface NewsGenerationEvidence {
+    outcome: string | null;
+    gate: { status: string | null };
+    launch: NewsLaunchEvidence;
+    engines: NewsEngineEvidence[];
+    progress: DailyProgressBag | null;
+}
+
+/** The frozen bundle's bounded identity card: run date, parent run, title, variants, safety. */
+export interface NewsBundleEvidence {
+    identity: string;
+    runDate: string;
+    parentRunId: string | null;
+    title: string | null;
+    variants: string[];
+    safety: string | null;
+}
+
+/** One publish target's plan-and-receipt evidence: send status, delivery effect, references. */
+export interface NewsPublishTargetEvidence {
+    id: string;
+    tier: number | null;
+    mode: string | null;
+    target: string | null;
+    status: 'succeeded' | 'failed' | 'uncertain' | 'planned' | 'dummy' | 'skipped';
+    effect: 'confirmed' | 'none' | 'unknown' | null;
+    url: string | null;
+    guid: string | null;
+    finishedAt: string | null;
+    error: string | null;
+    /** Fixed workspace-relative references — rendered as text, never turned into links. */
+    evidence: { plan: string; receipt: string | null };
+}
+
+/** One publish window's recorded evidence: planned targets, outcome status, provenance checks. */
+export interface NewsPublishWindowEvidence {
+    window: string;
+    recordedStatus: 'full' | 'partial' | 'none' | 'dummy' | null;
+    provenance: {
+        dateMatch: boolean | null;
+        bundleMatch: boolean | null;
+        parentMatch: boolean | null;
+        digestMatch: boolean | null;
+    };
+    targets: NewsPublishTargetEvidence[];
+}
+
+/** The attempt's publishing side: the bundle card plus one window group per publishable window. */
+export interface NewsPublishingEvidence {
+    bundle: NewsBundleEvidence | null;
+    windows: NewsPublishWindowEvidence[];
+}
+
+/** The typed news summary carried under `RunResults.summary` for `kk-news-generate`. */
+export interface NewsSummaryEvidence {
+    status: string;
+    startedAt: string | null;
+    completedAt: string | null;
+    outcome: string | null;
+    generation: NewsGenerationEvidence;
+    publishing: NewsPublishingEvidence;
+    /**
+     * The projection's own counts. `null` means the projection never recorded that count (a
+     * projection predating the field), which the module renders as an unrecorded word — never as
+     * an invented zero.
+     */
+    counts: {
+        artifactsAvailable: number | null;
+        artifactsTotal: number | null;
+        targetsSucceeded: number | null;
+        targetsFailed: number | null;
+        targetsUncertain: number | null;
+        targetsPlanned: number | null;
+        windowsFull: number | null;
+        windowsPartial: number | null;
+        windowsNone: number | null;
+    };
+}
+
+/** The untyped recorded progress bag a news generation row may carry (narrowed by the module). */
+export interface DailyProgressBag {
+    nodes?: unknown;
+    edges?: unknown;
+    edgesKnown?: unknown;
+    childRunId?: unknown;
+}
+
+/* ------------------------------------------------------------------------------------------------
  * Collect store views (G81, task 0307 — docs/design/collect-store-views.md §3)
  *
  * Read-only projections of `<project>/.works/kk.db` (ADR-035 amendment 2026-10-16, Collect only).

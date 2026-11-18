@@ -447,10 +447,43 @@ export function supplyContextOf(
     };
 }
 
+/** The Summary view: what this attempt produced, at a glance, plus its captured settings. */
+export type DailyView = 'summary' | 'generation' | 'publishing';
+
+/**
+ * The module's view set (0390): Summary, Generation, Publishing. This is an append-only strip:
+ * existing deep links keep working through {@link DAILY_VIEW_ALIASES}.
+ */
+export const DAILY_VIEWS: readonly DailyView[] = ['summary', 'generation', 'publishing'];
+
+/**
+ * Deep-link aliases for the retired tab names: `results` and `progress` both open Generation
+ * (results media/files are Generation view outputs; progress nodes are Generation stages), and
+ * `config` opens Summary (captured settings live there as a drill-down now).
+ */
+export const DAILY_VIEW_ALIASES: Readonly<Record<string, DailyView>> = {
+    results: 'generation',
+    progress: 'generation',
+    config: 'summary',
+};
+
+/** Resolve a deep-link segment to a view id: exact match first, then the alias table. */
+export function resolveDailyView(segment: string | null | undefined): DailyView | null {
+    if (!segment) return null;
+    if ((DAILY_VIEWS as readonly string[]).includes(segment)) return segment as DailyView;
+    return DAILY_VIEW_ALIASES[segment] ?? null;
+}
+
+/** The board path segment of a view id. */
+export function dailyViewPath(view: DailyView): string {
+    return view;
+}
+
 /**
  * The workflow family the module reads today. `kk-daily-ai-voice2` (and its `kk-daily-ai-voice`
- * predecessor) are retired: their runs stay readable, but a day that only ran under them is shown
- * as a retired-layout day rather than as "no run" (0384).
+ * predecessor, listed in {@link RETIRED_DAILY_WORKFLOWS}) are retired: their runs stay readable,
+ * but a day that only ran under them is shown as a retired-layout day rather than as "no run"
+ * (0384) — see {@link pickDailyFamily} and {@link retiredLayoutNotice}.
  */
 export const DAILY_WORKFLOW = 'kk-news-generate';
 

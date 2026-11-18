@@ -659,3 +659,33 @@ describe('channel-yield aggregate route (0319)', () => {
         ).toThrow(/aggregate reader origin/);
     });
 });
+
+describe('0390 evidence route', () => {
+    it('requests the versioned evidence envelope from the reader', async () => {
+        const calls: string[] = [];
+        const fetchImpl: FetchLike = async (input) => {
+            calls.push(String(input));
+            return new Response(
+                JSON.stringify({
+                    schemaVersion: 1,
+                    workflow: 'kk-news-generate',
+                    runId: 'run 7',
+                    capture: null,
+                    run: { id: 'run 7', status: 'done', startedAt: null, completedAt: null },
+                    results: null,
+                    diagnostics: [],
+                }),
+                { status: 200, headers: { 'content-type': 'application/json' } },
+            );
+        };
+        const client = createBoardClient({
+            fetchImpl,
+            readerOrigin: 'http://127.0.0.1:4340',
+            boardOrigin: 'http://127.0.0.1:4340',
+        });
+        const envelope = await client.evidence('kk-news-generate', 'run 7');
+        expect(envelope.schemaVersion).toBe(1);
+        expect(envelope.results).toBeNull();
+        expect(calls[0]).toBe('http://127.0.0.1:4340/api/workflows/kk-news-generate/runs/run%207/evidence');
+    });
+});

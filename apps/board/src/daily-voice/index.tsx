@@ -1,9 +1,19 @@
+import {
+    Badge,
+    type BadgeVariant,
+    Diagnostic,
+    EmptyState,
+    ModuleHeader,
+    ModuleShell,
+    ModuleTabs,
+    withBase,
+} from '@gobing-ai/spur/board/ui';
 import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CollectChannelYield, RunConfig, RunResults } from '../contracts';
+import type { CollectChannelYield, NewsSummaryEvidence, RunConfig, RunEvidence, RunResults } from '../contracts';
 import { type BoardClient, createBoardClient, DEFAULT_READER_ORIGIN, readerOriginFrom } from '../shared/api';
 import { ChannelYieldTable, PluginRunTable } from '../shared/channel-yield';
-import { artifactViews } from '../shared/collect';
-import { dedupeDiagnostics, diagnosticLine, formatTimestamp } from '../shared/format';
+import { type ArtifactView, artifactViews, type ResultFact } from '../shared/collect';
+import { dedupeDiagnostics, formatTimestamp } from '../shared/format';
 import {
     ACTIVE_POLL_MS,
     delayMs,
@@ -17,8 +27,6 @@ import {
     tick,
 } from '../shared/refresh';
 import {
-    BOARD_TABS,
-    type BoardTab,
     mergeRunPages,
     parseDeepLink,
     type RunListRow,
@@ -28,11 +36,26 @@ import {
     syncSelectionUrl,
 } from '../shared/run-selection';
 import {
+    type GenerationStageRow,
+    generationStageRows,
+    latestIssue,
+    newsSummaryFacts,
+    newsSummaryOf,
+    type OutputGroup,
+    outputGroups,
+    type PublishingTargetRow,
+    publishingWindowRows,
+    type StateTone,
+    uncapturedDiagnostic,
+} from './evidence';
+import {
+    DAILY_VIEW_ALIASES,
+    DAILY_VIEWS,
     DAILY_WORKFLOW,
     type DailyChannelView,
     type DailyFunnelView,
-    type DailyProgressView,
     type DailySupplyContext,
+    type DailyView,
     dailySummary,
     dailySummaryFacts,
     funnelView,
@@ -43,24 +66,45 @@ import {
 } from './view';
 
 /**
- * The Daily AI Voice Board module (`kk-daily-ai-voice2`), rendered inside the host's React tree.
+ * The Daily AI Voice Board module (`kk-daily-ai-voice2` route), rendered inside the host's React
+ * tree on the native module UI kit (0390, L3 R11).
  *
- * Thin by construction: selection, polling/backoff, availability and projection logic live in
- * `src/shared/` and `./view.ts` so they are unit-tested without a DOM. This file owns only the
- * React state, the two polling loops and the four tab panels.
+ * Three views — Summary, Generation, Publishing — share ONE run selection. The news family
+ * (`kk-news-generate`) renders the 0391 evidence envelope (`GET …/runs/<id>/evidence`) narrowed by
+ * `./evidence.ts`; the retired voice2 families keep their legacy panels as the fallback layout, so
+ * historical days stay readable (0384). Selection, polling/backoff, availability and projection
+ * logic live in `src/shared/`, `./view.ts` and `./evidence.ts`; this file owns only React state,
+ * the two polling loops and the view panels.
  */
-
-/** The workflow this module inspects today; retired families are read only as a fallback. */
 
 /** The host route the module is mounted at. */
 const MODULE_PATH = '/board/modules/kk-daily-ai-voice2';
 
-const TAB_LABELS: Record<BoardTab, string> = {
+/** The view tab strip identity: buttons are `${…}-${id}`, panels `${…}-panel-${id}`. */
+const VIEW_TABS_ID = 'daily-voice-view';
+
+/** Display labels for the three views, in strip order. */
+const VIEW_LABELS: Record<DailyView, string> = {
     summary: 'Summary',
-    results: 'Results',
-    progress: 'Execution progress',
-    config: 'Workflow Config Summary',
+    generation: 'Generation',
+    publishing: 'Publishing',
 };
+
+/** Kit badge variant for a recorded producer-state tone. */
+const TONE_BADGE: Record<StateTone, BadgeVariant> = {
+    info: 'info',
+    success: 'success',
+    warn: 'warning',
+    error: 'error',
+    neutral: 'neutral',
+};
+
+/** Badge variant for a run-list status word. */
+function statusBadgeVariant(status: string): BadgeVariant {
+    if (status === 'done' || status === 'success' || status === 'passed') return 'success';
+    if (status === 'failed' || status === 'failure') return 'error';
+    return 'info';
+}
 
 /** The installed host's contribution ABI (`@gobing-ai/spur/board/index.d.ts`, apiVersion 1). */
 interface BoardContribution {
@@ -68,14 +112,14 @@ interface BoardContribution {
     readonly component: ComponentType;
 }
 
-/** The one-line message for a caught error. */
-function messageOf(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
-}
-
 /** A fetch that never reached the reader reads as offline, not as missing data. */
 function isOfflineError(message: string): boolean {
     return message.includes('Failed to fetch') || message.includes('NetworkError') || message.includes('ECONNREFUSED');
+}
+
+/** The one-line message for a caught error. */
+function messageOf(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -105,9 +149,9 @@ function usePolling(loader: () => Promise<void>, intervalMs: number, refresh: Re
     }, [intervalMs]);
 }
 
-/** The four tabs of the Daily AI Voice module. */
+/** The three views of the Daily AI Voice module, on the native kit shell. */
 export function DailyVoiceModule() {
-    const [link] = useState(() => parseDeepLink(window.location.search));
+    const [link] = useState(() => parseDeepLink(window.location.search, DAILY_VIEWS, DAILY_VIEW_ALIASES));
     const [reader] = useState(() => readerOriginFrom(window.location.search));
     // G82: the ONE store consumption — the 0319 channels aggregate, read through the loopback
     // aggregate reader (a valid kkApi override wins, else the documented default; ADR-035 2026-10-22).
@@ -124,7 +168,10 @@ export function DailyVoiceModule() {
     );
     const [rows, setRows] = useState<RunListRow[]>([]);
     const [cursor, setCursor] = useState<string | null>(null);
-    const [selection, setSelection] = useState<RunSelection>({ runId: link.runId ?? null, tab: link.tab ?? 'summary' });
+    const [selection, setSelection] = useState<RunSelection<DailyView>>({
+        runId: link.runId ?? null,
+        tab: link.tab ?? 'summary',
+    });
     const [diagnostics, setDiagnostics] = useState(() => [
         ...link.diagnostics,
         ...(reader.diagnostic === null ? [] : [reader.diagnostic]),
@@ -132,11 +179,14 @@ export function DailyVoiceModule() {
     ]);
     const [historyRefresh, setHistoryRefresh] = useState<RefreshState>(() => initialRefresh(HISTORY_POLL_MS));
     const [readerRefresh, setReaderRefresh] = useState<RefreshState>(() => initialRefresh(ACTIVE_POLL_MS));
+    // The selected run's reader payload, family-shaped: the news family answers the evidence
+    // envelope; a retired voice2 family keeps the legacy results/config pair its panels render.
+    const [evidence, setEvidence] = useState<RunEvidence | null>(null);
     const [results, setResults] = useState<RunResults | null>(null);
     const [config, setConfig] = useState<RunConfig | null>(null);
     const [filterQuery, setFilterQuery] = useState('');
 
-    // G82: supply context (channels aggregate) for the Summary tab. Keyed to run + bounds, with a
+    // G82: supply context (channels aggregate) for the Summary view. Keyed to run + bounds, with a
     // sequence token so a stale response never overwrites the panel of a newer selection.
     const [supply, setSupply] = useState<CollectChannelYield | null>(null);
     const [storeOffline, setStoreOffline] = useState(false);
@@ -148,7 +198,7 @@ export function DailyVoiceModule() {
     const readerBusy = useRef(false);
     const selectionRef = useRef(selection);
     selectionRef.current = selection;
-    // The family the selected rows came from: results/config must be asked of THAT family, or a
+    // The family the selected rows came from: the reader payload must be asked of THAT family, or a
     // retired-layout run would be requested from the current one and answer 404 (0384).
     const [family, setFamily] = useState<string>(DAILY_WORKFLOW);
     const familyRef = useRef<string>(DAILY_WORKFLOW);
@@ -164,7 +214,10 @@ export function DailyVoiceModule() {
             let chosen = { family: DAILY_WORKFLOW, page: current };
             if (current.runs.length === 0) {
                 const retiredPages = await Promise.all(
-                    RETIRED_DAILY_WORKFLOWS.map(async (family) => ({ family, page: await client.runs(family) })),
+                    RETIRED_DAILY_WORKFLOWS.map(async (retired) => ({
+                        family: retired,
+                        page: await client.runs(retired),
+                    })),
                 );
                 const choice = pickDailyFamily(
                     current.runs,
@@ -199,16 +252,28 @@ export function DailyVoiceModule() {
         // newly selected run is fetched immediately (no wrong-run panel for a whole poll cycle).
         let stale = false;
         try {
-            const [nextResults, nextConfig] = await Promise.all([
-                client.results(familyRef.current, runId),
-                client.config(familyRef.current, runId),
-            ]);
-            if (selectionRef.current.runId !== runId) {
-                stale = true;
-                return;
+            if (familyRef.current === DAILY_WORKFLOW) {
+                const envelope = await client.evidence(familyRef.current, runId);
+                if (selectionRef.current.runId !== runId) {
+                    stale = true;
+                    return;
+                }
+                setEvidence(envelope);
+                setResults(null);
+                setConfig(null);
+            } else {
+                const [nextResults, nextConfig] = await Promise.all([
+                    client.results(familyRef.current, runId),
+                    client.config(familyRef.current, runId),
+                ]);
+                if (selectionRef.current.runId !== runId) {
+                    stale = true;
+                    return;
+                }
+                setResults(nextResults);
+                setConfig(nextConfig);
+                setEvidence(null);
             }
-            setResults(nextResults);
-            setConfig(nextConfig);
             setReaderRefresh(() => succeeded(Date.now(), ACTIVE_POLL_MS));
         } catch (error) {
             if (selectionRef.current.runId !== runId) {
@@ -231,7 +296,7 @@ export function DailyVoiceModule() {
 
     useEffect(() => {
         if (selection.runId === null && rows.length > 0) {
-            setSelection((state) => (state.runId === null ? resolveSelection(rows, link) : state));
+            setSelection((state) => (state.runId === null ? resolveSelection(rows, link, 'summary') : state));
         }
     }, [rows, selection.runId, link]);
 
@@ -239,16 +304,30 @@ export function DailyVoiceModule() {
         syncSelectionUrl(selection, { location: window.location, history: window.history }, MODULE_PATH);
     }, [selection]);
 
-    const tab = selection.tab;
+    const view = selection.tab;
+    const newsFamily = family === DAILY_WORKFLOW;
     const now = Date.now();
-    const summary = results === null ? null : dailySummary(results);
-    const facts = results === null ? [] : dailySummaryFacts(results, now);
+    const legacySummary = results === null ? null : dailySummary(results);
+    // The news projection: only when the selected rows really came from the news family, so a
+    // retired-layout day never renders the news narrowing over a voice2 bag.
+    const news = evidence !== null && newsFamily ? newsSummaryOf(evidence) : null;
+    const newsFacts = evidence !== null && newsFamily ? newsSummaryFacts(evidence) : [];
+    const issue = evidence !== null && newsFamily ? latestIssue(news, evidence.diagnostics) : null;
     const funnel = funnelView(results?.summary.funnel);
-    const context = supplyContextOf(config?.settings.window ?? null, summary?.startedAt ?? null);
-    // G82: the configured supply interval — [startedAt − captured window, startedAt). Unknown
-    // input renders unknown and issues NO store query (ADR-035 2026-10-22).
+    const legacyArtifacts = results === null ? [] : artifactViews(results, readerOrigin);
+    const outputRows: OutputGroup[] =
+        evidence !== null && newsFamily && evidence.results !== null
+            ? outputGroups(evidence.results, readerOrigin)
+            : [];
+    const stageRows: GenerationStageRow[] = news === null ? [] : generationStageRows(news);
+    // G82: the configured supply interval — [startedAt − captured window, startedAt). The news
+    // capture's allowlisted settings stand in for the legacy captured config's `window` value.
+    const context = supplyContextOf(
+        newsFamily ? (evidence?.capture?.settings.window ?? null) : (config?.settings.window ?? null),
+        news?.startedAt ?? legacySummary?.startedAt ?? null,
+    );
     useEffect(() => {
-        const bounds = tab === 'summary' && context !== null ? context : null;
+        const bounds = view === 'summary' && context !== null ? context : null;
         const key = bounds === null ? null : `${selection.runId}:${bounds.fromMs}:${bounds.untilMs}`;
         if (key === supplyKeyRef.current) return;
         supplyKeyRef.current = key;
@@ -275,8 +354,8 @@ export function DailyVoiceModule() {
         return () => {
             cancelled = true;
         };
-    }, [client, tab, context, selection.runId]);
-    const artifacts = results === null ? [] : artifactViews(results, readerOrigin);
+    }, [client, view, context, selection.runId]);
+
     const selectedRow = rows.find((row) => row.id === selection.runId);
     const filteredRows = useMemo(() => {
         const q = filterQuery.trim().toLowerCase();
@@ -284,115 +363,168 @@ export function DailyVoiceModule() {
         return rows.filter((r) => r.id.toLowerCase().includes(q) || r.status.toLowerCase().includes(q));
     }, [rows, filterQuery]);
 
+    const displayDiagnostics = dedupeDiagnostics([
+        ...diagnostics,
+        ...(evidence?.diagnostics ?? results?.diagnostics ?? []),
+    ]);
+    const freshness = freshnessLabel(readerRefresh);
+    const availability = evidence?.results?.availability ?? results?.availability ?? 'unverified';
+    const outcomeWord = newsFamily ? (news?.outcome ?? null) : (legacySummary?.outcome ?? null);
+
+    const filterBox = (
+        <div className="kk-board-run-filter-group">
+            <input
+                type="text"
+                className="kk-board-run-filter-input"
+                placeholder="Filter runs..."
+                value={filterQuery}
+                onChange={(e) => setFilterQuery(e.target.value)}
+                aria-label="Filter runs"
+            />
+            <label className="kk-board-run-selector">
+                Run
+                <select
+                    value={selection.runId ?? ''}
+                    onChange={(event) => setSelection((state) => ({ ...state, runId: event.target.value || null }))}
+                >
+                    <option value="">
+                        {rows.length === 0
+                            ? 'No runs recorded'
+                            : filteredRows.length === 0
+                              ? 'No matching runs'
+                              : 'Select a run'}
+                    </option>
+                    {filteredRows.map((row) => (
+                        <option key={row.id} value={row.id}>
+                            {row.id} — {row.status}
+                        </option>
+                    ))}
+                </select>
+            </label>
+            <button type="button" onClick={() => void loadReader()} title="Refresh run data">
+                ↻ Refresh
+            </button>
+            {selection.runId === null ? null : (
+                <a
+                    href={selectionPath(selection, window.location.search, MODULE_PATH)}
+                    className="kk-btn-action"
+                    title="Permanent link"
+                >
+                    🔗 Link
+                </a>
+            )}
+        </div>
+    );
+
     return (
-        <div className="kk-board kk-board-daily-voice">
-            <header className="kk-board-header">
-                <div className="kk-board-header-left">
-                    <div className="kk-board-header-title-row">
-                        <h1>Daily AI Voice</h1>
-                        {selectedRow ? (
-                            <span
-                                className={`kk-badge ${selectedRow.status === 'done' ? 'kk-badge-success' : selectedRow.status === 'failed' ? 'kk-badge-failed' : 'kk-badge-running'}`}
-                            >
-                                {selectedRow.status}
-                            </span>
-                        ) : null}
-                    </div>
-                    <p>
-                        Run <code>{selection.runId ?? 'none selected'}</code> · {freshnessLabel(readerRefresh)}
-                        {summary === null
-                            ? ''
-                            : ` · Outcome ${summary.outcome ?? 'unknown'} · ${results?.availability ?? 'unverified'}`}
-                    </p>
-                </div>
-                <div className="kk-board-header-right">
-                    <div className="kk-board-run-filter-group">
-                        <input
-                            type="text"
-                            className="kk-board-run-filter-input"
-                            placeholder="Filter runs..."
-                            value={filterQuery}
-                            onChange={(e) => setFilterQuery(e.target.value)}
-                            aria-label="Filter runs"
-                        />
-                        <label className="kk-board-run-selector">
-                            Run
-                            <select
-                                value={selection.runId ?? ''}
-                                onChange={(event) =>
-                                    setSelection((state) => ({ ...state, runId: event.target.value || null }))
-                                }
-                            >
-                                <option value="">
-                                    {rows.length === 0
-                                        ? 'No runs recorded'
-                                        : filteredRows.length === 0
-                                          ? 'No matching runs'
-                                          : 'Select a run'}
-                                </option>
-                                {filteredRows.map((row) => (
-                                    <option key={row.id} value={row.id}>
-                                        {row.id} — {row.status}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
-                    </div>
-                    <button type="button" onClick={() => void loadReader()} title="Refresh run data">
-                        ↻ Refresh
-                    </button>
-                    {selection.runId === null ? null : (
-                        <a
-                            href={selectionPath(selection, window.location.search, MODULE_PATH)}
-                            className="kk-btn-action"
-                            title="Permanent link"
-                        >
-                            🔗 Link
-                        </a>
-                    )}
-                </div>
-            </header>
-            <nav className="kk-board-tabs" aria-label="Daily AI Voice tabs">
-                {BOARD_TABS.map((candidate) => (
-                    <button
-                        key={candidate}
-                        type="button"
-                        aria-current={candidate === tab ? 'page' : undefined}
-                        onClick={() => setSelection((state) => ({ ...state, tab: candidate }))}
-                    >
-                        {TAB_LABELS[candidate]}
-                    </button>
-                ))}
-            </nav>
-            {family === DAILY_WORKFLOW ? null : (
+        <ModuleShell className="kk-board kk-board-daily-voice">
+            <ModuleHeader
+                icon={<span aria-hidden="true">🎙️</span>}
+                title="Daily AI Voice"
+                subtitle={
+                    <>
+                        Run <code>{selection.runId ?? 'none selected'}</code> · {freshness} ·{' '}
+                        {outcomeWord === null ? 'outcome unknown' : `Outcome ${outcomeWord}`} · {availability}
+                    </>
+                }
+                status={
+                    selectedRow ? (
+                        <Badge variant={statusBadgeVariant(selectedRow.status)} size="sm">
+                            {selectedRow.status}
+                        </Badge>
+                    ) : undefined
+                }
+                filters={filterBox}
+                tabs={
+                    <ModuleTabs
+                        tabs={DAILY_VIEWS.map((id) => ({ id, label: VIEW_LABELS[id] }))}
+                        value={view}
+                        onChange={(id) => setSelection((state) => ({ ...state, tab: id as DailyView }))}
+                        label="Daily AI Voice views"
+                        idPrefix={VIEW_TABS_ID}
+                    />
+                }
+            />
+            {newsFamily ? null : (
                 <p className="kk-board-empty kk-board-retired-layout">
                     {retiredLayoutNotice({ family, rows, retired: true })}
                 </p>
             )}
             {rows.length === 0 ? (
-                <p className="kk-board-empty">
+                <EmptyState testId="daily-voice-no-runs">
                     No runs recorded for {DAILY_WORKFLOW}. Configure the workflow in{' '}
-                    <a href="/board/settings/workflows">Settings → Workflows</a>.
-                </p>
+                    <a href={withBase('/board/settings/workflows')}>Settings → Workflows</a>.
+                </EmptyState>
             ) : null}
-            {tab === 'summary' ? (
-                <SummaryPanel
-                    facts={facts}
-                    results={results}
-                    funnel={funnel}
-                    artifacts={artifacts}
-                    context={context}
-                    supply={supply}
-                    storeOffline={storeOffline}
+            {DAILY_VIEWS.map((panelView) => {
+                const active = panelView === view;
+                const panel =
+                    panelView === 'summary' ? (
+                        newsFamily ? (
+                            <NewsSummaryPanel
+                                evidence={evidence}
+                                news={news}
+                                facts={newsFacts}
+                                issue={issue}
+                                context={context}
+                                supply={supply}
+                                storeOffline={storeOffline}
+                            />
+                        ) : (
+                            <LegacySummaryPanel
+                                facts={results === null ? [] : dailySummaryFacts(results, now)}
+                                results={results}
+                                config={config}
+                                funnel={funnel}
+                                artifacts={legacyArtifacts}
+                                context={context}
+                                supply={supply}
+                                storeOffline={storeOffline}
+                            />
+                        )
+                    ) : panelView === 'generation' ? (
+                        newsFamily ? (
+                            <NewsGenerationPanel
+                                evidence={evidence}
+                                news={news}
+                                stages={stageRows}
+                                groups={outputRows}
+                            />
+                        ) : (
+                            <>
+                                <LegacyResultsPanel
+                                    artifacts={legacyArtifacts}
+                                    channels={legacySummary?.channels ?? []}
+                                />
+                                <LegacyProgressPanel progress={legacySummary?.progress ?? null} />
+                            </>
+                        )
+                    ) : newsFamily ? (
+                        <NewsPublishingPanel news={news} />
+                    ) : (
+                        <LegacyChannelList channels={legacySummary?.channels ?? []} />
+                    );
+                return (
+                    <div
+                        key={panelView}
+                        id={`${VIEW_TABS_ID}-panel-${panelView}`}
+                        role="tabpanel"
+                        aria-labelledby={`${VIEW_TABS_ID}-${panelView}`}
+                        hidden={!active}
+                        style={active ? { display: 'flex', flexDirection: 'column', gap: '0.875rem' } : undefined}
+                    >
+                        {panel}
+                    </div>
+                );
+            })}
+            {displayDiagnostics.map((diagnostic) => (
+                <Diagnostic
+                    key={diagnostic.code}
+                    tone="error"
+                    title={diagnostic.code}
+                    detail={diagnostic.message}
+                    testId="daily-voice-diagnostic"
                 />
-            ) : null}
-            {tab === 'results' ? <ResultsPanel artifacts={artifacts} channels={summary?.channels ?? []} /> : null}
-            {tab === 'progress' ? <ProgressPanel progress={summary?.progress ?? null} /> : null}
-            {tab === 'config' ? <ConfigPanel config={config} /> : null}
-            {dedupeDiagnostics([...diagnostics, ...(results?.diagnostics ?? [])]).map((diagnostic) => (
-                <p key={diagnostic.code} role="status" className="kk-board-diagnostic">
-                    {diagnosticLine(diagnostic)}
-                </p>
             ))}
             {cursor === null ? null : (
                 <button type="button" onClick={() => void loadHistory()}>
@@ -402,62 +534,53 @@ export function DailyVoiceModule() {
             <p className="kk-board-footnote">
                 Run history every {HISTORY_POLL_MS / 1000}s; selected run every {ACTIVE_POLL_MS / 1000}s.
             </p>
-        </div>
+        </ModuleShell>
     );
 }
 
-/** Summary: execution status, result outcome, the episode funnel and the supply context panel. */
-function SummaryPanel({
+/* ---------------------------------------------------------------------------------------------- */
+/* News views — the 0391 evidence envelope narrowed by ./evidence.ts                              */
+/* ---------------------------------------------------------------------------------------------- */
+
+/**
+ * Summary: what this attempt produced at a glance, the latest actionable issue, the captured
+ * settings drill-down and the G82 supply-context panel.
+ */
+function NewsSummaryPanel({
+    evidence,
+    news,
     facts,
-    results,
-    funnel,
-    artifacts,
+    issue,
     context,
     supply,
     storeOffline,
 }: {
-    facts: ReturnType<typeof dailySummaryFacts>;
-    results: RunResults | null;
-    funnel: DailyFunnelView;
-    artifacts: ReturnType<typeof artifactViews>;
+    evidence: RunEvidence | null;
+    news: NewsSummaryEvidence | null;
+    facts: ResultFact[];
+    issue: { title: string; detail: string } | null;
     context: DailySupplyContext | null;
     supply: CollectChannelYield | null;
     storeOffline: boolean;
 }) {
-    if (results === null) return <p>No captured results for the selected run.</p>;
-    const summary = dailySummary(results);
-    const liveChannels = summary.channels.filter((c) => c.state === 'live').length;
+    if (evidence === null) return <EmptyState>No evidence for the selected run yet.</EmptyState>;
+    const capture = evidence.capture;
+    const settings = capture === null ? [] : Object.entries(capture.settings);
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-            <div className="kk-stat-grid">
-                <div className="kk-stat-card">
-                    <span className="kk-stat-label">Episode Outcome</span>
-                    <span className="kk-stat-value">{summary.outcome ?? '—'}</span>
-                    <span className="kk-stat-sub">
-                        {summary.articleTitle ? summary.articleTitle.slice(0, 32) : 'Daily podcast'}
-                    </span>
-                </div>
-                <div className="kk-stat-card">
-                    <span className="kk-stat-label">Distribution</span>
-                    <span className="kk-stat-value">
-                        {liveChannels} / {summary.channels.length}
-                    </span>
-                    <span className="kk-stat-sub">Channels published live</span>
-                </div>
-                <div className="kk-stat-card">
-                    <span className="kk-stat-label">Quality Score</span>
-                    <span className="kk-stat-value">{summary.quality?.overallScore ?? '—'}</span>
-                    <span className="kk-stat-sub">
-                        {summary.quality?.passed ? 'Passed QC standard' : 'Under evaluation'}
-                    </span>
-                </div>
-                <div className="kk-stat-card">
-                    <span className="kk-stat-label">Safety Verdict</span>
-                    <span className="kk-stat-value">{summary.safety?.verdict ?? '—'}</span>
-                    <span className="kk-stat-sub">Confidence: {summary.safety?.confidence ?? '—'}</span>
-                </div>
-            </div>
-            <dl className="kk-board-facts">
+        <>
+            {issue === null ? null : (
+                <Diagnostic tone="error" title={issue.title} detail={issue.detail} testId="daily-voice-issue" />
+            )}
+            {uncapturedDiagnostic(evidence) === null ? null : (
+                <Diagnostic
+                    tone="warning"
+                    title="Attempt not captured"
+                    detail={uncapturedDiagnostic(evidence)?.message}
+                    code={uncapturedDiagnostic(evidence)?.code}
+                    testId="daily-voice-uncaptured"
+                />
+            )}
+            <dl className="kk-board-facts" data-testid="daily-voice-summary-facts">
                 {facts.map((fact) => (
                     <div key={fact.label}>
                         <dt>{fact.label}</dt>
@@ -467,11 +590,323 @@ function SummaryPanel({
                     </div>
                 ))}
             </dl>
-            <FunnelPanel funnel={funnel} artifacts={artifacts} />
+            {capture === null ? null : (
+                <details className="kk-card" data-testid="daily-voice-captured-settings">
+                    <summary>
+                        Captured settings <span className="kk-stat-sub">stamp {capture.stamp}</span>
+                    </summary>
+                    <div className="kk-board-config">
+                        <p>Captured {formatTimestamp(capture.capturedAt)}</p>
+                        {settings.length === 0 ? <p>No settings were recorded for this attempt.</p> : null}
+                        <dl>
+                            {settings.map(([key, value]) => (
+                                <div key={key}>
+                                    <dt>{key}</dt>
+                                    <dd>{value}</dd>
+                                </div>
+                            ))}
+                        </dl>
+                        {capture.definitionDigest === undefined ? null : (
+                            <p>
+                                Definition digest <code>{capture.definitionDigest}</code>
+                            </p>
+                        )}
+                    </div>
+                </details>
+            )}
             <SupplyPanel context={context} supply={supply} storeOffline={storeOffline} />
-        </div>
+            {news === null ? (
+                <p className="kk-board-footnote">
+                    The generation and publishing views stay empty for an uncaptured attempt — fixed artifacts are
+                    unknown, never invented.
+                </p>
+            ) : null}
+        </>
     );
 }
+
+/** One generation stage row: recorded producer state, engine attempt count and last timing. */
+function StageRow({ stage }: { stage: GenerationStageRow }) {
+    return (
+        <li>
+            <strong>{stage.label}</strong>{' '}
+            <Badge variant={TONE_BADGE[stage.tone]} size="sm">
+                {stage.word}
+            </Badge>
+            {stage.timing === null ? null : <span className="kk-board-state"> {stage.timing}</span>}
+        </li>
+    );
+}
+
+/** The authorized reader URL rendering of one artifact, exactly as `artifactViews` resolved it. */
+function ArtifactRow({ artifact }: { artifact: ArtifactView }) {
+    if (artifact.href === null) {
+        return (
+            <li key={artifact.id}>
+                <span>
+                    {artifact.label} — {artifact.state}
+                </span>
+            </li>
+        );
+    }
+    if (artifact.kind === 'audio') {
+        return (
+            <li key={artifact.id}>
+                <audio controls src={artifact.href}>
+                    {/* The episode audio has no caption track; the element still needs one to satisfy the media a11y rule. */}
+                    <track kind="captions" />
+                </audio>{' '}
+                <a href={artifact.href} download>
+                    download {artifact.label}
+                </a>{' '}
+                — {artifact.state}
+            </li>
+        );
+    }
+    if (artifact.kind === 'image') {
+        return (
+            <li key={artifact.id}>
+                <img src={artifact.href} alt={artifact.label} /> {artifact.label} — {artifact.state}
+            </li>
+        );
+    }
+    return (
+        <li key={artifact.id}>
+            <a href={artifact.href}>{artifact.label}</a> — {artifact.state}
+        </li>
+    );
+}
+
+/**
+ * Generation: the recorded producer stages with the loud engine chain, the gate verdict and the
+ * launch receipt (stale flagged), plus artifact groups behind collapsible drill-downs — reader
+ * URLs only, never file links the run did not authorize.
+ */
+function NewsGenerationPanel({
+    evidence,
+    news,
+    stages,
+    groups,
+}: {
+    evidence: RunEvidence | null;
+    news: NewsSummaryEvidence | null;
+    stages: GenerationStageRow[];
+    groups: OutputGroup[];
+}) {
+    if (evidence === null || evidence.results === null) {
+        return (
+            <EmptyState testId="daily-voice-generation-empty">No captured projection for the selected run.</EmptyState>
+        );
+    }
+    const gate = news?.generation.gate.status ?? null;
+    const launch = news?.generation.launch ?? null;
+    return (
+        <>
+            <div className="kk-stat-grid" data-testid="daily-voice-generation-facts">
+                <div className="kk-stat-card">
+                    <span className="kk-stat-label">Generation outcome</span>
+                    <span className="kk-stat-value">{news?.generation.outcome ?? '—'}</span>
+                    <span className="kk-stat-sub">from the recorded result files</span>
+                </div>
+                <div className="kk-stat-card">
+                    <span className="kk-stat-label">Pool gate</span>
+                    <span className="kk-stat-value">{gate ?? '—'}</span>
+                    <span className="kk-stat-sub">pool-gate verdict</span>
+                </div>
+                <div className="kk-stat-card">
+                    <span className="kk-stat-label">Launch receipt</span>
+                    <span className="kk-stat-value">{launch?.status ?? '—'}</span>
+                    <span className="kk-stat-sub">
+                        {launch === null
+                            ? 'not recorded'
+                            : launch.stale
+                              ? `stale — receipt run ${launch.runId ?? 'unknown'} is not this attempt`
+                              : `run ${launch.runId ?? 'unknown'}`}
+                    </span>
+                </div>
+            </div>
+            {stages.length === 0 ? (
+                <p>No producer stages were recorded for this attempt.</p>
+            ) : (
+                <ul className="kk-board-progress" data-testid="daily-voice-generation-stages">
+                    {stages.map((stage) => (
+                        <StageRow key={stage.id} stage={stage} />
+                    ))}
+                </ul>
+            )}
+            {groups.length === 0 ? (
+                <p>No fixed artifacts were recorded for this attempt.</p>
+            ) : (
+                groups.map((group) => (
+                    <details
+                        key={group.producer || 'unattributed'}
+                        className="kk-card"
+                        data-testid="daily-voice-artifact-group"
+                    >
+                        <summary>
+                            {group.label}{' '}
+                            <span className="kk-stat-sub">
+                                {group.artifacts.filter((a) => a.href !== null).length} available of{' '}
+                                {group.artifacts.length}
+                            </span>
+                        </summary>
+                        <ul className="kk-board-artifacts">
+                            {group.artifacts.map((artifact) => (
+                                <ArtifactRow key={artifact.id} artifact={artifact} />
+                            ))}
+                        </ul>
+                    </details>
+                ))
+            )}
+        </>
+    );
+}
+
+/** A recorded count as its word: the number, or `not recorded` when the projection lacks it. */
+function countWord(value: number | null): string {
+    return value === null ? 'not recorded' : `${value}`;
+}
+
+/** The word for a sum of two counts: unrecorded stays unrecorded, never a fabricated 0. */
+function countSumWord(left: number | null, right: number | null): string {
+    return left === null || right === null ? 'not recorded' : `${left + right}`;
+}
+
+/** One recorded provenance check: matched / mismatched / unknown, never a rewritten verdict. */
+function ProvenanceRow({ label, matched }: { label: string; matched: boolean | null }) {
+    const word = matched === null ? 'unknown' : matched ? 'matched' : 'MISMATCHED';
+    const tone: StateTone = matched === null ? 'neutral' : matched ? 'success' : 'error';
+    return (
+        <li>
+            {label}{' '}
+            <Badge variant={TONE_BADGE[tone]} size="sm">
+                {word}
+            </Badge>
+        </li>
+    );
+}
+
+/** One publishing target row: recorded send status, delivery effect and fixed evidence paths. */
+function TargetRow({ target }: { target: PublishingTargetRow }) {
+    return (
+        <li key={target.id} data-testid="daily-voice-publish-target">
+            <strong>{target.id}</strong>{' '}
+            <Badge variant={TONE_BADGE[target.tone]} size="sm">
+                {target.word}
+            </Badge>
+            {target.target === null ? null : <span> · {target.target}</span>}
+            {target.mode === null ? null : <span> ({target.mode})</span>}
+            {target.url === null ? null : (
+                <>
+                    {' '}
+                    <a href={target.url} rel="noreferrer">
+                        open
+                    </a>
+                </>
+            )}
+            {target.error === null ? null : <span className="kk-board-state"> — {target.error}</span>}
+            {target.finishedAt === null ? null : (
+                <span className="kk-board-state"> finished {formatTimestamp(target.finishedAt)}</span>
+            )}
+            <span className="kk-board-state">
+                {' '}
+                evidence <code>{target.evidence.plan}</code>
+                {target.evidence.receipt === null ? (
+                    ' · receipt not recorded'
+                ) : (
+                    <code> · {target.evidence.receipt}</code>
+                )}
+            </span>
+        </li>
+    );
+}
+
+/**
+ * Publishing: the frozen bundle's identity card and one group per publishable window with its
+ * recorded outcome, identity-bound provenance checks and target receipts.
+ */
+function NewsPublishingPanel({ news }: { news: NewsSummaryEvidence | null }) {
+    if (news === null) {
+        return (
+            <EmptyState testId="daily-voice-publishing-empty">
+                No captured publishing projection for the selected run.
+            </EmptyState>
+        );
+    }
+    const bundle = news.publishing.bundle;
+    const rows = publishingWindowRows(news);
+    return (
+        <>
+            <div className="kk-stat-grid" data-testid="daily-voice-bundle">
+                <div className="kk-stat-card">
+                    <span className="kk-stat-label">Bundle</span>
+                    <span className="kk-stat-value">{bundle?.title ?? '—'}</span>
+                    <span className="kk-stat-sub">{bundle === null ? 'not recorded' : bundle.identity}</span>
+                </div>
+                <div className="kk-stat-card">
+                    <span className="kk-stat-label">Run date</span>
+                    <span className="kk-stat-value">{bundle?.runDate ?? '—'}</span>
+                    <span className="kk-stat-sub">
+                        {bundle?.variants.length ? `variants ${bundle.variants.join(', ')}` : 'variants unrecorded'}
+                    </span>
+                </div>
+                <div className="kk-stat-card">
+                    <span className="kk-stat-label">Targets</span>
+                    <span className="kk-stat-value">{countWord(news.counts.targetsSucceeded)} sent</span>
+                    <span className="kk-stat-sub">
+                        {countSumWord(news.counts.targetsFailed, news.counts.targetsUncertain)} failed or uncertain ·{' '}
+                        {countWord(news.counts.targetsPlanned)} planned
+                    </span>
+                </div>
+            </div>
+            {bundle?.parentRunId == null ? null : (
+                <p>
+                    Parent run <code>{bundle.parentRunId}</code>
+                </p>
+            )}
+            {bundle?.safety == null ? null : <p>Safety: {bundle.safety}</p>}
+            {rows.length === 0 ? (
+                <EmptyState>No publishable window was recorded for this attempt.</EmptyState>
+            ) : (
+                rows.map((row) => (
+                    <section key={row.window} className="kk-card" data-testid="daily-voice-publish-window">
+                        <div className="kk-card-header">
+                            <h2>{row.label}</h2>
+                            <Badge
+                                variant={row.recorded === null ? 'neutral' : TONE_BADGE[row.recorded.tone]}
+                                size="sm"
+                            >
+                                {row.recorded === null ? 'outcome not recorded' : row.recorded.word}
+                            </Badge>
+                        </div>
+                        <ul className="kk-board-edges">
+                            {row.provenance.map((check) => (
+                                <ProvenanceRow key={check.label} label={check.label} matched={check.matched} />
+                            ))}
+                        </ul>
+                        {row.targets.length === 0 ? (
+                            <p>No target plan was recorded for this window.</p>
+                        ) : (
+                            <ul className="kk-board-channels">
+                                {row.targets.map((target) => (
+                                    <TargetRow key={target.id} target={target} />
+                                ))}
+                            </ul>
+                        )}
+                    </section>
+                ))
+            )}
+            <p className="kk-board-footnote">
+                Evidence paths are workspace-relative references recorded by the run — shown as text, never turned into
+                links.
+            </p>
+        </>
+    );
+}
+
+/* ---------------------------------------------------------------------------------------------- */
+/* Retired-family fallback panels (voice2) — preserved unchanged from the legacy layout (0384)     */
+/* ---------------------------------------------------------------------------------------------- */
 
 /** A count that is `unavailable` when the artifact evidence was never recorded. */
 function funnelCount(value: number | null): string {
@@ -491,7 +926,7 @@ function EvidenceChip({
 }: {
     field: string;
     funnel: DailyFunnelView;
-    artifacts: ReturnType<typeof artifactViews>;
+    artifacts: ArtifactView[];
 }) {
     const evidenceId = funnel.evidence[field];
     if (evidenceId === undefined) return <span className="kk-board-state">no evidence</span>;
@@ -509,11 +944,11 @@ function EvidenceChip({
 }
 
 /**
- * The artifact-backed episode funnel: pool → annotation → topic filter → QC rejection → dedup →
- * plan, the duration ladder bounds and the no-content gate. Counts come from the run's own
+ * The artifact-backed voice2 episode funnel: pool → annotation → topic filter → QC rejection →
+ * dedup → plan, the duration ladder bounds and the no-content gate. Counts come from the run's own
  * artifacts with their evidence ids; unknown stays unavailable, never 0.
  */
-function FunnelPanel({ funnel, artifacts }: { funnel: DailyFunnelView; artifacts: ReturnType<typeof artifactViews> }) {
+function FunnelPanel({ funnel, artifacts }: { funnel: DailyFunnelView; artifacts: ArtifactView[] }) {
     const rows: { label: string; value: string; field: string }[] = [
         { label: '1 · Episode pool', value: funnelCount(funnel.poolCount), field: 'poolCount' },
         { label: '2 · Annotated', value: funnelCount(funnel.annotatedCount), field: 'annotatedCount' },
@@ -596,7 +1031,7 @@ function FunnelPanel({ funnel, artifacts }: { funnel: DailyFunnelView; artifacts
  * The ONE store consumption (ADR-035 2026-10-22): the 0319 channels aggregate rendered as supply
  * CONTEXT for the half-open interval configured for this run. The extract ladder bounds are not
  * persisted, so the panel is labeled configured context and the effective extraction window stays
- * unknown; the artifact-backed funnel above remains the consumption truth.
+ * unknown; the news runs' artifact evidence and the voice2 funnel remain the consumption truth.
  */
 function SupplyPanel({
     context,
@@ -661,16 +1096,130 @@ function SupplyPanel({
                 </div>
             ) : null}
             <p className="kk-board-footnote">
-                A source absent from this window recorded 0 contributions; its health is unknown. The episode funnel
-                above stays artifact-backed — supply here is context, not the run’s consumption record.
+                A source absent from this window recorded 0 contributions; its health is unknown. The artifact-backed
+                evidence stays the consumption record — supply here is context, not consumption.
             </p>
         </section>
     );
 }
 
-/** One channel row: draft/live/skipped/failed, with a public link only when one was recorded. */
-function ChannelList({ channels }: { channels: DailyChannelView[] }) {
-    if (channels.length === 0) return <p>No channel outcomes recorded for the selected run.</p>;
+/**
+ * Summary for a retired voice2 day: legacy facts, the captured-configuration drill-down (the
+ * content the retired `?tab=config` target used to render in full), the funnel and supply context.
+ */
+function LegacySummaryPanel({
+    facts,
+    results,
+    config,
+    funnel,
+    artifacts,
+    context,
+    supply,
+    storeOffline,
+}: {
+    facts: ResultFact[];
+    results: RunResults | null;
+    config: RunConfig | null;
+    funnel: DailyFunnelView;
+    artifacts: ArtifactView[];
+    context: DailySupplyContext | null;
+    supply: CollectChannelYield | null;
+    storeOffline: boolean;
+}) {
+    if (results === null) return <EmptyState>No captured results for the selected run.</EmptyState>;
+    const summary = dailySummary(results);
+    const settings = config === null ? [] : Object.entries(config.settings);
+    const liveChannels = summary.channels.filter((c) => c.state === 'live').length;
+    return (
+        <>
+            <div className="kk-stat-grid">
+                <div className="kk-stat-card">
+                    <span className="kk-stat-label">Episode Outcome</span>
+                    <span className="kk-stat-value">{summary.outcome ?? '—'}</span>
+                    <span className="kk-stat-sub">
+                        {summary.articleTitle ? summary.articleTitle.slice(0, 32) : 'Daily podcast'}
+                    </span>
+                </div>
+                <div className="kk-stat-card">
+                    <span className="kk-stat-label">Distribution</span>
+                    <span className="kk-stat-value">
+                        {liveChannels} / {summary.channels.length}
+                    </span>
+                    <span className="kk-stat-sub">Channels published live</span>
+                </div>
+                <div className="kk-stat-card">
+                    <span className="kk-stat-label">Quality Score</span>
+                    <span className="kk-stat-value">{summary.quality?.overallScore ?? '—'}</span>
+                    <span className="kk-stat-sub">
+                        {summary.quality?.passed ? 'Passed QC standard' : 'Under evaluation'}
+                    </span>
+                </div>
+                <div className="kk-stat-card">
+                    <span className="kk-stat-label">Safety Verdict</span>
+                    <span className="kk-stat-value">{summary.safety?.verdict ?? '—'}</span>
+                    <span className="kk-stat-sub">Confidence: {summary.safety?.confidence ?? '—'}</span>
+                </div>
+            </div>
+            <dl className="kk-board-facts">
+                {facts.map((fact) => (
+                    <div key={fact.label}>
+                        <dt>{fact.label}</dt>
+                        <dd>
+                            {fact.value} <span className="kk-board-state">{fact.availability}</span>
+                        </dd>
+                    </div>
+                ))}
+            </dl>
+            {config === null ? null : (
+                <details className="kk-card" data-testid="daily-voice-captured-config">
+                    <summary>
+                        Captured configuration{' '}
+                        <span className="kk-stat-sub">
+                            {config.capturedAt === null
+                                ? 'capture time not recorded'
+                                : `captured ${formatTimestamp(config.capturedAt)}`}
+                        </span>
+                    </summary>
+                    <div className="kk-board-config">
+                        <p>
+                            {config.capturedAt === null
+                                ? 'This run predates capture: its settings are unknown, never today’s defaults.'
+                                : `Captured ${formatTimestamp(config.capturedAt)}`}
+                        </p>
+                        {settings.length === 0 ? (
+                            <p>No settings were recorded for this run.</p>
+                        ) : (
+                            <dl>
+                                {settings.map(([key, value]) => (
+                                    <div key={key}>
+                                        <dt>{key}</dt>
+                                        <dd>{value}</dd>
+                                    </div>
+                                ))}
+                            </dl>
+                        )}
+                        {config.unavailableKeys.length === 0 ? null : (
+                            <p>
+                                Not captured: <code>{config.unavailableKeys.join(', ')}</code>
+                            </p>
+                        )}
+                        {config.definitionDigest === undefined ? null : (
+                            <p>
+                                Definition digest <code>{config.definitionDigest}</code>
+                            </p>
+                        )}
+                    </div>
+                </details>
+            )}
+            <FunnelPanel funnel={funnel} artifacts={artifacts} />
+            <SupplyPanel context={context} supply={supply} storeOffline={storeOffline} />
+        </>
+    );
+}
+
+/** One voice2 channel row: draft/live/skipped/failed, with a public link only when one was recorded. */
+function LegacyChannelList({ channels }: { channels: DailyChannelView[] }) {
+    if (channels.length === 0) return <EmptyState>No channel outcomes recorded for the selected run.</EmptyState>;
     return (
         <ul className="kk-board-channels">
             {channels.map((channel) => (
@@ -691,15 +1240,9 @@ function ChannelList({ channels }: { channels: DailyChannelView[] }) {
     );
 }
 
-/** Results: article/cover/script/audio evidence, report links and per-channel outcomes. */
-function ResultsPanel({
-    artifacts,
-    channels,
-}: {
-    artifacts: ReturnType<typeof artifactViews>;
-    channels: DailyChannelView[];
-}) {
-    if (artifacts.length === 0) return <p>No artifact evidence for the selected run.</p>;
+/** Generation view for a retired voice2 day: media/file evidence and per-channel outcomes. */
+function LegacyResultsPanel({ artifacts, channels }: { artifacts: ArtifactView[]; channels: DailyChannelView[] }) {
+    if (artifacts.length === 0) return <EmptyState>No artifact evidence for the selected run.</EmptyState>;
     const media = artifacts.filter((artifact) => artifact.kind === 'image' || artifact.kind === 'audio');
     const files = artifacts.filter((artifact) => artifact.kind !== 'image' && artifact.kind !== 'audio');
     return (
@@ -741,15 +1284,15 @@ function ResultsPanel({
                     </li>
                 ))}
             </ul>
-            <ChannelList channels={channels} />
+            <LegacyChannelList channels={channels} />
         </div>
     );
 }
 
-/** Execution progress: DAG node attempts + captured dependency edges; unknown edges stay unknown. */
-function ProgressPanel({ progress }: { progress: DailyProgressView | null }) {
+/** Voice2 execution progress: DAG node attempts + captured edges; unknown edges stay unknown. */
+function LegacyProgressPanel({ progress }: { progress: ReturnType<typeof dailySummary>['progress'] }) {
     if (progress === null || progress.nodes.length === 0) {
-        return <p>Recorded progress is unavailable for the selected run.</p>;
+        return <EmptyState>Recorded progress is unavailable for the selected run.</EmptyState>;
     }
     return (
         <div className="kk-board-progress">
@@ -772,7 +1315,7 @@ function ProgressPanel({ progress }: { progress: DailyProgressView | null }) {
             ) : (
                 <p>
                     Dependency edges are unknown — no digest-verified topology was captured. See{' '}
-                    <a href="/board/settings/workflows">Settings → Workflows</a> for the current graph.
+                    <a href={withBase('/board/settings/workflows')}>Settings → Workflows</a> for the current graph.
                 </p>
             )}
             {progress.childRunId === null ? null : (
@@ -780,30 +1323,6 @@ function ProgressPanel({ progress }: { progress: DailyProgressView | null }) {
                     Nested safety run: <code>{progress.childRunId}</code>
                 </p>
             )}
-        </div>
-    );
-}
-
-/** Workflow Config Summary: captured run values only; current definitions stay in Settings. */
-function ConfigPanel({ config }: { config: RunConfig | null }) {
-    if (config === null) return <p>No captured configuration for the selected run.</p>;
-    const entries = Object.entries(config.settings);
-    return (
-        <div className="kk-board-config">
-            <p>Captured {formatTimestamp(config.capturedAt)}</p>
-            {entries.length === 0 ? <p>Recorded configuration unavailable for this run.</p> : null}
-            <dl>
-                {entries.map(([key, value]) => (
-                    <div key={key}>
-                        <dt>{key}</dt>
-                        <dd>{value}</dd>
-                    </div>
-                ))}
-            </dl>
-            {config.unavailableKeys.length === 0 ? null : <p>Uncaptured keys: {config.unavailableKeys.join(', ')}</p>}
-            <p>
-                Current definitions and defaults live in <a href="/board/settings/workflows">Settings → Workflows</a>.
-            </p>
         </div>
     );
 }

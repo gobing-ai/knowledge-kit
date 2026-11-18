@@ -319,6 +319,25 @@ function writeWorkflows(): void {
         ]),
     );
     writeFileSync(join(dir, 'kk-itc.yaml'), stateMachine('kk-itc', [{ id: 'prepare', actions: 1 }]));
+    // 0390 R3: the current news family. One state per producer node the news artifact manifest
+    // names (`apps/cli/src/board/manifest.ts` NEWS_GENERATE_ARTIFACTS), so each hand-written file
+    // is authorized by a real recorded producer success. Its run is created LAST (see
+    // `ensureNewsFixture`), so the retired-layout assertions above keep testing the fallback.
+    writeFileSync(
+        join(dir, 'kk-news-generate.yaml'),
+        stateMachine('kk-news-generate', [
+            { id: 'prepare', actions: 1 },
+            { id: 'curate', actions: 1 },
+            { id: 'script-write', actions: 1 },
+            { id: 'editorial-judge', actions: 1 },
+            { id: 'render', actions: 1 },
+            { id: 'safety', actions: 1 },
+            { id: 'cards', actions: 1 },
+            { id: 'safety-variants', actions: 1 },
+            { id: 'voice', actions: 1 },
+            { id: 'freeze', actions: 1 },
+        ]),
+    );
 }
 
 /** Execute one workflow in the fixture project under a deterministic run id. */
@@ -393,6 +412,136 @@ function writeDailyAudio(workDirRel: string, stamp: string): void {
     // 64 deterministic bytes: a real media payload, not `String(bytes)`.
     const bytes = new Uint8Array(Array.from({ length: 64 }, (_, index) => (index * 3) % 256));
     writeFileSync(join(dir, `${stamp}_11_generate_content.mp3`), bytes);
+}
+
+/** The news fixture's run date/stamp — bundle identity, plan runDate and outcome runDate. */
+const NEWS_STAMP = '20261117';
+/** The news fixture's run id. */
+const NEWS_RUN = 'n-news';
+
+/**
+ * 0390 R3 — one news-family run's workspace. Every file is one of `NEWS_GENERATE_ARTIFACTS`'
+ * fixed paths, so the installed reader projects the news DTO (bundle, generation gate, publish
+ * windows, targets) from bytes a real run could have written — never from a fixture shortcut.
+ */
+function writeNewsWorkspace(workDirRel: string, stamp: string): void {
+    const dir = join(project, workDirRel);
+    const write = (rel: string, body: string | Uint8Array): void => {
+        mkdirSync(dirname(join(dir, rel)), { recursive: true });
+        writeFileSync(join(dir, rel), body);
+    };
+    const docs = Array.from({ length: 4 }, (_, index) => ({
+        id: `news-${index}`,
+        title: `News doc ${index}`,
+        body: 'body',
+    }));
+    write('pool-gate.json', JSON.stringify({ status: 'PASS' }));
+    write('10-collect/pool.json', JSON.stringify(docs));
+    write(`21-plan/${stamp}_04_quality-control-content_annotated.json`, JSON.stringify(docs));
+    write(
+        `21-plan/${stamp}_04_quality-control-content_candidates.json`,
+        JSON.stringify({ metadata: { doc_count: 4, docs } }),
+    );
+    write(`21-plan/${stamp}_03_plan_plan.json`, JSON.stringify(docs));
+    write(`24-script/${stamp}_08_script-write_plan.json`, JSON.stringify({ sections: 4 }));
+    write(
+        `24-script/${stamp}_08_editorial-judge_verdict.json`,
+        JSON.stringify({ verdict: 'PASS', confidence: 'HIGH' }),
+    );
+    write(`24-script/${stamp}_08_script_voicescript.yaml`, `title: news fixture\nsegments: []\n`);
+    write(`22-article/${stamp}_06_article_article.md`, '# News fixture\n');
+    write(`24-script/${stamp}_09_safety-judge_verdict.json`, JSON.stringify({ verdict: 'PASS', confidence: 'HIGH' }));
+    write(`25-xhs/${'cards.json'}`, JSON.stringify({ cards: [] }));
+    write('4-safety-variants/safety.json', JSON.stringify({ status: 'pass' }));
+    // 64 deterministic bytes: a real media payload the reader can serve.
+    write(
+        `30-audio/${stamp}_11_generate_content.mp3`,
+        new Uint8Array(Array.from({ length: 64 }, (_, index) => (index * 5) % 256)),
+    );
+    // The frozen bundle (root `bundle.json`, 0382): identity, run date, parent, variants, safety.
+    write(
+        'bundle.json',
+        JSON.stringify({
+            runId: `${stamp}-kk-news-generate`,
+            runDate: stamp,
+            parentRunId: 'kk-news-generate',
+            episode: { title: '每日AI乱炖' },
+            variants: { podcast: {}, xhs: {} },
+            safety: { status: 'pass' },
+        }),
+    );
+    // The launcher's own receipt: this attempt's outcome, bound to THIS run id (never stale).
+    write(
+        'schedule-receipt.json',
+        JSON.stringify({ runId: NEWS_RUN, status: 'done', startedAt: '2026-11-17T09:00:00.000Z' }),
+    );
+    write('5-report/generation.md', '# Generation report\n');
+    // One publish window: a plan with two planned targets and an outcome that agrees with them.
+    // No receipts are written, so each target stays `planned` ("no evidence recorded") and its
+    // evidence path must render as TEXT — the assertion that pinned this in the review.
+    write(
+        '4-publish/plan.after-generate.json',
+        JSON.stringify({
+            schemaVersion: 1,
+            window: 'after-generate',
+            bundleRunId: `${stamp}-kk-news-generate`,
+            parentRunId: 'kk-news-generate',
+            presetName: 'news-preset',
+            presetDigest: 'preset-digest',
+            runDate: stamp,
+            excluded: [],
+            rows: ['podcast-cn', 'xhs-overseas'].map((id, index) => ({
+                id,
+                plugin: index === 0 ? 'podcast' : 'xhs',
+                variant: 'podcast',
+                tier: index + 1,
+                window: 'after-generate',
+                mode: 'live',
+                required: index === 0,
+                approval: 'none',
+                status: 'planned',
+                payloadPath: `30-variants/${stamp}-podcast.json`,
+                payloadDigest: `payload-digest-${index}`,
+            })),
+        }),
+    );
+    write(
+        '4-publish/outcome.after-generate.json',
+        JSON.stringify({
+            schemaVersion: 1,
+            window: 'after-generate',
+            runDate: stamp,
+            status: 'partial',
+            published: 0,
+            targets: 2,
+            excluded: [],
+            rows: ['podcast-cn', 'xhs-overseas'].map((id, index) => ({
+                id,
+                tier: index + 1,
+                required: index === 0,
+                status: 'missing',
+                dummy: false,
+            })),
+        }),
+    );
+}
+
+/** Whether the news fixture run exists; created once, in this file's LAST describe. */
+let newsReady = false;
+
+/**
+ * 0390 R3 — create the news-family run the new panels render.
+ *
+ * Deliberately lazy and LAST: `pickDailyFamily` prefers the current family whenever it has a run,
+ * so creating this fixture at setup would flip every retired-layout assertion above onto the news
+ * panels. Running it here (in declaration order) keeps both layouts covered in one packed install.
+ */
+function ensureNewsFixture(): void {
+    if (newsReady) return;
+    runWorkflow('kk-news-generate', NEWS_RUN);
+    capture('kk-news-generate', NEWS_RUN, '.works/kk-news-generate/N1', NEWS_STAMP, ['window=24h']);
+    writeNewsWorkspace('.works/kk-news-generate/N1', NEWS_STAMP);
+    newsReady = true;
 }
 
 /**
@@ -867,8 +1016,11 @@ describe('installed Board native modules (AC1/AC7)', () => {
             expect(await page.locator(`.kk-board-${module.entry}`).count(), module.id).toBe(1);
             const heading = await page.locator('h1').first().textContent();
             expect(heading?.trim(), module.id).toBe(module.name);
-            // Collect, Daily Voice and ITC each ship four clean tabs.
-            expect(await page.locator('.kk-board-tabs button').count(), module.id).toBe(4);
+            // Collect and ITC keep the legacy four-tab strip; Daily Voice ships the kit's
+            // append-only three-view strip (0390: Summary, Generation, Publishing).
+            const tabCount = module.id === 'kk-daily-ai-voice2' ? 3 : 4;
+            const selector = module.id === 'kk-daily-ai-voice2' ? '[role="tab"]' : '.kk-board-tabs button';
+            expect(await page.locator(selector).count(), module.id).toBe(tabCount);
         }
     }, 30_000);
 
@@ -1555,6 +1707,27 @@ describe('Daily episode funnel and supply context (G82/0320)', () => {
         expect(await funnelText()).toContain('artifact-backed by this run');
     }, 60_000);
 
+    it('keeps a retired day’s captured configuration behind the migrated ?tab=config link (P2-2)', async () => {
+        if (!ready || page === null) throw new Error('setup did not complete');
+        const view: Page = page;
+        // A bookmarked legacy link: `?tab=config` resolves to Summary (0390), which must still carry
+        // the captured configuration the retired ConfigPanel rendered — never an empty Summary.
+        await openModule('kk-daily-ai-voice2', query({ run: 'd-funnel', tab: 'config' }));
+        await view.waitForSelector('.kk-board-facts');
+        expect(new URL(view.url()).searchParams.get('tab')).toBe('summary');
+        expect(await view.locator('.kk-board-retired-layout').count()).toBe(1);
+        const config = view.locator('[data-testid="daily-voice-captured-config"]');
+        await config.waitFor();
+        // Closed until asked, then the recorded capture time and every captured setting.
+        expect(await config.evaluate((el) => (el as HTMLDetailsElement).open)).toBe(false);
+        await config.locator('summary').click();
+        const text = await config.innerText();
+        expect(text).toContain('Captured');
+        expect(text).toContain('window');
+        expect(text).toContain('24h');
+        expect(text).toContain('episode_min_minutes');
+    }, 60_000);
+
     it('renders the measured-refusal funnel with its evidence, minutes and gate (AC3/AC4)', async () => {
         if (!ready || page === null) throw new Error('setup did not complete');
         const view: Page = page;
@@ -1588,7 +1761,9 @@ describe('Daily episode funnel and supply context (G82/0320)', () => {
         expect(text).toContain('policy-dispute');
         expect(text).toContain('lawsuit');
         // The recorded outcome stays no-content; nothing is rewritten into success.
-        expect(await view.locator('header').first().innerText()).toContain('no-content');
+        // The recorded outcome stays no-content; nothing is rewritten into success (0390: the
+        // header lives in the kit's ModuleHeader, so the outcome is read from the facts rows).
+        expect(await view.locator('.kk-board-facts').first().innerText()).toContain('no-content');
     }, 60_000);
 
     it('keeps the mismatched 2026-10-21-shaped stages side by side with a diagnostic (AC3)', async () => {
@@ -1702,6 +1877,199 @@ describe('Daily episode funnel and supply context (G82/0320)', () => {
             await view.unroute('**/api/workflows/kk-daily-ai-voice2/runs/d-funnel/*');
         }
     }, 60_000);
+});
+
+describe('Daily AI Voice news family in the installed Chromium (0390 R1/R2/R3)', () => {
+    /** The generated-artifact directory the browser screenshots are retained in. */
+    function artifactDir(): string {
+        const dir = join(REPO, '.works/test-artifacts/0390');
+        mkdirSync(dir, { recursive: true });
+        return dir;
+    }
+
+    function view0(): Page {
+        if (page === null) throw new Error('browser page not ready');
+        return page;
+    }
+
+    /** Open the news fixture run on one view and wait for the shared shell. */
+    async function openNews(view: 'summary' | 'generation' | 'publishing'): Promise<void> {
+        await openModule('kk-daily-ai-voice2', query({ run: NEWS_RUN, tab: view }));
+        await view0().waitForSelector('.kk-board');
+    }
+
+    it('renders the three news views over a recorded news run, with its captured settings', async () => {
+        if (!ready || page === null) throw new Error('setup did not complete');
+        const view: Page = page;
+        ensureNewsFixture();
+        const errors = await consoleErrorsDuring(async () => {
+            await openNews('summary');
+            // The current family answers: three tabs, the recorded run, and NO retired-layout banner.
+            const tabs = view.locator('[role="tab"]');
+            expect(await tabs.count()).toBe(3);
+            expect((await tabs.allInnerTexts()).map((text) => text.trim())).toEqual([
+                'Summary',
+                'Generation',
+                'Publishing',
+            ]);
+            expect(await view.locator('.kk-board-retired-layout').count()).toBe(0);
+            expect(await view.locator('.kk-board-empty', { hasText: 'No runs recorded' }).count()).toBe(0);
+            // The facts come from the run's own projection: gate verdict, outcome and timestamps.
+            const facts = view.locator('[data-testid="daily-voice-summary-facts"]');
+            await facts.waitFor();
+            const factsText = await facts.innerText();
+            expect(factsText).toContain('PASS');
+            expect(factsText).toContain('done');
+            expect(factsText).not.toContain('not captured');
+            // The captured settings drill-down opens and states the recorded setting.
+            const settings = view.locator('[data-testid="daily-voice-captured-settings"]');
+            await settings.waitFor();
+            expect(await settings.evaluate((el) => (el as HTMLDetailsElement).open)).toBe(false);
+            await settings.locator('summary').click();
+            expect(await settings.evaluate((el) => (el as HTMLDetailsElement).open)).toBe(true);
+            expect(await settings.innerText()).toContain('window');
+            expect(await settings.innerText()).toContain('24h');
+            await view.screenshot({ path: join(artifactDir(), 'news-summary-light.png'), fullPage: true });
+        });
+        expect(errors).toEqual([]);
+    }, 60_000);
+
+    it('opens an artifact drill-down and serves the generated artifact from the reader', async () => {
+        if (!ready || page === null) throw new Error('setup did not complete');
+        const view: Page = page;
+        ensureNewsFixture();
+        await openNews('generation');
+        // The generation view is the news panel, not the retired progress fallback.
+        await view.locator('[data-testid="daily-voice-generation-facts"]').waitFor();
+        const stages = view.locator('[data-testid="daily-voice-generation-stages"] li');
+        expect(await stages.count()).toBeGreaterThan(0);
+        expect(await view.locator('[data-testid="daily-voice-generation-facts"]').innerText()).toContain('PASS');
+        // Artifacts live behind a collapsible drill-down, closed until the operator opens it.
+        const group = view.locator('[data-testid="daily-voice-artifact-group"]').first();
+        await group.waitFor();
+        expect(await group.evaluate((el) => (el as HTMLDetailsElement).open)).toBe(false);
+        await group.locator('summary').click();
+        expect(await group.evaluate((el) => (el as HTMLDetailsElement).open)).toBe(true);
+        const links = group.locator('ul.kk-board-artifacts li a');
+        expect(await links.count()).toBeGreaterThan(0);
+        // The link is a READER route for this run's authorized artifact — never a workspace path.
+        const href = (await links.first().getAttribute('href')) ?? '';
+        expect(href).toContain(`/api/workflows/kk-news-generate/runs/${NEWS_RUN}/artifacts/`);
+        expect(href.startsWith('file:')).toBe(false);
+        await view.screenshot({ path: join(artifactDir(), 'news-generation-drilldown.png'), fullPage: true });
+    }, 60_000);
+
+    it('renders a publish target evidence path as text, never as a link', async () => {
+        if (!ready || page === null) throw new Error('setup did not complete');
+        const view: Page = page;
+        ensureNewsFixture();
+        await openNews('publishing');
+        const bundle = view.locator('[data-testid="daily-voice-bundle"]');
+        await bundle.waitFor();
+        expect(await bundle.innerText()).toContain(`${NEWS_STAMP}-kk-news-generate`);
+        const window = view.locator('[data-testid="daily-voice-publish-window"]').first();
+        await window.waitFor();
+        const text = await window.innerText();
+        // The plan path is the target's fixed evidence reference, shown verbatim.
+        expect(text).toContain('4-publish/plan.after-generate.json');
+        expect(await window.locator('code').allInnerTexts()).toContain('4-publish/plan.after-generate.json');
+        // Planned with no receipt: the recorded word, never a fabricated "sent".
+        expect(text).toContain('no evidence recorded');
+        expect(text).toContain('receipt not recorded');
+        // ...and the evidence reference is TEXT: no link was minted from it.
+        expect(await window.locator('a[href*="4-publish"]').count()).toBe(0);
+        expect(await window.locator('a[href*=".json"]').count()).toBe(0);
+        // The window's own recorded outcome is surfaced as recorded.
+        expect(text.toLowerCase()).toContain('partially sent');
+        await view.screenshot({ path: join(artifactDir(), 'news-publishing.png'), fullPage: true });
+    }, 60_000);
+
+    it('moves between the three views from the keyboard', async () => {
+        if (!ready || page === null) throw new Error('setup did not complete');
+        const view: Page = page;
+        ensureNewsFixture();
+        await openNews('summary');
+        const tabs = view.locator('[role="tab"]');
+        expect(await tabs.count()).toBe(3);
+        // The strip is a real tablist: buttons are natively focusable and activate on Enter/Space.
+        // (The host kit's ModuleTabs ships no roving arrow-key handler — ADR-150 owns that strip —
+        // so this pins the keyboard path the module can prove: Tab focus + activation.)
+        await tabs.nth(1).focus();
+        expect(await tabs.nth(1).evaluate((el) => el === document.activeElement)).toBe(true);
+        await view.keyboard.press('Enter');
+        await view.waitForTimeout(200);
+        expect(await tabs.nth(1).getAttribute('aria-selected')).toBe('true');
+        expect(new URL(view.url()).searchParams.get('tab')).toBe('generation');
+        await view.locator('[data-testid="daily-voice-generation-facts"]').waitFor();
+        // Space activates too, and the panel id matches the button's aria-controls.
+        await tabs.nth(2).focus();
+        await view.keyboard.press('Space');
+        await view.waitForTimeout(200);
+        expect(await tabs.nth(2).getAttribute('aria-selected')).toBe('true');
+        expect(await tabs.nth(2).getAttribute('aria-controls')).toBe('daily-voice-view-panel-publishing');
+        expect(await view.locator('#daily-voice-view-panel-publishing').isVisible()).toBe(true);
+        expect(new URL(view.url()).searchParams.get('run')).toBe(NEWS_RUN);
+    }, 60_000);
+
+    it('renders the news views in both light and dark themes', async () => {
+        if (!ready || page === null) throw new Error('setup did not complete');
+        const view: Page = page;
+        ensureNewsFixture();
+        const stripBackground = (): Promise<string> =>
+            view.evaluate(
+                () => getComputedStyle(document.querySelector('[role="tablist"]') as Element).backgroundColor,
+            );
+        try {
+            await view.emulateMedia({ colorScheme: 'light' });
+            await openNews('summary');
+            await view.locator('[data-testid="daily-voice-summary-facts"]').waitFor();
+            expect(await view.locator('[role="tab"]').count()).toBe(3);
+            const light = await stripBackground();
+            await view.screenshot({ path: join(artifactDir(), 'news-theme-light.png'), fullPage: true });
+            await view.emulateMedia({ colorScheme: 'dark' });
+            await openNews('publishing');
+            await view.locator('[data-testid="daily-voice-publish-window"]').first().waitFor();
+            expect(await view.locator('[role="tab"]').count()).toBe(3);
+            const dark = await stripBackground();
+            await view.screenshot({ path: join(artifactDir(), 'news-theme-dark.png'), fullPage: true });
+            // The theme really switched (the host drives it from prefers-color-scheme): the kit's
+            // tab strip resolves a different surface in dark mode.
+            expect(dark).not.toBe(light);
+            expect(dark.length).toBeGreaterThan(0);
+        } finally {
+            await view.emulateMedia({ colorScheme: 'light' });
+        }
+    }, 90_000);
+
+    it('states the loading gap and a bounded reader error instead of a blank panel', async () => {
+        if (!ready || page === null) throw new Error('setup did not complete');
+        const view: Page = page;
+        ensureNewsFixture();
+        // Loading: the evidence read is held open, so the Summary must say it has nothing yet.
+        await view.route(`**/runs/${NEWS_RUN}/evidence`, async (route) => {
+            await new Promise((resolve) => setTimeout(resolve, 4_000));
+            await route.continue();
+        });
+        try {
+            await openNews('summary');
+            await view.getByText('No evidence for the selected run yet.').first().waitFor({ timeout: 15_000 });
+            await view.locator('[data-testid="daily-voice-summary-facts"]').waitFor({ timeout: 20_000 });
+        } finally {
+            await view.unroute(`**/runs/${NEWS_RUN}/evidence`);
+        }
+        // Error: an aborted evidence read becomes ONE bounded diagnostic, never an invented panel.
+        await view.route(`**/runs/${NEWS_RUN}/evidence`, (route) => route.abort());
+        try {
+            await openNews('summary');
+            // One bounded diagnostic naming the failed read — the panel never invents a projection.
+            await view.getByText('board.reader.unavailable').first().waitFor({ timeout: 15_000 });
+            expect(await view.locator('[data-testid="daily-voice-summary-facts"]').count()).toBe(0);
+            expect(await view.locator('[data-testid="daily-voice-issue"]').count()).toBe(0);
+            await view.screenshot({ path: join(artifactDir(), 'news-reader-error.png'), fullPage: true });
+        } finally {
+            await view.unroute(`**/runs/${NEWS_RUN}/evidence`);
+        }
+    }, 90_000);
 });
 
 /** An unused loopback port for the reader-outage scenario. */

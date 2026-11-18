@@ -96,9 +96,16 @@ describe('buildBoard', () => {
     it('externalizes only the manifest-advertised React facades and never calls createRoot', () => {
         const bundle = readFileSync(join(REPO_ROOT, 'apps/board/dist/collect/index.js'), 'utf-8');
         const imports = externalSpecifiers(bundle);
-        // Exactly the two advertised facades — no bundled second React runtime and no dev runtime.
+        // Exactly the advertised facades — no bundled second React runtime and no dev runtime.
+        // The UI kit facade is advertised by the host Board import map (ADR-150), so it stays
+        // external alongside React; bundling it would ship a second kit instance.
         expect(new Set(imports)).toEqual(new Set(['react', 'react/jsx-runtime']));
-        expect(BOARD_EXTERNAL).toEqual(['react', 'react/jsx-runtime', 'react/jsx-dev-runtime']);
+        expect(BOARD_EXTERNAL).toEqual([
+            'react',
+            'react/jsx-runtime',
+            'react/jsx-dev-runtime',
+            '@gobing-ai/spur/board/ui',
+        ]);
         expect(bundle).toContain('webModule');
         expect(bundle).not.toContain('createRoot');
         expect(bundle).not.toContain('react-dom');
@@ -146,6 +153,13 @@ describe('buildBoard failure modes', () => {
         }
     });
 });
+
+/** Whether one Board entry's source imports the host UI kit facade, so its bundle must externalize it. */
+function usesKit(entry: string): boolean {
+    const row = BOARD_ENTRIES.find((candidate) => candidate.name === entry);
+    if (row === undefined) throw new Error(`unknown board entry: ${entry}`);
+    return readFileSync(join(REPO_ROOT, row.entry), 'utf-8').includes('@gobing-ai/spur/board/ui');
+}
 
 /** The CLI workspace whose `prepack` builds + ships the browser contributions. */
 const CLI_DIR = join(REPO_ROOT, 'apps/cli');
@@ -205,7 +219,11 @@ describe('packed CLI distribution (G8/0255 AC1/AC7)', () => {
         for (const entry of ENTRIES) {
             const bundle = packed.read(`dist/board/${entry}/index.js`);
             const imports = externalSpecifiers(bundle);
-            expect(new Set(imports), entry).toEqual(new Set(['react', 'react/jsx-runtime']));
+            // Modules written on the host UI kit also externalize its facade (ADR-150).
+            const expected = usesKit(entry)
+                ? ['react', 'react/jsx-runtime', '@gobing-ai/spur/board/ui']
+                : ['react', 'react/jsx-runtime'];
+            expect(new Set(imports), entry).toEqual(new Set(expected));
             expect(bundle, entry).toContain('webModule');
             expect(bundle, entry).not.toContain('createRoot');
             expect(bundle, entry).not.toContain('react-dom');

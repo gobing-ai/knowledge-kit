@@ -49,8 +49,19 @@ export const BOARD_ENTRIES: readonly BoardEntry[] = [
     { name: 'itc', entry: 'apps/board/src/itc/index.tsx', css: 'apps/board/src/shared/board.css' },
 ];
 
-/** The host facades the bundle must externalize (never inline a second React runtime). */
-export const BOARD_EXTERNAL: readonly string[] = ['react', 'react/jsx-runtime', 'react/jsx-dev-runtime'];
+/** The host facades the bundle must externalize (never inline a second React runtime).
+ *
+ * Besides the React trio, the module UI kit facade (`@gobing-ai/spur/board/ui`, ADR-150) is
+ * advertised by the host's `web/board-runtime.json` import map and resolves to the Board's own
+ * kit instance there. Bundling it would ship a second copy of the host components and lose the
+ * host stylesheet contract, so it stays external exactly like React.
+ */
+export const BOARD_EXTERNAL: readonly string[] = [
+    'react',
+    'react/jsx-runtime',
+    'react/jsx-dev-runtime',
+    '@gobing-ai/spur/board/ui',
+];
 
 /** Root-relative directories every entry is emitted into. */
 export const BOARD_OUTPUT_DIRS: readonly string[] = ['apps/board/dist', 'apps/cli/dist/board'];
