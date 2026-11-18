@@ -31,6 +31,7 @@ const seriesNames = join(import.meta.dir, '../../../plugins/kk/scripts/series-na
 const sentences = join(import.meta.dir, '../../../plugins/kk/scripts/sentences.ts');
 // 0348: the runner imports cover-compositor at module load, so lone-runner copies ship it too.
 const coverCompositor = join(import.meta.dir, '../../../plugins/kk/scripts/cover-compositor.ts');
+const topicSelectionAttempts = join(import.meta.dir, '../../../plugins/kk/scripts/topic-selection-attempts.ts');
 
 // A real 1x1 JPEG (generated once via `sips -s format jpeg` from a 1x1 png) so the jpg transcode
 // test exercises sips with data it can actually decode.
@@ -851,7 +852,9 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             expect(refusal.ids).toEqual(['a', 'b', 'c']);
             expect(res.stderr).toContain('floor gate');
         });
-    });
+        // Spawns stage subprocesses; the full apps/cli suite runs these concurrently and
+        // pushes ~1.8s standalone work past bun's 5s default (0392).
+    }, 20000);
 
     it('daily-qc-content keeps a pool that clears the floor and never gates without the arg', () => {
         withTempDir((dir) => {
@@ -902,7 +905,9 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             const keptLegacy = JSON.parse(readFileSync(candidatesPath, 'utf-8')) as { metadata: { docs: unknown[] } };
             expect(keptLegacy.metadata.docs).toHaveLength(7);
         });
-    });
+        // Spawns stage subprocesses; the full apps/cli suite runs these concurrently and
+        // pushes ~1.8s standalone work past bun's 5s default (0392).
+    }, 20000);
 
     it('daily-qc-content re-estimates after the topic boundary so a shrink below the floor is refused pre-spend (2026-10-22)', () => {
         withTempDir((dir) => {
@@ -945,6 +950,57 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             ) as { estimatedMinutes: number; ids: string[] };
             expect(refusal.ids).toEqual(['keep1', 'keep2', 'keep3']);
             expect(refusal.estimatedMinutes).toBeLessThan(15);
+        });
+        // Spawns stage subprocesses; the full apps/cli suite runs these concurrently and
+        // pushes ~1.8s standalone work past bun's 5s default (0392).
+    }, 20000);
+
+    it('daily-qc-content records a dedup day whose counts reconcile (0392)', () => {
+        withTempDir((dir) => {
+            // 5-doc pool: 1 prc-leadership exclusion, 1 near-duplicate drop, 3 survivors. Running
+            // totals must add up (preFilter = kept + excluded + deduped) or the run report prints a
+            // MISMATCH on every ordinary dedup day.
+            const docs = [
+                { id: 'keep1', title: 'DuckDB 并行执行重构', body: 'x'.repeat(600) },
+                { id: 'dup1', title: 'DuckDB 并行执行重构', body: 'x'.repeat(600) },
+                { id: 'keep2', title: 'Deno 团队被收购', body: 'x'.repeat(600) },
+                { id: 'keep3', title: '微软发布端侧笔记本', body: 'x'.repeat(600) },
+                { id: 'drop1', title: '习近平出席数据中心能耗座谈会', body: 'x'.repeat(600) },
+            ];
+            const env = fakeKk(
+                dir,
+                [
+                    "const fs = require('node:fs');",
+                    'const args = process.argv.slice(2);',
+                    "const out = args[args.indexOf('--out') + 1];",
+                    `fs.writeFileSync(out, JSON.stringify({ body: '', title: 'T', format: 'markdown', metadata: { docs: ${JSON.stringify(docs)} } }));`,
+                ].join('\n'),
+            );
+            mkdirSync(join(dir, '21-plan'), { recursive: true });
+            const stamp = '20261117';
+            writeFileSync(
+                join(dir, `21-plan/${stamp}_03_plan_content.json`),
+                JSON.stringify({ body: '', title: 'T', format: 'markdown', metadata: { docs } }),
+            );
+            // Legacy 9-arg call: no floor argument, so the floor stage stays out of this count.
+            const res = run(['daily-qc-content', dir, stamp, '', 'ai-news', '2', '3', '2', '1', '8'], env);
+            expect(res.status, res.stderr).toBe(0);
+            const candidates = JSON.parse(
+                readFileSync(join(dir, `21-plan/${stamp}_04_quality-control-content_candidates.json`), 'utf-8'),
+            ) as { metadata: { docs: { id: string }[] } };
+            expect(candidates.metadata.docs.map((doc) => doc.id)).toEqual(['keep1', 'keep2', 'keep3']);
+            const artifact = JSON.parse(readFileSync(join(dir, '21-plan/topic-selection-attempts.json'), 'utf-8')) as {
+                attempts: { counts: Record<string, number | null> }[];
+                reconciliation: { reconciled: boolean; issues: string[] };
+            };
+            expect(artifact.attempts[0]?.counts).toMatchObject({
+                preFilter: 5,
+                kept: 3,
+                uniqueExcluded: 1,
+                deduped: 1,
+            });
+            expect(artifact.reconciliation.issues).toEqual([]);
+            expect(artifact.reconciliation.reconciled).toBe(true);
         });
     });
 
@@ -1008,7 +1064,8 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                 '168h',
             ]);
         });
-    });
+        // Six stage subprocesses land ~5.3s under gate load — over bun's 5s default.
+    }, 20000);
 
     it('daily-article unwraps a plan.json that carries the Content envelope instead of the Doc[]', () => {
         // `plan-translate`'s executor has been observed writing the generator's Content envelope
@@ -1768,7 +1825,9 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         expect(envelope('google, openai').fallback).toStrictEqual(['google', 'openai']);
         expect(envelope().fallback).toBeUndefined();
         expect(envelope('').fallback).toBeUndefined();
-    });
+        // Spawns stage subprocesses; the full apps/cli suite runs these concurrently and
+        // pushes ~1.8s standalone work past bun's 5s default (0392).
+    }, 20000);
 
     it('daily-xhs-render names the failed card and exits with image-gen status, keeping earlier cards (0219 AC2)', () => {
         withTempDir((dir) => {
@@ -4441,6 +4500,10 @@ describe('F613 (0162) — script-write stage wiring', () => {
             copyFileSync(coverCompositor, join(dir, 'cover-compositor.ts'));
             copyFileSync(seriesNames, join(dir, 'series-names.ts'));
             copyFileSync(sentences, join(dir, 'sentences.ts'));
+            // 0392: daily-stages now imports the attempt ledger, so the lone-runner fixture
+            // needs that sibling too — its absence would surface as the wrong "daily-stages.ts
+            // not found" remediation instead of the skill-missing message under test.
+            copyFileSync(topicSelectionAttempts, join(dir, 'topic-selection-attempts.ts'));
             const result = run(
                 ['daily-script-style', dir, '20260925'],
                 { HOME: dir, KK_WORKFLOWS_DIR: '' },

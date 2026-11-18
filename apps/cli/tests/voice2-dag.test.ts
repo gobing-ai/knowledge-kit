@@ -729,7 +729,31 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
         // `~` for either workflow, so the frozen voice1 behaviour is unchanged.
         const docOnly = (line: string): boolean =>
             /^[+-]\s*#/.test(line) || /^[+-]\s*description:/.test(line) || /^[+-]\s*intro_music:/.test(line);
-        const behavioural = changed.filter((line) => !docOnly(line));
+        // Exception (2026-11-18, task 0392): the editorial topic-boundary PROSE inside the agent
+        // prompts is a policy surface, not frozen behaviour — `news-editorial/SKILL.md` is the source
+        // and the writers only ever see these `input:` scalars, so retuning the policy has to touch
+        // them (review finding 0392-#1). Both sides' prompt bodies are recognised by indentation under
+        // `input: |`, so a changed state id, command, edge, var default or condition still fails here.
+        const promptLines = (text: string): Set<string> => {
+            const promptBody = new Set<string>();
+            let bodyIndent: number | null = null;
+            for (const line of text.split('\n')) {
+                const input = line.match(/^(\s*)input: (?:&[\w-]+ )?\|$/);
+                if (input) {
+                    bodyIndent = (input[1] ?? '').length;
+                    continue;
+                }
+                if (bodyIndent === null || line.trim() === '') continue;
+                if (line.length - line.trimStart().length > bodyIndent) promptBody.add(line);
+                else bodyIndent = null;
+            }
+            return promptBody;
+        };
+        const headYaml = Bun.spawnSync(['git', 'show', 'HEAD:plugins/kk/workflows/kk-daily-ai-voice.yaml'], {
+            cwd: REPO,
+        }).stdout.toString();
+        const promptBodies = new Set([...promptLines(headYaml), ...promptLines(readFileSync(VOICE1, 'utf-8'))]);
+        const behavioural = changed.filter((line) => !docOnly(line) && !promptBodies.has(line.replace(/^[+-]/, '')));
         expect(behavioural, `kk-daily-ai-voice.yaml changed beyond docs:\n${diff.stdout.toString()}`).toEqual([]);
     });
 });

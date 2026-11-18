@@ -233,9 +233,9 @@ states:
           input: |
             Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — metadata.docs (Doc[]) is the translated plan; don't edit it.
             Write a tech-sharing prose article in natural simplified Chinese for the 「AI 乱炖」 column (show 「咸话咸说」， tools/papers/hands-on practice 随聊): no title line (the pipeline computes it), an intro paragraph (2–3 sentences), then one section per item (## numbered title, 2–4 sentences of flowing prose, source link [来源：<label>](<sourceUri>) inline), a closing paragraph tying items together.
-            选题边界：只写技术内容；某条主线若属政治/外交或贸易管制/军事/公共政策争议/社会公共事件，跳过该条并在文末加一行「> 注：<N> 条条目因选题边界未写入：<id>（<原因>）、<id>（<原因>）」。
+            选题边界：只写 AI 主题；主线是政治人物本人、武装冲突或非 AI 事件就跳过；AI 监管、模型责任与诉讼、出口管制、采购、标准与安全执法属 AI 主题公共政策，照常写入。文末加一行「> 注：<N> 条条目因选题边界未写入：<id>（<原因>）」。
             事实纪律：每个事实取自该条计划内容，不虚构、不引他处；数字与主体不得放大（如 16 张卡不得写成「几十张卡」，具名主体不得写成「顶级大厂」）；引语只能归属其原句主语；保留「据报道/称/承诺」等限定词；导语/收束不加计划外程度词（如「稳定解决」「高维」「治理」）；材料不足就少写或不写，不凑数。
-            Narrative register — smooth transitions, no list-like bulleting, no scaffold labels (「可做角度」「背景」「潜在影响」), no hedging (「读者宜另行核实」「仍待验证」). 「」 quotes.
+            Narrative register — smooth transitions, no list-like bulleting, no scaffold labels, no hedging labels. 「」 quotes.
             Output the markdown to ${vars.work_dir}/22-article/${vars.run_date}_06_article-write_body.md.
           expectFile: ${vars.work_dir}/22-article/${vars.run_date}_06_article-write_body.md
           allowAppend: false
@@ -261,7 +261,7 @@ states:
           # ADR-115 error tier: keep this prompt <= 1000 chars.
           input: |
             Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of plan docs; don't edit it.
-            Take item 1 only (its "title" and "metadata.brief") — the episode's lead story. If item 1's mainline is public affairs (politics/diplomacy, trade controls, military, policy disputes, social events), take the first in-scope item instead.
+            Take item 1 only (its "title" and "metadata.brief") — the episode's lead story. If item 1's mainline IS a political figure, an armed conflict or a non-AI event, take the first in-scope item instead; an AI-subject public-policy story (AI regulation, model liability/litigation, export controls, procurement, standards and safety enforcement) is in scope — keep it.
             Write one concrete visual scene in English, ≤240 characters, that a viewer would connect to that story: objects, settings, symbols, metaphor.
             No text, letters, numbers, logos, brand marks, flags, or recognizable real people. No style, color, lighting, or composition words — the preset owns those.
             Output strictly valid JSON {"subject": "..."} to ${vars.work_dir}/23-cover/${vars.run_date}_07_cover-brief.json.
@@ -297,8 +297,8 @@ states:
           # ADR-115 error tier: keep this prompt <= 1000 chars.
           input: |
             Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of docs; don't edit it. Also read the style contract ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_style.md and obey its char caps, duration budget and banned phrases.
-            For each doc write a `lead` (a spoken bridge, not containing the title) and an `insight` (grounded only in that doc's facts: keep its numbers and hedges（据报道）, add no new degree words like「高预算穷举」).
-            intro/outro hook only in-scope items; no greeting or sign-off — the builder adds both. 选题边界：政治/外交、贸易管制、军事、公共政策争议、社会公共事件条目绝不复述；读文章 22-article/*_06_article-write_body.md，其文末注记点名的 id 一并进 excluded，各配中文原因。
+            For each doc write a `lead` (spoken bridge, not the title) and an `insight` (only that doc's facts: keep its numbers and hedges（据报道）, no new degree words).
+            intro/outro hook only in-scope items; no greeting or sign-off — the builder adds both. 选题边界：只写 AI 主题；主线是政治人物本人、武装冲突或非 AI 事件就跳过；AI 监管、模型责任与诉讼、出口管制、采购、标准与安全执法属 AI 主题公共政策，照常写入。各在 excluded 配中文原因；读文章 22-article/*_06_article-write_body.md，其文末注记点名的 id 一并进 excluded。
             Output only JSON {"version":1,"intro":"…","outro":"…","items":[{"id":"…","lead":"…","insight":"…"}],"excluded":[{"id":"…","reason":"…"}]} to ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json. Exactly one `items` entry per doc not in `excluded`.
           expectFile: ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json
           allowAppend: false
@@ -482,9 +482,9 @@ states:
           input: |
             Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of news docs; don't edit it.
             Take item 1 only (its "title" and "metadata.brief") — the lead story.
-            Write an XHS note: "title" (≤20 chars) and "body" (Chinese note ≤1000 chars, ending with 3-5 hashtags). 选题边界：公共事务主线不写入，只写技术内容。
-            Write exactly ${vars.xhs_cards} cards: card 1 role "cover", the rest "content", except a final "closing". Each card carries "role", "copy" (Chinese on-card headline ≤12 chars), "points" (2-4 short Chinese bullets), "layout", "subject" (one concrete English visual scene), "sourcePoint" (the lead-story fact that card uses).
-            Ground every "copy", "points" and "sourcePoint" in that story — no invented facts. No text, letters, numbers, logos or real people in "subject".
+            Write an XHS note: "title" (≤20 chars) and "body" (≤1000 Chinese chars, 3-5 hashtags at the end). 选题边界：只写 AI 主题；主线是政治人物本人、武装冲突或非 AI 事件就跳过；AI 监管、模型责任与诉讼、出口管制、采购、标准与安全执法属 AI 主题公共政策，照常写入。
+            Write ${vars.xhs_cards} cards: card 1 "cover", the rest "content", a final "closing". Each card: "role", "copy" (≤12 chars), "points" (2-4 bullets), "layout", "subject" (English visual scene), "sourcePoint" (the story fact that card uses).
+            Ground every field in that story — no invented facts. No text, letters, numbers, logos or real people in "subject".
             Output strictly valid JSON {"title": "...", "body": "...", "cards": [...]} to ${vars.work_dir}/25-xhs/${vars.run_date}_18_xhs_plan.json.
           expectFile: ${vars.work_dir}/25-xhs/${vars.run_date}_18_xhs_plan.json
           allowAppend: false

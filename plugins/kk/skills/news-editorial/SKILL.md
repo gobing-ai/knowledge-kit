@@ -43,9 +43,18 @@ validator enforces mechanically, so violating them means the plan is rejected.
 1. **News first.** Every item tells the listener who (company, lab, team) did what (released, open-sourced,
    raised, sued, disclosed) and when. Commentary is restrained and anchored to that item; technical detail is
    only the one or two sentences needed to understand it.
-2. **Topic boundary (选题边界).** Never retell an item whose mainline is politics or diplomacy, trade controls,
-   military affairs, public-policy disputes or social public events, whatever nickname it travels under. Exclude
-   it with a Chinese reason. In-scope industry and institutional news is reported normally.
+2. **Topic boundary (选题边界, calibrated 2026-11-18 / task 0392).** Exclude an item only when `AI 产业` is not
+   its mainline. Out of scope: (a) the confirmed platform hard line in `plugins/kk/scripts/topic-boundary.json`
+   (the top-leadership rule and the future-dated check) — the deterministic stage already drops those, never
+   re-admit them; (b) a story whose mainline is partisan politics, an armed conflict or a non-AI crime/accident,
+   i.e. the AI angle is only the nickname; (c) an item with no usable AI-industry fact.
+   **In scope** — report normally, do not exclude: AI regulation and legislation, model/product liability and
+   litigation, export controls and procurement that decide AI capacity, standards and safety enforcement, and
+   company, lab, market and technical news. A public-policy story whose subject IS an AI system, model or vendor
+   is in scope even though it reads as policy; only the story whose subject is the political actor is out.
+   Record the exclusion with a Chinese reason naming the class from (a)-(c) and the sentence that shows it —
+   "感觉不合适" is not a reason. **Hand the revised policy to 0385** (the board's editorial projection); do not
+   implement 0385 here. Calibration samples live in `plugins/kk/tests/fixtures/topic-selection-cases.json`.
 3. **Fact discipline.** Every fact comes from that item's own plan content. Do not invent anything or borrow
    from other items. Never inflate numbers or actors. Attribute a quote only to its original speaker. Keep
    hedges (据报道 / 称 / 承诺). If the material is thin, write less.

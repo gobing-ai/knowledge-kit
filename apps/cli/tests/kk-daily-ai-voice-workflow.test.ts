@@ -975,3 +975,73 @@ if (plugin === 'aihot-ingest') {
         expect(edges).not.toContain('intro-music->quality-control');
     });
 });
+
+/**
+ * Task 0392 — the retuned editorial boundary is a POLICY, and the prompt layer is where it can
+ * silently revert. `news-editorial/SKILL.md` states it, but the article writer, the script writer,
+ * the cover brief and the XHS planner never read that file: they read these prompt scalars, and
+ * `script-write` also reads the style contract. No fixture replays this prose, so without a pin a
+ * revert of SKILL.md alone leaves every other test green (review finding 0392-#1).
+ */
+describe('0392 — the retuned topic boundary reaches the prompt layer', () => {
+    const read = (relative: string): string => readFileSync(join(import.meta.dir, '../../../', relative), 'utf-8');
+    const voice1 = read('plugins/kk/workflows/kk-daily-ai-voice.yaml');
+    const voice2 = read('plugins/kk/workflows/kk-daily-ai-voice2.yaml');
+    const skill = read('plugins/kk/skills/news-editorial/SKILL.md');
+    const contract = read('plugins/kk/skills/news-editorial/references/style-contract.zh.md');
+
+    // The one policy sentence every Chinese authoring prompt ships verbatim. Editing it in ONE
+    // place has to fail here, not drift: the writers receive whichever copy their step carries.
+    const POLICY =
+        '选题边界：只写 AI 主题；主线是政治人物本人、武装冲突或非 AI 事件就跳过；AI 监管、模型责任与诉讼、出口管制、采购、标准与安全执法属 AI 主题公共政策，照常写入。';
+    // The wide category exclusion 0189 shipped and 0392 retuned. It must not survive anywhere a
+    // writer or the admission reviewer reads: those are the exact strings the P2 finding quoted.
+    const RETIRED = [
+        '公共政策争议/社会公共事件，跳过',
+        '公共政策争议、社会公共事件条目绝不复述',
+        '公共事务主线不写入',
+        'policy disputes, social events',
+    ];
+
+    it('article-write, script-write and xhs-write each ship the policy sentence verbatim', () => {
+        for (const [name, yaml] of [
+            ['kk-daily-ai-voice', voice1],
+            ['kk-daily-ai-voice2', voice2],
+        ] as const) {
+            // 3 = article-write + script-write + xhs-write (voice2's article anchor is written once).
+            expect(yaml.split(POLICY).length - 1, `${name} policy copies`).toBeGreaterThanOrEqual(3);
+        }
+    });
+
+    it('the cover brief admits an AI-subject policy story instead of skipping it', () => {
+        for (const [name, yaml] of [
+            ['kk-daily-ai-voice', voice1],
+            ['kk-daily-ai-voice2', voice2],
+        ] as const) {
+            expect(yaml, name).toContain('AI-subject public-policy story');
+            expect(yaml, name).toContain('is in scope — keep it');
+        }
+    });
+
+    it('the blanket public-policy skip clause is retired from the prompts and the style contract', () => {
+        for (const [name, text] of [
+            ['kk-daily-ai-voice', voice1],
+            ['kk-daily-ai-voice2', voice2],
+            ['style contract', contract],
+        ] as const) {
+            for (const retired of RETIRED) expect(text, `${name} still says: ${retired}`).not.toContain(retired);
+        }
+    });
+
+    it('SKILL.md and the style contract name the same admitted class in their own language', () => {
+        // SKILL.md is the English source of the policy; the contract is what `script-write` reads.
+        for (const token of ['AI regulation', 'liability', 'export controls', 'procurement', 'safety enforcement']) {
+            expect(skill, `SKILL.md: ${token}`).toContain(token);
+        }
+        for (const token of ['AI 监管', '模型责任与诉讼', '出口管制', '采购', '标准与安全执法']) {
+            expect(contract, `style contract: ${token}`).toContain(token);
+        }
+        expect(contract).toContain('为由整类排除');
+        expect(contract).toContain('政治人物本人、武装冲突或与 AI 无关事件');
+    });
+});

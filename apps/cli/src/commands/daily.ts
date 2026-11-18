@@ -9,6 +9,12 @@ import { WORKFLOW_NAMES } from '../board/manifest';
 import { resolveKkConfigPath, runInvoke } from '../invoke';
 import { consoleOutput } from '../output';
 import { runStage } from '../stage';
+import {
+    appendSelectionAttempts,
+    parseSelectionAttempts,
+    type SelectionAttemptsView,
+    selectionAttemptsNote,
+} from '../topic-attempts';
 
 /** JSON parse bound locally: `cli-no-parse-at-module-scope` cannot tell a JSON parse from commander's
  * program parse (same rationale as `store.ts`); `parseJson`/`parseYaml` keep the contract readable. */
@@ -511,6 +517,25 @@ function countItems(path: string | undefined): number | undefined {
     }
 }
 
+/** `21-plan/topic-selection-attempts.json` beside the QC evidence it explains (0392 R14). */
+export function selectionAttemptsPath(workDir: string): string {
+    return join(workDir, '21-plan', 'topic-selection-attempts.json');
+}
+
+/**
+ * Read the per-attempt counts artifact on this synchronous commander path (see the daily.ts
+ * exemption in `.spur/rules/strict/runtime-boundaries.yaml`). Absent or unreadable is `null`.
+ */
+export function readSelectionAttempts(workDir: string): SelectionAttemptsView | null {
+    const path = selectionAttemptsPath(workDir);
+    if (!existsSync(path)) return null;
+    try {
+        return parseSelectionAttempts(readFileSync(path, 'utf-8'));
+    } catch {
+        return null;
+    }
+}
+
 /**
  * The `no-content` reason line, naming the refusal artifact that explains the empty candidates
  * when one exists (0266 R3): the post-spend duration refusal first (it is the later, more specific
@@ -518,10 +543,14 @@ function countItems(path: string | undefined): number | undefined {
  * artifact — or one without its numeric fields — falls through to today's lines unchanged.
  */
 export function noContentReason(workDir: string, runDate: string, poolCount: number | undefined): string {
-    const fallback =
+    // R14: the refusal names the selection counts too, and whether they are unique IDs or rule hits
+    // (0392) — a lost day must be explainable without opening the workspace.
+    const attemptsNote = selectionAttemptsNote(readSelectionAttempts(workDir));
+    const fallback = `${
         poolCount === 0
             ? 'no-content: the store pool was empty (kk store extract found no unused items)'
-            : 'no-content: content QC admitted zero of the pooled items';
+            : 'no-content: content QC admitted zero of the pooled items'
+    }${attemptsNote}`;
     const readRefusal = (path: string): Record<string, number | string | string[] | null> | null => {
         if (!existsSync(path)) return null;
         try {
@@ -541,19 +570,22 @@ export function noContentReason(workDir: string, runDate: string, poolCount: num
     const durationFloor = num(duration?.minMinutes);
     const keptCount = num(duration?.keptCount);
     if (measured !== null && measuredEstimate !== null && durationFloor !== null && keptCount !== null) {
-        return `no-content: the episode ran ${measured} min (pre-spend estimate ${measuredEstimate} min), below the ${durationFloor} min floor — duration refusal after synthesis (pool ${poolCount ?? 0}, kept ${keptCount})`;
+        // 0392 R14: the motivating shape (4-item pool -> 3 kept, 8.9 min vs a 15 min floor) is a
+        // DURATION refusal, so this branch carries the counts too — a refusal without them cannot
+        // explain what the filter kept, and the report is the only place the operator sees it.
+        return `no-content: the episode ran ${measured} min (pre-spend estimate ${measuredEstimate} min), below the ${durationFloor} min floor — duration refusal after synthesis (pool ${poolCount ?? 0}, kept ${keptCount})${attemptsNote}`;
     }
     // The same artifact written by `daily-generate`'s script gate: nothing was synthesized, so there
     // is no measured duration — the estimate is the authored script's own length (2026-10-22).
     if (duration?.stage === 'script' && measuredEstimate !== null && durationFloor !== null && keptCount !== null) {
-        return `no-content: the authored script estimates ${measuredEstimate} min of speech, below the ${durationFloor} min floor — script gate refusal before the TTS spend (pool ${poolCount ?? 0}, kept ${keptCount})`;
+        return `no-content: the authored script estimates ${measuredEstimate} min of speech, below the ${durationFloor} min floor — script gate refusal before the TTS spend (pool ${poolCount ?? 0}, kept ${keptCount})${attemptsNote}`;
     }
     const floor = readRefusal(join(workDir, '21-plan', `${runDate}_04_quality-control-content_floor-refusal.json`));
     const estimated = num(floor?.estimatedMinutes);
     const minMinutes = num(floor?.minMinutes);
     const ids = Array.isArray(floor?.ids) ? (floor?.ids as string[]) : null;
     if (estimated !== null && minMinutes !== null && ids !== null) {
-        return `no-content: a ${ids.length}-item pool estimated ${estimated} min of speech, below the ${minMinutes} min floor — pre-spend refusal (pool ${poolCount ?? 0}, kept ${ids.length})`;
+        return `no-content: a ${ids.length}-item pool estimated ${estimated} min of speech, below the ${minMinutes} min floor — pre-spend refusal (pool ${poolCount ?? 0}, kept ${ids.length})${attemptsNote}`;
     }
     return fallback;
 }
@@ -710,7 +742,10 @@ export async function generateRunReport(options: RunReportOptions): Promise<Gene
     if (code !== 0) throw new Error(`${NEWS_REPORT_PLUGIN} exited ${code}`);
     const parsedReport = parseJson(readFileSync(reportJson, 'utf-8')) as { body?: unknown };
     if (typeof parsedReport.body !== 'string') throw new Error(`${reportJson} has no string body`);
-    writeFileSync(reportMd, appendLadderReport(parsedReport.body, workDir));
+    writeFileSync(
+        reportMd,
+        appendSelectionAttempts(appendLadderReport(parsedReport.body, workDir), readSelectionAttempts(workDir)),
+    );
     writeFileSync(summary, `${candidateCount} items planned\n`);
     return { noContent: false, report: reportMd };
 }

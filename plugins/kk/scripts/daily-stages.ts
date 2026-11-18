@@ -116,6 +116,7 @@ import {
 } from './kk-workflow-stages.ts';
 import { splitSentences } from './sentences.ts';
 import { normalizeSeriesNames } from './series-names.ts';
+import { readSelectionAttempts, recordSelectionAttempt, selectionAttemptsPath } from './topic-selection-attempts.ts';
 
 export function dailyQcContent(args: string[]): void {
     const [
@@ -242,6 +243,30 @@ export function dailyQcContent(args: string[]): void {
         sted('write', candidates, () => writeJsonText(candidates, dedupedContent));
         console.error(`qc: dropped ${dropped.length} near-duplicate candidate(s): ${dropped.join(', ')}`);
     }
+    // Task 0392 R14: the run day's own counts artifact. It is written on EVERY invocation (kept or
+    // not) because the exclusion file only exists when a rule hit, and a retry appends instead of
+    // overwriting, so the report can reconcile after retries and still name what was lost. The floor
+    // stage runs after this, so its count stays `unknown` here rather than being inferred.
+    const selectionPath = selectionAttemptsPath(workDir);
+    sted('write', selectionPath, () => {
+        const attemptOrdinal = (readSelectionAttempts(workDir)?.attempts.length ?? 0) + 1;
+        recordSelectionAttempt(workDir, {
+            runDate,
+            attemptId: `${runDate}#${attemptOrdinal}`,
+            spec: readTopicBoundary(),
+            // `preFilter` is the count entering this stage, captured before the boundary mutates the
+            // candidates (the pre-QC pool count is `10-collect/pool.json`, a different stage).
+            preFilter: boundaryDocs.length,
+            // Post-dedup survivors, and the drops are handed over separately, so the identity holds
+            // on a dedup day too: preFilter === keptIds.length + excluded.length + dropped.length.
+            keptIds: (dropped.length > 0 ? deduped : currentDocs).map((doc) =>
+                String((doc as { id?: unknown }).id ?? ''),
+            ),
+            excluded,
+            deduped: dropped,
+            planned: null,
+        });
+    });
     // Last, not inside the timed block above: the estimate must see the pool every shrink pass has
     // already produced. 2026-10-22 cleared the floor on a 4-item pool (21.0 min estimated) that the
     // topic boundary then cut to 3 (14.4 min), so the run paid for a full synthesis the measured

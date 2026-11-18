@@ -41,6 +41,18 @@ prefer exclusion or abort over any rewording.
 | 4 | 未经核实断言 / 来源保真 | Claims resting on RSS titles, aggregation-page URLs, unknown model names, self-contradictory dates; invented facts | Remove the claim or downgrade to attributed uncertainty; insufficient material → shorten or stop, never pad |
 | 5 | 必要披露 | AI-generation disclosure, identity/experience truthfulness (only real hands-on experience claimed) | Missing disclosure → revise to add, unless that platform item is graded `note` (do not add it back); false identity claim → BLOCK |
 
+**Unpoliced class — 黄赌毒 (adult content / gambling / drugs), 0392 inventory finding.** The 0392 inventory
+names this class and the honest answer is: **nothing enforces it anywhere.** No selection rule
+(`plugins/kk/scripts/topic-boundary.json` holds only `prc-leadership` + `dateConflict`), no row in the
+table above, and no platform file (`references/platforms/*.md`) names adult content, gambling or drugs —
+`grep -riE '黄赌毒|色情|赌博|毒品|porn|gambl|adult' plugins/kk/skills plugins/kk/scripts apps/cli/src`
+returned nothing before this note (this paragraph is now its only hit — prose, not a rule). It is not a sub-case of category 2 (that row is political/diplomatic/trade-control/military/
+public-policy/social-event), so an adult/gambling/drug story whose subject is an AI product passes every
+rule in force today. Recorded here so the admission reviewer sees the gap instead of inferring coverage;
+0392 ships **no** filter for it (no observed harmful miss, and an unvetted keyword list would block AI
+stories that merely mention addiction treatment or betting-market models). Any future rule belongs here
+and in `topic-boundary.json`, with fixtures like `plugins/kk/tests/fixtures/topic-selection-cases.json`.
+
 ## Modes
 
 - **detect-only** (default): emit the report; touch nothing.

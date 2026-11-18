@@ -208,6 +208,37 @@ describe('kk daily prepare', () => {
 });
 
 describe('kk daily run-report', () => {
+    /**
+     * The 0392 R14 counts artifact a QC day leaves behind. Written here so the no-content lines can
+     * be asserted for carrying the selection counts, not just the refusal arithmetic.
+     */
+    function writeSelectionEvidence(dir: string, runDate = '20261007'): void {
+        mkdirSync(join(dir, '21-plan'), { recursive: true });
+        writeFileSync(
+            join(dir, '21-plan', 'topic-selection-attempts.json'),
+            JSON.stringify({
+                version: 1,
+                runDate,
+                specVersion: 2,
+                attempts: [
+                    {
+                        attempt: 1,
+                        attemptId: `${runDate}#1`,
+                        counts: { preFilter: 4, kept: 3, uniqueExcluded: 1, deduped: 0, planned: null },
+                    },
+                ],
+                reconciliation: {
+                    reconciled: true,
+                    ruleHits: 1,
+                    multipleHits: 0,
+                    zeroKept: false,
+                    skippedStages: ['plan', 'floor'],
+                    issues: [],
+                },
+            }),
+        );
+    }
+
     it('records no-content for an empty pool without invoking the generator', async () => {
         const dir = tempDir();
         const pool = join(dir, 'pool.json');
@@ -365,6 +396,9 @@ describe('kk daily run-report', () => {
                 reason: 'fixture',
             }),
         );
+        // 0392 R14: this is the motivating shape — a duration refusal must carry the selection
+        // counts, or the report cannot say how a 4-item pool became 3.
+        writeSelectionEvidence(dir);
         const result = await run([
             'daily',
             'run-report',
@@ -383,7 +417,40 @@ describe('kk daily run-report', () => {
         expect(summary).toContain('the episode ran 12.3 min (pre-spend estimate 16.1 min)');
         expect(summary).toContain('below the 15 min floor');
         expect(summary).toContain('duration refusal after synthesis (pool 4, kept 9)');
+        expect(summary).toContain('selection attempts 1 (spec v2): pre-filter 4 → kept 3, 1 unique excluded ID(s)');
+        expect(summary).toContain('counts reconcile');
         expect(summary).not.toContain('pre-spend refusal');
+    });
+
+    it('0392 R14 — the script-gate duration refusal carries the selection counts too', async () => {
+        const dir = tempDir();
+        const pool = join(dir, 'pool.json');
+        const candidates = join(dir, 'candidates.json');
+        writeFileSync(pool, JSON.stringify([{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }]));
+        writeFileSync(candidates, JSON.stringify({ metadata: { docs: [] } }));
+        mkdirSync(join(dir, '30-audio'), { recursive: true });
+        writeFileSync(
+            join(dir, '30-audio', '20261007_11_generate_content_duration-refusal.json'),
+            JSON.stringify({ stage: 'script', estimatedMinutes: 8.9, minMinutes: 15, keptCount: 3, reason: 'fixture' }),
+        );
+        writeSelectionEvidence(dir);
+        const result = await run([
+            'daily',
+            'run-report',
+            '--work-dir',
+            dir,
+            '--run-date',
+            '20261007',
+            '--pool',
+            pool,
+            '--candidates',
+            candidates,
+        ]);
+        expect(result.code).toBe(0);
+        expect(JSON.parse(result.out).noContent).toBe(true);
+        const summary = readFileSync(join(dir, 'run-report.summary.txt'), 'utf-8');
+        expect(summary).toContain('script gate refusal before the TTS spend (pool 4, kept 3)');
+        expect(summary).toContain('selection attempts 1 (spec v2): pre-filter 4 → kept 3, 1 unique excluded ID(s)');
     });
 
     it('invokes the report generator for a real pool and writes its body, failing loud when it fails', async () => {

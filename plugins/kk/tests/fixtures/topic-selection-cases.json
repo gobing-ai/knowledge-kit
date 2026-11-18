@@ -1,0 +1,113 @@
+{
+    "version": 1,
+    "note": "Task 0392 R1 calibration samples. Replayed against plugins/kk/scripts/topic-boundary.json by topic-selection-calibration.test.ts. `historical` = a real exclusion the store recorded; `counterexample` = a contrast sample the calibrated policy must keep (or, for a confirmed hard rule, must still drop).",
+    "runDate": "20261117",
+    "cases": [
+        {
+            "id": "hist-20261022-character-ai-lawsuit",
+            "tag": "historical",
+            "source": "G82 evidence note, run 6edae93b (2026-10-22): the day's only exclusion was a `lawsuit` hit under the old `policy-dispute` rule",
+            "note": "A licensing lawsuit over an AI chatbot is an AI-industry mainline, not a public-policy dispute; the 0189 rule dropped it and the 2026-10-22 narrowing must keep it",
+            "doc": {
+                "id": "hist-20261022-character-ai-lawsuit",
+                "title": "Character.AI faces licensing suit from publisher over chatbot replies",
+                "body": "A publisher sued the chatbot company on Tuesday, alleging that its models reproduced licensed article text in replies. The filing asks for an injunction covering the model's retrieval layer; the company said it will contest the claim and that its training corpus is licensed.",
+                "publishedAt": "2026-10-22T09:12:00"
+            },
+            "expect": "kept"
+        },
+        {
+            "id": "hist-20261022-meta-training-data-case",
+            "tag": "historical",
+            "source": "G82 evidence note (2026-10-22): the same `lawsuit` rule also hit the training-data case",
+            "note": "A torrent-based training-data case is product/legal risk news about AI systems; excluding it as `policy-dispute` lost the column's core beat",
+            "doc": {
+                "id": "hist-20261022-meta-training-data-case",
+                "title": "Court lets authors pursue training-data claims against Meta's torrent corpus",
+                "body": "The judge narrowed the claims but kept the core allegation that the lab seeded a torrent swarm to obtain books for pretraining. Discovery on model checkpoints continues; the lab argues the corpus was downloaded by contractors.",
+                "publishedAt": "2026-10-22T16:40:00"
+            },
+            "expect": "kept"
+        },
+        {
+            "id": "counter-ai-export-controls-lab-capacity",
+            "tag": "counterexample",
+            "source": "Task 0392 Q&A: an AI-relevant public-policy story paired with a hard-rule hit",
+            "note": "Public policy whose mainline is AI compute capacity is in scope; the wide editorial category exclusion dropped these",
+            "doc": {
+                "id": "counter-ai-export-controls-lab-capacity",
+                "title": "New licensing rule trims accelerator imports at two AI labs' regional data centres",
+                "body": "The commerce ministry published a licensing list that caps import volumes for high-end accelerators at the two data centres the labs use for pretraining. Both labs said scheduled training runs continue and that they are re-planning capacity for the next quarter.",
+                "publishedAt": "2026-11-16T08:30:00"
+            },
+            "expect": "kept"
+        },
+        {
+            "id": "counter-eu-ai-act-enforcement",
+            "tag": "counterexample",
+            "source": "Task 0392 Q&A: regulatory mainline with AI as the subject",
+            "note": "Enforcement of an AI act is regulation ABOUT AI, so it is industry news; only a story whose mainline is partisan politics is out of scope",
+            "doc": {
+                "id": "counter-eu-ai-act-enforcement",
+                "title": "Regulator opens first general-purpose model review under the AI Act",
+                "body": "The AI office sent questionnaires to three model providers asking for training-data summaries, evaluation results and incident logs. Providers have ten weeks to answer; non-compliance can trigger fines and a market-withdrawal order for the affected model family.",
+                "publishedAt": "2026-11-15T11:05:00"
+            },
+            "expect": "kept"
+        },
+        {
+            "id": "counter-court-ruling-on-ai-procurement",
+            "tag": "counterexample",
+            "source": "Task 0392 R1: a public-policy dispute whose subject is an AI procurement contract",
+            "note": "A procurement dispute is a policy dispute in form but an AI-vendor fact in substance; it must stay in scope",
+            "doc": {
+                "id": "counter-court-ruling-on-ai-procurement",
+                "title": "Tribunal suspends a city's AI triage contract award pending review",
+                "body": "The review board paused the award after a losing bidder challenged the evaluation of the model's accuracy figures. The city must re-score the two finalists within 30 days; the vendor said deployment of the pilot is unaffected.",
+                "publishedAt": "2026-11-14T13:20:00"
+            },
+            "expect": "kept"
+        },
+        {
+            "id": "hard-prc-leadership-headline",
+            "tag": "counterexample",
+            "source": "topic-boundary.json v2 `prc-leadership` rule (2026-10-22 operator ruling)",
+            "note": "The confirmed platform hard constraint stays enforced: a headline whose subject is the top leadership line is dropped whatever the AI angle",
+            "doc": {
+                "id": "hard-prc-leadership-headline",
+                "title": "习近平考察人工智能产业园并听取算力建设汇报",
+                "body": "据新华社报道，考察期间听取了算力基础设施与大模型产业化的汇报。多家参与企业随后表示将加快国产芯片适配。",
+                "publishedAt": "2026-11-16T05:00:00"
+            },
+            "expect": "excluded",
+            "expectRule": "prc-leadership"
+        },
+        {
+            "id": "counter-incidental-mention-below-fold",
+            "tag": "counterexample",
+            "source": "Task 0392 R1: incidental mention versus mainline, the precision case for the 200-char scan window",
+            "note": "A leadership name far below the fold is incidental: the boundary scans title plus the first scanChars characters, so this must stay in scope",
+            "doc": {
+                "id": "counter-incidental-mention-below-fold",
+                "title": "Anthropic ships a spreadsheet add-in for enterprise Claude deployments",
+                "body": "The add-in lets finance teams call the model from inside a workbook, with row-level permissions and an audit log per call. Pricing follows seat count, not token volume. Analysts called it a quieter bet than the coding agent, and the company said the add-in reuses the same context windows as its desktop app. A commentary note compared the rollout to earlier 总书记 site visits — incidental colour, not the item's mainline.",
+                "publishedAt": "2026-11-13T07:45:00"
+            },
+            "expect": "kept"
+        },
+        {
+            "id": "hard-date-conflict-future-draft",
+            "tag": "counterexample",
+            "source": "topic-boundary.json `dateConflict` (0189 R3): publishedAt after the run date",
+            "note": "A future-dated aggregated draft stays inadmissible as evidence regardless of topic",
+            "doc": {
+                "id": "hard-date-conflict-future-draft",
+                "title": "Draft: chipmaker to outline next-generation inference roadmap",
+                "body": "Aggregator carried an unpublished draft dated after the run day. Nothing in it can be used as a fact for this episode.",
+                "publishedAt": "2026-12-01T00:00:00"
+            },
+            "expect": "excluded",
+            "expectRule": "date-conflict"
+        }
+    ]
+}
