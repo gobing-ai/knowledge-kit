@@ -33,6 +33,7 @@ const sentences = join(import.meta.dir, '../../../plugins/kk/scripts/sentences.t
 const coverCompositor = join(import.meta.dir, '../../../plugins/kk/scripts/cover-compositor.ts');
 const topicSelectionAttempts = join(import.meta.dir, '../../../plugins/kk/scripts/topic-selection-attempts.ts');
 const newsEditorialLedger = join(import.meta.dir, '../../../plugins/kk/scripts/news-editorial-ledger.ts');
+const sourceCitation = join(import.meta.dir, '../../../plugins/kk/scripts/source-citation.ts');
 
 // A real 1x1 JPEG (generated once via `sips -s format jpeg` from a 1x1 png) so the jpg transcode
 // test exercises sips with data it can actually decode.
@@ -4506,6 +4507,7 @@ describe('F613 (0162) — script-write stage wiring', () => {
             // not found" remediation instead of the skill-missing message under test.
             copyFileSync(topicSelectionAttempts, join(dir, 'topic-selection-attempts.ts'));
             copyFileSync(newsEditorialLedger, join(dir, 'news-editorial-ledger.ts'));
+            copyFileSync(sourceCitation, join(dir, 'source-citation.ts'));
             const result = run(
                 ['daily-script-style', dir, '20260925'],
                 { HOME: dir, KK_WORKFLOWS_DIR: '' },
@@ -4874,7 +4876,10 @@ describe('F613 (0162) — script-write stage wiring', () => {
                 expect(snap1.article).toContain('这里是由Robin为你带来的咸话咸说之每日AI乱炖。');
                 expect(snap1.article).toContain('## OpenAI 开源轻量推理引擎');
                 expect(snap1.article).toContain('单卡吞吐提升 2.4 倍');
-                expect(snap1.article).toContain('[来源：OpenAI](https://openai.com/news/engine)');
+                // 0394 R16: the citation names the verified source host, not the collector label
+                // (`metadata.source` was the ingest classification, so an aggregator permalink or a
+                // publisher page both used to be labelled by transport).
+                expect(snap1.article).toContain('[来源：openai.com](https://openai.com/news/engine)');
                 expect(snap1.article).toContain('以上就是今天的全部内容');
 
                 // Check cover brief (0347 R5: legacy string cover keeps subject, gains the

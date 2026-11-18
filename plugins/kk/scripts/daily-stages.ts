@@ -122,6 +122,7 @@ import {
 } from './news-editorial-ledger.ts';
 import { splitSentences } from './sentences.ts';
 import { normalizeSeriesNames } from './series-names.ts';
+import { resolveSourceCitation } from './source-citation.ts';
 import { readSelectionAttempts, recordSelectionAttempt, selectionAttemptsPath } from './topic-selection-attempts.ts';
 
 export function dailyQcContent(args: string[]): void {
@@ -4614,16 +4615,14 @@ export function dailyCurateCheck(args: string[]): void {
     console.log(`curate-check: accepted (${kept.length} kept, ${excludedItems.length} excluded)`);
 }
 
-function sourceLabelForDoc(doc: Record<string, unknown>, sourceUri: string): string {
-    const meta = metadataOf(doc);
-    if (typeof meta.source === 'string' && meta.source.trim() !== '') {
-        return meta.source.trim();
-    }
-    try {
-        return new URL(sourceUri).hostname.replace(/^www\./, '') || '原文';
-    } catch {
-        return '原文';
-    }
+/**
+ * 0394 R1/R16 — the citation line for one curated item, or `''` when the doc carries no verifiable
+ * link. Resolution (corroborated original → retrieval URL → explicit aggregator fallback) is owned
+ * by `./source-citation.ts` so the same rule can serve the notes paths without a second convention.
+ */
+function sourceLineForDoc(doc: Record<string, unknown>, sourceUri: string): string {
+    const citation = resolveSourceCitation(doc, sourceUri);
+    return citation === null ? '' : `[来源：${citation.label}](${citation.url})`;
 }
 
 /**
@@ -4862,7 +4861,7 @@ export function dailyEditorialRender(args: string[]): void {
         const insight = typeof item?.insight === 'string' ? item.insight.trim() : '';
         if (!title || !body || !lead || !insight) continue;
         const sourceUri = typeof doc?.sourceUri === 'string' ? doc.sourceUri.trim() : '';
-        const sourceLine = sourceUri ? `[来源：${sourceLabelForDoc(doc ?? {}, sourceUri)}](${sourceUri})` : '';
+        const sourceLine = sourceUri ? sourceLineForDoc(doc ?? {}, sourceUri) : '';
         const parts = [`## ${title}`, lead, body, insight, ...(sourceLine ? [sourceLine] : [])];
         articleSections.push(parts.join('\n\n'));
     }
