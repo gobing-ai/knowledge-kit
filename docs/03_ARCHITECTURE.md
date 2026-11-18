@@ -704,3 +704,9 @@ ADR-037/038 shipped with A22 (tasks 0275–0278; `apps/cli/src/commands/bot.ts`,
 ### ITC extensibility (G21 — sponsored by ADR-040; tasks 0298–0303 shipped)
 
 ADR-040 as amended selects a top-level DAG with a child authoring FSM and the existing executor, while moving channel planning contracts into discovered publish plugins. Config-driven workspace allocation and versioned SEO evidence handoffs share the run envelope; G9 remains independently deployable. Collected-topic mode reads the existing store; decisions recommend within validated choices; topic presets express editorial targets. Plans and per-target receipts bind recovery to input identity. Mechanism and migration: [kk-itc-refactor.md](design/kk-itc-refactor.md).
+
+## Daily AI News editorial delivery (ADR-054, L3 accepted design)
+
+News generation reconciles evidence-backed editorial judgments between final selection and script writing. The news editorial skill authors the proposed changes. The deterministic step validates and atomically commits them to the durable `<works_dir>/kk-news-generate/conclusion.md` ledger and supplies a run-scoped snapshot. Works cleanup and backup procedures treat this ledger as an ADR-042 exception alongside the store.
+
+The frozen news bundle carries one episode title and the final editorial references. Podcast and image plugins own their output formats, and the shared publish workflow remains the single dispatch path. The [L3 design](design/daily-ai-news-editorial-delivery.md) specifies replay, notes, crop and channel-readiness behavior.

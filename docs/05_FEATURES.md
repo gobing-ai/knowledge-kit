@@ -121,6 +121,7 @@ sync: [T4]
 | **L** | kk-daily-ai-voice — daily AI voice news pipeline (umbrella) | 🔧 active | — | umbrella node for the daily AI voice pipeline use cases; child L1 |
 | **L1** | Redesign kk-daily-ai-voice workflow (was K) | 🔧 active | — | idea-pipeline run `idea-1788701858`: eval → design D1–D5 approved → 7 tasks `0092`–`0098` batch-created with deps (0094←0093, 0097←0092+0094+0095+0096, 0098←0097) |
 | **L2** | daily-ai-voice quasi-news podcast cover | 🔧 active | P2 | tasks `0347`–`0349` **done 2026-11-10** (`441f3d2`, `6ab49e1`, `b18b4aa`): quasi-news podcast presets + lead-story Hook brief (0347), deterministic CJK headline compositing + podcast logo badge with `daily-cover-normalize` (0348), pin flip to `daily-news-podcast-cover` x `quasi-news-podcast` + standalone `daily-cover-mock.ts` verification runner (0349); each task verdict PASS / review Confidence HIGH / residual blocking=0; see `docs/features/L2_daily-ai-voice-quasi-news-podcast-cover.md` |
+| **L3** | 每日AI乱炖节目定位、判断、分发与看板升级 | ⏳ backlog | P2 | 18 个验收场景、13 个任务，含公开纠错交付与视频号公众号链接。见 [L3 设计与交接](design/daily-ai-news-editorial-delivery.md)。 |
 
 ## Open research gates
 

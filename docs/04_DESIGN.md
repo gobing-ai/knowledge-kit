@@ -21,6 +21,7 @@ sync: [T3]
 | Satellite | Area | Status |
 | ----------- | ------ | -------- |
 | [kk-itc-refactor.md](design/kk-itc-refactor.md) | DAG/child authoring, config/workspaces, publication presets, recovery and SEO handoffs | shipped (G21, ADR-040; tasks 0298–0303) |
+| [daily-ai-news-editorial-delivery.md](design/daily-ai-news-editorial-delivery.md) | Episode editorial judgments, title, show notes, cover, publish trigger and native Daily AI Voice Board | accepted design (L3, ADR-054) |
 | [content-pipeline-consolidation.md](design/content-pipeline-consolidation.md) | `content_types` registry, one bundle/plan schema, one publish core, the `article`/`news` verb set and simplified workflow node maps | accepted design (G61, ADR-053); surface shipped in part — 0362 design freeze, 0363–0364 `new`/`status`, `content_types` and the five `publish-*` steps; launch verbs, the three workflows and retirement are 0365–0369 |
 | [kk-smart-seo.md](design/kk-smart-seo.md) | SEO/GEO audit workflow, decision catalogs, stages and one skill | partially shipped (G9, ADR-039; 0281-0284 collection, assessments, typed catalogs and enrichment shipped, 0285 the `kk-smart-seo` workflow + validated narrative + terminal status, 0286 the one `smart-seo` skill + its installed acceptance and documented consumer setup; a live-site audit and feature-level verification remain) |
 | [kk-noun-verb-bots.md](design/kk-noun-verb-bots.md) | Strict noun/verb operations + named browser sessions | shipped (A22, ADR-037/038; tasks 0275–0278; surface §1.8/§1.12) |

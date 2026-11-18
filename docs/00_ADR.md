@@ -2009,3 +2009,13 @@ The operator approved retaining the already-landed retirement with a sequencing 
 production migration and full scheduled-day validation are deferred to task 0373, whose handoff
 is in `docs/migration.md`. Task 0372 readiness covers the retirement and handoff, not production
 cut-over readiness; the latter still requires real Mac mini evidence.
+
+## ADR-054: Daily news keeps a durable editorial judgment ledger
+
+**Status:** Accepted (design) · **Date:** 2026-11-17 · **Feature:** L3 · **Amends:** ADR-042
+
+**Decision.** Reserve `<works_dir>/kk-news-generate/conclusion.md` as the authoritative, backed-up editorial judgment record. Generation reconciles verified changes before drafting and carries a frozen reference into each episode.
+
+**Why.** Corrections must survive run cleanup and remain reproducible across episode retries.
+
+**Detail:** [Daily AI News editorial and delivery design](design/daily-ai-news-editorial-delivery.md).
