@@ -2,11 +2,11 @@
 schema_version: 1
 id: "L3"
 name: "每日AI乱炖节目定位、判断与分发升级"
-status: backlog
+status: active
 priority: P2
 tags: []
 created_at: "2026-11-18T04:02:01.002Z"
-updated_at: "2026-11-18T04:51:04.206Z"
+updated_at: "2026-11-18T07:10:07.908Z"
 ---
 
 # L3: 每日AI乱炖节目定位、判断与分发升级
@@ -151,7 +151,7 @@ Feature: Daily AI News editorial and delivery uplift
 | 0389 | Replay the editorial-to-publish flow and synchronize documentation | todo |
 | 0386 | Restore concise podcast notes and reuse episode cards | todo |
 | 0393 | Verify and repair series-scoped selection continuity | todo |
-| 0391 | Bind Daily AI Voice Board to current news run and publish evidence | todo |
+| 0391 | Bind Daily AI Voice Board to current news run and publish evidence | testing |
 | 0387 | Compose news covers for the two centered crops | todo |
 | 0395 | Bind WeChat Channels cards to the confirmed Official Account article | todo |
 | 0392 | Calibrate daily topic filters and report candidate losses | todo |
@@ -161,3 +161,6 @@ Feature: Daily AI News editorial and delivery uplift
 ## Notes
 
 ## History
+
+- 2026-11-18T07:10:07.908Z backlog → active (system)
+

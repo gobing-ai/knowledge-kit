@@ -105,7 +105,7 @@
 [done] **L**: kk-daily-ai-voice — daily AI voice news pipeline ([L_kk-daily-ai-voice-daily-ai-voice-news-pipeline.md](./L_kk-daily-ai-voice-daily-ai-voice-news-pipeline.md))
     ├── [done] **L1**: Redesign kk-daily-ai-voice workflow: kk-owned concurrent collect, explicit content QC seam, plugin-owned publish mechanics ([L1_redesign-kk-daily-ai-voice-workflow-kk-owned-concurrent-collect-explicit-content-qc-seam-plugin-owned-publish-mechanics.md](./L1_redesign-kk-daily-ai-voice-workflow-kk-owned-concurrent-collect-explicit-content-qc-seam-plugin-owned-publish-mechanics.md))
     ├── [active] **L2**: daily-ai-voice-quasi-news-podcast-cover ([L2_daily-ai-voice-quasi-news-podcast-cover.md](./L2_daily-ai-voice-quasi-news-podcast-cover.md))
-    └── [backlog] **L3**: 每日AI乱炖节目定位、判断与分发升级 ([L3_ai.md](./L3_ai.md))
+    └── [active] **L3**: 每日AI乱炖节目定位、判断与分发升级 ([L3_ai.md](./L3_ai.md))
 [backlog] **M**: kk-user-config-roots ([M_kk-user-config-roots.md](./M_kk-user-config-roots.md))
 [done] **N**: daily-ai-voice-cover-image-authoring ([N_daily-ai-voice-cover-image-authoring.md](./N_daily-ai-voice-cover-image-authoring.md))
 [active] **O**: kk-daily-ai-voice: run report, show-notes revamp, real surfdash publish ([O_kk-daily-ai-voice-run-report-show-notes-revamp-real-surfdash-publish.md](./O_kk-daily-ai-voice-run-report-show-notes-revamp-real-surfdash-publish.md))

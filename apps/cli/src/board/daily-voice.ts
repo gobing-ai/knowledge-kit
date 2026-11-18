@@ -221,21 +221,29 @@ function asConfidenceLevel(value: unknown): ConfidenceLevel | null {
 }
 
 /**
- * The producer state a DAG run's action rows record for one node (§9).
+ * The producer state a DAG run's action rows record for a node chain (§9).
  *
- * `success` when any recorded attempt passed; `pending` while an attempt runs and none passed
- * (a same-run retry never hides its own success); `unknown` when the node has no recorded row.
+ * `success` when any recorded attempt passed on the node or, for fallback chains, on one of the
+ * `fallbackNodes` (the news DAG's loud voice/curate fallbacks write the SAME fixed file);
+ * `pending` while an attempt runs and none passed (a same-run retry never hides its own success);
+ * `unknown` when none of the nodes has a recorded row.
  */
-export function dagProducerState(actions: readonly unknown[], node: string): ProducerState {
+export function dagProducerState(
+    actions: readonly unknown[],
+    node: string,
+    fallbackNodes?: readonly string[],
+): ProducerState {
     let matched = false;
     let running = false;
-    for (const entry of actions) {
-        const record = asRecord(entry);
-        if (record === null || record.node !== node) continue;
-        matched = true;
-        const status = (stringOrNull(record.status) ?? '').toLowerCase();
-        if (record.ok === true || ['passed', 'done', 'success', 'completed'].includes(status)) return 'success';
-        if (status === 'pending' || status === 'running') running = true;
+    for (const candidate of [node, ...(fallbackNodes ?? [])]) {
+        for (const entry of actions) {
+            const record = asRecord(entry);
+            if (record === null || record.node !== candidate) continue;
+            matched = true;
+            const status = (stringOrNull(record.status) ?? '').toLowerCase();
+            if (record.ok === true || ['passed', 'done', 'success', 'completed'].includes(status)) return 'success';
+            if (status === 'pending' || status === 'running') running = true;
+        }
     }
     if (!matched) return 'unknown';
     return running ? 'pending' : 'failure';
@@ -680,11 +688,31 @@ export function sanitizeFunnelArtifact(
     artifactId: string,
     raw: string | undefined,
 ): Record<string, unknown> | null {
-    if (workflowFamily(workflow) !== 'kk-daily-ai-voice2') return null;
+    if (workflowFamily(workflow) !== 'kk-daily-ai-voice2' && workflow !== 'kk-news-generate') return null;
     const parsed = parseAnyJson(raw);
     if (parsed === null && raw !== undefined) return { note: 'malformed' };
     const record = asRecord(parsed);
     switch (artifactId) {
+        // News-only sanitized artifacts (task 0391): the gate verdict, the card series manifest
+        // and the variant safety record are counts/status only; the master script plan keeps no
+        // prose — only how many of each bounded list it declared.
+        case 'pool-gate':
+            return record === null ? null : { status: stringOrNull(record.status) };
+        case 'cards-index':
+            return countProjection(parsed);
+        case 'variants-safety':
+            return record === null
+                ? null
+                : { status: stringOrNull(record.status), verdict: stringOrNull(record.verdict) };
+        case 'script-plan':
+            return record === null
+                ? null
+                : {
+                      docs: arrayCount(record.docs),
+                      cards: arrayCount(record.cards),
+                      social: arrayCount(record.social),
+                      excluded: arrayCount(record.excluded),
+                  };
         case 'episode-pool':
         case 'episode-annotated':
         case 'episode-plan':

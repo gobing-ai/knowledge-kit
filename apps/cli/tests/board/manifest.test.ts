@@ -14,6 +14,7 @@ import {
     expandPattern,
     ITC_ARTIFACTS,
     isConfidenceLevel,
+    NEWS_GENERATE_ARTIFACTS,
     resolveAvailability,
     resolveWithin,
     WORKFLOW_NAMES,
@@ -29,8 +30,10 @@ describe('workflow allowlists', () => {
             'kk-news-generate',
             'kk-article-generate',
         ]);
-        // 0369 R8 / AC5: a G61 successor reuses its predecessor's manifest and settings.
-        expect(artifactsFor('kk-news-generate')).toBe(artifactsFor('kk-daily-ai-voice2'));
+        // 0369 R8 / AC5: a G61 successor reuses its predecessor's manifest and settings —
+        // superseded for news by 0391: the news DAG owns its artifact map (same file shapes, news
+        // node ids); the settings allowlist still follows the voice2 family.
+        expect(artifactsFor('kk-news-generate')).toBe(NEWS_GENERATE_ARTIFACTS);
         expect(artifactsFor('kk-article-generate')).toBe(artifactsFor('kk-itc'));
         expect(allowlistedKeys('kk-news-generate')).toEqual(allowlistedKeys('kk-daily-ai-voice2'));
         expect(allowlistedKeys('kk-article-generate')).toEqual(allowlistedKeys('kk-itc'));

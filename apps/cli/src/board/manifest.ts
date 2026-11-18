@@ -141,6 +141,13 @@ export interface ArtifactSpec {
     producerNode: string;
     /** The `actionKey` a state-machine action must record. */
     producerActionKey?: string;
+    /**
+     * DAG fallback chains only: the sibling nodes that may have produced the SAME fixed file when
+     * {@link producerNode} itself was skipped or failed (the news workflow's loud voice/curate
+     * fallbacks). Producer evidence resolves across the primary node and these in order; the
+     * descriptor still names {@link producerNode} as the artifact's producer identity.
+     */
+    producerFallbackNodes?: readonly string[];
     /** Declared media type for image/audio kinds; the kind is the fallback. */
     mime?: string;
     /**
@@ -398,6 +405,219 @@ export const DAILY_VOICE_ARTIFACTS: readonly ArtifactSpec[] = [
 ];
 
 /**
+ * kk-news-generate's fixed artifact manifest (G61 successor, task 0391). The news DAG shares the
+ * daily pipeline's stage bodies, so the file shapes match the voice2 manifest, but the PRODUCERS
+ * are the news DAG's own node ids and the bundle/report/variants paths are the news layout's
+ * (`bundle.json` at the run root per 0382, `5-report/generation.md`). Fallback chains
+ * (`curate-fix`/`curate-final`, `script-fix`, the loud voice fallbacks) authorize the SAME fixed
+ * file through `producerFallbackNodes` — whichever node recorded success owns the evidence.
+ */
+export const NEWS_GENERATE_ARTIFACTS: readonly ArtifactSpec[] = [
+    {
+        id: 'pool-gate',
+        label: 'Pool gate verdict',
+        kind: 'json',
+        pattern: 'pool-gate.json',
+        producerNode: 'prepare',
+    },
+    {
+        id: 'no-content',
+        label: 'No-content verdict',
+        kind: 'text',
+        pattern: 'run-report.summary.txt',
+        producerNode: 'prepare',
+    },
+    {
+        id: 'episode-pool',
+        label: 'Episode pool',
+        kind: 'json',
+        pattern: '10-collect/pool.json',
+        producerNode: 'prepare',
+    },
+    {
+        id: 'episode-annotated',
+        label: 'QC annotation input',
+        kind: 'json',
+        pattern: '21-plan/{stamp}_04_quality-control-content_annotated.json',
+        producerNode: 'prepare',
+    },
+    {
+        id: 'episode-qc-rejections',
+        label: 'QC rejections',
+        kind: 'json',
+        pattern: '21-plan/{stamp}_04_quality-control-content_candidates.rejected.json',
+        producerNode: 'prepare',
+    },
+    {
+        id: 'episode-exclusions',
+        label: 'Topic exclusions',
+        kind: 'json',
+        pattern: '21-plan/{stamp}_04_quality-control-content_exclusions.json',
+        producerNode: 'prepare',
+    },
+    {
+        id: 'episode-candidates',
+        label: 'Post-QC candidates',
+        kind: 'json',
+        pattern: '21-plan/{stamp}_04_quality-control-content_candidates.json',
+        producerNode: 'prepare',
+    },
+    {
+        id: 'episode-floor-refusal',
+        label: 'QC floor refusal',
+        kind: 'json',
+        pattern: '21-plan/{stamp}_04_quality-control-content_floor-refusal.json',
+        producerNode: 'prepare',
+    },
+    {
+        id: 'episode-plan',
+        label: 'Episode plan',
+        kind: 'json',
+        pattern: '21-plan/{stamp}_03_plan_plan.json',
+        producerNode: 'curate',
+        producerFallbackNodes: ['curate-fix', 'curate-final'],
+    },
+    {
+        id: 'episode-curated-exclusions',
+        label: 'Curated exclusions',
+        kind: 'json',
+        pattern: '21-plan/{stamp}_03_curate_excluded.json',
+        producerNode: 'curate',
+        producerFallbackNodes: ['curate-fix', 'curate-final'],
+    },
+    {
+        id: 'script-plan',
+        label: 'Master script plan',
+        kind: 'json',
+        pattern: '24-script/{stamp}_08_script-write_plan.json',
+        producerNode: 'script-write',
+        producerFallbackNodes: ['script-fix'],
+    },
+    {
+        id: 'editorial-verdict',
+        label: 'Editorial judge verdict',
+        kind: 'json',
+        pattern: '24-script/{stamp}_08_editorial-judge_verdict.json',
+        producerNode: 'editorial-judge',
+        // A PASS here is only usable with one of these levels; the projection nulls anything else.
+        confidenceVocabulary: CONFIDENCE_LEVELS,
+    },
+    {
+        id: 'script',
+        label: 'VoiceScript',
+        kind: 'text',
+        pattern: '24-script/{stamp}_08_script_voicescript.yaml',
+        producerNode: 'render',
+    },
+    {
+        id: 'article-body',
+        label: 'Article body',
+        kind: 'text',
+        pattern: '22-article/{stamp}_06_article_article.md',
+        producerNode: 'render',
+    },
+    {
+        id: 'article-content',
+        label: 'Article content',
+        kind: 'json',
+        pattern: '22-article/{stamp}_06_article_content.json',
+        producerNode: 'render',
+    },
+    {
+        id: 'cover',
+        label: 'Cover image',
+        kind: 'image',
+        pattern: '23-cover/{stamp}_07_cover_cover.png',
+        producerNode: 'render',
+        mime: 'image/png',
+    },
+    {
+        id: 'safety-verdict',
+        label: 'Content safety verdict',
+        kind: 'json',
+        pattern: '24-script/{stamp}_09_safety-judge_verdict.json',
+        producerNode: 'safety',
+        // A PASS here is only usable with one of these levels; the projection nulls anything else.
+        confidenceVocabulary: CONFIDENCE_LEVELS,
+    },
+    {
+        id: 'safety-report',
+        label: 'Content safety review',
+        kind: 'json',
+        pattern: '24-script/{stamp}_09_safety-review_report.json',
+        producerNode: 'safety',
+    },
+    {
+        id: 'audio',
+        label: 'Episode audio',
+        kind: 'audio',
+        pattern: '30-audio/{stamp}_11_generate_content.mp3',
+        producerNode: 'voice',
+        producerFallbackNodes: ['voice-fallback', 'voice-fallback2'],
+        mime: 'audio/mpeg',
+    },
+    {
+        id: 'audio-record',
+        label: 'Audio generation record',
+        kind: 'json',
+        pattern: '30-audio/{stamp}_11_generate_content.json',
+        producerNode: 'voice',
+        producerFallbackNodes: ['voice-fallback', 'voice-fallback2'],
+    },
+    {
+        id: 'episode-duration',
+        label: 'Duration verdict',
+        kind: 'json',
+        pattern: '30-audio/{stamp}_11_generate_content_duration.json',
+        producerNode: 'voice',
+        producerFallbackNodes: ['voice-fallback', 'voice-fallback2'],
+    },
+    {
+        id: 'episode-duration-refusal',
+        label: 'Duration refusal',
+        kind: 'json',
+        pattern: '30-audio/{stamp}_11_generate_content_duration-refusal.json',
+        producerNode: 'voice',
+        producerFallbackNodes: ['voice-fallback', 'voice-fallback2'],
+    },
+    {
+        id: 'cards-index',
+        label: 'Card series manifest',
+        kind: 'json',
+        pattern: '25-xhs/cards.json',
+        producerNode: 'cards',
+    },
+    {
+        id: 'cards-content',
+        label: 'Card series content',
+        kind: 'json',
+        pattern: '25-xhs/content.json',
+        producerNode: 'cards',
+    },
+    {
+        id: 'variants-safety',
+        label: 'Variant safety record',
+        kind: 'json',
+        pattern: '4-safety-variants/safety.json',
+        producerNode: 'safety-variants',
+    },
+    {
+        id: 'bundle',
+        label: 'Frozen bundle',
+        kind: 'json',
+        pattern: 'bundle.json',
+        producerNode: 'freeze',
+    },
+    {
+        id: 'report',
+        label: 'Generation report',
+        kind: 'text',
+        pattern: '5-report/generation.md',
+        producerNode: 'freeze',
+    },
+];
+
+/**
  * kk-itc's fixed artifact manifest (producer action keys per §9). ITC is a state machine, so a
  * producer is its recorded `actionKey`, never a node row. Per-target publish results are DERIVED
  * from the run's own plan (`itcResultSpecs`), not hard-coded: target names are open-ended.
@@ -482,6 +702,9 @@ export const ITC_ARTIFACTS: readonly ArtifactSpec[] = [
 
 /** The fixed artifact manifest for a workflow (empty until 0253/0254 register their entries). */
 export function artifactsFor(workflow: WorkflowName): readonly ArtifactSpec[] {
+    // The G61 news DAG owns its map: same file shapes as voice2, news node ids as producers. The
+    // settings allowlist still follows the family; artifacts and projection follow the workflow.
+    if (workflow === 'kk-news-generate') return NEWS_GENERATE_ARTIFACTS;
     const family = workflowFamily(workflow);
     if (family === 'kk-collect') return COLLECT_ARTIFACTS;
     if (family === 'kk-daily-ai-voice2') return DAILY_VOICE_ARTIFACTS;

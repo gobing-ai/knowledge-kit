@@ -22,6 +22,7 @@
  */
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import type { RunCaptureInput, WorkflowName } from '@gobing-ai/kk-board/contracts';
 import { openStore, resolveStorePath } from '@gobing-ai/kk-store';
 import {
     createNodeFileSystem,
@@ -31,6 +32,9 @@ import {
     type ProcessResult,
 } from '@gobing-ai/ts-runtime';
 import { setDefaultOutputTargets } from '@gobing-ai/ts-utils';
+import type { CaptureOutcome } from './board/capture';
+import { captureRun, isSafeRunId, isSafeStamp, parseSetting } from './board/capture';
+import { allowlistedKeys, WORKFLOW_NAMES } from './board/manifest';
 import { syncLedger } from './commands/ledger';
 import { resolveKkConfigPath } from './invoke';
 import { consoleOutput } from './output';
@@ -120,6 +124,13 @@ export interface LaunchDeps {
      * divergence probe (R3). `null` means it cannot be established, which only warns.
      */
     installRoot: () => Promise<string | null>;
+    /**
+     * Board capture binding (task 0391): bind the attempt to its workspace through the shared
+     * `captureRun` seam while the launch lock is held. Optional so legacy call sites and tests
+     * stay hermetic; the default binds the real `captureRun` against this launch's works root
+     * (the `kk daily prepare` posture). Callers only exercise it for Board workflows.
+     */
+    capture?: (input: RunCaptureInput) => Promise<CaptureOutcome>;
 }
 
 /** One supervised launch: the resolved run plus the posture flags of the launching verb. */
@@ -458,8 +469,81 @@ export function createLaunchDeps(): LaunchDeps {
  * `--dry-run` runs the preflight only: it takes no lock, writes nothing, and returns the step-4
  * receipt (status `running`) with the planned argv under `dryRun` (R9).
  */
+/** The capture binding result: an optional refusal reason plus bounded receipt notes. */
+interface BoardCaptureResult {
+    refusal?: string;
+    notes: string[];
+}
+
+/**
+ * Bind the launching attempt to its run workspace through the shared `captureRun` seam (task 0391,
+ * legacy capture authorization model): revocation of a previous owner's marker, the trust check of
+ * the workspace against this project's works root, and the record/marker write — all while the
+ * launch lock is held and BEFORE the running receipt or the child spawn, so a workspace is never
+ * mutated by a run the Board cannot bind.
+ *
+ * `kk-publish` owns no run workspace and is never captured. An unsafe capture identity (an
+ * article slug outside the capture alphabet, say) SKIPS the binding with a receipt note rather
+ * than refusing a launch the verb itself admitted. A refused revocation or a workspace-shape
+ * throw REFUSES the launch (exit 5) before any mutation; the optional record write after a
+ * successful revocation only warns (the capture seam's own contract) and never blocks.
+ */
+async function captureForLaunch(
+    capture: (input: RunCaptureInput) => Promise<CaptureOutcome>,
+    options: LaunchWorkflowOptions,
+    runId: string,
+    vars: Record<string, string>,
+): Promise<BoardCaptureResult> {
+    if (!WORKFLOW_NAMES.includes(options.workflow as WorkflowName)) return { notes: [] };
+    if (!isSafeRunId(runId) || !isSafeStamp(options.run)) {
+        return {
+            notes: [`board capture skipped: run id or stamp is outside the capture alphabet for run '${runId}'`],
+        };
+    }
+    // The settings snapshot is the launch's effective vars intersected with the workflow's
+    // allowlist — never free text. A var whose value the capture rule rejects (a duration spelled
+    // oddly, say) is simply not snapshotted; the reader reports the gap via `unavailableKeys`.
+    const settings: Record<string, string> = {};
+    for (const key of allowlistedKeys(options.workflow as WorkflowName)) {
+        const value = vars[key];
+        if (value === undefined) continue;
+        try {
+            const parsed = parseSetting(options.workflow as WorkflowName, `${key}=${value}`);
+            if (parsed !== null) settings[parsed.key] = parsed.value;
+        } catch {
+            // not snapshot-able under the capture rules — skip the key, keep launching
+        }
+    }
+    try {
+        const outcome = await capture({
+            workflow: options.workflow as WorkflowName,
+            runId,
+            workDir: options.workDir,
+            stamp: options.run,
+            settings,
+        });
+        const notes = outcome.diagnostics.map((diagnostic) => `board capture: ${diagnostic.message}`);
+        if (!outcome.captured) {
+            notes.push('board capture: the attempt record was not written; the Board serves it uncaptured');
+        }
+        return { notes };
+    } catch (error) {
+        return { refusal: `board capture refused: ${errorText(error)}`, notes: [] };
+    }
+}
+
+/**
+ * Launch one workflow attempt end-to-end (design §3): preflight, store lock, board capture
+ * binding, spawn of `spur workflow run` and the running/terminal receipt. A refusal before spawn
+ * still writes a `refused` receipt — except a held lock, where the holder's receipt stays
+ * byte-identical; lock release runs in `finally` even when a cleanup step throws.
+ */
 export async function launchWorkflow(options: LaunchWorkflowOptions): Promise<LaunchReceipt> {
     const deps: LaunchDeps = { ...createLaunchDeps(), ...options.deps };
+    // Default capture binding files under this launch's works root — the same posture as
+    // `kk daily prepare`'s captureForBoard. An injected seam keeps every test hermetic.
+    const capture =
+        deps.capture ?? ((input: RunCaptureInput) => captureRun(input, { trustedWorksRoot: options.worksDir }));
     const now = deps.now();
     const startedAt = now.toISOString();
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -549,6 +633,26 @@ export async function launchWorkflow(options: LaunchWorkflowOptions): Promise<La
             return refused;
         }
         for (const warning of refusal.warnings) consoleOutput.error(`  ~ ${warning}`);
+
+        // Board capture binding (task 0391) runs while the lock is held, before the running
+        // receipt: a refused binding refuses the launch before anything is written; notes ride
+        // the terminal receipt.
+        const bound = await captureForLaunch(capture, options, runId, vars);
+        if (bound.refusal !== undefined) {
+            // Same fold as the terminal receipt: refusal first, any earlier note after it.
+            const refused: LaunchReceipt = {
+                ...base,
+                status: 'refused',
+                exitCode: 5,
+                finishedAt: deps.now().toISOString(),
+                reason: [bound.refusal, ...notes].filter((part) => part !== undefined).join('; '),
+            };
+            await writeReceipt(deps.fs, receiptPath, refused);
+            consoleOutput.error(`${options.workflow} ${options.run} launch refused run ${runId}`);
+            consoleOutput.error(`  ! ${bound.refusal}`);
+            return refused;
+        }
+        notes.push(...bound.notes);
 
         await writeReceipt(deps.fs, receiptPath, { ...base, status: 'running', exitCode: 1 });
 

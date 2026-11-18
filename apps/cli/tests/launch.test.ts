@@ -22,9 +22,10 @@
  *  16. done without bundle — a green generate that froze no bundle recycles: nothing could settle it.
  */
 import { describe, expect, it } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import type { RunCaptureInput } from '@gobing-ai/kk-board/contracts';
 import {
     createNodeFileSystem,
     type FileSystem,
@@ -32,6 +33,7 @@ import {
     type ProcessOptions,
     type ProcessResult,
 } from '@gobing-ai/ts-runtime';
+import type { CaptureOutcome } from '../src/board/capture';
 import { createLaunchDeps, type LaunchDeps, type LaunchReceipt, launchWorkflow } from '../src/launch';
 import { silenceOutput } from './capture';
 
@@ -59,6 +61,8 @@ interface Harness {
     events: string[];
     /** Whether the signal handler was still installed each time the harness fired a signal. */
     handlerLive: boolean[];
+    /** Board capture inputs the hermetic default seam saw (0391). */
+    captures: RunCaptureInput[];
     workflowRuns(): Call[];
     fire(signal: 'SIGINT' | 'SIGTERM'): void;
     restore(): void;
@@ -96,6 +100,7 @@ function harness(options: HarnessOptions = {}): Harness {
     const ledgers: string[] = [];
     const events: string[] = [];
     const handlerLive: boolean[] = [];
+    const captures: RunCaptureInput[] = [];
     let handler: ((signal: 'SIGINT' | 'SIGTERM') => void) | undefined;
     const fireNow = (): void => {
         handlerLive.push(handler !== undefined);
@@ -166,10 +171,16 @@ function harness(options: HarnessOptions = {}): Harness {
             if (options.fireDuring === 'ledger') fireNow();
         },
         installRoot: async () => options.installRoot ?? null,
+        // 0391: the capture seam stays hermetic like every other dep — a launch binds nothing real.
+        capture: async (input) => {
+            captures.push(input);
+            return { revoked: false, captured: true, record: null, diagnostics: [] };
+        },
     };
     return {
         deps,
         calls,
+        captures,
         locks,
         releases,
         recycled,
@@ -762,6 +773,219 @@ describe('launchWorkflow — publish owns no store rows (0365 R5, design §3.2)'
             expect(readReceipt(join(space.workDir, '4-publish', 'schedule-receipt.cn-peak.json')).window).toBe(
                 'cn-peak',
             );
+        } finally {
+            stub.restore();
+        }
+    });
+});
+
+/** The Board capture binding (0391): the happy capture outcome a bound attempt produces. */
+function okCapture(record = true): CaptureOutcome {
+    return {
+        revoked: false,
+        captured: record,
+        record: record
+            ? {
+                  schemaVersion: 1,
+                  projectPath: '/proj',
+                  workflow: 'kk-news-generate',
+                  runId: 'run-1',
+                  workspacePath: '/proj/.works/kk-news-generate/20260101',
+                  stamp: '20260101',
+                  capturedAt: '2026-11-13T20:00:00.000Z',
+                  settings: {},
+              }
+            : null,
+        diagnostics: [],
+    };
+}
+
+/** A publish-verb scratch: `kk-publish` owns no run workspace and is never captured (R15 posture). */
+function publishScratch() {
+    const root = mkdtempSync(join(tmpdir(), 'kk-launch-pub-'));
+    const workDir = join(root, 'works', 'kk-publish', 'manual');
+    const workflowPath = join(root, 'workflows', 'kk-publish.yaml');
+    mkdirSync(workDir, { recursive: true });
+    mkdirSync(dirname(workflowPath), { recursive: true });
+    writeFileSync(workflowPath, 'name: kk-publish\n');
+    return { root, workDir, workflowPath, receiptPath: join(workDir, 'schedule-receipt.json') };
+}
+
+describe('launchWorkflow — board capture binding (0391)', () => {
+    it('binds the attempt under the lock, before the running receipt and the child', async () => {
+        const space = scratch();
+        const stub = harness();
+        const inputs: RunCaptureInput[] = [];
+        let childRunsAtCapture = -1;
+        const capture = async (input: RunCaptureInput): Promise<CaptureOutcome> => {
+            inputs.push(input);
+            childRunsAtCapture = stub.workflowRuns().length;
+            return okCapture();
+        };
+        try {
+            const receipt = await launchWorkflow({ ...baseOptions(space), deps: { ...stub.deps, capture } });
+            expect(receipt.exitCode).toBe(0);
+            expect(inputs).toHaveLength(1);
+            expect(inputs[0]).toMatchObject({
+                workflow: 'kk-news-generate',
+                runId: receipt.runId,
+                stamp: '20260101',
+                workDir: space.workDir,
+            });
+            // The binding happened while the child had not yet spawned (lock -> capture -> receipt -> child).
+            expect(childRunsAtCapture).toBe(0);
+            expect(stub.workflowRuns()).toHaveLength(1);
+        } finally {
+            stub.restore();
+        }
+    });
+
+    it('snapshots only the workflow allowlist from the effective launch vars', async () => {
+        const space = scratch();
+        const stub = harness();
+        const inputs: RunCaptureInput[] = [];
+        const capture = async (input: RunCaptureInput): Promise<CaptureOutcome> => {
+            inputs.push(input);
+            return okCapture();
+        };
+        try {
+            await launchWorkflow({
+                ...baseOptions(space),
+                vars: { skip_review: 'true', language: 'zh', transcode_mp3: 'maybe', bogus: 'nope' },
+                deps: { ...stub.deps, capture },
+            });
+            expect(inputs).toHaveLength(1);
+            // `work_dir`/`run_date`/`run_id`/`bogus` are never snapshot-able; an invalid value
+            // (`transcode_mp3: 'maybe'`) is skipped, not fatal.
+            expect(inputs[0]?.settings).toEqual({ skip_review: 'true', language: 'zh' });
+        } finally {
+            stub.restore();
+        }
+    });
+
+    it('stays effect-free on a dry run', async () => {
+        const space = scratch();
+        const stub = harness();
+        const capture = async (): Promise<CaptureOutcome> => {
+            throw new Error('capture must not run on a dry run');
+        };
+        try {
+            const receipt = await launchWorkflow({
+                ...baseOptions(space),
+                dryRun: true,
+                deps: { ...stub.deps, capture },
+            });
+            expect(receipt.dryRun).toBeDefined();
+            expect(existsSync(space.receiptPath)).toBe(false);
+            expect(stub.workflowRuns()).toHaveLength(0);
+        } finally {
+            stub.restore();
+        }
+    });
+
+    it('stays effect-free on a preflight refusal', async () => {
+        const space = scratch();
+        const stub = harness({
+            reply: (call) => {
+                if (call.args.join(' ').includes('agent run')) return { exitCode: 1, stderr: 'quota exhausted' };
+                return defaultReply(call);
+            },
+        });
+        const capture = async (): Promise<CaptureOutcome> => {
+            throw new Error('capture must not run behind a refused preflight');
+        };
+        try {
+            const receipt = await launchWorkflow({ ...baseOptions(space), deps: { ...stub.deps, capture } });
+            expect(receipt.exitCode).toBe(5);
+            expect(receipt.status).toBe('refused');
+            expect(existsSync(space.receiptPath)).toBe(true); // the refusal receipt itself, nothing else
+            expect(stub.workflowRuns()).toHaveLength(0);
+        } finally {
+            stub.restore();
+        }
+    });
+
+    it('refuses the launch before the child when capture refuses', async () => {
+        const space = scratch();
+        const stub = harness();
+        const capture = async (): Promise<CaptureOutcome> => {
+            throw new Error('workspace marker refuses revocation');
+        };
+        try {
+            const receipt = await launchWorkflow({ ...baseOptions(space), deps: { ...stub.deps, capture } });
+            expect(receipt.exitCode).toBe(5);
+            expect(receipt.status).toBe('refused');
+            expect(receipt.reason).toContain('board capture refused');
+            expect(receipt.reason).toContain('refuses revocation');
+            expect(readReceipt(space.receiptPath).status).toBe('refused');
+            expect(stub.workflowRuns()).toHaveLength(0);
+            expect(stub.releases).toHaveLength(1);
+        } finally {
+            stub.restore();
+        }
+    });
+
+    it('skips the binding with a receipt note for an unsafe capture identity, still launching', async () => {
+        const space = scratch();
+        const stub = harness();
+        const capture = async (): Promise<CaptureOutcome> => {
+            throw new Error('an unsafe identity must skip, not call the seam');
+        };
+        try {
+            const receipt = await launchWorkflow({
+                ...baseOptions(space),
+                runId: '../evil',
+                deps: { ...stub.deps, capture },
+            });
+            expect(receipt.exitCode).toBe(0);
+            expect(receipt.reason).toContain('board capture skipped');
+            expect(receipt.reason).toContain('outside the capture alphabet');
+            expect(stub.workflowRuns()).toHaveLength(1);
+        } finally {
+            stub.restore();
+        }
+    });
+
+    it('never captures a publish launch', async () => {
+        const space = publishScratch();
+        const stub = harness();
+        const capture = async (): Promise<CaptureOutcome> => {
+            throw new Error('kk-publish is not a Board workflow and must never be captured');
+        };
+        try {
+            const receipt = await launchWorkflow({
+                type: 'publish',
+                workflow: 'kk-publish',
+                workflowPath: space.workflowPath,
+                run: 'manual',
+                workDir: space.workDir,
+                worksDir: join(space.root, 'works'),
+                harnessRoot: space.root,
+                allowDirty: true,
+                identityVar: null,
+                deps: { ...stub.deps, capture },
+            });
+            expect(receipt.exitCode).toBe(0);
+            expect(stub.workflowRuns()).toHaveLength(1);
+        } finally {
+            stub.restore();
+        }
+    });
+
+    it('rides capture diagnostics and the uncaptured note on the terminal receipt', async () => {
+        const space = scratch();
+        const stub = harness();
+        const capture = async (): Promise<CaptureOutcome> => ({
+            revoked: true,
+            captured: false,
+            record: null,
+            diagnostics: [{ code: 'board.capture.record-write-failed', message: 'the record write failed' }],
+        });
+        try {
+            const receipt = await launchWorkflow({ ...baseOptions(space), deps: { ...stub.deps, capture } });
+            expect(receipt.exitCode).toBe(0);
+            expect(receipt.reason).toContain('board capture: the record write failed');
+            expect(receipt.reason).toContain('the Board serves it uncaptured');
         } finally {
             stub.restore();
         }

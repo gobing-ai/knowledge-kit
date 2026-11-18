@@ -5,6 +5,7 @@ import type {
     RunResults,
     WorkflowName,
 } from '@gobing-ai/kk-board/contracts';
+import type { FileSystem } from '@gobing-ai/ts-runtime';
 import {
     type ArtifactSpec,
     artifactsFor,
@@ -12,6 +13,7 @@ import {
     type MarkerState,
     type ProducerState,
     resolveAvailability,
+    resolveWithin,
 } from './manifest';
 
 /**
@@ -238,4 +240,61 @@ function parseJsonArray(raw: string): unknown[] | null {
     } catch {
         return null;
     }
+}
+
+/**
+ * The largest text/json body the reader will load into memory for one artifact (§9). The artifacts
+ * route streams ranges above this cap; the results projection simply reports `too-large`.
+ */
+export const MAX_PREVIEW_BYTES = 1024 * 1024;
+
+/** `fs.realPath` throws for a missing path; a missing path is simply not canonical. */
+export function safeRealPath(fs: FileSystem, path: string): string | null {
+    try {
+        return fs.realPath?.(path) ?? path;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * The workspace-read core every Board projection shares (§9): a fixed, manifest-derived relative
+ * path is resolved inside the workspace (never traversal), canonicalized twice around the read so
+ * a symlink swapped in mid-flight is an escaping read rather than a hit, and text/json bodies are
+ * bounded to {@link MAX_PREVIEW_BYTES} with a post-read size check that discards a file whose size
+ * changed while it was being read. Ownership is the CALLER's re-verification, not this function's.
+ */
+export async function observeRelative(
+    fs: FileSystem,
+    workspacePath: string,
+    relative: string,
+    kind: ArtifactSpec['kind'],
+): Promise<ArtifactObservation> {
+    const target = resolveWithin(workspacePath, relative);
+    if (target === null) return { state: 'absent' };
+    const canonicalRoot = safeRealPath(fs, workspacePath);
+    const canonical = safeRealPath(fs, target);
+    // A symlink inside the workspace pointing outside it is an escaping read, never a hit.
+    if (canonicalRoot === null || canonical === null) return { state: 'absent' };
+    if (canonical !== canonicalRoot && !canonical.startsWith(`${canonicalRoot}/`)) return { state: 'absent' };
+    // Re-resolve immediately before the read: a symlink swapped in since the check above is
+    // still an escaping read, never a hit (§9 no-follow containment).
+    if (safeRealPath(fs, target) !== canonical) return { state: 'absent' };
+    if (!(await fs.exists(target))) return { state: 'absent' };
+    const stat = await fs.stat(target);
+    if (stat === null || !stat.isFile()) return { state: 'absent' };
+    if (kind === 'text' || kind === 'json') {
+        if (stat.size > MAX_PREVIEW_BYTES) return { state: 'too-large', bytes: stat.size };
+        try {
+            const text = await fs.readFile(target);
+            // Enforce the cap on the bytes actually read: a file that changed size mid-read is
+            // a swapped/partially-written artifact, never a clean hit.
+            const after = await fs.stat(target);
+            if (after === null || after.size !== stat.size) return { state: 'unreadable', bytes: stat.size };
+            return { state: 'present', bytes: stat.size, text, path: canonical };
+        } catch {
+            return { state: 'unreadable', bytes: stat.size };
+        }
+    }
+    return { state: 'present', bytes: stat.size, path: canonical };
 }

@@ -9,7 +9,15 @@ import type {
 import { ITEM_DECISION_IDS } from '@gobing-ai/kk-store';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { captureRecordPath, markerPath, readCaptureRecord, readOwnerMarker } from './capture';
-import { type ArtifactObservation, isTerminalStatus, projectCollectResults, type RunDetailSummary } from './collect';
+import {
+    type ArtifactObservation,
+    isTerminalStatus,
+    MAX_PREVIEW_BYTES,
+    observeRelative,
+    projectCollectResults,
+    type RunDetailSummary,
+    safeRealPath,
+} from './collect';
 import {
     type CollectStoreItemsQuery,
     type CollectStoreSelectionsQuery,
@@ -30,10 +38,10 @@ import {
     type MarkerState,
     type ProducerState,
     resolveAvailability,
-    resolveWithin,
     WORKFLOW_NAMES,
     workflowFamily,
 } from './manifest';
+import { projectNewsResults } from './news';
 
 /**
  * The read-only loopback Board reader.
@@ -47,7 +55,7 @@ import {
 export const DEFAULT_BOARD_PORT = 4340;
 
 /** Text/JSON preview cap (§4): larger evidence is reported `oversized`, never truncated silently. */
-export const MAX_PREVIEW_BYTES = 1024 * 1024;
+export { MAX_PREVIEW_BYTES };
 
 /** Minimal fetch signature (satisfied by the platform `fetch`), injectable for tests. */
 export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
@@ -161,15 +169,6 @@ function stringField(value: unknown, key: string): string | null {
     if (typeof value !== 'object' || value === null) return null;
     const field = (value as Record<string, unknown>)[key];
     return typeof field === 'string' && field !== '' ? field : null;
-}
-
-/** `fs.realPath` throws for a missing path; a missing path is simply not canonical. */
-function safeRealPath(fs: FileSystem, path: string): string | null {
-    try {
-        return fs.realPath?.(path) ?? path;
-    } catch {
-        return null;
-    }
 }
 
 /** Read a detail/action field defensively from the versioned Board payload. */
@@ -368,33 +367,7 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
      */
     async function observe(record: RunCapture, spec: ArtifactSpec): Promise<ArtifactObservation> {
         const relative = expandPattern(spec.pattern, record.stamp);
-        const target = resolveWithin(record.workspacePath, relative);
-        if (target === null) return { state: 'absent' };
-        const canonicalRoot = safeRealPath(fs, record.workspacePath);
-        const canonical = safeRealPath(fs, target);
-        // A symlink inside the workspace pointing outside it is an escaping read, never a hit.
-        if (canonicalRoot === null || canonical === null) return { state: 'absent' };
-        if (canonical !== canonicalRoot && !canonical.startsWith(`${canonicalRoot}/`)) return { state: 'absent' };
-        // Re-resolve immediately before the read: a symlink swapped in since the check above is
-        // still an escaping read, never a hit (§9 no-follow containment).
-        if (safeRealPath(fs, target) !== canonical) return { state: 'absent' };
-        if (!(await fs.exists(target))) return { state: 'absent' };
-        const stat = await fs.stat(target);
-        if (stat === null || !stat.isFile()) return { state: 'absent' };
-        if (spec.kind === 'text' || spec.kind === 'json') {
-            if (stat.size > MAX_PREVIEW_BYTES) return { state: 'too-large', bytes: stat.size };
-            try {
-                const text = await fs.readFile(target);
-                // Enforce the cap on the bytes actually read: a file that changed size mid-read is
-                // a swapped/partially-written artifact, never a clean hit.
-                const after = await fs.stat(target);
-                if (after === null || after.size !== stat.size) return { state: 'unreadable', bytes: stat.size };
-                return { state: 'present', bytes: stat.size, text, path: canonical };
-            } catch {
-                return { state: 'unreadable', bytes: stat.size };
-            }
-        }
-        return { state: 'present', bytes: stat.size, path: canonical };
+        return observeRelative(fs, record.workspacePath, relative, spec.kind);
     }
 
     /**
@@ -452,6 +425,19 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         return { states, diagnostics: [], actions, progress };
     }
 
+    /**
+     * Producer evidence for one spec: recorded action keys come from the state projection; DAG
+     * producers resolve across the spec's own fallback chain (task 0391 — the news workflow's
+     * loud fallbacks write the SAME fixed file, so whichever node recorded success owns it).
+     */
+    function producerStateFor(
+        evidence: { states: Map<string, ProducerState>; actions: unknown[] },
+        spec: ArtifactSpec,
+    ): ProducerState {
+        if (spec.producerActionKey !== undefined) return evidence.states.get(spec.producerActionKey) ?? 'unknown';
+        return dagProducerState(evidence.actions, spec.producerNode, spec.producerFallbackNodes);
+    }
+
     /** The captured publish plan's text, or undefined when it is absent/unavailable (ITC). */
     async function planTextOf(record: RunCapture, specs: readonly ArtifactSpec[]): Promise<string | undefined> {
         const planSpec = specs.find((spec) => spec.id === 'publish-plan');
@@ -484,13 +470,22 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
             detail,
             marker,
             diagnostics: [...authorized.diagnostics, ...evidence.diagnostics],
-            producerOf: (spec: ArtifactSpec) =>
-                evidence.states.get(spec.producerActionKey ?? spec.producerNode) ?? 'unknown',
+            producerOf: (spec: ArtifactSpec) => producerStateFor(evidence, spec),
             observationOf: (spec: ArtifactSpec) => observations.get(spec.id),
         };
         // The DAG projection also consumes the run-detail action rows (node attempts + retries).
         let results: RunResults;
-        if (family === 'kk-daily-ai-voice2') {
+        if (workflow === 'kk-news-generate') {
+            // The current news DAG owns its projection (task 0391): the same fixed-artifact
+            // discipline, plus generation progress and per-window publish evidence read from the
+            // recorded workspace — always through the shared containment reader, never a path
+            // derived from plan/receipt content beyond a validated receipt id.
+            results = await projectNewsResults({
+                ...projection,
+                actions: evidence.actions,
+                readWorkspaceFile: (relative, kind) => observeRelative(fs, record.workspacePath, relative, kind),
+            });
+        } else if (family === 'kk-daily-ai-voice2') {
             results = projectDailyResults({ ...projection, actions: evidence.actions });
         } else if (family === 'kk-itc') {
             results = projectItcResults({ ...projection, resultSpecs, progress: evidence.progress });
@@ -519,6 +514,74 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         return { status: 200, body: config };
     }
 
+    /**
+     * The evidence envelope for one run (task 0391, read by the deliverables UI): authorization is
+     * the Spur run identity + project ownership (a capture record is NOT required), so attempts
+     * launched before capture binding still answer — with authorized Spur state only and an
+     * explicit uncaptured diagnostic explaining that fixed artifacts are unknown, never invented.
+     * Captured runs answer the full projection by reusing `resultsFor` verbatim.
+     */
+    async function evidenceFor(workflow: WorkflowName, runId: string): Promise<BoardResponse> {
+        const authorizedRun = await authorizeRun(workflow, runId);
+        if (!authorizedRun.ok) return authorizedRun.response;
+        const { detail } = authorizedRun;
+        const run = {
+            id: detail.id,
+            status: detail.status,
+            startedAt: detail.startedAt ?? null,
+            completedAt: detail.completedAt ?? null,
+        };
+        const record = await readCaptureRecord(fs, projectPath, runId);
+        if (record === null) {
+            // §9: a record that exists but does not parse is malformed stored evidence (422),
+            // never "no captured run" — mirror `authorize`'s distinction.
+            const present = await fs.exists(captureRecordPath(projectPath, runId));
+            if (present) {
+                return {
+                    status: 422,
+                    body: { code: 'board.capture.invalid', message: `Captured run '${runId}' is malformed.` },
+                };
+            }
+            return {
+                status: 200,
+                body: {
+                    schemaVersion: 1,
+                    workflow,
+                    runId,
+                    capture: null,
+                    run,
+                    results: null,
+                    diagnostics: [
+                        ...authorizedRun.diagnostics,
+                        {
+                            code: 'board.evidence.uncaptured',
+                            message: `Run '${runId}' has no Board capture record; only Spur-authorized run state is available and fixed artifacts stay unknown.`,
+                        },
+                    ],
+                },
+            };
+        }
+        const results = await resultsFor(workflow, runId);
+        if (results.status !== 200) return results;
+        return {
+            status: 200,
+            body: {
+                schemaVersion: 1,
+                workflow,
+                runId,
+                capture: {
+                    capturedAt: record.capturedAt,
+                    stamp: record.stamp,
+                    settings: record.settings,
+                    ...(record.definitionDigest === undefined ? {} : { definitionDigest: record.definitionDigest }),
+                },
+                run,
+                results: results.body,
+                diagnostics: [...authorizedRun.diagnostics],
+            },
+        };
+    }
+
     async function artifactFor(
         workflow: WorkflowName,
         runId: string,
@@ -540,7 +603,7 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         const observed = await observe(record, spec);
         const availability = resolveAvailability(
             markerBefore,
-            evidence.states.get(spec.producerActionKey ?? spec.producerNode) ?? 'unknown',
+            producerStateFor(evidence, spec),
             observed.state,
             isTerminalStatus(detail.status),
         );
@@ -741,7 +804,7 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
                         : await storeItemsFor(identified.runId, query.query);
                 return jsonResponse(response.body, response.status, cors);
             }
-            const match = /^\/api\/workflows\/([^/]+)\/runs\/([^/]+)\/(results|config)$/.exec(path);
+            const match = /^\/api\/workflows\/([^/]+)\/runs\/([^/]+)\/(results|config|evidence)$/.exec(path);
             const artifactMatch = /^\/api\/workflows\/([^/]+)\/runs\/([^/]+)\/artifacts\/([^/]+)$/.exec(path);
             // Query parsing moved AFTER matching: only the store routes declare parameters, every
             // shipped route keeps refusing them (§3 / R8).
@@ -755,7 +818,9 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
                 const response =
                     verb === 'results'
                         ? await resultsFor(identified.workflow, identified.runId)
-                        : await configFor(identified.workflow, identified.runId);
+                        : verb === 'config'
+                          ? await configFor(identified.workflow, identified.runId)
+                          : await evidenceFor(identified.workflow, identified.runId);
                 return jsonResponse(response.body, response.status, cors);
             }
             if (artifactMatch !== null) {

@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore } from '@gobing-ai/kk-store';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
-import { captureRun, markerPath } from '../../src/board/capture';
+import { captureRecordPath, captureRun, markerPath } from '../../src/board/capture';
 import type { ArtifactObservation } from '../../src/board/collect';
 import {
     artifactContent,
@@ -837,5 +837,134 @@ describe('collect channels route (0319 R3/R4/R6)', () => {
             400,
         );
         expect((await fetch(`${reader}/api/workflows/kk-itc/store/channels?from=0&until=1`)).status).toBe(404);
+    });
+});
+
+/** The fake Board for one DAG run (news or voice2): project identity + run-detail action rows. */
+function startDagBoard(projectPath: string, runId: string, workflowName: string, actions: unknown[] = []) {
+    const state = { projectPath, run: { id: runId, workflowName, status: 'done' }, actions };
+    const server = Bun.serve({
+        hostname: '127.0.0.1',
+        port: 0,
+        fetch(request) {
+            const url = new URL(request.url);
+            if (url.pathname === '/api/project') return json({ name: 'proj', path: state.projectPath });
+            if (url.pathname === `/api/runs/${runId}`)
+                return json({ run: state.run, phases: [], transitions: [], actions: state.actions });
+            if (url.pathname === `/api/runs/${runId}/progress`)
+                return json({ code: 'RUN_NOT_FOUND', message: 'orphan-row' }, 404);
+            return json({ error: 'unknown' }, 404);
+        },
+    });
+    servers.push(server);
+    return { origin: `http://127.0.0.1:${server.port}`, state };
+}
+
+/** A captured kk-news-generate project with one gate verdict on the news layout. */
+async function seededNewsProject(): Promise<{ root: string; workDir: string }> {
+    const root = tempDir('kk-board-news-');
+    const workDir = join(root, '.works', 'kk-news-generate', '20261117');
+    mkdirSync(workDir, { recursive: true });
+    writeFileSync(join(workDir, 'pool-gate.json'), JSON.stringify({ status: 'PASS' }));
+    await captureRun(
+        {
+            workflow: 'kk-news-generate',
+            runId: 'run-news',
+            workDir,
+            stamp: '20261117',
+            settings: { skip_review: 'true' },
+        },
+        { projectPath: root },
+    );
+    return { root, workDir };
+}
+
+describe('run evidence envelope (0391)', () => {
+    interface EvidenceJson {
+        schemaVersion: number;
+        workflow: string;
+        runId: string;
+        capture: { stamp: string; settings: Record<string, string> } | null;
+        run: { id: string; status: string } | null;
+        results: { summary: Record<string, unknown> } | null;
+        diagnostics: { code: string }[];
+    }
+
+    it('serves a captured run: capture metadata, authorized run state and the full projection', async () => {
+        const { root } = await seededProject();
+        const board = startFakeBoard(root);
+        const reader = startReader(board.origin, root);
+        const response = await fetch(`${reader}/api/workflows/kk-collect/runs/run-1/evidence`);
+        expect(response.status).toBe(200);
+        const body = (await response.json()) as EvidenceJson;
+        expect(body.schemaVersion).toBe(1);
+        expect(body.capture).toMatchObject({ stamp: STAMP, settings: { limit: '10' } });
+        expect(body.run).toMatchObject({ id: 'run-1', status: 'done' });
+        expect(body.results?.summary).toMatchObject({ verdict: 'PASS' });
+    });
+
+    it('answers an authorized uncaptured attempt with Spur state only and the uncaptured diagnostic', async () => {
+        const root = tempDir('kk-board-uncaptured-');
+        const board = startFakeBoard(root); // run-1 is Board-authorized but never captured
+        const reader = startReader(board.origin, root);
+        const response = await fetch(`${reader}/api/workflows/kk-collect/runs/run-1/evidence`);
+        expect(response.status).toBe(200);
+        const body = (await response.json()) as EvidenceJson;
+        expect(body.capture).toBeNull();
+        expect(body.results).toBeNull();
+        expect(body.run).toMatchObject({ id: 'run-1' });
+        expect(body.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(['board.evidence.uncaptured']);
+    });
+
+    it('answers a malformed capture record with 422, never 200', async () => {
+        const root = tempDir('kk-board-invalid-');
+        mkdirSync(join(root, '.works', '.board', 'runs'), { recursive: true });
+        writeFileSync(captureRecordPath(root, 'run-1'), 'not json {');
+        const board = startFakeBoard(root);
+        const reader = startReader(board.origin, root);
+        const response = await fetch(`${reader}/api/workflows/kk-collect/runs/run-1/evidence`);
+        expect(response.status).toBe(422);
+        expect(await errorCode(response)).toBe('board.capture.invalid');
+    });
+
+    it('serves the news projection and news artifact ids on the existing routes', async () => {
+        const { root } = await seededNewsProject();
+        const board = startDagBoard(root, 'run-news', 'kk-news-generate', [
+            { id: 'prepare-1', node: 'prepare', status: 'passed', ok: true, durationMs: 900 },
+        ]);
+        const reader = startReader(board.origin, root);
+        const results = await getJson(`${reader}/api/workflows/kk-news-generate/runs/run-news/results`);
+        expect(results.summary.generation).toBeDefined();
+        expect(results.summary.publishing).toBeDefined();
+        expect(results.artifacts.find((artifact: { id: string }) => artifact.id === 'pool-gate')).toMatchObject({
+            availability: 'available',
+        });
+        const gate = await fetch(`${reader}/api/workflows/kk-news-generate/runs/run-news/artifacts/pool-gate`);
+        expect(gate.status).toBe(200);
+        // The gate verdict serves its sanitized projection (status only), never the raw body.
+        expect(((await gate.json()) as { projection: unknown }).projection).toEqual({ status: 'PASS' });
+        const evidence = (await getJson(
+            `${reader}/api/workflows/kk-news-generate/runs/run-news/evidence`,
+        )) as unknown as EvidenceJson;
+        expect(evidence.capture).toMatchObject({ stamp: '20261117', settings: { skip_review: 'true' } });
+        expect(evidence.results).not.toBeNull();
+        const newsSummary = (evidence.results as { summary: Record<string, unknown> }).summary;
+        expect(newsSummary.generation).toBeDefined();
+    });
+
+    it('keeps the legacy voice2 results route on the daily projection', async () => {
+        const root = tempDir('kk-board-voice2-');
+        const workDir = join(root, '.works', 'kk-daily-ai-voice2', '20261011');
+        mkdirSync(workDir, { recursive: true });
+        await captureRun(
+            { workflow: 'kk-daily-ai-voice2', runId: 'run-voice', workDir, stamp: '20261011', settings: {} },
+            { projectPath: root },
+        );
+        const board = startDagBoard(root, 'run-voice', 'kk-daily-ai-voice2');
+        const reader = startReader(board.origin, root);
+        const results = await getJson(`${reader}/api/workflows/kk-daily-ai-voice2/runs/run-voice/results`);
+        expect('generation' in results.summary).toBe(false);
+        expect(Array.isArray(results.summary.channels)).toBe(true);
+        expect(results.summary.outcome).toBeNull();
     });
 });
