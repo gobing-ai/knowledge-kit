@@ -22,8 +22,16 @@ const SCRIPT = join(import.meta.dir, '..', 'seed-worktree-coverage.ts');
 let root = '';
 let source = '';
 
+/**
+ * Every fixture git call carries its own identity. A clone does not inherit the source repo's local
+ * `user.*`, and CI has no global identity — so setting it once in the source tree left the clone's
+ * commit to git's auto-detection, which on a runner yields "empty ident name" (run 44202377540).
+ */
 function git(cwd: string, ...args: string[]): string {
-    return execFileSync('git', ['-C', cwd, ...args], { stdio: 'pipe', encoding: 'utf8' });
+    return execFileSync('git', ['-c', 'user.name=test', '-c', 'user.email=test@example.com', '-C', cwd, ...args], {
+        stdio: 'pipe',
+        encoding: 'utf8',
+    });
 }
 
 /** A commit every target clones, so HEADs compare equal by construction. */
@@ -33,8 +41,6 @@ function makeSource(): string {
     writeFileSync(join(tree, 'apps', 'cli', 'src', 'a.ts'), 'export const a = 1;\n');
     git(tree, 'init', '-q');
     git(tree, 'add', '.');
-    git(tree, 'config', 'user.email', 'test@example.com');
-    git(tree, 'config', 'user.name', 'test');
     git(tree, 'commit', '-qm', 'init');
     return tree;
 }
