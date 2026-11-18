@@ -11,7 +11,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { COVER_HEIGHT, COVER_WIDTH, compositeCover } from './cover-compositor';
+import { COVER_HEIGHT, COVER_WIDTH, compositeCover, writeCoverPreviews } from './cover-compositor';
 
 interface MockOptions {
     headline: string;
@@ -19,7 +19,16 @@ interface MockOptions {
     out: string;
     provider: string;
     mockBg: boolean;
+    /** 0387 R1: when set, the inspectable crop/reference previews are written into this directory. */
+    previews: string;
 }
+
+/**
+ * 0387 R1 — the checked-in TRANSPARENT emblem used as the reference for the blend previews. The
+ * operator's banner is absent on the build machine, so verification fuses this fixture and the
+ * real reference comparison stays a separate operator check (never a fabricated banner).
+ */
+export const REFERENCE_LOGO_FIXTURE = join(import.meta.dir, '../tests/fixtures/alpha-logo.svg');
 
 const MOCK_BG_SVG = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${COVER_WIDTH}" height="${COVER_HEIGHT}" viewBox="0 0 ${COVER_WIDTH} ${COVER_HEIGHT}">
@@ -49,6 +58,7 @@ function parseMockArgs(args: string[]): MockOptions {
             out: { type: 'string', default: '/tmp/kk-cover-mock.png' },
             provider: { type: 'string', default: '' },
             'mock-bg': { type: 'boolean', default: false },
+            previews: { type: 'string', default: '' },
         },
         strict: true,
     });
@@ -58,6 +68,7 @@ function parseMockArgs(args: string[]): MockOptions {
         out: resolve(values.out ?? ''),
         provider: values.provider ?? '',
         mockBg: values['mock-bg'] ?? false,
+        previews: values.previews ?? '',
     };
 }
 
@@ -123,7 +134,13 @@ function verifyOutput(outPath: string): { width: number; height: number } {
     return { width, height };
 }
 
-export function runMock(args: string[]): { out: string; width: number; height: number; background: string } {
+export function runMock(args: string[]): {
+    out: string;
+    width: number;
+    height: number;
+    background: string;
+    previewDir: string;
+} {
     const options = parseMockArgs(args);
     const parent = dirname(options.out);
     if (!existsSync(parent)) {
@@ -149,10 +166,30 @@ export function runMock(args: string[]): { out: string; width: number; height: n
             outputPath: options.out,
         });
         const { width, height } = verifyOutput(options.out);
+        // 0387 R1: the crop previews + reference blend are the verification artifacts — rendered
+        // from the SAME composite path, into an inspectable directory the operator can open.
+        if (options.previews !== '') {
+            const manifest = writeCoverPreviews({
+                backgroundImagePath: background,
+                headline: options.headline,
+                outputPath: options.out,
+                previewDir: options.previews,
+                referenceLogoPath: REFERENCE_LOGO_FIXTURE,
+            });
+            console.error(
+                `daily-cover-mock: previews ${manifest.coverPath} crops=${manifest.crops.map((crop) => `${crop.platform}:${crop.rect.width}x${crop.rect.height}`).join(',')} blend=${manifest.referenceBlendPath}`,
+            );
+        }
         console.error(
             `daily-cover-mock: composited ${options.out} (${width}x${height}, background=${options.mockBg ? 'mock' : options.provider || 'default'})`,
         );
-        return { out: options.out, width, height, background: options.mockBg ? 'mock' : 'live' };
+        return {
+            out: options.out,
+            width,
+            height,
+            background: options.mockBg ? 'mock' : 'live',
+            previewDir: options.previews === '' ? '' : resolve(options.previews),
+        };
     } finally {
         rmSync(tmp, { recursive: true, force: true });
     }

@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -36,6 +36,41 @@ describe('daily-cover-mock runner (0349 R2/R3)', () => {
             expect(existsSync(out)).toBe(true);
             const probe = spawnSync('sips', ['-g', 'pixelWidth', '-g', 'pixelHeight', out], { encoding: 'utf-8' });
             expect(probe.stdout).toContain('pixelWidth: 1344');
+            expect(probe.stdout).toContain('pixelHeight: 576');
+        });
+    });
+
+    itMacOnly('writes the 0387 crop + reference previews when --previews is given', () => {
+        withTempDir((dir) => {
+            const out = join(dir, 'mock-out.png');
+            const previews = join(dir, 'previews');
+            const result = runMock([
+                '--mock-bg',
+                '--headline',
+                '重大突破：下一代AI深度推理时代正式开启',
+                '--out',
+                out,
+                '--previews',
+                previews,
+            ]);
+            expect(result.status).toBe(0);
+            expect(result.stderr).toContain('previews');
+            for (const name of ['cover-full.png', 'crop-wechat-mp.png', 'crop-podcast-site.png']) {
+                expect(existsSync(join(previews, name))).toBe(true);
+            }
+            expect(existsSync(join(previews, 'cover-reference.png'))).toBe(true);
+            expect(existsSync(join(previews, 'reference-logo-blend.png'))).toBe(true);
+            const manifest = JSON.parse(readFileSync(join(previews, 'manifest.json'), 'utf-8'));
+            expect(manifest.crops).toHaveLength(2);
+            expect(manifest.referenceLogoPath).toContain('alpha-logo.svg');
+            const probe = spawnSync(
+                'sips',
+                ['-g', 'pixelWidth', '-g', 'pixelHeight', join(previews, 'crop-podcast-site.png')],
+                {
+                    encoding: 'utf-8',
+                },
+            );
+            expect(probe.stdout).toContain('pixelWidth: 576');
             expect(probe.stdout).toContain('pixelHeight: 576');
         });
     });

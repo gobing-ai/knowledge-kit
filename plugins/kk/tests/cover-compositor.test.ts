@@ -9,7 +9,9 @@ import {
     COVER_HEIGHT,
     COVER_WIDTH,
     compositeCover,
+    layoutHeadline,
     logoBadgeSvg,
+    logoRect,
     wrapHeadline,
 } from '../scripts/cover-compositor';
 
@@ -19,6 +21,8 @@ import {
  * platform-neutral (ubuntu has no sips and Bun reports the missing binary the same way).
  */
 const HEADLINE = '量子芯片算力暴涨千倍？';
+/** The shipped emblem, resolved from this file so the badge probes do not depend on cwd. */
+const SHIPPED_LOGO = join(import.meta.dir, '../../../assets/general/xhxs.svg');
 
 const PNG_BYTES = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
@@ -79,7 +83,7 @@ describe('wrapHeadline', () => {
 
 describe('logoBadgeSvg', () => {
     it('inlines the real emblem re-clipped to viewBox 0 0 1095 760 at the badge geometry', () => {
-        const badge = logoBadgeSvg('assets/general/xhxs.svg', 48, 40, 72, 50);
+        const badge = logoBadgeSvg(SHIPPED_LOGO, 48, 40, 72, 50);
         expect(badge).toContain('viewBox="0 0 1095 760"');
         expect(badge).toContain('x="48" y="40" width="72" height="50"');
         expect(badge).toContain('<path d="M0.25 0.25');
@@ -118,10 +122,16 @@ describe('buildCoverSvg', () => {
         expect(svg).toContain('DAILY AI PODCAST');
     });
 
-    it('draws each headline line twice — dark offset behind the visible line — without a filter', () => {
-        const svg = buildCoverSvg({ ...base, headline: `${HEADLINE}\n全球科技巨头底层暗战打响！` });
-        expect(svg).toContain(`y="475"`);
-        expect(svg).toContain(`y="535"`);
+    it('draws each headline row twice — dark offset behind the visible line — without a filter', () => {
+        const headline = `${HEADLINE}\n全球科技巨头底层暗战打响！`;
+        const svg = buildCoverSvg({ ...base, headline });
+        const layout = layoutHeadline(headline);
+        expect(layout.rows.length).toBeGreaterThan(1);
+        for (const row of layout.rows) {
+            // visible line + its 3px dark offset, both centered on the canvas midline (0387 R1)
+            expect(svg).toContain(`y="${row.y}" text-anchor="middle"`);
+            expect(svg).toContain(`y="${row.y + 3}" text-anchor="middle"`);
+        }
         expect(svg.match(/DAILY AI PODCAST/g) ?? []).toHaveLength(1);
     });
 
@@ -138,13 +148,18 @@ describe('buildCoverSvg', () => {
         expect(svg).not.toContain('file://');
     });
 
-    it('styles a single headline white 46px and a second line signal yellow 32px', () => {
+    it('styles the first row white/heavy and every later row signal yellow', () => {
         const single = buildCoverSvg(base);
-        expect(single).toContain('font-size="46" font-weight="800" fill="#FFFFFF"');
+        const singleLayout = layoutHeadline(HEADLINE);
+        expect(singleLayout.rows).toHaveLength(1);
+        expect(single).toContain(`font-size="${singleLayout.rows[0].size}" font-weight="800" fill="#FFFFFF"`);
         expect(single).not.toContain('#FFB800');
 
-        const two = buildCoverSvg({ ...base, headline: `${HEADLINE}\n全球科技巨头底层暗战打响！` });
-        expect(two).toContain('font-size="32" font-weight="700" fill="#FFB800"');
+        const headline = `${HEADLINE}\n全球科技巨头底层暗战打响！`;
+        const two = buildCoverSvg({ ...base, headline });
+        for (const row of layoutHeadline(headline).rows.slice(1)) {
+            expect(two).toContain(`font-size="${row.size}" font-weight="700" fill="#FFB800"`);
+        }
     });
 
     it('XML-escapes model-authored headline text', () => {
@@ -156,6 +171,15 @@ describe('buildCoverSvg', () => {
     it('renders without the badge when the logo asset is absent', () => {
         const svg = buildCoverSvg({ ...base, logoPath: '/nonexistent/xhxs.svg' });
         expect(svg).not.toContain('viewBox="0 0 1095 760"');
+    });
+
+    it('places the scaled-down emblem in the top-right corner with no opaque plate (0387 R1)', () => {
+        const svg = buildCoverSvg({ ...base, logoPath: SHIPPED_LOGO });
+        const badge = logoRect();
+        expect(svg).toContain(`x="${badge.x}" y="${badge.y}" width="${badge.width}" height="${badge.height}"`);
+        expect(badge.x + badge.width).toBeLessThanOrEqual(COVER_WIDTH - badge.y);
+        // transparency: the old `<rect ... fill-opacity="0.7">` badge plate is gone
+        expect(svg).not.toContain('fill-opacity="0.7"');
     });
 });
 
