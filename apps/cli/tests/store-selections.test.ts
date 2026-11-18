@@ -177,6 +177,16 @@ function selectionRowOf(dbPath: string, sql: string): Record<string, unknown> | 
     }
 }
 
+/** One raw write against a fixture database (never a production store). */
+function writeRaw(dbPath: string, sql: string, params: readonly (string | number)[] = []): void {
+    const raw = new Database(dbPath);
+    try {
+        raw.query(sql).run(...params);
+    } finally {
+        raw.close();
+    }
+}
+
 /** The story id the ingest pass clustered onto one item. */
 function storyOf(dbPath: string, id: string): string | null {
     const raw = new Database(dbPath, { readonly: true });
@@ -845,5 +855,236 @@ describe('kk daily prepare — the release hint (R7)', () => {
         const result = await prepare(dir, dbPath);
         expect(result.code).toBe(0);
         expect(result.err).toBe('');
+    });
+});
+
+/**
+ * Task 0393 — series-scoped selection continuity across a story re-clustering.
+ *
+ * ## Failure-first list — written before the code
+ *
+ * 1. A selection records `story_id` BY VALUE at reservation time (`store select` →
+ *    `item.storyId`). The items pass can re-derive that identity later (`kk store backfill-facts`,
+ *    or a `store.story.threshold` retune), which orphans the reservation: the item selected or
+ *    published for the series is then its OWN story root, the ledger no longer joins on
+ *    `story_id`, and the aired item re-enters that series' pool (R15 violation).
+ * 2. The fix must not weaken the other guarantees: another series keeps its reuse, a story
+ *    sibling stays excluded while the identity still joins, a `dropped` reservation still
+ *    re-admits, `published` stays protected, and replay is deterministic (no writes on read).
+ */
+describe('series-scoped selection continuity across re-clustering (0393 R15)', () => {
+    /** Two titles one event: Jaccard ≈ 0.83, so they share a story at the 0.6 default. */
+    const T1 = 'OpenAI ships GPT-5 model';
+    const T2 = 'OpenAI ships GPT-5 model today';
+
+    /** Re-run the causal clustering pass, as an operator retune of `store.story.threshold` does. */
+    async function recluster(dbPath: string, threshold: number): Promise<number> {
+        const store = await openStore({ path: dbPath });
+        try {
+            return await store.items.backfillFacts({ threshold, windowHours: 72 });
+        } finally {
+            await store.close();
+        }
+    }
+
+    /** Seed one story reported twice, clustered at the default threshold. */
+    async function seedStory(dbPath: string): Promise<{ first: string; second: string }> {
+        await seed(dbPath, [
+            { doc: doc('s-1', T1), category: 'ai-news' },
+            { doc: doc('s-2', T2), category: 'ai-news' },
+        ]);
+        return { first: sid('s-1'), second: sid('s-2') };
+    }
+
+    async function selectDocs(
+        dir: string,
+        dbPath: string,
+        runId: string,
+        docs: readonly Doc[],
+        topic = 'ai-news',
+    ): Promise<void> {
+        const path = writeCandidates(dir, `${runId}-${topic}.json`, docs);
+        const result = await run([
+            'store',
+            'select',
+            '--topic',
+            topic,
+            '--workflow',
+            'kk-daily-ai-voice2',
+            '--run',
+            runId,
+            '--in',
+            path,
+            '--db',
+            dbPath,
+        ]);
+        expect(result.code).toBe(0);
+    }
+
+    it('keeps a selected item out of its series pool after the story identity is re-derived', async () => {
+        const dir = tempDir('kk-0393-drift-');
+        const dbPath = join(dir, 'drift.db');
+        const story = await seedStory(dbPath);
+        // One event, one story: the second report clusters onto the first.
+        expect(storyOf(dbPath, story.second)).toBe(story.first);
+
+        await selectDocs(dir, dbPath, 'run-1', [doc('s-2', T2)]);
+        expect(selectionRow(dbPath, story.second, 'run-1')).toMatchObject({
+            story_id: story.first,
+            status: 'selected',
+        });
+        // Before the re-clustering, both items are out of the pool (story-scoped, AC2).
+        expect(await extractIds(dbPath, join(dir, 'before.json'))).toEqual([]);
+
+        // The operator retunes the threshold; the second report no longer matches the first.
+        expect(await recluster(dbPath, 0.95)).toBeGreaterThan(0);
+        expect(storyOf(dbPath, story.second)).toBe(story.second);
+
+        // R15: the item the series already committed to must NOT re-enter its pool, even though its
+        // story id moved (item identity holds it out; the recorded story key still holds its
+        // sibling). Before 0393 the re-rooted item came back as the whole pool.
+        expect(await extractIds(dbPath, join(dir, 'after.json'))).toEqual([]);
+    });
+
+    it('keeps a published item protected after the story identity is re-derived', async () => {
+        const dir = tempDir('kk-0393-published-');
+        const dbPath = join(dir, 'published.db');
+        const story = await seedStory(dbPath);
+        await selectDocs(dir, dbPath, 'run-air', [doc('s-2', T2)]);
+        const promoted = await run([
+            'store',
+            'mark-published',
+            '--topic',
+            'ai-news',
+            '--run',
+            'run-air',
+            '--db',
+            dbPath,
+        ]);
+        expect(JSON.parse(promoted.out)).toEqual({ published: 1 });
+
+        await recluster(dbPath, 0.95);
+        expect(storyOf(dbPath, story.second)).toBe(story.second);
+
+        // An aired item never silently re-admits, and `release` still refuses to free it.
+        expect(await extractIds(dbPath, join(dir, 'after.json'))).toEqual([]);
+        expect(JSON.parse((await run(['store', 'release', '--run', 'run-air', '--db', dbPath])).out)).toEqual({
+            released: 0,
+        });
+        expect(selectionRow(dbPath, story.second, 'run-air')?.status).toBe('published');
+    });
+
+    it('keeps an aired item out of the pool when a headline correction re-clusters it onto a story', async () => {
+        // A materially updated event (the Q&A's "correction" case): the item keeps its own story key
+        // until the item is edited, then the causal pass re-clusters it onto an earlier story. The
+        // selection's recorded story key then matches NO item, so only item identity keeps the aired
+        // item out of the series pool.
+        const dir = tempDir('kk-0393-correction-');
+        const dbPath = join(dir, 'correction.db');
+        await seed(dbPath, [
+            { doc: doc('c-1', 'Chip funding round closes'), category: 'ai-news' },
+            { doc: doc('c-2', 'Robot factory opens in Osaka'), category: 'ai-news' },
+        ]);
+        const earlier = sid('c-1');
+        const aired = sid('c-2');
+        // Pin the causal order: the causal pass walks `first_seen_at, id`, and the fixture ids are
+        // hashes, so the story's earlier report must actually be earlier.
+        writeRaw(dbPath, 'UPDATE items SET first_seen_at = first_seen_at - 3600000 WHERE id = ?', [earlier]);
+        expect(storyOf(dbPath, aired)).toBe(aired);
+
+        await selectDocs(dir, dbPath, 'run-1', [doc('c-2', 'Robot factory opens in Osaka')]);
+        expect(selectionRow(dbPath, aired, 'run-1')?.story_id).toBe(aired);
+        expect(await extractIds(dbPath, join(dir, 'before.json'))).toEqual([earlier]);
+
+        // The outlet corrects the headline; the stored item is updated, then re-clustered.
+        const store = await openStore({ path: dbPath });
+        try {
+            await store.items.upsertDocs('run-update', [doc('c-2', 'Chip funding round closes today')], Date.now());
+            // A content change invalidates the label observations, so re-label before the next pool:
+            // the item must fall out of the pool because the LEDGER excludes it, not because the
+            // profile's `where` join dropped it.
+            const contentHash = (await store.items.findById(aired))?.contentHash ?? null;
+            for (const [decisionId, value] of [
+                ['kk-item-category', 'ai-news'],
+                ['kk-item-quality', '4'],
+                ['kk-item-importance', '4'],
+                ['kk-item-urgency', '3'],
+                ['kk-item-impact', '3'],
+                ['kk-item-china-politics', '0'],
+            ] as const) {
+                await store.labels.recordObservation({
+                    itemId: aired,
+                    decisionId,
+                    value,
+                    maker: 'heuristic',
+                    source: 'heuristic',
+                    runId: 'run-update',
+                    contentHash,
+                });
+            }
+            await store.items.backfillFacts({ threshold: 0.6, windowHours: 72 });
+        } finally {
+            await store.close();
+        }
+        expect(storyOf(dbPath, aired)).toBe(earlier);
+
+        // The aired item stays out; the story's never-aired sibling is free to run.
+        expect(await extractIds(dbPath, join(dir, 'after.json'))).toEqual([earlier]);
+    });
+
+    it('keeps the series reusable by another topic and by a dropped reservation after a re-clustering', async () => {
+        const dir = tempDir('kk-0393-reuse-');
+        const dbPath = join(dir, 'reuse.db');
+        const story = await seedStory(dbPath);
+        await selectDocs(dir, dbPath, 'run-1', [doc('s-2', T2)]);
+        await recluster(dbPath, 0.95);
+
+        // Another series' selection of the same item is a different ledger row.
+        await selectDocs(dir, dbPath, 'run-research', [doc('s-2', T2)], 'ai-research');
+        expect(selectionRowOf(dbPath, `SELECT status FROM selections WHERE run_id = 'run-research'`)).toEqual({
+            status: 'selected',
+        });
+
+        // Releasing the ai-news reservation returns the item to THAT series' pool only.
+        expect(
+            JSON.parse((await run(['store', 'release', '--run', 'run-1', '--topic', 'ai-news', '--db', dbPath])).out),
+        ).toEqual({ released: 1 });
+        expect(await extractIds(dbPath, join(dir, 'after.json'))).toEqual([story.first, story.second]);
+    });
+
+    it('replays the same ledger read deterministically, writing nothing', async () => {
+        const dir = tempDir('kk-0393-replay-');
+        const dbPath = join(dir, 'replay.db');
+        const story = await seedStory(dbPath);
+        await selectDocs(dir, dbPath, 'run-1', [doc('s-2', T2)]);
+        await recluster(dbPath, 0.95);
+
+        const first = await run([
+            'store',
+            'extract',
+            '--topic',
+            'ai-news',
+            '--db',
+            dbPath,
+            '--out',
+            join(dir, 'r1.json'),
+        ]);
+        const rowsBefore = countRows(dbPath, 'selections');
+        const second = await run([
+            'store',
+            'extract',
+            '--topic',
+            'ai-news',
+            '--db',
+            dbPath,
+            '--out',
+            join(dir, 'r2.json'),
+        ]);
+
+        expect(first.code).toBe(0);
+        expect(second.code).toBe(0);
+        expect(pool(join(dir, 'r1.json'))).toEqual(pool(join(dir, 'r2.json')));
+        expect(countRows(dbPath, 'selections')).toBe(rowsBefore);
+        expect(selectionRow(dbPath, story.second, 'run-1')?.story_id).toBe(story.first);
     });
 });

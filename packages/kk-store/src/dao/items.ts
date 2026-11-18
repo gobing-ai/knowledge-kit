@@ -502,8 +502,16 @@ export class ItemsDao extends EntityDao<typeof items, typeof items.id> {
             // Story-scoped, topic-scoped exclusion (task 0228): an item selected or published for
             // `excludeTopic` is out of the pool, and one story shared by several items excludes them
             // all. `dropped` selections are free to re-enter.
+            //
+            // Item identity is matched BESIDE the story key (0393 R15): a selection records the
+            // `story_id` it saw, and the clustering pass re-derives that key later (`kk store
+            // backfill-facts`, or a `store.story.threshold` retune). A re-rooted item then no longer
+            // joins its own row and would re-enter the series pool — so an item the series already
+            // committed to is excluded on its own id regardless of where the story key moved, while
+            // a never-selected sibling stays eligible.
             conditions.push(
-                `NOT EXISTS (SELECT 1 FROM selections s WHERE s.topic = ? AND s.story_id = i.story_id ` +
+                `NOT EXISTS (SELECT 1 FROM selections s WHERE s.topic = ? AND ` +
+                    `(s.item_id = i.id OR s.story_id = i.story_id) ` +
                     `AND s.status IN ('selected', 'published'))`,
             );
             params.push(query.excludeTopic);
