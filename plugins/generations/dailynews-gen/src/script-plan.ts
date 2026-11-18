@@ -23,11 +23,33 @@ export interface ScriptPlanSocial {
     long: string;
 }
 
+/**
+ * The cover slot has two legal forms (0347 R4, widened by 0385 R4):
+ *  - a plain string = the English visual scene (the pre-0347 shape), unchanged;
+ *  - an object = `{ scene?, headline, sourceIds? }`, where `headline` is the Chinese 当日要点 the
+ *    episode identity freezes (0385 R4) and `sourceIds` names the plan items the point rests on,
+ *    so admission dropping them can withhold the point instead of publishing it unsupported.
+ */
+export interface ScriptPlanCoverObject {
+    /** English visual scene for image generation (≤ `caps.cover`); optional so a point-only cover validates. */
+    scene?: string;
+    /** The frozen 当日要点 — the one point the title and the cover share (≤ `caps.coverHeadline`). */
+    headline: string;
+    /** Plan item ids the headline rests on; withheld when admission drops every one of them. */
+    sourceIds?: string[];
+}
+
+export type ScriptPlanCover = string | ScriptPlanCoverObject;
+
 export interface ScriptPlan {
     version: 1;
     intro: string;
     outro: string;
-    items: { id: string; lead: string; insight: string; card?: ScriptPlanItemCard }[];
+    /**
+     * `insight` is optional (0385 R3): a comment-free item is legal, and an empty string means the
+     * same thing as omission — the builder skips the insight sentence, never the item.
+     */
+    items: { id: string; lead: string; insight?: string; card?: ScriptPlanItemCard }[];
     /**
      * Docs deliberately not spoken (topic-boundary exclusions, task 0189). An id here is
      * exempt from `missing-item`; listing an id in both `items` and `excluded` is a
@@ -35,7 +57,7 @@ export interface ScriptPlan {
      */
     excluded?: { id: string; reason: string }[];
     /** Optional master-artifact fields rendered deterministically by `daily-editorial-render` (0345 R10). */
-    cover?: string;
+    cover?: ScriptPlanCover;
     cards?: ScriptPlanCards;
     social?: ScriptPlanSocial;
 }
@@ -51,6 +73,7 @@ export interface StyleContract {
         lead: number;
         insight: number;
         cover?: number;
+        coverHeadline?: number;
         cardCopy?: number;
         cardTitle?: number;
         socialShort?: number;
@@ -74,15 +97,28 @@ const ScriptPlanItemCardSchema = z.object({
 });
 
 /**
- * Empty spoken text is a shape error (`schema`), not a cap/banned case: an empty intro or insight
- * would normalize to a bare 「。」 segment, which no valid episode contains.
+ * `insight` is optional (0385 R3): the contract lets an item carry no comment, so omitting it — or
+ * sending `""` — must validate. A blank insight is skipped by the builder (no bare 「。」 segment)
+ * and by the editorial render (the item still renders, only the comment sentence is dropped).
  */
 const ScriptPlanItemSchema = z.object({
     id: z.string().min(1),
     lead: z.string().min(1),
-    insight: z.string().min(1),
+    insight: z.string().optional(),
     card: ScriptPlanItemCardSchema.optional(),
 });
+
+/**
+ * 0385 R4: the object form is what carries the episode's 当日要点, so the schema has to accept it —
+ * a string-only cover made the canonical `第<issue>期 · <headline>` title unreachable.
+ */
+const ScriptPlanCoverObjectSchema = z.object({
+    scene: z.string().min(1).optional(),
+    headline: z.string().min(1),
+    sourceIds: z.array(z.string().min(1)).optional(),
+});
+
+const ScriptPlanCoverSchema = z.union([z.string().min(1), ScriptPlanCoverObjectSchema]);
 
 const ScriptPlanExclusionSchema = z.object({
     id: z.string().min(1),
@@ -105,7 +141,7 @@ const ScriptPlanSchema = z.object({
     outro: z.string().min(1),
     items: z.array(ScriptPlanItemSchema),
     excluded: z.array(ScriptPlanExclusionSchema).optional(),
-    cover: z.string().min(1).optional(),
+    cover: ScriptPlanCoverSchema.optional(),
     cards: ScriptPlanCardsSchema.optional(),
     social: ScriptPlanSocialSchema.optional(),
 });
@@ -117,6 +153,7 @@ const StyleContractSchema = z.object({
         lead: z.number().int().positive(),
         insight: z.number().int().positive(),
         cover: z.number().int().positive().optional(),
+        coverHeadline: z.number().int().positive().optional(),
         cardCopy: z.number().int().positive().optional(),
         cardTitle: z.number().int().positive().optional(),
         socialShort: z.number().int().positive().optional(),
@@ -217,8 +254,17 @@ export function validateScriptPlan(
 
     if (valid.intro.length > style.caps.intro) errors.push({ itemId: 'episode', rule: 'cap:intro' });
     if (valid.outro.length > style.caps.outro) errors.push({ itemId: 'episode', rule: 'cap:outro' });
-    if (valid.cover !== undefined && valid.cover.length > (style.caps.cover ?? 240)) {
-        errors.push({ itemId: 'episode', rule: 'cap:cover' });
+    // 0385 R4: both cover forms are capped. The string form is one scene (the pre-0347 shape); the
+    // object form caps its scene at the same place and its 当日要点 at the (much tighter) headline cap.
+    if (typeof valid.cover === 'string') {
+        if (valid.cover.length > (style.caps.cover ?? 240)) errors.push({ itemId: 'episode', rule: 'cap:cover' });
+    } else if (valid.cover !== undefined) {
+        if (valid.cover.scene !== undefined && valid.cover.scene.length > (style.caps.cover ?? 240)) {
+            errors.push({ itemId: 'episode', rule: 'cap:cover' });
+        }
+        if (valid.cover.headline.length > (style.caps.coverHeadline ?? 25)) {
+            errors.push({ itemId: 'episode', rule: 'cap:coverHeadline' });
+        }
     }
     if (valid.cards !== undefined && valid.cards.title.length > (style.caps.cardTitle ?? 20)) {
         errors.push({ itemId: 'episode', rule: 'cap:cardTitle' });
@@ -233,7 +279,10 @@ export function validateScriptPlan(
     }
     for (const item of valid.items) {
         if (item.lead.length > style.caps.lead) errors.push({ itemId: item.id, rule: 'cap:lead' });
-        if (item.insight.length > style.caps.insight) errors.push({ itemId: item.id, rule: 'cap:insight' });
+        // 0385 R3: an omitted/blank insight is legal (the item still renders), so it has no cap,
+        // no banned-phrase and no duplicate rule to break.
+        const insight = item.insight?.trim() ?? '';
+        if (insight.length > style.caps.insight) errors.push({ itemId: item.id, rule: 'cap:insight' });
         if (item.card !== undefined && item.card.copy.length > (style.caps.cardCopy ?? 12)) {
             errors.push({ itemId: item.id, rule: 'cap:cardCopy' });
         }
@@ -241,7 +290,8 @@ export function validateScriptPlan(
         // unknown-id is already reported above; skip the redundancy check rather than double-report.
         if (
             doc !== undefined &&
-            redundantInsightClauses(item.insight, `${item.lead}${doc.body}`) >= REDUNDANT_INSIGHT_CLAUSE_LIMIT
+            insight !== '' &&
+            redundantInsightClauses(insight, `${item.lead}${doc.body}`) >= REDUNDANT_INSIGHT_CLAUSE_LIMIT
         ) {
             errors.push({ itemId: item.id, rule: 'redundant-insight' });
         }
@@ -250,7 +300,14 @@ export function validateScriptPlan(
     const fields: { itemId: string; text: string }[] = [
         { itemId: 'episode', text: valid.intro },
         { itemId: 'episode', text: valid.outro },
-        ...(valid.cover !== undefined ? [{ itemId: 'episode', text: valid.cover }] : []),
+        ...(typeof valid.cover === 'string'
+            ? [{ itemId: 'episode', text: valid.cover }]
+            : valid.cover !== undefined
+              ? [
+                    { itemId: 'episode', text: valid.cover.headline },
+                    ...(valid.cover.scene !== undefined ? [{ itemId: 'episode', text: valid.cover.scene }] : []),
+                ]
+              : []),
         ...(valid.cards !== undefined
             ? [
                   { itemId: 'episode', text: valid.cards.title },
@@ -265,7 +322,7 @@ export function validateScriptPlan(
             : []),
         ...valid.items.flatMap((item) => [
             { itemId: item.id, text: item.lead },
-            { itemId: item.id, text: item.insight },
+            ...((item.insight?.trim() ?? '') !== '' ? [{ itemId: item.id, text: item.insight as string }] : []),
             ...(item.card !== undefined
                 ? [
                       { itemId: item.id, text: item.card.copy },
@@ -280,10 +337,13 @@ export function validateScriptPlan(
         }
     }
 
+    // Two comment-free items are not "the same insight" — only real comment text can collide.
     const seenInsights = new Set<string>();
     for (const item of valid.items) {
-        if (seenInsights.has(item.insight)) errors.push({ itemId: item.id, rule: 'duplicate-insight' });
-        else seenInsights.add(item.insight);
+        const insight = item.insight?.trim() ?? '';
+        if (insight === '') continue;
+        if (seenInsights.has(insight)) errors.push({ itemId: item.id, rule: 'duplicate-insight' });
+        else seenInsights.add(insight);
     }
 
     return errors.length > 0 ? { ok: false, errors } : { ok: true, plan: valid };

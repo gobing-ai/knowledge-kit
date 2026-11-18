@@ -34,6 +34,7 @@ const coverCompositor = join(import.meta.dir, '../../../plugins/kk/scripts/cover
 const topicSelectionAttempts = join(import.meta.dir, '../../../plugins/kk/scripts/topic-selection-attempts.ts');
 const newsEditorialLedger = join(import.meta.dir, '../../../plugins/kk/scripts/news-editorial-ledger.ts');
 const sourceCitation = join(import.meta.dir, '../../../plugins/kk/scripts/source-citation.ts');
+const episodeIdentity = join(import.meta.dir, '../../../plugins/kk/scripts/episode-identity.ts');
 
 // A real 1x1 JPEG (generated once via `sips -s format jpeg` from a 1x1 png) so the jpg transcode
 // test exercises sips with data it can actually decode.
@@ -4508,6 +4509,7 @@ describe('F613 (0162) — script-write stage wiring', () => {
             copyFileSync(topicSelectionAttempts, join(dir, 'topic-selection-attempts.ts'));
             copyFileSync(newsEditorialLedger, join(dir, 'news-editorial-ledger.ts'));
             copyFileSync(sourceCitation, join(dir, 'source-citation.ts'));
+            copyFileSync(episodeIdentity, join(dir, 'episode-identity.ts'));
             const result = run(
                 ['daily-script-style', dir, '20260925'],
                 { HOME: dir, KK_WORKFLOWS_DIR: '' },
@@ -4884,11 +4886,40 @@ describe('F613 (0162) — script-write stage wiring', () => {
 
                 // Check cover brief (0347 R5: legacy string cover keeps subject, gains the
                 // lead-anchored headline fallback pair)
-                expect(JSON.parse(snap1.cover as string)).toEqual({
+                const cover = JSON.parse(snap1.cover as string) as {
+                    subject: string;
+                    headline: string;
+                    leadStoryTitle: string;
+                    episodeIdentity: {
+                        version: number;
+                        date: string;
+                        issue: string;
+                        headline: string | null;
+                        title: string | null;
+                        coverHeadline: string | null;
+                        supportingSourceIds: string[];
+                        status: string;
+                    };
+                };
+                expect(cover).toMatchObject({
                     subject:
                         'A sleek crystalline processor core splitting a beam of light into two parallel fiber channels',
                     headline: 'OpenAI 开源轻量推理引擎',
                     leadStoryTitle: 'OpenAI 开源轻量推理引擎',
+                });
+                // 0385 R4: the cover reuses the ONE frozen point and carries the episode identity, so a
+                // retry or a replay re-renders the same episode (`第<issue>期 · <point>`).
+                // This fixture's cover is a legacy STRING, so there is no 当日要点 to freeze: the
+                // identity records that honestly (`no-headline`, no headline/coverHeadline) and keeps
+                // the pre-0385 title, so a historical replay still re-renders what it shipped.
+                expect(cover.episodeIdentity).toMatchObject({
+                    version: 1,
+                    date: '20261108',
+                    issue: '261108',
+                    headline: null,
+                    coverHeadline: null,
+                    title: 'OpenAI 开源轻量推理引擎',
+                    status: 'no-headline',
                 });
 
                 // Check xhs_plan.json shape (cover + 2 content + closing = 4 cards)

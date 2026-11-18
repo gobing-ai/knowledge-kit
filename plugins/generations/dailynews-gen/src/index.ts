@@ -3,6 +3,7 @@ import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Doc, DocListSchema } from '@gobing-ai/kk-core';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
+import { analyzeEditorialClaims, type EditorialFinding } from './editorial-claims';
 import { buildNewsVoiceScript, formatVoiceScriptToYaml, type ScriptBuilderOptions } from './script-builder';
 import {
     parseStyleContract,
@@ -12,6 +13,7 @@ import {
     validateScriptPlan,
 } from './script-plan';
 
+export * from './editorial-claims';
 export * from './script-builder';
 export * from './script-plan';
 
@@ -25,6 +27,8 @@ interface ScriptPlanOutcome {
     scriptPlan?: ScriptPlan;
     scriptSource: 'plan' | 'template';
     scriptPlanErrors: ScriptPlanError[];
+    /** 0385 AC R2/R3 advisory findings — reported, never a rejection (see `editorial-claims.ts`). */
+    scriptPlanAdvisories: EditorialFinding[];
 }
 
 /**
@@ -37,12 +41,12 @@ interface ScriptPlanOutcome {
 async function resolveScriptPlan(fs: FileSystem, docs: Doc[]): Promise<ScriptPlanOutcome> {
     const planPath = process.env.DAILYNEWS_SCRIPT_PLAN;
     if (!planPath) {
-        return { scriptSource: 'template', scriptPlanErrors: [] };
+        return { scriptSource: 'template', scriptPlanErrors: [], scriptPlanAdvisories: [] };
     }
     const fallback = (errors: ScriptPlanError[]): ScriptPlanOutcome => {
         const reason = errors.map((error) => `${error.itemId}:${error.rule}`).join(', ');
         echoError(`dailynews-gen: script plan rejected, falling back to templates (${reason})`);
-        return { scriptSource: 'template', scriptPlanErrors: errors };
+        return { scriptSource: 'template', scriptPlanErrors: errors, scriptPlanAdvisories: [] };
     };
     if (!(await fs.exists(planPath))) {
         return fallback([{ itemId: 'episode', rule: 'missing-plan' }]);
@@ -85,7 +89,17 @@ async function resolveScriptPlan(fs: FileSystem, docs: Doc[]): Promise<ScriptPla
     if (!validated.ok) {
         return fallback(validated.errors);
     }
-    return { scriptPlan: validated.plan, scriptSource: 'plan', scriptPlanErrors: [] };
+    // 0385 AC R2/R3: the editorial findings ride alongside an ACCEPTED plan. They are stamped, not
+    // turned into rejections — a plan that validates today must keep validating.
+    const advisories = analyzeEditorialClaims(validated.plan);
+    if (advisories.length > 0) {
+        echoError(
+            `dailynews-gen: script plan accepted with ${advisories.length} advisory finding(s) (${advisories
+                .map((finding) => `${finding.itemId}:${finding.code}`)
+                .join(', ')})`,
+        );
+    }
+    return { scriptPlan: validated.plan, scriptSource: 'plan', scriptPlanErrors: [], scriptPlanAdvisories: advisories };
 }
 
 /**
@@ -148,7 +162,11 @@ export async function processGeneratorIO(
     const isZh = (options?.language || 'zh').toLowerCase() === 'zh';
     const planOutcome = isZh
         ? await resolveScriptPlan(fs, docs)
-        : { scriptSource: 'template' as const, scriptPlanErrors: [] as ScriptPlanError[] };
+        : {
+              scriptSource: 'template' as const,
+              scriptPlanErrors: [] as ScriptPlanError[],
+              scriptPlanAdvisories: [] as EditorialFinding[],
+          };
     // Topic boundary (task 0189): docs the plan declares excluded are not spoken, not counted,
     // and not referenced — title, storyCount, and references must match what is actually said.
     const excludedIds = new Set(planOutcome.scriptPlan?.excluded?.map((ex) => ex.id) ?? []);
@@ -183,6 +201,7 @@ export async function processGeneratorIO(
             })),
             scriptSource: planOutcome.scriptSource,
             scriptPlanErrors: planOutcome.scriptPlanErrors,
+            scriptPlanAdvisories: planOutcome.scriptPlanAdvisories,
         },
     };
 

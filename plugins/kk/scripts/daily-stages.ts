@@ -68,6 +68,12 @@ import {
 } from 'node:fs';
 import { basename, isAbsolute, join, resolve } from 'node:path';
 import {
+    EPISODE_IDENTITY_KEY,
+    type EpisodeIdentity,
+    freezeEpisodeIdentity,
+    identityFromMetadata,
+} from './episode-identity.ts';
+import {
     ADMISSION_CRITERIA,
     applyTopicBoundary,
     assertScriptContent,
@@ -707,6 +713,64 @@ export function dailyExtract(args: string[]): void {
     });
 }
 
+/**
+ * 0385 R4: the one frozen episode identity a bundle ships, read from the Content provenance first
+ * (a retry or a replay republishes what the episode already carried) and from the slot
+ * `daily-editorial-render` freezes second. `null` means "no identity recorded" — the caller leaves
+ * whatever title the artifact already has.
+ */
+function episodeIdentityFor(workDir: string, runDate: string, content: unknown): EpisodeIdentity | null {
+    return (
+        identityFromMetadata(metadataOf(content)) ??
+        identityFromMetadata({
+            [EPISODE_IDENTITY_KEY]: readJson(join(workDir, '21-plan', `${runDate}_05_script_identity.json`)),
+        })
+    );
+}
+
+/**
+ * 0385 R4: stamp the frozen title into one article Content — `title`, the H1 of the body, and the
+ * `metadata.episodeIdentity` record every later target reads. A withheld identity (`title: null`)
+ * leaves the Content untouched: there is no title to share, and inventing one is the bug.
+ *
+ * Both articles seams call this — `daily-article` after it derives (first run) and
+ * `daily-editorial-render` after the body is rewritten (retry) — so the stamp cannot be a no-op on
+ * one order and be wiped on the other.
+ */
+function stampEpisodeIdentity(articleContentPath: string, identity: EpisodeIdentity): boolean {
+    if (identity.title === null) return false;
+    const articleContent = readJson(articleContentPath);
+    if (articleContent === null) return false;
+    const priorBody = typeof articleContent.body === 'string' ? articleContent.body : '';
+    const body = priorBody.replace(/^#(?!#)[^\n]*/u, `# ${identity.title}`);
+    sted('write', articleContentPath, () =>
+        writeJsonText(articleContentPath, {
+            ...articleContent,
+            title: identity.title,
+            body,
+            metadata: { ...metadataOf(articleContent), [EPISODE_IDENTITY_KEY]: identity },
+        }),
+    );
+    return true;
+}
+
+/**
+ * 0385 R4: the article seam's one entry point — read the bundle's frozen identity for this run and
+ * stamp it into the article Content. `daily-article` calls it right after it derives the Content
+ * (first run) and after a `proseStale` re-derivation (retry), which is the only thing that keeps the
+ * stamp `daily-editorial-render` wrote from being wiped. Returns the identity it applied (or null).
+ */
+export function applyEpisodeIdentityToArticle(
+    workDir: string,
+    runDate: string,
+    articleContentPath: string,
+): EpisodeIdentity | null {
+    const identity = episodeIdentityFor(workDir, runDate, readJson(articleContentPath));
+    if (identity === null) return null;
+    stampEpisodeIdentity(articleContentPath, identity);
+    return identity;
+}
+
 export function dailyArticle(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = ''] = args;
     const articleMd = join(workDir, '22-article', `${runDate}_06_article_article.md`);
@@ -803,6 +867,11 @@ export function dailyArticle(args: string[]): void {
                 },
             },
         );
+        // 0385 R4: `generate-render` order is script → editorial-render → article → cover, so this
+        // is the FIRST seam where the Content exists; `daily-editorial-render`'s own stamp would be a
+        // no-op here. Stamping now — and re-stamping here after a `proseStale` re-derivation — is what
+        // keeps the article (surfdash) and the show notes on the same frozen title as podcast/ID3.
+        applyEpisodeIdentityToArticle(workDir, runDate, articleContent);
         const body = readJson(articleContent)?.body;
         if (typeof body !== 'string') failWith(1, `article: ${articleContent} has no string body`);
         sted('write', articleMd, () => writeRaw(articleMd, body));
@@ -2526,6 +2595,24 @@ export function dailyPublishPrep(args: string[]): void {
     const coverPath = join(workDir, '23-cover', `${runDate}_07_cover_cover.png`);
     timed(workDir, 'publish-prep', () => {
         const article = requireJson(articlePath, 'publish-prep');
+        // 0385 R4: the last seam before anything is dispatched is also the seam that proves the whole
+        // run shares ONE episode identity. It is read from the bundle's metadata first (a retry or a
+        // historical replay republishes the identity the episode already shipped), then from the slot
+        // `editorial-render` froze; a bundle that carries neither keeps the title it already has.
+        const identity =
+            identityFromMetadata(metadataOf(article)) ??
+            identityFromMetadata({
+                [EPISODE_IDENTITY_KEY]: readJson(join(workDir, '21-plan', `${runDate}_05_script_identity.json`)),
+            });
+        if (identity !== null && identity.status === 'support-removed') {
+            // The withhold path of R4: never publish a headline admission no longer backs, and never
+            // silently publish the legacy title in its place — a human has to regenerate the point.
+            failWith(
+                1,
+                `publish-prep: episode title withheld — admission dropped the headline's supporting source(s) (${identity.supportingSourceIds.join(', ')}); regenerate the headline from an admitted story before publishing`,
+            );
+        }
+        const episodeTitle = identity?.title ?? (typeof article.title === 'string' ? article.title : '');
         const audioMeta = metadataOf(readJson(audioPath));
         const rawFile = audioMeta.mp3Path ?? audioMeta.audioPath;
         if (typeof rawFile !== 'string' || rawFile === '') {
@@ -2537,7 +2624,7 @@ export function dailyPublishPrep(args: string[]): void {
         if (!audioFile.endsWith('.mp3')) {
             failWith(1, `publish-prep: resolved audio is not an MP3 (transcode_mp3 must be "true"): ${audioFile}`);
         }
-        stampId3Tags(audioFile, typeof article.title === 'string' ? article.title : '', runDate, artist, album);
+        stampId3Tags(audioFile, episodeTitle, runDate, artist, album);
         const resolvedCover = resolve(coverPath);
         const hasCover = existsSync(resolvedCover);
         // Daily-show itunes convention: season = year, episode = day-of-year. run_date arrives
@@ -2555,10 +2642,18 @@ export function dailyPublishPrep(args: string[]): void {
         // alone was silently dropped by the mapper — episodes published without a cover.
         const merged = {
             ...article,
+            // Every publish target (podcast, ID3, show notes, surfdash) reads this one title.
+            title: episodeTitle,
             metadata: {
                 ...metadataOf(article),
                 audioFile,
                 runDate,
+                ...(identity !== null
+                    ? {
+                          [EPISODE_IDENTITY_KEY]: identity,
+                          ...(identity.coverHeadline !== null ? { coverHeadline: identity.coverHeadline } : {}),
+                      }
+                    : {}),
                 ...(hasCover ? { coverImage: resolvedCover } : {}),
                 ...(episode > 0 ? { itunes: { season, episode } } : {}),
             },
@@ -4409,6 +4504,11 @@ export function dailyScriptStyle(args: string[]): void {
  * `24-script/<date>_08_script-write_errors.json` ([{itemId, rule}]) when the plan is absent or
  * rejected, and removes it when the plan is accepted. The trial build goes to a scratch path so the
  * `script` stage's isFile cache is never primed by a check.
+ *
+ * 0385 AC R2/R3: an ACCEPTED plan can still carry advisory editorial findings
+ * (`metadata.scriptPlanAdvisories` from the generator's `analyzeEditorialClaims`). Those are written
+ * to `24-script/<date>_08_script-write_advisories.json` and logged — a separate file, because the
+ * acceptance verdict they describe is not a rejection and must not trigger the fix pass.
  */
 export function dailyScriptCheck(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = ''] = args;
@@ -4441,7 +4541,19 @@ export function dailyScriptCheck(args: string[]): void {
         }
         if (source === 'plan') {
             if (isFile(errorsOut)) unlinkSync(errorsOut);
-            console.log('script plan accepted by the validator');
+            // 0385 AC R2/R3: the editorial findings are advisory — an accepted plan stays accepted,
+            // so they land in their own file and never re-open the fix loop that `errorsOut` drives.
+            const advisoriesOut = join(workDir, '24-script', `${runDate}_08_script-write_advisories.json`);
+            const advisories = Array.isArray(metadata.scriptPlanAdvisories) ? metadata.scriptPlanAdvisories : [];
+            if (advisories.length > 0) {
+                sted('write', advisoriesOut, () => writeJsonText(advisoriesOut, advisories));
+                console.log(
+                    `script plan accepted by the validator (${advisories.length} advisory finding(s)): ${advisoriesOut}`,
+                );
+            } else {
+                if (isFile(advisoriesOut)) unlinkSync(advisoriesOut);
+                console.log('script plan accepted by the validator');
+            }
             return;
         }
         writeErrors(Array.isArray(metadata.scriptPlanErrors) ? metadata.scriptPlanErrors : []);
@@ -4858,11 +4970,19 @@ export function dailyEditorialRender(args: string[]): void {
         const title = typeof doc?.title === 'string' ? doc.title.trim() : '';
         const body = typeof doc?.body === 'string' ? doc.body.trim() : '';
         const lead = typeof item?.lead === 'string' ? item.lead.trim() : '';
+        // 0385 R3: a comment-free item is legal, so a blank insight drops the comment sentence
+        // only — dropping the whole item would publish an episode the plan says to speak.
         const insight = typeof item?.insight === 'string' ? item.insight.trim() : '';
-        if (!title || !body || !lead || !insight) continue;
+        if (!title || !body || !lead) continue;
         const sourceUri = typeof doc?.sourceUri === 'string' ? doc.sourceUri.trim() : '';
         const sourceLine = sourceUri ? sourceLineForDoc(doc ?? {}, sourceUri) : '';
-        const parts = [`## ${title}`, lead, body, insight, ...(sourceLine ? [sourceLine] : [])];
+        const parts = [
+            `## ${title}`,
+            lead,
+            body,
+            ...(insight !== '' ? [insight] : []),
+            ...(sourceLine ? [sourceLine] : []),
+        ];
         articleSections.push(parts.join('\n\n'));
     }
     if (articleSections.length > 0 && outro !== '') {
@@ -4892,8 +5012,73 @@ export function dailyEditorialRender(args: string[]): void {
     const leadId = orderedIds[0];
     const leadDoc = leadId !== undefined ? docById.get(leadId) : undefined;
     const leadStoryTitle = typeof leadDoc?.title === 'string' ? leadDoc.title.trim() : '';
+    // 0385 R4: freeze ONE episode identity (run date + one point + the source ids the point rests
+    // on) for every publishing surface. The point is the script plan's cover headline and the cover
+    // reuses it verbatim, never a second wording. Two non-frozen outcomes are explicit: an existing
+    // frozen record wins (a retry or a historical replay keeps the identity the bundle shipped), and
+    // a point whose supporting sources admission dropped is WITHHELD — no title, no cover point, so
+    // nothing downstream can publish a headline the settled plan no longer backs.
+    const rawCoverSupport =
+        rawCover !== null && typeof rawCover === 'object' ? (rawCover as Record<string, unknown>).sourceIds : undefined;
+    // 0385 R4/P3: "admitted" means the episode actually covers the id — the plan docs MINUS the drop
+    // signals downstream already honours (the article boundary drop `metadata.excludedIds` and the
+    // script plan's own `excluded` list). Comparing against the raw plan set made the withhold
+    // guarantee structurally unreachable: the lead is always in the plan it came from.
+    const droppedIds = new Set<string>();
+    const articleMetaExcluded = metadataOf(
+        readJson(join(workDir, '22-article', `${runDate}_06_article_content.json`)),
+    )?.excludedIds;
+    if (Array.isArray(articleMetaExcluded)) {
+        for (const id of articleMetaExcluded) if (typeof id === 'string' && id !== '') droppedIds.add(id);
+    }
+    if (Array.isArray(master.excluded)) {
+        for (const entry of master.excluded as unknown[]) {
+            const id = entry !== null && typeof entry === 'object' ? (entry as { id?: unknown }).id : undefined;
+            if (typeof id === 'string' && id !== '') droppedIds.add(id);
+        }
+    }
+    const admittedSourceIds = [...docById.keys()].filter((id) => !droppedIds.has(id));
+    // The point's support is the cover's own `sourceIds` when the writer named them (the documented
+    // producer, 0385 R4), otherwise the admitted lead — the story the point is about.
+    const supportIds = Array.isArray(rawCoverSupport)
+        ? rawCoverSupport.filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+        : leadId !== undefined
+          ? [leadId]
+          : [];
+    const identityPath = join(workDir, '21-plan', `${runDate}_05_script_identity.json`);
+    const priorIdentity = identityFromMetadata({ [EPISODE_IDENTITY_KEY]: readJson(identityPath) });
+    const identity =
+        priorIdentity !== null && priorIdentity.status === 'frozen'
+            ? priorIdentity
+            : freezeEpisodeIdentity({
+                  date: runDate,
+                  headline: coverHeadline,
+                  supportingSourceIds: supportIds,
+                  admittedSourceIds,
+                  legacyTitle: leadStoryTitle,
+              });
+    if (priorIdentity === null || priorIdentity.status !== 'frozen') {
+        sted('mkdir', join(workDir, '21-plan'), () => mkdirSync(join(workDir, '21-plan'), { recursive: true }));
+        sted('write', identityPath, () => writeJsonText(identityPath, identity));
+    }
+    if (identity.status === 'frozen') {
+        console.log(`editorial-render: episode identity frozen: ${identity.title} (${identityPath})`);
+    } else if (identity.status === 'support-removed') {
+        // The point lost its support in admission: withhold it and its cover copy (never a fallback
+        // title here — the fallback below would smuggle back a point the plan no longer admits).
+        console.error(
+            `editorial-render: WITHHELD episode identity — admission dropped the headline's support (${identity.supportingSourceIds.join(', ')}); the title and the cover point are withheld (see ${identityPath})`,
+        );
+        coverHeadline = '';
+    }
+    // Every target reads the frozen title from the bundle, so the article Content (surfdash, ID3,
+    // show notes) carries the same one the podcast and the cover do. A withheld identity leaves the
+    // article title untouched: there is no title to share. On a first run the Content does not exist
+    // yet (this stage precedes `daily-article`) and the stamp is a no-op — `daily-article` re-applies
+    // it after it derives, so both orders converge on one title.
+    stampEpisodeIdentity(join(workDir, '22-article', `${runDate}_06_article_content.json`), identity);
     if (coverSubject !== '') {
-        if (coverHeadline === '' && leadStoryTitle !== '') {
+        if (coverHeadline === '' && leadStoryTitle !== '' && identity.status !== 'support-removed') {
             coverHeadline = leadStoryTitle;
         }
         const coverDir = join(workDir, '23-cover');
@@ -4902,8 +5087,11 @@ export function dailyEditorialRender(args: string[]): void {
         sted('write', coverOut, () =>
             writeJsonText(coverOut, {
                 subject: coverSubject,
-                headline: coverHeadline,
+                // The cover reuses the frozen point verbatim (0385 R4); `episodeIdentity` carries the
+                // title so a retry or a replay re-renders the same episode identity.
+                headline: identity.coverHeadline ?? coverHeadline,
                 leadStoryTitle,
+                episodeIdentity: identity,
             }),
         );
         console.log(`editorial-render: wrote cover brief: ${coverOut}`);

@@ -23,6 +23,10 @@ Every candidate `id` from `21-plan/<date>_04_quality-control-content_candidates.
 ## Order and balance
 
 1. Lead with the day's most consequential concrete news (urgency × impact), not the most technical item.
+   0385 R1 makes the audience explicit: urgency is *today's* news, and impact is measured on a white-collar
+   listener (product, ops, market, staff roles — not necessarily an engineer): what they can use, what it
+   costs, whether it changes how they work. Prefer the story a commuter can act on over the one only a model
+   engineer can appreciate; the deep technical story is the weekly's, not the daily's lead.
 2. Mix categories (industry, research, tools) instead of running three reddit technical threads in a row.
 3. Episode length comes from item count and complete facts, not from long commentary. The style contract
    gives the per-driver character rates. If kept items cannot reach the floor, keep more in-scope items rather

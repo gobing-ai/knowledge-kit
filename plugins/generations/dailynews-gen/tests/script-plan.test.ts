@@ -100,6 +100,9 @@ describe('F613 R1 — style contract sidecar', () => {
             lead: 80,
             insight: 380,
             cover: 240,
+            // 0385 R4: the contract has always shipped this cap; the validator now reads it (it caps
+            // the object cover's 当日要点, which the episode title is built from).
+            coverHeadline: 25,
             cardCopy: 12,
             cardTitle: 20,
             socialShort: 140,
@@ -778,5 +781,116 @@ describe('0345 R10 / AC7a — master script plan optional fields, caps and banne
                 ]),
             );
         }
+    });
+});
+
+/**
+ * 0385 R3/R4 — the plan schema is what the writer is held to, so the documented "insight optional"
+ * and "the cover carries the 当日要点" contracts have to be satisfiable through it. Both refusals used
+ * to reject the WHOLE plan (silent template fallback), which is the expensive failure mode.
+ */
+describe('0385 R3/R4 — optional insight and the object cover', () => {
+    const style = parseStyleContract(readFileSync(STYLE_SIDECAR, 'utf-8'));
+    const docs: Doc[] = [FIXTURE_DOC, ENERGY_DOC];
+    const schemaError: ScriptPlanValidation = { ok: false, errors: [{ itemId: 'episode', rule: 'schema' }] };
+    /** The second item, typed — `noUncheckedIndexedAccess` makes a bare index read possibly-undefined. */
+    const secondItem = (plan: ScriptPlan): ScriptPlan['items'][number] => plan.items[1] as ScriptPlan['items'][number];
+
+    it('accepts an item with no comment: omitted, empty and whitespace-only all validate (R3)', () => {
+        const omitted = twoDocPlan();
+        delete omitted.items[1]?.insight;
+        expect(omitAndValidate(omitted)).toBe(true);
+
+        const empty = twoDocPlan();
+        empty.items[1] = { ...secondItem(empty), insight: '' };
+        expect(omitAndValidate(empty)).toBe(true);
+
+        const blank = twoDocPlan();
+        blank.items[1] = { ...secondItem(blank), insight: '   ' };
+        expect(omitAndValidate(blank)).toBe(true);
+
+        // Two comment-free items are not "the same insight" — the plan still validates.
+        const bothSilent = twoDocPlan();
+        bothSilent.items[0] = { ...(bothSilent.items[0] as ScriptPlan['items'][number]), insight: '' };
+        bothSilent.items[1] = { ...secondItem(bothSilent), insight: '' };
+        expect(omitAndValidate(bothSilent)).toBe(true);
+
+        function omitAndValidate(plan: ScriptPlan): boolean {
+            return validateScriptPlan(plan, docs, style).ok;
+        }
+    });
+
+    it('speaks the item but no comment sentence when the plan insight is blank (R3)', () => {
+        const plan: ScriptPlan = {
+            version: 1,
+            intro: '今天我们把目光放在中美之间一场刚刚启动的AI安全会谈。',
+            outro: '从出口管制到通报机制，竞争与合作的天平如何摆动，值得持续关注。',
+            items: [{ id: '520246ce54c2a6e6', lead: '我们先从这场安全会谈说起。', insight: '   ' }],
+        };
+        const script = buildNewsVoiceScript([FIXTURE_DOC], {
+            date: new Date(2026, 8, 24),
+            language: 'zh',
+            voiceProfile: 'Robin',
+            scriptPlan: plan,
+        });
+        const texts = script.segments.map((segment) => segment.text);
+        // The item is still spoken, the canned template line never runs on the plan path, and no
+        // segment normalizes to a bare 「。」 (what an empty insight used to produce).
+        expect(texts.join('\n')).toContain('安全会谈');
+        expect(texts.join('\n')).not.toContain('硬件层承担的安全与算力责任');
+        expect(texts.some((text) => text.replace(/[\s。！？]/gu, '') === '')).toBe(false);
+    });
+
+    it('accepts the object cover that carries the point and keeps the legacy string form unchanged (R4)', () => {
+        const point: ScriptPlan = {
+            ...twoDocPlan(),
+            cover: { scene: 'A dimly lit server rack cooled by glowing pipes', headline: '开源模型许可收紧' },
+        };
+        const res = validateScriptPlan(point, docs, style);
+        expect(res.ok).toBe(true);
+        // The point survives validation verbatim — the renderer reads it from here.
+        if (res.ok) expect(res.plan.cover).toEqual(point.cover);
+
+        // A point-only cover validates too (the scene is optional).
+        const pointOnly: ScriptPlan = { ...twoDocPlan(), cover: { headline: '开源模型许可收紧' } };
+        expect(validateScriptPlan(pointOnly, docs, style).ok).toBe(true);
+
+        // …and the pre-0347 string form keeps its exact behavior: accepted, unchanged.
+        const legacy: ScriptPlan = {
+            ...twoDocPlan(),
+            cover: 'A dimly lit server rack cooled by glowing liquid pipes beside a conference table',
+        };
+        expect(validateScriptPlan(legacy, docs, style)).toEqual({ ok: true, plan: legacy });
+    });
+
+    it('rejects a cover that is neither a string nor an object with a headline (schema)', () => {
+        expect(validateScriptPlan({ ...twoDocPlan(), cover: { scene: 'a scene' } }, docs, style)).toEqual(schemaError);
+        expect(validateScriptPlan({ ...twoDocPlan(), cover: {} }, docs, style)).toEqual(schemaError);
+        expect(validateScriptPlan({ ...twoDocPlan(), cover: '' }, docs, style)).toEqual(schemaError);
+        expect(validateScriptPlan({ ...twoDocPlan(), cover: 42 }, docs, style)).toEqual(schemaError);
+    });
+
+    it('caps the object cover headline at coverHeadline and its scene at cover (cap:<field>)', () => {
+        expect(validateScriptPlan({ ...twoDocPlan(), cover: { headline: '开'.repeat(26) } }, docs, style)).toEqual({
+            ok: false,
+            errors: [{ itemId: 'episode', rule: 'cap:coverHeadline' }],
+        });
+        expect(
+            validateScriptPlan(
+                { ...twoDocPlan(), cover: { scene: 'x'.repeat(241), headline: '开源模型许可收紧' } },
+                docs,
+                style,
+            ),
+        ).toEqual({ ok: false, errors: [{ itemId: 'episode', rule: 'cap:cover' }] });
+        // Exactly at the cap is valid: the cap is a ceiling, not a target.
+        expect(validateScriptPlan({ ...twoDocPlan(), cover: { headline: '开'.repeat(25) } }, docs, style).ok).toBe(
+            true,
+        );
+    });
+
+    it('checks the object cover headline against the banned list', () => {
+        const res = validateScriptPlan({ ...twoDocPlan(), cover: { headline: '首先看这条' } }, docs, style);
+        expect(res.ok).toBe(false);
+        if (!res.ok) expect(res.errors).toEqual([{ itemId: 'episode', rule: 'banned:首先' }]);
     });
 });

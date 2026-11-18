@@ -428,9 +428,16 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
 
         const normalizedLead = normalizeBroadcastText(lead, isZh);
         const normalizedBody = cleanBody === '' ? '' : normalizeBroadcastText(cleanBody, isZh);
-        // F613: the plan insight is grounded in this item and always spoken; the keyword-bucket
-        // synthesizer (and its uniqueness set) only runs on the template path.
-        const insight = planItem?.insight ?? synthesizePersonalUnderstanding(cleanTitle, cleanBody, isZh, usedInsights);
+        // F613: the plan insight is spoken when it carries comment; 0385 R3 makes it optional, so a
+        // plan item with a blank insight speaks the item's facts and no comment sentence (never a
+        // bare 「。」 segment), and the keyword-bucket synthesizer only runs on the template path.
+        const plannedInsight = planItem?.insight?.trim() ?? '';
+        const insight =
+            planItem !== undefined
+                ? plannedInsight === ''
+                    ? null
+                    : plannedInsight
+                : synthesizePersonalUnderstanding(cleanTitle, cleanBody, isZh, usedInsights);
         const normalizedInsight = insight === null ? null : normalizeBroadcastText(insight, isZh);
 
         const factText = isZh ? `${normalizedLead}${normalizedBody}` : `${normalizedLead} ${normalizedBody}`;

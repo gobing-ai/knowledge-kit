@@ -41,9 +41,13 @@ Read `references/style-contract.zh.md` first. Its prose sets the column's identi
 opinion and technical detail. Its fenced `json` block holds the caps and banned phrases that the dailynews-gen
 validator enforces mechanically, so violating them means the plan is rejected.
 
-1. **News first.** Every item tells the listener who (company, lab, team) did what (released, open-sourced,
-   raised, sued, disclosed) and when. Commentary is restrained and anchored to that item; technical detail is
-   only the one or two sentences needed to understand it.
+1. **News first, for a white-collar listener (0385 R1).** Every item tells the listener who (company, lab,
+   team) did what (released, open-sourced, raised, sued, disclosed) and when. Order by timeliness and by impact
+   on a listener who is not an engineer — what they can use, what it costs, whether it changes how they work;
+   research detail and pure implementation news go last or get one sentence. Explain necessary jargon in a
+   plain clause ("也就是说……") before the term, never in a tutorial. The deep dive (full mechanism, tooling
+   comparison, systematic evaluation) belongs to the weekly, not to the daily. Commentary is restrained and
+   anchored to that item; technical detail is only the one or two sentences needed to understand it.
 2. **Topic boundary (选题边界, calibrated 2026-11-18 / task 0392).** Exclude an item only when `AI 产业` is not
    its mainline. Out of scope: (a) the confirmed platform hard line in `plugins/kk/scripts/topic-boundary.json`
    (the top-leadership rule and the future-dated check) — the deterministic stage already drops those, never
@@ -54,11 +58,16 @@ validator enforces mechanically, so violating them means the plan is rejected.
    company, lab, market and technical news. A public-policy story whose subject IS an AI system, model or vendor
    is in scope even though it reads as policy; only the story whose subject is the political actor is out.
    Record the exclusion with a Chinese reason naming the class from (a)-(c) and the sentence that shows it —
-   "感觉不合适" is not a reason. **Hand the revised policy to 0385** (the board's editorial projection); do not
-   implement 0385 here. Calibration samples live in `plugins/kk/tests/fixtures/topic-selection-cases.json`.
-3. **Fact discipline.** Every fact comes from that item's own plan content. Do not invent anything or borrow
-   from other items. Never inflate numbers or actors. Attribute a quote only to its original speaker. Keep
-   hedges (据报道 / 称 / 承诺). If the material is thin, write less.
+   "感觉不合适" is not a reason. (0385 applied this decision as the editorial projection; the policy below is
+   binding.) Calibration samples live in `plugins/kk/tests/fixtures/topic-selection-cases.json`.
+3. **Fact discipline (0385 R2).** Keep attributable fact, commentary and unverified inference visibly
+   separate in the copy, so a listener hears which sentence is which. Every fact comes from that item's own plan
+   content. Do not invent anything or borrow from other items. Never inflate numbers or actors. Attribute a
+   quote only to its original speaker, and attribute a commercial claim (funding amount, user count,
+   performance gain, compliance status) to the party that made it ("公司称") when nobody independent
+   corroborates it. Unverified inference has exactly two legal shapes — explicit attribution (据报道 / 当事人称 /
+   公司未证实) or omission. Keep hedges (据报道 / 称 / 承诺); never add scaffold hedges (读者宜另行核实 /
+   仍待验证) to look careful. If the material is thin, write less — omission is the default, not a softening.
 4. **Copy discipline.** Use reader-facing spoken Chinese. Do not use scaffold labels (可做角度 / 背景 /
    潜在影响) or hedge labels (读者宜另行核实 / 仍待验证), use 「」 for quotes, and never add a greeting,
    sign-off or AI-production footer. The builder adds those.
@@ -68,15 +77,30 @@ validator enforces mechanically, so violating them means the plan is rejected.
 Read the curated plan `Doc[]` (`--in`) and the curate exclusions (`--excluded`). For each doc in `--in`, write:
 
 - `lead`: one spoken bridge into the item (≤80 chars). It is not the title and not a rhetorical question.
-- `insight`: 2–4 sentences (≤380 chars) anchored to the doc's named actors, saying why it matters or what to watch. Never restate the doc's facts, numbers or phrasing (the listener has just heard them), give no generic advice or methodology, and add no new facts. The cap is a ceiling, not a target.
+- `insight` (optional; omitting it and writing `""` are the same thing — both validate, and the builder and the
+  renderer skip only the comment sentence, never the item): 2–4 sentences (≤380 chars) anchored to the doc's named actors, saying why it matters or what to watch. At most one sentence of commentary is required for a short item — leave the field as a single sentence, or omit the comment entirely when the item needs no judgement. Never restate the doc's facts, numbers or phrasing (the listener has just heard them), give no generic advice or methodology, and add no new facts. The cap is a ceiling, not a target.
 - `card`: optional per-item card slot `{ "copy": "≤12字标题", "points": ["要点1", "要点2"], "subject": "English visual scene" }` (2–4 points).
 
 At the episode level, write:
 
-- `intro` (≤150 chars): names the top two or three concrete in-scope developments.
-- `outro` (≤150 chars): a short close tying the items together.
+- `intro` (≤150 chars): one short greeting (the builder's fixed line) plus one or two points only — name the top
+  one or two concrete in-scope developments, then get to the first story. No opening thesis, no agenda list.
+- `outro` (≤150 chars): a short close. The cross-item synthesis lives here and only when the day genuinely has
+  a common thread: scale it by value and running time, or drop it and close in one sentence.
 - `excluded`: copy the array from `--excluded` (`21-plan/<date>_03_curate_excluded.json`) verbatim so the script plan records every dropped candidate with its Chinese reason.
-- `cover` (≤240 chars): one concrete visual scene in English for the lead item (objects, settings, symbols, metaphor; no text, letters, numbers, logos, flags, or recognizable people). 0347 R4: it may instead be `{ "scene": "…", "headline": "…" }` — `scene` keeps the same English visual contract (≤240 chars), and `headline` is a punchy 1–2 line Chinese Hook headline (≤25 chars per line) grounded in the lead news story, for deterministic lower-third typesetting downstream.
+- Episode identity (0385 R4): the Chinese publish title is `第<YYMMDD>期 · 当日要点` from the frozen episode date
+  and ONE point, and the cover headline reuses that same point (`plugins/kk/scripts/episode-identity.ts` freezes
+  it; `daily-editorial-render` stamps it, `publish-prep` refuses to publish when admission removed the point's
+  supporting source). Never invent a second title for a channel.
+- `cover`: either one concrete visual scene in English (a plain string, ≤240 chars: objects, settings, symbols, metaphor; no text, letters, numbers, logos, flags, or recognizable people) or — required for the 0385 R4 title — the object form
+  `{ "scene": "…", "headline": "…", "sourceIds": ["<plan item id>"] }`:
+  - `headline` (required, ≤25 chars): the 当日要点 the episode title freezes — one line, the day's most important
+    development in plain language, no date/issue/column name. The title prefix supplies the rest.
+  - `scene` (optional for validation, but then the cover image falls back to the default subject): same English
+    visual contract as the string form.
+  - `sourceIds` (optional): the plan item id(s) the point rests on — normally the lead. Name them so that when
+    admission drops every one of them the point is withheld instead of being published unsupported. Omitting
+    `sourceIds` means "the admitted lead", which is the usual case.
 - `cards`: `{ "title": "≤20字总标题", "body": "中文导语段落 + 3-5个话题标签" }` for the episode card series.
 - `social`: `{ "short": "≤140字 X/Threads 短帖", "long": "≤500字 微博/LinkedIn 长帖" }` (plain text, no markdown headings, no emoji spam, grounded in the plan).
 
@@ -87,7 +111,7 @@ Output:
   "version": 1,
   "intro": "…",
   "outro": "…",
-  "cover": { "scene": "…", "headline": "…" },
+  "cover": { "scene": "…", "headline": "…", "sourceIds": ["…"] },
   "cards": { "title": "…", "body": "…" },
   "social": { "short": "…", "long": "…" },
   "items": [
@@ -116,7 +140,16 @@ validator). Change only what the errors name and copy everything else unchanged.
 | `redundant-insight` | Rewrite the insight as commentary; drop the restated facts |
 | `duplicate-insight` | Make each insight specific to its own item |
 | `missing-item` / `unknown-id` / `conflict-id` | Make `items` match `--in` and `excluded` match `--excluded` with no overlap |
-| `schema` / `missing-plan` | Write the full master plan per mode `write` |
+| `schema` / `missing-plan` | Re-emit the whole plan per mode `write` — the fields the validator requires are `version: 1`, non-empty `intro`/`outro`, `items[]` each with `id` + `lead` (`insight` may be omitted or `""`), and `cover` as a string scene **or** the object `{ "scene": …, "headline": … }`. A `cover` that is only a string freezes no point, so the canonical title falls back to the legacy one |
+| `r3:commentary-repeat` / `r3:commentary-in-facts` | Keep at most one 第一人称评论 marker (`我看`/`我觉得`/`我认为`/`在我看来`/`个人觉得`) per item, and move it into `insight` — a `lead` is the fact sentence |
+| `r3:insight-multi-sentence` | Cut the comment back to one sentence: keep the judgement, drop the extra clauses |
+| `r3:unattributed-claim` | Name the source in that same sentence (`据路透社报道`, `公司称`, `财报显示`, a link) or drop the figure/superlative |
+| `r2:unexplained-jargon` | Gloss the term in the same sentence (`也就是说…`, `——也就是…`, or a 括号 explanation) or drop the term |
+
+The `r2:`/`r3:` rows above are the **advisory** editorial findings (0385 AC R2/R3) that
+`plugins/generations/dailynews-gen/src/editorial-claims.ts` reports on an already-accepted plan. They never
+reject a plan, so they are written to `24-script/<date>_08_script-write_advisories.json` rather than the
+`errors.json` that triggers this mode; fix them the same way when that file is handed to you.
 
 ## Mode: curate / curate --fix
 

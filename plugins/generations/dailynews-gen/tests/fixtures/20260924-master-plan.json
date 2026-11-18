@@ -1,0 +1,35 @@
+{
+    "version": 1,
+    "intro": "今天有两件事值得通勤路上听一听：一场刚刚启动的中美AI安全会谈，和数据中心电力压力带来的成本变化。",
+    "outro": "规则与算力同时收紧，接下来值得看的是通报机制会不会落地成常态。",
+    "cover": {
+        "scene": "A dimly lit server rack cooled by glowing liquid pipes beside a diplomatic conference table",
+        "headline": "中美启动AI安全通报机制磋商",
+        "sourceIds": ["520246ce54c2a6e6"]
+    },
+    "cards": {
+        "title": "AI安全与算力双线动态",
+        "body": "今日聚焦跨国安全通报机制与数据中心能耗两条主线 #AI #算力基建 #大模型"
+    },
+    "social": {
+        "short": "今日AI动态：中美启动安全通报机制磋商，数据中心电力成本同步走高。",
+        "long": "今天两条动态值得白领听众留意：一是中美就AI安全通报机制启动磋商，二是数据中心电力需求推高算力成本。规则与基础设施同时在变。"
+    },
+    "items": [
+        {
+            "id": "520246ce54c2a6e6",
+            "lead": "先从这场刚刚启动的安全会谈说起。",
+            "insight": "这场会谈的看点在于，通报机制能否在两个竞争者之间建立起最基础的沟通渠道。",
+            "card": {
+                "copy": "安全会谈启动",
+                "points": ["会谈聚焦安全通报机制", "出口管制仍在加码"],
+                "subject": "Two glass spheres connected by a thin glowing thread over a dark table"
+            }
+        },
+        {
+            "id": "energy-doc-1",
+            "lead": "再把目光转向脚下的电网。",
+            "insight": "电力缺口提醒我们，模型的进步最终要由物理世界的基础设施来买单。"
+        }
+    ]
+}
