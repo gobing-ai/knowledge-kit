@@ -1,0 +1,30 @@
+# Theme preset: the technical direction prose is the only control surface the model
+# reads, so every facet below must appear verbatim in `style` (the loader enforces it).
+name: ambient-tech
+description: Glassy ambient techno with a steady pulse.
+intended_use: Product walkthroughs, conference holds, editorial beds that must stay out of the way.
+genre: glassy ambient techno
+tempo: 100-115 BPM, steady and unaccented
+key: C# minor
+instrumentation:
+  - glassy FM bell
+  - granular pad
+  - muted kick and rim clicks
+  - clean sub pulse
+  - long reverb tail
+vocal_character: no lead vocal; occasional whispered, heavily reverberated fragments
+production: long reverb tails, wide stereo field, clean digital low end
+style: |-
+  Glassy ambient techno, 100-115 BPM, steady and unaccented, in C# minor.
+  Instrumentation: glassy FM bell, granular pad, muted kick and rim clicks, clean sub pulse, long reverb tail.
+  Vocal: no lead vocal; occasional whispered, heavily reverberated fragments.
+  Production: long reverb tails, wide stereo field, clean digital low end.
+avoid:
+  - hard drops
+  - talkbox vocals
+  - pop hooks
+  - vocal chops
+provenance:
+  authoring_source: task 0399 (feature D8) — docs/design/music-gen.md section 5 and the plugin README authoring form
+  authored_at: "2026-11-19"
+  status: authored

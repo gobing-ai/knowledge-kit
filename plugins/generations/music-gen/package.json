@@ -1,0 +1,24 @@
+{
+    "name": "@gobing-ai/music-gen",
+    "version": "0.1.0",
+    "type": "module",
+    "private": true,
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "scripts": {
+        "typecheck": "tsc --noEmit",
+        "gen:preset-index": "bun scripts/gen-preset-index.ts",
+        "check:preset-index": "bun scripts/gen-preset-index.ts --check",
+        "resolve-preset": "bun scripts/resolve-preset.ts"
+    },
+    "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+        "zod": "4.4.3"
+    },
+    "devDependencies": {
+        "@types/bun": "1.4.3"
+    }
+}

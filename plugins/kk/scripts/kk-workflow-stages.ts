@@ -18,6 +18,8 @@
  *   itc-publish-plan <work_dir> <targets> <source_locale> <publish_live>  (0150, sibling)
  *   itc-publish-fanout <work_dir> [--retry]   (0151, sibling)
  *   itc-publish-next  <work_dir>              (0151, sibling)
+ *   music-*           (0403, body in the sibling music-stages.ts): prepare/explore/select/
+ *                     analyze/judge-input/finalize for plugins/kk/workflows/kk-music.yaml
  *
  * `validate` / `wrap` / `render-storm` resolve the shipped sibling sidecars and delegate to them;
  * nothing about those sidecars changed. The `prepare-*` verbs and `duration` keep the logic that
@@ -172,6 +174,19 @@ async function loadAudioQuality(): Promise<typeof import('./audio-quality.ts')> 
     } catch {
         return fail(
             'audio-quality.ts not found next to kk-workflow-stages.ts — install or refresh the kk package (bun link in a checkout)',
+        );
+    }
+}
+/**
+ * Load the music-* helper sibling lazily (task 0403): it owns the kk-music workflow's fan-out and
+ * artifact assembly, and an install that still ships only the core runner must not break on load.
+ */
+async function loadMusicStages(): Promise<typeof import('./music-stages.ts')> {
+    try {
+        return await import('./music-stages.ts');
+    } catch {
+        return fail(
+            'music-stages.ts not found next to kk-workflow-stages.ts — install or refresh the kk package (bun link in a checkout)',
         );
     }
 }
@@ -2119,6 +2134,16 @@ if (import.meta.main)
             itcAdaptVerify(rest);
             break;
         }
+        case 'music-prepare':
+        case 'music-explore':
+        case 'music-select':
+        case 'music-analyze':
+        case 'music-judge-input':
+        case 'music-finalize': {
+            const { runMusicStage } = await loadMusicStages();
+            runMusicStage(stage, rest);
+            break;
+        }
         case 'seo-preflight':
         case 'seo-collect':
         case 'seo-check':
@@ -2138,6 +2163,6 @@ if (import.meta.main)
         }
         default:
             fail(
-                `unknown stage: ${stage ?? '(none)'} (expected prepare-itc|prepare-solo|prepare-storm|validate|wrap|duration|render-storm|itc-*|daily-*|seo-*)`,
+                `unknown stage: ${stage ?? '(none)'} (expected prepare-itc|prepare-solo|prepare-storm|validate|wrap|duration|render-storm|itc-*|daily-*|seo-*|music-*)`,
             );
     }

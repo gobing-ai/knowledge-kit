@@ -1,0 +1,15 @@
+name: valid-song
+description: A portable control format, so only the deliberately broken files report problems.
+intended_use: Control fixture.
+model: pro
+duration_target: "0:30"
+lyrics_policy: allowed
+structure:
+  - at: "0:00"
+    section: Intro
+  - at: "0:20"
+    section: Outro
+provenance:
+  authoring_source: test fixture
+  authored_at: "2026-11-19"
+  status: authored

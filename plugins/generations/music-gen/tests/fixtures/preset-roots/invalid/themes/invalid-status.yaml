@@ -1,0 +1,22 @@
+# Rejected: `generation-pending` is not one of authored | evidence-pending | verified.
+name: invalid-status
+description: Claims an evidence status the contract does not define.
+intended_use: Should never load.
+genre: analog synthwave
+tempo: 90-110 BPM
+key: A minor
+instrumentation:
+  - detuned saw pad
+vocal_character: breathy female alto
+production: analog tape warmth
+style: |-
+  Analog synthwave, 90-110 BPM, in A minor.
+  Instrumentation: detuned saw pad.
+  Vocal: breathy female alto.
+  Production: analog tape warmth.
+avoid:
+  - festival supersaws
+provenance:
+  authoring_source: test fixture
+  authored_at: "2026-11-19"
+  status: generation-pending

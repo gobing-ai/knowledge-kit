@@ -21,7 +21,8 @@ LLM-as-judge is **not** a knowledge-kit plugin kind (ADR-007 amdt 2026-08-07). I
 
 - A spur workflow needs a quality gate between `generate` and `publish`.
 - A user asks to "judge", "evaluate", "quality-check", or "gate" generated content.
-- A workflow or skill names a rubric (`tech-accuracy` / `brand-tone` / `compliance` / `news-balance` / `general`).
+- A workflow or skill names a rubric (`tech-accuracy` / `brand-tone` / `compliance` / `news-balance` /
+  `music-quality` / `general`).
 
 ## Verdict output contract
 
@@ -99,7 +100,7 @@ and `escalate` flag; treat `LOW` as a signal to demand human review before publi
 1. **Read the Content** from the path given in the evaluation request (the `content.json` written
    by the preceding `kk executor run <generator>` step).
 2. **Select the rubric** — named in the request (`tech-accuracy`, `brand-tone`,
-   `compliance`, `news-balance`, `general`). Default: `general`.
+   `compliance`, `news-balance`, `music-quality`, `general`). Default: `general`.
 3. **Evaluate each criterion** in the rubric. For each, produce a `pass` / `fail` / `warn` status
    backed by a specific, quotable evidence reference (quote, section, claim).
 4. **Score** — weighted aggregate per the rubric's scoring rules. `score` is 0.0–1.0.
@@ -127,9 +128,10 @@ and `escalate` flag; treat `LOW` as a signal to demand human review before publi
 
 ## Rubrics
 
-Five built-in rubrics. Full definitions, weights, and thresholds live in
-`references/rubrics.md`. The skill body intentionally stays lean — load the reference when
-evaluating.
+Six built-in rubrics. Full definitions, weights, and thresholds live in
+`references/rubrics.md`, except `music-quality`, whose measurement-discipline rules live in
+`references/music-quality-rubric.md`. The skill body intentionally stays lean — load the reference
+when evaluating.
 
 | Rubric | Use when | Key must-pass criteria |
 |--------|----------|------------------------|
@@ -138,6 +140,7 @@ evaluating.
 | `brand-tone` | Published voice | tone consistency, banned-phrase compliance, audience fit |
 | `compliance` | Sensitive content | no prohibited claims, disclosure presence, jurisdictional rules |
 | `news-balance` | Daily news script plan | news-first, commentary-share, no-restatement |
+| `music-quality` | Generated music takes (`kk-music`) | checks.clean — every measured take check passes |
 
 ## Prompt template
 
@@ -148,7 +151,7 @@ Use this template when the skill is invoked by an `agent.run` step. The workflow
 You are an LLM-as-judge evaluating generated content for the knowledge-kit pipeline.
 
 Content to evaluate: {{content_path}}
-Rubric: {{rubric}}              # general | tech-accuracy | brand-tone | compliance | news-balance
+Rubric: {{rubric}}              # general | tech-accuracy | brand-tone | compliance | news-balance | music-quality
 Output verdict to: {{verdict_path}}
 
 Load the rubric definition from plugins/kk/skills/content-judge/references/rubrics.md (section: {{rubric}}).
@@ -173,4 +176,6 @@ section in `references/rubrics.md` and name it from the prompt — do not add a 
 ## Additional resources
 
 - **`references/rubrics.md`** — full rubric definitions, criterion weights, and verdict thresholds
+- **`references/music-quality-rubric.md`** — the `music-quality` rubric: craft dimensions, the
+  `checks.clean` must-pass, and the rule that measured facts are quoted from `checks.json`
 - **`references/workflow-integration.md`** — `agent.run` step shape, shell/`jq` guard, retry topology

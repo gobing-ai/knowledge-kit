@@ -1,0 +1,10 @@
+{
+    "prompt": "Cinematic underscore at 60 BPM in E minor: low string swell, felt piano, granular texture, no percussion.\nAvoid: drum kit, vocal chops, horror stingers\n[0:00] Bed — string pad fades in under narration level\n[0:20] Lift — piano motif enters, texture widens\n[0:40] Tail — sustain and release, no hard ending\nInstrumental only — no vocals.",
+    "lyrics": "",
+    "language": "EN",
+    "model": "pro",
+    "durationTarget": "0:45",
+    "format": "mp3",
+    "title": "Quiet Datacenter",
+    "batchCount": 1
+}

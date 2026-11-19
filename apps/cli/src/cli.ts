@@ -7,6 +7,7 @@ import { registerExecutorCommand } from './commands/executor';
 import { registerItcCommand } from './commands/itc';
 import { registerLedgerCommand } from './commands/ledger';
 import { registerLockCommand } from './commands/lock';
+import { registerMusicCommand } from './commands/music';
 import { registerPluginCommand } from './commands/plugin';
 import { registerScheduleCommand } from './commands/schedule';
 import { registerStageCommand } from './commands/stage';
@@ -37,6 +38,7 @@ export function createProgram(): Command {
     registerItcCommand(program);
     registerLedgerCommand(program);
     registerLockCommand(program);
+    registerMusicCommand(program);
     registerPluginCommand(program);
     registerScheduleCommand(program);
     registerStageCommand(program);

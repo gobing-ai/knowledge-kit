@@ -1,0 +1,6 @@
+# Deliberately invalid: a preset must never carry a provider or an API model id.
+name: song
+model: pro
+duration_target: "2:30"
+provider: google
+api_model_id: lyria-3-pro-preview

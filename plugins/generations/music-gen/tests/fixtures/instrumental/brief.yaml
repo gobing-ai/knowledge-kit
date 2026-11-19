@@ -1,0 +1,27 @@
+# Golden brief: instrumental underscore — sends lyrics: '' and appends the
+# instrumental directive to the prompt text.
+title: Quiet Datacenter
+model: pro
+format: underscore
+theme: cinematic
+duration_target: "0:45"
+language: EN
+audio_format: mp3
+instrumental: true
+style: |-
+  Cinematic underscore at 60 BPM in E minor: low string swell, felt piano, granular texture, no percussion.
+avoid:
+  - drum kit
+  - vocal chops
+  - horror stingers
+structure:
+  - at: "0:00"
+    section: Bed
+    note: string pad fades in under narration level
+  - at: "0:20"
+    section: Lift
+    note: piano motif enters, texture widens
+  - at: "0:40"
+    section: Tail
+    note: sustain and release, no hard ending
+takes: 1

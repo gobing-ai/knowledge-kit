@@ -1,0 +1,30 @@
+# Theme preset: the technical direction prose is the only control surface the model
+# reads, so every facet below must appear verbatim in `style` (the loader enforces it).
+name: cinematic
+description: Orchestral/hybrid score with a dramatic arc.
+intended_use: Trailer-style openings, story intros, a track that must feel like a scene.
+genre: cinematic orchestral hybrid score
+tempo: 60-90 BPM with rubato swells
+key: D minor
+instrumentation:
+  - low string ostinato
+  - braam-style brass cluster
+  - taiko and frame drum
+  - felt piano
+  - wordless choir pad
+vocal_character: wordless choir texture only; no lead vocal line
+production: wide orchestral reverb, trailer-bright master, sub-heavy low end
+style: |-
+  Cinematic orchestral hybrid score, 60-90 BPM with rubato swells, in D minor.
+  Instrumentation: low string ostinato, braam-style brass cluster, taiko and frame drum, felt piano, wordless choir pad.
+  Vocal: wordless choir texture only; no lead vocal line.
+  Production: wide orchestral reverb, trailer-bright master, sub-heavy low end.
+avoid:
+  - horror stingers
+  - orchestral hits on every downbeat
+  - distorted electric guitar
+  - pop chorus stacks
+provenance:
+  authoring_source: task 0399 (feature D8) — docs/design/music-gen.md section 5 and the plugin README authoring form
+  authored_at: "2026-11-19"
+  status: authored

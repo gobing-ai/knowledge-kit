@@ -141,6 +141,11 @@ rules:
             # h3-local stages one temp output file for the wrapper and removes it on success and
             # failure — same vendor-CLI-transport class (0379, feature K2).
             - "plugins/generations/image-gen/src/providers/h3-local.ts"
+            # music-gen audio artifacts (0398 R6): the Lyria instance chooses the container, so
+            # the delivered bytes are written verbatim, and a brief's reference images are read to
+            # SHA-256 them for the 0397 digest — both binary, and the FileSystem seam is text-only.
+            # One file holds the plugin's whole binary-IO surface (same class as image-gen/bytes.ts).
+            - "plugins/generations/music-gen/src/artifact.ts"
             # Binary audio bytes read for the presigned-URL PUT upload
             # (podcast-pub); the FileSystem seam is text-only.
             - "plugins/publishings/podcast-pub/src/index.ts"

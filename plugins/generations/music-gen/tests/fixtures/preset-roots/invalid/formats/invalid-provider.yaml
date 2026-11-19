@@ -1,0 +1,15 @@
+# Rejected: a preset may never declare a provider.
+name: invalid-provider
+description: Carries a provider name.
+intended_use: Should never load.
+model: pro
+duration_target: "0:30"
+lyrics_policy: allowed
+structure:
+  - at: "0:00"
+    section: Intro
+provider: google
+provenance:
+  authoring_source: test fixture
+  authored_at: "2026-11-19"
+  status: authored

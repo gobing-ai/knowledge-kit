@@ -93,6 +93,8 @@ describe('preparePublishedManifest', () => {
                 '@gobing-ai/publish-harness',
                 // kk-wiki joined with feature I1 task 0350 (`kk wiki ingest`).
                 '@gobing-ai/kk-wiki',
+                // music-gen joined with feature D8 task 0401 (the `kk music` noun).
+                '@gobing-ai/music-gen',
             ]),
         });
         const deps = manifest.dependencies as Record<string, string>;

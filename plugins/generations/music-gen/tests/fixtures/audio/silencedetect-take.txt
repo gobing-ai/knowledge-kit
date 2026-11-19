@@ -1,0 +1,21 @@
+[aist#0:0/pcm_s16le @ 0x7ad9010180] Guessed Channel Layout: stereo
+Input #0, wav, from 'take.wav':
+  Metadata:
+    encoder         : Lavf62.12.102
+  Duration: 00:00:34.00, bitrate: 1536 kb/s
+  Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 48000 Hz, stereo, s16, 1536 kb/s
+Stream mapping:
+  Stream #0:0 -> #0:0 (pcm_s16le (native) -> pcm_s16le (native))
+Press [q] to stop, [?] for help
+Output #0, null, to 'pipe:':
+  Metadata:
+    encoder         : Lavf62.12.102
+  Stream #0:0: Audio: pcm_s16le, 48000 Hz, stereo, s16, 1536 kb/s
+    Metadata:
+      encoder         : Lavc62.28.102 pcm_s16le
+[Parsed_silencedetect_0 @ 0x7ad8834900] silence_start: 0
+[Parsed_silencedetect_0 @ 0x7ad8834900] silence_end: 2.000021 | silence_duration: 2.000021
+[Parsed_silencedetect_0 @ 0x7ad8834900] silence_start: 30
+[Parsed_silencedetect_0 @ 0x7ad8834900] silence_end: 34 | silence_duration: 4
+[out#0/null @ 0x7ad8834180] video:0KiB audio:6375KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+size=N/A time=00:00:34.00 bitrate=N/A speed=3.09e+03x elapsed=0:00:00.01    

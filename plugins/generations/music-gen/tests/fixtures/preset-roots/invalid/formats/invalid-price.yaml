@@ -1,0 +1,15 @@
+# Rejected: a price is provider-specific user config (0400), not preset data.
+name: invalid-price
+description: Carries a unit price.
+intended_use: Should never load.
+model: pro
+duration_target: "0:30"
+lyrics_policy: allowed
+structure:
+  - at: "0:00"
+    section: Intro
+price: 0.08
+provenance:
+  authoring_source: test fixture
+  authored_at: "2026-11-19"
+  status: authored

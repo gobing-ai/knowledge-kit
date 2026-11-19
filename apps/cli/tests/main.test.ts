@@ -74,6 +74,7 @@ describe('kk main exit seam', () => {
             expect(out).toContain('store');
             expect(out).toContain('ledger');
             expect(out).toContain('schedule');
+            expect(out).toContain('music');
             // Exact visible command list: the kk nouns plus Commander's built-in
             // `help` command (`kk help executor` is a shipped path). No legacy names
             // (add/invoke/fanin/fanout/plugins) and no alias rendering such as
@@ -86,6 +87,7 @@ describe('kk main exit seam', () => {
                 'help',
                 'ledger',
                 'lock',
+                'music',
                 'news',
                 'plugin',
                 'schedule',
@@ -239,6 +241,13 @@ describe('kk command tree shape (0275 AC1 — A22 R1)', () => {
             'ledger sync',
             'lock acquire',
             'lock release',
+            'music analyze',
+            'music check',
+            'music gen',
+            'music library',
+            'music master',
+            'music presets',
+            'music render',
             'news generate',
             'news generate-bundle',
             'news generate-cards',

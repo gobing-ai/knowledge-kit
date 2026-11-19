@@ -114,12 +114,27 @@ For daily news episode script plans (`kk-daily-ai-voice3` advisory `editorial-ju
 
 Thresholds: `pass_threshold = 0.80`
 
+## music-quality
+
+For generated music takes (`kk-music`, 0403; authored through `kk:music-authoring`). Its criteria are
+**not** in this file: the rubric carries a measurement-discipline section (measured facts quoted from
+`checks.json`, never re-derived and never scored by ear) that would sit awkwardly beside the text
+rubrics, so it ships as its own reference —
+[`music-quality-rubric.md`](music-quality-rubric.md).
+
+Summary: weights `checks.clean` 0.20 (the **only** must-pass), `brief-adherence` 0.25,
+`arrangement` 0.20, `lyric-intelligibility` 0.15, `hook` 0.10, `production-artefacts` 0.10;
+`pass_threshold = 0.75`. The load-bearing rule: `checks.clean` reads `<take>.checks.json` and fails on
+any row with `result: fail`.
+
 ## Adding a custom rubric
 
 1. Add a section to this file with a unique heading and a criteria table matching the schema
    above (criterion, weight, must-pass).
 2. Set `pass_threshold`.
 3. Reference the new rubric id from a thin wrapper's `rubric` field or an `agent.run` prompt.
+   A rubric whose rules are large enough to need their own file (as `music-quality` does) keeps a
+   pointer section here instead of an inline table, so this file stays the index.
 
 Weights must sum to 1.0; validation is the skill's responsibility at load time — if they do not
 sum to 1.0, normalize them and emit a `warn` finding noting the normalization.

@@ -1,0 +1,21 @@
+# Format preset: one idea in roughly thirty seconds. A clip job ignores duration, so
+# this preset declares no duration target and no structure line past the clip ceiling.
+name: clip
+description: Roughly thirty-second clip — one idea, no full arc.
+intended_use: Quick preview, a direction check before a pro run, or a short social cut.
+model: clip
+lyrics_policy: allowed
+structure:
+  - at: "0:00"
+    section: Statement
+    note: start on the main idea, no intro build
+  - at: "0:15"
+    section: Variation
+    note: add one instrument or restate the hook
+  - at: "0:26"
+    section: Close
+    note: land the last chord on the clip boundary
+provenance:
+  authoring_source: task 0399 (feature D8) — docs/design/music-gen.md section 5 and the plugin README authoring form
+  authored_at: "2026-11-19"
+  status: authored

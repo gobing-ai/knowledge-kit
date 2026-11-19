@@ -1,0 +1,23 @@
+{
+    "name": "music-gen",
+    "kind": "generator",
+    "entry": "./src/index.ts",
+    "version": "0.1.0",
+    "description": "Music generation plugin: one authored MusicBrief → audio Content over the self-hosted Lyria 3 instance (pro/clip), with a reconcile-don't-retry paid-call policy and an offline adapter (feature D8)",
+    "runtime": {
+        "requires": [
+            "@gobing-ai/kk-core",
+            "@gobing-ai/ts-runtime",
+            "@gobing-ai/ts-utils",
+            "fetch",
+            "ffmpeg",
+            "ffprobe",
+            "node:crypto",
+            "node:fs/promises",
+            "node:os",
+            "node:path",
+            "node:util",
+            "zod"
+        ]
+    }
+}

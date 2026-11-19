@@ -1,0 +1,30 @@
+# Theme preset: the technical direction prose is the only control surface the model
+# reads, so every facet below must appear verbatim in `style` (the loader enforces it).
+name: lofi
+description: Dusty sampled lo-fi hip-hop bed.
+intended_use: Study/focus background, calm narration bed, unhurried social cuts.
+genre: dusty sampled lo-fi hip-hop
+tempo: 70-85 BPM, swung and unhurried
+key: A minor
+instrumentation:
+  - vinyl-textured drum break
+  - sampled Rhodes chords
+  - upright bass
+  - mellow vibraphone
+  - tape hiss bed
+vocal_character: optional intimate alto, close-mic and conversational; absent when the format is instrumental
+production: tape saturation, a 12 kHz low-pass, gentle sidechain, audible vinyl crackle
+style: |-
+  Dusty sampled lo-fi hip-hop, 70-85 BPM, swung and unhurried, in A minor.
+  Instrumentation: vinyl-textured drum break, sampled Rhodes chords, upright bass, mellow vibraphone, tape hiss bed.
+  Vocal: optional intimate alto, close-mic and conversational; absent when the format is instrumental.
+  Production: tape saturation, a 12 kHz low-pass, gentle sidechain, audible vinyl crackle.
+avoid:
+  - trap hi-hat rolls
+  - hard drops
+  - EDM riser clichés
+  - over-compressed loudness
+provenance:
+  authoring_source: task 0399 (feature D8) — docs/design/music-gen.md section 5 and the plugin README authoring form
+  authored_at: "2026-11-19"
+  status: authored

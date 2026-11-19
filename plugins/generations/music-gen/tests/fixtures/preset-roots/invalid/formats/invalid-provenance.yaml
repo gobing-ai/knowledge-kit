@@ -1,0 +1,10 @@
+# Rejected: no provenance block, so the preset cannot say where it came from.
+name: invalid-provenance
+description: Has no provenance block at all.
+intended_use: Should never load.
+model: pro
+duration_target: "0:30"
+lyrics_policy: allowed
+structure:
+  - at: "0:00"
+    section: Intro
