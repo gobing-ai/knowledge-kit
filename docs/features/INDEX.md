@@ -86,6 +86,7 @@
         ├── [done] **G32**: kk-collect store v2: backtestable labels, item facts, story dedup, topic-scoped selections ([G32_kk-collect-store-v2-backtestable-labels-item-facts-story-dedup-topic-scoped-selections.md](./G32_kk-collect-store-v2-backtestable-labels-item-facts-story-dedup-topic-scoped-selections.md))
         └── [backlog] **G33**: kk-collect decision-maker effectiveness: score scale, outcome pruning, laya restore, ledgered safety and podcast decisions, in-process hub ([G33_kk-collect-decision-maker-effectiveness-score-scale-outcome-pruning-laya-restore-ledgered-safety-and-podcast-decisions-in-process-hub.md](./G33_kk-collect-decision-maker-effectiveness-score-scale-outcome-pruning-laya-restore-ledgered-safety-and-podcast-decisions-in-process-hub.md))
     ├── [backlog] **G4**: kk-solo-podcast ([G4_kk-solo-podcast.md](./G4_kk-solo-podcast.md))
+        └── [backlog] **G41**: kk-music workflow ([G41_kk-music-workflow.md](./G41_kk-music-workflow.md))
     ├── [backlog] **G5**: kk-storm-research ([G5_kk-storm-research.md](./G5_kk-storm-research.md))
     ├── [backlog] **G6**: kk-ingest-generate-publish ([G6_kk-ingest-generate-publish.md](./G6_kk-ingest-generate-publish.md))
         └── [blocked] **G61**: Content pipeline consolidation: shared publish core, article/news verbs, simplified workflows ([G61_content-pipeline-consolidation-shared-publish-core-article-news-verbs-simplified-workflows.md](./G61_content-pipeline-consolidation-shared-publish-core-article-news-verbs-simplified-workflows.md))
