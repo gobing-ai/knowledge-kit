@@ -1,15 +1,17 @@
 ---
 schema_version: 1
 name: Bind WeChat Channels cards to the confirmed Official Account article
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-18T04:49:21.260Z
-updated_at: "2026-11-18T04:50:05.961Z"
+updated_at: "2026-11-19T02:44:13.693Z"
 feature_id: L3
 priority: P1
 
 estimate_hours: 5
 dependencies: ["0388"]
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0395. Bind WeChat Channels cards to the confirmed Official Account article
@@ -20,8 +22,8 @@ The daily preset already defines shipinhao-pub/image with generic cards (plugins
 
 ### Requirements
 
-- [ ] R1. Gate the existing Channels image target on the verified Official Account article for the same episode, and carry that URL plus the approved card payload (L3 R18).
-- [ ] R2. Defer only that target when the link is missing or unsafe, preserve configured modes, and retry using existing target receipts.
+- [x] R1. Gate the existing Channels image target on the verified Official Account article for the same episode, and carry that URL plus the approved card payload (L3 R18).
+- [x] R2. Defer only that target when the link is missing or unsafe, preserve configured modes, and retry using existing target receipts.
 
 ### Acceptance Criteria
 
@@ -53,18 +55,62 @@ Own the shipinhao-pub image payload and target dependency binding after 0388. Ac
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/src/publish-matrix.ts:12` |
+| `apps/cli/src/publish-matrix.ts:1398` |
+| `apps/cli/src/publish-matrix.ts:1647` |
+| `apps/cli/src/publish-matrix.ts:1688` |
+| `apps/cli/src/publish-matrix.ts:1734` |
+| `apps/cli/src/publish-matrix.ts:37` |
+| `apps/cli/tests/daily-cache-recovery.test.ts:124` |
+| `apps/cli/tests/daily-cache-recovery.test.ts:197` |
+| `apps/cli/.works/kk.db:1` |
+| `apps/cli/.works/kk.db-shm:1` |
+| `apps/cli/.works/kk.db-wal:1` |
+| `apps/cli/.works/test-artifacts/0212/README.md:1` |
+| `apps/cli/.works/test-artifacts/0212/cutover-fixtures.md:1` |
+| `apps/cli/.works/tmp/test-content-nouns/summary.json:1` |
+| `apps/cli/.works/tmp/test-daily-recovery/cache/summary.json:1` |
+| `apps/cli/src/publish-channels-link.ts:1` |
+| `apps/cli/tests/publish-channels-link.test.ts:1` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 — Gate the existing Channels image target on the verified Official Account article for the same episode, and carry that URL plus the approved card payload (L3 R18) | MET | Gate: `apps/cli/src/publish-channels-link.ts:106-150` (same-episode via `resolveOwnerUrls` on `plan.parentRunId` at `:120`; safe-destination verification at `:83-95`; only `shipinhao-pub`/`image` targeted at `:68-73`). Wiring: `apps/cli/src/publish-matrix.ts:1650` (`channelsCardIds`) + `1694-1721` (gate before payload work, `channels-card-deferred`/`channels-card-bound` events) + `1734-1743` (carry). Producer set = this bundle's wechatmp `variant: article` rows across sibling plans: `apps/cli/src/publish-matrix.ts:1436-1456`. Payload carry: `apps/cli/src/publish-channels-link.ts:161-197`. Proof: `apps/cli/tests/publish-channels-link.test.ts:349-370` (retry sends the card once with `https://mp.weixin.qq.com/s/AbCdEf123456`, `metadata.images` unchanged) |
+| R2 — Defer only that target when the link is missing or unsafe, preserve configured modes, retry using existing target receipts | MET | Per-row deferral via the documented seam (`apps/cli/src/publish-matrix.ts:1711` → `apps/cli/src/publish-core.ts:498-520` writes `failed`/`effect: none` and continues the loop); no mode write anywhere in the diff. Siblings keep modes and dispatch + card is the only ledger `retry` entry: `apps/cli/tests/publish-channels-link.test.ts:305-325`. Missing-link and unsafe-link classes: `:327-347`. Retry through 0388's ledger only (`retryable`/`--retry`), sends once and does not resend: `:356-373` |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| R18 — 视频号卡片只使用已确认的公众号文章链接 (草稿状态下只挂起该目标；公开状态下使用该期真实公众号文章链接和已有卡片；按目标重试不重复发送) | MET | test | `apps/cli/tests/publish-channels-link.test.ts:305-325` — draft article → card receipt `failed`/`effect: none`/`channels-card-article-still-draft`, siblings `surfdash-pub.post` + `wechatmp-pub.文章` + `x-pub.post` dispatched, only `shipinhao-pub.image` in `retryable(ledger)`; `:349-370` — after release the retried card ships that exact URL with the unchanged approved `metadata.images` and a second retry issues 0 calls; `:338-347` — a foreign link never dispatches. Fresh run: `cd apps/cli && bun test tests/publish-channels-link.test.ts` → 9 pass / 0 fail, 59 expects; mutation-stubbed gate → 6 fail (probe (d)) |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-11-19T01:53:04.750Z todo → wip (system)
+- 2026-11-19T02:44:13.069Z wip → testing (system)
+- 2026-11-19T02:44:13.686Z testing → done (system)
+

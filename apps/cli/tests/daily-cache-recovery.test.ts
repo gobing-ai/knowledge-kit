@@ -121,7 +121,8 @@ describe('daily planning cache recovery', () => {
         }
         // Five stage subprocesses plus the QC attempt ledger (0392) land ~5.3s — over bun's 5s
         // default, which is a budget artefact, not a slow path worth optimising.
-    }, 20000);
+        // Full stage subprocesses: ~5.3s idle, 20s+ while a full suite runs concurrently.
+    }, 90000);
 
     it('does not trust a malformed cache sidecar', () => {
         const dir = mkdtempSync(join(tmpdir(), 'kk-daily-cache-invalid-'));
@@ -193,5 +194,6 @@ describe('daily planning cache recovery', () => {
         }
         // Four stage subprocesses plus the QC attempt ledger (0392) land at ~5.0s, i.e. on bun's 5s
         // default — a budget artefact of the ledger write, not a slow path worth optimising.
-    }, 20000);
+        // Full stage subprocesses: ~5.3s idle, 20s+ while a full suite runs concurrently.
+    }, 90000);
 });

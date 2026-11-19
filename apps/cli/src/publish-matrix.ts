@@ -10,6 +10,12 @@ import {
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import { z } from 'zod';
 import {
+    carryOfficialAccountLink,
+    gateChannelsCard,
+    isChannelsCardTarget,
+    OFFICIAL_ACCOUNT_PLUGIN,
+} from './publish-channels-link';
+import {
     loadPublishPreset,
     type PublishPreset,
     type PublishPresetTarget,
@@ -28,6 +34,7 @@ import {
     type DispatchTarget,
     dispatchable,
     dispatchLedgerPath,
+    type OwnerReceipt,
     planDispatch,
     readDispatchLedger,
     resolveFrozenRunDate,
@@ -1388,6 +1395,65 @@ async function readLinkMap(
     return { real, live, all };
 }
 
+/**
+ * 0395: every receipt on disk, in the owner-URL shape 0388 resolves links from.
+ *
+ * A receipt is evidence for the bundle revision its `parentRunId` names; the Fleet-wide read is safe
+ * because the resolution step keeps only the ones bound to this bundle. An unreadable receipt
+ * contributes nothing — it can never confirm a link.
+ */
+async function readOwnerReceipts(fs: FileSystem, publishDir: string): Promise<OwnerReceipt[]> {
+    const receiptsDir = join(publishDir, 'receipts');
+    if (!(await fs.exists(receiptsDir))) return [];
+    const receipts: OwnerReceipt[] = [];
+    for (const name of (await fs.readDir(receiptsDir)).filter((entry) => entry.endsWith('.json'))) {
+        try {
+            const receipt = JSON.parse(await fs.readFile(join(receiptsDir, name))) as Receipt;
+            receipts.push({
+                // The matrix writes the plan row id into `target`; the file name is the same key.
+                targetId: receipt.target ?? name.replace(/\.json$/, ''),
+                plugin: receipt.plugin,
+                parentRunId: receipt.parentRunId,
+                status: receipt.status,
+                mode: receipt.mode,
+                ...(receipt.url === undefined ? {} : { url: receipt.url }),
+            });
+        } catch {
+            // an unreadable receipt confirms nothing
+        }
+    }
+    return receipts;
+}
+
+/**
+ * 0395: the Official Account ARTICLE rows of THIS bundle revision.
+ *
+ * Scanned across the run's sibling plans for the same reason `readLinkMap` is — the Channels row
+ * lives in the RSS window while the 公众号 article row is planned in after-generate, and the card
+ * send must still know which receipt is allowed to confirm its link. Only `variant: article` rows
+ * qualify: the 公众号 播客 row is an audio post with no article to link.
+ */
+async function readOfficialAccountArticleIds(fs: FileSystem, publishDir: string, plan: PublishPlan): Promise<string[]> {
+    const ids: string[] = [];
+    const planPaths = ((await fs.exists(publishDir)) ? await fs.readDir(publishDir) : []).filter((name) =>
+        /^plan\..*\.json$/.test(name),
+    );
+    for (const name of planPaths) {
+        try {
+            const candidate = JSON.parse(await fs.readFile(join(publishDir, name))) as PublishPlan;
+            if (candidate.parentRunId !== plan.parentRunId) continue;
+            for (const row of candidate.rows) {
+                if (row.plugin === OFFICIAL_ACCOUNT_PLUGIN && row.variant === 'article' && !ids.includes(row.id)) {
+                    ids.push(row.id);
+                }
+            }
+        } catch {
+            // an unreadable sibling plan contributes no producer rows
+        }
+    }
+    return ids;
+}
+
 /** Mode ordering for ledger adoption: a wider earlier dispatch covers a narrower later one. */
 const DISPATCH_MODE_RANK: Record<DispatchMode, number> = { off: 0, dummy: 1, draft: 2, live: 3 };
 
@@ -1578,6 +1644,12 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
         // pick it up. Blocking unrelated channels (xhs, shipinhao) on a surfdash CMS hiccup lost two
         // whole days of planned posts; downstream posts that do link tier 0 still cannot go out with
         // a broken or missing link.
+        // 0395 (L3 R18): the WeChat Channels 图文 row may only carry the CONFIRMED Official Account
+        // article link. Its gate is resolved per row per pass from this bundle's receipts, so an
+        // operator who releases the article and retries simply finds a confirmed link — nothing is
+        // cached between passes and no second ledger records the wait (0388's `retry` does).
+        const channelsCardIds = new Set(plan.rows.filter((row) => isChannelsCardTarget(row)).map((row) => row.id));
+
         for (const tier of tiers) {
             const rows = pending.filter((row) => row.tier === tier);
             if (rows.length === 0) continue;
@@ -1613,6 +1685,44 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
                     const raw = (await fs.exists(row.payloadPath)) ? await fs.readFile(row.payloadPath) : '';
                     const links: LinkMap =
                         row.mode === 'dummy' ? linkMaps.all : row.mode === 'live' ? linkMaps.live : linkMaps.real;
+                    // 0395: the Channels card is gated BEFORE any payload work. A missing, drafted,
+                    // foreign or unsafe link fails only THIS row (effect `none` receipt + ledger
+                    // `retry`), so the other targets of the window keep their configured modes and
+                    // dispatch. A `dummy` row is a rehearsal with no external effect and never
+                    // blocks on the real article: it carries the link when one exists.
+                    let cardLink: string | undefined;
+                    if (channelsCardIds.has(row.key)) {
+                        const gate = gateChannelsCard({
+                            receipts: await readOwnerReceipts(fs, publishDir),
+                            parentRunId: plan.parentRunId,
+                            producerIds: await readOfficialAccountArticleIds(fs, publishDir, plan),
+                        });
+                        if (!gate.ok) {
+                            await appendEvent(fs, publishDir, {
+                                event: 'channels-card-deferred',
+                                window: plan.window,
+                                id: row.key,
+                                reason: gate.reason,
+                                detail: gate.detail,
+                                mode: row.mode,
+                            });
+                            if (row.mode !== 'dummy') {
+                                echoError(`publish-matrix-send: ${row.key} deferred — ${gate.detail}`);
+                                return { error: `channels-card-${gate.reason}` };
+                            }
+                            echo(`publish-matrix-send: ${row.key} rehearsal — ${gate.detail}`);
+                        } else {
+                            cardLink = gate.url;
+                            await appendEvent(fs, publishDir, {
+                                event: 'channels-card-bound',
+                                window: plan.window,
+                                id: row.key,
+                                articleTarget: gate.receiptId,
+                                articleUrl: gate.url,
+                                mode: row.mode,
+                            });
+                        }
+                    }
                     let resolved = raw;
                     for (const source of LINK_SOURCES) {
                         const url = links[source.receipt];
@@ -1620,6 +1730,17 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
                         // The payload is JSON text: escape the URL as a string fragment so a quote or
                         // backslash in it cannot break the document.
                         resolved = resolved.split(source.placeholder).join(JSON.stringify(url).slice(1, -1));
+                    }
+                    if (cardLink !== undefined) {
+                        // The confirmed link rides the APPROVED card bytes: the shared `cards` variant
+                        // has no link field, so it lands in the caption and the placement is recorded
+                        // in the resolved payload's metadata (design: use the channel's link
+                        // mechanism when it exists, else the body link, saying which).
+                        const carried = carryOfficialAccountLink(resolved, cardLink);
+                        resolved = carried.text;
+                        echo(
+                            `publish-matrix-send: ${row.key} carries the confirmed Official Account link (${carried.placement})`,
+                        );
                     }
                     if (LINK_SOURCES.some((source) => resolved.includes(source.placeholder))) {
                         // A draft may proceed without the cross-link (0383 follow-up): WeChat's
