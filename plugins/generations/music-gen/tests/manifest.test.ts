@@ -92,13 +92,20 @@ describe('AC1 — the plugin is discoverable and checkable', () => {
         const declared = declaredRequires();
         const imported = importedSpecifiers();
         // `fetch` is not an import: it is declared because the adapter calls the platform fetch.
-        const declaredModules = declared.filter((entry) => entry !== 'fetch').sort();
+        // `ffmpeg`/`ffprobe` are binaries the 0405 measure/master path spawns through the
+        // ts-runtime ProcessExecutor seam (0401 R5: declared requirements match actual usage).
+        const binaries = ['ffmpeg', 'ffprobe'];
+        const declaredModules = declared.filter((entry) => entry !== 'fetch' && !binaries.includes(entry)).sort();
         expect(declaredModules).toEqual(imported);
         const usesFetch = sourceFiles(join(PLUGIN_ROOT, 'src')).some((file) =>
             /\bfetch\b/.test(readFileSync(file, 'utf8')),
         );
         expect(usesFetch).toBe(true);
         expect(declared).toContain('fetch');
+        // The two binaries check/master spawn are declared, and named exactly once each.
+        for (const binary of binaries) {
+            expect(declared).toContain(binary);
+        }
         // Sorted and de-duplicated, so the annotation cannot drift into a hand-ordered list.
         expect(declared).toEqual([...declared].sort());
         expect(new Set(declared).size).toBe(declared.length);

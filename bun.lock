@@ -34,6 +34,7 @@
         "@gobing-ai/kk-core": "workspace:*",
         "@gobing-ai/kk-store": "workspace:*",
         "@gobing-ai/kk-wiki": "workspace:*",
+        "@gobing-ai/music-gen": "workspace:*",
         "@gobing-ai/publish-harness": "workspace:*",
         "@gobing-ai/ts-ai-decision": "catalog:",
         "@gobing-ai/ts-infra": "catalog:",

@@ -10,6 +10,8 @@
             "@gobing-ai/ts-runtime",
             "@gobing-ai/ts-utils",
             "fetch",
+            "ffmpeg",
+            "ffprobe",
             "node:crypto",
             "node:fs/promises",
             "node:os",

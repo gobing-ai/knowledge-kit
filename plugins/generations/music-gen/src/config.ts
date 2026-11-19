@@ -2,7 +2,7 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import type { DeliveryProfileConfig, DeliveryProfileOverride } from './audio/profile';
-import { AUDIO_FORMATS } from './brief';
+import { AUDIO_FORMATS, MUSIC_MODELS, type MusicModel } from './brief';
 import { resolveTakesCap } from './spend';
 
 /**
@@ -32,10 +32,18 @@ export const DEFAULT_GENERATE_TIMEOUT_MS = 180_000;
 /** Connect-phase deadline: an unreachable host fails fast enough for the bounded retry to matter. */
 export const DEFAULT_CONNECT_TIMEOUT_MS = 5_000;
 
+/**
+ * `music.defaultModel` default (0401 R2): the instance's Pro model, matching the
+ * brief's own built-in default. Only consulted when neither the brief nor the
+ * named format preset names a model, so it never overrides an authored choice.
+ */
+export const DEFAULT_MUSIC_MODEL: MusicModel = 'pro';
+
 /** Environment overrides (§6.1). There is deliberately no env override for the connect timeout. */
 export const MUSIC_ENV_KEYS = {
     instanceUrl: 'KK_MUSIC_INSTANCE_URL',
     timeoutMs: 'KK_MUSIC_TIMEOUT_MS',
+    defaultModel: 'KK_MUSIC_DEFAULT_MODEL',
     dryRun: 'KK_MUSIC_DRY_RUN',
     configPath: 'KK_CONFIG',
     runId: 'KK_MUSIC_RUN_ID',
@@ -60,6 +68,8 @@ export interface MusicConfig {
     baseUrl: string;
     timeoutMs: number;
     connectTimeoutMs: number;
+    /** Model used when no layer above the built-in default names one (`music.defaultModel`). */
+    defaultModel: MusicModel;
     prices: MusicPrices;
     /** Takes per invocation, resolved by the spend guard's single rule (0400 R4): default 2, never above 4. */
     takesCap: number;
@@ -79,6 +89,7 @@ export interface ResolvedMusicConfig extends MusicConfig {
         baseUrl: MusicConfigSource;
         timeoutMs: MusicConfigSource;
         connectTimeoutMs: MusicConfigSource;
+        defaultModel: MusicConfigSource;
         prices: MusicConfigSource;
         takesCap: MusicConfigSource;
         dryRun: MusicConfigSource;
@@ -103,6 +114,8 @@ export interface MusicConfigDocument {
     baseUrl?: string;
     timeoutMs?: number;
     connectTimeoutMs?: number;
+    /** `music.defaultModel`: `pro` (default) or `clip`. */
+    defaultModel?: MusicModel;
     prices?: Partial<MusicPrices>;
     /** `music.takesCap`: the 0400 take cap (default 2, never above 4). */
     takesCap?: number;
@@ -187,6 +200,18 @@ function readFiniteNumber(
         throw new MusicConfigError(label, expectation);
     }
     return value;
+}
+
+/** Read one model selector (`pro`/`clip`), or `undefined` when absent. */
+function readModel(document: Record<string, unknown>, field: string, label: string): MusicModel | undefined {
+    const value = document[field];
+    if (value === undefined) {
+        return undefined;
+    }
+    if (typeof value !== 'string' || !(MUSIC_MODELS as readonly string[]).includes(value)) {
+        throw new MusicConfigError(label, `expected one of ${MUSIC_MODELS.join(', ')}`);
+    }
+    return value as MusicModel;
 }
 
 /**
@@ -283,6 +308,7 @@ export function parseMusicConfigDocument(parsed: unknown): MusicConfigDocument {
         readPositiveInt(instance, 'timeoutMs', 'music.instance.timeoutMs');
     const connectTimeoutMs = readPositiveInt(instance, 'connectTimeoutMs', 'music.instance.connectTimeoutMs');
     const takesCap = readPositiveInt(music, 'takesCap', 'music.takesCap');
+    const defaultModel = readModel(music, 'defaultModel', 'music.defaultModel');
     const delivery = readDeliveryProfiles(music);
     const result: MusicConfigDocument = {};
     if (baseUrl !== undefined) {
@@ -296,6 +322,9 @@ export function parseMusicConfigDocument(parsed: unknown): MusicConfigDocument {
     }
     if (takesCap !== undefined) {
         result.takesCap = takesCap;
+    }
+    if (defaultModel !== undefined) {
+        result.defaultModel = defaultModel;
     }
     if (delivery !== undefined) {
         result.delivery = delivery;
@@ -380,10 +409,12 @@ export async function resolveMusicConfig(
 
     const envBaseUrl = env[MUSIC_ENV_KEYS.instanceUrl]?.trim();
     const envTimeout = readEnvPositiveInt(env, MUSIC_ENV_KEYS.timeoutMs);
+    const envModel = readModel(env, MUSIC_ENV_KEYS.defaultModel, MUSIC_ENV_KEYS.defaultModel);
 
     const baseUrl = envBaseUrl !== undefined && envBaseUrl !== '' ? envBaseUrl : document.baseUrl;
     const timeoutMs = envTimeout ?? document.timeoutMs;
     const connectTimeoutMs = document.connectTimeoutMs;
+    const defaultModel = envModel ?? document.defaultModel;
     const dryRun = env[MUSIC_ENV_KEYS.dryRun] === '1';
     const runId = env[MUSIC_ENV_KEYS.runId]?.trim();
 
@@ -393,6 +424,7 @@ export async function resolveMusicConfig(
         baseUrl: baseUrl ?? DEFAULT_INSTANCE_URL,
         timeoutMs: timeoutMs ?? DEFAULT_GENERATE_TIMEOUT_MS,
         connectTimeoutMs: connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
+        defaultModel: defaultModel ?? DEFAULT_MUSIC_MODEL,
         prices: { ...DEFAULT_MUSIC_PRICES, ...(document.prices ?? {}) },
         // `music.takesCap` is validated by the spend guard's own rule, so a cap above 4 is
         // rejected here — at load, before any estimate, dedupe or socket (0400 AC4).
@@ -409,6 +441,7 @@ export async function resolveMusicConfig(
                       : 'config',
             timeoutMs: envTimeout !== undefined ? 'env' : document.timeoutMs === undefined ? 'default' : 'config',
             connectTimeoutMs: connectTimeoutMs === undefined ? 'default' : 'config',
+            defaultModel: envModel !== undefined ? 'env' : document.defaultModel === undefined ? 'default' : 'config',
             prices: priceSource,
             takesCap: document.takesCap === undefined ? 'default' : 'config',
             dryRun: 'env',
