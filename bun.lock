@@ -188,6 +188,7 @@
     },
     "plugins/generations/music-gen": {
       "name": "@gobing-ai/music-gen",
+      "version": "0.1.0",
       "dependencies": {
         "@gobing-ai/kk-core": "workspace:*",
         "@gobing-ai/ts-runtime": "catalog:",
