@@ -236,6 +236,25 @@ describe('checkChannelSession', () => {
         expect(requests.map((request) => request.headless)).toEqual([false]);
     });
 
+    test('one budget covers both passes, so a refusal prints inside the caller deadline (2026-11-19)', async () => {
+        // Both passes wait their full timeout before refusing. Budgeting each pass separately spent
+        // 2x the caller's deadline, and the caller (kk plugin check) killed the probe before it could
+        // print `refused` — reporting `malformed probe output` for an expired session.
+        const { launcher, requests } = makeLauncher();
+        const neverAuthenticated: ChannelBrowserConfig = { ...CONFIG, isAuthenticated: async () => false };
+        const startedAt = Date.now();
+        const result = await checkChannelSession(neverAuthenticated, {
+            profileDir: DEFAULT_DIR,
+            launcher,
+            timeoutMs: 1_500,
+        });
+        const elapsed = Date.now() - startedAt;
+
+        expect(result.status).toBe('refused');
+        expect(requests.length).toBeGreaterThan(0);
+        expect(elapsed).toBeLessThan(2_600);
+    });
+
     test('headedFallback false keeps a refusal to the single headless pass', async () => {
         const { launcher, requests } = makeLauncher(() => {
             throw new LoginTimeoutError('headless console never confirmed');

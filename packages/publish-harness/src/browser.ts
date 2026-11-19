@@ -161,6 +161,11 @@ const DEFAULT_OPEN_NAV_TIMEOUT_MS = 30_000;
  * `xhs-pub` preflight scale (30s per pass), never the login wait.
  */
 const DEFAULT_CHECK_TIMEOUT_MS = 30_000;
+/**
+ * Held back from the check budget so a refusal can be PRINTED inside the caller's deadline: the
+ * caller kills the probe at that deadline and a killed probe yields no verdict (2026-11-19).
+ */
+const VERDICT_PRINT_MARGIN_MS = 2_000;
 const DEFAULT_STEP_TIMEOUT_MS = 30_000;
 const DEFAULT_POLL_MS = 500;
 const ATTACH_POLL_MS = 100;
@@ -419,8 +424,19 @@ export async function checkChannelSession(
           ? [true]
           : [true, false];
     let lastDetail = `${config.channel} readiness was never probed`;
+    // `timeoutMs` bounds the WHOLE check, not each pass: `kk plugin check` spawns this probe with its
+    // own deadline and kills it at it, and a killed probe reports `malformed probe output` instead of
+    // the refusal it was about to print. Two passes each spending the full budget therefore needed
+    // 2x the caller's deadline — an expired session on a two-pass channel (shipinhao, wechatmp) could
+    // never print `refused` (measured 2026-11-19). One deadline, drawn down by every pass, minus the
+    // margin the verdict and the teardown need before the parent's kill.
+    const deadline = Date.now() + timeoutMs;
+    // Scale the margin down for a short budget, so a 1.5 s check still gets to probe at all.
+    const printMarginMs = Math.min(VERDICT_PRINT_MARGIN_MS, Math.floor(timeoutMs / 4));
 
     for (const headless of passes) {
+        const remainingMs = deadline - Date.now() - printMarginMs;
+        if (remainingMs <= 0) break;
         try {
             await withProfilePage(
                 {
@@ -428,7 +444,7 @@ export async function checkChannelSession(
                     headless,
                     url: config.homeUrl,
                     isAuthenticated: config.isAuthenticated,
-                    timeoutMs,
+                    timeoutMs: remainingMs,
                     launcher: opts.launcher ?? kkBrowserLauncher,
                 },
                 async () => true,
