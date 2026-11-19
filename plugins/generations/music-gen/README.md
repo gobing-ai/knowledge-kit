@@ -1,28 +1,43 @@
 # music-gen
 
-Music generation over the homelab Lyria 3 instance (`POST /api/lyria/generate`).
+Music generation over the homelab Lyria 3 instance (`POST /api/lyria/generate`), as a
+`kind: generator` plugin.
 
-**Status: contract frozen (task 0397).** This tree currently holds the pure contract — the
-`MusicBrief` Zod schema, the deterministic prompt renderer, the instance request mapping, preset
-resolution and the canonical digest input, plus the four golden fixtures. The generator entry, the
-live/offline adapter, the presets, the spend guard and the `kk music` CLI noun land in 0398–0401.
+**Status: the plugin ships (task 0398).** The 0397 contract — the `MusicBrief` Zod schema, the
+deterministic prompt renderer, the instance request mapping, preset resolution and the canonical
+digest input — plus the plugin itself: `plugin.json`, the live instance adapter with the
+non-idempotent paid-call policy, the cache-first analyse, the offline adapter
+(`KK_MUSIC_DRY_RUN=1`), the artifact + take sidecar and the `Content` mapping. Presets land in 0399,
+the spend guard in 0400, the `kk music` noun in 0401, the workflow in 0403 and measurement in 0405.
 
 Contract authority: [`docs/design/music-gen.md`](../../../docs/design/music-gen.md). That document
 owns the wire contract, the render order, preset precedence, the adapter contract, the paid-call
 failure table, the environment variables and the artifact record. This README owns the **authoring
-form** — the YAML a person writes — and the preset index.
+form** — the YAML a person writes — the preset index and how to run the plugin.
 
 ```text
 plugins/generations/music-gen/
-  plugin.json                 # 0398: kind: generator, entry ./src/index.ts
+  plugin.json                 # kind: generator, entry ./src/index.ts, runtime.requires
   src/brief.ts                # MusicBrief schema + m:ss helpers + the field→target table
   src/render.ts               # kk-owned PROMPT text, frozen segment order
   src/request.ts              # POST /api/lyria/generate body, no instance defaults
   src/presets.ts              # brief > workflow > theme > format > built-in, portability guard
   src/digest.ts               # canonical digest input for 0400 dedupe / 0398 provenance
-  src/index.ts                # the published contract surface
+  src/job.ts                  # the --in envelope: brief from docs[0].body, knobs from metadata
+  src/config.ts               # music.instance.* / music.prices.* + KK_MUSIC_* overrides
+  src/adapter/instance.ts     # the live HTTP adapter and the paid-call policy
+  src/adapter/offline.ts      # KK_MUSIC_DRY_RUN=1: silent WAV, synthetic manifest, zero network
+  src/adapter/index.ts        # adapter selection (dry run → offline)
+  src/audio.ts                # delivered-container detection + the deterministic silent WAV
+  src/artifact.ts             # <slug>-<model>-<instanceId>.<ext> naming + the take sidecar
+  src/content.ts              # Content mapping: format audio, liner notes, references, echoes
+  src/plugin.ts               # the take loop: read → generate → persist → map
+  src/index.ts                # the published contract surface + the plugin entry
   tests/                      # bun:test; fixtures/<name>/{brief.yaml,prompt.txt,request.json}
 ```
+
+Nothing outside `src/adapter/` opens a socket, and nothing in the plugin (or its tests) ever makes a
+paid call: the adapter takes an injected `fetch` seam and every test supplies its own.
 
 ## 1. Authoring a brief
 
@@ -104,12 +119,104 @@ config (`music.prices`, 0400); `model: pro|clip` is the instance's own selector 
 
 `corporate-tech` and `xhs-pop` are deliberately not shipped: no generated track has produced
 evidence for them yet.
+## 3. Running the plugin
 
-## 3. Tests
+The plugin is invoked the way every generator is — a `DocList` in, a `Content` out:
+
+```bash
+bun plugins/generations/music-gen/src/index.ts --in docs.json --out content.json
+```
+
+`docs[0].body` carries the brief in the YAML authoring form above. `docs[0].metadata.musicGen` carries
+only what is *not* the brief, and is strict (an unknown key is an error, never silently dropped):
+
+```yaml
+metadata:
+  musicGen:
+    presets:                      # 0399 loads these from disk; accepted inline here
+      format: { name: loop, style: "Glassy texture at 110 BPM." }
+      theme: { name: ambient-tech }
+    outputStem: midnight-cable-car # overrides the artifact slug (default: the brief title)
+    force: true                    # a paid re-send the operator accepted (0400 records it)
+    reason: "the first take was unusable"
+```
+
+### 3.1 Configuration
+
+One reader, three layers: **environment override > `music:` config key > documented default**. The
+config file is the existing kk user config (`KK_CONFIG`, else `~/.config/kk/config.yaml`).
+
+| Setting | Environment | Config key | Default |
+| --- | --- | --- | --- |
+| Instance base URL | `KK_MUSIC_INSTANCE_URL` | `music.instance.url` (alias `music.baseUrl`) | `http://127.0.0.1:3000` |
+| Generate timeout (ms) | `KK_MUSIC_TIMEOUT_MS` | `music.instance.timeoutMs` (alias `music.timeoutMs`) | `180000` |
+| Connect timeout (ms) | — | `music.instance.connectTimeoutMs` | `5000` |
+| Offline adapter | `KK_MUSIC_DRY_RUN=1` | — | unset (live) |
+| Unit prices | — (0400) | `music.prices.{pro,clip,analyze}` | `pro 0.08`, `clip 0.04`, `analyze` unpriced |
+
+A key that is *present* but of the wrong type throws, naming the key — a silently defaulted endpoint
+or timeout would send a paid request somewhere unexpected. The default base URL is provisional: it
+assumes the instance listens on loopback port 3000, and 0404's dogfood pins the real value.
+
+### 3.2 The paid-call policy
+
+`POST /api/lyria/generate` and `POST /api/ai/analyze` are **non-idempotent**: the instance may have
+billed and persisted a take even when kk never saw the response. The adapter therefore:
+
+- **retries only connect-phase failures** (`ECONNREFUSED`, `ENOTFOUND`, `EAI_AGAIN`,
+  `EHOSTUNREACH`, `ENETUNREACH`, a connect timeout), bounded to 3 attempts — the request provably
+  never reached the instance;
+- treats `401`, `402`, `403`, `404`, `429` and the all-keys-rejected `502` as **terminal**: one
+  request sent, no retry, the instance's own error text plus a remediation;
+- **never re-sends after an ambiguous outcome** (a timeout after send, `ECONNRESET`, any other `5xx`,
+  an unparseable `200`, a `200` with no audio). It reconciles against `GET /api/generations` and
+  adopts the earliest take whose `prompt` is byte-equal to what kk sent, whose `model` matches and
+  whose `generatedAt` is at or after the request start — flagging it `adoptedByReconciliation` and
+  listing any later matches as `unclaimed`. No match fails naming the endpoint, the elapsed time and
+  the `--force` remediation.
+
+`analyze` is **cache-first**: the instance caches analysis per generation, so the manifest is read
+first and the paid `POST /api/ai/analyze` is issued only when no analysis is cached. An ambiguous
+analyse re-reads the manifest — it never pays twice.
+
+### 3.3 Artifacts and sidecars
+
+One artifact per take, in the `--out` directory:
+
+```text
+<slug>-<model>-<instanceId>.<ext>          # e.g. midnight-cable-car-clip-gen_01.mp3
+<slug>-<model>-<instanceId>.<ext>.take.json
+```
+
+The delivered container (`ext`) is detected from the returned bytes, never assumed from the request's
+`audio_format`. The sidecar carries the 0397 digest and digest input, the instance id, the model, the
+unit price charged, the adoption flag, the unclaimed extra takes, the exact request body and
+`language` / `durationTarget` / `batchCount` **exactly as the instance recorded them** (absent when the
+manifest lacked them, never defaulted). The instance's `generations/` library is never mirrored into a
+kk workspace.
+
+`takes: N` is N sequential single-take requests. A failure on take k leaves takes 1..k-1 on disk for
+a resume (0400's run-scoped dedupe skips them) and writes no `--out` file.
+
+### 3.4 Offline
+
+```bash
+KK_MUSIC_DRY_RUN=1 bun plugins/generations/music-gen/src/index.ts --in docs.json --out content.json
+```
+
+The offline adapter emits a deterministic 1-second silent WAV, a synthetic manifest (`offline-take-<n>`)
+and a synthetic analysis, with **zero network calls by construction** — it holds no fetch seam. It is
+the default for this plugin's whole test suite, so no test can spend money.
+
+## 4. Tests
 
 ```bash
 bun test plugins/generations/music-gen
 ```
 
-Fully offline: the four golden fixtures pin the prompt text and request JSON byte for byte, and the
-preset-portability test spawns a loader to prove the non-zero exit. No socket is opened.
+Fully offline. The four golden fixtures pin the prompt text and request JSON byte for byte; the
+preset-portability test spawns a loader to prove the non-zero exit; and every adapter test runs
+against an injected `fetch` stub, covering success, format detection, manifest mapping, cache-first
+analyse, each terminal status, the connect-retry bound, timeout → reconciliation adopt,
+timeout → miss → fail, and malformed JSON. The discoverability test runs kk-core's own registry over
+`plugins/` and compares `plugin.json`'s `runtime.requires` against the modules `src/` imports.

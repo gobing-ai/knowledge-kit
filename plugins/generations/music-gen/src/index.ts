@@ -1,13 +1,20 @@
 /**
- * `@gobing-ai/music-gen` contract surface (task 0397): the MusicBrief schema,
- * the deterministic prompt renderer, the instance request mapping, preset
- * resolution and the canonical digest input. Pure — no HTTP, no adapter, no
- * CLI. The plugin entry, adapter and job wiring land in 0398; presets in 0399;
- * spend guard in 0400; the CLI noun in 0401.
+ * `@gobing-ai/music-gen` — the music generator plugin over the self-hosted
+ * Lyria 3 instance.
+ *
+ * The frozen 0397 contract (brief schema, prompt renderer, request mapping,
+ * preset resolution, canonical digest) plus 0398's plugin surface (adapter,
+ * offline adapter, config, artifact + sidecar, Content mapping and the generator
+ * entry). The plugin entry is this file (`plugin.json` `entry: ./src/index.ts`),
+ * so `main()` runs only when the module is executed, never when it is imported.
  *
  * Contract authority: `docs/design/music-gen.md`.
  */
 
+// ── 0398: plugin surface ────────────────────────────────────────────────────
+export * from './adapter';
+export * from './artifact';
+export * from './audio';
 export {
     AUDIO_FORMATS,
     type AudioFormat,
@@ -31,6 +38,8 @@ export {
     type StructureEntry,
     StructureEntrySchema,
 } from './brief';
+export * from './config';
+export * from './content';
 export {
     canonicalDigestJson,
     canonicalDigestSha256,
@@ -40,6 +49,8 @@ export {
     type TakeDigest,
     takeDigest,
 } from './digest';
+export * from './job';
+export * from './plugin';
 export {
     assertPresetPortable,
     BUILTIN_DEFAULTS,
@@ -74,3 +85,8 @@ export {
     renderTakeRequests,
     serializeRequest,
 } from './request';
+
+if (import.meta.main) {
+    const { main } = await import('./plugin');
+    process.exit(await main());
+}

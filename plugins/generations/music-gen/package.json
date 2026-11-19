@@ -9,6 +9,9 @@
         "typecheck": "tsc --noEmit"
     },
     "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
         "zod": "4.4.3"
     },
     "devDependencies": {
