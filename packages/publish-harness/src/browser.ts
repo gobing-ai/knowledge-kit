@@ -167,13 +167,20 @@ const DEFAULT_CHECK_TIMEOUT_MS = 30_000;
  */
 const VERDICT_PRINT_MARGIN_MS = 2_000;
 /**
- * Every pass also pays a browser launch (~20 s on this host) that the auth wait does not count, so
- * each pass draws that allowance from the same deadline. Without it a two-pass channel whose session
- * expired needed launch + budget PER PASS and was killed mid-verdict by `kk plugin check`
- * (2026-11-19, shipinhao: `malformed probe output` for a probe that prints a clean refusal).
- * shortcut: a fixed launch estimate; upgrade if a channel's launch time proves it wrong.
+ * The least a pass is worth starting with. A pass that fails fast (a WAF block, a broken selector)
+ * leaves most of the budget for the headed fallback; a pass that burns its budget on the auth wait
+ * cannot be followed by another launch inside the caller's deadline, and a probe killed mid-verdict
+ * yields nothing (`kk plugin check` reports `malformed probe output`). 2026-11-19, shipinhao: giving
+ * EVERY pass the full budget needed twice the caller's deadline, so no verdict was ever printed.
  */
-const PASS_LAUNCH_ALLOWANCE_MS = 20_000;
+const MIN_PASS_BUDGET_MS = 5_000;
+/**
+ * What a pass needs on top of its auth wait: the browser launch (~20 s on this host), which
+ * `loginWithProfile` does not count inside `timeoutMs`. Without this reserve a pass that waits its
+ * full budget prints AFTER the caller's deadline and is killed mid-verdict.
+ * shortcut: a fixed launch estimate; raise it if a channel's launch time proves it wrong.
+ */
+const PASS_LAUNCH_RESERVE_MS = 20_000;
 const DEFAULT_STEP_TIMEOUT_MS = 30_000;
 const DEFAULT_POLL_MS = 500;
 const ATTACH_POLL_MS = 100;
@@ -439,13 +446,14 @@ export async function checkChannelSession(
     // never print `refused` (measured 2026-11-19). One deadline, drawn down by every pass, minus the
     // margin the verdict and the teardown need before the parent's kill.
     const deadline = Date.now() + timeoutMs;
-    // Scale the margin down for a short budget, so a 1.5 s check still gets to probe at all.
+    // Scale the margin and the pass floor down for a short budget, so a 1.5 s check still probes.
     const printMarginMs = Math.min(VERDICT_PRINT_MARGIN_MS, Math.floor(timeoutMs / 4));
+    const minPassMs = Math.min(MIN_PASS_BUDGET_MS, Math.floor(timeoutMs / 3));
+    const launchReserveMs = Math.min(PASS_LAUNCH_RESERVE_MS, Math.floor(timeoutMs / 3));
 
     for (const headless of passes) {
-        const remainingMs =
-            deadline - Date.now() - printMarginMs - Math.min(PASS_LAUNCH_ALLOWANCE_MS, Math.floor(timeoutMs / 3));
-        if (remainingMs <= 0) break;
+        const remainingMs = deadline - Date.now() - printMarginMs - launchReserveMs;
+        if (remainingMs < minPassMs) break;
         try {
             await withProfilePage(
                 {

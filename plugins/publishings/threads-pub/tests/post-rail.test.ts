@@ -382,16 +382,19 @@ describe('threads post rail session preflight', () => {
         expect(fake.closeCount()).toBe(0);
     });
 
-    test('a login redirect refuses both preflight passes instead of opening the composer', async () => {
+    test('a login redirect refuses after one read-only pass instead of opening the composer', async () => {
         // THREADS_CONFIG declares headed-only, but the publish preflight still uses the
         // headless-then-headed ladder (only the profile CLI reads `checkHeadedOnly`).
         const fake = makeFakeLauncher({ pages: [{ landedUrl: LOGIN_URL }] });
         const result = await transport(fake).publish({ content });
 
         expect(result.ok).toBe(false);
-        expect(result.error).toContain('headed threads readiness refused');
+        expect(result.error).toContain('headless threads readiness refused');
         expect(result.error).toContain(THREADS_LOGIN_INSTRUCTION);
-        expect(fake.requests.map((request) => request.headless)).toEqual([true, false]);
+        // The auth wait spends the whole check budget, so the headed fallback is not launched: a
+        // second launch inside one deadline is what made `kk plugin check` kill the probe before it
+        // could print its refusal (2026-11-19).
+        expect(fake.requests.map((request) => request.headless)).toEqual([true]);
     });
 
     test('a session that expires before the composer visit reports the login command, not a stack', async () => {

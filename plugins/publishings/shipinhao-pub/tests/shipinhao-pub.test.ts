@@ -1106,19 +1106,18 @@ describe('4. payload/IO + main() exit semantics', () => {
 });
 
 describe('5. session preflight', () => {
-    test('a login redirect refuses before any flow work after one headless and one headed pass', async () => {
+    test('a login redirect refuses before any flow work after one read-only pass', async () => {
         const fake = makeFakeLauncher({ groundedMissing: true, landedUrl: SIGNIN_URL });
         const result = await transport(fake).publish({ content: draftContent({ videoPath: VIDEO_PATH }) });
         expect(result.ok).toBe(false);
         expect(result.error).toContain('shipinhao session preflight refused — run:');
         expect(result.error).toContain(SHP_LOGIN_INSTRUCTION);
-        // Two read-only passes (headless, then the headed fallback the shipped probe has always
-        // used); still no flow work, no click, and both contexts closed.
-        expect(fake.requests).toEqual([
-            { profileDir: DEFAULT_DIR, headless: true },
-            { profileDir: DEFAULT_DIR, headless: false },
-        ]);
-        expect(fake.close()).toBe(2);
+        // One read-only pass: the auth wait spends the whole check budget, and the headed fallback is
+        // only launched when the first pass fails fast enough to leave room for it (2026-11-19; a
+        // second launch inside one deadline is what made `kk plugin check` kill the probe before it
+        // could print). Still no flow work, no click, and the context closed.
+        expect(fake.requests).toEqual([{ profileDir: DEFAULT_DIR, headless: true }]);
+        expect(fake.close()).toBe(1);
         expect(fake.calls.some((call) => call.startsWith('click:'))).toBe(false);
     });
 
