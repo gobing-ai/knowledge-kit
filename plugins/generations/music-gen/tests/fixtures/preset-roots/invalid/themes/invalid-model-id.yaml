@@ -1,0 +1,23 @@
+# Rejected: an upstream API model id is not portable preset data.
+name: invalid-model-id
+description: Carries an API model id.
+intended_use: Should never load.
+genre: ambient techno
+tempo: 100-115 BPM
+key: C# minor
+instrumentation:
+  - granular pad
+vocal_character: no lead vocal
+production: long reverb tails
+model_id: lyria-3-pro-preview
+style: |-
+  Ambient techno, 100-115 BPM, in C# minor.
+  Instrumentation: granular pad.
+  Vocal: no lead vocal.
+  Production: long reverb tails.
+avoid:
+  - hard drops
+provenance:
+  authoring_source: test fixture
+  authored_at: "2026-11-19"
+  status: authored

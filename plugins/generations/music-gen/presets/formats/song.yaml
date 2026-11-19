@@ -1,0 +1,31 @@
+# Format preset: the job intent and structural skeleton. Portable data — no upstream
+# vendor identity or spend fact may appear here (see FORBIDDEN_PRESET_KEYS in src/presets.ts).
+name: song
+description: Full song with vocals — intro, two verses, two choruses and a closing resolve.
+intended_use: A complete track with a sung hook; the default for lyrical pieces.
+model: pro
+duration_target: "2:30"
+lyrics_policy: allowed
+structure:
+  - at: "0:00"
+    section: Intro
+    note: establish the harmonic bed, drums enter after four bars
+  - at: "0:15"
+    section: Verse 1
+    note: sparse arrangement, vocal front and centre
+  - at: "0:45"
+    section: Chorus
+    note: full arrangement, hook lyric stated plainly
+  - at: "1:15"
+    section: Verse 2
+    note: one counter-melody added, vocal stays dry
+  - at: "1:45"
+    section: Chorus
+    note: repeat the hook with a wider harmony stack
+  - at: "2:10"
+    section: Outro
+    note: strip back to the harmonic bed and resolve without a fade
+provenance:
+  authoring_source: task 0399 (feature D8) — docs/design/music-gen.md section 5 and the plugin README authoring form
+  authored_at: "2026-11-19"
+  status: authored

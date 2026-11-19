@@ -7,8 +7,9 @@ Music generation over the homelab Lyria 3 instance (`POST /api/lyria/generate`),
 deterministic prompt renderer, the instance request mapping, preset resolution and the canonical
 digest input — plus the plugin itself: `plugin.json`, the live instance adapter with the
 non-idempotent paid-call policy, the cache-first analyse, the offline adapter
-(`KK_MUSIC_DRY_RUN=1`), the artifact + take sidecar and the `Content` mapping. Presets land in 0399,
-the spend guard in 0400, the `kk music` noun in 0401, the workflow in 0403 and measurement in 0405.
+(`KK_MUSIC_DRY_RUN=1`), the artifact + take sidecar and the `Content` mapping. The format × theme
+presets ship in 0399 (`presets/`, indexed below by a generator). The spend guard lands in 0400, the
+`kk music` noun in 0401, the workflow in 0403 and measurement in 0405.
 
 Contract authority: [`docs/design/music-gen.md`](../../../docs/design/music-gen.md). That document
 owns the wire contract, the render order, preset precedence, the adapter contract, the paid-call
@@ -33,6 +34,11 @@ plugins/generations/music-gen/
   src/content.ts              # Content mapping: format audio, liner notes, references, echoes
   src/plugin.ts               # the take loop: read → generate → persist → map
   src/index.ts                # the published contract surface + the plugin entry
+  presets/formats/*.yaml      # 0399: job intent, model, duration target, section skeleton, lyrics policy
+  presets/themes/*.yaml       # 0399: technical direction prose, avoid[], instrumentation palette
+  presets/SOURCE.md           # 0399: provenance + evidence-promotion rules
+  scripts/gen-preset-index.ts # 0399: README index generator (--check fails on drift)
+  scripts/resolve-preset.ts   # 0399: resolve a brief through the presets and print the trace
   tests/                      # bun:test; fixtures/<name>/{brief.yaml,prompt.txt,request.json}
 ```
 
@@ -99,26 +105,46 @@ config (`music.prices`, 0400); `model: pro|clip` is the instance's own selector 
 
 ## 2. Preset index
 
-`formats/` and `themes/` are shipped by 0399. This table is generated from those data files by
-0399's index script; until then it lists the planned set so the index cannot drift once generated.
+`formats/` and `themes/` ship as data (task 0399). Any format pairs with any theme: the **format**
+owns the arc (model, default duration target, section skeleton, lyrics policy) and the **theme** owns
+the sound (the technical-direction prose the model reads, plus its default `avoid[]`). The table
+below is generated from those files, so the index cannot drift from the data.
 
-| Format | Model | Default target | Intended use | Status |
+<!-- preset-index:start -->
+`formats/`: 5 · `themes/`: 4. Regenerate with
+`bun plugins/generations/music-gen/scripts/gen-preset-index.ts`; `--check` fails on drift.
+
+### Formats
+
+A format fixes the job intent, the instance selector (`pro|clip`), the default duration target and the
+timestamped section skeleton. `lyrics` is the format’s policy: `forbidden` resolves `instrumental: true`.
+
+| Format | Model | Default duration | Lyrics | Intended use | Status |
+| --- | --- | --- | --- | --- | --- |
+| `clip` | `clip` | — (clip is fixed at ~0:30) | allowed | Quick preview, a direction check before a pro run, or a short social cut. | `authored` |
+| `jingle` | `pro` | `0:20` | allowed | Product or station ident — the hook states the name once and resolves fast. | `authored` |
+| `loop` | `clip` | — (clip is fixed at ~0:30) | forbidden | Background bed for a talk-through, demo or menu loop; no vocals by design. | `authored` |
+| `song` | `pro` | `2:30` | allowed | A complete track with a sung hook; the default for lyrical pieces. | `authored` |
+| `underscore` | `pro` | `0:45` | forbidden | Underscore under spoken narration or a video essay; no hook or vocal required. | `authored` |
+
+### Themes
+
+A theme supplies the technical-direction prose the model reads — genre, tempo, key, instrumentation,
+vocal character and production — plus its default `avoid[]`, rendered as one `Avoid: …` segment.
+
+| Theme | Technical direction | Default avoid | Intended use | Status |
 | --- | --- | --- | --- | --- |
-| `song` | `pro` | `2:30` | Full song with vocals and a section skeleton | 0399 |
-| `clip` | `clip` | — (model fixed at ~0:30) | Short preview, loop sketch, direction check | 0399 |
-| `jingle` | `pro` | `0:20` | Product/station ident, hook states the name once | 0399 |
-| `loop` | `clip` | — | Instrumental loop bed | 0399 |
-| `underscore` | `pro` | `0:45` | Instrumental bed under narration, no hook requirement | 0399 |
+| `ambient-tech` | glassy ambient techno; 100-115 BPM, steady and unaccented; C# minor | hard drops, talkbox vocals, pop hooks, vocal chops | Product walkthroughs, conference holds, editorial beds that must stay out of the way. | `authored` |
+| `cinematic` | cinematic orchestral hybrid score; 60-90 BPM with rubato swells; D minor | horror stingers, orchestral hits on every downbeat, distorted electric guitar, pop chorus stacks | Trailer-style openings, story intros, a track that must feel like a scene. | `authored` |
+| `lofi` | dusty sampled lo-fi hip-hop; 70-85 BPM, swung and unhurried; A minor | trap hi-hat rolls, hard drops, EDM riser clichés, over-compressed loudness | Study/focus background, calm narration bed, unhurried social cuts. | `authored` |
+| `synthwave` | analog synthwave revival; 90-110 BPM, straight four-on-the-floor; A minor | festival supersaws, EDM risers, distorted djent guitars, modern trap percussion | Retro-tech explainers, night-drive montages, upbeat product stings. | `authored` |
+<!-- preset-index:end -->
 
-| Theme | Technical direction | Default avoid | Status |
-| --- | --- | --- | --- |
-| `cinematic` | Orchestral/hybrid score with a dramatic arc | trailer hits, horror stingers | 0399 |
-| `lofi` | Dusty sampled hip-hop bed at 70–85 BPM | trap hi-hats, hard drops | 0399 |
-| `synthwave` | Analog synth, 90–110 BPM, gated drums | EDM risers, distorted guitars | 0399 |
-| `ambient-tech` | Glassy, spacious texture at 100–115 BPM | hard drops, talkbox vocals | 0399 |
+Evidence status: `authored` means written from the design contract with no generated take judged
+against it yet, `evidence-pending` means queued for a real generation round, and `verified` means a
+reviewed take exists — the rules live in [`presets/SOURCE.md`](presets/SOURCE.md). `corporate-tech`
+and `xhs-pop` are deliberately not shipped: no generated track has produced evidence for them yet.
 
-`corporate-tech` and `xhs-pop` are deliberately not shipped: no generated track has produced
-evidence for them yet.
 ## 3. Running the plugin
 
 The plugin is invoked the way every generator is — a `DocList` in, a `Content` out:

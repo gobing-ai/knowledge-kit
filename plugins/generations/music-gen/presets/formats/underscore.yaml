@@ -1,0 +1,22 @@
+# Format preset: an instrumental bed under narration. No hook requirement — the arc
+# deliberately withholds a melodic foreground so a voice can sit in the midrange.
+name: underscore
+description: Instrumental bed for narration — supports the voice, never competes with it.
+intended_use: Underscore under spoken narration or a video essay; no hook or vocal required.
+model: pro
+duration_target: "0:45"
+lyrics_policy: forbidden
+structure:
+  - at: "0:00"
+    section: Establish
+    note: soft harmonic bed, no melodic foreground
+  - at: "0:15"
+    section: Sustain
+    note: hold the texture, leave the midrange open for a voice
+  - at: "0:35"
+    section: Settle
+    note: thin out and resolve under the last sentence
+provenance:
+  authoring_source: task 0399 (feature D8) — docs/design/music-gen.md section 5 and the plugin README authoring form
+  authored_at: "2026-11-19"
+  status: authored

@@ -1,0 +1,21 @@
+name: valid-lofi
+description: A portable control theme.
+intended_use: Control fixture.
+genre: dusty sampled lo-fi hip-hop
+tempo: 70-85 BPM
+key: A minor
+instrumentation:
+  - upright bass
+vocal_character: intimate alto, close-mic
+production: tape saturation
+style: |-
+  Dusty sampled lo-fi hip-hop, 70-85 BPM, in A minor.
+  Instrumentation: upright bass.
+  Vocal: intimate alto, close-mic.
+  Production: tape saturation.
+avoid:
+  - hard drops
+provenance:
+  authoring_source: test fixture
+  authored_at: "2026-11-19"
+  status: authored

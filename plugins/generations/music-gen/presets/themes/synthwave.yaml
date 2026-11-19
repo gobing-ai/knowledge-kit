@@ -1,0 +1,30 @@
+# Theme preset: the technical direction prose is the only control surface the model
+# reads, so every facet below must appear verbatim in `style` (the loader enforces it).
+name: synthwave
+description: Analog synth revival with gated drums.
+intended_use: Retro-tech explainers, night-drive montages, upbeat product stings.
+genre: analog synthwave revival
+tempo: 90-110 BPM, straight four-on-the-floor
+key: A minor
+instrumentation:
+  - detuned saw pad
+  - gated snare
+  - round sub bass
+  - arpeggiated lead
+  - chorus electric guitar
+vocal_character: breathy female alto, doubled and slightly detuned; optional when the format is instrumental
+production: analog tape warmth, wide stereo chorus, gated reverb on the snare
+style: |-
+  Analog synthwave revival, 90-110 BPM, straight four-on-the-floor, in A minor.
+  Instrumentation: detuned saw pad, gated snare, round sub bass, arpeggiated lead, chorus electric guitar.
+  Vocal: breathy female alto, doubled and slightly detuned; optional when the format is instrumental.
+  Production: analog tape warmth, wide stereo chorus, gated reverb on the snare.
+avoid:
+  - festival supersaws
+  - EDM risers
+  - distorted djent guitars
+  - modern trap percussion
+provenance:
+  authoring_source: task 0399 (feature D8) — docs/design/music-gen.md section 5 and the plugin README authoring form
+  authored_at: "2026-11-19"
+  status: authored

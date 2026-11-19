@@ -1,0 +1,21 @@
+# Rejected: the prose never states the declared production, and the model reads only the prose.
+name: invalid-coverage
+description: Declares facets its technical direction never mentions.
+intended_use: Should never load.
+genre: cinematic orchestral hybrid score
+tempo: 60-90 BPM
+key: D minor
+instrumentation:
+  - low string ostinato
+vocal_character: wordless choir
+production: trailer-bright master
+style: |-
+  Cinematic orchestral hybrid score, 60-90 BPM, in D minor.
+  Instrumentation: low string ostinato.
+  Vocal: wordless choir.
+avoid:
+  - horror stingers
+provenance:
+  authoring_source: test fixture
+  authored_at: "2026-11-19"
+  status: authored

@@ -1,0 +1,22 @@
+# Format preset: a twenty-second ident. The hook states the name once and the tag
+# resolves fast, so the skeleton never reaches past the declared duration target.
+name: jingle
+description: Twenty-second ident with a sung or spoken tag.
+intended_use: Product or station ident — the hook states the name once and resolves fast.
+model: pro
+duration_target: "0:20"
+lyrics_policy: allowed
+structure:
+  - at: "0:00"
+    section: Hook
+    note: state the product name once, on the downbeat
+  - at: "0:10"
+    section: Tag
+    note: short melodic tag, no fade
+  - at: "0:17"
+    section: Resolve
+    note: final sustained chord, ends on the beat
+provenance:
+  authoring_source: task 0399 (feature D8) — docs/design/music-gen.md section 5 and the plugin README authoring form
+  authored_at: "2026-11-19"
+  status: authored

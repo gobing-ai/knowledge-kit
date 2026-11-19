@@ -1,0 +1,21 @@
+# Format preset: an instrumental loop bed. lyrics_policy forbidden resolves
+# instrumental: true, so the renderer appends the no-vocals directive.
+name: loop
+description: Instrumental thirty-second loop that repeats cleanly at the boundary.
+intended_use: Background bed for a talk-through, demo or menu loop; no vocals by design.
+model: clip
+lyrics_policy: forbidden
+structure:
+  - at: "0:00"
+    section: Groove in
+    note: drums and bass from bar one, no intro
+  - at: "0:12"
+    section: Layer
+    note: add the pad and one percussive counter-line
+  - at: "0:24"
+    section: Loop point
+    note: return to the bar-one figure so the clip repeats seamlessly
+provenance:
+  authoring_source: task 0399 (feature D8) — docs/design/music-gen.md section 5 and the plugin README authoring form
+  authored_at: "2026-11-19"
+  status: authored

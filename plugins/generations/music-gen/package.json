@@ -6,7 +6,10 @@
         ".": "./src/index.ts"
     },
     "scripts": {
-        "typecheck": "tsc --noEmit"
+        "typecheck": "tsc --noEmit",
+        "gen:preset-index": "bun scripts/gen-preset-index.ts",
+        "check:preset-index": "bun scripts/gen-preset-index.ts --check",
+        "resolve-preset": "bun scripts/resolve-preset.ts"
     },
     "dependencies": {
         "@gobing-ai/kk-core": "workspace:*",
