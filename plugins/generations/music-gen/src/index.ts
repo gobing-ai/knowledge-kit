@@ -15,6 +15,11 @@
 export * from './adapter';
 export * from './artifact';
 export * from './audio';
+// ── 0405: measurement, take checks, masters and delivery profiles ───────────
+export * from './audio/checks';
+export * from './audio/master';
+export * from './audio/measure';
+export * from './audio/profile';
 export {
     AUDIO_FORMATS,
     type AudioFormat,

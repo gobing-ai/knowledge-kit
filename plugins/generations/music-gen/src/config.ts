@@ -1,6 +1,8 @@
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
+import type { DeliveryProfileConfig, DeliveryProfileOverride } from './audio/profile';
+import { AUDIO_FORMATS } from './brief';
 import { resolveTakesCap } from './spend';
 
 /**
@@ -64,6 +66,11 @@ export interface MusicConfig {
     dryRun: boolean;
     /** `KK_MUSIC_RUN_ID`: the workflow run a take belongs to, recorded in its sidecar (0400 R4). */
     runId?: string;
+    /**
+     * `music.delivery.<name>` overrides (0405 R5). Empty means only the built-in
+     * `streaming` profile exists; resolution is `resolveDeliveryProfile`.
+     */
+    delivery: DeliveryProfileConfig;
 }
 
 /** A resolved configuration plus the provenance of each setting. */
@@ -75,6 +82,7 @@ export interface ResolvedMusicConfig extends MusicConfig {
         prices: MusicConfigSource;
         takesCap: MusicConfigSource;
         dryRun: MusicConfigSource;
+        delivery: MusicConfigSource;
     };
 }
 
@@ -98,6 +106,8 @@ export interface MusicConfigDocument {
     prices?: Partial<MusicPrices>;
     /** `music.takesCap`: the 0400 take cap (default 2, never above 4). */
     takesCap?: number;
+    /** `music.delivery.<name>`: 0405 delivery profile overrides/definitions. */
+    delivery?: DeliveryProfileConfig;
 }
 
 /** Resolve the kk config path: `KK_CONFIG`, else `<home>/.config/kk/config.yaml`. */
@@ -161,6 +171,101 @@ function readPrice(
     return value;
 }
 
+/** Read one finite number, or `undefined` when absent. A present non-number throws. */
+function readFiniteNumber(
+    document: Record<string, unknown>,
+    field: string,
+    label: string,
+    predicate: (value: number) => boolean,
+    expectation: string,
+): number | undefined {
+    const value = document[field];
+    if (value === undefined) {
+        return undefined;
+    }
+    if (typeof value !== 'number' || !Number.isFinite(value) || !predicate(value)) {
+        throw new MusicConfigError(label, expectation);
+    }
+    return value;
+}
+
+/**
+ * Parse `music.delivery.<name>` (0405 R5): one record per profile, each a subset
+ * of `{ lufs, truePeak, lra, container, sampleRate }`. Types are checked here; the
+ * *completeness* of a new profile is checked at resolution
+ * (`resolveDeliveryProfile`), so an override of `streaming` may set one field
+ * while a brand-new profile must be whole.
+ */
+function readDeliveryProfiles(document: Record<string, unknown>): DeliveryProfileConfig | undefined {
+    const delivery = document.delivery;
+    if (delivery === undefined) {
+        return undefined;
+    }
+    if (!isRecord(delivery)) {
+        throw new MusicConfigError(
+            'music.delivery',
+            'expected a map of profile name to { lufs, truePeak, lra?, container, sampleRate }',
+        );
+    }
+    const profiles: DeliveryProfileConfig = {};
+    for (const [name, value] of Object.entries(delivery)) {
+        const key = `music.delivery.${name}`;
+        if (name.trim() === '' || !isRecord(value)) {
+            throw new MusicConfigError(key, 'expected an object with lufs, truePeak, lra?, container and sampleRate');
+        }
+        const profile: DeliveryProfileOverride = {};
+        const lufs = readFiniteNumber(
+            value,
+            'lufs',
+            `${key}.lufs`,
+            () => true,
+            'expected a finite loudness target in LUFS',
+        );
+        if (lufs !== undefined) {
+            profile.lufs = lufs;
+        }
+        const truePeak = readFiniteNumber(
+            value,
+            'truePeak',
+            `${key}.truePeak`,
+            (parsed) => parsed <= 0,
+            'expected a true-peak ceiling in dBTP at or below 0',
+        );
+        if (truePeak !== undefined) {
+            profile.truePeak = truePeak;
+        }
+        const lra = readFiniteNumber(
+            value,
+            'lra',
+            `${key}.lra`,
+            (parsed) => parsed >= 0,
+            'expected a non-negative loudness range in LU',
+        );
+        if (lra !== undefined) {
+            profile.lra = lra;
+        }
+        const sampleRate = readFiniteNumber(
+            value,
+            'sampleRate',
+            `${key}.sampleRate`,
+            (parsed) => Number.isInteger(parsed) && parsed > 0,
+            'expected a positive integer sample rate in Hz',
+        );
+        if (sampleRate !== undefined) {
+            profile.sampleRate = sampleRate;
+        }
+        const container = value.container;
+        if (container !== undefined) {
+            if (typeof container !== 'string' || !(AUDIO_FORMATS as readonly string[]).includes(container)) {
+                throw new MusicConfigError(`${key}.container`, `expected one of ${AUDIO_FORMATS.join(', ')}`);
+            }
+            profile.container = container as DeliveryProfileOverride['container'];
+        }
+        profiles[name] = profile;
+    }
+    return profiles;
+}
+
 /**
  * Parse the `music:` block. A missing block is the zero-config case; a present
  * key of the wrong type throws (the `store.*` reader's rule) — a silently
@@ -178,6 +283,7 @@ export function parseMusicConfigDocument(parsed: unknown): MusicConfigDocument {
         readPositiveInt(instance, 'timeoutMs', 'music.instance.timeoutMs');
     const connectTimeoutMs = readPositiveInt(instance, 'connectTimeoutMs', 'music.instance.connectTimeoutMs');
     const takesCap = readPositiveInt(music, 'takesCap', 'music.takesCap');
+    const delivery = readDeliveryProfiles(music);
     const result: MusicConfigDocument = {};
     if (baseUrl !== undefined) {
         result.baseUrl = baseUrl;
@@ -190,6 +296,9 @@ export function parseMusicConfigDocument(parsed: unknown): MusicConfigDocument {
     }
     if (takesCap !== undefined) {
         result.takesCap = takesCap;
+    }
+    if (delivery !== undefined) {
+        result.delivery = delivery;
     }
     if (isRecord(music.prices)) {
         const prices = music.prices;
@@ -290,6 +399,7 @@ export async function resolveMusicConfig(
         takesCap: resolveTakesCap(document.takesCap),
         dryRun,
         ...(runId === undefined || runId === '' ? {} : { runId }),
+        delivery: document.delivery ?? {},
         sources: {
             baseUrl:
                 envBaseUrl !== undefined && envBaseUrl !== ''
@@ -302,6 +412,7 @@ export async function resolveMusicConfig(
             prices: priceSource,
             takesCap: document.takesCap === undefined ? 'default' : 'config',
             dryRun: 'env',
+            delivery: document.delivery === undefined ? 'default' : 'config',
         },
     };
 }
