@@ -1052,6 +1052,27 @@ describe('series-scoped selection continuity across re-clustering (0393 R15)', (
         expect(await extractIds(dbPath, join(dir, 'after.json'))).toEqual([story.first, story.second]);
     });
 
+    it('keeps a sourced follow-up with a new fact eligible while the syndicated copy stays out (0393 R2)', async () => {
+        const dir = tempDir('kk-0393-followup-');
+        const dbPath = join(dir, 'followup.db');
+        const story = await seedStory(dbPath);
+        // A material follow-up: a new, attributable fact about the same subject, not a re-run headline.
+        const T3 = 'Microsoft prices GPT-5 Azure API at half the launch rate, Reuters reports';
+        await seed(dbPath, [{ doc: doc('s-3', T3), category: 'ai-news' }]);
+        await selectDocs(dir, dbPath, 'run-1', [doc('s-1', T1)]);
+        expect(
+            JSON.parse(
+                (await run(['store', 'mark-published', '--topic', 'ai-news', '--run', 'run-1', '--db', dbPath])).out,
+            ),
+        ).toEqual({ published: 1 });
+
+        // The aired original and its syndicated copy share the story; only the follow-up remains.
+        const ids = await extractIds(dbPath, join(dir, 'next-day.json'));
+        expect(ids).not.toContain(story.first);
+        expect(ids).not.toContain(story.second);
+        expect(ids).toEqual([sid('s-3')]);
+    });
+
     it('replays the same ledger read deterministically, writing nothing', async () => {
         const dir = tempDir('kk-0393-replay-');
         const dbPath = join(dir, 'replay.db');

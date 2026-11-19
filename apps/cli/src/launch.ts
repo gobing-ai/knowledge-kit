@@ -733,7 +733,9 @@ export async function launchWorkflow(options: LaunchWorkflowOptions): Promise<La
         // kept 20 of the next day's 26 moderated stories out of every pool.
         const greenWithBundle =
             status === 'done' && (await deps.fs.exists(await resolveBundlePath(deps.fs, options.workDir)));
-        if (status !== 'no-content' && options.workflow !== PUBLISH_WORKFLOW && !greenWithBundle) {
+        // A `no-content` generate recycles too (0393 R2): a late floor/duration refusal lands AFTER
+        // store-select reserved the pool, and an early empty pool reserved nothing (a no-op release).
+        if (options.workflow !== PUBLISH_WORKFLOW && !greenWithBundle) {
             try {
                 await deps.recycleRun(runId);
             } catch (error) {

@@ -2912,7 +2912,13 @@ completion: every required real row must carry a CURRENT-bundle receipt
 (`parentRunId` == the bundle's own run, `status: succeeded`, `effect: confirmed`, `mode: live`) —
 drafted owned success and dummy rehearsals HOLD the selection (`marked: false`, exit 0, per-row
 `unresolved[]` reasons), while a live-confirmed set marks published keyed to the bundle's
-`parentRunId`. Artifacts: `4-publish/settlement.<window>.json`,
+`parentRunId`. Since 0393 R2 the promotion is scoped to the validated final plan
+(`21-plan/<stamp>_03_plan_plan.json`, passed as `mark-published --in`) and the run's remaining
+`selected` rows — the reservations curation dropped — are released (`kk store release`), recorded
+as `scope: "final"` + `finalItemIds[]` (a failed release is kept as `releaseError`, the aired set
+stays published); a run with no readable plan keeps the whole-run promotion (`scope: "run"`). A
+`no-content` generate launch recycles its reservation like a failed one, because a late
+floor/duration refusal lands after `store-select`. Artifacts: `4-publish/settlement.<window>.json`,
 `4-publish/patch-surfdash.{result,payload}.json`, `4-publish/partial-marker.<window>.txt`.
 
 **Shipped preset.** `plugins/kk/publish-presets/daily-ai-voice.json` carries design §3's matrix,

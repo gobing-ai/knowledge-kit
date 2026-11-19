@@ -1267,7 +1267,13 @@ export async function runPublishMatrixSettle(args: string[], deps: PublishMatrix
         echo(`settle: held ${parsedWindow.data} — ${unresolved.length} unresolved (selection kept)`);
         return 0;
     }
+    // 0393 R2: prepare reserved the PRE-curation pool, but only the validated plan aired. Promote
+    // exactly the plan's IDs and release the rest; a run without a readable plan (legacy layout)
+    // keeps the whole-run promotion, which over-protects rather than re-airing anything.
+    const planPath = join(workDir, '21-plan', `${(plan.runDate ?? '').replaceAll('-', '')}_03_plan_plan.json`);
+    const finalItemIds = await readFinalItemIds(fs, planPath);
     const markArgs = ['store', 'mark-published', '--topic', topic, '--run', parentRunId];
+    if (finalItemIds !== undefined) markArgs.push('--in', planPath);
     if (dbArg !== undefined) markArgs.push('--db', dbArg);
     const result = await executor.run({ command: 'kk', args: markArgs });
     if (result.exitCode !== 0) {
@@ -1287,9 +1293,42 @@ export async function runPublishMatrixSettle(args: string[], deps: PublishMatrix
         echoError(`publish-matrix-settle: store mark-published failed — ${detail}`);
         return 1;
     }
-    await fs.writeFile(settlementPath, `${JSON.stringify({ ...settlement, marked: true }, null, 2)}\n`);
-    echo(`settle: marked ${topic}/${parentRunId} published`);
+    const settled: Record<string, unknown> = {
+        ...settlement,
+        marked: true,
+        scope: finalItemIds === undefined ? 'run' : 'final',
+        ...(finalItemIds === undefined ? {} : { finalItemIds }),
+    };
+    if (finalItemIds !== undefined) {
+        // Rows still `selected` after the promotion are the curation-dropped reservations: nothing
+        // carried them to air, so they return to the pool. `published` rows are never touched.
+        const releaseArgs = ['store', 'release', '--run', parentRunId, '--topic', topic];
+        if (dbArg !== undefined) releaseArgs.push('--db', dbArg);
+        const release = await executor.run({ command: 'kk', args: releaseArgs });
+        if (release.exitCode !== 0) {
+            // The aired set is already published; an unreleased row stays excluded, never re-aired.
+            settled.releaseError = release.stderr?.trim() || release.stdout?.trim() || `exit ${release.exitCode}`;
+            echoError(`publish-matrix-settle: store release failed — ${String(settled.releaseError)}`);
+        }
+    }
+    await fs.writeFile(settlementPath, `${JSON.stringify(settled, null, 2)}\n`);
+    echo(`settle: marked ${topic}/${parentRunId} published (${String(settled.scope)})`);
     return 0;
+}
+
+/** The validated plan's item IDs, or `undefined` when the plan is absent or not a non-empty Doc[]. */
+async function readFinalItemIds(fs: FileSystem, planPath: string): Promise<string[] | undefined> {
+    if (!(await fs.exists(planPath))) return undefined;
+    try {
+        const docs: unknown = JSON.parse(await fs.readFile(planPath));
+        if (!Array.isArray(docs)) return undefined;
+        const ids = docs.map((doc) => (doc as { id?: unknown } | null)?.id);
+        return ids.length > 0 && ids.every((id) => typeof id === 'string' && id !== '')
+            ? [...new Set(ids as string[])]
+            : undefined;
+    } catch {
+        return undefined;
+    }
 }
 
 /**

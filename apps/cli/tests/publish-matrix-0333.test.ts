@@ -217,6 +217,28 @@ function liveReceipt(parentRunId: string, aggregatePath: string): Record<string,
     };
 }
 
+/** Records each `kk` argv and runs the REAL store command against an isolated db. */
+function realStoreExecutor(dbPath: string, calls: string[][]): never {
+    return {
+        run: async (options: { command: string; args: string[] }) => {
+            calls.push(options.args);
+            const full = ['bun', join(REPO, 'apps/cli/src/index.ts'), ...options.args, '--db', dbPath];
+            const child = Bun.spawnSync(full, { cwd: REPO, stdout: 'pipe', stderr: 'pipe' });
+            return {
+                command: options.command,
+                args: options.args,
+                exitCode: child.exitCode ?? 1,
+                stdout: child.stdout?.toString() ?? '',
+                stderr: child.stderr?.toString() ?? '',
+                durationMs: 1,
+            };
+        },
+        runStreaming: () => {
+            throw new Error('not used');
+        },
+    } as never;
+}
+
 // ── R4: store settlement is receipt-aware ────────────────────────────────────────────────────
 
 describe('publish-matrix-settle (0333 R4)', () => {
@@ -352,6 +374,70 @@ describe('publish-matrix-settle (0333 R4)', () => {
         expect(rows.filter((row) => row.topic === 'ai-news').every((row) => row.status === 'published')).toBe(true);
         const settlement = readJson(join(fx.workDir, '4-publish', 'settlement.after-generate.json'));
         expect(settlement.marked).toBe(true);
+        rmSync(fx.root, { recursive: true, force: true });
+    });
+
+    it('F2c: settlement promotes only the final plan subset and releases the curation-dropped reservations (0393 R2)', async () => {
+        const fx = makeFixture();
+        seedPublishArtifacts(fx, PLAN_ROWS, {
+            'flip-pub.post': liveReceipt('voice3-run-1', '/tmp/unused.json'),
+            'stub-pub.post': liveReceipt('voice3-run-1', '/tmp/unused.json'),
+        });
+        // Prepare reserved three items before curation; curation kept two. The third never aired.
+        const dbPath = join(fx.root, 'kk.db');
+        const seed = await openStore({ path: dbPath });
+        const ids = ['item-1', 'item-2', 'item-3'];
+        await seed.items.upsertDocs(
+            'voice3-run-1',
+            ids.map((id, n) => ({
+                id,
+                title: `AI新闻${n}`,
+                body: `内容 https://example.com/${id}`,
+                sourceUri: `https://example.com/${id}`,
+                mediaType: 'text/html',
+                metadata: {},
+            })),
+        );
+        await seed.selections.insertMany(
+            ids.map((id) => ({ topic: 'ai-news', itemId: id, runId: 'voice3-run-1', storyId: id })),
+        );
+        await seed.close();
+        mkdirSync(join(fx.workDir, '21-plan'), { recursive: true });
+        writeFileSync(
+            join(fx.workDir, '21-plan', '20261022_03_plan_plan.json'),
+            JSON.stringify([
+                { id: 'item-1', title: 'AI新闻0', body: 'x', metadata: {} },
+                { id: 'item-2', title: 'AI新闻1', body: 'x', metadata: {} },
+            ]),
+        );
+
+        const calls: string[][] = [];
+        const code = await runPublishMatrixSettle(
+            [fx.workDir, '--window', 'after-generate', '--topic', 'ai-news', '--db', dbPath],
+            { executor: realStoreExecutor(dbPath, calls) },
+        );
+        expect(code).toBe(0);
+        const after = await openStore({ path: dbPath });
+        const status = Object.fromEntries(
+            (await after.selections.listByRun('voice3-run-1')).map((row) => [row.itemId, row.status]),
+        );
+        await after.close();
+        expect(status).toEqual({ 'item-1': 'published', 'item-2': 'published', 'item-3': 'dropped' });
+        const settlement = readJson(join(fx.workDir, '4-publish', 'settlement.after-generate.json'));
+        expect(settlement.marked).toBe(true);
+        expect(settlement.scope).toBe('final');
+        expect(settlement.finalItemIds).toEqual(['item-1', 'item-2']);
+
+        // A second window settling the same bundle is idempotent: nothing moves again.
+        const again = await runPublishMatrixSettle(
+            [fx.workDir, '--window', 'after-generate', '--topic', 'ai-news', '--db', dbPath],
+            { executor: realStoreExecutor(dbPath, []) },
+        );
+        expect(again).toBe(0);
+        const replay = await openStore({ path: dbPath });
+        const rows = await replay.selections.listByRun('voice3-run-1');
+        await replay.close();
+        expect(rows.map((row) => row.status).sort()).toEqual(['dropped', 'published', 'published']);
         rmSync(fx.root, { recursive: true, force: true });
     });
 

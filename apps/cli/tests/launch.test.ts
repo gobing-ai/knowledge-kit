@@ -710,16 +710,22 @@ describe('launchWorkflow — dry run and no-content (0365 R9, R5)', () => {
         }
     });
 
-    it('records no-content as a successful launch', async () => {
+    it('records no-content as a successful launch and returns any reservation to the pool (0393 R2)', async () => {
+        // A late refusal (floor/duration gate) writes no-content AFTER store-select reserved the
+        // pool; nothing was sent, so the reservation must be released or it locks those items out
+        // of every later pool. An early empty pool reserved nothing and the release is a no-op.
         const space = scratch();
-        writeFileSync(join(space.workDir, 'run-report.summary.txt'), 'no-content: pool empty\n');
+        writeFileSync(
+            join(space.workDir, 'run-report.summary.txt'),
+            'no-content: the script gate refused the episode duration\n',
+        );
         const stub = harness();
         try {
             const receipt = await launchWorkflow({ ...baseOptions(space), deps: stub.deps });
 
             expect(receipt.status).toBe('no-content');
             expect(receipt.exitCode).toBe(0);
-            expect(stub.recycled).toEqual([]);
+            expect(stub.recycled).toEqual([receipt.runId]);
         } finally {
             stub.restore();
         }
