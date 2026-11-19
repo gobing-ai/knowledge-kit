@@ -158,6 +158,7 @@ dist
 plugins/*/*/.spur/
 /docs/memo.md
 
+/docs/report/*-history-anatomy.md
 /docs/dogfood/*.md
 !/docs/dogfood/INDEX.md
 # Accidental spur runtime under docs/ (corpus root mis-set); never commit
