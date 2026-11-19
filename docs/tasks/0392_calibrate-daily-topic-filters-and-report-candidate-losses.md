@@ -1,31 +1,46 @@
 ---
 schema_version: 1
 name: Calibrate daily topic filters and report candidate losses
-status: done
+status: todo
 template: feature-impl
 created_at: 2026-11-18T04:42:14.699Z
-updated_at: "2026-11-18T12:43:50.315Z"
+updated_at: "2026-11-19T04:06:35.690Z"
 feature_id: L3
 priority: P1
 
 estimate_hours: 7
-done_forced: "false"
-done_reason: unforced close
+ac_altitude: graduating
+ac_numbering: task-local
 ---
 
 ## 0392. Calibrate daily topic filters and report candidate losses
 
 ### Background
 
-Code floor is leadership/date only (plugins/kk/scripts/topic-boundary.json:1), but the Agent still excludes entire public-affairs classes (plugins/kk/skills/news-editorial/SKILL.md:46). Existing QC writes exclusion evidence only on hits. The normal report is behind the pool gate (apps/cli/src/commands/content-generate.ts:418).
+The v2 mechanical boundary in `plugins/kk/scripts/topic-boundary.json` enforces `prc-leadership` and the future-date conflict. In the current news path, `plugins/kk/workflows/kk-news-generate.yaml` invokes the editorial skill for curate and curate-fix. The skill and its style contract still exclude entire public-affairs classes, including AI-relevant regulation and export controls. The reportable losses also include extraction and its window ladder, profile/QC admission, title dedup, duration/floor gates, Agent curation, and draft/final-variant channel review. See [L3 design](../design/daily-ai-news-editorial-delivery.md#过滤规则与执行报告).
+
+**Refine corrections (2026-11-18)**
+
+- The earlier policy citation covered one prompt only. The live workflow reads the skill plus its selection and style references, so calibrate the effective rule across both curate paths and audit the legacy voice flows for drift.
+- The normal report is conditional on pool admission. The early path in `writePoolGate` writes a summary, so trace that path separately and exercise it through `kk news prepare`.
+- A QC exclusion file records decisions where there were hits. It does not cover the stage inventory or prove zero hits. Capture observed counts at each stage and distinguish missing evidence.
+- The separate L3 worktree has implementation commit `f6c4ce57`. It is absent from main and is the starting point for integration review. Its recorded stages stop at plan and floor, so verify coverage of the live curation and channel-review results before accepting R14.
 
 ### Requirements
 
-- [x] R1. Inventory every selection filter and platform gate, including adult content, gambling, drugs, domestic politics and leadership. Reproduce overly broad matches using historical and contrast fixtures, including an AI-relevant public-policy story. Keep actual platform restrictions enforced.
+- [ ] R1. Inventory the operative rules for selection and platform admission, including adult content, gambling, drugs, domestic politics and leadership. Replay historical and contrast fixtures. Admit AI-subject public-policy candidates that otherwise qualify and preserve verified mechanical and per-channel restrictions.
+- [ ] R2. Produce retry-safe selection evidence covering raw pool, QC, mechanical boundary, title dedup, Agent curation and channel admission. Show the current attempt in the ordinary and no-content reports, including unique exclusions, rule hits, observed zero and unknown stages.
+
+Out of scope: new policy categories without supporting evidence, publisher permissions, production schedule changes and cross-episode identity (0393).
 
 ### Acceptance Criteria
 
-- [ ] R14 — 过滤规则按内容风险校准并在最终报告留证
+```gherkin
+Scenario: AC1 — R14 — 过滤规则按内容风险校准并在最终报告留证 (req: R1; R2)
+  Given a replay pool with a hard-rule hit, a future-dated item, an AI-relevant public-policy story, an incidental keyword, a duplicate title and an item with more than one rule hit
+  When news preparation, curation and reporting run on fixture input, including an empty-pool attempt and a retry
+  Then backed restrictions stay enforced, editorial and channel decisions retain their own reasons, and both report paths show reconciled attempt counts with observed zero distinct from skipped or missing evidence
+```
 
 ### Q&A
 
@@ -41,97 +56,36 @@ Code floor is leadership/date only (plugins/kk/scripts/topic-boundary.json:1), b
 
 **Verification exit.** Assert counts reconcile after retries, zero kept, multiple hits and skipped stages. Pair a relevant industry/public-policy item with a hard-rule hit.
 
+#### Q&A entry — 2026-11-19T04:05:45.764Z
+
+Closed decisions. Use the existing L3 worktree artifact and replay fixtures as integration inputs. Channel review remains target-specific. The early no-content summary and the completed report share the attempt projection. Publish only the inventory and replay evidence in this task's verification artifacts.
+
 ### Design
 
-Code owns versioned rule checks and deterministic counts. Agent owns context and attribution. Keep current confirmed hard constraints pending an explicit policy decision, and keep publication admission per channel. Reuse the QC artifact and news-report-gen. Record reconciled stage counts, unique exclusions, per-rule hits and decisions plus no-content diagnostics. Capture raw pre-filter counts before mutation. Bind evidence to attempt and fingerprints so retries do not erase results or inherit stale reasons.
+Use the existing `dailyExtract`, `dailyQcContent`, curate validator, and nested safety review as the sources of observed decisions. Read `10-collect/ladder.json` with its chosen window, count the chosen pool once, and capture QC/boundary/dedup inputs before mutation. Count one excluded ID per stage and one hit per distinct ID/rule pair. For each observed selection stage, input count equals kept plus distinct drops. Keep channel decisions keyed by target and scope, using candidate IDs only when the receipt identifies them. A channel-only outcome belongs in the target summary and does not change candidate totals. The curated plan and exclusions are authoritative only after validation or the recorded fallback. A skipped stage or missing/mismatched receipt is unknown.
+
+Reuse the worktree implementation's versioned `21-plan/topic-selection-attempts.json` and `apps/cli/src/topic-attempts.ts` reader. Bind evidence to run date, `resolveRunId`, attempt, input digest and rule version. A cached result counts as observed only with matching provenance. Preserve previous attempts and expose only the selected attempt in report totals. Use `generateRunReport` / `news-report-gen` for report rendering and the same projection for the early pool-gate summary and later refusals. No new public CLI or platform policy. Give 0385 the calibrated editorial copy and report artifact location.
 
 ### Plan
 
-- [ ] Build replay fixtures for policy and editorial overlap, clear versus incidental matches, multiple hits, and zero survivors. Audit the shipped skill and legacy report cases against current invocations. Calibrate on labeled examples before changing narrow rules. Run generation and report for passing and empty cases, including cached reruns, and leave inspectable Markdown plus JSON evidence.
+- [ ] R1: Compare `f6c4ce57` with the integration branch before changing code. Replay its labeled calibration fixtures and audit the current curate/curate-fix skill references, legacy voice prompts, and the platform references invoked by the safety workflow. Record which rules run, their authority and any enforcement gaps.
+- [ ] R2: Reuse the committed attempt writer and report reader. Add evidence only at missing boundaries and align the ordinary report and early/late no-content paths with the current generation entry point.
+- [ ] R1/R2: Extend the fixture path in `apps/cli/tests/kk-news-generate.e2e.test.ts` and use the existing stage and report harnesses in `apps/cli/tests/kk-workflow-stages.test.ts` and `apps/cli/tests/commands/daily.test.ts`. Assert kept/excluded reasons, duplicate and multiple-hit arithmetic, zero kept, cached retry, skipped curation, and target decisions from fixture safety receipts. Retain the resulting Markdown and JSON with the replay command. Reconcile evidence before handing policy copy to 0385.
 
 ### Solution
 
-One versioned rule surface, one counts ledger, one policy text — and an honest inventory.
-
-**R1 — inventory (all four filter layers, named class by class).**
-1. Deterministic selection rules: `plugins/kk/scripts/topic-boundary.json` (v2, unmodified) — only the
-   `prc-leadership` keyword rule and the future-date `dateConflict` check run in code
-   (`daily-stages.ts:207-240`), on a 200-char window. Nothing else is mechanical.
-2. Editorial topic boundary (agent prose): `plugins/kk/skills/news-editorial/SKILL.md:46-55` — retuned by
-   this task. It is a policy, and the writers never read that file: they read the prompt scalars of the
-   daily workflows, which shipped the wide 0189 exclusion verbatim. Both are now one text (below).
-3. Platform admission gates (content-safety): `plugins/kk/skills/content-safety/SKILL.md:33-40` category 2
-   plus the per-channel files (`references/platforms/{xiaoyuzhou,wechatmp,xhs}.md` XY-02 / WX-01 / XH-06).
-   Inventoried, **intentionally kept**: they are platform rules, not editorial preference.
-4. **黄赌毒 (adult content / gambling / drugs) — the honest answer: nothing enforces it anywhere.** No rule
-   in `topic-boundary.json`, no row in the content-safety category table, no mention in any
-   `references/platforms/*.md`, and `grep -riE '黄赌毒|色情|赌博|毒品|porn|gambl|adult' plugins/kk/skills
-   plugins/kk/scripts apps/cli/src` returned nothing. It is not a sub-case of category 2, so an
-   adult/gambling/drug story whose subject is an AI product passes every rule in force. Per the R1 scope
-   ("identify current enforcement location and originating policy") this task records the gap and ships
-   **no** filter (no observed harmful miss; an unvetted keyword list would block AI stories that mention
-   addiction treatment or betting-market models). The finding is now visible to the admission reviewer in
-   `plugins/kk/skills/content-safety/SKILL.md` (the "Unpoliced class" note under the category table).
-
-**The retuned boundary (one text, four surfaces).** Keep the hard line (`prc-leadership`, `dateConflict`
-in code — never re-admit); keep excluding a story whose mainline IS the political actor, an armed conflict
-or a non-AI event; **admit AI-subject public policy** (AI regulation, model liability/litigation, export
-controls, procurement, standards and safety enforcement). `news-editorial/SKILL.md:46-55` is the source;
-the same sentence now ships verbatim in `kk-daily-ai-voice.yaml` (article-write, script-write, xhs-write)
-and its voice2 twins, in the English cover-brief prompts, and in
-`news-editorial/references/style-contract.zh.md:12-15` (the contract `script-write` reads).
-`apps/cli/tests/kk-daily-ai-voice-workflow.test.ts` pins it: each workflow must carry the sentence three
-times, the retired blanket skip clause must be absent from both workflows and the contract, and SKILL.md +
-contract must name the same admitted classes. Reverting the policy in one place now fails.
-
-**R14 — evidence in the final report.** One artifact per run day,
-`21-plan/topic-selection-attempts.json` (`version: 1`, `specVersion`, append-only `attempts[]`,
-`reconciliation`), written on every QC invocation, appended on retries, never inferring a missing stage as
-zero (`observed` | `unknown`). Both report paths consume it: the ordinary `## Topic selection` section and
-the `no-content` reason line. The reconciliation identity is `preFilter = kept + uniqueExcluded + deduped`
-(`topic-selection-attempts.ts:196-220`) — `kept` is post-dedup, so omitting the near-duplicate drops made
-every dedup day publish a false MISMATCH. `noContentReason` now appends the counts note to **all four**
-branches: post-synthesis duration refusal, script-gate refusal, pre-spend floor refusal, and the generic
-fallback (`apps/cli/src/commands/daily.ts:546-588`) — the R14 motivating shape (4-item pool → 3 kept,
-8.9 min vs a 15 min floor) is a duration refusal, and it was the one branch that carried no counts.
-
-**Calibration evidence.** `plugins/kk/tests/fixtures/topic-selection-cases.json` (2 `historical` +
-6 `counterexample` cases, including an AI-subject export-licensing story) replayed against the spec in
-force by `plugins/kk/scripts/topic-selection-calibration.ts`; re-adding the old wide `policy-dispute` rule
-turns the replay red. **Handed to 0385** (the board's editorial projection) — not implemented here.
+<!-- Filled during implementation: file:line change map and concise rationale. -->
 
 ### Testing
 
-**Pipeline verify results**
-
-- Verdict: PASS (from verdict artifact)
-
-| Requirement | Status | Evidence |
-|-------------|--------|----------|
-| R1 — inventory every selection filter and platform gate (incl. adult content, gambling, drugs, domestic politics and leadership); reproduce overly broad matches with historical + contrast fixtures incl. an AI-relevant public-policy story; keep actual platform restrictions enforced | MET | All four layers named class by class: deterministic rules `plugins/kk/scripts/topic-boundary.json:6,28` (unmodified; only `prc-leadership` + `dateConflict`, enforced at `plugins/kk/scripts/daily-stages.ts:207-240`); editorial policy `plugins/kk/skills/news-editorial/SKILL.md:46-55` now shipped verbatim at the surfaces writers actually read (`plugins/kk/workflows/kk-daily-ai-voice.yaml:236,264,301,485`, `plugins/kk/workflows/kk-daily-ai-voice2.yaml:394,468,532,773`, `plugins/kk/skills/news-editorial/references/style-contract.zh.md:12-15`); platform gates inventoried and kept (`plugins/kk/skills/content-safety/SKILL.md:39` + `references/platforms/*.md`); 黄赌毒 recorded as unpoliced with no invented filter (`plugins/kk/skills/content-safety/SKILL.md:44-54`). Fixtures: 2 `historical` + 6 `counterexample` incl. the AI-police export-control story `plugins/kk/tests/fixtures/topic-selection-cases.json:41-55`, replayed by `plugins/kk/scripts/topic-selection-calibration.ts:76-104`; re-adding a wide `policy-dispute` rule turns the replay red `plugins/kk/tests/topic-selection-calibration.test.ts:67-79`; a one-surface prompt revert fails `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:979-1045` |
-
-| Acceptance Criteria | Status | Evidence Type | Evidence |
-|---------------------|--------|---------------|----------|
-| R14 — 过滤规则按内容风险校准并在最终报告留证 | MET | test | Calibrated policy at every operative surface (rows above) with the "no bare 感觉不合适 reason" rule `plugins/kk/skills/news-editorial/SKILL.md:53-54`. Evidence artifact `21-plan/topic-selection-attempts.json` (versioned, append-only, `unknown` never 0) written on every QC invocation `plugins/kk/scripts/daily-stages.ts:248-270`; identity `preFilter = kept + uniqueExcluded + deduped` with null ⇒ unproven `plugins/kk/scripts/topic-selection-attempts.ts:213-227`; both report paths consume it — ordinary section `apps/cli/src/topic-attempts.ts:103-113` appended at `apps/cli/src/commands/daily.ts:745-748`, no-content note on all four branches `apps/cli/src/commands/daily.ts:553,576,581,588`. Fresh evidence: dedup day reconciles end to end `apps/cli/tests/kk-workflow-stages.test.ts:956-1003` (1 pass), dedup/mismatch/unproven unit cases `plugins/kk/tests/topic-selection-calibration.test.ts:182-233` (suite 27 pass / 0 fail), duration-refusal + script-gate notes `apps/cli/tests/commands/daily.test.ts:396-436` (suite 99 pass / 0 fail) |
-- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
 
 ### Review
 
-<!-- spur:record-review -->
-
-**SECU findings** (pipeline verify step — verdict: PASS)
-
-| Priority | Dimension | Location | Finding |
-|----------|-----------|----------|----------|
-| P4 | — | — | No findings (verify verdict PASS) |
+<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
 
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
-
-- 2026-11-18T10:26:12.985Z todo → wip (system)
-- 2026-11-18T12:43:49.727Z wip → testing (system)
-- 2026-11-18T12:43:50.311Z testing → done (system)
-

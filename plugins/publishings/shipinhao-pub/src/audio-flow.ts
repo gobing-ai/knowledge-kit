@@ -184,17 +184,60 @@ export async function attachAudioCover(page: Page, coverPath: string, stepTimeou
     const chooser = await chooserPromise;
     if (chooser === null) return 'clicking the 封面 tile opened no file chooser';
     await chooser.setFiles(coverPath);
-    const cropped = await expectOutcome(
+    // 2026-11-18 (the "shipinhao audio never publishes" leaf cause): choosing the file was treated as
+    // a committed cover. The tile then shows an upload percentage (25% measured) for as long as the
+    // file is in flight, and a submit clicked in that window fails client-side with 「请上传封面」
+    // while the page stays on the form — so no works row ever appeared and every run ended
+    // `uncertain`. The percentage token is the only pre-submit signal that the cover is NOT committed.
+    const settled = await expectOutcome(
+        async () => ((await coverUploadPending(page)) ? null : 'cover upload settled'),
+        stepTimeoutMs,
+        '音频 封面 upload',
+    );
+    if (!settled.ok) return `the 封面 file was chosen but its upload never settled: ${settled.error}`;
+    // 2026-11-18 (measured): the crop dialog renders inside the `WUJIE-APP` shadow root, and it mounts
+    // BEFORE its cropper initializes — a single 确认 click fired in that window is swallowed, the
+    // dialog stays open, and the form then refuses the submit with 「请上传封面」. So the click is
+    // retried while the dialog is still there, and success is the dialog CLOSING, not the click call
+    // returning. `page.locator` pierces the open shadow root natively; `document.*` text reads do not
+    // (that is why the older probe believed an uncommitted cover had been accepted).
+    let cropSeen = false;
+    // Open, then wait for the cropper IMAGE: clicking 确认 while the cropper is still mounting closes
+    // the dialog without committing the cover (measured 2026-11-18 — the form then refuses the
+    // submit with 「请上传封面」 and no works row is ever created).
+    const cropReady = await expectOutcome(
         async () => {
-            const confirm = page.locator('button:text-is("确认")').first();
-            if ((await confirm.count()) === 0 || !(await confirm.isVisible().catch(() => false))) return null;
-            await confirm.click({ timeout: 4_000 }).catch(() => {});
-            return 'crop confirmed';
+            const dialog = page.locator(CROP_DIALOG).first();
+            const open = (await dialog.count()) > 0 && (await dialog.isVisible().catch(() => false));
+            if (!open) return cropSeen ? 'crop dialog closed before it was ready' : null;
+            cropSeen = true;
+            const cropper = page.locator(CROP_IMAGE).first();
+            return (await cropper.count()) > 0 && (await cropper.isVisible().catch(() => false))
+                ? 'cropper ready'
+                : null;
         },
         stepTimeoutMs,
         '编辑音频封面 crop dialog',
     );
-    if (!cropped.ok) return `the 封面 crop dialog never appeared: ${cropped.error}`;
+    if (!cropReady.ok) return `the 封面 crop dialog never appeared or its cropper never mounted: ${cropReady.error}`;
+    const cropped = await expectOutcome(
+        async () => {
+            const dialog = page.locator(CROP_DIALOG).first();
+            if ((await dialog.count()) === 0 || !(await dialog.isVisible().catch(() => false))) {
+                return 'crop dialog closed';
+            }
+            // The dialog can survive the first click while the cropper settles, so each pass clicks.
+            await page
+                .locator(`${CROP_DIALOG} button:text-is("确认")`)
+                .last()
+                .click({ timeout: 4_000 })
+                .catch(() => {});
+            return null;
+        },
+        stepTimeoutMs,
+        '编辑音频封面 crop confirm',
+    );
+    if (!cropped.ok) return `the 封面 crop dialog never closed: ${cropped.error}`;
     const cleared = await expectOutcome(
         async () => ((await page.locator('text=请上传封面').count()) === 0 ? 'cover accepted' : null),
         stepTimeoutMs,
@@ -202,6 +245,46 @@ export async function attachAudioCover(page: Page, coverPath: string, stepTimeou
     );
     if (!cleared.ok) return `the 封面 was uploaded but the form still reports 「请上传封面」: ${cleared.error}`;
     return null;
+}
+
+/**
+ * The inline validation lines the 音频 form renders when a submit is refused client-side (measured
+ * 2026-11-18). Only these exact lines are read: any other text on the page is content, not a verdict.
+ */
+const AUDIO_FORM_REFUSALS = ['请上传封面', '请上传音频', '请填写标题', '请填写描述', '请选择合集'] as const;
+
+/** The form's refusal line after a submit, or null when it rendered none. */
+async function readSubmitRefusal(page: Page): Promise<string | null> {
+    for (const text of AUDIO_FORM_REFUSALS) {
+        try {
+            if ((await page.locator(`text=${text}`).count()) > 0) return text;
+        } catch {
+            // An unreadable probe is not a refusal.
+        }
+    }
+    return null;
+}
+
+/**
+ * The 编辑音频封面 crop dialog. It lives in the `WUJIE-APP` shadow root (measured 2026-11-18), so it is
+ * matched by the cropper it contains or by its own title, never by a light-DOM ancestor.
+ */
+const CROP_DIALOG = '.weui-desktop-dialog:has(.cropper-wrap), .weui-desktop-dialog:has-text("编辑音频封面")';
+/** The cropper's own image: present only once the dialog has finished mounting (measured 2026-11-18). */
+const CROP_IMAGE = `${CROP_DIALOG} .cropper-wrap img, ${CROP_DIALOG} .croppie-container img, ${CROP_DIALOG} img`;
+
+/**
+ * Whether the 封面 tile still shows an upload percentage ("25%"), i.e. the file is in flight and the
+ * cover is NOT committed yet (measured 2026-11-18). The form's own 「请上传封面」 line is useless as a
+ * pre-submit check: it only renders after a refused submit.
+ */
+async function coverUploadPending(page: Page): Promise<boolean> {
+    try {
+        return (await page.locator('text=/\\d{1,3}%/').count()) > 0;
+    } catch {
+        // An unreadable probe is not evidence of an upload; the crop/validation checks still run.
+        return false;
+    }
 }
 
 /** Open the 合集 picker, click the exact collection, and verify the row reads it back. */
@@ -358,6 +441,22 @@ export async function pendingAudioFlow(input: AudioFlowInput, metadata: Record<s
         if ((await confirm.count()) > 0 && (await confirm.isVisible().catch(() => false))) {
             await confirm.click({ timeout: 5_000 }).catch(() => {});
             break;
+        }
+    }
+
+    // A form that stays on the create route after the submit did not submit: the platform renders its
+    // client-side validation inline (measured 2026-11-18: 「请上传封面」 under the cover tile while the
+    // page never left /platform/post/createAudio). Reading it turns an opaque `unknown` into the one
+    // line that names the fix — the 2026-11-15/17/18 runs all died as "no works row ever observed".
+    if (page.url().includes(SHP_AUDIO_CREATE_PATH)) {
+        const refusal = await readSubmitRefusal(page);
+        if (refusal !== null) {
+            return stageFail(
+                `shipinhao 音频 submit was refused by the form: 「${refusal}」 — nothing was published`,
+                'audio-submit-validation',
+                metadata,
+                `inline validation: ${refusal}`,
+            );
         }
     }
 

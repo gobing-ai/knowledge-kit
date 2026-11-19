@@ -810,7 +810,10 @@ const STEP = {
     bundleFreeze: (): RowStage => ({
         name: 'publish-matrix-bundle',
         args: ARGS.bundleFreeze,
-        when: (ctx) => ctx.bundleStage === 'freeze',
+        // The matrix freeze is news-only and belongs to `--stage freeze` alone; the article bundle
+        // has its own row below. Leaving the noun in the guard keeps `--stage variants` from
+        // freezing before the variants safety review has run (2026-11-18).
+        when: (ctx) => ctx.noun === 'news' && ctx.bundleStage === 'freeze',
     }),
     report: (): RowStage => ({ name: GENERATION_REPORT, args: ARGS.report }),
 };
@@ -847,6 +850,12 @@ async function countFiles(ctx: GenerateContext, dir: string, suffix: string): Pr
     if (!(await ctx.fs.exists(path))) return 0;
     return (await ctx.fs.readDir(path)).filter((entry: string) => entry.endsWith(suffix)).length;
 }
+
+/**
+ * `--stage variants` for news: the payload/staging stages that produce what the variants safety
+ * review reads. A `--stage freeze` must never re-run them (see the row below).
+ */
+const newsVariantsStage = (ctx: GenerateContext): boolean => ctx.noun === 'news' && ctx.bundleStage === 'variants';
 
 /**
  * The seven verbs of design §1.3, in the design's own order. Every row runs the stages design §6
@@ -969,11 +978,17 @@ export const GENERATE_ROWS: GenerateVerbRow[] = [
     },
     {
         verb: 'generate-bundle',
+        // 2026-11-18: the two stages split on their own boundary. `--stage variants` materializes the
+        // payloads the variants safety review registers; `--stage freeze` must NOT re-run them — the
+        // review's revisions live in exactly those files, so a re-render discarded them and the
+        // freeze's own digest guard then refused the bundle (11-18: 2h36m lost, nothing published).
+        // `bundleFreeze` carries its own noun + stage guard (news, `--stage freeze`), so nothing
+        // here needs to repeat it.
         stages: [
-            { ...STEP.publishPrep(), when: (ctx: GenerateContext) => ctx.noun === 'news' },
-            { ...STEP.bundleVariants(), when: (ctx: GenerateContext) => ctx.noun === 'news' },
-            { ...STEP.safetyManifest(), when: (ctx: GenerateContext) => ctx.noun === 'news' },
-            { ...STEP.bundleFreeze(), when: (ctx: GenerateContext) => ctx.noun === 'news' },
+            { ...STEP.publishPrep(), when: newsVariantsStage },
+            { ...STEP.bundleVariants(), when: newsVariantsStage },
+            { ...STEP.safetyManifest(), when: newsVariantsStage },
+            STEP.bundleFreeze(),
             {
                 name: BUNDLE_CONTENT_TYPE,
                 args: () => [],

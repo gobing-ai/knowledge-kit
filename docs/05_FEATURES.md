@@ -70,6 +70,7 @@ sync: [T4]
 | D5 | Voice generator (Voicebox) | ✅ done | 3 | task `0070` done; `plugins/generations/voice-gen` REST `/generate` + VoiceScript multi-speaker concat + `format: "audio"`; satellite `docs/design/voice-gen.md`; verify PASS |
 | D6 | image-gen runtime fallback | ✅ done | 3 | tasks `0164`–`0166` done; opt-in runtime fallback loop + error classifier + daily-cover wiring; verify PASS + Shippable PASS |
 | D7 | image-gen pre-spend illustration anchor validation | ✅ done | 3 | task `0169` done; pre-provider validation of illustration anchors in `image-gen` on paid and dry-run branches |
+| D8 | Music generation over the homelab Lyria 3 instance | 📋 backlog | 3 | tasks `0384`–`0391` + `0394` backlog; `music-gen` generator plugin, `kk music` noun, `kk-music` workflow, `music-quality` rubric under content-judge; minted as root `Q`, moved under D 2026-11-18 |
 | **E** | Multi-channel publish | ✅ done | 1 | kind parent (renamed from "Publish", 0035); AC rolled up from E2+E3 (DD-09); suite in scope → **E4**; XHS follow-on **E8** done |
 | E1 | wt-publish audit | ✅ done | 1 | task `0002` done (transports mapped; Surfdash simplest); wrapall 2026-08-19 — `spur feature sync E1` verifying→done |
 | E2 | Publish design and test harness | ✅ done | 1 | tasks `0018`/`0019` done; transport abstraction + `packages/publish-harness`; verifyall re-audit PASS + shippable; commit `2195d14` |
