@@ -2529,6 +2529,45 @@ function planItemsForPodcast(workDir: string, runDate: string): Array<{ title: s
     return items;
 }
 
+/**
+ * 0396 R2 — the other channels' dispatch rows, shaped for podcast-pub's delivery classifier.
+ *
+ * Read from the 0388 ledger (the authority on what was dispatched for this frozen date). Capability
+ * is deliberately NOT asserted: an unknown content surface must surface as `unsupported` with its
+ * documented reason rather than a delivery nobody verified.
+ */
+export function correctionTargetRows(ledgerPath: string): Array<Record<string, unknown>> {
+    const ledger = readJson(ledgerPath);
+    const entries =
+        ledger !== null && Array.isArray((ledger as { entries?: unknown }).entries)
+            ? ((ledger as { entries: unknown[] }).entries as Array<Record<string, unknown>>)
+            : [];
+    const rows: Array<Record<string, unknown>> = [];
+    for (const entry of entries) {
+        // The 0388 ledger keys a row by `id` (`plugin[@operation]`) with `plugin` beside it — NOT by a
+        // `target` field. Reading a non-existent field silently produced zero rows and made this whole
+        // seam inert (0396 review), so the id is the identity here and `plugin` is the fallback.
+        // The self row is identified by PLUGIN, not by id: the writer keys an entry as
+        // `plugin.operation` (`podcast-pub.episode`), so comparing the id let the podcast's own row
+        // through and the operator saw a "not delivered to podcast-pub.episode" warning for the target
+        // that actually received it (0396 review).
+        const plugin = typeof entry?.plugin === 'string' ? entry.plugin.trim() : '';
+        const id = typeof entry?.id === 'string' ? entry.id.trim() : '';
+        const target = id !== '' ? id : plugin;
+        if (plugin === 'podcast-pub' || target === '' || target === 'podcast-pub') continue;
+        const blockedBy = Array.isArray(entry.blockedBy) ? entry.blockedBy.filter((id) => typeof id === 'string') : [];
+        rows.push({
+            target,
+            ...(typeof entry.state === 'string' ? { state: entry.state } : {}),
+            ...(typeof entry.mode === 'string' ? { mode: entry.mode } : {}),
+            ...(typeof entry.manualStep === 'string' ? { manualStep: entry.manualStep } : {}),
+            ...(typeof entry.lastError === 'string' ? { lastError: entry.lastError } : {}),
+            ...(blockedBy.length > 0 ? { blockedBy } : {}),
+        });
+    }
+    return rows;
+}
+
 export function dailyPublishPodcast(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = ''] = args;
     const prep = join(workDir, '31-publish', `${runDate}_13_publish-prep_content.json`);
@@ -2559,6 +2598,18 @@ export function dailyPublishPodcast(args: string[]): void {
                 showNotes,
                 ...(Object.keys(podcast).length > 0 ? { podcast } : {}),
             });
+            // 0396 R2: the plugin records a delivery per TARGET, so the dispatch state of the other
+            // channels has to reach it. The prep file's top-level `options` IS the channel the plugin
+            // documents, and the 0388 ledger is the authority on those rows — no capability is
+            // asserted here, so an unknown surface comes back as `unsupported` with its exact reason
+            // instead of a claimed delivery.
+            const siblingTargets = correctionTargetRows(join(workDir, '4-publish', 'dispatch-ledger.json'));
+            if (siblingTargets.length > 0) {
+                merged.options = {
+                    ...((merged.options as Record<string, unknown>) ?? {}),
+                    correctionTargets: siblingTargets,
+                };
+            }
             sted('write', prep, () => writeJsonText(prep, merged));
             kk(
                 [
@@ -2575,6 +2626,22 @@ export function dailyPublishPodcast(args: string[]): void {
                 {
                     unset: ['SPUR_WORKFLOW_RUN_ACTIVE'],
                     soft: true,
+                    // 0396 R1: the publish dispatch is where a correction's delivery is REAL, so the
+                    // frozen snapshot rides with it too. Without this the per-target delivery record
+                    // could never be written by a production run (only the show-notes render saw the
+                    // snapshot). `kk executor fan-out` exposes no options channel, so the env is the
+                    // seam the plugin already documents.
+                    env: {
+                        ...(isFile(join(workDir, '21-plan', `${runDate}_judgment-snapshot.json`))
+                            ? {
+                                  PODCAST_PUB_CORRECTIONS: join(
+                                      workDir,
+                                      '21-plan',
+                                      `${runDate}_judgment-snapshot.json`,
+                                  ),
+                              }
+                            : {}),
+                    },
                 },
             );
         } catch (error) {
@@ -5318,6 +5385,14 @@ export function dailyShowNotes(args: string[]): void {
                 PODCAST_PUB_CARDS_DIAGNOSTICS: cardsDiagnostics,
                 ...(postPath === '' ? { PODCAST_PUB_BRIEF_WITHOUT_RECEIPT: 'true' } : {}),
                 PODCAST_PUB_ARTICLE_POST_PATH: postPath,
+                // 0396 R1: the frozen 0384 judgment snapshot is what the correction block is read
+                // from (stable correction id, prior-episode reference, evidence). Passing the path
+                // only when the snapshot exists keeps a run without corrections byte-identical, and
+                // a snapshot that cannot be read fails the render instead of dropping an owed
+                // correction silently.
+                ...(isFile(join(workDir, '21-plan', `${runDate}_judgment-snapshot.json`))
+                    ? { PODCAST_PUB_CORRECTIONS: join(workDir, '21-plan', `${runDate}_judgment-snapshot.json`) }
+                    : {}),
                 // 2026-10-08: the column settings carry the AI-production note. Do not append the
                 // stock closer to show notes (or the article, or the spoken sign-off).
                 ...(isFile(audioContent) ? { PODCAST_PUB_AUDIO_CONTENT: audioContent } : {}),

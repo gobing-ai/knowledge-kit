@@ -857,7 +857,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
         // Spawns stage subprocesses; the full apps/cli suite runs these concurrently and
         // pushes ~1.8s standalone work past bun's 5s default (0392).
-    }, 20000);
+    }, 120000);
 
     it('daily-qc-content keeps a pool that clears the floor and never gates without the arg', () => {
         withTempDir((dir) => {
@@ -910,7 +910,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
         // Spawns stage subprocesses; the full apps/cli suite runs these concurrently and
         // pushes ~1.8s standalone work past bun's 5s default (0392).
-    }, 20000);
+    }, 120000);
 
     it('daily-qc-content re-estimates after the topic boundary so a shrink below the floor is refused pre-spend (2026-10-22)', () => {
         withTempDir((dir) => {
@@ -956,7 +956,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
         // Spawns stage subprocesses; the full apps/cli suite runs these concurrently and
         // pushes ~1.8s standalone work past bun's 5s default (0392).
-    }, 20000);
+    }, 120000);
 
     it('daily-qc-content records a dedup day whose counts reconcile (0392)', () => {
         withTempDir((dir) => {
@@ -1068,7 +1068,9 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             ]);
         });
         // Six stage subprocesses land ~5.3s under gate load — over bun's 5s default.
-    }, 45000);
+        // Six stage subprocesses: ~5.3s idle, 45s+ on a loaded machine (a full suite runs these
+        // concurrently). Budget only; the assertions are unchanged.
+    }, 120000);
 
     it('daily-article unwraps a plan.json that carries the Content envelope instead of the Doc[]', () => {
         // `plan-translate`'s executor has been observed writing the generator's Content envelope
@@ -1830,7 +1832,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         expect(envelope('').fallback).toBeUndefined();
         // Spawns stage subprocesses; the full apps/cli suite runs these concurrently and
         // pushes ~1.8s standalone work past bun's 5s default (0392).
-    }, 20000);
+    }, 120000);
 
     it('daily-xhs-render names the failed card and exits with image-gen status, keeping earlier cards (0219 AC2)', () => {
         withTempDir((dir) => {
@@ -3660,6 +3662,28 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
+    it('daily-show-notes forwards the frozen judgment snapshot so the correction block can be carried (0396 R1)', () => {
+        withTempDir((dir) => {
+            mkdirSync(join(dir, '31-publish'), { recursive: true });
+            mkdirSync(join(dir, '21-plan'), { recursive: true });
+            const stamp = '20260101';
+            const snapshot = join(dir, `21-plan/${stamp}_judgment-snapshot.json`);
+            writeFileSync(
+                snapshot,
+                JSON.stringify({ version: 1, runDate: stamp, judgments: [], superseded: [], corrections: [] }),
+            );
+            const rendered = run(['daily-show-notes', dir, stamp, '', 'Daily AI'], showNotesKk(dir));
+            expect(rendered.status).toBe(0);
+            // The stage owns the wiring: the plugin reads the snapshot path, not the ledger, and only
+            // when it exists — otherwise a run without corrections renders byte-identically.
+            expect(showNotesEnv(dir)).toMatchObject({ PODCAST_PUB_CORRECTIONS: snapshot });
+
+            const withoutSnapshot = run(['daily-show-notes', dir, '20260102', '', 'Daily AI'], showNotesKk(dir));
+            expect(withoutSnapshot.status).toBe(0);
+            expect(showNotesEnv(dir).PODCAST_PUB_CORRECTIONS).toBeUndefined();
+        });
+    });
+
     it('daily-show-notes degrades to an empty article post path when the surfdash result is absent or failed', () => {
         withTempDir((dir) => {
             mkdirSync(join(dir, '31-publish'), { recursive: true });
@@ -3710,6 +3734,125 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                 'WARN podcast-pub: brief mode requested but ARTICLE_POST_PATH is empty; using legacy layout',
             );
             expect(showNotesEnv(dir).PODCAST_PUB_ARTICLE_POST_PATH).toBe('');
+        });
+    });
+
+    it('daily-publish-podcast forwards the frozen judgment snapshot so a delivery can be recorded (0396 R1)', () => {
+        withTempDir((dir) => {
+            const stamp = '20260101';
+            mkdirSync(join(dir, '31-publish'), { recursive: true });
+            mkdirSync(join(dir, '21-plan'), { recursive: true });
+            // The publish stage only reaches its fan-out with a prepared Content in place.
+            writeFileSync(
+                join(dir, '31-publish', `${stamp}_13_publish-prep_content.json`),
+                JSON.stringify({
+                    title: '每日AI乱炖 · 2026-01-01',
+                    body: 'notes',
+                    format: 'markdown',
+                    metadata: { audioFile: '/tmp/a.mp3', podcast: { keep: true } },
+                }),
+            );
+            writeFileSync(join(dir, '31-publish', `${stamp}_15_show-notes_show-notes.md`), '# notes\n');
+            const snapshot = join(dir, `21-plan/${stamp}_judgment-snapshot.json`);
+            writeFileSync(
+                snapshot,
+                JSON.stringify({ version: 1, runDate: stamp, judgments: [], superseded: [], corrections: [] }),
+            );
+            const envLog = join(dir, 'publish-env.jsonl');
+            // A correction's delivery becomes real at dispatch, so the snapshot must ride the fan-out;
+            // without it the per-target record could never be written by a production run.
+            const published = run(
+                ['daily-publish-podcast', dir, stamp, ''],
+                fakeKk(
+                    dir,
+                    `require('node:fs').appendFileSync(${JSON.stringify(envLog)}, JSON.stringify(process.env) + '\\n'); process.exit(0)`,
+                ),
+            );
+            expect(published.status).toBe(0);
+            const envs = readFileSync(envLog, 'utf-8')
+                .trim()
+                .split('\n')
+                .map((line) => JSON.parse(line) as Record<string, string>);
+            expect(envs.some((entry) => entry.PODCAST_PUB_CORRECTIONS === snapshot)).toBe(true);
+        });
+    });
+
+    it('daily-publish-podcast hands the other channels dispatch rows to the correction classifier (0396 R2)', () => {
+        withTempDir((dir) => {
+            const stamp = '20260101';
+            mkdirSync(join(dir, '31-publish'), { recursive: true });
+            mkdirSync(join(dir, '4-publish'), { recursive: true });
+            writeFileSync(
+                join(dir, '31-publish', `${stamp}_13_publish-prep_content.json`),
+                JSON.stringify({
+                    title: '每日AI乱炖 · 2026-01-01',
+                    body: 'notes',
+                    format: 'markdown',
+                    metadata: { audioFile: '/tmp/a.mp3', podcast: { keep: true } },
+                }),
+            );
+            writeFileSync(join(dir, '31-publish', `${stamp}_15_show-notes_show-notes.md`), '# notes\n');
+            // The 0388 ledger is the authority on the other channels' dispatch state.
+            writeFileSync(
+                join(dir, '4-publish', 'dispatch-ledger.json'),
+                // The EXACT shape `planDispatch`/`writeDispatchLedger` produce: an entry carries
+                // `id` (`plugin[@operation]`) plus `plugin`, never a `target` field — a fixture that
+                // invents `target` passes while the real seam reads nothing (0396 review).
+                JSON.stringify({
+                    schemaVersion: 1,
+                    entries: [
+                        {
+                            id: 'podcast-pub',
+                            plugin: 'podcast-pub',
+                            window: 'cn-peak',
+                            tier: 0,
+                            mode: 'live',
+                            state: 'pending',
+                            attempts: 0,
+                        },
+                        {
+                            id: 'wechatmp-pub',
+                            plugin: 'wechatmp-pub',
+                            window: 'cn-peak',
+                            tier: 2,
+                            mode: 'draft',
+                            state: 'blocked',
+                            attempts: 0,
+                            blockedBy: ['surfdash-pub@article'],
+                            manualStep: 'qr-scan',
+                        },
+                        {
+                            id: 'x-pub',
+                            plugin: 'x-pub',
+                            window: 'cn-peak',
+                            tier: 2,
+                            mode: 'live',
+                            state: 'retry',
+                            attempts: 1,
+                            lastError: 'HTTP 502',
+                        },
+                    ],
+                }),
+            );
+            const published = run(['daily-publish-podcast', dir, stamp, ''], fakeKk(dir, 'process.exit(0)'));
+            expect(published.status).toBe(0);
+            const prep = JSON.parse(
+                readFileSync(join(dir, '31-publish', `${stamp}_13_publish-prep_content.json`), 'utf-8'),
+            ) as {
+                options?: { correctionTargets?: Array<Record<string, unknown>> };
+            };
+            const rows = prep.options?.correctionTargets ?? [];
+            // The podcast row is the stage's own dispatch; the others ride along with their exact
+            // state so a manual/blocked/retry reason can be recorded per target.
+            expect(rows.map((row) => row.target)).toEqual(['wechatmp-pub', 'x-pub']);
+            expect(rows[0]).toMatchObject({
+                state: 'blocked',
+                blockedBy: ['surfdash-pub@article'],
+                manualStep: 'qr-scan',
+            });
+            expect(rows[1]).toMatchObject({ state: 'retry', lastError: 'HTTP 502' });
+            // No capability is asserted for an unknown surface: it must be classified `unsupported`.
+            expect(rows.some((row) => row.supportsCorrections === true)).toBe(false);
         });
     });
 

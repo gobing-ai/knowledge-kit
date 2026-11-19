@@ -8,6 +8,17 @@ import { FakeFileCliTransport, type PublishTransport, type PublishTransportPaylo
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 import { runBackfill } from './backfill';
+import {
+    type CorrectionDeliveryTarget,
+    correctionDeliveryPath,
+    type FrozenCorrectionSet,
+    planCorrectionDeliveries,
+    readCorrectionDeliveries,
+    readFrozenCorrections,
+    recordCorrectionDeliveries,
+    renderCorrectionsBlock,
+    writeCorrectionDeliveries,
+} from './corrections';
 import { type EpisodeMapping, mapContentToEpisode } from './map';
 import {
     MicrofeedClient,
@@ -79,6 +90,13 @@ interface PodcastPubOptions {
     rewriteBody?: unknown;
     applySlug?: unknown;
     overrides?: unknown;
+    /**
+     * 0396 R2 — the other 0388 targets this episode's correction must reach, as the dispatch ledger
+     * sees them (`{target, mode, state, manualStep, blockedBy, lastError, supportsCorrections,
+     * capabilityReason}`). Each row yields one delivery record with an exact reason; a row that is
+     * manual/blocked/unsupported is recorded as such and never as `delivered`.
+     */
+    correctionTargets?: unknown;
 }
 
 /** Re-reads env each call so tests can set credentials without constructor plumbing (design D4). */
@@ -211,6 +229,44 @@ function resolveShowNotesRenderOptions(
     };
 }
 
+/**
+ * 0396 R1 — the frozen correction projection, read from the snapshot path the stage passes in
+ * (`PODCAST_PUB_CORRECTIONS`, 0384's `21-plan/<date>_judgment-snapshot.json`).
+ *
+ * `null` = the caller configured no corrections for this run (the documented "no frozen judgment"
+ * case: no block, no heading). A configured-but-unreadable snapshot is an exact, path-naming error —
+ * never a silent "there is no correction", because a swallowed correction is a public error left
+ * unacknowledged.
+ */
+function resolveCorrectionSet(): { set: FrozenCorrectionSet } | { error: string } | null {
+    const path = resolveOptionString(undefined, 'PODCAST_PUB_CORRECTIONS');
+    if (path === undefined) return null;
+    try {
+        const parsed: unknown = JSON.parse(readFileSync(path, 'utf-8'));
+        return {
+            set: readFrozenCorrections(parsed, {
+                runDate: resolveOptionString(undefined, 'PODCAST_PUB_RUN_DATE') ?? null,
+            }),
+        };
+    } catch (error: unknown) {
+        return {
+            error: `corrections: cannot read the frozen judgment snapshot ${path} (${error instanceof Error ? error.message : String(error)}) — the correction block is NOT carried; fix the snapshot path before publishing`,
+        };
+    }
+}
+
+/**
+ * Places the correction block directly under the episode title (the first markdown line), so the
+ * acknowledgement is the first thing a reader hears/reads under the episode identity 0385 froze. The
+ * block itself carries its own `## 本期更正说明` heading; with no block the markdown is byte-identical.
+ */
+function insertCorrectionBlock(markdown: string, block: string | null): string {
+    if (block === null) return markdown;
+    const split = markdown.indexOf('\n');
+    if (split === -1) return `${markdown}\n\n${block}`;
+    return `${markdown.slice(0, split)}\n\n${block}${markdown.slice(split + 1)}`;
+}
+
 /** Validates the plan Doc[] and renders show-notes markdown (pure render; no microfeed call). */
 function renderShowNotesFromOptions(
     options: ShowNotesOpOptions,
@@ -223,9 +279,23 @@ function renderShowNotesFromOptions(
     const renderOptions = resolveShowNotesRenderOptions(options);
     if ('error' in renderOptions) return { error: renderOptions.error };
     const warnings: string[] = [];
+    const corrections = resolveCorrectionSet();
+    if (corrections !== null && 'error' in corrections) return { error: corrections.error };
+    const block = corrections === null ? null : renderCorrectionsBlock(corrections.set);
+    if (corrections !== null) {
+        // Malformed/duplicate frozen entries are reported, never silently dropped (R1: an owed
+        // correction must be visible in the run log even when the block carries the valid ones).
+        for (const diagnostic of corrections.set.diagnostics) {
+            warnings.push(`WARN podcast-pub: correction ${diagnostic}`);
+        }
+    }
+    const withCorrections = (markdown: string): string => insertCorrectionBlock(markdown, block);
     const brief = resolveBriefNotes(docs.data, renderOptions.renderOptions, warnings);
-    if (brief !== null) return brief;
-    return { markdown: renderShowNotesMarkdown(docs.data, renderOptions.renderOptions, warnings), warnings };
+    if (brief !== null) return { markdown: withCorrections(brief.markdown), warnings };
+    return {
+        markdown: withCorrections(renderShowNotesMarkdown(docs.data, renderOptions.renderOptions, warnings)),
+        warnings,
+    };
 }
 
 /**
@@ -581,6 +651,101 @@ function mappedValidateInput(content: Content): MicrofeedItemInput {
     };
 }
 
+/** Untrusted `options.correctionTargets` rows → the classifier's target shape (unknown keys dropped). */
+function readCorrectionTargets(raw: unknown): CorrectionDeliveryTarget[] {
+    if (!Array.isArray(raw)) return [];
+    const targets: CorrectionDeliveryTarget[] = [];
+    for (const entry of raw) {
+        if (entry === null || typeof entry !== 'object') continue;
+        const row = entry as Record<string, unknown>;
+        const target = typeof row.target === 'string' ? row.target.trim() : '';
+        if (target === '') continue;
+        const blockedBy = Array.isArray(row.blockedBy) ? row.blockedBy.filter((id) => typeof id === 'string') : [];
+        targets.push({
+            target,
+            ...(typeof row.mode === 'string' ? { mode: row.mode } : {}),
+            ...(typeof row.state === 'string' ? { state: row.state } : {}),
+            ...(typeof row.manualStep === 'string' ? { manualStep: row.manualStep } : {}),
+            ...(typeof row.lastError === 'string' ? { lastError: row.lastError } : {}),
+            ...(blockedBy.length > 0 ? { blockedBy: blockedBy as string[] } : {}),
+            // Absent capability facts mean "unknown" and are treated as unsupported on purpose: a
+            // correction is never recorded as delivered to a target whose surface we cannot name.
+            supportsCorrections: row.supportsCorrections === true,
+            ...(typeof row.capabilityReason === 'string' ? { capabilityReason: row.capabilityReason } : {}),
+            ...(typeof row.deliveryEvidence === 'string' ? { deliveryEvidence: row.deliveryEvidence } : {}),
+        });
+    }
+    return targets;
+}
+
+/**
+ * 0396 R1/R2 — record where this episode's correction was delivered.
+ *
+ * The podcast target is classified from the publish that just happened (`dispatched` when the item
+ * went live, `pending` while it is a draft), the other targets from the 0388 dispatch rows the stage
+ * forwards. The ledger lands at `PODCAST_PUB_CORRECTION_DELIVERY` (defaulted by the stage to
+ * `31-publish/<date>_16_corrections-delivery.json`); every non-delivered row prints its EXACT
+ * target-level reason into the warning channel instead of being folded into a generic failure.
+ * Returns the delivered rows for the publish result's metadata.
+ */
+async function recordCorrectionDelivery(
+    options: PodcastPubOptions,
+    episodeStatus: string,
+    delivery: { itemId?: string; url?: string },
+    warnings: string[],
+): Promise<{ correctionIds: string[]; delivered: string[] } | null> {
+    const corrections = resolveCorrectionSet();
+    if (corrections === null || 'error' in corrections) {
+        if (corrections !== null && 'error' in corrections) warnings.push(`WARN podcast-pub: ${corrections.error}`);
+        return null;
+    }
+    if (corrections.set.corrections.length === 0) return null;
+    const runDate = corrections.set.runDate;
+    const path = resolveOptionString(undefined, 'PODCAST_PUB_CORRECTION_DELIVERY');
+    const targets: CorrectionDeliveryTarget[] = [
+        {
+            target: TARGET,
+            state: episodeStatus === 'published' ? 'dispatched' : 'pending',
+            supportsCorrections: true,
+        },
+        ...readCorrectionTargets(options.correctionTargets),
+    ];
+    const ledgerPath = path ?? (runDate === null ? undefined : correctionDeliveryPath(process.cwd(), runDate));
+    const ledger = ledgerPath === undefined ? null : await readCorrectionDeliveries(ledgerPath, runDate);
+    const planned = planCorrectionDeliveries(corrections.set, targets, {
+        runDate,
+        prior: ledger?.deliveries ?? [],
+    }).map((entry) =>
+        // The published item is the traceable address of a delivery to this target.
+        entry.state === 'delivered' && entry.target === TARGET
+            ? {
+                  ...entry,
+                  ...(delivery.itemId === undefined ? {} : { itemId: delivery.itemId }),
+                  ...(delivery.url === undefined ? {} : { url: delivery.url }),
+              }
+            : entry,
+    );
+    for (const entry of planned) {
+        if (entry.state === 'delivered') continue;
+        warnings.push(
+            `WARN podcast-pub: correction ${entry.correctionId} not delivered to target "${entry.target}" — ${entry.reason}`,
+        );
+    }
+    if (ledger !== null && ledgerPath !== undefined) {
+        const { ledger: next, skipped } = recordCorrectionDeliveries(ledger, planned);
+        await writeCorrectionDeliveries(ledgerPath, next);
+        for (const entry of skipped) {
+            warnings.push(
+                `WARN podcast-pub: correction ${entry.correctionId} already delivered to target "${entry.target}" — not re-sent`,
+            );
+        }
+    }
+    return {
+        correctionIds: corrections.set.corrections.map((entry) => entry.correctionId),
+        delivered: planned.filter((entry) => entry.state === 'delivered').map((entry) => entry.target),
+    };
+}
+
 /**
  * Two-phase publish (design D2, the only legal order): create a draft item →
  * presign with `item_id` → PUT bytes → PUT item with attachment + target status.
@@ -673,13 +838,27 @@ async function publishEpisode(
         } catch {
             hostedItem = undefined;
         }
+        const hostedUrl = publicItemUrl(hostedItem, itemId, client);
+        const corrections = await recordCorrectionDelivery(
+            options,
+            String(episode.status),
+            { itemId, url: hostedUrl },
+            fields.warnings,
+        );
         return ResultSchema.parse({
             ok: true,
             target: TARGET,
-            url: publicItemUrl(hostedItem, itemId, client),
+            url: hostedUrl,
             id: itemId,
             message: 'Published successfully to microfeed (hosted audio, single-call create)',
-            ...(fields.warnings.length > 0 ? { metadata: { warnings: fields.warnings } } : {}),
+            ...(fields.warnings.length > 0 || corrections !== null
+                ? {
+                      metadata: {
+                          ...(corrections !== null ? { corrections } : {}),
+                          ...(fields.warnings.length > 0 ? { warnings: fields.warnings } : {}),
+                      },
+                  }
+                : {}),
         });
     }
 
@@ -737,10 +916,17 @@ async function publishEpisode(
         ...episodeExtras(episode, seo),
     });
 
+    const publishedUrl = publicItemUrl(item, itemId, client);
+    const corrections = await recordCorrectionDelivery(
+        options,
+        String(episode.status),
+        { itemId, url: publishedUrl },
+        fields.warnings,
+    );
     return ResultSchema.parse({
         ok: true,
         target: TARGET,
-        url: publicItemUrl(item, itemId, client),
+        url: publishedUrl,
         id: itemId,
         message: 'Published successfully to microfeed (two-phase upload + publish)',
         // 20260917 review #6: downstream surfdash patch reuses the podcast-hosted cover URL
@@ -748,6 +934,7 @@ async function publishEpisode(
         metadata: {
             itemId,
             imageUrl: imageUrl ?? null,
+            ...(corrections !== null ? { corrections } : {}),
             ...(fields.warnings.length > 0 ? { warnings: fields.warnings } : {}),
         },
     });
