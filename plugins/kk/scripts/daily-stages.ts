@@ -1914,7 +1914,12 @@ const WECHAT_OUTRO = '\n\n欲听往期节目，可至小宇宙、Apple Podcast�
 /** The brand strings this daily show pins on every 公众号 draft. */
 const WECHAT_BRAND = {
     author: '冰原奔狼',
-    claimSource: '个人观点，仅供参考',
+    // WX-03 (verified 2026-11-11): 《标识办法》第十条 + 微信 2025-08-31 公告 make the AI-generation
+    // declaration a publish-time metadata duty, and 创作来源 is that declaration entry. The stance
+    // label (`个人观点，仅供参考`, the 2026-10-10 choice) declares nothing about AI generation, so the
+    // variants safety gate blocked every daily run (2026-11-19). The article is AI-drafted and the
+    // audio is AI-synthesized; declare it. The field is single-select — one label per draft.
+    claimSource: '内容由AI生成',
     coverSource: 'library',
 } as const;
 
@@ -1948,7 +1953,7 @@ export function buildWechatArticleContent(
         reward: true,
         author: WECHAT_BRAND.author,
         collection: options.collection,
-        // 创作来源 is the column's own stance, not an AI-declaration label (2026-10-10).
+        // 创作来源 is the platform's AI-declaration entry (WX-03); the label declares AI generation.
         claimSource: WECHAT_BRAND.claimSource,
         // 封面 comes from 图片库: the episode cover is uploaded there as the audio material's cover.
         coverSource: WECHAT_BRAND.coverSource,
