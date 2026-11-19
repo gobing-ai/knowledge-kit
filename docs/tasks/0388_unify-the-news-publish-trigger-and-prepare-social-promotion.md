@@ -1,15 +1,17 @@
 ---
 schema_version: 1
 name: Unify the news publish trigger and prepare social promotion
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-18T04:03:43.217Z
-updated_at: "2026-11-18T04:50:04.157Z"
+updated_at: "2026-11-19T01:19:54.670Z"
 feature_id: L3
 priority: P1
 
 estimate_hours: 8
 dependencies: ["0386", "0387"]
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0388. Unify the news publish trigger and prepare social promotion
@@ -20,7 +22,7 @@ L3 · 发布预设和现有发布核心。现行发布入口按窗口变更默�
 
 ### Requirements
 
-- [ ] R1. 依赖满足的目标按既有权限执行，微信保留草稿和扫码边界，未就绪的引流可按目标重试且提供逐渠道实机测试材料（L3 R9）
+- [x] R1. 依赖满足的目标按既有权限执行，微信保留草稿和扫码边界，未就绪的引流可按目标重试且提供逐渠道实机测试材料（L3 R9）
 
 ### Acceptance Criteria
 
@@ -56,18 +58,62 @@ L3 · 发布预设和现有发布核心。现行发布入口按窗口变更默�
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/src/commands/content-launch.ts:105` |
+| `apps/cli/src/commands/content-launch.ts:34` |
+| `apps/cli/src/commands/content-launch.ts:516` |
+| `apps/cli/src/publish-matrix.ts:1391` |
+| `apps/cli/src/publish-matrix.ts:1474` |
+| `apps/cli/src/publish-matrix.ts:1665` |
+| `apps/cli/src/publish-matrix.ts:1688` |
+| `apps/cli/src/publish-matrix.ts:24` |
+| `apps/cli/tests/publish-matrix.test.ts:1481` |
+| `apps/cli/.works/kk.db:1` |
+| `apps/cli/.works/kk.db-shm:1` |
+| `apps/cli/.works/kk.db-wal:1` |
+| `apps/cli/.works/test-artifacts/0212/README.md:1` |
+| `apps/cli/.works/test-artifacts/0212/cutover-fixtures.md:1` |
+| `apps/cli/.works/tmp/test-content-nouns/summary.json:1` |
+| `apps/cli/.works/tmp/test-daily-recovery/cache/summary.json:1` |
+| `apps/cli/src/publish-dispatch.ts:1` |
+| `apps/cli/tests/publish-dispatch.test.ts:1` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 — 依赖满足的目标按既有权限执行，微信保留草稿和扫码边界，未就绪的引流可按目标重试且提供逐渠道实机测试材料（L3 R9） | MET | Dependency-satisfied dispatch + per-target retry + adoption: `apps/cli/src/publish-matrix.ts:1486-1536`, `:1669-1678`; `apps/cli/tests/publish-matrix.test.ts:1533-1583` (second trigger adopts), `:1560-1583` (only the failed target retried under `--retry`); WeChat draft + QR-scan boundary: `apps/cli/src/publish-dispatch.ts:142-153`, `apps/cli/tests/publish-dispatch.test.ts:218-248`; authorization matrix preserved: `apps/cli/src/publish-matrix.ts:607-613`, `:1595-1601` |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| R9 — 各渠道由一次发布触发并保留授权矩阵 | MET | test | One trigger, one frozen date, no repeated effect: `apps/cli/tests/publish-matrix.test.ts:1533-1558`; unique-ledger behaviour now mutation-certified at `apps/cli/tests/publish-matrix.test.ts:1629-1654`; `apps/cli/tests/publish-dispatch.test.ts:133-250`; production wiring `apps/cli/src/publish-matrix.ts:1482-1526`, `:1662-1695`; wechatmp never live `apps/cli/src/publish-dispatch.ts:142-153` |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-11-18T22:55:15.481Z todo → wip (system)
+- 2026-11-19T01:19:53.708Z wip → testing (system)
+- 2026-11-19T01:19:54.654Z testing → done (system)
+

@@ -31,6 +31,7 @@ import { type LaunchReceipt, launchWorkflow, type PlannedLaunch, PUBLISH_WORKFLO
 import { consoleOutput } from '../output';
 import { resolvePackageRoot } from '../package-root';
 import { PublishWindowSchema } from '../publish-core';
+import { resolveFrozenRunDate } from '../publish-dispatch';
 import { resolveBundlePath } from '../publish-matrix';
 import { type ContentConfigDocument, configPath, expandHome, readConfig, resolveWorksDir } from './content';
 
@@ -100,12 +101,6 @@ export function normalizeRunDate(raw: string): string | undefined {
     const parsed = new Date(`${match[1]}-${match[2]}-${match[3]}T00:00:00Z`);
     if (Number.isNaN(parsed.getTime())) return undefined;
     return parsed.toISOString().slice(0, 10).replaceAll('-', '') === digits ? digits : undefined;
-}
-
-/** Today (offset 0) or yesterday (offset -1) in America/Los_Angeles — the episodes' own day. */
-function losAngelesDate(offsetDays = 0): string {
-    const instant = new Date(Date.now() + offsetDays * 24 * 60 * 60 * 1000);
-    return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(instant).replaceAll('-', '');
 }
 
 /**
@@ -518,15 +513,26 @@ async function publishAction(noun: string, defaultType: string, options: Publish
     }
     const timeoutMs = parseTimeout(options.timeoutMs, 'publish');
     const worksDir = resolveWorksDir(config, configFile);
-    // An explicit --run-date wins; then the bundle's own day when --work-dir archives a finished run;
-    // otherwise the window's Los Angeles day (overseas reads the episode that landed after the 07:00
-    // tick, i.e. yesterday) — the retired publish-window rule.
-    let runDate =
-        selector.runDate ?? (type === 'news' ? losAngelesDate(window === 'overseas-rss' ? -1 : 0) : undefined);
-    if (type === 'news' && selector.runDate === undefined && selector.workDir !== undefined) {
-        const archived = await readJson(fs, join(selector.workDir, '4-publish', 'bundle.json'));
-        const bundleDay = typeof archived?.runDate === 'string' ? normalizeRunDate(archived.runDate) : undefined;
-        if (bundleDay !== undefined) runDate = bundleDay;
+    // 0388: the episode day is frozen ONCE — an explicit --run-date, else the day the archived run's
+    // bundle carries, else (nothing frozen yet) the window's Los Angeles day, which is the legacy
+    // rule kept for older windows. The retired expression let the WINDOW pick the day on every call
+    // (overseas-rss read yesterday), so two windows of one run dispatched two episode numbers.
+    let runDate: string | undefined;
+    if (type === 'news') {
+        let bundleDay: string | undefined;
+        if (selector.workDir !== undefined) {
+            const archived = await readJson(fs, await resolveBundlePath(fs, selector.workDir));
+            bundleDay =
+                typeof archived?.runDate === 'string' && normalizeRunDate(archived.runDate) !== undefined
+                    ? archived.runDate
+                    : undefined;
+        }
+        // The launcher's own run identity keeps the compact `YYYYMMDD` form.
+        runDate = resolveFrozenRunDate({
+            ...(selector.runDate === undefined ? {} : { runDate: selector.runDate }),
+            ...(bundleDay === undefined ? {} : { bundleRunDate: bundleDay }),
+            window,
+        }).runDate.replaceAll('-', '');
     }
     const run = resolveRun({
         type,

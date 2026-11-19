@@ -1478,3 +1478,249 @@ describe('publish-matrix stage wiring and itc coexistence (0321 R6, R7)', () => 
         }
     });
 });
+
+/**
+ * 0388 — the dispatch ledger is wired into the ONE place rows are actually sent.
+ *
+ * The matrix stays the authority on modes and per-row resend rules; the ledger is the authority on
+ * what was already dispatched for the FROZEN date. The cases below are the ones the module-level
+ * suite could not prove: the same decisions taken through `sendPublishMatrix` itself.
+ */
+describe('publish-matrix-send × dispatch ledger (0388 wiring)', () => {
+    const sendArgs = (fx: Fixture, extra: string[] = []): string[] => [
+        fx.workDir,
+        '--window',
+        'after-generate',
+        ...extra,
+    ];
+    const ledgerOf = (fx: Fixture): { runDate: string; window: string; entries: Array<Record<string, unknown>> } =>
+        JSON.parse(readFileSync(join(fx.workDir, '4-publish/dispatch-ledger.json'), 'utf-8')) as {
+            runDate: string;
+            window: string;
+            entries: Array<Record<string, unknown>>;
+        };
+    const stateOf = (fx: Fixture, id: string): string | undefined =>
+        ledgerOf(fx).entries.find((entry) => entry.id === id)?.state as string | undefined;
+
+    /** Dispatch seam whose failing row reports `effect: none` — the only failure `--retry` resends. */
+    function fakeNoneFailure(failing: string) {
+        const calls: string[][] = [];
+        const dispatch = async (argv: string[]): Promise<number> => {
+            calls.push(argv);
+            const target = argv[argv.indexOf('--target') + 1] ?? '';
+            const outPath = argv[argv.indexOf('--out') + 1] ?? '';
+            mkdirSync(dirname(outPath), { recursive: true });
+            if (target === failing) {
+                writeFileSync(
+                    outPath,
+                    JSON.stringify({
+                        ok: false,
+                        targets: [
+                            {
+                                target,
+                                ok: false,
+                                status: 'failed',
+                                error: 'channel not ready',
+                                metadata: { itcDelivery: { effect: 'none' } },
+                            },
+                        ],
+                    }),
+                );
+                return 1;
+            }
+            writeFileSync(
+                outPath,
+                JSON.stringify({
+                    ok: true,
+                    targets: [{ target, ok: true, status: 'published', url: `https://example.test/${target}` }],
+                }),
+            );
+            return 0;
+        };
+        return { dispatch, calls };
+    }
+
+    it('adopts the ledger on a second trigger for the same frozen date and sends nothing', async () => {
+        const fixture = makeFixture([...TIER0, ...DOMESTIC]);
+        await withCleanup(async (fx) => {
+            const out = captureOutput();
+            try {
+                expect(await planPublishMatrix(planArgs(fx), { projectRoot: fx.root })).toBe(0);
+                const first = fakeDispatch({ 'surfdash-pub': { ok: true, url: 'https://surfdash.test/a' } });
+                expect(await sendPublishMatrix(sendArgs(fx), { dispatch: first.dispatch })).toBe(0);
+                expect(first.calls).toHaveLength(3);
+
+                // The ledger is the record of what this frozen date dispatched.
+                expect(ledgerOf(fx).runDate).toBe('2026-10-22');
+                expect(stateOf(fx, 'surfdash-pub.post')).toBe('dispatched');
+                expect(stateOf(fx, 'podcast-pub.episode')).toBe('dispatched');
+                expect(stateOf(fx, 'wechatmp-pub.文章')).toBe('dispatched');
+
+                // Second trigger, same date: no completed effect is repeated.
+                const second = fakeDispatch();
+                expect(await sendPublishMatrix(sendArgs(fx), { dispatch: second.dispatch })).toBe(0);
+                expect(second.calls).toHaveLength(0);
+            } finally {
+                out.restore();
+            }
+        }, fixture);
+    });
+
+    it('re-attempts ONLY the failed target of a partially failed date, then adopts it', async () => {
+        const fixture = makeFixture([...TIER0, ...DOMESTIC]);
+        await withCleanup(async (fx) => {
+            const out = captureOutput();
+            try {
+                expect(await planPublishMatrix(planArgs(fx), { projectRoot: fx.root })).toBe(0);
+                const first = fakeNoneFailure('podcast-pub');
+                expect(await sendPublishMatrix(sendArgs(fx), { dispatch: first.dispatch })).toBe(0);
+                expect(stateOf(fx, 'surfdash-pub.post')).toBe('dispatched');
+                // An unready target is `retryable`, not dispatched and not lost.
+                expect(stateOf(fx, 'podcast-pub.episode')).toBe('retry');
+
+                // `--retry` resends the effect:none failure only (the matrix's own rule).
+                const second = fakeDispatch({ 'podcast-pub': { ok: true, url: 'https://podcast.test/e' } });
+                expect(await sendPublishMatrix(sendArgs(fx, ['--retry']), { dispatch: second.dispatch })).toBe(0);
+                expect(second.calls).toHaveLength(1);
+                expect(second.calls[0]).toContain('podcast-pub');
+                expect(stateOf(fx, 'podcast-pub.episode')).toBe('dispatched');
+
+                // A third trigger has nothing left to do on this date.
+                const third = fakeDispatch();
+                expect(await sendPublishMatrix(sendArgs(fx), { dispatch: third.dispatch })).toBe(0);
+                expect(third.calls).toHaveLength(0);
+            } finally {
+                out.restore();
+            }
+        }, fixture);
+    });
+
+    it('adopts the ledger from a legacy --window invocation whose plan predates runDate', async () => {
+        const fixture = makeFixture([...TIER0, ...DOMESTIC]);
+        await withCleanup(async (fx) => {
+            const out = captureOutput();
+            try {
+                expect(await planPublishMatrix(planArgs(fx), { projectRoot: fx.root })).toBe(0);
+                // A legacy plan carries no runDate: the day comes from the clock fallback, and the
+                // window still works exactly as before.
+                const planPath = join(fx.workDir, '4-publish/plan.after-generate.json');
+                const legacyPlan = JSON.parse(readFileSync(planPath, 'utf-8')) as Record<string, unknown>;
+                delete legacyPlan.runDate;
+                writeFileSync(planPath, `${JSON.stringify(legacyPlan, null, 2)}\n`);
+
+                const first = fakeDispatch({
+                    'surfdash-pub': { ok: true, url: 'https://surfdash.test/a' },
+                    'podcast-pub': { ok: true, url: 'https://podcast.test/e' },
+                });
+                expect(await sendPublishMatrix(sendArgs(fx), { dispatch: first.dispatch })).toBe(0);
+                expect(first.calls).toHaveLength(3);
+                expect(ledgerOf(fx).runDate).not.toBe('');
+
+                // Same legacy invocation again: the ledger, not the clock, decides what is done.
+                const again = fakeDispatch();
+                expect(await sendPublishMatrix(sendArgs(fx), { dispatch: again.dispatch })).toBe(0);
+                expect(again.calls).toHaveLength(0);
+            } finally {
+                out.restore();
+            }
+        }, fixture);
+    });
+
+    it('refuses to re-send a dispatched target whose receipt evidence is gone', async () => {
+        // The ledger's own contribution: a completed external effect is never repeated, even when
+        // the receipt that would have proven it is gone. The row is reported, not silently resent.
+        const fixture = makeFixture([...TIER0]);
+        await withCleanup(async (fx) => {
+            const out = captureOutput();
+            try {
+                expect(await planPublishMatrix(planArgs(fx), { projectRoot: fx.root })).toBe(0);
+                const first = fakeDispatch();
+                expect(await sendPublishMatrix(sendArgs(fx), { dispatch: first.dispatch })).toBe(0);
+                expect(first.calls).toHaveLength(2);
+                rmSync(join(fx.workDir, '4-publish/receipts/surfdash-pub.post.json'));
+                // The AGGREGATE fanout result must go too: `publish-core` reuses it when present
+                // (`if (!(await fs.exists(outPath))) dispatch(...)`), so leaving it made this case
+                // pass with `ledgerSuppresses` deleted — a mutation-insensitive certification of the
+                // ledger's one unique behaviour (0388 review P3).
+                rmSync(join(fx.workDir, '4-publish/fanout-result.surfdash-pub.post.json'));
+                expect(stateOf(fx, 'surfdash-pub.post')).toBe('dispatched');
+
+                const second = fakeDispatch();
+                expect(await sendPublishMatrix(sendArgs(fx), { dispatch: second.dispatch })).toBe(0);
+                // Nothing is re-sent: the withheld row is reported, the sibling skips on its receipt.
+                expect(second.calls).toHaveLength(0);
+                expect(stateOf(fx, 'surfdash-pub.post')).toBe('dispatched');
+            } finally {
+                out.restore();
+            }
+        }, fixture);
+    });
+
+    it('never lets the ledger resend a failed row the matrix refuses to resend', async () => {
+        // A plain failure leaves `effect: unknown` (the send may have happened). The matrix never
+        // resends that under `--retry`; the ledger records it as `retry` and stays out of the way —
+        // the ledger remembers what ran, it does not overrule the resend rules.
+        const fixture = makeFixture([...TIER0, ...DOMESTIC]);
+        await withCleanup(async (fx) => {
+            const out = captureOutput();
+            try {
+                expect(await planPublishMatrix(planArgs(fx), { projectRoot: fx.root })).toBe(0);
+                const first = fakeDispatch({ 'podcast-pub': { ok: false, error: 'timeout' } });
+                expect(await sendPublishMatrix(sendArgs(fx), { dispatch: first.dispatch })).toBe(0);
+                expect(stateOf(fx, 'podcast-pub.episode')).toBe('retry');
+                expect(stateOf(fx, 'surfdash-pub.post')).toBe('dispatched');
+
+                const retryPass = fakeDispatch();
+                expect(await sendPublishMatrix(sendArgs(fx, ['--retry']), { dispatch: retryPass.dispatch })).toBe(0);
+                expect(retryPass.calls).toHaveLength(0);
+                // Not dispatched, not forgotten: it stays an open, operator-resolvable retry.
+                expect(stateOf(fx, 'podcast-pub.episode')).toBe('retry');
+            } finally {
+                out.restore();
+            }
+        }, fixture);
+    });
+
+    it('keeps a sibling window in the same ledger and still sends only its own rows', async () => {
+        const fixture = makeFixture([
+            ...TIER0,
+            ...DOMESTIC,
+            { plugin: 'x-pub', operation: 'post', variant: 'article', tier: 1, window: 'cn-peak', mode: 'draft' },
+        ]);
+        await withCleanup(async (fx) => {
+            const out = captureOutput();
+            try {
+                expect(await planPublishMatrix(planArgs(fx), { projectRoot: fx.root })).toBe(0);
+                expect(
+                    await planPublishMatrix(
+                        [fx.workDir, '--bundle', fx.bundlePath, '--preset', 'daily-ai-voice', '--window', 'cn-peak'],
+                        { projectRoot: fx.root },
+                    ),
+                ).toBe(0);
+
+                const first = fakeDispatch({ 'surfdash-pub': { ok: true, url: 'https://surfdash.test/a' } });
+                expect(await sendPublishMatrix(sendArgs(fx), { dispatch: first.dispatch })).toBe(0);
+                expect(ledgerOf(fx).window).toBe('after-generate');
+
+                // The later window fires its own trigger on the same frozen date: only its row goes
+                // out, and the earlier window's dispatch record survives the write.
+                const peak = fakeDispatch();
+                expect(await sendPublishMatrix([fx.workDir, '--window', 'cn-peak'], { dispatch: peak.dispatch })).toBe(
+                    0,
+                );
+                expect(peak.calls).toHaveLength(1);
+                expect(peak.calls[0]).toContain('x-pub');
+                expect(ledgerOf(fx).window).toBe('cn-peak');
+                expect(stateOf(fx, 'surfdash-pub.post')).toBe('dispatched');
+                expect(stateOf(fx, 'x-pub.post')).toBe('dispatched');
+
+                // Re-entry on the first window is still a no-op.
+                const back = fakeDispatch();
+                expect(await sendPublishMatrix(sendArgs(fx), { dispatch: back.dispatch })).toBe(0);
+                expect(back.calls).toHaveLength(0);
+            } finally {
+                out.restore();
+            }
+        }, fixture);
+    });
+});

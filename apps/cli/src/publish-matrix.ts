@@ -21,6 +21,19 @@ import {
     type SendRow,
     sendRows,
 } from './publish-core';
+import {
+    applyDispatchResults,
+    type DispatchEntry,
+    type DispatchMode,
+    type DispatchTarget,
+    dispatchable,
+    dispatchLedgerPath,
+    planDispatch,
+    readDispatchLedger,
+    resolveFrozenRunDate,
+    retryable,
+    writeDispatchLedger,
+} from './publish-dispatch';
 
 /** One frozen asset a bundle ships: a `Content` JSON path plus its sha256. */
 export const BundleVariantSchema = z
@@ -1375,6 +1388,31 @@ async function readLinkMap(
     return { real, live, all };
 }
 
+/** Mode ordering for ledger adoption: a wider earlier dispatch covers a narrower later one. */
+const DISPATCH_MODE_RANK: Record<DispatchMode, number> = { off: 0, dummy: 1, draft: 2, live: 3 };
+
+/**
+ * 0388: does the dispatch ledger refuse to send this row again on the frozen date?
+ *
+ * The ledger closes the ONE door the receipts cannot: a target it recorded as `dispatched` whose
+ * receipt evidence is gone (deleted, moved away, lost with the run dir) must not be sent a second
+ * time — a completed external effect is never repeated. When the receipt IS still there, this file's
+ * own identity rules stay the authority (they reconcile a changed payload or a draft→live promotion
+ * instead of silently skipping), so the ledger does not pre-empt them.
+ *
+ * A rehearsal (`dummy`) has no external effect and never suppresses, and a narrower recorded mode
+ * (draft) does not cover a wider planned one (live): the plan's mode stays the authority on what may
+ * go out. `retry`/`pending`/`blocked`/`deferred` never suppress — those rows keep going through the
+ * resend rules (succeeded skipped, live-with-unknown-effect never resent, `--retry` resends
+ * `effect: none` failures only).
+ */
+function ledgerSuppresses(row: PublishPlanRow, entry: DispatchEntry | undefined, hasReceipt: boolean): boolean {
+    if (entry === undefined || entry.state !== 'dispatched') return false;
+    if (hasReceipt) return false;
+    if (entry.mode === 'dummy' || row.mode === 'dummy') return false;
+    return DISPATCH_MODE_RANK[entry.mode] >= DISPATCH_MODE_RANK[row.mode];
+}
+
 /**
  * `publish-matrix-send`: dispatch the plan's rows in tier order and record one receipt per row.
  *
@@ -1433,7 +1471,72 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
             .digest('hex');
 
         const tiers = [...new Set(plan.rows.map((row) => row.tier))].sort((a, b) => a - b);
-        const pending = onlyTier === undefined ? plan.rows : plan.rows.filter((row) => row.tier === onlyTier);
+        const tierRows = onlyTier === undefined ? plan.rows : plan.rows.filter((row) => row.tier === onlyTier);
+
+        // 0388: the dispatch ledger is the durable record of "dispatched once per FROZEN date".
+        // This file stays the authority on MODES and per-row resend rules; the ledger answers the
+        // other question — what was already dispatched for this date — so a second trigger for the
+        // same date (a re-run, a later window) repeats no completed effect. The frozen day comes
+        // from the plan (which froze it from the bundle/`--run-date`), so a legacy `--window`
+        // invocation still lands on the same day and adopts the same ledger.
+        const frozen = resolveFrozenRunDate({
+            ...(plan.runDate === undefined ? {} : { runDate: plan.runDate }),
+            window: plan.window,
+        });
+        const priorLedger = await readDispatchLedger(fs, workDir);
+        const ledgerTargets: DispatchTarget[] = [
+            ...plan.rows.map((row) => ({
+                id: row.id,
+                plugin: row.plugin,
+                ...(row.operation === undefined ? {} : { operation: row.operation }),
+                window: row.window,
+                tier: row.tier,
+                mode: row.mode,
+            })),
+            // Entries recorded for a sibling window of this run stay in the ledger: this trigger
+            // plans only its own window, but it must not forget what the other windows dispatched.
+            ...(priorLedger?.entries ?? [])
+                .filter((entry) => !plan.rows.some((row) => row.id === entry.id))
+                .map((entry) => ({ ...entry })),
+        ];
+        let ledger = planDispatch({
+            runDate: frozen.runDate,
+            window: plan.window,
+            targets: ledgerTargets,
+            frozenSource: frozen.source,
+            bundleRunId: plan.bundleRunId,
+            ledger: priorLedger,
+        });
+        const recorded = new Map(ledger.entries.map((entry) => [entry.id, entry] as const));
+        const withReceipt = new Set<string>();
+        for (const row of tierRows) {
+            if (await fs.exists(join(receiptsDir, `${row.id}.json`))) withReceipt.add(row.id);
+        }
+        const suppressed = tierRows.filter((row) =>
+            ledgerSuppresses(row, recorded.get(row.id), withReceipt.has(row.id)),
+        );
+        const pending = tierRows.filter((row) => !ledgerSuppresses(row, recorded.get(row.id), withReceipt.has(row.id)));
+        for (const row of suppressed) {
+            echoError(
+                `publish-matrix-send: ${row.id} was already dispatched for ${frozen.runDate} and its receipt evidence is gone — not resending; remove its entry from ${dispatchLedgerPath(workDir)} if the channel really published nothing`,
+            );
+        }
+
+        // The matrix, not the ledger, decides whether a dependency-blocked row may still go out
+        // (2026-11-12: the link dependency is per payload). Every row this pass actually sends is
+        // therefore `pending`, so its outcome is recorded instead of being silently dropped by
+        // `applyDispatchResults`.
+        const sendIds = new Set(pending.map((row) => row.id));
+        ledger = {
+            ...ledger,
+            entries: ledger.entries.map((entry) => {
+                if (!sendIds.has(entry.id) || (entry.state !== 'blocked' && entry.state !== 'deferred')) {
+                    return entry;
+                }
+                const { blockedBy: _blockedBy, ...rest } = entry;
+                return { ...rest, state: 'pending' as const };
+            }),
+        };
 
         // Edit-while-paused revalidation (0331 R5): before any dispatch, every dispatched row's
         // payload must still match the digest the plan froze, and every real row's source variant
@@ -1559,6 +1662,21 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
                 },
             });
 
+            // 0388: record this tier's outcomes in the ledger before anything can throw, so a
+            // partial pass is durable: a sent row becomes `dispatched` (never repeated) and a failed
+            // one `retry` (re-attempted alone). A row the send loop skipped as an identical
+            // succeeded receipt is a completed effect too — the ledger converges on the receipts.
+            ledger = applyDispatchResults(ledger, [
+                ...sendOutcome.receipts.map((receipt) => ({
+                    id: receipt.target ?? receipt.plugin,
+                    ok: receipt.status === 'succeeded',
+                    ...(receipt.url === undefined ? {} : { url: receipt.url }),
+                    ...(receipt.error === undefined ? {} : { error: receipt.error }),
+                })),
+                ...sendOutcome.skipped.map((id) => ({ id, ok: true })),
+            ]);
+            await writeDispatchLedger(fs, workDir, ledger);
+
             if (sendOutcome.reconciliationRequired.length > 0) {
                 throw new Error(
                     `receipt reconciliation required for: ${sendOutcome.reconciliationRequired.join(', ')}`,
@@ -1567,6 +1685,14 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
         }
 
         echo(`window ${plan.window}: ${pending.length} target(s) dispatched`);
+        if (suppressed.length > 0) {
+            echo(
+                `publish-matrix-send: adopted ${suppressed.length} target(s) the ledger already dispatched for ${frozen.runDate} (${frozen.source}) — not resent`,
+            );
+        }
+        echo(
+            `publish-matrix-send: dispatch ledger ${dispatchLedgerPath(workDir)} — ${ledger.entries.filter((entry) => entry.state === 'dispatched').length} dispatched, ${dispatchable(ledger).length} pending, ${retryable(ledger).length} retryable (frozen date ${ledger.runDate})`,
+        );
         return 0;
     } catch (err: unknown) {
         echoError(`publish-matrix-send: ${err instanceof Error ? err.message : String(err)}`);
