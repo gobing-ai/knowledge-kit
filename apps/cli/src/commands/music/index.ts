@@ -152,11 +152,23 @@ export function registerMusicCommand(program: Command): void {
             .option('--model <model>', 'pro|clip (default: the take sidecar’s model)')
             .option('--duration-target <m:ss>', 'the brief’s duration target (default: the take sidecar’s)')
             .option('--style <text>', 'the brief’s style prose, for the warn-only agreement checks')
-            .option('--sections <n>', 'the brief’s structure length, for the section-count check'),
+            .option('--sections <n>', 'the brief’s structure length, for the section-count check')
+            .option('--brief <brief.yaml>', 'the brief that produced the take: fills style/sections/duration-target')
+            .option(
+                '--analysis <analysis.json>',
+                'the take’s instance analysis (kk music analyze --json); default: analysis-<instanceId>.json beside the take',
+            ),
     ).action(
         async (
             take: string,
-            options: VerbOptions & { model?: string; durationTarget?: string; style?: string; sections?: string },
+            options: VerbOptions & {
+                model?: string;
+                durationTarget?: string;
+                style?: string;
+                sections?: string;
+                brief?: string;
+                analysis?: string;
+            },
             command: Command,
         ) => {
             await execute('check', options, command, async (context) => await runCheck(take, options, context));

@@ -1,0 +1,22 @@
+[
+  {
+    "command": "article new (first)",
+    "exitCode": 0,
+    "stdout": "{\"workDir\":\"/var/folders/2g/398pfv8j1tj_zt78g_ty2r740000gn/T/kk-content-nouns-DuJaFM/works/kk-article-generate/demo\",\"run\":\"demo\",\"type\":\"itc\",\"created\":true}\n"
+  },
+  {
+    "command": "article new (second)",
+    "exitCode": 0,
+    "stdout": "{\"workDir\":\"/var/folders/2g/398pfv8j1tj_zt78g_ty2r740000gn/T/kk-content-nouns-DuJaFM/works/kk-article-generate/demo\",\"run\":\"demo\",\"type\":\"itc\",\"created\":false}\n"
+  },
+  {
+    "command": "article status",
+    "exitCode": 0,
+    "stdout": "{\"workDir\":\"/var/folders/2g/398pfv8j1tj_zt78g_ty2r740000gn/T/kk-content-nouns-DuJaFM/works/kk-article-generate/demo\",\"type\":\"itc\",\"generate\":null,\"bundle\":null,\"windows\":null,\"progress\":{\"stages\":0,\"current\":null,\"state\":\"not-started\",\"elapsedMs\":null},\"gate\":{\"pool\":null,\"floorRefusal\":null,\"ladder\":null}}\n"
+  },
+  {
+    "command": "news status",
+    "exitCode": 1,
+    "stdout": "{\"workDir\":\"/var/folders/2g/398pfv8j1tj_zt78g_ty2r740000gn/T/kk-content-nouns-DuJaFM/works/kk-news-generate/20260101\",\"type\":\"news\",\"generate\":null,\"bundle\":null,\"windows\":null,\"progress\":{\"stages\":0,\"current\":null,\"state\":\"not-started\",\"elapsedMs\":null},\"gate\":{\"pool\":null,\"floorRefusal\":null,\"ladder\":null}}\n"
+  }
+]

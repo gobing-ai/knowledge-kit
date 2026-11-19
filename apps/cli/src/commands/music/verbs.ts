@@ -14,7 +14,7 @@
  * `no-direct-fs-io`) rather than `node:fs`: the brief read, the sidecar probe,
  * the prompt/`--out` write and the `gen` staging file.
  */
-import { resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import type { Doc } from '@gobing-ai/kk-core';
 import {
     type AudioMeasurement,
@@ -432,23 +432,63 @@ export async function runAnalyze(
     return payload;
 }
 
-/** `check` — measure a take and write `<take>.checks.json` (free, ffmpeg only). */
+/**
+ * The analysis object of an `analysis-<instanceId>.json` file (task 0403).
+ *
+ * The documented writer redirects a whole `kk music analyze --json` payload into that file, while a
+ * dry run writes the bare offline object — both mean "this take's analysis", so the reader unwraps
+ * the envelope instead of forcing every caller to know which shape it has.
+ */
+export function analysisObject(raw: string): Record<string, unknown> {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const nested = parsed.analysis;
+    return typeof nested === 'object' && nested !== null ? (nested as Record<string, unknown>) : parsed;
+}
+
+/**
+ * `check` — measure a take and write `<take>.checks.json` (free, ffmpeg only).
+ *
+ * `--brief` fills the three values the brief owns (style prose, structure length, duration target)
+ * so the warn-only agreement rows stay measurable through a single verb, and the analysis is read
+ * from `--analysis` or, by default, from `analysis-<instanceId>.json` beside the take — the run
+ * directory contract's own location (0402). A take with no analysis keeps a `fail` on
+ * `analysis.present`: an unanalyzed take is not a passed take.
+ */
 export async function runCheck(
     takePath: string,
-    options: VerbOptions & { model?: string; durationTarget?: string; style?: string; sections?: string },
+    options: VerbOptions & {
+        model?: string;
+        durationTarget?: string;
+        style?: string;
+        sections?: string;
+        brief?: string;
+        analysis?: string;
+    },
     context: VerbContext,
 ): Promise<MusicPayload> {
     const artifactPath = resolve(takePath);
     const sidecar = await readSidecar(artifactPath);
-    const model = takeModel(options.model, sidecar);
-    const durationTarget = options.durationTarget ?? sidecar?.durationTarget;
+    const brief = options.brief === undefined ? null : await readBrief(resolve(options.brief));
+    const model = takeModel(options.model ?? brief?.model, sidecar);
+    const durationTarget = options.durationTarget ?? sidecar?.durationTarget ?? brief?.duration_target;
+    const style = options.style ?? brief?.style;
+    const sections = options.sections ?? (brief?.structure === undefined ? undefined : String(brief.structure.length));
+    const analysisPath =
+        options.analysis === undefined
+            ? sidecar === null
+                ? undefined
+                : resolve(join(dirname(artifactPath), `analysis-${sidecar.instanceId}.json`))
+            : resolve(options.analysis);
+    const hasAnalysis = analysisPath !== undefined && (await musicSeams.fileSystem.exists(analysisPath));
+    const analysis = hasAnalysis ? analysisObject(await musicSeams.fileSystem.readFile(analysisPath)) : undefined;
     const runner = musicSeams.audioRunner;
     const outcome = await runTakeChecks({
         artifactPath,
         model,
         ...(durationTarget === undefined ? {} : { durationTarget }),
-        ...(options.style === undefined ? {} : { briefStyle: options.style }),
-        ...(options.sections === undefined ? {} : { briefSectionCount: Number(options.sections) }),
+        ...(style === undefined ? {} : { briefStyle: style }),
+        ...(sections === undefined ? {} : { briefSectionCount: Number(sections) }),
+        ...(analysis === undefined ? {} : { analysis }),
         ...(runner === undefined ? {} : { runner }),
     });
     const payload = { ...envelope('check', context.config.dryRun), ok: outcome.ok, checksPath: outcome.checksPath };

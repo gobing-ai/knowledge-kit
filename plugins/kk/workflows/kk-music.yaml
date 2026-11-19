@@ -1,0 +1,328 @@
+---
+# kk-music — one idea → a measured, judged, loudness-normalized take (feature D8, task 0403).
+#
+#   prepare → brief → explore → select → analyze → check → judge → master → finalize → done
+#                                                                                  ↘ failed
+#
+# **The spend shape (R2).** `explore` authors-or-adopts one brief per direction and takes exactly
+# ONE take per brief in the FORMAT's own model (the preset names it: pro for song/jingle/underscore,
+# clip for clip/loop). There is no Clip→Pro explore: a Clip render is a different model and cannot
+# exhibit arrangement, structure timing or lyrics past 0:30. `select` is the only operator gate;
+# `auto` skips it only when exactly one take exists (one take is not a choice). `analyze` runs on
+# the selected take only. A brief whose take is already on disk is adopted by `music-stages.ts`, so
+# re-running `explore` into the same run directory pays for nothing (0400's digest dedupe is the
+# backstop), and anything else needs `force` + `force_reason`.
+#
+# **The gate order (R3).** `check` (`kk music check`, 0405 take checks) exits 0 before `judge`;
+# `judge` is one `agent.run` on kk:content-judge with the `music-quality` rubric, routed through the
+# same confidence-aware jq filter every kk judge gate uses (a `PASS` without a HIGH/MEDIUM/LOW
+# confidence is `PASS!`, which no accept guard matches); `master` is reached only on `PASS`, or on
+# `NEEDS_REVISION` with `accept_revision=true`; and `master` (0405's delivery check) exits 0 before
+# `finalize`. A failing action aborts the run as failed at that state (the engine's default
+# onError), which is what keeps an unmeasured take out of the judge and a failed file out of the
+# report — the explicit `failed` edges below are the judgement route.
+#
+# **ADR-115.** Each shell action is one bounded call: a `kk music` verb, or one `kk stage run
+# music-*` subcommand whose body lives in `plugins/kk/scripts/music-stages.ts` (fan-out and bundle
+# assembly are verbs here, never YAML). Both `agent.run` prompts are skill invocations under the
+# 1000-character cap and paste no brief, no rows and no rubric.
+#
+# **Resume (R5).** Every state is artifact-gated: briefs, prompt text, take sidecars, the analysis,
+# `checks.json`, the judge bundle and the verdict all survive a failure, so a resumed run continues
+# from the first artifact that is missing and never re-pays for a take that is on disk.
+"$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
+name: kk-music
+kind: state-machine
+description: >-
+  One musical idea into one delivered take: author differentiated briefs, explore them in the
+  format's own model, let the operator pick, analyze and measure that take, judge it against the
+  music-quality rubric, loudness-normalize it to a delivery profile and report the run.
+initialState: prepare
+terminalStates:
+  - done
+  - failed
+failureStates:
+  - failed
+iterationBound: 12
+vars:
+  # --- the idea (R1): a one-line topic, or an existing idea/brief file ---
+  topic: ""
+  idea_file: ""
+  # --- the musical direction: shipped format + theme presets (`kk music presets`) ---
+  format: "song"
+  theme: ""
+  # --- the run directory: <works>/kk-music/<topic-slug>/ ---
+  works: ".works"
+  run_dir: ""
+  # --- spend shape: differentiated briefs to explore (default 2, never above music.takesCap) ---
+  directions: "2"
+  # --- who runs the authoring and judging agent.run steps ---
+  agent: ""
+  # --- delivery: the loudness profile `kk music master` normalizes to ---
+  delivery_profile: "streaming"
+  # --- gates ---
+  auto: "false"
+  accept_revision: "false"
+  force: "false"
+  force_reason: ""
+  # --- free rehearsal: KK_MUSIC_DRY_RUN=1 for every paid verb (offline adapter, no network) ---
+  dry_run: "false"
+  # --- projected from the run directory, never authored by hand ---
+  take_file: ""
+  instance_id: ""
+  brief_number: ""
+  verdict: ""
+  __runId: ""
+  __hitlAnswer: ""
+
+states:
+  - id: prepare
+    description: >-
+      Resolve <works>/kk-music/<topic-slug>/, stage 1-brief/ and 3-takes/, write idea.md and publish
+      the run-bound path this workflow projects into vars.run_dir. No instance traffic.
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk stage run music-prepare "${vars.works}" "${vars.topic}" "${vars.idea_file}"
+            "${vars.format}" "${vars.theme}" "${vars.directions}" "${vars.force}" "${vars.__runId}"
+      - kind: file.read.into-var
+        options:
+          path: ".spur/run/${vars.__runId}-music-run-dir.txt"
+          var: run_dir
+
+  - id: brief
+    description: >-
+      Author `directions` differentiated briefs and render each one's prompt text (agent.run on
+      kk:music-authoring). Free: render opens no socket. Existing briefs are reused verbatim.
+    onEnter:
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          input: |
+            Invoke the kk:music-authoring skill, operation `brief`.
+            Run directory: ${vars.run_dir} — idea at ${vars.run_dir}/idea.md.
+            Format ${vars.format}, theme ${vars.theme}, ${vars.directions} differentiated direction(s).
+            For each number 01..0${vars.directions}: write 1-brief/brief-<nn>.yaml in the 0397 authoring form
+            (takes: 1, no invented keys) and render it — kk music render --in 1-brief/brief-<nn>.yaml
+            --out 1-brief/brief-<nn>.prompt.txt, stdout into 1-brief/brief-<nn>.render.txt.
+            Reuse any brief-<nn>.yaml that already exists verbatim; never edit an authored brief.
+            Do not call kk music gen: exploring is the next state's job.
+          expectFile: ${vars.run_dir}/1-brief/brief-01.prompt.txt
+      - kind: shell
+        options:
+          command: >-
+            test -f "${vars.run_dir}/1-brief/brief-${vars.directions}.yaml" &&
+            test -f "${vars.run_dir}/1-brief/brief-${vars.directions}.prompt.txt"
+
+  - description: >-
+      One take per differentiated brief, in the format's own model. A brief whose sidecar and take
+      are on disk is adopted (no request); a digest already paid for refuses without force+reason.
+    id: explore
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk stage run music-explore "${vars.run_dir}" "${vars.directions}" "${vars.force}"
+            "${vars.force_reason}" "${vars.dry_run}" "${vars.__runId}"
+
+  - id: select
+    description: "The only operator gate: pick which take becomes the deliverable (skipped by `auto` only when one take exists)"
+    pause: true
+    onEnter:
+      - kind: hitl.select
+        options:
+          prompt: >-
+            Pick the take to deliver from ${vars.run_dir}/3-takes/ — 01..0${vars.directions}. Each take's
+            prompt text is at 1-brief/brief-<nn>.prompt.txt and its spend is in 3-takes/explore.json.
+          options:
+            - "01"
+            - "02"
+            - "03"
+            - "04"
+          var: __hitlAnswer
+          # No auto path skips this state except the single-take route below, so the gate asks.
+          decision:
+            mode: never
+      - kind: shell
+        options:
+          command: >-
+            kk stage run music-select "${vars.run_dir}" "${vars.__hitlAnswer}" "${vars.auto}"
+      - kind: file.read.into-var
+        options:
+          path: ${vars.run_dir}/3-takes/.brief
+          var: brief_number
+
+  - id: analyze
+    description: >-
+      Bind the selected take (already bound by explore when there is exactly one) and pay for that
+      take's instance analysis once. A cached analysis-<instanceId>.json is adopted, never re-bought.
+    onEnter:
+      - kind: shell
+        options:
+          command: 'kk stage run music-select "${vars.run_dir}" "" "${vars.auto}"'
+      - kind: file.read.into-var
+        options:
+          path: ${vars.run_dir}/3-takes/.take-file
+          var: take_file
+      - kind: file.read.into-var
+        options:
+          path: ${vars.run_dir}/3-takes/.instance-id
+          var: instance_id
+      - kind: file.read.into-var
+        options:
+          path: ${vars.run_dir}/3-takes/.brief
+          var: brief_number
+      - kind: shell
+        options:
+          command: 'kk stage run music-analyze "${vars.run_dir}" "${vars.dry_run}"'
+
+  - id: check
+    description: >-
+      Measure the selected take (0405 take checks: duration band, leading/trailing silence, analysis
+      present, warn-only brief agreement) and write <take>.checks.json. A fail row exits 1, so no
+      unmeasured take reaches the judge.
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk music check "${vars.run_dir}/3-takes/${vars.take_file}"
+            --brief "${vars.run_dir}/1-brief/brief-${vars.brief_number}.yaml"
+
+  - id: judge
+    description: >-
+      Assemble 4-judge-input.md from the five verbatim inputs once checks are clean, then judge the
+      take against the music-quality rubric (agent.run on kk:content-judge).
+    onEnter:
+      - kind: shell
+        options:
+          command: 'kk stage run music-judge-input "${vars.run_dir}"'
+      - kind: agent.run
+        options:
+          role: reviewer
+          agent: ${vars.agent}
+          input: |
+            Invoke the kk:content-judge skill with rubric `music-quality`.
+            content_path: ${vars.run_dir}/4-judge-input.md
+            content_ref: ${vars.run_dir}/3-takes/${vars.take_file}
+            verdict_path: ${vars.run_dir}/4-verdict-music.json
+            Grade only what the bundle shows; every measurement is quoted from checks.json with its
+            unit and source, never re-derived and never scored by ear. Emit the existing verdict
+            contract (verdict, confidence HIGH|MEDIUM|LOW, rubric, findings[], content_ref) and no
+            second verdict file.
+          expectFile: ${vars.run_dir}/4-verdict-music.json
+
+  - id: master
+    description: >-
+      Loudness-normalize the selected take to the delivery profile (0405). The post-master delivery
+      check is the last word: a delivery miss exits 1 and never reaches finalize.
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk music master "${vars.run_dir}/3-takes/${vars.take_file}" --profile "${vars.delivery_profile}"
+
+  - id: finalize
+    description: >-
+      Write the run report: spend summed from the take sidecars, instance ids, verdict, the delivery
+      profile with its measured LUFS/true peak, and the final artifact path (R4).
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk stage run music-finalize "${vars.run_dir}" "${vars.delivery_profile}" "${vars.format}"
+            "${vars.__runId}"
+
+  - id: done
+    description: "Terminal — the take is measured, judged PASS, normalized and reported."
+  - id: failed
+    description: >-
+      Terminal — the verdict refused the take (FAIL, an out-of-contract PASS, or NEEDS_REVISION
+      without accept_revision). A failing deterministic action fails the run at its own state.
+
+transitions:
+  - from: prepare
+    to: brief
+    description: "Run directory staged and idea.md written -> author the briefs"
+    guard:
+      kind: always
+
+  - from: brief
+    to: explore
+    description: "Every direction has a brief and a rendered prompt -> take one take per brief"
+    guard:
+      kind: always
+
+  - from: explore
+    to: analyze
+    description: "auto with exactly one take -> the single take is not a choice, skip the operator gate"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.auto}" = "true" &&
+          jq -e '.takes == 1' "${vars.run_dir}/3-takes/explore.json" >/dev/null
+
+  - from: explore
+    to: select
+    description: "Takes on disk -> pause for the operator's pick (always, when there is more than one take)"
+    guard:
+      kind: always
+
+  - from: select
+    to: analyze
+    description: "A take was selected -> bind and analyze that take only"
+    guard:
+      kind: always
+
+  - from: analyze
+    to: check
+    description: "The selected take's analysis is on disk -> measure it"
+    guard:
+      kind: always
+
+  - from: check
+    to: judge
+    description: "Every take check passed (checks.json has no fail row) -> assemble the bundle and judge"
+    guard:
+      kind: always
+
+  - from: judge
+    to: master
+    description: "PASS with a HIGH/MEDIUM/LOW confidence -> normalize"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          v="$(jq -r 'if (.verdict // "") == "PASS" then (.verdict + (if ((.confidence // "") | test("^(HIGH|MEDIUM|LOW)$")) then "" else "!" end)) else (.verdict // "") end' ${vars.run_dir}/4-verdict-music.json 2>/dev/null)";
+          test "$v" = PASS
+
+  - from: judge
+    to: master
+    description: "NEEDS_REVISION with accept_revision=true -> normalize the take as it is"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          v="$(jq -r 'if (.verdict // "") == "PASS" then (.verdict + (if ((.confidence // "") | test("^(HIGH|MEDIUM|LOW)$")) then "" else "!" end)) else (.verdict // "") end' ${vars.run_dir}/4-verdict-music.json 2>/dev/null)";
+          test "$v" = NEEDS_REVISION && test "${vars.accept_revision}" = "true"
+
+  - from: judge
+    to: failed
+    terminalReason: failed-guard
+    description: "FAIL, an out-of-contract PASS, or NEEDS_REVISION without accept_revision -> block master"
+    guard:
+      kind: always
+
+  - from: master
+    to: finalize
+    description: "Delivery check passed on the encoded output -> report the run"
+    guard:
+      kind: always
+
+  - from: finalize
+    to: done
+    description: "Run report written -> complete"
+    guard:
+      kind: always
