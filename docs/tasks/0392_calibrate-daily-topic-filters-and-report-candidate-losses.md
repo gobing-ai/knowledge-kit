@@ -4,7 +4,7 @@ name: Calibrate daily topic filters and report candidate losses
 status: todo
 template: feature-impl
 created_at: 2026-11-18T04:42:14.699Z
-updated_at: "2026-11-19T04:06:35.690Z"
+updated_at: "2026-11-19T21:41:06.865Z"
 feature_id: L3
 priority: P1
 
@@ -74,7 +74,63 @@ Reuse the worktree implementation's versioned `21-plan/topic-selection-attempts.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Integrated the L3 worktree commit `f6c4ce57` onto `main` and closed the gap the refine note named — the
+ported artifact stopped at `plan`/`floor`, so Agent curation and channel admission carried no evidence.
+
+**R1 — inventory (all four filter layers, named class by class).**
+1. Deterministic selection rules: `plugins/kk/scripts/topic-boundary.json` (v2, unmodified) — only the
+   `prc-leadership` keyword rule and the future-date `dateConflict` check run in code
+   (`plugins/kk/scripts/daily-stages.ts` (QC stage)), on a 200-char window. Nothing else is mechanical.
+2. Editorial topic boundary (agent prose): `plugins/kk/skills/news-editorial/SKILL.md:46-55`, retuned here and
+   calibrated 2026-11-18. The LIVE news path
+   (`plugins/kk/workflows/kk-news-generate.yaml:90,128`) reads that skill plus `references/selection.md` and
+   `references/style-contract.zh.md` for BOTH curate and curate-fix, so the skill is the single source. The
+   legacy voice flows carry the same sentence verbatim (`kk-daily-ai-voice.yaml:236,264,301,485`,
+   `kk-daily-ai-voice2.yaml:394,468,532,773`), and the contract narrowed the blanket public-policy
+   exclusion (`news-editorial/references/style-contract.zh.md:12-15`).
+3. Platform admission gates (content-safety): `plugins/kk/skills/content-safety/SKILL.md:39` category 2 plus
+   the per-channel files (`references/platforms/{xiaoyuzhou,wechatmp,xhs}.md`). Inventoried and **kept** —
+   they are platform rules, not editorial preference.
+4. **黄赌毒 (adult content / gambling / drugs) — nothing enforces it anywhere.** No rule in
+   `topic-boundary.json`, no row in the category table, no mention in any `references/platforms/*.md`; the
+   class is not a sub-case of category 2. Recorded as the "Unpoliced class" note
+   (`plugins/kk/skills/content-safety/SKILL.md:44-54`) with **no** new filter — no observed harmful miss, and
+   an unvetted keyword list would block AI stories that only mention addiction treatment or betting models.
+
+**R2 — six stages of evidence, one attempt per invocation.** Stage keying answer: the artifact is a single
+artifact, `21-plan/topic-selection-attempts.json` (`version: 2`), whose `attempts[]` is append-only per
+*invocation* — a retry is attempt 2. Later stages of the SAME invocation amend that attempt instead of
+appending, so one run day keeps one attempt however deep the pipeline runs.
+`plugins/kk/scripts/topic-selection-attempts.ts:34-46` now records one row per stage that actually ran
+(`{stage, input, kept, dropped[]}`), and reconciliation is per stage
+(`input === kept + dropped.length`) plus chain continuity (`next.input === previous.kept`),
+`reconcileSelectionAttempts`. That replaces the single cross-stage sum, which could not prove which
+stage lost what.
+- Raw pool + QC: `daily-stages.ts` `dailyQcContent` records `qc` as `{input: plan-snapshot docs, kept: candidates,
+  dropped: id difference}` — the drops are named by ID, not inferred.
+- Mechanical boundary and title dedup: `topicBoundary` and `dedup` rows from the same writer.
+- Floor: `daily-stages.ts` `applyFloorGate` records an admitted pool (`kept = input, dropped = []`) and a refusal
+  (`kept = 0, dropped = all ids`), so a stage that ran and dropped nothing is evidence rather than silence.
+- Agent curation: `daily-stages.ts` `dailyCurateCheck` amends after validation
+  (`curation` = the agent's split as handed over, `plan` = the validated plan after the check's own
+  near-duplicate pass). The editorial exclusions keep the agent's own reason
+  (`curationExcluded[]`), separate from mechanical rule hits. The `--final` fallback is recorded too, so a
+  fallback reads as observed evidence instead of a missing stage.
+- Channel admission: `dailySafetyGate` records the review report's `platforms[]` decisions per target and
+  scope with the gate's own status. A channel outcome is a target decision and never moves candidate
+  totals; a missing report leaves the stage `unknown`.
+Both report paths consume it: `apps/cli/src/topic-attempts.ts` (`selectionAttemptsSection` / `selectionAttemptsNote`) renders the funnel
+(`qc 24→18 (-6) · …`), the editorial-exclusion count, the per-target channel line (or
+`unknown (no safety receipt)`), and the unknown-stage list; `selectionAttemptsNote` carries the same facts
+on the no-content reason line.
+
+**Verified against main, not just against the branch.** `git merge-tree --merge-base` showed both commits'
+code merging cleanly onto `main` (only the task file conflicted, resolved toward main's refined version), and
+the ported modules import nothing outside `main` except the sibling boundary engine — so this run integrates
+the commits rather than replaying the branch.
+
+**Handed to 0385** (board editorial projection) and 0384: the calibrated policy text and the artifact
+location. Not implemented here.
 
 ### Testing
 

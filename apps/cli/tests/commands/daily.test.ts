@@ -417,7 +417,9 @@ describe('kk daily run-report', () => {
         expect(summary).toContain('the episode ran 12.3 min (pre-spend estimate 16.1 min)');
         expect(summary).toContain('below the 15 min floor');
         expect(summary).toContain('duration refusal after synthesis (pool 4, kept 9)');
-        expect(summary).toContain('selection attempts 1 (spec v2): pre-filter 4 → kept 3, 1 unique excluded ID(s)');
+        expect(summary).toContain('selection attempts 1 (spec v2): raw pool 4 → kept 3, 1 unique excluded ID(s)');
+        // R2: a day whose safety stage never ran says so instead of implying zero channel blocks.
+        expect(summary).toContain('channel admission: unknown (no safety receipt)');
         expect(summary).toContain('counts reconcile');
         expect(summary).not.toContain('pre-spend refusal');
     });
@@ -450,7 +452,9 @@ describe('kk daily run-report', () => {
         expect(JSON.parse(result.out).noContent).toBe(true);
         const summary = readFileSync(join(dir, 'run-report.summary.txt'), 'utf-8');
         expect(summary).toContain('script gate refusal before the TTS spend (pool 4, kept 3)');
-        expect(summary).toContain('selection attempts 1 (spec v2): pre-filter 4 → kept 3, 1 unique excluded ID(s)');
+        expect(summary).toContain('selection attempts 1 (spec v2): raw pool 4 → kept 3, 1 unique excluded ID(s)');
+        // R2: a day whose safety stage never ran says so instead of implying zero channel blocks.
+        expect(summary).toContain('channel admission: unknown (no safety receipt)');
     });
 
     it('invokes the report generator for a real pool and writes its body, failing loud when it fails', async () => {

@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { TopicBoundarySpec } from '../scripts/kk-workflow-stages.ts';
 import {
+    amendSelectionAttempt,
     appendSelectionAttempt,
     buildSelectionAttempt,
     countRuleHits,
@@ -16,6 +17,7 @@ import {
     readSelectionAttempts,
     reconcileSelectionAttempts,
     recordSelectionAttempt,
+    recordSelectionStage,
     SELECTION_ATTEMPTS_VERSION,
     selectionAttemptsPath,
 } from '../scripts/topic-selection-attempts.ts';
@@ -92,24 +94,29 @@ describe('selection calibration fixtures (0392 R1)', () => {
     });
 });
 
+/** The QC-side stage records: 5 planned docs → QC keeps 5 → boundary drops x,y → dedup drops none. */
+const qcStages = [
+    { stage: 'qc' as const, input: 5, kept: 5, dropped: [] as string[] },
+    { stage: 'topicBoundary' as const, input: 5, kept: 3, dropped: ['x', 'y'] },
+    { stage: 'dedup' as const, input: 3, kept: 3, dropped: [] as string[] },
+];
+
 const attemptBase = {
     runDate: '20261117',
     spec,
-    preFilter: 5,
+    stages: qcStages,
     keptIds: ['a', 'b', 'c'],
     excluded: [
         { id: 'x', title: 'X', rule: 'prc-leadership', reason: 'r', matched: '习近平' },
         { id: 'y', title: 'Y', rule: 'prc-leadership', reason: 'r', matched: '总书记' },
     ],
-    deduped: [] as string[],
-    planned: 3,
     recordedAt: '2026-11-17T04:30:00.000Z',
 };
 
-describe('per-attempt selection counts artifact (0392 R14)', () => {
-    test('an attempt reconciles preFilter = kept + unique excluded + deduped, with rule hits counted separately', () => {
+describe('per-attempt selection counts artifact (0392 R1)', () => {
+    test('every observed stage holds input = kept + dropped, with rule hits counted separately', () => {
         const attempt = buildSelectionAttempt({ ...attemptBase, attemptId: 'run1#1' }, 1);
-        expect(attempt.counts).toEqual({ preFilter: 5, kept: 3, uniqueExcluded: 2, deduped: 0, planned: 3 });
+        expect(attempt.counts).toEqual({ preFilter: 5, kept: 3, uniqueExcluded: 2, deduped: 0, planned: null });
         expect(attempt.perRuleHits).toEqual({ 'prc-leadership': 2 });
         expect(attempt.specVersion).toBe(spec.version);
         const reconciliation = reconcileSelectionAttempts([attempt]);
@@ -117,9 +124,41 @@ describe('per-attempt selection counts artifact (0392 R14)', () => {
         expect(reconciliation.uniqueIds).toBe(2);
         expect(reconciliation.ruleHits).toBe(2);
         expect(reconciliation.zeroKept).toBe(false);
-        // The floor stage runs after this artifact is written, so it is unknown at QC time.
-        expect(reconciliation.skippedStages).toEqual(['floor']);
+        // The floor, curation and safety stages run after the QC stage writes this artifact, so
+        // they are unknown here rather than assumed to be zero.
+        expect(reconciliation.skippedStages).toEqual(['floor', 'curation', 'plan', 'channelAdmission']);
         expect(reconciliation.issues).toEqual([]);
+    });
+
+    test('a stage that cannot prove its own arithmetic is named, not smoothed over', () => {
+        const attempt = buildSelectionAttempt(
+            {
+                ...attemptBase,
+                attemptId: 'run1#1',
+                stages: [{ stage: 'qc', input: 9, kept: 5, dropped: [] }],
+            },
+            1,
+        );
+        const reconciliation = reconcileSelectionAttempts([attempt]);
+        expect(reconciliation.reconciled).toBe(false);
+        expect(reconciliation.issues).toEqual(['qc: input 9 ≠ kept 5 + dropped 0']);
+    });
+
+    test('a stage that starts from a count the previous stage never handed over is a chain break', () => {
+        const attempt = buildSelectionAttempt(
+            {
+                ...attemptBase,
+                attemptId: 'run1#1',
+                stages: [
+                    { stage: 'qc', input: 5, kept: 5, dropped: [] },
+                    { stage: 'dedup', input: 4, kept: 3, dropped: ['dup'] },
+                ],
+            },
+            1,
+        );
+        const reconciliation = reconcileSelectionAttempts([attempt]);
+        expect(reconciliation.reconciled).toBe(false);
+        expect(reconciliation.issues[0]).toContain('qc → dedup: previous kept 5 ≠ next input 4');
     });
 
     test('multiple hits under several rules are one unique ID each', () => {
@@ -142,82 +181,125 @@ describe('per-attempt selection counts artifact (0392 R14)', () => {
             {
                 ...attemptBase,
                 attemptId: 'run1#1',
-                preFilter: 2,
+                stages: [
+                    { stage: 'qc', input: 2, kept: 2, dropped: [] },
+                    { stage: 'topicBoundary', input: 2, kept: 0, dropped: ['x', 'y'] },
+                    { stage: 'dedup', input: 0, kept: 0, dropped: [] },
+                ],
                 keptIds: [],
                 excluded: [
                     { id: 'x', title: 'X', rule: 'prc-leadership', reason: 'r', matched: '习近平' },
                     { id: 'y', title: 'Y', rule: 'date-conflict', reason: 'r', matched: '2026-12-01' },
                 ],
-                deduped: [],
-                planned: null,
             },
             1,
         );
         const reconciliation = reconcileSelectionAttempts([attempt]);
         expect(reconciliation.zeroKept).toBe(true);
         expect(reconciliation.reconciled).toBe(true);
+        expect(attempt.counts.kept).toBe(0);
         expect(reconciliation.skippedStages).toContain('plan');
     });
 
     test('a skipped stage stays unknown instead of counting as zero', () => {
         const attempt = buildSelectionAttempt(
-            { ...attemptBase, attemptId: 'run1#1', deduped: null, planned: null, observed: { floor: false } },
+            { ...attemptBase, attemptId: 'run1#1', stages: [qcStages[0] as (typeof qcStages)[0]] },
             1,
         );
         expect(attempt.counts.deduped).toBeNull();
         expect(attempt.counts.planned).toBeNull();
         expect(attempt.stageEvidence.dedup).toBe('unknown');
-        expect(attempt.stageEvidence.preFilter).toBe('observed');
+        expect(attempt.stageEvidence.qc).toBe('observed');
         const reconciliation = reconcileSelectionAttempts([attempt]);
-        expect(reconciliation.skippedStages).toEqual(['dedup', 'plan', 'floor']);
+        expect(reconciliation.skippedStages).toEqual([
+            'topicBoundary',
+            'dedup',
+            'floor',
+            'curation',
+            'plan',
+            'channelAdmission',
+        ]);
+        // Absent evidence leaves the reconciliation unproven, never violated.
+        expect(reconciliation.issues).toEqual([]);
     });
 
-    test('counts that do not reconcile are named, not smoothed over', () => {
-        const attempt = buildSelectionAttempt({ ...attemptBase, attemptId: 'run1#1', preFilter: 9 }, 1);
-        const reconciliation = reconcileSelectionAttempts([attempt]);
-        expect(reconciliation.reconciled).toBe(false);
-        expect(reconciliation.issues[0]).toContain('do not reconcile');
-    });
-
-    test('a dedup day reconciles: preFilter = kept + unique excluded + deduped', () => {
-        // 5-doc pool: 1 boundary exclusion, 1 near-duplicate drop, 3 survivors. Summing only
-        // kept + excluded published a false MISMATCH for exactly this shape.
+    test('a dedup day reconciles: the near-duplicate drop sits in its own stage', () => {
         const attempt = buildSelectionAttempt(
             {
                 ...attemptBase,
                 attemptId: 'run1#1',
-                preFilter: 5,
-                keptIds: ['a', 'b', 'c'],
+                stages: [
+                    { stage: 'qc', input: 5, kept: 5, dropped: [] },
+                    { stage: 'topicBoundary', input: 5, kept: 4, dropped: ['x'] },
+                    { stage: 'dedup', input: 4, kept: 3, dropped: ['dup'] },
+                ],
                 excluded: [{ id: 'x', title: 'X', rule: 'prc-leadership', reason: 'r', matched: '习近平' }],
-                deduped: ['dup'],
             },
             1,
         );
         const reconciliation = reconcileSelectionAttempts([attempt]);
         expect(reconciliation.reconciled).toBe(true);
         expect(reconciliation.issues).toEqual([]);
+        expect(attempt.counts.deduped).toBe(1);
         // Dedup evidence was observed, so it must not be reported as a skipped stage either.
         expect(reconciliation.skippedStages).not.toContain('dedup');
     });
 
-    test('a dedup day that still loses a candidate names all three counts', () => {
-        const attempt = buildSelectionAttempt(
-            { ...attemptBase, attemptId: 'run1#1', preFilter: 7, deduped: ['dup'] },
-            1,
-        );
-        const reconciliation = reconcileSelectionAttempts([attempt]);
-        expect(reconciliation.reconciled).toBe(false);
-        expect(reconciliation.issues).toEqual([
-            'counts do not reconcile: preFilter 7 ≠ kept 3 + excluded 2 + deduped 1',
-        ]);
+    test('curation and plan amend the SAME attempt and chain their counts', () => {
+        const first = recordSelectionAttempt(mkdtempSync(join(tmpdir(), 'kk-selection-amend-')), {
+            ...attemptBase,
+            attemptId: 'run1#1',
+        });
+        const amended = amendSelectionAttempt(first, '20261117', {
+            stages: [
+                { stage: 'curation', input: 3, kept: 2, dropped: ['c'] },
+                { stage: 'plan', input: 2, kept: 2, dropped: [] },
+            ],
+            curationExcluded: [{ id: 'c', reason: '与主线重复的背景消息' }],
+        });
+        expect(amended?.attempts).toHaveLength(1);
+        const latest = amended?.attempts[0];
+        // The curated plan is the headline kept count, and the editorial reason is retained.
+        expect(latest?.counts.kept).toBe(2);
+        expect(latest?.counts.planned).toBe(2);
+        expect(latest?.curationExcluded).toEqual([{ id: 'c', reason: '与主线重复的背景消息' }]);
+        expect(latest?.stageEvidence.curation).toBe('observed');
+        expect(latest?.stageEvidence.plan).toBe('observed');
+        expect(amended?.reconciliation.reconciled).toBe(true);
+        expect(amended?.reconciliation.skippedStages).toEqual(['floor', 'channelAdmission']);
     });
 
-    test('missing dedup evidence leaves the identity unproven, never violated', () => {
-        const attempt = buildSelectionAttempt({ ...attemptBase, attemptId: 'run1#1', deduped: null }, 1);
-        const reconciliation = reconcileSelectionAttempts([attempt]);
-        expect(reconciliation.reconciled).toBe(false);
-        expect(reconciliation.issues).toEqual([]);
-        expect(reconciliation.skippedStages).toContain('dedup');
+    test('an amend with no attempt on disk leaves the stage unknown instead of inventing one', () => {
+        expect(amendSelectionAttempt(null, '20261117', { channelAdmission: [] })).toBeNull();
+        const otherDay = appendSelectionAttempt(null, { ...attemptBase, attemptId: 'run1#1' });
+        expect(amendSelectionAttempt(otherDay, '20261118', {})).toBeNull();
+    });
+
+    test('channel admission is a target outcome and never moves the candidate totals', () => {
+        const first = appendSelectionAttempt(null, { ...attemptBase, attemptId: 'run1#1' });
+        const amended = amendSelectionAttempt(first, '20261117', {
+            channelAdmission: [
+                {
+                    scope: 'drafts',
+                    targets: [
+                        { target: 'xiaoyuzhou', decision: 'OK' },
+                        { target: 'wechatmp', decision: 'BLOCK' },
+                    ],
+                    status: 'exclude',
+                },
+            ],
+        });
+        const latest = amended?.attempts[0];
+        expect(latest?.counts).toEqual(first.attempts[0]?.counts ?? null);
+        expect(latest?.stageEvidence.channelAdmission).toBe('observed');
+        expect(amended?.reconciliation.skippedStages).not.toContain('channelAdmission');
+        // A re-run of the same scope replaces it; a new scope appends.
+        const rescoped = amendSelectionAttempt(amended ?? first, '20261117', {
+            channelAdmission: [
+                { scope: 'variants', targets: [{ target: 'apple-podcasts', decision: 'OK' }], status: 'pass' },
+            ],
+        });
+        expect(rescoped?.attempts[0]?.channelAdmission.map((entry) => entry.scope)).toEqual(['drafts', 'variants']);
     });
 
     test('a retry appends and supersedes the earlier attempt without inheriting its reasons', () => {
@@ -228,7 +310,11 @@ describe('per-attempt selection counts artifact (0392 R14)', () => {
         const second = appendSelectionAttempt(first, {
             ...attemptBase,
             attemptId: 'run1#2',
-            preFilter: 4,
+            stages: [
+                { stage: 'qc', input: 4, kept: 4, dropped: [] },
+                { stage: 'topicBoundary', input: 4, kept: 4, dropped: [] },
+                { stage: 'dedup', input: 4, kept: 4, dropped: [] },
+            ],
             keptIds: ['a', 'b', 'c', 'd'],
             excluded: [],
         });
@@ -246,7 +332,6 @@ describe('per-attempt selection counts artifact (0392 R14)', () => {
             attemptId: 'run1#2',
             excluded: [{ id: 'x', title: 'X', rule: 'date-conflict', reason: 'r', matched: '2026-12-01' }],
             keptIds: ['a', 'b', 'c', 'y'],
-            preFilter: 5,
         });
         expect(second.attempts[1]?.multipleHitIds).toEqual(['x']);
         expect(second.reconciliation.multipleHits).toBe(1);
@@ -270,6 +355,12 @@ describe('per-attempt selection counts artifact (0392 R14)', () => {
         // A retry through the writer keeps attempt 1 in the file.
         recordSelectionAttempt(workDir, { ...attemptBase, attemptId: 'run1#2' });
         expect(readSelectionAttempts(workDir)?.attempts).toHaveLength(2);
+        // The stage writer amends the CURRENT attempt, so a curation pass after the retry lands on
+        // attempt 2 and never resurrects attempt 1's numbers.
+        recordSelectionStage(workDir, '20261117', {
+            stages: [{ stage: 'curation', input: 3, kept: 3, dropped: [] }],
+        });
+        expect(readSelectionAttempts(workDir)?.attempts[1]?.stageEvidence.curation).toBe('observed');
         writeFileSync(selectionAttemptsPath(workDir), '{not json');
         expect(readSelectionAttempts(workDir)).toBeNull();
         writeFileSync(selectionAttemptsPath(workDir), JSON.stringify({ version: 1, attempts: 'nope' }));

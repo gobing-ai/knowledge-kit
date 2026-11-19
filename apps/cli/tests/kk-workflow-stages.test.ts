@@ -1007,6 +1007,198 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
+    // 0392 R2: the artifact is staged, not written once. Each later stage amends the attempt already
+    // on disk, so one run day keeps ONE attempt whatever the pipeline depth.
+    function seedAttempts(dir: string, stamp: string, ids: string[]): void {
+        mkdirSync(join(dir, '21-plan'), { recursive: true });
+        const stages = [
+            { stage: 'qc', input: ids.length, kept: ids.length, dropped: [] },
+            { stage: 'topicBoundary', input: ids.length, kept: ids.length, dropped: [] },
+            { stage: 'dedup', input: ids.length, kept: ids.length, dropped: [] },
+        ];
+        writeFileSync(
+            join(dir, '21-plan/topic-selection-attempts.json'),
+            JSON.stringify({
+                version: 2,
+                runDate: stamp,
+                specVersion: 2,
+                attempts: [
+                    {
+                        attempt: 1,
+                        attemptId: `${stamp}#1`,
+                        recordedAt: '2026-11-17T04:30:00.000Z',
+                        specVersion: 2,
+                        counts: {
+                            preFilter: ids.length,
+                            kept: ids.length,
+                            uniqueExcluded: 0,
+                            deduped: 0,
+                            planned: null,
+                        },
+                        stages,
+                        perRuleHits: {},
+                        exclusions: [],
+                        curationExcluded: [],
+                        multipleHitIds: [],
+                        keptIds: ids,
+                        channelAdmission: [],
+                        stageEvidence: {
+                            qc: 'observed',
+                            topicBoundary: 'observed',
+                            dedup: 'observed',
+                            floor: 'unknown',
+                            curation: 'unknown',
+                            plan: 'unknown',
+                            channelAdmission: 'unknown',
+                        },
+                    },
+                ],
+                reconciliation: {},
+            }),
+        );
+    }
+
+    type Artifact = {
+        attempts: {
+            counts: Record<string, number | null>;
+            stages: { stage: string; input: number; kept: number; dropped: string[] }[];
+            curationExcluded: { id: string; reason: string }[];
+            channelAdmission: { scope: string; status: string; targets: { target: string; decision: string }[] }[];
+            stageEvidence: Record<string, string>;
+        }[];
+        reconciliation: { reconciled: boolean; issues: string[]; skippedStages: string[] };
+    };
+
+    it('daily-curate-check amends the attempt with curation + plan evidence (0392 R2)', () => {
+        withTempDir((dir) => {
+            const stamp = '20261117';
+            seedAttempts(dir, stamp, ['a', 'b']);
+            const candidates = join(dir, `21-plan/${stamp}_04_quality-control-content_candidates.json`);
+            writeFileSync(
+                candidates,
+                JSON.stringify({
+                    metadata: {
+                        docs: [
+                            { id: 'a', title: 'A' },
+                            { id: 'b', title: 'B' },
+                        ],
+                    },
+                }),
+            );
+            writeFileSync(
+                join(dir, `21-plan/${stamp}_03_plan_plan.json`),
+                JSON.stringify([{ id: 'a', title: '条目A' }]),
+            );
+            writeFileSync(
+                join(dir, `21-plan/${stamp}_03_curate_excluded.json`),
+                JSON.stringify([{ id: 'b', reason: '低价值公关通稿' }]),
+            );
+
+            const res = run(['daily-curate-check', dir, stamp]);
+            expect(res.status, res.stderr).toBe(0);
+            const artifact = JSON.parse(
+                readFileSync(join(dir, '21-plan/topic-selection-attempts.json'), 'utf-8'),
+            ) as Artifact;
+            // Amended, never appended: one run day, one attempt.
+            expect(artifact.attempts).toHaveLength(1);
+            const latest = artifact.attempts[0];
+            expect(latest?.stages.map((entry) => entry.stage)).toEqual([
+                'qc',
+                'topicBoundary',
+                'dedup',
+                'curation',
+                'plan',
+            ]);
+            // The agent's own reason is retained, and the curated plan becomes the headline kept count.
+            expect(latest?.curationExcluded).toEqual([{ id: 'b', reason: '低价值公关通稿' }]);
+            expect(latest?.counts.kept).toBe(1);
+            expect(latest?.counts.planned).toBe(1);
+            expect(latest?.stageEvidence.curation).toBe('observed');
+            // Still unknown: the floor gate and the safety gate ran elsewhere.
+            expect(artifact.reconciliation.skippedStages).toEqual(['floor', 'channelAdmission']);
+            expect(artifact.reconciliation.reconciled).toBe(true);
+            expect(artifact.reconciliation.issues).toEqual([]);
+        });
+    });
+
+    it('daily-curate-check --final records the documented fallback as curation evidence (0392 R2)', () => {
+        withTempDir((dir) => {
+            const stamp = '20261117';
+            seedAttempts(dir, stamp, ['a', 'b']);
+            writeFileSync(
+                join(dir, `21-plan/${stamp}_04_quality-control-content_candidates.json`),
+                JSON.stringify({
+                    metadata: {
+                        docs: [
+                            { id: 'a', title: 'A' },
+                            { id: 'b', title: 'B' },
+                        ],
+                    },
+                }),
+            );
+            // No curated plan at all: the agent output is missing, so the check records a fallback.
+            const res = run(['daily-curate-check', dir, stamp, '--final']);
+            expect(res.status, res.stderr).toBe(0);
+            const artifact = JSON.parse(
+                readFileSync(join(dir, '21-plan/topic-selection-attempts.json'), 'utf-8'),
+            ) as Artifact;
+            const latest = artifact.attempts[0];
+            // The fallback keeps every candidate and excludes nothing — recorded, not silent.
+            expect(latest?.stages).toContainEqual({ stage: 'curation', input: 2, kept: 2, dropped: [] });
+            expect(latest?.counts.kept).toBe(2);
+            expect(latest?.stageEvidence.curation).toBe('observed');
+            expect(artifact.reconciliation.reconciled).toBe(true);
+        });
+    });
+
+    it('daily-safety-gate records channel admission without touching the candidate totals (0392 R2)', () => {
+        withTempDir((dir) => {
+            const stamp = '20261117';
+            seedAttempts(dir, stamp, ['a', 'b']);
+            mkdirSync(join(dir, '24-script'), { recursive: true });
+            mkdirSync(join(dir, '22-article'), { recursive: true });
+            writeFileSync(
+                join(dir, `22-article/${stamp}_06_article_content.json`),
+                JSON.stringify({ title: 'T', body: 'B' }),
+            );
+            writeFileSync(join(dir, `24-script/${stamp}_08_script_voicescript.yaml`), 'segments: []\n');
+            const prep = run(['daily-safety-prep', dir, stamp, 'xiaoyuzhou,wechatmp']);
+            expect(prep.status, prep.stderr).toBe(0);
+            const at = (name: string) => join(dir, '24-script', `${stamp}_09_${name}`);
+            writeFileSync(
+                at('safety-review_report.json'),
+                JSON.stringify({
+                    platforms: [
+                        { platform: 'xiaoyuzhou', decision: 'OK' },
+                        { platform: 'wechatmp', decision: 'BLOCK', findings: [{ category: 2, item: 'WX-02' }] },
+                    ],
+                }),
+            );
+            writeFileSync(
+                at('safety-judge_verdict.json'),
+                JSON.stringify({
+                    verdict: 'FAIL',
+                    confidence: 'LOW',
+                    findings: [{ criterion: 'jurisdictional-rules', status: 'fail' }],
+                }),
+            );
+            expect(run(['daily-safety-gate', dir, stamp, '0']).status).toBe(0);
+            const artifact = JSON.parse(
+                readFileSync(join(dir, '21-plan/topic-selection-attempts.json'), 'utf-8'),
+            ) as Artifact;
+            const latest = artifact.attempts[0];
+            expect(latest?.channelAdmission[0]?.targets).toEqual([
+                { target: 'xiaoyuzhou', decision: 'OK' },
+                { target: 'wechatmp', decision: 'BLOCK' },
+            ]);
+            expect(latest?.channelAdmission[0]?.status).toBe('exclude');
+            // A channel outcome is a target decision; it never moves the candidate totals.
+            expect(latest?.counts).toMatchObject({ preFilter: 2, kept: 2, uniqueExcluded: 0, deduped: 0 });
+            expect(latest?.stageEvidence.channelAdmission).toBe('observed');
+            expect(artifact.reconciliation.skippedStages).toEqual(['floor', 'curation', 'plan']);
+        });
+    });
+
     it('daily-extract widens the store window only while the pool misses the floor (2026-10-19)', () => {
         withTempDir((dir) => {
             const calls = join(dir, 'calls.log');

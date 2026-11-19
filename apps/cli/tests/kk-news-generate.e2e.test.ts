@@ -74,6 +74,9 @@ const runDate = args[1] ?? '';
 const write = (path, body) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, body); };
 const writeJson = (path, value) => write(path, JSON.stringify(value, null, 2) + '\n');
 const docs = JSON.parse(await Bun.file(process.env.KK_STUB_DOCS).text());
+// 0392 R2: the counts artifact is written by the REAL module, so the stub only fakes the stage
+// boundary — the arithmetic the workflow depends on is never re-implemented in a double.
+const attempts = process.env.KK_STUB_ATTEMPTS ? await import(process.env.KK_STUB_ATTEMPTS) : null;
 const content = (body) => ({ title: '每日AI乱炖', format: 'markdown', body, metadata: {} });
 
 if (process.env.KK_STUB_FAIL_STAGE === stage) process.exit(3);
@@ -90,6 +93,14 @@ switch (stage) {
             title: '每日AI乱炖', format: 'markdown', body: 'candidates',
             metadata: { docs: process.env.KK_STUB_EMPTY_POOL === '1' ? [] : docs },
         });
+        attempts?.recordSelectionAttempt(workDir, {
+            runDate,
+            attemptId: runDate + '#1',
+            spec: { version: 2 },
+            stages: [{ stage: 'qc', input: docs.length, kept: process.env.KK_STUB_EMPTY_POOL === '1' ? 0 : docs.length, dropped: process.env.KK_STUB_EMPTY_POOL === '1' ? docs.map((d) => d.id) : [] }],
+            excluded: [],
+            keptIds: process.env.KK_STUB_EMPTY_POOL === '1' ? [] : docs.map((d) => d.id),
+        });
         break;
     case 'daily-curate-check': {
         const plan = join(workDir, '21-plan', runDate + '_03_plan_plan.json');
@@ -97,6 +108,13 @@ switch (stage) {
         writeJson(plan, docs);
         writeJson(join(workDir, '21-plan', runDate + '_03_curate_excluded.json'), []);
         if (existsSync(errors)) rmSync(errors, { force: true });
+        // The curation stage amends the attempt the QC node wrote: one run day, one attempt.
+        attempts?.recordSelectionStage(workDir, runDate, {
+            stages: [
+                { stage: 'curation', input: docs.length, kept: docs.length, dropped: [] },
+                { stage: 'plan', input: docs.length, kept: docs.length, dropped: [] },
+            ],
+        });
         break;
     }
     case 'daily-script-check': {
@@ -336,6 +354,7 @@ function runEnv(fixture: Fixture, extraEnv: Record<string, string> = {}): Record
         HOME: join(fixture.root, 'home'),
         KK_CONFIG: fixture.config,
         KK_STUB_DOCS: fixture.docsFile,
+        KK_STUB_ATTEMPTS: join(REPO, 'plugins/kk/scripts/topic-selection-attempts.ts'),
         KK_AGENT_LOG: fixture.agentLog,
         KK_PLUGIN_PATH: join(REPO, 'plugins/kk'),
         ...extraEnv,
@@ -432,6 +451,22 @@ describe('kk-news-generate — AC3: the workflow freezes the bundle voice3 freez
         // The report (node 20's second command) and the ledger ran behind the freeze.
         expect(readFileSync(join(workDir, '5-report', 'generation.md'), 'utf-8')).toContain('Daily run report');
         expect(readFileSync(join(workDir, 'run-report.summary.txt'), 'utf-8')).toContain('items planned');
+        // 0392 R2: the run's counts artifact survives the whole workflow as ONE attempt, and the
+        // curation node amended it AFTER the QC node (the ordering a unit test cannot show).
+        const selection = JSON.parse(
+            readFileSync(join(workDir, '21-plan', 'topic-selection-attempts.json'), 'utf-8'),
+        ) as {
+            attempts: {
+                stages: { stage: string; input: number; kept: number }[];
+                stageEvidence: Record<string, string>;
+            }[];
+            reconciliation: { reconciled: boolean; skippedStages: string[] };
+        };
+        expect(selection.attempts).toHaveLength(1);
+        expect(selection.attempts[0]?.stages.map((entry) => entry.stage)).toEqual(['qc', 'curation', 'plan']);
+        expect(selection.attempts[0]?.stageEvidence.curation).toBe('observed');
+        expect(selection.reconciliation.skippedStages).not.toContain('curation');
+        expect(selection.reconciliation.reconciled).toBe(true);
         // Every agent node was dispatched through the ONE executor variable.
         const agentCalls = readFileSync(fx.agentLog, 'utf-8').trim().split('\n').filter(Boolean);
         expect(agentCalls.length).toBeGreaterThanOrEqual(3);
@@ -503,6 +538,14 @@ describe('kk-news-generate — AC3: the workflow freezes the bundle voice3 freez
         expect(existsSync(join(workDir, 'bundle.json'))).toBe(false);
         // The no-content verdict the launching verb's receipt reads.
         expect(readFileSync(join(workDir, 'run-report.summary.txt'), 'utf-8')).toStartWith('no-content:');
+        // 0392 R2: an empty pool still leaves an attempt, and its zero is observed — the no-content
+        // path must distinguish "QC dropped everything" from "nothing was recorded".
+        const selection = JSON.parse(
+            readFileSync(join(workDir, '21-plan', 'topic-selection-attempts.json'), 'utf-8'),
+        ) as { attempts: { counts: Record<string, number | null> }[]; reconciliation: { zeroKept: boolean } };
+        expect(selection.attempts[0]?.counts.preFilter).toBe(2);
+        expect(selection.attempts[0]?.counts.kept).toBe(0);
+        expect(selection.reconciliation.zeroKept).toBe(true);
         // No content node ran, so the only real dispatch is the executor probe. `--version` /
         // `--list-models` are capability probes the roster check makes, not spend on content.
         const agentCalls = readFileSync(fx.agentLog, 'utf-8').trim().split('\n').filter(Boolean);

@@ -129,7 +129,12 @@ import {
 import { splitSentences } from './sentences.ts';
 import { normalizeSeriesNames } from './series-names.ts';
 import { resolveSourceCitation } from './source-citation.ts';
-import { readSelectionAttempts, recordSelectionAttempt, selectionAttemptsPath } from './topic-selection-attempts.ts';
+import {
+    readSelectionAttempts,
+    recordSelectionAttempt,
+    recordSelectionStage,
+    selectionAttemptsPath,
+} from './topic-selection-attempts.ts';
 
 export function dailyQcContent(args: string[]): void {
     const [
@@ -256,28 +261,38 @@ export function dailyQcContent(args: string[]): void {
         sted('write', candidates, () => writeJsonText(candidates, dedupedContent));
         console.error(`qc: dropped ${dropped.length} near-duplicate candidate(s): ${dropped.join(', ')}`);
     }
-    // Task 0392 R14: the run day's own counts artifact. It is written on EVERY invocation (kept or
-    // not) because the exclusion file only exists when a rule hit, and a retry appends instead of
-    // overwriting, so the report can reconcile after retries and still name what was lost. The floor
-    // stage runs after this, so its count stays `unknown` here rather than being inferred.
+    // Task 0392 R2: the raw pool entering QC, captured OUTSIDE the timed block so a cached rerun
+    // still records it (`10-collect/pool.json` is a different artifact — this is the plan snapshot
+    // the QC filter actually reads). The QC drops are named by ID difference, so the stage's own
+    // arithmetic holds instead of being inferred.
+    const poolDocs = metadataOf(readJson(planContent)).docs;
+    const poolIds = (Array.isArray(poolDocs) ? poolDocs : []).map((doc) => String((doc as { id?: unknown }).id ?? ''));
+    const boundaryIds = new Set(boundaryDocs.map((doc) => String((doc as { id?: unknown }).id ?? '')));
+    const qcDropped = poolIds.filter((id) => !boundaryIds.has(id));
+    // Task 0392 R2: one record per stage that ran, so each stage is provable on its own
+    // (`input === kept + dropped`) instead of being inferred from one cross-stage sum.
     const selectionPath = selectionAttemptsPath(workDir);
     sted('write', selectionPath, () => {
         const attemptOrdinal = (readSelectionAttempts(workDir)?.attempts.length ?? 0) + 1;
+        const keptDocs = dropped.length > 0 ? deduped : currentDocs;
         recordSelectionAttempt(workDir, {
             runDate,
             attemptId: `${runDate}#${attemptOrdinal}`,
             spec: readTopicBoundary(),
-            // `preFilter` is the count entering this stage, captured before the boundary mutates the
-            // candidates (the pre-QC pool count is `10-collect/pool.json`, a different stage).
-            preFilter: boundaryDocs.length,
-            // Post-dedup survivors, and the drops are handed over separately, so the identity holds
-            // on a dedup day too: preFilter === keptIds.length + excluded.length + dropped.length.
-            keptIds: (dropped.length > 0 ? deduped : currentDocs).map((doc) =>
-                String((doc as { id?: unknown }).id ?? ''),
-            ),
+            stages: [
+                { stage: 'qc', input: poolIds.length, kept: boundaryDocs.length, dropped: qcDropped },
+                // The boundary's drops are rule-tagged, not just counted: the exclusions carry them.
+                {
+                    stage: 'topicBoundary',
+                    input: boundaryDocs.length,
+                    kept: currentDocs.length,
+                    dropped: excluded.map((entry) => entry.id),
+                },
+                { stage: 'dedup', input: currentDocs.length, kept: keptDocs.length, dropped },
+            ],
+            // Post-dedup survivors, so the recorded kept set is what later stages actually receive.
+            keptIds: keptDocs.map((doc) => String((doc as { id?: unknown }).id ?? '')),
             excluded,
-            deduped: dropped,
-            planned: null,
         });
     });
     // Last, not inside the timed block above: the estimate must see the pool every shrink pass has
@@ -578,10 +593,20 @@ function applyFloorGate(
     } = estimateSpokenMinutes(docs, vdriver, keptRatio.ratio);
     if (estimatedSeconds >= floor * 60) {
         if (clearStaleRefusal && isFile(refusal)) unlinkSync(refusal);
+        // Task 0392 R2: the floor gate observed this pool and admitted it — a stage that ran and
+        // dropped nothing is evidence, not silence.
+        recordSelectionStage(workDir, runDate, {
+            stages: [{ stage: 'floor', input: docs.length, kept: docs.length, dropped: [] }],
+        });
         console.log(`floor gate: estimated ${estimatedMinutes} min from ${chars} chars — above the ${floor} min floor`);
         return;
     }
     const ids = docs.map((doc) => String((doc as Record<string, unknown> | null)?.id ?? ''));
+    // A refusal drops the whole pool: recording it as `kept 0` keeps the stage identity true and
+    // tells the report the day ended here rather than leaving the stage unknown.
+    recordSelectionStage(workDir, runDate, {
+        stages: [{ stage: 'floor', input: docs.length, kept: 0, dropped: ids }],
+    });
     sted('write', refusal, () =>
         writeJqText(refusal, {
             estimatedMinutes,
@@ -3833,6 +3858,23 @@ export function dailySafetyGate(args: string[]): void {
             unlinkSync(infraMarker);
         }
         sted('write', statusFile, () => writeRaw(statusFile, status));
+        // Task 0392 R2: the channel-admission decisions this run actually reached, keyed by target
+        // and scope. A channel outcome is not a candidate drop — it never touches the totals.
+        // Unobserved (no platforms array) leaves the stage unknown instead of claiming zero blocks.
+        if (platforms.length > 0) {
+            recordSelectionStage(workDir, runDate, {
+                channelAdmission: [
+                    {
+                        scope: scopeDir === '' ? 'drafts' : scopeDir,
+                        targets: platforms.map((platform) => ({
+                            target: String(platform?.platform ?? ''),
+                            decision: String(platform?.decision ?? ''),
+                        })),
+                        status,
+                    },
+                ],
+            });
+        }
         console.log(`safety: status=${status} (${reason}); routing is transition-owned`);
     });
 }
@@ -4665,6 +4707,14 @@ export function dailyCurateCheck(args: string[]): void {
             sted('write', planFile, () => writeJsonText(planFile, candidateDocs));
             sted('write', excludedFile, () => writeJsonText(excludedFile, []));
             if (isFile(errFile)) unlinkSync(errFile);
+            // Task 0392 R2: the recorded fallback IS the curation evidence for this attempt — the
+            // agent's split was rejected, so the plan is every candidate and nothing was excluded.
+            recordSelectionStage(workDir, runDate, {
+                stages: [
+                    { stage: 'curation', input: candidateIds.length, kept: candidateDocs.length, dropped: [] },
+                    { stage: 'plan', input: candidateDocs.length, kept: candidateDocs.length, dropped: [] },
+                ],
+            });
             return;
         }
         sted('write', errFile, () => writeJsonText(errFile, errors));
@@ -4775,6 +4825,9 @@ export function dailyCurateCheck(args: string[]): void {
         return;
     }
 
+    // Captured before the check's own dedup pass: `curation` records what the AGENT handed over,
+    // `plan` records what the validation then kept, so the two stages never double-count a drop.
+    const agentExcluded = excludedItems.map((entry) => entry.id);
     const { kept, dropped } = dedupPlanByTitle(planDocs);
     if (dropped.length > 0) {
         sted('write', planFile, () => writeJsonText(planFile, kept));
@@ -4791,6 +4844,22 @@ export function dailyCurateCheck(args: string[]): void {
     }
 
     if (isFile(errFile)) unlinkSync(errFile);
+    // Task 0392 R2: curation is authoritative only after this validation passed — that is why the
+    // evidence is written here and not by the agent. `curation` is the agent's split as handed over;
+    // `plan` is the validated plan after the check's own near-duplicate pass, so the two stages
+    // chain (`curation.kept` → `plan.input`) and each one's arithmetic holds.
+    recordSelectionStage(workDir, runDate, {
+        stages: [
+            {
+                stage: 'curation',
+                input: candidateIds.length,
+                kept: planDocs.length,
+                dropped: agentExcluded,
+            },
+            { stage: 'plan', input: planDocs.length, kept: kept.length, dropped },
+        ],
+        curationExcluded: excludedItems.map((entry) => ({ id: entry.id, reason: entry.reason })),
+    });
     console.log(`curate-check: accepted (${kept.length} kept, ${excludedItems.length} excluded)`);
 }
 
