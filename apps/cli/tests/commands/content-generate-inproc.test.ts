@@ -336,6 +336,31 @@ describe('generate step verbs — refusals shared by every verb', () => {
         expect(stageCalls.concat(matrixCalls.map((call) => call)).length).toBeGreaterThan(0);
     });
 
+    // 2026-11-18: `--stage freeze` used to re-run prep/variants/manifest, re-rendering the very files
+    // the variants safety review had just reviewed and revised — the review's edits were discarded and
+    // freeze's digest guard refused the run (2h36m lost, nothing published). Freeze must touch nothing
+    // but the bundle; and `--stage variants` must never freeze before evidence exists.
+    it('generate-bundle splits the variants and freeze stages on their own boundary', async () => {
+        reset();
+        const dir = workDir('bundle-boundary');
+        mkdirSync(join(dir, '30-variants'), { recursive: true });
+        writeFileSync(join(dir, '30-variants', 'zh_article.content.json'), JSON.stringify({ body: 'reviewed' }));
+
+        await run(['news', 'generate-bundle', '--work-dir', dir, '--stage', 'freeze']);
+        expect(stageCalls.map((call) => call[0])).not.toContain('daily-bundle-variants');
+        expect(stageCalls.map((call) => call[0])).not.toContain('daily-publish-prep');
+        expect(matrixCalls.map((call) => call[0])).toEqual(['bundle']);
+
+        reset();
+        await run(['news', 'generate-bundle', '--work-dir', dir, '--stage', 'variants']);
+        expect(stageCalls.map((call) => call[0])).toEqual([
+            'daily-publish-prep',
+            'daily-bundle-variants',
+            'daily-safety-manifest',
+        ]);
+        expect(matrixCalls).toEqual([]);
+    });
+
     // The launcher resolves the package root and the workflow file, so it measures ~5 s under a
     // loaded host: an explicit budget, never bun's 5 s default (the flake that made the verdict
     // replay flip between clean and exit 1).
