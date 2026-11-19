@@ -163,9 +163,11 @@ function checkRequires(list: Entity[]): string[] {
 }
 
 describe('runtime-requires (task 0342 / feature F81 R1, R2, R3)', () => {
-    test('20 kk entities are collected (16 skills, 4 commands)', () => {
-        expect(entities.length).toBe(20);
-        expect(byPath.size).toBe(20);
+    test('21 kk entities are collected (17 skills, 4 commands)', () => {
+        // 2026-11-19 adds `skills/music-authoring/SKILL.md` (0402), which dispatches `kk:content-judge`
+        // and therefore inherits its `cli:spur` token.
+        expect(entities.length).toBe(21);
+        expect(byPath.size).toBe(21);
     });
 
     test('AC1: every entity declares a valid, sorted, de-duplicated requires list equal to the derived closure', () => {
@@ -176,14 +178,16 @@ describe('runtime-requires (task 0342 / feature F81 R1, R2, R3)', () => {
         }
     });
 
-    test('AC3: the group snapshot matches the 2026-11-10 frozen table (9/6/0/5)', () => {
+    test('AC3: the group snapshot matches the 2026-11-19 frozen table (10/6/0/5)', () => {
         const groups: Record<string, number> = {};
         for (const entity of entities) {
             const key = [...deriveRequires(entity.path)].sort().join(',');
             groups[key] = (groups[key] ?? 0) + 1;
         }
         expect(groups).toEqual({
-            'cli:kk,cli:spur,local-fs': 9,
+            // 10 after 0402: music-authoring invokes `kk music` directly and inherits spur through its
+            // `kk:content-judge` dispatch.
+            'cli:kk,cli:spur,local-fs': 10,
             'cli:kk,local-fs': 6,
             'local-fs': 5,
         });
