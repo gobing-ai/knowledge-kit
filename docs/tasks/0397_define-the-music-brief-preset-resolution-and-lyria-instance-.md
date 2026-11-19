@@ -4,7 +4,7 @@ name: Define the music brief, preset-resolution and lyria instance adapter contr
 status: done
 template: feature-impl
 created_at: 2026-11-18T22:16:10.470Z
-updated_at: "2026-11-19T04:31:47.315Z"
+updated_at: "2026-11-19T19:44:13.687Z"
 feature_id: D8
 
 ac_numbering: task-local
@@ -112,7 +112,7 @@ Design-first contract freeze. The plugin, presets, spend guard, audio checks, CL
 against this surface instead of inventing one each. Contract authority:
 [docs/design/music-gen.md](design/music-gen.md).
 
-#### AC6-vs-AC2/AC3 tension (read first)
+**AC6-vs-AC2/AC3 tension (read first)**
 
 AC6 says "no implementation file other than the golden fixtures was added by this task" and R6 says
 "no implementation code in this task beyond the four golden fixtures". AC2 and AC3 are not satisfiable
@@ -131,7 +131,7 @@ deliverable #1 resolves the conflict in favour of a pure module. What was added 
   0398 R1 extends `package.json` with its remaining deps and adds `plugin.json` + the entry.
 - `bun.lock` changed because the new workspace member was installed (`bun install`).
 
-#### Change map
+**Change map**
 
 | File:line | What and why |
 | --------- | ------------ |
@@ -175,7 +175,7 @@ deliverable #1 resolves the conflict in favour of a pure module. What was added 
 | `docs/04_DESIGN.md:64` | The single satellite index row for the new design doc |
 | `docs/features/D8_music-generation-music-gen-plugin-kk-music-workflow-and-quality-gates-over-the-homelab-lyria-3-instance.md:139` | The feature record's single pointer to the frozen contract + authoring form |
 
-#### Decisions taken while freezing (and why)
+**Decisions taken while freezing (and why)**
 
 1. **`audio_format` was added to the brief.** The instance's generate route has a `format` field
    (audio container) while R1/R4 use `format` for the preset axis. Keeping one name for both would

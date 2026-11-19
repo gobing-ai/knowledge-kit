@@ -4,7 +4,7 @@ name: "Ship the music-gen generator plugin: lyria instance adapter, job and Cont
 status: done
 template: feature-impl
 created_at: 2026-11-18T22:16:14.376Z
-updated_at: "2026-11-19T05:53:17.195Z"
+updated_at: "2026-11-19T19:44:13.905Z"
 feature_id: D8
 
 ac_numbering: task-local
@@ -115,7 +115,7 @@ data (0399), spend remains a recorded number (0400), and the offline adapter is 
 for the suite, so no test and no dry run can open a socket or pay for a take. One deliberate rule
 change was needed and only one (row on `runtime-boundaries.yaml` below).
 
-#### AC interpretations
+**AC interpretations**
 
 - **R5 echoes vs. the sidecar's `language`.** `Content` — both `metadata.takes[]` and the liner notes —
   carries `language`, `durationTarget` and `batchCount` only when the instance manifest recorded them,
@@ -146,7 +146,7 @@ change was needed and only one (row on `runtime-boundaries.yaml` below).
   but takes 1..k-1 stay on disk with their sidecars (Design: "each persists or fails independently"),
   so 0400's run-scoped dedupe can skip what was already paid for.
 
-#### Change map
+**Change map**
 
 | File:line | What and why |
 | --------- | ------------ |

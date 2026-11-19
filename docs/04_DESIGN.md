@@ -102,6 +102,14 @@ kk wiki summarize <page> --from <-|file> [--json]
 kk wiki synthesize <topic|page> --from <-|file> [--type <pageType>] [--json]
 kk wiki link [--fix] [--json]
 kk wiki lint [--json]
+kk music render --in <brief.yaml> [--out <prompt.txt>] [--json]
+kk music presets [--json]
+kk music gen --in <brief.yaml> --out <content.json> [--yes] [--estimate-only]
+              [--takes <n>] [--force] [--reason <text>] [--json]
+kk music library [--json]
+kk music analyze <instanceId> [--yes] [--json]
+kk music check <take> [--brief <brief.yaml>] [--analysis <path>] [--json]
+kk music master <take> [--profile <name>] [--json]
 kk store migrate [--db <path>]
 kk store ingest --run <id> --in <Doc[].json> --new-ids <path> [--db <path>]
 kk store backfill-facts [--db <path>]
@@ -1547,6 +1555,43 @@ is accepted design, not surface: do not invoke it as if it exists.
   (`apps/cli/tests/schedule-no-scripts.e2e.test.ts`). The old launchers and workflows stay in the
   tree until a production day on the new lines is evidenced; the `kk schedule` cron templates above
   still render the old launcher commands until that retirement.
+
+### 1.15 `music` — shipped (D8, tasks 0397–0405)
+
+`kk music` is the step owner for music generation over the self-hosted Lyria 3 instance; every verb
+is a thin delegate to `plugins/generations/music-gen`, so no prompt rendering, spend rule, ffmpeg
+argv or HTTP lives in the CLI. Paid verbs state `PAID` in `--help` and refuse without `--yes`
+(the 0400 spend guard): `gen` and `analyze`. Free verbs never construct an instance client, so they
+succeed with the instance unreachable: `render`, `presets`, `check`, `master` (`library` is a free
+read-only `GET /api/generations`).
+
+- **render** — resolve a `MusicBrief` through the presets and print the kk prompt text plus the
+  request JSON (0397 R2/R3, 0399 R3); `--out` writes the prompt. Validates the brief, so it is the
+  authoring loop's free check.
+- **presets** — the shipped format and theme inventory with its evidence status (0399 R5; the table
+  is generated, `README.md` is the index).
+- **gen** — estimate (prompt, model, takes, unit price, total), confirmation, run-scoped duplicate
+  refusal by the 0397 request digest, takes cap (default 2, hard maximum 4), one artifact and one
+  sidecar per take. `--estimate-only` prints and exits 0 without opening a socket (0400 R1).
+- **analyze** — cache-first: the instance manifest's cached analysis is returned without a paid call;
+  only a take with no cached analysis pays once (0398 R3). An unconfigured `music.prices.analyze`
+  renders `unpriced` and still demands `--yes`.
+- **check** — local ffprobe/ffmpeg measurement and the pre-master take checks, written to
+  `<take>.checks.json`; exits non-zero exactly when a row is `fail`. Loudness is **not** a take
+  check: it is judged after `master`, on the encoded delivery file (0405 R2/R4). `--analysis` (or
+  the sibling `<take>.analysis-<instanceId>.json`) satisfies `analysis.present`.
+- **master** — two-pass `loudnorm` to a named delivery profile with an explicit `-ar`, written as
+  `<artifact>.<profile>.<ext>`; the provider take is never modified (0405 R3).
+
+Configuration lives in the `music:` block of the user config root with `KK_MUSIC_*` environment
+overrides and documented defaults (`baseUrl` → `http://127.0.0.1:3000`, `timeoutMs`,
+`defaultModel`, `takesCap` ≤ 4, `prices.{pro,clip,analyze}`, `delivery.<name>` with one built-in
+`streaming` = −14 LUFS / −1 dBTP / wav / 44100). `--verbose` reports the winning layer per key; an
+unreachable endpoint yields a one-line remediation naming the config key and file. A `takesCap`
+above 4 is rejected at load. Every verb emits one stable `--json` envelope (artifact path, instance
+id, digest, `paid`, spend, measurements, check rows), which is what the `kk-music` workflow's states
+and the `music-authoring` skill consume. The workflow drives this surface only — it never shells a
+plugin script or re-derives a request (0403).
 
 ## 2. Configuration keys
 

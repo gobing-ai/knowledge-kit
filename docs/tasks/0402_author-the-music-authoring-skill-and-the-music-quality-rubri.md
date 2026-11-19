@@ -4,7 +4,7 @@ name: Author the music-authoring skill and the music quality rubric
 status: done
 template: feature-impl
 created_at: 2026-11-18T22:16:16.524Z
-updated_at: "2026-11-19T08:31:11.931Z"
+updated_at: "2026-11-19T19:44:14.314Z"
 feature_id: D8
 
 ac_numbering: task-local
@@ -88,7 +88,7 @@ Scenario: AC5 — The judge reads one bundle (req: R5)
 
 ### Solution
 
-#### Change map
+**Change map**
 
 | Change | File:line | Why |
 | --- | --- | --- |
@@ -106,7 +106,7 @@ Scenario: AC5 — The judge reads one bundle (req: R5)
 | New test: operations + gates + resume, the six constraint ids, the byte budget, the real `render`/`check` flow, the verb anti-drift scan, the rubric's weights/must-pass/citation rules, the bundle ids, and the verdict key-set equality | `plugins/kk/tests/music-authoring.test.ts:1` | R1-R5. Two behavioural halves spawn the real CLI; the rest are structural scans of the three skill files against the CLI's own verb list, so documentation drift fails the suite. |
 | Frozen runtime-requires inventory: 21 entities (17 skills, 4 commands), group `cli:kk,cli:spur,local-fs` 9 → 10 | `plugins/kk/tests/runtime-requires.test.ts:166`, `:181`, `:190` | The new skill invokes `kk music` directly and inherits `cli:spur` through its `kk:content-judge` dispatch, so the derived closure and the frozen table move by one. `requires: [cli:kk, cli:spur, local-fs]` is what the test derives (AC1 passes unmodified). |
 
-#### Rationale
+**Rationale**
 
 - **Two skills, one rubric, zero schema change.** Authoring lives in `music-authoring`; evaluation stays
   in `content-judge` with one new reference file. The `review` operation assembles a bundle and hands it
@@ -121,7 +121,7 @@ Scenario: AC5 — The judge reads one bundle (req: R5)
   directory (0403) so the skill and the workflow can never disagree about where a brief, a take or
   `checks.json` lives.
 
-#### AC interpretations
+**AC interpretations**
 
 - **AC1** — "validates against the 0397 MusicBrief schema via `kk music render`" is proven by executing
   the real verb on the documented brief (new test, and the probe transcript): exit 0, and the rendered

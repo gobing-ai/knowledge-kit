@@ -4,7 +4,7 @@ name: Measure takes and loudness-normalize to a delivery profile
 status: done
 template: feature-impl
 created_at: 2026-11-18T23:37:07.663Z
-updated_at: "2026-11-19T07:48:29.112Z"
+updated_at: "2026-11-19T19:44:14.517Z"
 feature_id: D8
 
 ac_altitude: task-local
@@ -101,7 +101,7 @@ Scenario: AC6 — The suite needs no ffmpeg (req: R6)
 
 Owns all audio engineering for the feature: measurement, the pre-master take gate, loudness normalization and the post-master delivery gate. Everything spawns through one injectable runner, so the committed suite runs with no ffmpeg on PATH (AC6).
 
-#### Change map
+**Change map**
 
 | Change | Where | What it does |
 | --- | --- | --- |
@@ -124,7 +124,7 @@ Owns all audio engineering for the feature: measurement, the pre-master take gat
 | Fixtures + tests | `tests/fixtures/audio/*`, `tests/audio-captures.ts`, `tests/audio-{measure,checks,master,profile}.test.ts` | Real ffmpeg 8.1.2 captures (34 s take: 2 s lead-in, 28 s tone, 4 s tail; its `streaming` master at 44.1 kHz) replayed through the injected runner — no ffmpeg in CI. |
 | Default runner on the sanctioned process seam | `src/audio/measure.ts:88,93,104,120` | `spawnRunner` now issues `new NodeProcessExecutor().run({ command, args })` instead of `Bun.spawnSync` — music-gen is not on the `no-direct-process-spawn` allowlist (`.spur/rules/strict/runtime-boundaries.yaml:41,44`, the voice-gen entries) and must not be added to it. `ProcessResult` differs from `ToolOutput` in exactly one place: `exitCode: number \| null`, and no throw for a tool that never started, so the adapter maps a null code to `AudioToolError` kind `spawn` with the install hint (a missing ffmpeg still reads "install ffmpeg", never `exited 1`) and passes every real exit code and both streams through untouched. `AudioToolRunner`, its recorded argv and every parser expectation are unchanged. **Supersedes the `Bun.spawnSync` clause in the first row and the R6 smoke-assertion wording below.** |
 
-#### Rationale
+**Rationale**
 
 - **One runner, many argv.** Measurement and mastering share `AudioToolRunner` instead of each module spawning its own tool, so a test replays every call by argv shape and the `-ar`/two-pass assertions are made on the same argv the production path builds.
 - **Parsers take text, not a path.** All four parsers are pure over captured stdout/stderr: the 4 fixtures drive them directly, and the same functions run in production behind the spawn, so a parsing bug cannot hide behind "no ffmpeg here".
@@ -132,7 +132,7 @@ Owns all audio engineering for the feature: measurement, the pre-master take gat
 - **Delivery rows are computed from the profile, never from a constant.** A test with a `channels` profile (−16 LUFS / −2 dBTP / 48 kHz) shows the numbers moving with the config (AC5 in the same code path as AC4).
 - **One built-in only.** No 小红书/B站/视频号 numbers are invented: R5 is satisfied by `streaming` plus config, and the error message tells an operator to define `music.delivery.<name>`.
 
-#### AC interpretations
+**AC interpretations**
 
 - **AC2 "the -22 LUFS take does not fail on loudness"** — the take checks emit *no* loudness row at all, rather than a permanently-`pass` row that would fake a measurement. Loudness is measured once, post-master, by `delivery.integrated_loudness` (§Design: "Loudness belongs only to the second"). The test asserts both `checksPassed(rows) === true` for a −22 LUFS measurement and that no row id mentions loudness.
 - **AC2 "an analysis BPM outside the brief band"** — "brief band" is read from the brief's resolved style/theme text: a declared range (`100-115 BPM`) is used as-is, a declared point (`at 78 BPM`) becomes ±10% (`70.2–85.8`), because a preset's single figure is not a metronomic command. Key and section-count rows follow the same "only when the brief states it" rule; all three rows are `warn` at worst.

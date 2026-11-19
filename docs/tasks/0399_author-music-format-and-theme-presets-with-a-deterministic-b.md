@@ -4,7 +4,7 @@ name: Author music format and theme presets with a deterministic brief renderer
 status: done
 template: feature-impl
 created_at: 2026-11-18T22:16:14.918Z
-updated_at: "2026-11-19T06:53:30.541Z"
+updated_at: "2026-11-19T19:44:14.108Z"
 feature_id: D8
 
 ac_numbering: task-local
@@ -94,7 +94,7 @@ Scenario: AC5 — The index matches the data (req: R5)
 
 Implements R1–R5 on top of the frozen 0397 surface: the shipped format × theme preset data, a loader that enforces portability + provenance + evidence status uniformly for every data file, name-based resolution that reuses `resolveJob` instead of forking it, and a generated README index. No change to 0397's precedence, goldens, request mapping or prompt order.
 
-#### Change map
+**Change map**
 
 | File:line | Change | Why |
 | --- | --- | --- |
@@ -136,7 +136,7 @@ Implements R1–R5 on top of the frozen 0397 surface: the shipped format × them
 | `plugins/generations/music-gen/tests/preset-data.test.ts:322` | AC5 — README equals the inventory, markers present, drift detected in a temp copy, splice idempotent, missing markers throws | AC5 |
 | `plugins/generations/music-gen/tests/fixtures/preset-roots/invalid/*` | Fixture roots: one invalid file per rule + one valid control file per axis | AC4 |
 
-#### Rationale
+**Rationale**
 
 - **Reuse, not fork.** `resolveJob`, `explainJob`, `parsePresetDocument`, `assertPresetPortable`, `PresetLayer` and `PresetContractViolation` are untouched; 0399 adds schemas, a loader and a name→layer adapter on top. The 0397 goldens and the `parseMusicPresetDocument`/portability tests still pass byte-identically.
 - **The loader enforces, the schema describes.** Portability is enforced by the existing `assertPresetPortable` walk (so nested `transport.base_url` is still caught), the schema covers shape and the format-local invariants, and `themeDirectionGaps` covers the one cross-field rule the schema cannot see: prose coverage. All three report `{path, field, message}` and the loader throws once with every problem — AC4's "no partially loaded preset reaches the renderer".
@@ -145,7 +145,7 @@ Implements R1–R5 on top of the frozen 0397 surface: the shipped format × them
 - **The index is generated.** `renderPresetIndex`/`splicePresetIndex` are pure and `--check` compares bytes, so a new data file that is not indexed fails the same test that proves the index matches.
 - **The loader takes a `root` override.** Tests and the probe point it at a throwaway tree; a missing root is a problem, not an empty set.
 
-#### AC interpretation
+**AC interpretation**
 
 - **AC1** — "each declares model, structure skeleton and lyrics policy, and every pro format declares a duration target": asserted per shipped format, plus `renderGenerateRequest` proves clip/loop carry no `durationTarget` and pro formats carry theirs. "No provider, base URL, API model id or price" is asserted twice: by the loader (fixtures) and by a raw-text scan of every shipped YAML.
 - **AC2** — "its prose covers genre, tempo, key, instrumentation, vocal character and production": the structured facets exist *and* must appear verbatim in `style`, which is the segment the model reads. "Its default avoid-list is rendered as one `Avoid: …` segment": asserted on the rendered prompt, including the merge with a brief-level `avoid`.
