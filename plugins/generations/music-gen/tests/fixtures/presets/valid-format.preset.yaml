@@ -1,0 +1,16 @@
+# A portable format preset: no provider, no API model id, no price.
+name: jingle
+model: pro
+duration_target: "0:20"
+lyrics_policy: allowed
+structure:
+  - at: "0:00"
+    section: Hook
+    note: state the product name once
+  - at: "0:15"
+    section: Tag
+    note: short resolve, no fade
+provenance:
+  authoring_source: operator
+  authored_at: "2026-11-19"
+  status: authored

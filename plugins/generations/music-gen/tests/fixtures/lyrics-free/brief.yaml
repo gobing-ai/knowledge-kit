@@ -1,0 +1,31 @@
+# Golden brief: pro model with no authored lyrics — the request omits the
+# lyrics field so the model writes its own, and the prompt still carries no
+# lyrics block.
+title: Ambient Tech Daybreak
+model: pro
+format: song
+theme: ambient-tech
+duration_target: "2:30"
+language: zh-CN
+audio_format: mp3
+instrumental: false
+style: |-
+  Ambient tech-house at 110 BPM in F major: glassy marimba, soft four-on-the-floor, warm sub, airy field recording.
+  Vocal: breathy Mandarin top line, sparse phrasing, long reverb.
+avoid:
+  - hard drops
+  - talkbox vocals
+structure:
+  - at: "0:00"
+    section: Intro
+    note: marimba pattern, filtered kick
+  - at: "0:45"
+    section: Verse
+    note: vocal enters, bass joins
+  - at: "1:40"
+    section: Chorus
+    note: chords open, counter-melody on marimba
+  - at: "2:15"
+    section: Outro
+    note: filter closes, one final phrase
+takes: 1

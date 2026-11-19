@@ -1,0 +1,9 @@
+{
+    "prompt": "Ambient tech-house at 110 BPM in F major: glassy marimba, soft four-on-the-floor, warm sub, airy field recording.\nVocal: breathy Mandarin top line, sparse phrasing, long reverb.\nAvoid: hard drops, talkbox vocals\n[0:00] Intro — marimba pattern, filtered kick\n[0:45] Verse — vocal enters, bass joins\n[1:40] Chorus — chords open, counter-melody on marimba\n[2:15] Outro — filter closes, one final phrase",
+    "language": "zh-CN",
+    "model": "pro",
+    "durationTarget": "2:30",
+    "format": "mp3",
+    "title": "Ambient Tech Daybreak",
+    "batchCount": 1
+}

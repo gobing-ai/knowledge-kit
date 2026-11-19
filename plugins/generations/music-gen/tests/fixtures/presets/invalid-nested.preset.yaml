@@ -1,0 +1,7 @@
+# Deliberately invalid: the portability guard walks nested mappings too.
+name: song
+model: pro
+duration_target: "2:30"
+options:
+  transport:
+    base_url: http://127.0.0.1:3000

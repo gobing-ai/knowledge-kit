@@ -1,0 +1,5 @@
+# Deliberately invalid: a preset must never carry a provider price.
+name: song
+model: pro
+duration_target: "2:30"
+price: 0.08

@@ -1,0 +1,39 @@
+# Golden brief: pro model, authored lyrics, 0:30 target, full structure.
+title: Midnight Cable Car
+model: pro
+format: song
+theme: synthwave
+duration_target: "0:30"
+language: EN
+audio_format: mp3
+style: |-
+  Warm analog synthwave at 92 BPM in A minor: detuned Juno-style pad, gated snare, round sub bass, tape hiss.
+  Vocal: intimate female alto, close-mic, no reverb tail.
+avoid:
+  - trap hi-hats
+  - EDM riser clichés
+  - distorted guitars
+structure:
+  - at: "0:00"
+    section: Intro
+    note: filtered pad only, no drums for four bars
+  - at: "0:08"
+    section: Verse
+    note: verse vocal enters, drums join on beat three
+  - at: "0:20"
+    section: Chorus
+    note: hook lyric repeated, gated snare opens up
+  - at: "0:28"
+    section: Outro
+    note: sudden stop on the final chord
+lyrics: |-
+  [Verse]
+  Last tram humming through the rain
+  Every window holds a name
+  [Chorus]
+  Midnight cable car, carry me home
+  Midnight cable car, I am not alone
+takes: 1
+meta:
+  author: fixture
+  purpose: golden

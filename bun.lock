@@ -25,7 +25,7 @@
     },
     "apps/cli": {
       "name": "@gobing-ai/knowledge-kit",
-      "version": "0.1.19",
+      "version": "0.1.20",
       "bin": {
         "kk": "./dist/index.js",
         "knowledge-kit": "./dist/index.js",
@@ -179,6 +179,15 @@
         "@gobing-ai/ts-runtime": "catalog:",
         "@gobing-ai/ts-utils": "catalog:",
         "playwright": "catalog:",
+        "zod": "4.4.3",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.3",
+      },
+    },
+    "plugins/generations/music-gen": {
+      "name": "@gobing-ai/music-gen",
+      "dependencies": {
         "zod": "4.4.3",
       },
       "devDependencies": {
@@ -654,6 +663,8 @@
     "@gobing-ai/linkedin-pub": ["@gobing-ai/linkedin-pub@workspace:plugins/publishings/linkedin-pub"],
 
     "@gobing-ai/medium-pub": ["@gobing-ai/medium-pub@workspace:plugins/publishings/medium-pub"],
+
+    "@gobing-ai/music-gen": ["@gobing-ai/music-gen@workspace:plugins/generations/music-gen"],
 
     "@gobing-ai/news-report-gen": ["@gobing-ai/news-report-gen@workspace:plugins/generations/news-report-gen"],
 

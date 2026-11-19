@@ -1,0 +1,12 @@
+# Golden brief: clip model, no avoid list and no structure — exercises the
+# omitted `Avoid:` segment and the dropped (never sent) durationTarget.
+title: Lofi Loop Sketch
+model: clip
+format: clip
+theme: lofi
+duration_target: "0:30"
+language: EN
+audio_format: mp3
+style: |-
+  Dusty lofi hip-hop at 78 BPM in D minor: vinyl crackle, upright bass, brushed kit, Rhodes chords.
+takes: 1

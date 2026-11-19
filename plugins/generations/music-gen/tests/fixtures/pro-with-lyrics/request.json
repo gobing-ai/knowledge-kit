@@ -1,0 +1,10 @@
+{
+    "prompt": "Warm analog synthwave at 92 BPM in A minor: detuned Juno-style pad, gated snare, round sub bass, tape hiss.\nVocal: intimate female alto, close-mic, no reverb tail.\nAvoid: trap hi-hats, EDM riser clichés, distorted guitars\n[0:00] Intro — filtered pad only, no drums for four bars\n[0:08] Verse — verse vocal enters, drums join on beat three\n[0:20] Chorus — hook lyric repeated, gated snare opens up\n[0:28] Outro — sudden stop on the final chord",
+    "lyrics": "[Verse]\nLast tram humming through the rain\nEvery window holds a name\n[Chorus]\nMidnight cable car, carry me home\nMidnight cable car, I am not alone",
+    "language": "EN",
+    "model": "pro",
+    "durationTarget": "0:30",
+    "format": "mp3",
+    "title": "Midnight Cable Car",
+    "batchCount": 1
+}
