@@ -1,15 +1,17 @@
 ---
 schema_version: 1
 name: Replay the editorial-to-publish flow and synchronize documentation
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-18T04:03:43.217Z
-updated_at: "2026-11-18T04:50:04.354Z"
+updated_at: "2026-11-19T07:40:19.525Z"
 feature_id: L3
 priority: P1
 
 estimate_hours: 5
 dependencies: ["0388", "0390", "0395", "0396"]
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0389. Replay the editorial-to-publish flow and synchronize documentation
@@ -20,11 +22,11 @@ L3 · 跨插件回放与文档一致性。现行发布 DAG 和生成 DAG 可用�
 
 ### Requirements
 
-- [ ] R1. 由可重放基线验证流程校验归代码、编辑判断归 Agent、目标适配归插件（L3 R1）
+- [x] R1. 由可重放基线验证流程校验归代码、编辑判断归 Agent、目标适配归插件（L3 R1）
 
 ### Acceptance Criteria
 
-- [ ] R1 — 验证现有边界与节目基线
+- [x] R1 — 验证现有边界与节目基线
 
 ### Q&A
 
@@ -56,18 +58,60 @@ L3 · 跨插件回放与文档一致性。现行发布 DAG 和生成 DAG 可用�
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `docs/04_DESIGN.md:24` |
+| `docs/04_DESIGN.md:558` |
+| `docs/04_DESIGN.md:6` |
+| `docs/04_DESIGN.md:8` |
+| `docs/05_FEATURES.md:124` |
+| `docs/05_FEATURES.md:6` |
+| `docs/05_FEATURES.md:8` |
+| `apps/cli/.works/kk.db:1` |
+| `apps/cli/.works/kk.db-shm:1` |
+| `apps/cli/.works/kk.db-wal:1` |
+| `apps/cli/.works/test-artifacts/0212/README.md:1` |
+| `apps/cli/.works/test-artifacts/0212/cutover-fixtures.md:1` |
+| `apps/cli/.works/tmp/test-content-nouns/summary.json:1` |
+| `apps/cli/.works/tmp/test-daily-recovery/cache/summary.json:1` |
+| `apps/cli/tests/editorial-publish-replay-0389.test.ts:1` |
+| `plugins/publishings/podcast-pub/.works/tmp/test-podcast-transcript/episode-1.mp3:1` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 — 由可重放基线验证流程校验归代码、编辑判断归 Agent、目标适配归插件（L3 R1） | MET | Code-owned refusals executed, not described: `apps/cli/tests/editorial-publish-replay-0389.test.ts:194-209` (`validateProposal` refuses an unselected id; `parseConclusion` errors on a corrupt machine block), `:488-520` (`BundleSchema` refuses `safety.status=block`, an unknown top-level key and a variant without `sha256`; `resolveFrozenRunDate` throws on `2026-13-40`). Agent-owned judgement: `:561-577` (skill declares "Everything deterministic stays in code" + policy vocabulary; ledger must not carry `新闻优先`/`选题边界`/`white-collar` vocabulary and must not read the skill). Plugin-owned adaptation: `:579-614` (non-empty owner scan of `plugins/publishings/podcast-pub/src` for `<!--kk:timeline-->`/`<!--kk:corrections-->`/`kk-tl-row`, zero in `apps/cli/src`, zero `plugins/publishings/*` or `@gobing-ai/*-pub` imports in the CLI, 22 `<name>-pub` packages each owning `src/index.ts`). Vacuous-pass guards present (`:545` >10 agent surfaces, `:589` non-empty owner scan, `:606` >10 plugin dirs). **Mutation sensitivity verified live by this review, not assumed:** a new file `apps/cli/src/…tmp.ts` containing `<!--kk:corrections-->` → 8 pass / 1 fail at `:593`; file deleted, `git status --porcelain` md5 identical before/after |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC R1 — 验证现有边界与节目基线 | MET | test | `cd apps/cli && NODE_ENV=test bun test tests/editorial-publish-replay-0389.test.ts` → **9 pass / 0 fail, 125 expect()**, fresh run by this review (0.22 s). Boundary half: `:538-614` (three split scans + the probe above). Baseline half replayed over frozen fixtures through the shipped modules: `:147-192` 0385 `freezeEpisodeIdentity`/`composeEpisodeTitle`/`identityFromMetadata` (`第261119期 · …`), `:211-283` 0386 `renderBriefShowNotes` (frozen H1, `openai.com` source label, `待文章发布回执` placeholder) + 0396 `readFrozenCorrections`/`renderCorrectionsBlock`, `:321-397` 0388 `resolveFrozenRunDate` → `planDispatch` ×4 → `writeDispatchLedger`/`readDispatchLedger` over the node fs port in a `mkdtemp` dir, `:399-486` 0395 gate + `carryOfficialAccountLink` idempotency, `:488-520` schema/date boundary |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-11-19T07:37:36.550Z todo → wip (system)
+- 2026-11-19T07:40:18.179Z wip → testing (system)
+- 2026-11-19T07:40:19.511Z testing → done (system)
+

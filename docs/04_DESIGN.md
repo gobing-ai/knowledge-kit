@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.65.0
+version: 2.66.0
 created_at: 2026-07-22
-updated_at: 2026-11-14
+updated_at: 2026-11-18
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -21,7 +21,7 @@ sync: [T3]
 | Satellite | Area | Status |
 | ----------- | ------ | -------- |
 | [kk-itc-refactor.md](design/kk-itc-refactor.md) | DAG/child authoring, config/workspaces, publication presets, recovery and SEO handoffs | shipped (G21, ADR-040; tasks 0298–0303) |
-| [daily-ai-news-editorial-delivery.md](design/daily-ai-news-editorial-delivery.md) | Episode editorial judgments, title, show notes, cover, publish trigger and native Daily AI Voice Board | accepted design (L3, ADR-054) |
+| [daily-ai-news-editorial-delivery.md](design/daily-ai-news-editorial-delivery.md) | Episode editorial judgments, title, show notes, cover, publish trigger and native Daily AI Voice Board | shipped in part (L3, ADR-054; tasks 0384–0396 — surfaces below; live channel operations stay outside acceptance) |
 | [content-pipeline-consolidation.md](design/content-pipeline-consolidation.md) | `content_types` registry, one bundle/plan schema, one publish core, the `article`/`news` verb set and simplified workflow node maps | accepted design (G61, ADR-053); surface shipped in part — 0362 design freeze, 0363–0364 `new`/`status`, `content_types` and the five `publish-*` steps; launch verbs, the three workflows and retirement are 0365–0369 |
 | [kk-smart-seo.md](design/kk-smart-seo.md) | SEO/GEO audit workflow, decision catalogs, stages and one skill | partially shipped (G9, ADR-039; 0281-0284 collection, assessments, typed catalogs and enrichment shipped, 0285 the `kk-smart-seo` workflow + validated narrative + terminal status, 0286 the one `smart-seo` skill + its installed acceptance and documented consumer setup; a live-site audit and feature-level verification remain) |
 | [kk-noun-verb-bots.md](design/kk-noun-verb-bots.md) | Strict noun/verb operations + named browser sessions | shipped (A22, ADR-037/038; tasks 0275–0278; surface §1.8/§1.12) |
@@ -554,6 +554,25 @@ run.startedAt)` interval, rendered with the shared `ChannelYieldTable`/`PluginRu
 **configured context** because the extract ladder bounds are not persisted (the effective
 extraction window is unknown), and kept visibly distinct from the artifact-backed funnel. A run
 without a captured `window` or `startedAt` renders unknown and issues no store query.
+
+### L3 editorial-to-publish surfaces (0384–0396, ADR-054)
+
+The L3 batch replaced the daily episode's ad-hoc editorial and dispatch decisions with frozen
+artifacts. The split the replay test
+(`apps/cli/tests/editorial-publish-replay-0389.test.ts`) proves is the contract: **deterministic
+validation is code**, **editorial judgement is the agent's** (`plugins/kk/skills/news-editorial`,
+mode `align`), **per-target adaptation is the plugin's**.
+
+| Surface | Shape | Owner |
+| ------- | ----- | ----- |
+| Episode identity / title | `metadata.episodeIdentity` `{version:1, date, issue, headline, title, coverHeadline, supportingSourceIds, status: frozen\|no-headline\|support-removed}`; title is `第<YYMMDD>期 · <当日要点>`, the cover headline is the same point | `plugins/kk/scripts/episode-identity.ts` (`freezeEpisodeIdentity`, `identityFromMetadata` — a retry reads the bundle's own identity back) |
+| Editorial judgment ledger + run snapshot | `conclusion.md` machine block (`<!-- kk:judgment-ledger:begin -->…`) + `21-plan/<date>_judgment-snapshot.json` `{judgments, superseded, corrections[], preamble}`; the agent authors a *proposal*, the commit validates → locks → CAS → atomically writes | `plugins/kk/scripts/news-editorial-ledger.ts` (`commitAlignment`, `reconcileLedger`); proposal contract in the skill's `align` mode |
+| Show notes + cards (0386) | `renderBriefShowNotes`: per-item bullets with the 0394 source, the measured timeline (`--:--` when a measurement is absent), the card region (`<!--kk:cards-->`), and `完整图文版：待文章发布回执` until a real article receipt exists | `plugins/publishings/podcast-pub/src/show-notes-brief.ts` |
+| News cover (0387) | two centered crops composed for the same frozen point | `plugins/kk/scripts/cover-compositor.ts`, presets under `plugins/kk/publish-presets` |
+| Dispatch ledger (0388) | `4-publish/dispatch-ledger.json` `{schemaVersion:1, runDate, window, frozenSource, bundleRunId?, entries[]}`; one frozen date per trigger (precedence `--run-date` → bundle `runDate` → clock), one entry per target with `dispatched\|pending\|retry\|blocked\|deferred\|off`; completed effects are adopted, never re-run | `apps/cli/src/publish-dispatch.ts`; the DAG that consumes it is `plugins/kk/workflows/kk-publish.yaml:50` |
+| Channels card gate (0395) | a `shipinhao-pub` card carries the Official Account URL **only** from a confirmed receipt of the same bundle and the `mp.weixin.qq.com` host; planned-nothing / draft / stale-bundle / unsafe URL are four distinct refusals; the confirmed link is inserted at `{{official_account_url}}` or appended to the reviewed caption | gate + carriage: `apps/cli/src/publish-channels-link.ts`; the card payload itself stays in `plugins/publishings/shipinhao-pub` |
+| Public corrections (0396) | `## 本期更正说明` + `<!--kk:corrections-->` block rendered from the snapshot's `corrections`/`preamble` — never fabricated (no frozen judgment ⇒ no block); also projected per target as `delivered\|pending\|manual\|blocked\|unsupported` | `plugins/publishings/podcast-pub/src/corrections.ts` |
+| Board evidence route (0390/0391) | read-only `/api/workflows/<workflow>/runs/<runId>/evidence` envelope plus the three-view Daily AI Voice module (Summary/Generation/Publishing) driven by `NEWS_GENERATE_ARTIFACTS`; absence is `unavailable`/`unknown`, never a zero | `apps/cli/src/board/{reader,news,manifest}.ts`, `apps/board/src/daily-voice/` |
 
 ### `kk-itc` Board capture + the IT Content module (G8, task 0254)
 

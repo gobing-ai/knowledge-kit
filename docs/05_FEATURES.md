@@ -3,9 +3,9 @@ name: Features
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state
 authority: derived
-version: 2.33.0
+version: 2.34.0
 created_at: 2026-07-22
-updated_at: 2026-11-15
+updated_at: 2026-11-18
 derived_from: [01_PRD, 02_ROADMAP]
 edit_rules: 99 §6.6
 sync: [T4]
@@ -121,7 +121,7 @@ sync: [T4]
 | **L** | kk-daily-ai-voice — daily AI voice news pipeline (umbrella) | 🔧 active | — | umbrella node for the daily AI voice pipeline use cases; child L1 |
 | **L1** | Redesign kk-daily-ai-voice workflow (was K) | 🔧 active | — | idea-pipeline run `idea-1788701858`: eval → design D1–D5 approved → 7 tasks `0092`–`0098` batch-created with deps (0094←0093, 0097←0092+0094+0095+0096, 0098←0097) |
 | **L2** | daily-ai-voice quasi-news podcast cover | 🔧 active | P2 | tasks `0347`–`0349` **done 2026-11-10** (`441f3d2`, `6ab49e1`, `b18b4aa`): quasi-news podcast presets + lead-story Hook brief (0347), deterministic CJK headline compositing + podcast logo badge with `daily-cover-normalize` (0348), pin flip to `daily-news-podcast-cover` x `quasi-news-podcast` + standalone `daily-cover-mock.ts` verification runner (0349); each task verdict PASS / review Confidence HIGH / residual blocking=0; see `docs/features/L2_daily-ai-voice-quasi-news-podcast-cover.md` |
-| **L3** | 每日AI乱炖节目定位、判断、分发与看板升级 | ⏳ backlog | P2 | 18 个验收场景、13 个任务，含公开纠错交付与视频号公众号链接。见 [L3 设计与交接](design/daily-ai-news-editorial-delivery.md)。 |
+| **L3** | 每日AI乱炖节目定位、判断、分发与看板升级 | 🔧 active | P2 | 18 个验收场景、13 个任务；`0384`–`0396` 全部落地（判断台账、节目身份、简洁备注、封面、统一发布触发、看板证据、主题校准、选材连续性、来源引用、视频号公众号绑定、公开纠错）。**0389** 以冻结产物回放编辑→发布链并同步文档（`apps/cli/tests/editorial-publish-replay-0389.test.ts`），关闭前的装机包/离线传输演练只证明行为；真实账号、素材与实机发布确认仍在验收之外。见 [L3 设计与交接](design/daily-ai-news-editorial-delivery.md)。 |
 
 ## Open research gates
 
