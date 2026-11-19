@@ -4,7 +4,7 @@ name: Ship the kk-music workflow with explore, select, judge and master gates
 status: done
 template: feature-impl
 created_at: 2026-11-18T22:16:17.053Z
-updated_at: "2026-11-19T09:10:26.717Z"
+updated_at: "2026-11-19T23:57:18.676Z"
 feature_id: D8
 
 ac_numbering: task-local
@@ -196,11 +196,11 @@ process, so 0400's estimate, confirmation, dedupe and cap remain the only spend 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 — kk-music state machine with the nine states, terminal done and failure failed, all R1 vars | MET | `plugins/kk/workflows/kk-music.yaml:40` (initialState), `:79`-`:239` (prepare, brief, select, analyze, check, judge, master, finalize, done, failed); vars asserted at `plugins/kk/tests/kk-music-workflow.test.ts:211`; `spur workflow validate` -> valid, 0 errors |
-| R2 — spend shape: directions in the format's model, select the only gate, analyze on the selected take, re-run pays nothing | MET | `plugins/kk/scripts/music-stages.ts` explore/select/analyze states; `plugins/kk/tests/kk-music-workflow.test.ts:355` (one pro take per brief, no clip, re-run pays nothing), `:231` (select is the only operator-pause state) |
-| R3 — measurement before judge, judge through the shipped filter, master only on PASS/accept_revision | MET | `plugins/kk/tests/kk-music-workflow.test.ts:284` (judge filter byte-identical to the shipped confidence-aware jq), `:320` (PASS at any confidence reaches master), `:339` (NEEDS_REVISION requires accept_revision=true), `:346` (blocked review -> failed terminal) |
-| R4 — per-state artifacts plus a run report naming spend, instance ids, verdict, delivery measurements and the artifact | MET | `plugins/kk/scripts/music-stages.ts` finalize (run report sums spend from take sidecars); artifacts follow 0402's run-directory contract |
-| R5 — dry-run with KK_MUSIC_DRY_RUN=1 and resumable without re-paying | MET | probe: engine `--dry-run` walked prepare->brief->explore->select and wrote no artifacts; the offline real-actions probe issued 2 pro takes/0 clip and a re-run reported adopted/paid:false |
+| R1 | MET | `plugins/kk/workflows/kk-music.yaml:40` (initialState), `:79`-`:239` (prepare, brief, select, analyze, check, judge, master, finalize, done, failed); vars asserted at `plugins/kk/tests/kk-music-workflow.test.ts:211`; `spur workflow validate` -> valid, 0 errors |
+| R2 | MET | `plugins/kk/scripts/music-stages.ts` explore/select/analyze states; `plugins/kk/tests/kk-music-workflow.test.ts:355` (one pro take per brief, no clip, re-run pays nothing), `:231` (select is the only operator-pause state) |
+| R3 | MET | `plugins/kk/tests/kk-music-workflow.test.ts:284` (judge filter byte-identical to the shipped confidence-aware jq), `:320` (PASS at any confidence reaches master), `:339` (NEEDS_REVISION requires accept_revision=true), `:346` (blocked review -> failed terminal) |
+| R4 | MET | `plugins/kk/scripts/music-stages.ts` finalize (run report sums spend from take sidecars); artifacts follow 0402's run-directory contract |
+| R5 | MET | probe: engine `--dry-run` walked prepare->brief->explore->select and wrote no artifacts; the offline real-actions probe issued 2 pro takes/0 clip and a re-run reported adopted/paid:false |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|

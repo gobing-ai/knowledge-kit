@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: Calibrate daily topic filters and report candidate losses
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-18T04:42:14.699Z
-updated_at: "2026-11-19T21:41:06.865Z"
+updated_at: "2026-11-19T23:20:12.483Z"
 feature_id: L3
 priority: P1
 
 estimate_hours: 7
 ac_altitude: graduating
 ac_numbering: task-local
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0392. Calibrate daily topic filters and report candidate losses
@@ -28,8 +30,8 @@ The v2 mechanical boundary in `plugins/kk/scripts/topic-boundary.json` enforces 
 
 ### Requirements
 
-- [ ] R1. Inventory the operative rules for selection and platform admission, including adult content, gambling, drugs, domestic politics and leadership. Replay historical and contrast fixtures. Admit AI-subject public-policy candidates that otherwise qualify and preserve verified mechanical and per-channel restrictions.
-- [ ] R2. Produce retry-safe selection evidence covering raw pool, QC, mechanical boundary, title dedup, Agent curation and channel admission. Show the current attempt in the ordinary and no-content reports, including unique exclusions, rule hits, observed zero and unknown stages.
+- [x] R1. Inventory the operative rules for selection and platform admission, including adult content, gambling, drugs, domestic politics and leadership. Replay historical and contrast fixtures. Admit AI-subject public-policy candidates that otherwise qualify and preserve verified mechanical and per-channel restrictions.
+- [x] R2. Produce retry-safe selection evidence covering raw pool, QC, mechanical boundary, title dedup, Agent curation and channel admission. Show the current attempt in the ordinary and no-content reports, including unique exclusions, rule hits, observed zero and unknown stages.
 
 Out of scope: new policy categories without supporting evidence, publisher permissions, production schedule changes and cross-episode identity (0393).
 
@@ -134,14 +136,37 @@ location. Not implemented here.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | Inventory of all four layers: mechanical rules only `prc-leadership` + `dateConflict` in `plugins/kk/scripts/topic-boundary.json`; editorial boundary calibrated at `plugins/kk/skills/news-editorial/SKILL.md:51-55` (AI-subject public policy admitted, hard line never re-admitted); style contract `plugins/kk/skills/news-editorial/references/style-contract.zh.md:12-15`; platform gates kept; unpoliced 黄赌毒 class recorded without a new filter at `plugins/kk/skills/content-safety/SKILL.md:44-54`. Replay fixtures: `plugins/kk/tests/topic-selection-calibration.test.ts:40` (calibration fixtures suite). |
+| R2 | MET | Per-stage rows with `input = kept + dropped` and chain continuity: `plugins/kk/scripts/topic-selection-attempts.ts:281` (`reconcileSelectionAttempts`). Stage writers pinned: QC/dedup `apps/cli/tests/kk-workflow-stages.test.ts:961`, curation+plan `:1072`, `--final` fallback `:1124`, channel admission without moving totals `:1154`. Retry appends a new attempt `plugins/kk/tests/topic-selection-calibration.test.ts:305`; multiple hits `:328`; unknown stages `:272`, `:370`. Both report paths: ordinary report `apps/cli/src/commands/daily.ts:747` (`appendSelectionAttempts`); no-content line `apps/cli/src/commands/daily.ts:548` reached from the early pool gate `apps/cli/src/commands/content-generate.ts:423` and the late refusal `apps/cli/tests/commands/daily.test.ts:427`. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — R14 — 过滤规则按内容风险校准并在最终报告留证 | MET | test | Fixture pool with hard-rule hit, future-dated item, AI public-policy item, duplicate and multi-hit: `plugins/kk/tests/topic-selection-calibration.test.ts:40,116,305,328`; empty-pool attempt closes done/no-content `apps/cli/tests/kk-news-generate.e2e.test.ts:529`; report rendering with observed zero vs unknown `apps/cli/tests/topic-attempts.test.ts:71,124`. Repository test run exit 0. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-11-19T22:50:46.058Z todo → wip (system)
+- 2026-11-19T22:50:46.658Z wip → testing (system)
+- 2026-11-19T23:20:12.394Z testing → done (system)
+

@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: Verify and repair series-scoped selection continuity
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-18T04:42:14.702Z
-updated_at: "2026-11-19T04:07:00.146Z"
+updated_at: "2026-11-19T23:20:13.431Z"
 feature_id: L3
 priority: P1
 
 estimate_hours: 8
 ac_altitude: graduating
 ac_numbering: task-local
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0393. Verify and repair series-scoped selection continuity
@@ -27,8 +29,8 @@ ac_numbering: task-local
 
 ### Requirements
 
-- [ ] R1. Trace the reported repeat using episode and ledger evidence where available. Show the demonstrated re-clustering gap in a fixture and prevent previous same-topic selected or published items from re-entering after identity drift. Preserve dropped re-admission, reuse by another topic and deterministic replay.
-- [ ] R2. Replay reservation, final curation and publish settlement with a final subset of candidates. Preserve aired items, release only proven unspent reservations, and fix any reproduced lifecycle gap. Keep a material, sourced follow-up eligible and record unresolved incident attribution when producing-host evidence is unavailable.
+- [x] R1. Trace the reported repeat using episode and ledger evidence where available. Show the demonstrated re-clustering gap in a fixture and prevent previous same-topic selected or published items from re-entering after identity drift. Preserve dropped re-admission, reuse by another topic and deterministic replay.
+- [x] R2. Replay reservation, final curation and publish settlement with a final subset of candidates. Preserve aired items, release only proven unspent reservations, and fix any reproduced lifecycle gap. Keep a material, sourced follow-up eligible and record unresolved incident attribution when producing-host evidence is unavailable.
 
 Out of scope: production-store writes, blanket threshold changes, unproven event merges and publisher authorization changes.
 
@@ -73,18 +75,72 @@ Trace `resolveRunId` and `STORE_PICK` in `content-generate.ts` through bundle `p
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+**R1 — series identity across re-clustering (commit 43308794, already on main).**
+`packages/kk-store/src/dao/items.ts:512-517` — the topic-scoped exclusion in `selectByProfile` matches
+`s.item_id = i.id OR s.story_id = i.story_id` within the existing topic + `selected|published` guard, so an
+item whose story key was re-derived (`backfill-facts`, threshold retune) cannot re-enter its series pool.
+Dropped re-admission, other-topic reuse and replay determinism are unchanged. Failure-first suite
+`apps/cli/tests/store-selections.test.ts:875` (19 pass / 3 fail before the fix, recorded in the commit).
+Incident attribution stays **UNRESOLVED**: the producing host's artifacts were unreachable from this
+checkout and no joined selection rows were available locally.
+
+**R2 — reservation lifecycle (two reproduced gaps, fixed).**
+1. *Over-promotion at settlement.* Prepare reserves the pre-curation pool (`store select --in candidates`),
+   but `publish-matrix-settle` ran `kk store mark-published --topic --run` with no `--in`, and
+   `SelectionsDao.updateStatus` with no item list promotes every `selected` row of the run — curation-dropped
+   candidates were burned as aired. `apps/cli/src/publish-matrix.ts:1270-1316`: settlement now reads the
+   validated plan `21-plan/<stamp>_03_plan_plan.json` (`readFinalItemIds`, `:1320`), promotes only those IDs
+   (`mark-published --in <plan>`), then releases the run's remaining `selected` rows (`kk store release
+   --run --topic`). The settlement artifact records `scope: "final"` + `finalItemIds[]` so every
+   disposition is traceable to the final IDs and the receipt-gated `parentRunId`. A release failure is kept
+   as `releaseError` without un-publishing the aired set. A run without a readable plan keeps the old
+   whole-run promotion (`scope: "run"`) — over-protects, never re-airs.
+2. *Stranded reservation on a late no-content.* `apps/cli/src/launch.ts:736-739`: the launcher skipped
+   recycling for `no-content`, but a floor/duration refusal writes `no-content:` AFTER `store-select`
+   reserved the pool (the 2026-11-13 class). A no-content generate cannot have sent anything, so it now
+   releases like a failed launch; an early empty pool reserved nothing and the release is a no-op.
+
+Follow-ups: a materially new, sourced fact titles into a different story and stays eligible while the
+aired original and its syndicated copy stay excluded (characterization pin, `store-selections.test.ts`
+"keeps a sourced follow-up…"). No threshold or event-merge change.
+
+Not changed: legacy `kk-daily-ai-voice2.yaml` `mark-published` node (retired voice2 path, not the current
+news settlement); ITC settlement already scopes by `chosen.itemIds` (`apps/cli/src/itc-topic.ts:410-424`).
+Surface doc: `docs/04_DESIGN.md` publish-matrix `settle` paragraph.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `packages/kk-store/src/dao/items.ts:512-517` excludes on `s.item_id = i.id OR s.story_id = i.story_id` within topic + selected/published; dropped re-admission and other-topic reuse preserved. Failure-first suite `apps/cli/tests/store-selections.test.ts:875` (re-derived selected `:924`, published `:949`, headline re-cluster `:977`, other topic + dropped `:1035`, replay determinism). Incident attribution recorded UNRESOLVED (producing-host evidence unavailable) in commit 43308794 and the Solution. |
+| R2 | MET | Final-subset settlement: `apps/cli/src/publish-matrix.ts:1273-1316` promotes only the validated plan IDs (`mark-published --in 21-plan/<stamp>_03_plan_plan.json`) and releases the remaining `selected` reservations (`kk store release`), recording `scope: final` + `finalItemIds`; `readFinalItemIds` `:1320`. Proven against the real store CLI by `apps/cli/tests/publish-matrix-0333.test.ts:380` (F2c: 2 published, curation-dropped 1 released, idempotent re-settle) — failed before the fix. Late no-content release: `apps/cli/src/launch.ts:736-739`, proven by `apps/cli/tests/launch.test.ts:713` (failed before the fix). Receipt gating (draft/partial/stale/dummy hold, confirmed marks) unchanged: F1/F3/F4/F5/F11 at `publish-matrix-0333.test.ts:274-578`. Sourced follow-up stays eligible: `apps/cli/tests/store-selections.test.ts:1055`. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — R15 — 每日节目按系列阻止重复使用已选新闻 | MET | test | Identity half: `apps/cli/tests/store-selections.test.ts:875-1075` (prior selected/published excluded after re-clustering, other topic reuses, dropped re-admitted, follow-up eligible, replay writes nothing). Disposition half: `apps/cli/tests/publish-matrix-0333.test.ts:380` (settlement traceable to final IDs and the receipt-gated `parentRunId`) and `apps/cli/tests/launch.test.ts:713` (no-content returns the reservation). |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-11-19T22:50:47.203Z todo → wip (system)
+- 2026-11-19T22:50:47.817Z wip → testing (system)
+- 2026-11-19T23:20:13.349Z testing → done (system)
+

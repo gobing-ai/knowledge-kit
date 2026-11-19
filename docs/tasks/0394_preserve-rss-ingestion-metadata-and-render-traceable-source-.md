@@ -4,7 +4,7 @@ name: Preserve RSS ingestion metadata and render traceable source citations
 status: done
 template: feature-impl
 created_at: 2026-11-18T04:42:14.702Z
-updated_at: "2026-11-18T16:13:41.112Z"
+updated_at: "2026-11-19T23:19:53.321Z"
 feature_id: L3
 priority: P1
 
@@ -71,7 +71,7 @@ Reuse existing Doc provenance and URL normalization. Separate the retrieval URL 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 — Audit provenance from raw ingest to stored doc, curated item, article and show notes; retain the collector classification while exposing the actual verified source identity | MET | Classification is written as the digest source line's first token and retained untouched (`plugins/ingestions/horizon-ingest/src/index.ts:125`), references from `<details>` (`:98`); the renderer no longer treats the classification as a publisher (`plugins/kk/scripts/daily-stages.ts:4623-4626`); citations resolve to the linked host/origin (`plugins/kk/scripts/source-citation.ts:145-186`). Hop list now complete: article fixed (`plugins/kk/scripts/daily-stages.ts:4864`), fallback renderer deferred-and-declared (`plugins/generations/daily-article-gen/src/index.ts:98`, invoked `plugins/kk/scripts/daily-stages.ts:790`, declared at `docs/tasks/0394_preserve-rss-ingestion-metadata-and-render-traceable-source-.md:62`), show notes deferred-and-declared (`plugins/publishings/podcast-pub/src/show-notes.ts:414`, declared `:61`) |
+| R1 | MET | Classification is written as the digest source line's first token and retained untouched (`plugins/ingestions/horizon-ingest/src/index.ts:125`), references from `<details>` (`:98`); the renderer no longer treats the classification as a publisher (`plugins/kk/scripts/daily-stages.ts:4623-4626`); citations resolve to the linked host/origin (`plugins/kk/scripts/source-citation.ts:145-186`). Hop list now complete: article fixed (`plugins/kk/scripts/daily-stages.ts:4864`), fallback renderer deferred-and-declared (`plugins/generations/daily-article-gen/src/index.ts:98`, invoked `plugins/kk/scripts/daily-stages.ts:790`, declared at `docs/tasks/0394_preserve-rss-ingestion-metadata-and-render-traceable-source-.md:62`), show notes deferred-and-declared (`plugins/publishings/podcast-pub/src/show-notes.ts:414`, declared `:61`) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|

@@ -4,7 +4,7 @@ name: Author the music-authoring skill and the music quality rubric
 status: done
 template: feature-impl
 created_at: 2026-11-18T22:16:16.524Z
-updated_at: "2026-11-19T19:44:14.314Z"
+updated_at: "2026-11-19T23:57:18.463Z"
 feature_id: D8
 
 ac_numbering: task-local
@@ -155,11 +155,11 @@ Scenario: AC5 — The judge reads one bundle (req: R5)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 — music-authoring skill with brief/lyric/iterate/review, explicit gates, safe resume | MET | `plugins/kk/skills/music-authoring/SKILL.md:122` (operations, each ending in a Gate and a Resume step), `:69` (run-directory contract), `:257` (resume rules); `plugins/kk/tests/music-authoring.test.ts` (37 tests) |
-| R2 — the model's real constraints encoded so no promise exceeds it | MET | `plugins/kk/skills/music-authoring/SKILL.md:103` (six constraint ids with what-is-true and do-instead, each citing the code or doc that makes it true) |
-| R3 — music-quality rubric inside content-judge, must-pass checks.clean, measured facts cited | MET | `plugins/kk/skills/content-judge/references/music-quality-rubric.md:14` (criteria table, `checks.clean` the only must-pass), `:32` (measurement discipline); row added to the content-judge rubric table |
-| R4 — existing verdict contract unchanged | MET | the rubric scores into the shared contract (`rubric: "music-quality"`, required `confidence`, findings' `criterion` ids, `content_ref` = take path); `plugins/kk/tests/verdict-confidence.test.ts` green unedited (53 pass) and no `music-verdict.json` exists |
-| R5 — judge input bundle written by review | MET | `plugins/kk/skills/music-authoring/references/judge-input.md` (six-section bundle contract), `plugins/kk/skills/music-authoring/SKILL.md:231` (one path handed to the judge) |
+| R1 | MET | `plugins/kk/skills/music-authoring/SKILL.md:122` (operations, each ending in a Gate and a Resume step), `:69` (run-directory contract), `:257` (resume rules); `plugins/kk/tests/music-authoring.test.ts` (37 tests) |
+| R2 | MET | `plugins/kk/skills/music-authoring/SKILL.md:103` (six constraint ids with what-is-true and do-instead, each citing the code or doc that makes it true) |
+| R3 | MET | `plugins/kk/skills/content-judge/references/music-quality-rubric.md:14` (criteria table, `checks.clean` the only must-pass), `:32` (measurement discipline); row added to the content-judge rubric table |
+| R4 | MET | the rubric scores into the shared contract (`rubric: "music-quality"`, required `confidence`, findings' `criterion` ids, `content_ref` = take path); `plugins/kk/tests/verdict-confidence.test.ts` green unedited (53 pass) and no `music-verdict.json` exists |
+| R5 | MET | `plugins/kk/skills/music-authoring/references/judge-input.md` (six-section bundle contract), `plugins/kk/skills/music-authoring/SKILL.md:231` (one path handed to the judge) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|

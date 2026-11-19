@@ -4,7 +4,7 @@ name: "Guard paid generation: pre-spend estimate, run-scoped dedupe and takes ca
 status: done
 template: feature-impl
 created_at: 2026-11-18T22:16:15.451Z
-updated_at: "2026-11-19T07:18:14.792Z"
+updated_at: "2026-11-19T23:57:18.054Z"
 feature_id: D8
 
 ac_numbering: task-local
@@ -198,11 +198,11 @@ a path that has no adapter or fetch seam at all.
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 — pre-spend estimate (prompt, model, takes, unit price, total; analyze unpriced by default; `--estimate-only` free) | MET | `plugins/generations/music-gen/src/spend.ts:217` (`estimateGenerate`), `:232` (`estimateAnalyze`), `:262` (`formatEstimate`); `plugins/generations/music-gen/src/config.ts` reads `music.prices.{pro,clip,analyze}` with pro 0.08 / clip 0.04 and no analyze default; `plugins/generations/music-gen/src/plugin.ts:279` (`--estimate-only` path, no adapter constructed) |
-| R2 — explicit confirmation for every paid call | MET | `plugins/generations/music-gen/src/spend.ts:286` (`requireConfirmation`), `plugins/generations/music-gen/src/plugin.ts:126` (guard runs before `createMusicInstance`, so no socket can open first) |
-| R3 — run-scoped dedupe by the 0397 digest, `--force --reason` override, library not a dedupe source | MET | `plugins/generations/music-gen/src/spend.ts` `findRunDirDuplicates` + `enforceRunScopedDedupe` (scans `<runDir>/*.take.json` only, refuses with the existing artifact path and digest, requires a reason with `--force`) |
-| R4 — takes cap (default 2, hard 4) and a complete spend record per take | MET | `plugins/generations/music-gen/src/spend.ts:164` (`resolveTakesCap`), `:193` (`resolveTakeCount`, refuses rather than clamps); sidecar gains `runId` and the estimate's `unitPrice` (`src/artifact.ts`, `src/plugin.ts`) |
-| R5 — every refusal names the flag that resolves it | MET | `plugins/generations/music-gen/src/spend.ts:70` (`SpendRefusal` carries `flag` and builds `pass <flag>` into the message) |
+| R1 | MET | `plugins/generations/music-gen/src/spend.ts:217` (`estimateGenerate`), `:232` (`estimateAnalyze`), `:262` (`formatEstimate`); `plugins/generations/music-gen/src/config.ts` reads `music.prices.{pro,clip,analyze}` with pro 0.08 / clip 0.04 and no analyze default; `plugins/generations/music-gen/src/plugin.ts:279` (`--estimate-only` path, no adapter constructed) |
+| R2 | MET | `plugins/generations/music-gen/src/spend.ts:286` (`requireConfirmation`), `plugins/generations/music-gen/src/plugin.ts:126` (guard runs before `createMusicInstance`, so no socket can open first) |
+| R3 | MET | `plugins/generations/music-gen/src/spend.ts` `findRunDirDuplicates` + `enforceRunScopedDedupe` (scans `<runDir>/*.take.json` only, refuses with the existing artifact path and digest, requires a reason with `--force`) |
+| R4 | MET | `plugins/generations/music-gen/src/spend.ts:164` (`resolveTakesCap`), `:193` (`resolveTakeCount`, refuses rather than clamps); sidecar gains `runId` and the estimate's `unitPrice` (`src/artifact.ts`, `src/plugin.ts`) |
+| R5 | MET | `plugins/generations/music-gen/src/spend.ts:70` (`SpendRefusal` carries `flag` and builds `pass <flag>` into the message) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|

@@ -4,7 +4,7 @@ name: Define the music brief, preset-resolution and lyria instance adapter contr
 status: done
 template: feature-impl
 created_at: 2026-11-18T22:16:10.470Z
-updated_at: "2026-11-19T19:44:13.687Z"
+updated_at: "2026-11-19T23:57:17.449Z"
 feature_id: D8
 
 ac_numbering: task-local
@@ -203,12 +203,12 @@ deliverable #1 resolves the conflict in favour of a pure module. What was added 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 — MusicBrief schema (Zod + YAML form) with a total field→target mapping | MET | `plugins/generations/music-gen/src/brief.ts:123` (strict schema) and `:92` (`BRIEF_FIELD_TARGETS`); `plugins/generations/music-gen/tests/brief.test.ts:174` asserts the table covers `MusicBriefSchema.shape` exactly, so no field can be dropped |
-| R2 — frozen prompt render order, no duration sentence, no lyrics block, 4 goldens | MET | `plugins/generations/music-gen/src/render.ts:61` (`renderPromptText`), `:30` (`INSTANCE_OWNED_PROMPT_MARKERS`); goldens `plugins/generations/music-gen/tests/fixtures/{pro-with-lyrics,clip,instrumental,lyrics-free}/{prompt.txt,request.json}`; `plugins/generations/music-gen/tests/render.test.ts:1` proves byte-identical double render and marker absence |
-| R3 — request mapping with no instance defaults | MET | `plugins/generations/music-gen/src/request.ts:66` (pro always `durationTarget`, clip never, `language` always, `lyrics: ''` when instrumental, `batchCount: 1`), `:92` (`takes: N` = N single-take requests); `plugins/generations/music-gen/tests/request.test.ts:32,40` |
-| R4 — preset precedence over portable data | MET | `plugins/generations/music-gen/src/presets.ts:273` (`resolveJob`), `:122`/`:403` (`FORBIDDEN_PRESET_KEYS`, `assertPresetPortable`), `:376` (`explainJob`); `plugins/generations/music-gen/tests/presets.test.ts:37,225` |
-| R5 — adapter contract incl. the non-idempotent paid-call policy | MET | `docs/design/music-gen.md:186` (base URL/timeouts), `:223` (paid-call table: connect-phase-only retry, terminal 401/402/403/404/429/502, post-send ambiguity → `GET /api/generations` reconcile then adopt-or-fail), `:246` (artifact record: instance generation id + detected format) |
-| R6 — contract recorded in the owning docs | MET | `docs/design/music-gen.md:1` (satellite), `docs/04_DESIGN.md:1` (indexed once), `plugins/generations/music-gen/README.md:1` (YAML authoring form, no second schema), feature record cross-reference; no ADR opened because no platform invariant changed |
+| R1 | MET | `plugins/generations/music-gen/src/brief.ts:123` (strict schema) and `:92` (`BRIEF_FIELD_TARGETS`); `plugins/generations/music-gen/tests/brief.test.ts:174` asserts the table covers `MusicBriefSchema.shape` exactly, so no field can be dropped |
+| R2 | MET | `plugins/generations/music-gen/src/render.ts:61` (`renderPromptText`), `:30` (`INSTANCE_OWNED_PROMPT_MARKERS`); goldens `plugins/generations/music-gen/tests/fixtures/{pro-with-lyrics,clip,instrumental,lyrics-free}/{prompt.txt,request.json}`; `plugins/generations/music-gen/tests/render.test.ts:1` proves byte-identical double render and marker absence |
+| R3 | MET | `plugins/generations/music-gen/src/request.ts:66` (pro always `durationTarget`, clip never, `language` always, `lyrics: ''` when instrumental, `batchCount: 1`), `:92` (`takes: N` = N single-take requests); `plugins/generations/music-gen/tests/request.test.ts:32,40` |
+| R4 | MET | `plugins/generations/music-gen/src/presets.ts:282` (`resolveJob`), `:131`/`:412` (`FORBIDDEN_PRESET_KEYS`, `assertPresetPortable`), `:385` (`explainJob`); `plugins/generations/music-gen/tests/presets.test.ts:37,225` |
+| R5 | MET | `docs/design/music-gen.md:186` (base URL/timeouts), `:223` (paid-call table: connect-phase-only retry, terminal 401/402/403/404/429/502, post-send ambiguity → `GET /api/generations` reconcile then adopt-or-fail), `:246` (artifact record: instance generation id + detected format) |
+| R6 | MET | `docs/design/music-gen.md:1` (satellite), `docs/04_DESIGN.md:1` (indexed once), `plugins/generations/music-gen/README.md:1` (YAML authoring form, no second schema), feature record cross-reference; no ADR opened because no platform invariant changed |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|

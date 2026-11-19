@@ -4,7 +4,7 @@ name: Refine daily audience, spoken script and canonical episode title
 status: done
 template: feature-impl
 created_at: 2026-11-18T04:03:43.216Z
-updated_at: "2026-11-18T19:15:11.197Z"
+updated_at: "2026-11-19T23:19:51.950Z"
 feature_id: L3
 priority: P1
 
@@ -82,10 +82,10 @@ L3 · 受众、证据、节奏与节目元数据。现行风格契约定义为�
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 — 按时效和对白领听众的影响筛选，白话解释术语，深度专题留给周更 | MET | `plugins/kk/skills/news-editorial/references/style-contract.zh.md:9-14` (栏目定位, 白领听众), `:26-34` (受众取舍 + the advisory rule statement `:34`), `plugins/kk/skills/news-editorial/references/selection.md:26-30` (urgency × white-collar impact ordering); the 解释 half is now executable — `plugins/generations/dailynews-gen/src/editorial-claims.ts:199-210` (`r2:unexplained-jargon`) with tests `plugins/generations/dailynews-gen/tests/editorial-claims.test.ts:132`, `:143`, `:152`, `:158` |
-| R2 — 区分可归因事实、评论和待证推断，证据不足时归因或省略 | MET | Contract `style-contract.zh.md:49-62` (three-way separation, 商业声明 attribution, omission as default, advisory rule statement `:65`); executable legs `editorial-claims.ts:166-175` (`r3:commentary-in-facts`), `:186-196` (`r3:unattributed-claim`) with tests `editorial-claims.test.ts:83`, `:103`, `:111`, `:119`, `:124`; banned-scaffold list still enforced (`src/script-plan.ts:322-331`) |
-| R3 — 开场一句问候加一到两句要点，逐条评论可省略且至多一句，综评按价值调整或省略 | MET | `style-contract.zh.md:74` (insight optional, omission ≡ `""`) enforced by `src/script-plan.ts:107` (probe: omitted / `""` / `"   "` → `ok:true`), builder skips only the comment (`src/script-builder.ts:431-441`), render keeps the item (`daily-stages.ts:4956-4968`); `≤1 sentence` now checked by `editorial-claims.ts:178-185` + test `:91`; pinned at `plugins/kk/tests/episode-identity-0385.test.ts:391` |
-| R4 — 标题 `第261120期 · 当日要点`，封面复用同一要点，重试/历史重放保留身份，支持源撤销即撤稿 | MET | `plugins/kk/scripts/episode-identity.ts:54-146`; freeze + cover reuse `plugins/kk/scripts/daily-stages.ts:5033-5047`/`:5075`; article seam both orders `:763-775`/`:874`; replay `:722-732`, withhold refusal `:2602-2613`; tests `plugins/kk/tests/episode-identity-0385.test.ts:495`, `:525`. Re-probed this turn: object cover `{scene,headline,sourceIds}` → `ok:true`, `{headline}`-only → `ok:true`, legacy string → `ok:true`, `cover:""` → `schema`, 26-char headline → `cap:coverHeadline` (`caps.coverHeadline === 25`) |
+| R1 | MET | `plugins/kk/skills/news-editorial/references/style-contract.zh.md:9-14` (栏目定位, 白领听众), `:26-34` (受众取舍 + the advisory rule statement `:34`), `plugins/kk/skills/news-editorial/references/selection.md:26-30` (urgency × white-collar impact ordering); the 解释 half is now executable — `plugins/generations/dailynews-gen/src/editorial-claims.ts:199-210` (`r2:unexplained-jargon`) with tests `plugins/generations/dailynews-gen/tests/editorial-claims.test.ts:132`, `:143`, `:152`, `:158` |
+| R2 | MET | Contract `style-contract.zh.md:49-62` (three-way separation, 商业声明 attribution, omission as default, advisory rule statement `:65`); executable legs `editorial-claims.ts:166-175` (`r3:commentary-in-facts`), `:186-196` (`r3:unattributed-claim`) with tests `editorial-claims.test.ts:83`, `:103`, `:111`, `:119`, `:124`; banned-scaffold list still enforced (`src/script-plan.ts:322-331`) |
+| R3 | MET | `style-contract.zh.md:74` (insight optional, omission ≡ `""`) enforced by `src/script-plan.ts:107` (probe: omitted / `""` / `"   "` → `ok:true`), builder skips only the comment (`src/script-builder.ts:431-441`), render keeps the item (`daily-stages.ts:4956-4968`); `≤1 sentence` now checked by `editorial-claims.ts:178-185` + test `:91`; pinned at `plugins/kk/tests/episode-identity-0385.test.ts:391` |
+| R4 | MET | `plugins/kk/scripts/episode-identity.ts:54-146`; freeze + cover reuse `plugins/kk/scripts/daily-stages.ts:5033-5047`/`:5075`; article seam both orders `:763-775`/`:874`; replay `:722-732`, withhold refusal `:2602-2613`; tests `plugins/kk/tests/episode-identity-0385.test.ts:495`, `:525`. Re-probed this turn: object cover `{scene,headline,sourceIds}` → `ok:true`, `{headline}`-only → `ok:true`, legacy string → `ok:true`, `cover:""` → `schema`, 26-char headline → `cap:coverHeadline` (`caps.coverHeadline === 25`) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|

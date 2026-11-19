@@ -4,7 +4,7 @@ name: Add the kk music CLI noun over the music-gen plugin
 status: done
 template: feature-impl
 created_at: 2026-11-18T22:16:15.981Z
-updated_at: "2026-11-19T08:18:43.880Z"
+updated_at: "2026-11-19T23:57:18.259Z"
 feature_id: D8
 
 ac_numbering: task-local
@@ -139,11 +139,11 @@ AC interpretations:
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 — music noun with render/gen/library/analyze/check/master/presets, each a thin delegate | MET | `apps/cli/src/commands/music/index.ts:70` (noun) and `:78`/`:91`/`:102`/`:132`/`:140`/`:150`/`:168` (verbs); bodies in `apps/cli/src/commands/music/verbs.ts` delegate to the plugin — no prompt rendering, spend rule, ffmpeg argv or HTTP in the CLI |
-| R2 — config from the user root with KK_MUSIC_* overrides and documented defaults | MET | `apps/cli/src/commands/music/runtime.ts` (seams, failure mapping, --verbose layer report); `plugins/generations/music-gen/src/config.ts` (music.* block, defaultModel, takesCap rejected above 4 at load) |
-| R3 — render/presets/check/master free of instance traffic | MET | free verbs never call `MusicSeams.createClient` (`apps/cli/src/commands/music/verbs.ts`); asserted at `apps/cli/tests/commands/music.test.ts:169` |
-| R4 — stable --json per verb | MET | one payload envelope per verb in `apps/cli/src/commands/music/verbs.ts`; asserted at `apps/cli/tests/commands/music.test.ts:204` |
-| R5 — help and plugin check agree (paid/free, declared requirements) | MET | PAID/FREE help lines in `apps/cli/src/commands/music/index.ts`; `ffmpeg`/`ffprobe` declared in `plugins/generations/music-gen/plugin.json`; asserted at `apps/cli/tests/commands/music.test.ts:305` |
+| R1 | MET | `apps/cli/src/commands/music/index.ts:70` (noun) and `:78`/`:91`/`:102`/`:132`/`:140`/`:150`/`:180` (verbs); bodies in `apps/cli/src/commands/music/verbs.ts` delegate to the plugin — no prompt rendering, spend rule, ffmpeg argv or HTTP in the CLI |
+| R2 | MET | `apps/cli/src/commands/music/runtime.ts` (seams, failure mapping, --verbose layer report); `plugins/generations/music-gen/src/config.ts` (music.* block, defaultModel, takesCap rejected above 4 at load) |
+| R3 | MET | free verbs never call `MusicSeams.createClient` (`apps/cli/src/commands/music/verbs.ts`); asserted at `apps/cli/tests/commands/music.test.ts:169` |
+| R4 | MET | one payload envelope per verb in `apps/cli/src/commands/music/verbs.ts`; asserted at `apps/cli/tests/commands/music.test.ts:204` |
+| R5 | MET | PAID/FREE help lines in `apps/cli/src/commands/music/index.ts`; `ffmpeg`/`ffprobe` declared in `plugins/generations/music-gen/plugin.json`; asserted at `apps/cli/tests/commands/music.test.ts:305` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|

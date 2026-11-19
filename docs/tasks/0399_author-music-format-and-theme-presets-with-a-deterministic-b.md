@@ -4,7 +4,7 @@ name: Author music format and theme presets with a deterministic brief renderer
 status: done
 template: feature-impl
 created_at: 2026-11-18T22:16:14.918Z
-updated_at: "2026-11-19T19:44:14.108Z"
+updated_at: "2026-11-19T23:57:17.849Z"
 feature_id: D8
 
 ac_numbering: task-local
@@ -161,11 +161,11 @@ Implements R1–R5 on top of the frozen 0397 surface: the shipped format × them
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 — format presets as data (`song`, `clip`, `jingle`, `loop`, `underscore`) | MET | `plugins/generations/music-gen/presets/formats/{song,clip,jingle,loop,underscore}.yaml` (model, structure skeleton with timestamps, lyrics policy, pro-only duration target); validated by `plugins/generations/music-gen/src/presets.ts:504` |
-| R2 — theme presets as data (`cinematic`, `lofi`, `synthwave`, `ambient-tech` only) | MET | `plugins/generations/music-gen/presets/themes/*.yaml` (six technical-direction facets + `style` prose, default `avoid[]`, instrumentation palette, provenance); schema `plugins/generations/music-gen/src/presets.ts:592`, facet enforcement `:621`; `corporate-tech`/`xhs-pop` deliberately absent per `plugins/generations/music-gen/presets/SOURCE.md` |
-| R3 — resolution reuses 0397 R4, unknown names fail loudly, sources printed | MET | `plugins/generations/music-gen/src/presets.ts:891` (`resolveNamedJob` -> unmodified `resolveJob` at `:282`), `:849` (`UnknownPresetError` lists valid names), `:385` (`explainJob` trace); CLI-facing wrapper `plugins/generations/music-gen/scripts/resolve-preset.ts` |
-| R4 — evidence discipline on preset files | MET | provenance schema `plugins/generations/music-gen/src/presets.ts:484` with the status enum at `:470`; portability check `:412`; aggregated failure type `:658` (`PresetDataError`, exit 2, nothing partially loaded) |
-| R5 — generated preset index | MET | `plugins/generations/music-gen/scripts/gen-preset-index.ts:108` (`checkPresetIndex`) writes the table into `plugins/generations/music-gen/README.md:113`, `--check` exits 1 on drift |
+| R1 | MET | `plugins/generations/music-gen/presets/formats/{song,clip,jingle,loop,underscore}.yaml` (model, structure skeleton with timestamps, lyrics policy, pro-only duration target); validated by `plugins/generations/music-gen/src/presets.ts:504` |
+| R2 | MET | `plugins/generations/music-gen/presets/themes/*.yaml` (six technical-direction facets + `style` prose, default `avoid[]`, instrumentation palette, provenance); schema `plugins/generations/music-gen/src/presets.ts:592`, facet enforcement `:621`; `corporate-tech`/`xhs-pop` deliberately absent per `plugins/generations/music-gen/presets/SOURCE.md` |
+| R3 | MET | `plugins/generations/music-gen/src/presets.ts:891` (`resolveNamedJob` -> unmodified `resolveJob` at `:282`), `:849` (`UnknownPresetError` lists valid names), `:385` (`explainJob` trace); CLI-facing wrapper `plugins/generations/music-gen/scripts/resolve-preset.ts` |
+| R4 | MET | provenance schema `plugins/generations/music-gen/src/presets.ts:484` with the status enum at `:470`; portability check `:412`; aggregated failure type `:658` (`PresetDataError`, exit 2, nothing partially loaded) |
+| R5 | MET | `plugins/generations/music-gen/scripts/gen-preset-index.ts:108` (`checkPresetIndex`) writes the table into `plugins/generations/music-gen/README.md:113`, `--check` exits 1 on drift |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|

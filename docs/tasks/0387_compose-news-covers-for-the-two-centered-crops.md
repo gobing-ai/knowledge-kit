@@ -4,7 +4,7 @@ name: Compose news covers for the two centered crops
 status: done
 template: feature-impl
 created_at: 2026-11-18T04:03:43.217Z
-updated_at: "2026-11-18T22:25:45.124Z"
+updated_at: "2026-11-19T23:19:52.352Z"
 feature_id: L3
 priority: P1
 
@@ -110,8 +110,7 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 — 两个目标平台的中心裁切都保留标题要点；完整封面右上角显示缩小后的透明标识；验证产物包含参考融合及平台裁切预览 | MET | (a) crops keep the point: `safeAreaRect()` = `{416,34,512,508}` inside both crop rects `{0,2,1344,572}` / `{384,0,576,576}`, `plugins/kk/tests/cover-crop-safety-0387.test.ts:130-146`; pixels inside the tight 1:1 crop differ **58** from backdrop while the withheld-headline control measures **0** (own probe, this round). (b) top-right scaled transparent emblem: `logoRect()` = `{1264,24,56,38}` (`plugins/kk/scripts/cover-compositor.ts:130`), drawn without a plate (`plugins/kk/scripts/cover-compositor.ts:340,364`), present at **663** vs the same-band bare rect on the flat bg and **95** on the photo bg, and **0** when the badge is absent — the probe now fails on an emblemless cover (`plugins/kk/tests/cover-crop-safety-0387.test.ts:397,405-406`). (c) verification products: `cover-full.png`, `cover-reference.png`, `reference-logo-blend.png`, `crop-wechat-mp.png` (1344×572), `crop-podcast-site.png` (576×576) + `manifest.json` under `.spur/run/0387-cover-previews/{short,long}/`, regenerated this round from the restored source with the emblem at `bbox y=24`. |
-| R1 (verification-integrity sub-claim: the artifacts actually prove the emblem) | MET | Both mutation-named tests fail under an absent default emblem (20 pass / 2 fail) and the artifacts' own pixels carry it (badge `(202,211,224,243)` vs bare `(0,0,0,0)`) — see P2 row 1 and P4 row 5. |
+| R1 | MET | (a) crops keep the point: `safeAreaRect()` = `{416,34,512,508}` inside both crop rects `{0,2,1344,572}` / `{384,0,576,576}`, `plugins/kk/tests/cover-crop-safety-0387.test.ts:130-146`; pixels inside the tight 1:1 crop differ **58** from backdrop while the withheld-headline control measures **0** (own probe, this round). (b) top-right scaled transparent emblem: `logoRect()` = `{1264,24,56,38}` (`plugins/kk/scripts/cover-compositor.ts:130`), drawn without a plate (`plugins/kk/scripts/cover-compositor.ts:340,364`), present at **663** vs the same-band bare rect on the flat bg and **95** on the photo bg, and **0** when the badge is absent — the probe now fails on an emblemless cover (`plugins/kk/tests/cover-crop-safety-0387.test.ts:397,405-406`). (c) verification products: `cover-full.png`, `cover-reference.png`, `reference-logo-blend.png`, `crop-wechat-mp.png` (1344×572), `crop-podcast-site.png` (576×576) + `manifest.json` under `.spur/run/0387-cover-previews/{short,long}/`, regenerated this round from the restored source with the emblem at `bbox y=24`. Both mutation-named tests fail under an absent default emblem (20 pass / 2 fail) and the artifacts' own pixels carry it (badge `(202,211,224,243)` vs bare `(0,0,0,0)`) — see P2 row 1 and P4 row 5. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|

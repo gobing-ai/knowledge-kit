@@ -4,7 +4,7 @@ name: Measure takes and loudness-normalize to a delivery profile
 status: done
 template: feature-impl
 created_at: 2026-11-18T23:37:07.663Z
-updated_at: "2026-11-19T19:44:14.517Z"
+updated_at: "2026-11-19T23:57:18.889Z"
 feature_id: D8
 
 ac_altitude: task-local
@@ -149,12 +149,12 @@ Owns all audio engineering for the feature: measurement, the pre-master take gat
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 — measurement (ffprobe + loudnorm analysis + silencedetect) through one injectable runner, pure parsers | MET | `plugins/generations/music-gen/src/audio/measure.ts:33` (`AudioToolRunner` seam), `:228`/`:329`/`:374` (pure parsers), `:200` (`measureAudio`), `:95` (default runner via `NodeProcessExecutor`); malformed output raises `AudioToolError` naming the tool and fragment (`:44`) |
-| R2 — pre-master take checks writing `<artifact>.checks.json`, non-zero on any fail, no loudness row | MET | `plugins/generations/music-gen/src/audio/checks.ts:230` (`runTakeChecks`), `:417`/`:427`/`:511` (duration/silence/analysis rows with `id/measured/threshold/unit/source/result`); warn-only agreement rows; exit code derived from the rows |
-| R3 — two-pass loudnorm, explicit `-ar`, non-destructive output | MET | `plugins/generations/music-gen/src/audio/master.ts:139` (pass construction), `:204` (pass-1 measurements fed to pass 2), `:113` (`-ar` from the profile), `:77` (output path `<artifact>.<profile>.<ext>`) |
-| R4 — delivery check re-measures the encoded output, appends `delivery.*`, no re-master loop | MET | `plugins/generations/music-gen/src/audio/checks.ts:570` (`runDeliveryChecks`: integrated loudness ±1 LU, true peak ceiling, sample-rate proof; rows merged before the failure is thrown) |
-| R5 — delivery profiles from `music.delivery.<name>` with one built-in `streaming` | MET | `plugins/generations/music-gen/src/audio/profile.ts:36` (built-in), `:119` (resolution, unknown name lists the defined profiles); `plugins/generations/music-gen/src/config.ts:199`,`:402` |
-| R6 — offline tests over captured tool output, no ffmpeg in CI | MET | `plugins/generations/music-gen/tests/audio-captures.ts` (real ffmpeg 8.1.2 captures replayed through the injected runner), `plugins/generations/music-gen/tests/audio-{measure,checks,master,profile}.test.ts` |
+| R1 | MET | `plugins/generations/music-gen/src/audio/measure.ts:33` (`AudioToolRunner` seam), `:228`/`:329`/`:374` (pure parsers), `:200` (`measureAudio`), `:95` (default runner via `NodeProcessExecutor`); malformed output raises `AudioToolError` naming the tool and fragment (`:44`) |
+| R2 | MET | `plugins/generations/music-gen/src/audio/checks.ts:230` (`runTakeChecks`), `:417`/`:427`/`:511` (duration/silence/analysis rows with `id/measured/threshold/unit/source/result`); warn-only agreement rows; exit code derived from the rows |
+| R3 | MET | `plugins/generations/music-gen/src/audio/master.ts:139` (pass construction), `:204` (pass-1 measurements fed to pass 2), `:113` (`-ar` from the profile), `:77` (output path `<artifact>.<profile>.<ext>`) |
+| R4 | MET | `plugins/generations/music-gen/src/audio/checks.ts:570` (`runDeliveryChecks`: integrated loudness ±1 LU, true peak ceiling, sample-rate proof; rows merged before the failure is thrown) |
+| R5 | MET | `plugins/generations/music-gen/src/audio/profile.ts:36` (built-in), `:119` (resolution, unknown name lists the defined profiles); `plugins/generations/music-gen/src/config.ts:224`,`:434` |
+| R6 | MET | `plugins/generations/music-gen/tests/audio-captures.ts` (real ffmpeg 8.1.2 captures replayed through the injected runner), `plugins/generations/music-gen/tests/audio-{measure,checks,master,profile}.test.ts` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
@@ -163,6 +163,7 @@ Owns all audio engineering for the feature: measurement, the pre-master take gat
 | AC3 — Normalization is two-pass, rate-explicit and non-destructive (req: R3) | MET | test | `plugins/generations/music-gen/tests/audio-master.test.ts:49` (pass 2 carries measured_I/TP/LRA/thresh), `:69` (profile lra + explicit rate), `:108` (one writing pass, take untouched), `:178` (output equal to the take refused); probe: real ffmpeg run produced `lofi-pro-take1.streaming.wav` at 44100 Hz with delivery `-14 LUFS`, `TP -13.27 dBTP` |
 | AC4 — The delivered file is what gets checked (req: R4) | MET | test | `plugins/generations/music-gen/tests/audio-master.test.ts:133` (delivery rows land beside the take rows in checks.json), `:193` (a failing delivery check reports measured values and never runs a second master pass) |
 | AC5 — Delivery targets are profiles, not constants (req: R5) | MET | test | `plugins/generations/music-gen/tests/audio-profile.test.ts` (configured `channels` profile used, `streaming` falls back to -14 LUFS / -1 dBTP, unknown name exits non-zero listing the defined profiles); probe: `masterTake` on the streaming profile measured `-14 LUFS` / `-13.27 dBTP` / `44100 Hz` |
+| AC6 — The suite needs no ffmpeg (req: R6) | MET | command | `env PATH="<dir with only bun>:/usr/bin:/bin" bun test tests/audio-{measure,checks,master,profile}.test.ts` in `plugins/generations/music-gen` -> `command -v ffmpeg`/`ffprobe` absent, 67 pass / 0 fail across 4 files (2026-11-19); runner injected via `plugins/generations/music-gen/tests/audio-captures.ts`. Fix pass: AC6 row was missing from the prior Testing table. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

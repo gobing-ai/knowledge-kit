@@ -4,7 +4,7 @@ name: Unify the news publish trigger and prepare social promotion
 status: done
 template: feature-impl
 created_at: 2026-11-18T04:03:43.217Z
-updated_at: "2026-11-19T01:19:54.670Z"
+updated_at: "2026-11-19T23:19:52.554Z"
 feature_id: L3
 priority: P1
 
@@ -90,7 +90,7 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 — 依赖满足的目标按既有权限执行，微信保留草稿和扫码边界，未就绪的引流可按目标重试且提供逐渠道实机测试材料（L3 R9） | MET | Dependency-satisfied dispatch + per-target retry + adoption: `apps/cli/src/publish-matrix.ts:1486-1536`, `:1669-1678`; `apps/cli/tests/publish-matrix.test.ts:1533-1583` (second trigger adopts), `:1560-1583` (only the failed target retried under `--retry`); WeChat draft + QR-scan boundary: `apps/cli/src/publish-dispatch.ts:142-153`, `apps/cli/tests/publish-dispatch.test.ts:218-248`; authorization matrix preserved: `apps/cli/src/publish-matrix.ts:607-613`, `:1595-1601` |
+| R1 | MET | Dependency-satisfied dispatch + per-target retry + adoption: `apps/cli/src/publish-matrix.ts:1486-1536`, `:1669-1678`; `apps/cli/tests/publish-matrix.test.ts:1533-1583` (second trigger adopts), `:1560-1583` (only the failed target retried under `--retry`); WeChat draft + QR-scan boundary: `apps/cli/src/publish-dispatch.ts:142-153`, `apps/cli/tests/publish-dispatch.test.ts:218-248`; authorization matrix preserved: `apps/cli/src/publish-matrix.ts:607-613`, `:1595-1601` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|

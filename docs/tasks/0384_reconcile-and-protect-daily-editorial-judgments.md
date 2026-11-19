@@ -4,7 +4,7 @@ name: Reconcile and protect daily editorial judgments
 status: done
 template: feature-impl
 created_at: 2026-11-18T04:03:43.213Z
-updated_at: "2026-11-18T14:51:08.680Z"
+updated_at: "2026-11-19T23:19:51.316Z"
 feature_id: L3
 priority: P1
 
@@ -115,8 +115,8 @@ L3 · 冻结后对齐、提交与快照。现行工作流在最终选题后进�
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 — conclusion.md 记录有证据的新判断和被取代记录，稿件采用本期快照并明确承认错误、致歉及更正 | MET | `plugins/kk/scripts/news-editorial-ledger.ts:296` renders `## 现行判断` + `## 被取代记录（保留不改写）` + `## 本期更正说明`; `:826` freezes `superseded`/`corrections.retired`/`text`/`preamble`; `plugins/kk/skills/news-editorial/SKILL.md:129` is the `align` contract; `plugins/kk/tests/news-editorial-ledger.test.ts:223` pins the retired record, correction id and preamble |
-| R2 — 重复操作不重复追加，冲突不会覆盖已确认判断，无新判断时复用合法快照 | MET | `plugins/kk/scripts/news-editorial-ledger.ts:521` — lock (`:597`), CAS (`:612`), replay no-op, snapshot reuse (`:659`); pinned by `plugins/kk/tests/news-editorial-ledger.test.ts:107`, `:142`, `:174`, `:190` |
+| R1 | MET | `plugins/kk/scripts/news-editorial-ledger.ts:296` renders `## 现行判断` + `## 被取代记录（保留不改写）` + `## 本期更正说明`; `:826` freezes `superseded`/`corrections.retired`/`text`/`preamble`; `plugins/kk/skills/news-editorial/SKILL.md:129` is the `align` contract; `plugins/kk/tests/news-editorial-ledger.test.ts:223` pins the retired record, correction id and preamble |
+| R2 | MET | `plugins/kk/scripts/news-editorial-ledger.ts:521` — lock (`:597`), CAS (`:612`), replay no-op, snapshot reuse (`:659`); pinned by `plugins/kk/tests/news-editorial-ledger.test.ts:107`, `:142`, `:174`, `:190` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|

@@ -4,7 +4,7 @@ name: Bind WeChat Channels cards to the confirmed Official Account article
 status: done
 template: feature-impl
 created_at: 2026-11-18T04:49:21.260Z
-updated_at: "2026-11-19T02:44:13.693Z"
+updated_at: "2026-11-19T23:19:53.526Z"
 feature_id: L3
 priority: P1
 
@@ -86,12 +86,12 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 — Gate the existing Channels image target on the verified Official Account article for the same episode, and carry that URL plus the approved card payload (L3 R18) | MET | Gate: `apps/cli/src/publish-channels-link.ts:106-150` (same-episode via `resolveOwnerUrls` on `plan.parentRunId` at `:120`; safe-destination verification at `:83-95`; only `shipinhao-pub`/`image` targeted at `:68-73`). Wiring: `apps/cli/src/publish-matrix.ts:1650` (`channelsCardIds`) + `1694-1721` (gate before payload work, `channels-card-deferred`/`channels-card-bound` events) + `1734-1743` (carry). Producer set = this bundle's wechatmp `variant: article` rows across sibling plans: `apps/cli/src/publish-matrix.ts:1436-1456`. Payload carry: `apps/cli/src/publish-channels-link.ts:161-197`. Proof: `apps/cli/tests/publish-channels-link.test.ts:349-370` (retry sends the card once with `https://mp.weixin.qq.com/s/AbCdEf123456`, `metadata.images` unchanged) |
-| R2 — Defer only that target when the link is missing or unsafe, preserve configured modes, retry using existing target receipts | MET | Per-row deferral via the documented seam (`apps/cli/src/publish-matrix.ts:1711` → `apps/cli/src/publish-core.ts:498-520` writes `failed`/`effect: none` and continues the loop); no mode write anywhere in the diff. Siblings keep modes and dispatch + card is the only ledger `retry` entry: `apps/cli/tests/publish-channels-link.test.ts:305-325`. Missing-link and unsafe-link classes: `:327-347`. Retry through 0388's ledger only (`retryable`/`--retry`), sends once and does not resend: `:356-373` |
+| R1 | MET | Gate: `apps/cli/src/publish-channels-link.ts:106-150` (same-episode via `resolveOwnerUrls` on `plan.parentRunId` at `:120`; safe-destination verification at `:83-95`; only `shipinhao-pub`/`image` targeted at `:68-73`). Wiring: `apps/cli/src/publish-matrix.ts:1650` (`channelsCardIds`) + `1694-1721` (gate before payload work, `channels-card-deferred`/`channels-card-bound` events) + `1734-1743` (carry). Producer set = this bundle's wechatmp `variant: article` rows across sibling plans: `apps/cli/src/publish-matrix.ts:1436-1456`. Payload carry: `apps/cli/src/publish-channels-link.ts:161-197`. Proof: `apps/cli/tests/publish-channels-link.test.ts:349-370` (retry sends the card once with `https://mp.weixin.qq.com/s/AbCdEf123456`, `metadata.images` unchanged) |
+| R2 | MET | Per-row deferral via the documented seam (`apps/cli/src/publish-matrix.ts:1711` → `apps/cli/src/publish-core.ts:498-520` writes `failed`/`effect: none` and continues the loop); no mode write anywhere in the diff. Siblings keep modes and dispatch + card is the only ledger `retry` entry: `apps/cli/tests/publish-channels-link.test.ts:305-325`. Missing-link and unsafe-link classes: `:327-347`. Retry through 0388's ledger only (`retryable`/`--retry`), sends once and does not resend: `:356-373` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R18 — 视频号卡片只使用已确认的公众号文章链接 (草稿状态下只挂起该目标；公开状态下使用该期真实公众号文章链接和已有卡片；按目标重试不重复发送) | MET | test | `apps/cli/tests/publish-channels-link.test.ts:305-325` — draft article → card receipt `failed`/`effect: none`/`channels-card-article-still-draft`, siblings `surfdash-pub.post` + `wechatmp-pub.文章` + `x-pub.post` dispatched, only `shipinhao-pub.image` in `retryable(ledger)`; `:349-370` — after release the retried card ships that exact URL with the unchanged approved `metadata.images` and a second retry issues 0 calls; `:338-347` — a foreign link never dispatches. Fresh run: `cd apps/cli && bun test tests/publish-channels-link.test.ts` → 9 pass / 0 fail, 59 expects; mutation-stubbed gate → 6 fail (probe (d)) |
+| R18 — 视频号卡片只使用已确认的公众号文章链接 | MET | test | `apps/cli/tests/publish-channels-link.test.ts:305-325` — draft article → card receipt `failed`/`effect: none`/`channels-card-article-still-draft`, siblings `surfdash-pub.post` + `wechatmp-pub.文章` + `x-pub.post` dispatched, only `shipinhao-pub.image` in `retryable(ledger)`; `:349-370` — after release the retried card ships that exact URL with the unchanged approved `metadata.images` and a second retry issues 0 calls; `:338-347` — a foreign link never dispatches. Fresh run: `cd apps/cli && bun test tests/publish-channels-link.test.ts` → 9 pass / 0 fail, 59 expects; mutation-stubbed gate → 6 fail (probe (d)) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
