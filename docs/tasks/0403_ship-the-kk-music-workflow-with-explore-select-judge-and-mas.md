@@ -4,15 +4,16 @@ name: Ship the kk-music workflow with explore, select, judge and master gates
 status: backlog
 template: feature-impl
 created_at: 2026-11-18T22:16:17.053Z
-updated_at: "2026-11-19T00:14:06.546Z"
+updated_at: "2026-11-19T03:55:08.080Z"
 feature_id: D8
 
 ac_numbering: task-local
 ac_altitude: task-local
 estimate_hours: 8
+dependencies: ["0400", "0401", "0402", "0405"]
 ---
 
-## 0390. Ship the kk-music workflow with explore, select, judge and master gates
+## 0403. Ship the kk-music workflow with explore, select, judge and master gates
 
 ### Background
 
@@ -27,8 +28,8 @@ Music differs from the article/podcast pipelines in one decisive way: the model 
 ### Requirements
 
 - [ ] R1. Ship `plugins/kk/workflows/kk-music.yaml` (state machine): `prepare → brief → explore → select → analyze → check → judge → master → finalize`, terminal `done`, failure `failed`. Vars: topic/brief file, theme, format, works dir (run dir `<works>/kk-music/<topic-slug>/`), `directions`, agent, delivery profile, `auto`, `accept_revision`, `force` + `force_reason`, and the dry-run flag.
-- [ ] R2. Encode the spend shape. `explore` produces `directions` differentiated briefs (default 2, never above `takesCap`) and one take per brief in the **format's model** (Pro for song/jingle/underscore, Clip for clip/loop). `select` is the only human gate (HITL), and `auto` skips it only when exactly one take exists. `analyze` runs on the selected take only. Re-running `explore` into the same run directory pays only for briefs without an existing take (0387 dedupe); anything else requires `force` + `force_reason`.
-- [ ] R3. Gate progress on measurement, not opinion. `check` (`kk music check`, 0394 take checks) must exit 0 before `judge`. `judge` uses `agent.run` on content-judge with the `music-quality` rubric, gated through the existing confidence-aware `jq` filter. `master` is reached only on `PASS`, or on `NEEDS_REVISION` with `accept_revision=true`. `master` (`kk music master`, including 0394's delivery check) must exit 0 before `finalize`.
+- [ ] R2. Encode the spend shape. `explore` produces `directions` differentiated briefs (default 2, never above `takesCap`) and one take per brief in the **format's model** (Pro for song/jingle/underscore, Clip for clip/loop). `select` is the only human gate (HITL), and `auto` skips it only when exactly one take exists. `analyze` runs on the selected take only. Re-running `explore` into the same run directory pays only for briefs without an existing take (0400 dedupe); anything else requires `force` + `force_reason`.
+- [ ] R3. Gate progress on measurement, not opinion. `check` (`kk music check`, 0405 take checks) must exit 0 before `judge`. `judge` uses `agent.run` on content-judge with the `music-quality` rubric, gated through the existing confidence-aware `jq` filter. `master` is reached only on `PASS`, or on `NEEDS_REVISION` with `accept_revision=true`. `master` (`kk music master`, including 0405's delivery check) must exit 0 before `finalize`.
 - [ ] R4. Keep artifacts per state under the run directory (briefs, kk prompt text, takes + sidecars, analysis, `checks.json`, `judge-input.md`, verdict, normalized file) and emit a run report naming spend (summed from take sidecars), instance ids, verdict, delivery profile with measured LUFS/true peak, and the final artifact path.
 - [ ] R5. Make the workflow runnable with no spend (`KK_MUSIC_DRY_RUN=1`), and resumable after a failure at any state without re-paying: paid states skip work whose take sidecar or cached analysis already exists.
 
@@ -84,7 +85,7 @@ Scenario: AC5 — Dry-run is free and resume does not re-pay (req: R5)
 - **Iteration is a new run, not a loop.** A NEEDS_REVISION verdict's feedback feeds `music-authoring iterate`, which writes a new brief. Re-entering `explore` with it is a new digest and therefore a new paid take. There is no automatic regenerate loop, because each loop iteration is real money.
 - **State ownership.** Authoring is `agent.run` on `music-authoring`, judging is `agent.run` on `content-judge` with `music-quality`, and everything else is a `kk music` verb. No prompt prose in the YAML.
 - **Resume seam.** Take sidecars and cached analysis decide what already exists, and a resumed run continues from the first state whose artifact is missing. The 0207 ledger is not consulted (it is a post-run token report).
-- **Dependency.** Blocked by 0387, 0388, 0389 and 0394.
+- **Dependency.** Blocked by 0400, 0401, 0402 and 0405.
 - **Estimate.** 7h: 9 states, vars, gates, artifact naming, dry-run/resume paths, engine dry-run validation. One state fewer than the first draft (no `promote`).
 
 ### Plan

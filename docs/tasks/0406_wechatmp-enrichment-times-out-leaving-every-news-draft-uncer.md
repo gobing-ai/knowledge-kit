@@ -8,7 +8,7 @@ updated_at: "2026-11-18T23:29:22.508Z"
 
 ---
 
-## 0392. wechatmp 赞赏 enrichment times out, leaving every news draft uncertain
+## 0406. wechatmp 赞赏 enrichment times out, leaving every news draft uncertain
 
 ### Background
 

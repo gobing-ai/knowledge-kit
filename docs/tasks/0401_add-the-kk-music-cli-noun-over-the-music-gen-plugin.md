@@ -4,15 +4,16 @@ name: Add the kk music CLI noun over the music-gen plugin
 status: backlog
 template: feature-impl
 created_at: 2026-11-18T22:16:15.981Z
-updated_at: "2026-11-19T00:14:06.546Z"
+updated_at: "2026-11-19T03:55:07.644Z"
 feature_id: D8
 
 ac_numbering: task-local
 ac_altitude: task-local
 estimate_hours: 8
+dependencies: ["0398", "0399", "0400", "0405"]
 ---
 
-## 0388. Add the kk music CLI noun over the music-gen plugin
+## 0401. Add the kk music CLI noun over the music-gen plugin
 
 ### Background
 
@@ -24,7 +25,7 @@ Config resolution has an established shape too: user config roots with environme
 
 ### Requirements
 
-- [ ] R1. Register a `music` noun with verbs `render`, `gen`, `library`, `analyze`, `check`, `master`, `presets` on the existing two-layer CLI surface. Each verb delegates to the plugin functions that own the behaviour: render/presets → 0384/0386, gen/analyze/library → 0385 behind the 0387 spend guard, check/master → 0394. No logic is duplicated in the CLI or the YAML.
+- [ ] R1. Register a `music` noun with verbs `render`, `gen`, `library`, `analyze`, `check`, `master`, `presets` on the existing two-layer CLI surface. Each verb delegates to the plugin functions that own the behaviour: render/presets → 0397/0399, gen/analyze/library → 0398 behind the 0400 spend guard, check/master → 0405. No logic is duplicated in the CLI or the YAML.
 - [ ] R2. Resolve plugin configuration from a `music:` block in the user config root with `KK_MUSIC_*` environment overrides and documented defaults: `baseUrl`, `timeoutMs`, `defaultModel`, `takesCap` (≤ 4), `prices.{pro,clip,analyze}`, `delivery.<profile>`. Fail with a one-line remediation naming the config key when the endpoint is unreachable.
 - [ ] R3. Keep `render`, `presets list`, `check` and `master` free of instance traffic (prompt/preset inspection and local ffmpeg only), so a brief can be reviewed and diffed before any spend and a take can be re-checked or re-mastered without re-paying.
 - [ ] R4. Emit `--json` for every verb with a stable shape (artifact paths, instance ids, digests, `paid`, spend, measurements, check results) for workflow and skill consumption, and human-readable output otherwise.
@@ -37,7 +38,7 @@ Scenario: AC1 — The noun is registered on the shared surface (req: R1)
   Given the CLI registration
   When kk music --help runs
   Then render, gen, library, analyze, check, master and presets are listed with their arguments
-  And gen and analyze refuse without --yes through the 0387 guard
+  And gen and analyze refuse without --yes through the 0400 guard
 
 Scenario: AC2 — Config comes from the user root with an env override (req: R2)
   Given a user config with a base URL and an environment override for the same key
@@ -76,8 +77,8 @@ Scenario: AC5 — Help and plugin check agree (req: R5)
 
 - **Register, do not re-implement.** Workflow states call `kk music <verb>`, and the verbs call the plugin's `src/` functions, so a behaviour change lands once.
 - **Paid-verb marking.** Help text and the JSON payload both carry `paid: true|false`. Agent skills and humans read it, and the workflow's confirmation gate keys off it.
-- **Config keys.** `music.{baseUrl,timeoutMs,defaultModel,takesCap,prices,delivery}` with `KK_MUSIC_*` overrides. Nothing machine-specific is committed, which keeps the plugin portable across the operator's machines. `lufsTarget` from the first draft is replaced by named delivery profiles (0394 R5).
-- **Dependency.** Blocked by 0385, 0386, 0387 and 0394 (the verbs wrap their functions).
+- **Config keys.** `music.{baseUrl,timeoutMs,defaultModel,takesCap,prices,delivery}` with `KK_MUSIC_*` overrides. Nothing machine-specific is committed, which keeps the plugin portable across the operator's machines. `lufsTarget` from the first draft is replaced by named delivery profiles (0405 R5).
+- **Dependency.** Blocked by 0398, 0399, 0400 and 0405 (the verbs wrap their functions).
 - **Estimate.** 8h: seven verbs, config block, JSON shapes and snapshots, help text, tests.
 
 ### Plan

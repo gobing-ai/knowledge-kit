@@ -4,15 +4,16 @@ name: Dogfood one music track end to end and sync the owning docs
 status: backlog
 template: feature-impl
 created_at: 2026-11-18T22:16:17.582Z
-updated_at: "2026-11-19T00:14:21.344Z"
+updated_at: "2026-11-19T03:55:08.293Z"
 feature_id: D8
 
 ac_numbering: task-local
 ac_altitude: task-local
 estimate_hours: 5
+dependencies: ["0402", "0403", "0405"]
 ---
 
-## 0391. Dogfood one music track end to end and sync the owning docs
+## 0404. Dogfood one music track end to end and sync the owning docs
 
 ### Background
 
@@ -20,12 +21,12 @@ Implements: R1 — one real end-to-end track; R2 — evidence and spend record; 
 
 Features in this repo close on evidence, not on claims: K3's promotion gate, the daily pipelines' run reports, and the `docs/tasks/evidence/<feature>/<wbs>/` convention. A music capability that has never produced a mastered file from an idea is unproven regardless of green unit tests — and the reverse is also true, so the acceptance run must show both a free dry-run and one paid take with its measured numbers.
 
-Docs ownership: `docs/04_DESIGN.md` indexes the design satellite (0384), `docs/05_FEATURES.md` points at the generated feature index, and the plugin README is the preset index (0386). This task closes that loop.
+Docs ownership: `docs/04_DESIGN.md` indexes the design satellite (0397), `docs/05_FEATURES.md` points at the generated feature index, and the plugin README is the preset index (0399). This task closes that loop.
 
 ### Requirements
 
 - [ ] R1. Run the pipeline end to end on a real idea using the live instance: a song-format run with `directions: 2` (two Pro takes), operator selection, analyze, check, judge and master to the `streaming` profile, with no manual step outside the workflow's own gates.
-- [ ] R2. Preserve reproducible evidence under `docs/tasks/evidence/D8/0391/`: briefs, kk prompt text, instance ids, `checks.json`, verdict JSON, measured duration/LUFS/true peak before and after normalization, and the spend summed from take sidecars.
+- [ ] R2. Preserve reproducible evidence under `docs/tasks/evidence/D8/0404/`: briefs, kk prompt text, instance ids, `checks.json`, verdict JSON, measured duration/LUFS/true peak before and after normalization, and the spend summed from take sidecars.
 - [ ] R3. Sync the owning docs: the `docs/04_DESIGN.md` link to the new satellite, `docs/05_FEATURES.md`/feature index for D8, the plugin README preset index with real statuses (which pairs were actually generated), and the workflow list wherever `kk` enumerates workflows.
 - [ ] R4. Ship only the built-in `streaming` delivery profile. Channel loudness profiles (小红书 / B站 / 视频号 or others) are deferred until a publish platform for music is chosen; record that deferral in the feature Notes, and add no channel profile, to shipped defaults or to evidence, in this feature.
 - [ ] R5. File residuals as new tasks rather than widening this one, and record accepted limitations (single-turn iteration cost, analysis latency, preset coverage, the Clip-explore decision) in the feature Notes.
@@ -84,9 +85,9 @@ Scenario: AC6 — A free regression path exists (req: R6)
 - **Do the cheap loop first.** Start with a `KK_MUSIC_DRY_RUN=1` run to prove the plumbing, then spend exactly one explore round. The acceptance spend is two Pro takes ($0.16) plus one analysis (unpriced, small), recorded from sidecars.
 - **Measure, do not listen.** "It sounded fine" is not evidence. The report quotes duration vs target, LUFS and true peak before and after normalization, and the analysis BPM/key against the brief.
 - **Keep the original.** Normalization writes a new file and the provider take stays untouched, so a later re-normalization to another profile or a re-judge is possible without re-paying.
-- **Channel targets are deferred, not guessed.** Which platform publishes music is undecided, and no published loudness spec for 小红书, B站 or 视频号 was verified. The publish feature that picks the platform measures one real re-served upload and adds that profile through 0394's config mechanism, with no code change here. If the track ends up as background under a voice-over, the video mix sets final loudness anyway.
+- **Channel targets are deferred, not guessed.** Which platform publishes music is undecided, and no published loudness spec for 小红书, B站 or 视频号 was verified. The publish feature that picks the platform measures one real re-served upload and adds that profile through 0405's config mechanism, with no code change here. If the track ends up as background under a voice-over, the video mix sets final loudness anyway.
 - **Docs last, with real statuses.** Only pairs generated during this run get `generated` in the preset index. Everything else stays `authored`/`evidence-pending`, matching K3's discipline.
-- **Dependency.** Blocked by 0389, 0390 and 0394.
+- **Dependency.** Blocked by 0402, 0403 and 0405.
 - **Estimate.** 5h: run + evidence + doc sync + residuals.
 
 ### Plan

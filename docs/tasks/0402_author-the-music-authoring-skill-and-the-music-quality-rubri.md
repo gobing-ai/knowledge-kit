@@ -4,15 +4,16 @@ name: Author the music-authoring skill and the music quality rubric
 status: backlog
 template: feature-impl
 created_at: 2026-11-18T22:16:16.524Z
-updated_at: "2026-11-19T00:14:06.546Z"
+updated_at: "2026-11-19T03:55:07.862Z"
 feature_id: D8
 
 ac_numbering: task-local
 ac_altitude: task-local
 estimate_hours: 10
+dependencies: ["0401", "0405"]
 ---
 
-## 0389. Author the music-authoring skill and the music quality rubric
+## 0402. Author the music-authoring skill and the music quality rubric
 
 ### Background
 
@@ -20,7 +21,7 @@ Implements: R1 — authoring skill; R2 — truth constraints in the skill; R3 �
 
 Quality gating in this platform is delivered as agent skills + `agent.run`, never as a plugin kind (ADR-007 amendment; `plugins/kk/skills/content-judge/SKILL.md`). The existing `audio-authoring` skill owns *spoken* audio (`VoiceScript`), and `content-judge` owns rubric-based evaluation with one shared verdict contract (`content-judge/SKILL.md:26-49`) that every workflow gate reads through a confidence-aware `jq` filter (`plugins/kk/workflows/judge-gated-publish-example.yaml:76`), pinned by `plugins/kk/tests/verdict-confidence.test.ts`. Music needs an authoring voice of its own plus a music rubric. It does not need a third judge or a second verdict shape.
 
-Re-scoped 2026-11-18: deterministic checks moved to 0394 (code, `checks.json`), which runs as a workflow state *before* the judge. The judge therefore never sees a take with a failing or unmeasured check. "No PASS on unmeasured criteria" is enforced by state order, not by trusting the LLM to obey a rubric line.
+Re-scoped 2026-11-18: deterministic checks moved to 0405 (code, `checks.json`), which runs as a workflow state *before* the judge. The judge therefore never sees a take with a failing or unmeasured check. "No PASS on unmeasured criteria" is enforced by state order, not by trusting the LLM to obey a rubric line.
 
 ### Requirements
 
@@ -37,7 +38,7 @@ Scenario: AC1 — The skill covers the authoring loop (req: R1)
   Given the music-authoring skill
   When brief, lyric, iterate and review are exercised on a sample idea in dry-run
   Then each operation produces its documented artifact under the run directory
-  And brief and iterate output validate against the 0384 MusicBrief schema via kk music render
+  And brief and iterate output validate against the 0397 MusicBrief schema via kk music render
   And each names its operator gate and how it resumes an interrupted run
 
 Scenario: AC2 — The skill states the model's real limits (req: R2)
@@ -72,12 +73,12 @@ Scenario: AC5 — The judge reads one bundle (req: R5)
 
 ### Design
 
-- **Two skills, one rubric, zero schema change (closed 2026-11-18).** Authoring stays in `music-authoring`, and evaluation stays in `content-judge` with one new rubric file. The first draft's `music-verdict.json` (per-check measured values, thresholds, craft scores) was a fork: it was a second file with a second shape, and it omitted `confidence`, so every existing gate would have read its PASS as `PASS!`. The numbers already have a home (0394 `checks.json`); the verdict only has to cite them.
+- **Two skills, one rubric, zero schema change (closed 2026-11-18).** Authoring stays in `music-authoring`, and evaluation stays in `content-judge` with one new rubric file. The first draft's `music-verdict.json` (per-check measured values, thresholds, craft scores) was a fork: it was a second file with a second shape, and it omitted `confidence`, so every existing gate would have read its PASS as `PASS!`. The numbers already have a home (0405 `checks.json`); the verdict only has to cite them.
 - **Measure, then judge, by state order.** The workflow runs `kk music check` and stops on non-zero before `judge`. The rubric's `checks.clean` must-pass is defence in depth, not the primary gate.
 - **BPM/key mismatch is a `warn` input, not a verdict.** The instance analysis is a model estimate, so a mismatch can push the craft score toward NEEDS_REVISION but cannot FAIL a take on its own.
 - **Anti-hallucination.** Every finding that cites a number quotes its unit and the tool that produced it from `checks.json` (`ffprobe`, `ffmpeg loudnorm`, `POST /api/ai/analyze`). No criterion may be scored from the prompt text alone.
-- **Dependency.** Blocked by 0388 (verbs produce the artifacts) and 0394 (`checks.json` shape). The rubric draft may start once 0394's check record shape is frozen.
-- **Estimate.** 7h: skill (4 operations) + rubric + rubric-table row + judge-input bundle + fixtures. Reduced from 10h because the deterministic checks moved to 0394.
+- **Dependency.** Blocked by 0401 (verbs produce the artifacts) and 0405 (`checks.json` shape). The rubric draft may start once 0405's check record shape is frozen.
+- **Estimate.** 7h: skill (4 operations) + rubric + rubric-table row + judge-input bundle + fixtures. Reduced from 10h because the deterministic checks moved to 0405.
 
 ### Plan
 

@@ -4,32 +4,33 @@ name: "Ship the music-gen generator plugin: lyria instance adapter, job and Cont
 status: backlog
 template: feature-impl
 created_at: 2026-11-18T22:16:14.376Z
-updated_at: "2026-11-19T00:14:06.546Z"
+updated_at: "2026-11-19T03:55:02.031Z"
 feature_id: D8
 
 ac_numbering: task-local
 ac_altitude: task-local
 estimate_hours: 10
+dependencies: ["0397"]
 ---
 
-## 0385. Ship the music-gen generator plugin: lyria instance adapter, job and Content mapping
+## 0398. Ship the music-gen generator plugin: lyria instance adapter, job and Content mapping
 
 ### Background
 
 Implements: R1 — plugin contract; R2 — live adapter with non-idempotent paid-call policy; R3 — cache-first analyze; R4 — offline adapter; R5 — Content mapping; R6 — artifact + take sidecar; R7 — CI-safe tests.
 
-0384 freezes the brief, render order and adapter contract; this task ships the plugin that implements them. Precedent: `image-gen` (`plugins/generations/image-gen/src/index.ts`) is a `kind: generator` plugin with provider adapters under `src/providers/`, a pure preset composer, and a first-class dry-run path (`KK_IMAGE_DRY_RUN`) that keeps the whole suite offline; `voice-gen` proves audio output is a legal generator result — `Content.format = 'audio'` with the artifact path carried alongside (`plugins/generations/voice-gen/src/index.ts:351`).
+0397 freezes the brief, render order and adapter contract; this task ships the plugin that implements them. Precedent: `image-gen` (`plugins/generations/image-gen/src/index.ts`) is a `kind: generator` plugin with provider adapters under `src/providers/`, a pure preset composer, and a first-class dry-run path (`KK_IMAGE_DRY_RUN`) that keeps the whole suite offline; `voice-gen` proves audio output is a legal generator result — `Content.format = 'audio'` with the artifact path carried alongside (`plugins/generations/voice-gen/src/index.ts:351`).
 
 The instance is an external service, so the adapter is the only place that knows HTTP. Everything downstream (CLI, workflow, judge) sees a typed job in and a typed artifact out.
 
 ### Requirements
 
 - [ ] R1. Ship `plugins/generations/music-gen` as a `kind: generator` plugin: `plugin.json` (`name`, `kind`, `entry: ./src/index.ts`, version, description), `package.json`, `tsconfig.json`, a README stub, and `runtime.requires` annotated per 0342 so `kk plugins check` validates it.
-- [ ] R2. Implement the live adapter against the 0384 contract: `POST /api/lyria/generate`, `GET /api/generations`, `POST /api/ai/analyze`; base URL from user config with an environment override; a generation timeout sized for a 30–120 s blocking call; the audio format and instance generation id read from the response. Apply the 0384 non-idempotent policy exactly: retry only on connect-phase failures, treat `401/402/403/404/429` and all-keys-rejected `502` as terminal, and reconcile against `GET /api/generations` after a timeout, socket reset or other `5xx`.
+- [ ] R2. Implement the live adapter against the 0397 contract: `POST /api/lyria/generate`, `GET /api/generations`, `POST /api/ai/analyze`; base URL from user config with an environment override; a generation timeout sized for a 30–120 s blocking call; the audio format and instance generation id read from the response. Apply the 0397 non-idempotent policy exactly: retry only on connect-phase failures, treat `401/402/403/404/429` and all-keys-rejected `502` as terminal, and reconcile against `GET /api/generations` after a timeout, socket reset or other `5xx`.
 - [ ] R3. Make `analyze` cache-first: read the take's instance manifest (via `GET /api/generations`) and return the cached `analysis` when present. Only call the paid `POST /api/ai/analyze` when no analysis is cached. The instance caches analysis per generation (`app/docs/guide/03-api-integration.md:68`), so a second paid analysis is pure waste.
 - [ ] R4. Implement the offline adapter (`KK_MUSIC_DRY_RUN=1`). It returns a deterministic short silent WAV and a synthetic manifest/analysis with zero network calls, and it is the default for the test suite.
 - [ ] R5. Map a resolved job onto the generator contract: `Content` with `format: 'audio'`; a body that carries liner notes (kk prompt text, lyrics, duration target, model, instance provider, instance id, analysis summary when present); and `references` pointing at the instance audio URL plus the kk sidecar path. Request echoes (`language`, `durationTarget`, `batchCount`) survive into metadata exactly as the instance recorded them, and are treated as absent (never defaulted) when the manifest lacks them.
-- [ ] R6. Persist one artifact per take into the job's run directory with deterministic naming, plus one sidecar per take (request digest from 0384, instance id, model, unit price charged, adopted-by-reconciliation flag). Never mirror the instance's `generations/` library into a kk workspace.
+- [ ] R6. Persist one artifact per take into the job's run directory with deterministic naming, plus one sidecar per take (request digest from 0397, instance id, model, unit price charged, adopted-by-reconciliation flag). Never mirror the instance's `generations/` library into a kk workspace.
 - [ ] R7. Cover the adapter with tests that run offline: success, format detection, manifest mapping, cache-first analyze, each terminal status, connect-refused retry bound, timeout → reconciliation adopt, timeout → reconciliation miss → fail, and malformed JSON. No network, no paid call, runnable in the repo's normal test target.
 
 ### Acceptance Criteria
@@ -44,7 +45,7 @@ Scenario: AC1 — The plugin is discoverable and checkable (req: R1)
 Scenario: AC2 — One take round-trips through the adapter (req: R2, R5)
   Given a stubbed instance that answers 200 with an MP3 body and a manifest
   When the plugin executes a confirmed one-take job
-  Then exactly one POST /api/lyria/generate is made with the kk prompt text, lyrics and request fields from 0384
+  Then exactly one POST /api/lyria/generate is made with the kk prompt text, lyrics and request fields from 0397
   And the returned Content has format audio, an artifact on disk, the instance generation id, and the format detected from the returned bytes
   And language, durationTarget and batchCount are echoed exactly as the manifest records them, absent when absent
 
@@ -87,10 +88,10 @@ Scenario: AC6 — The workspace boundary is respected (req: R6)
 - **`fetch`, no SDK.** The instance is plain JSON over HTTP, so a client dependency buys nothing. Keep the request/response types in `src/adapter/instance.ts` next to the mapping tests.
 - **No second failover layer.** The instance already tries its key list in order and refuses to fail over on request-level errors "so the account is not billed twice" (`app/docs/guide/04-app-integration.md:53`). kk's adapter adds only connect-phase retry and post-send reconciliation.
 - **Reconciliation match.** A library take matches when its `prompt` equals kk's sent prompt text byte for byte, its `model` matches, and its `generatedAt` ≥ the request start time. When several takes match, adopt the earliest and record the rest in the sidecar as `unclaimed` so the operator can see the extra spend.
-- **Takes are a client loop.** `takes: N` issues N sequential requests, and each persists or fails independently. A failure on take k leaves takes 1..k-1 on disk for resume (0387 dedupe skips them).
+- **Takes are a client loop.** `takes: N` issues N sequential requests, and each persists or fails independently. A failure on take k leaves takes 1..k-1 on disk for resume (0400 dedupe skips them).
 - **Artifact naming.** `<slug>-<model>-<instanceId>.<ext>` keeps every take traceable to the instance library by id, and two takes of the same brief cannot collide.
-- **Sidecar, not manifest copy.** The instance owns `generations/<id>.json`. kk writes `<artifact>.take.json` with only what the workflow needs. 0387 reads it for dedupe and spend, and 0394 adds measurements to it.
-- **Dependency.** Blocked by 0384. Blocks 0386, 0387 and 0394.
+- **Sidecar, not manifest copy.** The instance owns `generations/<id>.json`. kk writes `<artifact>.take.json` with only what the workflow needs. 0400 reads it for dedupe and spend, and 0405 adds measurements to it.
+- **Dependency.** Blocked by 0397. Blocks 0399, 0400 and 0405.
 - **Estimate.** 10h: adapter + reconciliation + cache-first analyze + job/mapping + offline adapter + tests.
 
 ### Plan

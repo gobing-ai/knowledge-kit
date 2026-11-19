@@ -4,21 +4,22 @@ name: Measure takes and loudness-normalize to a delivery profile
 status: backlog
 template: feature-impl
 created_at: 2026-11-18T23:37:07.663Z
-updated_at: "2026-11-19T00:14:06.546Z"
+updated_at: "2026-11-19T03:55:03.083Z"
 feature_id: D8
 
 ac_altitude: task-local
 ac_numbering: task-local
 estimate_hours: 8
+dependencies: ["0398"]
 ---
 
-## 0394. Measure takes and loudness-normalize to a delivery profile
+## 0405. Measure takes and loudness-normalize to a delivery profile
 
 ### Background
 
 Implements: R1 — measurement; R2 — take checks; R3 — loudness normalization; R4 — delivery check; R5 — delivery profiles; R6 — offline tests.
 
-Split out of 0389/0390 on 2026-11-18. Two problems in the original plan made this its own task. First, nothing owned the ffmpeg code: 0388 listed `master` as a verb, 0389 described "deterministic checks" inside a skill task, and 0390 orchestrated a master state that no task implemented. Second, the gate order was wrong: 0389 checked integrated loudness and true peak against the delivery target on the **raw take**, but 0390 runs judge *before* master. Raw Lyria output loudness is arbitrary, so every take would fail a check that only the mastered file can pass.
+Split out of 0402/0403 on 2026-11-18. Two problems in the original plan made this its own task. First, nothing owned the ffmpeg code: 0401 listed `master` as a verb, 0402 described "deterministic checks" inside a skill task, and 0403 orchestrated a master state that no task implemented. Second, the gate order was wrong: 0402 checked integrated loudness and true peak against the delivery target on the **raw take**, but 0403 runs judge *before* master. Raw Lyria output loudness is arbitrary, so every take would fail a check that only the mastered file can pass.
 
 So this task owns all audio-engineering code: measurement, the pre-master take checks, loudness normalization ("master" means loudness and true-peak normalization only — no EQ, compression or creative mastering), and the post-master delivery check. It stays inside feature Q because the feature's deliverable is a delivery-ready file, and feature R4 is unverifiable without measurement.
 
@@ -30,7 +31,7 @@ Precedent: `voice-gen` already shells out to ffmpeg behind an injectable runner,
 - [ ] R2. Implement **take checks** (pre-master) that write `<artifact>.checks.json` and exit non-zero on any `fail`. The checks: duration vs `durationTarget` (Pro only; tolerance ±20% or ±10 s, whichever is larger); Clip duration within 25–35 s; leading silence ≤ 1.0 s; trailing silence ≤ 3.0 s; presence of instance analysis. BPM/key/section-count consistency between the brief and the instance analysis is reported as `warn`, never `fail`, because the analysis is itself a model estimate. Every check record carries `id`, `measured`, `threshold`, `unit`, `source` (tool + version) and `result: pass|warn|fail`. A check that could not be measured is `fail`, never skipped.
 - [ ] R3. Implement loudness normalization in `src/audio/master.ts`: two-pass ffmpeg `loudnorm` (pass-1 measurements fed to pass 2) toward the selected delivery profile, with explicit `-ar` from the profile, because `loudnorm` upsamples internally to 192 kHz and would otherwise emit a 192 kHz file. The output goes to a new file `<artifact>.<profile>.<ext>`, and the provider take is never modified.
 - [ ] R4. Implement the **delivery check** (post-master): re-measure the encoded output file, not the intermediate, and fail when integrated loudness is outside the profile target ±1 LU or true peak exceeds the profile ceiling. Lossy encoding can push true peak back over the ceiling, which is why the encoded file is the one measured. Append the result to `checks.json` as `delivery.*` checks. A failure does not loop into re-mastering; it fails with the measured values.
-- [ ] R5. Resolve delivery profiles from user config `music.delivery.<name>: { lufs, truePeak, lra?, container, sampleRate }` with exactly one built-in, `streaming` (`-14 LUFS`, `-1 dBTP`, `wav`, `44100`). An unknown profile name fails, listing the defined profiles. No channel-specific profile (小红书 / B站 / 视频号) ships with numbers until a measured reference upload backs them (see 0391).
+- [ ] R5. Resolve delivery profiles from user config `music.delivery.<name>: { lufs, truePeak, lra?, container, sampleRate }` with exactly one built-in, `streaming` (`-14 LUFS`, `-1 dBTP`, `wav`, `44100`). An unknown profile name fails, listing the defined profiles. No channel-specific profile (小红书 / B站 / 视频号) ships with numbers until a measured reference upload backs them (see 0404).
 - [ ] R6. Cover measurement parsing, every take check, two-pass argument construction, the 192 kHz guard and the delivery check with offline tests over captured ffmpeg/ffprobe output fixtures and the injected runner. No ffmpeg is needed in CI.
 
 ### Acceptance Criteria
@@ -82,12 +83,12 @@ Scenario: AC6 — The suite needs no ffmpeg (req: R6)
 
 ### Design
 
-- **Take checks vs delivery checks.** A take check answers "is this generation usable?" (duration, silence, analysis present) and runs before the judge. A delivery check answers "does the file meet the channel target?" and runs after master. Loudness belongs only to the second, which fixes the gate-order bug in the original 0389/0390.
+- **Take checks vs delivery checks.** A take check answers "is this generation usable?" (duration, silence, analysis present) and runs before the judge. A delivery check answers "does the file meet the channel target?" and runs after master. Loudness belongs only to the second, which fixes the gate-order bug in the original 0402/0403.
 - **Default container `wav` (closed 2026-11-18).** The instance delivers MP3 for Pro and Clip alike via OpenRouter (`app/docs/guide/03-api-integration.md:101,112`). Normalizing and re-encoding to MP3 is a second lossy generation, and target platforms transcode again on upload. Lossless output avoids stacking losses, and a profile may still choose `mp3` explicitly.
 - **Loudness-range is optional.** `lra` is passed to loudnorm only when the profile sets it, because forcing an LRA on music invites the dynamic (non-linear) mode and audible pumping.
 - **No re-master loop.** A delivery-check failure means the profile is unreachable for this take, for example a very dynamic underscore pushed to a hot target. Looping would hide that. Fail with numbers and let the operator pick a profile.
 - **Thresholds are defaults, not law.** Duration and silence tolerances live in one constants block with the rationale beside them. Making them configurable is deferred until a real take disagrees with them.
-- **Dependency.** Blocked by 0385 (take sidecar, analysis). Blocks 0388 (wires `check`/`master` verbs), 0389 (the rubric reads `checks.json`) and 0390.
+- **Dependency.** Blocked by 0398 (take sidecar, analysis). Blocks 0401 (wires `check`/`master` verbs), 0402 (the rubric reads `checks.json`) and 0403.
 - **Estimate.** 8h: measure + parsers, take checks, two-pass master, delivery check, profile resolution, fixture tests.
 
 ### Plan
