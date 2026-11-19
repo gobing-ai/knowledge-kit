@@ -107,6 +107,34 @@ export {
     renderTakeRequests,
     serializeRequest,
 } from './request';
+export {
+    type AnalyzeEstimateInput,
+    DEFAULT_TAKES_CAP,
+    type DedupeDecision,
+    type DedupeScanInput,
+    enforceRunScopedDedupe,
+    estimateAnalyze,
+    estimateGenerate,
+    findRunDirDuplicates,
+    formatEstimate,
+    formatUsd,
+    type GenerateEstimateInput,
+    type GenerationPlan,
+    type GenerationPlanInput,
+    HARD_TAKES_CAP,
+    planGeneration,
+    type RunDirDuplicate,
+    requireConfirmation,
+    resolveTakeCount,
+    resolveTakesCap,
+    type SpendEmit,
+    type SpendEstimate,
+    type SpendKind,
+    SpendRefusal,
+    type SpendRequest,
+    type TakeDigestEntry,
+    withConfirmation,
+} from './spend';
 
 if (import.meta.main) {
     const { main } = await import('./plugin');

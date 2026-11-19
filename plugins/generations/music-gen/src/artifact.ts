@@ -92,9 +92,12 @@ export function takeArtifactName(
     return `${slug}-${model}-${safeInstanceId(instanceId)}.${format}`;
 }
 
+/** Suffix that marks a take sidecar; the spend guard's dedupe scan keys off it (task 0400 R3). */
+export const TAKE_SIDECAR_SUFFIX = '.take.json';
+
 /** `<artifact>.take.json` — the sidecar filename for one take. */
 export function takeSidecarName(artifactFileName: string): string {
-    return `${artifactFileName}.take.json`;
+    return `${artifactFileName}${TAKE_SIDECAR_SUFFIX}`;
 }
 
 /** One take's sidecar. Field ownership is per key so 0400 and 0405 extend it, never replace it. */
@@ -123,6 +126,8 @@ export interface TakeSidecar {
     unclaimed: UnclaimedTake[];
     forced: boolean;
     reason: string | null;
+    /** Workflow run this take belongs to, when the caller knows it (0400 R4). */
+    runId?: string;
     createdAt: string;
     generatedAt?: string;
     /** Absolute path of the artifact this sidecar describes. */
@@ -147,6 +152,8 @@ export interface TakeSidecarOptions {
     unclaimed: UnclaimedTake[];
     forced: boolean;
     reason?: string;
+    /** Workflow run id, recorded verbatim when present (0400 R4). */
+    runId?: string;
     /** Injected clock so a test can pin `createdAt`. */
     now?: () => number;
     language: string;
@@ -177,6 +184,7 @@ export function buildTakeSidecar(options: TakeSidecarOptions): TakeSidecar {
         unclaimed: options.unclaimed,
         forced: options.forced,
         reason: options.reason ?? null,
+        ...(options.runId === undefined ? {} : { runId: options.runId }),
         createdAt,
         ...(options.generatedAt === undefined ? {} : { generatedAt: options.generatedAt }),
         artifactPath: options.artifactPath,

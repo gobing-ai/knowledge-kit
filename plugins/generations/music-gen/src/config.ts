@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
+import { resolveTakesCap } from './spend';
 
 /**
  * Music plugin configuration (task 0398 R2; contract frozen by
@@ -35,6 +36,7 @@ export const MUSIC_ENV_KEYS = {
     timeoutMs: 'KK_MUSIC_TIMEOUT_MS',
     dryRun: 'KK_MUSIC_DRY_RUN',
     configPath: 'KK_CONFIG',
+    runId: 'KK_MUSIC_RUN_ID',
 } as const;
 
 /** Per-model and per-analyze unit prices. `analyze` is unpriced (`null`) until the instance bills it. */
@@ -57,7 +59,11 @@ export interface MusicConfig {
     timeoutMs: number;
     connectTimeoutMs: number;
     prices: MusicPrices;
+    /** Takes per invocation, resolved by the spend guard's single rule (0400 R4): default 2, never above 4. */
+    takesCap: number;
     dryRun: boolean;
+    /** `KK_MUSIC_RUN_ID`: the workflow run a take belongs to, recorded in its sidecar (0400 R4). */
+    runId?: string;
 }
 
 /** A resolved configuration plus the provenance of each setting. */
@@ -67,6 +73,7 @@ export interface ResolvedMusicConfig extends MusicConfig {
         timeoutMs: MusicConfigSource;
         connectTimeoutMs: MusicConfigSource;
         prices: MusicConfigSource;
+        takesCap: MusicConfigSource;
         dryRun: MusicConfigSource;
     };
 }
@@ -89,6 +96,8 @@ export interface MusicConfigDocument {
     timeoutMs?: number;
     connectTimeoutMs?: number;
     prices?: Partial<MusicPrices>;
+    /** `music.takesCap`: the 0400 take cap (default 2, never above 4). */
+    takesCap?: number;
 }
 
 /** Resolve the kk config path: `KK_CONFIG`, else `<home>/.config/kk/config.yaml`. */
@@ -168,6 +177,7 @@ export function parseMusicConfigDocument(parsed: unknown): MusicConfigDocument {
         readPositiveInt(music, 'timeoutMs', 'music.timeoutMs') ??
         readPositiveInt(instance, 'timeoutMs', 'music.instance.timeoutMs');
     const connectTimeoutMs = readPositiveInt(instance, 'connectTimeoutMs', 'music.instance.connectTimeoutMs');
+    const takesCap = readPositiveInt(music, 'takesCap', 'music.takesCap');
     const result: MusicConfigDocument = {};
     if (baseUrl !== undefined) {
         result.baseUrl = baseUrl;
@@ -177,6 +187,9 @@ export function parseMusicConfigDocument(parsed: unknown): MusicConfigDocument {
     }
     if (connectTimeoutMs !== undefined) {
         result.connectTimeoutMs = connectTimeoutMs;
+    }
+    if (takesCap !== undefined) {
+        result.takesCap = takesCap;
     }
     if (isRecord(music.prices)) {
         const prices = music.prices;
@@ -263,6 +276,7 @@ export async function resolveMusicConfig(
     const timeoutMs = envTimeout ?? document.timeoutMs;
     const connectTimeoutMs = document.connectTimeoutMs;
     const dryRun = env[MUSIC_ENV_KEYS.dryRun] === '1';
+    const runId = env[MUSIC_ENV_KEYS.runId]?.trim();
 
     const priceSource: MusicConfigSource = document.prices === undefined ? 'default' : readable ? 'config' : 'default';
 
@@ -271,7 +285,11 @@ export async function resolveMusicConfig(
         timeoutMs: timeoutMs ?? DEFAULT_GENERATE_TIMEOUT_MS,
         connectTimeoutMs: connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
         prices: { ...DEFAULT_MUSIC_PRICES, ...(document.prices ?? {}) },
+        // `music.takesCap` is validated by the spend guard's own rule, so a cap above 4 is
+        // rejected here — at load, before any estimate, dedupe or socket (0400 AC4).
+        takesCap: resolveTakesCap(document.takesCap),
         dryRun,
+        ...(runId === undefined || runId === '' ? {} : { runId }),
         sources: {
             baseUrl:
                 envBaseUrl !== undefined && envBaseUrl !== ''
@@ -282,6 +300,7 @@ export async function resolveMusicConfig(
             timeoutMs: envTimeout !== undefined ? 'env' : document.timeoutMs === undefined ? 'default' : 'config',
             connectTimeoutMs: connectTimeoutMs === undefined ? 'default' : 'config',
             prices: priceSource,
+            takesCap: document.takesCap === undefined ? 'default' : 'config',
             dryRun: 'env',
         },
     };

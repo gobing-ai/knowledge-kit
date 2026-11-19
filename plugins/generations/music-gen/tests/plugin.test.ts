@@ -24,8 +24,12 @@ const CONFIG: MusicConfig = {
     timeoutMs: 180_000,
     connectTimeoutMs: 5_000,
     prices: DEFAULT_MUSIC_PRICES,
+    takesCap: 2,
     dryRun: true,
 };
+
+/** The 0400 confirmation these 0398 cases assume: they exercise generation, not the gate. */
+const CONFIRMED = { spend: { confirmed: true } } as const;
 
 const CLIP_BRIEF = `title: Midnight Cable Car
 model: clip
@@ -47,6 +51,8 @@ interface RunResult {
     content: Content;
     files: string[];
     sidecars: TakeSidecar[];
+    /** The 0400 pre-spend estimate blocks the entry emitted, in order. */
+    estimates: string[];
 }
 
 /** Write a DocList whose first doc carries the brief, run the entry, collect the run directory. */
@@ -62,6 +68,7 @@ async function runJob(options: {
     files?: Record<string, string>;
 }): Promise<RunResult> {
     const dir = mkdtempSync(join(tmpdir(), 'kk-music-gen-'));
+    const estimates: string[] = [];
     const doc: Doc = {
         id: 'brief-1',
         body: options.brief ?? CLIP_BRIEF,
@@ -78,6 +85,8 @@ async function runJob(options: {
         client: options.client ?? createOfflineInstance(),
         config: CONFIG,
         now: () => 1_700_000_000_000,
+        spend: { confirmed: true },
+        emit: (block: string) => estimates.push(block),
         ...(options.images === undefined
             ? {}
             : {
@@ -96,7 +105,7 @@ async function runJob(options: {
     const sidecars = files
         .filter((name) => name.endsWith('.take.json'))
         .map((name) => JSON.parse(readFileSync(join(dir, name), 'utf8')) as TakeSidecar);
-    return { dir, content, files, sidecars };
+    return { dir, content, files, sidecars, estimates };
 }
 
 describe('AC6 — the workspace boundary is respected', () => {
@@ -174,6 +183,7 @@ describe('AC6 — the workspace boundary is respected', () => {
             const error = await processGeneratorIO(inputPath, join(dir, 'content.json'), {
                 client,
                 config: CONFIG,
+                ...CONFIRMED,
             }).catch((err: unknown) => err as Error);
             expect(error).toBeInstanceOf(Error);
             expect((error as Error).message).toContain('take 2 of 2 failed');
@@ -334,6 +344,7 @@ describe('job input', () => {
             const error = await processGeneratorIO(inputPath, join(dir, 'content.json'), {
                 client: createOfflineInstance(),
                 config: CONFIG,
+                ...CONFIRMED,
             }).catch((err: unknown) => err as Error);
             expect((error as Error).message).toContain('empty');
         } finally {
@@ -349,6 +360,7 @@ describe('job input', () => {
             const error = await processGeneratorIO(inputPath, join(dir, 'content.json'), {
                 client: createOfflineInstance(),
                 config: CONFIG,
+                ...CONFIRMED,
             }).catch((err: unknown) => err as Error);
             expect((error as Error).message).toContain('docs[0].body');
         } finally {
@@ -387,6 +399,7 @@ instrumental: true
             const error = await processGeneratorIO(inputPath, join(dir, 'content.json'), {
                 client: createOfflineInstance(),
                 config: CONFIG,
+                ...CONFIRMED,
             }).catch((err: unknown) => err as Error);
             expect((error as Error).message).toContain('Invalid music job spec');
         } finally {
@@ -411,7 +424,7 @@ describe('the plugin entry', () => {
         process.env.KK_MUSIC_DRY_RUN = '1';
         process.env.KK_CONFIG = join(dir, 'no-such-config.yaml');
         try {
-            expect(await main(['--in', inputPath, '--out', outputPath])).toBe(0);
+            expect(await main(['--in', inputPath, '--out', outputPath, '--yes'])).toBe(0);
             const content = JSON.parse(readFileSync(outputPath, 'utf8')) as Content;
             expect(content.format).toBe('audio');
             expect((content.metadata as { provider?: string }).provider).toBe('offline');
@@ -445,7 +458,7 @@ describe('the plugin entry', () => {
                     { id: 'brief-1', body: CLIP_BRIEF, metadata: { musicGen: { presets: { theme: { name: '' } } } } },
                 ]),
             );
-            expect(await main(['--in', inputPath, '--out', join(dir, 'content.json')])).toBe(1);
+            expect(await main(['--in', inputPath, '--out', join(dir, 'content.json'), '--yes'])).toBe(1);
         } finally {
             if (previousDryRun === undefined) {
                 delete process.env.KK_MUSIC_DRY_RUN;
@@ -491,6 +504,7 @@ describe('adapter helpers', () => {
             const badInput = await processGeneratorIO(inputPath, join(dir, 'content.json'), {
                 client: createOfflineInstance(),
                 config: CONFIG,
+                ...CONFIRMED,
             }).catch((err: unknown) => err as Error);
             expect((badInput as Error).message).toContain('Invalid DocList input');
 
@@ -503,6 +517,7 @@ describe('adapter helpers', () => {
             const firstTake = await processGeneratorIO(inputPath, join(dir, 'content.json'), {
                 client: failing,
                 config: CONFIG,
+                ...CONFIRMED,
             }).catch((err: unknown) => err as Error);
             expect((firstTake as Error).message).toContain('402');
             expect(readdirSync(dir).filter((name) => name.endsWith('.wav') || name.endsWith('.mp3'))).toHaveLength(0);

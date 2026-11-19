@@ -179,10 +179,38 @@ config file is the existing kk user config (`KK_CONFIG`, else `~/.config/kk/conf
 | Connect timeout (ms) | — | `music.instance.connectTimeoutMs` | `5000` |
 | Offline adapter | `KK_MUSIC_DRY_RUN=1` | — | unset (live) |
 | Unit prices | — (0400) | `music.prices.{pro,clip,analyze}` | `pro 0.08`, `clip 0.04`, `analyze` unpriced |
+| Take cap | — (0400) | `music.takesCap` | `2`, never above `4` |
+| Workflow run id | `KK_MUSIC_RUN_ID` | — | unset (recorded in the sidecar when present) |
 
 A key that is *present* but of the wrong type throws, naming the key — a silently defaulted endpoint
 or timeout would send a paid request somewhere unexpected. The default base URL is provisional: it
 assumes the instance listens on loopback port 3000, and 0404's dogfood pins the real value.
+
+### 3.1.1 The spend guard (task 0400)
+
+One enforcement point, `src/spend.ts`, runs before the adapter exists — so a refused run prints its
+estimate and stops without opening a socket:
+
+| Step | Rule | Refusal names |
+| --- | --- | --- |
+| Estimate | prompt, resolved model, takes, unit price, total from `music.prices`; `analyze` has no default and renders `unpriced` | — |
+| Confirmation | no paid call without `--yes` (or the workflow var the HITL gate sets); an unpriced call still needs it | `--yes` |
+| Dedupe | the 0397 per-take digest is compared with the sidecars in the **run directory**; a match prints the existing artifact path and digest | `--force --reason <text>` |
+| Takes cap | `music.takesCap` (default 2, hard max 4); over the cap is refused, never trimmed | `--takes` (and the cap) |
+
+```bash
+# print the cost and stop: no socket, no artifact (exit 0)
+bun plugins/generations/music-gen/src/index.ts --in docs.json --out content.json --estimate-only
+
+# a paid run needs --yes; a deliberate re-roll needs --force --reason
+bun plugins/generations/music-gen/src/index.ts --in docs.json --out content.json --yes
+bun plugins/generations/music-gen/src/index.ts --in docs.json --out content.json --yes --force --reason "first take was unusable"
+```
+
+The dedupe scope is the run directory, not the digest: the same brief in another topic's run
+directory is a legitimate re-roll. A resumed run that re-requests an already-paid take is therefore
+refused by default — resume it with `--force --reason` so the re-spend is recorded, never repeated
+silently.
 
 ### 3.2 The paid-call policy
 
@@ -221,8 +249,9 @@ unit price charged, the adoption flag, the unclaimed extra takes, the exact requ
 manifest lacked them, never defaulted). The instance's `generations/` library is never mirrored into a
 kk workspace.
 
-`takes: N` is N sequential single-take requests. A failure on take k leaves takes 1..k-1 on disk for
-a resume (0400's run-scoped dedupe skips them) and writes no `--out` file.
+`takes: N` is N sequential single-take requests. A failure on take k leaves takes 1..k-1 on disk — a
+resume reaches them through 0400's dedupe, which refuses to pay for a take the run already owns unless
+the operator passes `--force --reason` — and writes no `--out` file.
 
 ### 3.4 Offline
 
