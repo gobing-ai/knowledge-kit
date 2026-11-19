@@ -166,6 +166,14 @@ const DEFAULT_CHECK_TIMEOUT_MS = 30_000;
  * caller kills the probe at that deadline and a killed probe yields no verdict (2026-11-19).
  */
 const VERDICT_PRINT_MARGIN_MS = 2_000;
+/**
+ * Every pass also pays a browser launch (~20 s on this host) that the auth wait does not count, so
+ * each pass draws that allowance from the same deadline. Without it a two-pass channel whose session
+ * expired needed launch + budget PER PASS and was killed mid-verdict by `kk plugin check`
+ * (2026-11-19, shipinhao: `malformed probe output` for a probe that prints a clean refusal).
+ * shortcut: a fixed launch estimate; upgrade if a channel's launch time proves it wrong.
+ */
+const PASS_LAUNCH_ALLOWANCE_MS = 20_000;
 const DEFAULT_STEP_TIMEOUT_MS = 30_000;
 const DEFAULT_POLL_MS = 500;
 const ATTACH_POLL_MS = 100;
@@ -435,7 +443,8 @@ export async function checkChannelSession(
     const printMarginMs = Math.min(VERDICT_PRINT_MARGIN_MS, Math.floor(timeoutMs / 4));
 
     for (const headless of passes) {
-        const remainingMs = deadline - Date.now() - printMarginMs;
+        const remainingMs =
+            deadline - Date.now() - printMarginMs - Math.min(PASS_LAUNCH_ALLOWANCE_MS, Math.floor(timeoutMs / 3));
         if (remainingMs <= 0) break;
         try {
             await withProfilePage(
