@@ -59,6 +59,10 @@ interface FakeOptions {
     confirmClickRejects?: boolean;
     /** Row counts returned per 音频管理 row read, in order; the last repeats. */
     rows?: number[];
+    /** The 封面 tile keeps showing an upload percentage, i.e. the file never settles. */
+    coverUploading?: boolean;
+    /** Inline validation the form renders when the submit is refused (page never leaves the form). */
+    submitRefusal?: string;
 }
 
 /**
@@ -100,6 +104,14 @@ function fakePage(options: FakeOptions = {}): { page: Page; calls: string[] } {
                 if (selector.includes('button:text-is("确认")') && !selector.includes('发表')) {
                     if (options.cropDialog === false) return 0;
                     return cropConfirmed ? 0 : 1;
+                }
+                // The crop dialog and its cropper image: open from the cover file until 确认 lands.
+                if (selector.includes('cropper-wrap') || selector.includes('编辑音频封面')) {
+                    return options.cropDialog === false || cropConfirmed ? 0 : 1;
+                }
+                if (selector.includes('%')) return options.coverUploading === true ? 1 : 0;
+                if (options.submitRefusal !== undefined && selector === `text=${options.submitRefusal}`) {
+                    return submitted ? 1 : 0;
                 }
                 if (selector.includes('请上传封面')) return coverDirty ? 1 : 0;
                 if (selector.includes('确认发表')) return options.confirm === true ? (confirmClicked ? 0 : 1) : 0;
@@ -167,7 +179,16 @@ function fakePage(options: FakeOptions = {}): { page: Page; calls: string[] } {
             calls.push('goto');
             afterForm = false;
         },
-        url: () => (submitted ? MANAGER : afterForm && options.openForm !== false ? CREATE : MANAGER),
+        // A refused submit never leaves the create form (measured 2026-11-18); a successful one
+        // lands back on 音频管理, which is where the receipt is read.
+        url: () =>
+            submitted
+                ? options.submitRefusal !== undefined
+                    ? CREATE
+                    : MANAGER
+                : afterForm && options.openForm !== false
+                  ? CREATE
+                  : MANAGER,
         waitForTimeout: async (ms: number) => {
             calls.push(`wait ${ms}`);
         },
@@ -304,6 +325,16 @@ describe('pendingAudioFlow (recon-grounded steps)', () => {
         expect((await run()).error).toContain('发表音频 form never opened');
     });
 
+    it('names the inline validation when the form refuses the submit', async () => {
+        // Measured 2026-11-18: the page stays on /platform/post/createAudio and renders the refusal
+        // inline; reporting it beats a 30 s receipt wait that can only say "unknown".
+        const { run } = pending({}, { coverAccepted: true, submitRefusal: '请上传封面' });
+        const result = await run();
+        expect(result.ok).toBe(false);
+        expect(result.metadata?.stage).toBe('audio-submit-validation');
+        expect(String(result.error)).toContain('请上传封面');
+    });
+
     it('fails the upload step when the drop zone is absent', async () => {
         const { run } = pending({}, { zone: false });
         expect((await run()).error).toContain('audio drop zone');
@@ -342,6 +373,13 @@ describe('pendingAudioFlow (recon-grounded steps)', () => {
         expect(calls.some((call) => call === 'mouse.click')).toBe(true);
         expect(calls.some((call) => call.startsWith('files '))).toBe(true);
         expect(result.ok, calls.join(' | ')).toBe(true);
+    });
+
+    it('waits for the 封面 upload to settle before it looks for the crop dialog', async () => {
+        // 2026-11-18: the file was chosen, the tile showed 25%, the flow moved on, and the submit was
+        // refused client-side with 「请上传封面」 while the page never left the form.
+        const result = await attachAudioCover(fakePage({ coverUploading: true }).page, COVER, 5);
+        expect(result).toContain('upload never settled');
     });
 
     it('refuses when the crop dialog never appears', async () => {

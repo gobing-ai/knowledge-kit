@@ -91,13 +91,25 @@ bootstrap:
         timeoutMs: 3600000
         command: spur --no-logo history import && spur --no-logo history analyze
 
-      # 05:00 daily: full-corpus import (checkpoint resume self-heals gaps),
-      # then the twelve-section history-anatomy diagnostic report headless. On
-      # a cache hit the workflow skips the token-expensive model stages and
-      # republishes provenance (ADR-079), so a ready report costs no tokens.
+      # 08:15 daily (moved from 05:03 on 2026-11-18): full-corpus import
+      # (checkpoint resume self-heals gaps), then the twelve-section
+      # history-anatomy diagnostic report headless. On a cache hit the
+      # workflow skips the token-expensive model stages and republishes
+      # provenance (ADR-079), so a ready report costs no tokens.
       # Ends with database maintenance (PRAGMA optimize + wal_checkpoint).
+      #
+      # Why 08:15 and not 05:03: one job worker serialises every job, and the
+      # 04:30 voice run needs ~2.6 h (audio alone ~2 h) — on 11-18 it ran
+      # 04:30-07:06 and this job, queued at 05:03, only started at 07:06:29,
+      # starving the */30 7-23 refresh ticks and sitting in front of the 07:00
+      # overseas-rss publish, which does have a deadline. 08:15 is after the
+      # measured generate finish (06:30-07:10), after that publish window, and
+      # after the 07:00/07:30 refresh ticks. The report has no deadline
+      # (16-18 min on a cache hit, up to ~4.5 h cold). 02:00 is not an option:
+      # the daily window would be nearly empty (measured 11-18 durations from
+      # queue_jobs: kk-daily-ai-voice 156 min, history report 16-270 min).
       - name: history-daily-report
-        cron: "3 5 * * *"
+        cron: "15 8 * * *"
         # 3h: every run since creation (33/33) died on the 600s default, because
         # full-corpus import alone costs ~310s and the workflow adds agent stages.
         # Raised 2h->3h 2026-11-06: worst-case import ~18m + wide analyze legs ~38m
@@ -110,11 +122,43 @@ bootstrap:
         # gemini-3.8-flash-high) after the 2026-11-07 run f91131fa — enrich OK at
         # 13m43s but validate FAIL -> correct x2 (19m34s + 9m49s) -> still FAIL ->
         # retry-exhausted. Pin advertises in vars (parsed as {name}); no workflow edit.
+        #
+        # 2026-11-18: this job had been failing since 11-12 (and failing enrich on
+        # 11-08) with `agent.run 'enrich' (agy-gemini) exited with code 3` after
+        # 2-3ms and empty stdout/stderr. That signature is `agy` NOT LOGGED IN, not
+        # a workflow bug: agy's own log says "You are not logged into Antigravity",
+        # print mode's silent auth fails, and the OAuth prompt cannot complete in a
+        # headless child. The pin makes an auth outage fatal for the whole report,
+        # so check it first:
+        #   agy -p OK --mode text        # prints an OAuth URL; complete it in a browser
+        #   agy models                   # exits 0 only once the login is live
+        # Spur has no auth probe (`spur agent doctor` reports the BINARY, not the
+        # login), so this comment is the only preflight there is. `agy models` is
+        # the job's first command for that reason: an outage fails in a second with
+        # "Please sign in to view available models" instead of a code-3 mystery.
+        #
+        # The PATH export is the second half of the same outage class: `agy` lives in
+        # ~/.local/bin, which is NOT on this server's PATH (/Users/robin/.bun/bin:
+        # /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin), and `spur agent run --agent
+        # agy-gemini` then answers "Agent 'antigravity-cli' is not installed or not
+        # runnable" — the same silently-dead executor from the other direction.
+        #
+        # FAILOVER, not a second pin (2026-11-18): the probe now CHOOSES the pin. Spur
+        # has no failover for a live-but-dead executor — `resolveRole`'s checkUsable is
+        # install+version only, and DoctorRunner hardcodes probeAuth:false — so a pin
+        # to a logged-out CLI kills the run at its first agent stage. Its one built-in
+        # re-roll is for a DISABLED pin, and nothing marks an auth outage disabled.
+        # `grok-4.7` is the fallback because it is the next enabled capable native pair
+        # (capable-2) and probed alive on 11-18; `pi-sol` (capable-2) probed dead the
+        # same day. Both stay honest: this job still prefers agy-gemini's capable-1
+        # native gemini when it answers.
         timeoutMs: 10800000
         command: >-
+          export PATH="$HOME/.local/bin:$PATH" &&
+          if agy models >/dev/null 2>&1; then R=agy-gemini; else R=grok-4.7; fi &&
           spur --no-logo history import --source all &&
           spur --no-logo workflow run config/workflows/history-anatomy.yaml --quiet
-          --vars '{"stepTimeoutMs":"5400000","__executor.reviewer":"{\"name\":\"agy-gemini\"}"}' &&
+          --vars "{\"stepTimeoutMs\":\"5400000\",\"__executor.reviewer\":\"{\\\"name\\\":\\\"$R\\\"}\"}" &&
           spur --no-logo self maintain
 
       # 04:30 daily: kk-daily-ai-voice2 end-to-end over the kk store (extract →

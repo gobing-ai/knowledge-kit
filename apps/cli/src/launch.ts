@@ -171,16 +171,23 @@ export interface LaunchWorkflowOptions {
 
 const ANSI_RE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*[A-Za-z]`, 'g');
 
-/** The last non-empty stderr line (the port of the legacy `named` truncation), capped at 240 chars. */
+const DETAIL_BUDGET = 240;
+
+/**
+ * The last two non-empty stderr lines (the port of the legacy `named` truncation), capped at 240
+ * chars. A cut is marked with a leading `…`: an unmarked tail slice once turned the registry line
+ * `…workflow.action.output` into a receipt that read `workflow failed: tput"}`, hiding the cause
+ * (2026-11-18).
+ */
 function refusalDetail(stdout: string, stderr: string, exitCode: number | null): string {
     const text = `${stderr}${stdout}`.replace(ANSI_RE, '').trim();
     const named = text
         .split('\n')
         .filter((line) => line.trim() !== '')
         .slice(-2)
-        .join(' | ')
-        .slice(-240);
-    return named !== '' ? named : `exit ${exitCode ?? '?'}`;
+        .join(' | ');
+    const detail = named.length > DETAIL_BUDGET ? `…${named.slice(-(DETAIL_BUDGET - 1))}` : named;
+    return detail !== '' ? detail : `exit ${exitCode ?? '?'}`;
 }
 
 function errorText(error: unknown): string {
