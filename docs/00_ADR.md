@@ -2002,6 +2002,33 @@ built-in, and `channels` is applied only by the named `publish-plan`, whose rows
 `kk-daily-publish3` / `kk-itc-publish-tail` are tasks 0365–0369.
 **Detail:** `docs/design/content-pipeline-consolidation.md`, tasks 0363–0364.
 
+**Amendment 2026-11-19 (pre-freeze localization, task 0409).** The G61 migration dropped voice3's
+`translate` state, and the digest publisher had never emitted en/ja itself — so every ordinary day
+produced a zh-only locale set that the site's orchestrator refuses for a `sub-category:ai-daily` post
+(`publish-orchestrator.ts` `discoverLocaleFiles` + its digest guard). No decision above changes; the
+nodes and the payload are placed by it:
+
+- **Decision 7 placement.** Translation is a model call, so it is one `agent.run` node (`localize`,
+  role `scribe`, the workflow's single `agent` var) plus one deterministic gate node
+  (`localize-check` → the `news-localize-validate` stage). The pair sits after `render` and the
+  operator `review` pause and before `variants`, because ADR-053's "publish exactly what was
+  safety-reviewed and frozen" is only true of the translations if they are inside the frozen
+  variant. Translating after the freeze would publish unreviewed bytes; translating inside the
+  plugin would put a model call in a deterministic generation step (decision 6).
+- **The payload is the interface.** The `article` variant carries the translations as
+  `metadata.surfdash.locales.{en,ja} = {title, body}`; the publisher materializes one `index.md` per
+  locale beside zh and spawns `postsurfing` once with the zh path. A digest Content missing (or
+  carrying a blank) locale is refused **before** the spawn with `effect: none`, so a missing
+  translation surfaces as a retryable kk failure instead of the site's opaque post-spawn "missing
+  locale file(s)". The refusal is digest-scoped: only `sub-category:ai-daily` posts owe the set.
+  The site keeps owning every locale's SEO frontmatter (ADR-008) — kk supplies the translated title
+  and body, and the site's refine/retitle rewrites the rest per locale.
+- **Measured, not assumed.** The 2026-11-19 dogfood also suggested the workflow's `SPUR_*`
+  environment might hide the sibling files from the nested run. A hermetic two-leg repro (plain shell
+  vs a `spur workflow run` shell step; stub checkout, env-recording stub bin) showed identical `SPUR_*`
+  inheritance, cwd and locale listings, so `spawnCli` keeps stripping only its two single-flight guard
+  vars and the repro stays as the regression test.
+
 **Amendment 2026-11-14 (task 0372, operator decision).** An effective channel mode of `off`
 vetoes `--live-channels`: resolve the specific/plugin config over the preset default first, then
 promote only enabled rows. Disabled rows remain excluded with their config/preset mode source.

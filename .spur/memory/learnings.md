@@ -2602,3 +2602,60 @@ Verification of this wrap
 - Scope: `git status --porcelain` lists only `docs/` paths (7 files); `.spur/run/` is gitignored, so this artifact adds no tracked change.
 - `bun run lint` → exit 0, 681 files checked, no fixes applied.
 - Not run: `bun run test`, `bun run build` — the diff is Markdown only and touches no code path. Recorded as not-run rather than claimed green.
+## 2026-11-19 — batch 0408,0409 (feature L3)
+
+### 0408 — digest headline contract (1..2 headlines)
+
+- **Count segments, not separators.** `seps !== 1` rejected a separator-free single headline — exactly
+  the shape the site's `seo retitle` emits when two headlines do not fit its SEO budget. Both kk
+  predicates now count `rest.split(listSep)` segments; the message names the count (`got 3 in "…"`)
+  instead of describing a rule the site does not have.
+- **Mirror, do not outsource, the site's structural floor.** ADR-008 keeps the budget verdict with the
+  site, so the kk gate enforces only 1..2 + non-empty. Re-implementing `twoHeadlinesThatFit` in kk is
+  the anti-pattern this task removed.
+
+### 0409 — pre-freeze localization
+
+- **A model call never belongs in a plugin.** Translation is one `agent.run` node (`localize`) plus a
+  deterministic gate node (`localize-check` → `news-localize-validate`); the plugin materializes and
+  refuses, it never authors.
+- **Pre-freeze is the only safe placement.** The translations must ride inside the frozen `article`
+  variant, or the variants safety review and the freeze digest cover bytes that are not what publish.
+- **Refusals belong where they are cheap and retryable.** The digest locale refusal sits before the
+  `postsurfing` spawn (`effect: none`); the site's post-spawn "missing locale file(s)" is opaque and
+  already too late.
+- **Scope a refusal by the other side's real rule.** The site requires zh/en/ja only for
+  `sub-category:ai-daily` (`publish-orchestrator.ts:586-604`); making the refusal unconditional would
+  have broken every non-digest surfdash post (the `itc-main` preset).
+- **Measure the anomaly before scrubbing anything.** The two-leg repro (plain shell vs
+  `spur workflow run` shell step) showed identical `SPUR_*` inheritance, cwd and locale listings, so
+  `spawnCli` kept its two-key strip. A blanket `SPUR_*` scrub would have been a fix for a bug that did
+  not exist.
+
+### Harness gotchas hit in this batch
+
+- **Host-inline `spur workflow continue --answer-text` takes a RECEIPT path**, not prose:
+  `.spur/run/<runId>/receipts/<state>.json` with `{runId, state, executor: 'host', outcome: 'done',
+  files, startedAt, finishedAt}`. Prose is refused with "work-item receipt could not be read".
+- **The incremental light gate's `rules:post` coverage-gate judges `.coverage/lcov.info`.** A scoped
+  `bun test <files>` run overwrites that tracefile, so every merely-imported module reads as 0–40%
+  covered and the gate fails with no code defect. Regenerate the tracefile with the full suite
+  (`bun run test` from the repo root) before re-entering the gate.
+- **`spur self exec check` reports `deferQualityGate: true` by default** in this engine version: the
+  per-task gate writes `DEFERRED` after a light-tier run, so the full gate stays owed at integration.
+- **A test must not resolve repo paths from `process.cwd()`.** `bun run test` runs from the repo root
+  and the incremental gate runs each workspace's tests from the package directory; `join(cwd,
+  'plugins')` silently means two different paths. Resolve from `import.meta.dir`. (Pre-existing in
+  `surfdash-pub.test.ts`, surfaced by this batch's gate.)
+- **Node-count contract tests are load-bearing.** `kk-news-generate-dag.test.ts` pins the exact node
+  list, the `${vars.agent}` occurrence count and "no `kk stage` in a node body"; adding a node pair
+  means updating all three, and a new `kk stage` node needs an explicit, commented exception rather
+  than a silent rule erosion.
+- **Fixture bins must mirror the site's real blast radius.** `fake-postsufing.ts` refines the digest's
+  locale siblings (the real orchestrator refines every locale) but must leave non-digest and prepared
+  posts' non-primary bytes alone — otherwise it breaks the `publish-prepared` locale-fingerprint
+  checks.
+- **Worktree staging is real work.** The 0409 run spent its first gate cycle on a pre-existing test
+  defect and its second on a coverage-tracefile artifact; both were pre-existing, and each was
+  verified against the base ref before touching anything.
+

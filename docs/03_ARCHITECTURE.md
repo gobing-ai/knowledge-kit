@@ -550,6 +550,13 @@ Invariants, each mechanically checkable:
   `<variant>@<plugin>` and wins the lookup over the shared `<variant>`), and `{{article_url}}` /
   `{{podcast_url}}` resolve at send time from the tier-0 receipts — a publish plugin only ever
   receives finished content.
+- A channel that needs more than one locale gets them on the generate side too: the `article`
+  variant carries `metadata.surfdash.locales.{en,ja} = {title, body}` (produced by the news DAG's
+  `localize` node before `variants`, gated by `localize-check`), and the publisher materializes one
+  `index.md` per locale beside zh, spawning `postsurfing` once with the zh path. A digest Content
+  missing a locale is refused before that spawn with effect `none`, so the site's opaque
+  post-spawn "missing locale file(s)" can no longer be the first place a half-localized day is
+  visible (2026-11-19, ADR-053 amendment, task 0409).
 - Tier 0 is the publication contract: serial and first, because later tiers may link it. The
   dependency is per payload, not per tier: a failed tier-0 row fails only the later rows whose
   `{{article_url}}` / `{{podcast_url}}` cannot resolve (effect `none`, retryable); unrelated

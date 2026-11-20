@@ -48,7 +48,7 @@ const command = (node: Node): string => String(node.action?.options?.command ?? 
 const condition = (node: Node): string => String(node.condition?.options?.command ?? '');
 const order = doc.nodes.map((node) => node.id);
 
-/** The twenty nodes of design §5.1, in the design's own topological order. */
+/** The design §5.1 nodes in the design's topological order, plus 0409's localize pair. */
 const DESIGN_NODES = [
     'executor-probe',
     'prepare',
@@ -63,6 +63,10 @@ const DESIGN_NODES = [
     'render',
     'safety',
     'review',
+    // 0409 R1: the en/ja translations of the reviewed article, gated before the freeze so the
+    // variants review and the freeze digest cover exactly the bytes that publish.
+    'localize',
+    'localize-check',
     'voice',
     'voice-fallback',
     'voice-fallback2',
@@ -75,14 +79,20 @@ const DESIGN_NODES = [
 /** Shell nodes that are NOT nested workflow calls: the ones R2 constrains to one verb call. */
 const verbNodes = (): Node[] =>
     doc.nodes.filter(
-        (node) => node.pause !== true && node.action?.kind === 'shell' && !command(node).includes('spur workflow run'),
+        (node) =>
+            node.pause !== true &&
+            node.action?.kind === 'shell' &&
+            !command(node).includes('spur workflow run') &&
+            // 0409: the localize gate is the one shell node that is a `kk stage` call, not a verb.
+            node.id !== 'localize-check',
     );
 
 describe('kk-news-generate — AC1: twenty nodes, one executor variable, no padding', () => {
-    it('declares exactly the twenty designed node ids, in topological order', () => {
+    it('declares exactly the designed node ids, in topological order', () => {
         expect(doc.name).toBe('kk-news-generate');
         expect(doc.kind).toBe('dag');
-        expect(doc.nodes).toHaveLength(20);
+        // 22 since 0409: the twenty design nodes plus `localize` and its deterministic gate.
+        expect(doc.nodes).toHaveLength(22);
         expect(order).toEqual(DESIGN_NODES);
     });
 
@@ -117,7 +127,7 @@ describe('kk-news-generate — AC1: twenty nodes, one executor variable, no padd
         expect(text).not.toContain(`\${vars.model}`);
         // Every agent node resolves through the one var; the only literal is the var's own default.
         const literalAgents = [...text.matchAll(/agent: (.+)/g)].map((match) => match[1]?.trim());
-        expect(literalAgents).toEqual(['inline', ...Array(6).fill(`\${vars.agent}`)]);
+        expect(literalAgents).toEqual(['inline', ...Array(7).fill(`\${vars.agent}`)]);
     });
 
     it('runs the 0360 executor probe first: the shared real-traffic prompt', () => {
@@ -130,7 +140,10 @@ describe('kk-news-generate — AC1: twenty nodes, one executor variable, no padd
     });
 
     it('never reaches back to a stage name, jq or a var-writing file read (AC1)', () => {
-        for (const node of doc.nodes) {
+        // 0409's one documented exception: the localize gate is a stage (`news-localize-validate`),
+        // because translating in the plugin would put a model call in a deterministic step and
+        // translating after the freeze would publish bytes the safety review never saw.
+        for (const node of doc.nodes.filter((entry) => entry.id !== 'localize-check')) {
             const body = `${command(node)}\n${condition(node)}`;
             expect(body).not.toContain('kk stage');
             expect(body).not.toContain('jq ');
@@ -179,6 +192,8 @@ describe('kk-news-generate — R7: the node bodies', () => {
             'script-write',
             'script-fix',
             'editorial-judge',
+            // 0409 R1: the translation of the reviewed article (scribal work, same executor var).
+            'localize',
         ]);
         // The four writer-skill prompts cite the resolved skill directory (design §2.2: read in
         // place, no per-run copy). The judge cites its OWN skill (`kk:content-judge`), which is a
@@ -191,7 +206,9 @@ describe('kk-news-generate — R7: the node bodies', () => {
             expect(String(node.action?.options?.agent)).toBe(`\${vars.agent}`);
             if (writerNodes.includes(node.id)) expect(input).toContain(`\${vars.skill_dir}/SKILL.md`);
         }
-        for (const node of agents.filter((entry) => entry.id !== 'executor-probe')) {
+        // 0409: the localize node is a translation of an already-authored article, not a mode of the
+        // writer skill, so its prompt cites the artefact contract instead of `skill_dir`.
+        for (const node of agents.filter((entry) => !['executor-probe', 'localize'].includes(entry.id))) {
             expect(String(node.action?.options?.input)).toContain('SKILL.md');
         }
         // The two fix passes and the judge resolve above the primary's rung.

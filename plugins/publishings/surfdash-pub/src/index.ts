@@ -1271,6 +1271,72 @@ function resolvePreparedPost(
 
 type PrepareOutcome = { ok: true; prepared: PreparedPost } | { ok: false; result: Result };
 
+/** The non-primary locales a digest post carries (`metadata.surfdash.locales`); zh is the primary. */
+const LOCAL_DRAFTS = ['en', 'ja'] as const;
+
+/** One localized sibling's authored text, as the workflow's `localize` step delivers it. */
+interface LocaleDraft {
+    title: string;
+    body: string;
+}
+
+/**
+ * Reads `metadata.surfdash.locales.{en,ja}` off the article Content (0409 Q&A: the payload shape the
+ * localize step and the article variant agree on). A blank title or body is not a locale: an
+ * untranslated file must read as missing, so the digest refusal fires instead of publishing zh
+ * text under `/en/` or `/ja/`.
+ */
+function readLocaleDrafts(content: Content): Partial<Record<(typeof LOCAL_DRAFTS)[number], LocaleDraft>> {
+    const drafts: Partial<Record<(typeof LOCAL_DRAFTS)[number], LocaleDraft>> = {};
+    const surfdash = content.metadata?.surfdash;
+    if (typeof surfdash !== 'object' || surfdash === null) return drafts;
+    const locales = (surfdash as Record<string, unknown>).locales;
+    if (typeof locales !== 'object' || locales === null) return drafts;
+    for (const locale of LOCAL_DRAFTS) {
+        const entry = (locales as Record<string, unknown>)[locale];
+        if (typeof entry !== 'object' || entry === null) continue;
+        const { title, body } = entry as Record<string, unknown>;
+        if (typeof title !== 'string' || title.trim() === '') continue;
+        if (typeof body !== 'string' || body.trim() === '') continue;
+        drafts[locale] = { title, body };
+    }
+    return drafts;
+}
+
+/**
+ * Mints one locale's `index.md` (frontmatter + body) and copies the cover into its `assets/`.
+ *
+ * A file the site's own refine step already marked is not ours to clobber: re-minting replaces the
+ * refined frontmatter (`refined`, `seo_title`, …) with generator defaults and flips a published day
+ * back to a draft — so a refined file is kept and reused (2026-11-05 tier-0 rerun).
+ */
+async function mintLocalePost(options: {
+    postDir: string;
+    content: Content;
+    coverPath?: string;
+    publishDate?: string;
+}): Promise<void> {
+    const filePath = join(options.postDir, 'index.md');
+    if (readRefinedSnapshot(filePath) !== undefined) {
+        echoError(`surfdash-pub: keeping existing refined post at ${filePath} (not re-minting)`);
+        return;
+    }
+    await createNodeFileSystem().ensureDir(options.postDir);
+    let imageFrontmatter: string | undefined;
+    if (options.coverPath !== undefined) {
+        const assetsDir = join(options.postDir, 'assets');
+        await createNodeFileSystem().ensureDir(assetsDir);
+        const coverName = `cover${extname(options.coverPath).toLowerCase()}`;
+        await copyFile(options.coverPath, join(assetsDir, coverName));
+        imageFrontmatter = `./assets/${coverName}`;
+    }
+    const markdown = mapContentToSurfingMarkdown(options.content, {
+        image: imageFrontmatter,
+        publishDate: options.publishDate,
+    });
+    await createNodeFileSystem().writeFile(filePath, markdown);
+}
+
 /**
  * Materializes the local post without invoking the external publishing FSM.
  *
@@ -1328,31 +1394,48 @@ async function preparePost(payload: PublishTransportPayload): Promise<PrepareOut
         return { ok: false, result: failNotSent('digest post has no cover image (metadata.coverImage)') };
     }
 
+    // 0409 R2: the site requires the full locale set for a digest before it will sync
+    // (`publish-orchestrator.ts` `discoverLocaleFiles` + the `sub-category:ai-daily` guard), so a
+    // missing translation is refused here with effect none — never as the site's opaque
+    // "missing locale file(s)" failure after the spawn.
+    const drafts = readLocaleDrafts(payload.content);
+    if (isDigestContent(payload.content)) {
+        const missing = LOCAL_DRAFTS.filter((locale) => drafts[locale] === undefined);
+        if (missing.length > 0) {
+            return {
+                ok: false,
+                result: failNotSent(
+                    `digest post is missing metadata.surfdash.locales for ${missing.join(', ')} — the site refuses a digest with a missing locale file; re-run the localize step before publishing`,
+                ),
+            };
+        }
+    }
+
     const filePath = join(postDir, 'index.md');
+    const publishDate = runDate ? `${runDate.slice(0, 4)}-${runDate.slice(4, 6)}-${runDate.slice(6, 8)}` : undefined;
+    const cover = typeof coverPath === 'string' ? coverPath : undefined;
     try {
         // A post the site's own refine step already marked is not ours to clobber: re-minting it
         // replaces the refined canonical frontmatter (refine owns `refined`, `seo_title`, …) with
         // generator defaults and flips an already-published day back to a draft. Keep the file and
         // reuse it; only genuinely fresh days (no marker) get minted (2026-11-05 tier-0 rerun).
-        if (readRefinedSnapshot(filePath) === undefined) {
-            await createNodeFileSystem().ensureDir(postDir);
-            let imageFrontmatter: string | undefined;
-            if (typeof coverPath === 'string') {
-                const assetsDir = join(postDir, 'assets');
-                await createNodeFileSystem().ensureDir(assetsDir);
-                const coverName = `cover${extname(coverPath).toLowerCase()}`;
-                await copyFile(coverPath, join(assetsDir, coverName));
-                imageFrontmatter = `./assets/${coverName}`;
+        await mintLocalePost({ postDir, content: payload.content, coverPath: cover, publishDate });
+        for (const locale of LOCAL_DRAFTS) {
+            const draft = drafts[locale];
+            if (draft === undefined) continue;
+            const siblingDir = resolve(articlesRoot, locale, slug);
+            if (dirname(resolve(siblingDir)) !== resolve(articlesRoot, locale)) {
+                return { ok: false, result: failNotSent(`post path escapes ${articlesRoot}`) };
             }
-            const markdown = mapContentToSurfingMarkdown(payload.content, {
-                image: imageFrontmatter,
-                publishDate: runDate
-                    ? `${runDate.slice(0, 4)}-${runDate.slice(4, 6)}-${runDate.slice(6, 8)}`
-                    : undefined,
+            // The zh Body and title are replaced by the translation; the frontmatter fields the
+            // site owns (refined, seo_title, …) are rewritten by its own refine/retitle, exactly as
+            // for zh — so a locale file is the same Content shape with a localized title/body.
+            await mintLocalePost({
+                postDir: siblingDir,
+                content: { ...payload.content, title: draft.title, body: draft.body },
+                coverPath: cover,
+                publishDate,
             });
-            await createNodeFileSystem().writeFile(filePath, markdown);
-        } else {
-            echoError(`surfdash-pub: keeping existing refined post at ${filePath} (not re-minting)`);
         }
     } catch (err: unknown) {
         return {

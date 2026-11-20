@@ -297,6 +297,55 @@ nodes:
           test "${vars.skip_review}" != "true"
           && grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null
 
+  # ── 13a. localize: en/ja translations of the reviewed zh article, before the freeze ────────
+  - id: localize
+    description: >-
+      Translate the reviewed zh article into en/ja (0409 R1) and write
+      `22-article/locales/{en,ja}.md` (first line `# <title>`, rest the body). The site's publish
+      orchestrator refuses a `sub-category:ai-daily` post whose locale set is incomplete, and the
+      translations must exist BEFORE the freeze so the variant — hence the variants safety review
+      and the freeze digest — covers exactly the bytes that publish (ADR-053). Translating here,
+      not in the plugin, keeps the model call in the workflow and the plugin deterministic.
+    dependsOn: [render, review]
+    condition:
+      kind: shell
+      options:
+        command: 'grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null'
+    action:
+      kind: agent.run
+      options:
+        role: scribe
+        agent: ${vars.agent}
+        timeoutMs: 900000
+        # ADR-115 error tier: keep this prompt <= 1000 chars.
+        input: |
+          Translate the daily AI digest article into English and Japanese (task 0409).
+          Source: ${vars.work_dir}/22-article/${vars.run_date}_06_article_content.json (title, body).
+          Write TWO plain markdown files with your file-write tool (a headless sandbox may block shell writes):
+          ${vars.work_dir}/22-article/locales/en.md and ${vars.work_dir}/22-article/locales/ja.md
+          Each file: first line `# <translated title>`, then a blank line, then the translated body.
+          Keep every code block, URL, model name, company name and reference intact; translate prose only.
+          English: natural tech-journalism English. Japanese: natural です・ます tech-journalism Japanese.
+          Neither file may contain Chinese text — a zh draft under /en/ or /ja/ fails the gate.
+        expectFile: ${vars.work_dir}/22-article/locales/ja.md
+        allowAppend: false
+
+  - id: localize-check
+    description: >-
+      `news-localize-validate` (0409 R1): a deterministic gate on the two translations — missing,
+      empty, untitled, or untranslated (a zh document under en/ja) fails the run HERE, before the
+      variants are built and long before `surfdash-pub` would hit the site's opaque
+      "missing locale file(s)". No `onError: continue`: a half-localized day must not freeze.
+    dependsOn: [localize]
+    condition:
+      kind: shell
+      options:
+        command: 'grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null'
+    action:
+      kind: shell
+      options:
+        command: 'kk stage news-localize-validate "${vars.work_dir}"'
+
   # ── 14–16. voice: one engine per attempt, the fallback chain visible in the graph ───────────
   - id: voice
     description: >-
@@ -365,7 +414,7 @@ nodes:
       `daily-safety-manifest` in one process: `31-publish/` prep, `30-variants/*` payloads and the
       manifest the nested variants review registers. Two stages, because the review of those
       variants has to run between them and a nested workflow call cannot live inside a verb.
-    dependsOn: [voice, voice-fallback, voice-fallback2, cards]
+    dependsOn: [voice, voice-fallback, voice-fallback2, cards, localize-check]
     condition:
       kind: shell
       options:

@@ -83,6 +83,32 @@ describe('buildDailyTopicsEntry', () => {
         expect(built.entry.zh).not.toHaveProperty('claim_basis');
     });
 
+    // 0408 R2: a title the site collapsed to one headline still derives an entry, and the
+    // "leading key_points labels, in order" rule is unchanged for a single headline.
+    test('derives an entry from a single-headline title', () => {
+        const collapsed = (post: string, from: string, to: string): string => post.replace(from, to);
+        const single = buildDailyTopicsEntry({
+            zh: collapsed(posts.zh, 'Claude Code、OpenAI 新证明', 'Claude Code'),
+            en: collapsed(posts.en, 'Claude Code, OpenAI', 'Claude Code'),
+            ja: collapsed(posts.ja, 'Claude Code、OpenAI の新証明', 'Claude Code'),
+        });
+        expect(single.ok).toBe(true);
+        if (!single.ok) return;
+        expect(single.entry.zh.headlines).toEqual(['Claude Code']);
+        expect(single.entry.en.headlines).toEqual(['Claude Code']);
+        expect(single.entry.ja.headlines).toEqual(['Claude Code']);
+        expect(single.entry.zh.claims.length).toBeGreaterThan(0);
+
+        // A single headline that is not the FIRST key_points label is still refused.
+        const wrongLead = buildDailyTopicsEntry({
+            ...posts,
+            zh: posts.zh.replace('Claude Code、OpenAI 新证明', 'OpenAI 新证明'),
+        });
+        expect(wrongLead.ok).toBe(false);
+        if (wrongLead.ok) return;
+        expect(wrongLead.error).toContain('do not match');
+    });
+
     test('fails when the entry cannot be generated confidently', () => {
         const noTitle = buildDailyTopicsEntry({
             ...posts,
