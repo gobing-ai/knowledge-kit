@@ -63,6 +63,10 @@ interface FakeOptions {
     coverUploading?: boolean;
     /** Inline validation the form renders when the submit is refused (page never leaves the form). */
     submitRefusal?: string;
+    /** Reads of the crop dialog's cropper image that come back empty: the dialog mounts first. */
+    cropperMountReads?: number;
+    /** Crop 确认 clicks the dialog swallows before one commits (Infinity: it never closes). */
+    cropClicksSwallowed?: number;
 }
 
 /**
@@ -81,6 +85,8 @@ function fakePage(options: FakeOptions = {}): { page: Page; calls: string[] } {
     let coverDirty = true;
     let pickerOpen = false;
     let cropConfirmed = false;
+    let cropperReads = 0;
+    let cropClicks = 0;
     let confirmClicked = false;
     let picked = '';
 
@@ -104,6 +110,13 @@ function fakePage(options: FakeOptions = {}): { page: Page; calls: string[] } {
                 if (selector.includes('button:text-is("确认")') && !selector.includes('发表')) {
                     if (options.cropDialog === false) return 0;
                     return cropConfirmed ? 0 : 1;
+                }
+                // The cropper image mounts after its dialog (measured 2026-11-18).
+                if (selector.includes('cropper-wrap') && selector.endsWith(' img')) {
+                    if (options.cropDialog === false || cropConfirmed) return 0;
+                    if (cropperReads++ < (options.cropperMountReads ?? 0)) return 0;
+                    calls.push('cropper mounted');
+                    return 1;
                 }
                 // The crop dialog and its cropper image: open from the cover file until 确认 lands.
                 if (selector.includes('cropper-wrap') || selector.includes('编辑音频封面')) {
@@ -137,6 +150,7 @@ function fakePage(options: FakeOptions = {}): { page: Page; calls: string[] } {
                     if (options.confirmClickRejects === true) throw new Error('dialog detached');
                     confirmClicked = true;
                 } else if (selector.includes('button:text-is("确认")')) {
+                    if (cropClicks++ < (options.cropClicksSwallowed ?? 0)) return;
                     cropConfirmed = true;
                     coverDirty = options.coverAccepted === false;
                 }
@@ -380,6 +394,28 @@ describe('pendingAudioFlow (recon-grounded steps)', () => {
         // refused client-side with 「请上传封面」 while the page never left the form.
         const result = await attachAudioCover(fakePage({ coverUploading: true }).page, COVER, 5);
         expect(result).toContain('upload never settled');
+    });
+
+    it('waits for the cropper image before it clicks 确认 in a dialog that mounts first', async () => {
+        // 2026-11-18: the crop dialog renders before its cropper image; a 确认 fired in that window is
+        // swallowed and the submit is later refused with 「请上传封面」.
+        const { page, calls } = fakePage({ cropperMountReads: 2 });
+        expect(await attachAudioCover(page, COVER, 3_000)).toBeNull();
+        const mounted = calls.indexOf('cropper mounted');
+        const firstConfirm = calls.findIndex((call) => call.startsWith('click') && call.includes('确认'));
+        expect(mounted).toBeGreaterThan(-1);
+        expect(firstConfirm).toBeGreaterThan(mounted);
+    });
+
+    it('re-clicks 确认 until the crop dialog closes when the first click is swallowed', async () => {
+        const { page, calls } = fakePage({ cropClicksSwallowed: 1 });
+        expect(await attachAudioCover(page, COVER, 3_000)).toBeNull();
+        expect(calls.filter((call) => call.startsWith('click') && call.includes('确认')).length).toBe(2);
+    });
+
+    it('refuses when the crop dialog never closes, however often 确认 is clicked', async () => {
+        const result = await attachAudioCover(fakePage({ cropClicksSwallowed: Infinity }).page, COVER, 1_000);
+        expect(result).toContain('crop dialog never closed');
     });
 
     it('refuses when the crop dialog never appears', async () => {
