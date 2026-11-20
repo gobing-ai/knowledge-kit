@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: shipinhao audio publish cannot read its works row, so every submission is unknown
-status: todo
+status: done
 template: issue
 created_at: 2026-11-18T23:29:36.971Z
-updated_at: "2026-11-20T00:28:50.242Z"
+updated_at: "2026-11-20T03:16:07.273Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
 priority: P3
 estimate_hours: 0.5
 feature_id: L3
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0407. shipinhao audio publish cannot read its works row, so every submission is unknown
@@ -28,8 +30,8 @@ Captured from the creation title: "shipinhao audio publish cannot read its works
 
 ### Requirements
 
-- [ ] R1. — Commit the 封面 before submitting. Success is the crop dialog closing, not the upload percentage or the click returning.
-- [ ] R2. — Name a refused submit. A submit refused client-side reports the form's inline validation line (stage `audio-submit-validation`), never a blind receipt wait. "Clicked but unconfirmed" stays `unknown`, never published.
+- [x] R1. — Commit the 封面 before submitting. Success is the crop dialog closing, not the upload percentage or the click returning.
+- [x] R2. — Name a refused submit. A submit refused client-side reports the form's inline validation line (stage `audio-submit-validation`), never a blind receipt wait. "Clicked but unconfirmed" stays `unknown`, never published.
 
 **Non-goals:** the dead-pid browser-lease reclaim (contradicts the frozen 0276 contract; separate ADR + task if wanted).
 
@@ -110,15 +112,39 @@ auto-reclaim for a dead pid on this host would match `reclaimStaleNativeLock`.
 
 ### Testing
 
-- 2026-11-19: `bun test plugins/publishings/shipinhao-pub/tests/audio-flow.test.ts` → 37 pass, 0 fail (single-file runs exit 1 on coverage by design, see AGENTS.md § Testing).
-- Live receipts: `succeeded/confirmed` for 2026-11-17 and 2026-11-18 (Root Cause), and 2026-11-19 (`.spur/context/memory.md:316`).
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/publishings/shipinhao-pub/src/audio-flow.ts:192` upload settle, `plugins/publishings/shipinhao-pub/src/audio-flow.ts:208` cropper-image wait, `plugins/publishings/shipinhao-pub/src/audio-flow.ts:223` 确认 retried until dialog closes; tests `plugins/publishings/shipinhao-pub/tests/audio-flow.test.ts:392`, `plugins/publishings/shipinhao-pub/tests/audio-flow.test.ts:399`, `plugins/publishings/shipinhao-pub/tests/audio-flow.test.ts:410`, `plugins/publishings/shipinhao-pub/tests/audio-flow.test.ts:416` |
+| R2 | MET | `plugins/publishings/shipinhao-pub/src/audio-flow.ts:451-456` stage `audio-submit-validation`; test `plugins/publishings/shipinhao-pub/tests/audio-flow.test.ts:328`; no-growth stays unknown `plugins/publishings/shipinhao-pub/tests/audio-flow.test.ts:317` |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | `bun test plugins/publishings/shipinhao-pub/tests/audio-flow.test.ts` → 40 pass 0 fail; `plugins/publishings/shipinhao-pub/tests/audio-flow.test.ts:399` (no 确认 before cropper image mounts), `plugins/publishings/shipinhao-pub/tests/audio-flow.test.ts:410` (swallowed click re-clicked until close), `plugins/publishings/shipinhao-pub/tests/audio-flow.test.ts:416` (never closes → refused); mutation-checked: dropping the cropper wait fails :399, treating the click as success fails :410/:416 |
+| AC2 | MET | test | `plugins/publishings/shipinhao-pub/tests/audio-flow.test.ts:328` asserts stage `audio-submit-validation` and 「请上传封面」 in the error |
+| AC3 | MET | command | `jq '{status,effect,window}' .works/kk-news-generate/2026111{7,8,9}/4-publish/receipts/shipinhao-pub.audio.json` → `succeeded` / `confirmed` / `after-generate` for 11-17, 11-18, 11-19 (gitignored works artifacts, read 2026-11-19) |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | tests-pass | — | advisory |
 
 ### References
 
 <!-- Links to failing logs, related issues, tasks, docs, or external references. -->
 
 ### History
+
+- 2026-11-20T01:38:30.750Z todo → wip (system)
+- 2026-11-20T01:38:32.051Z wip → testing (system)
+- 2026-11-20T03:16:07.148Z testing → done (system)
+
