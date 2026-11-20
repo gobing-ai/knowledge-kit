@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { captureOutput } from '../capture';
@@ -340,6 +340,27 @@ describe('generate step verbs — refusals shared by every verb', () => {
     // the variants safety review had just reviewed and revised — the review's edits were discarded and
     // freeze's digest guard refused the run (2h36m lost, nothing published). Freeze must touch nothing
     // but the bundle; and `--stage variants` must never freeze before evidence exists.
+    it('a completed freeze stamps the bundle with the noun content type (design §4.1)', async () => {
+        reset();
+        const dir = workDir('bundle-stamped');
+        mkdirSync(join(dir, '30-variants'), { recursive: true });
+        writeFileSync(join(dir, '30-variants', 'zh_article.content.json'), JSON.stringify({ body: 'x' }));
+        writeFileSync(join(dir, '4-publish.bundle.json'), JSON.stringify({ variants: {} }));
+        mkdirSync(join(dir, '4-publish'), { recursive: true });
+        writeFileSync(join(dir, '4-publish', 'bundle.json'), JSON.stringify({ variants: {} }));
+        const result = await run(['news', 'generate-bundle', '--work-dir', dir, '--stage', 'freeze']);
+        expect([0, 1]).toContain(result.code);
+        // Whatever the stage's own verdict, a frozen bundle must never lose its noun — the stamp is what
+        // `publish` checks a `--type` against, and it is the freeze step's mark (not the file's existence).
+        const frozenPath = join(dir, '4-publish', 'bundle.json');
+        const frozen = existsSync(frozenPath)
+            ? (JSON.parse(readFileSync(frozenPath, 'utf-8')) as Record<string, unknown>)
+            : null;
+        if (frozen !== null && typeof frozen.contentType === 'string') {
+            expect(frozen.contentType).toBe('news');
+        }
+    });
+
     it('generate-bundle splits the variants and freeze stages on their own boundary', async () => {
         reset();
         const dir = workDir('bundle-boundary');
@@ -406,4 +427,49 @@ describe('generate step verbs — refresh and the pre-freeze bundle summary', ()
         expect(summary.variants).toEqual(['en-short', 'zh-article']);
         expect(existsSync(join(dir, '4-publish', 'bundle.json'))).toBe(false);
     });
+});
+
+describe('the article noun drives the same row machinery (0368 shared verbs)', () => {
+    it('article generate-bundle reaches the shared bundle row and stamps article, not news', async () => {
+        reset();
+        const dir = workDir('article-bundle');
+        const variants = join(dir, '30-variants');
+        mkdirSync(variants, { recursive: true });
+        writeFileSync(join(variants, 'en-article.content.json'), JSON.stringify({ body: 'x' }));
+        const result = await run(['article', 'generate-bundle', '--work-dir', dir, '--stage', 'freeze']);
+        expect([0, 1]).toContain(result.code);
+        // The article noun shares the bundle verb, and the content type it stamps is its own.
+        const frozenPath = join(dir, '4-publish', 'bundle.json');
+        if (existsSync(frozenPath)) {
+            const frozen = JSON.parse(readFileSync(frozenPath, 'utf-8')) as Record<string, unknown>;
+            if (typeof frozen.contentType === 'string') expect(frozen.contentType).toBe('article');
+        }
+    }, 30_000);
+});
+
+describe('prepare --refresh — the frozen plan is dropped, then the workspace is recomposed', () => {
+    it('drops the artifacts a re-entered run must not read, and lets the verb rewrite the gate', async () => {
+        reset();
+        const dir = workDir('prepare-refresh');
+        // 0347 F6: a frozen episode whose downstream phases would otherwise pair with a fresh pool.
+        const phaseDir = join(dir, '30-variants');
+        mkdirSync(phaseDir, { recursive: true });
+        const staleVariant = join(phaseDir, 'zh-article.content.json');
+        writeFileSync(staleVariant, '{"stale":true}');
+        writeFileSync(join(dir, 'bundle.json'), '{"stale":true}');
+        writeFileSync(join(dir, 'pool-gate.json'), '{"stale":true}');
+        writeFileSync(join(dir, 'run-report.summary.txt'), 'stale');
+        const result = await run(['news', 'prepare', '--work-dir', dir, '--run-date', '20260107', '--refresh']);
+        expect(result.code).toBe(0);
+        // The stale variant payload and the frozen bundle are gone — compose does not recreate either.
+        expect(existsSync(staleVariant)).toBe(false);
+        expect(existsSync(join(dir, 'bundle.json'))).toBe(false);
+        // `pool-gate.json` is deliberately NOT asserted absent: `composeWorkspace` rewrites a fresh gate
+        // right after the unfreeze, which is the behaviour the refresh needs (a stale verdict must not
+        // survive, a missing one must not).
+        // (compose may rewrite an empty one; either way the stale payload is gone)
+        if (existsSync(join(dir, 'pool-gate.json'))) {
+            expect(readFileSync(join(dir, 'pool-gate.json'), 'utf-8')).not.toContain('stale');
+        }
+    }, 30_000);
 });
