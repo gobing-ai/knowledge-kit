@@ -1,0 +1,69 @@
+{
+  "verb": "analyze",
+  "paid": true,
+  "dryRun": false,
+  "artifactPath": null,
+  "instanceId": "gen-1795196931030-puqx6j",
+  "digest": null,
+  "spend": {
+    "currency": "USD",
+    "takes": 1,
+    "unitPrice": null,
+    "total": null
+  },
+  "measurements": null,
+  "checks": null,
+  "cached": false,
+  "charged": true,
+  "analysis": {
+    "title": "When the Orchids Grow",
+    "genre": "Alternative Rock",
+    "mood": "Emotional",
+    "energy": 75,
+    "bpm": 90,
+    "key": "D minor",
+    "instrumentation": [
+      "Lead male vocals",
+      "Backing vocals",
+      "Electric guitar",
+      "Distorted electric guitar",
+      "Bass guitar",
+      "Drums",
+      "Drum machine",
+      "Synth pads"
+    ],
+    "sections": [
+      {
+        "name": "Intro",
+        "start": "00:00",
+        "end": "00:11"
+      },
+      {
+        "name": "Verse 1",
+        "start": "00:11",
+        "end": "00:47"
+      },
+      {
+        "name": "Chorus 1",
+        "start": "00:47",
+        "end": "01:14"
+      },
+      {
+        "name": "Verse 2",
+        "start": "01:14",
+        "end": "01:45"
+      },
+      {
+        "name": "Chorus 2",
+        "start": "01:45",
+        "end": "02:11"
+      },
+      {
+        "name": "Outro",
+        "start": "02:11",
+        "end": "02:29"
+      }
+    ],
+    "notes": "The track features a dramatic dynamic shift between understated lo-fi indie verses and powerful, wall-of-sound alternative rock choruses driven by heavy guitars and expressive belt vocals."
+  }
+}

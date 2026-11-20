@@ -1,0 +1,52 @@
+title: Morning Chamber, Dark Guitar
+format: song
+theme: synthwave
+model: pro
+duration_target: "2:30"
+language: EN
+audio_format: mp3
+style: |-
+  Dark pastoral synthwave at 150 BPM in D minor, 4/4, wide choruses against narrow intimate verses.
+  Instrumentation: down-tuned palm-muted rhythm guitars, distorted electronic bass, filtered electronic
+  percussion, detuned saw pad, gated snare, arpeggiated lead.
+  Vocal: low male baritone, close and dry in the verses, stacked harmony in the chorus, no falsetto.
+  Theme: waking among valley orchids and birdsong with a stream below — the pastoral image carried by
+  the pad and lead, never by orchestral strings; aggression lives in the guitars and the bass.
+  Production: dark, aggressive, wide-stereo choruses, gated reverb on the snare, tape-warm low end.
+avoid:
+  - falsetto
+  - orchestral strings
+  - long ambient introduction
+  - clean bright pop production
+structure:
+  - at: "0:00"
+    section: Intro
+    note: filtered electronic percussion and distant down-tuned guitar noise, no vocal
+  - at: "0:10"
+    section: Verse 1
+    note: low baritone enters, restrained palm-muted guitars, narrow mix
+  - at: "0:45"
+    section: Chorus
+    note: full-width guitars, heavy drums, stacked vocal harmonies, wide stereo
+  - at: "1:15"
+    section: Verse 2
+    note: baritone dry and forward, one counter-melody on the lead, guitars pulled back
+  - at: "1:45"
+    section: Chorus
+    note: repeat the hook wider, distorted electronic bass takes the low end
+  - at: "2:10"
+    section: Outro
+    note: strip back to the harmonic bed and resolve on the final chord without a fade
+lyrics: |-
+  [Verse]
+  Birdsong on a valley floor
+  A stream that runs beneath the door
+  [Chorus]
+  Wake me where the orchids grow
+  Dark guitar and the water's low
+  [Verse]
+  Every window full of rain
+  Every dawn the same refrain
+  [Outro]
+  Where the orchids grow
+takes: 1

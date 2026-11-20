@@ -1,0 +1,63 @@
+{
+    "schemaVersion": 1,
+    "runId": "c73a9b02-1958-4fd8-b159-f137ae8c5a99",
+    "format": "song",
+    "profile": "streaming",
+    "finalArtifact": "/Users/robin/xprojects/knowledge-kit/.works/kk-music/morning-chamber-orchids/3-takes/morning-chamber-dark-guitar-lyria-3-pro-preview-gen-1795196931030-puqx6j.streaming.wav",
+    "spend": {
+        "total": 0.16,
+        "takes": 2,
+        "unpriced": 0
+    },
+    "takes": [
+        {
+            "instanceId": "gen-1795196931030-puqx6j",
+            "model": "lyria-3-pro-preview",
+            "unitPrice": 0.08,
+            "artifactPath": "/Users/robin/xprojects/knowledge-kit/.works/kk-music/morning-chamber-orchids/3-takes/morning-chamber-dark-guitar-lyria-3-pro-preview-gen-1795196931030-puqx6j.mp3"
+        },
+        {
+            "instanceId": "gen-1795196971433-ib7mnc",
+            "model": "lyria-3-pro-preview",
+            "unitPrice": 0.08,
+            "artifactPath": "/Users/robin/xprojects/knowledge-kit/.works/kk-music/morning-chamber-orchids/3-takes/morning-chamber-spacious-cut-lyria-3-pro-preview-gen-1795196971433-ib7mnc.mp3"
+        }
+    ],
+    "verdict": {
+        "verdict": "PASS",
+        "confidence": "MEDIUM"
+    },
+    "delivery": {
+        "integratedLoudness": -14.01,
+        "truePeak": -1,
+        "rows": [
+            {
+                "id": "delivery.integrated_loudness",
+                "measured": -14.01,
+                "threshold": "-15–-13",
+                "unit": "LUFS",
+                "source": "ffmpeg 9.0.1 loudnorm",
+                "result": "pass",
+                "note": "streaming target -14 LUFS ±1 LU"
+            },
+            {
+                "id": "delivery.true_peak",
+                "measured": -1,
+                "threshold": -1,
+                "unit": "dBTP",
+                "source": "ffmpeg 9.0.1 loudnorm",
+                "result": "pass",
+                "note": "streaming ceiling -1 dBTP, measured on the encoded output"
+            },
+            {
+                "id": "delivery.sample_rate",
+                "measured": 44100,
+                "threshold": 44100,
+                "unit": "Hz",
+                "source": "ffprobe 9.0.1",
+                "result": "pass",
+                "note": "the `-ar` guard: loudnorm upsamples to 192 kHz unless the output rate is explicit"
+            }
+        ]
+    }
+}

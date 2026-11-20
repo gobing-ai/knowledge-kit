@@ -6,7 +6,7 @@ status: active
 priority: P2
 tags: []
 created_at: "2026-11-18T22:15:57.189Z"
-updated_at: "2026-11-19T04:31:22.394Z"
+updated_at: "2026-11-20T18:04:47.407Z"
 ---
 
 # D8: Music generation: music-gen plugin, kk-music workflow and quality gates over the homelab Lyria 3 instance
@@ -151,6 +151,19 @@ Feature: Music generation over the homelab Lyria 3 instance
 5. `0402` music-authoring skill + music-quality rubric — blocks 0403. The rubric draft can start once 0405's check record shape is frozen.
 6. `0403` kk-music workflow — blocks 0404.
 7. `0404` dogfood, evidence, docs sync.
+
+7. *Dogfood closed the loop (2026-11-20, 0404).* One accepted track end to end over the real instance: run `c73a9b02`, two Pro takes from two differentiated briefs, operator pick at `select`, judge `PASS` 0.825 (`MEDIUM`), delivery −14.01 LUFS / −1 dBTP / 44100 Hz at `streaming`. Evidence and every measured number: `docs/tasks/evidence/D8/0404/`. `song` and `synthwave` are now `verified`; every other preset stays `authored` because no take has been judged for it.
+
+**Accepted limitations (2026-11-20).** Each is a decision, not an open question.
+
+- **Channel loudness profiles stay deferred** (decision 5): `streaming` is the only built-in delivery profile, no channel profile ships, and the evidence for this round carries none.
+- **Single-turn iteration cost.** Each take is a separate paid, non-idempotent request; a revision is a full re-generation from a new brief. One round of re-takes is `2 × unit price`, and `explore` adopts sidecar-bearing takes so a resumed run never re-pays.
+- **Analysis latency and estimates.** `analyze` is a paid per-instance call whose output is a model estimate; its BPM/key/section rows are `warn`-only and never decide a verdict. The accepted take's analysis read 90 bpm against the brief's 150 — a craft input, recorded, not a defect.
+- **Preset coverage.** Five formats × four themes are authored; only the `song` × `synthwave` pair is verified. Unverified presets are usable and honestly labelled `authored` in the plugin README index.
+- **Clip-explore decision stands.** `clip` is a different model, so no Clip render predicts a Pro take; each direction is explored in the format's own model.
+- **Adapter connect bound vs synchronous generate.** The adapter counts connect time until response headers, and this instance answers only after the take, so the shipped 5 s default reads a real generation as unreachable. Worked around in local config (`music.instance.connectTimeoutMs`); filed as `0414`.
+
+**Residuals filed from this round.** `0411` and `0412` (workflow runnability, done), `0413` (installed-package preset root, done), `0414` (connect bound, open).
 
 ## History
 

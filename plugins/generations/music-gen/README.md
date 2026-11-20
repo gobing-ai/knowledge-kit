@@ -124,7 +124,7 @@ timestamped section skeleton. `lyrics` is the format’s policy: `forbidden` res
 | `clip` | `clip` | — (clip is fixed at ~0:30) | allowed | Quick preview, a direction check before a pro run, or a short social cut. | `authored` |
 | `jingle` | `pro` | `0:20` | allowed | Product or station ident — the hook states the name once and resolves fast. | `authored` |
 | `loop` | `clip` | — (clip is fixed at ~0:30) | forbidden | Background bed for a talk-through, demo or menu loop; no vocals by design. | `authored` |
-| `song` | `pro` | `2:30` | allowed | A complete track with a sung hook; the default for lyrical pieces. | `authored` |
+| `song` | `pro` | `2:30` | allowed | A complete track with a sung hook; the default for lyrical pieces. | `verified` |
 | `underscore` | `pro` | `0:45` | forbidden | Underscore under spoken narration or a video essay; no hook or vocal required. | `authored` |
 
 ### Themes
@@ -137,7 +137,7 @@ vocal character and production — plus its default `avoid[]`, rendered as one `
 | `ambient-tech` | glassy ambient techno; 100-115 BPM, steady and unaccented; C# minor | hard drops, talkbox vocals, pop hooks, vocal chops | Product walkthroughs, conference holds, editorial beds that must stay out of the way. | `authored` |
 | `cinematic` | cinematic orchestral hybrid score; 60-90 BPM with rubato swells; D minor | horror stingers, orchestral hits on every downbeat, distorted electric guitar, pop chorus stacks | Trailer-style openings, story intros, a track that must feel like a scene. | `authored` |
 | `lofi` | dusty sampled lo-fi hip-hop; 70-85 BPM, swung and unhurried; A minor | trap hi-hat rolls, hard drops, EDM riser clichés, over-compressed loudness | Study/focus background, calm narration bed, unhurried social cuts. | `authored` |
-| `synthwave` | analog synthwave revival; 90-110 BPM, straight four-on-the-floor; A minor | festival supersaws, EDM risers, distorted djent guitars, modern trap percussion | Retro-tech explainers, night-drive montages, upbeat product stings. | `authored` |
+| `synthwave` | analog synthwave revival; 90-110 BPM, straight four-on-the-floor; A minor | festival supersaws, EDM risers, distorted djent guitars, modern trap percussion | Retro-tech explainers, night-drive montages, upbeat product stings. | `verified` |
 <!-- preset-index:end -->
 
 Evidence status: `authored` means written from the design contract with no generated take judged

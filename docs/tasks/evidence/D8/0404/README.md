@@ -1,96 +1,108 @@
 # 0404 — one music track, end to end (evidence)
 
-**Status at 2026-11-20: not accepted.** The free rehearsal ran end to end; the paid round reached the
-two-take `select` gate against a live instance, but the instance is running its **mock provider**
-(`LYRIA_MOCK=1`), so both takes are 8-second $0 synthesized placeholders, not Lyria renders. Per this
-task's closed Q&A ("never substitute dry-run artifacts for paid evidence", "instance unreachable →
-stop and report") the run stops at `select`: no `analyze` was paid for, no take was accepted, nothing
-was `master`ed, no preset was promoted, and no doc claims a capability that was not exercised.
+**Status at 2026-11-20: accepted.** The `kk-music` workflow ran one real idea against the live homelab
+lyria-3-pro instance: two Pro takes from two differentiated briefs, the operator picked one at `select`,
+the selected take was analyzed, measured, judged against the `music-quality` rubric and mastered to the
+`streaming` delivery profile. `song` (format) and `synthwave` (theme) are promoted to `verified` on the
+strength of this take.
 
 - Idea: the operator's, captured from the lyria studio project `proj-1795030763741-2n8j8s`
   (150 BPM / D minor / baritone lead / dark production over a pastoral Chinese theme).
-- Theme choice: `synthwave` (operator pick; it becomes the candidate `verified` theme once a real take
-  is accepted).
+- Theme choice: `synthwave`.
 - Frozen vars: `format=song`, `directions=2`, `delivery_profile=streaming`, `auto=false`,
   `accept_revision=false`, `force=false`.
-- Instance: `KK_MUSIC_INSTANCE_URL=http://127.0.0.1:3100` (the Mac Mini's native lyria-3-pro on
-  `host.docker.internal:3100`, behind the `music.robinmin.net` CF tunnel → Caddy). Probed free with
-  `kk music library --json` before anything paid.
-- CLI used for every nested verb: the checkout (`KK_MUSIC_KK_BIN=<repo>/apps/cli/src/index.ts`). The
-  **installed** `kk` cannot load the shipped presets at all — running `dist/index.js` resolves
-  `MUSIC_PRESET_ROOT` to `<pkg>/presets` (absent) instead of `plugins/generations/music-gen/presets`,
-  so `kk music presets` fails with `preset directory is missing`. That is a packaging defect for 0404
-  R5 to file, worked around here only via the documented `KK_MUSIC_KK_BIN` stage escape.
+- Instance: `KK_MUSIC_INSTANCE_URL=http://127.0.0.1:3100` — the Mac Mini's native lyria-3-pro, bound to
+  loopback (`host.docker.internal:3100` from Caddy; public entry `music.robinmin.net` behind CF Access).
+  Probed free with `kk music library --json` before anything paid.
+- Run `c73a9b02-1958-4fd8-b159-f137ae8c5a99` → `done`.
 
-## What ran
+## Deliverable
 
-| Step | Command | Result |
-| --- | --- | --- |
-| Free rehearsal | `spur workflow run plugins/kk/workflows/kk-music.yaml --vars '{"dry_run":"true",…}'` (run `b964b82b-4b36-4d34-94dc-45d9e2b6a845`) | stopped at **`check`** on `duration.target` (1 s silent offline WAV vs the `2:30` target) |
-| Paid explore | same workflow, `dry_run=false` (run `be6fc51f-90c8-4ba5-8c6c-ca19c1004b17`) | 2 takes generated, run **paused at `select`** — stopped there |
-| Selection / analyze / check / judge / master | — | **not run** (see Status) |
+| Fact | Value |
+| --- | --- |
+| Selected take | brief 01, `Morning Chamber, Dark Guitar` |
+| Instance id | `gen-1795196931030-puqx6j` (model `lyria-3-pro-preview`, provider `gemini`) |
+| Instance analysis | title "When the Orchids Grow", Alternative Rock / Emotional, energy 75, **90 bpm**, **D minor**, 8 named instruments, 6 sections |
+| Duration | 149.13 s measured (`ffprobe 9.0.1`), brief target `2:30`, band 120–180 s |
+| Silence | leading 0 s, trailing 0.67 s (`ffmpeg 9.0.1 silencedetect`) |
+| Judge | `PASS`, confidence `MEDIUM`, score **0.825** — the one warn is `analysis.bpm` (90 rendered against the 150 BPM ask) |
+| Delivery | **−14.01 LUFS** / **−1 dBTP** / 44100 Hz, `streaming` profile (`ffmpeg 9.0.1 loudnorm`, `ffprobe 9.0.1`) — all three rows pass |
+| Spend | **$0.16** = 2 Pro takes × `$0.08`; analysis unpriced on this instance (`unitPrice: null`) |
+| sha256 (original take, mp3) | `25cde1c736a2a6c024bf915564df5dd9c99f5316c51fdf002525dbebd58a252d` |
+| sha256 (mastered, wav) | `3ed38685eb1fdceb0ddfbb763042cbb0f69fc98da0b12444378900a1dd7c6107` |
 
-The refine note predicted the dry run would stop on `silence.*`; the measured stop is
-`duration.target`. Recorded as a finding, not a reason to edit code: the offline adapter emits a 1 s
-silent WAV, which fails the duration band first.
+No audio bytes are committed. The originals live in `.works/kk-music/morning-chamber-orchids/3-takes/`
+(`…puqx6j.mp3` and `…puqx6j.streaming.wav`); the digests above are the durable record. AC1's
+byte-for-byte clause holds by construction: `master` writes a new file and the provider take is never
+rewritten — its digest was taken after the run and matches the one recorded at generation.
 
-## Dry-run evidence (`dryrun/`)
+## What ran (one workflow, eleven states, one operator pause)
 
-`transcript.json` / `transcript.txt` (the `spur workflow trace` of the rehearsal), both `brief-<nn>.prompt.txt`
-(the exact prompt text), `brief-<nn>.render.txt` (render's resolved job + request), `explore.json`,
-`analysis-offline-take-1.json`, and `morning-chamber-dark-guitar-pro-offline-take-1.wav.checks.json`
-— the measured 1 s duration fail, with `source` on every row.
+`prepare → brief → explore → select → analyze → check → judge → master → finalize → done`
 
-## Paid-attempt evidence (`paid/`)
+| State | Artifact / result |
+| --- | --- |
+| `prepare` | `idea.md`, `1-brief/`, `3-takes/` under `$works/kk-music/morning-chamber-orchids/` |
+| `brief` | `brief-01.yaml` (150 BPM guitar-forward) and `brief-02.yaml` (104 BPM chamber-leaning), each rendered to `…prompt.txt` + `…render.txt` |
+| `explore` | 2 paid takes, one per brief, in the format's own model (`lyria-3-pro-preview`); `3-takes/explore.json` |
+| `select` | **operator gate** — take 01 chosen; `3-takes/selection.json` |
+| `analyze` | `3-takes/analysis-gen-1795196931030-puqx6j.json` (paid, unpriced) |
+| `check` | `…puqx6j.mp3.checks.json` — 7 rows, one warn (`analysis.bpm`), no fail |
+| `judge` | `4-judge-input.md` assembled by the run; `4-verdict-music.json` written by `kk:content-judge` with the `music-quality` rubric |
+| `master` | `…puqx6j.streaming.wav` + three delivery rows, all pass |
+| `finalize` | `5-run-report.md` / `5-run-report.json` (spend, verdict, delivery, artifact paths) |
 
-`idea.md`, both authored briefs and their prompt text, `explore.json` (two `status: generated` briefs,
-`unitPrice: 0.08` each), both `.take.json` sidecars, and the **instance's own record** of each
-generation (`instance-record-01.json`, `instance-record-02.json`).
+## Files here
 
-| Fact | Take 01 | Take 02 |
-| --- | --- | --- |
-| Instance id | `gen-1795194526460-lsg320` | `gen-1795194528188-chlt4q` |
-| Instance provider | **`mock`** | **`mock`** |
-| Measured duration (ffprobe) | 8.000 s (target 2:30) | 8.000 s (target 2:30) |
-| Mean / max volume (ffmpeg) | −12.5 dB / −6.0 dB | −12.5 dB / −6.0 dB |
-| sha256 of the original take | `ce15401262371de9ba93d083958350cee39997637a8c78d17563ad0955698612` | `d691f8f03ff692444e6ec3fcaec78c9de891c87617976efe2b667dba003c449c` |
-| Local artifact (not committed) | `.works/kk-music/morning-chamber-pastoral-dark-electronic/3-takes/morning-chamber-dark-guitar-lyria-3-pro-preview-gen-1795194526460-lsg320.wav` | `.works/kk-music/…-gen-1795194528188-chlt4q.wav` |
+- `accepted/` — the accepted run: `idea.md`, both briefs with prompt text and render trace, `explore.json`,
+  `selection.json`, `content-01.json`, the take sidecars for both takes, the selected take's
+  `checks.json`, its instance `analysis-*.json`, `4-judge-input.md`, `4-verdict-music.json`,
+  `5-run-report.{md,json}`, both instance generation records (proving `provider: "gemini"` and the
+  measured durations), and `sha256.txt`.
+- `dryrun/` — the free rehearsal that ran before any money was committed: the `spur workflow trace`
+  transcript and its deterministic artifacts. It stopped at `check` on `duration.target` (the offline
+  adapter's 1 s silent WAV), which is the adapter's documented behaviour, not a defect.
+- `paid/` — the **first** paid attempt, kept as history: it produced two 8 s takes because the instance
+  was then running `LYRIA_MOCK=1` (`provider: "mock"`, $0 spent), and it stopped at `select`. Nothing
+  from that attempt was analyzed, mastered, judged or promoted.
 
-**Spend.** The CLI's local price table recorded 2 × `$0.08` = `$0.16`; the instance reports
-`provider: mock`, which "uses no key at all and reports neither" (its own README: `LYRIA_MOCK=1` is
-"$0, no keys needed"), so the actual provider spend is **$0.00**. No audio bytes are committed, and the
-paths in the table above belong to the batch worktree (`knowledge-kit-runall-0404-0406-0410-83ed`),
-which was removed after landing — the two sha256 digests are the durable record of those mock takes.
+## Findings recorded, not fixed here
 
-## Resume conditions
+1. **Instance provider was mock.** The first paid attempt hit `LYRIA_MOCK=1`; the run stopped at `select`
+   instead of substituting artifacts. Fixed by restarting the instance without it (see 0404's Q&A).
+2. **Connect deadline vs synchronous generate.** The adapter counts "connect" until response headers
+   arrive (`plugins/generations/music-gen/src/adapter/instance.ts` `attempt()`), and this instance
+   answers `POST /api/lyria/generate` only after the take is complete — so the 5 s default reported a
+   real ~40 s generation as `unreachable` and never billed. Worked around locally with
+   `music.instance.connectTimeoutMs: 120000` in `~/.config/kk/config.yaml` (not committed); filed as a
+   residual task.
+3. **Tempo.** 90 BPM rendered against the 150 BPM ask (`analysis.bpm` warn, judge feedback). Accepted as
+   the take's actual read rather than re-bought; the next brief should make tempo the dominant
+   instruction in `style`.
+4. **Installed-package preset root.** `kk`'s bundle resolved `MUSIC_PRESET_ROOT` to a directory the
+   package does not ship — fixed under 0413 (this run used the checkout via `KK_MUSIC_KK_BIN` until the
+   fix landed).
+5. **Workflow gates.** The `brief` guard's unpadded file test (0411) and the `hitl.select` gate that
+   `spur workflow continue` cannot answer (0412) were fixed before this run.
 
-1. Restart the instance without `LYRIA_MOCK=1` and with a funded `GEMINI_API_KEY` (billing enabled —
-   Google's free tier allows zero Lyria requests/day), per `homelab/lyria-3-pro/README.md`.
-2. Re-probe `kk music library --json` and confirm a **new** generation comes back with
-   `provider: "gemini"` and a duration near the target — not `mock`, not 8 s.
-3. Re-run the paid explore into a **fresh** run directory (the two mock takes in
-   `.works/kk-music/morning-chamber-pastoral-dark-electronic/` are adopted by their sidecars and must
-   not be mistaken for the accepted take), then `select` → `analyze` → `check` → `judge` → `master`.
-
-## Regression path (R6, free)
+## Free regression path (R6 — no paid call)
 
 ```bash
 # 1. The rendered prompt text is byte-identical to what is committed here.
-bun apps/cli/src/index.ts music render --in paid/brief-01.yaml --out /tmp/brief-01.prompt.txt && \
-  cmp /tmp/brief-01.prompt.txt paid/brief-01.prompt.txt
+bun apps/cli/src/index.ts music render --in accepted/brief-01.yaml --out /tmp/brief-01.prompt.txt \
+  && cmp /tmp/brief-01.prompt.txt accepted/brief-01.prompt.txt
 
-# 2. The workflow's own dry run reproduces its deterministic artifacts and stop state.
+# 2. The committed preset data still resolves and the index still matches.
+bun apps/cli/src/index.ts music presets --json | jq -r '.root, (.formats[]|.name), (.themes[]|.name)'
+bun plugins/generations/music-gen/scripts/gen-preset-index.ts --check
+
+# 3. The workflow's own dry run reproduces its deterministic artifacts and stop state (no socket, no spend).
 export KK_MUSIC_KK_BIN="$PWD/apps/cli/src/index.ts"
 spur workflow run plugins/kk/workflows/kk-music.yaml --vars '{"topic":"regression dryrun","format":"song","theme":"synthwave","directions":"2","works":".works/tmp","dry_run":"true","auto":"false","executor":"host"}'
-#   expected: paused at `brief` → author two briefs → paused at `select` → answer a take number
-#   → failed at `check` with `duration.target` (1 s offline WAV). No socket, no spend.
+#   expected: pause at `brief` → author two briefs → pause at `select` → answer a take number
+#   → fail at `check` with `duration.target` (the offline adapter's 1 s silent WAV).
 ```
 
-## Defects found (filed, not fixed inside 0404)
-
-| Defect | Task |
-| --- | --- |
-| `brief` guard tested an unpadded `brief-<n>.yaml`, so any 2-direction run died at `brief` | filed + fixed under 0411 |
-| `select` was a `hitl.select` gate that `spur workflow continue --answer` cannot answer (yes/no/cancel only) | filed + fixed under 0412 |
-| Installed `kk` cannot resolve `plugins/generations/music-gen/presets` from the bundle | filed as a residual (below) |
-| The lyria instance runs `LYRIA_MOCK=1` | operator incident, recorded in 0404's Q&A (no code) |
+The measured numbers a later change must not regress are in the deliverable table above: 149.13 s,
+leading silence 0 s, trailing 0.67 s, D minor, 6 sections, −14.01 LUFS, −1 dBTP, 44100 Hz, judge PASS
+at 0.825.

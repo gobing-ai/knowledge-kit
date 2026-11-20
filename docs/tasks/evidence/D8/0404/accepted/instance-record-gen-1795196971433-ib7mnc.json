@@ -1,0 +1,14 @@
+{
+  "id": "gen-1795196971433-ib7mnc",
+  "model": "lyria-3-pro-preview",
+  "format": "mp3",
+  "prompt": "Spacious pastoral synthwave at 104 BPM in D minor, 4/4, half-time drums and long empty bars; the same\nidea read as a chamber piece rather than a rock chorus.\nInstrumentation: detuned saw pad carrying the harmonic bed, arpeggiated lead, round sub bass, gated\nsnare held to half-time, down-tuned rhythm guitars entering once in the chorus only.\nVocal: low male baritone, almost whispered in the verses, doubled at the octave in the chorus.\nTheme: waking among valley orchids and birdsong with a stream below — the stream is the arpeggio, the\nbirdsong a filtered lead motif; no orchestral strings.\nProduction: tape-warm and spacious, narrow verses, chorus opens wide without distortion build-up.\nAvoid: falsetto, orchestral strings, long ambient introduction, double-kick metal drumming, festival supersaws, EDM risers, distorted djent guitars, modern trap percussion\n[0:00] Intro — pad bed and a stream-like filtered texture, no drums for four bars\n[0:18] Verse 1 — baritone almost whispered, arpeggiated lead only, no guitars\n[0:52] Chorus — down-tuned guitars enter once, pad opens wide, half-time drums\n[1:20] Verse 2 — dry vocal over sub bass and pad, drums drop out for two bars\n[1:48] Chorus — full but restrained, harmony stack on the hook, no distortion build-up\n[2:12] Outro — chamber resolve on the pad and the stream motif, no fade",
+  "lyrics": "[[A0]]\n[[B1]]\n[18.5:] Orchids on the valley side\n[27.7:] Birdsong and the morning tide\n[[C2]]\n[55.4:] Wake me slow where the water runs\n[64.6:] Dark guitar when the morning comes\n[[B3]]\n[73.8:] Not a window, not a door\n[83.1:] Just the stream beneath the floor\n[[C4]]\n[110.8:] Wake me slow where the water runs\n[120.0:] Dark guitar when the morning comes\n[[D5]]\n[129.2:] Where the water runs",
+  "provider": "gemini",
+  "generatedAt": "2026-11-20T17:50:08.501Z",
+  "title": "Morning Chamber, Spacious Cut",
+  "durationSeconds": 146.1,
+  "language": "EN",
+  "durationTarget": "2:30",
+  "batchCount": 1
+}

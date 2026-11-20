@@ -1,0 +1,87 @@
+[
+    {
+        "id": "duration.target",
+        "measured": 149.13,
+        "threshold": "120–180",
+        "unit": "s",
+        "source": "ffprobe 9.0.1",
+        "result": "pass",
+        "note": "brief target 2:30 ±30 s"
+    },
+    {
+        "id": "silence.leading",
+        "measured": 0,
+        "threshold": 1,
+        "unit": "s",
+        "source": "ffmpeg 9.0.1 silencedetect",
+        "result": "pass"
+    },
+    {
+        "id": "silence.trailing",
+        "measured": 0.67,
+        "threshold": 3,
+        "unit": "s",
+        "source": "ffmpeg 9.0.1 silencedetect",
+        "result": "pass"
+    },
+    {
+        "id": "analysis.present",
+        "measured": "present",
+        "threshold": "present",
+        "unit": "state",
+        "source": "lyria instance analysis",
+        "result": "pass"
+    },
+    {
+        "id": "analysis.bpm",
+        "measured": 90,
+        "threshold": "135–165",
+        "unit": "bpm",
+        "source": "lyria instance analysis",
+        "result": "warn",
+        "note": "the analysis estimate is outside the brief band; a warn, never a fail (R2)"
+    },
+    {
+        "id": "analysis.key",
+        "measured": "D minor",
+        "threshold": "D minor",
+        "unit": "key",
+        "source": "lyria instance analysis",
+        "result": "pass"
+    },
+    {
+        "id": "analysis.sections",
+        "measured": 6,
+        "threshold": 6,
+        "unit": "sections",
+        "source": "lyria instance analysis",
+        "result": "pass"
+    },
+    {
+        "id": "delivery.integrated_loudness",
+        "measured": -14.01,
+        "threshold": "-15–-13",
+        "unit": "LUFS",
+        "source": "ffmpeg 9.0.1 loudnorm",
+        "result": "pass",
+        "note": "streaming target -14 LUFS ±1 LU"
+    },
+    {
+        "id": "delivery.true_peak",
+        "measured": -1,
+        "threshold": -1,
+        "unit": "dBTP",
+        "source": "ffmpeg 9.0.1 loudnorm",
+        "result": "pass",
+        "note": "streaming ceiling -1 dBTP, measured on the encoded output"
+    },
+    {
+        "id": "delivery.sample_rate",
+        "measured": 44100,
+        "threshold": 44100,
+        "unit": "Hz",
+        "source": "ffprobe 9.0.1",
+        "result": "pass",
+        "note": "the `-ar` guard: loudnorm upsamples to 192 kHz unless the output rate is explicit"
+    }
+]

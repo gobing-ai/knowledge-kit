@@ -27,4 +27,9 @@ avoid:
 provenance:
   authoring_source: task 0399 (feature D8) — docs/design/music-gen.md section 5 and the plugin README authoring form
   authored_at: "2026-11-19"
-  status: authored
+  status: verified
+  evidence: >-
+    verified 2026-11-20 by 0404's dogfood round — generation gen-1795196931030-puqx6j (pro,
+    149.13 s, D minor) rendered from .works/kk-music/morning-chamber-orchids, accepted by the
+    operator; run report c73a9b02: judge PASS 0.825 (MEDIUM), delivery -14.01 LUFS / -1 dBTP at
+    the streaming profile. Evidence: docs/tasks/evidence/D8/0404/accepted/.

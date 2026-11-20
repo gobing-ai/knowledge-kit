@@ -1,0 +1,36 @@
+{
+    "digest": "3eb3d96f6d1e30f91a6c5b76c9096e671083c511d07fd0f5731b46c2129c015f",
+    "digestInput": {
+        "model": "pro",
+        "prompt": "Dark pastoral synthwave at 150 BPM in D minor, 4/4, wide choruses against narrow intimate verses.\nInstrumentation: down-tuned palm-muted rhythm guitars, distorted electronic bass, filtered electronic\npercussion, detuned saw pad, gated snare, arpeggiated lead.\nVocal: low male baritone, close and dry in the verses, stacked harmony in the chorus, no falsetto.\nTheme: waking among valley orchids and birdsong with a stream below — the pastoral image carried by\nthe pad and lead, never by orchestral strings; aggression lives in the guitars and the bass.\nProduction: dark, aggressive, wide-stereo choruses, gated reverb on the snare, tape-warm low end.\nAvoid: falsetto, orchestral strings, long ambient introduction, clean bright pop production, festival supersaws, EDM risers, distorted djent guitars, modern trap percussion\n[0:00] Intro — filtered electronic percussion and distant down-tuned guitar noise, no vocal\n[0:10] Verse 1 — low baritone enters, restrained palm-muted guitars, narrow mix\n[0:45] Chorus — full-width guitars, heavy drums, stacked vocal harmonies, wide stereo\n[1:15] Verse 2 — baritone dry and forward, one counter-melody on the lead, guitars pulled back\n[1:45] Chorus — repeat the hook wider, distorted electronic bass takes the low end\n[2:10] Outro — strip back to the harmonic bed and resolve on the final chord without a fade",
+        "lyrics": "[Verse]\nBirdsong on a valley floor\nA stream that runs beneath the door\n[Chorus]\nWake me where the orchids grow\nDark guitar and the water's low\n[Verse]\nEvery window full of rain\nEvery dawn the same refrain\n[Outro]\nWhere the orchids grow",
+        "durationTarget": "2:30",
+        "language": "EN",
+        "images": [],
+        "takeIndex": 0
+    },
+    "instanceId": "gen-1795196931030-puqx6j",
+    "model": "lyria-3-pro-preview",
+    "format": "mp3",
+    "request": {
+        "prompt": "Dark pastoral synthwave at 150 BPM in D minor, 4/4, wide choruses against narrow intimate verses.\nInstrumentation: down-tuned palm-muted rhythm guitars, distorted electronic bass, filtered electronic\npercussion, detuned saw pad, gated snare, arpeggiated lead.\nVocal: low male baritone, close and dry in the verses, stacked harmony in the chorus, no falsetto.\nTheme: waking among valley orchids and birdsong with a stream below — the pastoral image carried by\nthe pad and lead, never by orchestral strings; aggression lives in the guitars and the bass.\nProduction: dark, aggressive, wide-stereo choruses, gated reverb on the snare, tape-warm low end.\nAvoid: falsetto, orchestral strings, long ambient introduction, clean bright pop production, festival supersaws, EDM risers, distorted djent guitars, modern trap percussion\n[0:00] Intro — filtered electronic percussion and distant down-tuned guitar noise, no vocal\n[0:10] Verse 1 — low baritone enters, restrained palm-muted guitars, narrow mix\n[0:45] Chorus — full-width guitars, heavy drums, stacked vocal harmonies, wide stereo\n[1:15] Verse 2 — baritone dry and forward, one counter-melody on the lead, guitars pulled back\n[1:45] Chorus — repeat the hook wider, distorted electronic bass takes the low end\n[2:10] Outro — strip back to the harmonic bed and resolve on the final chord without a fade",
+        "lyrics": "[Verse]\nBirdsong on a valley floor\nA stream that runs beneath the door\n[Chorus]\nWake me where the orchids grow\nDark guitar and the water's low\n[Verse]\nEvery window full of rain\nEvery dawn the same refrain\n[Outro]\nWhere the orchids grow",
+        "language": "EN",
+        "model": "pro",
+        "durationTarget": "2:30",
+        "format": "mp3",
+        "title": "Morning Chamber, Dark Guitar",
+        "batchCount": 1
+    },
+    "requestedFormat": "mp3",
+    "language": "EN",
+    "takeIndex": 0,
+    "unitPrice": 0.08,
+    "adoptedByReconciliation": false,
+    "unclaimed": [],
+    "forced": false,
+    "reason": null,
+    "createdAt": "2026-11-20T17:49:31.271Z",
+    "artifactPath": "/Users/robin/xprojects/knowledge-kit/.works/kk-music/morning-chamber-orchids/3-takes/morning-chamber-dark-guitar-lyria-3-pro-preview-gen-1795196931030-puqx6j.mp3",
+    "audioUrl": "http://127.0.0.1:3100/generations/gen-1795196931030-puqx6j.mp3"
+}

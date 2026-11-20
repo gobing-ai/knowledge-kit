@@ -1,0 +1,44 @@
+{
+  "verdict": "PASS",
+  "confidence": "MEDIUM",
+  "rubric": "music-quality",
+  "score": 0.825,
+  "summary": "checks.json carries 7 rows and no fail: duration.target measured 149.13 s against the 120–180 band (unit s, source ffprobe 9.0.1), silence.leading measured 0 s and silence.trailing 0.67 s (unit s, source ffmpeg 9.0.1 silencedetect), analysis.present present, analysis.key measured D minor (source lyria instance analysis), analysis.sections measured 6, and the only warn is analysis.bpm measured 90 bpm against the 135–165 band the 150 BPM brief asked for. Arrangement agrees with the declared structure almost to the boundary (Intro 00:00–00:11, Verse 1 00:11–00:47, Chorus 1 00:47–01:14, Verse 2 01:14–01:45, Chorus 2 01:45–02:11, Outro 02:11–02:29 against the brief's 0:00/0:10/0:45/1:15/1:45/2:10). The analysis names lead male vocals, backing vocals, electric and distorted electric guitar, bass guitar, drums and synth pads, matching the brief's instrumentation and vocal character, while its genre label reads Alternative Rock rather than synthwave. Lyric text is present, English, tagged by section and keeps a repeated chorus hook; mix-level intelligibility and any audible artefact are not observable from the bundle, so no claim is made about them. One warn row (BPM) plus one warn craft criterion put the weighted score at 0.825, above the 0.75 threshold, and the only must-pass criterion is clean.",
+  "findings": [
+    {
+      "criterion": "checks.clean",
+      "status": "pass",
+      "detail": "checks.json exists for the take with 7 rows and no result: fail. Rows: duration.target pass (measured 149.13, threshold \"120–180\", unit s, source ffprobe 9.0.1), silence.leading pass (measured 0, threshold 1, unit s, source ffmpeg 9.0.1 silencedetect), silence.trailing pass (measured 0.67, threshold 3, unit s, source ffmpeg 9.0.1 silencedetect), analysis.present pass (present, source lyria instance analysis), analysis.bpm warn (measured 90, threshold \"135–165\", unit bpm, source lyria instance analysis), analysis.key pass (measured D minor, source lyria instance analysis), analysis.sections pass (measured 6, threshold 6, unit sections, source lyria instance analysis). Warn ids: analysis.bpm."
+    },
+    {
+      "criterion": "brief-adherence",
+      "status": "warn",
+      "detail": "Tempo disagrees: analysis.bpm measured 90 bpm (unit bpm, source lyria instance analysis) against the brief's 150 BPM technical direction, which the check records as the 135–165 band. Key agrees: analysis.key measured D minor. Instrumentation agrees with the brief's technical direction — the analysis names lead male vocals, backing vocals, electric guitar, distorted electric guitar, bass guitar, drums, drum machine and synth pads. The analysis labels the genre \"Alternative Rock\" while the brief's style reads \"dark pastoral synthwave\": the guitar-forward, dark-production half of the brief is attested, the synthwave half is not, and timbral and production texture remain not observable from the bundle."
+    },
+    {
+      "criterion": "arrangement",
+      "status": "pass",
+      "detail": "The analysis' 6 sections match the brief's 6 declared sections and each boundary is within ~2 s of the declaration: Intro 00:00–00:11 (brief 0:00), Verse 1 00:11–00:47 (0:10), Chorus 1 00:47–01:14 (0:45), Verse 2 01:14–01:45 (1:15), Chorus 2 01:45–02:11 (1:45), Outro 02:11–02:29 (2:10). analysis.sections measured 6 against the brief's 6 structure entries (unit sections, source lyria instance analysis)."
+    },
+    {
+      "criterion": "lyric-intelligibility",
+      "status": "pass",
+      "detail": "The bundle carries authored EN lyric text, tagged [Verse] / [Chorus] / [Outro] in the order the structure declares (two verses, two choruses, one outro), with consistent two-line shapes inside each section and no prose sentences in place of hook lines. Language matches the brief's EN. Mix-level intelligibility is not observable from the bundle and is not claimed."
+    },
+    {
+      "criterion": "hook",
+      "status": "pass",
+      "detail": "A repeated hook line is locatable in the lyric text inside the declared chorus sections: \"Wake me where the orchids grow\" with its answering line appears in the [Chorus] block that the structure places at 0:45 and again at 1:45 (structure entries Chorus and Chorus). The bundle makes no claim about whether the melody is memorable."
+    },
+    {
+      "criterion": "production-artefacts",
+      "status": "warn",
+      "detail": "No artefact is recorded as a row: silence.leading measured 0 s and silence.trailing 0.67 s, both pass (unit s, source ffmpeg 9.0.1 silencedetect), and no delivery rows exist yet because the take has not been mastered. Clipping, dropout, clicks and vocal-timbre artefacts are only audible and therefore unattested from the bundle."
+    }
+  ],
+  "feedback": [
+    "Tempo is the one measured miss: the take rendered at 90 bpm against the brief's 150 BPM ask (analysis.bpm warn, source lyria instance analysis). A next iterate should state the tempo as the single dominant instruction at the start of `style` and drop the competing \"wide choruses\" framing from the same sentence, or accept the slower half-time reading deliberately and re-brief the structure timings to match it."
+  ],
+  "content_ref": "/Users/robin/xprojects/knowledge-kit/.works/kk-music/morning-chamber-orchids/3-takes/morning-chamber-dark-guitar-lyria-3-pro-preview-gen-1795196931030-puqx6j.mp3",
+  "evaluated_at": "2026-11-20T18:00:00Z"
+}
