@@ -470,7 +470,7 @@ empty; run rows are still served). Messages are bounded and never carry raw SQLi
    `id: kk-collect | kk-daily-ai-voice2 | kk-itc`. This checkout ships the declarations **enabled**
    — G8/0255, made safe by step 1. The host validates every `directory` at *server start*, so a
    checkout that skipped lifecycle scripts (or ran `git clean -xdf`) still needs one
-   `bun scripts/build-board.ts` before serving; otherwise `spur serve` fails with
+   `bun scripts/build-board.ts` before serving; otherwise `spur self serve` fails with
    `bootstrap.modules[<i>] ("kk-…"): module directory "…" was not found`. An installed user points
    `directory` at their installed package's own `dist/board/<entry>` tree and needs neither this
    checkout nor a `node_modules` edit.
@@ -484,7 +484,7 @@ empty; run rows are still served). Messages are bounded and never carry raw SQLi
    only shows the SPA's own 404. Definitions stay in **Settings → Workflows**
    (`/board/settings/workflows`). A validated `kkApi` query parameter selects a non-default loopback
    reader port and is retained in saved URLs. A Board served on a LAN address
-   (`spur serve --host 0.0.0.0`, opened as `http://<lan-ip>:<port>`) is supported too: the Board
+   (`spur self serve --host 0.0.0.0`, opened as `http://<lan-ip>:<port>`) is supported too: the Board
    origin a module validates is `window.location.origin`, so Collect's native mode reads the
    Board's own routes and no module refuses to render. Only the `kkApi` reader override stays
    loopback-only.
@@ -772,7 +772,7 @@ re-entrant for the same `--run`, and a claim older than its recorded TTL is stol
 covers a crashed holder. `--ttl` defaults to `7200000` (2 h: the observed 20261006 collection ran
 ~32 min); `kk-collect` pins `--ttl 14400000` (4 h) so a run is never overtaken mid-collect while the
 claim still expires inside the 6 h tick cadence — a run killed between `lock` and `release` (a
-`spur serve` restart aborts the tick in the queue, so `release-failed` never runs) then costs one
+`spur self serve` restart aborts the tick in the queue, so `release-failed` never runs) then costs one
 tick instead of two: with a cadence-sized TTL the next tick reported `{"skipped":"locked"}` and
 12 h of collection were lost (2026-11-15).
 `kk lock release --name <lock> --run <id>` frees the lock **iff** that run still owns it and
@@ -1191,7 +1191,7 @@ grok-bot template (kk-serve, the publish3 windows) are refused with the ADR-044 
 never creates the Bot routine; the command's only side effect is the text it prints
 (`plugins/kk/README.md` §Schedule documents the install lines and the paste-into-routine step).
 
-`spur serve` **hosts the scheduler**: the `.spur/config.yaml` `bootstrap.scheduler` jobs (the daily
+`spur self serve` **hosts the scheduler**: the `.spur/config.yaml` `bootstrap.scheduler` jobs (the daily
 `kk-daily-ai-voice` tick) are enqueued by the job worker that lives inside the server, so the server
 itself is what must be kept alive (2026-10-12). `kk-serve` is that keepalive (task 0265).
 

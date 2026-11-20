@@ -11,12 +11,12 @@
  * comes from the real store file. Its content sha256 AND its `sqlite_master` + per-table row counts
  * are captured before and after the browser run; any difference exits non-zero.
  *
- * Two walls make a `spur serve --cwd <checkout>` impossible here, both verified 2026-10-17: the
+ * Two walls make a `spur self serve --cwd <checkout>` impossible here, both verified 2026-10-17: the
  * operator's own Board owns the checkout ("Project already has a server owner (pid …)"), and the
  * reader refuses any Board whose `/api/project` path differs from its own project path (403
  * `board.project.mismatch`). So the BOARD and the reader share a throwaway project: it holds the CLI
  * tarball packed from THIS worktree (`prepack` builds the board assets, so the browser exercises
- * 0307/0308 code), a copy of the Spur plane (a `spur serve` writes to its database), and — never a
+ * 0307/0308 code), a copy of the Spur plane (a `spur self serve` writes to its database), and — never a
  * copy — a SYMLINK to the live store (and to its `-wal`, so the projections see the live snapshot).
  * The reader therefore opens this checkout's real store file, and both its content sha256 (`db` and
  * `wal`) and its `sqlite_master` + per-table row counts are compared before and after.
@@ -263,7 +263,7 @@ function writeConfig(project: string): void {
  * file, so the digests observe the live store. Its `-wal` is linked too — a WAL-mode store keeps the
  * newest committed rows there, and only a db path beside it can see them; SQLite rebuilds a fresh
  * `-shm` in this directory and pure reads never append to the WAL, which the before/after digests
- * would catch anyway. The Spur plane IS copied: a `spur serve` writes to its own database.
+ * would catch anyway. The Spur plane IS copied: a `spur self serve` writes to its own database.
  */
 function boardProject(paths: Paths): string {
     const dir = mkdtempSync(join(tmpdir(), 'kk-verify-collect-board-'));
@@ -563,6 +563,7 @@ async function main(): Promise<number> {
                 'board',
                 [
                     ...spurCommand(),
+                    'self',
                     'serve',
                     '--port',
                     String(boardPort),
@@ -682,21 +683,25 @@ async function main(): Promise<number> {
     }
 }
 
-/** The Spur CLI invocation: `$SPUR_BIN`, then the workspace dependency, then the PATH. */
+/** The Spur CLI invocation: `$SPUR_BIN`, then the PATH, then the module resolver. */
 function spurCommand(): string[] {
     const override = process.env.SPUR_BIN;
     if (override !== undefined && override !== '') return [process.execPath, override];
-    try {
-        const pkg = import.meta.resolve('@gobing-ai/spur/package.json');
-        return [process.execPath, join(dirname(fileURLToPath(pkg)), 'spur.js')];
-    } catch {
-        const which = Bun.which('spur');
-        if (which === null) throw new Error('cannot resolve the installed spur CLI; set SPUR_BIN to spur.js');
+    // PATH first: `import.meta.resolve` walks ancestor `node_modules`, so a stale
+    // `~/node_modules/@gobing-ai/spur` would otherwise shadow the single global install.
+    const which = Bun.which('spur');
+    if (which !== null) {
         // `scripts/spur-env.ts` is the canonical resolver: a published install and a source
         // checkout whose `spur` on PATH is a working copy both resolve there.
         const packageRoot = spurPackageRootOf(dirname(realpathSync(which)));
         if (packageRoot === undefined) throw new Error(`cannot locate the @gobing-ai/spur package behind ${which}`);
         return [process.execPath, join(packageRoot, 'spur.js')];
+    }
+    try {
+        const pkg = import.meta.resolve('@gobing-ai/spur/package.json');
+        return [process.execPath, join(dirname(fileURLToPath(pkg)), 'spur.js')];
+    } catch {
+        throw new Error('cannot resolve the installed spur CLI; set SPUR_BIN to spur.js');
     }
 }
 

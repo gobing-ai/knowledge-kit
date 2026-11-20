@@ -191,7 +191,7 @@ export function isLoopbackHttpOrigin(origin: string): boolean {
  *
  * The Board origin is never operator input — every module passes `window.location.origin` — and the
  * browser enforces same-origin on the requests it carries. A Board served on a LAN address
- * (`spur serve --host 0.0.0.0`, or behind a TLS proxy) is therefore usable; only a malformed value
+ * (`spur self serve --host 0.0.0.0`, or behind a TLS proxy) is therefore usable; only a malformed value
  * is refused.
  */
 export function isHttpOrigin(origin: string): boolean {

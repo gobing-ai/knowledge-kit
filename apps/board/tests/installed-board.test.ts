@@ -948,7 +948,28 @@ async function openModule(id: string, query = ''): Promise<void> {
     await page.goto(`${boardOrigin}/board/modules/${id}${query === '' ? '' : `?${query}`}`, {
         waitUntil: 'domcontentloaded',
     });
-    await page.waitForSelector('.kk-board', { timeout: 15_000 });
+    // `.kk-board` is rendered by the module itself, so the host's own diagnostic (an unusable
+    // `webModule`, a 404 page) shows up only as a bare selector timeout. Carry the rendered text and
+    // the page errors into the failure so the cause is named.
+    const errors: string[] = [];
+    const onConsole = (message: ConsoleMessage): void => {
+        if (message.type() === 'error') errors.push(message.text());
+    };
+    const onPageError = (error: Error): void => {
+        errors.push(error.message);
+    };
+    page.on('console', onConsole);
+    page.on('pageerror', onPageError);
+    try {
+        await page.waitForSelector('.kk-board', { timeout: 15_000 });
+    } catch {
+        const body = (await page.locator('body').innerText()).replace(/\s+/g, ' ').trim().slice(0, 400);
+        const detail = errors.length === 0 ? '' : ` | errors: ${errors.join(' | ')}`;
+        throw new Error(`module ${id} never mounted at ${page.url()}: ${body}${detail}`);
+    } finally {
+        page.off('console', onConsole);
+        page.off('pageerror', onPageError);
+    }
 }
 
 /** Wait until the run selector or table carries an option/row for `runId`. */
