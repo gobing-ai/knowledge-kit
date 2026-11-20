@@ -236,6 +236,38 @@ describe('checkChannelSession', () => {
         expect(requests.map((request) => request.headless)).toEqual([false]);
     });
 
+    test('one deadline covers every pass, so a refusal prints inside the caller budget (2026-11-19)', async () => {
+        // Both passes wait their full timeout before refusing. Budgeting each pass separately spent
+        // 2x the caller's deadline, and the caller (kk plugin check) killed the probe before it could
+        // print `refused` — reporting `malformed probe output` for an expired session.
+        const { launcher, requests } = makeLauncher();
+        const neverAuthenticated: ChannelBrowserConfig = { ...CONFIG, isAuthenticated: async () => false };
+        const startedAt = Date.now();
+        const result = await checkChannelSession(neverAuthenticated, {
+            profileDir: DEFAULT_DIR,
+            launcher,
+            timeoutMs: 3_000,
+        });
+        const elapsed = Date.now() - startedAt;
+
+        expect(result.status).toBe('refused');
+        // The auth wait spent the budget, so the headed fallback cannot be launched inside it.
+        expect(requests.map((request) => request.headless)).toEqual([true]);
+        expect(elapsed).toBeLessThan(3_500);
+    });
+
+    test('a pass that fails fast still leaves room for the headed fallback', async () => {
+        // The ladder exists for a WAF-style block, which fails immediately rather than timing out.
+        const { launcher, requests } = makeLauncher((request) => {
+            if (request.headless) throw new BrowserProfileMissingError(DEFAULT_DIR);
+        });
+        const result = await checkChannelSession(CONFIG, { profileDir: DEFAULT_DIR, launcher, timeoutMs: 30_000 });
+
+        expect(result.status).toBe('refused');
+        expect(requests.map((request) => request.headless)).toEqual([true]);
+        expect(result.detail).toContain('no infoq browser profile');
+    });
+
     test('headedFallback false keeps a refusal to the single headless pass', async () => {
         const { launcher, requests } = makeLauncher(() => {
             throw new LoginTimeoutError('headless console never confirmed');
