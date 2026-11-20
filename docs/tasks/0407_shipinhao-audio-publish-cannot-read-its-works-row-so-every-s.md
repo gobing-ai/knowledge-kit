@@ -4,32 +4,55 @@ name: shipinhao audio publish cannot read its works row, so every submission is 
 status: todo
 template: issue
 created_at: 2026-11-18T23:29:36.971Z
-updated_at: "2026-11-19T00:41:53.911Z"
+updated_at: "2026-11-20T00:28:50.242Z"
 
+ac_altitude: task-local
+ac_numbering: task-local
+priority: P3
+estimate_hours: 0.5
+feature_id: L3
 ---
 
 ## 0407. shipinhao audio publish cannot read its works row, so every submission is unknown
 
 ### Background
 
-Captured from the creation title: "shipinhao audio publish cannot read its works row, so every submission is unknown".
+Captured from the creation title: "shipinhao audio publish cannot read its works row so every scheduled audio row is uncertain".
+
+**Refine corrections (2026-11-19)**
+
+- **Already fixed; ready to close, not to implement.** The hypothesis in the title ("cannot read its works row") was wrong. The leaf cause was an uncommitted 封面 that made the platform refuse the submit (see Root Cause). The fix landed in commit 130c9c22 (2026-11-18, `plugins/publishings/shipinhao-pub/src/audio-flow.ts`, `CROP_IMAGE` 274, cropper wait 214, `audio-submit-validation` 456) with two regression tests. Re-run 2026-11-19: `bun test plugins/publishings/shipinhao-pub/tests/audio-flow.test.ts` → 37 pass, 0 fail. Live: `shipinhao-pub.audio` `succeeded/confirmed` for 11-17 and 11-18 (Root Cause) and 11-19 (`.spur/context/memory.md:316`).
+- **Valid on the new workflow.** The row `shipinhao-pub / audio / episode` is live in `plugins/kk/publish-presets/daily-ai-voice.json:39-49`.
+- **Secondary finding dropped from this task.** Auto-reclaiming a dead-pid browser lease would contradict the frozen lease contract in `packages/publish-harness/src/profile-lease.ts:8-13` (task 0276: "A lease is never killed or auto-removed"; refusal text 248). `reclaimStaleNativeLock` (293-330) covers only Chromium's native `SingletonLock`. Changing that policy needs its own ADR entry and task, so it is raised to the operator as a candidate, not done here.
+- **Remaining action:** verify + close (`/sp:dev-verify 0407`, then wrap). Estimate lowered to 0.5 h.
 
 ### Requirements
 
-kk news publish --window after-generate marks shipinhao-pub.audio uncertain: 发表音频 was clicked but no row carrying the title was ever observed in 音频管理 (plugins/publishings/shipinhao-pub/src/audio-flow.ts:380, stage 'audio-receipt').
+- [ ] R1. — Commit the 封面 before submitting. Success is the crop dialog closing, not the upload percentage or the click returning.
+- [ ] R2. — Name a refused submit. A submit refused client-side reports the form's inline validation line (stage `audio-submit-validation`), never a blind receipt wait. "Clicked but unconfirmed" stays `unknown`, never published.
 
-Evidence (2026-11-18):
-- receipt .works/kk-news-generate/20261118/4-publish/receipts/shipinhao-pub.audio.json: status uncertain / effect unknown, durationMs 83777, metadata.stage 'audio-receipt', evidence '音频 list row never observed'.
-- Before the 2026-11-18 login the row failed at the session preflight ('Authentication was not confirmed within 180000ms'); after 'bun plugins/publishings/shipinhao-pub/src/profile-check.ts login' verified the profile, the run reached the submit and failed only at the receipt read.
-- Independent recon with the harness launcher (packages/publish-harness/src/browser.ts createKkBrowserLauncher, headless:false) reached https://channels.weixin.qq.com/platform/post/audioManager but the grid never rendered rows after 20+s of polling, i.e. the blind spot is in reading the list, not necessarily in publishing.
-- The code's own recon note (audio-flow.ts:272) records that a missing 封面 makes the platform refuse with 「请上传封面」 and produce no works row; the receipt carries no cover warning, so both causes are open.
+**Non-goals:** the dead-pid browser-lease reclaim (contradicts the frozen 0276 contract; separate ADR + task if wanted).
 
-What is needed: decide from the live console which failure this is (row exists under a different render vs cover refusal), then make the receipt read robust (wait for the grid's data request, or read the works list through the authenticated CGI) and keep 'clicked but unconfirmed' as unknown — never as published.
-Immediate operator check: does 视频号 → 内容管理 → 音频 list a '每日AI乱炖 · 2026-11-18' row?
+*Original report (superseded by Root Cause):* `kk news publish --window after-generate` marked `shipinhao-pub.audio` uncertain: 发表音频 was clicked but no row carrying the title appeared in 音频管理 (stage `audio-receipt`).
 
 ### Acceptance Criteria
 
-<!-- Number items AC1, AC2, … (never R<n> — that is the Requirements namespace). Preferred: `Scenario: AC1 — <concrete outcome> (req: R1)` blocks with Given/When/Then, declaring both `ac_altitude: task-local` and `ac_numbering: task-local` for task-local regression criteria (altitude skips only the feature-subset check; numbering makes `(req: R<n>)` count toward requirement coverage). Parsed checkbox rows `- [ ] AC1 — <title>` are supported but never bind requirements — only `Scenario:` titles read `(req: R<n>)`. Bare `- AC1` bullets are legacy unparsed records, not a traceability bypass. Requirements use `- [ ] R1. <text>`, checked at close. Use a regression scenario proving the bug is fixed. -->
+```gherkin
+Scenario: AC1 — The cover is committed before submit (req: R1)
+  Given the 音频 form whose crop dialog mounts before its cropper image
+  When attachAudioCover runs
+  Then it waits for the upload to settle and the cropper image, clicks 确认 inside the crop dialog, and succeeds only when the dialog closes
+
+Scenario: AC2 — A refused submit names the inline validation (req: R2)
+  Given a submit that leaves the page on /platform/post/createAudio with 请上传封面
+  When the flow reads the outcome
+  Then it fails at stage audio-submit-validation naming that line, instead of a 30 s unknown receipt wait
+
+Scenario: AC3 — Live rows confirm (req: R1, R2)
+  Given the scheduled after-generate window on 2026-11-17, 11-18 and 11-19
+  When the shipinhao-pub.audio receipt is read
+  Then it is succeeded with a confirmed works row
+```
 
 ### Q&A
 
@@ -37,11 +60,14 @@ Immediate operator check: does 视频号 → 内容管理 → 音频 list a '每
 
 ### Design
 
-<!-- Fix approach and tradeoffs. Keep this short unless the issue changes architecture. -->
+As shipped in 130c9c22: `attachAudioCover` waits for upload settle → crop dialog + `CROP_IMAGE` → dialog-scoped 确认 → dialog closed. After submit, if still on `/platform/post/createAudio`, it reads the inline validation (`请上传封面` / `请上传音频` / `请填写标题` / `请填写描述` / `请选择合集`) and fails with stage `audio-submit-validation`. File: `plugins/publishings/shipinhao-pub/src/audio-flow.ts`.
 
 ### Plan
 
-<!-- Ordered debugging/fix checklist. Fill before moving to todo/wip. -->
+1. ~~Fix and regression tests~~ (done, 130c9c22).
+2. `/sp:dev-verify 0407`: the AC1/AC2 tests in `plugins/publishings/shipinhao-pub/tests/audio-flow.test.ts`, AC3 receipts.
+3. `/sp:dev-wrap 0407`.
+4. Operator: delete the duplicate 2026-11-18 16:25 row in 音频管理 (Root Cause note).
 
 ### Root Cause
 
@@ -79,11 +105,13 @@ auto-reclaim for a dead pid on this host would match `reclaimStaleNativeLock`.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+- `plugins/publishings/shipinhao-pub/src/audio-flow.ts`: cover commit wait (`CROP_IMAGE` 274, cropper wait ~214); post-submit inline validation read, stage `audio-submit-validation` (~456). Commit 130c9c22.
+- `plugins/publishings/shipinhao-pub/tests/audio-flow.test.ts`: +2 regression tests (upload never settles; submit refused by inline validation).
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+- 2026-11-19: `bun test plugins/publishings/shipinhao-pub/tests/audio-flow.test.ts` → 37 pass, 0 fail (single-file runs exit 1 on coverage by design, see AGENTS.md § Testing).
+- Live receipts: `succeeded/confirmed` for 2026-11-17 and 2026-11-18 (Root Cause), and 2026-11-19 (`.spur/context/memory.md:316`).
 
 ### Review
 

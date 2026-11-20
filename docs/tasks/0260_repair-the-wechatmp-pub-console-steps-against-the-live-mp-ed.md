@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Repair the wechatmp-pub console steps against the live MP editor
-status: blocked
+status: cancelled
 template: standard
 created_at: 2026-10-12T02:23:38.506Z
-updated_at: "2026-10-14T20:58:37.642Z"
+updated_at: "2026-11-20T00:28:49.408Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -88,6 +88,15 @@ or publish anything. Its direct WebBridge/profile evidence remains at
 - Prior environment/work facts are current → audit HEAD is `e07afeb7`, Bun is 1.4.3, installed Playwright is 1.55.0 with Chromium available; no WIP tasks and one worktree were reported. PIDs 91513/91514 still run the 20261013 MP executor (child Bun 1.3.14) → no live profile takeover; recheck before the live completion gate.
 
 Offline audit evidence: `.spur/run/refine-0260/audit-20261014/probe.ts` and `observations.json`. The production DOM expressions were extracted from source and executed in isolated headless Chromium with network blocked; all seven observations are recorded in Testing. This establishes code defects, not current live-console compatibility. These scratch files are gitignored; the defect descriptions and frozen implementation contract are retained in this task.
+
+**Refine corrections (2026-11-19): cancelled, superseded**
+
+- **R1–R3 shipped.** They passed into `testing` on 2026-10-14. The task was blocked only on R4, the attended live draft readback.
+- **R4 was overtaken.**
+  - Task 0318 (done; commit 61263694, 2026-10-21) landed a live acceptance on a fresh editor. It observed 原创/赞赏 checked, claim and URL with the exact requested text, and no overlays.
+  - The editor rail this contract froze has since been reworked: v2 editor paste/dialogs/cover picker in 30202fcd, podcast library reuse in 0b149f36, a late-audio cover rescue in 17b48188, and honest row failure on unapplied enrichment in bec762a2. The `#js_cover_area`/`SELECT_FIRST` defects named here describe code that no longer exists in that form.
+- **The remaining live gap moved.** It is now owned by task 0406 (the 赞赏 confirm stall in the new `kk news publish` matrix, plus duplicate drafts). Re-running this R4 against the old daily workflow would verify a retired path.
+- **Disposition.** Cancelled, not done: the R4 live gate was never met under this task.
 
 ### Requirements
 
@@ -396,4 +405,5 @@ Three-dimensional review of the 6-file diff vs R1–R4 and AC1–AC7.
 - 2026-10-14T20:50:04.618Z todo → wip (system)
 - 2026-10-14T20:56:18.909Z wip → testing (system)
 - 2026-10-14T20:58:37.642Z testing → blocked (system)
+- 2026-11-20T00:28:49.408Z blocked → cancelled (system)
 

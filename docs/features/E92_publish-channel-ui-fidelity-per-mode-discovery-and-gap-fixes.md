@@ -6,7 +6,7 @@ status: active
 priority: P2
 tags: []
 created_at: "2026-10-05T17:58:49.842Z"
-updated_at: "2026-10-13T20:53:13.202Z"
+updated_at: "2026-11-20T00:29:00.470Z"
 ---
 
 # E92: Publish channel UI fidelity: per-mode discovery and gap fixes
@@ -92,12 +92,15 @@ Feature: Publish channel UI fidelity
 | 0200 | Discover the WeChat MP console and record UI draft drift | done |
 | 0204 | Discover the X compose console (article and post) and record UI draft drift | done |
 | 0205 | Fix the recorded per-channel UI drift and add validated mode dispatch | done |
-| 0260 | Repair the wechatmp-pub console steps against the live MP editor | blocked |
+| 0260 | Repair the wechatmp-pub console steps against the live MP editor | cancelled |
+| 0406 | wechatmp 赞赏 enrichment times out, leaving every news draft uncertain | todo |
 | 0199 | Discover the xhs publish console per mode and record UI drift | done |
 | 0201 | Discover the InfoQ write console and record UI draft drift | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
+
+- 2026-11-19: 0260 cancelled (superseded by 0318 live acceptance and the v2-editor rework). Its live residual, the 赞赏 confirm stall in the new news publish matrix plus duplicate drafts, is owned by 0406.
 
 ## History
 
