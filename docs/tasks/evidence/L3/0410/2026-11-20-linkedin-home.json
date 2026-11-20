@@ -1,0 +1,162 @@
+{
+  "url": "https://www.linkedin.com/feed/foryou/",
+  "title": "Feed | LinkedIn",
+  "buttons": [
+    {
+      "text": "Skip to search",
+      "testid": null,
+      "disabled": false,
+      "cls": "cfsj5c cfsj5b cfst0 cfsa26 cfsfvv cfsjpf cfsjqy cfsj5f cfsj5"
+    },
+    {
+      "text": "Skip to main content",
+      "testid": null,
+      "disabled": false,
+      "cls": "cfsj5c cfsj5b cfst0 cfsa26 cfsfvv cfsjpf cfsjqy cfsj5f cfsj5"
+    },
+    {
+      "text": "Skip to sidebar",
+      "testid": null,
+      "disabled": false,
+      "cls": "cfsj5c cfsj5b cfst0 cfsa26 cfsfvv cfsjpf cfsjqy cfsj5f cfsj5"
+    },
+    {
+      "text": "Skip to primary content",
+      "testid": null,
+      "disabled": false,
+      "cls": "cfsj5c cfsj5b cfst0 cfsa26 cfsfvv cfsjpf cfsjqy cfsj5f cfsj5"
+    },
+    {
+      "text": "Skip to aside",
+      "testid": null,
+      "disabled": false,
+      "cls": "cfsj5c cfsj5b cfst0 cfsa26 cfsfvv cfsjpf cfsjqy cfsj5f cfsj5"
+    },
+    {
+      "text": "Home",
+      "testid": null,
+      "disabled": false,
+      "cls": "cfskvq cfskvp cfsh8u cfst0 cfsa26 cfsayy cfsg2e cfsf2q cfsh9"
+    },
+    {
+      "text": "Me",
+      "testid": null,
+      "disabled": false,
+      "cls": "cfskvq cfskvp cfsh8u cfst0 cfsa26 cfsayy cfsg2e cfsf2q cfsh9"
+    },
+    {
+      "text": "For Business",
+      "testid": null,
+      "disabled": false,
+      "cls": "cfskvq cfskvp cfsh8u cfst0 cfsa26 cfsayy cfsg2e cfsf2q cfsh9"
+    },
+    {
+      "text": "Retry Premium",
+      "testid": null,
+      "disabled": false,
+      "cls": "cfsjic cfskpi cfskph cfsjgf cfsjhb cfsjh7 cfsji3 cfst0 cfsfv"
+    },
+    {
+      "text": "For you, 1 of 2, selectedFor you",
+      "testid": null,
+      "disabled": false,
+      "cls": "cfsf9q cfskpi cfskph cfsjgf cfsjhb cfsjh7 cfsji3 cfst0 cfsfv"
+    },
+    {
+      "text": "Network, 2 of 2Network",
+      "testid": null,
+      "disabled": false,
+      "cls": "cfsf9q cfskpi cfskph cfsjgf cfsjhb cfsjh7 cfsji3 cfst0 cfsfv"
+    },
+    {
+      "text": "Start a post",
+      "testid": null,
+      "disabled": false,
+      "cls": "cfsjic cfsf1u cfsgiy cfsjdt cfsjdo cfskpi cfskph cfsjgf cfsj"
+    },
+    {
+      "text": "Video",
+      "testid": null,
+      "disabled": false,
+      "cls": "cfskpi cfskph cfsjgf cfsjhb cfsjh7 cfsji3 cfst0 cfsfvv cfsjq"
+    },
+    {
+      "text": "Photo",
+      "testid": null,
+      "disabled": false,
+      "cls": "cfskpi cfskph cfsjgf cfsjhb cfsjh7 cfsji3 cfst0 cfsfvv cfsjq"
+    },
+    {
+      "text": "Sort by: Top",
+      "testid": null,
+      "disabled": false,
+      "cls": "cfsgiy cfsjdt cfsjdo cfskpi cfskph cfsjgf cfsjhb cfsjh7 cfsj"
+    },
+    {
+      "text": "Follow",
+      "testid": null,
+      "disabled": false,
+      "cls": "cfsj5c cfsj5b cfst0 cfsa26 cfsfvv cfsjpf cfsjqy cfsj5h cfsj5"
+    },
+    {
+      "text": "Follow",
+      "testid": null,
+      "disabled": false,
+      "cls": "cfsj5c cfsj5b cfst0 cfsa26 cfsfvv cfsjpf cfsjqy cfsj5h cfsj5"
+    },
+    {
+      "text": "Follow",
+      "testid": null,
+      "disabled": false,
+      "cls": "cfsj5c cfsj5b cfst0 cfsa26 cfsfvv cfsjpf cfsjqy cfsj5h cfsj5"
+    },
+    {
+      "text": "… more",
+      "testid": "expandable-text-button",
+      "disabled": false,
+      "cls": "cfska5 cfska4 cfska3 cfsilg cfsitw cfsjjz cfsjkg cfsjkx cfsj"
+    },
+    {
+      "text": "243",
+      "testid": null,
+      "disabled": false,
+      "cls": "cfsj5c cfsj5b cfst0 cfsa26 cfsfvv cfsjpf cfsjqy cfsj5g cfsj5"
+    },
+    {
+      "text": "9",
+      "testid": null,
+      "disabled": false,
+      "cls": "cfsj5c cfsj5b cfst0 cfsa26 cfsfvv cfsjpf cfsjqy cfsj5g cfsj5"
+    },
+    {
+      "text": "8",
+      "testid": null,
+      "disabled": false,
+      "cls": "cfsj5c cfsj5b cfst0 cfsa26 cfsfvv cfsjpf cfsjqy cfsj5g cfsj5"
+    },
+    {
+      "text": "Follow",
+      "testid": null,
+      "disabled": false,
+      "cls": "cfsj5c cfsj5b cfst0 cfsa26 cfsfvv cfsjpf cfsjqy cfsj5h cfsj5"
+    },
+    {
+      "text": "… more",
+      "testid": "expandable-text-button",
+      "disabled": false,
+      "cls": "cfska5 cfska4 cfska3 cfsilg cfsitw cfsjjz cfsjkg cfsjkx cfsj"
+    },
+    {
+      "text": "113",
+      "testid": null,
+      "disabled": false,
+      "cls": "cfsj5c cfsj5b cfst0 cfsa26 cfsfvv cfsjpf cfsjqy cfsj5g cfsj5"
+    }
+  ],
+  "editors": [],
+  "signInMarkers": {
+    "loginForm": 0,
+    "loggedInNav": 0
+  },
+  "bodyStart": "0 notifications Skip to search Skip to main content Skip to sidebar Skip to primary content Skip to aside Home My Network Jobs 1 Messaging 13 Notifications Me For Business Retry Premium Robin Min Founder & CEO at Gobing "
+}

@@ -32,7 +32,7 @@ import {
 import type { BrowserLauncher, IsAuthenticatedPredicate } from '@gobing-ai/ts-browser-automation';
 import { withProfilePage } from '@gobing-ai/ts-browser-automation';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
-import type { Page } from 'playwright';
+import type { Locator, Page } from 'playwright';
 
 const TARGET = 'x';
 const LOGIN_INSTRUCTION = 'bun plugins/publishings/x-pub/src/profile-check.ts login';
@@ -47,8 +47,15 @@ export const X_POST_URL = 'https://x.com/home';
 export const X_NEW_POST_BUTTON = '[data-testid="SideNav_NewTweet_Button"]';
 /** Composer page the nav button lands on. */
 export const X_COMPOSE_PATH = '/compose/post';
-/** Page-scoped submit (the composer is a page, not a dialog). */
+/**
+ * Submit controls, measured 2026-11-20 on `/compose/post`: the **page** composer carries
+ * `[data-testid="tweetButton"]`, and the inline composer on `/home` carries
+ * `[data-testid="tweetButtonInline"]`. Both start `disabled`/`aria-disabled="true"` and enable as soon
+ * as the editor holds text, so the rail must accept either rather than assume the page one survives.
+ */
 export const X_POST_SUBMIT = '[data-testid="tweetButton"]';
+export const X_POST_SUBMIT_INLINE = '[data-testid="tweetButtonInline"]';
+export const X_POST_SUBMITS: readonly string[] = [X_POST_SUBMIT, X_POST_SUBMIT_INLINE];
 
 /** Composer controls, all page-scoped (measured 2026-11-16). */
 export const POST_SELECTORS = {
@@ -211,15 +218,31 @@ export class XPostBrowserTransport implements PublishTransport {
         return composer.ok ? null : `x composer never opened at ${X_COMPOSE_PATH}: ${composer.error}`;
     }
 
-    /** Types the text and requires the Post control to enable (bounded three attempts). */
+    /**
+     * Types the text and requires the Post control to enable (bounded three attempts).
+     *
+     * Measured 2026-11-20: **Escape on `/compose/post` navigates to `/home`** — the compose surface is a
+     * page there, not an overlay — so the old "press Escape to clear the mask" first move threw the
+     * run off the page whose submit it then waited on (`[data-testid="tweetButton"]` is page-scoped and
+     * disappears), and every attempt ended as "post submit never enabled". A mask, when it exists, is
+     * cleared by the forced editor click below, which never navigates.
+     */
     private async typeAndEnable(page: Page, text: string): Promise<string | null> {
         const textBox = page.locator(POST_SELECTORS.text[0]).first();
-        const submit = page.locator(X_POST_SUBMIT).first();
+        // Whichever submit control this surface renders — the page composer or the inline one.
+        const submitOf = async (): Promise<Locator> => {
+            for (const selector of X_POST_SUBMITS) {
+                if (
+                    (await page
+                        .locator(selector)
+                        .count()
+                        .catch(() => 0)) > 0
+                )
+                    return page.locator(selector).first();
+            }
+            return page.locator(X_POST_SUBMIT).first();
+        };
         for (let attempt = 1; attempt <= 3; attempt++) {
-            // X can leave a `[data-testid="mask"]` layer over the composer (it opens the compose
-            // surface as an overlay after an in-app navigation), which swallows pointer events. A
-            // forced click, and focus as the fallback, reach the editor without dismissing it.
-            await page.keyboard.press('Escape').catch(() => {});
             await page.waitForTimeout(250);
             const focused = await textBox.click({ force: true }).then(
                 () => true,
@@ -235,7 +258,7 @@ export class XPostBrowserTransport implements PublishTransport {
             await textBox.press('Backspace').catch(() => {});
             await textBox.pressSequentially(text, { delay: 8 });
             const enabled = await expectOutcome(
-                async () => ((await submit.isEnabled().catch(() => false)) ? 'post enabled' : null),
+                async () => ((await (await submitOf()).isEnabled().catch(() => false)) ? 'post enabled' : null),
                 // One step, capped at 10s: a caller may shrink the step (tests), never stretch it.
                 { timeoutMs: Math.min(10_000, this.stepTimeoutMs), label: `x post enabled (attempt ${attempt})` },
             );

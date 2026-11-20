@@ -1,0 +1,63 @@
+{
+  "before": {
+    "url": "https://x.com/compose/post",
+    "textareas": [
+      "tweetTextarea_0_label",
+      "tweetTextarea_0RichTextInputContainer",
+      "tweetTextarea_0",
+      "tweetTextarea_0_label",
+      "tweetTextarea_0RichTextInputContainer",
+      "tweetTextarea_0"
+    ],
+    "submits": [
+      {
+        "testid": "tweetButton",
+        "disabled": true,
+        "aria": "true"
+      },
+      {
+        "testid": "tweetButtonInline",
+        "disabled": true,
+        "aria": "true"
+      }
+    ],
+    "mask": 1,
+    "progress": 2
+  },
+  "afterEscape": {
+    "url": "https://x.com/home",
+    "textareas": [
+      "tweetTextarea_0_label",
+      "tweetTextarea_0RichTextInputContainer",
+      "tweetTextarea_0"
+    ],
+    "submits": [
+      {
+        "testid": "tweetButtonInline",
+        "disabled": true,
+        "aria": "true"
+      }
+    ],
+    "mask": 0,
+    "progress": 1
+  },
+  "clicked": true,
+  "enabled": true,
+  "afterTyping": {
+    "url": "https://x.com/home",
+    "textareas": [
+      "tweetTextarea_0_label",
+      "tweetTextarea_0RichTextInputContainer",
+      "tweetTextarea_0"
+    ],
+    "submits": [
+      {
+        "testid": "tweetButtonInline",
+        "disabled": false,
+        "aria": null
+      }
+    ],
+    "mask": 0,
+    "progress": 2
+  }
+}

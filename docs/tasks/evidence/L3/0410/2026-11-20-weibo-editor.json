@@ -1,0 +1,34 @@
+{
+  "url": "https://card.weibo.com/article/v5/editor#/draft/4079026",
+  "title": "头条文章编辑器",
+  "editors": [
+    {
+      "tag": "textarea",
+      "ph": "请输入标题",
+      "cls": "n-input__textarea-el"
+    },
+    {
+      "tag": "textarea",
+      "ph": "导语（选填）",
+      "cls": "n-input__textarea-el"
+    },
+    {
+      "tag": "div",
+      "ph": null,
+      "cls": "tiptap ProseMirror wb_container_v5 wb-editor WB_ed"
+    }
+  ],
+  "buttons": [
+    "专栏",
+    "咸话咸说2025",
+    "草稿箱已满！",
+    "来源：yahoo",
+    "来源：aihot",
+    "来源：aihot",
+    "保存草稿",
+    "预览",
+    "下一步",
+    "SVG"
+  ],
+  "bodyStart": "头条文章 专栏 咸话咸说2025 草稿箱 (30/30) 发布历史 草稿箱已满！ 每日AI乱炖 · 2026-11-19 2026-11-20 13:00 每日AI乱炖 · 2026-11-18 2026-11-18 17:02 每日AI乱炖 · 2026-11-17 2026-11-17 17:02 每日AI乱炖 · 2026-11-16 2026-11-16 17:00 每日AI乱炖 · 2026-11-13 2026-11-13 19:22 每日AI乱炖 · 2026-11-12 2026-11-12 23:"
+}

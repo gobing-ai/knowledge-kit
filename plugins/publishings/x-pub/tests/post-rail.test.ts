@@ -16,6 +16,7 @@ import {
     POST_SELECTORS,
     X_NEW_POST_BUTTON,
     X_POST_SUBMIT,
+    X_POST_SUBMIT_INLINE,
     X_POST_URL,
     XPostBrowserTransport,
 } from '../src/post-rail';
@@ -70,6 +71,11 @@ interface FakePageOptions {
     uploadError?: string;
     /** Posting returns the page to the profile URL, so the receipt reads it via `reload`. */
     returnToProfileAfterSubmit?: boolean;
+    /**
+     * Measured 2026-11-20: on `/compose/post` the composer is a PAGE, and Escape navigates to `/home`.
+     * Any rail that presses Escape to clear a mask therefore loses the page-scoped submit control.
+     */
+    escapeLeavesCompose?: boolean;
 }
 
 /**
@@ -113,7 +119,8 @@ function makeFakePostPage(options: FakePageOptions, calls: string[]): Page {
     const leaf = (selector: string) => ({
         count: async () => attached(selector),
         isVisible: async () => attached(selector) > 0,
-        isEnabled: async () => (selector === X_POST_SUBMIT ? submitEnabled() : attached(selector) > 0),
+        isEnabled: async () =>
+            selector === X_POST_SUBMIT || selector === X_POST_SUBMIT_INLINE ? submitEnabled() : attached(selector) > 0,
         getAttribute: async (name: string) => {
             calls.push(`getAttribute:${selector}|${name}`);
             if (selector === POST_SELECTORS.profileLink[0]) {
@@ -134,7 +141,7 @@ function makeFakePostPage(options: FakePageOptions, calls: string[]): Page {
                 throw new Error('mask intercepts pointer events');
             }
             if (selector === X_NEW_POST_BUTTON && options.composerNeverOpens !== true) url = composeUrl;
-            if (selector !== X_POST_SUBMIT || !submitEnabled()) return;
+            if ((selector !== X_POST_SUBMIT && selector !== X_POST_SUBMIT_INLINE) || !submitEnabled()) return;
             submitted = true;
             if (options.returnToProfileAfterSubmit === true) url = PROFILE_URL;
         },
@@ -145,6 +152,7 @@ function makeFakePostPage(options: FakePageOptions, calls: string[]): Page {
         press: async (key: string) => {
             calls.push(`press:${key}`);
             if (options.rejectPress === true) throw new Error('key press rejected');
+            if (key === 'Escape' && options.escapeLeavesCompose === true) url = 'https://x.com/home';
             if (key === 'Backspace') typed = '';
         },
         pressSequentially: async (text: string) => {
@@ -241,6 +249,9 @@ describe('post rail frozen surface', () => {
         expect(X_POST_URL).toBe('https://x.com/home');
         expect(X_NEW_POST_BUTTON).toBe('[data-testid="SideNav_NewTweet_Button"]');
         expect(X_POST_SUBMIT).toBe('[data-testid="tweetButton"]');
+        // Measured 2026-11-20: the inline composer on /home submits with its own testid, and both
+        // controls start disabled until the editor holds text.
+        expect(X_POST_SUBMIT_INLINE).toBe('[data-testid="tweetButtonInline"]');
         expect(POST_SELECTORS.text).toEqual(['[data-testid="tweetTextarea_0"]']);
         expect(POST_SELECTORS.fileInput).toEqual(['input[data-testid="fileInput"]', '[data-testid="fileInput"]']);
         expect(POST_CONFIG.channel).toBe('x');
@@ -689,5 +700,29 @@ describe('post rail composer failures', () => {
         expect(result.error).toContain('receipt not confirmed');
         expect(result.error).toContain('never reported as published');
         expect(fake.calls).toContain(`click:${X_POST_SUBMIT}`);
+    });
+});
+
+describe('measured 2026-11-20 — /compose/post is a page, and Escape navigates away from it', () => {
+    /**
+     * The reported failure was `x post submit never enabled`. Cause, measured on the live site: the
+     * rail's first typing move pressed Escape to clear a mask, which navigated `/compose/post` →
+     * `/home`; the page-scoped `[data-testid="tweetButton"]` then did not exist, so every attempt timed
+     * out on a submit control that was no longer on the page. The fake now models that navigation, so a
+     * reintroduced Escape fails this test instead of the nightly run.
+     */
+    test('the happy path never presses Escape, and the post still goes out', async () => {
+        const fake = makeFakeLauncher({
+            pages: [
+                {
+                    escapeLeavesCompose: true,
+                    statusHref: '/robin/status/100',
+                    statusHrefAfterSubmit: '/robin/status/101',
+                },
+            ],
+        });
+        const result = await transport(fake).publish({ content });
+        expect(fake.calls.filter((call) => call === 'press:Escape')).toEqual([]);
+        expect(result.ok, `error: ${result.error ?? ''} calls: ${fake.calls.slice(0, 12).join(' | ')}`).toBe(true);
     });
 });

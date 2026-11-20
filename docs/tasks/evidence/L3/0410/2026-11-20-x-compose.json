@@ -1,0 +1,15 @@
+{
+  "url": "https://x.com/compose/post",
+  "loggedIn": true,
+  "composerDialog": 2,
+  "postButton": {
+    "disabled": true,
+    "ariaDisabled": "true",
+    "text": "Post"
+  },
+  "textArea": {
+    "testid": "tweetTextarea_0_label",
+    "present": true
+  },
+  "bodyStart": "To view keyboard shortcuts, press question mark View keyboard shortcuts 1 Drafts Everyone What’s happening? Everyone can reply Post Home Explore Notifications 1"
+}

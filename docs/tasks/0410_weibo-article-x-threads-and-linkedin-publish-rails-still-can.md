@@ -4,7 +4,7 @@ name: Weibo article, X, Threads and LinkedIn publish rails still cannot confirm 
 status: todo
 template: issue
 created_at: 2026-11-19T22:00:52.977Z
-updated_at: "2026-11-20T09:00:46.932Z"
+updated_at: "2026-11-20T23:09:15.438Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -134,7 +134,30 @@ Recordings go under `.spur/run/dogfood/<YYYY-MM-DD>-social/<rail>/`, and Root Ca
 
 ### Root Cause
 
-<!-- Verified underlying cause with file:line evidence. Fill once reproduced/isolated. -->
+**Measured 2026-11-20, read-only, on the operator's signed-in profiles.** Every rail was opened through
+the harness launcher the rails themselves use, with `KK_BROWSER_CHANNEL=chrome` — the pin
+`~/.config/kk/config.yaml` already carries for wechatmp/xhs/x/threads/shipinhao/weibo, because Playwright's
+bundled chromium-1187 cannot launch on this machine (its own comment records the 2026-10-21 finding).
+**`linkedin-pub` has no pin** — the only rail missing it, which is itself a candidate cause for R4.
+
+| Rail | Signed in | What the live surface actually is | Verdict |
+| --- | --- | --- | --- |
+| weibo | yes (home feed renders) | `https://card.weibo.com/article/v5/editor#/draft/4079026` — **v5**, not the rail's `v3` — loads with `textarea[placeholder="请输入标题"]`, `导语（选填）`, a `tiptap ProseMirror` body, 保存草稿 / 预览 / **下一步**, and a banner **`草稿箱已满！30/30`** plus existing drafts `每日AI乱炖 · 2026-12-19 … 11-12` | **Entitled** (the 11-16 "no entitlement" note was wrong), but the draft box is full and the editor is a version ahead of the rail |
+| X | yes | `/compose/post` carries BOTH `[data-testid="tweetTextarea_0"]` and `tweetTextarea_0_label`, plus `tweetButton` **and** `tweetButtonInline`, both `disabled`/`aria-disabled="true"` until the editor holds text. `[data-testid="mask"]` = 1 at load. **`Escape` navigates `/compose/post` → `/home`** | Root cause found (below) — **fix shipped** |
+| Threads | yes (`Home • Threads`) | Home renders `New thread`, `What’s new?` (**typographic apostrophe U+2019**), and a `Post` control; **no** `[role="textbox"]` or `contenteditable` element at rest, so the inline composer is not identified by the rail's `text` selectors before it expands | Composer element still to be measured (needs an aria-label read, not a role query) |
+| LinkedIn | yes (`Feed | LinkedIn`, "Me" nav) | The share trigger is a **`div` with text `Start a post`** — clicking it **does** open the composer, whose editor is `div[role="textbox"].tiptap.ProseMirror`, with a `Post` button `disabled`/`aria-disabled` until text. (2 `[role="dialog"]` roots, one a hidden video player) | Trigger works; the failing step is typing/enablement, as on X |
+
+**X root cause, measured twice.** `post-rail.ts`'s `typeAndEnable` began every attempt with
+`page.keyboard.press('Escape')` "to clear a mask". On `/compose/post` that is a **navigation**: the URL
+became `/home`, the page-scoped `[data-testid="tweetButton"]` disappeared, and the enable-wait then polled
+a control that was no longer on the page — exactly the reported `x post submit never enabled`. With the
+Escape removed, a click on `[data-testid^="tweetTextarea_0"]` plus typing sets `disabled: false` and
+`aria-disabled: null`, verified live (`2026-11-20-x-selector-truth.json`, `x-post-enabled-after-typing.png`).
+
+**Stale-lease findings (environment, not code).** The `x` profile's launch refused with `browser lease …
+is held by pid 99596` — a dead process from the operator's own 13:05 attempt. The harness never auto-removes
+stale ownership; the lease was cleared after confirming the pid was gone, and `~/.config/kk/config.yaml`
+now has no stale leases. `threads`/`linkedin`/`weibo` launched cleanly.
 
 ### Solution
 

@@ -1,0 +1,14 @@
+{
+  "before": {
+    "disabled": true,
+    "ariaDisabled": "true"
+  },
+  "typed": true,
+  "after": {
+    "disabled": false,
+    "ariaDisabled": null,
+    "editorText": "measurement probe — not a post",
+    "editorTestid": "tweetTextarea_0_label",
+    "reply": "Everyone"
+  }
+}

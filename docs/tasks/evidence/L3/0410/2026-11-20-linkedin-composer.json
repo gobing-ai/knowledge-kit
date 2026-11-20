@@ -1,0 +1,22 @@
+{
+  "clicked": true,
+  "state": {
+    "dialogs": 2,
+    "dialogClass": "vjs-error-display vjs-modal-dialog vjs-hidden ",
+    "editors": [
+      {
+        "tag": "div",
+        "role": "textbox",
+        "ph": null,
+        "cls": "tiptap ProseMirror cfskz1 cfskz0 cfsf1i ProseMirror-focused"
+      }
+    ],
+    "postButtons": [
+      {
+        "disabled": true,
+        "cls": "cfsj5c cfsj5b cfst0 cfsa26 cfsfvv cfsjpf cfsjqy cfsj5h cfsj5"
+      }
+    ],
+    "bodyStart": "Robin Min Post to Anyone Comments: Anyone Add collaborators Proofread Post 0 notifications Skip to search Skip to main content Skip to sidebar Skip to primary content Skip to aside Home My Network Job"
+  }
+}
