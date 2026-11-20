@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Dogfood one music track end to end and sync the owning docs
-status: wip
+status: done
 template: feature-impl
 created_at: 2026-11-18T22:16:17.582Z
-updated_at: "2026-11-20T19:00:51.628Z"
+updated_at: "2026-11-20T22:16:21.009Z"
 feature_id: D8
 
 ac_numbering: task-local
@@ -12,6 +12,8 @@ ac_altitude: task-local
 estimate_hours: 5
 dependencies: ["0402", "0403", "0405"]
 priority: P2
+done_forced: "true"
+done_reason: "Acceptance run c73a9b02 reached done on the real instance: two Gemini Pro takes, operator picked 01, judge PASS 0.825 (MEDIUM), mastered -14.01 LUFS / -1 dBTP; evidence committed (77e07c8f), song+synthwave promoted to verified, 04/05/D8 Notes synced, R6 free regression path in the evidence README. Pipeline run f9c85975 is terminal retry-exhausted on defects outside this diff: the schedule.ts fs-io rule site (fixed, 454e5ce6) and a partial-coverage tracefile read (fixed by a full-suite run); the residual red is apps/cli/src/commands/content-generate.ts funcs 89.25%, another session's file, filed as 0415. Full bun run test: 6191 pass / 0 fail."
 ---
 
 ## 0404. Dogfood one music track end to end and sync the owning docs
@@ -208,7 +210,30 @@ connect-deadline workaround are both in the README and 0404's Q&A.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Acceptance run (real instance, real spend).** `spur workflow run kk-music.yaml` → run
+`c73a9b02-1958-4fd8-b159-f137ae8c5a99` → `done`, 11 states, one operator pause at `select`.
+
+| Check | Evidence |
+| --- | --- |
+| End-to-end delivery | `3-takes/…puqx6j.streaming.wav`, 149.13 s (`ffprobe 9.0.1`), delivery rows `−14.01 LUFS / −1 dBTP / 44100 Hz` (`ffmpeg 9.0.1 loudnorm`) — all pass (`5-run-report.json`) |
+| Measurement | `…puqx6j.mp3.checks.json`: 7 rows, 0 fail, 1 warn (`analysis.bpm` 90 against the 135–165 band), `analysis.key` D minor, `analysis.sections` 6/6 (`lyria instance analysis`) |
+| Judge | `4-verdict-music.json` — `music-quality` rubric, **PASS**, confidence `MEDIUM`, score 0.825 (only `checks.clean` is must-pass and it passes) |
+| Spend | `5-run-report.json` → `$0.16` = 2 Pro takes × $0.08, summed from the sidecars; analysis unpriced |
+| Byte-for-byte original | `accepted/sha256.txt`: mp3 `25cde1c7…` taken after the run, `master` wrote a separate wav |
+| Docs | `gen-preset-index.ts --check` → "README matches the shipped presets"; `song` + `synthwave` carry `status: verified` with generation id, date and measurement note |
+| Preset data | `bun test plugins/generations/music-gen` → 274 pass / 0 fail |
+| Workflow | `bun test plugins/kk/tests/kk-music-workflow.test.ts` → 22 pass / 0 fail (0411/0412 pins) |
+| Repo gate | `bun run lint` clean; `spur rule run --preset recommended-pre-check` 59/59; `recommended-post-check` 2/2; full `bun run test` **6191 pass / 0 fail** — exit 1 solely from `apps/cli/src/commands/content-generate.ts` funcs 89.25% (another session's file, filed as **0415**, not this task's diff) |
+
+**Pipeline note (why this close is an audited bypass).** Task-pipeline run `f9c85975` is terminal
+`retry-exhausted`: its light gate went red twice on defects outside this task's diff — the
+`no-direct-fs-io` site in `apps/cli/src/commands/schedule.ts` (fixed by the operator-approved exemption
+`454e5ce6`) and a partial-coverage tracefile read (fixed by running the full suite before post-check).
+The residual red is `0415`. Nothing in 0404's own change is unverified.
+
+**Free regression path.** `docs/tasks/evidence/D8/0404/README.md` §"Free regression path" — the
+`kk music render` byte-compare over the committed briefs, `music presets` + `gen-preset-index --check`,
+and the `dry_run=true` workflow with its expected stop state. No paid call.
 
 ### Review
 
@@ -228,4 +253,6 @@ connect-deadline workaround are both in the README and 0404's Q&A.
 - 2026-11-19T00:14:06.546Z feature_id Q → D8 (system)
 - 2026-11-19T22:30:53.267Z backlog → todo (system)
 - 2026-11-20T18:08:27.812Z todo → wip (system)
+- 2026-11-20T22:16:14.366Z wip → testing (system)
+- 2026-11-20T22:16:20.885Z testing → done (system)
 
