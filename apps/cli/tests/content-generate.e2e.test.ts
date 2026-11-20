@@ -160,6 +160,26 @@ switch (stage) {
         writeJson(join(workDir, '30-audio', runDate + '_10_wrap-docs_docs.json'), { metadata: { docs: [] } });
         break;
     case 'daily-generate':
+        // A script-gate refusal: the real stage writes this artifact, empties the QC candidates and
+        // never produces the generate_content.json that daily-intro needs (0266 refuseScriptBelowFloor).
+        if (process.env.KK_STUB_SCRIPT_REFUSAL === '1') {
+            writeJson(join(workDir, '30-audio', runDate + '_11_generate_content_duration-refusal.json'), {
+                stage: 'script',
+                estimatedMinutes: 5.3,
+                minMinutes: 15,
+                keptCount: 0,
+                scriptChars: 1747,
+                charRate: 5.6,
+                reason: 'the authored script estimates 5.3 min of speech, below the 15 min floor',
+            });
+            writeJson(join(workDir, '21-plan', runDate + '_04_quality-control-content_candidates.json'), {
+                title: '每日AI乱炖',
+                format: 'markdown',
+                body: 'candidates',
+                metadata: { docs: [] },
+            });
+            break;
+        }
         writeJson(join(workDir, '30-audio', runDate + '_11_generate_content.json'), {
             title: '每日AI乱炖',
             format: 'markdown',
@@ -173,6 +193,13 @@ switch (stage) {
         });
         break;
     case 'daily-intro':
+        // The real daily-intro needs the synthesized content and fails loud without it; a double
+        // that stays silent would hide exactly the failure the refusal must short-circuit.
+        if (!existsSync(join(workDir, '30-audio', runDate + '_11_generate_content.json'))) {
+            console.error('stub: daily-intro: required input not found');
+            process.exit(1);
+        }
+        break;
     case 'daily-voice-audit':
     case 'daily-quality-report':
     case 'daily-quality-verdict':
@@ -341,6 +368,27 @@ describe('kk news generate step verbs — AC2: the nine design invocations', () 
     // writeJsonText(picked.docs)), not the `{metadata:{docs}}` envelope the rest of this suite
     // stubs. Reading only the envelope left poolNonEmpty false, so daily-plan and
     // daily-qc-content never ran and every generation settled no-content on real data.
+    it('closes a script-gate refusal as no-content instead of failing the voice verb (2026-11-20)', async () => {
+        const fx = makeFixture();
+        await seedStore(fx);
+        const workDir = join(fx.works, 'kk-news-generate', DIGITS);
+        expect(kk(fx, ['news', 'prepare', '--work-dir', workDir, '--run-date', DIGITS]).code).toBe(0);
+        expect(JSON.parse(readFileSync(join(workDir, 'pool-gate.json'), 'utf-8'))).toEqual({ status: 'PASS' });
+
+        // The refusal empties the candidates and produces no audio content. Before the fix the verb
+        // still ran `daily-intro`, which fails on the missing content → exit 1 → the DAG's
+        // `voice-fallback2` failed the whole day, and every node still gated on the stale `PASS`.
+        const voice = kk(fx, ['news', 'generate-voice', '--work-dir', workDir, '--engine', 'voxcpm'], {
+            KK_STUB_SCRIPT_REFUSAL: '1',
+        });
+        expect(voice.code).toBe(0);
+        expect(existsSync(join(workDir, '30-audio', `${DIGITS}_11_generate_content.json`))).toBe(false);
+        // The gate is re-settled on the emptied candidates, so every later node skips — the run
+        // closes `done` (a no-content day), not `failed`.
+        expect(JSON.parse(readFileSync(join(workDir, 'pool-gate.json'), 'utf-8'))).toEqual({ status: 'EMPTY' });
+        expect(readFileSync(join(workDir, 'run-report.summary.txt'), 'utf-8')).toContain('no-content');
+    });
+
     it('reads the bare Doc[] pool.json that dailyExtract writes', async () => {
         const fx = makeFixture();
         await seedStore(fx);

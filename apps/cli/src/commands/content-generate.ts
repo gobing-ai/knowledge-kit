@@ -949,12 +949,25 @@ export const GENERATE_ROWS: GenerateVerbRow[] = [
         verb: 'generate-voice',
         stages: [
             STEP.generate(),
-            STEP.intro(),
-            STEP.voiceAudit(),
-            STEP.duration(),
-            STEP.qualityReport(),
-            STEP.qualityVerdict(),
-            STEP.showNotes(),
+            // 2026-11-20: `daily-generate`'s script gate refuses a sub-floor authored script by
+            // writing the duration refusal and EMPTYING the QC candidates, and produces no audio at
+            // all. The pool gate was written back when the pool was admitted, so it still said
+            // PASS: `daily-intro` then ran on a content file that never existed and failed the verb
+            // (exit 1), which failed `voice-fallback2` and turned a designed no-content day into a
+            // `failed` run — while `cards`, `variants` and `safety-variants` kept spending on the
+            // stale PASS (measured 2026-11-20: 29.7 min of card rendering after the refusal).
+            // Re-settling the gate here (idempotent on a content day) makes the refusal end the row
+            // and every later node condition on EMPTY, which is the workflow's own no-content
+            // contract: `done`, no TTS, no cards, no second safety review.
+            STEP.poolGate(),
+            // Everything below consumes the audio content the generate stage produced; a skipped
+            // `generate` (refusal) must skip them too instead of failing on a missing input.
+            { ...STEP.intro(), when: candidatesNonEmpty },
+            { ...STEP.voiceAudit(), when: candidatesNonEmpty },
+            { ...STEP.duration(), when: candidatesNonEmpty },
+            { ...STEP.qualityReport(), when: candidatesNonEmpty },
+            { ...STEP.qualityVerdict(), when: candidatesNonEmpty },
+            { ...STEP.showNotes(), when: candidatesNonEmpty },
         ],
         summary: async (ctx) => {
             const metadata = await audioMetadata(ctx);
