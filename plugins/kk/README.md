@@ -97,6 +97,18 @@ whole day, and the daily run closes as no-content. A render without the key is s
 value is simply empty, which spur reads as "not set". The rendered artifact carries a live
 credential: keep it in `~/Library/LaunchAgents` (or your crontab), never in a committed file.
 
+The `kk-serve` plist additionally binds **`NODE_PATH` to the module root that carries
+`@gobing-ai/spur`** (resolved from the `spur` on `PATH`, else the bun-global default). The project's
+decision catalogs (`decisions.paths` → `plugins/kk/decisions`) declare
+`$schema: "@gobing-ai/spur/schemas/decision-catalog.schema.json"`, and Bun's resolver does not search
+the global install — so every job the scheduler launches, and every nested `spur`/`kk` it launches,
+loses the whole decision layer without it. Not hypothetical: on 2026-11-19 a `bun install` run in
+`$HOME` pruned the checkout's `/Users/robin/node_modules/@gobing-ai/spur` shadow, after which
+`kk store label` died at catalog load (empty label artifact → `kk-collect` closed `failed-check`)
+and spur's `decide` action silently loaded **zero** project catalogs, so `kk-safety-verdict` produced
+no row and the safety gate refused the day's drafts. Leave the key in place when you hand-edit the
+plist; re-rendering restores it.
+
 `kk-collect` collects every ingestion source into the kk store and never publishes. Two ticks that
 overlap are **one** collection: the first state takes `kk store lock acquire --name collect` and a
 tick that finds the claim inside its TTL exits 0 (`skipped`) without collecting. Before relying on

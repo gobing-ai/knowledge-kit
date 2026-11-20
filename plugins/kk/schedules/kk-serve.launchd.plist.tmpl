@@ -46,9 +46,18 @@
     </array>
     <key>WorkingDirectory</key>
     <string>{{repo}}</string>
-    <!-- The environment block is load-bearing twice over:
+    <!-- The environment block is load-bearing three times over:
            - PATH — launchd starts with /usr/bin:/bin:/usr/sbin:/sbin and the scheduler's job worker
              runs its commands through /bin/sh -c, so bare `spur`, `kk`, `jq` and `bun` must resolve.
+           - NODE_PATH — the module root carrying `@gobing-ai/spur`. Project decision catalogs
+             (`decisions.paths` → `plugins/kk/decisions`) declare `$schema:
+             "@gobing-ai/spur/schemas/decision-catalog.schema.json"`, and Bun's resolver does not
+             search the global install, so WITHOUT this every registered catalog fails to load: kk
+             answers `Decision catalog … Cannot find package '@gobing-ai/spur'` (2026-11-19: a whole
+             `kk-collect` tick lost its labels and the next 04:30 run lost its `kk-safety-verdict`
+             row, which the gate read as a refusal) and spur's `decide` action silently loads ZERO
+             project catalogs. `kk schedule render` binds the path from the `spur` on PATH that the
+             `Program` below names; render from a shell that has it.
            - TYPESAFE_API_KEY — spur keeps the decision-maker credential env-only, and a server
              started from launchd inherits nothing from the operator's shell; without the key every
              `typesafe`-routed decision (kk-item-china-politics, -sensitivity, -audience) falls back
@@ -62,6 +71,8 @@
     <dict>
         <key>PATH</key>
         <string>{{home}}/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>NODE_PATH</key>
+        <string>{{spur_modules}}</string>
         <key>TYPESAFE_API_KEY</key>
         <string>{{typesafe_api_key}}</string>
     </dict>

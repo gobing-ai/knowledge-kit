@@ -196,6 +196,12 @@ describe('kk schedule render', () => {
         expect(plistIntegerValue(plist, 'ThrottleInterval')).toBe(10);
         // PATH is what the scheduler's `/bin/sh -c` jobs need (bare spur/kk/jq/bun).
         expect(plistStringValue(plist, 'PATH')).toContain(`${homedir()}/.bun/bin`);
+        // NODE_PATH is what makes `@gobing-ai/spur` resolvable for the decision catalogs the jobs
+        // load (2026-11-19: without it every project catalog failed to load and the collect + safety
+        // jobs failed). Derived from the `spur` on PATH, falling back to the bun-global layout the
+        // `Program` above already assumes.
+        expect(plistStringValue(plist, 'NODE_PATH')).toEndWith('node_modules');
+        expect(plistStringValue(plist, 'NODE_PATH')).not.toContain('{{');
         expect(plist).toContain('<key>TYPESAFE_API_KEY</key>');
         // D2: the hand plist's TYPESAFE_BASE_URL is deliberately not part of the shipped template.
         expect(plist).not.toContain('<key>TYPESAFE_BASE_URL</key>');

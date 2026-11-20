@@ -1,5 +1,6 @@
+import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { type Command, CommanderError } from 'commander';
 import { consoleOutput } from '../output';
@@ -88,6 +89,54 @@ const HOME_PLACEHOLDER = '{{home}}';
  * value as "not set".
  */
 const TYPESAFE_API_KEY_PLACEHOLDER = '{{typesafe_api_key}}';
+
+/**
+ * The `{{spur_modules}}` template placeholder bound to the module root that carries
+ * `@gobing-ai/spur` — the directory the rendered `NODE_PATH` names.
+ *
+ * Project decision catalogs declare `$schema: "@gobing-ai/spur/schemas/…"`, and Spur/kk resolve it
+ * through `Bun.resolveSync` from the catalog's own directory (`.spur/config.yaml`
+ * `decisions.paths` → `plugins/kk/decisions`). Bun's resolver does NOT search the global install,
+ * so a scheduler-launched job — which inherits only what this plist binds — cannot see the package
+ * unless `NODE_PATH` carries its module root. On 2026-11-19 the checkout's only other resolver (a
+ * `/Users/robin/node_modules` shadow, pruned by a stray `bun install` in the home directory) vanished
+ * and both consumers failed: `kk store label` exited at catalog load (empty label artifact → the
+ * collect tick failed) and spur's `decide` action silently loaded zero project catalogs, so the
+ * `kk-safety-verdict` row was absent and the daily safety gate refused the drafts. Bind it here so a
+ * re-rendered plist cannot lose it again.
+ *
+ * `scripts/with-spur-env.ts` solves the same problem for `bun run` and derives the path from the
+ * `spur` binary; this is the same derivation for a bundled, shippable CLI, so it cannot import the
+ * repo script.
+ */
+const SPUR_MODULES_PLACEHOLDER = '{{spur_modules}}';
+
+/**
+ * The module root carrying `@gobing-ai/spur`, derived from the `spur` on PATH.
+ *
+ * Falls back to the bun-global layout the template's `Program` already assumes (`{{home}}/.bun/bin/spur`)
+ * when `spur` is absent or PATH carries something unexpected — `render` must stay a pure text
+ * operation that always produces a complete artifact, and that layout is the one the baked-in
+ * `Program` path requires anyway.
+ */
+function spurModulesDir(): string {
+    const conventional = resolve(homedir(), '.bun/install/global/node_modules');
+    const binary = Bun.which('spur');
+    if (binary === null) return conventional;
+    let dir: string;
+    try {
+        dir = dirname(realpathSync(binary));
+    } catch {
+        return conventional;
+    }
+    for (;;) {
+        const modules = join(dir, 'node_modules');
+        if (existsSync(join(modules, '@gobing-ai/spur/package.json'))) return modules;
+        const parent = dirname(dir);
+        if (parent === dir) return conventional;
+        dir = parent;
+    }
+}
 
 /**
  * The minimum circular gap (minutes) between two firings of a cron expression's MINUTE field.
@@ -200,7 +249,8 @@ async function renderAction(schedule: string, options: RenderOptions): Promise<v
             : rendered
                   .replaceAll(REPO_PLACEHOLDER, repo)
                   .replaceAll(HOME_PLACEHOLDER, homedir())
-                  .replaceAll(TYPESAFE_API_KEY_PLACEHOLDER, xmlEscape(process.env.TYPESAFE_API_KEY ?? ''));
+                  .replaceAll(TYPESAFE_API_KEY_PLACEHOLDER, xmlEscape(process.env.TYPESAFE_API_KEY ?? ''))
+                  .replaceAll(SPUR_MODULES_PLACEHOLDER, xmlEscape(spurModulesDir()));
         if (isGrok && substitution.includes('{{')) {
             throw new Error(
                 'grok-bot routine left an unsubstituted placeholder — grok-bot templates may carry only {{bot}}, {{cron}}, {{tz}}',
