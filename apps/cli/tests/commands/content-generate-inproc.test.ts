@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { captureOutput } from '../capture';
@@ -386,5 +386,24 @@ describe('generate step verbs — refusals shared by every verb', () => {
         } finally {
             configFileForCases = previous;
         }
+    });
+});
+
+describe('generate step verbs — refresh and the pre-freeze bundle summary', () => {
+    it('generate-bundle before a freeze reports the payload set it will package, not a frozen file', async () => {
+        reset();
+        const dir = workDir('bundle-pre-freeze');
+        const variants = join(dir, '30-variants');
+        mkdirSync(variants, { recursive: true });
+        writeFileSync(join(variants, 'zh-article.content.json'), '{}');
+        writeFileSync(join(variants, 'en-short.content.json'), '{}');
+        writeFileSync(join(variants, 'notes.md'), 'not a payload');
+        const result = await run(['news', 'generate-bundle', '--work-dir', dir, '--stage', 'variants']);
+        expect(result.code).toBe(0);
+        const summary = JSON.parse(result.out) as { variants: string[] };
+        // Without a frozen bundle the answer is the variant payload set — .md and other files are not
+        // payloads, and no `bundle.json` exists to read.
+        expect(summary.variants).toEqual(['en-short', 'zh-article']);
+        expect(existsSync(join(dir, '4-publish', 'bundle.json'))).toBe(false);
     });
 });
