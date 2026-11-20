@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,6 +13,17 @@ import {
     issueNumberOf,
     MAX_HEADLINE_CHARS,
 } from '../scripts/episode-identity';
+
+let stageLog: { mockRestore(): void };
+let stageError: { mockRestore(): void };
+beforeEach(() => {
+    stageLog = spyOn(console, 'log').mockImplementation(() => {});
+    stageError = spyOn(console, 'error').mockImplementation(() => {});
+});
+afterEach(() => {
+    stageLog.mockRestore();
+    stageError.mockRestore();
+});
 
 /**
  * 0385 R4 — one episode carries one frozen identity (`第261120期 · 当日要点`), the cover reuses the

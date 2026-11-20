@@ -1,9 +1,20 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { dailyEditorialRender } from '../scripts/daily-stages';
 import { AGGREGATOR_MARKER, resolveSourceCitation } from '../scripts/source-citation';
+
+let stageLog: { mockRestore(): void };
+let stageError: { mockRestore(): void };
+beforeEach(() => {
+    stageLog = spyOn(console, 'log').mockImplementation(() => {});
+    stageError = spyOn(console, 'error').mockImplementation(() => {});
+});
+afterEach(() => {
+    stageLog.mockRestore();
+    stageError.mockRestore();
+});
 
 /**
  * 0394 R1/R16 — the rendered 来源 link points at a verifiable actual origin, never at a transport

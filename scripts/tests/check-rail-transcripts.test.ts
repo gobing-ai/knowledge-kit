@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -126,11 +126,18 @@ describe('the CLI leaf', () => {
     });
 
     test('cliMain wires real argv to the exit code', () => {
-        module('flow.ts', '// transcript: none — measured by hand\n');
-        expect(cliMain([join(root, 'x-pub', 'src', 'flow.ts')])).toBe(0);
+        // cliMain writes the finding to the real stderr; keep it out of the suite's output.
+        const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+        try {
+            module('flow.ts', '// transcript: none — measured by hand\n');
+            expect(cliMain([join(root, 'x-pub', 'src', 'flow.ts')])).toBe(0);
 
-        module('post-rail.ts', 'export const a = 1;\n');
-        expect(cliMain([join(root, 'x-pub', 'src', 'post-rail.ts')])).toBe(1);
+            module('post-rail.ts', 'export const a = 1;\n');
+            expect(cliMain([join(root, 'x-pub', 'src', 'post-rail.ts')])).toBe(1);
+            expect(String(stderr.mock.calls[0]?.[0])).toContain('carries no `// transcript:` header');
+        } finally {
+            stderr.mockRestore();
+        }
     });
 
     test('the real process exits 1 on a finding and 0 on a clean file', () => {

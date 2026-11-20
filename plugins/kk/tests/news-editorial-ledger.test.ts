@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -20,6 +20,17 @@ import {
     renderConclusion,
     validateProposal,
 } from '../scripts/news-editorial-ledger';
+
+let stageLog: { mockRestore(): void };
+let stageError: { mockRestore(): void };
+beforeEach(() => {
+    stageLog = spyOn(console, 'log').mockImplementation(() => {});
+    stageError = spyOn(console, 'error').mockImplementation(() => {});
+});
+afterEach(() => {
+    stageLog.mockRestore();
+    stageError.mockRestore();
+});
 
 /**
  * 0384 R10 — the daily editorial judgment ledger's retry and concurrency protections. Each case
