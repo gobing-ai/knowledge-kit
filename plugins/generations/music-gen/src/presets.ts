@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { z } from 'zod';
 import {
@@ -669,8 +669,41 @@ export class PresetDataError extends Error {
     }
 }
 
-/** Shipped preset root: `plugins/generations/music-gen/presets`. */
+/**
+ * Shipped preset root for the source layout: `plugins/generations/music-gen/presets`.
+ *
+ * A bundled `kk` puts this module inside `<pkg>/dist/index.js`, where the sibling directory does not
+ * exist — the packaged copy lives at `<pkg>/plugins/generations/music-gen/presets` instead (0413).
+ * {@link resolveMusicPresetRoot} picks the first candidate that exists; this constant stays the
+ * source-layout path and the last-resort value, so a genuinely missing corpus still fails with a
+ * recognisable path.
+ */
 export const MUSIC_PRESET_ROOT = join(import.meta.dir, '..', 'presets');
+
+/**
+ * Preset-root candidates for one anchor directory, nearest first: the plugin-local sibling layout
+ * (source and any unpacked plugin dir), then the package-root layout a bundle needs, checked at
+ * every ancestor because a bundle's `import.meta.dir` is `<pkg>/dist`.
+ */
+export function musicPresetRootCandidates(from: string = import.meta.dir): string[] {
+    const candidates: string[] = [];
+    let dir = resolve(from);
+    for (;;) {
+        candidates.push(join(dir, '..', 'presets'));
+        candidates.push(join(dir, 'plugins', 'generations', 'music-gen', 'presets'));
+        const parent = resolve(dir, '..');
+        if (parent === dir) return candidates;
+        dir = parent;
+    }
+}
+
+/** The first candidate that exists, else the source-layout path (so the failure names a real shape). */
+export async function resolveMusicPresetRoot(fs: FileSystem, from?: string): Promise<string> {
+    for (const candidate of musicPresetRootCandidates(from)) {
+        if (await fs.exists(candidate)) return candidate;
+    }
+    return MUSIC_PRESET_ROOT;
+}
 
 /** The shipped inventory: one map per axis, keyed by preset name. */
 export interface LoadedMusicPresets {
@@ -792,8 +825,8 @@ function collectPresets<T extends { name: string }>(args: {
  * {@link PresetDataError} with every problem listed — no partial set escapes.
  */
 export async function loadMusicPresets(options: LoadMusicPresetsOptions = {}): Promise<LoadedMusicPresets> {
-    const root = options.root ?? MUSIC_PRESET_ROOT;
     const fs = options.fileSystem ?? createNodeFileSystem();
+    const root = options.root ?? (await resolveMusicPresetRoot(fs));
     const problems: MusicPresetProblem[] = [];
     const formatFiles = await readPresetFiles(join(root, 'formats'), 'formats', fs, problems);
     const themeFiles = await readPresetFiles(join(root, 'themes'), 'themes', fs, problems);

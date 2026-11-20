@@ -17,10 +17,12 @@ import {
     explainJob,
     loadMusicPresets,
     MUSIC_PRESET_ROOT,
+    musicPresetRootCandidates,
     PRESET_STATUSES,
     PresetDataError,
     presetLayerForTheme,
     resolveJob,
+    resolveMusicPresetRoot,
     resolveNamedJob,
     themeDirectionGaps,
     UnknownPresetError,
@@ -124,15 +126,18 @@ describe('AC2 — themes carry the technical direction the model reads', () => {
         expect(['corporate-tech', 'xhs-pop'].filter((name) => shipped.themes.has(name))).toEqual([]);
     });
 
-    test('a theme status is authored, evidence-pending or verified — and none claims verified', () => {
+    test('every preset carries a valid status, and `verified` names the generation that earned it', () => {
         for (const preset of [...shipped.themes.values(), ...shipped.formats.values()]) {
             expect(PRESET_STATUSES).toContain(preset.provenance.status);
             expect(preset.provenance.authored_at).toMatch(/^\d{4}-\d{2}-\d{2}$/);
             if (preset.provenance.status === 'verified') {
-                // Promotion needs a real generation review; a freshly authored file cannot have one.
+                // Promotion needs a real generation review: SOURCE.md's contract is a generation id and
+                // a date in the evidence note, not a claim that one was made (0404 promoted the first
+                // pair, so the old "nothing is verified yet" snapshot no longer holds).
                 expect(preset.provenance.evidence).toBeDefined();
+                expect(preset.provenance.evidence).toMatch(/gen-\d+/);
+                expect(preset.provenance.evidence).toMatch(/\d{4}-\d{2}-\d{2}/);
             }
-            expect(['authored', 'evidence-pending']).toContain(preset.provenance.status);
         }
     });
 
@@ -506,5 +511,42 @@ describe('R3 — the resolve-preset CLI prints the trace and maps failures to ex
         } finally {
             rmSync(dir, { recursive: true, force: true });
         }
+    });
+});
+
+describe('0413 — the preset root survives the packaged layout', () => {
+    test('a source anchor resolves to the plugin-local presets directory first', () => {
+        const anchor = join('/checkout', 'plugins', 'generations', 'music-gen', 'src');
+        expect(musicPresetRootCandidates(anchor)[0]).toBe(
+            join('/checkout', 'plugins', 'generations', 'music-gen', 'presets'),
+        );
+    });
+
+    test('a bundled anchor still finds the package-root layout', () => {
+        const bundled = join('/pkg', 'dist');
+        expect(musicPresetRootCandidates(bundled)).toContain(
+            join('/pkg', 'plugins', 'generations', 'music-gen', 'presets'),
+        );
+    });
+
+    test('resolution picks the packaged layout a bundle actually ships', async () => {
+        // The defect: a bundled `kk` has import.meta.dir = <pkg>/dist, so `join(dir, '..', 'presets')` is
+        // `<pkg>/presets` — which the package does not ship, and `kk music presets` failed outright.
+        const packaged = join('/pkg', 'plugins', 'generations', 'music-gen', 'presets');
+        const fakeFs = {
+            exists: async (path: string) => path === packaged,
+            readDir: async () => [],
+            readFile: async () => '',
+            writeFile: async () => undefined,
+            unlink: async () => undefined,
+            mkdir: async () => undefined,
+            stat: async () => null,
+        } as unknown as Parameters<typeof resolveMusicPresetRoot>[0];
+        expect(await resolveMusicPresetRoot(fakeFs, join('/pkg', 'dist'))).toBe(packaged);
+    });
+
+    test('no candidate existing falls back to the source-layout path, never undefined', async () => {
+        const fakeFs = { exists: async () => false } as unknown as Parameters<typeof resolveMusicPresetRoot>[0];
+        expect(await resolveMusicPresetRoot(fakeFs, '/pkg/dist')).toBe(MUSIC_PRESET_ROOT);
     });
 });
