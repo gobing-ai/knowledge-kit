@@ -3,7 +3,7 @@
 <!-- kk-serve — keeps the knowledge-kit Spur server alive whenever this user is logged in.
 
      WHY the keepalive is not optional: the daily job `kk-daily-ai-voice` (cron `30 4 * * *`) is
-     enqueued by the job worker that lives INSIDE `spur serve` (`.spur/config.yaml`
+     enqueued by the job worker that lives INSIDE `spur self serve` (`.spur/config.yaml`
      `bootstrap.scheduler`). On 2026-10-12 that process was SIGTERM'd at 00:17 local and not
      restarted until 10:00, so the 04:30 tick never fired and the day produced no episode at all —
      no workspace, no ledger row, no run record. `crontab -l` is empty and nothing else supervises
@@ -34,6 +34,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>spur</string>
+        <string>self</string>
         <string>serve</string>
         <string>--cwd</string>
         <string>{{repo}}</string>

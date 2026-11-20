@@ -20,7 +20,7 @@
  * 7. `kk-serve` (task 0265) is launchd-only: `--platform cron` exits 1 naming the missing
  *    template — cron cannot keep a process alive — while kk-collect's cron render is unchanged;
  * 8. the kk-serve launchd render carries R2's keepalive dict (Label `ai.gobing.spur-serve`, an
- *    absolute `Program`, `spur serve --cwd {{repo}} --host 127.0.0.1 --port 3003 --no-open`,
+ *    absolute `Program`, `spur self serve --cwd {{repo}} --host 127.0.0.1 --port 3003 --no-open`,
  *    `RunAtLoad`/`KeepAlive` true, `ThrottleInterval` 10, both streams at
  *    `.works/spur-serve/serve.log`, PATH + TYPESAFE_API_KEY);
  * 9. an XML-special credential is escaped so the artifact still parses, and an unset key renders
@@ -177,6 +177,7 @@ describe('kk schedule render', () => {
         expect(plistStringValue(plist, 'Program')).toBe(`${homedir()}/.bun/bin/spur`);
         expect(plistArrayValues(plist, 'ProgramArguments')).toEqual([
             'spur',
+            'self',
             'serve',
             '--cwd',
             REPO,

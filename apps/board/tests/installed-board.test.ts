@@ -73,18 +73,24 @@ let browser: Browser | null = null;
 let page: Page | null = null;
 let spur: string[] = [];
 
-/** Resolve the globally installed Spur package when Bun's test resolver cannot see NODE_PATH. */
+/**
+ * Resolve the Spur package behind the `spur` on PATH — the same one `scripts/with-spur-env.ts` puts on
+ * NODE_PATH. PATH comes first because `import.meta.resolve` walks ancestor `node_modules`, so a stale
+ * `~/node_modules/@gobing-ai/spur` would otherwise shadow the single global install.
+ */
 function resolveSpurPackageRoot(): string {
-    try {
-        return dirname(fileURLToPath(import.meta.resolve('@gobing-ai/spur/package.json')));
-    } catch {
-        const which = Bun.which('spur');
-        if (which === null) throw new Error('cannot resolve the installed spur CLI; set SPUR_BIN to spur.js');
+    const which = Bun.which('spur');
+    if (which !== null) {
         // `scripts/spur-env.ts` is the canonical resolver: it accepts a published install AND a
         // source checkout whose `spur` on PATH is a working copy (the workspace self-link case).
         const packageRoot = spurPackageRootOf(dirname(realpathSync(which)));
         if (packageRoot === undefined) throw new Error(`cannot locate the @gobing-ai/spur package behind ${which}`);
         return packageRoot;
+    }
+    try {
+        return dirname(fileURLToPath(import.meta.resolve('@gobing-ai/spur/package.json')));
+    } catch {
+        throw new Error('cannot resolve the installed spur CLI; set SPUR_BIN to spur.js');
     }
 }
 
@@ -108,7 +114,7 @@ function spawnSpur(args: string[], cwd: string): string {
     return shell(command, [...rest, ...args], cwd);
 }
 
-/** Resolve the installed `spur` CLI: `$SPUR_BIN`, then the workspace dependency, then the PATH. */
+/** Resolve the installed `spur` CLI: `$SPUR_BIN`, then the PATH, then the module resolver. */
 function resolveSpur(): string[] {
     const override = process.env.SPUR_BIN;
     if (override !== undefined && override !== '') return [process.execPath, override];
@@ -905,8 +911,8 @@ async function setup(): Promise<void> {
     boardOrigin = `http://127.0.0.1:${boardPort}`;
     const boardServer = spawnServer(
         'board',
-        'installed Board (spur serve)',
-        [...spur, 'serve', '--port', String(boardPort), '--host', '127.0.0.1', '--no-open', '--cwd', project],
+        'installed Board (spur self serve)',
+        [...spur, 'self', 'serve', '--port', String(boardPort), '--host', '127.0.0.1', '--no-open', '--cwd', project],
         project,
         // The LAN-origin case below reaches this same listener under a non-loopback hostname.
         { SPUR_CORS_ORIGINS: `http://${LAN_HOST}:${boardPort}` },
