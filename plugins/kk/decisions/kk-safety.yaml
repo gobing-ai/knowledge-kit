@@ -3,8 +3,11 @@
 # `kk-daily-safety` used to read the judge's self-reported `confidence` field in a shell `jq`
 # filter on the accept edge. The verdict is now a catalog decision over the SAME artifacts as
 # evidence, so the outcome is calibrated, ledgered (`decision_logs`) and carries a declared
-# fallback. The fallback is `escalate`, never `pass`: a missing, unreadable or garbled report has
-# to land on a recorded human decision, not on a silent publish.
+# fallback. The fallback is `escalate`, never `pass`: the decision can always refuse to publish.
+# A JUDGED escalate (the model read the evidence and could not settle it) needs a human, and the
+# accept guard refuses it for an unattended run; an ABSTAINED row (`source: "default"` — the maker
+# refused or was unavailable, so nothing was judged) is named by `kk stage daily-safety-verdict` and
+# leaves the gate's own verdict in charge, because an abstention is not a verdict.
 #
 # Resolution: registered through `decisions.paths` in `.spur/config.yaml`
 # (project-relative `plugins/kk/decisions`). No maker is named here on purpose — the project

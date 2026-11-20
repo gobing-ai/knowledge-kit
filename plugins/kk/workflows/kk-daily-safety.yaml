@@ -280,17 +280,19 @@ transitions:
       An admitted outcome: the gate classified the run pass|escalate|exclude and wrote its stamp,
       AND the `kk-safety-verdict` decision (task 0317 R6) admits the same pair. The decision replaced
       the judge's self-reported `confidence` re-parsed in a shell jq filter: it reads the report, the
-      verdict and the gate status as evidence and declares `escalate` as its fallback, so a missing
-      or garbled evidence set lands on a recorded human decision instead of a silent publish. The
-      gate stays authoritative on `block`/`revise`, which is why the status check is not redundant:
-      a decision cannot overrule the gate. An absent or out-of-vocabulary decision row refuses the
-      edge (fail-closed), and the unconditional `judge -> block` below always matches, so the loop
-      can never strand.
+      verdict and the gate status as evidence, so a JUDGED `escalate` is refused for an unattended run
+      (a human has to look) while an ABSTAINED row — the maker failed, nothing was judged — leaves the
+      gate's own verdict in charge and is named on stderr by `daily-safety-verdict`. The gate stays
+      authoritative on `block`/`revise`, which is why the status check is not redundant: a decision
+      cannot overrule the gate. An absent or out-of-vocabulary decision row refuses the edge
+      (fail-closed), and the unconditional `judge -> block` below always matches, so the loop can
+      never strand.
     guard:
       kind: shell
       options:
-        # One predicate owns the final publish-valid contract. It distinguishes the gate's real
-        # `escalate` status from a catalog fallback value, which is already folded into `accept`.
+        # One predicate owns the final publish-valid contract. It separates three things the fold
+        # collapses into `accept`: a real gate `escalate`, a judged decision `escalate`, and a
+        # decision that abstained on a maker failure.
         command: >-
           bun plugins/kk/scripts/safety-artifact-check.ts publish-valid "${vars.work_dir}" "${vars.run_date}" "${vars.unattended}"
           "${vars.safety_scope_dir}"

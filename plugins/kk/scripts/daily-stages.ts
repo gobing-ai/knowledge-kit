@@ -3986,8 +3986,9 @@ export function dailyPreflight(args: string[]): void {
  *
  * The gate stays authoritative on `block`/`revise`; the decision can only refuse an outcome the gate
  * already admitted. The decision replaced the judge's self-reported `confidence` field, which the
- * accept guard used to re-parse in shell: its fallback is `escalate`, so missing or garbled evidence
- * lands on a recorded human decision instead of a silent publish.
+ * accept guard used to re-parse in shell: a JUDGED `escalate` now needs a human (the accept guard
+ * refuses it for an unattended run), while an ABSTAINED row (`source: "default"` — the maker failed
+ * and nothing was judged) is named on stderr and leaves the gate's own verdict in charge.
  *
  * Writes `24-script/<date>_09_safety-verdict.status` = `accept`, or `refuse` after naming the
  * offending value on stderr. Never exits non-zero: routing belongs to the transitions.
@@ -4006,9 +4007,22 @@ export function dailySafetyVerdict(args: string[]): void {
         // A missing/unreadable decision row is a refusal, never an approval: `onError: continue` on
         // the decide action is what can leave it absent.
         let verdict = '';
+        // A maker that cannot answer does not silently vanish: it lands on the catalog fallback with
+        // `source: "default"`, so name the abstention where the run report and triage can see it.
+        // (2026-11-20: fm-local refuses safety-report text, so this is the caveat, not an edge case.)
+        let abstention = '';
         if (isFile(decisionFile)) {
-            const row = JSON.parse(readFileSync(decisionFile, 'utf-8')) as { value?: unknown };
+            const row = JSON.parse(readFileSync(decisionFile, 'utf-8')) as {
+                value?: unknown;
+                source?: unknown;
+                degraded?: unknown;
+                backend?: unknown;
+                reason?: unknown;
+            };
             verdict = String(row.value ?? '');
+            if (row.source === 'default' || row.degraded === true) {
+                abstention = `kk-daily-safety.judge.decision-abstained: kk-safety-verdict fell back to [${verdict}] (${String(row.backend ?? 'maker')}: ${String(row.reason ?? 'unknown')}) — nothing was judged, so the gate's [${status}] verdict stands alone`;
+            }
         }
         let refusal = '';
         if (!ADMITTED.has(status)) {
@@ -4057,6 +4071,7 @@ export function dailySafetyVerdict(args: string[]): void {
             }
         }
         if (refusal !== '') console.error(refusal);
+        else if (abstention !== '') console.error(abstention);
         sted('write', token, () => writeRaw(token, refusal === '' ? 'accept' : 'refuse'));
         if (evidence !== null) {
             const evidencePath = join(scopeDirOf(workDir, scopeDir), 'safety.json');

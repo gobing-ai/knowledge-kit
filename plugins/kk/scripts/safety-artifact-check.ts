@@ -8,7 +8,8 @@ import { spawnSync } from 'node:child_process';
  * missing or malformed artifact takes the bounded retry edge. The revision predicate also uses the
  * safety request digest rather than Spur's Git working-tree `requireDiff` contract because daily
  * drafts live under the ignored `.works` tree. The publish predicate keeps a real safety escalation
- * out of unattended publication without mistaking a catalog fallback value for one.
+ * out of unattended publication, from either classifier, without mistaking an ABSTAINED decision
+ * (the maker failed, nothing was judged) for one.
  */
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -147,9 +148,24 @@ function judgeValid(workDir: string, scopeDir: string, runDate: string): string 
 }
 
 /**
- * The catalog decision may fall back to `escalate` even when the gate admitted `pass` or `exclude`.
- * Only the gate's persisted status represents a real content-safety escalation, so unattended mode
- * rejects that status while attended mode leaves it for the caller's pause node.
+ * The final publish contract for unattended publication, over the fold token, the gate's status and
+ * the catalog decision row.
+ *
+ * Two independent classifiers share one `pass|escalate|exclude` vocabulary, and an `escalate` from
+ * either means a human has to look:
+ *
+ * - **the gate's persisted status** (report + judge verdict + contract checks) — the authority on
+ *   `block`/`revise`, and a real `escalate` there refuses unattended publication;
+ * - **the `kk-safety-verdict` catalog decision** — its `escalate` is a judged verdict ("the evidence
+ *   cannot settle this"), so an unattended run refuses it too. 0317 R6 admitted every escalate here,
+ *   which let a judged escalation publish under `--skip-review` with no human anywhere.
+ *
+ * The SAME row is also where a maker failure lands: `source: "default"` + `degraded: true` means the
+ * decision ABSTAINED and nothing was judged (measured 2026-11-20 on fm-local, whose guardrails refuse
+ * safety-report text — 9 asks since 11-05, every one "The model refused to answer"). An abstention is
+ * not a verdict, so the gate's own verdict stands and the run publishes; `daily-safety-verdict`
+ * records it on stderr. A row that names no provenance is treated the same way: absent evidence of a
+ * judgement is not evidence of one.
  */
 function publishValid(workDir: string, scopeDir: string, runDate: string, unattendedArg: string): string | null {
     if (unattendedArg !== 'true' && unattendedArg !== 'false') return 'unattended must be true or false';
@@ -167,8 +183,15 @@ function publishValid(workDir: string, scopeDir: string, runDate: string, unatte
     if (!new Set(['pass', 'exclude', 'escalate']).has(gateStatus)) {
         return `gate status ${gateStatus || 'missing'} is not publish-valid`;
     }
-    if (unattendedArg === 'true' && gateStatus === 'escalate') {
+    if (unattendedArg !== 'true') return null;
+    if (gateStatus === 'escalate')
         return 'unattended run refuses a real safety escalation; attended review is required';
+    const decision = readJson(safetyPath(workDir, scopeDir, runDate, 'safety-verdict.decision'));
+    const judgedEscalate =
+        String(decision?.value ?? '') === 'escalate' && decision?.source === 'model' && decision?.degraded !== true;
+    if (judgedEscalate) {
+        const confidence = String(decision?.confidenceLevel ?? 'unstated');
+        return `kk-safety-verdict escalated on the evidence (confidence ${confidence}) — the decision requires a human, so an unattended run must not publish`;
     }
     return null;
 }

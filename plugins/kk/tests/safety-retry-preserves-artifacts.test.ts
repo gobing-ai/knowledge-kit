@@ -312,17 +312,25 @@ describe('kk-daily-safety retry recovery (0338)', () => {
         expect(JSON.parse(readFileSync(verdict, 'utf-8'))).toMatchObject({ verdict: 'PASS' });
         expect(readFileSync(calls, 'utf-8').trim().split('\n')).toEqual(['pi', 'pi']);
 
-        // The decision catalog may fall back to escalate, but an admitted gate status remains
-        // publish-valid. The predicate must inspect the gate status, not the decision value.
-        writeFileSync(
-            join(workDir, '24-script', `${STAMP}_09_safety-verdict.decision`),
-            JSON.stringify({ value: 'escalate' }),
-        );
-        const fallback = Bun.spawnSync([process.execPath, SAFETY_CHECKER, 'publish-valid', workDir, STAMP, 'true'], {
-            stdout: 'pipe',
-            stderr: 'pipe',
-        });
-        expect(fallback.exitCode).toBe(0);
+        // TWO different `escalate` rows share one artifact name. A maker failure writes
+        // `source: "default"` with `degraded: true`: the decision ABSTAINED, nothing was judged, so
+        // the gate's own `pass` still owns the publish decision. A judged `escalate`
+        // (`source: "model"`) is a content verdict — "the evidence cannot settle this" — and needs
+        // a human, so unattended publication must refuse it.
+        const publishValidWith = (row: Record<string, unknown>): { exitCode: number; stderr: string } => {
+            writeFileSync(join(workDir, '24-script', `${STAMP}_09_safety-verdict.decision`), JSON.stringify(row));
+            const check = Bun.spawnSync([process.execPath, SAFETY_CHECKER, 'publish-valid', workDir, STAMP, 'true'], {
+                stdout: 'pipe',
+                stderr: 'pipe',
+            });
+            return { exitCode: check.exitCode ?? 1, stderr: check.stderr.toString() };
+        };
+        const abstained = publishValidWith({ value: 'escalate', source: 'default', degraded: true, reason: 'error' });
+        expect(abstained.exitCode, abstained.stderr).toBe(0);
+        expect(publishValidWith({ value: 'pass', source: 'model', degraded: false }).exitCode).toBe(0);
+        const judged = publishValidWith({ value: 'escalate', source: 'model', degraded: false });
+        expect(judged.exitCode, judged.stderr).not.toBe(0);
+        expect(judged.stderr).toContain('kk-safety-verdict escalated on the evidence');
     });
 
     it('repairs an invalid primary report with the bounded retry before judging', { timeout: 60_000 }, () => {
