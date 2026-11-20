@@ -35,6 +35,7 @@ export class WechatCgiDraftError extends Error {
             | 'request-failed'
             | 'receipt-invalid'
             | 'readback-failed'
+            | 'duplicate-draft'
             | 'ambiguous-submission',
         readonly stage: string,
         message: string,
@@ -421,10 +422,85 @@ function ambiguousSubmission(stage: string, detail: string): WechatCgiDraftError
 }
 
 /**
- * The R2 create: eligibility re-asserted at the mutation boundary, ONE same-origin POST, receipt
- * gated (HTTP ok, ret absent|0, safe numeric appMsgId), then the id+title readback. Any
- * unverifiable create outcome throws ambiguous with metadata.ambiguousSubmission=true; readback
- * failures throw readback-failed (the create receipt itself already verified). Never retries.
+ * The console's own `list_ex` draft list, read on the authenticated page (task 0406 R4). One reader
+ * for both callers — the pre-create duplicate guard and the post-create readback — so the guard can
+ * never disagree with the confirmation about what the console holds. `stage` names the caller's
+ * step: a read failure is reported where it happened (nothing was created before the create).
+ */
+async function readDraftList(
+    page: WechatPage,
+    session: WechatCgiSession,
+    stage: string,
+): Promise<Record<string, unknown>[]> {
+    const listUrl = buildUrl(APPMSG_URL, {
+        action: 'list_ex',
+        begin: '0',
+        count: '5',
+        token: session.token,
+        lang: 'zh_CN',
+        f: 'json',
+    });
+    let listVerdict: CgiVerdict | undefined;
+    try {
+        listVerdict = await evaluateCgiVerdict(
+            page,
+            cgiFetchExpression({
+                url: listUrl,
+                method: 'GET',
+                fields: {},
+                maxBytes: MAX_RESPONSE_BYTES,
+                timeoutMs: REQUEST_TIMEOUT_MS,
+            }),
+        );
+    } catch (error) {
+        throw new WechatCgiDraftError(
+            'readback-failed',
+            stage,
+            `draft list readback ended before a receipt returned: ${stripQuery(String(error))}`,
+        );
+    }
+    if (listVerdict?.kind !== 'ok') {
+        const detail =
+            listVerdict?.kind === 'http-status'
+                ? `HTTP ${listVerdict.status}`
+                : listVerdict?.kind === 'too-large'
+                  ? `${MAX_RESPONSE_BYTES}-byte bound exceeded`
+                  : listVerdict?.kind === 'error'
+                    ? stripQuery(listVerdict.detail)
+                    : 'page returned no usable verdict';
+        throw new WechatCgiDraftError('readback-failed', stage, `draft list readback failed: ${detail}`);
+    }
+    let list: unknown;
+    try {
+        list = JSON.parse(listVerdict.text);
+    } catch {
+        throw new WechatCgiDraftError('readback-failed', stage, 'draft list receipt is not JSON');
+    }
+    return isRecord(list) && Array.isArray(list.app_msg_list)
+        ? list.app_msg_list.filter((item): item is Record<string, unknown> => isRecord(item))
+        : [];
+}
+
+/**
+ * R4: the console already holds a draft with this exact title, so creating would only add a
+ * duplicate (3 drafts in one night, 2026-11-19). Refuse with the id that holds it and no side
+ * effect — a failed `effect: none` row is retryable once the operator clears the console draft.
+ */
+function duplicateDraft(existing: Record<string, unknown>, title: string): WechatCgiDraftError {
+    const id = existing.app_id !== undefined ? existing.app_id : existing.appmsgid;
+    return new WechatCgiDraftError(
+        'duplicate-draft',
+        'pre-create-lookup',
+        `duplicate-draft: appmsgid ${String(id)} already holds "${title}" — delete it or finish it in the console`,
+    );
+}
+
+/**
+ * The R2 create: eligibility re-asserted at the mutation boundary, a duplicate-title lookup
+ * (0406 R4) before anything is dispatched, ONE same-origin POST, receipt gated (HTTP ok, ret
+ * absent|0, safe numeric appMsgId), then the id+title readback. Any unverifiable create outcome
+ * throws ambiguous with metadata.ambiguousSubmission=true; readback failures throw readback-failed
+ * (the create receipt itself already verified). Never retries.
  */
 export async function createWechatArticleDraft(
     page: WechatPage,
@@ -432,8 +508,12 @@ export async function createWechatArticleDraft(
     content: Content,
     media: WechatArticleMedia,
 ): Promise<{ appMsgId: string; editPath: string }> {
-    assertEligibleCgiDraft(content);
+    const certified = certifyCgiDraft(content);
     assertMpOrigin(page);
+    const existing = (await readDraftList(page, session, 'pre-create-lookup')).find(
+        (item) => item.title === certified.title,
+    );
+    if (existing !== undefined) throw duplicateDraft(existing, certified.title);
     const payload = buildCreateArticlePayload(session, content, media);
     let createVerdict: CgiVerdict | undefined;
     try {
@@ -487,56 +567,10 @@ export async function createWechatArticleDraft(
     if (appMsgId === undefined || !/^-?\d{1,12}$/.test(appMsgId)) {
         throw ambiguousSubmission('create-receipt', 'create receipt did not return a safe numeric appMsgId');
     }
-    const listUrl = buildUrl(APPMSG_URL, {
-        action: 'list_ex',
-        begin: '0',
-        count: '5',
-        token: session.token,
-        lang: 'zh_CN',
-        f: 'json',
-    });
-    let listVerdict: CgiVerdict | undefined;
-    try {
-        listVerdict = await evaluateCgiVerdict(
-            page,
-            cgiFetchExpression({
-                url: listUrl,
-                method: 'GET',
-                fields: {},
-                maxBytes: MAX_RESPONSE_BYTES,
-                timeoutMs: REQUEST_TIMEOUT_MS,
-            }),
-        );
-    } catch (error) {
-        throw new WechatCgiDraftError(
-            'readback-failed',
-            'readback',
-            `draft list readback ended before a receipt returned: ${stripQuery(String(error))}`,
-        );
-    }
-    if (listVerdict?.kind !== 'ok') {
-        const detail =
-            listVerdict?.kind === 'http-status'
-                ? `HTTP ${listVerdict.status}`
-                : listVerdict?.kind === 'too-large'
-                  ? `${MAX_RESPONSE_BYTES}-byte bound exceeded`
-                  : listVerdict?.kind === 'error'
-                    ? stripQuery(listVerdict.detail)
-                    : 'page returned no usable verdict';
-        throw new WechatCgiDraftError('readback-failed', 'readback', `draft list readback failed: ${detail}`);
-    }
-    let list: unknown;
-    try {
-        list = JSON.parse(listVerdict.text);
-    } catch {
-        throw new WechatCgiDraftError('readback-failed', 'readback', 'draft list receipt is not JSON');
-    }
-    const items = isRecord(list) && Array.isArray(list.app_msg_list) ? list.app_msg_list : [];
+    const items = await readDraftList(page, session, 'readback');
     const confirmed = items.some(
         (item) =>
-            isRecord(item) &&
-            item.title === content.title &&
-            (String(item.app_id) === appMsgId || String(item.appmsgid) === appMsgId),
+            item.title === content.title && (String(item.app_id) === appMsgId || String(item.appmsgid) === appMsgId),
     );
     if (!confirmed) {
         throw new WechatCgiDraftError(

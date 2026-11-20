@@ -427,12 +427,14 @@ describe('CGI draft browser fixtures (real Chromium, route-mocked mp origin)', (
     describe('createWechatArticleDraft (create POST + list readback)', () => {
         const APP_MSG_ID = '123456';
         const LIST_OK = { app_msg_list: [{ app_id: APP_MSG_ID, title: CREATE_TITLE }] };
+        /** The console read before the create: no draft holds this title yet (0406 R4). */
+        const LIST_EMPTY = { app_msg_list: [] };
         const CREATE_OK: MockResponse = { json: { ret: 0, appMsgId: APP_MSG_ID } };
 
         test('a verified receipt plus a matching readback returns the id and a token-free editPath', async () => {
             const facts = await runCgiDraftScenario(browser, {
                 create: [CREATE_OK],
-                list: [{ json: LIST_OK }],
+                list: [{ json: LIST_EMPTY }, { json: LIST_OK }],
                 run: (page) =>
                     createWechatArticleDraft(page, SESSION, cgiContent({ digest: '摘要', author: 'kk' }), CREATE_MEDIA),
             });
@@ -440,9 +442,15 @@ describe('CGI draft browser fixtures (real Chromium, route-mocked mp origin)', (
             expect(draft.appMsgId).toBe(APP_MSG_ID);
             expect(draft.editPath).toContain('appmsgid=123456');
             expect(draft.editPath).not.toContain('token');
-            // Exactly two dispatched requests: the create POST, then the list readback.
-            expect(facts.observed.map((request) => request.path)).toEqual([CREATE_ENDPOINT, APPMSG_ENDPOINT]);
-            const create = facts.observed[0];
+            // Exactly three dispatched requests: the pre-create duplicate lookup (0406 R4), the
+            // create POST, then the readback.
+            expect(facts.observed.map((request) => request.path)).toEqual([
+                APPMSG_ENDPOINT,
+                CREATE_ENDPOINT,
+                APPMSG_ENDPOINT,
+            ]);
+            expect(facts.observed[0]?.query.action).toBe('list_ex');
+            const create = facts.observed[1];
             expect(create?.query.sub).toBe('create');
             expect(create?.query.type).toBe('77');
             expect(create?.query.token).toBe(SESSION.token);
@@ -454,29 +462,63 @@ describe('CGI draft browser fixtures (real Chromium, route-mocked mp origin)', (
                 { x1: 10, y1: 20, x2: 1188, y2: 735 },
                 { x1: 10, y1: 20, x2: 610, y2: 610 },
             ]);
-            const list = facts.observed[1];
+            const list = facts.observed[2];
             expect(list?.query.action).toBe('list_ex');
             expect(list?.query.token).toBe(SESSION.token);
+        });
+
+        test('a draft already holding the title is refused before any create POST is dispatched', async () => {
+            const facts = await runCgiDraftScenario(browser, {
+                create: [CREATE_OK],
+                list: [{ json: { app_msg_list: [{ app_id: '777888', title: CREATE_TITLE }] } }],
+                run: (page) => createWechatArticleDraft(page, SESSION, cgiContent(), CREATE_MEDIA),
+            });
+            expect(facts.code).toBe('duplicate-draft');
+            expect(facts.stage).toBe('pre-create-lookup');
+            expect(facts.error).toContain('duplicate-draft: appmsgid 777888 already holds');
+            expect(facts.error).toContain('delete it or finish it in the console');
+            // Nothing was created: only the lookup reached the console.
+            expect(facts.observed.map((request) => request.path)).toEqual([APPMSG_ENDPOINT]);
+        });
+
+        test('a different title in the list does not block the create', async () => {
+            const facts = await runCgiDraftScenario(browser, {
+                create: [CREATE_OK],
+                list: [{ json: { app_msg_list: [{ app_id: '777888', title: '别的标题' }] } }, { json: LIST_OK }],
+                run: (page) => createWechatArticleDraft(page, SESSION, cgiContent(), CREATE_MEDIA),
+            });
+            expect((facts.outcome as { appMsgId: string }).appMsgId).toBe(APP_MSG_ID);
+        });
+
+        test('an unreadable pre-create lookup refuses as readback-failed with nothing created', async () => {
+            const facts = await runCgiDraftScenario(browser, {
+                create: [CREATE_OK],
+                list: [{ status: 500, body: 'boom' }],
+                run: (page) => createWechatArticleDraft(page, SESSION, cgiContent(), CREATE_MEDIA),
+            });
+            expect(facts.code).toBe('readback-failed');
+            expect(facts.stage).toBe('pre-create-lookup');
+            expect(facts.observed.map((request) => request.path)).toEqual([APPMSG_ENDPOINT]);
         });
 
         test('an explicit ret refusal is receipt-invalid and definitive — no readback is dispatched', async () => {
             const facts = await runCgiDraftScenario(browser, {
                 create: [{ json: { ret: 1, err_msg: 'not allowed' } }],
-                list: [],
+                list: [{ json: LIST_EMPTY }],
                 run: (page) => createWechatArticleDraft(page, SESSION, cgiContent(), CREATE_MEDIA),
             });
             expect(facts.code).toBe('receipt-invalid');
             expect(facts.stage).toBe('create-receipt');
             expect(facts.error).toContain('ret=1');
             expect(facts.metadata?.ambiguousSubmission).toBeUndefined();
-            expect(facts.observed.map((request) => request.path)).toEqual([CREATE_ENDPOINT]);
+            expect(facts.observed.map((request) => request.path)).toEqual([APPMSG_ENDPOINT, CREATE_ENDPOINT]);
         });
 
         test('a garbage appMsgId is an ambiguous submission: exactly ONE create request, no retry, no readback', async () => {
             for (const appMsgId of ['abc', '']) {
                 const facts = await runCgiDraftScenario(browser, {
                     create: [{ json: { ret: 0, appMsgId } }],
-                    list: [{ json: LIST_OK }],
+                    list: [{ json: LIST_EMPTY }],
                     run: (page) => createWechatArticleDraft(page, SESSION, cgiContent(), CREATE_MEDIA),
                 });
                 expect(facts.code, `appMsgId '${appMsgId}'`).toBe('ambiguous-submission');
@@ -485,14 +527,14 @@ describe('CGI draft browser fixtures (real Chromium, route-mocked mp origin)', (
                 expect(
                     facts.observed.map((request) => request.path),
                     `appMsgId '${appMsgId}'`,
-                ).toEqual([CREATE_ENDPOINT]);
+                ).toEqual([APPMSG_ENDPOINT, CREATE_ENDPOINT]);
             }
         });
 
         test('a readback title mismatch refuses as readback-failed', async () => {
             const facts = await runCgiDraftScenario(browser, {
                 create: [CREATE_OK],
-                list: [{ json: { app_msg_list: [{ app_id: APP_MSG_ID, title: '别的标题' }] } }],
+                list: [{ json: LIST_EMPTY }, { json: { app_msg_list: [{ app_id: APP_MSG_ID, title: '别的标题' }] } }],
                 run: (page) => createWechatArticleDraft(page, SESSION, cgiContent(), CREATE_MEDIA),
             });
             expect(facts.code).toBe('readback-failed');
@@ -502,7 +544,7 @@ describe('CGI draft browser fixtures (real Chromium, route-mocked mp origin)', (
         test('a readback that never shows the created id refuses as readback-failed', async () => {
             const facts = await runCgiDraftScenario(browser, {
                 create: [CREATE_OK],
-                list: [{ json: { app_msg_list: [{ app_id: '999', title: CREATE_TITLE }] } }],
+                list: [{ json: LIST_EMPTY }, { json: { app_msg_list: [{ app_id: '999', title: CREATE_TITLE }] } }],
                 run: (page) => createWechatArticleDraft(page, SESSION, cgiContent(), CREATE_MEDIA),
             });
             expect(facts.code).toBe('readback-failed');
@@ -512,25 +554,25 @@ describe('CGI draft browser fixtures (real Chromium, route-mocked mp origin)', (
         test('an HTTP 500 create is ambiguous: one request, no retry', async () => {
             const facts = await runCgiDraftScenario(browser, {
                 create: [{ status: 500, body: 'boom' }],
-                list: [],
+                list: [{ json: LIST_EMPTY }],
                 run: (page) => createWechatArticleDraft(page, SESSION, cgiContent(), CREATE_MEDIA),
             });
             expect(facts.code).toBe('ambiguous-submission');
             expect(facts.metadata?.ambiguousSubmission).toBe(true);
             expect(facts.error).toContain('HTTP 500');
-            expect(facts.observed.map((request) => request.path)).toEqual([CREATE_ENDPOINT]);
+            expect(facts.observed.map((request) => request.path)).toEqual([APPMSG_ENDPOINT, CREATE_ENDPOINT]);
         });
 
         test('an aborted create transport is ambiguous: one request, no retry', async () => {
             const facts = await runCgiDraftScenario(browser, {
                 create: [{ abort: true }],
-                list: [],
+                list: [{ json: LIST_EMPTY }],
                 run: (page) => createWechatArticleDraft(page, SESSION, cgiContent(), CREATE_MEDIA),
             });
             expect(facts.code).toBe('ambiguous-submission');
             expect(facts.stage).toBe('create-dispatch');
             expect(facts.metadata?.ambiguousSubmission).toBe(true);
-            expect(facts.observed.map((request) => request.path)).toEqual([CREATE_ENDPOINT]);
+            expect(facts.observed.map((request) => request.path)).toEqual([APPMSG_ENDPOINT, CREATE_ENDPOINT]);
         });
         // The 30 s request-timeout variant is not exercised: it costs a 30 s wall clock per run and
         // follows the same already-covered `kind: 'error'` verdict path as the aborted transport.
@@ -556,6 +598,8 @@ const parseOk = (sources: string[]) => JSON.stringify({ kind: 'ok', sources, htm
 const APPLY_OK = JSON.stringify({ kind: 'ok', html: '<p>正文</p>' });
 const APP_MSG_ID = '123456';
 const LIST_OK = verdictOk({ app_msg_list: [{ app_id: APP_MSG_ID, title: CREATE_TITLE }] });
+/** The pre-create lookup's verdict: the console holds no draft with this title yet (0406 R4). */
+const LIST_EMPTY = verdictOk({ app_msg_list: [] });
 const SAVED_EDITOR_URL = `${MP_ORIGIN}/cgi-bin/appmsg?t=media/appmsg_edit_v2&action=edit&isNew=0&type=77&appmsgid=${APP_MSG_ID}`;
 
 /** The media verdict chain of one eligible plain run: parse → cover transfer → crop → apply. */
@@ -637,6 +681,10 @@ function makeDeps(
 const createDispatches = (page: WechatPage & { seen: string[] }): string[] =>
     page.seen.filter((expression) => expression.includes('/cgi-bin/operate_appmsg'));
 
+/** The entry page's draft-list reads (`list_ex`), for exactly-once assertions (0406 R4). */
+const listReads = (page: WechatPage & { seen: string[] }): string[] =>
+    page.seen.filter((expression) => expression.includes('list_ex'));
+
 describe('runMode CGI integration (offline fake pages)', () => {
     test('an eligible plain draft takes the CGI branch: created once, secret-free url, no DOM editor', async () => {
         const content = cgiContent({ images: [tmpCover], coverPath: tmpCover, digest: '摘要', author: 'kk' });
@@ -645,6 +693,7 @@ describe('runMode CGI integration (offline fake pages)', () => {
         const entry = queuedPage([
             SESSION_OK,
             ...mediaQueue(tmpCover),
+            LIST_EMPTY,
             verdictOk({ ret: 0, appMsgId: APP_MSG_ID }),
             LIST_OK,
         ]);
@@ -672,13 +721,35 @@ describe('runMode CGI integration (offline fake pages)', () => {
         const content = cgiContent({ images: [tmpCover], coverPath: tmpCover });
         const validation = await validateModeInput('文章', content);
         if (validation.error !== undefined) throw new Error(validation.error);
-        const entry = queuedPage([SESSION_OK, ...mediaQueue(tmpCover), '{"not json']);
+        const entry = queuedPage([SESSION_OK, ...mediaQueue(tmpCover), LIST_EMPTY, '{"not json']);
         const result = await runMode(validation.input, makeDeps(entry, content));
         expect(result.ok).toBe(false);
         expect(result.metadata?.stage).toBe('create-dispatch');
         expect(result.metadata?.ambiguousSubmission).toBe(true);
         expect(createDispatches(entry)).toHaveLength(1);
-        expect(entry.seen.some((expression) => expression.includes('list_ex'))).toBe(false);
+        // The only list read is the pre-create duplicate lookup; the ambiguous create never reads back.
+        expect(listReads(entry)).toHaveLength(1);
+        expect(entry.seen.findIndex((expression) => expression.includes('list_ex'))).toBeLessThan(
+            entry.seen.findIndex((expression) => expression.includes('/cgi-bin/operate_appmsg')),
+        );
+    });
+
+    test('a console draft already holding the title refuses with effect none and dispatches no create', async () => {
+        const content = cgiContent({ images: [tmpCover], coverPath: tmpCover });
+        const validation = await validateModeInput('文章', content);
+        if (validation.error !== undefined) throw new Error(validation.error);
+        const entry = queuedPage([
+            SESSION_OK,
+            ...mediaQueue(tmpCover),
+            verdictOk({ app_msg_list: [{ app_id: '777888', title: CREATE_TITLE }] }),
+        ]);
+        const result = await runMode(validation.input, makeDeps(entry, content));
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('duplicate-draft: appmsgid 777888');
+        expect(result.metadata?.stage).toBe('pre-create-lookup');
+        // Nothing was created, so the row is honestly retryable — not an unknown effect.
+        expect(result.metadata?.itcDelivery).toEqual({ schemaVersion: 1, effect: 'none' });
+        expect(createDispatches(entry)).toHaveLength(0);
     });
 
     test('a media-preparation failure reports stage media-preparation without any create dispatch', async () => {
@@ -717,6 +788,7 @@ describe('runMode CGI integration (offline fake pages)', () => {
         const entry = queuedPage([
             SESSION_OK,
             ...mediaQueue(tmpCover),
+            LIST_EMPTY,
             verdictOk({ ret: 0, appMsgId: APP_MSG_ID }),
             LIST_OK,
         ]);

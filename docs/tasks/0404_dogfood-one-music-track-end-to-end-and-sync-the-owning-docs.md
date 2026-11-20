@@ -4,7 +4,7 @@ name: Dogfood one music track end to end and sync the owning docs
 status: todo
 template: feature-impl
 created_at: 2026-11-18T22:16:17.582Z
-updated_at: "2026-11-19T22:35:17.840Z"
+updated_at: "2026-11-20T09:00:46.935Z"
 feature_id: D8
 
 ac_numbering: task-local
@@ -102,6 +102,21 @@ Scenario: AC6 — A free regression path exists (req: R6)
 - **Theme choice (closed).** The operator's idea picks the theme from the four shipped ones; the implementer records the choice in the evidence README. No new preset is authored here.
 - **Instance unreachable (closed).** If the homelab instance cannot be reached or returns an entitlement error, stop and report the blocker with the adapter's error text. Never substitute dry-run artifacts for paid evidence.
 - **Defects found mid-run (closed).** File a task per defect (R5) and stop the run at the failing state; do not patch `music-gen`/`kk music`/workflow code inside 0404.
+
+#### Q&A entry — 2026-11-20T09:00:46.934Z
+
+- **Blocker recorded during the 2026-11-20 batch (`--tasks 0404,0406,0410`).** Plan step 0 was run:
+  the installed `kk` already answers (`kk music --help` lists render/presets/gen/library/analyze), this
+  checkout has `plugins/kk/workflows/kk-music.yaml`, `plugins/kk/scripts/music-stages.ts` and
+  `plugins/generations/music-gen`. The instance probe failed — no `music:` block in
+  `~/.config/kk/config.yaml`, no `KK_MUSIC_*` in the environment, so the adapter used its default
+  `http://127.0.0.1:3000` and `kk music library --json` returned
+  `music.baseUrl at GET /api/generations: lyria instance GET /api/generations could not be read after 1 attempt (8 ms) — check the instance is healthy and music.instance.url / KK_MUSIC_INSTANCE_URL`.
+  Per the closed Q&A ("Instance unreachable") the run stopped before the dry run and before any paid
+  call: no evidence was written under `docs/tasks/evidence/D8/0404/`, no preset was promoted, and nothing
+  in docs was touched, because every accepted number would have to come from the paid takes. Resume by
+  exporting the homelab `KK_MUSIC_INSTANCE_URL`, re-probing `kk music library --json`, then re-running
+  this task; the pending paid round still needs the operator's explicit go.
 
 ### Design
 

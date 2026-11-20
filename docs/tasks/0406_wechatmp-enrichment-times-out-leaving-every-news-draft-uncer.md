@@ -4,7 +4,7 @@ name: wechatmp 赞赏 enrichment times out, leaving every news draft uncertain
 status: todo
 template: issue
 created_at: 2026-11-18T23:29:22.307Z
-updated_at: "2026-11-20T00:28:50.033Z"
+updated_at: "2026-11-20T08:38:12.235Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -120,7 +120,34 @@ Scenario: AC6 — The suite pins the fixes (req: R5)
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Shipped **R4 in full** (the duplicate-draft guard) plus its R5 tests. **R1, R2 and R3 are blocked** on the
+operator-attended headed session that their own plans require — see *Blocked* below. Nothing was
+guessed in place of that measurement.
+
+**R4 — one draft per run.**
+
+| File | Change |
+| --- | --- |
+| `plugins/publishings/wechatmp-pub/src/cgi-draft.ts` | `'duplicate-draft'` joins the bounded error vocabulary (`:41`). The readback's own `list_ex` request is extracted into `readDraftList(page, session, stage)` (`:431`), one reader for both callers. `createWechatArticleDraft` calls it **before** `buildCreateArticlePayload`/the POST (`:515`) and refuses on an exact-title match with `duplicateDraft()` (`:487`). The post-create confirmation now reads through the same helper (`:570`). |
+| `plugins/publishings/wechatmp-pub/src/flow.ts` | On `error.code === 'duplicate-draft'` the failure carries `itcDelivery: { schemaVersion: 1, effect: 'none' }` (`:2588`), so the matrix records `effect: none` — a bounded retry, not an operator resend, once the console draft is cleared. |
+| `plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-draft.test.ts` | Real-Chromium fixtures: duplicate title refuses with `duplicate-draft`/`pre-create-lookup` and **dispatches no create** (observed requests = the lookup only); a different title does not block; an unreadable lookup refuses `readback-failed` at `pre-create-lookup` with nothing created. Existing create/ambiguous/readback fixtures updated to the new three-request sequence. Fake-page `runMode` case pins `ok:false` + `itcDelivery.effect === 'none'` + zero create dispatches. |
+
+Error text is the contract R4 names verbatim:
+`duplicate-draft: appmsgid <id> already holds "<title>" — delete it or finish it in the console`.
+
+**Scope note.** The lookup uses the readback's frozen `list_ex` shape (`begin=0, count=5`), so it sees
+the console's five most recent drafts — the same window the confirmation already trusted. Widening it
+would change a frozen request shape this task does not own.
+
+**Blocked (not attempted, no placeholder evidence).**
+
+- **R1** — the 赞赏 surface can only be measured in an operator-attended headed session on the signed-in
+  `wechatmp` profile (task Plan step 1, Q&A "Can R2 proceed without R1? no"). No session was available
+  during this batch, so R1's measurement and therefore R2's selector/`REWARD_CONFIRM` change and R3's
+  `reward: false` decision are untouched.
+- **R3** stays conditional by construction: it is decided only by R1's entitlement finding.
+- Consequently the `plugins/kk/scripts/daily-stages.ts` reward opt-out, the new `enrich.ts` probe and the
+  slow-mount/confirm tests are **not** in this change.
 
 ### Testing
 

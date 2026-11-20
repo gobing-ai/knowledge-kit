@@ -2585,6 +2585,11 @@ async function runCgiDraft(input: ModeInput, deps: ModeRunDeps): Promise<Result 
                 publishStatus: deps.publishStatus,
                 stage: error.stage,
                 ...(error.metadata.ambiguousSubmission === true ? { ambiguousSubmission: true } : {}),
+                // 0406 R4: the duplicate refusal dispatched nothing, so the row is honestly
+                // `effect: none` — a bounded retry (not an operator resend) is the right next step.
+                ...(error.code === 'duplicate-draft'
+                    ? { itcDelivery: { schemaVersion: 1, effect: 'none' as const } }
+                    : {}),
             },
         });
     }

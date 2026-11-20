@@ -4,7 +4,7 @@ name: Weibo article, X, Threads and LinkedIn publish rails still cannot confirm 
 status: todo
 template: issue
 created_at: 2026-11-19T22:00:52.977Z
-updated_at: "2026-11-20T00:28:50.863Z"
+updated_at: "2026-11-20T09:00:46.932Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -89,6 +89,18 @@ Scenario: AC6 — Each fix is pinned (req: R6)
 - **Q: Who authorizes the live verification posts (AC2-AC4)? A (closed):** the operator, per post. These rails have no draft mode, so each verification is an irreversible public post (ADR-022). The implementer prepares and asks; it never posts on its own.
 - **Q: Recording tool? A (closed):** the harness launcher, headed (`createKkBrowserLauncher`, `packages/publish-harness/src/browser.ts`) with the click/keystroke recorder used on 2026-11-16, writing `events.jsonl` + screenshots under `.spur/run/dogfood/<YYYY-MM-DD>-social/<rail>/`. Commit nothing from that directory that contains session cookies or tokens.
 - **Q: Keep the expired overrides? A:** out of scope. Raised to the operator in this task's Background and the refine report.
+
+#### Q&A entry — 2026-11-20T09:00:46.931Z
+
+- **Blocker recorded during the 2026-11-20 batch (`--tasks 0404,0406,0410`).** No rail was changed. Every
+  requirement here is measurement-first (R1–R4 each begin "record … in an operator-attended headed
+  session"), and `plugins/kk/src`-level selectors may not be guessed: the 11-16 → 11-19 cycle this task
+  exists to end came from exactly that. The `kk bot list` profiles (`weibo`, `x`, `threads`, `linkedin`)
+  are all `cached` with an unverified session, and the 11-16 recordings the Background cites are not on
+  disk, so a new recording is required, not optional. Resume with the operator at a headed browser
+  (`createKkBrowserLauncher`) writing `.spur/run/dogfood/<date>-social/<rail>/events.jsonl` +
+  screenshots, one rail at a time in the order entitlement → X → Threads → LinkedIn; AC2–AC4 also need
+  per-post approval before anything is published.
 
 ### Design
 
