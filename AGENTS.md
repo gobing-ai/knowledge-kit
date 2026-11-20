@@ -226,6 +226,18 @@ grep -c expectedItemSections "$KK_PKG/plugins/kk/scripts/daily-stages.ts"   # co
 
 Until this repo is released and reinstalled, that copy is the one the cron actually runs.
 
+**The decision layer needs `@gobing-ai/spur` resolvable from the checkout.** `plugins/kk/decisions/*.yaml`
+and `.spur/config.yaml` declare `$schema: "@gobing-ai/spur/schemas/…"`, and Bun resolves that from the
+catalog's own directory — but Spur is a global tool with no dependency entry here, so a bare
+`kk store label` / `spur decision` needs the checkout's `node_modules/@gobing-ai/spur` symlink. Three
+consumers, three owners: `bun run …` gets `NODE_PATH` from `scripts/with-spur-env.ts`; scheduler jobs
+get it from the `kk schedule render` plist; an operator's own shell gets the symlink, which
+`bun run prepare` (`scripts/link-spur.ts`) re-creates after every install because `bun install` prunes
+it. Diagnose with `spur --no-logo decision list | grep -c plugins/kk/decisions` (0 = the layer is
+invisible, and `kk store label` exits at catalog load while spur's `decide` silently loads zero project
+catalogs); repair with `bun scripts/link-spur.ts`. Do not export `NODE_PATH` in a shell rc instead — it
+leaks this checkout's global tree into every project on the machine.
+
 **Check the sync before the next tick, not at it.** `kk news generate`'s launch preflight refuses
 (exit 5) when the checkout's `plugins/kk/{workflows,scripts}` differ from the install, because the
 executed stage body is the installed one — on 2026-11-16 the 04:30 tick was refused and the day

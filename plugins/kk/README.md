@@ -109,6 +109,15 @@ and spur's `decide` action silently loaded **zero** project catalogs, so `kk-saf
 no row and the safety gate refused the day's drafts. Leave the key in place when you hand-edit the
 plist; re-rendering restores it.
 
+Neither owner covers a bare interactive `kk store label` / `spur decision` in your own shell, which is
+why this checkout keeps a `node_modules/@gobing-ai/spur` symlink to the installed package — the only
+resolver that exists before any of those wrappers run. Nothing declares the package as a dependency
+(it has to stay a latest global tool), so `bun install` is free to prune the link; `bun run prepare`
+re-creates it from the `spur` on `PATH` on every install (`scripts/link-spur.ts`). Check with
+`spur --no-logo decision list | grep -c plugins/kk/decisions` (0 = the decision layer is invisible) and
+repair with `bun scripts/link-spur.ts`. A global `NODE_PATH` export in your shell rc is not the fix:
+it leaks one checkout's global tree into every project on the machine.
+
 `kk-collect` collects every ingestion source into the kk store and never publishes. Two ticks that
 overlap are **one** collection: the first state takes `kk store lock acquire --name collect` and a
 tick that finds the claim inside its TTL exits 0 (`skipped`) without collecting. Before relying on
