@@ -127,6 +127,12 @@ rules:
             - "apps/cli/src/config.ts"
             # Single existsSync entry-point probe inside a sync Commander action.
             - "apps/cli/src/commands/plugin.ts"
+            # `kk schedule render` derives the spur module root from the `spur` on PATH: `realpathSync`
+            # to peel the bun-global bin symlink, then `existsSync` probing up the tree (b3aa2c25).
+            # The seam exposes no realpath, and `node:fs/promises` is forbidden by this same rule, so
+            # this is the sync-structural class the list above already covers — not a new exemption
+            # class. Text IO in this file (the template read) still goes through the FileSystem seam.
+            - "apps/cli/src/commands/schedule.ts"
             # Binary audio WAV buffer write for voice-gen generator plugin
             - "plugins/generations/voice-gen/src/index.ts"
             # image-gen binary byte-writer + reference-image reads (0107 R1): image
