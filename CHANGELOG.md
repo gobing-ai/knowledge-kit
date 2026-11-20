@@ -1,5 +1,104 @@
 ## [Unreleased]
 
+## [0.1.21] - 2026-11-19
+
+### Added
+
+- feat(music-gen): land the D8 music capability batch (35a72bbb)
+<!-- src: plugins/kk/scripts/kk-workflow-stages.ts:184 · confidence: HIGH -->
+- feat(news): close the 0392 selection-evidence gap on current main (0600c51c)
+<!-- src: apps/cli/src/topic-attempts.ts:18 · confidence: HIGH -->
+- feat(kk): 0403 ship the kk-music workflow (b8c7c4e8)
+<!-- src: plugins/kk/workflows/kk-music.yaml:34 · confidence: HIGH -->
+- feat(kk): 0402 add the music-authoring skill and the music-quality rubric (999587ab)
+<!-- src: plugins/kk/skills/music-authoring/SKILL.md:3 · confidence: HIGH -->
+- feat(cli): 0401 add the kk music noun over the music-gen plugin (feb2a6fe)
+<!-- src: apps/cli/src/commands/music/verbs.ts:205 · confidence: HIGH -->
+- feat(music-gen): 0405 measure takes and loudness-normalize to a profile (de7b3835)
+<!-- src: plugins/generations/music-gen/src/audio/checks.ts:31 · confidence: HIGH -->
+- feat(podcast): deliver traceable public corrections in the next episode (0396) (24ffa7c4)
+<!-- src: plugins/publishings/podcast-pub/src/corrections.ts:25 · confidence: HIGH -->
+- feat(music-gen): 0400 guard paid calls with an estimate, confirmation and dedupe (3f6572f9)
+<!-- src: plugins/generations/music-gen/src/artifact.ts:96 · confidence: HIGH -->
+- feat(music-gen): 0399 ship format and theme presets with a generated index (a7945b83)
+<!-- src: plugins/generations/music-gen/scripts/gen-preset-index.ts:18 · confidence: HIGH -->
+- feat(music-gen): 0398 ship the generator plugin and the lyria adapter (8fcc5cc3)
+<!-- src: plugins/generations/music-gen/src/adapter/index.ts:22 · confidence: HIGH -->
+- feat(music-gen): 0397 freeze the brief, render, request and preset contract (867675c1)
+<!-- src: plugins/generations/music-gen/src/brief.ts:14 · confidence: HIGH -->
+- feat(publish): bind Channels cards to the confirmed Official Account article (0395) (813406f4)
+<!-- src: apps/cli/src/publish-channels-link.ts:24 · confidence: HIGH -->
+- feat(publish): unify the news publish trigger on one frozen date (0388) (7b848979)
+<!-- src: apps/cli/src/publish-dispatch.ts:30 · confidence: HIGH -->
+- feat(cover): compose news covers for the two centered crops (0387) (34b42aa8)
+<!-- src: plugins/kk/scripts/cover-compositor.ts:38 · confidence: HIGH -->
+- feat(podcast): restore concise show notes and reuse episode cards (0386) (7a600aef)
+<!-- src: plugins/publishings/podcast-pub/src/index.ts:293 · confidence: HIGH -->
+- feat(news): refine daily audience, spoken script and canonical episode title (0385) (cc08fbf6)
+<!-- src: plugins/generations/dailynews-gen/src/editorial-claims.ts:17 · confidence: HIGH -->
+- feat(news): render traceable source citations from verified provenance (0394) (afad9605)
+<!-- src: plugins/kk/scripts/source-citation.ts:33 · confidence: HIGH -->
+- feat(news): reconcile and protect daily editorial judgments (0384) (260562dd)
+<!-- src: plugins/kk/scripts/daily-stages.ts:4885 · confidence: HIGH -->
+- feat(news): calibrate daily topic filters and report candidate losses (0392) (f6c4ce57)
+<!-- src: apps/cli/src/commands/daily.ts:521 · confidence: HIGH -->
+- feat(board): redesign Daily AI Voice board around generation and publishing evidence (0390) (4b46e7ab)
+<!-- src: apps/board/src/daily-voice/evidence.ts:34 · confidence: HIGH -->
+- feat(board): bind Daily AI Voice Board to current news run and publish evidence (0391) (9c4d8213)
+<!-- src: apps/cli/src/board/collect.ts:249 · confidence: HIGH -->
+
+### Fixed
+
+- fix(news): settle only the aired plan and recycle no-content reservations (dc2a4b3b)
+<!-- src: apps/cli/src/publish-matrix.ts:1274 · confidence: HIGH -->
+- fix(harness): reserve the browser launch inside the channel-check deadline (8566cb1a)
+<!-- src: packages/publish-harness/src/browser.ts:183 · confidence: HIGH -->
+- fix(harness): draw each pass's browser launch from the check deadline (36c3b261)
+<!-- src: packages/publish-harness/src/browser.ts:176 · confidence: HIGH -->
+- fix(kk): declare AI generation in the wechatmp 创作来源 field (032fc0d3)
+<!-- src: plugins/kk/scripts/daily-stages.ts:2082 · confidence: HIGH -->
+- fix(harness): spend one check budget across both channel-probe passes (2ca1e940)
+<!-- src: packages/publish-harness/src/browser.ts:168 · confidence: HIGH -->
+- fix(cli): 0401 home the music workflow and pack the new workspace package (fcc2b6eb)
+<!-- src: apps/cli/package.json:52 · confidence: HIGH -->
+- fix(tasks): renumber colliding D8 and issue tasks out of the L3 WBS range (109f8c86)
+  <!-- borderline: a corpus renumbering, no behaviour claim — every file it touched is a task or feature doc -->
+- fix(kk): commit the shipinhao audio cover before submitting (130c9c22)
+<!-- src: plugins/publishings/shipinhao-pub/src/audio-flow.ts:192 · confidence: HIGH -->
+- fix(kk): stop the news freeze stage from re-rendering reviewed variants (404efb69)
+<!-- src: apps/cli/src/commands/content-generate.ts:858 · confidence: HIGH -->
+- fix(cli): mark a truncated launch refusal so the cause survives (b659279d)
+<!-- src: apps/cli/src/launch.ts:185 · confidence: HIGH -->
+- fix(store): keep series selection continuity across re-clustering (0393) (43308794)
+<!-- src: packages/kk-store/src/dao/items.ts:281 · confidence: HIGH -->
+
+### Changed
+
+- docs(kk): sync the kk music surface and un-nest the D8 change maps (4d6bb8a4)
+- docs(features): sync the D8 and G41 feature tables after the merge (4edb2610)
+- docs(features): add D8 music generation as backlog (5cc22885)
+
+### Other
+
+- chore: merge 95a6b652 into main (cb39df72)
+- docs(context): record the shipinhao audio publish after the session refresh (95a6b652)
+- docs(tasks): update evidence tables after the refinement pass (ab035854)
+- docs(tasks): updat tasks after refinment (8921b8c8)
+- docs(context): record the 2026-11-19 daily-news dogfood findings (3e07d5d7)
+- chore(project): add new things into .gitignore (5df08664)
+- docs(memory): preserve the L3 batch report and review verdicts (54b7700a)
+- chore: merge main into sp/runall-l3-20261117-210220 (53ae95c3)
+- docs(memory): record the L3 batch report and process lessons (9bc5b5c4)
+- test(news): replay the editorial-to-publish flow and sync the derived docs (0389) (062df62f)
+- docs(tasks): updat tasks after refinment (b8c12764)
+- chore: merge 130c9c22 into main (27532fda)
+- chore(memory): update memory (cd53ab9f)
+- docs(tasks): file the wechatmp enrichment and shipinhao publish defects (4f7a645e)
+- chore(spur): move the history report to 08:15 and pick a live reviewer (eab19412)
+- chore(task): close 0376 and 0378 on the 2026-11-17 evidence (cec48af8)
+- docs(report): add the 2026-11-17 history anatomy daily report (ac1f05c6)
+- docs(task): plan l3 daily-ai-news editorial and delivery (e9b3ad93)
+
 ## [0.1.20] - 2026-11-17
 
 ### Added
