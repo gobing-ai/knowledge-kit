@@ -47,6 +47,21 @@ const PNG_BYTES = Buffer.from(
 );
 const itMacOnly = it.skipIf(process.platform !== 'darwin');
 
+/**
+ * Stand-in for `sips` so the preview ORCHESTRATION and its fail-loud branches run on every
+ * platform (CI is Linux, where sips does not exist). Call 1 is compositeCover's render, faked as a
+ * success that writes its `--out` file; later calls get `crop`. Pixel content stays macOS-only.
+ */
+function fakeSips(crop: (args: string[]) => childProcess.SpawnSyncReturns<Buffer>) {
+    let calls = 0;
+    return spyOn(childProcess, 'spawnSync').mockImplementation(((_file: string, args: string[]) => {
+        calls += 1;
+        if (calls > 1) return crop(args);
+        writeFileSync(args[args.indexOf('--out') + 1], PNG_BYTES);
+        return { status: 0, error: undefined } as unknown as childProcess.SpawnSyncReturns<Buffer>;
+    }) as typeof childProcess.spawnSync);
+}
+
 function withTempDir<T>(fn: (dir: string) => T): T {
     const dir = mkdtempSync(join(tmpdir(), 'cover-crop-0387-'));
     try {
@@ -266,17 +281,12 @@ describe('preview artifacts (R8 verification products)', () => {
         });
     });
 
-    itMacOnly('fails loud when sips cannot write a crop preview', () => {
+    it('fails loud when sips cannot write a crop preview', () => {
         withTempDir((dir) => {
             const bg = background(dir);
-            const real = childProcess.spawnSync;
-            let calls = 0;
-            const spy = spyOn(childProcess, 'spawnSync').mockImplementation(((file: string, args: string[]) => {
-                calls += 1;
-                // the first call is compositeCover's own render; the crop call is faked to fail
-                if (calls === 1) return real(file, args);
-                return { status: 1, error: undefined } as unknown as childProcess.SpawnSyncReturns<Buffer>;
-            }) as typeof childProcess.spawnSync);
+            const spy = fakeSips(
+                () => ({ status: 1, error: undefined }) as unknown as childProcess.SpawnSyncReturns<Buffer>,
+            );
             try {
                 expect(() =>
                     writeCoverPreviews({
@@ -292,16 +302,12 @@ describe('preview artifacts (R8 verification products)', () => {
         });
     });
 
-    itMacOnly('fails loud when sips reports success without writing the preview', () => {
+    it('fails loud when sips reports success without writing the preview', () => {
         withTempDir((dir) => {
             const bg = background(dir);
-            const real = childProcess.spawnSync;
-            let calls = 0;
-            const spy = spyOn(childProcess, 'spawnSync').mockImplementation(((file: string, args: string[]) => {
-                calls += 1;
-                if (calls === 1) return real(file, args);
-                return { status: 0, error: undefined } as unknown as childProcess.SpawnSyncReturns<Buffer>;
-            }) as typeof childProcess.spawnSync);
+            const spy = fakeSips(
+                () => ({ status: 0, error: undefined }) as unknown as childProcess.SpawnSyncReturns<Buffer>,
+            );
             try {
                 expect(() =>
                     writeCoverPreviews({
@@ -317,16 +323,13 @@ describe('preview artifacts (R8 verification products)', () => {
         });
     });
 
-    itMacOnly('fails loud when the sips binary is missing mid-way', () => {
+    it('fails loud when the sips binary is missing mid-way', () => {
         withTempDir((dir) => {
             const bg = background(dir);
-            const real = childProcess.spawnSync;
-            let calls = 0;
-            const spy = spyOn(childProcess, 'spawnSync').mockImplementation(((file: string, args: string[]) => {
-                calls += 1;
-                if (calls === 1) return real(file, args);
-                return { status: null, error: new Error('ENOENT') } as unknown as childProcess.SpawnSyncReturns<Buffer>;
-            }) as typeof childProcess.spawnSync);
+            const spy = fakeSips(
+                () =>
+                    ({ status: null, error: new Error('ENOENT') }) as unknown as childProcess.SpawnSyncReturns<Buffer>,
+            );
             try {
                 expect(() =>
                     writeCoverPreviews({
@@ -342,17 +345,58 @@ describe('preview artifacts (R8 verification products)', () => {
         });
     });
 
-    itMacOnly('refuses to claim a reference blend when the emblem is missing', () => {
+    it('refuses to claim a reference blend when the emblem is missing', () => {
         withTempDir((dir) => {
-            expect(() =>
-                writeCoverPreviews({
+            const spy = fakeSips((args) => {
+                writeFileSync(args[args.indexOf('--out') + 1], PNG_BYTES);
+                return { status: 0, error: undefined } as unknown as childProcess.SpawnSyncReturns<Buffer>;
+            });
+            try {
+                expect(() =>
+                    writeCoverPreviews({
+                        backgroundImagePath: background(dir),
+                        headline: SHORT,
+                        outputPath: join(dir, 'cover.png'),
+                        previewDir: join(dir, 'previews'),
+                        referenceLogoPath: join(dir, 'absent-banner.svg'),
+                    }),
+                ).toThrow(/refuse to fake the blend/);
+            } finally {
+                spy.mockRestore();
+            }
+        });
+    });
+
+    it('records every crop rectangle and the reference artifacts in the manifest it writes', () => {
+        withTempDir((dir) => {
+            const cropArgs: string[][] = [];
+            const spy = fakeSips((args) => {
+                cropArgs.push(args);
+                writeFileSync(args[args.indexOf('--out') + 1], PNG_BYTES);
+                return { status: 0, error: undefined } as unknown as childProcess.SpawnSyncReturns<Buffer>;
+            });
+            try {
+                const manifest = writeCoverPreviews({
                     backgroundImagePath: background(dir),
                     headline: SHORT,
                     outputPath: join(dir, 'cover.png'),
                     previewDir: join(dir, 'previews'),
-                    referenceLogoPath: join(dir, 'absent-banner.svg'),
-                }),
-            ).toThrow(/refuse to fake the blend/);
+                    referenceLogoPath: FIXTURE,
+                });
+                expect(manifest.crops.map((crop) => crop.rect)).toEqual([
+                    { x: 0, y: 2, width: 1344, height: 572 },
+                    { x: 384, y: 0, width: 576, height: 576 },
+                ]);
+                // sips -c <height> <width> --cropOffset <y> <x>: the crop calls carry those rects
+                expect(cropArgs[0].slice(0, 6)).toEqual(['-c', '572', '1344', '--cropOffset', '2', '0']);
+                expect(cropArgs[1].slice(0, 6)).toEqual(['-c', '576', '576', '--cropOffset', '0', '384']);
+                expect(manifest.referenceLogoPath).toBe(FIXTURE);
+                expect(existsSync(manifest.referenceBlendPath)).toBe(true);
+                const written = JSON.parse(readFileSync(join(dir, 'previews', 'manifest.json'), 'utf-8'));
+                expect(written).toEqual(JSON.parse(JSON.stringify(manifest)));
+            } finally {
+                spy.mockRestore();
+            }
         });
     });
 
