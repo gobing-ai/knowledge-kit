@@ -13,24 +13,12 @@
  * Repo manifests keep `catalog:` / `workspace:*`; only the tarball is rewritten.
  */
 
-import { catalogFromRootPackage, preparePublishedManifest } from './publish-manifest';
+import { catalogFromRootPackage, collectPrivateWorkspaceNames, preparePublishedManifest } from './publish-manifest';
 
 const repoRoot = new URL('../', import.meta.url).pathname;
 
 async function loadJson(path: string): Promise<Record<string, unknown>> {
     return await Bun.file(path).json();
-}
-
-async function collectPrivateWorkspaceNames(): Promise<Set<string>> {
-    const wsPrivate = new Set<string>();
-    for (const wsDir of ['apps', 'packages']) {
-        const glob = new Bun.Glob(`${wsDir}/*/package.json`);
-        for await (const entry of glob.scan({ cwd: repoRoot, absolute: true })) {
-            const pkg = await loadJson(entry);
-            if (pkg.name && pkg.private === true) wsPrivate.add(pkg.name as string);
-        }
-    }
-    return wsPrivate;
 }
 
 /** Strip/rewrite workspace protocol deps, then `npm publish` the package. */
@@ -46,7 +34,7 @@ async function publish(target: string | undefined): Promise<void> {
     const rootPkg = await loadJson(`${repoRoot}package.json`);
     const result = preparePublishedManifest(manifest, {
         catalog: catalogFromRootPackage(rootPkg),
-        privateWorkspaceNames: await collectPrivateWorkspaceNames(),
+        privateWorkspaceNames: await collectPrivateWorkspaceNames(repoRoot, rootPkg),
     });
 
     if (result.changed > 0) {

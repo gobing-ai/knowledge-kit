@@ -5,6 +5,41 @@
 
 const DEP_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies'] as const;
 
+/** Scan roots used when the root manifest declares no `workspaces.packages`. */
+const DEFAULT_WORKSPACE_PATTERNS = ['apps/*', 'packages/*'];
+
+/**
+ * Workspace globs from the root manifest. Deriving them keeps a private workspace outside
+ * apps/–packages/ (the plugin kinds) from looking public: the publish scan missed
+ * `@gobing-ai/music-gen` there and the 0.1.21 tarball build refused to publish.
+ */
+export function workspacePackagePatterns(rootPkg: Record<string, unknown>): string[] {
+    const workspaces = rootPkg.workspaces;
+    if (!workspaces || typeof workspaces !== 'object' || Array.isArray(workspaces)) {
+        return DEFAULT_WORKSPACE_PATTERNS;
+    }
+    const packages = (workspaces as { packages?: unknown }).packages;
+    return Array.isArray(packages) && packages.every((p) => typeof p === 'string' && p.length > 0)
+        ? (packages as string[])
+        : DEFAULT_WORKSPACE_PATTERNS;
+}
+
+/** Names of the `private: true` workspace packages a publish run may strip. */
+export async function collectPrivateWorkspaceNames(
+    repoRoot: string,
+    rootPkg: Record<string, unknown>,
+): Promise<Set<string>> {
+    const names = new Set<string>();
+    for (const pattern of workspacePackagePatterns(rootPkg)) {
+        const glob = new Bun.Glob(`${pattern}/package.json`);
+        for await (const entry of glob.scan({ cwd: repoRoot, absolute: true })) {
+            const pkg = (await Bun.file(entry).json()) as Record<string, unknown>;
+            if (typeof pkg.name === 'string' && pkg.private === true) names.add(pkg.name);
+        }
+    }
+    return names;
+}
+
 export interface PreparePublishedManifestOptions {
     /** Root `workspaces.catalog` name → version range. */
     catalog: Record<string, string>;

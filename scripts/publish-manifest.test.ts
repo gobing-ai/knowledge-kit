@@ -2,7 +2,12 @@ import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { catalogFromRootPackage, preparePublishedManifest } from './publish-manifest';
+import {
+    catalogFromRootPackage,
+    collectPrivateWorkspaceNames,
+    preparePublishedManifest,
+    workspacePackagePatterns,
+} from './publish-manifest';
 
 const repoRoot = fileURLToPath(new URL('../', import.meta.url));
 
@@ -66,7 +71,20 @@ describe('preparePublishedManifest', () => {
         ).toThrow(/not in the root workspaces.catalog/);
     });
 
-    it('the CLI package rewrite is npm-installable (no catalog: or workspace: left)', () => {
+    it('collects private workspaces from the root globs, plugin kinds included (0.1.21 publish)', async () => {
+        const rootPkg = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf-8')) as Record<string, unknown>;
+        // The publish workflow died on `@gobing-ai/music-gen` because the scan hardcoded
+        // apps/ and packages/, so a private plugin-kind workspace looked public.
+        expect(workspacePackagePatterns(rootPkg)).toContain('plugins/generations/*');
+        const names = await collectPrivateWorkspaceNames(repoRoot, rootPkg);
+        expect(names.has('@gobing-ai/music-gen')).toBe(true);
+        expect(names.has('@gobing-ai/kk-core')).toBe(true);
+        // A package that is not private must stay out of the set, or it would be stripped.
+        expect(names.has('commander')).toBe(false);
+        expect(workspacePackagePatterns({})).toEqual(['apps/*', 'packages/*']);
+    });
+
+    it('the CLI package rewrite is npm-installable (no catalog: or workspace: left)', async () => {
         const cliPkg = JSON.parse(readFileSync(join(repoRoot, 'apps/cli/package.json'), 'utf-8')) as Record<
             string,
             unknown
@@ -79,23 +97,11 @@ describe('preparePublishedManifest', () => {
         expect(catalog['@gobing-ai/ts-utils']).toBeTruthy();
 
         const manifest = structuredClone(cliPkg);
+        // The real collector, never a hand-kept copy of it: a mirrored list is what let
+        // music-gen through the gate while the publish scan still skipped plugins/.
         preparePublishedManifest(manifest, {
             catalog,
-            // Must mirror `collectPrivateWorkspaceNames()` (scripts/publish.ts:24) — it globs
-            // `{apps,packages}/*/package.json` for `private: true`, so every private workspace
-            // package the CLI depends on belongs here. kk-store joined with task 0206;
-            // kk-board joined with G8 task 0252 (a devDependency for the `./contracts` types);
-            // publish-harness joined with task 0276 (the bot lifecycle).
-            privateWorkspaceNames: new Set([
-                '@gobing-ai/kk-core',
-                '@gobing-ai/kk-store',
-                '@gobing-ai/kk-board',
-                '@gobing-ai/publish-harness',
-                // kk-wiki joined with feature I1 task 0350 (`kk wiki ingest`).
-                '@gobing-ai/kk-wiki',
-                // music-gen joined with feature D8 task 0401 (the `kk music` noun).
-                '@gobing-ai/music-gen',
-            ]),
+            privateWorkspaceNames: await collectPrivateWorkspaceNames(repoRoot, rootPkg),
         });
         const deps = manifest.dependencies as Record<string, string>;
         for (const range of Object.values(deps)) {
