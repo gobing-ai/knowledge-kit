@@ -1,0 +1,38 @@
+title: Morning Chamber, Spacious Cut (brief)
+model: pro (brief)
+duration_target: 2:30 (brief)
+language: EN (brief)
+instrumental: false (format preset "song")
+audio_format: mp3 (brief)
+style: Spacious pastoral synthwave at 104 BPM in D minor, 4/4, h... (brief)
+avoid: 8 entries (brief)
+structure: 6 section(s) (brief)
+takes: 1 (brief)
+
+Spacious pastoral synthwave at 104 BPM in D minor, 4/4, half-time drums and long empty bars; the same
+idea read as a chamber piece rather than a rock chorus.
+Instrumentation: detuned saw pad carrying the harmonic bed, arpeggiated lead, round sub bass, gated
+snare held to half-time, down-tuned rhythm guitars entering once in the chorus only.
+Vocal: low male baritone, almost whispered in the verses, doubled at the octave in the chorus.
+Theme: waking among valley orchids and birdsong with a stream below — the stream is the arpeggio, the
+birdsong a filtered lead motif; no orchestral strings.
+Production: tape-warm and spacious, narrow verses, chorus opens wide without distortion build-up.
+Avoid: falsetto, orchestral strings, long ambient introduction, double-kick metal drumming, festival supersaws, EDM risers, distorted djent guitars, modern trap percussion
+[0:00] Intro — pad bed and a stream-like filtered texture, no drums for four bars
+[0:18] Verse 1 — baritone almost whispered, arpeggiated lead only, no guitars
+[0:52] Chorus — down-tuned guitars enter once, pad opens wide, half-time drums
+[1:20] Verse 2 — dry vocal over sub bass and pad, drums drop out for two bars
+[1:48] Chorus — full but restrained, harmony stack on the hook, no distortion build-up
+[2:12] Outro — chamber resolve on the pad and the stream motif, no fade
+
+{
+  "prompt": "Spacious pastoral synthwave at 104 BPM in D minor, 4/4, half-time drums and long empty bars; the same\nidea read as a chamber piece rather than a rock chorus.\nInstrumentation: detuned saw pad carrying the harmonic bed, arpeggiated lead, round sub bass, gated\nsnare held to half-time, down-tuned rhythm guitars entering once in the chorus only.\nVocal: low male baritone, almost whispered in the verses, doubled at the octave in the chorus.\nTheme: waking among valley orchids and birdsong with a stream below — the stream is the arpeggio, the\nbirdsong a filtered lead motif; no orchestral strings.\nProduction: tape-warm and spacious, narrow verses, chorus opens wide without distortion build-up.\nAvoid: falsetto, orchestral strings, long ambient introduction, double-kick metal drumming, festival supersaws, EDM risers, distorted djent guitars, modern trap percussion\n[0:00] Intro — pad bed and a stream-like filtered texture, no drums for four bars\n[0:18] Verse 1 — baritone almost whispered, arpeggiated lead only, no guitars\n[0:52] Chorus — down-tuned guitars enter once, pad opens wide, half-time drums\n[1:20] Verse 2 — dry vocal over sub bass and pad, drums drop out for two bars\n[1:48] Chorus — full but restrained, harmony stack on the hook, no distortion build-up\n[2:12] Outro — chamber resolve on the pad and the stream motif, no fade",
+  "lyrics": "[Verse]\nOrchids on the valley side\nBirdsong and the morning tide\n[Chorus]\nWake me slow where the water runs\nDark guitar when the morning comes\n[Verse]\nNot a window, not a door\nJust the stream beneath the floor\n[Outro]\nWhere the water runs",
+  "language": "EN",
+  "model": "pro",
+  "durationTarget": "2:30",
+  "format": "mp3",
+  "title": "Morning Chamber, Spacious Cut",
+  "batchCount": 1
+}
+prompt written to /Users/robin/xprojects/knowledge-kit-runall-0404-0406-0410-83ed/.works/kk-music/morning-chamber-pastoral-dark-electronic-dryrun/1-brief/brief-02.prompt.txt

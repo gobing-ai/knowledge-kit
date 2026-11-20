@@ -1,0 +1,14 @@
+{
+  "id": "gen-1795194526460-lsg320",
+  "model": "lyria-3-pro-preview",
+  "format": "wav",
+  "prompt": "Dark pastoral synthwave at 150 BPM in D minor, 4/4, wide choruses against narrow intimate verses.\nInstrumentation: down-tuned palm-muted rhythm guitars, distorted electronic bass, filtered electronic\npercussion, detuned saw pad, gated snare, arpeggiated lead.\nVocal: low male baritone, close and dry in the verses, stacked harmony in the chorus, no falsetto.\nTheme: waking among valley orchids and birdsong with a stream below — the pastoral image carried by\nthe pad and lead, never by orchestral strings; aggression lives in the guitars and the bass.\nProduction: dark, aggressive, wide-stereo choruses, gated reverb on the snare, tape-warm low end.\nAvoid: falsetto, orchestral strings, long ambient introduction, clean bright pop production, festival supersaws, EDM risers, distorted djent guitars, modern trap percussion\n[0:00] Intro — filtered electronic percussion and distant down-tuned guitar noise, no vocal\n[0:10] Verse 1 — low baritone enters, restrained palm-muted guitars, narrow mix\n[0:45] Chorus — full-width guitars, heavy drums, stacked vocal harmonies, wide stereo\n[1:15] Verse 2 — baritone dry and forward, one counter-melody on the lead, guitars pulled back\n[1:45] Chorus — repeat the hook wider, distorted electronic bass takes the low end\n[2:10] Outro — strip back to the harmonic bed and resolve on the final chord without a fade",
+  "lyrics": "[Verse]\nBirdsong on a valley floor\nA stream that runs beneath the door\n[Chorus]\nWake me where the orchids grow\nDark guitar and the water's low\n[Verse]\nEvery window full of rain\nEvery dawn the same refrain\n[Outro]\nWhere the orchids grow",
+  "provider": "mock",
+  "generatedAt": "2026-11-20T17:08:48.007Z",
+  "title": "Morning Chamber, Dark Guitar",
+  "durationSeconds": 8,
+  "language": "EN",
+  "durationTarget": "2:30",
+  "batchCount": 1
+}

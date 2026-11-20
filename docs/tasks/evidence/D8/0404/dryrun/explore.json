@@ -1,0 +1,31 @@
+{
+    "schemaVersion": 1,
+    "runId": "b964b82b-4b36-4d34-94dc-45d9e2b6a845",
+    "directions": 2,
+    "takes": 2,
+    "dryRun": true,
+    "briefs": [
+        {
+            "brief": "/Users/robin/xprojects/knowledge-kit-runall-0404-0406-0410-83ed/.works/kk-music/morning-chamber-pastoral-dark-electronic-dryrun/1-brief/brief-01.yaml",
+            "content": "/Users/robin/xprojects/knowledge-kit-runall-0404-0406-0410-83ed/.works/kk-music/morning-chamber-pastoral-dark-electronic-dryrun/3-takes/content-01.json",
+            "status": "adopted",
+            "paid": false,
+            "instanceId": "offline-take-1",
+            "model": "pro",
+            "digest": "3eb3d96f6d1e30f91a6c5b76c9096e671083c511d07fd0f5731b46c2129c015f",
+            "unitPrice": 0.08,
+            "artifactPath": "/Users/robin/xprojects/knowledge-kit-runall-0404-0406-0410-83ed/.works/kk-music/morning-chamber-pastoral-dark-electronic-dryrun/3-takes/morning-chamber-dark-guitar-pro-offline-take-1.wav"
+        },
+        {
+            "brief": "/Users/robin/xprojects/knowledge-kit-runall-0404-0406-0410-83ed/.works/kk-music/morning-chamber-pastoral-dark-electronic-dryrun/1-brief/brief-02.yaml",
+            "content": "/Users/robin/xprojects/knowledge-kit-runall-0404-0406-0410-83ed/.works/kk-music/morning-chamber-pastoral-dark-electronic-dryrun/3-takes/content-02.json",
+            "status": "adopted",
+            "paid": false,
+            "instanceId": "offline-take-1",
+            "model": "pro",
+            "digest": "0865cc1a39424adc4100f2ff6202c6631a03656c72db5823c3e944a045f32240",
+            "unitPrice": 0.08,
+            "artifactPath": "/Users/robin/xprojects/knowledge-kit-runall-0404-0406-0410-83ed/.works/kk-music/morning-chamber-pastoral-dark-electronic-dryrun/3-takes/morning-chamber-spacious-cut-pro-offline-take-1.wav"
+        }
+    ]
+}

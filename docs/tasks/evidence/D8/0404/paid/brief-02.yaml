@@ -1,0 +1,53 @@
+title: Morning Chamber, Spacious Cut
+format: song
+theme: synthwave
+model: pro
+duration_target: "2:30"
+language: EN
+audio_format: mp3
+style: |-
+  Spacious pastoral synthwave at 104 BPM in D minor, 4/4, half-time drums and long empty bars; the same
+  idea read as a chamber piece rather than a rock chorus.
+  Instrumentation: detuned saw pad carrying the harmonic bed, arpeggiated lead, round sub bass, gated
+  snare held to half-time, down-tuned rhythm guitars entering once in the chorus only.
+  Vocal: low male baritone, almost whispered in the verses, doubled at the octave in the chorus.
+  Theme: waking among valley orchids and birdsong with a stream below — the stream is the arpeggio, the
+  birdsong a filtered lead motif; no orchestral strings.
+  Production: tape-warm and spacious, narrow verses, chorus opens wide without distortion build-up.
+avoid:
+  - falsetto
+  - orchestral strings
+  - long ambient introduction
+  - double-kick metal drumming
+structure:
+  - at: "0:00"
+    section: Intro
+    note: pad bed and a stream-like filtered texture, no drums for four bars
+  - at: "0:18"
+    section: Verse 1
+    note: baritone almost whispered, arpeggiated lead only, no guitars
+  - at: "0:52"
+    section: Chorus
+    note: down-tuned guitars enter once, pad opens wide, half-time drums
+  - at: "1:20"
+    section: Verse 2
+    note: dry vocal over sub bass and pad, drums drop out for two bars
+  - at: "1:48"
+    section: Chorus
+    note: full but restrained, harmony stack on the hook, no distortion build-up
+  - at: "2:12"
+    section: Outro
+    note: chamber resolve on the pad and the stream motif, no fade
+lyrics: |-
+  [Verse]
+  Orchids on the valley side
+  Birdsong and the morning tide
+  [Chorus]
+  Wake me slow where the water runs
+  Dark guitar when the morning comes
+  [Verse]
+  Not a window, not a door
+  Just the stream beneath the floor
+  [Outro]
+  Where the water runs
+takes: 1

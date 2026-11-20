@@ -233,7 +233,10 @@ describe('the shipped workflow is one inspectable state machine (R1/AC1)', () =>
         const hitl = parsed.states.flatMap((state) =>
             (state.onEnter ?? []).filter((action) => action.kind.startsWith('hitl.')),
         );
-        expect(hitl.map((action) => action.kind)).toEqual(['hitl.select']);
+        // `hitl.input`, not `hitl.select`: a headless resume (`spur workflow continue`) accepts a free
+        // text answer but only yes|no|cancel for a select gate, so a numbered take choice could never
+        // be delivered from the CLI (2026-11-20, task 0404 dogfood).
+        expect(hitl.map((action) => action.kind)).toEqual(['hitl.input']);
     });
 
     it('reaches every state from prepare over the declared transitions', () => {
@@ -279,6 +282,40 @@ describe('the shipped workflow is one inspectable state machine (R1/AC1)', () =>
             // A prompt that pastes the bundle is a second, drifting copy of it (0402's contract).
             expect(prompt).not.toContain('## 1. brief');
         }
+    });
+
+    it('guards the brief state on the zero-padded artifacts its own prompt coins (0411)', () => {
+        const brief = parsed.states.find((state) => state.id === 'brief');
+        const shells = (brief?.onEnter ?? [])
+            .filter((action) => action.kind === 'shell')
+            .map((action) => String(action.options?.command ?? ''));
+        expect(shells).toHaveLength(1);
+        const guard = shells[0] as string;
+        // The state's prompt tells the author to write `brief-01..`, so testing `brief-2.yaml`
+        // killed every run with two directions (2026-11-20, observed end to end).
+        expect(guard).toMatch(/brief-0\$\(\(\$\{vars\.directions\}\)\)\.yaml/);
+        expect(guard).toMatch(/brief-0\$\(\(\$\{vars\.directions\}\)\)\.prompt\.txt/);
+        expect(guard).not.toMatch(/brief-\$\{vars\.directions\}\./);
+    });
+
+    it('lets a headless resume answer the select gate, and re-binds the take from that answer (0412)', () => {
+        const select = parsed.states.find((state) => state.id === 'select');
+        const analyze = parsed.states.find((state) => state.id === 'analyze');
+        const shellOf = (id: string) =>
+            String(
+                (parsed.states.find((state) => state.id === id)?.onEnter ?? []).find(
+                    (action) => action.kind === 'shell',
+                )?.options?.command ?? '',
+            );
+        expect(select?.pause).toBe(true);
+        // A `hitl.select` gate can never be answered from `spur workflow continue` (--answer takes
+        // only yes|no|cancel), and a resume skips the paused state's own actions — so `analyze` has
+        // to bind the take again from the free-text answer.
+        expect(shellOf('select')).toContain('music-select');
+        expect(shellOf('select')).toMatch(/\$\{vars\.__hitlAnswer\}/);
+        expect(shellOf('analyze')).toContain('music-select');
+        expect(shellOf('analyze')).toMatch(/\$\{vars\.__hitlAnswer\}/);
+        expect(analyze?.pause).toBeUndefined();
     });
 
     it('routes the judge through the shipped confidence-aware filter, byte for byte', () => {

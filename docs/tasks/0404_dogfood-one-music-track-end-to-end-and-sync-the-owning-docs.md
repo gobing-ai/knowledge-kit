@@ -4,7 +4,7 @@ name: Dogfood one music track end to end and sync the owning docs
 status: todo
 template: feature-impl
 created_at: 2026-11-18T22:16:17.582Z
-updated_at: "2026-11-20T09:00:46.935Z"
+updated_at: "2026-11-20T17:14:46.733Z"
 feature_id: D8
 
 ac_numbering: task-local
@@ -117,6 +117,13 @@ Scenario: AC6 — A free regression path exists (req: R6)
   in docs was touched, because every accepted number would have to come from the paid takes. Resume by
   exporting the homelab `KK_MUSIC_INSTANCE_URL`, re-probing `kk music library --json`, then re-running
   this task; the pending paid round still needs the operator's explicit go.
+
+#### Q&A entry — 2026-11-20T17:14:46.732Z
+
+- **Instance reachable; the paid round stops at the mock provider (2026-11-20).** The homelab instance is live at `http://127.0.0.1:3100` (native lyria-3-pro behind `music.robinmin.net` → Caddy), and the free probe plus the offline rehearsal ran end to end: rehearsal run `b964b82b-4b36-4d34-94dc-45d9e2b6a845` stopped at `check` on `duration.target` (the 1 s offline WAV), not on `silence.*` as the refine note predicted. The paid explore (run `be6fc51f-90c8-4ba5-8c6c-ca19c1004b17`, briefs 01/02, `directions=2`) generated two takes and stopped at the `select` gate because the instance is running **`LYRIA_MOCK=1`**: its own generation records report `provider: "mock"`, `durationSeconds: 8`, and the audio measured 8.000 s at −12.5 dB mean / −6.0 dB max. Real provider spend is therefore **$0.00** (the CLI's local table booked 2 × $0.08). No `analyze` was paid, nothing was `master`ed, no preset was promoted, and docs were left untouched: an 8 s mock take cannot certify R1. Resume by restarting the instance without `LYRIA_MOCK=1` and with a funded `GEMINI_API_KEY`, re-probing `kk music library --json` for a `provider: "gemini"` generation, then re-running into a fresh run directory — the two mock takes are adopted by their sidecars and must not be mistaken for the accepted take.
+- **Two workflow defects found and fixed under the operator's explicit scope exception (2026-11-20).** The non-goal says file, don't fix; the operator authorized fixing both so R1 was reachable at all, and each landed with its own residual task: **0411** — the `brief` guard tested an unpadded `brief-<n>.yaml` while the same state's prompt coins `brief-0<n>`, so every 2-direction run failed at `brief`; **0412** — `select` was a `hitl.select` gate that `spur workflow continue --answer` cannot answer (yes/no/cancel only) and a resume skips the paused state's own binding, so the gate was unreachable headlessly. Both are `done` with tests in `plugins/kk/tests/kk-music-workflow.test.ts`.
+- **Third defect filed, not fixed (0413).** The *installed* `kk` cannot resolve the shipped presets: `dist/index.js` makes `MUSIC_PRESET_ROOT` resolve to `<pkg>/presets`, which the package does not ship, so `kk music presets` fails with `preset directory is missing`. Every nested verb in this run used the checkout via the documented `KK_MUSIC_KK_BIN` stage escape.
+- **Evidence written.** `docs/tasks/evidence/D8/0404/` carries the rehearsal transcript and its deterministic artifacts (`dryrun/`), the two briefs, their prompt text, take sidecars and the instance's own generation records (`paid/`), plus a README with the measured numbers, the sha256 of both original takes, the spend accounting and the free R6 regression commands. No audio bytes are committed.
 
 ### Design
 

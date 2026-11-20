@@ -1,0 +1,36 @@
+{
+    "digest": "0865cc1a39424adc4100f2ff6202c6631a03656c72db5823c3e944a045f32240",
+    "digestInput": {
+        "model": "pro",
+        "prompt": "Spacious pastoral synthwave at 104 BPM in D minor, 4/4, half-time drums and long empty bars; the same\nidea read as a chamber piece rather than a rock chorus.\nInstrumentation: detuned saw pad carrying the harmonic bed, arpeggiated lead, round sub bass, gated\nsnare held to half-time, down-tuned rhythm guitars entering once in the chorus only.\nVocal: low male baritone, almost whispered in the verses, doubled at the octave in the chorus.\nTheme: waking among valley orchids and birdsong with a stream below — the stream is the arpeggio, the\nbirdsong a filtered lead motif; no orchestral strings.\nProduction: tape-warm and spacious, narrow verses, chorus opens wide without distortion build-up.\nAvoid: falsetto, orchestral strings, long ambient introduction, double-kick metal drumming, festival supersaws, EDM risers, distorted djent guitars, modern trap percussion\n[0:00] Intro — pad bed and a stream-like filtered texture, no drums for four bars\n[0:18] Verse 1 — baritone almost whispered, arpeggiated lead only, no guitars\n[0:52] Chorus — down-tuned guitars enter once, pad opens wide, half-time drums\n[1:20] Verse 2 — dry vocal over sub bass and pad, drums drop out for two bars\n[1:48] Chorus — full but restrained, harmony stack on the hook, no distortion build-up\n[2:12] Outro — chamber resolve on the pad and the stream motif, no fade",
+        "lyrics": "[Verse]\nOrchids on the valley side\nBirdsong and the morning tide\n[Chorus]\nWake me slow where the water runs\nDark guitar when the morning comes\n[Verse]\nNot a window, not a door\nJust the stream beneath the floor\n[Outro]\nWhere the water runs",
+        "durationTarget": "2:30",
+        "language": "EN",
+        "images": [],
+        "takeIndex": 0
+    },
+    "instanceId": "gen-1795194528188-chlt4q",
+    "model": "lyria-3-pro-preview",
+    "format": "wav",
+    "request": {
+        "prompt": "Spacious pastoral synthwave at 104 BPM in D minor, 4/4, half-time drums and long empty bars; the same\nidea read as a chamber piece rather than a rock chorus.\nInstrumentation: detuned saw pad carrying the harmonic bed, arpeggiated lead, round sub bass, gated\nsnare held to half-time, down-tuned rhythm guitars entering once in the chorus only.\nVocal: low male baritone, almost whispered in the verses, doubled at the octave in the chorus.\nTheme: waking among valley orchids and birdsong with a stream below — the stream is the arpeggio, the\nbirdsong a filtered lead motif; no orchestral strings.\nProduction: tape-warm and spacious, narrow verses, chorus opens wide without distortion build-up.\nAvoid: falsetto, orchestral strings, long ambient introduction, double-kick metal drumming, festival supersaws, EDM risers, distorted djent guitars, modern trap percussion\n[0:00] Intro — pad bed and a stream-like filtered texture, no drums for four bars\n[0:18] Verse 1 — baritone almost whispered, arpeggiated lead only, no guitars\n[0:52] Chorus — down-tuned guitars enter once, pad opens wide, half-time drums\n[1:20] Verse 2 — dry vocal over sub bass and pad, drums drop out for two bars\n[1:48] Chorus — full but restrained, harmony stack on the hook, no distortion build-up\n[2:12] Outro — chamber resolve on the pad and the stream motif, no fade",
+        "lyrics": "[Verse]\nOrchids on the valley side\nBirdsong and the morning tide\n[Chorus]\nWake me slow where the water runs\nDark guitar when the morning comes\n[Verse]\nNot a window, not a door\nJust the stream beneath the floor\n[Outro]\nWhere the water runs",
+        "language": "EN",
+        "model": "pro",
+        "durationTarget": "2:30",
+        "format": "mp3",
+        "title": "Morning Chamber, Spacious Cut",
+        "batchCount": 1
+    },
+    "requestedFormat": "mp3",
+    "language": "EN",
+    "takeIndex": 0,
+    "unitPrice": 0.08,
+    "adoptedByReconciliation": false,
+    "unclaimed": [],
+    "forced": false,
+    "reason": null,
+    "createdAt": "2026-11-20T17:08:49.738Z",
+    "artifactPath": "/Users/robin/xprojects/knowledge-kit-runall-0404-0406-0410-83ed/.works/kk-music/morning-chamber-pastoral-dark-electronic/3-takes/morning-chamber-spacious-cut-lyria-3-pro-preview-gen-1795194528188-chlt4q.wav",
+    "audioUrl": "http://127.0.0.1:3100/generations/gen-1795194528188-chlt4q.wav"
+}

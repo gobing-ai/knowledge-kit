@@ -112,9 +112,13 @@ states:
           expectFile: ${vars.run_dir}/1-brief/brief-01.prompt.txt
       - kind: shell
         options:
+          # The workflow's own prompt numbers the directions `01..0<n>`, so the guard must test the
+          # padded file — testing the bare `${vars.directions}` made every 2-direction run die here
+          # (2026-11-20). The arithmetic also normalizes a caller-supplied `02`, and both `test -f`
+          # calls stay inside ADR-115's command budget.
           command: >-
-            test -f "${vars.run_dir}/1-brief/brief-${vars.directions}.yaml" &&
-            test -f "${vars.run_dir}/1-brief/brief-${vars.directions}.prompt.txt"
+            test -f "${vars.run_dir}/1-brief/brief-0$((${vars.directions})).yaml" &&
+            test -f "${vars.run_dir}/1-brief/brief-0$((${vars.directions})).prompt.txt"
 
   - description: >-
       One take per differentiated brief, in the format's own model. A brief whose sidecar and take
@@ -131,20 +135,17 @@ states:
     description: "The only operator gate: pick which take becomes the deliverable (skipped by `auto` only when one take exists)"
     pause: true
     onEnter:
-      - kind: hitl.select
+      # `hitl.input`, not `hitl.select`: the run is resumed headlessly (`spur workflow continue`), and
+      # `--answer` there accepts only yes|no|cancel, so a numbered choice could never be delivered.
+      # Free text carries the take number, and `analyze` below re-binds from it because a resume
+      # skips this state's own actions (`resumeMode: skip-enter`).
+      - kind: hitl.input
         options:
           prompt: >-
-            Pick the take to deliver from ${vars.run_dir}/3-takes/ — 01..0${vars.directions}. Each take's
-            prompt text is at 1-brief/brief-<nn>.prompt.txt and its spend is in 3-takes/explore.json.
-          options:
-            - "01"
-            - "02"
-            - "03"
-            - "04"
+            Pick the take to deliver from ${vars.run_dir}/3-takes/ — answer with a brief number
+            (01 for the first direction, 02 for the second). Each take's prompt text is at
+            1-brief/brief-<nn>.prompt.txt and its spend is in 3-takes/explore.json.
           var: __hitlAnswer
-          # No auto path skips this state except the single-take route below, so the gate asks.
-          decision:
-            mode: never
       - kind: shell
         options:
           command: >-
@@ -156,12 +157,15 @@ states:
 
   - id: analyze
     description: >-
-      Bind the selected take (already bound by explore when there is exactly one) and pay for that
-      take's instance analysis once. A cached analysis-<instanceId>.json is adopted, never re-bought.
+      Bind the selected take and pay for that take's instance analysis once. A cached
+      analysis-<instanceId>.json is adopted, never re-bought.
     onEnter:
+      # The binding step lives here as well as in `select`: a resume of the operator gate skips
+      # `select`'s actions, so this is the pass that actually writes the selection from the answer.
       - kind: shell
         options:
-          command: 'kk stage run music-select "${vars.run_dir}" "" "${vars.auto}"'
+          command: >-
+            kk stage run music-select "${vars.run_dir}" "${vars.__hitlAnswer}" "${vars.auto}"
       - kind: file.read.into-var
         options:
           path: ${vars.run_dir}/3-takes/.take-file

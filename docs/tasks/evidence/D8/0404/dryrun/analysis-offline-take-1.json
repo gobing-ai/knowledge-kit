@@ -1,0 +1,7 @@
+{
+    "dryRun": true,
+    "provider": "offline",
+    "model": "pro",
+    "summary": "offline: synthetic analysis, no instance was called",
+    "durationSeconds": 1
+}

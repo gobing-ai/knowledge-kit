@@ -1,0 +1,62 @@
+[
+    {
+        "id": "duration.target",
+        "measured": 1,
+        "threshold": "120–180",
+        "unit": "s",
+        "source": "ffprobe 9.0.1",
+        "result": "fail",
+        "note": "brief target 2:30 ±30 s"
+    },
+    {
+        "id": "silence.leading",
+        "measured": 1,
+        "threshold": 1,
+        "unit": "s",
+        "source": "ffmpeg 9.0.1 silencedetect",
+        "result": "pass"
+    },
+    {
+        "id": "silence.trailing",
+        "measured": 1,
+        "threshold": 3,
+        "unit": "s",
+        "source": "ffmpeg 9.0.1 silencedetect",
+        "result": "pass"
+    },
+    {
+        "id": "analysis.present",
+        "measured": "present",
+        "threshold": "present",
+        "unit": "state",
+        "source": "lyria instance analysis",
+        "result": "pass"
+    },
+    {
+        "id": "analysis.bpm",
+        "measured": null,
+        "threshold": "135–165",
+        "unit": "bpm",
+        "source": "lyria instance analysis",
+        "result": "warn",
+        "note": "the analysis carries no BPM, so agreement with the brief could not be compared"
+    },
+    {
+        "id": "analysis.key",
+        "measured": null,
+        "threshold": "D minor",
+        "unit": "key",
+        "source": "lyria instance analysis",
+        "result": "warn",
+        "note": "the analysis carries no key, so agreement with the brief could not be compared"
+    },
+    {
+        "id": "analysis.sections",
+        "measured": null,
+        "threshold": 6,
+        "unit": "sections",
+        "source": "lyria instance analysis",
+        "result": "warn",
+        "note": "the analysis carries no section list, so agreement with the brief could not be compared"
+    }
+]

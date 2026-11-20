@@ -1,0 +1,31 @@
+{
+    "schemaVersion": 1,
+    "runId": "be6fc51f-90c8-4ba5-8c6c-ca19c1004b17",
+    "directions": 2,
+    "takes": 2,
+    "dryRun": false,
+    "briefs": [
+        {
+            "brief": "/Users/robin/xprojects/knowledge-kit-runall-0404-0406-0410-83ed/.works/kk-music/morning-chamber-pastoral-dark-electronic/1-brief/brief-01.yaml",
+            "content": "/Users/robin/xprojects/knowledge-kit-runall-0404-0406-0410-83ed/.works/kk-music/morning-chamber-pastoral-dark-electronic/3-takes/content-01.json",
+            "status": "generated",
+            "paid": true,
+            "instanceId": "gen-1795194526460-lsg320",
+            "model": "lyria-3-pro-preview",
+            "digest": "3eb3d96f6d1e30f91a6c5b76c9096e671083c511d07fd0f5731b46c2129c015f",
+            "unitPrice": 0.08,
+            "artifactPath": "/Users/robin/xprojects/knowledge-kit-runall-0404-0406-0410-83ed/.works/kk-music/morning-chamber-pastoral-dark-electronic/3-takes/morning-chamber-dark-guitar-lyria-3-pro-preview-gen-1795194526460-lsg320.wav"
+        },
+        {
+            "brief": "/Users/robin/xprojects/knowledge-kit-runall-0404-0406-0410-83ed/.works/kk-music/morning-chamber-pastoral-dark-electronic/1-brief/brief-02.yaml",
+            "content": "/Users/robin/xprojects/knowledge-kit-runall-0404-0406-0410-83ed/.works/kk-music/morning-chamber-pastoral-dark-electronic/3-takes/content-02.json",
+            "status": "generated",
+            "paid": true,
+            "instanceId": "gen-1795194528188-chlt4q",
+            "model": "lyria-3-pro-preview",
+            "digest": "0865cc1a39424adc4100f2ff6202c6631a03656c72db5823c3e944a045f32240",
+            "unitPrice": 0.08,
+            "artifactPath": "/Users/robin/xprojects/knowledge-kit-runall-0404-0406-0410-83ed/.works/kk-music/morning-chamber-pastoral-dark-electronic/3-takes/morning-chamber-spacious-cut-lyria-3-pro-preview-gen-1795194528188-chlt4q.wav"
+        }
+    ]
+}
