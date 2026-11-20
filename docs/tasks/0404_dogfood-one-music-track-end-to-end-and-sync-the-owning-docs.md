@@ -4,7 +4,7 @@ name: Dogfood one music track end to end and sync the owning docs
 status: wip
 template: feature-impl
 created_at: 2026-11-18T22:16:17.582Z
-updated_at: "2026-11-20T18:08:27.812Z"
+updated_at: "2026-11-20T19:00:51.628Z"
 feature_id: D8
 
 ac_numbering: task-local
@@ -124,6 +124,10 @@ Scenario: AC6 — A free regression path exists (req: R6)
 - **Two workflow defects found and fixed under the operator's explicit scope exception (2026-11-20).** The non-goal says file, don't fix; the operator authorized fixing both so R1 was reachable at all, and each landed with its own residual task: **0411** — the `brief` guard tested an unpadded `brief-<n>.yaml` while the same state's prompt coins `brief-0<n>`, so every 2-direction run failed at `brief`; **0412** — `select` was a `hitl.select` gate that `spur workflow continue --answer` cannot answer (yes/no/cancel only) and a resume skips the paused state's own binding, so the gate was unreachable headlessly. Both are `done` with tests in `plugins/kk/tests/kk-music-workflow.test.ts`.
 - **Third defect filed, not fixed (0413).** The *installed* `kk` cannot resolve the shipped presets: `dist/index.js` makes `MUSIC_PRESET_ROOT` resolve to `<pkg>/presets`, which the package does not ship, so `kk music presets` fails with `preset directory is missing`. Every nested verb in this run used the checkout via the documented `KK_MUSIC_KK_BIN` stage escape.
 - **Evidence written.** `docs/tasks/evidence/D8/0404/` carries the rehearsal transcript and its deterministic artifacts (`dryrun/`), the two briefs, their prompt text, take sidecars and the instance's own generation records (`paid/`), plus a README with the measured numbers, the sha256 of both original takes, the spend accounting and the free R6 regression commands. No audio bytes are committed.
+
+#### Q&A entry — 2026-11-20T19:00:51.625Z
+
+- **Gate paused on a concurrent writer, not on this task's diff (2026-11-20).** The acceptance run (`c73a9b02`) reached `done` and everything R1–R6 asks for is committed (`77e07c8f`), but task-pipeline run `f9c85975` is paused at `remediate`: `kk`'s launch preflight refuses while `plugins/kk` carries uncommitted changes, and another live agent session is editing that tree right now (`AGENTS.md`, `package.json`'s `prepare` → `link-spur`, `plugins/kk/{README,decisions/kk-safety.yaml,scripts/daily-stages.ts,scripts/safety-artifact-check.ts,tests/safety-retry-preserves-artifacts.test.ts,workflows/kk-daily-safety.yaml}`, untracked `scripts/link-spur.ts`; mtimes 10:36–10:49). Two gate defects were cleared on the way and are not this task's either: `no-direct-fs-io` on `apps/cli/src/commands/schedule.ts:1` (from `b3aa2c25`; exemption added in `454e5ce6`, operator-approved, since the seam has no realpath and `node:fs/promises` is forbidden by the same rule) and a `coverage-gate` read of a partial tracefile (the light tier's subset coverage step overwrote `.coverage/lcov.info`; a full `bun run test` → 6188 pass / 0 fail fixed the input). Resume the gate after that session lands its work: `spur workflow continue f9c85975-a960-4ef9-aaa0-e21e91ddefe2 --answer-text .spur/run/f9c85975-a960-4ef9-aaa0-e21e91ddefe2-fix-receipt.json`.
 
 ### Design
 
