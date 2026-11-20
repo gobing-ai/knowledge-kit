@@ -667,9 +667,22 @@ function formatWindowMs(ms: number): string {
  * and dedup), so it is an upper bound: the ladder can stop one step early, never one late.
  */
 export function dailyExtract(args: string[]): void {
-    const [workDir = '', topic = '', window = '', minMinutes = '', vdriver = ''] = args;
+    const [workDir = '', topic = '', window = '', minMinutes = '', vdriver = '', limitArg = ''] = args;
     if (!workDir) fail('missing work_dir');
     if (!topic) fail('missing topic');
+    // 2026-11-20: `kk store extract --limit` defaults to the profile's cap (else 20), and this stage
+    // passed no `--limit` at all — so the plan cap (`plan_max_items`, 40) never reached the store and
+    // the pool was pre-trimmed to the default before the quota existed. Measured on the production
+    // store: 56 category-allowed, importance>=3, unpublished items sat in the 168h window, the
+    // extract returned 24, QC admitted 13, the writer kept 3 and the day refused at the TTS gate;
+    // at `--limit 40` the same window yields 30 items and 23 survive QC. The extract bound must be
+    // at least the plan bound or the plan can never fill.
+    const extractedLimit = Number(limitArg);
+    const limit =
+        limitArg !== '' && Number.isInteger(extractedLimit) && extractedLimit > 0
+            ? ['--limit', String(extractedLimit)]
+            : [];
+    if (limitArg !== '' && limit.length === 0) fail(`extract: invalid limit: ${limitArg}`);
     const poolPath = join(workDir, '10-collect', 'pool.json');
     const base = parseWindowMs(window === '' ? '24h' : window);
     if (base === null) fail(`extract: invalid window: ${window || '(empty)'}`);
@@ -706,7 +719,7 @@ export function dailyExtract(args: string[]): void {
         for (const ms of windows) {
             const label = formatWindowMs(ms);
             const attempt = join(workDir, '10-collect', `.pool-${label}.json`);
-            kk(['store', 'extract', '--topic', topic, '--window', label, '--out', attempt]);
+            kk(['store', 'extract', '--topic', topic, '--window', label, '--out', attempt, ...limit]);
             const parsed = readJson(attempt);
             const docs = Array.isArray(parsed) ? (parsed as unknown[]) : [];
             const estimate = estimateSpokenMinutes(docs, vdriver, ratio.ratio);

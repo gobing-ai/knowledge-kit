@@ -622,6 +622,11 @@ const ARGS = {
         ctx.settings.window,
         String(ctx.settings.episode_min_minutes),
         ctx.settings.vdriver,
+        // 2026-11-20: the extract bound has to reach the store. Without it `kk store extract` caps the
+        // pool at its own default (~20) while `plan_max_items` (40) only caps the plan afterwards, so
+        // a 168h window with 56 eligible items produced a 24-item pool, a 3-item plan and a 5.3-min
+        // script that the TTS gate refused.
+        String(ctx.settings.plan_max_items),
     ],
     plan: (ctx: GenerateContext): string[] => [
         ctx.workDir,

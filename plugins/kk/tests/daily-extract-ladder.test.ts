@@ -27,12 +27,14 @@ describe('daily-extract floor ladder uses the authored-script measure (0377)', (
         root: string;
         workDir: string;
         windows: () => string[];
-        run: () => ReturnType<typeof spawnSync>;
+        limits: () => string[];
+        run: (limit?: string) => ReturnType<typeof spawnSync>;
     } {
         const root = mkdtempSync(join(tmpdir(), 'kk-extract-ladder-'));
         const workDir = join(root, 'works');
         const binDir = join(root, 'bin');
         const logFile = join(root, 'windows.log');
+        const limitLog = join(root, 'limits.log');
         mkdirSync(binDir, { recursive: true });
         mkdirSync(join(workDir, '10-collect'), { recursive: true });
         const body = JSON.stringify(docs);
@@ -44,22 +46,38 @@ import { appendFileSync, writeFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 const outPath = args[args.indexOf('--out') + 1] ?? '';
 const window = args[args.indexOf('--window') + 1] ?? '';
+const limitArg = args.indexOf('--limit') >= 0 ? (args[args.indexOf('--limit') + 1] ?? '') : '';
 if (process.env.KK_SHIM_LOG) appendFileSync(process.env.KK_SHIM_LOG, window + '\\n');
+if (process.env.KK_SHIM_LIMIT_LOG && limitArg !== '') appendFileSync(process.env.KK_SHIM_LIMIT_LOG, limitArg + '\\n');
 writeFileSync(outPath, process.env.KK_SHIM_POOL ?? '[]');
 `,
         );
         chmodSync(shimPath, 0o755);
         writeFileSync(join(root, 'pool.json'), body);
-        const run = () =>
-            spawnSync('bun', [runner, 'daily-extract', workDir, 'ai-news', '24h', '15', 'voxcpm'], {
-                encoding: 'utf-8',
-                env: {
-                    ...process.env,
-                    PATH: `${binDir}:${process.env.PATH}`,
-                    KK_SHIM_LOG: logFile,
-                    KK_SHIM_POOL: body,
+        const run = (limit?: string) =>
+            spawnSync(
+                'bun',
+                [
+                    runner,
+                    'daily-extract',
+                    workDir,
+                    'ai-news',
+                    '24h',
+                    '15',
+                    'voxcpm',
+                    ...(limit === undefined ? [] : [limit]),
+                ],
+                {
+                    encoding: 'utf-8',
+                    env: {
+                        ...process.env,
+                        PATH: `${binDir}:${process.env.PATH}`,
+                        KK_SHIM_LOG: logFile,
+                        KK_SHIM_LIMIT_LOG: limitLog,
+                        KK_SHIM_POOL: body,
+                    },
                 },
-            });
+            );
         return {
             root,
             workDir,
@@ -70,9 +88,36 @@ writeFileSync(outPath, process.env.KK_SHIM_POOL ?? '[]');
                     return [];
                 }
             },
+            limits: () => {
+                try {
+                    return readFileSync(limitLog, 'utf-8').trim().split('\n').filter(Boolean);
+                } catch {
+                    return [];
+                }
+            },
             run,
         };
     }
+
+    it('caps each rung at the plan size, so the pool is not pre-trimmed to the extract default (2026-11-20)', () => {
+        // Measured on the production store: 56 category-allowed, importance>=3, unpublished items sat
+        // in the 168h window while `daily-extract` passed no `--limit` at all, so the store default
+        // (~20) capped the pool at 24 — the run kept 3 items, authored 5.3 min and refused at the TTS
+        // gate. The plan cap (40) has to reach the extract, or the plan can never use it.
+        const fixture = withFixture(pool(20, 27704));
+        const res = fixture.run('40');
+        expect(res.status, res.stderr).toBe(0);
+        expect(fixture.limits()).toEqual(['40']);
+        rmSync(fixture.root, { recursive: true, force: true });
+    });
+
+    it('omits --limit when the caller passes none, keeping the store default', () => {
+        const fixture = withFixture(pool(20, 27704));
+        const res = fixture.run();
+        expect(res.status, res.stderr).toBe(0);
+        expect(fixture.limits()).toEqual([]);
+        rmSync(fixture.root, { recursive: true, force: true });
+    });
 
     it('widens to the next rung when the earned spoken length misses the floor', () => {
         // 7,244 raw chars is the production pool from 2026-11-15: it cleared the old 1.4x estimate
