@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: "Surf of the digest headline contract: kk demands two title headlines while the site's aligned plan can collapse to one"
-status: todo
+status: done
 template: issue
 created_at: 2026-11-19T22:00:27.891Z
-updated_at: "2026-11-20T00:28:50.451Z"
+updated_at: "2026-11-20T00:44:25.369Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
 priority: P1
 estimate_hours: 2
 feature_id: L3
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0408. Surf of the digest headline contract: kk demands two title headlines while the site's aligned plan can collapse to one
@@ -29,10 +31,10 @@ Captured from the 2026-11-19 dogfood of the scheduled daily run: the kk digest g
 
 ### Requirements
 
-- [ ] R1. — Accept the site's headline range. `checkDigestFrontmatter` accepts a daily title carrying **one or two** non-empty headlines joined by the locale list separator (`、` zh/ja, `, ` en). It still rejects zero headlines, any empty headline, and three or more. The error text names the actual count.
-- [ ] R2. — Claims parsing follows the same range. `parseTitleHeadlines` returns a one-element array for a single-headline title, so `buildLocaleEntry` (`topic-claims.ts:102-138`) keeps working. The rule "title headlines are the leading key_points labels, in order" applies unchanged to one headline.
-- [ ] R3. — No budget re-implementation. kk does not decide whether two headlines would have fit. That verdict stays with the site's `check-digest` (`twoHeadlinesThatFit`), reached through the existing publish path.
-- [ ] R4. — Regression coverage. The existing "exactly two" test is rewritten to the new contract. New cases cover single-headline accept (zh, en, ja), 3-headline reject, and empty-headline reject. At least one case must fail on the pre-fix code.
+- [x] R1. — Accept the site's headline range. `checkDigestFrontmatter` accepts a daily title carrying **one or two** non-empty headlines joined by the locale list separator (`、` zh/ja, `, ` en). It still rejects zero headlines, any empty headline, and three or more. The error text names the actual count.
+- [x] R2. — Claims parsing follows the same range. `parseTitleHeadlines` returns a one-element array for a single-headline title, so `buildLocaleEntry` (`topic-claims.ts:102-138`) keeps working. The rule "title headlines are the leading key_points labels, in order" applies unchanged to one headline.
+- [x] R3. — No budget re-implementation. kk does not decide whether two headlines would have fit. That verdict stays with the site's `check-digest` (`twoHeadlinesThatFit`), reached through the existing publish path.
+- [x] R4. — Regression coverage. The existing "exactly two" test is rewritten to the new contract. New cases cover single-headline accept (zh, en, ja), 3-headline reject, and empty-headline reject. At least one case must fail on the pre-fix code.
 
 **Non-goals:** producing en/ja (0409); changing the site's retitle/aligned-plan logic; the single-episode `第<YY><MM><DD>期 · <headline>` title (the news editorial contract, `docs/design/daily-ai-news-editorial-delivery.md:27`), which is not the surfdash post title.
 
@@ -107,15 +109,59 @@ Scenario: AC5 — The regression is pinned (req: R4)
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+**Change map.**
+
+| File | Change |
+| --- | --- |
+| `plugins/publishings/surfdash-pub/src/digest-check.ts:215-232` | Replaced the `seps !== 1` predicate with a headline-count range: split `rest` on the locale list separator and reject `heads.length < 1 \|\| heads.length > 2 \|\| any empty`. The message now names the count: `title: expected one or two non-empty headlines joined "<sep>", got <n> in "<rest>"`. |
+| `plugins/publishings/surfdash-pub/src/topic-claims.ts:68-73` | `parseTitleHeadlines` guard widened from `heads.length < 2` to `heads.length < 1 \|\| heads.length > 2`, so `buildLocaleEntry` accepts a one-headline title; the `headlines.length > parts.labels.length \|\| headlines[i] !== labels[i]` leading-label rule is untouched. |
+| `plugins/publishings/surfdash-pub/tests/digest-check.test.ts` | Table rows rewritten to the 1..2 contract (`three zh headlines` → `got 3 in`, `empty zh headline` → `got 2 in`, `en … three headlines` → `got 3 in`). Removed the rows that now legitimately pass. Added a `%s: a single-headline title passes` case for zh/en/ja that also re-asserts the two-headline baseline. |
+| `plugins/publishings/surfdash-pub/tests/topic-claims.test.ts` | Added `derives an entry from a single-headline title` (all three locales + the mismatched-lead refusal). |
+
+**Why.** kk's digest gate is a pre-flight mirror of the site's `check-digest`. The site accepts 1–2 headlines and owns the "were two owed?" budget verdict (`twoHeadlinesThatFit`), reached through `publishPreparedFile`'s refine step. A stricter kk gate made every day on which `seo retitle` legitimately collapsed the title unconfirmable, even though the site published it.
+
+**TDD order.** Tests were edited first and run against the pre-fix sources: 7 failures (3 rewritten table rows, 3 single-headline accepts, 1 topic-claims case). After the two source edits both files pass (55 pass / 0 fail).
+
+**R3.** No fit/budget computation was added; the only `budget` occurrences in the two sources are the pre-existing `SEO_TITLE_LIMIT` comment (`digest-check.ts:31`, the rendered-title length rule) and the new explanatory comments.
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/publishings/surfdash-pub/src/digest-check.ts:223-231` accepts one or two separator-joined headlines and rejects `heads.length > 2` or any empty segment; the message names the count (`digest-check.ts:230`). Single-headline accept per locale pinned by `tests/digest-check.test.ts:123` (zh/en/ja), out-of-range by `tests/digest-check.test.ts:88-104`. |
+| R2 | MET | `plugins/publishings/surfdash-pub/src/topic-claims.ts:73` guard widened to `heads.length < 1 \|\| heads.length > 2 \|\| any empty`; `buildLocaleEntry`'s leading-label rule (`topic-claims.ts:129`) untouched. Pinned by `tests/topic-claims.test.ts:88` (one headline derives an entry; a non-leading headline still errors `do not match`). |
+| R3 | MET | `rg -n 'fit\|budget\|twoHeadlines' plugins/publishings/surfdash-pub/src/{digest-check,topic-claims}.ts` returns only the pre-existing `SEO_TITLE_LIMIT` comment (`digest-check.ts:31`, rendered-title length) and the two new explanatory comments — no headline-fit computation, no site budget port. |
+| R4 | MET | `tests/digest-check.test.ts:88-104,118-130` and `tests/topic-claims.test.ts:86-112` are the rewritten/extended cases; run against the pre-fix sources they failed 7 times (3 rewritten table rows, 3 single-headline accepts, 1 topic-claims case) and pass after the fix. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — a single-headline title passes the kk digest gate (R1) | MET | test | `tests/digest-check.test.ts:118-131` (zh/en/ja single headline → `[]`), green: `bun test plugins/publishings/surfdash-pub/` → 150 pass / 0 fail |
+| AC2 — out-of-range titles are still refused (R1) | MET | test | `tests/digest-check.test.ts:88-104` — 3 headlines (`got 3 in`), empty headline (`got 2 in`), date-only/wrong series/wrong date/wrong colon; two-headline baseline still `[]` (`tests/digest-check.test.ts:64-77,131`) |
+| AC3 — claims derive from a single-headline title (R2) | MET | test | `tests/topic-claims.test.ts:88-112` — entry built for all three locales with `headlines === ['Claude Code']`, and a non-leading single headline still reports `do not match` |
+| AC4 — kk does not judge the two-headline budget (R3) | MET | command | `rg -n 'fit\|budget\|twoHeadlines' plugins/publishings/surfdash-pub/src/digest-check.ts plugins/publishings/surfdash-pub/src/topic-claims.ts` → 4 hits, all comments/preexisting `SEO_TITLE_LIMIT`; no computation added |
+| AC5 — the regression is pinned (R4) | MET | test | Pre-fix run of the two test files: 7 failures / 48 pass; post-fix: 55 pass / 0 fail (`tests/digest-check.test.ts`, `tests/topic-claims.test.ts`) |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+**Verdict: PASS** — 4 requirements MET, 5 AC MET (`spur task verdict 0408 --from-answer` → `PASS (4 requirements, 2 checks)`).
+
+| Dimension | Finding |
+| --- | --- |
+| Functional traceability | R1 `digest-check.ts:223-231` · R2 `topic-claims.ts:73` · R3 grep shows no fit/budget logic · R4 pre-fix 7 failures → post-fix 55 pass / 0 fail. |
+| Correctness | The old `seps !== 1` also rejected a separator-free single headline — exactly the shape the site's `seo retitle` emits. Counting segments matches the site's own split. |
+| Architecture | No new seam: both predicates stay inside `surfdash-pub`; the SEO budget verdict stays with the site (ADR-008); `digestCheckGate`/`digestCheckLocaleSet` untouched. |
+| Security / errors | The rejection message still quotes the offending title tail and now also the headline count; no new path or execution surface. |
+| Tests | The reject rows moved to the count-naming message instead of being deleted, so both sides of the range stay pinned. |
+
+- **P4 (advisory).** `heads.length < 1` is unreachable behind the `(.+)` title capture. Kept so the predicate states R1's "rejects zero headlines"; a zero-headline title is rejected on the earlier title-shape branch.
+- **Intended widening.** An en title carrying `、` (or a zh title carrying `, `) now parses as one headline. Same structural range; the site's collapse can emit a headline whose text contains either separator.
+
+**Scope checked:** `bun test plugins/publishings/surfdash-pub/` (150 pass / 0 fail), `biome check` on the four changed files (clean). Residual risk: the kk gate is a mirror, so a site-side change to `check-digest.ts`'s headline policy still drifts silently — unchanged by this task and out of its scope.
 
 ### References
 
@@ -126,3 +172,8 @@ Scenario: AC5 — The regression is pinned (req: R4)
 - Concurrency check before starting: `git worktree list`, `spur task list --status wip --json`.
 
 ### History
+
+- 2026-11-20T00:42:20.715Z todo → wip (system)
+- 2026-11-20T00:44:24.131Z wip → testing (system)
+- 2026-11-20T00:44:25.362Z testing → done (system)
+

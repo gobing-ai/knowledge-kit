@@ -1524,7 +1524,8 @@ is accepted design, not surface: do not invoke it as if it exists.
   (see "Run directories" below). The retired publish3 DAG was the scheduled path until
   0369 cut the scheduler over to `kk news publish`; both produce the same `4-publish/` file set and outcome per window
   (proven by `apps/cli/tests/kk-publish.e2e.test.ts`, AC3).
-- Shipped workflows: `kk-publish` (0366), `kk-news-generate` (0367, twenty nodes, one executor var)
+- Shipped workflows: `kk-publish` (0366), `kk-news-generate` (0367, twenty-two nodes — the twenty
+  design nodes plus 0409's pre-freeze `localize` / `localize-check` pair — one executor var)
   and `kk-article-generate` (0368, thirteen states, one executor var, `executor-probe` first). The
   article steps of the two shared verbs are the article column of one per-type table
   (`apps/cli/src/commands/content-generate-article.ts`): `--step outline` commits
@@ -1823,6 +1824,17 @@ requires `expectedPostSha256` and `expectedLocaleFingerprint`. The publisher che
 locale identities before and after the remote orchestration, and scopes its content/asset commit
 to all three dated locale directories. Validation receipts and successful cache reuse bind the
 same paths, input bytes and locale fingerprint; a missing or changed identity blocks dispatch.
+
+**The locale set rides the payload (2026-11-19, task 0409).** `metadata.surfdash.locales.{en,ja}`
+carries `{title, body}` translations produced on the generate side (the news DAG's `localize` node,
+gated by `localize-check` before the freeze). The publisher materializes one `index.md` per locale
+beside zh — same slug, same cover assets, same refined-file protection — and then spawns
+`postsurfing` once with the zh path. For a `sub-category:ai-daily` Content, a missing or blank
+locale is refused **before** the spawn with `effect: none` and an error naming the locales (the
+site's orchestrator requires the full set for a digest); a non-digest post still publishes zh alone,
+which is why the `itc-main` preset is unaffected. The site keeps owning each locale's SEO
+frontmatter (ADR-008): kk supplies the translated title and body, and the site's refine/retitle
+rewrites description, key_points and the series title per locale.
 
 Before committing and pushing to `main` the transport runs the site's own gate in the checkout —
 `bun run sd check digest` plus `check:content`, `check:body` and `check:seo`, i.e. the same content

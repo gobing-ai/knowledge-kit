@@ -2184,19 +2184,44 @@ export function buildPodcastContent(
  * (surfdash-pub/src/index.ts), so the run's cover rides along exactly as the episode/wechat
  * builders stamp it. voice2's prepare mode never exercised this gate; the frozen-bundle matrix
  * send surfaced it on 2026-11-05 (empty run → 'digest post has no cover image').
+ *
+ * 0409: `metadata.surfdash.locales` carries the en/ja translations the localize step wrote, so the
+ * frozen variant — and therefore the safety review and the freeze digest — covers them. They are
+ * read from the files at variant-build time so the variant is the single source the publisher reads.
  */
 export function buildSurfdashContent(
     article: Record<string, unknown>,
     _links: PublishLinks,
-    options: { coverPath?: string } = {},
+    options: { coverPath?: string; locales?: Partial<Record<'en' | 'ja', { title: string; body: string }>> } = {},
 ): Record<string, unknown> {
     return {
         ...article,
         metadata: {
             ...metadataOf(article),
             ...(options.coverPath === undefined ? {} : { coverImage: options.coverPath }),
+            ...(options.locales === undefined ? {} : { surfdash: { locales: options.locales } }),
         },
     };
+}
+
+/**
+ * Reads `${workDir}/22-article/locales/{en,ja}.md` (first line `# <title>`, rest the body) into the
+ * payload shape `surfdash-pub` consumes. A locale whose file is missing or untitled is simply
+ * absent — `news-localize-validate` is the gate that refuses it, and the publisher refuses a digest
+ * payload that lacks one, so silent partial data never reaches a live publish.
+ */
+function readArticleLocales(workDir: string): Partial<Record<'en' | 'ja', { title: string; body: string }>> {
+    const locales: Partial<Record<'en' | 'ja', { title: string; body: string }>> = {};
+    for (const locale of ['en', 'ja'] as const) {
+        const file = join(workDir, '22-article', 'locales', `${locale}.md`);
+        if (!isFile(file)) continue;
+        const [firstLine = '', ...rest] = readFileSync(file, 'utf-8').split('\n');
+        const title = firstLine.startsWith('# ') ? firstLine.slice(2).trim() : '';
+        const body = rest.join('\n').trim();
+        if (title === '' || body === '') continue;
+        locales[locale] = { title, body };
+    }
+    return locales;
 }
 
 /**
@@ -2356,8 +2381,15 @@ export function dailyBundleVariants(args: string[]): void {
                 : '';
         if (article === null) skipped.push('article (no 22-article content)');
         else {
-            write('article', buildSurfdashContent(article, links, { coverPath: cover }));
-            write('article@surfdash-pub', buildSurfdashContent(article, links, { coverPath: cover }));
+            // 0409: the frozen variant carries the en/ja translations, so the safety review and the
+            // freeze digest cover them and the publisher writes what was reviewed.
+            const articleLocales = readArticleLocales(workDir);
+            const articleOptions = {
+                coverPath: cover,
+                ...(Object.keys(articleLocales).length > 0 ? { locales: articleLocales } : {}),
+            };
+            write('article', buildSurfdashContent(article, links, articleOptions));
+            write('article@surfdash-pub', buildSurfdashContent(article, links, articleOptions));
             write('article@xhs-pub', buildXhsArticleContent(article, { publishStatus: 'draft' }));
             // The article carries the episode audio at the top (operator request 2026-11-15): the
             // 公众号 播客 row is off, so without this the MP draft had no player at all. Same source
@@ -5800,6 +5832,68 @@ export function dailyTranslateValidate(args: string[]): void {
             );
             console.error(`translate-validate: ${message}`);
         }
+    });
+}
+
+/** CJK ideographs and kana: present in a zh draft, absent from a real en translation. */
+const CJK_TEXT = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff66-\uff9f]/u;
+/** Kana only: a ja translation always carries hiragana/katakana; a zh copy of the draft never does. */
+const KANA_TEXT = /[\u3040-\u309f\u30a0-\u30ff]/u;
+
+/**
+ * `news-localize-validate <workDir>` — the pre-freeze gate on the news pipeline's en/ja translations
+ * (task 0409 R1).
+ *
+ * The `localize` agent node writes `${workDir}/22-article/locales/{en,ja}.md` (first line
+ * `# <title>`, rest the body) between `review` and `variants`. This stage refuses a locale that is
+ * missing, empty, untitled, or still Chinese — an untranslated locale is not a locale — so no bundle
+ * can freeze half-localized. Translating after the freeze would break ADR-053's "publish exactly what
+ * was safety-reviewed and frozen", and translating inside the plugin would put a model call in a
+ * deterministic step, so the gate lives here.
+ */
+export function newsLocalizeValidate(args: string[]): void {
+    const [workDir = ''] = args;
+    timed(workDir, 'localize-validate', () => {
+        const localesDir = join(workDir, '22-article', 'locales');
+        const accepted: string[] = [];
+        const problems: string[] = [];
+        for (const locale of ['en', 'ja'] as const) {
+            const file = join(localesDir, `${locale}.md`);
+            if (!isFile(file)) {
+                problems.push(`${locale}: file missing (${file})`);
+                continue;
+            }
+            const raw = readFileSync(file, 'utf-8');
+            if (raw.trim() === '') {
+                problems.push(`${locale}: file is empty`);
+                continue;
+            }
+            const [firstLine = '', ...rest] = raw.split('\n');
+            const title = firstLine.startsWith('# ') ? firstLine.slice(2).trim() : '';
+            if (title === '') {
+                problems.push(`${locale}: first line must be "# <title>", got "${firstLine.trim().slice(0, 60)}"`);
+                continue;
+            }
+            if (rest.join('\n').trim() === '') {
+                problems.push(`${locale}: body is empty after the title line`);
+                continue;
+            }
+            const untranslated = locale === 'en' ? CJK_TEXT.test(raw) : !KANA_TEXT.test(raw);
+            if (untranslated) {
+                problems.push(
+                    `${locale}: untranslated — ${locale === 'en' ? 'the document still carries CJK text' : 'the document has no kana, so it is not Japanese'}`,
+                );
+                continue;
+            }
+            accepted.push(locale);
+        }
+        if (problems.length > 0) {
+            failWith(1, `localize-validate: ${problems.join('; ')} — repair the translation before freezing`);
+        }
+        sted('write', join(localesDir, 'localize-validate.json'), () =>
+            writeJsonText(join(localesDir, 'localize-validate.json'), { ok: true, locales: accepted }),
+        );
+        console.log(`localize-validate: ${accepted.join('/')} translations ready for the freeze`);
     });
 }
 

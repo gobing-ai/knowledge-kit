@@ -222,9 +222,13 @@ export function checkDigestFrontmatter(markdown: string, locale: DigestLocale): 
         } else {
             const rest = match[2] ?? '';
             const heads = locale === 'en' ? rest.split(', ') : rest.split('、');
-            const seps = locale === 'en' ? (rest.match(/, /g) ?? []).length : (rest.match(/、/g) ?? []).length;
-            if (seps !== 1 || heads.some((head) => head.trim() === '')) {
-                problems.push(`title: expected exactly two non-empty headlines joined "${listSep}", got "${rest}"`);
+            // 1..2, not "exactly 2": the site's `seo retitle` legitimately collapses a title to one
+            // headline when two do not fit its SEO budget (surfdash `check-digest.ts`), and that
+            // budget verdict is the site's (ADR-008). kk mirrors only the structural range.
+            if (heads.length < 1 || heads.length > 2 || heads.some((head) => head.trim() === '')) {
+                problems.push(
+                    `title: expected one or two non-empty headlines joined "${listSep}", got ${heads.length} in "${rest}"`,
+                );
             }
         }
         const seoTitle = `${title} | Surfing`;

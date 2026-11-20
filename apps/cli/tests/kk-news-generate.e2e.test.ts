@@ -165,6 +165,7 @@ switch (stage) {
             metadata: { mp3Path: join(workDir, '30-audio', runDate + '_11_generate_audio.mp3') },
         });
         break;
+    case 'news-localize-validate': break;
     case 'daily-bundle-variants':
         for (const key of ['article', 'episode', 'xhs-article']) {
             writeJson(join(workDir, '30-variants', key + '.content.json'), content(key));
@@ -213,6 +214,13 @@ fi
 if [ -n "$judge" ]; then
   mkdir -p "$(dirname "$judge")"
   printf '{"verdict":"PASS","confidence":"HIGH","rubric":"news-balance","score":0.9}\\n' > "$judge"
+fi
+# 0409: the localize node writes en/ja beside the article; the prompt names both absolute paths.
+locale_en=$(printf '%s' "$prompt" | grep -oE '[^ "]+/locales/en.md' | head -1)
+if [ -n "$locale_en" ]; then
+  mkdir -p "$(dirname "$locale_en")"
+  printf '# Daily AI Stew\n\nEnglish body.\n' > "$locale_en"
+  printf '# デイリーAIシチュー\n\n日本語の本文です。\n' > "\${locale_en%en.md}ja.md"
 fi
 exit 0
 `;

@@ -31,6 +31,20 @@ import { crossLinkFor, localeIndexPath, patchPostFiles, upsertFrontmatterKey } f
 // Auto-push targets the real surfdash checkout — CLI-path tests run offline with stub binaries.
 process.env.SURFDASH_AUTO_PUSH ??= '0';
 
+/**
+ * 0409 R2: the en/ja drafts a digest Content carries (`metadata.surfdash.locales`). `publish` now
+ * refuses a digest without them, because the site's orchestrator refuses a digest with a missing
+ * locale file; the fake postsurfing fixture refines the siblings the same way the site does.
+ */
+function digestLocales(date: string): Record<string, unknown> {
+    return {
+        locales: {
+            en: { title: `Daily AI Stew · ${date}`, body: '# Daily AI Stew\n\nEnglish body.' },
+            ja: { title: `デイリーAIシチュー · ${date}`, body: '# デイリーAIシチュー\n\n日本語の本文。' },
+        },
+    };
+}
+
 describe('surfdash-pub plugin', () => {
     test('slugify converts titles and tags into lowercase hyphenated strings', () => {
         expect(slugify('Hello World!')).toBe('hello-world');
@@ -317,7 +331,11 @@ describe('surfdash-pub plugin', () => {
 
         await writeFile(inPath, JSON.stringify(inputContent), 'utf-8');
 
-        const pluginsRoot = join(process.cwd(), 'plugins');
+        // Repo-root plugin collection, resolved from the test file rather than `process.cwd()`: the
+        // suite runs from the repo root under `bun run test` and from the package directory under the
+        // incremental gate (`spur self check`), and a cwd-relative root made discovery fail in the
+        // latter (pre-existing; surfaced by 0409's gate run).
+        const pluginsRoot = join(import.meta.dir, '../../../..', 'plugins');
         process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT = 'fake';
         try {
             const code = await runInvoke({
@@ -2066,6 +2084,8 @@ describe('digest frontmatter check wiring in publishPost and syncPost (Item 4)',
                 runDate: '20261023',
                 subCategory: 'ai-daily',
                 coverImage: coverSrc,
+                // 0409 R2: a digest carries its translations, or `publish` refuses before spawning.
+                surfdash: digestLocales('2026-10-23'),
             },
         };
 
@@ -2296,6 +2316,8 @@ process.exit(0);
                 runDate: '20261024',
                 subCategory: 'ai-daily',
                 coverImage: coverSrc,
+                // 0409 R2: a digest carries its translations, or `publish` refuses before spawning.
+                surfdash: digestLocales('2026-10-24'),
             },
         });
 
@@ -3022,6 +3044,12 @@ if (argv[0] === 'seo' && argv[1] === 'listen-link') {
     console.log('seo listen-link backfill — 1 linked (written), 0 not-live, 0 already-linked');
     process.exit(0);
 }
+if (argv[0] === 'seo' && argv[1] === 'retitle') {
+    // 0409: a digest with en/ja siblings runs the daily-topics sync, which retitles after the map
+    // write — the stub answers it like the site does instead of falling through to exit 1.
+    console.log('seo retitle --write --stamp-claims ok');
+    process.exit(0);
+}
 if (argv[0] === 'check' && argv[1] === 'digest') {
     process.exit(0);
 }
@@ -3097,6 +3125,12 @@ if (argv[0] === 'seo' && argv[1] === 'listen-link') {
     console.log('✎ 20261023-old [backfilled]');
     process.exit(0);
 }
+if (argv[0] === 'seo' && argv[1] === 'retitle') {
+    // 0409: a digest with en/ja siblings runs the daily-topics sync, which retitles after the map
+    // write — the stub answers it like the site does instead of falling through to exit 1.
+    console.log('seo retitle --write --stamp-claims ok');
+    process.exit(0);
+}
 if (argv[0] === 'check' && argv[1] === 'digest') {
     process.exit(0);
 }
@@ -3155,6 +3189,11 @@ import { appendFileSync } from 'node:fs';
 const argv = process.argv.slice(2);
 if (argv[0] === 'seo' && argv[1] === 'listen-link') {
     appendFileSync('${orderLog}', 'backfill\\n');
+    process.exit(0);
+}
+if (argv[0] === 'seo' && argv[1] === 'retitle') {
+    // 0409: a digest with en/ja siblings runs the daily-topics sync, which retitles after the map
+    // write; it logs nothing, so the backfill -> site gate -> commit order stays observable.
     process.exit(0);
 }
 if (argv[0] === 'check' && argv[1] === 'digest') {

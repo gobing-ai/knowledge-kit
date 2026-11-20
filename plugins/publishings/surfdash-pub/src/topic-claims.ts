@@ -68,7 +68,9 @@ function parseTitleHeadlines(title: string, locale: PatchLocale): string[] | und
     const match = title.match(new RegExp(`^${escapeRe(series)} · (\\d{4}-\\d{2}-\\d{2})${escapeRe(titleSep)}(.+)$`));
     if (!match?.[2]) return undefined;
     const heads = match[2].split(listSep).map((head) => head.trim());
-    if (heads.length < 2 || heads.some((head) => head === '')) return undefined;
+    // 1..2 structural headlines: the site may collapse a title to one when two do not fit its
+    // SEO budget, so a single headline is a valid derivation source (task 0408).
+    if (heads.length < 1 || heads.length > 2 || heads.some((head) => head === '')) return undefined;
     return heads;
 }
 

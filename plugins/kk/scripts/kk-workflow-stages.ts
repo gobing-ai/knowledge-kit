@@ -2099,6 +2099,11 @@ if (import.meta.main)
             dailyTranslateValidate(rest);
             break;
         }
+        case 'news-localize-validate': {
+            const { newsLocalizeValidate } = await loadDailyStages();
+            newsLocalizeValidate(rest);
+            break;
+        }
         case 'itc-outline-pick': {
             const { itcOutlinePick } = await loadItcStages();
             itcOutlinePick(rest);

@@ -90,37 +90,19 @@ describe('checkDigestFrontmatter', () => {
             name: 'three zh headlines',
             locale: 'zh',
             title: '每日AI乱炖 · 2026-10-23：一、二、三',
-            want: 'exactly two non-empty headlines',
-        },
-        {
-            name: 'one zh headline only',
-            locale: 'zh',
-            title: '每日AI乱炖 · 2026-10-23：只有一条',
-            want: 'exactly two non-empty headlines',
+            want: 'got 3 in',
         },
         {
             name: 'empty zh headline',
             locale: 'zh',
             title: '每日AI乱炖 · 2026-10-23：一、',
-            want: 'exactly two non-empty headlines',
+            want: 'got 2 in',
         },
         {
-            name: 'en with zero ", "',
-            locale: 'en',
-            title: 'Daily AI Stew · 2026-10-23: One headline',
-            want: 'exactly two non-empty headlines',
-        },
-        {
-            name: 'en with two ", "',
+            name: 'en with two ", " (three headlines)',
             locale: 'en',
             title: 'Daily AI Stew · 2026-10-23: A, B, C',
-            want: 'exactly two non-empty headlines',
-        },
-        {
-            name: 'en using the zh list separator',
-            locale: 'en',
-            title: 'Daily AI Stew · 2026-10-23: A、B',
-            want: 'exactly two non-empty headlines',
+            want: 'got 3 in',
         },
         { name: 'en date-only regression shape', locale: 'en', title: 'Daily AI Stew · 2026-10-23', want: 'expected' },
     ];
@@ -129,6 +111,24 @@ describe('checkDigestFrontmatter', () => {
         const problems = checkDigestFrontmatter(mutated, locale);
         expect(problems.length).toBeGreaterThan(0);
         expect(problems.join('\n')).toContain(want);
+    });
+
+    // 0408 R1: the site's `seo retitle` collapses a title to ONE headline whenever two do not fit
+    // its SEO budget (surfdash `check-digest.ts`), so the kk mirror accepts the 1..2 structural
+    // range and leaves "were two owed?" to the site gate. Single headlines used to fail here.
+    test.each([
+        ['zh', '迪士尼买下 Character.AI'],
+        ['en', 'Disney buy'],
+        ['ja', 'ディズニーが買収'],
+    ] as const)('%s: a single-headline title passes', (locale, headline) => {
+        const titleSep = locale === 'en' ? ': ' : '：';
+        const mutated = valid(locale).replace(
+            /^title: .*$/m,
+            () => `title: "${SERIES_NAMES[locale]} · 2026-10-23${titleSep}${headline}"`,
+        );
+        expect(checkDigestFrontmatter(mutated, locale)).toEqual([]);
+        // The two-headline baseline still passes: the range is 1..2, not "anything".
+        expect(checkDigestFrontmatter(valid(locale), locale)).toEqual([]);
     });
 
     test('title whose rendered "<title> | Surfing" exceeds 60 code points fails', () => {
