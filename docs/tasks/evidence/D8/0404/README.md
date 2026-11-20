@@ -58,7 +58,9 @@ generation (`instance-record-01.json`, `instance-record-02.json`).
 
 **Spend.** The CLI's local price table recorded 2 × `$0.08` = `$0.16`; the instance reports
 `provider: mock`, which "uses no key at all and reports neither" (its own README: `LYRIA_MOCK=1` is
-"$0, no keys needed"), so the actual provider spend is **$0.00**. No audio bytes are committed.
+"$0, no keys needed"), so the actual provider spend is **$0.00**. No audio bytes are committed, and the
+paths in the table above belong to the batch worktree (`knowledge-kit-runall-0404-0406-0410-83ed`),
+which was removed after landing — the two sha256 digests are the durable record of those mock takes.
 
 ## Resume conditions
 
