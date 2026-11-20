@@ -1,0 +1,28 @@
+{
+  "row": ".setting-group__switch.js_reward_open",
+  "rowMap": {
+    ".js_reward_open": 1,
+    ".js_reward_allow_click": 1,
+    ".setting-group__switch.js_reward_open": 1,
+    ".setting-group__switch.js_can_reward": 0,
+    ".setting-group__switch": 16,
+    ".js_original": 0,
+    ".js_article_tags_label": 1,
+    "#js_article_url_area": 1,
+    "#js_claim_source_area": 1
+  },
+  "clickError": "TimeoutError: click: Timeout 8000ms exceeded.",
+  "mountedAfterMs": 8009,
+  "survey": {
+    "dialogCount": 6,
+    "dialogText": "   未设置头像和名称 发表内容需要完善公众号头像和名称    去设置 取消",
+    "buttons": [
+      "",
+      "去设置",
+      "取消"
+    ],
+    "inputs": [],
+    "blockedMarkers": [],
+    "accountMarkers": []
+  }
+}

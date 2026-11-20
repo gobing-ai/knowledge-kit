@@ -2087,9 +2087,15 @@ export function buildWechatArticleContent(
 ): Record<string, unknown> {
     const wechatmp: Record<string, unknown> = {
         original: true,
-        // 赞赏 is enabled per episode; the plugin fills the 赞赏账户 only when the platform leaves it
-        // empty (it defaults from 作者, operator walk 2026-10-10).
-        reward: true,
+        // 赞赏 is NOT requested: measured 2026-11-20 on a fresh 文章 draft, this account's row renders
+        // `不开启 … 无法开启赞赏，因为还没有赞赏账户授权给本公众号` with a 0×0 box — the platform has not
+        // authorized a 赞赏 account for 咸话咸说, so no selector, probe or retry can enable it, and asking
+        // for it only converted a healthy draft into `ok:false` until `WECHATMP_ALLOW_PARTIAL_ENRICH=1`
+        // was set by hand (11-16, 11-18, 11-19). Evidence:
+        // `.spur/run/dogfood/2026-11-20-wechatmp-reward/survey-dom.json` (5806: reward row text + box).
+        // If the operator opens 赞赏 later, flip this line back together with the probe in
+        // `plugins/publishings/wechatmp-pub/src/enrich.ts` (`REWARD_STATE`).
+        reward: false,
         author: WECHAT_BRAND.author,
         collection: options.collection,
         // 创作来源 is the platform's AI-declaration entry (WX-03); the label declares AI generation.

@@ -2331,6 +2331,12 @@ interface RecordingOpts {
     missingOn?: string | string[];
     /** 0272: model the 赏-blocked account (the dialog renders 前往开通). Default: functional. */
     rewardBlocked?: boolean;
+    /**
+     * 2026-11-20 measured shape: the account has no authorized 赞赏 account, so the row itself carries
+     * `无法开启赞赏，因为还没有赞赏账户授权给本公众号` and a 0×0 box. Distinct from `rewardBlocked`, which is
+     * the older "the dialog, once open, offers only 前往开通" shape.
+     */
+    rewardRowBlocked?: boolean;
     /** 0260: the committed value a locator input readback returns (原文链接 committed URL). */
     inputValue?: string | ((selector: string) => string);
     /** 0260: selector fragment(s) whose locator input readback REJECTS (production wrappers can). */
@@ -2400,6 +2406,14 @@ function recordingPage(ops: string[], evalReturns: unknown[] = [], opts: Recordi
             ops.push(`files ${selector}`);
         },
         evaluate: async (expression) => {
+            // The 赞赏 row-state read (measured 2026-11-20) answers from the state and never consumes a
+            // scripted return: it is a probe, not a step, so the queue stays aligned for every existing
+            // case. Blocked = the platform's refusal text on a zero-size row.
+            if (expression.includes('无法开启赞赏')) {
+                return opts.rewardRowBlocked === true
+                    ? { clickable: false, blocked: true, text: '不开启 无法开启赞赏，因为还没有赞赏账户授权给本公众号' }
+                    : { clickable: true, blocked: false, text: '' };
+            }
             if (expression.includes('.article_url_setting')) {
                 if (readbackBroken('input.js_url')) throw new Error('committed readback refused');
                 if (!urlCommitted) return null;
@@ -2574,6 +2588,38 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
         expect(warnings).toContain('赞赏: 赞赏未生效，请手动设置');
         // The row click was broken by failOn (it throws before recording), but both retry sweeps ran.
         expect(warnings.some((w) => w.startsWith('赞赏:') && w.includes('detached row'))).toBe(true);
+    });
+
+    test('the measured 2026-11-20 shape: a row carrying the platform refusal is a capability in ONE step, never an 8 s click', async () => {
+        const ops: string[] = [];
+        // Pre-read uncommitted only; every later scripted value is the panel sweep reading `closed`, so
+        // any extra click or dialog wait would consume one and show up as a shifted warning list.
+        const started = Date.now();
+        const warnings = await enrichArticle(
+            recordingPage(ops, [false, false, false, false, false], { rewardRowBlocked: true }),
+            { reward: true, author: '冰原奔狼' },
+        );
+        const elapsedMs = Date.now() - started;
+        // The platform's own reason is quoted back, word for word, as the capability warning.
+        expect(warnings.some((w) => w.includes('无法开启赞赏，因为还没有赞赏账户授权给本公众号'))).toBe(true);
+        expect(warnings.some((w) => w.startsWith('赞赏: 需要赞赏账户'))).toBe(true);
+        // No row click was attempted, and no confirm click either: the row has no box to click.
+        expect(ops.some((op) => op.includes('js_reward_open') || op.includes('js_reward_allow_click'))).toBe(false);
+        expect(ops.some((op) => op.includes('确认') || op.includes('确定'))).toBe(false);
+        // Fast by construction: the whole step is one evaluation plus the field sweep, not an 8 s click
+        // timeout plus a retry of the same impossible click.
+        expect(elapsedMs).toBeLessThan(2_000);
+    });
+
+    test('a healthy account still opens the row and takes its account from 作者', async () => {
+        const ops: string[] = [];
+        const warnings = await enrichArticle(recordingPage(ops, [false, false, false, false, false]), {
+            reward: true,
+            author: '冰原奔狼',
+        });
+        // The row-level read answered "clickable", so the old path ran unchanged.
+        expect(ops.some((op) => op.startsWith('click ') && op.includes('js_reward_open'))).toBe(true);
+        expect(warnings.some((w) => w.includes('无法开启赞赏'))).toBe(false);
     });
 
     test('0260: an absent 合集 row exhausts openRow and warns once instead of crashing', async () => {

@@ -1,0 +1,18 @@
+{"t":11087,"kind":"console","detail":{"url":"https://mp.weixin.qq.com/cgi-bin/home?t=home/index&lang=zh_CN&token=297689298"}}
+{"t":11110,"kind":"creation-item","detail":{"item":"div.new-creation__menu-item:has-text(\"文章\")"}}
+{"t":24006,"kind":"editor","detail":{"url":"https://mp.weixin.qq.com/cgi-bin/appmsg?t=media/appmsg_edit_v2&action=edit&isNew=1&type=77&createType=0&token=297689298&lang=zh_CN&timestamp=1795213747312","newTab":true}}
+{"t":24079,"kind":"screenshot","detail":{"name":"measure-editor"}}
+{"t":24100,"kind":"row-map","detail":{".js_reward_open":1,".js_reward_allow_click":1,".setting-group__switch.js_reward_open":1,".setting-group__switch.js_can_reward":0,".setting-group__switch":16,".js_original":0,".js_article_tags_label":1,"#js_article_url_area":1,"#js_claim_source_area":1}}
+{"t":24108,"kind":"dismiss-attempt","detail":{"attempt":0,"visible":6,"target":"button:has-text(\"取消\")"}}
+{"t":29110,"kind":"dismiss-failed","detail":{"error":"TimeoutError: click: Timeout 5000ms exceeded."}}
+{"t":30318,"kind":"dismiss-attempt","detail":{"attempt":1,"visible":6,"target":"button:has-text(\"取消\")"}}
+{"t":35319,"kind":"dismiss-failed","detail":{"error":"TimeoutError: click: Timeout 5000ms exceeded."}}
+{"t":36528,"kind":"dismiss-attempt","detail":{"attempt":2,"visible":6,"target":"button:has-text(\"取消\")"}}
+{"t":41530,"kind":"dismiss-failed","detail":{"error":"TimeoutError: click: Timeout 5000ms exceeded."}}
+{"t":42736,"kind":"dialogs-after-dismiss","detail":{"visible":6}}
+{"t":42795,"kind":"screenshot","detail":{"name":"measure-editor-dismissed"}}
+{"t":42797,"kind":"reward-row","detail":{"row":".setting-group__switch.js_reward_open"}}
+{"t":50801,"kind":"reward-click","detail":{"clickError":"TimeoutError: click: Timeout 8000ms exceeded."}}
+{"t":50806,"kind":"dialog-mount","detail":{"mountedAfterMs":8009}}
+{"t":50838,"kind":"dialog-survey","detail":{"dialogCount":6,"dialogText":"   未设置头像和名称 发表内容需要完善公众号头像和名称    去设置 取消","buttons":["","去设置","取消"],"inputs":[],"blockedMarkers":[],"accountMarkers":[]}}
+{"t":50894,"kind":"screenshot","detail":{"name":"measure-reward-dialog"}}

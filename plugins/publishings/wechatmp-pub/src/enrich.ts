@@ -124,6 +124,52 @@ const CLAIM_COMMITTED = `(() => {
     return { enabled, text };
 })()`;
 
+/**
+ * The 赞赏 row's own state, measured 2026-11-20 on a fresh 文章 draft (account without an authorized
+ * 赞赏 account): the row renders `.setting-group__switch.js_reward_allow_click` carrying the text
+ * `不开启 … 无法开启赞赏，因为还没有赞赏账户授权给本公众号`, its box is **0×0**, and the click the rail
+ * used to attempt therefore burned its full 8 s timeout (`赞赏: click: Timeout 8000ms exceeded`) on
+ * an element no operator action in this run could make clickable. One bounded read answers both
+ * questions — is the row blocked by text, and is there a box to click at all — before any click.
+ * Native CSS only: Playwright's `:visible` throws inside `evaluate` (task 0260 AC4).
+ */
+const REWARD_STATE = `(() => {
+    const rows = [
+        document.querySelector('.js_reward_allow_click'),
+        document.querySelector('.js_reward_open'),
+        document.querySelector('.setting-group__switch.js_reward_open'),
+    ].filter((el) => el !== null);
+    if (rows.length === 0) return null;
+    const blockedText = /无法开启赞赏|还没有赞赏账户|前往开通|未开通/;
+    for (const el of rows) {
+        const text = (el.textContent ?? '').replace(/\\s+/g, ' ').trim();
+        const box = el.getBoundingClientRect();
+        if (blockedText.test(text) || (box.width === 0 && box.height === 0)) {
+            return { clickable: false, blocked: true, text: text.slice(0, 200) };
+        }
+    }
+    return { clickable: true, blocked: false, text: '' };
+})()`;
+
+/** `{ clickable, blocked, text }` from REWARD_STATE; `null` when the row is absent or unreadable. */
+async function readRewardState(
+    page: WechatPage,
+): Promise<{ clickable: boolean; blocked: boolean; text: string } | null> {
+    try {
+        const raw: unknown = await page.evaluate(REWARD_STATE);
+        if (typeof raw !== 'object' || raw === null) return null;
+        const value = raw as { clickable?: unknown; blocked?: unknown; text?: unknown };
+        if (typeof value.clickable !== 'boolean' || typeof value.blocked !== 'boolean') return null;
+        return {
+            clickable: value.clickable,
+            blocked: value.blocked,
+            text: typeof value.text === 'string' ? value.text : '',
+        };
+    } catch {
+        return null;
+    }
+}
+
 /** Read a settings checkbox's committed enabled state; `null` = unobservable (never "satisfied"). */
 async function readChecked(page: WechatPage, expression: string): Promise<boolean | null> {
     try {
@@ -259,10 +305,22 @@ export async function enrichArticle(page: WechatPage, meta: Record<string, unkno
         const name = '赞赏';
         if ((await readChecked(page, COMMITTED.reward)) !== true) {
             const outcome = await step(name, async () => {
+                // Measured 2026-11-20: an account without an authorized 赞赏 account renders the row
+                // with the refusal already in it and a 0×0 box, so opening/closing it is impossible and
+                // the old path spent its whole 8 s click budget proving that. Read the row first — one
+                // bounded evaluation, no click, no dialog wait — and report the capability in one step.
+                const state = await readRewardState(page);
+                if (state?.blocked === true) {
+                    throw new CapabilityError(
+                        `需要赞赏账户（本公众号未被授权，平台原文：${state.text === '' ? '无法开启赞赏' : state.text}）— 运营者在平台开通后重跑，本次不请求该字段`,
+                    );
+                }
                 await openRow(ROW_REWARD, '赞赏');
-                // Measured 2026-10-13: without a 赏账户 the dialog renders the 前往开通 link + a
-                // 无法开启-style prerequisite line instead of the account field — an operator action
-                // (开通赞赏), never a selector failure, and no retry of this run can change it.
+                // Measured 2026-10-13: on other builds the prerequisite line appears only inside the
+                // dialog, so the post-open probe stays for that shape. It stays short on purpose — the
+                // row-level read above is what answers the measured 2026-11-20 account, and a longer
+                // window here only slows every healthy run (a 4 s probe pushed the enrichment suites
+                // past their own step budget).
                 const blocked = await tryFindSelector(
                     page,
                     [`${DIALOG} :has-text("前往开通")`, `${DIALOG} :has-text("无法开启")`],

@@ -1,0 +1,84 @@
+{
+  "url": "https://mp.weixin.qq.com/cgi-bin/appmsg?t=media/appmsg_edit_v2&action=edit&isNew=1&type=77&createType=0&token=297689298&lang=zh_CN&timestamp=1795213833066",
+  "rewardRows": {
+    ".setting-group__switch.js_reward_open": {
+      "tag": "div",
+      "className": "setting-group__switch js_reward_open",
+      "text": "不开启",
+      "ariaDisabled": null,
+      "disabled": null,
+      "display": "flex",
+      "visibility": "visible",
+      "opacity": "1",
+      "pointerEvents": "auto",
+      "rect": {
+        "w": 0,
+        "h": 0,
+        "x": 0,
+        "y": 0
+      },
+      "groupText": ""
+    },
+    ".js_reward_open": {
+      "tag": "div",
+      "className": "setting-group__switch js_reward_open",
+      "text": "不开启",
+      "ariaDisabled": null,
+      "disabled": null,
+      "display": "flex",
+      "visibility": "visible",
+      "opacity": "1",
+      "pointerEvents": "auto",
+      "rect": {
+        "w": 0,
+        "h": 0,
+        "x": 0,
+        "y": 0
+      },
+      "groupText": ""
+    },
+    ".js_reward_allow_click": {
+      "tag": "div",
+      "className": "setting-group__switch js_reward_allow_click",
+      "text": "不开启\n                        \n                        \n                          无法开启赞赏，因为还没有赞赏账户授权给本公众号\n                ",
+      "ariaDisabled": null,
+      "disabled": null,
+      "display": "flex",
+      "visibility": "visible",
+      "opacity": "1",
+      "pointerEvents": "auto",
+      "rect": {
+        "w": 0,
+        "h": 0,
+        "x": 0,
+        "y": 0
+      },
+      "groupText": ""
+    },
+    ".setting-group__switch.js_can_reward": null
+  },
+  "settingTitles": [
+    "封面和摘要",
+    "封面",
+    "视频号",
+    "位置",
+    "在认领的位置页展示",
+    "原创",
+    "原创",
+    "赞赏",
+    "付费",
+    "赞赏",
+    "公益捐赠",
+    "付费",
+    "原创",
+    "赞赏",
+    "留言",
+    "链接",
+    "文章设置\n                部分功能不支持设置"
+  ],
+  "dialogsShown": [],
+  "bodyClasses": "zh_CN weui-desktop-page_simple page_appmsg_new weui-desktop-web1 screen_small",
+  "hasEditorFrame": [
+    "https://mp.weixin.qq.com/s?__biz=MzA4MTA0MzEwMA==&tempkey=MTM1Ml9TdzdSdjFNZ0hJNmxMZ013SjE1ZFJoWlBPUmN0YUNwYnYzVEtNanN1RmpXUTcwVVFjLVBtVk9UU04zek1mMlNGaUNaM2dqYVlxcHZBLU10UDdZeFVsaGZiTWRZTDNCOVgtV3k5TklvTllTaFlSLVlTSDZJeGwtdkUyTnk3aUNDWHlScVFfWnN5WExvT05DVHdGdm1RalB0S2lpd1U2R2k2VVZnU2Fnfn4%3D&chksm=1f9a518028edd896a36d38dd7e8fbc1f8e6f09915d1d7eb3d74a5341780ead4f1ce167fdbae0&scene=0&xtrack=1&subscene=90&color_scheme=light"
+  ]
+}

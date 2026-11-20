@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: wechatmp 赞赏 enrichment times out, leaving every news draft uncertain
-status: todo
+status: done
 template: issue
 created_at: 2026-11-18T23:29:22.307Z
-updated_at: "2026-11-20T08:38:12.235Z"
+updated_at: "2026-11-20T22:57:53.407Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
 priority: P2
 estimate_hours: 5
 feature_id: E92
+done_forced: "true"
+done_reason: "R1 measured on the live console (headed, signed-in): the account's 赞赏 row is the blocked variant — '无法开启赞赏，因为还没有赞赏账户授权给本公众号' on a 0x0 box — which is why the click could only time out. R2 reads that state in one bounded step and reports the capability with the platform text, no click/no 8 s wait; R3 sets reward:false in the daily builder with the evidence cited; R4 shipped earlier (duplicate-draft guard); R5 tests added (2 enrich cases, 3 builder cases, 4 guard cases). Verified: plugins/publishings/wechatmp-pub 273 pass, daily reward suite 3 pass, lint clean, tsc clean, stage bodies synced to the install. Live confirmation (next news-generate window's wechatmp receipt) is stated as owed, not claimed."
 ---
 
 ## 0406. wechatmp 赞赏 enrichment times out, leaving every news draft uncertain
@@ -116,42 +118,88 @@ Scenario: AC6 — The suite pins the fixes (req: R5)
 
 ### Root Cause
 
-<!-- Verified underlying cause with file:line evidence. Fill once reproduced/isolated. -->
+**Measured 2026-11-20, operator-attended headed session, signed-in `wechatmp` profile, fresh 文章 draft.**
+
+Entry path measured with the rail's own selectors: 新的创作 → 文章 opens `appmsg_edit_v2&action=edit&isNew=1&type=77&createType=0` in a new tab (the rail's `enterViaMenu` path). In that editor:
+
+| Selector | Count | Meaning |
+| --- | --- | --- |
+| `.js_reward_open`, `.setting-group__switch.js_reward_open` | 1 | the 赞赏 row renders |
+| `.js_reward_allow_click` | 1 | **the blocked variant of the row** |
+| `.setting-group__switch.js_can_reward` | 0 | the enabled switch is absent |
+| `#js_article_url_area`, `#js_claim_source_area`, `.js_article_tags_label` | 1 each | the neighbouring rows are intact |
+
+The blocked row's own state (`survey-dom.json`):
+
+- text: `不开启 … 无法开启赞赏，因为还没有赞赏账户授权给本公众号`
+  — *"cannot enable 赞赏 because no 赞赏 account has been authorized for this public account"*;
+- `display: flex`, `visibility: visible`, `pointer-events: auto`, and a **0×0 bounding box**.
+
+**Root cause of the 8 s failure.** The rail clicked that zero-size div: nothing can be clicked with no box,
+so Playwright spent the full `clickSelector(page, DIALOG_CONFIRM/ROW_REWARD, 8_000)` budget and surfaced
+`赞赏: click: Timeout 8000ms exceeded` — the error the task carried since 11-16. It is **not** a
+lazily-rendered dialog racing a 1.5 s probe: the row's own text states the capability gap, and no retry
+of this run can enable 赞赏.
+
+**Dialog inventory.** No 赞赏 dialog ever opens on this account, so the confirm control (R2's
+`REWARD_CONFIRM`) has **no measured label** — the earlier reading of a "未设置头像和名称" modal was a
+hidden template matched by a broad dialog selector, not a live overlay (`survey-dom.json` →
+`dialogsShown: []`). The confirm-label scoping therefore stays open, deliberately: it needs an entitled
+account to measure, and inventing it here would be exactly the guess this task exists to stop.
+
+**Branch taken (R3).** The account cannot offer 赞赏 → the daily builder stops requesting it
+(`plugins/kk/scripts/daily-stages.ts:2091`, `reward: false`, comment naming this artifact), so the 文章 row
+confirms without `WECHATMP_ALLOW_PARTIAL_ENRICH`.
 
 ### Solution
 
-Shipped **R4 in full** (the duplicate-draft guard) plus its R5 tests. **R1, R2 and R3 are blocked** on the
-operator-attended headed session that their own plans require — see *Blocked* below. Nothing was
-guessed in place of that measurement.
+**R1 measured** (see Root Cause + `docs/tasks/evidence/E92/0406/`): the 赞赏 row on this account is the
+blocked variant — `无法开启赞赏，因为还没有赞赏账户授权给本公众号`, rendered as a 0×0 box — so the rail's
+click could only ever time out. No dialog opens, hence no measured confirm label yet.
 
-**R4 — one draft per run.**
+**R2 — encode the measured behaviour.**
 
 | File | Change |
 | --- | --- |
-| `plugins/publishings/wechatmp-pub/src/cgi-draft.ts` | `'duplicate-draft'` joins the bounded error vocabulary (`:41`). The readback's own `list_ex` request is extracted into `readDraftList(page, session, stage)` (`:431`), one reader for both callers. `createWechatArticleDraft` calls it **before** `buildCreateArticlePayload`/the POST (`:515`) and refuses on an exact-title match with `duplicateDraft()` (`:487`). The post-create confirmation now reads through the same helper (`:570`). |
-| `plugins/publishings/wechatmp-pub/src/flow.ts` | On `error.code === 'duplicate-draft'` the failure carries `itcDelivery: { schemaVersion: 1, effect: 'none' }` (`:2588`), so the matrix records `effect: none` — a bounded retry, not an operator resend, once the console draft is cleared. |
-| `plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-draft.test.ts` | Real-Chromium fixtures: duplicate title refuses with `duplicate-draft`/`pre-create-lookup` and **dispatches no create** (observed requests = the lookup only); a different title does not block; an unreadable lookup refuses `readback-failed` at `pre-create-lookup` with nothing created. Existing create/ambiguous/readback fixtures updated to the new three-request sequence. Fake-page `runMode` case pins `ok:false` + `itcDelivery.effect === 'none'` + zero create dispatches. |
+| `plugins/publishings/wechatmp-pub/src/enrich.ts` | new `REWARD_STATE` page-side probe + `readRewardState()`: one bounded evaluation answers *is the row blocked by the platform's own refusal text, and does it have a box at all?* The reward step now reads it **before** `openRow` and, when blocked, raises `CapabilityError` in one step with the platform's text quoted — no click, no dialog wait, no 8 s timeout, no retry of an impossible click. The pre-existing post-open probe stays for the older "prerequisite appears only inside the dialog" shape, at its original 1.5 s bound (a 4 s window slowed every healthy run past the suites' step budget). |
+| `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts` | a `rewardRowBlocked` state on the recording page (it answers the row-state probe **without** consuming a scripted `evaluate`, so the existing sequences stay aligned) plus two cases: the measured blocked row → capability warning quoting the platform text, **zero** row/confirm clicks, under 2 s; and a healthy account → the row still opens and the account still comes from 作者. |
 
-Error text is the contract R4 names verbatim:
-`duplicate-draft: appmsgid <id> already holds "<title>" — delete it or finish it in the console`.
+`REWARD_CONFIRM` (R2's "scope the confirm click to the reward dialog's own label") is **not** added: no
+dialog was measurable. That clause is deferred with the evidence saying so, rather than satisfied with a
+guessed selector.
 
-**Scope note.** The lookup uses the readback's frozen `list_ex` shape (`begin=0, count=5`), so it sees
-the console's five most recent drafts — the same window the confirmation already trusted. Widening it
-would change a frozen request shape this task does not own.
+**R3 — the capability gap stops failing the daily row.** `plugins/kk/scripts/daily-stages.ts:2091` sets
+`reward: false` with a comment citing `survey-dom.json` and the three failed drafts (11-16/11-18/11-19).
+The requested-but-unapplied contract for the other four fields is unchanged; flipping the line back is the
+whole reversal once 赞赏 is authorized.
 
-**Blocked (not attempted, no placeholder evidence).**
+**R4 — duplicate drafts.** Shipped earlier in this batch (`0b159de5`): a pre-create exact-title lookup in
+`cgi-draft.ts` refuses with `duplicate-draft: appmsgid <id> already holds "<title>…` and reports
+`effect: none`. Live confirmation of the original problem is on the record: the console's 近期草稿 list
+showed two drafts both titled `每日AI乱炖 · 2026-11-19`.
 
-- **R1** — the 赞赏 surface can only be measured in an operator-attended headed session on the signed-in
-  `wechatmp` profile (task Plan step 1, Q&A "Can R2 proceed without R1? no"). No session was available
-  during this batch, so R1's measurement and therefore R2's selector/`REWARD_CONFIRM` change and R3's
-  `reward: false` decision are untouched.
-- **R3** stays conditional by construction: it is decided only by R1's entitlement finding.
-- Consequently the `plugins/kk/scripts/daily-stages.ts` reward opt-out, the new `enrich.ts` probe and the
-  slow-mount/confirm tests are **not** in this change.
+**R5 — tests.** The two new enrich cases above, the four `readDraftList`/duplicate-guard cases from R4, and
+`plugins/kk/tests/daily-wechat-reward-0406.test.ts` (the builder's metadata: `reward: false`, 原创/合集/
+创作来源 still requested, audio-first 播客 carrying the same decision).
+
+**Not changed:** `flow.ts`'s "requested enrichment that did not take is a failure" contract, the other four
+enrichment rows, `WECHATMP_ALLOW_PARTIAL_ENRICH` (still the operator escape, now unnecessary for this row).
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+| Check | Result |
+| --- | --- |
+| `bun test plugins/publishings/wechatmp-pub` | 273 pass, 0 fail (includes the two new blocked/healthy reward cases and the four duplicate-guard cases) |
+| `bun test plugins/kk/tests/daily-wechat-reward-0406.test.ts` | 3 pass, 0 fail |
+| `bun run lint` (biome 2.5.15 + every workspace typecheck) | clean |
+| `bunx tsc --noEmit -p plugins/publishings/wechatmp-pub` | clean |
+| Stage-body sync (AGENTS.md) | `plugins/kk/scripts/` rsynced to the installed package; `grep -c "reward: false"` → 1 there; `bun run tools:fresh` reports no drift |
+| Measurement | headed, signed-in session against the live console; artifacts in `docs/tasks/evidence/E92/0406/` (`survey-dom.json`, `measure-summary.json`, `measure-events.jsonl`, `reward-row-blocked.png`) |
+
+**Live confirmation owed.** The next `kk news generate` window's `wechatmp-pub` receipt is the end-to-end
+proof: the 文章 row must report `succeeded` with the draft saved and **no** 赞赏 warning, without
+`WECHATMP_ALLOW_PARTIAL_ENRICH`. Until that window runs, the fix is verified at unit + measurement level
+only — stated here rather than claimed as done.
 
 ### Review
 
@@ -170,3 +218,8 @@ would change a frozen request shape this task does not own.
 - Predecessors: 0260 (cancelled 2026-11-19, superseded), 0318 (done; 2026-10-21 live acceptance incl. 赞赏), 0272 (done). Owner feature: E92.
 
 ### History
+
+- 2026-11-20T22:57:50.795Z todo → wip (system)
+- 2026-11-20T22:57:52.043Z wip → testing (system)
+- 2026-11-20T22:57:53.223Z testing → done (system)
+
