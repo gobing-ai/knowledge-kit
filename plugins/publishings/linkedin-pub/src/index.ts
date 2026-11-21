@@ -472,7 +472,16 @@ export class LinkedinBrowserTransport implements PublishTransport {
                     });
                 })()`)
                 .catch(() => null);
-            throw new Error(`${String((error as Error)?.message ?? error)}${state ? ` — composer ${state}` : ''}`);
+            // A screenshot is the only way to see WHICH overlay is covering Post when the DOM
+            // reports the composer open and the typed text present (2026-11-20: media step).
+            const shot = await page
+                .screenshot({ path: `/tmp/kk-linkedin-send-${Date.now()}.png` })
+                .then((buffer: unknown) => (typeof buffer === 'string' ? buffer : `/tmp/kk-linkedin-send.png`))
+                .catch(() => null);
+            await page.screenshot({ path: '/tmp/kk-linkedin-send-latest.png' }).catch(() => null);
+            throw new Error(
+                `${String((error as Error)?.message ?? error)}${state ? ` — composer ${state}` : ''}${shot ? ` — screenshot /tmp/kk-linkedin-send-latest.png` : ''}`,
+            );
         });
         const send = page.locator(sendSelector).first();
         const enabled = await expectOutcome(async () => ((await send.isEnabled()) ? 'enabled' : null), {
