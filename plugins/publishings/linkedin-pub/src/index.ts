@@ -81,11 +81,21 @@ export const LINKEDIN_POST_SELECTORS = {
     // share surface is NOT a `[role="dialog"]`, so controls are page-scoped by text, with the old
     // class-based ladder kept as a fallback for accounts still on the previous UI.
     shareTrigger: [
+        // Measured 2026-11-20: `text="Start a post"` resolves to the inner text node's element, and
+        // clicking THAT does not open the composer (the run then timed out in the composer stage and
+        // reported "composer did not open … selector drift"). The has-text forms hit the clickable
+        // ancestor; the text form stays last for the previous UI.
+        'button:has-text("Start a post")',
+        'div[role="button"]:has-text("Start a post")',
         'text="Start a post"',
         'button.share-box-feed-entry__trigger',
         'button[aria-label*="Start a post" i]',
     ],
     composer: [
+        // Measured 2026-11-20: the editor IS the ProseMirror element (`div[role=textbox]
+        // [contenteditable=true].tiptap.ProseMirror`), not a descendant of it.
+        'div.ProseMirror[contenteditable="true"]',
+        'div[role="textbox"][contenteditable="true"]',
         '.tiptap.ProseMirror div[role="textbox"]',
         'div[role="textbox"].tiptap',
         '.tiptap.ProseMirror',
@@ -100,7 +110,10 @@ export const LINKEDIN_POST_SELECTORS = {
     ],
     fileInput: ['input[type="file"][accept*="image"]', 'input[type="file"]', '[role="dialog"] input[type="file"]'],
     send: [
+        // Measured 2026-11-20: a plain `<button>` whose text is exactly Post, inside a composer that
+        // carries NO dialog role — the dialog-scoped forms below could never match.
         'button:text-is("Post")',
+        'div[role="button"]:text-is("Post")',
         '[role="dialog"] button:text-is("Post")',
         '[role="dialog"] button.share-actions__primary-action',
     ],
@@ -441,6 +454,25 @@ export class LinkedinBrowserTransport implements PublishTransport {
         const sendSelector = await resolveSelector(page, LINKEDIN_POST_SELECTORS.send, {
             timeoutMs: this.stepTimeoutMs,
             label: 'linkedin Post button',
+        }).catch(async (error: unknown) => {
+            // The composer is a plain overlay (no dialog role), so a selector list that matches only
+            // inside `[role="dialog"]` reads as "not attached" while Post is plainly on screen. Report
+            // what the composer actually holds — and whether it is still open — instead of the list.
+            const state = await page
+                .evaluate(`(() => {
+                    const editor = document.querySelector('div.ProseMirror[contenteditable="true"], div[role="textbox"][contenteditable="true"]');
+                    const buttons = [...document.querySelectorAll('button, div[role="button"]')]
+                        .filter((n) => n.offsetWidth > 0)
+                        .map((n) => (n.getAttribute('aria-label') || n.textContent || '').replace(/\\s+/g, ' ').trim())
+                        .filter(Boolean).slice(-12);
+                    return JSON.stringify({
+                        composerOpen: editor !== null,
+                        textLen: (editor?.textContent || '').trim().length,
+                        buttons,
+                    });
+                })()`)
+                .catch(() => null);
+            throw new Error(`${String((error as Error)?.message ?? error)}${state ? ` — composer ${state}` : ''}`);
         });
         const send = page.locator(sendSelector).first();
         const enabled = await expectOutcome(async () => ((await send.isEnabled()) ? 'enabled' : null), {
