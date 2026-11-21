@@ -30,6 +30,13 @@ export interface PatchPostRequest {
     localCover: string;
     /** `YYYY-MM-DD` episode date used in the cross-link text. */
     dateIso: string;
+    /**
+     * The episode's frozen identity title (0385 R4), e.g. `第261120期 · Anthropic 上市，估值口径成为焦点`.
+     * Written to the zh post's `episode_title` frontmatter and used for the zh cross-link text, so the
+     * article states the same episode identity the podcast ships. Empty → the older series · date
+     * wording, which is what pre-0385 bundles carry.
+     */
+    episodeTitle?: string;
 }
 
 /** What the file pass changed; the caller commits exactly {@link PatchPostOutcome.written}. */
@@ -71,10 +78,16 @@ export const SERIES_NAMES: Record<PatchLocale, string> = {
     ja: 'デイリーAIシチュー',
 };
 
-export function crossLinkFor(locale: PatchLocale, dateIso: string, showNotesUrl: string): string {
+export function crossLinkFor(locale: PatchLocale, dateIso: string, showNotesUrl: string, episodeTitle = ''): string {
     const series = SERIES_NAMES[locale];
+    // The zh episode's frozen identity (0385) rides after the link, never inside the anchor: the site's
+    // `listen-link-series-name` gate requires the anchor text to name the canonical series and nothing
+    // else series-like. en/ja have no localized identity, so they keep the series · date wording.
     const links: Record<PatchLocale, string> = {
-        zh: `🎧 本期已同步制作为播客节目，[点击收听《${series} · ${dateIso}》](${showNotesUrl})。`,
+        zh:
+            episodeTitle !== ''
+                ? `🎧 本期已同步制作为播客节目，[点击收听《${series} · ${dateIso}》](${showNotesUrl})：${episodeTitle}。`
+                : `🎧 本期已同步制作为播客节目，[点击收听《${series} · ${dateIso}》](${showNotesUrl})。`,
         en: `🎧 This episode is also available as a podcast: [listen to ${series} · ${dateIso}](${showNotesUrl}).`,
         ja: `🎧 本エピソードはポッドキャストでも配信中：[${series} · ${dateIso} を聴く](${showNotesUrl})。`,
     };
@@ -153,12 +166,17 @@ export async function patchPostFiles(request: PatchPostRequest): Promise<PatchPo
             md = upsertFrontmatterKey(md, 'og_image', './assets/cover.png');
             images[locale] = './assets/cover.png';
         }
+        if (locale === 'zh' && (request.episodeTitle ?? '') !== '') {
+            // The article states the episode identity the podcast ships (0385). The site renders it
+            // under the H1; its SEO title stays the digest shape, so this is additive, not a rename.
+            md = upsertFrontmatterKey(md, 'episode_title', request.episodeTitle as string);
+        }
         if (request.showNotesUrl !== '') {
             // 2026-10-23: a previous run may have left a 🎧 cross-link line carrying a retired
             // series name — refresh that line in place instead of keeping it forever (the URL it
             // carries made a fresh append a no-op). A non-cross-link line mentioning the URL is
             // left alone; the fresh link is only appended when no line carries the URL at all.
-            const link = crossLinkFor(locale, request.dateIso, request.showNotesUrl);
+            const link = crossLinkFor(locale, request.dateIso, request.showNotesUrl, request.episodeTitle ?? '');
             const lines = md.split('\n');
             const carriesUrl = lines.some((line) => line.includes(request.showNotesUrl));
             if (!carriesUrl) {

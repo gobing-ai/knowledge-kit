@@ -1757,6 +1757,19 @@ function dailyPatchSurfdash(args: string[]): void {
         }
         const payload = join(workDir, '31-publish', `${runDate}_23_patch-surfdash_patch.json`);
         const podcastMeta = (pod.metadata ?? {}) as Record<string, unknown>;
+        // 0385 R4: the episode's frozen identity title is what the podcast ships (`第<issue>期 · <headline>`).
+        // The article states the same identity — the site renders it under its own SEO title, and the
+        // zh cross-link names it — so the two surfaces cannot carry different episode names.
+        const identity = readJson(join(workDir, '21-plan', `${runDate}_05_script_identity.json`)) as {
+            title?: unknown;
+            status?: unknown;
+        } | null;
+        const episodeTitle = identity?.status === 'frozen' && typeof identity.title === 'string' ? identity.title : '';
+        if (episodeTitle === '') {
+            console.error(
+                `patch-surfdash: no frozen episode identity in 21-plan/${runDate}_05_script_identity.json — the article keeps the series · date wording`,
+            );
+        }
         sted('write', payload, () =>
             writeJqText(payload, {
                 body: '',
@@ -1767,6 +1780,7 @@ function dailyPatchSurfdash(args: string[]): void {
                     showNotesUrl: typeof pod.url === 'string' ? pod.url : '',
                     dateIso: `${runDate.slice(0, 4)}-${runDate.slice(4, 6)}-${runDate.slice(6, 8)}`,
                     localCover: join(workDir, '23-cover', `${runDate}_07_cover_cover.png`),
+                    episodeTitle,
                 },
             }),
         );

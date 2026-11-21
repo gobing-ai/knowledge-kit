@@ -1653,6 +1653,38 @@ describe('surfdash-pub post-patch (2026-10-12 boundary move from the kk stage)',
         });
     });
 
+    test('patchPostFiles carries the frozen episode title to zh only: frontmatter + cross-link text', async () => {
+        await withTree(async (root, localCover) => {
+            // 0385 R4: the podcast ships `第<issue>期 · <headline>` and the article has to state the
+            // same episode identity. `episode_title` is the additive frontmatter field the site renders
+            // under its own SEO title; en/ja have no localized identity, so they stay untouched.
+            const episodeTitle = '第261120期 · Anthropic 上市，估值口径成为焦点';
+            await patchPostFiles({
+                postPath: post(root, 'zh'),
+                coverUrl: 'https://cdn.example/cover.png',
+                showNotesUrl: 'https://pod.example/i/1',
+                localCover,
+                dateIso: '2026-11-20',
+                episodeTitle,
+            });
+            const zh = await readFile(post(root, 'zh'), 'utf-8');
+            expect(zh).toContain(`episode_title: '${episodeTitle}'`);
+            // The anchor keeps the canonical series (site gate `listen-link-series-name`); the episode
+            // identity follows the link as prose, never inside the anchor text.
+            expect(zh).toContain('[点击收听《每日AI乱炖 · 2026-11-20》](https://pod.example/i/1)');
+            expect(zh).toContain(`：${episodeTitle}。`);
+            const en = await readFile(post(root, 'en'), 'utf-8');
+            expect(en).not.toContain('episode_title');
+            expect(en).toContain('[listen to Daily AI Stew · 2026-11-20](https://pod.example/i/1)');
+
+            // An episode without a frozen identity keeps the older series · date wording verbatim.
+            const legacy = crossLinkFor('zh', '2026-11-20', 'https://pod.example/i/1');
+            expect(legacy).toBe(
+                '🎧 本期已同步制作为播客节目，[点击收听《每日AI乱炖 · 2026-11-20》](https://pod.example/i/1)。',
+            );
+        });
+    });
+
     test('patchPostFiles adds the full-series-name listen link to zh, en and ja once the episode is published', async () => {
         await withTree(async (root, localCover) => {
             const jaPath = post(root, 'ja');

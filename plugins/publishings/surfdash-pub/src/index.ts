@@ -97,6 +97,8 @@ interface SurfdashPubOptions {
     localCover?: unknown;
     /** `patch`: `YYYY-MM-DD` episode date for the cross-link text. */
     dateIso?: unknown;
+    /** `patch`: the episode's frozen identity title (0385 R4); the zh post's `episode_title`. */
+    episodeTitle?: unknown;
 }
 
 /**
@@ -1001,7 +1003,10 @@ async function syncPost(options: SurfdashPubOptions): Promise<Result> {
 }
 
 /** `options.<key>` when it is a string, trimmed; else ''. `patch`'s four optional fields read this way. */
-function strOption(options: SurfdashPubOptions, key: 'coverUrl' | 'showNotesUrl' | 'localCover' | 'dateIso'): string {
+function strOption(
+    options: SurfdashPubOptions,
+    key: 'coverUrl' | 'showNotesUrl' | 'localCover' | 'dateIso' | 'episodeTitle',
+): string {
     const raw = options[key];
     return typeof raw === 'string' ? raw.trim() : '';
 }
@@ -1036,6 +1041,7 @@ async function patchPost(options: SurfdashPubOptions): Promise<Result> {
             showNotesUrl: strOption(options, 'showNotesUrl'),
             localCover: strOption(options, 'localCover'),
             dateIso: strOption(options, 'dateIso'),
+            episodeTitle: strOption(options, 'episodeTitle'),
         });
     } catch (error: unknown) {
         return fail(`patch error: ${error instanceof Error ? error.message : String(error)}`);

@@ -5515,6 +5515,43 @@ describe('daily-patch-surfdash git scoping and frontmatter (R6/R11)', () => {
         });
     });
 
+    it('carries the frozen episode identity into the patch payload, and drops a withheld one (0385 R4)', () => {
+        withTempDir((dir) => {
+            const fx = setupFixture(dir, 'https://cdn.example/c.png', 'Body.');
+            mkdirSync(join(fx.workDir, '21-plan'), { recursive: true });
+            const identityPath = join(fx.workDir, '21-plan', `${RUN_DATE}_05_script_identity.json`);
+            const identity = {
+                version: 1,
+                date: RUN_DATE,
+                issue: '260904',
+                headline: 'Anthropic 上市，估值口径成为焦点',
+                title: '第260904期 · Anthropic 上市，估值口径成为焦点',
+                coverHeadline: 'Anthropic 上市，估值口径成为焦点',
+                supportingSourceIds: [],
+                status: 'frozen',
+            };
+            const payloadOf = () =>
+                JSON.parse(
+                    readFileSync(join(fx.workDir, '31-publish', `${RUN_DATE}_23_patch-surfdash_patch.json`), 'utf-8'),
+                ) as { options: Record<string, unknown> };
+            writeFileSync(identityPath, JSON.stringify(identity), 'utf-8');
+
+            const res = run(['daily-patch-surfdash', fx.workDir, RUN_DATE, fx.root], { SURFDASH_AUTO_PUSH: '0' });
+            expect(res.status, res.stderr).toBe(0);
+            expect(payloadOf().options.episodeTitle).toBe(identity.title);
+
+            // Admission removed the headline's support: the record withholds the title, and the article
+            // must not carry an episode name the episode no longer stands behind.
+            writeFileSync(
+                identityPath,
+                JSON.stringify({ ...identity, title: null, headline: null, status: 'support-removed' }),
+                'utf-8',
+            );
+            run(['daily-patch-surfdash', fx.workDir, RUN_DATE, fx.root], { SURFDASH_AUTO_PUSH: '0' });
+            expect(payloadOf().options.episodeTitle).toBe('');
+        });
+    });
+
     it('refuses to commit when the checkout is not on main', () => {
         withTempDir((dir) => {
             const fx = setupFixture(dir, 'https://cdn.example/c.png', 'Body.');
