@@ -330,7 +330,10 @@ export class ThreadsPostBrowserTransport implements PublishTransport {
                 // leave-guard observed on 2026-11-20. `getByRole` derives the accessible name from the
                 // child text, so it names the control the user sees.
                 const roleEngine = page as unknown as {
-                    getByRole?: (role: string, options: { name: string; exact: boolean }) => { count(): Promise<number> };
+                    getByRole?: (
+                        role: string,
+                        options: { name: string; exact: boolean },
+                    ) => { count(): Promise<number> };
                 };
                 const byRole = roleEngine.getByRole?.('button', { name: 'Post', exact: true });
                 const roleCount = byRole === undefined ? 0 : await byRole.count().catch(() => 0);
@@ -389,7 +392,10 @@ export class ThreadsPostBrowserTransport implements PublishTransport {
             // The composer's Post is the LAST match (the feed's inline composer sits behind it).
             const rolePost = (
                 page as unknown as {
-                    getByRole: (role: string, options: { name: string; exact: boolean }) => {
+                    getByRole: (
+                        role: string,
+                        options: { name: string; exact: boolean },
+                    ) => {
                         last(): { click(options: { timeout: number }): Promise<unknown> };
                     };
                 }
