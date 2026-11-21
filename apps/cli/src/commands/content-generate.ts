@@ -61,8 +61,16 @@ const PARSE_JSON: (raw: string) => unknown = JSON.parse.bind(JSON);
 /** The topic profile of the news pipeline (`daily-extract` and `kk store select` both key on it). */
 const NEWS_TOPIC = 'ai-news';
 
-/** The three engines `generate-voice --engine` accepts (design §1.3). */
-const VOICE_ENGINES = ['voxcpm', 'gemini', 'omnivoice'] as const;
+/**
+ * The engines `generate-voice --engine` accepts (design §1.3).
+ *
+ * `voicebox` is the local REST renderer (`voice-gen`, the shared pipeline every other engine
+ * reuses): `daily-generate` has always mapped it (`VOICE_DRIVERS.voicebox = 'voice-gen'`,
+ * `plugins/kk/scripts/daily-stages.ts:1376`), but this list omitted it, so the one engine that needs
+ * no cloud credits could not be selected by the verb (2026-11-20: voxcpm measured ~19x realtime and
+ * its worker died mid-section, gemini's primary project answered HTTP 402 on every call).
+ */
+const VOICE_ENGINES = ['voxcpm', 'gemini', 'omnivoice', 'voicebox'] as const;
 type VoiceEngine = (typeof VOICE_ENGINES)[number];
 
 /**
@@ -70,7 +78,12 @@ type VoiceEngine = (typeof VOICE_ENGINES)[number];
  * `ominivoice` (its own key, kept as it is — a stage body is never edited here) while design §1.3
  * spells the flag value `omnivoice`.
  */
-const ENGINE_DRIVERS: Record<VoiceEngine, string> = { voxcpm: 'voxcpm', gemini: 'gemini', omnivoice: 'ominivoice' };
+const ENGINE_DRIVERS: Record<VoiceEngine, string> = {
+    voxcpm: 'voxcpm',
+    gemini: 'gemini',
+    omnivoice: 'ominivoice',
+    voicebox: 'voicebox',
+};
 
 /** The steps `generate-check --step` accepts for the news noun (design §1.3; the article column lives in `content-generate-article.ts`). */
 const NEWS_CHECK_STEPS = ['curate', 'script'] as const;
