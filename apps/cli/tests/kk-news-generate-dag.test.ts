@@ -68,6 +68,7 @@ const DESIGN_NODES = [
     'localize',
     'localize-check',
     'voice',
+    'voice-fallback-box',
     'voice-fallback',
     'voice-fallback2',
     'cards',
@@ -91,8 +92,9 @@ describe('kk-news-generate — AC1: twenty nodes, one executor variable, no padd
     it('declares exactly the designed node ids, in topological order', () => {
         expect(doc.name).toBe('kk-news-generate');
         expect(doc.kind).toBe('dag');
-        // 22 since 0409: the twenty design nodes plus `localize` and its deterministic gate.
-        expect(doc.nodes).toHaveLength(22);
+        // 23 since 0417: the twenty design nodes plus `localize` + its deterministic gate, and the
+        // `voice-fallback-box` attempt that puts the local Voicebox renderer before the cloud engines.
+        expect(doc.nodes).toHaveLength(23);
         expect(order).toEqual(DESIGN_NODES);
     });
 
@@ -162,6 +164,7 @@ describe('kk-news-generate — R7: the node bodies', () => {
             'script-check': `kk news generate-check --work-dir "\${vars.work_dir}" --step script`,
             render: `kk news generate-render --work-dir "\${vars.work_dir}"`,
             voice: `kk news generate-voice --work-dir "\${vars.work_dir}" --engine voxcpm`,
+            'voice-fallback-box': `kk news generate-voice --work-dir "\${vars.work_dir}" --engine voicebox`,
             'voice-fallback': `kk news generate-voice --work-dir "\${vars.work_dir}" --engine gemini`,
             'voice-fallback2': `kk news generate-voice --work-dir "\${vars.work_dir}" --engine omnivoice`,
             cards: `kk news generate-cards --work-dir "\${vars.work_dir}"`,
@@ -245,16 +248,18 @@ describe('kk-news-generate — R7: the node bodies', () => {
     });
 
     it('gates the voice chain and the card render on a failed step instead of a hard node error', () => {
-        // voice3's posture: the primary and the middle attempt continue, the last one is loud.
+        // voice3's posture: the primary and the middle attempts continue, the last one is loud.
         expect(byId.get('voice')?.action?.onError).toBe('continue');
+        expect(byId.get('voice-fallback-box')?.action?.onError).toBe('continue');
         expect(byId.get('voice-fallback')?.action?.onError).toBe('continue');
         expect(byId.get('voice-fallback2')?.action?.onError).toBeUndefined();
         expect(byId.get('cards')?.action?.onError).toBe('continue');
-        // The chain edges are the design's: each fallback hangs off the attempt before it.
-        expect(byId.get('voice-fallback')?.dependsOn).toEqual(['voice']);
+        // 0417 R3: local voicebox precedes the cloud engines; each fallback hangs off the one before.
+        expect(byId.get('voice-fallback-box')?.dependsOn).toEqual(['voice']);
+        expect(byId.get('voice-fallback')?.dependsOn).toEqual(['voice-fallback-box']);
         expect(byId.get('voice-fallback2')?.dependsOn).toEqual(['voice-fallback']);
         // And each fallback only runs while no engine left a passing audio verdict.
-        for (const id of ['voice-fallback', 'voice-fallback2']) {
+        for (const id of ['voice-fallback-box', 'voice-fallback', 'voice-fallback2']) {
             expect(condition(byId.get(id) as Node)).toContain('"passed": true');
             expect(condition(byId.get(id) as Node)).toContain('30-audio');
         }

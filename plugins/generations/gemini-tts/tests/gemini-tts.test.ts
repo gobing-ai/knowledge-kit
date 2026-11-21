@@ -240,7 +240,7 @@ describe('createGeminiVoiceClient', () => {
     it('R6 — non-retryable 4xx fails at once; network errors retry then fail', async () => {
         const bad = stubFetch(() => new Response('not json', { status: 400 }));
         const c1 = createGeminiVoiceClient({ env: { GEMINI_API_KEY: 'k' }, fetch: bad.fn, sleep: noSleep });
-        await expect(c1.generate(body())).rejects.toThrow(/HTTP 400 after 1 attempt\(s\): not json/);
+        await expect(c1.generate(body())).rejects.toThrow(/HTTP 400 is not retryable .*not json/);
         expect(bad.calls).toHaveLength(1);
 
         let n = 0;
@@ -254,9 +254,54 @@ describe('createGeminiVoiceClient', () => {
             sleep: noSleep,
         });
         await expect(c2.generate(body({ text: 'x'.repeat(40) }))).rejects.toThrow(
-            /request failed after 3 attempts: ECONNRESET/,
+            /request failed after 3 attempt\(s\) within 180000ms: ECONNRESET/,
         );
         expect(n).toBe(3);
+    });
+
+    it('R1 — HTTP 401/402/403 fail fast with no retry and no backoff sleep', async () => {
+        for (const status of [401, 402, 403]) {
+            const sleeps: number[] = [];
+            const { fn, calls } = stubFetch(() =>
+                Response.json({ error: { message: 'prepay credits depleted' } }, { status }),
+            );
+            const client = createGeminiVoiceClient({
+                env: { GEMINI_API_KEY: 'k' },
+                fetch: fn,
+                sleep: async (ms) => {
+                    sleeps.push(ms);
+                },
+            });
+            await expect(client.generate(body())).rejects.toThrow(
+                new RegExp(`HTTP ${status} is not retryable .*prepay credits depleted`),
+            );
+            expect(calls).toHaveLength(1);
+            expect(sleeps).toEqual([]);
+        }
+    });
+
+    it('R1 — one per-segment budget bounds attempts and backoff on a stalling endpoint', async () => {
+        const started = Date.now();
+        let calls = 0;
+        const stalling = (async () => {
+            calls += 1;
+            await Bun.sleep(120);
+            throw new Error('The operation timed out.');
+        }) as unknown as typeof fetch;
+        const client = createGeminiVoiceClient({
+            env: {
+                GEMINI_API_KEY: 'k',
+                GEMINI_TTS_MAX_ATTEMPTS: '20',
+                GEMINI_TTS_TIMEOUT_MS: '100',
+                GEMINI_TTS_SEGMENT_TIMEOUT_MS: '250',
+            },
+            fetch: stalling,
+            sleep: (ms) => Bun.sleep(ms),
+        });
+        await expect(client.generate(body())).rejects.toThrow(/250ms/);
+        // The attempt cap alone would have allowed 20 stalled attempts (~2.4 s of pure stalling).
+        expect(calls).toBeLessThanOrEqual(2);
+        expect(Date.now() - started).toBeLessThan(2000);
     });
 
     it('R1 — a response without audio is an error', async () => {

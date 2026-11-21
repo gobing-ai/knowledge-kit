@@ -4,7 +4,7 @@ name: "Optimize daily-xhs-render cards stage: reuse browser instance and paralle
 status: todo
 template: issue
 created_at: 2026-11-21T03:56:36.426Z
-updated_at: "2026-11-21T03:58:34.977Z"
+updated_at: "2026-11-21T06:06:45.073Z"
 feature_id: F61
 
 tags: ["perf", "cards", "deferred"]
@@ -42,6 +42,32 @@ Scenario: AC2 — Bounded concurrency reduces wall time without OOM (req: R2, R4
 ### Q&A
 
 <!-- Clarifications and triage decisions. Keep empty if none. -->
+
+#### Blocked on a decision — 2026-11-20 (batch run 0415–0419)
+
+Refine evidence, gathered before any code was written:
+
+- **The root-cause attribution is wrong.** `daily-xhs-render` does not render HTML per card; it runs
+  `kk executor run image-gen` **once per card as a subprocess**
+  (`plugins/kk/scripts/daily-stages.ts:6253-6310`), and the per-render cost that dominates 27–46 min
+  is the **provider image render** (h3-local: 3–28 min per render, `docs/04_DESIGN.md` image-gen
+  provider table), not a Chromium launch. The Chromium launch happens inside each `image-gen`
+  process (`plugins/generations/image-gen/src/compose/chromium.ts:88-105`) and costs ~1–3 s.
+  Hoisting the browser to the stage therefore requires a **multi-Doc batch invocation of
+  `image-gen`** (one process, N cards, one browser) and saves seconds per card, not minutes.
+- **The lever that would reach ≤8–12 min is explicitly forbidden by a prior decision.** The card loop
+  is sequential *on purpose*: "Sequential on purpose: one provider call per card … and the first
+  failure stops the spend — later cards stay unrendered for a resume run to pick up"
+  (`plugins/kk/scripts/daily-stages.ts:6237-6242`, task 0219 R1). R2's parallel provider calls
+  reverse that spend-safety rule: on a flaky provider a parallel fan-out bills every remaining card
+  before the first failure is seen.
+- **So this needs the operator's call, not code:** (a) keep fail-fast spend and accept 27–46 min,
+  (b) allow bounded parallel provider calls (2–3) and accept that one bad render bills the rest of
+  the set, or (c) attack the render cost itself (smaller/faster preset, or a cached-illustration
+  path) instead of the orchestration. R4's "≤8–12 min verified on a real run" is only reachable
+  under (b) or (c).
+
+No product source was changed for this task.
 
 ### Design
 

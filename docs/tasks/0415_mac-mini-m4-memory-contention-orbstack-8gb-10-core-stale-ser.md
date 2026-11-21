@@ -4,7 +4,7 @@ name: Mac mini M4 memory contention (OrbStack 8GB/10-core, stale servers) and ex
 status: todo
 template: issue
 created_at: 2026-11-21T03:56:31.760Z
-updated_at: "2026-11-21T03:58:08.156Z"
+updated_at: "2026-11-21T06:06:33.749Z"
 feature_id: F61
 
 tags: ["perf", "ops", "mac-mini"]
@@ -55,6 +55,34 @@ Scenario: AC4 — External SSD offload is safely configured or explicitly skippe
 
 <!-- Clarifications and triage decisions. Keep empty if none. -->
 
+#### Execution record — 2026-11-20 (batch run 0415–0419, worktree `sp-runall-0415-0419-1cca`)
+
+- **R1 done.** `orb config set memory_mib 2048` + `orb config set cpu 4`, then `orb restart -a`.
+  Verified: `orb config show` → `cpu: 4`, `memory_mib: 2048`; `orb status` → Running; all eight
+  homelab containers back and healthy (homestarter, 5× immich, caddy, cloudflared, claude-cc-bridge).
+  `sysctl vm.swapusage` went `used = 3887 M` → `used = 2211 M` right after the restart, but read
+  `2609 M` later while two other agent sessions and a full quality-gate run were in flight, so the
+  "swap below 1 GB under steady state" clause still needs an **idle** measurement to call AC1 fully MET.
+- **R2 done, with one correction to the premise.** The three stale gateways did go: `:3002`
+  (`spur self serve`, 11 h) and idle `:3100` (lyria-3-pro) are no longer listening (they ended during
+  the run), and `:3003` remains the one project gateway. `:3070` is **not** stale — killing it
+  respawned a fresh `spur self serve --gateway --port 3070` within 5 s, so it is supervised
+  infrastructure (login item) and was left running rather than fought.
+- **R3 NOT MET — the premise is wrong.** Voicebox's `backend_variant: "cpu"` is not a
+  memory-pressure symptom. After `pkill -f voicebox-server` and a clean relaunch with the same argv,
+  `/health` reported `gpu_available: true, backend_variant: "cpu"`; after a live render that loaded
+  the model (`model_loaded: true`, a 2.6 s 1.7B utterance in 40 s) it still reported `"cpu"`. So the
+  CPU path is Voicebox's own MLX backend selection on this host and a restart cannot fix it. The
+  mitigation that shipped today is task **0417's** `voice-gen` CPU-fallback guard (loud warning, or
+  hard failure under `VOICEBOX_REQUIRE_GPU=1`), which makes the ~5.6x RTF degradation impossible to
+  miss. AC3 should be re-scoped to "the degradation is never silent", or Voicebox needs its own fix.
+- **R4 done (HF cache only).** 20 GB `~/.cache/huggingface` rsync'd to
+  `/Volumes/RTK9210-FLASH/cache/huggingface` (verified `20G` on the volume), then `HF_HOME` set for
+  `voxcpm-tts` in `~/.config/kk/config.yaml` (backup: `~/.config/kk/backups/config.yaml.pre-0415-*`).
+  `works_dir` / `store.db_path` deliberately stay on internal NVMe per ADR-042. Unmount guard: a
+  missing volume cannot be created under root-owned `/Volumes`, so a model load fails loudly instead
+  of silently caching internally — documented inline at the config key.
+
 ### Design
 
 - **Memory reclamation first:** Lowering OrbStack from 8 GB/10 cores to 2 GB/4 cores immediately returns ~6 GB of unified memory to macOS and Metal/MPS workloads.
@@ -76,7 +104,16 @@ Scenario: AC4 — External SSD offload is safely configured or explicitly skippe
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+| File | What / why |
+| --- | --- |
+| `~/.config/kk/config.yaml:110` | R4: `HF_HOME` for `voxcpm-tts` points at the external SSD (`/Volumes/RTK9210-FLASH/cache/huggingface`, 20 GB rsync'd first so nothing re-downloads), with the unmount guard documented in place — a missing volume cannot be created under root-owned `/Volumes`, so the model load fails loudly instead of silently caching on the internal disk. `works_dir` and `store.db_path` stay internal per ADR-042. |
+| `docs/tasks/0415_mac-mini-m4-memory-contention-orbstack-8gb-10-core-stale-ser.md:1` | Live-op evidence for R1–R3 (below); no product source changes — this task mutates the host, not the repo. |
+
+**Live evidence (2026-11-20, this session).**
+
+- **R1 — OrbStack capped and restarted.** `orb config set memory_mib 2048` + `cpu 4` then `orb restart -a`; `orb config show` now reports `cpu: 4`, `memory_mib: 2048`, `orb status` = Running, and all eight homelab containers came back healthy (homestarter, 5× immich, caddy, cloudflared, claude-cc-bridge). Swap went from `used = 3887 M` to `used = 2211 M` immediately after the restart (still 2.2–2.6 GB under the two concurrent agent sessions that were running during the measurement, so the "<1 GB steady state" clause is not yet proven — it needs an idle measurement).
+- **R2 — stale gateways cleared.** `:3002` (`spur serve`, 11 h) and `:3100` (`node`/`lyria-3-pro`, idle) are gone; `:3003` remains the one project gateway (`spur self serve --cwd /Users/robin/xprojects/knowledge-kit`). `:3070` is **not** stale: killing it respawned a fresh `spur self serve --gateway --port 3070` within 5 s, so it is supervised infrastructure and stays.
+- **R3 — Voicebox did not recover MPS (NOT MET).** After `pkill -f voicebox-server` and a clean relaunch with the same argv, `/health` still reports `gpu_available: true` with `backend_variant: "cpu"` — and it still reports that *after* a live render loads the model (`model_loaded: true`, a 2.6 s 1.7B render in 40 s). So the CPU path is Voicebox's own MLX/backend selection on this host, not a memory-pressure symptom, and a restart cannot fix it. The mitigation shipped today is task 0417's `voice-gen` CPU-fallback guard (loud warning, or hard failure under `VOICEBOX_REQUIRE_GPU=1`), which makes the 5.6x RTF degradation impossible to miss.
 
 ### Testing
 

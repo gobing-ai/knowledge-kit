@@ -1,3 +1,5 @@
+import { echoError } from '@gobing-ai/ts-utils';
+
 export interface EffectConfig {
     type: string;
     enabled?: boolean;
@@ -54,6 +56,35 @@ export interface VoiceboxClientOptions {
     sleep?: (ms: number) => Promise<void>;
 }
 
+/** `/health` fields the CPU-fallback guard reads (observed live shape, 2026-11-20). */
+export interface VoiceboxHealth {
+    status?: string;
+    gpu_available?: boolean;
+    gpu_type?: string;
+    backend_type?: string;
+    backend_variant?: string;
+}
+
+/** Backend variants that mean the GPU path is actually executing renders. */
+const GPU_BACKENDS = new Set(['gpu', 'mps', 'metal', 'cuda']);
+
+/**
+ * Voicebox reports `gpu_available: true` while rendering on `backend_variant: "cpu"` (~5.6x RTF).
+ * Returns the payload when the GPU exists but is not used, so the degradation is surfaced instead of
+ * silently costing an hour per episode (0417 R2).
+ */
+export function detectCpuFallback(payload: VoiceboxHealth): VoiceboxHealth | undefined {
+    if (payload.gpu_available !== true) return undefined;
+    const variant = (payload.backend_variant ?? '').toLowerCase();
+    if (!variant || GPU_BACKENDS.has(variant)) return undefined;
+    return payload;
+}
+
+/** `VOICEBOX_REQUIRE_GPU` turns the CPU-fallback warning into a hard failure. */
+function requireGpu(env: Record<string, string | undefined>): boolean {
+    return ['1', 'true', 'yes'].includes((env.VOICEBOX_REQUIRE_GPU ?? '').toLowerCase());
+}
+
 /**
  * Creates a client for the Voicebox local REST API.
  */
@@ -79,8 +110,9 @@ export function createVoiceboxClient(options: VoiceboxClientOptions = {}): Voice
         url,
 
         async health(): Promise<void> {
+            let res: Response;
             try {
-                const res = await customFetch(`${url}/health`, { signal: AbortSignal.timeout(requestTimeoutMs) });
+                res = await customFetch(`${url}/health`, { signal: AbortSignal.timeout(requestTimeoutMs) });
                 if (!res.ok) {
                     throw new Error(`HTTP ${res.status} ${res.statusText}`);
                 }
@@ -89,6 +121,23 @@ export function createVoiceboxClient(options: VoiceboxClientOptions = {}): Voice
                 throw new Error(
                     `Voicebox health check failed at ${url}: ${reason} — is Voicebox.app running with its REST server enabled? (restart the app or fix VOICEBOX_URL)`,
                 );
+            }
+            // body read is best-effort: an older/partial /health must not fail the run (its JSON shape
+            // is not part of the client contract), only the CPU-fallback signal matters here.
+            let payload: VoiceboxHealth | undefined;
+            try {
+                payload = (await res.json()) as VoiceboxHealth;
+            } catch {
+                payload = undefined;
+            }
+            const fallback = payload && detectCpuFallback(payload);
+            if (fallback) {
+                const detail = `backend_variant: "${fallback.backend_variant}", gpu_available: true, gpu_type: "${fallback.gpu_type ?? 'unknown'}"`;
+                const message = `Voicebox at ${url} is rendering on CPU (${detail}) — expect ~5.6x realtime degradation. Restart Voicebox.app while Metal is free, or set VOICEBOX_REQUIRE_GPU=0 to accept it.`;
+                if (requireGpu(process.env)) {
+                    throw new Error(`voice-gen: ${message}`);
+                }
+                echoError(`voice-gen: warning: ${message}`);
             }
         },
 

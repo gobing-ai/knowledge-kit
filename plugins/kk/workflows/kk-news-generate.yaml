@@ -364,9 +364,29 @@ nodes:
       options:
         command: 'kk news generate-voice --work-dir "${vars.work_dir}" --engine voxcpm'
 
-  - id: voice-fallback
-    description: "Fallback 1: gemini — runs when no engine has left a passing audio verdict (the content JSON is the evidence; `grep` keeps `jq` out of the graph)"
+  - id: voice-fallback-box
+    description: >-
+      Fallback 1: voicebox — the local Voicebox REST renderer (`voice-gen`), no cloud credits and no
+      in-process ASR, so it is tried before the cloud engines. It was previously reachable only by
+      hand (2026-11-20: voxcpm ~19x realtime on CPU, gemini HTTP 402 on every call, and the episode
+      was rescued with `--engine voicebox` after 55 min of failed fallbacks). The node also warns
+      loudly when Voicebox answers `gpu_available: true` with `backend_variant: "cpu"`.
     dependsOn: [voice]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          ! grep -q '"passed": true' "${vars.work_dir}/30-audio/${vars.run_date}_11_generate_content.json" 2>/dev/null
+          && grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null
+    action:
+      kind: shell
+      onError: continue
+      options:
+        command: 'kk news generate-voice --work-dir "${vars.work_dir}" --engine voicebox'
+
+  - id: voice-fallback
+    description: "Fallback 2: gemini — runs when no local engine has left a passing audio verdict (the content JSON is the evidence; `grep` keeps `jq` out of the graph); HTTP 401/402/403 now fail fast instead of retrying for minutes"
+    dependsOn: [voice-fallback-box]
     condition:
       kind: shell
       options:
@@ -380,7 +400,7 @@ nodes:
         command: 'kk news generate-voice --work-dir "${vars.work_dir}" --engine gemini'
 
   - id: voice-fallback2
-    description: "Fallback 2 (last, loud): omnivoice — the run fails here if three engines could not render the script"
+    description: "Fallback 3 (last, loud): omnivoice — OOM-prone on a 16 GB host (exit 137 measured twice, 32 min and 80 min in), so it stays the last resort; the run fails here if four engines could not render the script"
     dependsOn: [voice-fallback]
     condition:
       kind: shell

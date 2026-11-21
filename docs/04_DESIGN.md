@@ -1623,6 +1623,7 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `KK_CONFIG` | no | Path to the operator YAML (`works_dir`, workflow defaults, `plugins.<collection>.<name>.env`). Default: `~/.config/kk/config.yaml` |
 | `FIRECRAWL_API_KEY` | yes (web-search live) | Bearer token for the live Firecrawl client (task 0057; selected when `fixture` is absent/false) — unset → exit 1, no `--out` (fail loud) |
 | `VOICEBOX_URL` | no (voice-gen) | Origin for Voicebox REST API (default: `http://127.0.0.1:17493`). Local origins (`127.0.0.1`/`localhost`/`::1`) are **auto-started** when not already healthy (0146): voice-gen spawns the server binary detached, polls `/health` for 30s (500ms interval, fixed defaults), logs stderr to `/tmp/voicebox-server.log`. Non-local URLs and a missing binary (`VOICEBOX_SERVER_BIN`, default `/Applications/Voicebox.app/Contents/MacOS/voicebox-server`; data dir `VOICEBOX_DATA_DIR`) are configuration errors — fail loud, never spawn |
+| `VOICEBOX_REQUIRE_GPU` | no (voice-gen) | `1`/`true`/`yes` turns the silent-CPU-fallback report into a failure. `/health` answering `gpu_available: true` with a non-GPU `backend_variant` (e.g. `cpu`, measured at ~5.6x RTF on 2026-11-20) always logs a loud warning; this flag makes it fatal instead (task 0417 R2) |
 | `DAILYNEWS_LANGUAGE` | no (dailynews-gen) | Broadcast language passed through `kk executor run`; `zh` (default) or `en` |
 | `DAILYNEWS_TITLE` | no (dailynews-gen) | Optional broadcast title passed through `kk executor run` |
 | `VOICEBOX_DEFAULT_PROFILE` | no (dailynews-gen/voice-gen/omni-voice-gen/gemini-tts) | Default profile name/ID when the news workflow or segment/doc omits profile |
@@ -1660,6 +1661,7 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `GEMINI_TTS_ASR_MODEL` | no (gemini-tts) | Text model for verbatim transcription (default `gemini-3.8-flash`) |
 | `GEMINI_TTS_MAX_ATTEMPTS` | no (gemini-tts) | Retry cap for 429, 5xx, and network errors (default 4) |
 | `GEMINI_TTS_TIMEOUT_MS` | no (gemini-tts) | Per-request `AbortSignal.timeout` in ms (default `120000`) |
+| `GEMINI_TTS_SEGMENT_TIMEOUT_MS` | no (gemini-tts) | Wall-clock ceiling for ONE segment across every attempt and backoff (default `180000`), so a stalling endpoint cannot multiply the per-request timeout by the attempt count. HTTP 400/401/402/403/404 are terminal — auth/billing failures fail fast instead of retrying (task 0417 R1) |
 | `VOXCPM_MODEL` | no (voxcpm-tts) | VoxCPM model id or local snapshot dir (default `openbmb/VoxCPM2`); resolved and retained explicitly before load and checked against vendor exclusion |
 | `VOXCPM_DEVICE` | no (voxcpm-tts) | `auto` (default), `cpu`, `cuda`, `mps`; an unavailable requested device fails |
 | `VOXCPM_PROFILES_PATH` | no (voxcpm-tts) | Path to the frozen `profiles` registry (default `<plugin-root>/profiles.json`) |
