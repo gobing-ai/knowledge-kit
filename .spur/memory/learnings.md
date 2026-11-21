@@ -2659,3 +2659,10 @@ Verification of this wrap
   defect and its second on a coverage-tracefile artifact; both were pre-existing, and each was
   verified against the base ref before touching anything.
 
+## 2026-11-21 — G16 (`0420`, `0421`)
+
+- **0420:** Isolating Python NDJSON worker stdout via `os.dup(1)` + `os.dup2(2, 1)` before importing PyTorch/Transformers prevents native model logs from corrupting JSONL frames; every configured model, cache, and profile path must be canonicalized and rejected if it resolves into `vendors/`.
+- **0420:** `bunfig.toml` enables `coverage = true` globally and ignores `--no-coverage`, so partial `bun test` commands overwrite `.coverage/lcov.info` and trip `rules:post` (`coverage-gate`) unless `--coverage-dir=.works/tmp/coverage-changed` is passed.
+- **0421:** Data-driven `BATCH_MANIFEST_CONFIG` in `plugins/kk/scripts/daily-stages.ts` generalizes single-worker batch manifest routing (`VOXCPM_BATCH_MANIFEST`, `VIBEVOICE_BATCH_MANIFEST`) and isolates per-driver audio cache keys cleanly without duplicating driver branches.
+- **0421:** `spur workflow commit-guard-stage` filters `.spur/*` as bookkeeping, so tracked `.spur/` edits (`.spur/rules/strict/runtime-boundaries.yaml`, `.spur/memory/learnings.md`) require explicit `git add -- <path>` after verifying `commit-guard-check` reports `{"foreign":[]}`.
+
