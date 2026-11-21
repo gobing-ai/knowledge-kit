@@ -2,24 +2,29 @@ import { describe, expect, test } from 'bun:test';
 import { buildWechatArticleContent, PLACEHOLDER_LINKS } from '../scripts/daily-stages';
 
 /**
- * The daily builder's 公众号 metadata (0406 R3).
+ * The daily builder's 公众号 metadata — the 赞赏 request (0406 R3, reversed 2026-11-20).
  *
- * Failure this pins: the row asked for 赞赏 unconditionally (`reward: true`), and on an account the
- * platform has not authorized for 赞赏 the plugin reported a capability warning that `flow.ts` turned
- * into `ok: false` — so every daily draft failed until the operator set
- * `WECHATMP_ALLOW_PARTIAL_ENRICH=1` by hand (2026-11-16, 11-18, 11-19). Measured 2026-11-20: the row
- * renders `无法开启赞赏，因为还没有赞赏账户授权给本公众号` with a 0×0 box, so no retry can enable it.
+ * Failure history this pins: the row asked for 赞赏 unconditionally, and on an account the platform
+ * has not authorized for 赞赏 the plugin reported a capability refusal that `flow.ts` turned into
+ * `ok: false` — so every daily draft failed until the operator set
+ * `WECHATMP_ALLOW_PARTIAL_ENRICH=1` by hand (2026-11-16, 11-18, 11-19).
+ *
+ * 0406 R3 answered by dropping the request (`reward: false`). The operator reversed that on
+ * 2026-11-20 (commit ca24a947: "赞赏 ON"): the tolerance now lives in config
+ * (`~/.config/kk/config.yaml` → `WECHATMP_ALLOW_PARTIAL_ENRICH: "1"`), so a refusal warns once and
+ * keeps the healthy draft, and the request follows the operator again. Flipping `reward` without
+ * that tolerance reinstates the 11-16 failure — the coupling is the thing to keep.
  *
  * The other metadata duties are not this change's: 原创, 合集, 创作来源 must keep being requested.
  */
-describe('daily 公众号 metadata — 赞赏 is not requested for an unauthorized account', () => {
+describe('daily 公众号 metadata — 赞赏 is requested, with the refusal tolerated', () => {
     const article = { title: '标题', body: '正文' };
     const base = { links: PLACEHOLDER_LINKS, publishStatus: 'draft' as const, collection: '每日AI乱炖' };
 
-    test('the 文章 variant carries reward: false with the measured reason named in the source', () => {
+    test('the 文章 variant requests 赞赏, matching the 2026-11-20 operator decision', () => {
         const content = buildWechatArticleContent(article, base);
         const wechatmp = (content.metadata as Record<string, unknown>).wechatmp as Record<string, unknown>;
-        expect(wechatmp.reward).toBe(false);
+        expect(wechatmp.reward).toBe(true);
     });
 
     test('the fields that are still requested stay requested', () => {
@@ -41,7 +46,7 @@ describe('daily 公众号 metadata — 赞赏 is not requested for an unauthoriz
             audioTitle: '第 1 期',
         });
         const wechatmp = (content.metadata as Record<string, unknown>).wechatmp as Record<string, unknown>;
-        expect(wechatmp.reward).toBe(false);
+        expect(wechatmp.reward).toBe(true);
         expect(wechatmp.audioPath).toBe('/tmp/episode.mp3');
     });
 });
