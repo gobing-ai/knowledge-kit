@@ -198,6 +198,19 @@ describe('generate step verbs — in-process rows', () => {
         expect(stageCalls.some((call) => call[0] === 'daily-generate')).toBe(true);
     });
 
+    it('generate-voice accepts the local voicebox engine and forwards its driver token (2026-11-20)', async () => {
+        // The stage has mapped `voicebox -> voice-gen` since 0257, but the verb's closed engine list
+        // omitted it, so the only renderer that needs no cloud credits could not be selected.
+        reset();
+        const dir = workDir('voice-engine-voicebox');
+        const result = await run(['news', 'generate-voice', '--work-dir', dir, '--engine', 'voicebox']);
+        expect(result.code).toBe(0);
+        const generate = stageCalls.find((call) => call[0] === 'daily-generate');
+        expect(generate).toBeDefined();
+        // daily-generate's 5th argument is the driver token the stage resolves to a plugin.
+        expect(generate?.[5]).toBe('voicebox');
+    });
+
     it('generate-voice rejects an unknown engine with exit 2', async () => {
         reset();
         const dir = workDir('voice-engine');
@@ -260,10 +273,11 @@ describe('generate step verbs — in-process rows', () => {
             JSON.stringify([{ id: 'a' }]),
         );
         const result = await run(['news', 'report', '--work-dir', dir]);
-        process.stdout.write(
-            `REPORTPROBE ${JSON.stringify({ code: result.code, out: result.out.slice(-200), err: result.err.slice(-200), page: existsSync(join(dir, '5-report', 'generation.md')) })}\n`,
-        );
-        expect([0, 1]).toContain(result.code);
+        expect(result.code).toBe(0);
+        // The verb's own contract: the page exists at the design's name, and the row's one JSON object
+        // carries its path (the ledger sync warns on the stubbed spur and never fails the verb).
+        expect(existsSync(join(dir, '5-report', 'generation.md'))).toBe(true);
+        expect(result.out).toContain('5-report/generation.md');
     }, 30_000);
 
     it('report writes the page and returns the summary', async () => {

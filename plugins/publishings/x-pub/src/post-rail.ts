@@ -32,7 +32,7 @@ import {
 import type { BrowserLauncher, IsAuthenticatedPredicate } from '@gobing-ai/ts-browser-automation';
 import { withProfilePage } from '@gobing-ai/ts-browser-automation';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
-import type { Locator, Page } from 'playwright';
+import type { Page } from 'playwright';
 
 const TARGET = 'x';
 const LOGIN_INSTRUCTION = 'bun plugins/publishings/x-pub/src/profile-check.ts login';
@@ -229,19 +229,6 @@ export class XPostBrowserTransport implements PublishTransport {
      */
     private async typeAndEnable(page: Page, text: string): Promise<string | null> {
         const textBox = page.locator(POST_SELECTORS.text[0]).first();
-        // Whichever submit control this surface renders — the page composer or the inline one.
-        const submitOf = async (): Promise<Locator> => {
-            for (const selector of X_POST_SUBMITS) {
-                if (
-                    (await page
-                        .locator(selector)
-                        .count()
-                        .catch(() => 0)) > 0
-                )
-                    return page.locator(selector).first();
-            }
-            return page.locator(X_POST_SUBMIT).first();
-        };
         for (let attempt = 1; attempt <= 3; attempt++) {
             await page.waitForTimeout(250);
             const focused = await textBox.click({ force: true }).then(
@@ -258,7 +245,23 @@ export class XPostBrowserTransport implements PublishTransport {
             await textBox.press('Backspace').catch(() => {});
             await textBox.pressSequentially(text, { delay: 8 });
             const enabled = await expectOutcome(
-                async () => ((await (await submitOf()).isEnabled().catch(() => false)) ? 'post enabled' : null),
+                async () => {
+                    // Whichever submit control this surface renders: the page composer's
+                    // `tweetButton`, or the inline composer's `tweetButtonInline` on /home. Asked by
+                    // enablement, never by attachment — the page-scoped control is gone the moment the
+                    // surface navigates, and an absent control simply reads disabled.
+                    for (const selector of X_POST_SUBMITS) {
+                        if (
+                            await page
+                                .locator(selector)
+                                .first()
+                                .isEnabled()
+                                .catch(() => false)
+                        )
+                            return 'post enabled';
+                    }
+                    return null;
+                },
                 // One step, capped at 10s: a caller may shrink the step (tests), never stretch it.
                 { timeoutMs: Math.min(10_000, this.stepTimeoutMs), label: `x post enabled (attempt ${attempt})` },
             );
