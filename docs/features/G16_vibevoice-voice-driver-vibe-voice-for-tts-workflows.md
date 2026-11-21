@@ -2,11 +2,11 @@
 schema_version: 1
 id: "G16"
 name: "VibeVoice voice driver (vibe-voice) for TTS workflows"
-status: verifying
+status: done
 priority: P2
 tags: []
 created_at: "2026-11-21T07:38:01.755Z"
-updated_at: "2026-11-21T09:49:18.411Z"
+updated_at: "2026-11-21T17:38:36.873Z"
 ---
 
 # G16: VibeVoice voice driver (vibe-voice) for TTS workflows
@@ -93,4 +93,5 @@ Feature: VibeVoice voice driver (vibe-voice) for TTS workflows
 
 - 2026-11-21T09:04:31.199Z backlog → active (system)
 - 2026-11-21T09:49:18.411Z active → verifying (system)
+- 2026-11-21T17:38:36.873Z verifying → done (system)
 
