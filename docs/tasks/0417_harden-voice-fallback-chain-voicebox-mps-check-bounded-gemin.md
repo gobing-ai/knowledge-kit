@@ -110,7 +110,7 @@ Scenario: AC3 — Workflow fallback chain includes voicebox and avoids silent OO
 
 ### Review
 
-Verdict: **PASS** (full cert: `.spur/run/3cfc7ed0-4e8a-4d0a-aceb-691210d0b269-review-cert.md`)
+Verdict: **PASS** (evidence: `.spur/memory/evidence/0417-verdict.json`)
 
 | Lens | Result |
 | --- | --- |

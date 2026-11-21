@@ -20,7 +20,7 @@ function withFixtureDir<T>(fn: (ctx: { dir: string; binDir: string; date: string
     const shimPath = join(binDir, 'kk');
     const shimScript = `#!/usr/bin/env bun
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 
 const args = process.argv.slice(2);
 const logFile = process.env.KK_SHIM_LOG;
@@ -56,13 +56,19 @@ if ((failAt >= 0 && callIndex === failAt) || (failFrom >= 0 && callIndex >= fail
     process.exit(1);
 }
 
-if (outPath) {
-    const wavPath = outPath.replace(/\\.json$/, '.wav');
+const batchTargets: Array<{ in: string; out: string }> = process.env.VOXCPM_BATCH_MANIFEST
+    ? JSON.parse(readFileSync(process.env.VOXCPM_BATCH_MANIFEST, 'utf-8'))
+    : outPath
+      ? [{ in: inPath, out: outPath }]
+      : [];
+
+for (const target of batchTargets) {
+    const wavPath = target.out.replace(/\\.json$/, '.wav');
     // Generate a clean 1s mono WAV; rate is overridable so the 24 kHz regression and the
     // 0257 48 kHz native-rate join both run through the same harness.
     const rate = process.env.KK_SHIM_SAMPLE_RATE ?? '24000';
     spawnSync('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=1000:duration=1:sample_rate=' + rate, '-c:a', 'pcm_s16le', '-ac', '1', wavPath]);
-    writeFileSync(outPath, JSON.stringify({
+    writeFileSync(target.out, JSON.stringify({
         title: 'Section',
         body: '',
         format: 'audio',
