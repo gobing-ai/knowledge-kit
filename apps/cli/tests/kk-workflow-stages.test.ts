@@ -5552,6 +5552,30 @@ describe('daily-patch-surfdash git scoping and frontmatter (R6/R11)', () => {
         });
     });
 
+    it("commits this run's untracked post when the surfdash receipt is missing — the deploy owes it the cover", () => {
+        withTempDir((dir) => {
+            const fx = setupFixture(dir, 'https://cdn.example/c.png', 'Body.');
+            // 2026-11-20: a window whose plan excluded surfdash-pub (an earlier attempt had died at
+            // `sync_cms`) left the day's post untracked with no receipt. The stage skipped, so the
+            // post and its `./assets/cover.png` never reached git, the deploy had nothing to ship and
+            // the live article 404'd its own cover while the cron log carried only a warning.
+            rmSync(join(fx.workDir, '31-publish', `${RUN_DATE}_14_publish-surfdash_result.json`));
+            const postDir = `content/posts/articles/zh/${RUN_DATE}-post`;
+            git(fx.root, 'rm', '-q', '--cached', '-r', postDir);
+            const before = git(fx.root, 'rev-parse', 'HEAD').stdout.trim();
+
+            const res = run(['daily-patch-surfdash', fx.workDir, RUN_DATE, fx.root], { SURFDASH_AUTO_PUSH: '1' });
+
+            expect(res.status, res.stderr).toBe(0);
+            expect(res.stderr).toContain('is uncommitted in the checkout');
+            const committed = git(fx.root, 'show', '--name-only', '--pretty=format:', 'HEAD')
+                .stdout.split('\n')
+                .filter((l) => l.trim() !== '');
+            expect(committed).toContain(`${postDir}/index.md`);
+            expect(git(fx.root, 'rev-parse', 'HEAD').stdout.trim()).not.toBe(before);
+        });
+    });
+
     it('writes a failed resync receipt and skips the remote patch when a publish receipt has no targets array', () => {
         withTempDir((dir) => {
             const fx = setupFixture(dir, 'https://cdn.example/c.png', 'Body.');

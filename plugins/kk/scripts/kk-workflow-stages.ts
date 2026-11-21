@@ -57,7 +57,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { compositeCover } from './cover-compositor';
 
 export const SCRIPTS_DIR = import.meta.dir;
@@ -1661,6 +1661,35 @@ function publishMatrixPatchSurfdash(args: string[]): void {
     });
 }
 
+/**
+ * The day's zh post path when this run's content sits uncommitted in the surfdash checkout.
+ *
+ * `surfdash-pub` writes the post and its `assets/` into the checkout before it syncs the CMS, and the
+ * daily patch stage is the only step that commits them. A publish that fails, or a window whose plan
+ * excludes the surfdash target, leaves the write behind with no commit, so the deploy never sees the
+ * post — its `./assets/cover.png` 404s on the live site while the run reports only a warning. This
+ * finds that state (untracked or modified paths under `content/posts` whose slug starts with the run
+ * date) so the patch can heal it instead of looking at a missing receipt and skipping.
+ */
+function strandedSurfdashPost(root: string, runDate: string): string | undefined {
+    const listed = spawnSync('git', ['-C', root, 'status', '--porcelain', '-z', '--', 'content/posts'], {
+        encoding: 'utf-8',
+    });
+    if (listed.status !== 0) return undefined;
+    const slugs = new Set<string>();
+    // `-z` entries are `XY <path>` NUL-separated, so the status prefix plus its space is 3 chars.
+    for (const entry of (listed.stdout ?? '').split('\u0000')) {
+        const match = /content\/posts\/articles\/(?:zh|en|ja)\/([^/]+)/.exec(entry.slice(3));
+        const slug = match?.[1];
+        if (slug?.startsWith(runDate)) slugs.add(slug);
+    }
+    for (const slug of slugs) {
+        const zh = join(root, 'content', 'posts', 'articles', 'zh', slug, 'index.md');
+        if (isFile(zh)) return zh;
+    }
+    return undefined;
+}
+
 function dailyPatchSurfdash(args: string[]): void {
     const [workDir = '', runDate = '', surfdashRoot = '', pluginsPath = ''] = args;
     if (!surfdashRoot || !existsSync(surfdashRoot)) {
@@ -1683,26 +1712,41 @@ function dailyPatchSurfdash(args: string[]): void {
                 )
             );
         };
-        if (invalidReceipt(sdResult) || invalidReceipt(podcastResult)) {
-            const error = 'patch-surfdash: malformed surfdash/podcast publish receipt — nothing to patch';
-            sted('write', resultPath, () => writeJqText(resultPath, { ok: false, target: 'surfdash-pub', error }));
-            console.error(error);
-            return;
-        }
+        const sdUsable = !invalidReceipt(sdResult);
+        const podUsable = !invalidReceipt(podcastResult);
         const targetOf = (path: string): Record<string, unknown> => {
             const parsed = readJson(path) as { targets?: Array<Record<string, unknown>> };
             return parsed.targets?.[0] ?? {};
         };
-        const sd = targetOf(sdResult);
-        const pod = targetOf(podcastResult);
-        const postPath = (sd.metadata as Record<string, unknown> | undefined)?.postPath;
-        if (typeof postPath !== 'string' || postPath === '') {
+        const sd = sdUsable ? targetOf(sdResult) : {};
+        const pod = podUsable ? targetOf(podcastResult) : {};
+        const receiptPath = (sd.metadata as Record<string, unknown> | undefined)?.postPath;
+        const fromReceipt = typeof receiptPath === 'string' && receiptPath !== '' ? receiptPath : undefined;
+        // The publisher writes the post and its `assets/` into the checkout *before* it syncs the CMS,
+        // and only this stage commits them. A publish that fails — or a window whose plan excludes the
+        // surfdash target (2026-11-20: `not in --channels list`) — leaves that write behind with no
+        // commit, so the deploy never sees the post and its `./assets/cover.png` 404s while the run
+        // reports nothing worse than a warning. Heal that state instead of skipping it.
+        const stranded = fromReceipt === undefined ? strandedSurfdashPost(surfdashRoot, runDate) : undefined;
+        const postPath = fromReceipt ?? stranded;
+        if (postPath === undefined) {
+            if (!sdUsable || !podUsable) {
+                const error = 'patch-surfdash: malformed surfdash/podcast publish receipt — nothing to patch';
+                sted('write', resultPath, () => writeJqText(resultPath, { ok: false, target: 'surfdash-pub', error }));
+                console.error(error);
+                return;
+            }
             // A surfdash publish that never landed (2026-10-21: its `git push` was rejected with
             // `fetch first`) leaves no postPath to patch. `publish-classify` has already recorded the
             // run as `partial`, and failing here turned a published podcast episode into a `failed`
             // run — the folded tail must not escalate what the classifier already routed.
             console.error('patch-surfdash: surfdash result carries no postPath — nothing to patch, skip');
             return;
+        }
+        if (fromReceipt === undefined) {
+            console.error(
+                `patch-surfdash: no surfdash publish receipt, but ${relative(surfdashRoot, postPath)} is uncommitted in the checkout — patching it so the deploy ships the post and its cover`,
+            );
         }
         if (process.env.KK_SURFDASH_PATCH_OFFLINE === '1') {
             // The marker keeps the completeness report's cms-resync row honest in offline runs.
