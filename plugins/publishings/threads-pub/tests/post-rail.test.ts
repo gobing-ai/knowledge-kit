@@ -71,6 +71,18 @@ interface FakePageOptions {
     mediaNeverRenders?: boolean;
     /** Posting returns the page to the profile URL, so the receipt reads it via `reload`. */
     returnToProfileAfterSubmit?: boolean;
+    /** The role engine's `Post` button count; a number models a real Playwright locator (2026-11-20). */
+    rolePostCount?: number;
+    /** The role engine's `count()` rejects — the selector list must still resolve the control. */
+    rejectRoleCount?: boolean;
+    /** The `Dismiss suggestions` click rejects; the post must still go out. */
+    rejectDismissClick?: boolean;
+    /** The first (non-forced) submit click is intercepted; the forced fallback must still post. */
+    submitClickIntercepted?: boolean;
+    /** Whole-document inventory the missing-Post diagnostic reads; absent means no `evaluate`. */
+    consoleJson?: string;
+    /** `evaluate` rejects — the inventory must never turn the failure into a stack. */
+    rejectEvaluate?: boolean;
 }
 
 /**
@@ -83,6 +95,7 @@ function makeFakePostPage(options: FakePageOptions, calls: string[]): Page {
     let typed = '';
     let submitted = false;
     let mediaUploaded = false;
+    let submitClicks = 0;
 
     const onProfile = (): boolean => url === PROFILE_URL;
     const postHref = (): string | null => {
@@ -146,8 +159,13 @@ function makeFakePostPage(options: FakePageOptions, calls: string[]): Page {
                 }
                 return null;
             },
-            click: async () => {
+            click: async (clickOptions?: { force?: boolean; timeout?: number }) => {
                 calls.push(`click:${selector}`);
+                if (selector.includes('Dismiss suggestions')) {
+                    calls.push('dismiss:attempt');
+                    if (options.rejectDismissClick === true) throw new Error('suggestions layer stayed open');
+                    return;
+                }
                 if (options.rejectInteractions === true && selector === THREADS_POST_SELECTORS.text[0]) {
                     throw new Error('composer detached');
                 }
@@ -158,6 +176,10 @@ function makeFakePostPage(options: FakePageOptions, calls: string[]): Page {
                     throw new Error('entry intercepted');
                 }
                 if (selector !== THREADS_POST_SELECTORS.submit[0]) return;
+                submitClicks += 1;
+                if (options.submitClickIntercepted === true && clickOptions?.force !== true && submitClicks === 1) {
+                    throw new Error('suggestions layer intercepts pointer events');
+                }
                 submitted = true;
                 if (options.returnToProfileAfterSubmit === true) url = PROFILE_URL;
             },
@@ -201,6 +223,37 @@ function makeFakePostPage(options: FakePageOptions, calls: string[]): Page {
             calls.push(`setInputFiles:${selector}|${filePath}`);
             mediaUploaded = true;
         },
+        // A real Playwright page always carries the role engine and `evaluate`; both are optional
+        // here so the older doubles keep modelling the CSS-only surface.
+        ...(options.rolePostCount === undefined && options.rejectRoleCount !== true
+            ? {}
+            : {
+                  getByRole(role: string, byOptions: { name: string; exact: boolean }) {
+                      calls.push(`getByRole:${role}|${byOptions.name}`);
+                      return {
+                          async count() {
+                              if (options.rejectRoleCount === true) throw new Error('role engine detached');
+                              return options.rolePostCount ?? 0;
+                          },
+                          last: () => ({
+                              async click() {
+                                  calls.push('click:role:Post:last');
+                                  submitted = true;
+                                  if (options.returnToProfileAfterSubmit === true) url = PROFILE_URL;
+                              },
+                          }),
+                      };
+                  },
+              }),
+        ...(options.consoleJson === undefined && options.rejectEvaluate !== true
+            ? {}
+            : {
+                  async evaluate() {
+                      calls.push('evaluate:inventory');
+                      if (options.rejectEvaluate === true) throw new Error('evaluate unavailable');
+                      return options.consoleJson;
+                  },
+              }),
     };
     return page as unknown as Page;
 }
@@ -736,5 +789,88 @@ describe('threads post rail composer failures', () => {
         expect(result.error).toContain('receipt not confirmed');
         expect(result.error).toContain('never reported as published');
         expect(fake.calls).toContain(`click:${THREADS_POST_SELECTORS.submit[0]}`);
+    });
+});
+
+describe('measured 2026-11-20 — the composer’s Post control and the suggestions layer', () => {
+    test('the role engine names the composer’s Post and its last match is clicked', async () => {
+        // Threads puts the label in a CHILD div, so the CSS `:text-is` forms match nothing on the
+        // measured build; the accessible name still says Post. The feed's inline composer sits
+        // behind the dialog, so the LAST match is the one that posts.
+        const fake = makeFakeLauncher({
+            pages: [{}, { rolePostCount: 2, postHrefAfterSubmit: '/@robin/post/CCC' }],
+        });
+        const result = await transport(fake).publish({ content });
+
+        expect(result.ok, `error: ${result.error ?? ''}`).toBe(true);
+        expect(result.id).toBe('CCC');
+        expect(fake.calls).toContain('getByRole:button|Post');
+        expect(fake.calls).toContain('click:role:Post:last');
+        expect(fake.calls).not.toContain(`click:${THREADS_POST_SELECTORS.submit[0]}`);
+    });
+
+    test('a role engine that refuses to count falls back to the measured selectors', async () => {
+        const fake = makeFakeLauncher({
+            pages: [{}, { rejectRoleCount: true, postHrefAfterSubmit: '/@robin/post/DDD' }],
+        });
+        const result = await transport(fake).publish({ content });
+
+        expect(result.ok, `error: ${result.error ?? ''}`).toBe(true);
+        expect(result.id).toBe('DDD');
+        expect(fake.calls).toContain('getByRole:button|Post');
+        expect(fake.calls).toContain(`click:${THREADS_POST_SELECTORS.submit[0]}`);
+    });
+
+    test('a suggestions layer that refuses to close still posts', async () => {
+        const fake = makeFakeLauncher({
+            pages: [{}, { rejectDismissClick: true, postHrefAfterSubmit: '/@robin/post/EEE' }],
+        });
+        const result = await transport(fake).publish({ content });
+
+        expect(result.ok, `error: ${result.error ?? ''}`).toBe(true);
+        expect(result.id).toBe('EEE');
+        expect(fake.calls).toContain('dismiss:attempt');
+    });
+
+    test('a submit click an overlay intercepts falls back to a forced click', async () => {
+        // The measured failure: a forced click alone dispatches onto the overlay and posts NOTHING;
+        // a real click is tried first, and the force stays as the fallback for a transient overlay.
+        const fake = makeFakeLauncher({
+            pages: [{}, { submitClickIntercepted: true, postHrefAfterSubmit: '/@robin/post/FFF' }],
+        });
+        const result = await transport(fake).publish({ content });
+
+        expect(result.ok, `error: ${result.error ?? ''}`).toBe(true);
+        expect(result.id).toBe('FFF');
+        expect(fake.calls.filter((call) => call === `click:${THREADS_POST_SELECTORS.submit[0]}`)).toHaveLength(2);
+    });
+
+    test('a Post control that never attaches reports the dialog’s own inventory', async () => {
+        const fake = makeFakeLauncher({
+            pages: [
+                {},
+                {
+                    missingSubmit: true,
+                    consoleJson: 'DIV[role=button] < DIV[role=none].x1 — DIV < DIV[role=button]',
+                },
+            ],
+        });
+        const result = await transport(fake).publish({ content });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('threads post control never attached');
+        expect(result.error).toContain('(dialog buttons: DIV[role=button] < DIV[role=none].x1');
+        expect(fake.calls).toContain('evaluate:inventory');
+    });
+
+    test('an unreadable inventory still fails the Post with the timeout alone', async () => {
+        const fake = makeFakeLauncher({ pages: [{}, { missingSubmit: true, rejectEvaluate: true }] });
+
+        const result = await transport(fake).publish({ content });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('threads post control never attached');
+        expect(result.error).not.toContain('dialog buttons');
+        expect(result.error).not.toContain('evaluate unavailable');
     });
 });
