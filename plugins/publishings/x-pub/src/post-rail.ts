@@ -16,7 +16,8 @@
  * `fill()` leaves Post disabled), media `button[aria-label="Add photos or video"]` then
  * `input[data-testid="fileInput"]`, submit `[data-testid="tweetButton"]`.
  */
-import { extname, isAbsolute } from 'node:path';
+import { tmpdir } from 'node:os';
+import { extname, isAbsolute, join } from 'node:path';
 import type { Result } from '@gobing-ai/kk-core';
 import { ResultSchema } from '@gobing-ai/kk-core';
 import { type PublishTransport, type PublishTransportPayload, trySelectors } from '@gobing-ai/publish-harness';
@@ -329,10 +330,93 @@ export class XPostBrowserTransport implements PublishTransport {
                 // Four steps: X transcodes the image and only then re-enables Post (30s step → 120s).
                 { timeoutMs: this.stepTimeoutMs * 4, label: 'x post submit enabled after media' },
             );
-            if (!reEnabled.ok) return fail(`x post submit stayed disabled after the media: ${reEnabled.error}`);
+            if (!reEnabled.ok) {
+                // The submit state is a projection of what X thinks the composer holds: an empty
+                // editor (a re-mount dropped the typed text), a rejected upload, or an account
+                // banner all look identical as "disabled". Report the evidence instead of the
+                // symptom — the first live failure (2026-11-20) named only the timeout.
+                const observable = page as unknown as { evaluate?: (script: string) => Promise<unknown> };
+                const evidence = await (observable.evaluate === undefined
+                    ? Promise.resolve(null)
+                    : observable
+                          .evaluate(`(() => {
+                        const editor = document.querySelector('[data-testid="tweetTextarea_0"]');
+                        const submit = document.querySelector('${X_POST_SUBMIT}');
+                        const alerts = [...document.querySelectorAll('[data-testid="toast"], [role="alert"], [data-testid="error-detail"]')]
+                            .map((n) => (n.textContent || '').replace(/\\s+/g, ' ').trim()).filter(Boolean).slice(0, 3);
+                        const images = [...document.querySelectorAll('[data-testid="attachments"] img, [data-testid="tweetPhoto"] img')].length;
+                        return JSON.stringify({
+                            textLen: (editor?.textContent || '').trim().length,
+                            submitDisabled: submit?.getAttribute('aria-disabled') ?? (submit?.disabled === true ? 'true' : 'false'),
+                            images,
+                            alerts,
+                        });
+                    })()`)
+                          .catch(() => null));
+                return fail(
+                    `x post submit stayed disabled after the media: ${reEnabled.error}${evidence ? ` — composer ${String(evidence)}` : ''}`,
+                );
+            }
         }
 
-        await page.locator(X_POST_SUBMIT).first().click();
+        // Click the submit that is actually VISIBLE and ENABLED, across both surfaces. The module
+        // header already warns that the composer page carries a hidden template whose button never
+        // enables; `.first()` on `tweetButton` can pick that twin and swallow the click, which reads
+        // downstream as "Post was clicked but no new status id appeared" (measured 2026-11-20: two
+        // runs, no status on the profile, no error either).
+        const submit = await (async () => {
+            let enabledFallback: ReturnType<typeof page.locator> | null = null;
+            for (const selector of X_POST_SUBMITS) {
+                const candidate = page.locator(selector).first();
+                const enabled = await candidate.isEnabled().catch(() => false);
+                if (!enabled) continue;
+                // A visible, enabled control is the real one; the composer page also renders a hidden
+                // template whose button is enabled-looking but never posts. Preferring visibility and
+                // accepting enabled-only when visibility cannot be established keeps a surface whose
+                // button reports no layout (and the test double) working.
+                const visible = await candidate.isVisible().catch(() => false);
+                if (visible) return candidate;
+                enabledFallback ??= candidate;
+            }
+            return enabledFallback;
+        })();
+        if (submit === null) return fail('x post submit was enabled a moment ago but no clickable control remained');
+        await submit.click();
+        // Capture the composer's immediate reaction. The receipt step navigates to the profile, so
+        // any validation toast, "Posting…" state or blocking modal is gone by the time it reports —
+        // which is exactly how two silent failures happened on 2026-11-20. A screenshot is the
+        // cheapest decisive evidence: X says WHY it refused, in the UI, once.
+        await page.waitForTimeout(2_500);
+        // The double in `tests/post-rail.test.ts` models only the surface the rail clicks and reads;
+        // evaluate/screenshot are evidence-only, so a page without them must still publish.
+        const observable = page as unknown as {
+            evaluate?: (script: string) => Promise<unknown>;
+            screenshot?: (options: { path: string }) => Promise<unknown>;
+        };
+        const afterClick = await (observable.evaluate === undefined
+            ? Promise.resolve(null)
+            : observable
+                  .evaluate(`(() => {
+                const alerts = [...document.querySelectorAll('[data-testid="toast"], [role="alert"], [data-testid="error-detail"]')]
+                    .map((n) => (n.textContent || '').replace(/\\s+/g, ' ').trim()).filter(Boolean).slice(0, 3);
+                const dialogs = [...document.querySelectorAll('[role="dialog"]')]
+                    .map((n) => (n.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 120)).filter(Boolean).slice(0, 2);
+                const editor = document.querySelector('[data-testid="tweetTextarea_0"]');
+                return JSON.stringify({
+                    path: location.pathname,
+                    textLen: (editor?.textContent || '').trim().length,
+                    alerts,
+                    dialogs,
+                });
+            })()`)
+                  .catch(() => null));
+        const shot = join(tmpdir(), `kk-x-post-${Date.now()}.png`);
+        const shotOk = await (observable.screenshot === undefined
+            ? Promise.resolve(false)
+            : observable
+                  .screenshot({ path: shot })
+                  .then(() => true)
+                  .catch(() => false));
         const receipt = await expectOutcome(
             async () => {
                 const id = await this.newestStatusId(page, handle);
@@ -342,9 +426,41 @@ export class XPostBrowserTransport implements PublishTransport {
             },
             { timeoutMs: this.stepTimeoutMs, label: 'x status receipt' },
         );
+        // X's own confirmation toast is a receipt in its own right. The profile-timeline poll above
+        // is the *preferred* evidence because it yields the status id, but the timeline can lag or
+        // refuse to render for a session that still posts fine (measured 2026-11-20: the toast read
+        // "Your post was sent. You have 1 hour to make any edits.", the profile showed nothing within
+        // 30 s, and the row failed — so a retry posted the same text AGAIN). Confirming on the toast
+        // turns a duplicate-generating "failure" into an honest success with no status id.
+        const sentToast = /post was sent|已发布|发送成功|已发送/i.test(String(afterClick ?? ''));
+        if (!receipt.ok && sentToast) {
+            return ResultSchema.parse({
+                ok: true,
+                target: TARGET,
+                url: `https://x.com${handle}`,
+                message: `x post sent — X confirmed it in the composer toast; the profile timeline had not rendered it yet, so no status id was recorded`,
+                metadata: { ...metadata, confirmedBy: 'post-sent-toast' },
+            });
+        }
         if (!receipt.ok) {
+            // Name what the console said, not just that nothing appeared: a validation toast, a
+            // duplicate guard, an alt-text prompt and a swallowed click all look identical here.
+            const evidence = await (observable.evaluate === undefined
+                ? Promise.resolve(null)
+                : observable
+                      .evaluate(`(() => {
+                    const alerts = [...document.querySelectorAll('[data-testid="toast"], [role="alert"], [data-testid="error-detail"]')]
+                        .map((n) => (n.textContent || '').replace(/\\s+/g, ' ').trim()).filter(Boolean).slice(0, 3);
+                    const editor = document.querySelector('[data-testid="tweetTextarea_0"]');
+                    return JSON.stringify({
+                        url: location.pathname,
+                        textLen: (editor?.textContent || '').trim().length,
+                        alerts,
+                    });
+                })()`)
+                      .catch(() => null));
             return fail(
-                `x post receipt not confirmed — Post was clicked but no new status id appeared on the profile (${receipt.error}); an unobserved submit is never reported as published`,
+                `x post receipt not confirmed — Post was clicked but no new status id appeared on the profile (${receipt.error}); an unobserved submit is never reported as published${afterClick ? ` — after click ${afterClick}` : ''}${shotOk ? ` — screenshot ${shot}` : ''}${evidence ? ` — console ${evidence}` : ''}`,
             );
         }
         const id = /\/status\/(\d+)/.exec(receipt.evidence)?.[1];
