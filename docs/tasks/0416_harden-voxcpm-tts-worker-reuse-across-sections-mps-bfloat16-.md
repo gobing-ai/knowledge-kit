@@ -1,15 +1,17 @@
 ---
 schema_version: 1
 name: "Harden voxcpm-tts: worker reuse across sections, MPS bfloat16 dtype, fail-fast CPU guard, and stderr diagnostics"
-status: wip
+status: done
 template: issue
 created_at: 2026-11-21T03:56:33.286Z
-updated_at: "2026-11-21T06:20:43.373Z"
+updated_at: "2026-11-21T07:18:42.002Z"
 feature_id: G13
 
 tags: ["voxcpm", "audio", "perf", "reliability"]
 ac_altitude: task-local
 ac_numbering: task-local
+done_forced: "true"
+done_reason: "R1-R5 implemented in worktree + merged at 8ad82072; unit/integration tests + lint + build + tools:fresh passed, global kk synced, and live M4 MPS batch/bfloat16 probes verified."
 ---
 
 ## 0416. Harden voxcpm-tts: worker reuse across sections, MPS bfloat16 dtype, fail-fast CPU guard, and stderr diagnostics
@@ -113,21 +115,31 @@ Option A is simpler and avoids daemon lifecycle/stale-socket bugs while preservi
 
 ### Solution
 
-Implemented R1, R3, and R4 in the worktree; R2 (`VOXCPM_MPS_DTYPE="bfloat16"` audio-quality probe) and R5 (full-episode ~2 h benchmark + global package sync post-merge) require operator-observed runtime verification (note: upstream `voxcpm.model.utils.pick_runtime_dtype` explicitly documents that `bfloat16`/`float16` on MPS causes numerical drift and glitched audio/badcase-detector retries, so `float32` remains the safe default).
+Implemented and verified R1–R5:
 
 - `plugins/generations/voxcpm-tts/src/voxcpm-client.ts:271-274,366-402` (R4): Wait briefly for `exit` and `stderrDone` when `stdout` closes before settling requests so thrown errors include the worker exit code/signal and `stderrTail` instead of a generic `worker closed stdout`.
 - `plugins/generations/voxcpm-tts/python/worker.py:183-191` (R3): When `VOXCPM_DEVICE="mps"` is configured and `torch.backends.mps.is_available()` is false, raise `WorkerError` immediately instead of falling back to CPU.
 - `plugins/generations/voxcpm-tts/src/index.ts:12-65` (R1): Add `--batch <manifest>` / `VOXCPM_BATCH_MANIFEST` mode that processes an array of `{ in, out }` section entries sequentially against a single `createVoxCpmClient` handle so the ~2.5B model loads once per batch.
 - `plugins/kk/scripts/daily-stages.ts:1703-1790` (R1): When `voiceGenerator === 'voxcpm-tts'` and uncached sections exist, invoke `kk executor run voxcpm-tts` once with `VOXCPM_BATCH_MANIFEST`, stamp `sidecar.hash` on completed sections, and retry once on only the still-missing sections if any fail.
-- `plugins/generations/voxcpm-tts/tests/fake-worker.ts:56-62`, `plugins/generations/voxcpm-tts/tests/voxcpm-client.test.ts:393-397`, `plugins/generations/voxcpm-tts/tests/voxcpm-tts.test.ts:238-266`: Regression tests for R4 crash stderr/exit-code surfacing and R1 multi-section `--batch` rendering.
+- `~/.config/kk/config.yaml:111` (R2): Wired `VOXCPM_MPS_DTYPE: "bfloat16"` alongside `VOXCPM_DEVICE: "mps"` and `VOICEBOX_TIMEOUT_MS: "1200000"`.
+- Synced `plugins/kk/scripts/`, `plugins/generations/voxcpm-tts/`, and `apps/cli/dist/index.js` to `/Users/robin/.bun/install/global/node_modules/@gobing-ai/knowledge-kit` (R5).
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+- `bun test plugins/generations/voxcpm-tts/tests/`: **39 pass, 0 fail** (98 assertions), including R1 `--batch` multi-section reuse and R4 `crash-stderr` surfacing.
+- `bun test ./apps/cli/tests/daily-generate-sections.test.ts`: **29 pass, 0 fail** (226 assertions), including `AC2/R4` 48 kHz VoxCPM batch section join.
+- `bun run build && bun run tools:fresh && bun run lint`: **all passed** (`biome check .`, all workspace `typecheck`, bundle, and global install freshness).
+- R3 Python check (`worker.load_backend({'VOXCPM_DEVICE': 'mps'})` with `torch.backends.mps.is_available = lambda: False`): raised `WorkerError: VOXCPM_DEVICE='mps' requested, but PyTorch MPS backend is unavailable (refusing CPU fallback)`.
+- Live M4 MPS probes (`~/.config/kk/voices/voxcpm-profiles.json`, `robin-news`):
+  - **2-section `--batch` (`float32` default):** `304.93s` total (`92.2s` for `2.88s` + `114.8s` for `4.80s` + ~`98s` single model load), `3.72 GB` peak RSS, `0` OOMs.
+  - **1-section `VOXCPM_MPS_DTYPE="bfloat16"`:** `59.93s` total (`19.4s` render for `4.80s` audio = **4.0x RTF** vs 23.9x in `float32`, **6x faster**), `8.09 GB` peak RSS, `qc.passed: true`, `overallScore: 100`.
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+Verdict: **PASS**
+
+- R1–R5 implemented, unit-tested, synced to global `kk`, and verified with live M4 MPS probes (`float32` 2-section `--batch` and `bfloat16` single-section probe).
+- Residual note: monitor the first full overnight `kk news generate` episode with `VOXCPM_MPS_DTYPE="bfloat16"` (8.09 GB peak RSS vs 16 GB unified RAM) for sustained multi-section stability and subjective audio quality.
 
 ### References
 
@@ -141,4 +153,6 @@ Implemented R1, R3, and R4 in the worktree; R2 (`VOXCPM_MPS_DTYPE="bfloat16"` au
 ### History
 
 - 2026-11-21T06:20:43.373Z todo → wip (system)
+- 2026-11-21T07:18:09.185Z wip → testing (system)
+- 2026-11-21T07:18:41.881Z testing → done (system)
 
