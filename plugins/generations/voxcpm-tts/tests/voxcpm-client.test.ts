@@ -389,4 +389,10 @@ describe('voxcpm-tts teardown escalation + framing bound (review findings 1-2)',
         await expect(handle.client.waitUntilDone(id, 5000)).rejects.toThrow(/exceeds 1 MiB/);
         await handle.close();
     });
+
+    it('surfaces worker stderr tail and exit code when stdout closes on crash (R4)', async () => {
+        const handle = client('crash-stderr');
+        await expect(handle.client.health()).rejects.toThrow(/RuntimeError: Metal OOM/);
+        await handle.close();
+    });
 });

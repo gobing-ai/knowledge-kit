@@ -234,4 +234,34 @@ describe('voxcpm-tts entry (AC4)', () => {
         expect(childPid).toBeGreaterThan(0);
         await expectDead(childPid);
     });
+
+    it('renders multiple sections in --batch mode with a single worker / model load (R1)', async () => {
+        const profiles = anchoredRegistry();
+        const in1 = join(dir, 'sec1_in.json');
+        const out1 = join(dir, 'sec1.json');
+        const in2 = join(dir, 'sec2_in.json');
+        const out2 = join(dir, 'sec2.json');
+        writeFileSync(in1, JSON.stringify([{ ...plainDoc(), id: 's1' }]));
+        writeFileSync(in2, JSON.stringify([{ ...plainDoc(), id: 's2' }]));
+        const manifest = join(dir, 'batch.json');
+        writeFileSync(
+            manifest,
+            JSON.stringify([
+                { in: in1, out: out1 },
+                { in: in2, out: out2 },
+            ]),
+        );
+
+        const code = await main(['--batch', manifest], clientOptions('ok', profiles));
+        expect(code).toBe(0);
+        expect(readContent(out1).metadata?.generator).toBe('kk:voxcpm-tts');
+        expect(readContent(out2).metadata?.generator).toBe('kk:voxcpm-tts');
+        expect(existsSync(join(dir, 'sec1.wav'))).toBe(true);
+        expect(existsSync(join(dir, 'sec2.wav'))).toBe(true);
+
+        const badManifest = join(dir, 'bad-batch.json');
+        writeFileSync(badManifest, JSON.stringify({ nope: true }));
+        expect(await main(['--batch', badManifest], clientOptions('ok', profiles))).toBe(1);
+        expect(stderr.text()).toContain('invalid batch manifest');
+    });
 });

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "Harden voxcpm-tts: worker reuse across sections, MPS bfloat16 dtype, fail-fast CPU guard, and stderr diagnostics"
-status: todo
+status: wip
 template: issue
 created_at: 2026-11-21T03:56:33.286Z
-updated_at: "2026-11-21T06:07:51.725Z"
+updated_at: "2026-11-21T06:20:43.373Z"
 feature_id: G13
 
 tags: ["voxcpm", "audio", "perf", "reliability"]
@@ -113,7 +113,13 @@ Option A is simpler and avoids daemon lifecycle/stale-socket bugs while preservi
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Implemented R1, R3, and R4 in the worktree; R2 (`VOXCPM_MPS_DTYPE="bfloat16"` audio-quality probe) and R5 (full-episode ~2 h benchmark + global package sync post-merge) require operator-observed runtime verification (note: upstream `voxcpm.model.utils.pick_runtime_dtype` explicitly documents that `bfloat16`/`float16` on MPS causes numerical drift and glitched audio/badcase-detector retries, so `float32` remains the safe default).
+
+- `plugins/generations/voxcpm-tts/src/voxcpm-client.ts:271-274,366-402` (R4): Wait briefly for `exit` and `stderrDone` when `stdout` closes before settling requests so thrown errors include the worker exit code/signal and `stderrTail` instead of a generic `worker closed stdout`.
+- `plugins/generations/voxcpm-tts/python/worker.py:183-191` (R3): When `VOXCPM_DEVICE="mps"` is configured and `torch.backends.mps.is_available()` is false, raise `WorkerError` immediately instead of falling back to CPU.
+- `plugins/generations/voxcpm-tts/src/index.ts:12-65` (R1): Add `--batch <manifest>` / `VOXCPM_BATCH_MANIFEST` mode that processes an array of `{ in, out }` section entries sequentially against a single `createVoxCpmClient` handle so the ~2.5B model loads once per batch.
+- `plugins/kk/scripts/daily-stages.ts:1703-1790` (R1): When `voiceGenerator === 'voxcpm-tts'` and uncached sections exist, invoke `kk executor run voxcpm-tts` once with `VOXCPM_BATCH_MANIFEST`, stamp `sidecar.hash` on completed sections, and retry once on only the still-missing sections if any fail.
+- `plugins/generations/voxcpm-tts/tests/fake-worker.ts:56-62`, `plugins/generations/voxcpm-tts/tests/voxcpm-client.test.ts:393-397`, `plugins/generations/voxcpm-tts/tests/voxcpm-tts.test.ts:238-266`: Regression tests for R4 crash stderr/exit-code surfacing and R1 multi-section `--batch` rendering.
 
 ### Testing
 
@@ -133,3 +139,6 @@ Option A is simpler and avoids daemon lifecycle/stale-socket bugs while preservi
 - Related: task `0415` (memory reclamation), task `0417` (fallback chain)
 
 ### History
+
+- 2026-11-21T06:20:43.373Z todo → wip (system)
+

@@ -1700,13 +1700,18 @@ export function dailyGenerate(args: string[]): void {
             plans = computePlans(voiceGenerator);
         }
 
-        // Synthesize sections sequentially (concurrency 1)
-        for (const plan of plans) {
-            if (!plan.needsSynthesis) {
-                console.log(`generate: section cached: ${plan.def.stem}`);
-                continue;
-            }
-            console.log(`generate: synthesizing section: ${plan.def.stem}`);
+        const stampSidecarHash = (plan: (typeof plans)[number]): void => {
+            try {
+                const sidecar = readJson(plan.jsonPath) as Record<string, unknown>;
+                sidecar.hash = plan.hash;
+                if (sidecar.metadata && typeof sidecar.metadata === 'object') {
+                    (sidecar.metadata as Record<string, unknown>).hash = plan.hash;
+                }
+                writeJsonText(plan.jsonPath, sidecar);
+            } catch {}
+        };
+
+        const buildSectionDocIn = (plan: (typeof plans)[number]): string => {
             const secScript = { ...script, segments: plan.def.segments };
             const secDocIn = join(secDir, `.${plan.def.stem}_in.json`);
             const doc = {
@@ -1718,40 +1723,102 @@ export function dailyGenerate(args: string[]): void {
                 metadata: { voiceProfile },
             };
             writeJsonText(secDocIn, [doc]);
-            try {
-                // 0269-shaped hardening (20261012): one retry for a failed section. The design already
-                // bounds the episode's risk with the pre-flight quota probe and the per-section cache,
-                // but a failure that arrives MID-render (a 429 once the window drains, a network blip)
-                // still cost the whole episode — the one step nothing can publish without. The retry is
-                // cheap and bounded: the successful sections are cache hits, so at most one extra
-                // request per failed section is issued, and a persistent failure still fails loud.
-                let status = kk(voiceExecutorArgs(voiceGenerator, secDocIn, plan.jsonPath, pluginsPath), {
-                    env: { VOICE_GEN_MP3: transcodeMp3 },
+            return secDocIn;
+        };
+
+        if (voiceGenerator === 'voxcpm-tts' && anySynthesisNeeded) {
+            const pendingPlans = plans.filter((p) => p.needsSynthesis);
+            for (const plan of plans) {
+                if (!plan.needsSynthesis) {
+                    console.log(`generate: section cached: ${plan.def.stem}`);
+                }
+            }
+            const secInputs = pendingPlans.map((p) => ({ plan: p, inPath: buildSectionDocIn(p) }));
+            const batchManifestPath = join(secDir, '.voxcpm_batch.json');
+            const runBatch = (items: typeof secInputs): number => {
+                writeJsonText(
+                    batchManifestPath,
+                    items.map((item) => ({ in: item.inPath, out: item.plan.jsonPath })),
+                );
+                return kk(voiceExecutorArgs(voiceGenerator, items[0].inPath, items[0].plan.jsonPath, pluginsPath), {
+                    env: { VOICE_GEN_MP3: transcodeMp3, VOXCPM_BATCH_MANIFEST: batchManifestPath },
                     soft: true,
                 });
+            };
+            try {
+                console.log(
+                    `generate: synthesizing ${secInputs.length} voxcpm section(s) in single-worker batch: ${secInputs.map((i) => i.plan.def.stem).join(', ')}`,
+                );
+                let status = runBatch(secInputs);
+                for (const item of secInputs) {
+                    if (existsSync(item.plan.jsonPath) && validNativeAudio(item.plan.wavPath)) {
+                        stampSidecarHash(item.plan);
+                    }
+                }
                 if (status !== 0) {
-                    console.log(
-                        `generate: section ${plan.def.stem} synthesis failed (exit ${status}) — retrying it once`,
+                    const remaining = secInputs.filter(
+                        (item) => !existsSync(item.plan.jsonPath) || !validNativeAudio(item.plan.wavPath),
                     );
-                    status = kk(voiceExecutorArgs(voiceGenerator, secDocIn, plan.jsonPath, pluginsPath), {
+                    if (remaining.length > 0) {
+                        console.log(
+                            `generate: voxcpm batch failed (exit ${status}) — retrying ${remaining.length} remaining section(s) once`,
+                        );
+                        status = runBatch(remaining);
+                        for (const item of remaining) {
+                            if (existsSync(item.plan.jsonPath) && validNativeAudio(item.plan.wavPath)) {
+                                stampSidecarHash(item.plan);
+                            }
+                        }
+                    } else {
+                        status = 0;
+                    }
+                }
+                if (status !== 0) {
+                    failWith(status, 'generate: voxcpm batch section synthesis failed');
+                }
+            } finally {
+                rmSync(batchManifestPath, { force: true });
+                for (const item of secInputs) {
+                    rmSync(item.inPath, { force: true });
+                }
+            }
+        } else {
+            // Synthesize sections sequentially (concurrency 1)
+            for (const plan of plans) {
+                if (!plan.needsSynthesis) {
+                    console.log(`generate: section cached: ${plan.def.stem}`);
+                    continue;
+                }
+                console.log(`generate: synthesizing section: ${plan.def.stem}`);
+                const secDocIn = buildSectionDocIn(plan);
+                try {
+                    // 0269-shaped hardening (20261012): one retry for a failed section. The design already
+                    // bounds the episode's risk with the pre-flight quota probe and the per-section cache,
+                    // but a failure that arrives MID-render (a 429 once the window drains, a network blip)
+                    // still cost the whole episode — the one step nothing can publish without. The retry is
+                    // cheap and bounded: the successful sections are cache hits, so at most one extra
+                    // request per failed section is issued, and a persistent failure still fails loud.
+                    let status = kk(voiceExecutorArgs(voiceGenerator, secDocIn, plan.jsonPath, pluginsPath), {
                         env: { VOICE_GEN_MP3: transcodeMp3 },
                         soft: true,
                     });
+                    if (status !== 0) {
+                        console.log(
+                            `generate: section ${plan.def.stem} synthesis failed (exit ${status}) — retrying it once`,
+                        );
+                        status = kk(voiceExecutorArgs(voiceGenerator, secDocIn, plan.jsonPath, pluginsPath), {
+                            env: { VOICE_GEN_MP3: transcodeMp3 },
+                            soft: true,
+                        });
+                    }
+                    if (status !== 0) {
+                        failWith(status, `generate: section synthesis failed for ${plan.def.stem}`);
+                    }
+                } finally {
+                    rmSync(secDocIn, { force: true });
                 }
-                if (status !== 0) {
-                    failWith(status, `generate: section synthesis failed for ${plan.def.stem}`);
-                }
-            } finally {
-                rmSync(secDocIn, { force: true });
+                stampSidecarHash(plan);
             }
-            try {
-                const sidecar = readJson(plan.jsonPath) as Record<string, unknown>;
-                sidecar.hash = plan.hash;
-                if (sidecar.metadata && typeof sidecar.metadata === 'object') {
-                    (sidecar.metadata as Record<string, unknown>).hash = plan.hash;
-                }
-                writeJsonText(plan.jsonPath, sidecar);
-            } catch {}
         }
 
         // Join sections with ffmpeg

@@ -269,6 +269,8 @@ export function createVoxCpmClient(options: VoxCpmClientOptions = {}): VoxCpmCli
     let fatal: Error | undefined;
     let closed = false;
     let stderrTail = '';
+    let stderrDone: Promise<void> = Promise.resolve();
+    let exitDetails: { code: number | null; signal: NodeJS.Signals | null } | undefined;
     let stdoutBuffer = '';
     let renderInFlight: { id: number; dest: string } | undefined;
     let warnedChunk = false;
@@ -363,24 +365,43 @@ export function createVoxCpmClient(options: VoxCpmClientOptions = {}): VoxCpmCli
         child = proc;
         proc.on('error', (err) => fail(new Error(`voxcpm-tts: worker process error: ${err.message}`)));
         proc.on('exit', (code, signal) => {
+            exitDetails = { code, signal };
             if (!closed && !fatal) {
-                fail(
-                    new Error(
-                        `voxcpm-tts: worker exited unexpectedly (code ${code ?? 'null'}, signal ${signal ?? 'none'})${stderrTail ? `: ${stderrTail.slice(-400)}` : ''}`,
-                    ),
-                );
+                void Promise.race([stderrDone, new Promise((r) => setTimeout(r, 150))]).then(() => {
+                    if (!closed && !fatal) {
+                        fail(
+                            new Error(
+                                `voxcpm-tts: worker exited unexpectedly (code ${code ?? 'null'}, signal ${signal ?? 'none'})${stderrTail ? `: ${stderrTail.slice(-400)}` : ''}`,
+                            ),
+                        );
+                    }
+                });
             }
         });
+        if (proc.stderr) {
+            stderrDone = pump(proc.stderr, (text) => {
+                stderrTail = (stderrTail + text).slice(-STDERR_MAX_CHARS);
+            });
+        }
         if (proc.stdout) {
             void pump(proc.stdout, consumeStdout, () => {
                 if (!fatal && !closed) {
-                    fail(new Error('voxcpm-tts: worker closed stdout before settling all requests'));
+                    void Promise.race([
+                        Promise.all([waitForExit(proc, 250), stderrDone]),
+                        new Promise((r) => setTimeout(r, 250)),
+                    ]).then(() => {
+                        if (!fatal && !closed) {
+                            const detail = exitDetails
+                                ? ` (code ${exitDetails.code ?? 'null'}, signal ${exitDetails.signal ?? 'none'})`
+                                : ' before settling all requests';
+                            fail(
+                                new Error(
+                                    `voxcpm-tts: worker closed stdout${detail}${stderrTail ? `: ${stderrTail.slice(-400)}` : ''}`,
+                                ),
+                            );
+                        }
+                    });
                 }
-            });
-        }
-        if (proc.stderr) {
-            void pump(proc.stderr, (text) => {
-                stderrTail = (stderrTail + text).slice(-STDERR_MAX_CHARS);
             });
         }
         // Normal-signal teardown: SIGTERM/SIGINT close, terminate and reap owned workers.

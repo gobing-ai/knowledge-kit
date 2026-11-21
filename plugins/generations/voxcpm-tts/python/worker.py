@@ -183,6 +183,15 @@ def load_backend(environ: dict[str, str]) -> dict:
     if device not in ("auto", "cpu", "cuda", "mps"):
         raise WorkerError(f"unsupported VOXCPM_DEVICE {device!r} (allowed: auto, cpu, cuda, mps)")
 
+    if device == "mps":
+        with contextlib.redirect_stdout(sys.stderr):
+            import torch  # type: ignore
+
+        if not torch.backends.mps.is_available():
+            raise WorkerError(
+                "VOXCPM_DEVICE='mps' requested, but PyTorch MPS backend is unavailable (refusing CPU fallback)"
+            )
+
     with contextlib.redirect_stdout(sys.stderr):
         import voxcpm  # type: ignore
         from huggingface_hub import snapshot_download  # type: ignore

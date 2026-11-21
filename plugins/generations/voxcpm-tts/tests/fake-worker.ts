@@ -56,6 +56,10 @@ function writeWav(dest: string | undefined, seconds = 1, channels = 1, bits = 16
 if (mode === 'crash') {
     process.exit(3);
 }
+if (mode === 'crash-stderr') {
+    process.stderr.write('Traceback (most recent call last):\nRuntimeError: Metal OOM\n');
+    process.exit(137);
+}
 if (mode === 'exit0') {
     process.exit(0);
 }
