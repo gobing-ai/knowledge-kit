@@ -2046,3 +2046,15 @@ cut-over readiness; the latter still requires real Mac mini evidence.
 **Why.** Corrections must survive run cleanup and remain reproducible across episode retries.
 
 **Detail:** [Daily AI News editorial and delivery design](design/daily-ai-news-editorial-delivery.md).
+
+---
+
+## ADR-055: VibeVoice reuses the TypeScript voice pipeline with an isolated Python worker
+
+**Status:** Accepted (design — G16) · **Date:** 2026-11-20 · **Complements:** ADR-023, ADR-036.
+
+**Decision.** Add an opt-in `vibe-voice` (alias `vibevoice`) voice driver backed by `plugins/generations/vibe-voice-tts` (`kk:vibe-voice-tts`), a TypeScript generator plugin that reuses `@gobing-ai/voice-gen`'s `processGeneratorIO` pipeline and owns a private uv-managed Python inference worker (`vibevoice==0.0.1` on Python 3.12, default checkpoint `microsoft/VibeVoice-1.5B` with optional streaming checkpoint support). Keep `vendors/VibeVoice` reference-only and never access it at build, package, or runtime. Register `vibe-voice` across `dailyGenerate`, `kk news generate-voice --engine`, and the Spur Board settings allowlist while keeping existing workflow defaults unchanged.
+
+**Why.** The `VoiceboxClient` + isolated uv NDJSON worker seam proven by `voxcpm-tts` (ADR-036) preserves a single VoiceScript/QC/audio implementation and allows one-flag switching between voice drivers while isolating VibeVoice's PyTorch/Transformers stack.
+
+**Detail:** [VibeVoice voice driver](design/vibe-voice-driver.md); feature G16.
