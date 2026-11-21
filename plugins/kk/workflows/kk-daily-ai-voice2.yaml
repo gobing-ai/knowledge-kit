@@ -56,9 +56,9 @@ vars:
   xhs_cards: "4"
   xhs_style: "xhs-knowledge"
   # 0379 K2: the local text-free/composition rehearsal passed; H3 remains an explicit XHS opt-in.
-  # Rollback: xhs_provider=minimax, xhs_model=image-01. The cover pin above is unchanged.
-  xhs_provider: "h3-local"
-  xhs_model: "h3"
+  # 2026-11-20 (0418 Option A): fast cloud provider to keep sequential fail-fast spend (0219 R1) within <= 8-12 min.
+  xhs_provider: "minimax"
+  xhs_model: "image-01"
   # ADR-022 rail: draft-box only. "true" posts live and stays a launch-time opt-in.
   xhs_live: "false"
   wechat_enabled: "true"

@@ -4355,6 +4355,63 @@ export function dailySafetyManifest(args: string[]): void {
  * skill's reference files, never here. 0331: an optional trailing scope_dir re-roots the whole
  * artifact set for the variants review (see the scope machinery above).
  */
+function buildSafetyDigest(
+    workDir: string,
+    scopeDir: string,
+    runDate: string,
+    targets: string[],
+    digest: string,
+    content: unknown[],
+): string {
+    const drafts = isDraftsScope(scopeDir);
+    const lines: string[] = [
+        `# Safety Review Digest (${runDate})`,
+        '',
+        `- Scope: ${drafts ? 'drafts' : 'variants'}`,
+        `- Platforms: ${targets.join(', ')}`,
+        `- Digest: \`${digest}\``,
+        '',
+    ];
+    const maxCharsPerItem = 4000;
+    for (const entry of content) {
+        if (typeof entry === 'string') {
+            if (!isFile(entry)) continue;
+            const raw = readFileSync(entry, 'utf-8');
+            let body = raw;
+            if (entry.endsWith('.yaml') || entry.endsWith('.yml')) {
+                try {
+                    const parsed = Bun.YAML.parse(raw) as {
+                        title?: string;
+                        segments?: Array<{ text?: string; speaker?: string }>;
+                    };
+                    const segs = Array.isArray(parsed?.segments)
+                        ? parsed.segments.map((s, idx) => `${idx + 1}. ${s.text ?? ''}`).join('\n')
+                        : raw;
+                    body = `${parsed?.title ? `Title: ${parsed.title}\n\n` : ''}${segs}`;
+                } catch {}
+            }
+            const truncated = body.length > maxCharsPerItem ? `${body.slice(0, maxCharsPerItem)}\n…[truncated]` : body;
+            lines.push(`## ${entry} (${raw.length} chars)`, '', truncated, '');
+        } else if (entry && typeof entry === 'object') {
+            const item = entry as { key?: string; path?: string };
+            const rel = item.path ?? '';
+            const abs = rel ? join(workDir, rel) : '';
+            if (!abs || !isFile(abs)) continue;
+            const raw = readFileSync(abs, 'utf-8');
+            let summary = raw;
+            try {
+                const parsed = JSON.parse(raw) as { title?: string; body?: string; format?: string };
+                const text = typeof parsed.body === 'string' ? parsed.body : raw;
+                summary = `Title: ${parsed.title ?? ''}\nFormat: ${parsed.format ?? ''}\n\n${text}`;
+            } catch {}
+            const truncated =
+                summary.length > maxCharsPerItem ? `${summary.slice(0, maxCharsPerItem)}\n…[truncated]` : summary;
+            lines.push(`## ${item.key ?? rel} (${rel}, ${raw.length} chars)`, '', truncated, '');
+        }
+    }
+    return lines.join('\n');
+}
+
 export function dailySafetyPrep(args: string[]): void {
     const [workDir = '', runDate = '', platforms = '', scopeDir = ''] = args;
     const drafts = isDraftsScope(scopeDir);
@@ -4383,6 +4440,7 @@ export function dailySafetyPrep(args: string[]): void {
         }
         for (const name of [
             'safety-review_report.json',
+            'safety-review_digest.md',
             'safety-judge_verdict.json',
             'safety-judge_status.txt',
             'safety-judge_stamp.json',
@@ -4400,17 +4458,23 @@ export function dailySafetyPrep(args: string[]): void {
             if (isFile(stale)) unlinkSync(stale);
         }
         const request = scopeArtifact(workDir, scopeDir, runDate, 'safety-review_request.json');
+        const digestFile = scopeArtifact(workDir, scopeDir, runDate, 'safety-review_digest.md');
         const targets = platforms
             .split(',')
             .map((platform) => platform.trim())
             .filter(Boolean);
+        const content = scopeContent(workDir, scopeDir, runDate);
+        sted('write', digestFile, () =>
+            writeRaw(digestFile, buildSafetyDigest(workDir, scopeDir, runDate, targets, digest, content)),
+        );
         sted('write', request, () =>
             writeJsonText(request, {
                 digest,
+                digestFile,
                 platforms: targets,
                 mode: 'detect-only',
                 scope: drafts ? 'drafts' : 'variants',
-                content: scopeContent(workDir, scopeDir, runDate),
+                content,
             }),
         );
     });

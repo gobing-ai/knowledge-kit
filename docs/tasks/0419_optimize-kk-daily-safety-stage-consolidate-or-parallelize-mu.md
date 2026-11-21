@@ -1,15 +1,17 @@
 ---
 schema_version: 1
 name: "Optimize kk-daily-safety stage: consolidate or parallelize multi-platform review passes"
-status: todo
+status: done
 template: issue
 created_at: 2026-11-21T03:56:38.022Z
-updated_at: "2026-11-21T06:06:45.602Z"
+updated_at: "2026-11-21T07:22:22.337Z"
 feature_id: F61
 
 tags: ["perf", "safety", "deferred"]
 ac_altitude: task-local
 ac_numbering: task-local
+done_forced: "true"
+done_reason: "Implemented operator-approved Option A; verified tests, lint, build, and global kk sync."
 ---
 
 ## 0419. Optimize kk-daily-safety stage: consolidate or parallelize multi-platform review passes
@@ -76,15 +78,21 @@ No product source was changed for this task.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Implemented Option A (operator-approved 2026-11-20): keep the single-call multi-platform architecture in `kk-daily-safety.yaml` and emit a compact structured review digest so `review` and `judge` avoid reading huge `bundle.json` and raw draft/variant payloads.
+
+- `plugins/kk/scripts/daily-stages.ts:4358-4485`: added `buildSafetyDigest()` and wired `dailySafetyPrep()` to write `<runDate>_09_safety-review_digest.md` and reference it via `digestFile` in `<runDate>_09_safety-review_request.json` (both `drafts` and `variants` scopes).
+- `plugins/kk/workflows/kk-daily-safety.yaml:73-78,104-111` (and symlink `.spur/workflows/kk-daily-safety.yaml`): updated `review` and `judge-primary` prompts (staying within ADR-115 `<= 1000` chars) to read `digestFile` first and spot-check `content` only when exact-line verification is needed.
+- `plugins/kk/tests/safety-variants-scope.test.ts:194-205`: added assertion verifying `dailySafetyPrep` writes `digestFile` (`Safety Review Digest`) and records it in `safety-review_request.json`.
+- Synced `plugins/kk/scripts/`, `plugins/kk/workflows/`, and `apps/cli/dist/index.js` to `/Users/robin/.bun/install/global/node_modules/@gobing-ai/knowledge-kit`.
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+- `bun test ./plugins/kk/tests/daily-safety-infra.test.ts ./plugins/kk/tests/safety-variants-scope.test.ts ./apps/cli/tests/launch-safety-dag.test.ts`: **17 pass, 0 fail** (123 assertions).
+- `bun run format && bun run lint && bun run build && bun run tools:fresh`: all passed.
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+Verdict: **PASS** (Option A: compact digest surface preserves `*_safety-review_report.json` and `*_safety-judge_verdict.json` contracts; next daily run will confirm live stage wall-time reduction).
 
 ### References
 
@@ -92,3 +100,8 @@ No product source was changed for this task.
 - `.works/kk-news-generate/20261119/4-safety-variants/20261119_09_safety-review_report.json`
 
 ### History
+
+- 2026-11-21T07:22:19.786Z todo → wip (system)
+- 2026-11-21T07:22:21.008Z wip → testing (system)
+- 2026-11-21T07:22:22.219Z testing → done (system)
+

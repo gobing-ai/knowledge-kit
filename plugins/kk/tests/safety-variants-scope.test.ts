@@ -193,8 +193,17 @@ describe('0331 stages — the variants chain digests registered bytes and leaves
         expect(existsSync(join(dir, VARIANTS_SCOPE, 'safety.json'))).toBe(false);
         const request = JSON.parse(
             readFileSync(join(dir, VARIANTS_SCOPE, `${STAMP}_09_safety-review_request.json`), 'utf-8'),
-        ) as { scope: string; digest: string; content: { key: string; path: string; sha256: string }[] };
+        ) as {
+            scope: string;
+            digest: string;
+            digestFile: string;
+            content: { key: string; path: string; sha256: string }[];
+        };
         expect(request.scope).toBe('variants');
+        expect(existsSync(request.digestFile)).toBe(true);
+        const digestText = readFileSync(request.digestFile, 'utf-8');
+        expect(digestText).toContain('Safety Review Digest');
+        expect(digestText).toContain('surfdash-pub:post');
         const manifest = JSON.parse(readFileSync(join(dir, VARIANTS_SCOPE, 'manifest.json'), 'utf-8'));
         expect(request.digest).toBe(manifestDigest(dir, manifest));
         expect(request.content.map((entry) => entry.key)).toEqual(['surfdash-pub:post', 'wechatmp-pub:文章']);
