@@ -410,15 +410,29 @@ export class LinkedinBrowserTransport implements PublishTransport {
         await page.locator(triggerSelector).first().click();
 
         // Modal editor. A missing editor after the click is the same loud typed refusal family.
+        // The share box is a React target that can be clicked before the feed finishes hydrating
+        // (measured 2026-11-20: one run opened the composer, the next did not with the same session),
+        // so the click is retried once against a freshly resolved trigger before failing.
         let composerSelector: string;
         try {
             composerSelector = await resolveSelector(page, LINKEDIN_POST_SELECTORS.composer, {
-                timeoutMs: this.stepTimeoutMs,
+                timeoutMs: Math.min(this.stepTimeoutMs, 15_000),
                 label: 'linkedin composer',
             });
         } catch {
+            const retryTrigger = await resolveSelector(page, LINKEDIN_POST_SELECTORS.shareTrigger, {
+                timeoutMs: 10_000,
+                label: 'linkedin share box retry',
+            }).catch(() => null);
+            if (retryTrigger !== null) await page.locator(retryTrigger).first().click().catch(() => {});
+            composerSelector = await resolveSelector(page, LINKEDIN_POST_SELECTORS.composer, {
+                timeoutMs: this.stepTimeoutMs,
+                label: 'linkedin composer (after retry)',
+            }).catch(() => '');
+        }
+        if (composerSelector === '') {
             return stageFail(
-                `linkedin composer did not open after the share box (selector drift) — run: ${LINKEDIN_LOGIN_INSTRUCTION}`,
+                `linkedin composer did not open after the share box, twice (selector drift) — run: ${LINKEDIN_LOGIN_INSTRUCTION}`,
                 'composer',
                 metadata,
             );
@@ -451,7 +465,20 @@ export class LinkedinBrowserTransport implements PublishTransport {
         const beforeLinks = await this.readPostLinks(page);
 
         // Send: the Post control inside the share dialog.
-        const sendSelector = await resolveSelector(page, LINKEDIN_POST_SELECTORS.send, {
+        // Prefer the role engine. The composer's Post is a plain `<button>Post</button>` that is
+        // visible and enabled in the captured state (2026-11-20 screenshot) while every CSS form in
+        // the list failed to resolve — the same class of miss the threads rail hit with `text-is`
+        // against a styled label. `getByRole` names the control as the user sees it; the composer's
+        // Post is the LAST match because the feed's own Post entry point sits above it.
+        const roleEngine = page as unknown as {
+            getByRole?: (
+                role: string,
+                options: { name: string; exact: boolean },
+            ) => { count(): Promise<number>; last(): { click(options?: { timeout?: number }): Promise<unknown> } };
+        };
+        const rolePost = roleEngine.getByRole?.('button', { name: 'Post', exact: true });
+        const roleCount = rolePost === undefined ? 0 : await rolePost.count().catch(() => 0);
+        const sendSelector = roleCount > 0 ? 'role:Post' : await resolveSelector(page, LINKEDIN_POST_SELECTORS.send, {
             timeoutMs: this.stepTimeoutMs,
             label: 'linkedin Post button',
         }).catch(async (error: unknown) => {
@@ -483,18 +510,27 @@ export class LinkedinBrowserTransport implements PublishTransport {
                 `${String((error as Error)?.message ?? error)}${state ? ` — composer ${state}` : ''}${shot ? ` — screenshot /tmp/kk-linkedin-send-latest.png` : ''}`,
             );
         });
-        const send = page.locator(sendSelector).first();
-        const enabled = await expectOutcome(async () => ((await send.isEnabled()) ? 'enabled' : null), {
-            timeoutMs: this.stepTimeoutMs,
-            label: 'linkedin Post button enabled',
-        });
+        const send = sendSelector === 'role:Post' ? null : page.locator(sendSelector).first();
+        const enabled = await expectOutcome(
+            async () => {
+                if (rolePost !== undefined && sendSelector === 'role:Post') {
+                    return (await rolePost.count()) > 0 ? 'enabled' : null;
+                }
+                return send !== null && (await send.isEnabled()) ? 'enabled' : null;
+            },
+            { timeoutMs: this.stepTimeoutMs, label: 'linkedin Post button enabled' },
+        );
         if (!enabled.ok)
             return stageFail(
                 `linkedin Post button never became clickable — ${enabled.error}`,
                 'send-enabled',
                 metadata,
             );
-        await send.click();
+        if (rolePost !== undefined && sendSelector === 'role:Post') {
+            await rolePost.last().click({ timeout: this.stepTimeoutMs });
+        } else if (send !== null) {
+            await send.click();
+        }
 
         // Confirmation: a failure toast fails fast; otherwise the fresh post link is preferred so
         // the Result can carry the created post's url/id, with the fresh success toast as the
