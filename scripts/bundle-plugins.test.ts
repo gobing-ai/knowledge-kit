@@ -137,8 +137,9 @@ describe('bundle-plugins EXCLUDE (0111)', () => {
         expect(EXCLUDE.test('/ingestions/karakeep-local/node_modules/@gobing-ai/kk-core')).toBe(true);
         expect(EXCLUDE.test('/generations/core-facts-gen/node_modules')).toBe(true);
         expect(EXCLUDE.test('/publishings/emdash-pub/node_modules/')).toBe(true);
-        // A plugin's local Python env (omni-voice-gen) is machine-specific, never distribution content.
+        // A plugin's local Python env (omni-voice-gen, vibe-voice-tts) is machine-specific, never distribution content.
         expect(EXCLUDE.test('/generations/omni-voice-gen/.venv/bin/python')).toBe(true);
+        expect(EXCLUDE.test('/generations/vibe-voice-tts/.venv/bin/python')).toBe(true);
     });
 
     it('still stages plugin source, manifests, and dist entries', () => {
@@ -181,6 +182,16 @@ describe('bundle-plugins EXCLUDE (0111)', () => {
             expect((JSON.parse(readFileSync(join(voxcpmDir, 'plugin.json'), 'utf-8')) as { entry: string }).entry).toBe(
                 './dist/index.js',
             );
+            // G16 / 0420: the vibe-voice-tts uv worker + project assets are copied assets beside
+            // its bundled dist entry (never bundled into JS or tied to the checkout).
+            const vibeVoiceDir = join(pluginTarget, 'generations', 'vibe-voice-tts');
+            expect(existsSync(join(vibeVoiceDir, 'dist', 'index.js'))).toBe(true);
+            for (const asset of ['python/worker.py', 'pyproject.toml', 'uv.lock', 'uv.toml', 'profiles.json']) {
+                expect(existsSync(join(vibeVoiceDir, asset)), asset).toBe(true);
+            }
+            expect(
+                (JSON.parse(readFileSync(join(vibeVoiceDir, 'plugin.json'), 'utf-8')) as { entry: string }).entry,
+            ).toBe('./dist/index.js');
             for (const collection of ['ingestions', 'generations', 'publishings'] as const) {
                 const collectionDir = join(pluginTarget, collection);
                 if (!existsSync(collectionDir)) {

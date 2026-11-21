@@ -1,0 +1,10 @@
+{
+    "profiles": [
+        {
+            "id": "robin-news",
+            "name": "robin-news",
+            "mode": "instruct",
+            "instruct": "清晰、自然、沉稳的中文新闻播报，语速适中。"
+        }
+    ]
+}

@@ -1,0 +1,9 @@
+[project]
+name = "vibe-voice-tts"
+version = "1.0.0"
+description = "VibeVoice-backed voice generator worker for knowledge-kit (independent uv project)"
+requires-python = "==3.12.*"
+dependencies = ["vibevoice==0.0.1"]
+
+[dependency-groups]
+dev = ["pytest"]

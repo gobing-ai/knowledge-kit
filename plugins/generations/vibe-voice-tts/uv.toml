@@ -1,0 +1,4 @@
+# Hardlink wheels from the shared uv cache instead of duplicating multi-gigabyte torch trees
+# across local plugin virtualenvs. Override with UV_LINK_MODE=copy if ~/.cache/uv lives on a
+# separate filesystem.
+link-mode = "hardlink"
