@@ -1,5 +1,106 @@
 ## [Unreleased]
 
+## [0.1.23] - 2026-11-21
+
+### Added
+
+- feat(music): dogfood one accepted track, promote song x synthwave (77e07c8f)
+<!-- src: plugins/generations/music-gen/presets/formats/song.yaml:33 · confidence: HIGH -->
+- feat(news): prune published episode wavs in publish-report (3fe4bfb0)
+<!-- src: apps/cli/src/commands/content-publish.ts:440 · confidence: HIGH -->
+- feat(voice): fail fast on billing 4xx, surface Voicebox CPU fallback, add voicebox to the daily chain (73f27e96)
+<!-- src: plugins/generations/gemini-tts/src/gemini-client.ts:148 · confidence: HIGH -->
+- feat(voxcpm-tts): harden worker stderr, MPS fail-fast, and batch reuse (0416 partial) (41eaf6f5)
+<!-- src: plugins/generations/voxcpm-tts/src/voxcpm-client.ts:374 · confidence: HIGH -->
+- feat(daily): carry the frozen episode identity to the surfdash article (d9120687)
+<!-- src: plugins/kk/scripts/kk-workflow-stages.ts:1770 · confidence: HIGH -->
+- feat(vibe-voice-tts): add standalone VibeVoice TTS generator plugin and uv worker (5dc5a2ad)
+<!-- src: plugins/generations/vibe-voice-tts/pyproject.toml:4 · confidence: HIGH -->
+- feat(voice): wire vibe-voice vdriver across daily stages, CLI, board and docs (7d48fd52)
+<!-- src: apps/cli/src/board/manifest.ts:56 · confidence: HIGH -->
+
+### Fixed
+
+- fix(wechatmp-pub): refuse a duplicate draft title before creating (0b159de5)
+<!-- src: plugins/publishings/wechatmp-pub/src/cgi-draft.ts:485 · confidence: HIGH -->
+- fix(kk-music): make the workflow runnable end to end headlessly (08b988eb)
+<!-- src: plugins/kk/workflows/kk-music.yaml:138 · confidence: HIGH -->
+- fix(schedule): bind NODE_PATH in the kk-serve plist so the decision layer loads (b3aa2c25)
+<!-- src: plugins/kk/schedules/kk-serve.launchd.plist.tmpl:74 · confidence: HIGH -->
+- fix(music-gen): resolve the preset root from the packaged layout (a8156f0d)
+<!-- src: plugins/generations/music-gen/src/presets.ts:673 · confidence: HIGH -->
+- fix(news): close a sub-floor script refusal as no-content, not a failed run (53816bda)
+<!-- src: apps/cli/src/commands/content-generate.ts:952 · confidence: HIGH -->
+- fix(safety): require a human for a judged kk-safety-verdict escalation (8251759a)
+<!-- src: plugins/kk/scripts/safety-artifact-check.ts:159 · confidence: HIGH -->
+- fix(spur-link): re-create the checkout's @gobing-ai/spur link on install (144bc83e)
+<!-- src: scripts/link-spur.ts:30 · confidence: HIGH -->
+- fix(news): pass the plan cap to `kk store extract` so the pool is not pre-trimmed (2783cad8)
+<!-- src: apps/cli/src/commands/content-generate.ts:625 · confidence: HIGH -->
+- fix(wechatmp): read the 赞赏 row's own refusal instead of clicking a 0x0 box (c9ba2bf7)
+<!-- src: plugins/publishings/wechatmp-pub/src/enrich.ts:309 · confidence: HIGH -->
+- fix(x-pub): stop pressing Escape on the compose page, and accept the inline submit (177320f9)
+<!-- src: plugins/publishings/x-pub/src/post-rail.ts:232 · confidence: HIGH -->
+- fix(x-pub): ask enablement, not attachment, when resolving the submit control (6b42e3e1)
+<!-- src: plugins/publishings/x-pub/src/post-rail.ts:251 · confidence: HIGH -->
+- fix(content-generate): accept the voicebox engine in generate-voice (876c6205)
+<!-- src: apps/cli/src/commands/content-generate.ts:65 · confidence: HIGH -->
+- fix(music-gen): split connect probe from synchronous paid POSTs (0414) (efae4f0b)
+<!-- src: plugins/generations/music-gen/src/adapter/instance.ts:41 · confidence: HIGH -->
+- fix(wechatmp): request 赞赏 and stop losing the audio at the picker close (ca24a947)
+<!-- src: plugins/publishings/wechatmp-pub/src/flow.ts:2956 · confidence: HIGH -->
+- fix(x-pub): confirm a sent post on X's own toast, and click the real submit (653894e9)
+<!-- src: plugins/publishings/x-pub/src/post-rail.ts:435 · confidence: HIGH -->
+- fix(daily): commit the surfdash post this run left uncommitted instead of skipping (2ee11f63)
+<!-- src: plugins/kk/scripts/kk-workflow-stages.ts:1665 · confidence: HIGH -->
+- fix(threads-pub): fix composer text check and nested Post button click (43b273ef)
+<!-- src: plugins/publishings/threads-pub/src/post-rail.ts:61 · confidence: HIGH -->
+- fix(threads-pub): read the composer back, and find the Post control where Threads renders it (b8fcc358)
+<!-- src: plugins/publishings/threads-pub/src/post-rail.ts:361 · confidence: HIGH -->
+- fix(threads-pub): click the composer's Post via the role engine, not a CSS label match (35f7b45f)
+<!-- src: plugins/publishings/threads-pub/src/post-rail.ts:326 · confidence: HIGH -->
+- fix(linkedin-pub): measure the composer, and report it when Post cannot be resolved (540e37c3)
+<!-- src: plugins/publishings/linkedin-pub/src/index.ts:113 · confidence: HIGH -->
+- fix(linkedin-pub): screenshot the page when Post cannot be resolved (63d30832)
+<!-- src: plugins/publishings/linkedin-pub/src/index.ts:475 · confidence: HIGH -->
+- fix(linkedin-pub): click Post through the role engine, and retry a cold share box (20457d63)
+<!-- src: plugins/publishings/linkedin-pub/src/index.ts:423 · confidence: HIGH -->
+
+### Changed
+
+- build(generations): hardlink uv wheels instead of copying them (a8698cb5)
+<!-- src: plugins/generations/voxcpm-tts/uv.toml:5 · confidence: HIGH -->
+- perf(daily): switch xhs cards to minimax (0418) and add safety review digest (0419) (752a89ac)
+<!-- src: plugins/kk/scripts/daily-stages.ts:4368 · confidence: HIGH -->
+
+### Other
+
+- docs(evidence): note that 0404's mock takes lived in the batch worktree (6efeab69)
+- chore(rules): exempt the schedule render fs-io site (454e5ce6)
+- docs(tasks): record 0404's gate pause on a concurrent writer (da2d5789)
+- chore(project): upgrade project dependencies (86cbac7f)
+- test(content-generate): cover the registration seam, itemCount and the pre-freeze bundle summary (db5819a6)
+- docs(tasks): close 0404 with its verification record, and file 0415 (0ae8727d)
+- test(content-generate): three more measured cases, and drop the 0415 task file (0af61734)
+- docs(feature): update existing feature files (4c113f8e)
+- test(content-generate): reach the per-file function threshold through the exported row seam (f95bbf5a)
+- docs(tasks): file 0415-0419 after today's voice-chain stalls (f9f3db70)
+- chore: ignore .spur/tmp directory (4224480e)
+- docs(tasks): close 0415 with host memory and cache offload record (779ced95)
+- docs(tasks): record the 0415-0419 batch findings on 0416 (8543cb62)
+- chore: merge sp/runall-0415-0419-1cca into main (cbad024f)
+- test(daily-generate): support VOXCPM_BATCH_MANIFEST in section shim and fix 0417 evidence ref (8ad82072)
+- docs(tasks): mark 0416 done with M4 MPS batch and bfloat16 probe evidence (44cc8e24)
+- docs(voice): add VibeVoice driver ADR, design, feature G16, and tasks (a9f6f309)
+- style(threads-pub): wrap the getByRole signature types (8087ea78)
+- test(wechatmp): pin the 2026-11-20 赞赏 decision the daily builder now ships (74b892dd)
+- test(x-pub): cover the post-click evidence and the submit resolution (fdd26824)
+- test(threads-pub): cover the role-engine submit and the suggestions layer (d9cc430d)
+- test(board): name the failed request when a console error arrives (1443e486)
+- style(linkedin-pub): format the role-engine submit change (62b87679)
+- chore(wrap): dev-runall G16 close-out writes (acb93bb1)
+- chore: merge sp/runall-g16-002235 into main (2a3b854c)
+
 ## [0.1.21] - 2026-11-19
 
 ### Added
