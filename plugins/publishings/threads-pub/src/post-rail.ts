@@ -323,6 +323,18 @@ export class ThreadsPostBrowserTransport implements PublishTransport {
 
         const submit = await expectOutcome(
             async () => {
+                // Prefer the role engine: Threads puts the label in a CHILD div of a role=button, so a
+                // CSS `:text-is` on the parent only matches when the parent holds nothing else, and a
+                // selector the harness has to normalize can degrade to a bare `div[role="button"]`
+                // whose FIRST match is the composer's Cancel — which is exactly the "Save to drafts?"
+                // leave-guard observed on 2026-11-20. `getByRole` derives the accessible name from the
+                // child text, so it names the control the user sees.
+                const roleEngine = page as unknown as {
+                    getByRole?: (role: string, options: { name: string; exact: boolean }) => { count(): Promise<number> };
+                };
+                const byRole = roleEngine.getByRole?.('button', { name: 'Post', exact: true });
+                const roleCount = byRole === undefined ? 0 : await byRole.count().catch(() => 0);
+                if (roleCount > 0) return `role:Post:${roleCount}`;
                 const found = await trySelectors(page, THREADS_POST_SELECTORS.submit);
                 return found.found ? (found.selector ?? THREADS_POST_SELECTORS.submit[0]) : null;
             },
@@ -372,13 +384,26 @@ export class ThreadsPostBrowserTransport implements PublishTransport {
             .then(() => true)
             .catch(() => false);
         if (dismiss) await page.waitForTimeout(500);
-        await page
-            .locator(submit.evidence)
-            .first()
-            .click({ timeout: this.stepTimeoutMs })
-            .catch(async () => {
-                await page.locator(submit.evidence).first().click({ force: true });
-            });
+        const submitEvidence = String(submit.evidence);
+        if (submitEvidence.startsWith('role:Post:')) {
+            // The composer's Post is the LAST match (the feed's inline composer sits behind it).
+            const rolePost = (
+                page as unknown as {
+                    getByRole: (role: string, options: { name: string; exact: boolean }) => {
+                        last(): { click(options: { timeout: number }): Promise<unknown> };
+                    };
+                }
+            ).getByRole('button', { name: 'Post', exact: true });
+            await rolePost.last().click({ timeout: this.stepTimeoutMs });
+        } else {
+            await page
+                .locator(submitEvidence)
+                .first()
+                .click({ timeout: this.stepTimeoutMs })
+                .catch(async () => {
+                    await page.locator(submitEvidence).first().click({ force: true });
+                });
+        }
 
         await page.waitForTimeout(2_500);
         await evidence(page, '07-post-clicked');
