@@ -76,6 +76,19 @@ interface FakePageOptions {
      * Any rail that presses Escape to clear a mask therefore loses the page-scoped submit control.
      */
     escapeLeavesCompose?: boolean;
+    /** Composer console evidence the post-click step reads; absent means the page has no `evaluate`. */
+    consoleJson?: string;
+    /** `evaluate` rejects — evidence must never turn a failure into a stack. */
+    rejectEvaluate?: boolean;
+    /** A page that also carries `screenshot`; `reject` models a capture that fails. */
+    screenshot?: 'ok' | 'reject';
+    /**
+     * The submit control reads enabled for the first N reads only: typing's own probe, then nothing
+     * clickable when the rail resolves the control for the click (the 2026-11-20 hidden twin).
+     */
+    submitEnabledReads?: number;
+    /** The FIRST profile navigation rejects (the baseline read is best-effort, the receipt is not). */
+    rejectBaselineGoto?: boolean;
 }
 
 /**
@@ -90,6 +103,8 @@ function makeFakePostPage(options: FakePageOptions, calls: string[]): Page {
     let submitted = false;
     let mediaUploaded = false;
     let homeVisits = 0;
+    let submitReads = 0;
+    let profileGotos = 0;
 
     const composerOpen = (): boolean => url.includes('/compose/post');
     const submitEnabled = (): boolean =>
@@ -119,8 +134,12 @@ function makeFakePostPage(options: FakePageOptions, calls: string[]): Page {
     const leaf = (selector: string) => ({
         count: async () => attached(selector),
         isVisible: async () => attached(selector) > 0,
-        isEnabled: async () =>
-            selector === X_POST_SUBMIT || selector === X_POST_SUBMIT_INLINE ? submitEnabled() : attached(selector) > 0,
+        isEnabled: async () => {
+            if (selector !== X_POST_SUBMIT && selector !== X_POST_SUBMIT_INLINE) return attached(selector) > 0;
+            submitReads += 1;
+            const limit = options.submitEnabledReads;
+            return submitEnabled() && (limit === undefined || submitReads <= limit);
+        },
         getAttribute: async (name: string) => {
             calls.push(`getAttribute:${selector}|${name}`);
             if (selector === POST_SELECTORS.profileLink[0]) {
@@ -164,6 +183,12 @@ function makeFakePostPage(options: FakePageOptions, calls: string[]): Page {
     const page = {
         async goto(target: string) {
             calls.push(`goto:${target}`);
+            if (target === PROFILE_URL) {
+                profileGotos += 1;
+                if (options.rejectBaselineGoto === true && profileGotos === 1) {
+                    throw new Error('profile navigation failed');
+                }
+            }
             url = options.landedUrl ?? target;
             if (url === X_POST_URL) homeVisits += 1;
         },
@@ -188,6 +213,26 @@ function makeFakePostPage(options: FakePageOptions, calls: string[]): Page {
             if (options.uploadError !== undefined) throw new Error(options.uploadError);
             mediaUploaded = true;
         },
+        // The evidence steps are optional on purpose: a real page always has them, and a page
+        // without them must still publish (the rail guards both).
+        ...(options.consoleJson === undefined && options.rejectEvaluate !== true
+            ? {}
+            : {
+                  async evaluate() {
+                      calls.push('evaluate');
+                      if (options.rejectEvaluate === true) throw new Error('evaluate unavailable');
+                      return options.consoleJson;
+                  },
+              }),
+        ...(options.screenshot === undefined
+            ? {}
+            : {
+                  async screenshot(payload: { path: string }) {
+                      calls.push(`screenshot:${payload.path}`);
+                      if (options.screenshot === 'reject') throw new Error('screenshot unavailable');
+                      await writeFile(payload.path, 'png');
+                  },
+              }),
     };
     return page as unknown as Page;
 }
@@ -724,5 +769,161 @@ describe('measured 2026-11-20 — /compose/post is a page, and Escape navigates 
         const result = await transport(fake).publish({ content });
         expect(fake.calls.filter((call) => call === 'press:Escape')).toEqual([]);
         expect(result.ok, `error: ${result.error ?? ''} calls: ${fake.calls.slice(0, 12).join(' | ')}`).toBe(true);
+    });
+});
+
+describe('measured 2026-11-20 — post-click evidence and submit resolution', () => {
+    const TOAST =
+        '{"path":"/compose/post","textLen":7,"alerts":["Your post was sent. You have 1 hour to make any edits."],"dialogs":[]}';
+
+    let dir = '';
+    const coverPath = (): string => join(dir, 'cover.png');
+
+    beforeEach(async () => {
+        dir = mkdtempSync(join(tmpdir(), 'kk-x-post-evidence-'));
+        await writeFile(join(dir, 'cover.png'), 'png');
+    });
+
+    afterEach(async () => {
+        await rm(dir, { recursive: true, force: true });
+    });
+
+    test('X’s own sent toast confirms a post the profile timeline has not rendered yet', async () => {
+        // Measured 2026-11-20: the toast read "Your post was sent.", the profile showed nothing in
+        // 30 s, the row failed, and the retry posted the same text AGAIN. The toast is a receipt.
+        const fake = makeFakeLauncher({
+            pages: [
+                {},
+                { statusHref: '/robin/status/100', statusHrefAfterSubmit: '/robin/status/100', consoleJson: TOAST },
+            ],
+        });
+        const result = await transport(fake).publish({ content });
+
+        expect(result.ok).toBe(true);
+        expect(result.target).toBe('x');
+        expect(result.id).toBeUndefined();
+        expect(result.url).toBe(`https://x.com/robin`);
+        expect(result.message).toContain('confirmed it in the composer toast');
+        expect(result.metadata?.confirmedBy).toBe('post-sent-toast');
+        expect(fake.calls).toContain('evaluate');
+    });
+
+    test('a toast that never says the post was sent does not confirm it', async () => {
+        const fake = makeFakeLauncher({
+            pages: [
+                {},
+                {
+                    statusHref: '/robin/status/100',
+                    statusHrefAfterSubmit: '/robin/status/100',
+                    consoleJson: '{"alerts":["Something went wrong. Try again."],"path":"/compose/post"}',
+                },
+            ],
+        });
+        const result = await transport(fake).publish({ content });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('receipt not confirmed');
+    });
+
+    test('a receipt that never appears names the page, the console and the screenshot it kept', async () => {
+        const fake = makeFakeLauncher({
+            pages: [
+                {},
+                {
+                    statusHref: '/robin/status/100',
+                    statusHrefAfterSubmit: '/robin/status/100',
+                    consoleJson: '{"alerts":["Your post could not be sent."],"url":"/compose/post","textLen":0}',
+                    screenshot: 'ok',
+                },
+            ],
+        });
+        const result = await transport(fake).publish({ content });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('receipt not confirmed');
+        // After the click the composer's own reaction, the screenshot path and a second console read
+        // are all in the error — the first live failure named only the timeout.
+        expect(result.error).toContain('after click {"alerts":["Your post could not be sent."]');
+        expect(result.error).toContain('screenshot');
+        expect(result.error).toContain('console {"alerts":["Your post could not be sent."]');
+        expect(fake.calls.some((call) => call.startsWith('screenshot:'))).toBe(true);
+    });
+
+    test('an unreadable console and a failed capture still fail the receipt, without a stack', async () => {
+        const fake = makeFakeLauncher({
+            pages: [
+                {},
+                {
+                    statusHref: '/robin/status/100',
+                    statusHrefAfterSubmit: '/robin/status/100',
+                    rejectEvaluate: true,
+                    screenshot: 'reject',
+                },
+            ],
+        });
+        const result = await transport(fake).publish({ content });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('receipt not confirmed');
+        expect(result.error).not.toContain('after click');
+        expect(result.error).not.toContain('— screenshot');
+        expect(result.error).not.toContain('evaluate unavailable');
+    });
+
+    test('a Post that stays disabled after the media reports the composer it saw', async () => {
+        const fake = makeFakeLauncher({
+            pages: [
+                {},
+                {
+                    submitDisabledAfterMedia: true,
+                    consoleJson: '{"textLen":7,"submitDisabled":"true","images":1,"alerts":[]}',
+                },
+            ],
+        });
+        const result = await transport(fake, 1).publish({ content, options: { coverPath: coverPath() } });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('submit stayed disabled after the media');
+        expect(result.error).toContain('composer {"textLen":7,"submitDisabled":"true","images":1');
+    });
+
+    test('a Post that stays disabled with an unreadable console reports the timeout alone', async () => {
+        const fake = makeFakeLauncher({
+            pages: [{}, { submitDisabledAfterMedia: true, rejectEvaluate: true }],
+        });
+        const result = await transport(fake, 1).publish({ content, options: { coverPath: coverPath() } });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('submit stayed disabled after the media');
+        expect(result.error).not.toContain('composer');
+    });
+
+    test('a submit that is no longer clickable refuses instead of blind-clicking', async () => {
+        // The composer page carries a hidden twin whose button enables but never posts; once the
+        // real control is gone, a blind click reads downstream as "clicked but nothing happened".
+        const fake = makeFakeLauncher({
+            pages: [{}, { statusHrefAfterSubmit: '/robin/status/200', submitEnabledReads: 1 }],
+        });
+        const result = await transport(fake).publish({ content });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('no clickable control remained');
+        expect(fake.calls).not.toContain(`click:${X_POST_SUBMIT}`);
+        expect(fake.calls).not.toContain(`click:${X_POST_SUBMIT_INLINE}`);
+    });
+});
+
+describe('post rail baseline read', () => {
+    test('a profile that refuses to load leaves the baseline unknown and still confirms the new post', async () => {
+        // The baseline is best-effort: its only job is to tell a pre-existing status id from the new
+        // one, and an unknown baseline still confirms whenever the profile shows an id afterwards.
+        const fake = makeFakeLauncher({
+            pages: [{}, { rejectBaselineGoto: true, statusHrefAfterSubmit: '/robin/status/300' }],
+        });
+        const result = await transport(fake).publish({ content });
+
+        expect(result.ok, `error: ${result.error ?? ''}`).toBe(true);
+        expect(result.id).toBe('300');
+        expect(fake.calls.filter((call) => call === `goto:${PROFILE_URL}`)).toHaveLength(2);
     });
 });
