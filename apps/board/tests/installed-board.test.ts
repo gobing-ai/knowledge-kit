@@ -33,7 +33,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openStore } from '@gobing-ai/kk-store';
-import { type Browser, type ConsoleMessage, chromium, type Locator, type Page } from 'playwright';
+import { type Browser, type ConsoleMessage, chromium, type Locator, type Page, type Request } from 'playwright';
 import { spurPackageRootOf } from '../../../scripts/spur-env';
 
 const REPO = resolve(import.meta.dir, '../../..');
@@ -802,13 +802,24 @@ async function consoleErrorsDuring(fn: () => Promise<void>): Promise<string[]> {
     const onPageError = (error: Error): void => {
         errors.push(error.message);
     };
+    // A console line names the failure but never the resource: `net::ERR_INCOMPLETE_CHUNKED_ENCODING`
+    // failed this suite once (CI run 44852346749, 2026-11-21) and the text alone could not say which
+    // response was cut, so the occurrence cost a rerun instead of a diagnosis. Requests the browser
+    // cancels for its own reasons (a navigation, a superseded load) are not failures and stay silent.
+    const onRequestFailed = (request: Request): void => {
+        const failure = request.failure();
+        if (failure === null || failure.errorText.includes('ERR_ABORTED')) return;
+        errors.push(`${request.method()} ${request.url()} — ${failure.errorText}`);
+    };
     page.on('console', onConsole);
     page.on('pageerror', onPageError);
+    page.on('requestfailed', onRequestFailed);
     try {
         await fn();
     } finally {
         page.off('console', onConsole);
         page.off('pageerror', onPageError);
+        page.off('requestfailed', onRequestFailed);
     }
     return errors;
 }
