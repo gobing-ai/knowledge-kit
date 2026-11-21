@@ -358,11 +358,30 @@ export class ThreadsPostBrowserTransport implements PublishTransport {
                 `threads post control never attached: ${submit.error}${inventory ? ` (dialog buttons: ${String(inventory)})` : ''}`,
             );
         }
-        // The composer rides under a suggestions/tooltip layer that intercepts pointer events
-        // (`<div class="__fb-light-mode …"> intercepts pointer events`, measured 2026-11-20). The
-        // editor click already forces through the same layer; Post does too.
-        await page.locator(submit.evidence).first().click({ force: true });
+        // The composer rides under a suggestions layer that intercepts pointer events
+        // (`<div class="__fb-light-mode …"> intercepts pointer events`, measured 2026-11-20). A
+        // forced click dispatches onto that layer and posts NOTHING — the profile stayed unchanged —
+        // so dismiss the layer first and click for real. The force click remains as a fallback for a
+        // surface that reports a transient overlay.
+        const dismiss = await page
+            .locator(
+                'div[role="button"]:text-is("Dismiss suggestions"), div[role="button"]:has(> div:text-is("Dismiss suggestions"))',
+            )
+            .first()
+            .click({ timeout: 3_000 })
+            .then(() => true)
+            .catch(() => false);
+        if (dismiss) await page.waitForTimeout(500);
+        await page
+            .locator(submit.evidence)
+            .first()
+            .click({ timeout: this.stepTimeoutMs })
+            .catch(async () => {
+                await page.locator(submit.evidence).first().click({ force: true });
+            });
 
+        await page.waitForTimeout(2_500);
+        await evidence(page, '07-post-clicked');
         const receipt = await expectOutcome(
             async () => {
                 const id = await this.newestPostId(page, handle);
