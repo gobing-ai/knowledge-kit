@@ -1,0 +1,5 @@
+# Hardlink wheels from the shared uv cache instead of copying them. Measured 2026-11-20: this
+# env and voxcpm-tts's held 2.45 GiB with zero hardlinked bytes, so torch/scipy/llvmlite
+# were stored twice on top of ~/.cache/uv/archive-v0. Hardlinks need both paths on one
+# filesystem; override with UV_LINK_MODE=copy if the cache ever moves to another device.
+link-mode = "hardlink"
