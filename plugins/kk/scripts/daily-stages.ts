@@ -6119,6 +6119,25 @@ export function newsLocalizeValidate(args: string[]): void {
                 );
                 continue;
             }
+            // Rewrite safe compound retired/wrong-locale series brands before freezing and refuse
+            // any unrewritable retired brand or wrong-language show name that check:seo rejects.
+            const normalized = normalizeSeriesNames(raw, locale);
+            const activeText = normalized.markdown;
+            if (activeText !== raw) {
+                sted('write', file, () => writeRaw(file, activeText));
+            }
+            if (normalized.remaining.length > 0) {
+                problems.push(`${locale}: retired series name (${normalized.remaining.join(', ')})`);
+                continue;
+            }
+            if (locale === 'ja' && /ごった煮|寄せ鍋|咸话咸说|Salty Talk/i.test(activeText)) {
+                problems.push(`${locale}: retired series or wrong-language show name in translated body`);
+                continue;
+            }
+            if (locale === 'en' && /咸话咸说|咸話咸説/.test(activeText)) {
+                problems.push(`${locale}: wrong-language show name in translated body`);
+                continue;
+            }
             accepted.push(locale);
         }
         if (problems.length > 0) {

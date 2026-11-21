@@ -16,7 +16,7 @@ const ROOT = join(process.cwd(), '.tmp-surfdash-fixture-locales');
 const SLUG = '20261119-ai-2026-11-19';
 
 /** A surfdash checkout stub: the articles tree plus a postsurfing bin that logs one line per spawn. */
-function writeStubRoot(root: string): { bin: string; spawnLog: string; coverPath: string } {
+function writeStubRoot(root: string): { bin: string; spawnLog: string; coverUrl: string } {
     rmSync(root, { recursive: true, force: true });
     mkdirSync(root, { recursive: true });
     const bin = join(root, 'postsurfing');
@@ -31,9 +31,11 @@ function writeStubRoot(root: string): { bin: string; spawnLog: string; coverPath
         'utf-8',
     );
     Bun.spawnSync(['chmod', '+x', bin]);
-    const coverPath = join(root, 'cover.png');
-    writeFileSync(coverPath, 'png-bytes', 'utf-8');
-    return { bin, spawnLog, coverPath };
+    return {
+        bin,
+        spawnLog,
+        coverUrl: 'https://podcast-media.salty.vip/production/images/item-test.png',
+    };
 }
 
 /** A digest article Content with zh plus the locales the localize step produced. */
@@ -69,24 +71,27 @@ afterEach(() => {
 });
 
 describe('surfdash-pub locale set (0409 R2)', () => {
-    test('AC3 — writes zh/en/ja and spawns postsurfing once with the zh path', async () => {
-        const { bin, spawnLog, coverPath } = writeStubRoot(ROOT);
+    test('AC3 — writes zh/en/ja with remote cover and spawns postsurfing once with the zh path', async () => {
+        const { bin, spawnLog, coverUrl } = writeStubRoot(ROOT);
         process.env.SURFDASH_ROOT = ROOT;
         process.env.POSTSURFING_BIN = bin;
 
         const result = await new PostsurfingFileCliTransport().publish({
-            content: digestContent(coverPath, { en: EN, ja: JA }),
+            content: digestContent(coverUrl, { en: EN, ja: JA }),
         });
 
         for (const locale of ['zh', 'en', 'ja']) {
             expect(existsSync(localePath(locale))).toBe(true);
+            const md = readFileSync(localePath(locale), 'utf-8');
+            expect(md).toContain(coverUrl);
+            expect(existsSync(join(ROOT, 'content', 'posts', 'articles', locale, SLUG, 'assets', 'cover.png'))).toBe(
+                false,
+            );
         }
         const en = readFileSync(localePath('en'), 'utf-8');
         expect(en).toContain('Daily AI Stew');
         expect(en).toContain('English body.');
         expect(readFileSync(localePath('ja'), 'utf-8')).toContain('日本語の本文。');
-        // The cover rides into every locale's assets dir, as the site's schema expects one post dir.
-        expect(existsSync(join(ROOT, 'content', 'posts', 'articles', 'en', SLUG, 'assets', 'cover.png'))).toBe(true);
 
         const spawns = readFileSync(spawnLog, 'utf-8').trim().split('\n');
         expect(spawns).toHaveLength(1);
@@ -97,12 +102,12 @@ describe('surfdash-pub locale set (0409 R2)', () => {
     });
 
     test('AC4 — a missing locale is refused before any spawn, effect none', async () => {
-        const { bin, spawnLog, coverPath } = writeStubRoot(ROOT);
+        const { bin, spawnLog, coverUrl } = writeStubRoot(ROOT);
         process.env.SURFDASH_ROOT = ROOT;
         process.env.POSTSURFING_BIN = bin;
 
         const result = await new PostsurfingFileCliTransport().publish({
-            content: digestContent(coverPath, { en: EN }),
+            content: digestContent(coverUrl, { en: EN }),
         });
 
         expect(result.ok).toBe(false);
@@ -113,12 +118,12 @@ describe('surfdash-pub locale set (0409 R2)', () => {
     });
 
     test('an empty locale body counts as missing (an untranslated locale is not a locale)', async () => {
-        const { bin, spawnLog, coverPath } = writeStubRoot(ROOT);
+        const { bin, spawnLog, coverUrl } = writeStubRoot(ROOT);
         process.env.SURFDASH_ROOT = ROOT;
         process.env.POSTSURFING_BIN = bin;
 
         const result = await new PostsurfingFileCliTransport().publish({
-            content: digestContent(coverPath, { en: EN, ja: { title: JA.title, body: '   ' } }),
+            content: digestContent(coverUrl, { en: EN, ja: { title: JA.title, body: '   ' } }),
         });
 
         expect(result.ok).toBe(false);
@@ -127,7 +132,7 @@ describe('surfdash-pub locale set (0409 R2)', () => {
     });
 
     test('a refined non-primary locale is kept, not re-minted', async () => {
-        const { bin, coverPath } = writeStubRoot(ROOT);
+        const { bin, coverUrl } = writeStubRoot(ROOT);
         process.env.SURFDASH_ROOT = ROOT;
         process.env.POSTSURFING_BIN = bin;
         mkdirSync(join(ROOT, 'content', 'posts', 'articles', 'en', SLUG), { recursive: true });
@@ -135,7 +140,7 @@ describe('surfdash-pub locale set (0409 R2)', () => {
         writeFileSync(localePath('en'), refined, 'utf-8');
 
         await new PostsurfingFileCliTransport().publish({
-            content: digestContent(coverPath, { en: EN, ja: JA }),
+            content: digestContent(coverUrl, { en: EN, ja: JA }),
         });
 
         expect(readFileSync(localePath('en'), 'utf-8')).toBe(refined);
@@ -143,7 +148,7 @@ describe('surfdash-pub locale set (0409 R2)', () => {
     });
 
     test('a non-digest post keeps writing zh only (the site requires locales for digests alone)', async () => {
-        const { bin, spawnLog, coverPath } = writeStubRoot(ROOT);
+        const { bin, spawnLog, coverUrl } = writeStubRoot(ROOT);
         process.env.SURFDASH_ROOT = ROOT;
         process.env.POSTSURFING_BIN = bin;
 
@@ -152,7 +157,7 @@ describe('surfdash-pub locale set (0409 R2)', () => {
                 title: 'AI 2026-11-19',
                 body: '# An IT article\n\nBody.\n',
                 format: 'markdown',
-                metadata: { runDate: '20261119', coverImage: coverPath },
+                metadata: { runDate: '20261119', coverImage: coverUrl },
             },
         });
 

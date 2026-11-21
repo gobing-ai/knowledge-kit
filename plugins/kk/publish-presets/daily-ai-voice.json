@@ -3,18 +3,18 @@
     "name": "daily-ai-voice",
     "targets": [
         {
-            "plugin": "surfdash-pub",
-            "operation": "post",
-            "variant": "article",
+            "plugin": "podcast-pub",
+            "operation": "episode",
+            "variant": "episode",
             "tier": 0,
             "window": "after-generate",
             "mode": "live",
             "required": true
         },
         {
-            "plugin": "podcast-pub",
-            "operation": "episode",
-            "variant": "episode",
+            "plugin": "surfdash-pub",
+            "operation": "post",
+            "variant": "article",
             "tier": 0,
             "window": "after-generate",
             "mode": "live",

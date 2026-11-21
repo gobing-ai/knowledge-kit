@@ -1434,6 +1434,45 @@ async function readLinkMap(
     return { real, live, all };
 }
 
+async function readPodcastTier0AssetLinks(
+    fs: FileSystem,
+    receiptsDir: string,
+    parentRunId: string,
+    consumerMode: 'draft' | 'live' | 'dummy',
+): Promise<{ imageUrl?: string; podcastUrl?: string } | null> {
+    if (!(await fs.exists(receiptsDir))) return null;
+    for (const name of (await fs.readDir(receiptsDir)).filter((entry) => entry.endsWith('.json'))) {
+        try {
+            const receipt = JSON.parse(await fs.readFile(join(receiptsDir, name))) as Receipt;
+            if (
+                receipt.plugin !== 'podcast-pub' ||
+                receipt.parentRunId !== parentRunId ||
+                receipt.status !== 'succeeded' ||
+                receipt.dummy === true ||
+                (consumerMode === 'live' && receipt.mode !== 'live') ||
+                receipt.aggregatePath === undefined
+            ) {
+                continue;
+            }
+            if (!(await fs.exists(receipt.aggregatePath))) continue;
+            const aggregate = JSON.parse(await fs.readFile(receipt.aggregatePath)) as {
+                targets?: Array<{ url?: string; metadata?: Record<string, unknown> }>;
+            };
+            const first = aggregate.targets?.[0];
+            const rawImage = typeof first?.metadata?.imageUrl === 'string' ? first.metadata.imageUrl : undefined;
+            const rawUrl = typeof first?.url === 'string' ? first.url : receipt.url;
+            const imageUrl = rawImage !== undefined && /^https:\/\//.test(rawImage) ? rawImage : undefined;
+            const podcastUrl = rawUrl !== undefined && /^https:\/\//.test(rawUrl) ? rawUrl : undefined;
+            if (imageUrl !== undefined || podcastUrl !== undefined) {
+                return { ...(imageUrl ? { imageUrl } : {}), ...(podcastUrl ? { podcastUrl } : {}) };
+            }
+        } catch {
+            // unreadable podcast receipt or aggregate leaves the original payload untouched
+        }
+    }
+    return null;
+}
+
 /**
  * 0395: every receipt on disk, in the owner-URL shape 0388 resolves links from.
  *
@@ -1720,7 +1759,62 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
                 dummyReceipt: (row, context) =>
                     writeDummyReceipt(fs, row, { ...context, parentRunId: plan.parentRunId, planDigest }),
                 preparePayload: async (row) => {
-                    if (tier === 0) return { payloadPath: row.payloadPath };
+                    if (tier === 0) {
+                        if (row.plugin === 'surfdash-pub' && (await fs.exists(row.payloadPath))) {
+                            // Keep an already-delivered raw payload identity intact on replay (e.g.
+                            // legacy presets where surfdash-pub ran before podcast-pub wrote its receipt).
+                            const rawDigest = createHash('sha256')
+                                .update(await fs.readFile(row.payloadPath))
+                                .digest('hex');
+                            const priorReceiptPath = join(receiptsDir, `${row.key}.json`);
+                            if (await fs.exists(priorReceiptPath)) {
+                                try {
+                                    const prior = JSON.parse(await fs.readFile(priorReceiptPath)) as Receipt;
+                                    if (
+                                        prior.status === 'succeeded' &&
+                                        prior.dummy !== true &&
+                                        prior.parentRunId === plan.parentRunId &&
+                                        prior.payloadDigest === rawDigest
+                                    ) {
+                                        return { payloadPath: row.payloadPath };
+                                    }
+                                } catch {
+                                    // unreadable prior receipt falls through to normal payload preparation
+                                }
+                            }
+                            const podcastLinks = await readPodcastTier0AssetLinks(
+                                fs,
+                                receiptsDir,
+                                plan.parentRunId,
+                                row.mode,
+                            );
+                            if (podcastLinks !== null) {
+                                const parsed = JSON.parse(await fs.readFile(row.payloadPath)) as {
+                                    metadata?: Record<string, unknown>;
+                                    [key: string]: unknown;
+                                };
+                                const nextMetadata: Record<string, unknown> = { ...(parsed.metadata ?? {}) };
+                                if (podcastLinks.imageUrl !== undefined) {
+                                    nextMetadata.coverImage = podcastLinks.imageUrl;
+                                }
+                                if (podcastLinks.podcastUrl !== undefined) {
+                                    nextMetadata.podcastUrl = podcastLinks.podcastUrl;
+                                }
+                                const resolvedPath = join(
+                                    workDir,
+                                    '4-publish',
+                                    'payloads',
+                                    `content.${row.key}.resolved.json`,
+                                );
+                                await fs.writeFile(
+                                    resolvedPath,
+                                    `${JSON.stringify({ ...parsed, metadata: nextMetadata }, null, 2)}\n`,
+                                );
+                                return { payloadPath: resolvedPath };
+                            }
+                        }
+                        return { payloadPath: row.payloadPath };
+                    }
                     const raw = (await fs.exists(row.payloadPath)) ? await fs.readFile(row.payloadPath) : '';
                     const links: LinkMap =
                         row.mode === 'dummy' ? linkMaps.all : row.mode === 'live' ? linkMaps.live : linkMaps.real;

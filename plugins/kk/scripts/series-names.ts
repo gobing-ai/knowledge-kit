@@ -34,7 +34,19 @@ export const DAILY_SERIES_NAMES: Record<DailyLocale, DailySeriesNames> = {
  * Retired series spellings that must never be emitted in any locale. ごった煮 is deliberately absent:
  * it is ordinary ja vocabulary, so rewriting or failing on it would butcher legitimate prose.
  */
-const RETIRED_SERIES_NAMES = ['毎日AIブレンド', 'Daily AI Medley', 'Daily AI Briefing'] as const;
+const RETIRED_SERIES_NAMES = [
+    '毎日AIブレンド',
+    '毎日AIごった煮',
+    'AIごった煮',
+    '毎日AI寄せ鍋',
+    'デイリーAIニュース',
+    'Daily AI Medley',
+    'Daily AI Briefing',
+    'Daily AI Hotchpotch',
+    'Daily AI Hodgepodge',
+    '每日AI资讯',
+    '每日 AI 资讯',
+] as const;
 
 /** All canonical series tokens — each locale's own name is correct there, wrong-locale elsewhere. */
 const SERIES_TOKENS = ['每日AI乱炖', 'Daily AI Stew', 'デイリーAIシチュー'] as const;
@@ -66,6 +78,7 @@ function retiredIn(text: string, locale: DailyLocale): string[] {
         ...SERIES_TOKENS.filter((token) => token !== canonical).map(tokenRe),
         SHORT_ZH_FORM,
         /\bhodgepodge\b/gi,
+        /\bhotchpotch\b/gi,
     ];
     const found: string[] = [];
     for (const pattern of patterns) {
@@ -112,8 +125,8 @@ export function normalizeSeriesNames(
         if (locale === 'en') {
             // The observed en intro phrase — rewritten as a phrase first so the bare word never
             // produces "daily AI Daily AI Stew".
-            out = out.replace(/\byour daily AI hodgepodge\b/gi, 'Your Daily AI Stew');
-            out = out.replace(/\bdaily AI hodgepodge\b/gi, 'Daily AI Stew');
+            out = out.replace(/\byour daily AI h(?:odge|otch)podge\b/gi, 'Your Daily AI Stew');
+            out = out.replace(/\bdaily AI h(?:odge|otch)podge\b/gi, 'Daily AI Stew');
         }
         for (const token of [...RETIRED_SERIES_NAMES, ...SERIES_TOKENS.filter((name) => name !== canonical)]) {
             out = out.replace(tokenRe(token), () => canonical);

@@ -12,30 +12,15 @@
  * `bun run check:content` in the surfdash checkout. The surfdash site gate is the authoritative
  * validation suite before deployment.
  *
- * Daily-topics sync:
- * Before the site gate and commit, digest posts with all three locale files are mapped into
- * the surfdash site's `scripts/seo/daily-topics.json` (from the posts' own refined frontmatter,
- * no new prose), then `bun run sd seo retitle --write --stamp-claims` runs in the checkout.
- * A build/retitle failure fails the run before anything is committed or pushed. See
- * `./topic-claims` for the file work.
- *
- * Environment variables:
- * - `SURFDASH_LISTEN_BACKFILL`:
- *   - `off`: skips the listen-link backfill command.
- * - `SURFDASH_DIGEST_CHECK`:
- *   - unset / default: fail-loud on gate failure; commit and push are blocked.
- *   - `warn`: echoes gate failures via `echoError` prefixed with `site gate (warn):` and continues.
- *   - `off`: bypasses the gate check.
- *   - Both escape hatches are IGNORED while this run pushes to surfdash `main`
- *     (`SURFDASH_AUTO_PUSH !== '0'` and the checkout is on `main`): a failing gate always
- *     blocks there, and `off` still runs the gate.
- * - `SURFDASH_AUTO_PUSH`:
- *   - '0': disables auto-commit and push (used in tests and offline runs).
+ * Cover hosting:
+ * Digests share remote `https://podcast-media.salty.vip/...` covers rather than committing
+ * `assets/cover.png` binaries into git. Local fallback covers upload to Microfeed via
+ * `./media-upload` before frontmatter is written.
  */
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { copyFile, cp, writeFile } from 'node:fs/promises';
-import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { writeFile } from 'node:fs/promises';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import type { PublishTransport, PublishTransportPayload } from '@gobing-ai/publish-harness';
@@ -43,7 +28,8 @@ import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 // The plugin's public digest-contract surface (2026-10-24).
 import { checkDigestFrontmatter, DIGEST_TAG, type DigestLocale } from './digest-check';
-import { localeIndexPath, PATCH_LOCALES, type PatchPostOutcome, patchPostFiles } from './patch';
+import { uploadCoverToMicrofeed } from './media-upload';
+import { crossLinkFor, localeIndexPath, PATCH_LOCALES, type PatchPostOutcome, patchPostFiles } from './patch';
 import { buildDailyTopicsEntry, isDigestMarkdown, slugFromPostPath, upsertDailyTopicsEntry } from './topic-claims';
 
 export { checkDigestFrontmatter, DIGEST_TAG, type DigestLocale } from './digest-check';
@@ -107,10 +93,12 @@ interface SurfdashPubOptions {
 export interface MapContentOptions {
     /** Target publishing site name or base URL. Defaults to 'surfdash'. */
     targetName?: string;
-    /** Frontmatter image value (e.g. `./assets/cover.png`); written to `image` and `og_image`. */
+    /** Frontmatter remote cover URL (`https://podcast-media.salty.vip/...`); written to `image` and `og_image`. */
     image?: string;
     /** ISO date for publishDate; defaults to today. */
     publishDate?: string;
+    /** Locale directory this post belongs to (`zh` / `en` / `ja`). Defaults to `zh`. */
+    locale?: SupportedLocale;
 }
 
 /**
@@ -195,6 +183,18 @@ export function mapContentToSurfingMarkdown(content: Content, options: MapConten
     // source and would have dropped the post out of the sitemap if surfdash's refine step had
     // not overwritten it. See docs/00_ADR.md ADR-008: the generator supplies content, the site
     // supplies identity.
+    const postLocale = options.locale ?? 'zh';
+    const rawEpisodeTitle =
+        typeof content.metadata?.episodeTitle === 'string' && content.metadata.episodeTitle.trim() !== ''
+            ? content.metadata.episodeTitle.trim()
+            : typeof content.metadata?.episode_title === 'string' && content.metadata.episode_title.trim() !== ''
+              ? content.metadata.episode_title.trim()
+              : '';
+    const podcastUrl =
+        typeof content.metadata?.podcastUrl === 'string' && /^https:\/\//.test(content.metadata.podcastUrl)
+            ? content.metadata.podcastUrl
+            : '';
+
     const frontmatterObj: Record<string, unknown> = {
         title,
         description,
@@ -202,10 +202,15 @@ export function mapContentToSurfingMarkdown(content: Content, options: MapConten
         publishDate: isoDate,
         draft,
         ...(options.image ? { image: options.image, og_image: options.image } : {}),
+        ...(postLocale === 'zh' && rawEpisodeTitle !== '' ? { episode_title: rawEpisodeTitle } : {}),
     };
 
     const yamlLines = ['---', ...Object.entries(frontmatterObj).map(([k, v]) => `${k}: ${JSON.stringify(v)}`), '---'];
-    return `${yamlLines.join('\n')}\n\n${content.body.trim()}\n`;
+    let bodyText = content.body.trim();
+    if (podcastUrl !== '' && !bodyText.includes(podcastUrl)) {
+        bodyText = `${bodyText}\n\n${crossLinkFor(postLocale, isoDate, podcastUrl, rawEpisodeTitle)}`;
+    }
+    return `${yamlLines.join('\n')}\n\n${bodyText}\n`;
 }
 
 /** True when the content's tag sources (contentTags) mark it as a daily digest post. */
@@ -906,10 +911,6 @@ async function scaffoldLocale(options: SurfdashPubOptions): Promise<Result> {
         if (!existsSync(draftPath)) {
             return fail(`sd translate reported success but the draft is missing: ${draftPath}`);
         }
-        const assetsDir = join(dirname(postPath.postPath), 'assets');
-        if (existsSync(assetsDir)) {
-            await cp(assetsDir, join(dirname(draftPath), 'assets'), { recursive: true });
-        }
         return ResultSchema.parse({
             ok: true,
             target: TARGET,
@@ -1042,26 +1043,14 @@ async function patchPost(options: SurfdashPubOptions): Promise<Result> {
             localCover: strOption(options, 'localCover'),
             dateIso: strOption(options, 'dateIso'),
             episodeTitle: strOption(options, 'episodeTitle'),
+            uploadLocalCover: uploadCoverToMicrofeed,
         });
     } catch (error: unknown) {
         return fail(`patch error: ${error instanceof Error ? error.message : String(error)}`);
     }
     if (outcome.changed === 0) echoError(`patch: no post bytes changed for ${outcome.slug}`);
-    // Daily-topics map + retitle run before the CMS sync so the synced rows carry the retitled
-    // frontmatter; a failure here must not commit or push a half-synced post.
-    const topics = await runDailyTopicsSync(surfdashRoot, postPath.postPath);
-    if (!topics.ok) return fail(topics.error);
     const synced = await syncPost({ postPath: postPath.postPath });
     const commitPaths = new Set(outcome.written.map((path) => relative(surfdashRoot, path)));
-    for (const p of topics.paths) commitPaths.add(p);
-    for (const locale of PATCH_LOCALES) {
-        const indexMd = localeIndexPath(postPath.postPath, locale);
-        if (!indexMd) continue;
-        const assetsDir = join(dirname(indexMd), 'assets');
-        if (existsSync(assetsDir)) {
-            commitPaths.add(relative(surfdashRoot, assetsDir));
-        }
-    }
     if (process.env.SURFDASH_AUTO_PUSH !== '0') {
         const backfilled = await runListenLinkBackfill(surfdashRoot);
         for (const p of backfilled) commitPaths.add(p);
@@ -1319,7 +1308,8 @@ function readLocaleDrafts(content: Content): Partial<Record<(typeof LOCAL_DRAFTS
 async function mintLocalePost(options: {
     postDir: string;
     content: Content;
-    coverPath?: string;
+    coverUrl?: string;
+    locale?: SupportedLocale;
     publishDate?: string;
 }): Promise<void> {
     const filePath = join(options.postDir, 'index.md');
@@ -1328,16 +1318,9 @@ async function mintLocalePost(options: {
         return;
     }
     await createNodeFileSystem().ensureDir(options.postDir);
-    let imageFrontmatter: string | undefined;
-    if (options.coverPath !== undefined) {
-        const assetsDir = join(options.postDir, 'assets');
-        await createNodeFileSystem().ensureDir(assetsDir);
-        const coverName = `cover${extname(options.coverPath).toLowerCase()}`;
-        await copyFile(options.coverPath, join(assetsDir, coverName));
-        imageFrontmatter = `./assets/${coverName}`;
-    }
     const markdown = mapContentToSurfingMarkdown(options.content, {
-        image: imageFrontmatter,
+        image: options.coverUrl,
+        locale: options.locale,
         publishDate: options.publishDate,
     });
     await createNodeFileSystem().writeFile(filePath, markdown);
@@ -1386,17 +1369,44 @@ async function preparePost(payload: PublishTransportPayload): Promise<PrepareOut
         return { ok: false, result: failNotSent(`post path escapes ${articlesRoot}`) };
     }
 
-    const coverPath = payload.content.metadata?.coverImage;
-    if (typeof coverPath === 'string' && !existsSync(coverPath)) {
-        return { ok: false, result: failNotSent(`metadata.coverImage not found: ${coverPath}`) };
-    }
-    if (typeof coverPath === 'string' && !COVER_EXTS.has(extname(coverPath).toLowerCase())) {
-        return {
-            ok: false,
-            result: failNotSent(`metadata.coverImage must be one of ${[...COVER_EXTS].join(', ')}`),
-        };
-    }
-    if (isDigestContent(payload.content) && typeof coverPath !== 'string') {
+    const rawCover = payload.content.metadata?.coverImage;
+    let coverUrl: string | undefined;
+    if (typeof rawCover === 'string' && rawCover.trim() !== '') {
+        const trimmedCover = rawCover.trim();
+        if (/^https:\/\//.test(trimmedCover)) {
+            coverUrl = trimmedCover;
+        } else {
+            if (!existsSync(trimmedCover)) {
+                return { ok: false, result: failNotSent(`metadata.coverImage not found: ${trimmedCover}`) };
+            }
+            if (!COVER_EXTS.has(extname(trimmedCover).toLowerCase())) {
+                return {
+                    ok: false,
+                    result: failNotSent(`metadata.coverImage must be one of ${[...COVER_EXTS].join(', ')}`),
+                };
+            }
+            const optsObj =
+                payload.options !== undefined && typeof payload.options === 'object' && payload.options !== null
+                    ? (payload.options as Record<string, unknown>)
+                    : {};
+            const isDryRun = optsObj.dryRun === true || process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT === 'fake';
+            if (isDryRun) {
+                const safeName = basename(trimmedCover).replace(/[^a-zA-Z0-9._-]/g, '_') || 'cover.png';
+                coverUrl = `https://podcast-media.salty.vip/production/images/dry-run-${safeName}`;
+            } else {
+                try {
+                    coverUrl = await uploadCoverToMicrofeed(trimmedCover);
+                } catch (err: unknown) {
+                    return {
+                        ok: false,
+                        result: failNotSent(
+                            `Failed to upload cover image to podcast-media: ${err instanceof Error ? err.message : String(err)}`,
+                        ),
+                    };
+                }
+            }
+        }
+    } else if (isDigestContent(payload.content)) {
         return { ok: false, result: failNotSent('digest post has no cover image (metadata.coverImage)') };
     }
 
@@ -1419,18 +1429,18 @@ async function preparePost(payload: PublishTransportPayload): Promise<PrepareOut
 
     const filePath = join(postDir, 'index.md');
     const publishDate = runDate ? `${runDate.slice(0, 4)}-${runDate.slice(4, 6)}-${runDate.slice(6, 8)}` : undefined;
-    const cover = typeof coverPath === 'string' ? coverPath : undefined;
+    const mintedDirs = [join('content', 'posts', 'articles', locale, slug)];
     try {
         // A post the site's own refine step already marked is not ours to clobber: re-minting it
         // replaces the refined canonical frontmatter (refine owns `refined`, `seo_title`, …) with
         // generator defaults and flips an already-published day back to a draft. Keep the file and
         // reuse it; only genuinely fresh days (no marker) get minted (2026-11-05 tier-0 rerun).
-        await mintLocalePost({ postDir, content: payload.content, coverPath: cover, publishDate });
-        for (const locale of LOCAL_DRAFTS) {
-            const draft = drafts[locale];
+        await mintLocalePost({ postDir, content: payload.content, coverUrl, locale, publishDate });
+        for (const draftLocale of LOCAL_DRAFTS) {
+            const draft = drafts[draftLocale];
             if (draft === undefined) continue;
-            const siblingDir = resolve(articlesRoot, locale, slug);
-            if (dirname(resolve(siblingDir)) !== resolve(articlesRoot, locale)) {
+            const siblingDir = resolve(articlesRoot, draftLocale, slug);
+            if (dirname(resolve(siblingDir)) !== resolve(articlesRoot, draftLocale)) {
                 return { ok: false, result: failNotSent(`post path escapes ${articlesRoot}`) };
             }
             // The zh Body and title are replaced by the translation; the frontmatter fields the
@@ -1439,9 +1449,11 @@ async function preparePost(payload: PublishTransportPayload): Promise<PrepareOut
             await mintLocalePost({
                 postDir: siblingDir,
                 content: { ...payload.content, title: draft.title, body: draft.body },
-                coverPath: cover,
+                coverUrl,
+                locale: draftLocale,
                 publishDate,
             });
+            mintedDirs.push(join('content', 'posts', 'articles', draftLocale, slug));
         }
     } catch (err: unknown) {
         return {
@@ -1463,6 +1475,7 @@ async function preparePost(payload: PublishTransportPayload): Promise<PrepareOut
             slug,
             filePath,
             relPostDir: join('content', 'posts', 'articles', locale, slug),
+            relPostDirs: mintedDirs,
             articleUrl,
         },
     };
@@ -1556,18 +1569,17 @@ async function publishPreparedFile(
                 },
             });
         }
-        const topics = await runDailyTopicsSync(surfdashRoot, filePath);
-        if (!topics.ok) return failUncertain(topics.error);
         const backfilled = await runListenLinkBackfill(surfdashRoot);
         const commitPaths = relPostDirs ?? [relPostDir];
-        const gate = await runSiteGate(surfdashRoot, [...commitPaths, ...backfilled, ...topics.paths]);
+        const gate = await runSiteGate(surfdashRoot, [...commitPaths, ...backfilled]);
         if (!gate.ok) return failUncertain(gate.error);
-        const commitLocales: SupportedLocale[] = relPostDirs === undefined ? [locale] : ['zh', 'en', 'ja'];
+        const commitLocales: SupportedLocale[] =
+            relPostDirs !== undefined && relPostDirs.length > 1 ? ['zh', 'en', 'ja'] : [locale];
         const pushed = await pushPostGit(
             surfdashRoot,
             commitPaths,
             `content: daily AI news ${dateStamp} (${commitLocales.join(', ')})`,
-            [...backfilled, ...topics.paths],
+            backfilled,
         );
         if (!pushed.ok) return failUncertain(pushed.error);
         const live = await awaitArticleLive(articleUrl);

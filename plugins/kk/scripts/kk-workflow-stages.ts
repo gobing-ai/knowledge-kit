@@ -1612,6 +1612,23 @@ function publishMatrixPatchSurfdash(args: string[]): void {
         );
         const podMeta = (podTarget.metadata ?? {}) as Record<string, unknown>;
         const runDate = String(readJson(join(publishDir, `outcome.${window}.json`))?.runDate ?? '');
+        const compactDate = runDate.replaceAll('-', '');
+        const bundle = readJson(join(workDir, 'bundle.json')) as { episode?: { title?: unknown } } | null;
+        const identity =
+            compactDate.length === 8
+                ? (readJson(join(workDir, '21-plan', `${compactDate}_05_script_identity.json`)) as {
+                      title?: unknown;
+                      status?: unknown;
+                  } | null)
+                : null;
+        const episodeTitle =
+            typeof podMeta.episodeTitle === 'string' && podMeta.episodeTitle !== ''
+                ? podMeta.episodeTitle
+                : identity?.status === 'frozen' && typeof identity.title === 'string'
+                  ? identity.title
+                  : typeof bundle?.episode?.title === 'string'
+                    ? bundle.episode.title
+                    : '';
         const payload = join(publishDir, 'patch-surfdash.payload.json');
         sted('write', payload, () =>
             writeJqText(payload, {
@@ -1621,11 +1638,12 @@ function publishMatrixPatchSurfdash(args: string[]): void {
                     postPath,
                     coverUrl: podReal && typeof podMeta.imageUrl === 'string' ? podMeta.imageUrl : '',
                     showNotesUrl: podReal && typeof podTarget.url === 'string' ? podTarget.url : '',
-                    ...(runDate.length === 8
-                        ? { dateIso: `${runDate.slice(0, 4)}-${runDate.slice(4, 6)}-${runDate.slice(6, 8)}` }
-                        : runDate.length === 10
-                          ? { dateIso: runDate }
-                          : {}),
+                    ...(episodeTitle !== '' ? { episodeTitle } : {}),
+                    ...(compactDate.length === 8
+                        ? {
+                              dateIso: `${compactDate.slice(0, 4)}-${compactDate.slice(4, 6)}-${compactDate.slice(6, 8)}`,
+                          }
+                        : {}),
                 },
             }),
         );

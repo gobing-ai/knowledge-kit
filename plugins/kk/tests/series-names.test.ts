@@ -26,6 +26,10 @@ describe('series-names (2026-10-23 retired-name regression)', () => {
             'Daily AI Medley',
             'daily AI medley',
             'Daily AI Briefing',
+            'Daily AI Hotchpotch',
+            'Daily AI Hodgepodge',
+            '毎日AIごった煮',
+            '毎日AI寄せ鍋',
             'AI 乱炖',
             'AI乱炖',
         ]) {
@@ -121,12 +125,25 @@ describe('series-names (2026-10-23 retired-name regression)', () => {
         expect(findRetiredSeriesNames('see https://pod.example/daily-ai-medley/1 now', 'en')).toEqual([]);
     });
 
-    it('reports a bare hodgepodge it cannot safely rewrite instead of butchering prose', () => {
+    it('reports a bare hodgepodge or hotchpotch it cannot safely rewrite instead of butchering prose', () => {
         const en = normalizeSeriesNames('The stack is a hodgepodge of APIs.', 'en');
         expect(en.markdown).toBe('The stack is a hodgepodge of APIs.');
         expect(en.remaining).toEqual(['hodgepodge']);
+        const hot = normalizeSeriesNames('A hotchpotch of models.', 'en');
+        expect(hot.remaining).toEqual(['hotchpotch']);
         // In ja/zh prose the bare word is just as unrewritable.
         expect(normalizeSeriesNames('Hodgepodge of APIs。', 'ja').remaining).toEqual(['Hodgepodge']);
+    });
+
+    it('rewrites 毎日AIごった煮 and Daily AI Hotchpotch cleanly in ja/en', () => {
+        expect(normalizeSeriesNames('Robinがお届けする「毎日AIごった煮」です。', 'ja')).toEqual({
+            markdown: 'Robinがお届けする「デイリーAIシチュー」です。',
+            remaining: [],
+        });
+        expect(normalizeSeriesNames('This is Robin with the Daily AI Hotchpotch.', 'en')).toEqual({
+            markdown: 'This is Robin with the Daily AI Stew.',
+            remaining: [],
+        });
     });
 
     it('findRetiredSeriesNames reports pre-rewrite occurrences for hand repair', () => {
