@@ -38,6 +38,9 @@ export const GENERATE_PATH = '/api/lyria/generate';
 /** Library route (free): the reconciliation + cache-first analyse source. */
 export const LIBRARY_PATH = '/api/generations';
 
+/** Cheap reachability probe route (free): decided under `connectTimeoutMs` before paid POSTs. */
+export const STATUS_PATH = '/api/settings/status';
+
 /** Analyse route (paid). */
 export const ANALYZE_PATH = '/api/ai/analyze';
 
@@ -383,17 +386,22 @@ export class InstanceClient implements MusicInstance {
         return new URL(`${LIBRARY_PATH}/${encodeURIComponent(instanceId)}`, `${this.baseUrl}/`).toString();
     }
 
-    /** One round trip with a connect-phase deadline and an end-to-end deadline. */
+    /** One round trip with an optional connect-phase deadline (GET only) and an end-to-end deadline. */
     private async attempt(method: 'GET' | 'POST', path: string, body: unknown): Promise<AttemptOutcome> {
         const controller = new AbortController();
-        let phase: 'connect' | 'body' = 'connect';
+        // Paid POSTs are synchronous on the instance (headers arrive only after generation completes),
+        // so only GETs (including the pre-POST reachability probe) carry the connect-phase timer.
+        const enforceConnectTimer = method === 'GET';
+        let phase: 'connect' | 'body' = enforceConnectTimer ? 'connect' : 'body';
         let abortReason: 'connect-timeout' | 'generate-timeout' | undefined;
-        const connectTimer = setTimeout(() => {
-            if (phase === 'connect' && abortReason === undefined) {
-                abortReason = 'connect-timeout';
-                controller.abort();
-            }
-        }, this.connectTimeoutMs);
+        const connectTimer = enforceConnectTimer
+            ? setTimeout(() => {
+                  if (phase === 'connect' && abortReason === undefined) {
+                      abortReason = 'connect-timeout';
+                      controller.abort();
+                  }
+              }, this.connectTimeoutMs)
+            : undefined;
         const totalTimer = setTimeout(() => {
             if (abortReason === undefined) {
                 abortReason = 'generate-timeout';
@@ -413,7 +421,9 @@ export class InstanceClient implements MusicInstance {
             const response = await this.fetchImpl(this.url(path), init);
             // Headers arrived: the request reached the instance, so a later abort is post-send.
             phase = 'body';
-            clearTimeout(connectTimer);
+            if (connectTimer !== undefined) {
+                clearTimeout(connectTimer);
+            }
             const bytes = new Uint8Array(await response.arrayBuffer());
             const contentType = response.headers.get('content-type') ?? undefined;
             return {
@@ -448,7 +458,9 @@ export class InstanceClient implements MusicInstance {
             // Anything unrecognised may have reached the instance: ambiguous, never retried.
             return { kind: 'ambiguous', reason };
         } finally {
-            clearTimeout(connectTimer);
+            if (connectTimer !== undefined) {
+                clearTimeout(connectTimer);
+            }
             clearTimeout(totalTimer);
         }
     }
@@ -481,13 +493,24 @@ export class InstanceClient implements MusicInstance {
         return { kind: 'ambiguous', reason: `answered an unexpected ${String(status)}`, status, attempts };
     }
 
-    /** Send one request, retrying connect-phase failures only, and classify the result. */
+    /** Send one request, probing reachability before paid POSTs, and classify the result. */
     private async send(method: 'GET' | 'POST', path: string, body: unknown): Promise<SendOutcome> {
         const maxAttempts = method === 'POST' ? this.connectAttempts : 1;
         let attempts = 0;
         let lastReason = '';
         for (;;) {
             attempts += 1;
+            if (method === 'POST') {
+                const probe = await this.attempt('GET', STATUS_PATH, undefined);
+                if (probe.kind === 'connect') {
+                    lastReason = probe.reason;
+                    if (attempts >= maxAttempts) {
+                        return { kind: 'connect-exhausted', reason: lastReason, attempts };
+                    }
+                    await this.sleep(this.retryDelayMs * 2 ** (attempts - 1));
+                    continue;
+                }
+            }
             const outcome = await this.attempt(method, path, body);
             if (outcome.kind === 'response') {
                 return this.classify(outcome.response, attempts);

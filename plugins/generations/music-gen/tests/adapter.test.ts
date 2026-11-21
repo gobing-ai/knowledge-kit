@@ -5,6 +5,7 @@ import {
     GENERATE_PATH,
     InstanceError,
     LIBRARY_PATH,
+    STATUS_PATH,
 } from '../src/adapter/instance';
 import { renderGenerateRequest } from '../src/request';
 import { loadGoldenJob } from './goldens';
@@ -219,8 +220,8 @@ describe('AC5 — a paid request is never re-sent on an ambiguous outcome', () =
             expect(instanceError.instanceMessage).toBe(text);
             expect(instanceError.message).toContain(text);
             expect(instanceError.message.toLowerCase()).toContain(remediation.toLowerCase());
-            expect(stub.calls).toHaveLength(1);
-            expect(stub.calls[0]?.method).toBe('POST');
+            const posts = stub.calls.filter((call) => call.method === 'POST');
+            expect(posts).toHaveLength(1);
         });
     }
 
@@ -233,7 +234,7 @@ describe('AC5 — a paid request is never re-sent on an ambiguous outcome', () =
         expect(error.status).toBe(502);
         expect(error.message).toContain('all provider keys were rejected');
         expect(error.message).toContain('key list');
-        expect(stub.calls).toHaveLength(1);
+        expect(stub.calls.filter((call) => call.method === 'POST')).toHaveLength(1);
     });
 
     test('a 502 with an unrelated body is ambiguous and reconciles instead of retrying', async () => {
@@ -246,7 +247,7 @@ describe('AC5 — a paid request is never re-sent on an ambiguous outcome', () =
             .generate(REQUEST)
             .catch(() => undefined);
         expect(stub.calls.filter((call) => call.method === 'POST')).toHaveLength(1);
-        expect(stub.calls.filter((call) => call.method === 'GET').map((call) => call.url)).toEqual([
+        expect(stub.calls.filter((call) => call.url.endsWith(LIBRARY_PATH)).map((call) => call.url)).toEqual([
             'http://instance.test/api/generations',
         ]);
     });
@@ -275,7 +276,7 @@ describe('AC5 — a paid request is never re-sent on an ambiguous outcome', () =
         expect(error.attempts).toBe(3);
         expect(error.message).toContain('nothing was billed');
         expect(stub.calls).toHaveLength(3);
-        expect(stub.calls.every((call) => call.method === 'POST')).toBe(true);
+        expect(stub.calls.every((call) => call.method === 'GET' && call.url.endsWith(STATUS_PATH))).toBe(true);
     });
 
     test('a connect-phase stall is retried, not treated as an ambiguous send', async () => {
@@ -285,6 +286,61 @@ describe('AC5 — a paid request is never re-sent on an ambiguous outcome', () =
             .catch((err: unknown) => err)) as InstanceError;
         expect(error.kind).toBe('connect');
         expect(stub.calls).toHaveLength(3);
+        expect(stub.calls.every((call) => call.method === 'GET' && call.url.endsWith(STATUS_PATH))).toBe(true);
+    });
+
+    test('0414: a healthy connection with POST headers arriving after connectTimeoutMs is dispatched once, never retried as connect', async () => {
+        const bytes = mp3Bytes();
+        const stub = stubFetch(async (call) => {
+            if (call.method === 'GET' && call.url.endsWith(STATUS_PATH)) {
+                return jsonResponse({ ok: true });
+            }
+            if (call.method === 'POST' && call.url.endsWith(GENERATE_PATH)) {
+                await new Promise((resolve) => setTimeout(resolve, 40));
+                return jsonResponse(successManifest());
+            }
+            return audioResponse(bytes);
+        });
+        const client = createInstanceClient({
+            baseUrl: 'http://instance.test',
+            timeoutMs: 120,
+            connectTimeoutMs: 25,
+            fetch: stub.fetch,
+            connectAttempts: 3,
+            retryDelayMs: 1,
+            sleep: async () => {},
+            now: steppingClock().now,
+        });
+        const take = await client.generate(REQUEST);
+        expect(take.id).toBe('gen_1');
+        expect(stub.calls.filter((call) => call.method === 'POST')).toHaveLength(1);
+    });
+
+    test('0414: a slow POST returning a terminal error after connectTimeoutMs surfaces the instance outcome without retry', async () => {
+        const stub = stubFetch(async (call) => {
+            if (call.method === 'GET' && call.url.endsWith(STATUS_PATH)) {
+                return jsonResponse({ ok: true });
+            }
+            await new Promise((resolve) => setTimeout(resolve, 40));
+            return jsonResponse({ error: 'rate limit exceeded' }, 429);
+        });
+        const client = createInstanceClient({
+            baseUrl: 'http://instance.test',
+            timeoutMs: 120,
+            connectTimeoutMs: 25,
+            fetch: stub.fetch,
+            connectAttempts: 3,
+            retryDelayMs: 1,
+            sleep: async () => {},
+            now: steppingClock().now,
+        });
+        const error = (await client.generate(REQUEST).catch((err: unknown) => err)) as InstanceError;
+        expect(error).toBeInstanceOf(InstanceError);
+        expect(error.kind).toBe('terminal');
+        expect(error.status).toBe(429);
+        expect(error.message).not.toContain('nothing was billed');
+        expect(error.message).toContain('rate limit exceeded');
+        expect(stub.calls.filter((call) => call.method === 'POST')).toHaveLength(1);
     });
 
     test('a post-send timeout reconciles, adopts the earliest match and records the extras as unclaimed', async () => {
@@ -391,6 +447,9 @@ describe('AC5 — a paid request is never re-sent on an ambiguous outcome', () =
 
     test('an unreachable library during reconciliation still sends only one generate', async () => {
         const stub = stubFetch((call) => {
+            if (call.method === 'GET' && call.url.endsWith(STATUS_PATH)) {
+                return jsonResponse({ ok: true });
+            }
             if (call.method === 'POST') {
                 return hangingBody(call.init);
             }

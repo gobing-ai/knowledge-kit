@@ -4,7 +4,7 @@ Feature **D8**. Generator plugin `plugins/generations/music-gen` that turns a `M
 music through the self-hosted Lyria 3 instance on the homelab Mac Mini
 (`POST /api/lyria/generate`). Frozen by task **0397**; implemented by 0398 (plugin + adapter), 0399
 (presets), 0400 (spend guard), 0401 (`kk music`), 0402 (skill/rubric), 0403 (workflow), 0405
-(measure/normalize).
+(measure/normalize), 0414 (probe-decided connect phase).
 
 > Chosen approach: one authored YAML brief, one deterministic prompt renderer, one request mapping
 > with no instance defaults, pure preset precedence over portable data, and a non-idempotent paid-call
@@ -193,7 +193,7 @@ Implemented by 0398; frozen here.
 | ------- | ------------ | --------------------------- | ------- |
 | Instance base URL | `KK_MUSIC_INSTANCE_URL` | `music.instance.url` | `http://127.0.0.1:3000` |
 | Generate timeout (ms) | `KK_MUSIC_TIMEOUT_MS` | `music.instance.timeoutMs` | `180000` |
-| Connect-phase timeout (ms) | — | `music.instance.connectTimeoutMs` | `5000` |
+| Connect-phase timeout (ms) | — | `music.instance.connectTimeoutMs` | `5000` — bounds the free pre-`POST` reachability probe only (§6.3) |
 | Offline adapter | `KK_MUSIC_DRY_RUN=1` | — | unset (live) |
 | Unit prices | — (0400) | `music.prices.{pro,clip,analyze}` | `pro 0.08`, `clip 0.04`, `analyze` **unpriced** |
 | Take cap | — (0400) | `music.takesCap` | `2`, never above `4` |
@@ -207,7 +207,9 @@ Implemented by 0398; frozen here.
   deploy config lives in the homelab checkout, which was not available while freezing this contract
   (§9); 0404's dogfood pins the real value. The env override is the supported path in the meantime.
 - Timeouts are sized for a **30–120 s blocking generation**: 180 s end-to-end so a slow-but-successful
-  request is not cut off, 5 s connect so an unreachable host fails fast enough to retry (C7).
+  request is not cut off, 5 s connect so an unreachable host fails fast enough to retry (C7). The
+  connect bound applies to `GET` requests only; a paid `POST` runs under the generate timeout alone
+  (§6.3).
 
 ### 6.2 Response handling
 
@@ -230,7 +232,7 @@ kk adds **no second failover layer** — only the two edges below.
 
 | Condition | Phase | Automatic action | Operator remediation |
 | --------- | ----- | ---------------- | -------------------- |
-| `ECONNREFUSED`, `ENOTFOUND`, `EAI_AGAIN`, connect timeout | connect — the request provably never reached the instance | Retry with backoff, bounded to 3 attempts total | Instance down or wrong base URL: start the instance or fix `music.instance.url` / `KK_MUSIC_INSTANCE_URL` |
+| `ECONNREFUSED`, `ENOTFOUND`, `EAI_AGAIN`, connect timeout — on a `GET`, or on the pre-`POST` probe | connect — the request provably never reached the instance | Retry the probe with backoff, bounded to 3 attempts total; the paid `POST` is dispatched only after the probe answers | Instance down or wrong base URL: start the instance or fix `music.instance.url` / `KK_MUSIC_INSTANCE_URL` |
 | `400` | post-send, request rejected | None — terminal | Fix the brief/request; the instance's own error text is surfaced verbatim |
 | `401` | post-send | None — terminal | Rotate/fix the provider key on the instance (never print it) |
 | `402` | post-send | None — terminal | Provider credits/entitlement exhausted; top up or switch the instance's key |
@@ -242,6 +244,14 @@ kk adds **no second failover layer** — only the two edges below.
 
 Terminal means: one request sent, no retry, the instance's own error text plus the remediation in the
 message. Ambiguous means: never re-send; reconcile, adopt or fail.
+
+**The connect phase is the probe, not the response wait (0414).** Both paid routes answer only after
+the work is done, so response headers arrive a full generation late (30–120 s). Before each paid
+`POST`, `send()` therefore probes the free `GET /api/settings/status` under `connectTimeoutMs` and
+dispatches the `POST` only on a successful probe; `connectTimeoutMs` never bounds the `POST` itself.
+A `POST` whose headers arrive after `connectTimeoutMs` is not a connect failure: it stays in the
+post-send classification above and its own outcome (take or terminal status) is surfaced — never a
+retry, never a `nothing was billed` claim. A dead host still fails at 5 s, bounded to 3 probe attempts.
 
 ### 6.4 Artifact record
 
