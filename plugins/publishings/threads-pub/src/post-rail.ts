@@ -56,7 +56,17 @@ export const THREADS_POST_SELECTORS = {
         'div[aria-label^="Empty text field"]',
         'div[role="textbox"][contenteditable="true"]',
     ],
-    submit: ['div[role="button"]:text-is("Post"):visible', 'button:text-is("Post"):visible'],
+    // Threads renders the label as a CHILD div inside the role=button element, so `text-is` on the
+    // button misses whenever the button carries more than the bare label (measured 2026-11-20: the
+    // element with text "Post" was `DIV < DIV[role=button]`, and every selector below found nothing).
+    // The `:has` shapes match either nesting; the direct forms stay for the plain surface.
+    submit: [
+        'div[role="button"]:has(> div:text-is("Post")):visible',
+        'div[role="button"]:has(div:text-is("Post")):visible',
+        'div[role="button"]:text-is("Post"):visible',
+        'button:text-is("Post"):visible',
+        'div[role="button"][aria-label="Post"]:visible',
+    ],
     mediaButton: ['div[role="button"]:text-is("Attach media")', 'div[aria-label*="Attach media" i]'],
     fileInput: ['input[type="file"]'],
     mediaPreview: ['div[role="dialog"] img[src*="cdninstagram"], div[role="dialog"] img[src*="fbcdn"]'],
@@ -270,7 +280,12 @@ export class ThreadsPostBrowserTransport implements PublishTransport {
                 const value = String(
                     await editor
                         .evaluate(
-                            `(() => { const el = arguments[0]; return (el.innerText || el.textContent || el.value || ''); })()`,
+                            // Playwright hands the element to this expression as its first
+                            // parameter. The arrow IIFE that read `arguments[0]` had no `arguments`
+                            // binding at all, so it threw into the `.catch('')` below and every
+                            // typed post read as "not retained" (measured 2026-11-20: the composer
+                            // screenshot showed the full text and Post enabled).
+                            `(el) => (el.innerText || el.textContent || el.value || '')`,
                         )
                         .catch(() => ''),
                 );
@@ -313,8 +328,40 @@ export class ThreadsPostBrowserTransport implements PublishTransport {
             },
             { timeoutMs: this.stepTimeoutMs, label: 'threads post submit' },
         );
-        if (!submit.ok) return fail(`threads post control never attached: ${submit.error}`);
-        await page.locator(submit.evidence).first().click();
+        if (!submit.ok) {
+            // The composer's Post control is a styled div whose text Playwright's `:text-is` must
+            // match exactly; a label tweak ("Post" → "Post\u00a0" / an icon-only button) leaves the
+            // selector list matching nothing while the button is plainly on screen. Report the
+            // dialog's actual clickable inventory instead of the timeout.
+            await evidence(page, '06-submit-missing');
+            const observable = page as unknown as { evaluate?: (script: string) => Promise<unknown> };
+            const inventory = await (observable.evaluate === undefined
+                ? Promise.resolve(null)
+                : observable
+                      .evaluate(`(() => {
+                    // Search the WHOLE document, not one dialog: the composer may not be the first
+                    // [role=dialog] in DOM order (which is why an earlier inventory listed the
+                    // composer's chips but not its Post control), and Post may carry no role at all.
+                    const hits = [...document.querySelectorAll('*')]
+                        .filter((n) => n.children.length === 0 && (n.textContent || '').trim() === 'Post')
+                        .map((n) => {
+                            const p = n.parentElement;
+                            return n.tagName + (n.getAttribute('role') ? '[role=' + n.getAttribute('role') + ']' : '')
+                                + (n.getAttribute('aria-label') ? '[aria=' + n.getAttribute('aria-label') + ']' : '')
+                                + ' < ' + (p?.tagName ?? '') + (p?.getAttribute('role') ? '[role=' + p.getAttribute('role') + ']' : '')
+                                + (p?.className ? '.' + String(p.className).split(/\\s+/).slice(0, 2).join('.') : '');
+                        });
+                    return hits.slice(0, 4).join(' | ') || 'no element whose text is exactly Post';
+                })()`)
+                      .catch(() => null));
+            return fail(
+                `threads post control never attached: ${submit.error}${inventory ? ` (dialog buttons: ${String(inventory)})` : ''}`,
+            );
+        }
+        // The composer rides under a suggestions/tooltip layer that intercepts pointer events
+        // (`<div class="__fb-light-mode …"> intercepts pointer events`, measured 2026-11-20). The
+        // editor click already forces through the same layer; Post does too.
+        await page.locator(submit.evidence).first().click({ force: true });
 
         const receipt = await expectOutcome(
             async () => {

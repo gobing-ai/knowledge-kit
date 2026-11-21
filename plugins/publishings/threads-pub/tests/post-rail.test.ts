@@ -266,9 +266,14 @@ describe('threads post rail frozen surface', () => {
     test('exports the measured composer contract', () => {
         expect(THREADS_HOME_URL).toBe('https://www.threads.com');
         expect(THREADS_LOGIN_INSTRUCTION).toBe('bun plugins/publishings/threads-pub/src/profile-check.ts login');
-        expect(THREADS_POST_SELECTORS.submit).toEqual([
+        // 2026-11-20: the label is a CHILD div of the role=button element, so the direct text-is
+        // forms alone match nothing; the :has shapes carry the real composer.
+        expect([...THREADS_POST_SELECTORS.submit]).toEqual([
+            'div[role="button"]:has(> div:text-is("Post")):visible',
+            'div[role="button"]:has(div:text-is("Post")):visible',
             'div[role="button"]:text-is("Post"):visible',
             'button:text-is("Post"):visible',
+            'div[role="button"][aria-label="Post"]:visible',
         ]);
         expect(THREADS_POST_SELECTORS.fileInput).toEqual(['input[type="file"]']);
         expect(THREADS_CONFIG.channel).toBe('threads');
