@@ -228,7 +228,10 @@ nodes:
       row did not succeed (design §5.3 R3 — the page and the ledger row are already written, so a
       partial window keeps its report and still fails). Depends on `settle` so a report can never
       race an unfinished settlement, and on `diagnose` so a gated-miss day (settle skipped, diagnose
-      ran) still writes its page and stays done (no outcome file).
+      ran) still writes its page and stays done (no outcome file). The verb also prunes the
+      published episode's WAV intermediates (`kk stage audio-prune`: section renders, joined final,
+      intro merge — 987 MB across six daily runs) once `metadata.mp3Path` is on disk; a run with no
+      delivered MP3 keeps its source, and a prune miss is a warning, never a publish failure.
     dependsOn: [settle, diagnose]
     action:
       kind: shell

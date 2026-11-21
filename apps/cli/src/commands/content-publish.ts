@@ -31,7 +31,7 @@ import {
     UnknownChannelModeError,
     validatePublishChannelTokens,
 } from '../publish-matrix';
-import { runStageCancellable } from '../stage';
+import { runStage, runStageCancellable } from '../stage';
 import { type ContentConfigDocument, configPath, readConfig, resolveWorksDir } from './content';
 import { syncLedger } from './ledger';
 
@@ -435,6 +435,18 @@ async function reportAction(type: string, options: PublishOptions): Promise<void
         );
     }
     consoleOutput.write(JSON.stringify({ report: reportPath }));
+    // The episode is delivered: its lossless WAV intermediates (section renders + joined + intro
+    // merge, ~250 MB a day) have no reader left — the enclosure, publish-prep and every retry window
+    // read the MP3. `audio-prune` no-ops without a delivered episode, so one hook serves every noun;
+    // silenced because this verb's stdout is the report JSON, and a cleanup miss never fails a publish.
+    try {
+        const pruneCode = await quietStdout(async () => runStage(['audio-prune', context.workDir]));
+        if (pruneCode !== 0) consoleOutput.error(`publish-report: audio-prune exited ${pruneCode}`);
+    } catch (error: unknown) {
+        consoleOutput.error(
+            `publish-report: audio-prune warning: ${error instanceof Error ? error.message : String(error)}`,
+        );
+    }
     // The run's honest exit (ported from publish3's `outcome-assert`, which sat AFTER report and
     // ledger): the page and the ledger row are already written when this node fails, so a partial
     // window keeps its report and still fails the run. A gated-miss day has no outcome file and

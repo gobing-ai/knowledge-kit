@@ -1846,6 +1846,62 @@ export function dailyGenerate(args: string[]): void {
 }
 
 /**
+ * Delete a published episode's lossless audio intermediates: every section render (the synthesis
+ * cache `dailyGenerate` reads), the joined final, and the `<stem>.intro.wav` merge output.
+ *
+ * Measured 2026-11-20: 987 MB of WAV across six daily runs — 80% of `.works/kk-news-generate` — for
+ * 13–20 MB of MP3 per day. Nothing outside the run reads them: the podcast enclosure, `publish-prep`
+ * and every retry window read the MP3, and `daily-intro` merged its copy inside the run.
+ *
+ * Guarded on the delivered artifact, never on a run status: a missing MP3 means the transcode
+ * failed, and pruning then would turn the rebuild into a paid re-synthesis. Re-entering
+ * `daily-generate` after a prune re-synthesizes the sections — the intended trade, since a
+ * published day is not regenerated.
+ */
+export function dailyAudioPrune(args: string[]): void {
+    const [workDir = ''] = args;
+    if (!workDir) fail('missing work_dir');
+    const audioDir = join(workDir, '30-audio');
+    if (!existsSync(audioDir)) {
+        console.log(`audio-prune: no ${audioDir} — nothing to prune`);
+        return;
+    }
+    const contentName = readdirSync(audioDir)
+        .filter((entry) => /^\d{8}_11_generate_content\.json$/.test(entry))
+        .sort()
+        .at(-1);
+    if (contentName === undefined) {
+        console.log('audio-prune: no episode content in 30-audio — nothing to prune');
+        return;
+    }
+    const content = readJson(join(audioDir, contentName));
+    const recorded = [metadataOf(content).mp3Path, content?.mp3Path].find(
+        (candidate): candidate is string => typeof candidate === 'string' && candidate !== '',
+    );
+    if (recorded === undefined || !isFile(resolve(recorded))) {
+        console.log('audio-prune: publish MP3 not on disk — keeping the WAV intermediates');
+        return;
+    }
+    const wavs: string[] = [];
+    const collect = (dir: string): void => {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+            const path = join(dir, entry.name);
+            if (entry.isDirectory()) collect(path);
+            else if (entry.name.endsWith('.wav')) wavs.push(path);
+        }
+    };
+    collect(audioDir);
+    let freed = 0;
+    for (const wav of wavs) {
+        freed += statSync(wav).size;
+        sted('remove', wav, () => rmSync(wav, { force: true }));
+    }
+    console.log(
+        `audio-prune: removed ${wavs.length} WAV intermediate${wavs.length === 1 ? '' : 's'} (${(freed / 1048576).toFixed(1)} MB), kept ${basename(resolve(recorded))}`,
+    );
+}
+
+/**
  * 20260917 review #7: prepend the show's 8s intro sting to the generated audio.
  * `intro_music` empty -> skip. Writes `<stem>.intro.wav` (original render kept), points
  * `audioPath` at the merged file, extends `duration`, marks `introMerged` (idempotent).

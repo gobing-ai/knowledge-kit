@@ -368,6 +368,18 @@ describe('content publish verbs (0364)', () => {
             expect(missingBundleSettle.stderr).toContain('bundle.json not found');
 
             process.env.KK_SPUR_BIN = join(root, 'missing-spur');
+            // The episode's lossless intermediates, as `daily-generate` + `daily-intro` leave them.
+            const audioDir = join(workDir, '30-audio');
+            const audioStamp = join(audioDir, '20261113_11_generate_content');
+            mkdirSync(join(audioDir, 'sections', '20261113'), { recursive: true });
+            writeFileSync(`${audioStamp}.mp3`, 'mp3');
+            writeFileSync(`${audioStamp}.wav`, 'wav');
+            writeFileSync(`${audioStamp}.intro.wav`, 'wav');
+            writeFileSync(join(audioDir, 'sections', '20261113', '00-opening.wav'), 'wav');
+            writeFileSync(
+                `${audioStamp}.json`,
+                JSON.stringify({ format: 'audio', metadata: { mp3Path: `${audioStamp}.mp3` } }),
+            );
             const report = await runCli([
                 'news',
                 'publish-report',
@@ -378,6 +390,12 @@ describe('content publish verbs (0364)', () => {
             ]);
             expect(report.code).toBe(0);
             expect(report.stderr).toContain('ledger sync warning');
+            // Publishing finished, so the WAV intermediates go and the delivered MP3 stays.
+            expect(existsSync(`${audioStamp}.mp3`)).toBe(true);
+            expect(existsSync(`${audioStamp}.json`)).toBe(true);
+            expect(existsSync(`${audioStamp}.wav`)).toBe(false);
+            expect(existsSync(`${audioStamp}.intro.wav`)).toBe(false);
+            expect(existsSync(join(audioDir, 'sections', '20261113', '00-opening.wav'))).toBe(false);
             const reportPath = join(workDir, '5-report', 'publish-after-generate.md');
             expect(existsSync(reportPath)).toBe(true);
             expect(readFileSync(reportPath, 'utf8')).toContain('| surfdash-pub.post |');

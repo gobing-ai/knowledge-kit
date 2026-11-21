@@ -2064,6 +2064,11 @@ if (import.meta.main)
         case 'daily-publish-completeness':
             dailyPublishCompleteness(rest);
             break;
+        case 'audio-prune': {
+            const { dailyAudioPrune } = await loadDailyStages();
+            dailyAudioPrune(rest);
+            break;
+        }
         case 'daily-patch-surfdash':
             dailyPatchSurfdash(rest);
             break;

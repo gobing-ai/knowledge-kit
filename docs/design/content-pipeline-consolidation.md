@@ -454,6 +454,12 @@ Vars: `work_dir`, `run_date`, `window`, `preset`, `channels`, `live_channels`, `
 | 8 | `settle` | boundary | `publish-settle`; exit 1 fails the run when a required row is unsettled | the only node that writes the store |
 | 9 | `report` | boundary | `publish-report` | a report failure must not undo a settlement |
 
+Node 9 also drops the published episode's lossless audio intermediates: `publish-report` ends with
+`kk stage audio-prune <work_dir>` (silenced, warning-only), which deletes the per-section renders,
+the joined `.wav` and the `.intro.wav` merge once `metadata.mp3Path` is on disk — 987 MB of WAV
+across six daily runs (80% of `.works/kk-news-generate`) for 13–20 MB of MP3 a day. The stage no-ops
+when no MP3 was delivered, so a failed transcode keeps its source (measured 2026-11-20).
+
 Fate of the 18 publish3 nodes: `wait-until`, `rss-gate`, `plan`, `validate` → node 1; `check` →
 2; `send-confirm` → 3; `send` → 4; `send-retry` → 5; `classify`, `patch-surfdash`,
 `partial-marker`, `settle`, `outcome-assert`, `bundle-runs` → node 8; `diagnose` → 6; `repair` →
