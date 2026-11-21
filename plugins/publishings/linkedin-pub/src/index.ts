@@ -424,7 +424,12 @@ export class LinkedinBrowserTransport implements PublishTransport {
                 timeoutMs: 10_000,
                 label: 'linkedin share box retry',
             }).catch(() => null);
-            if (retryTrigger !== null) await page.locator(retryTrigger).first().click().catch(() => {});
+            if (retryTrigger !== null)
+                await page
+                    .locator(retryTrigger)
+                    .first()
+                    .click()
+                    .catch(() => {});
             composerSelector = await resolveSelector(page, LINKEDIN_POST_SELECTORS.composer, {
                 timeoutMs: this.stepTimeoutMs,
                 label: 'linkedin composer (after retry)',
@@ -478,15 +483,18 @@ export class LinkedinBrowserTransport implements PublishTransport {
         };
         const rolePost = roleEngine.getByRole?.('button', { name: 'Post', exact: true });
         const roleCount = rolePost === undefined ? 0 : await rolePost.count().catch(() => 0);
-        const sendSelector = roleCount > 0 ? 'role:Post' : await resolveSelector(page, LINKEDIN_POST_SELECTORS.send, {
-            timeoutMs: this.stepTimeoutMs,
-            label: 'linkedin Post button',
-        }).catch(async (error: unknown) => {
-            // The composer is a plain overlay (no dialog role), so a selector list that matches only
-            // inside `[role="dialog"]` reads as "not attached" while Post is plainly on screen. Report
-            // what the composer actually holds — and whether it is still open — instead of the list.
-            const state = await page
-                .evaluate(`(() => {
+        const sendSelector =
+            roleCount > 0
+                ? 'role:Post'
+                : await resolveSelector(page, LINKEDIN_POST_SELECTORS.send, {
+                      timeoutMs: this.stepTimeoutMs,
+                      label: 'linkedin Post button',
+                  }).catch(async (error: unknown) => {
+                      // The composer is a plain overlay (no dialog role), so a selector list that matches only
+                      // inside `[role="dialog"]` reads as "not attached" while Post is plainly on screen. Report
+                      // what the composer actually holds — and whether it is still open — instead of the list.
+                      const state = await page
+                          .evaluate(`(() => {
                     const editor = document.querySelector('div.ProseMirror[contenteditable="true"], div[role="textbox"][contenteditable="true"]');
                     const buttons = [...document.querySelectorAll('button, div[role="button"]')]
                         .filter((n) => n.offsetWidth > 0)
@@ -498,18 +506,20 @@ export class LinkedinBrowserTransport implements PublishTransport {
                         buttons,
                     });
                 })()`)
-                .catch(() => null);
-            // A screenshot is the only way to see WHICH overlay is covering Post when the DOM
-            // reports the composer open and the typed text present (2026-11-20: media step).
-            const shot = await page
-                .screenshot({ path: `/tmp/kk-linkedin-send-${Date.now()}.png` })
-                .then((buffer: unknown) => (typeof buffer === 'string' ? buffer : `/tmp/kk-linkedin-send.png`))
-                .catch(() => null);
-            await page.screenshot({ path: '/tmp/kk-linkedin-send-latest.png' }).catch(() => null);
-            throw new Error(
-                `${String((error as Error)?.message ?? error)}${state ? ` — composer ${state}` : ''}${shot ? ` — screenshot /tmp/kk-linkedin-send-latest.png` : ''}`,
-            );
-        });
+                          .catch(() => null);
+                      // A screenshot is the only way to see WHICH overlay is covering Post when the DOM
+                      // reports the composer open and the typed text present (2026-11-20: media step).
+                      const shot = await page
+                          .screenshot({ path: `/tmp/kk-linkedin-send-${Date.now()}.png` })
+                          .then((buffer: unknown) =>
+                              typeof buffer === 'string' ? buffer : `/tmp/kk-linkedin-send.png`,
+                          )
+                          .catch(() => null);
+                      await page.screenshot({ path: '/tmp/kk-linkedin-send-latest.png' }).catch(() => null);
+                      throw new Error(
+                          `${String((error as Error)?.message ?? error)}${state ? ` — composer ${state}` : ''}${shot ? ` — screenshot /tmp/kk-linkedin-send-latest.png` : ''}`,
+                      );
+                  });
         const send = sendSelector === 'role:Post' ? null : page.locator(sendSelector).first();
         const enabled = await expectOutcome(
             async () => {
