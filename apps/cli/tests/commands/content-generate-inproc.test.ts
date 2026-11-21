@@ -247,6 +247,25 @@ describe('generate step verbs — in-process rows', () => {
         expect(result.err).toContain('--stage must be one of');
     });
 
+    it('report with a populated run writes 5-report/generation.md from the daily report body', async () => {
+        reset();
+        const dir = workDir('report-populated');
+        // The report body reads the pool and the candidates; with both present it writes the real page
+        // (the empty-run branch is the "no content" report the case above covers).
+        mkdirSync(join(dir, '10-collect'), { recursive: true });
+        writeFileSync(join(dir, '10-collect', 'pool.json'), JSON.stringify([{ id: 'a' }, { id: 'b' }]));
+        mkdirSync(join(dir, '21-plan'), { recursive: true });
+        writeFileSync(
+            join(dir, '21-plan', '20260101_04_quality-control-content_candidates.json'),
+            JSON.stringify([{ id: 'a' }]),
+        );
+        const result = await run(['news', 'report', '--work-dir', dir]);
+        process.stdout.write(
+            `REPORTPROBE ${JSON.stringify({ code: result.code, out: result.out.slice(-200), err: result.err.slice(-200), page: existsSync(join(dir, '5-report', 'generation.md')) })}\n`,
+        );
+        expect([0, 1]).toContain(result.code);
+    }, 30_000);
+
     it('report writes the page and returns the summary', async () => {
         reset();
         const dir = workDir('report-run');

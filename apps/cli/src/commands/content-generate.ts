@@ -493,8 +493,15 @@ async function runRawCli(argv: string[]): Promise<number> {
     return result.exitCode ?? 1;
 }
 
-/** `{selected: N}` from the store route's one JSON object; 0 when the route printed none. */
-function selectedCountOf(stdout: string | undefined): number {
+/**
+ * `{selected: N}` from the store route's one JSON object; 0 when the route printed none.
+ *
+ * Exported because it is the only *pure* member of the process seams (`spawnStage`/`runRawCli` need a
+ * real child), so it is the one that can be pinned directly: the store route's stdout is the only
+ * evidence `--stage select` records, and a parse that silently returned NaN would let an empty
+ * selection look like a filled one.
+ */
+export function selectedCountOf(stdout: string | undefined): number {
     const line = (stdout ?? '').trim().split('\n').filter(Boolean).pop() ?? '';
     try {
         const parsed: unknown = PARSE_JSON(line);

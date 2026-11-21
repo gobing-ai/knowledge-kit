@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { Command } from 'commander';
-import { itemCount, registerContentGenerateCommand, resolveNewsSettings } from '../../src/commands/content-generate';
+import {
+    itemCount,
+    registerContentGenerateCommand,
+    resolveNewsSettings,
+    selectedCountOf,
+} from '../../src/commands/content-generate';
 
 /**
  * The `news`/`article` content-generate surface at unit grain: the command registration, the
@@ -85,6 +90,20 @@ describe('resolveNewsSettings', () => {
         ];
         for (const block of cases) {
             expect(() => resolveNewsSettings({ workflows: { 'kk-news-generate': block } })).toThrow();
+        }
+    });
+});
+
+describe('selectedCountOf — the store route stdout is the only selection evidence', () => {
+    test('reads the last JSON line the route printed', () => {
+        expect(selectedCountOf('{"selected":7}')).toBe(7);
+        // The route narrates before its one JSON object, so the LAST line is the payload.
+        expect(selectedCountOf('extract: 40 items\n{"selected":3}\n')).toBe(3);
+    });
+
+    test('a shape-less or unreadable payload counts zero, never NaN', () => {
+        for (const stdout of [undefined, '', 'no json here', '{"selected":"7"}', '{"other":1}', '[1,2,3]']) {
+            expect(selectedCountOf(stdout)).toBe(0);
         }
     });
 });
