@@ -2151,7 +2151,9 @@ export function buildWechatArticleContent(
         // `.spur/run/dogfood/2026-11-20-wechatmp-reward/survey-dom.json` (5806: reward row text + box).
         // If the operator opens 赞赏 later, flip this line back together with the probe in
         // `plugins/publishings/wechatmp-pub/src/enrich.ts` (`REWARD_STATE`).
-        reward: false,
+        // 2026-11-20 operator request: 赞赏 ON. `WECHATMP_ALLOW_PARTIAL_ENRICH=1` is set, so a
+        // still-unauthorized account warns once and keeps the healthy draft instead of failing it.
+        reward: true,
         author: WECHAT_BRAND.author,
         collection: options.collection,
         // 创作来源 is the platform's AI-declaration entry (WX-03); the label declares AI generation.

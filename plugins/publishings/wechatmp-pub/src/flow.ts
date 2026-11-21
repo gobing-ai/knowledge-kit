@@ -2951,6 +2951,29 @@ export async function insertAudioMaterial(
                             }
                         }
                         if (!closed) {
+                            // 2026-11-20: the `完成` walk can leave the picker on screen (a
+                            // crop-confirm page whose 确定 sits outside the chooser subtree). Close
+                            // the PICKER only — the audio dialog behind it still holds the uploaded
+                            // file and the material title, so a global dialog sweep would discard
+                            // the audio we came for.
+                            const pickerClose = await tryFindSelector(
+                                page,
+                                [
+                                    `${chooser} .weui-desktop-dialog__close-btn`,
+                                    `${chooser} .weui-desktop-dialog__close`,
+                                    `${chooser} button:has-text("取消")`,
+                                ],
+                                3_000,
+                            );
+                            if (pickerClose !== undefined) {
+                                await clickSelector(page, pickerClose, 3_000);
+                                closed = await waitUntil(
+                                    async () => !(await page.locator(chooser).first().isVisible()),
+                                    10_000,
+                                );
+                            }
+                        }
+                        if (!closed) {
                             // Live 2026-11-09 this stall is real — capture WHAT is on screen (the
                             // confirm dialog may not nest under the chooser selector, which would
                             // explain the 确定 retry missing it) before giving up on the audio save.
