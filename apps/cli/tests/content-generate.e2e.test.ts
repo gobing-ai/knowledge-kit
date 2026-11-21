@@ -652,6 +652,27 @@ describe('kk news generate step verbs — AC2: the nine design invocations', () 
         expect(article.code).toBe(1);
         expect(article.err).toContain('outline-recommendation.json');
     });
+
+    it('accepts --engine vibe-voice on kk news generate-voice and preserves voxcpm default', async () => {
+        const fx = makeFixture();
+        await seedStore(fx);
+        const workDir = join(fx.works, 'kk-news-generate', DIGITS);
+        expect(kk(fx, ['news', 'prepare', '--work-dir', workDir, '--run-date', DIGITS]).code).toBe(0);
+        expect(kk(fx, ['news', 'generate-render', '--work-dir', workDir]).code).toBe(0);
+
+        const voice = kk(fx, ['news', 'generate-voice', '--work-dir', workDir, '--engine', 'vibe-voice']);
+        expect(voice.code, voice.err).toBe(0);
+        expect(payload(voice)).toEqual({
+            engine: 'vibe-voice',
+            audio: join(workDir, '30-audio', `${DIGITS}_11_generate_audio.mp3`),
+            durationSec: 1020,
+            quality: 'pass',
+        });
+
+        const defaultVoice = kk(fx, ['news', 'generate-voice', '--work-dir', workDir]);
+        expect(defaultVoice.code, defaultVoice.err).toBe(0);
+        expect(payload(defaultVoice)).toMatchObject({ engine: 'voxcpm', quality: 'pass' });
+    });
 });
 
 /** Sanity: the fixture's stage double is a real file the resolver can execute. */

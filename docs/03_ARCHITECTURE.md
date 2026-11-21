@@ -51,6 +51,14 @@ tree. Both daily workflows opt in through the existing `vdriver` variable; defau
 Driver-aware one-shot cache validation ships with it. [The design satellite](design/voxcpm-daily-voice-driver.md)
 owns the worker protocol, profile behavior, distribution checks and comparison procedure.
 
+**VibeVoice adapter (G16, ADR-055 — shipped).** `vibe-voice-tts` (`kk:vibe-voice-tts`) supplies a
+`VoiceboxClient` to the shared voice-gen pipeline (`processGeneratorIO`) over a private uv Python 3.12
+NDJSON worker (`vibevoice==0.0.1`, default checkpoint `microsoft/VibeVoice-1.5B`). `vendors/VibeVoice`
+is reference-only and blocked at runtime across all paths and env vars. Both daily workflows,
+`kk news generate-voice --engine vibe-voice`, and the Board settings allowlist accept `vibe-voice`
+(and alias `vibevoice`) while preserving existing defaults. [The VibeVoice design](design/vibe-voice-driver.md)
+owns the worker protocol, profile modes, and driver wiring.
+
 ```
 apps/
   cli/              # @gobing-ai/knowledge-kit — Commander binary (createProgram factory)
@@ -73,6 +81,7 @@ plugins/
     omni-voice-gen/   # Python (uv) generator plugin: OmniVoice TTS, drop-in for voice-gen (F611, ADR-020 — the only non-TypeScript plugin)
     gemini-tts/       # @gobing-ai/gemini-tts — generator plugin: hosted Gemini 3.8 TTS over voice-gen's pipeline (F612, ADR-023)
     voxcpm-tts/       # @gobing-ai/voxcpm-tts — generator plugin: VoxCPM over voice-gen's pipeline + private uv Python worker (G14, ADR-036)
+    vibe-voice-tts/   # @gobing-ai/vibe-voice-tts — generator plugin: VibeVoice over voice-gen's pipeline + private uv Python 3.12 worker (G16, ADR-055)
     core-facts-gen/   # @gobing-ai/core-facts-gen — merged Doc[] → dated core-facts markdown (mechanical, no LLM; F61)
     daily-article-gen/ # @gobing-ai/daily-article-gen — merged Doc[] → daily AI-news article with per-item links (mechanical, no LLM)
     episode-plan-gen/ # @gobing-ai/episode-plan-gen — scores/dedups/selects blended Doc[] into the episode plan (mechanical, no LLM; F61)
@@ -459,6 +468,7 @@ Full spec: `docs/design/storm-evidence-cache.md`.
 | `plugins/generations/voice-gen` | `@gobing-ai/voice-gen` | VoiceScript/plain-text `Doc[]` → Voicebox WAV/optional MP3 audio `Content` (D5) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
 | `plugins/generations/omni-voice-gen` | — (Python, uv — not a Bun workspace) | VoiceScript/plain-text `Doc[]` → OmniVoice WAV/optional MP3 audio `Content`; drop-in for voice-gen via the `vdriver` workflow var (F611, ADR-020) | PyPI `omnivoice` (torch stack), stdlib |
 | `plugins/generations/gemini-tts` | `@gobing-ai/gemini-tts` | VoiceScript/plain-text `Doc[]` → hosted Gemini 3.8 TTS WAV/optional MP3 audio `Content`; supplies a Gemini-backed `VoiceboxClient` to voice-gen's `processGeneratorIO` rather than porting the pipeline (F612, ADR-023), plus the one-time replicated-voice creation CLI | `@gobing-ai/voice-gen`, `@gobing-ai/ts-utils` |
+| `plugins/generations/vibe-voice-tts` | `@gobing-ai/vibe-voice-tts` | VoiceScript/plain-text `Doc[]` → VibeVoice WAV/optional MP3 audio `Content`; supplies an isolated uv Python 3.12 NDJSON worker (`vibevoice==0.0.1`) behind `VoiceboxClient` + `processGeneratorIO`, selected via `vdriver: vibe-voice` / `vibevoice` or `--engine vibe-voice` (G16, ADR-055) | `@gobing-ai/voice-gen`, `@gobing-ai/ts-utils` (runtime isolated uv `vibevoice==0.0.1`) |
 | `plugins/generations/core-facts-gen` | `@gobing-ai/core-facts-gen` | Merged `Doc[]` → one dated core-facts markdown `Content` (mechanical, no LLM; F61) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
 | `plugins/generations/daily-article-gen` | `@gobing-ai/daily-article-gen` | Merged `Doc[]` → readable daily AI-news article with per-item source links (mechanical template, no LLM) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
 | `plugins/generations/episode-plan-gen` | `@gobing-ai/episode-plan-gen` | Scores/dedups/selects blended `Doc[]` into the daily episode plan, plus the `--mode filter` quality gate (mechanical, no LLM; F61) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |

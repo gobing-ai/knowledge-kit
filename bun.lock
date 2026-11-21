@@ -211,6 +211,17 @@
         "@types/bun": "1.4.3",
       },
     },
+    "plugins/generations/vibe-voice-tts": {
+      "name": "@gobing-ai/vibe-voice-tts",
+      "dependencies": {
+        "@gobing-ai/ts-utils": "catalog:",
+        "@gobing-ai/voice-gen": "workspace:*",
+      },
+      "devDependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@types/bun": "1.4.3",
+      },
+    },
     "plugins/generations/voice-gen": {
       "name": "@gobing-ai/voice-gen",
       "dependencies": {
@@ -706,6 +717,8 @@
     "@gobing-ai/ts-runtime": ["@gobing-ai/ts-runtime@0.5.32", "", { "dependencies": { "@gobing-ai/ts-utils": "^0.5.32", "execa": "^9.5.0", "yaml": "^2.7.0", "zod": "^4.1.0" }, "peerDependencies": { "@gobing-ai/ts-db": "^0.5.32" }, "optionalPeers": ["@gobing-ai/ts-db"] }, "sha512-tA05n+bROXRyAuENuZzoGFDkFMZYIOpzkabzK2wjEMqJ6MNrDbjuRxALFfHGCYGl/5teDzO9w+Q9CEhLQLZd0A=="],
 
     "@gobing-ai/ts-utils": ["@gobing-ai/ts-utils@0.5.32", "", {}, "sha512-8EPNOh0EZQOsp0E8sWMkyAOvYCFNr4vF+62tU4wOax+UFOkXPZX4JJmHwF8RZda8OCOIT9kdh4wF7yzrw37YYA=="],
+
+    "@gobing-ai/vibe-voice-tts": ["@gobing-ai/vibe-voice-tts@workspace:plugins/generations/vibe-voice-tts"],
 
     "@gobing-ai/voice-gen": ["@gobing-ai/voice-gen@workspace:plugins/generations/voice-gen"],
 

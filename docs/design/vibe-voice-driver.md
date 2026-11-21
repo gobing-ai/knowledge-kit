@@ -10,7 +10,7 @@ tags: [contract, G16, plugin, workflow]
 
 # VibeVoice voice driver (`vibe-voice`)
 
-Status: accepted design (G16; ADR-055). Companion to `voice-gen.md` and `voxcpm-daily-voice-driver.md`; specifies the standalone `vibe-voice-tts` generator plugin, its private uv Python worker, profile registry, and the driver-switching wiring across `dailyGenerate`, `kk news generate-voice`, and the Spur Board manifest.
+Status: implemented design (G16; ADR-055). Companion to `voice-gen.md` and `voxcpm-daily-voice-driver.md`; specifies the standalone `vibe-voice-tts` generator plugin, its private uv Python worker, profile registry, and the driver-switching wiring across `dailyGenerate`, `kk news generate-voice`, and the Spur Board manifest.
 
 ## 1. Outcome and boundaries
 
@@ -56,7 +56,7 @@ plugins/generations/vibe-voice-tts/
 
 ### Python package and model checkpoints
 
-- Pinned package: independently published `vibevoice==0.0.1` on PyPI (wheel SHA256 `fe42a8ee9adcd4fa87b2abd72be502f635bb847387e682b672022d7a9d606add`) under Python 3.12 (`requires-python = "==3.12.*"`).
+- Pinned package: independently published `vibevoice==0.0.1` on PyPI (wheel SHA256 `fe42a8ee9adcd4fa87b2abd72be502f635bb847387e682b672022d7a9d606add`) under Python 3.12 (`requires-python = "==3.12.*"`). Note that the `0.0.1` PyPI wheel ships `VibeVoiceProcessor` + `VibeVoiceForConditionalGenerationInference` (standard 1.5B reference/instruct synthesis); if a streaming checkpoint/`cached_prompt` profile is configured against `0.0.1`, `worker.py` fails loud with an actionable `WorkerError` reporting the missing streaming inference modules.
 - Default model (`VIBEVOICE_MODEL`): `microsoft/VibeVoice-1.5B` (64K context, ~90 min generation, 24 kHz output sample rate, native English and Chinese support, reference-WAV cloning via `VibeVoiceProcessor` + `VibeVoiceForConditionalGenerationInference`).
 - Optional streaming model: `microsoft/VibeVoice-Realtime-0.5B` (uses `VibeVoiceStreamingProcessor` + `VibeVoiceStreamingForConditionalGenerationInference` with prefilled `.pt` voice caches).
 - Device selection (`VIBEVOICE_DEVICE`): `auto` (default: `cuda` → `mps` → `cpu`), `cpu`, `cuda`, `mps`. Explicit `mps` when `torch.backends.mps.is_available()` is false fails loud without silent CPU fallback. On `cuda`, uses `torch.bfloat16` with `flash_attention_2` (falling back to `sdpa` if `flash_attn` is absent); on `mps` and `cpu`, uses `torch.float32` with `sdpa`.

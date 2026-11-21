@@ -30,6 +30,12 @@ describe('package publish metadata (R1/R2)', () => {
         for (const asset of ['python/worker.py', 'pyproject.toml', 'uv.lock', 'profiles.json']) {
             expect(existsSync(join(voxcpmDir, asset)), asset).toBe(true);
         }
+        // G16 / 0420: the vibe-voice-tts uv worker + project assets ship beside the bundled dist entry.
+        const vibeVoiceDir = join(pkgDir, 'plugins', 'generations', 'vibe-voice-tts');
+        expect(existsSync(join(vibeVoiceDir, 'dist', 'index.js'))).toBe(true);
+        for (const asset of ['python/worker.py', 'pyproject.toml', 'uv.lock', 'uv.toml', 'profiles.json']) {
+            expect(existsSync(join(vibeVoiceDir, asset)), asset).toBe(true);
+        }
         // 0111: staged product plugins must not carry checkout-bound node_modules.
         for (const collection of ['ingestions', 'generations', 'publishings'] as const) {
             const collectionDir = join(pkgDir, 'plugins', collection);

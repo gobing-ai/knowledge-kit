@@ -53,7 +53,7 @@ const FAMILY_SETTINGS: Readonly<Record<WorkflowFamily, Readonly<Record<string, S
     'kk-daily-ai-voice2': {
         window: { kind: 'duration' },
         language: { kind: 'choice', values: ['en', 'zh', 'ja'] },
-        vdriver: { kind: 'choice', values: ['voicebox', 'ominivoice', 'gemini', 'voxcpm'] },
+        vdriver: { kind: 'choice', values: ['voicebox', 'ominivoice', 'gemini', 'voxcpm', 'vibe-voice', 'vibevoice'] },
         skip_review: { kind: 'boolean' },
         transcode_mp3: { kind: 'boolean' },
         cover_enabled: { kind: 'boolean' },

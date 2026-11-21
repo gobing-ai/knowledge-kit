@@ -546,7 +546,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             expect(res.exitCode).toBe(1);
             const stderr = res.stderr.toString();
             expect(stderr).toContain("unknown vdriver 'voxcmp'");
-            expect(stderr).toContain('expected one of: ominivoice, voicebox, gemini, voxcpm');
+            expect(stderr).toContain('expected one of: ominivoice, voicebox, gemini, voxcpm, vibe-voice, vibevoice');
             expect(existsSync(join(workDir, '30-audio'))).toBe(false);
         } finally {
             rmSync(workDir, { recursive: true, force: true });
@@ -565,11 +565,13 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         // keeps covering the omni-voice-gen branch (generator swap + call log).
         // 0140: the third case drives a degradation-class audit (`passed:false`, no
         // `repetition_detected`) through the real engine — Branch A publishes it warn-only.
+        // G16: add opt-in vibe-voice row alongside voxcpm, gemini, ominivoice, and default.
         for (const [vdriver, qcPassed] of [
             [undefined, true],
             ['ominivoice', true],
             ['gemini', true],
             ['voxcpm', true],
+            ['vibe-voice', true],
             [undefined, false],
         ] as const) {
             const testRoot = mkdtempSync(join(tmpdir(), 'kk-daily-ai-voice-'));
@@ -710,7 +712,7 @@ if (plugin === 'aihot-ingest') {
         body,
         format: 'markdown',
     }));
-} else if (plugin === 'voice-gen' || plugin === 'voxcpm-tts') {
+} else if (plugin === 'voice-gen' || plugin === 'voxcpm-tts' || plugin === 'vibe-voice-tts') {
     readFileSync(inPath, 'utf8');
     const wavPath = join(dirname(outPath), 'content.wav');
     writeWav(wavPath);
@@ -827,6 +829,8 @@ if (plugin === 'aihot-ingest') {
                     gemini: 'kk:gemini-tts',
                     voicebox: 'kk:voice-gen',
                     voxcpm: 'kk:voxcpm-tts',
+                    'vibe-voice': 'kk:vibe-voice-tts',
+                    vibevoice: 'kk:vibe-voice-tts',
                 };
                 const generator = typeof vdriver === 'string' ? generatorByDriver[vdriver] : generatorByDriver.gemini;
                 expect(generated.metadata.generator).toBe(generator);
@@ -856,10 +860,12 @@ if (plugin === 'aihot-ingest') {
                         ? ['omni-voice-gen']
                         : vdriver === 'voxcpm'
                           ? ['voxcpm-tts']
-                          : ['gemini-tts', 'gemini-tts']),
+                          : vdriver === 'vibe-voice'
+                            ? ['vibe-voice-tts']
+                            : ['gemini-tts', 'gemini-tts']),
                 ]);
-                // 0257 AC1: VoxCPM never probes Gemini and never falls back to another voice.
-                if (vdriver === 'voxcpm') {
+                // 0257 / G16: VoxCPM and VibeVoice never probe Gemini and never fall back to another voice.
+                if (vdriver === 'voxcpm' || vdriver === 'vibe-voice') {
                     expect(result.stdout.toString()).not.toContain('gemini quota probe');
                     expect(calls.map((call) => call.plugin)).not.toContain('gemini-tts');
                 }
@@ -897,10 +903,8 @@ if (plugin === 'aihot-ingest') {
                 rmSync(testRoot, { recursive: true, force: true });
             }
         }
-        // 5 real workflow executions (spur engine + bun subprocesses per state): the old 30s
-        // budget tripped under load (30985ms timeout flake). 160s covered 4 rows; the 0257 voxcpm
-        // row adds one more, so the budget scales.
-    }, 220_000);
+        // 6 real workflow executions (spur engine + bun subprocesses per state): scale budget for vibe-voice row.
+    }, 260_000);
 
     // --- 0128 R3: the flattening enumeration ---------------------------------
 

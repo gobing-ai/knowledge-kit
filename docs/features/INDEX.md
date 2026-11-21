@@ -77,7 +77,7 @@
         ├── [active] **G13**: Segmented episode speech for daily voice2 ([G13_segmented-episode-speech-for-daily-voice2.md](./G13_segmented-episode-speech-for-daily-voice2.md))
         ├── [done] **G14**: VoxCPM voice driver for both daily AI voice workflows ([G14_voxcpm-voice-driver-for-both-daily-ai-voice-workflows.md](./G14_voxcpm-voice-driver-for-both-daily-ai-voice-workflows.md))
         ├── [done] **G15**: Daily AI Voice v3: split generate and publish, preset-driven channel matrix ([G15_daily-ai-voice-v3-split-generate-and-publish-preset-driven-channel-matrix.md](./G15_daily-ai-voice-v3-split-generate-and-publish-preset-driven-channel-matrix.md))
-        └── [backlog] **G16**: VibeVoice voice driver (vibe-voice) for TTS workflows ([G16_vibevoice-voice-driver-vibe-voice-for-tts-workflows.md](./G16_vibevoice-voice-driver-vibe-voice-for-tts-workflows.md))
+        └── [verifying] **G16**: VibeVoice voice driver (vibe-voice) for TTS workflows ([G16_vibevoice-voice-driver-vibe-voice-for-tts-workflows.md](./G16_vibevoice-voice-driver-vibe-voice-for-tts-workflows.md))
     ├── [done] **G2**: kk-itc ([G2_kk-itc.md](./G2_kk-itc.md))
         └── [active] **G21**: kk-itc refactor: collected topics, plugin-owned publishing and reliable recovery ([G21_kk-itc-refactor-collected-topics-plugin-owned-publishing-and-reliable-recovery.md](./G21_kk-itc-refactor-collected-topics-plugin-owned-publishing-and-reliable-recovery.md))
             ├── [backlog] **G211**: Profile-aware publish dispatch: same-plugin multi-profile fan-out and per-locale surfdash ([G211_profile-aware-publish-dispatch-same-plugin-multi-profile-fan-out-and-per-locale-surfdash.md](./G211_profile-aware-publish-dispatch-same-plugin-multi-profile-fan-out-and-per-locale-surfdash.md))

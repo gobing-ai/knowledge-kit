@@ -1,0 +1,6 @@
+{
+    "name": "vibe-voice-tts",
+    "kind": "generator",
+    "entry": "./src/index.ts",
+    "version": "1.0.0"
+}

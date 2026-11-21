@@ -43,7 +43,22 @@ for (let i = 0; i < args.length; i++) {
 
 const start = Date.now();
 if (logFile) {
-    appendFileSync(logFile, JSON.stringify({ event: 'start', index: callIndex, inPath, outPath, args, time: start }) + '\\n');
+    appendFileSync(
+        logFile,
+        JSON.stringify({
+            event: 'start',
+            index: callIndex,
+            inPath,
+            outPath,
+            args,
+            batchEnv: process.env.VIBEVOICE_BATCH_MANIFEST
+                ? 'VIBEVOICE_BATCH_MANIFEST'
+                : process.env.VOXCPM_BATCH_MANIFEST
+                  ? 'VOXCPM_BATCH_MANIFEST'
+                  : '',
+            time: start,
+        }) + '\\n',
+    );
 }
 
 // Simulating small work
@@ -56,8 +71,9 @@ if ((failAt >= 0 && callIndex === failAt) || (failFrom >= 0 && callIndex >= fail
     process.exit(1);
 }
 
-const batchTargets: Array<{ in: string; out: string }> = process.env.VOXCPM_BATCH_MANIFEST
-    ? JSON.parse(readFileSync(process.env.VOXCPM_BATCH_MANIFEST, 'utf-8'))
+const batchManifest = process.env.VIBEVOICE_BATCH_MANIFEST ?? process.env.VOXCPM_BATCH_MANIFEST;
+const batchTargets: Array<{ in: string; out: string }> = batchManifest
+    ? JSON.parse(readFileSync(batchManifest, 'utf-8'))
     : outPath
       ? [{ in: inPath, out: outPath }]
       : [];
@@ -722,6 +738,93 @@ describe('0257 — VoxCPM wiring: driver-aware whole-document and sectioned audi
             expect(meta.generator).toBe('kk:voxcpm-tts');
         });
     }, 30_000);
+
+    it('G16 / R2 — whole-document vdriver=vibe-voice and vibevoice render vibe-voice-tts with no Gemini probe', () => {
+        for (const driver of ['vibe-voice', 'vibevoice']) {
+            withFixtureDir(({ dir, binDir, date, logFile }) => {
+                setupSixItemFixture(dir, date, 6);
+                const res = runStage(['daily-generate', dir, date, '', '', driver], binDir, logFile);
+                expect(res.status, res.stderr).toBe(0);
+                const starts = startEvents(logFile);
+                expect(starts).toHaveLength(1);
+                expect(starts[0]?.args).toContain('vibe-voice-tts');
+                expect(starts[0]?.args).not.toContain('gemini-tts');
+                expect(res.stdout).not.toContain('gemini quota probe');
+                const meta = (
+                    JSON.parse(readFileSync(contentPath(dir, date), 'utf-8')) as { metadata: Record<string, unknown> }
+                ).metadata;
+                expect(meta.generator).toBe('kk:vibe-voice-tts');
+            });
+        }
+    }, 30_000);
+
+    it('G16 / R2 / R3 — sectioned vdriver=vibe-voice uses single-worker VIBEVOICE_BATCH_MANIFEST and isolates cross-driver caches', () => {
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+            // 1. Seed a valid VoxCPM whole-doc + sectioned render first.
+            const first = runStage(['daily-generate', dir, date, '', 'true', 'voxcpm', '1'], binDir, logFile);
+            expect(first.status, first.stderr).toBe(0);
+            expect((startEvents(logFile)[0] as { batchEnv?: string }).batchEnv).toBe('VOXCPM_BATCH_MANIFEST');
+
+            // 2. Switch to vdriver=vibe-voice: must NOT reuse VoxCPM sections or joined final; must batch via VIBEVOICE_BATCH_MANIFEST.
+            rmSync(logFile, { force: true });
+            const switched = runStage(['daily-generate', dir, date, '', 'true', 'vibe-voice', '1'], binDir, logFile);
+            expect(switched.status, switched.stderr).toBe(0);
+            const vibeStarts = startEvents(logFile) as Array<{ args: string[]; batchEnv?: string }>;
+            expect(vibeStarts).toHaveLength(1);
+            expect(vibeStarts[0]?.args).toContain('vibe-voice-tts');
+            expect(vibeStarts[0]?.batchEnv).toBe('VIBEVOICE_BATCH_MANIFEST');
+            const finalVibe = JSON.parse(readFileSync(contentPath(dir, date), 'utf-8')) as {
+                metadata: Record<string, unknown>;
+            };
+            expect(finalVibe.metadata.generator).toBe('kk:vibe-voice-tts');
+
+            // 3. Repeat vdriver=vibe-voice: exact section + joined final reuse (zero generator calls).
+            rmSync(logFile, { force: true });
+            const repeat = runStage(['daily-generate', dir, date, '', 'true', 'vibe-voice', '1'], binDir, logFile);
+            expect(repeat.status, repeat.stderr).toBe(0);
+            expect(repeat.stdout).toContain('joined speech reused');
+            expect(existsSync(logFile)).toBe(false);
+
+            // 4. Switch back to voxcpm: must NOT reuse VibeVoice artifacts (note sectionHashes differ by driver too).
+            rmSync(logFile, { force: true });
+            const back = runStage(['daily-generate', dir, date, '', 'true', 'voxcpm', '1'], binDir, logFile);
+            expect(back.status, back.stderr).toBe(0);
+            const backStarts = startEvents(logFile) as Array<{ args: string[]; batchEnv?: string }>;
+            expect(backStarts).toHaveLength(1);
+            expect(backStarts[0]?.args).toContain('voxcpm-tts');
+            expect(backStarts[0]?.batchEnv).toBe('VOXCPM_BATCH_MANIFEST');
+        });
+    }, 60_000);
+
+    it('G16 / R3 — whole-document vdriver=vibe-voice never reuses VoxCPM, Gemini, OmniVoice, or Voicebox caches', () => {
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+            for (const foreignDriver of ['voxcpm', 'gemini', 'ominivoice', 'voicebox']) {
+                rmSync(contentPath(dir, date), { force: true });
+                const seedRes = runStage(['daily-generate', dir, date, '', '', foreignDriver], binDir, logFile);
+                expect(seedRes.status, seedRes.stderr).toBe(0);
+
+                rmSync(logFile, { force: true });
+                const vibeRes = runStage(['daily-generate', dir, date, '', '', 'vibe-voice'], binDir, logFile);
+                expect(vibeRes.status, vibeRes.stderr).toBe(0);
+                const starts = startEvents(logFile);
+                expect(starts).toHaveLength(1);
+                expect(starts[0]?.args).toContain('vibe-voice-tts');
+                const meta = (
+                    JSON.parse(readFileSync(contentPath(dir, date), 'utf-8')) as { metadata: Record<string, unknown> }
+                ).metadata;
+                expect(meta.generator).toBe('kk:vibe-voice-tts');
+
+                // Repeating vibe-voice immediately hits its own cache with zero generator calls.
+                rmSync(logFile, { force: true });
+                const hitRes = runStage(['daily-generate', dir, date, '', '', 'vibe-voice'], binDir, logFile);
+                expect(hitRes.status, hitRes.stderr).toBe(0);
+                expect(hitRes.stdout).toContain('audio cached');
+                expect(existsSync(logFile)).toBe(false);
+            }
+        });
+    }, 60_000);
 
     it('AC1/R2 — a matching whole-document cache reuses without a probe; a missing MP3 is repaired with zero generator calls', () => {
         withFixtureDir(({ dir, binDir, date, logFile }) => {
