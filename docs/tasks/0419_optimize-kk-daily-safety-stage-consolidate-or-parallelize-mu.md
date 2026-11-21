@@ -4,7 +4,7 @@ name: "Optimize kk-daily-safety stage: consolidate or parallelize multi-platform
 status: todo
 template: issue
 created_at: 2026-11-21T03:56:38.022Z
-updated_at: "2026-11-21T03:58:43.399Z"
+updated_at: "2026-11-21T06:06:45.602Z"
 feature_id: F61
 
 tags: ["perf", "safety", "deferred"]
@@ -36,6 +36,27 @@ Scenario: AC1 — Faster multi-platform safety evaluation with identical contrac
 ### Q&A
 
 <!-- Clarifications and triage decisions. Keep empty if none. -->
+
+#### Blocked on a decision — 2026-11-20 (batch run 0415–0419)
+
+Refine evidence, gathered before any code was written:
+
+- **The premise is factually wrong: there are no per-platform calls to consolidate.**
+  `.spur/workflows/kk-daily-safety.yaml:73-79` already asks for **one** reviewer call for all
+  platforms — the request carries `platforms` and the skill writes one report with "one `platforms[]`
+  entry per requested platform" — and the judge phase is likewise a single call
+  (`:105-113`). The 12–17 min is the latency of two (occasionally three, with `revise`) full agent
+  sessions, each allowed `timeoutMs: 1200000`, not three sequential per-platform round trips.
+- **"Bounded parallel per-platform calls" is not expressible today.** The safety machine is a
+  nested `spur workflow` DAG and the engine executes one node at a time — `type: parallel` is an
+  inert schema field (`docs/03_ARCHITECTURE.md`). Per-platform fan-out would need a new
+  `kk stage daily-safety-*` subcommand owning the fan-out plus a preserved per-platform rubric,
+  which is an architecture change (ADR-level), not a stage tweak.
+- **R3's ≤2–3 min target is then a function of agent-session latency** (two skill invocations that
+  each read the drafts and emit a graded report). Reaching it means either trimming what the two
+  calls read (a smaller, shared digest instead of full drafts) or accepting the current cost.
+
+No product source was changed for this task.
 
 ### Design
 

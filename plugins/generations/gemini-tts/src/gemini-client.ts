@@ -8,6 +8,12 @@ const DEFAULT_PROFILES_PATH = new URL('../profiles.json', import.meta.url).pathn
 const TRANSCRIBE_PROMPT = 'Transcribe this audio verbatim. Output only the transcript, no commentary.';
 /** retry-after above this (Google daily-quota 429s: ~70_000s) is never actionable inside a run. */
 const RETRY_AFTER_CAP_SEC = 120;
+/**
+ * 4xx that retrying can never fix: auth, billing (2026-11-20: a depleted project answered 402 on
+ * every call) and malformed requests. Retried, they burn the whole per-segment budget for a
+ * certain failure, which is how one episode spent 23 minutes failing over.
+ */
+const TERMINAL_STATUSES = new Set([400, 401, 402, 403, 404]);
 const PLACEHOLDER_VOICE = 'voice_REPLACE_ME';
 
 type Env = Record<string, string | undefined>;
@@ -78,13 +84,24 @@ export function createGeminiVoiceClient(options: GeminiVoiceClientOptions = {}):
     const styleOverride = env.GEMINI_TTS_STYLE;
     const maxAttempts = positiveInt(env.GEMINI_TTS_MAX_ATTEMPTS, 4);
     const timeoutMs = positiveInt(env.GEMINI_TTS_TIMEOUT_MS, 120_000);
+    // Wall-clock ceiling for ONE segment across every attempt and backoff, so a stalled endpoint
+    // cannot multiply the per-request timeout by the attempt count (R1).
+    const segmentTimeoutMs = positiveInt(env.GEMINI_TTS_SEGMENT_TIMEOUT_MS, 180_000);
     const buffered = new Map<string, Uint8Array>();
     let profiles: Record<string, { voice?: string }> | undefined;
     let seq = 0;
 
     async function post(body: unknown, label: string): Promise<InteractionResponse> {
         const apiKey = env.GEMINI_API_KEY ?? '';
+        const deadline = Date.now() + segmentTimeoutMs;
         for (let attempt = 1; ; attempt++) {
+            const remaining = deadline - Date.now();
+            if (remaining <= 0) {
+                throw new Error(
+                    `${label}: segment budget ${segmentTimeoutMs}ms exhausted after ${attempt - 1} attempt(s)`,
+                );
+            }
+            const attemptMs = Math.min(timeoutMs, remaining);
             let res: Response;
             try {
                 res = await withDeadline(
@@ -92,18 +109,24 @@ export function createGeminiVoiceClient(options: GeminiVoiceClientOptions = {}):
                         method: 'POST',
                         headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
                         body: JSON.stringify(body),
-                        signal: AbortSignal.timeout(timeoutMs),
+                        signal: AbortSignal.timeout(attemptMs),
                     }),
-                    timeoutMs,
+                    attemptMs,
                 );
             } catch (err: unknown) {
                 const msg = err instanceof Error ? err.message : String(err);
-                if (attempt >= maxAttempts)
-                    throw new Error(`${label}: request failed after ${attempt} attempts: ${msg}`);
-                await sleep(2000 * 2 ** (attempt - 1));
+                if (attempt >= maxAttempts || Date.now() >= deadline)
+                    throw new Error(
+                        `${label}: request failed after ${attempt} attempt(s) within ${segmentTimeoutMs}ms: ${msg}`,
+                    );
+                await sleep(Math.min(2000 * 2 ** (attempt - 1), Math.max(0, deadline - Date.now())));
                 continue;
             }
-            if (res.ok) return withDeadline(res.json(), timeoutMs) as Promise<InteractionResponse>;
+            if (res.ok)
+                return withDeadline(
+                    res.json(),
+                    Math.min(timeoutMs, Math.max(1, deadline - Date.now())),
+                ) as Promise<InteractionResponse>;
             const raw = await withDeadline(res.text(), timeoutMs);
             let apiMessage = raw.slice(0, 300);
             try {
@@ -118,6 +141,11 @@ export function createGeminiVoiceClient(options: GeminiVoiceClientOptions = {}):
             if (retryAfter > RETRY_AFTER_CAP_SEC) {
                 throw new Error(
                     `${label}: HTTP ${res.status} quota/reset horizon too far out (retry-after ${retryAfter}s ≈ ${(retryAfter / 3600).toFixed(1)}h): ${apiMessage}`,
+                );
+            }
+            if (TERMINAL_STATUSES.has(res.status)) {
+                throw new Error(
+                    `${label}: HTTP ${res.status} is not retryable (auth/billing/request class) — failing fast instead of burning the segment budget: ${apiMessage}`,
                 );
             }
             const retryable = res.status === 429 || res.status >= 500;

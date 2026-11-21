@@ -4,7 +4,7 @@ name: "Harden voxcpm-tts: worker reuse across sections, MPS bfloat16 dtype, fail
 status: todo
 template: issue
 created_at: 2026-11-21T03:56:33.286Z
-updated_at: "2026-11-21T03:58:18.273Z"
+updated_at: "2026-11-21T06:07:51.725Z"
 feature_id: G13
 
 tags: ["voxcpm", "audio", "perf", "reliability"]
@@ -60,6 +60,33 @@ Scenario: AC5 — Gate and installed package sync pass (req: R5)
 ### Q&A
 
 <!-- Clarifications and triage decisions. Keep empty if none. -->
+
+#### Execution record — 2026-11-20 (batch run 0415–0419)
+
+Nothing in this task's source was changed in this session; the root causes were confirmed against
+the code and the live host so refine starts from evidence, not from the task's assumptions:
+
+- **R1 confirmed, and it is a real refactor.** `plugins/kk/scripts/daily-stages.ts:1686-1700`
+  synthesizes sections in a `for` loop, one `kk executor run <driver>` subprocess per section, and
+  `plugins/generations/voxcpm-tts/src/index.ts:32` spawns a fresh `uv` worker and kills it in
+  `finally` — so the ~2.5 B model reloads per section. Option A (batch invocation) needs a
+  multi-Doc input contract in `voxcpm-tts` (`processGeneratorIO` currently maps one `--in`/`--out`
+  pair) plus the per-section sidecar/cache keys and the one-retry-per-section policy
+  (`daily-stages.ts:1700-1730`) re-expressed for a batch. That is a design change to two units, not
+  a local edit.
+- **R2/R5 cannot be certified tonight.** Both need the model on MPS and a full-episode benchmark
+  (the 2026-11-18/19 episodes measured ~120/142 min). Tasks 0415's memory reclamation landed, so
+  the machine now has room, but a 2 h paid render is not something an unattended batch should start
+  without the operator watching the quality.
+- **The operator already applied a manual workaround** that this task must not silently contradict:
+  `~/.config/kk/config.yaml` pins `VOXCPM_DEVICE: "mps"` and raises `VOICEBOX_TIMEOUT_MS` to
+  1 200 000 for `voxcpm-tts` (2026-11-20 comment: `auto` resolved to CPU at ~19x realtime, an
+  explicit `mps` rendered 6.7 s in 202 s including the ~3 min model load). R3's fail-fast should be
+  built on top of that pin, not replace it.
+- **R4 is the cheapest real win and is unblocked:** `voxcpm-client.ts:377` throws
+  `worker closed stdout before settling all requests` from the stdout pump without the
+  `stderrTail`/exit-code/signal that the `exit` handler at `:373` already carries — the exact
+  diagnostic gap that made today's mid-section crash opaque.
 
 ### Design
 
