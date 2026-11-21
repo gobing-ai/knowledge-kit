@@ -57,7 +57,7 @@ sync: [T3]
 | [xhs-image-cards.md](design/xhs-image-cards.md) | XHS card skill, image-gen presets, ordered Content images, browser draft/public Result | shipped (E8, ADR-024; 0167 xhs-pub script transport, 0168 xhs-images skill + presets) |
 | [segmented-episode-speech.md](design/segmented-episode-speech.md) | Voice2 section synthesis, per-section cache, join, then the existing intro sting (ADR-034) | implemented (G13) |
 | [voxcpm-daily-voice-driver.md](design/voxcpm-daily-voice-driver.md) | Standalone VoxCPM voice generator: private uv Python worker behind voice-gen (ADR-036) | implemented (G14) |
-| [vibe-voice-driver.md](design/vibe-voice-driver.md) | Standalone VibeVoice voice generator (`vibe-voice-tts`) and `vdriver=vibe-voice` / `--engine vibe-voice` wiring (ADR-055) | accepted design (G16) |
+| [vibe-voice-driver.md](design/vibe-voice-driver.md) | Standalone VibeVoice voice generator (`vibe-voice-tts`) and `vdriver=vibe-voice` / `--engine vibe-voice` wiring (ADR-055) | implemented (G16) |
 | [kk-wiki.md](design/kk-wiki.md) | `kk wiki` verb surface, vault frontmatter, config keys and Quartz publish projection | accepted design (I1, ADR-048; not yet built — §1 transcribes the verbs once they ship) |
 | [workflow-board-modules.md](design/workflow-board-modules.md) | Native Collect / Daily AI Voice / IT Content Board modules; recorded run settings with Settings → Workflows reuse; local reader and run capture surface | shipped (G8; 0252–0255) |
 | [collect-store-views.md](design/collect-store-views.md) | Collect module read-only store views: cadence overview, run funnel, label quality, items browser and downstream yield over `.works/kk.db` | accepted design (G81) |
@@ -1457,7 +1457,7 @@ kk article generate-check --work-dir <dir> --step outline|judge|adapt        # s
 kk article generate-bundle --work-dir <dir> --stage variants|freeze          # shipped (0367/0368)
 
 kk news <same verbs, --type fixed to news, --run-date <YYYYMMDD> instead of --slug>
-kk news prepare | generate-render | generate-voice | generate-cards | report --work-dir <dir> …   # shipped (0367)
+kk news prepare | generate-render | generate-voice [--engine voxcpm|gemini|omnivoice|voicebox|vibe-voice] | generate-cards | report --work-dir <dir> …   # shipped (0367; vibe-voice G16)
 kk news prepare --work-dir <dir> [--refresh] [--ledger-sync]   # --refresh: drop the frozen pool + plan
 ```
 
@@ -1627,11 +1627,11 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `VOICEBOX_REQUIRE_GPU` | no (voice-gen) | `1`/`true`/`yes` turns the silent-CPU-fallback report into a failure. `/health` answering `gpu_available: true` with a non-GPU `backend_variant` (e.g. `cpu`, measured at ~5.6x RTF on 2026-11-20) always logs a loud warning; this flag makes it fatal instead (task 0417 R2) |
 | `DAILYNEWS_LANGUAGE` | no (dailynews-gen) | Broadcast language passed through `kk executor run`; `zh` (default) or `en` |
 | `DAILYNEWS_TITLE` | no (dailynews-gen) | Optional broadcast title passed through `kk executor run` |
-| `VOICEBOX_DEFAULT_PROFILE` | no (dailynews-gen/voice-gen/omni-voice-gen/gemini-tts) | Default profile name/ID when the news workflow or segment/doc omits profile |
+| `VOICEBOX_DEFAULT_PROFILE` | no (dailynews-gen/voice-gen/omni-voice-gen/gemini-tts/voxcpm-tts/vibe-voice-tts) | Default profile name/ID when the news workflow or segment/doc omits profile |
 | `VOICEBOX_TIMEOUT_MS` | no (voice-gen) | Per-request timeout in ms (default: `600000`) — bounds both the generation poll and every Voicebox HTTP call (`/health`, `/profiles`, `/generate`, `/history/<id>`, `/audio/<id>`, `/transcribe`) |
 | `VOICEBOX_POLL_MS` | no (voice-gen) | Poll interval in ms (default: `1000`) |
 | `VOICEBOX_ENGINE` | no (voice-gen) | TTS engine override when script/profile omit it (`qwen` default; `qwen_custom_voice` has no clone support) |
-| `VOICE_GEN_FAIL_ON_QC` | no (voice-gen, omni-voice-gen, gemini-tts) | `true` fails generation when the QC audit fails (fidelity/duration/repetition); the daily workflow does **not** route on `metadata.qc.passed` — degradation-class audits publish warn-only and surface in the run report's `## 音频 QC` block (0140), while the credibility-damaging `repetition_detected` class is hard-failed upstream by 0139 R5a |
+| `VOICE_GEN_FAIL_ON_QC` | no (voice-gen, omni-voice-gen, gemini-tts, voxcpm-tts, vibe-voice-tts) | `true` fails generation when the QC audit fails (fidelity/duration/repetition); the daily workflow does **not** route on `metadata.qc.passed` — degradation-class audits publish warn-only and surface in the run report's `## 音频 QC` block (0140), while the credibility-damaging `repetition_detected` class is hard-failed upstream by 0139 R5a |
 | — (per-segment verify) | no (voice-gen) | Unconditional post-generation check: each segment's audio is transcribed back and compared against the source text (`transcriptionFidelity`); below `TRANSCRIPTION_FIDELITY_FLOOR` (0.15) the segment is regenerated (≤2 retries) with a varied seed and halved `max_chunk_chars` (floor 100). Final attempt always accepted; the QC audit (which reuses the stored transcription) remains the backstop. Catches contiguous loop garbage the server's gap-based runaway detector misses (dogfood 2026-09-03) |
 | `EPISODE_PLAN_MAX_ITEMS` | no (episode-plan-gen) | Caps selected episode items (default `20`); the daily workflow passes `plan_max_items` through |
 | `EPISODE_PLAN_DATE` | no (episode-plan-gen) | Optional run date stamped into the plan Content metadata (`planDate`) |
@@ -1652,8 +1652,8 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `SURFDASH_URL` | no (surfdash-pub) | Base URL for the live-URL poll and `url` in the Result (default `https://surfing.salty.vip`); article derived as `<base>/<locale>/posts/<slug>` |
 | `VOICEBOX_MAX_CHUNK_CHARS` | no (voice-gen) | Max chunk characters (default: `800`, range 100–5000) |
 | `VOICEBOX_CROSSFADE_MS` | no (voice-gen) | Crossfade duration in ms (default: `50`, range 0–500) |
-| `VOICE_GEN_MP3` | no (voice-gen, omni-voice-gen, gemini-tts) | When `true`/`1`/`yes`/`on`, transcode sibling WAV to `<outStem>.mp3` with ffmpeg (`libmp3lame`); `metadata.mp3Path` is the absolute MP3. Default off. Missing ffmpeg or transcode failure → fail-loud, no `--out` |
-| `VOICE_GEN_MAX_RUN_MS` | no (voice-gen, omni-voice-gen, gemini-tts) | Total render budget in ms, checked between segments (default: unset = unlimited); exceeded → fail loud before the next segment. Guard against a wedged TTS backend crawling for hours (voice-gen D14; omni-voice-gen D6) |
+| `VOICE_GEN_MP3` | no (voice-gen, omni-voice-gen, gemini-tts, voxcpm-tts, vibe-voice-tts) | When `true`/`1`/`yes`/`on`, transcode sibling WAV to `<outStem>.mp3` with ffmpeg (`libmp3lame`); `metadata.mp3Path` is the absolute MP3. Default off. Missing ffmpeg or transcode failure → fail-loud, no `--out` |
+| `VOICE_GEN_MAX_RUN_MS` | no (voice-gen, omni-voice-gen, gemini-tts, voxcpm-tts, vibe-voice-tts) | Total render budget in ms, checked between segments (default: unset = unlimited); exceeded → fail loud before the next segment. Guard against a wedged TTS backend crawling for hours (voice-gen D14; omni-voice-gen D6) |
 | `GEMINI_API_KEY` | yes (gemini-tts) | API key sent as `x-goog-api-key` on Gemini TTS and voice-create requests. Missing → exit 1 before any network call |
 | `GOOGLE_BASE_URL` | no (gemini-tts) | Gemini API origin (default `https://generativelanguage.googleapis.com`) |
 | `GEMINI_TTS_MODEL` | no (gemini-tts) | `gemini-3.8-flash-tts` (default) or `gemini-3.8-flash-lite-tts`; anything else exits 1 naming both |
@@ -1666,6 +1666,10 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `VOXCPM_MODEL` | no (voxcpm-tts) | VoxCPM model id or local snapshot dir (default `openbmb/VoxCPM2`); resolved and retained explicitly before load and checked against vendor exclusion |
 | `VOXCPM_DEVICE` | no (voxcpm-tts) | `auto` (default), `cpu`, `cuda`, `mps`; an unavailable requested device fails |
 | `VOXCPM_PROFILES_PATH` | no (voxcpm-tts) | Path to the frozen `profiles` registry (default `<plugin-root>/profiles.json`) |
+| `VIBEVOICE_MODEL` | no (vibe-voice-tts) | VibeVoice HuggingFace model id or local snapshot dir (default `microsoft/VibeVoice-1.5B`); canonicalized and checked against vendor exclusion |
+| `VIBEVOICE_DEVICE` | no (vibe-voice-tts) | `auto` (default: `cuda` → `mps` → `cpu`), `cpu`, `cuda`, `mps`; unavailable requested device fails without silent CPU fallback |
+| `VIBEVOICE_PROFILES_PATH` | no (vibe-voice-tts) | Path to the frozen VibeVoice `profiles` registry (`reference`, `cached_prompt`, or single-segment `instruct`; default `<plugin-root>/profiles.json`) |
+| `VIBEVOICE_BATCH_MANIFEST` | no (vibe-voice-tts) | Path to JSON array of `{ in, out }` section entries for single-worker batch synthesis |
 | `OMNIVOICE_PROFILE_REGISTRY` | no (omni-voice-gen) | Path to the JSON profile registry (profile name → `{ref_audio, ref_text}` clone / `{prompt}` saved clone prompt / `{instruct}` voice design); default `<plugin>/profiles.json`. Unknown profile name → exit 1 naming the profile (D4) |
 | `OMNIVOICE_MODEL` | no (omni-voice-gen) | HuggingFace model id loaded via `OmniVoice.from_pretrained` (default: `k2-fsa/OmniVoice`) |
 | `OMNIVOICE_DEVICE` | no (omni-voice-gen) | Torch device map override (default: auto — CUDA > MPS > CPU) |

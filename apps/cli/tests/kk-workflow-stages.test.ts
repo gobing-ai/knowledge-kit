@@ -4725,6 +4725,31 @@ describe('task 0250 — daily-script episode-budget fitting (voice2 dogfood R3/A
         });
     });
 
+    it('fits a vibe-voice and vibevoice script at the conservative 5.2 cps rate (G16)', () => {
+        const expectedBudget = Math.floor((25 * 60 - 8 - 120) * 5.2);
+        const sentence = '这是一句关于本地模型推理优化的技术播报。';
+        const body = [
+            'title: "T"',
+            'language: zh',
+            'segments:',
+            '  - text: "开场白。"',
+            `  - text: ${JSON.stringify(sentence.repeat(420))}`,
+            '  - text: "结束语。"',
+            '',
+        ].join('\n');
+        for (const driver of ['vibe-voice', 'vibevoice']) {
+            withTempDir((dir) => {
+                const { yamlOut, env } = setup(dir, body);
+                const result = runScript(dir, env, driver);
+                expect(result.status).toBe(0);
+                expect(result.stdout).toContain('script: fitted voicescript');
+                const chars = spokenChars(readFileSync(yamlOut, 'utf-8'));
+                expect(chars).toBeLessThanOrEqual(expectedBudget);
+                expect(chars).toBeGreaterThan(expectedBudget - 40);
+            });
+        }
+    });
+
     it('an over-budget script is rewritten as block YAML at or under the budget and passes the checker', () => {
         withTempDir((dir) => {
             // 420 sentences x 20 chars = 8400 spoken chars > the 7683 budget; every sentence ends

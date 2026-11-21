@@ -1379,6 +1379,8 @@ export function dailyGenerate(args: string[]): void {
         voicebox: 'voice-gen',
         gemini: 'gemini-tts',
         voxcpm: 'voxcpm-tts',
+        'vibe-voice': 'vibe-voice-tts',
+        vibevoice: 'vibe-voice-tts',
     };
     let voiceGenerator = VOICE_DRIVERS[vdriver];
     if (!voiceGenerator) {
@@ -1726,7 +1728,16 @@ export function dailyGenerate(args: string[]): void {
             return secDocIn;
         };
 
-        if (voiceGenerator === 'voxcpm-tts' && anySynthesisNeeded) {
+        const BATCH_MANIFEST_CONFIG: Record<string, { envKey: string; filename: string; label: string }> = {
+            'voxcpm-tts': { envKey: 'VOXCPM_BATCH_MANIFEST', filename: '.voxcpm_batch.json', label: 'voxcpm' },
+            'vibe-voice-tts': {
+                envKey: 'VIBEVOICE_BATCH_MANIFEST',
+                filename: '.vibe-voice_batch.json',
+                label: 'vibe-voice',
+            },
+        };
+        const batchConfig = BATCH_MANIFEST_CONFIG[voiceGenerator];
+        if (batchConfig && anySynthesisNeeded) {
             const pendingPlans = plans.filter((p) => p.needsSynthesis);
             for (const plan of plans) {
                 if (!plan.needsSynthesis) {
@@ -1734,20 +1745,20 @@ export function dailyGenerate(args: string[]): void {
                 }
             }
             const secInputs = pendingPlans.map((p) => ({ plan: p, inPath: buildSectionDocIn(p) }));
-            const batchManifestPath = join(secDir, '.voxcpm_batch.json');
+            const batchManifestPath = join(secDir, batchConfig.filename);
             const runBatch = (items: typeof secInputs): number => {
                 writeJsonText(
                     batchManifestPath,
                     items.map((item) => ({ in: item.inPath, out: item.plan.jsonPath })),
                 );
                 return kk(voiceExecutorArgs(voiceGenerator, items[0].inPath, items[0].plan.jsonPath, pluginsPath), {
-                    env: { VOICE_GEN_MP3: transcodeMp3, VOXCPM_BATCH_MANIFEST: batchManifestPath },
+                    env: { VOICE_GEN_MP3: transcodeMp3, [batchConfig.envKey]: batchManifestPath },
                     soft: true,
                 });
             };
             try {
                 console.log(
-                    `generate: synthesizing ${secInputs.length} voxcpm section(s) in single-worker batch: ${secInputs.map((i) => i.plan.def.stem).join(', ')}`,
+                    `generate: synthesizing ${secInputs.length} ${batchConfig.label} section(s) in single-worker batch: ${secInputs.map((i) => i.plan.def.stem).join(', ')}`,
                 );
                 let status = runBatch(secInputs);
                 for (const item of secInputs) {
@@ -1761,7 +1772,7 @@ export function dailyGenerate(args: string[]): void {
                     );
                     if (remaining.length > 0) {
                         console.log(
-                            `generate: voxcpm batch failed (exit ${status}) — retrying ${remaining.length} remaining section(s) once`,
+                            `generate: ${batchConfig.label} batch failed (exit ${status}) — retrying ${remaining.length} remaining section(s) once`,
                         );
                         status = runBatch(remaining);
                         for (const item of remaining) {
@@ -1774,7 +1785,7 @@ export function dailyGenerate(args: string[]): void {
                     }
                 }
                 if (status !== 0) {
-                    failWith(status, 'generate: voxcpm batch section synthesis failed');
+                    failWith(status, `generate: ${batchConfig.label} batch section synthesis failed`);
                 }
             } finally {
                 rmSync(batchManifestPath, { force: true });
@@ -4688,7 +4699,7 @@ function spokenCharRate(vdriver: string): number {
     // voxcpm measured the same day on a 12-section zh+en episode: 6,772 chars / 1,297.7 s speech
     // (5.19 字/秒). The provisional 5.6 borrowed from voicebox let the fit budget reach 7,683 chars
     // — 24.6 min of audio, 18 s inside the 25-min gate. 5.2 puts a full-budget script at ~22.9 min.
-    if (vdriver === 'voxcpm') return 5.2;
+    if (vdriver === 'voxcpm' || vdriver === 'vibe-voice' || vdriver === 'vibevoice') return 5.2;
     return 5.6;
 }
 

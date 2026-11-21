@@ -70,7 +70,7 @@ const NEWS_TOPIC = 'ai-news';
  * no cloud credits could not be selected by the verb (2026-11-20: voxcpm measured ~19x realtime and
  * its worker died mid-section, gemini's primary project answered HTTP 402 on every call).
  */
-const VOICE_ENGINES = ['voxcpm', 'gemini', 'omnivoice', 'voicebox'] as const;
+const VOICE_ENGINES = ['voxcpm', 'gemini', 'omnivoice', 'voicebox', 'vibe-voice'] as const;
 type VoiceEngine = (typeof VOICE_ENGINES)[number];
 
 /**
@@ -83,6 +83,7 @@ const ENGINE_DRIVERS: Record<VoiceEngine, string> = {
     gemini: 'gemini',
     omnivoice: 'ominivoice',
     voicebox: 'voicebox',
+    'vibe-voice': 'vibe-voice',
 };
 
 /** The steps `generate-check --step` accepts for the news noun (design §1.3; the article column lives in `content-generate-article.ts`). */

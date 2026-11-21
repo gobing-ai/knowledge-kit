@@ -39,6 +39,15 @@ describe('workflow allowlists', () => {
         expect(allowlistedKeys('kk-article-generate')).toEqual(allowlistedKeys('kk-itc'));
         expect(allowlistedKeys('kk-collect')).toEqual(['limit', 'horizon_hours']);
         expect(WORKFLOW_SETTINGS['kk-collect'].limit).toEqual({ kind: 'integer' });
+        // G16 / 0421: vdriver settings allowlist accepts vibe-voice and alias vibevoice alongside existing drivers.
+        expect(WORKFLOW_SETTINGS['kk-daily-ai-voice2'].vdriver).toEqual({
+            kind: 'choice',
+            values: ['voicebox', 'ominivoice', 'gemini', 'voxcpm', 'vibe-voice', 'vibevoice'],
+        });
+        expect(WORKFLOW_SETTINGS['kk-news-generate'].vdriver).toEqual({
+            kind: 'choice',
+            values: ['voicebox', 'ominivoice', 'gemini', 'voxcpm', 'vibe-voice', 'vibevoice'],
+        });
         // Free text and provider blocks are uncapturable by construction.
         expect(Object.keys(WORKFLOW_SETTINGS['kk-daily-ai-voice2'])).not.toContain('topic');
         expect(Object.keys(WORKFLOW_SETTINGS['kk-itc'])).not.toContain('title');

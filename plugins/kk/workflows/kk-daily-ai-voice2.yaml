@@ -24,8 +24,9 @@ vars:
   window: "24h"
   language: "zh"
   voice_profile: "robin-news"
-  # Voice driver switch — voxcpm (voxcpm-tts) | gemini (gemini-tts) | voicebox (voice-gen)
-  # | ominivoice (omni-voice-gen). The generate tier below mirrors the fallback order, and the
+  # Voice driver switch — voxcpm (voxcpm-tts) | vibe-voice / vibevoice (vibe-voice-tts, ADR-055)
+  # | gemini (gemini-tts) | voicebox (voice-gen) | ominivoice (omni-voice-gen). The generate tier below
+  # mirrors the fallback order, and the
   # fit/duration gates take their spoken-char rate from this var — switching drivers here is enough.
   # 2026-10-20 (operator decision): voxcpm STAYS the primary. It is audibly echoey - a 40 ms periodic
   # reflection on renders longer than ~30 s plus a pause floor only 16-22 dB below speech, measured by
