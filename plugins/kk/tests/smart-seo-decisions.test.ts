@@ -20,6 +20,20 @@ beforeEach(() => {
 });
 afterEach(() => stageProgress.mockRestore());
 
+// Real `spur decision run` children inherit this env. Without it every test run wrote its
+// deliberate input rejections and live-maker fallbacks into the project's .spur/spur.db, where
+// they showed up on the Board observability page as production decision failures.
+const testDbDir = mkdtempSync(join(tmpdir(), 'kk-seo-decisions-db-'));
+const savedDatabaseUrl = process.env.DATABASE_URL;
+beforeAll(() => {
+    process.env.DATABASE_URL = join(testDbDir, 'spur.db');
+});
+afterAll(() => {
+    if (savedDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = savedDatabaseUrl;
+    rmSync(testDbDir, { recursive: true, force: true });
+});
+
 describe('Smart SEO Catalogs and Declarations (R1 / AC1)', () => {
     it('verifies the existence and validity of all four flat catalogs', () => {
         const catalogFiles = [
@@ -722,7 +736,8 @@ describe('Confidence level (HIGH/MEDIUM/LOW) verification (R2 / AC2)', () => {
                 'typesafe',
                 '--json',
             ],
-            { stdout: 'pipe', stderr: 'pipe' },
+            // Bun.spawnSync does not see runtime process.env mutations; pass the test DB explicitly.
+            { stdout: 'pipe', stderr: 'pipe', env: { ...process.env } },
         );
         expect(proc.exitCode).toBe(0);
         const payload = JSON.parse(proc.stdout.toString()) as {
