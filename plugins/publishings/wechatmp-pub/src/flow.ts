@@ -24,7 +24,7 @@ import {
     WechatCgiDraftError,
 } from './cgi-draft';
 import { prepareArticleMedia, type WechatArticleMedia } from './cgi-media';
-import { enrichArticle } from './enrich';
+import { enrichArticleDetailed } from './enrich';
 import {
     artifactPaths,
     CREATE_TYPES,
@@ -1270,12 +1270,7 @@ export async function setCover(
  * seeded. The flow *does* attach that file as the first body image, so 从正文选择 resolves it with no
  * library dependency — which is the route a cover-carrying article should take (2026-11-12).
  */
-function coverSourceOf(content: Content): 'library' | 'body' {
-    const meta = content.metadata?.wechatmp;
-    if (meta !== null && typeof meta === 'object' && !Array.isArray(meta)) {
-        const declared = (meta as Record<string, unknown>).coverSource;
-        if (declared === 'body' || declared === 'library') return declared;
-    }
+function genericCoverPathOf(content: Content): string | undefined {
     const generic = content.metadata?.coverImage;
     const genericPath =
         typeof generic === 'string'
@@ -1283,7 +1278,25 @@ function coverSourceOf(content: Content): 'library' | 'body' {
             : typeof (generic as { path?: unknown } | undefined)?.path === 'string'
               ? (generic as { path: string }).path
               : undefined;
-    return genericPath !== undefined && genericPath.length > 0 ? 'body' : 'library';
+    return genericPath !== undefined && genericPath.length > 0 ? genericPath : undefined;
+}
+
+function libraryCoverFallback(content: Content): string | undefined {
+    const meta = content.metadata?.wechatmp;
+    if (meta !== null && typeof meta === 'object' && !Array.isArray(meta)) {
+        const coverPath = (meta as Record<string, unknown>).coverPath;
+        if (typeof coverPath === 'string' && coverPath.trim().length > 0) return coverPath.trim();
+    }
+    return genericCoverPathOf(content);
+}
+
+function coverSourceOf(content: Content): 'library' | 'body' {
+    const meta = content.metadata?.wechatmp;
+    if (meta !== null && typeof meta === 'object' && !Array.isArray(meta)) {
+        const declared = (meta as Record<string, unknown>).coverSource;
+        if (declared === 'body' || declared === 'library') return declared;
+    }
+    return genericCoverPathOf(content) !== undefined ? 'body' : 'library';
 }
 
 /** The audio-embed block of `metadata.wechatmp`, or null when this run embeds no audio. Shared by
@@ -1311,12 +1324,14 @@ export async function enrichArticleDraft(
     page: WechatPage,
     content: Content,
     stepTimeoutMs: number,
-): Promise<{ enrichWarnings: string[]; coverWarnings: string[] }> {
+): Promise<{ enrichWarnings: string[]; capabilityWarnings: string[]; coverWarnings: string[] }> {
     const enrichMeta = content.metadata?.wechatmp;
     if (enrichMeta === undefined || typeof enrichMeta !== 'object' || Array.isArray(enrichMeta))
-        return { enrichWarnings: [], coverWarnings: [] };
+        return { enrichWarnings: [], capabilityWarnings: [], coverWarnings: [] };
     const meta = enrichMeta as Record<string, unknown>;
-    const enrichWarnings = await enrichArticle(page, meta);
+    const detailed = await enrichArticleDetailed(page, meta);
+    const enrichWarnings = [...detailed.warnings];
+    const capabilityWarnings = [...detailed.capabilityWarnings];
     const audio = audioBlockOf(content);
     let audioFailed = false;
     let coverSeeded = false;
@@ -1347,7 +1362,7 @@ export async function enrichArticleDraft(
             if (cover !== null) coverWarnings.push(cover);
         }
     }
-    return { enrichWarnings, coverWarnings };
+    return { enrichWarnings, capabilityWarnings, coverWarnings };
 }
 
 /** Compose 文章 (createType 0): body images, title, body + 一键排版, 摘要, 作者, cover, settings. */
@@ -1363,8 +1378,9 @@ async function composeArticle(
     // Images go in AFTER the body: the v2 editor's own `execCommand('insertHTML')` body path
     // REPLACES the document, so an image attached first is silently wiped — and with it the
     // 默认首图为封面 / 从正文选择 material (measured 2026-11-12: bodyImgs 2 → 0, then 2 again when
-    // re-attached after the body). A cover-carrying article lost its cover exactly this way.
-    await attachImages(page, input.images, deps);
+    // re-attached after the body). Only attach body images when non-empty (`coverSource: 'library'`
+    // with no body illustrations keeps input.images empty so the cover never lands in the body).
+    if (input.images.length > 0) await attachImages(page, input.images, deps);
     for (const warning of [
         await fillOptional(page, DIGEST_INPUT, input.digest ?? '', '摘要', deps),
         await fillOptional(page, AUTHOR_INPUT, authorOf(deps.content), '作者', deps),
@@ -1379,21 +1395,25 @@ async function composeArticle(
     const audioRuns = audioBlockOf(deps.content) !== null;
     if (!(coverSource === 'library' && audioRuns)) {
         const cover = await setCover(page, coverSource, deps, {
-            // Requested identity = the article's first body image (the 默认首图为封面 semantics of
-            // modes.coverPath). No audio ran, so the library binding is unknown — only an exposed
-            // exact filename can match.
-            requested: input.images[0],
+            // Requested identity = the article's first body image (从正文选择), or
+            // `metadata.wechatmp.coverPath` / `metadata.coverImage` when `coverSource: 'library'`
+            // omits body attachment and no audio uploaded it cleanly first.
+            requested: input.images[0] ?? libraryCoverFallback(deps.content),
         });
         if (cover !== null) warnings.push(cover);
     }
-    const { enrichWarnings, coverWarnings } = await enrichArticleDraft(page, deps.content, deps.stepTimeoutMs);
+    const { enrichWarnings, capabilityWarnings, coverWarnings } = await enrichArticleDraft(
+        page,
+        deps.content,
+        deps.stepTimeoutMs,
+    );
     warnings.push(...coverWarnings);
     // Layout is deliberately last: 原文链接, media insertion, and cover commitment must be part of
     // the body the platform formats, and the native auto-save acknowledgement must settle before
     // 保存为草稿 or the public saved-editor readback begins.
     const layout = await applyLayout(page, deps);
     if (layout !== null) warnings.push(layout);
-    return { warnings, titlePath, enrichWarnings };
+    return { warnings, titlePath, enrichWarnings, capabilityWarnings };
 }
 
 /** Compose 贴图 (createType 8): ≥1 image is the message; title and body are 选填. */
@@ -1694,6 +1714,7 @@ interface ComposeReport {
     warnings: string[];
     titlePath: 'absent' | 'mirror-agreed' | 'mirror-unread';
     enrichWarnings: string[];
+    capabilityWarnings?: string[];
 }
 
 /** Compose the requested mode's post. Exhaustive over {@link ModeInput}. */
@@ -2627,17 +2648,22 @@ export async function runMode(input: ModeInput, deps: ModeRunDeps): Promise<Resu
         if (!result.ok && diagnostics.length > 0) {
             return { ...result, error: `${result.error} — compose diagnostics: ${diagnostics.join(' | ')}` };
         }
-        // Requested enrichment that did not take is a FAILURE, not a warning (2026-11-15). The daily
-        // draft was saved 原创/赞赏/原文链接-free and the row still reported ok:true, so the receipt
-        // said 'succeeded' while the article was incomplete and only a human noticed. The draft
-        // exists — that is a real, visible effect — so the operator is told exactly what is missing
-        // and where it is. WECHATMP_ALLOW_PARTIAL_ENRICH=1 restores the old warn-and-continue shape
-        // for an account that genuinely cannot offer one of these fields.
-        if (result.ok && composed.enrichWarnings.length > 0 && process.env.WECHATMP_ALLOW_PARTIAL_ENRICH !== '1') {
+        // Requested enrichment that did not take is a FAILURE, not a warning (2026-11-15).
+        // WECHATMP_ALLOW_PARTIAL_ENRICH=1 tolerates ONLY account capability refusals (赞赏账户,
+        // 原文链接行不存在) — never real non-capability failures (音频, 原创声明, 原文链接保存失败,
+        // 合集, 创作来源).
+        const capabilitySet = new Set(composed.capabilityWarnings ?? []);
+        const blockingEnrichWarnings = composed.enrichWarnings.filter((warning) => !capabilitySet.has(warning));
+        const partialAllowed = process.env.WECHATMP_ALLOW_PARTIAL_ENRICH === '1';
+        const fatalEnrichWarnings = partialAllowed ? blockingEnrichWarnings : composed.enrichWarnings;
+        if (result.ok && fatalEnrichWarnings.length > 0) {
+            const capabilityOnly = blockingEnrichWarnings.length === 0;
             return {
                 ...result,
                 ok: false,
-                error: `draft saved but enrichment did not apply — ${composed.enrichWarnings.join(' | ')} (set WECHATMP_ALLOW_PARTIAL_ENRICH=1 to accept a partial draft)`,
+                error: `draft saved but enrichment did not apply — ${fatalEnrichWarnings.join(' | ')}${
+                    capabilityOnly ? ' (set WECHATMP_ALLOW_PARTIAL_ENRICH=1 to accept a partial draft)' : ''
+                }`,
             };
         }
         return result;
@@ -2744,6 +2770,14 @@ function escapeHtml(text: string): string {
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+async function evalOrFallback(page: WechatPage, script: string, fallback: string): Promise<string> {
+    try {
+        return String((await page.evaluate(script)) ?? fallback);
+    } catch {
+        return fallback;
+    }
+}
+
 /**
  * Audio at the article top (operator request 2026-09-29; upload path added 2026-10-10).
  *
@@ -2759,7 +2793,17 @@ function escapeHtml(text: string): string {
 export async function insertAudioMaterial(
     page: WechatPage,
     input: { title: string; audioPath: string; coverPath: string },
+    timing: {
+        uploadWaitMs?: number;
+        saveCloseWaitMs?: number;
+        saveDispatchWaitMs?: number;
+        rowRetries?: number;
+    } = {},
 ): Promise<{ warning: string; coverSeeded: boolean }> {
+    const uploadWaitMs = timing.uploadWaitMs ?? 120_000;
+    const saveCloseWaitMs = timing.saveCloseWaitMs ?? 30_000;
+    const saveDispatchWaitMs = timing.saveDispatchWaitMs ?? 10_000;
+    const postUploadRowRetries = timing.rowRetries ?? 15;
     const { title, audioPath, coverPath } = input;
     // The library demonstrably holds the episode cover once the picker verified the unique same-name
     // row (0260 R1 refined 2026-11-09): failures AFTER that point must not suppress the deferred
@@ -2842,17 +2886,46 @@ export async function insertAudioMaterial(
         })()`;
 
     /** Upload the audio + its cover, acknowledge the rules, and 保存. Returns a structured outcome. */
-    const upload = async (): Promise<{ warning: string; coverSeeded: boolean }> => {
+    const upload = async (): Promise<{ warning: string; coverSeeded: boolean; sawLiveUpload: boolean }> => {
+        let sawLiveUpload = false;
+        const failUpload = (warning: string) => ({ ...result(warning), sawLiveUpload });
+        const uploadDialog = '.weui-desktop-dialog:visible:has(h3.weui-desktop-dialog__title:text-is("上传音频"))';
+        const isLiveUploadForm = async (): Promise<boolean> => {
+            if ((await page.locator(uploadDialog).count()) === 0) return false;
+            try {
+                const titleText =
+                    (await page.locator(`${uploadDialog} h3.weui-desktop-dialog__title`).first().textContent?.()) ?? '';
+                return titleText.trim() === '上传音频';
+            } catch {
+                return false;
+            }
+        };
         const uploadControl = await trySelectors(page, UPLOAD_AUDIO);
-        if (!uploadControl.found) return result('音频: 上传音频 control not found in the audio dialog');
+        if (!uploadControl.found) return failUpload('音频: 上传音频 control not found in the audio dialog');
         // Click the winner, never a joined union: `text=…, css…` mixes selector engines and
         // Playwright parses the whole string as CSS — zero matches (DOM fixture 0260).
         await clickSelector(page, uploadControl.selector ?? UPLOAD_AUDIO[0] ?? 'text=上传音频', 8_000);
         const audioInput = await trySelectors(page, AUDIO_UPLOAD_INPUT, { visible: false });
-        if (!audioInput.found) return result('音频: no audio file input appeared');
+        if (!audioInput.found) return failUpload('音频: no audio file input appeared');
         await uploadFile(asPlaywrightPage(page), audioInput.selector ?? AUDIO_UPLOAD_INPUT.join(', '), audioPath, {
-            timeoutMs: 60_000,
+            timeoutMs: 120_000,
         });
+        sawLiveUpload = await isLiveUploadForm();
+        if (sawLiveUpload) {
+            const uploaded = await waitUntil(
+                async () =>
+                    (await page.locator(`${uploadDialog} button:has-text("重新上传")`).count()) > 0 &&
+                    /100%/.test(
+                        await evalOrFallback(
+                            page,
+                            `(() => { const d = [...document.querySelectorAll('.weui-desktop-dialog')].find((el) => el.offsetWidth > 0 && el.querySelector('input[name=audio_id]')); return d ? (d.textContent ?? '') : ''; })()`,
+                            '',
+                        ),
+                    ),
+                uploadWaitMs,
+            );
+            if (!uploaded) return failUpload('音频: 音频文件上传未完成（未达到 100%），未保存音频');
+        }
         // The form requires a cover before it will save.
         const coverControl = await trySelectors(page, UPLOAD_COVER);
         if (coverControl.found) {
@@ -2873,13 +2946,13 @@ export async function insertAudioMaterial(
                             ),
                         5_000,
                     );
-                    if (!libraryReady) return result('音频: 封面素材库加载未完成，未上传重复封面');
+                    if (!libraryReady) return failUpload('音频: 封面素材库加载未完成，未上传重复封面');
                     existing = Number(
                         await page.evaluate(
                             `([...document.querySelectorAll('.weui-desktop-img-picker__item')].filter(row => row.offsetWidth > 0 && row.querySelector('.weui-desktop-img-picker__img-title')?.textContent?.trim() === ${JSON.stringify(coverName)})).length`,
                         ),
                     );
-                    if (existing > 1) return result('音频: 内容绑定封面存在多个同名素材，未猜测选择');
+                    if (existing > 1) return failUpload('音频: 内容绑定封面存在多个同名素材，未猜测选择');
                 }
                 let uploadPath = coverPath;
                 let temporaryDir: string | undefined;
@@ -2916,7 +2989,7 @@ export async function insertAudioMaterial(
                                 ),
                             30_000,
                         );
-                        if (!selected) return result('音频: 上传封面未出现唯一已选中的同名图片，未提交封面');
+                        if (!selected) return failUpload('音频: 上传封面未出现唯一已选中的同名图片，未提交封面');
                         // The picker just proved the library holds the unique same-name cover; every
                         // failure past this point leaves the cover in the 图片库 (cover rescue valid).
                         libraryHasCover = true;
@@ -2927,6 +3000,9 @@ export async function insertAudioMaterial(
                             30_000,
                         );
                         await clickSelector(page, next, 8_000);
+                        if (sawLiveUpload && (await page.locator(`${chooser} button:has-text("上一步")`).count()) > 0) {
+                            await page.waitForTimeout?.(2_000);
+                        }
                         const finish = await findSelector(
                             page,
                             [`${chooser} button:has-text("完成"):not(.weui-desktop-btn_disabled)`],
@@ -2978,7 +3054,7 @@ export async function insertAudioMaterial(
                             // confirm dialog may not nest under the chooser selector, which would
                             // explain the 确定 retry missing it) before giving up on the audio save.
                             const inventory = await openDialogInventory(page);
-                            return result(
+                            return failUpload(
                                 `音频: 封面选择器完成后未关闭，未保存音频${inventory ? ` (dialogs: ${inventory})` : ''}`,
                             );
                         }
@@ -2994,15 +3070,42 @@ export async function insertAudioMaterial(
         const titleInput = await trySelectors(page, AUDIO_TITLE_INPUT);
         if (titleInput.found) await fillSelector(page, titleInput.selector ?? AUDIO_TITLE_INPUT.join(', '), title);
         const agreed = String(await page.evaluate(AGREE));
-        if (agreed !== 'checked') return result(`音频: 服务规则勾选失败 (${agreed})`);
+        if (agreed !== 'checked') return failUpload(`音频: 服务规则勾选失败 (${agreed})`);
         const save = await findSelector(
             page,
             UPLOAD_SAVE.map((selector) => `${selector}:not(.weui-desktop-btn_disabled):not([disabled])`),
             '音频上传完成且封面已提交后的保存按钮',
             90_000,
         );
+        if (sawLiveUpload) {
+            await evalOrFallback(
+                page,
+                '(() => { window.__kkToasts = []; new MutationObserver(() => { const t = document.querySelector(".weui-desktop-toast"); if (t && t.textContent) window.__kkToasts.push(t.textContent.trim().slice(0, 200)); }).observe(document.body, { subtree: true, childList: true, characterData: true }); })()',
+                '',
+            );
+        }
         await clickSelector(page, save, 8_000);
-        return result('');
+        if (sawLiveUpload) {
+            let formClosed = await waitUntil(async () => !(await isLiveUploadForm()), saveCloseWaitMs);
+            if (!formClosed) {
+                const dispatched = await evalOrFallback(
+                    page,
+                    '(() => { const form = [...document.querySelectorAll(".weui-desktop-dialog")].find((d) => d.querySelector(".title_form_wrp")); const btn = form && [...form.querySelectorAll("button")].find((b) => (b.textContent ?? "").trim() === "保存"); if (!btn) return "no-btn"; btn.click(); return btn.disabled ? "was-disabled" : "clicked"; })()',
+                    'null',
+                );
+                formClosed = await waitUntil(async () => !(await isLiveUploadForm()), saveDispatchWaitMs);
+                if (!formClosed) {
+                    const saveDiagnostics = `(() => {
+                        const form = [...document.querySelectorAll(".weui-desktop-dialog")].find((d) => d.querySelector(".title_form_wrp"));
+                        const btn = form && [...form.querySelectorAll("button")].find((b) => (b.textContent ?? "").trim() === "保存");
+                        return JSON.stringify({ btn: btn ? { disabled: btn.disabled, offW: btn.offsetWidth } : null, toasts: (window.__kkToasts ?? []).slice(-3) });
+                    })()`;
+                    const diag = (await evalOrFallback(page, saveDiagnostics, '')).slice(0, 400);
+                    return failUpload(`音频: 保存失败，上传弹窗未关闭（dispatch=${dispatched} ${diag}）`);
+                }
+            }
+        }
+        return failUpload('');
     };
 
     /** One MATCH read; a throwing probe stays 'error' (unknown, never treated as missing). */
@@ -3014,9 +3117,9 @@ export async function insertAudioMaterial(
         }
     };
     /** Poll the picker while rows stream in; 'missing' keeps polling, JSON answers settle it. */
-    const awaitMatch = async (): Promise<string> => {
+    const awaitMatch = async (retries: number = AUDIO_ROW_RETRIES): Promise<string> => {
         let match = await matchOnce();
-        for (let i = 0; match === 'missing' && i < AUDIO_ROW_RETRIES; i += 1) {
+        for (let i = 0; match === 'missing' && i < retries; i += 1) {
             await page.waitForTimeout?.(AUDIO_ROW_SETTLE_MS);
             match = await matchOnce();
         }
@@ -3033,16 +3136,18 @@ export async function insertAudioMaterial(
         await page.evaluate(`document.querySelector(${JSON.stringify(AUDIO_MENU)})?.click()`);
         await waitForVisible(page, AUDIO_DIALOG, AUDIO_DIALOG_TIMEOUT_MS);
         let match = await awaitMatch();
+        let postSavePoll = false;
         if (match === 'missing') {
             // No reusable material: upload one, then POLL until the new row actually exists — never
             // assume the upload auto-selected a default row (task 0260 AC2).
             const uploadResult = await upload();
+            postSavePoll = uploadResult.sawLiveUpload;
             if (uploadResult.warning !== '') {
-                await page.evaluate(CANCEL);
+                if (!uploadResult.sawLiveUpload) await page.evaluate(CANCEL);
                 return result(uploadResult.warning);
             }
             await waitForVisible(page, AUDIO_DIALOG, AUDIO_DIALOG_TIMEOUT_MS);
-            match = await awaitMatch();
+            match = await awaitMatch(postSavePoll ? postUploadRowRetries : AUDIO_ROW_RETRIES);
             if (match === 'missing') {
                 await page.evaluate(CANCEL);
                 return result(`音频: 保存后素材列表未出现「${title}」，未插入音频`);
@@ -3070,7 +3175,14 @@ export async function insertAudioMaterial(
             await page.evaluate(CANCEL);
             return result('音频: 素材匹配探测返回未知结果，未插入音频');
         }
-        if ((await page.evaluate(INSERT)) !== true) {
+        let inserted = (await page.evaluate(INSERT)) === true;
+        if (!inserted && postSavePoll) {
+            for (let i = 0; !inserted && i < 5; i += 1) {
+                await page.waitForTimeout?.(500);
+                inserted = (await page.evaluate(INSERT)) === true;
+            }
+        }
+        if (!inserted) {
             await page.evaluate(CANCEL);
             return result('音频: 插入按钮未找到，请手动插入');
         }

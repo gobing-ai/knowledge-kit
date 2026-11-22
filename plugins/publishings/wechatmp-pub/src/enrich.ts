@@ -72,8 +72,14 @@ const URL_COMMITTED = `(() => {
 /** The 原创 dialog's declaration radio (measured 2026-10-13): the platform requires an explicit
  *  declaration type + the agreement check before 确定. `无需声明` is the undo choice, never a target. */
 const ORIGINAL_DECLARATION = `${DIALOG} label:has(.js_original_type_radio):has-text("文字原创")`;
-/** Drive the hidden checkbox through its label, preserving a pre-checked agreement (probe 6). */
-const ORIGINAL_AGREEMENT = `${DIALOG} label.original_agreement:has(input[type="checkbox"]:not(:checked))`;
+/** Drive the hidden checkbox through its label, preserving a pre-checked agreement (probe 6).
+ *  Live 2026-11 WeChat v2 replaced `.original_agreement` with `.weui-desktop-form__check-label`, so
+ *  match the legacy class first and fall back to the checkbox label containing the agreement text. */
+const ORIGINAL_AGREEMENT = [
+    `${DIALOG} label.original_agreement:has(input[type="checkbox"]:not(:checked))`,
+    `${DIALOG} label:has(input[type="checkbox"]:not(:checked)):has-text("我已阅读并同意") i.weui-desktop-icon-checkbox`,
+    `${DIALOG} label:has(input[type="checkbox"]:not(:checked)):has-text("我已阅读并同意")`,
+] as const;
 /** The 合集 picker's options load after the dialog opens (the pre-ADR-029 settle, kept). */
 const COLLECTION_SETTLE_MS = 1_200;
 /** The settings panel re-renders after a dialog confirm and can briefly detach rows. */
@@ -98,9 +104,18 @@ function norm(value: unknown): string {
  * Playwright-only syntax (`:visible`, `:has-text`) never enters `querySelector` — it throws there.
  */
 const COMMITTED = {
-    /** Both undeclared and declared templates keep hidden inputs. Read the switch in the visible
-     * row branch, never the hidden undeclared template or the dialog's matching checkbox. */
+    /** Both undeclared and declared templates keep hidden inputs. Live WeChat checks BOTH
+     * checkboxes (including the visible `未声明` row) as soon as `#js_original` opens while keeping
+     * `#js_original_open` hidden (`rects=0`), so require `#js_original_open` visibility + checked
+     * state whenever `#js_original_open` exists in the DOM; fall back to the legacy visible switch
+     * when `#js_original_open` is absent. */
     original: `(() => {
+        const open = document.querySelector('#js_original_open');
+        if (open) {
+            if (open.getClientRects().length === 0) return false;
+            const sw = open.querySelector('input.weui-desktop-switch__input, input[type="checkbox"]');
+            return sw ? sw.checked === true : true;
+        }
         const el = [...document.querySelectorAll('#js_original input.weui-desktop-switch__input')]
             .find(input => input.parentElement?.getClientRects().length > 0);
         return el ? el.checked === true : null;
@@ -180,6 +195,12 @@ async function readChecked(page: WechatPage, expression: string): Promise<boolea
     }
 }
 
+/** Structured enrichment result separating account capability refusals from real setting failures. */
+export interface EnrichOutcome {
+    warnings: string[];
+    capabilityWarnings: string[];
+}
+
 /**
  * Set the operator's draft metadata (原创/赞赏/合集/原文链接/创作来源) in the v2 editor.
  *
@@ -188,7 +209,13 @@ async function readChecked(page: WechatPage, expression: string): Promise<boolea
  * into warnings and surfaced in the `Result`; the draft still saves.
  */
 export async function enrichArticle(page: WechatPage, meta: Record<string, unknown>): Promise<string[]> {
+    return (await enrichArticleDetailed(page, meta)).warnings;
+}
+
+/** Same behavior as {@link enrichArticle}, also naming capability refusals separately. */
+export async function enrichArticleDetailed(page: WechatPage, meta: Record<string, unknown>): Promise<EnrichOutcome> {
     const warnings: string[] = [];
+    const capabilityWarnings: string[] = [];
     const str = (key: string) => (typeof meta[key] === 'string' ? (meta[key] as string) : '');
     const on = (key: string) => meta[key] === true;
     // Sweep any leaked dialog so the next step (especially 保存为草稿) is never overlay-blocked.
@@ -247,7 +274,9 @@ export async function enrichArticle(page: WechatPage, meta: Record<string, unkno
             return 'ok';
         } catch (error) {
             if (error instanceof CapabilityError) {
-                warnings.push(`${name}: ${error.message}`);
+                const msg = `${name}: ${error.message}`;
+                warnings.push(msg);
+                capabilityWarnings.push(msg);
                 return 'capability';
             }
             // retry once below
@@ -285,11 +314,17 @@ export async function enrichArticle(page: WechatPage, meta: Record<string, unkno
                 // then 确定. The plain-text probe the old rail used could hit the dialog heading.
                 await clickSelector(page, ORIGINAL_DECLARATION, 5_000);
                 // trySelectors absorbs its own probe failures (returns found:false) — no .catch here.
-                const agreement = await trySelectors(page, [ORIGINAL_AGREEMENT]);
-                if (agreement.found) {
-                    await clickSelector(page, ORIGINAL_AGREEMENT, 3_000);
+                const agreement = await trySelectors(page, ORIGINAL_AGREEMENT);
+                if (agreement.found && agreement.selector != null) {
+                    await clickSelector(page, agreement.selector, 3_000);
                 }
                 await clickSelector(page, ORIGINAL_CONFIRM, 8_000);
+                // Allow async confirmation closing without calling page.evaluate (preserves mock FIFO queues).
+                await page
+                    .locator(DIALOG)
+                    .first()
+                    .waitFor?.({ state: 'hidden', timeout: 1_500 })
+                    .catch(() => undefined);
             });
             if (
                 outcome !== 'capability' &&
@@ -389,7 +424,9 @@ export async function enrichArticle(page: WechatPage, meta: Record<string, unkno
         const urlRow =
             (await readUrl()) === norm(originalUrl) ? 'committed' : await tryFindSelector(page, ROW_URL, 2_000);
         if (urlRow === undefined) {
-            warnings.push(`${name}: 行不存在（当前公众号不支持），请手动处理或移除 originalUrl`);
+            const msg = `${name}: 行不存在（当前公众号不支持），请手动处理或移除 originalUrl`;
+            warnings.push(msg);
+            capabilityWarnings.push(msg);
         } else if (urlRow !== 'committed') {
             await step(name, async () => {
                 if ((await readUrl()) === norm(originalUrl)) return;
@@ -444,5 +481,14 @@ export async function enrichArticle(page: WechatPage, meta: Record<string, unkno
     }
 
     await sweep();
-    return warnings;
+    // Recheck 原创声明 when subsequent settings ran: live WeChat can clear 原创 if 创作来源/合集
+    // resets editor state. Guarded on subsequent steps so single-setting mock queues do not shift.
+    const ranAfterOriginal = on('reward') || collection !== '' || originalUrl !== '' || claimSource !== '';
+    const hadOriginalWarning = warnings.some((w) => w.startsWith('原创声明:'));
+    if (on('original') && ranAfterOriginal && !hadOriginalWarning) {
+        if ((await readChecked(page, COMMITTED.original)) === false) {
+            warnings.push('原创声明: 后续设置后原创声明被重置，请核对');
+        }
+    }
+    return { warnings, capabilityWarnings };
 }

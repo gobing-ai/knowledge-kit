@@ -2196,6 +2196,74 @@ const WECHAT_BRAND = {
     coverSource: 'library',
 } as const;
 
+/** A concise key-point bullet injected into the top-of-article `## 今日要点` summary for 公众号. */
+export interface WechatKeyPoint {
+    label: string;
+    text: string;
+}
+
+function stripLeadingH1Heading(body: string): string {
+    return body.replace(/^\s*# +[^\n]+\n+/, '');
+}
+
+function wechatKeyPointLabel(title: string): string {
+    const clean = title.replace(/^#+\s+/, '').trim();
+    const firstClause = clean.split(/[：:，,。！？!?\-—|]/)[0]?.trim() ?? clean;
+    const chars = Array.from(firstClause);
+    if (chars.length > 0 && chars.length <= 18) return firstClause;
+    return Array.from(clean).slice(0, 18).join('');
+}
+
+function extractWechatKeyPoints(
+    planItems: ReadonlyArray<{ title: string; brief?: string }>,
+    articleBody: string,
+): WechatKeyPoint[] {
+    const out: WechatKeyPoint[] = [];
+    for (const item of planItems.slice(0, 5)) {
+        const text = (item.brief ?? item.title).replace(/\s+/g, ' ').trim();
+        const label = wechatKeyPointLabel(item.title);
+        if (label !== '' && text !== '') out.push({ label, text });
+    }
+    if (out.length > 0) return out;
+    const sections = stripLeadingH1Heading(articleBody).split(/\n(?=##\s+)/);
+    for (const section of sections) {
+        const match = section.match(/^##\s+(.+)\n+([\s\S]+)$/);
+        if (!match?.[1] || !match[2]) continue;
+        const firstPara = match[2]
+            .split(/\n{2,}/)
+            .map((p) => p.replace(/\s+/g, ' ').trim())
+            .find((p) => p !== '' && !p.startsWith('#') && !p.startsWith('-'));
+        if (!firstPara) continue;
+        const firstSentence = (splitSentences(firstPara, { cjkOnly: true })[0] ?? firstPara).trim();
+        const label = wechatKeyPointLabel(match[1]);
+        if (label !== '' && firstSentence !== '') out.push({ label, text: firstSentence });
+        if (out.length >= 5) break;
+    }
+    return out;
+}
+
+function cleanWechatDigest(body: string, keyPoints?: readonly WechatKeyPoint[]): string {
+    const stripMd = (s: string): string =>
+        s
+            .replace(/^#{1,6}\s+/gm, '')
+            .replace(/\*\*([^*]+)\*\*/g, '$1')
+            .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+            .replace(/\s+/g, ' ')
+            .trim();
+    const paragraphs = stripLeadingH1Heading(body)
+        .split(/\n{2,}/)
+        .map((p) => stripMd(p))
+        .filter((p) => p !== '' && !p.startsWith('今日要点') && !p.startsWith('- '));
+    const candidate =
+        paragraphs[0] ??
+        (keyPoints ?? [])
+            .slice(0, 2)
+            .map((kp) => `${kp.label}：${kp.text}`)
+            .join(' ');
+    if (candidate === '') return '';
+    return Array.from(candidate).slice(0, 120).join('');
+}
+
 /**
  * The 公众号 article payload (task 0327 R1): the article Content plus MP draft enrichment.
  *
@@ -2211,6 +2279,7 @@ export function buildWechatArticleContent(
         coverPath?: string;
         audioPath?: string;
         audioTitle?: string;
+        keyPoints?: readonly WechatKeyPoint[];
         /**
          * The 咸话咸说 closer is an article-only sign-post (operator request 2026-09-29: "appended
          * to the wechat input body only, never the master article"). An audio-first 公众号 播客 post
@@ -2221,17 +2290,10 @@ export function buildWechatArticleContent(
 ): Record<string, unknown> {
     const wechatmp: Record<string, unknown> = {
         original: true,
-        // 赞赏 is NOT requested: measured 2026-11-20 on a fresh 文章 draft, this account's row renders
-        // `不开启 … 无法开启赞赏，因为还没有赞赏账户授权给本公众号` with a 0×0 box — the platform has not
-        // authorized a 赞赏 account for 咸话咸说, so no selector, probe or retry can enable it, and asking
-        // for it only converted a healthy draft into `ok:false` until `WECHATMP_ALLOW_PARTIAL_ENRICH=1`
-        // was set by hand (11-16, 11-18, 11-19). Evidence:
-        // `.spur/run/dogfood/2026-11-20-wechatmp-reward/survey-dom.json` (5806: reward row text + box).
-        // If the operator opens 赞赏 later, flip this line back together with the probe in
-        // `plugins/publishings/wechatmp-pub/src/enrich.ts` (`REWARD_STATE`).
-        // 2026-11-20 operator request: 赞赏 ON. `WECHATMP_ALLOW_PARTIAL_ENRICH=1` is set, so a
-        // still-unauthorized account warns once and keeps the healthy draft instead of failing it.
-        reward: true,
+        // 2026-11-21 operator decision (A3): keep `reward: false` while the 咸话咸说 account lacks
+        // an authorized 赞赏账户, so WECHATMP_ALLOW_PARTIAL_ENRICH=1 is no longer needed and real
+        // enrichment failures (音频, 原创, 原文链接) fail loud.
+        reward: false,
         author: WECHAT_BRAND.author,
         collection: options.collection,
         // 创作来源 is the platform's AI-declaration entry (WX-03); the label declares AI generation.
@@ -2248,12 +2310,34 @@ export function buildWechatArticleContent(
                   audioCoverPath: options.coverPath ?? '',
               }),
     };
-    const body = typeof article.body === 'string' ? article.body : '';
+    const rawBody = typeof article.body === 'string' ? article.body : '';
+    const existingMeta = metadataOf(article);
+    if (options.appendOutro === false) {
+        return {
+            ...article,
+            body: rawBody,
+            metadata: {
+                ...existingMeta,
+                ...(options.audioPath === undefined ? {} : { audio: options.audioPath }),
+                publishStatus: options.publishStatus,
+                wechatmp,
+            },
+        };
+    }
+    let formattedBody = stripLeadingH1Heading(rawBody);
+    const keyPoints = (options.keyPoints ?? []).filter((kp) => kp.label.trim() !== '' && kp.text.trim() !== '');
+    if (keyPoints.length > 0 && !/^\s*##\s+今日要点\b/m.test(formattedBody)) {
+        const bullets = keyPoints.map((kp) => `- **${kp.label.trim()}** — ${kp.text.trim()}`).join('\n');
+        formattedBody = `## 今日要点\n\n${bullets}\n\n${formattedBody.trimStart()}`;
+    }
+    const existingDigest = typeof existingMeta.digest === 'string' ? existingMeta.digest.trim() : '';
+    const derivedDigest = existingDigest !== '' ? existingDigest : cleanWechatDigest(rawBody, keyPoints);
     return {
         ...article,
-        body: options.appendOutro === false ? body : `${body}${WECHAT_OUTRO}`,
+        body: `${formattedBody}${WECHAT_OUTRO}`,
         metadata: {
-            ...metadataOf(article),
+            ...existingMeta,
+            ...(derivedDigest !== '' ? { digest: derivedDigest } : {}),
             // wechatmp-pub's 播客 operation resolves the episode mp3 through the generic media key
             // `metadata.audio` (`modes.ts` resolveMediaPath), while the 文章 audio-embed rail keeps
             // reading `wechatmp.audioPath` — carry both spellings so one variant serves both rows.
@@ -2500,6 +2584,35 @@ function variantFileName(key: string): string {
  * variant file is wiped before writing, so `30-variants/` after this stage contains only what
  * THIS pass produced.
  */
+function cardsForPodcast(
+    workDir: string,
+    cardsEnabled: boolean,
+): Array<{ index: string; copy: string; status?: string; imagePath?: string }> {
+    if (!cardsEnabled) return [];
+    const parsed = readJson(join(workDir, '25-xhs', 'cards.json'));
+    const rawCards = (parsed as { cards?: unknown } | null)?.cards;
+    if (!Array.isArray(rawCards)) return [];
+    const out: Array<{ index: string; copy: string; status?: string; imagePath?: string }> = [];
+    for (const entry of rawCards) {
+        if (entry === null || typeof entry !== 'object') continue;
+        const card = entry as Record<string, unknown>;
+        const index = typeof card.index === 'string' ? card.index.trim() : String(card.index ?? '').trim();
+        const copy = typeof card.copy === 'string' ? card.copy.trim() : '';
+        if (index === '' || copy === '') continue;
+        const status = typeof card.status === 'string' ? card.status.trim() : undefined;
+        const rawPath = typeof card.imagePath === 'string' ? card.imagePath.trim() : '';
+        const resolvedImg = rawPath !== '' ? (rawPath.startsWith('/') ? rawPath : resolve(workDir, rawPath)) : '';
+        const validImg = resolvedImg !== '' && isFile(resolvedImg) ? resolvedImg : undefined;
+        out.push({
+            index,
+            copy,
+            ...(status === undefined ? {} : { status }),
+            ...(validImg === undefined ? {} : { imagePath: validImg }),
+        });
+    }
+    return out;
+}
+
 export function dailyBundleVariants(args: string[]): void {
     const [workDir = '', runDate = '', _pluginsPath = '', cardsEnabledArg = '', coverEnabledArg = ''] = args;
     timed(workDir, 'bundle-variants', () => {
@@ -2522,6 +2635,7 @@ export function dailyBundleVariants(args: string[]): void {
 
         const article = readJson(articlePath);
         const prep = readJson(prepPath);
+        const planItems = planItemsForPodcast(workDir, runDate);
         const write = (key: string, content: Record<string, unknown>): void => {
             const file = join(outDir, variantFileName(key));
             sted('write', file, () => writeJsonText(file, content));
@@ -2553,12 +2667,18 @@ export function dailyBundleVariants(args: string[]): void {
                 prep !== null && typeof metadataOf(prep).audioFile === 'string'
                     ? String(metadataOf(prep).audioFile)
                     : undefined;
+            const rawArticleBody =
+                typeof (article as Record<string, unknown>).body === 'string'
+                    ? String((article as Record<string, unknown>).body)
+                    : '';
+            const wechatKeyPoints = extractWechatKeyPoints(planItems, rawArticleBody);
             write(
                 'article@wechatmp-pub',
                 buildWechatArticleContent(article, {
                     links,
                     publishStatus: 'draft',
                     collection: '每日AI资讯',
+                    keyPoints: wechatKeyPoints,
                     ...(cover === undefined ? {} : { coverPath: cover }),
                     ...(articleAudio === undefined ? {} : { audioPath: articleAudio, audioTitle: firstArticleLine }),
                 }),
@@ -2568,8 +2688,15 @@ export function dailyBundleVariants(args: string[]): void {
         if (prep === null) skipped.push('episode (no publish-prep content)');
         else {
             const showNotes = isFile(notesPath) ? readFileSync(notesPath, 'utf-8') : '';
-            write('episode', buildPodcastContent(prep, { showNotes }));
-            write('episode@podcast-pub', buildPodcastContent(prep, { showNotes }));
+            const podcastCards = cardsForPodcast(workDir, cardsEnabledArg !== 'false');
+            const podcastMeta: Record<string, unknown> = {
+                ...(planItems.length > 0 ? { planItems } : {}),
+                ...(podcastCards.length > 0 ? { cards: podcastCards } : {}),
+            };
+            const podcastOpts =
+                Object.keys(podcastMeta).length > 0 ? { showNotes, podcast: podcastMeta } : { showNotes };
+            write('episode', buildPodcastContent(prep, podcastOpts));
+            write('episode@podcast-pub', buildPodcastContent(prep, podcastOpts));
             write('episode@xhs-pub', buildXhsEpisodeContent(prep, { publishStatus: 'draft', links }));
             // 公众号 播客 shares the episode with podcast-pub: same audio, same cover, no article body.
             write(
@@ -2940,6 +3067,11 @@ export function dailyPublishPrep(args: string[]): void {
                     : {}),
                 ...(hasCover ? { coverImage: resolvedCover } : {}),
                 ...(episode > 0 ? { itunes: { season, episode } } : {}),
+                ...(typeof audioMeta.duration === 'number' &&
+                Number.isFinite(audioMeta.duration) &&
+                audioMeta.duration > 0
+                    ? { durationSeconds: audioMeta.duration }
+                    : {}),
             },
             options: {
                 audioFile,
