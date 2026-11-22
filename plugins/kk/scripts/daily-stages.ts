@@ -2524,16 +2524,16 @@ export function weightedLength(text: string): number {
 }
 
 /** Platforms where attaching a native image suppresses the URL's clickable Open Graph preview card. */
-const OG_CARD_PLATFORMS = new Set(['x', 'threads', 'linkedin']);
+const OG_CARD_PLATFORMS = new Set(['x', 'threads', 'linkedin', 'weibo']);
 
 /**
  * One channel's short promo copy as a Content (task 0327 R3; task 0410 episode promo framing):
  * prepends the frozen episode title and appends the episode listen URL (`{{podcast_url}}`) when
  * supplied, reserving header/footer budget before truncating copy (X counts URLs at t.co weight 23).
  *
- * Platforms in `OG_CARD_PLATFORMS` (`x`, `threads`, `linkedin`) omit `coverImage` when linking a
+ * Platforms in `OG_CARD_PLATFORMS` (`x`, `threads`, `linkedin`, `weibo`) omit `coverImage` when linking a
  * podcast URL so their native Open Graph card renders cleanly instead of being suppressed by an
- * attached image; image-first rails (`weibo`, `jike`) keep `coverImage`.
+ * attached image; image-first rails (`jike`) keep `coverImage`.
  */
 export function buildSocialContent(
     copy: string,
