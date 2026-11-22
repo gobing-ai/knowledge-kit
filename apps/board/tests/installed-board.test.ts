@@ -796,8 +796,20 @@ async function seedChannelTicks(): Promise<void> {
 async function consoleErrorsDuring(fn: () => Promise<void>): Promise<string[]> {
     if (page === null) throw new Error('browser page not ready');
     const errors: string[] = [];
+    // Installed `spur self serve` calls `Bun.serve` without `idleTimeout: 0` (default 10 s), while
+    // its `/api/events/planning` SSE keepalive fires every 15 s. An idle host stream is therefore
+    // cut with `net::ERR_INCOMPLETE_CHUNKED_ENCODING` around 10 s (e.g. right after the 9 s AC6
+    // mid-flight switch test), emitting both a `requestfailed` and a console error anchored to that
+    // exact host SSE URL. Filter ONLY that host-owned idle cut; every reader/module/other error
+    // still fails the assertion.
+    const planningSseUrl = `${boardOrigin}/api/events/planning`;
+    const isHostPlanningSseIdleCut = (url: string, detail: string): boolean =>
+        url === planningSseUrl && detail.includes('ERR_INCOMPLETE_CHUNKED_ENCODING');
     const onConsole = (message: ConsoleMessage): void => {
-        if (message.type() === 'error') errors.push(message.text());
+        if (message.type() !== 'error') return;
+        const text = message.text();
+        if (isHostPlanningSseIdleCut(message.location().url, text)) return;
+        errors.push(text);
     };
     const onPageError = (error: Error): void => {
         errors.push(error.message);
@@ -809,6 +821,7 @@ async function consoleErrorsDuring(fn: () => Promise<void>): Promise<string[]> {
     const onRequestFailed = (request: Request): void => {
         const failure = request.failure();
         if (failure === null || failure.errorText.includes('ERR_ABORTED')) return;
+        if (isHostPlanningSseIdleCut(request.url(), failure.errorText)) return;
         errors.push(`${request.method()} ${request.url()} — ${failure.errorText}`);
     };
     page.on('console', onConsole);
