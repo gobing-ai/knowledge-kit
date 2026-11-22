@@ -102,7 +102,7 @@ At the episode level, write:
     admission drops every one of them the point is withheld instead of being published unsupported. Omitting
     `sourceIds` means "the admitted lead", which is the usual case.
 - `cards`: `{ "title": "≤20字总标题", "body": "中文导语段落 + 3-5个话题标签" }` for the episode card series.
-- `social`: `{ "short": "≤140字 X/Threads 短帖", "long": "≤500字 微博/LinkedIn 长帖" }` (plain text, no markdown headings, no emoji spam, grounded in the plan).
+- `social`: `{ "short": "≤100字 X/Threads/微博推广短帖钩子（bundle-variants 会统一前置节目标题、末尾注入 {{podcast_url}} 并附首张卡片图）", "long": "≤300字 LinkedIn 精选要点推广（禁止长文 Digest，bundle-variants 会前置标题与播客链接）" }` (plain text, no markdown headings, no emoji spam, grounded in the plan).
 
 Output:
 

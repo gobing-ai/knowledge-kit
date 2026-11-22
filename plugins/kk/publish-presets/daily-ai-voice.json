@@ -72,7 +72,7 @@
             "variant": "article",
             "tier": 2,
             "window": "cn-peak",
-            "mode": "live"
+            "mode": "off"
         },
         {
             "plugin": "xhs-pub",
@@ -103,7 +103,7 @@
             "operation": "post",
             "variant": "social:weibo",
             "tier": 3,
-            "window": "overseas-rss",
+            "window": "cn-peak",
             "mode": "live"
         },
         {
@@ -152,29 +152,29 @@
             "plugin": "x-pub",
             "operation": "post",
             "mode": "live",
-            "reason": "operator instruction 2026-11-15: publish to all available platforms for the dogfood run; no draftable rail exists, so this is a recorded exception to ADR-022",
-            "until": "2026-11-16 dogfood run"
+            "reason": "operator instruction 2026-11-21: publish illustrated promo post linking unified {{podcast_url}} (temporary until RSS sync lag resolved); no draftable rail exists, so this is a recorded exception to ADR-022",
+            "until": "until Xiaoyuzhou/Apple Podcasts RSS sync lag resolved"
         },
         {
             "plugin": "weibo-pub",
             "operation": "post",
             "mode": "live",
-            "reason": "operator instruction 2026-11-15: publish to all available platforms for the dogfood run; no draftable rail exists, so this is a recorded exception to ADR-022",
-            "until": "2026-11-16 dogfood run"
+            "reason": "operator instruction 2026-11-21: replace long article with illustrated promo post linking unified {{podcast_url}} in cn-peak (temporary until RSS sync lag resolved); no draftable rail exists, so this is a recorded exception to ADR-022",
+            "until": "until Xiaoyuzhou/Apple Podcasts RSS sync lag resolved"
         },
         {
             "plugin": "threads-pub",
             "operation": "post",
             "mode": "live",
-            "reason": "operator instruction 2026-11-15: publish to all available platforms for the dogfood run; no draftable rail exists, so this is a recorded exception to ADR-022",
-            "until": "2026-11-16 dogfood run"
+            "reason": "operator instruction 2026-11-21: publish illustrated promo post linking unified {{podcast_url}} (temporary until RSS sync lag resolved); no draftable rail exists, so this is a recorded exception to ADR-022",
+            "until": "until Xiaoyuzhou/Apple Podcasts RSS sync lag resolved"
         },
         {
             "plugin": "linkedin-pub",
             "operation": "post",
             "mode": "live",
-            "reason": "operator instruction 2026-11-15: publish to all available platforms for the dogfood run; no draftable rail exists, so this is a recorded exception to ADR-022",
-            "until": "2026-11-16 dogfood run"
+            "reason": "operator instruction 2026-11-21: publish illustrated promo post linking unified {{podcast_url}} (temporary until RSS sync lag resolved); no draftable rail exists, so this is a recorded exception to ADR-022",
+            "until": "until Xiaoyuzhou/Apple Podcasts RSS sync lag resolved"
         }
     ]
 }

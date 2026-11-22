@@ -2532,9 +2532,12 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             expect(xhsEpisode.metadata.operation).toBe('发播客');
             expect(xhsEpisode.metadata.audio).toBe('/tmp/e.mp3');
 
-            // Social copy becomes a variant with the cover attached; the missing platforms are named.
-            const socialX = read('social_x') as { body: string; metadata: { coverImage?: string } };
-            expect(socialX.body).toBe('x 文案');
+            // Social copy becomes an illustrated promo variant carrying episode title, {{podcast_url}} and cover.
+            const socialX = read('social_x') as { title: string; body: string; metadata: { coverImage?: string } };
+            expect(socialX.title).toBe('标题');
+            expect(socialX.body).toContain('标题');
+            expect(socialX.body).toContain('x 文案');
+            expect(socialX.body).toContain('{{podcast_url}}');
             expect(socialX.metadata.coverImage).toBe(join(cover, '20260101_07_cover_cover.png'));
             expect(result.stdout).toContain('social:weibo (no 26-social/weibo.md)');
             expect(existsSync(join(variants, 'social_weibo.content.json'))).toBe(false);

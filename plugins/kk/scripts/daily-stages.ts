@@ -2494,19 +2494,17 @@ function weightedCharWeight(char: string): number {
 }
 
 /** Weighted length of `text` (code-point based, so an emoji counts once before its weight). */
-function weightedLength(text: string): number {
+export function weightedLength(text: string): number {
     let total = 0;
     for (const char of text) total += weightedCharWeight(char);
     return total;
 }
 
 /**
- * One channel's short copy as a Content (task 0327 R3): the body is the authored post text and the
- * episode cover rides along as `metadata.coverImage`.
- *
- * The cap is a backstop, not the author: the prompt owns the limit, so an over-length draft is
- * truncated rather than rejected, and `truncatedFrom` records what was cut. Truncation respects the
- * channel's own unit — see {@link SocialLimit}.
+ * One channel's short promo copy as a Content (task 0327 R3; task 0410 episode promo framing):
+ * prepends the frozen episode title and appends the episode listen URL (`{{podcast_url}}`) when
+ * supplied, reserving header/footer budget before truncating copy (X counts URLs at t.co weight 23),
+ * and rides along with the first card/cover image as `metadata.coverImage`.
  */
 export function buildSocialContent(
     copy: string,
@@ -2515,35 +2513,57 @@ export function buildSocialContent(
         limit: SocialLimit;
         coverPath?: string;
         cardPath?: string;
+        episodeTitle?: string;
+        listenUrl?: string;
     },
 ): Record<string, unknown> {
     const trimmed = copy.trim();
-    const measure = (text: string): number => (options.limit.weighted === true ? weightedLength(text) : text.length);
-    let body = trimmed;
-    if (measure(trimmed) > options.limit.max) {
-        // Walk code points, adding while the budget holds: a slice by code units could split a
-        // surrogate pair or bust the weighted budget on CJK text.
+    const episodeTitle = options.episodeTitle?.trim() ?? '';
+    const listenUrl = options.listenUrl?.trim() ?? '';
+    const header = episodeTitle !== '' && !trimmed.startsWith(episodeTitle) ? `${episodeTitle}\n\n` : '';
+    const footer =
+        listenUrl !== '' && !trimmed.includes(listenUrl)
+            ? options.platform === 'x'
+                ? `\n\n🎧 ${listenUrl}`
+                : `\n\n🎧 完整节目：${listenUrl}`
+            : '';
+
+    const measure = (text: string): number => {
+        if (options.limit.weighted === true) {
+            // X counts URLs via t.co (23 units); reserve 23 for placeholders and full URLs alike.
+            const normalized = text.replace(/(?:https?:\/\/\S+|\{\{(?:podcast|article)_url\}\})/g, 'x'.repeat(23));
+            return weightedLength(normalized);
+        }
+        return text.replace(/\{\{(?:podcast|article)_url\}\}/g, 'x'.repeat(60)).length;
+    };
+
+    const fullMeasure = measure(`${header}${trimmed}${footer}`);
+    let keptCopy = trimmed;
+    if (fullMeasure > options.limit.max) {
+        const copyBudget = Math.max(0, options.limit.max - measure(header) - measure(footer));
         let kept = '';
         let used = 0;
         for (const char of trimmed) {
             const weight = options.limit.weighted === true ? weightedCharWeight(char) : 1;
-            if (used + weight > options.limit.max) break;
+            if (used + weight > copyBudget) break;
             kept += char;
             used += weight;
         }
-        body = kept;
+        keptCopy = kept;
     }
+
+    const body = `${header}${keptCopy}${footer}`;
     const attachedImage = options.cardPath ?? options.coverPath;
     return {
-        title: `${options.platform} · 每日AI乱炖`,
+        title: episodeTitle !== '' ? episodeTitle : `${options.platform} · 每日AI乱炖`,
         format: 'text',
         body,
         metadata: {
             platform: options.platform,
-            ...(body === trimmed
+            ...(keptCopy === trimmed
                 ? {}
                 : {
-                      truncatedFrom: measure(trimmed),
+                      truncatedFrom: fullMeasure,
                       truncatedUnit: options.limit.weighted === true ? 'weighted' : 'code_units',
                   }),
             ...(attachedImage === undefined ? {} : { coverImage: attachedImage }),
@@ -2747,6 +2767,8 @@ export function dailyBundleVariants(args: string[]): void {
                     limit,
                     ...(cover === undefined ? {} : { coverPath: cover }),
                     ...(cardImage === undefined ? {} : { cardPath: cardImage }),
+                    ...(firstArticleLine !== '' ? { episodeTitle: firstArticleLine } : {}),
+                    ...(prep !== null ? { listenUrl: links.podcastUrl } : {}),
                 }),
             );
         }
