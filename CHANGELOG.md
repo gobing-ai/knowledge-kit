@@ -1,5 +1,52 @@
 ## [Unreleased]
 
+## [0.1.24] - 2026-11-22
+
+### Added
+
+- feat(surfdash-pub): share podcast-media covers and stop daily-topics mutation (f6e27af4)
+<!-- src: plugins/publishings/surfdash-pub/src/media-upload.ts:33 · confidence: HIGH -->
+- feat(surfdash-pub): accept episode-identity titles without headline parsing (8a1f1611)
+<!-- src: plugins/publishings/surfdash-pub/src/digest-check.ts:42 · confidence: HIGH -->
+- feat(podcast-pub): add vertical cards and the full-article link (a7a2b057)
+<!-- src: plugins/publishings/podcast-pub/src/show-notes-brief.ts:24 · confidence: HIGH -->
+- feat: render a 1200x630 Open Graph card for the daily episode (21f6ba25)
+<!-- src: plugins/kk/scripts/cover-compositor.ts:442 · confidence: HIGH -->
+- feat: publish illustrated promo posts from the daily voice workflow (ca7a2af5)
+<!-- src: plugins/kk/scripts/daily-stages.ts:2504 · confidence: HIGH -->
+
+### Fixed
+
+- fix(podcast-pub): omit an empty seo.description instead of a bare colon (313dd262)
+<!-- src: plugins/publishings/podcast-pub/src/seo.ts:700 · confidence: HIGH -->
+- fix(threads-pub): wait for the async OG card before posting (54ba3ef8)
+<!-- src: plugins/publishings/threads-pub/src/post-rail.ts:76 · confidence: HIGH -->
+- fix(linkedin-pub): wait for the async link preview before posting (72a5bfc7)
+<!-- src: plugins/publishings/linkedin-pub/src/index.ts:664 · confidence: HIGH -->
+- fix(content-launch): keep a live row when an earlier one is off (cc7f19ea)
+<!-- src: apps/cli/src/commands/content-launch.ts:224 · confidence: HIGH -->
+- fix(shipinhao-pub): recognize the new login page so expiry fails fast (5e907e82)
+<!-- src: plugins/publishings/shipinhao-pub/src/selectors.ts:90 · confidence: HIGH -->
+- fix(linkedin-pub): attach the cover image and dismiss the media editor (98e7a4fc)
+<!-- src: plugins/publishings/linkedin-pub/src/index.ts:249 · confidence: HIGH -->
+- fix(x-pub): find an enabled submit across page and inline composers (b9e05109)
+<!-- src: plugins/publishings/x-pub/src/post-rail.ts:262 · confidence: HIGH -->
+- fix(wechatmp): stop requesting 赞赏 and clean the daily 今日要点 digest (32c4ed11)
+<!-- src: plugins/publishings/wechatmp-pub/src/enrich.ts:143 · confidence: HIGH -->
+
+### Changed
+
+- chore(deps): bump @gobing-ai ts-* libraries to ^0.8.4 (c043ed9d)
+<!-- src: package.json:18 · confidence: HIGH -->
+
+### Other
+
+- chore: merge d752e4cd into main (f83e9385)
+- test(cover-compositor): cover social card helpers without macOS sips (d752e4cd)
+- test(smart-seo): keep decision runs out of the project spur.db (568e9508)
+- test(board): ignore the host-owned SSE idle cut in console-error checks (d140c8db)
+- docs: restate task 0410 as illustrated promo-post rails (ca842412)
+
 ## [0.1.23] - 2026-11-21
 
 ### Added
