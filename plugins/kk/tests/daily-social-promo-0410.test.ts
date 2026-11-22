@@ -22,12 +22,13 @@ const PODCAST_URL = '{{podcast_url}}';
 const LIVE_URL = 'https://podcast.salty.vip/i/daily-ai-2026-11-21/';
 
 describe('task 0410 — illustrated social promo assembly', () => {
-    test('prepends frozen episode title, appends {{podcast_url}}, and preserves image attachment', () => {
+    test('prepends frozen episode title, appends {{podcast_url}}, and attaches coverImage only on image rails', () => {
         const platforms = [
-            { platform: 'weibo', limit: { max: 2000 } },
-            { platform: 'x', limit: { max: 280, weighted: true } },
-            { platform: 'threads', limit: { max: 500 } },
-            { platform: 'linkedin', limit: { max: 3000 } },
+            { platform: 'weibo', limit: { max: 2000 }, expectImage: true },
+            { platform: 'jike', limit: { max: 2000 }, expectImage: true },
+            { platform: 'x', limit: { max: 280, weighted: true }, expectImage: false },
+            { platform: 'threads', limit: { max: 500 }, expectImage: false },
+            { platform: 'linkedin', limit: { max: 3000 }, expectImage: false },
         ] as const;
 
         for (const entry of platforms) {
@@ -43,7 +44,9 @@ describe('task 0410 — illustrated social promo assembly', () => {
             expect(content.title).toBe(EPISODE_TITLE);
             expect(body.startsWith(`${EPISODE_TITLE}\n\n`)).toBe(true);
             expect(body.endsWith(PODCAST_URL)).toBe(true);
-            expect((content.metadata as Record<string, unknown>).coverImage).toBe('/tmp/card-01.png');
+            expect((content.metadata as Record<string, unknown>).coverImage).toBe(
+                entry.expectImage ? '/tmp/card-01.png' : undefined,
+            );
         }
     });
 
@@ -77,17 +80,20 @@ describe('task 0410 — illustrated social promo assembly', () => {
         expect(content.body).toBe(alreadyFramed);
     });
 
-    test('dailyBundleVariants writes framed social_{weibo,x,threads,linkedin}.content.json with card image', () => {
+    test('dailyBundleVariants routes OG channels without coverImage, keeps weibo card, and wires podcast socialImage', () => {
         const dir = mkdtempSync(join(tmpdir(), 'kk-daily-promo-0410-'));
         try {
             mkdirSync(join(dir, '22-article'), { recursive: true });
+            mkdirSync(join(dir, '23-cover'), { recursive: true });
             mkdirSync(join(dir, '25-xhs', 'cards'), { recursive: true });
             mkdirSync(join(dir, '26-social'), { recursive: true });
             mkdirSync(join(dir, '31-publish'), { recursive: true });
 
             const stamp = '20261121';
             const cardPath = join(dir, '25-xhs', 'cards', 'card-01.png');
+            const socialCoverPath = join(dir, '23-cover', `${stamp}_07_cover_social.jpg`);
             writeFileSync(cardPath, 'png');
+            writeFileSync(socialCoverPath, 'jpg');
             writeFileSync(
                 join(dir, '22-article', `${stamp}_06_article_content.json`),
                 JSON.stringify({ title: EPISODE_TITLE, body: '正文内容', format: 'markdown', metadata: {} }),
@@ -124,8 +130,18 @@ describe('task 0410 — illustrated social promo assembly', () => {
                 expect(variant.body).toContain(EPISODE_TITLE);
                 expect(variant.body).toContain(`${platform} 推广钩子`);
                 expect(variant.body).toContain(PODCAST_URL);
-                expect(variant.metadata.coverImage).toBe(cardPath);
+                if (platform === 'weibo') {
+                    expect(variant.metadata.coverImage).toBe(cardPath);
+                } else {
+                    expect(variant.metadata.coverImage).toBeUndefined();
+                }
             }
+
+            const podcast = JSON.parse(
+                readFileSync(join(dir, '30-variants', 'episode@podcast-pub.content.json'), 'utf-8'),
+            ) as { metadata: { podcast?: { socialImage?: string; socialImageEnabled?: boolean } } };
+            expect(podcast.metadata.podcast?.socialImage).toBe(socialCoverPath);
+            expect(podcast.metadata.podcast?.socialImageEnabled).toBe(true);
         } finally {
             rmSync(dir, { recursive: true, force: true });
         }

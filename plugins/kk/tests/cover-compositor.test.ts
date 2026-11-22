@@ -9,6 +9,8 @@ import {
     COVER_HEIGHT,
     COVER_WIDTH,
     compositeCover,
+    compositeSocialCover,
+    deriveSocialCoverFromImage,
     layoutHeadline,
     logoBadgeSvg,
     logoRect,
@@ -256,5 +258,28 @@ describe('compositeCover', () => {
             const leftovers = readdirSync(tmpdir()).filter((f) => f.startsWith('cover-composite-'));
             expect(leftovers).toHaveLength(0);
         });
+    });
+
+    itMacOnly('compositeSocialCover and deriveSocialCoverFromImage emit 1200x630 JPEG cards', () => {
+        withTempDir((dir) => {
+            const bg = join(dir, 'bg.png');
+            const cover = join(dir, 'cover.png');
+            const directSocial = join(dir, 'social-direct.jpg');
+            const derivedSocial = join(dir, 'social-derived.jpg');
+            writeFileSync(bg, PNG_BYTES);
+
+            compositeSocialCover({ backgroundImagePath: bg, headline: HEADLINE, outputPath: directSocial });
+            expect(pixelSize(directSocial)).toEqual({ width: '1200', height: '630' });
+
+            compositeCover({ backgroundImagePath: bg, headline: HEADLINE, outputPath: cover });
+            deriveSocialCoverFromImage(cover, derivedSocial);
+            expect(pixelSize(derivedSocial)).toEqual({ width: '1200', height: '630' });
+        });
+    });
+
+    it('deriveSocialCoverFromImage fails loud when sips cannot probe source dimensions', () => {
+        expect(() => deriveSocialCoverFromImage('/nonexistent/cover.png', '/tmp/out.jpg')).toThrow(
+            /cannot probe dimensions/,
+        );
     });
 });

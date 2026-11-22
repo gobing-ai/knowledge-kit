@@ -2500,11 +2500,17 @@ export function weightedLength(text: string): number {
     return total;
 }
 
+/** Platforms where attaching a native image suppresses the URL's clickable Open Graph preview card. */
+const OG_CARD_PLATFORMS = new Set(['x', 'threads', 'linkedin']);
+
 /**
  * One channel's short promo copy as a Content (task 0327 R3; task 0410 episode promo framing):
  * prepends the frozen episode title and appends the episode listen URL (`{{podcast_url}}`) when
- * supplied, reserving header/footer budget before truncating copy (X counts URLs at t.co weight 23),
- * and rides along with the first card/cover image as `metadata.coverImage`.
+ * supplied, reserving header/footer budget before truncating copy (X counts URLs at t.co weight 23).
+ *
+ * Platforms in `OG_CARD_PLATFORMS` (`x`, `threads`, `linkedin`) omit `coverImage` when linking a
+ * podcast URL so their native Open Graph card renders cleanly instead of being suppressed by an
+ * attached image; image-first rails (`weibo`, `jike`) keep `coverImage`.
  */
 export function buildSocialContent(
     copy: string,
@@ -2553,7 +2559,8 @@ export function buildSocialContent(
     }
 
     const body = `${header}${keptCopy}${footer}`;
-    const attachedImage = options.cardPath ?? options.coverPath;
+    const attachCover = !(listenUrl !== '' && OG_CARD_PLATFORMS.has(options.platform));
+    const attachedImage = attachCover ? (options.cardPath ?? options.coverPath) : undefined;
     return {
         title: episodeTitle !== '' ? episodeTitle : `${options.platform} · 每日AI乱炖`,
         format: 'text',
@@ -2647,8 +2654,11 @@ export function dailyBundleVariants(args: string[]): void {
         const notesPath = join(workDir, '31-publish', `${runDate}_15_show-notes_show-notes.md`);
         const cardsPath = join(workDir, '25-xhs', 'content.json');
         const coverPath = join(workDir, '23-cover', `${runDate}_07_cover_cover.png`);
+        const socialCoverPath = join(workDir, '23-cover', `${runDate}_07_cover_social.jpg`);
         const socialDir = join(workDir, '26-social');
         const cover = coverEnabledArg !== 'false' && isFile(coverPath) ? resolve(coverPath) : undefined;
+        const socialCover =
+            coverEnabledArg !== 'false' && isFile(socialCoverPath) ? resolve(socialCoverPath) : undefined;
         const links = PLACEHOLDER_LINKS;
         const written: string[] = [];
         const skipped: string[] = [];
@@ -2712,6 +2722,7 @@ export function dailyBundleVariants(args: string[]): void {
             const podcastMeta: Record<string, unknown> = {
                 ...(planItems.length > 0 ? { planItems } : {}),
                 ...(podcastCards.length > 0 ? { cards: podcastCards } : {}),
+                ...(socialCover === undefined ? {} : { socialImage: socialCover, socialImageEnabled: true }),
             };
             const podcastOpts =
                 Object.keys(podcastMeta).length > 0 ? { showNotes, podcast: podcastMeta } : { showNotes };

@@ -58,7 +58,7 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
-import { compositeCover } from './cover-compositor';
+import { compositeCover, compositeSocialCover } from './cover-compositor';
 
 export const SCRIPTS_DIR = import.meta.dir;
 export const VALIDATE_SIDECAR = 'validate-voicescript.ts';
@@ -1093,7 +1093,10 @@ export function coverNormalizeBody(workDir: string, runDate: string): void {
     const briefPath = join(workDir, '23-cover', `${runDate}_07_cover-brief.json`);
     const headline = briefHeadline(briefPath);
     if (headline !== '') {
+        const socialOut = join(workDir, '23-cover', `${runDate}_07_cover_social.jpg`);
         try {
+            // Render the 1200×630 OG card FIRST from the raw AI background before overwriting `out`.
+            compositeSocialCover({ backgroundImagePath: out, headline, outputPath: socialOut });
             compositeCover({ backgroundImagePath: out, headline, outputPath: out });
         } catch (error) {
             failWith(1, `cover composite: ${(error as Error).message}`);
