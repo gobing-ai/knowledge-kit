@@ -322,6 +322,7 @@ function targetMatchesChannel(target: PublishPresetTarget, token: string): boole
     return (
         target.plugin === token ||
         target.id === token ||
+        targetId(target) === token ||
         (target.variant !== undefined && `${target.plugin}/${target.variant}` === token)
     );
 }
@@ -698,8 +699,9 @@ async function composePlan(
         // Real rows bind to reviewed bytes (0331 R3). With evidence present, EVERY non-dummy row's
         // variant must match its reviewed digest — a variant edited after the variants review
         // (social copy, card text) cannot ride an article-only review. With no evidence at all,
-        // only live rows are gated, so legacy bundles keep planning dummy/draft rows unchanged.
-        if (mode === 'live' && safety === undefined) {
+        // only live news rows are gated (articles carry no final-variant safety workflow per design
+        // §4.1), so legacy bundles and article bundles keep planning unchanged.
+        if (mode === 'live' && safety === undefined && bundle.contentType === 'news') {
             throw new Error(
                 `bundle has no final-variant safety evidence; run the variants safety gate (kk-daily-safety scope=variants) before a live launch`,
             );
@@ -748,11 +750,21 @@ async function composePlan(
         delete inherited.published;
         delete inherited.status;
         // Operation-native mode fields (0330 R1): the matrix writes the field each plugin's mapper
-        // reads, so a draft can never inherit live-looking keys from a variant. Plugins without a
-        // native field keep reading publishStatus.
+        // reads, so a draft can never inherit live-looking keys from a variant (ADR-022). Plugins
+        // without a native field keep reading publishStatus.
         const nativeMode: Record<string, Record<string, unknown>> = mode === 'live'
-            ? { 'surfdash-pub': { published: true }, 'podcast-pub': { status: 'published' } }
-            : { 'surfdash-pub': { published: false }, 'podcast-pub': { status: 'unpublished' } };
+            ? {
+                  'surfdash-pub': { published: true },
+                  'podcast-pub': { status: 'published' },
+                  'qiita-pub': { private: false, published: true },
+                  'zenn-pub': { published: true },
+              }
+            : {
+                  'surfdash-pub': { published: false },
+                  'podcast-pub': { status: 'unpublished' },
+                  'qiita-pub': { private: true, published: false },
+                  'zenn-pub': { published: false },
+              };
 
         const payload: Content = {
             ...parsedContent.data,

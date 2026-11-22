@@ -181,6 +181,12 @@ async function planAction(type: string, options: PublishOptions): Promise<void> 
     const command = 'kk.content.publish-plan';
     const fs = createNodeFileSystem();
     const context = await loadContext(type, options, command, fs);
+    // Clear any prior plan for this window before validating or planning: `kk-publish.yaml` runs
+    // `plan` with `onError: continue` (for the overseas-rss miss branch) and relies on `check`
+    // failing on a missing plan when `plan` exits nonzero. Leaving a stale plan on disk would let
+    // a failed re-plan silently re-execute the previous run's plan and exit 0.
+    const stalePlanPath = join(context.workDir, '4-publish', `plan.${context.window}.json`);
+    if (await fs.exists(stalePlanPath)) await fs.deleteFile(stalePlanPath);
     const applied = (() => {
         try {
             validatePublishChannelTokens(context.preset, [

@@ -206,27 +206,50 @@ async function writeSeededContent(
     locale: string,
     markdown: string,
     options: NewOptions,
+    coverDest?: string,
+    variants?: Record<string, string>,
 ): Promise<void> {
     const contentDir = join(workDir, 'content', locale);
     await fs.ensureDir(contentDir);
     await fs.writeFile(join(contentDir, 'article.md'), markdown);
+    await fs.writeFile(join(workDir, '3-draft-draft-article.md'), markdown);
 
     const fallbackTitle = options.slug?.replaceAll('-', ' ') ?? 'article';
     const article = splitMarkdown(markdown, fallbackTitle, options.title);
     if (article.body === '') fail(2, 'kk.content.new', `source file is empty: ${options.from ?? '(source)'}`);
+    const metadata: JsonObject = {
+        published: false,
+        ...(parseTags(options.tags) !== undefined ? { tags: parseTags(options.tags) } : {}),
+        ...(options.description !== undefined ? { description: options.description } : {}),
+        ...(coverDest !== undefined ? { coverImage: coverDest } : {}),
+    };
     const content: JsonObject = {
         title: article.title,
         format: 'markdown',
         body: article.body,
-        metadata: {
-            published: false,
-            ...(parseTags(options.tags) !== undefined ? { tags: parseTags(options.tags) } : {}),
-            ...(options.description !== undefined ? { description: options.description } : {}),
-        },
+        metadata,
     };
     const publishDir = join(workDir, '4-publish');
     await fs.ensureDir(publishDir);
     await fs.writeFile(join(publishDir, 'content.json'), `${JSON.stringify(content, null, 2)}\n`);
+
+    if (variants !== undefined) {
+        for (const [name, sourcePath] of Object.entries(variants)) {
+            const variantMd = await fs.readFile(sourcePath);
+            const split = splitMarkdown(variantMd, article.title);
+            if (split.body === '') fail(2, 'kk.content.new', `variant file is empty: ${sourcePath}`);
+            const variantContent: JsonObject = {
+                title: split.title,
+                format: 'markdown',
+                body: split.body,
+                metadata,
+            };
+            await fs.writeFile(
+                join(publishDir, `content.${name}.json`),
+                `${JSON.stringify(variantContent, null, 2)}\n`,
+            );
+        }
+    }
 }
 
 async function seedItcPreparation(
@@ -307,12 +330,16 @@ async function newAction(defaultType: string, options: NewOptions, article: bool
     }
     await fs.ensureDir(run.workDir);
     if (article) await seedItcPreparation(fs, run.workDir, run, options, resolved.publish_preset);
-    if (fromPath !== undefined) await writeSeededContent(fs, run.workDir, locale, await fs.readFile(fromPath), options);
+    let coverDest: string | undefined;
     if (options.cover !== undefined) {
         const coverPath = resolve(expandHome(options.cover));
         const coverDir = join(run.workDir, '4-illustrations');
         await fs.ensureDir(coverDir);
-        await fs.copy(coverPath, join(coverDir, `cover${extname(coverPath) || '.png'}`));
+        coverDest = join(coverDir, `cover${extname(coverPath) || '.png'}`);
+        await fs.copy(coverPath, coverDest);
+    }
+    if (fromPath !== undefined) {
+        await writeSeededContent(fs, run.workDir, locale, await fs.readFile(fromPath), options, coverDest, variants);
     }
     const request = requestObject(type, resolved, run, options, locale, variants, run.workDir);
     await fs.writeFile(requestPath, `${JSON.stringify(request, null, 2)}\n`);

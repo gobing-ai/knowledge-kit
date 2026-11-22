@@ -1449,7 +1449,8 @@ kk article generate  --type <t> --slug <s> [--agent <executor>] [--auto] [--skip
                      [--channels <a,b>] [--live-channels <a,b>] [--timeout-ms <n>] [--allow-dirty] [--dry-run]
 kk article publish   --type <t> (--slug <s> | --run-date <YYYYMMDD> | --work-dir <dir>) [--window <w>]
                      [--preset <name>] [--channels <a,b>] [--live-channels <a,b>] [--live-confirm]
-                     [--dummy] [--retry] [--agent <executor>] [--unattended] [--yes] [--timeout-ms <n>] [--dry-run]
+                     [--dummy] [--retry] [--agent <executor>] [--unattended] [--yes] [--timeout-ms <n>]
+                     [--allow-dirty] [--dry-run]
 kk article status    --type <t> (--slug <s> | --work-dir <dir>) [--window <w>]
 kk article publish-plan | publish-check | publish-send | publish-settle | publish-report
                      --work-dir <dir> [--window <w>] …            # workflow steps, named flags only

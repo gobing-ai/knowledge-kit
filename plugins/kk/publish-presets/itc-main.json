@@ -12,58 +12,65 @@
         {
             "plugin": "infoq-pub",
             "profile": "article",
-            "variant": "article",
-            "tier": 0,
-            "required": true
+            "variant": "zh-article",
+            "tier": 2,
+            "required": false,
+            "transport": "browser"
         },
         {
             "plugin": "juejin-pub",
             "profile": "article",
-            "variant": "article",
-            "tier": 0,
-            "required": true
+            "variant": "zh-article",
+            "tier": 2,
+            "required": false,
+            "transport": "browser"
         },
         {
             "plugin": "wechatmp-pub",
             "profile": "article",
-            "variant": "article",
-            "tier": 0,
-            "required": true
+            "operation": "文章",
+            "variant": "zh-article",
+            "tier": 2,
+            "required": false,
+            "transport": "browser"
         },
         {
             "plugin": "x-pub",
             "profile": "article-zh",
+            "operation": "article",
             "variant": "zh-article",
-            "tier": 0,
-            "required": true
+            "tier": 2,
+            "required": false,
+            "transport": "browser"
         },
         {
             "plugin": "zenn-pub",
             "profile": "article",
-            "variant": "article",
-            "tier": 0,
-            "required": true
+            "variant": "ja-article",
+            "tier": 2,
+            "required": false
         },
         {
             "plugin": "qiita-pub",
             "profile": "article",
-            "variant": "article",
-            "tier": 0,
-            "required": true
+            "variant": "ja-article",
+            "tier": 2,
+            "required": false
         },
         {
             "plugin": "medium-pub",
             "profile": "article",
-            "variant": "article",
-            "tier": 0,
-            "required": true
+            "variant": "en-article",
+            "tier": 2,
+            "required": false
         },
         {
             "plugin": "substack-pub",
             "profile": "article",
-            "variant": "article",
-            "tier": 0,
-            "required": true
+            "variant": "en-article",
+            "tier": 2,
+            "required": false,
+            "transport": "browser"
         }
     ]
 }

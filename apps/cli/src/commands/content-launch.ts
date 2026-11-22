@@ -34,6 +34,7 @@ import { PublishWindowSchema } from '../publish-core';
 import { resolveFrozenRunDate } from '../publish-dispatch';
 import { resolveBundlePath } from '../publish-matrix';
 import { type ContentConfigDocument, configPath, expandHome, readConfig, resolveWorksDir } from './content';
+import { DEFAULT_MAX_REVISIONS, runArticleBundle } from './content-generate-article';
 
 /** Windows `publish` accepts (design §1.1; the matrix's own enum from 0364). */
 const PUBLISH_WINDOWS = PublishWindowSchema.options;
@@ -71,6 +72,7 @@ interface PublishOptions {
     unattended?: boolean;
     yes?: boolean;
     timeoutMs?: string;
+    allowDirty?: boolean;
     dryRun?: boolean;
 }
 
@@ -211,7 +213,9 @@ function reportReceipt(receipt: LaunchReceipt): number {
  * from the retired publish-window launcher, R3/F10). Runs before the lock: a consent mismatch is a refusal.
  */
 export function validateLiveTokens(
-    preset: { targets?: Array<{ plugin?: string; id?: string; mode?: string; window?: string }> } | null,
+    preset: {
+        targets?: Array<{ plugin?: string; id?: string; operation?: string; mode?: string; window?: string }>;
+    } | null,
     window: string,
     tokens: string[],
     presetName: string,
@@ -221,10 +225,17 @@ export function validateLiveTokens(
         fail(5, 'kk.content.publish', `cannot validate --live-channels: preset '${presetName}' was not found`);
     }
     const inWindow = (preset.targets ?? []).filter((target) => (target.window ?? 'after-generate') === window);
+    const computedId = (target: { plugin?: string; id?: string; operation?: string }): string | undefined =>
+        target.id ??
+        (target.plugin && target.operation
+            ? `${target.plugin}.${target.operation.trim().replace(/[\s/]+/g, '-')}`
+            : target.plugin);
     const refused = tokens.filter(
         (token) =>
             !inWindow.some(
-                (target) => (target.plugin === token || target.id === token) && (target.mode ?? 'draft') !== 'off',
+                (target) =>
+                    (target.plugin === token || target.id === token || computedId(target) === token) &&
+                    (target.mode ?? 'draft') !== 'off',
             ),
     );
     if (refused.length > 0) {
@@ -240,11 +251,13 @@ export function validateLiveTokens(
 async function readPreset(
     presetName: string,
     fs: FileSystem,
-): Promise<{ targets?: Array<{ plugin?: string; id?: string; mode?: string; window?: string }> } | null> {
+): Promise<{
+    targets?: Array<{ plugin?: string; id?: string; operation?: string; mode?: string; window?: string }>;
+} | null> {
     const root = await resolvePackageRoot(fs);
     const path = join(root, 'plugins', 'kk', 'publish-presets', `${presetName}.json`);
     return (await readJson(fs, path)) as {
-        targets?: Array<{ plugin?: string; id?: string; mode?: string; window?: string }>;
+        targets?: Array<{ plugin?: string; id?: string; operation?: string; mode?: string; window?: string }>;
     } | null;
 }
 
@@ -366,6 +379,7 @@ interface PublishRunSettings {
     retry?: boolean;
     agent?: string;
     timeoutMs?: number;
+    allowDirty?: boolean;
     dryRun?: boolean;
     /** The scheduled posture: one automatic `generate` when the bundle is missing (R7). */
     unattended: boolean;
@@ -443,6 +457,34 @@ async function publishRun(settings: PublishRunSettings): Promise<LaunchReceipt> 
             }
         }
     }
+    // A finished article seeded via `kk article new --from` carries `request.json` (`from`) and
+    // `4-publish/content.json` with no AI generation step; freeze its bundle on first publish so
+    // the documented two-command flow (`article new --from` → `article publish`) works directly.
+    if (bundle === null && type !== 'news' && settings.dryRun !== true) {
+        const request = await readJson(fs, join(run.workDir, 'request.json'));
+        if (
+            typeof request?.from === 'string' &&
+            request.from.trim() !== '' &&
+            (await fs.exists(join(publishDir, 'content.json')))
+        ) {
+            const frozen = await runArticleBundle(
+                {
+                    workDir: run.workDir,
+                    type,
+                    runId: `kk-content-${run.run}`,
+                    preset: presetName,
+                    maxRevisions: DEFAULT_MAX_REVISIONS,
+                    step: '',
+                    bundleStage: 'freeze',
+                },
+                fs,
+            );
+            if (frozen.code !== 0) {
+                fail(5, 'kk.content.publish', `failed to freeze seeded article bundle in ${run.workDir}`);
+            }
+            bundle = await readJson(fs, await resolveBundlePath(fs, run.workDir));
+        }
+    }
     if (bundle === null && settings.dryRun !== true) {
         fail(5, 'kk.content.publish', `no publishable bundle at ${bundlePath}`);
     }
@@ -490,6 +532,7 @@ async function publishRun(settings: PublishRunSettings): Promise<LaunchReceipt> 
         receiptPath,
         ...(settings.agent === undefined ? {} : { agent: settings.agent }),
         ...(settings.timeoutMs === undefined ? {} : { timeoutMs: settings.timeoutMs }),
+        ...(settings.allowDirty === undefined ? {} : { allowDirty: settings.allowDirty }),
         ...(settings.dryRun === undefined ? {} : { dryRun: settings.dryRun }),
     });
     if (receipt.dryRun === undefined || planned.length === 0) return receipt;
@@ -565,6 +608,7 @@ async function publishAction(noun: string, defaultType: string, options: Publish
         ...(options.retry === undefined ? {} : { retry: options.retry }),
         ...(options.agent === undefined ? {} : { agent: options.agent }),
         ...(timeoutMs === undefined ? {} : { timeoutMs }),
+        ...(options.allowDirty === undefined ? {} : { allowDirty: options.allowDirty }),
         ...(options.dryRun === undefined ? {} : { dryRun: options.dryRun }),
     });
     const code = reportReceipt(receipt);
@@ -612,6 +656,7 @@ function configurePublish(command: Command, noun: string, defaultType: string): 
         .option('--unattended', 'scheduled posture: generate once when the bundle is missing')
         .option('--yes', 'consent to that one generate without --unattended')
         .option('--timeout-ms <n>', 'deadline for the workflow child in milliseconds')
+        .option('--allow-dirty', 'launch even when harness paths are dirty')
         .option('--dry-run', 'run the preflight and print the planned launch without taking the lock')
         .action((options: PublishOptions) => publishAction(noun, defaultType, options));
 }
