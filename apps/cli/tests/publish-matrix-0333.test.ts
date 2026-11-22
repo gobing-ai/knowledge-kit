@@ -844,6 +844,96 @@ describe('publish-matrix-patch-surfdash stage (0333 R3)', () => {
     });
 });
 
+describe('publish-matrix-patch-podcast stage', () => {
+    it('P1: real podcast + real surfdash derives patch-podcast payload and skips honestly offline', () => {
+        const fx = makeFixture(['podcast-pub', 'surfdash-pub']);
+        const pub = join(fx.workDir, '4-publish');
+        const podAggregate = join(pub, 'aggregate.pod.json');
+        const sdAggregate = join(pub, 'aggregate.sd.json');
+        writeAggregate(podAggregate, {
+            target: 'podcast-pub',
+            ok: true,
+            status: 'published',
+            id: 'ITEM_POD_1',
+            url: 'https://podcast.salty.vip/i/ep-1/',
+            metadata: { itemId: 'ITEM_POD_1' },
+        });
+        writeAggregate(sdAggregate, {
+            target: 'surfdash-pub',
+            ok: true,
+            status: 'published',
+            url: 'https://surfing.salty.vip/zh/posts/20261121-meta',
+            metadata: { postPath: '/srv/surfdash/content/posts/articles/zh/20261121-meta/index.md' },
+        });
+        seedPublishArtifacts(
+            fx,
+            [
+                { id: 'podcast-pub.episode', plugin: 'podcast-pub', tier: 0, mode: 'live', required: true },
+                { id: 'surfdash-pub.post', plugin: 'surfdash-pub', tier: 0, mode: 'live', required: true },
+            ],
+            {
+                'podcast-pub.episode': {
+                    ...liveReceipt('voice3-run-1', podAggregate),
+                    plugin: 'podcast-pub',
+                    profile: 'podcast',
+                    mode: 'live',
+                },
+                'surfdash-pub.post': {
+                    ...liveReceipt('voice3-run-1', sdAggregate),
+                    plugin: 'surfdash-pub',
+                    profile: 'surfdash',
+                    mode: 'live',
+                },
+            },
+        );
+        const code = runStage('publish-matrix-patch-podcast', [fx.workDir, '--window', 'after-generate'], {
+            KK_PODCAST_PATCH_OFFLINE: '1',
+        });
+        expect(code).toBe(0);
+        const payload = JSON.parse(readFileSync(join(pub, 'patch-podcast.payload.json'), 'utf-8')) as {
+            options?: Record<string, unknown>;
+        };
+        expect(payload.options?.operation).toBe('patch-article-link');
+        expect(payload.options?.itemId).toBe('ITEM_POD_1');
+        expect(payload.options?.postPath).toBe('/srv/surfdash/content/posts/articles/zh/20261121-meta/index.md');
+        const result = readJson(join(pub, 'patch-podcast.result.json'));
+        expect(result.ok).toBe(false);
+        expect(String(result.error)).toContain('offline');
+        rmSync(fx.root, { recursive: true, force: true });
+    });
+
+    it('P2: missing or dummy surfdash/podcast receipts skip explicitly without writing payload', () => {
+        const fx = makeFixture(['podcast-pub', 'surfdash-pub']);
+        const pub = join(fx.workDir, '4-publish');
+        const podAggregate = join(pub, 'aggregate.pod.json');
+        writeAggregate(podAggregate, { target: 'podcast-pub', ok: true, id: 'ITEM_POD_1', metadata: {} });
+        seedPublishArtifacts(
+            fx,
+            [
+                { id: 'podcast-pub.episode', plugin: 'podcast-pub', tier: 0, mode: 'live', required: true },
+                { id: 'surfdash-pub.post', plugin: 'surfdash-pub', tier: 0, mode: 'live', required: true },
+            ],
+            {
+                'podcast-pub.episode': {
+                    ...liveReceipt('voice3-run-1', podAggregate),
+                    plugin: 'podcast-pub',
+                    profile: 'podcast',
+                    mode: 'live',
+                },
+            },
+        );
+        const code = runStage('publish-matrix-patch-podcast', [fx.workDir, '--window', 'after-generate'], {
+            KK_PODCAST_PATCH_OFFLINE: '1',
+        });
+        expect(code).toBe(0);
+        expect(existsSync(join(pub, 'patch-podcast.payload.json'))).toBe(false);
+        const result = readJson(join(pub, 'patch-podcast.result.json'));
+        expect(result.ok).toBe(false);
+        expect(String(result.error)).toContain('skipped');
+        rmSync(fx.root, { recursive: true, force: true });
+    });
+});
+
 // ── R1: receipts drive retries; uncertain live never resends ────────────────────────────────
 
 /** Fixture publishing plugin: `flip-pub` fails once (state file), then succeeds. */

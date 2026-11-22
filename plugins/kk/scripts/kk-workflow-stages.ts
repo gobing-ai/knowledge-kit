@@ -1680,6 +1680,120 @@ function publishMatrixPatchSurfdash(args: string[]): void {
 }
 
 /**
+ * `publish-matrix-patch-podcast`: patch the real surfdash article URL into an already-published
+ * podcast microfeed item (`complete-article` link), once both Tier 0 targets have real succeeded
+ * receipts in the window. Derives `4-publish/patch-podcast.payload.json` + `.result.json`.
+ */
+function publishMatrixPatchPodcast(args: string[]): void {
+    const flag = (name: string): string | undefined => {
+        const i = args.indexOf(name);
+        return i >= 0 ? args[i + 1] : undefined;
+    };
+    const workDir = args[0] ?? '';
+    const window = flag('--window');
+    if (workDir === '' || window === undefined || window === '') {
+        failWith(1, 'usage: publish-matrix-patch-podcast <work_dir> --window <w>');
+    }
+    const publishDir = join(workDir, '4-publish');
+    const resultPath = join(publishDir, 'patch-podcast.result.json');
+    const writeResult = (value: Record<string, unknown>): void => {
+        sted('write', resultPath, () => writeJqText(resultPath, value));
+    };
+    const receipt = (id: string): Record<string, unknown> | null =>
+        readJson(join(publishDir, 'receipts', `${id}.json`));
+    const aggregateTarget = (receiptPath: string | undefined): Record<string, unknown> => {
+        const aggregate = receiptPath === undefined ? null : readJson(receiptPath);
+        const targets = aggregate?.targets;
+        if (!Array.isArray(targets) || targets.length === 0 || targets[0] === null || typeof targets[0] !== 'object') {
+            return {};
+        }
+        return targets[0] as Record<string, unknown>;
+    };
+    timed(workDir, 'publish-matrix-patch-podcast', () => {
+        const outcome = readJson(join(publishDir, `outcome.${window}.json`)) as {
+            rows?: Array<{ id?: string }>;
+        } | null;
+        const rowId = (prefix: string): string | undefined =>
+            (outcome?.rows ?? []).map((row) => row.id ?? '').find((id) => id.startsWith(prefix));
+        const podId = rowId('podcast-pub');
+        const sdId = rowId('surfdash-pub');
+        if (podId === undefined || sdId === undefined) {
+            const error = 'skipped: requires both podcast-pub and surfdash-pub targets in this window';
+            writeResult({ ok: false, target: 'podcast-pub', error });
+            console.error(`patch-podcast: ${error}`);
+            return;
+        }
+        const podReceipt = receipt(podId);
+        const podReal = podReceipt !== null && podReceipt?.dummy !== true && podReceipt?.status === 'succeeded';
+        const podTarget = aggregateTarget(
+            typeof podReceipt?.aggregatePath === 'string' ? podReceipt.aggregatePath : undefined,
+        );
+        const podMeta = (podTarget.metadata ?? {}) as Record<string, unknown>;
+        const itemId =
+            typeof podTarget.id === 'string' && podTarget.id !== ''
+                ? podTarget.id
+                : typeof podMeta.itemId === 'string' && podMeta.itemId !== ''
+                  ? podMeta.itemId
+                  : '';
+        const sdReceipt = receipt(sdId);
+        const sdReal = sdReceipt !== null && sdReceipt?.dummy !== true && sdReceipt?.status === 'succeeded';
+        const sdTarget = aggregateTarget(
+            typeof sdReceipt?.aggregatePath === 'string' ? sdReceipt.aggregatePath : undefined,
+        );
+        const sdMeta = (sdTarget.metadata ?? {}) as Record<string, unknown>;
+        const postPath = typeof sdMeta.postPath === 'string' ? sdMeta.postPath : '';
+        const articleUrl =
+            typeof sdMeta.articleUrl === 'string' && /^https?:\/\//i.test(sdMeta.articleUrl)
+                ? sdMeta.articleUrl
+                : typeof sdTarget.url === 'string' && /^https?:\/\//i.test(sdTarget.url)
+                  ? sdTarget.url
+                  : '';
+        if (!podReal || itemId === '' || !sdReal || (postPath === '' && articleUrl === '')) {
+            const error =
+                !podReal || itemId === ''
+                    ? 'skipped: no real podcast publish receipt/itemId — nothing to patch'
+                    : 'skipped: no real surfdash publish receipt/postPath — nothing to patch';
+            writeResult({ ok: false, target: 'podcast-pub', error });
+            console.error(`patch-podcast: ${error}`);
+            return;
+        }
+        const payload = join(publishDir, 'patch-podcast.payload.json');
+        sted('write', payload, () =>
+            writeJqText(payload, {
+                title: 'patch-article-link',
+                format: 'markdown',
+                body: '',
+                options: {
+                    operation: 'patch-article-link',
+                    itemId,
+                    ...(postPath !== '' ? { postPath } : {}),
+                    ...(articleUrl !== '' ? { articleUrl } : {}),
+                },
+            }),
+        );
+        if (process.env.KK_PODCAST_PATCH_OFFLINE === '1') {
+            writeResult({ ok: false, target: 'podcast-pub', error: 'skipped: offline (KK_PODCAST_PATCH_OFFLINE=1)' });
+            console.error(
+                'patch-podcast: offline — payload derived, plugin patch skipped (KK_PODCAST_PATCH_OFFLINE=1)',
+            );
+            return;
+        }
+        const status = kk(['executor', 'run', 'podcast-pub', '--in', payload, '--out', resultPath], {
+            unset: NESTED_SPUR_UNSET,
+            soft: true,
+        });
+        const result = readJson(resultPath);
+        if (result?.ok === true) {
+            console.error(`patch-podcast: ${String(result.message ?? 'patched')}`);
+            return;
+        }
+        console.error(
+            `patch-podcast: WARNING: ${String(result?.error ?? `podcast-pub patch-article-link exited ${status}`)}`,
+        );
+    });
+}
+
+/**
  * The day's zh post path when this run's content sits uncommitted in the surfdash checkout.
  *
  * `surfdash-pub` writes the post and its `assets/` into the checkout before it syncs the CMS, and the
@@ -2156,6 +2270,9 @@ if (import.meta.main)
             break;
         case 'publish-matrix-patch-surfdash':
             publishMatrixPatchSurfdash(rest);
+            break;
+        case 'publish-matrix-patch-podcast':
+            publishMatrixPatchPodcast(rest);
             break;
         case 'daily-run-report':
             dailyRunReport(rest);

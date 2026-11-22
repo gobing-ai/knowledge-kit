@@ -351,6 +351,9 @@ async function settleAction(type: string, options: PublishOptions): Promise<void
         await quietStdout(() =>
             runStageCancellable(['publish-matrix-patch-surfdash', context.workDir, '--window', context.window]),
         );
+        await quietStdout(() =>
+            runStageCancellable(['publish-matrix-patch-podcast', context.workDir, '--window', context.window]),
+        );
     }
     const statusPath = join(context.workDir, '4-publish', `publish-status.${context.window}.txt`);
     if ((await fs.exists(statusPath)) && /^(full|partial|none)$/.test((await fs.readFile(statusPath)).trim())) {

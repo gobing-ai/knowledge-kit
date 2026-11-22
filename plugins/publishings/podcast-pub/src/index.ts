@@ -36,7 +36,15 @@ import {
     warn,
 } from './seo';
 import { renderShowNotesMarkdown, type ShowNotesRenderOptions } from './show-notes';
-import { applyArticleReceipt, renderBriefShowNotes } from './show-notes-brief';
+import {
+    applyArticleReceipt,
+    articleUrlFromPostPath,
+    planCards,
+    renderBriefShowNotes,
+    renderCardsRegion,
+    stripArticlePlaceholderHtml,
+    upsertArticleLinkHtml,
+} from './show-notes-brief';
 import { buildTranscriptSegments, renderWebVtt, resolveTranscriptConfig, transcriptReferences } from './transcript';
 
 /** Result target name for this plugin. */
@@ -56,7 +64,17 @@ export function publicItemUrl(item: MicrofeedItem | undefined, itemId: string, c
 const TARGET = 'podcast-pub';
 
 /** Management operations routed via `options.operation` (design D5). */
-const OPERATIONS = ['publish', 'show-notes', 'list', 'get', 'update', 'delete', 'validate', 'backfill-seo'] as const;
+const OPERATIONS = [
+    'publish',
+    'show-notes',
+    'list',
+    'get',
+    'update',
+    'delete',
+    'validate',
+    'backfill-seo',
+    'patch-article-link',
+] as const;
 type Operation = (typeof OPERATIONS)[number];
 
 /** Target-specific options carried on the invoke payload. */
@@ -71,6 +89,10 @@ interface PodcastPubOptions {
     title?: unknown;
     runDate?: unknown;
     articleBaseUrl?: unknown;
+    /** Explicit hosted article URL for `patch-article-link`. */
+    articleUrl?: unknown;
+    /** Surfdash publish result `metadata.postPath` (briefMode & `patch-article-link` URL source). */
+    postPath?: unknown;
     /** Brief/timeline render flag (task 0118). */
     briefMode?: unknown;
     /** Surfdash publish result `metadata.postPath` (briefMode URL source). */
@@ -747,6 +769,127 @@ async function recordCorrectionDelivery(
 }
 
 /**
+ * Uploads rendered local card PNGs to microfeed R2 and rewrites `<!--kk:cards-->` with their
+ * hosted HTTPS URLs before show-notes HTML renders. Per-card failures degrade to text captions +
+ * a warning without aborting episode publish.
+ */
+async function hydrateShowNotesCards(client: MicrofeedClient, content: Content, warnings: string[]): Promise<Content> {
+    const metadata = content.metadata ?? {};
+    const podcastMeta =
+        metadata.podcast !== null && typeof metadata.podcast === 'object' && !Array.isArray(metadata.podcast)
+            ? (metadata.podcast as Record<string, unknown>)
+            : undefined;
+    const rawCards = podcastMeta?.cards ?? metadata.cards;
+    if (rawCards === undefined) return content;
+
+    const showNotes = typeof metadata.showNotes === 'string' ? metadata.showNotes : '';
+    const usesShowNotes = showNotes.includes('<!--kk:cards-->');
+    const sourceMarkdown = usesShowNotes ? showNotes : content.body;
+    if (!sourceMarkdown.includes('<!--kk:cards-->')) return content;
+
+    const { cards } = planCards(rawCards);
+    if (cards.length === 0) return content;
+
+    let uploadedAny = false;
+    const hydrated = await Promise.all(
+        cards.map(async (card) => {
+            if (card.imageUrl !== '' || !card.imagePath) return card;
+            const ext = extname(card.imagePath).toLowerCase();
+            const mime = COVER_MIME[ext];
+            if (!mime) {
+                warn(`card ${card.index} upload skipped: unsupported extension "${ext}"`, warnings);
+                return card;
+            }
+            try {
+                const bytes = new Uint8Array(await readFile(card.imagePath));
+                const prepared = await client.prepareUpload({
+                    category: 'image',
+                    full_local_file_path: basename(card.imagePath),
+                    size: bytes.byteLength,
+                    type: mime,
+                });
+                await client.uploadBytes(prepared.presignedUrl, bytes, mime);
+                uploadedAny = true;
+                return { ...card, imageUrl: prepared.mediaUrl };
+            } catch (error: unknown) {
+                warn(
+                    `card ${card.index} upload failed (${error instanceof Error ? error.message : String(error)}); keeping text caption`,
+                    warnings,
+                );
+                return card;
+            }
+        }),
+    );
+    if (!uploadedAny) return content;
+
+    const region = renderCardsRegion(hydrated);
+    const updatedMarkdown = sourceMarkdown.replace(/<!--kk:cards-->[\s\S]*?<!--\/kk:cards-->/, () => region);
+    if (usesShowNotes) {
+        return {
+            ...content,
+            metadata: {
+                ...metadata,
+                showNotes: updatedMarkdown,
+            },
+        };
+    }
+    return {
+        ...content,
+        body: updatedMarkdown,
+    };
+}
+
+/**
+ * Patches the published `完整图文版` link onto an existing microfeed episode item idempotently.
+ */
+async function patchArticleLink(client: MicrofeedClient, options: PodcastPubOptions): Promise<Result> {
+    const itemId = resolveItemId(options);
+    if ('error' in itemId) return fail(itemId.error);
+    const baseUrl =
+        typeof options.articleBaseUrl === 'string' && options.articleBaseUrl.trim() !== ''
+            ? options.articleBaseUrl.trim()
+            : 'https://surfing.salty.vip';
+    const explicitUrl = typeof options.articleUrl === 'string' ? options.articleUrl.trim() : '';
+    const postPath =
+        typeof options.articlePostPath === 'string' && options.articlePostPath.trim() !== ''
+            ? options.articlePostPath.trim()
+            : typeof options.postPath === 'string'
+              ? options.postPath.trim()
+              : '';
+    const articleUrl = /^https?:\/\//i.test(explicitUrl)
+        ? explicitUrl
+        : postPath !== ''
+          ? articleUrlFromPostPath(postPath, baseUrl)
+          : '';
+    if (!/^https?:\/\//i.test(articleUrl)) {
+        return fail('options.articleUrl or options.postPath is required for the "patch-article-link" operation');
+    }
+    const feed = await client.getItem(itemId.itemId);
+    const item = feed.items?.[0];
+    if (!item) return fail(`microfeed item "${itemId.itemId}" not found in the feed response`);
+    const currentHtml = typeof item.content_html === 'string' ? item.content_html : '';
+    const patched = upsertArticleLinkHtml(currentHtml, articleUrl);
+    let updatedItem = item;
+    if (patched.changed) {
+        updatedItem = await client.updateItem(itemId.itemId, { content_html: patched.html });
+    }
+    const itemUrl = publicItemUrl(updatedItem, itemId.itemId, client);
+    return ResultSchema.parse({
+        ok: true,
+        target: TARGET,
+        id: itemId.itemId,
+        url: itemUrl,
+        message: patched.changed
+            ? `Patched article link into microfeed item ${itemId.itemId}`
+            : `Article link already present on microfeed item ${itemId.itemId}`,
+        metadata: {
+            changed: patched.changed,
+            articleUrl,
+        },
+    });
+}
+
+/**
  * Two-phase publish (design D2, the only legal order): create a draft item →
  * presign with `item_id` → PUT bytes → PUT item with attachment + target status.
  * `metadata.audioUrl` (already hosted) skips the upload steps and creates the
@@ -765,7 +908,7 @@ async function publishEpisode(
     // map.ts ambiguity guard is not tripped); absent keys leave the existing
     // Content→episode mapping (map.ts) as the fallback, unchanged.
     const { audioFile, coverPath, durationSec } = assembly.assembly;
-    const content: Content =
+    const rawContent: Content =
         audioFile !== undefined || coverPath !== undefined || durationSec !== undefined
             ? {
                   ...payload.content,
@@ -777,6 +920,9 @@ async function publishEpisode(
                   },
               }
             : payload.content;
+
+    const cardWarnings: string[] = [];
+    const content = await hydrateShowNotesCards(client, rawContent, cardWarnings);
 
     let episode: EpisodeMapping;
     try {
@@ -790,6 +936,7 @@ async function publishEpisode(
     const policy = prepareEpisodeFields(episode, content.metadata ?? {}, seoConfig.config);
     if (!policy.ok) return fail(policy.error);
     const fields = policy.fields;
+    if (cardWarnings.length > 0) fields.warnings.push(...cardWarnings);
     // Transcript (PODCAST_PUB_TRANSCRIPT): built and written to disk before any create call so
     // the `_microfeed` payload in both create branches carries the same field when it exists.
     try {
@@ -806,6 +953,8 @@ async function publishEpisode(
     }
     const seo = mergeSocial(fields.seo, social);
     episode = shapedEpisode(episode, fields);
+    // Never ship the pre-publish placeholder literal to public listeners on microfeed.
+    episode.contentHtml = stripArticlePlaceholderHtml(episode.contentHtml);
 
     let localAudioBytes: Uint8Array | undefined;
     let mediaIdentity: string;
@@ -1037,6 +1186,8 @@ export class PodcastPubTransport implements PublishTransport {
                     if ('error' in config) return fail(config.error);
                     return await runBackfill(client, options, config.config);
                 }
+                case 'patch-article-link':
+                    return await patchArticleLink(client, options);
                 case 'validate': {
                     // Validate the caller-supplied item input, or the Content-mapped
                     // draft when no explicit input is given (server-side schema check).
