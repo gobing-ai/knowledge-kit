@@ -821,6 +821,39 @@ setInterval(() => {}, 1000);
         });
     });
 
+    it('pluginEnvFromConfig inherits MICROFEED credentials from podcast-pub for surfdash-pub without overriding explicit values', async () => {
+        await withTempDir(async (root) => {
+            const configPath = join(root, 'config.yaml');
+            writeFileSync(
+                configPath,
+                [
+                    'plugins:',
+                    '  publishings:',
+                    '    podcast-pub:',
+                    '      env:',
+                    '        MICROFEED_BASE_URL: "https://podcast.example"',
+                    '        MICROFEED_API_KEY: "mf-secret"',
+                    '    surfdash-pub:',
+                    '      env:',
+                    '        SURFDASH_URL: "https://surfing.example"',
+                    '        MICROFEED_BASE_URL: "https://override.example"',
+                    '    qiita-pub:',
+                    '      env:',
+                    '        QIITA_TOKEN: "tok"',
+                    '',
+                ].join('\n'),
+            );
+            expect(pluginEnvFromConfig('publish', 'surfdash-pub', configPath)).toEqual({
+                SURFDASH_URL: 'https://surfing.example',
+                MICROFEED_BASE_URL: 'https://override.example',
+                MICROFEED_API_KEY: 'mf-secret',
+            });
+            expect(pluginEnvFromConfig('publish', 'qiita-pub', configPath)).toEqual({
+                QIITA_TOKEN: 'tok',
+            });
+        });
+    });
+
     it('injects KK_CONFIG plugin env at spawn; process env wins', async () => {
         await withTempDir(async (root) => {
             const configPath = join(root, 'config.yaml');

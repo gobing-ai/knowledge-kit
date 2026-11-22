@@ -208,14 +208,29 @@ async function resolveMediaPath(content: Content, spec: MediaSpec): Promise<{ pa
     return { path };
 }
 
+/** Whether `content.metadata.wechatmp.coverSource === 'library'`. */
+export function isLibraryCover(content: Content): boolean {
+    const wechatmp = content.metadata?.wechatmp;
+    return (
+        typeof wechatmp === 'object' &&
+        wechatmp !== null &&
+        !Array.isArray(wechatmp) &&
+        (wechatmp as Record<string, unknown>).coverSource === 'library'
+    );
+}
+
 /**
  * The body-image set for the two image-carrying modes, in attachment order.
  *
- * `metadata.images` is the repo's ordered convention (xhs reads the same key). The daily MP stage
- * instead supplies `metadata.wechatmp.coverPath` — the operator's cover — which is attached FIRST
- * because the cover panel states 默认首图为封面 (discovery §5.2): the first body image is the cover.
+ * `metadata.images` is the repo's ordered convention (xhs reads the same key). When `coverSource`
+ * is `'library'` (the daily 文章 + audio rail), the cover comes from 图片库 via the audio upload's
+ * seeded cover — validating `coverPath`/`coverImage` stays active, but the cover file is NOT
+ * injected into the article body. When `coverSource` is `'body'` or omitted, `coverPath`/`coverImage`
+ * are prepended so 默认首图为封面 resolves the cover from the first body image (discovery §5.2).
  */
-async function resolveBodyImages(content: Content): Promise<{ paths?: string[]; error?: string }> {
+async function resolveBodyImages(
+    content: Content,
+): Promise<{ paths?: string[]; hasValidatedCover?: boolean; error?: string }> {
     const ordered = content.metadata?.images;
     if (ordered !== undefined && !Array.isArray(ordered)) {
         return { error: 'images validation: metadata.images must be an array' };
@@ -225,9 +240,9 @@ async function resolveBodyImages(content: Content): Promise<{ paths?: string[]; 
         typeof content.metadata?.wechatmp === 'object' && content.metadata.wechatmp !== null
             ? (content.metadata.wechatmp as Record<string, unknown>).coverPath
             : undefined;
-    const candidates: Array<{ path: string; what: string }> = [];
+    const candidates: Array<{ path: string; what: string; coverOnly: boolean }> = [];
     if (typeof cover === 'string' && cover.length > 0)
-        candidates.push({ path: cover, what: 'metadata.wechatmp.coverPath' });
+        candidates.push({ path: cover, what: 'metadata.wechatmp.coverPath', coverOnly: true });
     // Repo-wide single-cover convention (itc pipeline writes this; surfdash/xhs read it too).
     const genericCover = content.metadata?.coverImage;
     const genericCoverPath =
@@ -237,17 +252,19 @@ async function resolveBodyImages(content: Content): Promise<{ paths?: string[]; 
               ? (genericCover as { path: string }).path
               : undefined;
     if (genericCoverPath !== undefined && genericCoverPath.length > 0)
-        candidates.push({ path: genericCoverPath, what: 'metadata.coverImage' });
+        candidates.push({ path: genericCoverPath, what: 'metadata.coverImage', coverOnly: true });
     for (const [index, image] of descriptors.entries()) {
         const path = typeof image === 'string' ? image : (image as { path?: unknown })?.path;
         if (typeof path !== 'string' || path.length === 0) {
             return { error: `images validation: images[${index}] carries no path` };
         }
-        candidates.push({ path, what: `metadata.images[${index}]` });
+        candidates.push({ path, what: `metadata.images[${index}]`, coverOnly: false });
     }
 
+    const skipCoverInBody = isLibraryCover(content);
     const paths: string[] = [];
-    for (const { path, what } of candidates) {
+    let hasValidatedCover = false;
+    for (const { path, what, coverOnly } of candidates) {
         if (!isAbsolute(path)) {
             return { error: `images validation: ${what} must be absolute, got '${path}'` };
         }
@@ -259,9 +276,10 @@ async function resolveBodyImages(content: Content): Promise<{ paths?: string[]; 
         if (!(await createNodeFileSystem().exists(path))) {
             return { error: `images validation: ${what} does not exist: '${path}'` };
         }
-        paths.push(path);
+        if (coverOnly) hasValidatedCover = true;
+        if (!(skipCoverInBody && coverOnly)) paths.push(path);
     }
-    return { paths };
+    return { paths, hasValidatedCover };
 }
 
 /**
@@ -359,7 +377,7 @@ export async function validateModeInput(operation: WechatmpOperation, content: C
             if (digest.error) return { error: digest.error };
             const images = await resolveBodyImages(content);
             if (images.error) return { error: images.error };
-            if ((images.paths ?? []).length === 0) {
+            if ((images.paths ?? []).length === 0 && !(isLibraryCover(content) && images.hasValidatedCover === true)) {
                 return {
                     error: 'cover validation: 文章 takes its cover from a body image (默认首图为封面) but none was supplied — set metadata.wechatmp.coverPath, metadata.coverImage or metadata.images[]',
                 };

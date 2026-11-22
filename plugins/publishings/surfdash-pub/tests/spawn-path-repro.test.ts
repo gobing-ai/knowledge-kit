@@ -99,7 +99,7 @@ function probeEnv(root: string, bin: string, out: string): Record<string, string
         PROBE_ROOT: root,
         PROBE_BIN: bin,
         PROBE_OUT: out,
-        PROBE_COVER: join(root, 'cover.png'),
+        PROBE_COVER: 'https://podcast-media.salty.vip/production/images/probe-cover.png',
     };
 }
 

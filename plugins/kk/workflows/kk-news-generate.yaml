@@ -325,6 +325,9 @@ nodes:
           ${vars.work_dir}/22-article/locales/en.md and ${vars.work_dir}/22-article/locales/ja.md
           Each file: first line `# <translated title>`, then a blank line, then the translated body.
           Keep every code block, URL, model name, company name and reference intact; translate prose only.
+          Canonical series/show names (NEVER invent alternatives like Hotchpotch, Hodgepodge, ごった煮, or 寄せ鍋):
+          - en: series "Daily AI Stew", show "Salty Talk"
+          - ja: series "デイリーAIシチュー", show "咸話咸説"
           English: natural tech-journalism English. Japanese: natural です・ます tech-journalism Japanese.
           Neither file may contain Chinese text — a zh draft under /en/ or /ja/ fails the gate.
         expectFile: ${vars.work_dir}/22-article/locales/ja.md

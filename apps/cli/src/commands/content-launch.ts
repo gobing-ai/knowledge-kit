@@ -221,10 +221,12 @@ export function validateLiveTokens(
         fail(5, 'kk.content.publish', `cannot validate --live-channels: preset '${presetName}' was not found`);
     }
     const inWindow = (preset.targets ?? []).filter((target) => (target.window ?? 'after-generate') === window);
-    const refused = tokens.filter((token) => {
-        const row = inWindow.find((target) => target.plugin === token || target.id === token);
-        return row === undefined || (row.mode ?? 'draft') === 'off';
-    });
+    const refused = tokens.filter(
+        (token) =>
+            !inWindow.some(
+                (target) => (target.plugin === token || target.id === token) && (target.mode ?? 'draft') !== 'off',
+            ),
+    );
     if (refused.length > 0) {
         fail(
             5,

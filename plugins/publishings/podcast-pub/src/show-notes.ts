@@ -106,8 +106,8 @@ export function computeAudioOffsets(
 
 const isHttpUrl = (u: string): boolean => /^https?:\/\//i.test(u.trim());
 
-/** The exact `<style>` block {@link renderTimelineHtml} emits; reused by the marker validator. */
-const TIMELINE_STYLE = `<style>
+/** Previous `<style>` block accepted for backward compatibility in {@link isGeneratedTimeline}. */
+const LEGACY_TIMELINE_STYLE = `<style>
 .kk-tl{margin:1em 0}
 .kk-tl-row{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid rgba(128,128,128,.25)}
 .kk-tl-t{flex:0 0 56px;font-variant-numeric:tabular-nums;font-weight:700;color:#0969da}
@@ -117,11 +117,31 @@ const TIMELINE_STYLE = `<style>
 </style>`;
 
 /**
- * Tags {@link renderTimelineHtml} can emit: `div`/`p`/`a` carrying only the exact class, href,
- * target, and rel attributes it produces. Anything else inside a marker block is attacker-supplied.
+ * The exact vertical-axis `<style>` block emitted by {@link renderTimelineHtml} and
+ * {@link renderBriefShowNotes}; reused by the marker validator. Left column holds time offsets,
+ * the center border + node dot draws the vertical axis, and the right column holds story summary.
+ */
+export const TIMELINE_STYLE = `<style>
+.kk-tl{margin:1.25em 0;padding:0}
+.kk-tl-row{display:flex;align-items:stretch;gap:0}
+.kk-tl-t{flex:0 0 58px;padding:2px 14px 18px 0;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;font-size:.92em;line-height:1.5;color:var(--mf-accent,#e34b4b)}
+.kk-tl-body{position:relative;flex:1;min-width:0;padding:0 0 18px 18px;border-left:2px solid var(--mf-border,rgba(128,128,128,.35))}
+.kk-tl-row:last-child .kk-tl-body{border-left-color:transparent;padding-bottom:4px}
+.kk-tl-body::before{content:"";position:absolute;left:-6px;top:.42em;width:10px;height:10px;border-radius:50%;background:var(--mf-accent,#e34b4b);box-shadow:0 0 0 3px var(--mf-background,#fff)}
+.kk-tl-title{font-weight:600;line-height:1.5}
+.kk-tl-title a,.kk-tl-src{font-weight:400;font-size:.86em;margin-left:6px;color:var(--mf-muted,#666)}
+.kk-tl-brief{margin:5px 0 0;color:var(--mf-muted,#666);font-size:.94em;line-height:1.65}
+.kk-tl-more{margin:1.1em 0 0;font-size:.95em}
+@media (max-width:480px){.kk-tl-t{flex:0 0 46px;padding-right:10px;font-size:.86em}.kk-tl-body{padding-left:14px}}
+</style>`;
+
+/**
+ * Tags {@link renderTimelineHtml} / {@link renderBriefShowNotes} can emit: `div`/`p`/`a`/`span`
+ * carrying only the exact class, href, target, and rel attributes they produce. Anything else inside
+ * a marker block is attacker-supplied.
  */
 const TIMELINE_TAG =
-    /^<\/?(?:div|p|a)(?:\s+(?:class="kk-tl(?:-[a-z]+)?"|href="https?:\/\/[^"<>\s]*"|target="_blank"|rel="noopener"))*\s*>$/;
+    /^<\/?(?:div|p|a|span)(?:\s+(?:class="kk-tl(?:-[a-z]+)?"|href="https?:\/\/[^"<>\s]*"|target="_blank"|rel="noopener"))*\s*>$/;
 
 /**
  * A marker block is trusted only if it is markup {@link renderTimelineHtml} could have produced.
@@ -130,7 +150,7 @@ const TIMELINE_TAG =
  * and any leftover stray `<` means the block is not well-formed generator output.
  */
 function isGeneratedTimeline(block: string): boolean {
-    const rest = block.replace(TIMELINE_STYLE, '');
+    const rest = block.replace(TIMELINE_STYLE, '').replace(LEGACY_TIMELINE_STYLE, '');
     if (rest.includes('<style') || rest.includes('<!--')) return false;
     return (rest.match(/<[^>]*>/g) ?? []).every((tag) => TIMELINE_TAG.test(tag)) && !/<(?![^>]*>)/.test(rest);
 }

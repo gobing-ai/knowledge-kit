@@ -173,7 +173,7 @@ describe('surfdash-pub plugin', () => {
         }
     });
 
-    test('PostsurfingFileCliTransport date-stamps slug from metadata.runDate and copies cover asset', async () => {
+    test('PostsurfingFileCliTransport writes remote coverImage without copying assets and uploads local covers via Microfeed', async () => {
         const tmpDir = join(process.cwd(), '.tmp-mock-postsurfing-cover');
         await mkdir(tmpDir, { recursive: true });
         const mockBin = join(tmpDir, 'postsurfing');
@@ -183,28 +183,103 @@ describe('surfdash-pub plugin', () => {
             'utf-8',
         );
         await Bun.spawn(['chmod', '+x', mockBin]).exited;
+
+        const uploadRequests: string[] = [];
+        let uploadedCount = 0;
+        const mfServer = Bun.serve({
+            port: 0,
+            fetch(req): Response {
+                const url = new URL(req.url);
+                uploadRequests.push(`${req.method} ${url.pathname}`);
+                if (req.method === 'POST' && url.pathname === '/api/v1/media_files/presigned_urls') {
+                    uploadedCount += 1;
+                    return Response.json({
+                        presigned_url: `${url.origin}/upload/item-${uploadedCount}.png`,
+                        media_url: `https://podcast-media.salty.vip/production/images/item-uploaded-${uploadedCount}.png`,
+                    });
+                }
+                return new Response('', { status: 200 });
+            },
+        });
+
         const coverSrc = join(tmpDir, 'source-cover.png');
         await writeFile(coverSrc, 'fake-png-bytes', 'utf-8');
 
         process.env.POSTSURFING_BIN = mockBin;
         process.env.SURFDASH_ROOT = tmpDir;
+        process.env.MICROFEED_BASE_URL = `http://127.0.0.1:${mfServer.port}`;
+        process.env.MICROFEED_API_KEY = 'mf-test-key';
         try {
             const transport = new PostsurfingFileCliTransport();
-            const content: Content = {
-                title: '中文标题', // slugifies to '' — falls back to <date>-post
+            const remoteContent: Content = {
+                title: '中文标题',
                 body: '# 中文标题\n\n正文段落。',
                 format: 'markdown',
-                metadata: { runDate: '20260904', coverImage: coverSrc },
+                metadata: {
+                    runDate: '20260904',
+                    coverImage: 'https://podcast-media.salty.vip/production/images/item-remote.png',
+                    podcastUrl: 'https://podcast.salty.vip/i/daily-ai-2026-09-04/',
+                    episodeTitle: '第260904期 · 测试播客',
+                },
             };
-            const result = await transport.publish({ content });
-            expect(result.ok).toBe(true);
-
+            const remoteRes = await transport.publish({ content: remoteContent });
+            expect(remoteRes.ok).toBe(true);
             const postDir = join(tmpDir, 'content', 'posts', 'articles', 'zh', '20260904-post');
-            const markdown = await readFile(join(postDir, 'index.md'), 'utf-8');
-            expect(markdown).toContain('publishDate: "2026-09-04"');
-            expect(markdown).toContain('image: "./assets/cover.png"');
-            expect(markdown).toContain('og_image: "./assets/cover.png"');
-            expect(existsSync(join(postDir, 'assets', 'cover.png'))).toBe(true);
+            const remoteMd = await readFile(join(postDir, 'index.md'), 'utf-8');
+            expect(remoteMd).toContain('publishDate: "2026-09-04"');
+            expect(remoteMd).toContain('image: "https://podcast-media.salty.vip/production/images/item-remote.png"');
+            expect(remoteMd).toContain('og_image: "https://podcast-media.salty.vip/production/images/item-remote.png"');
+            expect(remoteMd).toContain('episode_title: "第260904期 · 测试播客"');
+            expect(remoteMd).toContain('https://podcast.salty.vip/i/daily-ai-2026-09-04/');
+            expect(existsSync(join(postDir, 'assets'))).toBe(false);
+            expect(uploadRequests).toHaveLength(0);
+
+            // Local cover falls back to Microfeed upload once and writes remote image without assets/.
+            const localRes = await transport.publish({
+                content: {
+                    title: 'Local Fallback Title',
+                    body: '# Local Fallback Title\n\nBody.',
+                    format: 'markdown',
+                    metadata: { runDate: '20260905', coverImage: coverSrc },
+                },
+            });
+            expect(localRes.ok).toBe(true);
+            const localDir = join(tmpDir, 'content', 'posts', 'articles', 'zh', '20260905-local-fallback-title');
+            const localMd = await readFile(join(localDir, 'index.md'), 'utf-8');
+            expect(localMd).toContain('image: "https://podcast-media.salty.vip/production/images/item-uploaded-1.png"');
+            expect(existsSync(join(localDir, 'assets'))).toBe(false);
+            expect(uploadRequests).toEqual(['POST /api/v1/media_files/presigned_urls', 'PUT /upload/item-1.png']);
+        } finally {
+            mfServer.stop();
+            delete process.env.MICROFEED_BASE_URL;
+            delete process.env.MICROFEED_API_KEY;
+            delete process.env.POSTSURFING_BIN;
+            delete process.env.SURFDASH_ROOT;
+            await rm(tmpDir, { recursive: true, force: true });
+        }
+    });
+
+    test('PostsurfingFileCliTransport fails closed on local cover when MICROFEED credentials are absent', async () => {
+        const tmpDir = join(process.cwd(), '.tmp-mock-postsurfing-no-mf');
+        await mkdir(tmpDir, { recursive: true });
+        const coverSrc = join(tmpDir, 'source-cover.png');
+        await writeFile(coverSrc, 'fake-png-bytes', 'utf-8');
+        process.env.SURFDASH_ROOT = tmpDir;
+        process.env.POSTSURFING_BIN = join(tmpDir, 'missing-bin');
+        delete process.env.MICROFEED_BASE_URL;
+        delete process.env.MICROFEED_API_KEY;
+        try {
+            const res = await new PostsurfingFileCliTransport().publish({
+                content: {
+                    title: 'Needs Microfeed',
+                    body: '# Needs Microfeed\n\nBody.',
+                    format: 'markdown',
+                    metadata: { runDate: '20261121', coverImage: coverSrc },
+                },
+            });
+            expect(res.ok).toBe(false);
+            expect(res.error).toContain('MICROFEED_BASE_URL');
+            expect((res.metadata?.itcDelivery as { effect?: string } | undefined)?.effect).toBe('none');
         } finally {
             delete process.env.POSTSURFING_BIN;
             delete process.env.SURFDASH_ROOT;
@@ -524,8 +599,8 @@ describe('surfdash-pub operations (0096)', () => {
             expect(result.metadata?.target).toBe('en');
             expect(existsSync(draftPath)).toBe(true);
             expect(await readFile(draftPath, 'utf-8')).toContain('scaffolded zh -> en');
-            // The zh post's assets dir is copied next to the draft.
-            expect(existsSync(join(dirname(draftPath), 'assets', 'cover.png'))).toBe(true);
+            // Remote covers are shared via frontmatter — scaffold-locale does not copy assets/ binaries.
+            expect(existsSync(join(dirname(draftPath), 'assets'))).toBe(false);
             // The sd CLI received the exact frozen argv shape.
             const sdArgs = JSON.parse(await readFile(join(root, 'sd-args.log'), 'utf-8')) as string[];
             expect(sdArgs).toEqual(['translate', zhPostPath, '--source', 'zh', '--target', 'en']);
@@ -769,12 +844,11 @@ describe('surfdash-pub operations (0096)', () => {
             (await readFile(localePaths.zh, 'utf-8')).replace('draft: true', 'draft: false\nrefined: true'),
         );
         for (const locale of ['en', 'ja'] as const) {
-            await mkdir(join(dirname(localePaths[locale]), 'assets'), { recursive: true });
+            await mkdir(dirname(localePaths[locale]), { recursive: true });
             await writeFile(
                 localePaths[locale],
-                `---\ntitle: ${locale}\npublishDate: "2026-09-06"\ndraft: false\nrefined: true\n---\n\n${locale} body\n`,
+                `---\ntitle: ${locale}\npublishDate: "2026-09-06"\nimage: "https://podcast-media.salty.vip/production/images/item-seed.png"\ndraft: false\nrefined: true\n---\n\n${locale} body\n`,
             );
-            await writeFile(join(dirname(localePaths[locale]), 'assets', 'cover.png'), `${locale} initial asset`);
         }
 
         const runGit = (...args: string[]): void => {
@@ -795,7 +869,6 @@ describe('surfdash-pub operations (0096)', () => {
 
             for (const locale of ['zh', 'en', 'ja'] as const) {
                 await writeFile(localePaths[locale], `${await readFile(localePaths[locale], 'utf-8')}updated\n`);
-                await writeFile(join(dirname(localePaths[locale]), 'assets', 'cover.png'), `${locale} updated asset`);
             }
             const localeDigests = Object.fromEntries(
                 (['zh', 'en', 'ja'] as const).map((locale) => [
@@ -847,7 +920,7 @@ describe('surfdash-pub operations (0096)', () => {
                     expect(pushedPaths).toContain(
                         `content/posts/articles/${locale}/20260906-prepared-all-locales/index.md`,
                     );
-                    expect(pushedPaths).toContain(
+                    expect(pushedPaths).not.toContain(
                         `content/posts/articles/${locale}/20260906-prepared-all-locales/assets/cover.png`,
                     );
                 }
@@ -1521,6 +1594,43 @@ describe('surfdash-pub frontmatter tags (2026-10-12)', () => {
         const parsed = Bun.YAML.parse(frontmatter) as { tags: string[] };
         expect(parsed.tags).toEqual(['ai-news', 'sub-category:ai-daily']);
     });
+
+    test('mapContentToSurfingMarkdown sets locale episode_title for episode-identity titles without leaking zh to en/ja', () => {
+        const enMd = mapContentToSurfingMarkdown(
+            {
+                title: 'Issue 261121 · Meta Reconsiders Its 2030 Net-Zero Target',
+                body: 'Body.',
+                format: 'markdown',
+                metadata: { episodeTitle: '第261121期 · Meta 重新评估 2030 年净零目标' },
+            },
+            { locale: 'en', publishDate: '2026-11-21' },
+        );
+        expect(enMd).toContain('episode_title: "Issue 261121 · Meta Reconsiders Its 2030 Net-Zero Target"');
+        expect(enMd).not.toContain('第261121期');
+
+        const jaMd = mapContentToSurfingMarkdown(
+            {
+                title: '第261121回 · Meta、2030年ネットゼロ目標を再検討',
+                body: '本文。',
+                format: 'markdown',
+                metadata: { episodeTitle: '第261121期 · Meta 重新评估 2030 年净零目标' },
+            },
+            { locale: 'ja', publishDate: '2026-11-21' },
+        );
+        expect(jaMd).toContain('episode_title: "第261121回 · Meta、2030年ネットゼロ目標を再検討"');
+        expect(jaMd).not.toContain('第261121期');
+
+        const nonEpisodeEn = mapContentToSurfingMarkdown(
+            {
+                title: 'Daily AI Stew · 2026-11-20: Anthropic',
+                body: 'Body.',
+                format: 'markdown',
+                metadata: { episodeTitle: '第261120期 · Anthropic' },
+            },
+            { locale: 'en', publishDate: '2026-11-20' },
+        );
+        expect(nonEpisodeEn).not.toContain('episode_title');
+    });
 });
 
 describe('surfdash-pub post-patch (2026-10-12 boundary move from the kk stage)', () => {
@@ -1605,7 +1715,7 @@ describe('surfdash-pub post-patch (2026-10-12 boundary move from the kk stage)',
             const prose = 'Earlier coverage: https://pod.example/i/2 is worth a listen.';
             await writeFile(
                 enPath,
-                `---\ntitle: T\n---\n\n${prose}\n\n🎧 This episode is also available as a podcast: [listen to Daily AI Stew · 2026-10-11](https://pod.example/i/2).\n`,
+                `---\ntitle: T\nimage: 'https://cdn.example/cover.png'\n---\n\n${prose}\n\n🎧 This episode is also available as a podcast: [listen to Daily AI Stew · 2026-10-11](https://pod.example/i/2).\n`,
             );
             await patchPostFiles({
                 postPath: post(root, 'zh'),
@@ -1693,7 +1803,7 @@ describe('surfdash-pub post-patch (2026-10-12 boundary move from the kk stage)',
             const url = 'https://podcast.salty.vip/i/daily-ai-2026-10-23/';
             const outcome = await patchPostFiles({
                 postPath: post(root, 'zh'),
-                coverUrl: '',
+                coverUrl: 'https://cdn.example/cover.png',
                 showNotesUrl: url,
                 localCover,
                 dateIso: '2026-10-23',
@@ -1709,24 +1819,51 @@ describe('surfdash-pub post-patch (2026-10-12 boundary move from the kk stage)',
         });
     });
 
-    test('patchPostFiles copies the local cover when no podcast cover URL exists', async () => {
+    test('patchPostFiles preserves existing https:// cover and uses uploadLocalCover fallback without assets/', async () => {
         await withTree(async (root, localCover) => {
-            // Strip the pre-existing `image:` so the fallback branch is reachable.
             for (const locale of ['zh', 'en']) {
                 const md = await readFile(post(root, locale), 'utf-8');
-                await writeFile(post(root, locale), md.replace(/^image:.*$/m, '').replace(/^og_image:.*$/m, ''));
+                await writeFile(
+                    post(root, locale),
+                    md
+                        .replace(/^image:.*$/m, "image: 'https://podcast-media.salty.vip/existing.png'")
+                        .replace(/^og_image:.*$/m, ''),
+                );
             }
-            const outcome = await patchPostFiles({
+            const kept = await patchPostFiles({
                 postPath: post(root, 'zh'),
                 coverUrl: '',
                 showNotesUrl: '',
                 localCover,
                 dateIso: '2026-10-11',
             });
-            const asset = join(dirname(post(root, 'zh')), 'assets', 'cover.png');
-            expect(existsSync(asset)).toBe(true);
-            expect(outcome.written).toContain(asset);
-            expect(await readFile(post(root, 'zh'), 'utf-8')).toContain("image: './assets/cover.png'");
+            expect(kept.images.zh).toBe('https://podcast-media.salty.vip/existing.png');
+            expect(await readFile(post(root, 'zh'), 'utf-8')).toContain(
+                "og_image: 'https://podcast-media.salty.vip/existing.png'",
+            );
+
+            for (const locale of ['zh', 'en']) {
+                const md = await readFile(post(root, locale), 'utf-8');
+                await writeFile(post(root, locale), md.replace(/^image:.*$/m, '').replace(/^og_image:.*$/m, ''));
+            }
+            let uploads = 0;
+            const uploaded = await patchPostFiles({
+                postPath: post(root, 'zh'),
+                coverUrl: '',
+                showNotesUrl: '',
+                localCover,
+                dateIso: '2026-10-11',
+                uploadLocalCover: async () => {
+                    uploads += 1;
+                    return 'https://podcast-media.salty.vip/production/images/uploaded-once.png';
+                },
+            });
+            expect(uploads).toBe(1);
+            expect(uploaded.images).toEqual({
+                zh: 'https://podcast-media.salty.vip/production/images/uploaded-once.png',
+                en: 'https://podcast-media.salty.vip/production/images/uploaded-once.png',
+            });
+            expect(existsSync(join(dirname(post(root, 'zh')), 'assets', 'cover.png'))).toBe(false);
         });
     });
 
@@ -1754,8 +1891,8 @@ describe('surfdash-pub post-patch (2026-10-12 boundary move from the kk stage)',
         });
     });
 
-    test('patchPostFiles throws naming the locale when coverUrl is empty, frontmatter has no image key, and localCover is missing', async () => {
-        await withTree(async (root, _localCover) => {
+    test('patchPostFiles throws naming the locale when no remote cover or uploader exists', async () => {
+        await withTree(async (root, localCover) => {
             for (const locale of ['zh', 'en']) {
                 const md = await readFile(post(root, locale), 'utf-8');
                 await writeFile(post(root, locale), md.replace(/^image:.*$/m, '').replace(/^og_image:.*$/m, ''));
@@ -1768,7 +1905,18 @@ describe('surfdash-pub post-patch (2026-10-12 boundary move from the kk stage)',
                     localCover: join(root, 'non-existent-cover.png'),
                     dateIso: '2026-10-11',
                 }),
-            ).rejects.toThrow('zh post has no cover');
+            ).rejects.toThrow('zh post has no remote https:// cover');
+
+            await expect(
+                patchPostFiles({
+                    postPath: post(root, 'zh'),
+                    coverUrl: '',
+                    showNotesUrl: '',
+                    localCover,
+                    dateIso: '2026-10-11',
+                    uploadLocalCover: async () => 'http://insecure.example/cover.png',
+                }),
+            ).rejects.toThrow('uploaded cover must be an absolute https:// URL');
         });
     });
 });
@@ -1800,14 +1948,12 @@ describe('surfdash-pub patch operation (2026-10-12 boundary move)', () => {
         git(root, 'add', '-A');
         git(root, 'commit', '-q', '-m', 'init');
 
-        // Create an en sibling with an untracked assets/cover.png (as scaffold-locale produces)
         const enDir = join(root, 'content', 'posts', 'articles', 'en', `${RUN_DATE}-post`);
-        await mkdir(join(enDir, 'assets'), { recursive: true });
+        await mkdir(enDir, { recursive: true });
         await writeFile(
             join(enDir, 'index.md'),
             `---\ntitle: EN\npublishDate: '2026-10-11'\nimage: ./assets/cover.png\n---\n\nEN Body\n`,
         );
-        await writeFile(join(enDir, 'assets', 'cover.png'), 'en-cover-bytes');
 
         const inPath = join(root, 'patch-in.json');
         const outPath = join(root, 'patch-out.json');
@@ -1846,7 +1992,8 @@ describe('surfdash-pub patch operation (2026-10-12 boundary move)', () => {
             // Committed on main, including the scaffolded en/assets/cover.png so no untracked assets remain.
             expect(git(fx.root, 'log', '-1', '--format=%s').stdout).toContain('cover + podcast cross-link');
             const trackedFiles = git(fx.root, 'ls-tree', '-r', '--name-only', 'HEAD').stdout;
-            expect(trackedFiles).toContain(`content/posts/articles/en/${RUN_DATE}-post/assets/cover.png`);
+            expect(trackedFiles).toContain(`content/posts/articles/en/${RUN_DATE}-post/index.md`);
+            expect(trackedFiles).not.toContain('assets/cover.png');
             expect(git(fx.root, 'status', '--porcelain', '--', 'content/posts/articles').stdout.trim()).toBe('');
         } finally {
             delete process.env.SURFDASH_ROOT;
@@ -2115,7 +2262,7 @@ describe('digest frontmatter check wiring in publishPost and syncPost (Item 4)',
             metadata: {
                 runDate: '20261023',
                 subCategory: 'ai-daily',
-                coverImage: coverSrc,
+                coverImage: 'https://podcast-media.salty.vip/production/images/test-cover.png',
                 // 0409 R2: a digest carries its translations, or `publish` refuses before spawning.
                 surfdash: digestLocales('2026-10-23'),
             },
@@ -2340,14 +2487,14 @@ process.exit(0);
             return { base, origin, work, coverSrc };
         };
 
-        const makeContent = (coverSrc: string): Content => ({
+        const makeContent = (_coverSrc: string): Content => ({
             title: 'Test Post',
             body: '# Test Post\n\n正文段落。',
             format: 'markdown',
             metadata: {
                 runDate: '20261024',
                 subCategory: 'ai-daily',
-                coverImage: coverSrc,
+                coverImage: 'https://podcast-media.salty.vip/production/images/test-cover.png',
                 // 0409 R2: a digest carries its translations, or `publish` refuses before spawning.
                 surfdash: digestLocales('2026-10-24'),
             },
@@ -2852,47 +2999,6 @@ key_points:
 
             process.env.SURFDASH_ROOT = fx.work;
             process.env.SURFDASH_AUTO_PUSH = '1';
-            process.env.TEST_SD_RETITLE_FAIL = '1';
-            try {
-                const transport = new PostsurfingFileCliTransport();
-                const result = await transport.publish({
-                    content: { title: 'unused', body: 'unused', format: 'markdown' },
-                    options: {
-                        operation: 'patch',
-                        postPath: zhPostPath,
-                        coverUrl: 'https://cdn.example/cover.png',
-                        dateIso: '2026-11-08',
-                    },
-                });
-                expect(result.ok).toBe(false);
-                expect(result.error).toContain('retitle');
-                const pushed = await new Response(
-                    Bun.spawn(['git', '--git-dir', fx.origin, 'log', '-1', '--format=%s', 'main']).stdout,
-                ).text();
-                expect(pushed.trim()).toBe('add-digest');
-            } finally {
-                delete process.env.TEST_SD_RETITLE_FAIL;
-                delete process.env.SURFDASH_ROOT;
-                process.env.SURFDASH_AUTO_PUSH = '0';
-                await rm(fx.base, { recursive: true, force: true });
-            }
-        });
-
-        test('patchPost upserts daily-topics and pushes on the happy path', async () => {
-            const fx = await setupGateFixture('test-patch-topics-push');
-            const slug = '20261108-ai-2026-11-08';
-            const zhPostPath = await writeDigestLocales(fx.work, slug);
-            await writeFile(join(fx.work, 'scripts', 'publish-orchestrator.ts'), 'process.exit(0);\n');
-            const gitRun = async (cmd: string[], cwd: string): Promise<void> => {
-                const proc = Bun.spawn(cmd, { cwd, stdout: 'pipe', stderr: 'pipe' });
-                await proc.exited;
-            };
-            await gitRun(['git', 'add', '-A'], fx.work);
-            await gitRun(['git', 'commit', '-m', 'add-digest'], fx.work);
-            await gitRun(['git', 'push', 'origin', 'main'], fx.work);
-
-            process.env.SURFDASH_ROOT = fx.work;
-            process.env.SURFDASH_AUTO_PUSH = '1';
             try {
                 const transport = new PostsurfingFileCliTransport();
                 const result = await transport.publish({
@@ -2905,19 +3011,48 @@ key_points:
                     },
                 });
                 expect(result.ok).toBe(true);
-                const map = JSON.parse(readFileSync(join(fx.work, 'scripts', 'seo', 'daily-topics.json'), 'utf-8')) as {
-                    [key: string]: { en: { headlines: string[] } };
-                };
-                expect(map[slug]?.en.headlines).toEqual(['Claude Code', 'OpenAI']);
+                // patchPost leaves daily-topics.json untouched; unmapped digests stay self-consistent on surfdash.
+                expect(existsSync(join(fx.work, 'scripts', 'seo', 'daily-topics.json'))).toBe(false);
                 const pushed = await new Response(
                     Bun.spawn(['git', '--git-dir', fx.origin, 'log', '-1', '--format=%s', 'main']).stdout,
                 ).text();
                 expect(pushed).toContain('cover + podcast cross-link');
-                const originMap = await new Response(
-                    Bun.spawn(['git', '--git-dir', fx.origin, 'show', 'HEAD:scripts/seo/daily-topics.json']).stdout,
-                ).text();
-                expect(originMap).toContain(slug);
             } finally {
+                delete process.env.SURFDASH_ROOT;
+                process.env.SURFDASH_AUTO_PUSH = '0';
+                await rm(fx.base, { recursive: true, force: true });
+            }
+        });
+
+        test('publish commits all zh/en/ja locale files without mutating daily-topics.json', async () => {
+            const fx = await setupGateFixture('test-publish-no-topics');
+            const restoreFetch = mockLiveFetch();
+            process.env.POSTSURFING_BIN = join(fx.work, 'postsurfing');
+            process.env.SURFDASH_ROOT = fx.work;
+            process.env.SURFDASH_AUTO_PUSH = '1';
+            try {
+                const transport = new PostsurfingFileCliTransport();
+                const result = await transport.publish({ content: makeContent(fx.coverSrc) });
+                expect(result.ok).toBe(true);
+                expect(existsSync(join(fx.work, 'scripts', 'seo', 'daily-topics.json'))).toBe(false);
+                const pushedFiles = await new Response(
+                    Bun.spawn([
+                        'git',
+                        '--git-dir',
+                        fx.origin,
+                        'diff-tree',
+                        '--no-commit-id',
+                        '--name-only',
+                        '-r',
+                        'main',
+                    ]).stdout,
+                ).text();
+                for (const locale of ['zh', 'en', 'ja']) {
+                    expect(pushedFiles).toContain(`content/posts/articles/${locale}/20261024-test-post/index.md`);
+                }
+            } finally {
+                restoreFetch();
+                delete process.env.POSTSURFING_BIN;
                 delete process.env.SURFDASH_ROOT;
                 process.env.SURFDASH_AUTO_PUSH = '0';
                 await rm(fx.base, { recursive: true, force: true });

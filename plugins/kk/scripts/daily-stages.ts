@@ -2196,6 +2196,74 @@ const WECHAT_BRAND = {
     coverSource: 'library',
 } as const;
 
+/** A concise key-point bullet injected into the top-of-article `## 今日要点` summary for 公众号. */
+export interface WechatKeyPoint {
+    label: string;
+    text: string;
+}
+
+function stripLeadingH1Heading(body: string): string {
+    return body.replace(/^\s*# +[^\n]+\n+/, '');
+}
+
+function wechatKeyPointLabel(title: string): string {
+    const clean = title.replace(/^#+\s+/, '').trim();
+    const firstClause = clean.split(/[：:，,。！？!?\-—|]/)[0]?.trim() ?? clean;
+    const chars = Array.from(firstClause);
+    if (chars.length > 0 && chars.length <= 18) return firstClause;
+    return Array.from(clean).slice(0, 18).join('');
+}
+
+function extractWechatKeyPoints(
+    planItems: ReadonlyArray<{ title: string; brief?: string }>,
+    articleBody: string,
+): WechatKeyPoint[] {
+    const out: WechatKeyPoint[] = [];
+    for (const item of planItems.slice(0, 5)) {
+        const text = (item.brief ?? item.title).replace(/\s+/g, ' ').trim();
+        const label = wechatKeyPointLabel(item.title);
+        if (label !== '' && text !== '') out.push({ label, text });
+    }
+    if (out.length > 0) return out;
+    const sections = stripLeadingH1Heading(articleBody).split(/\n(?=##\s+)/);
+    for (const section of sections) {
+        const match = section.match(/^##\s+(.+)\n+([\s\S]+)$/);
+        if (!match?.[1] || !match[2]) continue;
+        const firstPara = match[2]
+            .split(/\n{2,}/)
+            .map((p) => p.replace(/\s+/g, ' ').trim())
+            .find((p) => p !== '' && !p.startsWith('#') && !p.startsWith('-'));
+        if (!firstPara) continue;
+        const firstSentence = (splitSentences(firstPara, { cjkOnly: true })[0] ?? firstPara).trim();
+        const label = wechatKeyPointLabel(match[1]);
+        if (label !== '' && firstSentence !== '') out.push({ label, text: firstSentence });
+        if (out.length >= 5) break;
+    }
+    return out;
+}
+
+function cleanWechatDigest(body: string, keyPoints?: readonly WechatKeyPoint[]): string {
+    const stripMd = (s: string): string =>
+        s
+            .replace(/^#{1,6}\s+/gm, '')
+            .replace(/\*\*([^*]+)\*\*/g, '$1')
+            .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+            .replace(/\s+/g, ' ')
+            .trim();
+    const paragraphs = stripLeadingH1Heading(body)
+        .split(/\n{2,}/)
+        .map((p) => stripMd(p))
+        .filter((p) => p !== '' && !p.startsWith('今日要点') && !p.startsWith('- '));
+    const candidate =
+        paragraphs[0] ??
+        (keyPoints ?? [])
+            .slice(0, 2)
+            .map((kp) => `${kp.label}：${kp.text}`)
+            .join(' ');
+    if (candidate === '') return '';
+    return Array.from(candidate).slice(0, 120).join('');
+}
+
 /**
  * The 公众号 article payload (task 0327 R1): the article Content plus MP draft enrichment.
  *
@@ -2211,6 +2279,7 @@ export function buildWechatArticleContent(
         coverPath?: string;
         audioPath?: string;
         audioTitle?: string;
+        keyPoints?: readonly WechatKeyPoint[];
         /**
          * The 咸话咸说 closer is an article-only sign-post (operator request 2026-09-29: "appended
          * to the wechat input body only, never the master article"). An audio-first 公众号 播客 post
@@ -2221,17 +2290,10 @@ export function buildWechatArticleContent(
 ): Record<string, unknown> {
     const wechatmp: Record<string, unknown> = {
         original: true,
-        // 赞赏 is NOT requested: measured 2026-11-20 on a fresh 文章 draft, this account's row renders
-        // `不开启 … 无法开启赞赏，因为还没有赞赏账户授权给本公众号` with a 0×0 box — the platform has not
-        // authorized a 赞赏 account for 咸话咸说, so no selector, probe or retry can enable it, and asking
-        // for it only converted a healthy draft into `ok:false` until `WECHATMP_ALLOW_PARTIAL_ENRICH=1`
-        // was set by hand (11-16, 11-18, 11-19). Evidence:
-        // `.spur/run/dogfood/2026-11-20-wechatmp-reward/survey-dom.json` (5806: reward row text + box).
-        // If the operator opens 赞赏 later, flip this line back together with the probe in
-        // `plugins/publishings/wechatmp-pub/src/enrich.ts` (`REWARD_STATE`).
-        // 2026-11-20 operator request: 赞赏 ON. `WECHATMP_ALLOW_PARTIAL_ENRICH=1` is set, so a
-        // still-unauthorized account warns once and keeps the healthy draft instead of failing it.
-        reward: true,
+        // 2026-11-21 operator decision (A3): keep `reward: false` while the 咸话咸说 account lacks
+        // an authorized 赞赏账户, so WECHATMP_ALLOW_PARTIAL_ENRICH=1 is no longer needed and real
+        // enrichment failures (音频, 原创, 原文链接) fail loud.
+        reward: false,
         author: WECHAT_BRAND.author,
         collection: options.collection,
         // 创作来源 is the platform's AI-declaration entry (WX-03); the label declares AI generation.
@@ -2248,12 +2310,34 @@ export function buildWechatArticleContent(
                   audioCoverPath: options.coverPath ?? '',
               }),
     };
-    const body = typeof article.body === 'string' ? article.body : '';
+    const rawBody = typeof article.body === 'string' ? article.body : '';
+    const existingMeta = metadataOf(article);
+    if (options.appendOutro === false) {
+        return {
+            ...article,
+            body: rawBody,
+            metadata: {
+                ...existingMeta,
+                ...(options.audioPath === undefined ? {} : { audio: options.audioPath }),
+                publishStatus: options.publishStatus,
+                wechatmp,
+            },
+        };
+    }
+    let formattedBody = stripLeadingH1Heading(rawBody);
+    const keyPoints = (options.keyPoints ?? []).filter((kp) => kp.label.trim() !== '' && kp.text.trim() !== '');
+    if (keyPoints.length > 0 && !/^\s*##\s+今日要点\b/m.test(formattedBody)) {
+        const bullets = keyPoints.map((kp) => `- **${kp.label.trim()}** — ${kp.text.trim()}`).join('\n');
+        formattedBody = `## 今日要点\n\n${bullets}\n\n${formattedBody.trimStart()}`;
+    }
+    const existingDigest = typeof existingMeta.digest === 'string' ? existingMeta.digest.trim() : '';
+    const derivedDigest = existingDigest !== '' ? existingDigest : cleanWechatDigest(rawBody, keyPoints);
     return {
         ...article,
-        body: options.appendOutro === false ? body : `${body}${WECHAT_OUTRO}`,
+        body: `${formattedBody}${WECHAT_OUTRO}`,
         metadata: {
-            ...metadataOf(article),
+            ...existingMeta,
+            ...(derivedDigest !== '' ? { digest: derivedDigest } : {}),
             // wechatmp-pub's 播客 operation resolves the episode mp3 through the generic media key
             // `metadata.audio` (`modes.ts` resolveMediaPath), while the 文章 audio-embed rail keeps
             // reading `wechatmp.audioPath` — carry both spellings so one variant serves both rows.
@@ -2410,19 +2494,23 @@ function weightedCharWeight(char: string): number {
 }
 
 /** Weighted length of `text` (code-point based, so an emoji counts once before its weight). */
-function weightedLength(text: string): number {
+export function weightedLength(text: string): number {
     let total = 0;
     for (const char of text) total += weightedCharWeight(char);
     return total;
 }
 
+/** Platforms where attaching a native image suppresses the URL's clickable Open Graph preview card. */
+const OG_CARD_PLATFORMS = new Set(['x', 'threads', 'linkedin']);
+
 /**
- * One channel's short copy as a Content (task 0327 R3): the body is the authored post text and the
- * episode cover rides along as `metadata.coverImage`.
+ * One channel's short promo copy as a Content (task 0327 R3; task 0410 episode promo framing):
+ * prepends the frozen episode title and appends the episode listen URL (`{{podcast_url}}`) when
+ * supplied, reserving header/footer budget before truncating copy (X counts URLs at t.co weight 23).
  *
- * The cap is a backstop, not the author: the prompt owns the limit, so an over-length draft is
- * truncated rather than rejected, and `truncatedFrom` records what was cut. Truncation respects the
- * channel's own unit — see {@link SocialLimit}.
+ * Platforms in `OG_CARD_PLATFORMS` (`x`, `threads`, `linkedin`) omit `coverImage` when linking a
+ * podcast URL so their native Open Graph card renders cleanly instead of being suppressed by an
+ * attached image; image-first rails (`weibo`, `jike`) keep `coverImage`.
  */
 export function buildSocialContent(
     copy: string,
@@ -2431,35 +2519,58 @@ export function buildSocialContent(
         limit: SocialLimit;
         coverPath?: string;
         cardPath?: string;
+        episodeTitle?: string;
+        listenUrl?: string;
     },
 ): Record<string, unknown> {
     const trimmed = copy.trim();
-    const measure = (text: string): number => (options.limit.weighted === true ? weightedLength(text) : text.length);
-    let body = trimmed;
-    if (measure(trimmed) > options.limit.max) {
-        // Walk code points, adding while the budget holds: a slice by code units could split a
-        // surrogate pair or bust the weighted budget on CJK text.
+    const episodeTitle = options.episodeTitle?.trim() ?? '';
+    const listenUrl = options.listenUrl?.trim() ?? '';
+    const header = episodeTitle !== '' && !trimmed.startsWith(episodeTitle) ? `${episodeTitle}\n\n` : '';
+    const footer =
+        listenUrl !== '' && !trimmed.includes(listenUrl)
+            ? options.platform === 'x'
+                ? `\n\n🎧 ${listenUrl}`
+                : `\n\n🎧 完整节目：${listenUrl}`
+            : '';
+
+    const measure = (text: string): number => {
+        if (options.limit.weighted === true) {
+            // X counts URLs via t.co (23 units); reserve 23 for placeholders and full URLs alike.
+            const normalized = text.replace(/(?:https?:\/\/\S+|\{\{(?:podcast|article)_url\}\})/g, 'x'.repeat(23));
+            return weightedLength(normalized);
+        }
+        return text.replace(/\{\{(?:podcast|article)_url\}\}/g, 'x'.repeat(60)).length;
+    };
+
+    const fullMeasure = measure(`${header}${trimmed}${footer}`);
+    let keptCopy = trimmed;
+    if (fullMeasure > options.limit.max) {
+        const copyBudget = Math.max(0, options.limit.max - measure(header) - measure(footer));
         let kept = '';
         let used = 0;
         for (const char of trimmed) {
             const weight = options.limit.weighted === true ? weightedCharWeight(char) : 1;
-            if (used + weight > options.limit.max) break;
+            if (used + weight > copyBudget) break;
             kept += char;
             used += weight;
         }
-        body = kept;
+        keptCopy = kept;
     }
-    const attachedImage = options.cardPath ?? options.coverPath;
+
+    const body = `${header}${keptCopy}${footer}`;
+    const attachCover = !(listenUrl !== '' && OG_CARD_PLATFORMS.has(options.platform));
+    const attachedImage = attachCover ? (options.cardPath ?? options.coverPath) : undefined;
     return {
-        title: `${options.platform} · 每日AI乱炖`,
+        title: episodeTitle !== '' ? episodeTitle : `${options.platform} · 每日AI乱炖`,
         format: 'text',
         body,
         metadata: {
             platform: options.platform,
-            ...(body === trimmed
+            ...(keptCopy === trimmed
                 ? {}
                 : {
-                      truncatedFrom: measure(trimmed),
+                      truncatedFrom: fullMeasure,
                       truncatedUnit: options.limit.weighted === true ? 'weighted' : 'code_units',
                   }),
             ...(attachedImage === undefined ? {} : { coverImage: attachedImage }),
@@ -2500,6 +2611,35 @@ function variantFileName(key: string): string {
  * variant file is wiped before writing, so `30-variants/` after this stage contains only what
  * THIS pass produced.
  */
+function cardsForPodcast(
+    workDir: string,
+    cardsEnabled: boolean,
+): Array<{ index: string; copy: string; status?: string; imagePath?: string }> {
+    if (!cardsEnabled) return [];
+    const parsed = readJson(join(workDir, '25-xhs', 'cards.json'));
+    const rawCards = (parsed as { cards?: unknown } | null)?.cards;
+    if (!Array.isArray(rawCards)) return [];
+    const out: Array<{ index: string; copy: string; status?: string; imagePath?: string }> = [];
+    for (const entry of rawCards) {
+        if (entry === null || typeof entry !== 'object') continue;
+        const card = entry as Record<string, unknown>;
+        const index = typeof card.index === 'string' ? card.index.trim() : String(card.index ?? '').trim();
+        const copy = typeof card.copy === 'string' ? card.copy.trim() : '';
+        if (index === '' || copy === '') continue;
+        const status = typeof card.status === 'string' ? card.status.trim() : undefined;
+        const rawPath = typeof card.imagePath === 'string' ? card.imagePath.trim() : '';
+        const resolvedImg = rawPath !== '' ? (rawPath.startsWith('/') ? rawPath : resolve(workDir, rawPath)) : '';
+        const validImg = resolvedImg !== '' && isFile(resolvedImg) ? resolvedImg : undefined;
+        out.push({
+            index,
+            copy,
+            ...(status === undefined ? {} : { status }),
+            ...(validImg === undefined ? {} : { imagePath: validImg }),
+        });
+    }
+    return out;
+}
+
 export function dailyBundleVariants(args: string[]): void {
     const [workDir = '', runDate = '', _pluginsPath = '', cardsEnabledArg = '', coverEnabledArg = ''] = args;
     timed(workDir, 'bundle-variants', () => {
@@ -2514,14 +2654,18 @@ export function dailyBundleVariants(args: string[]): void {
         const notesPath = join(workDir, '31-publish', `${runDate}_15_show-notes_show-notes.md`);
         const cardsPath = join(workDir, '25-xhs', 'content.json');
         const coverPath = join(workDir, '23-cover', `${runDate}_07_cover_cover.png`);
+        const socialCoverPath = join(workDir, '23-cover', `${runDate}_07_cover_social.jpg`);
         const socialDir = join(workDir, '26-social');
         const cover = coverEnabledArg !== 'false' && isFile(coverPath) ? resolve(coverPath) : undefined;
+        const socialCover =
+            coverEnabledArg !== 'false' && isFile(socialCoverPath) ? resolve(socialCoverPath) : undefined;
         const links = PLACEHOLDER_LINKS;
         const written: string[] = [];
         const skipped: string[] = [];
 
         const article = readJson(articlePath);
         const prep = readJson(prepPath);
+        const planItems = planItemsForPodcast(workDir, runDate);
         const write = (key: string, content: Record<string, unknown>): void => {
             const file = join(outDir, variantFileName(key));
             sted('write', file, () => writeJsonText(file, content));
@@ -2553,12 +2697,18 @@ export function dailyBundleVariants(args: string[]): void {
                 prep !== null && typeof metadataOf(prep).audioFile === 'string'
                     ? String(metadataOf(prep).audioFile)
                     : undefined;
+            const rawArticleBody =
+                typeof (article as Record<string, unknown>).body === 'string'
+                    ? String((article as Record<string, unknown>).body)
+                    : '';
+            const wechatKeyPoints = extractWechatKeyPoints(planItems, rawArticleBody);
             write(
                 'article@wechatmp-pub',
                 buildWechatArticleContent(article, {
                     links,
                     publishStatus: 'draft',
                     collection: '每日AI资讯',
+                    keyPoints: wechatKeyPoints,
                     ...(cover === undefined ? {} : { coverPath: cover }),
                     ...(articleAudio === undefined ? {} : { audioPath: articleAudio, audioTitle: firstArticleLine }),
                 }),
@@ -2568,8 +2718,16 @@ export function dailyBundleVariants(args: string[]): void {
         if (prep === null) skipped.push('episode (no publish-prep content)');
         else {
             const showNotes = isFile(notesPath) ? readFileSync(notesPath, 'utf-8') : '';
-            write('episode', buildPodcastContent(prep, { showNotes }));
-            write('episode@podcast-pub', buildPodcastContent(prep, { showNotes }));
+            const podcastCards = cardsForPodcast(workDir, cardsEnabledArg !== 'false');
+            const podcastMeta: Record<string, unknown> = {
+                ...(planItems.length > 0 ? { planItems } : {}),
+                ...(podcastCards.length > 0 ? { cards: podcastCards } : {}),
+                ...(socialCover === undefined ? {} : { socialImage: socialCover, socialImageEnabled: true }),
+            };
+            const podcastOpts =
+                Object.keys(podcastMeta).length > 0 ? { showNotes, podcast: podcastMeta } : { showNotes };
+            write('episode', buildPodcastContent(prep, podcastOpts));
+            write('episode@podcast-pub', buildPodcastContent(prep, podcastOpts));
             write('episode@xhs-pub', buildXhsEpisodeContent(prep, { publishStatus: 'draft', links }));
             // 公众号 播客 shares the episode with podcast-pub: same audio, same cover, no article body.
             write(
@@ -2620,6 +2778,8 @@ export function dailyBundleVariants(args: string[]): void {
                     limit,
                     ...(cover === undefined ? {} : { coverPath: cover }),
                     ...(cardImage === undefined ? {} : { cardPath: cardImage }),
+                    ...(firstArticleLine !== '' ? { episodeTitle: firstArticleLine } : {}),
+                    ...(prep !== null ? { listenUrl: links.podcastUrl } : {}),
                 }),
             );
         }
@@ -2940,6 +3100,11 @@ export function dailyPublishPrep(args: string[]): void {
                     : {}),
                 ...(hasCover ? { coverImage: resolvedCover } : {}),
                 ...(episode > 0 ? { itunes: { season, episode } } : {}),
+                ...(typeof audioMeta.duration === 'number' &&
+                Number.isFinite(audioMeta.duration) &&
+                audioMeta.duration > 0
+                    ? { durationSeconds: audioMeta.duration }
+                    : {}),
             },
             options: {
                 audioFile,
@@ -6117,6 +6282,25 @@ export function newsLocalizeValidate(args: string[]): void {
                 problems.push(
                     `${locale}: untranslated — ${locale === 'en' ? 'the document still carries CJK text' : 'the document has no kana, so it is not Japanese'}`,
                 );
+                continue;
+            }
+            // Rewrite safe compound retired/wrong-locale series brands before freezing and refuse
+            // any unrewritable retired brand or wrong-language show name that check:seo rejects.
+            const normalized = normalizeSeriesNames(raw, locale);
+            const activeText = normalized.markdown;
+            if (activeText !== raw) {
+                sted('write', file, () => writeRaw(file, activeText));
+            }
+            if (normalized.remaining.length > 0) {
+                problems.push(`${locale}: retired series name (${normalized.remaining.join(', ')})`);
+                continue;
+            }
+            if (locale === 'ja' && /ごった煮|寄せ鍋|咸话咸说|Salty Talk/i.test(activeText)) {
+                problems.push(`${locale}: retired series or wrong-language show name in translated body`);
+                continue;
+            }
+            if (locale === 'en' && /咸话咸说|咸話咸説/.test(activeText)) {
+                problems.push(`${locale}: wrong-language show name in translated body`);
                 continue;
             }
             accepted.push(locale);

@@ -83,6 +83,8 @@ interface FakePageOptions {
     consoleJson?: string;
     /** `evaluate` rejects — the inventory must never turn the failure into a stack. */
     rejectEvaluate?: boolean;
+    /** Whether `THREADS_POST_SELECTORS.linkPreview` is attached once a URL is typed. */
+    linkPreviewLands?: boolean;
 }
 
 /**
@@ -117,6 +119,10 @@ function makeFakePostPage(options: FakePageOptions, calls: string[]): Page {
         if (selector === THREADS_POST_SELECTORS.fileInput[0]) return 1;
         if (selector === THREADS_POST_SELECTORS.mediaPreview[0]) {
             return mediaUploaded && options.mediaNeverRenders !== true ? 1 : 0;
+        }
+        if ((THREADS_POST_SELECTORS.linkPreview as readonly string[]).includes(selector)) {
+            calls.push('probe:linkPreview');
+            return options.linkPreviewLands === true && typed !== '' ? 1 : 0;
         }
         return 0;
     };
@@ -872,5 +878,58 @@ describe('measured 2026-11-20 — the composer’s Post control and the suggesti
         expect(result.error).toContain('threads post control never attached');
         expect(result.error).not.toContain('dialog buttons');
         expect(result.error).not.toContain('evaluate unavailable');
+    });
+});
+
+describe('OG link preview wait (2026-11-21 live composer probe)', () => {
+    const urlContent: Content = {
+        title: 'Promo',
+        body: '第261121期\n\nhttps://podcast.salty.vip/i/daily-ai-2026-11-21/',
+        format: 'markdown',
+    };
+
+    test('link-only post waits for the async link preview card before submitting', async () => {
+        const fake = makeFakeLauncher({
+            pages: [{}, { linkPreviewLands: true, postHrefAfterSubmit: '/@robin/post/LINK1' }],
+        });
+        const result = await transport(fake, 200).publish({ content: urlContent });
+
+        expect(result.ok, `error: ${result.error ?? ''}`).toBe(true);
+        expect(result.id).toBe('LINK1');
+        const probeIndex = fake.calls.indexOf('probe:linkPreview');
+        const submitIndex = fake.calls.indexOf(`click:${THREADS_POST_SELECTORS.submit[0]}`);
+        expect(probeIndex).toBeGreaterThan(-1);
+        expect(submitIndex).toBeGreaterThan(probeIndex);
+    });
+
+    test('link-only post still submits when the preview card never renders', async () => {
+        const fake = makeFakeLauncher({
+            pages: [{}, { linkPreviewLands: false, postHrefAfterSubmit: '/@robin/post/LINK2' }],
+        });
+        const result = await transport(fake).publish({ content: urlContent });
+
+        expect(result.ok, `error: ${result.error ?? ''}`).toBe(true);
+        expect(result.id).toBe('LINK2');
+        expect(fake.calls).toContain('probe:linkPreview');
+        expect(fake.calls).toContain(`click:${THREADS_POST_SELECTORS.submit[0]}`);
+    });
+
+    test('attached coverImage skips link-preview probing even when text contains a URL', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-threads-link-cover-'));
+        const cover = join(dir, 'cover.jpg');
+        await writeFile(cover, 'jpg');
+        try {
+            const fake = makeFakeLauncher({
+                pages: [{}, { linkPreviewLands: true, postHrefAfterSubmit: '/@robin/post/IMG1' }],
+            });
+            const result = await transport(fake).publish({
+                content: { ...urlContent, metadata: { coverImage: cover } },
+            });
+
+            expect(result.ok, `error: ${result.error ?? ''}`).toBe(true);
+            expect(fake.calls).not.toContain('probe:linkPreview');
+        } finally {
+            await rm(dir, { recursive: true, force: true });
+        }
     });
 });

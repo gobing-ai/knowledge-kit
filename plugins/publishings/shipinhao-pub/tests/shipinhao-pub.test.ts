@@ -518,6 +518,8 @@ describe('1. declared surface (selectors, constants, config, operations, manifes
         expect(SHP_DESCRIPTION_MAX_CHARS).toBe(100);
         expect(SHP_LOGIN_URL_RE.source).toContain('open\\.weixin\\.qq\\.com');
         expect(SHP_LOGIN_URL_RE.test(SIGNIN_URL)).toBe(true);
+        expect(SHP_LOGIN_URL_RE.test('https://channels.weixin.qq.com/login.html')).toBe(true);
+        expect(SHP_LOGIN_URL_RE.test('https://channels.weixin.qq.com/login')).toBe(true);
         expect(SHP_LOGIN_URL_RE.test(SHP_HOME_URL)).toBe(false);
         for (const re of SHP_RECEIPT_URL_RES) expect(re.source).toContain('channels\\.weixin\\.qq\\.com');
         expect(SHP_RECEIPT_URL_RES.some((re) => re.test(DRAFT_URL))).toBe(true);

@@ -105,8 +105,11 @@ describe('dailyCoverNormalize x compositeCover', () => {
             expect(result.status).toBe(0);
             expect(result.stderr).toContain('cover composited');
             const out = join(cover, '20260101_07_cover_cover.png');
+            const socialOut = join(cover, '20260101_07_cover_social.jpg');
             expect(existsSync(out)).toBe(true);
             expect(pixelWidth(out)).toBe('1344');
+            expect(existsSync(socialOut)).toBe(true);
+            expect(pixelWidth(socialOut)).toBe('1200');
         });
     });
 
@@ -117,6 +120,7 @@ describe('dailyCoverNormalize x compositeCover', () => {
             expect(result.status).toBe(0);
             expect(result.stderr).toContain('cover composited');
             expect(pixelWidth(join(dir, '23-cover', '20260101_07_cover_cover.png'))).toBe('1344');
+            expect(pixelWidth(join(dir, '23-cover', '20260101_07_cover_social.jpg'))).toBe('1200');
         });
     });
 });

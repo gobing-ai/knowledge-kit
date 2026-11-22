@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { type Content, type Doc, ResultSchema } from '@gobing-ai/kk-core';
@@ -9,6 +9,15 @@ import { getPublishTransport, main, PodcastPubTransport, processPublishIO } from
 import { mapContentToEpisode, resolveAudioMimeType } from '../src/map';
 import { resolveTimeoutMs } from '../src/microfeed-client';
 import { renderShowNotesHtml, renderShowNotesMarkdown } from '../src/show-notes';
+
+let restoreOutputTargets: (() => void) | undefined;
+beforeEach(() => {
+    restoreOutputTargets = setDefaultOutputTargets({ stderr: createBufferTarget() });
+});
+afterEach(() => {
+    restoreOutputTargets?.();
+    restoreOutputTargets = undefined;
+});
 
 /** A recorded fake-API request. */
 interface CapturedRequest {
@@ -377,9 +386,9 @@ describe('podcast-pub mapping', () => {
                     'itunes:episodeType': 'full',
                     'itunes:season': 2024,
                     'itunes:episode': 248,
+                    // Episodes with no summary clauses omit seo.description so Microfeed uses body text instead of `：`.
                     seo: {
                         title: 'Episode 1: Ground Up｜咸话咸说',
-                        description: '咸话咸说·每日AI乱炖 2024-09-04：',
                     },
                     slug: 'daily-ai-2024-09-04',
                 });
@@ -449,7 +458,6 @@ describe('podcast-pub publish (R1/R3)', () => {
                         'itunes:episodeType': 'full',
                         seo: {
                             title: 'Episode 1: Ground Up｜咸话咸说',
-                            description: '咸话咸说·每日AI乱炖：',
                         },
                     },
                 });
@@ -623,7 +631,6 @@ describe('podcast-pub publish (R1/R3)', () => {
                         'itunes:episodeType': 'full',
                         seo: {
                             title: 'Episode 1: Ground Up｜咸话咸说',
-                            description: '咸话咸说·每日AI乱炖（约 10 分钟）：',
                         },
                     },
                 });
@@ -1542,7 +1549,6 @@ describe('podcast-pub publish assembly options (L1 R6)', () => {
                         'itunes:episodeType': 'full',
                         seo: {
                             title: 'Episode 1: Ground Up｜咸话咸说',
-                            description: '咸话咸说·每日AI乱炖：',
                         },
                     },
                 });

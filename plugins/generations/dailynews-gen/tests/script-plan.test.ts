@@ -105,8 +105,8 @@ describe('F613 R1 — style contract sidecar', () => {
             coverHeadline: 25,
             cardCopy: 12,
             cardTitle: 20,
-            socialShort: 140,
-            socialLong: 500,
+            socialShort: 100,
+            socialLong: 300,
         });
         // every current zhInsightFor canned line is banned, so a plan can never reuse them
         for (const canned of [
@@ -717,8 +717,8 @@ describe('0345 R10 / AC7a — master script plan optional fields, caps and banne
                 body: '正文导语',
             },
             social: {
-                short: '短'.repeat(141),
-                long: '长'.repeat(501),
+                short: '短'.repeat(101),
+                long: '长'.repeat(301),
             },
             items: [
                 {

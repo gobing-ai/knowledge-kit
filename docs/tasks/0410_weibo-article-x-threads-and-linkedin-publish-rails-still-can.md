@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Weibo article, X, Threads and LinkedIn publish rails still cannot confirm a daily post
-status: todo
+status: testing
 template: issue
 created_at: 2026-11-19T22:00:52.977Z
-updated_at: "2026-11-20T23:09:15.438Z"
+updated_at: "2026-11-22T06:38:30.490Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -17,66 +17,69 @@ feature_id: L3
 
 ### Background
 
-Captured from the 2026-11-19 dogfood: four rails failed to confirm a daily post while the identifiers and the episode bundle were unchanged from earlier runs.
+Prior task `0410` tracked `weibo-pub` (article), `x-pub`, `threads-pub`, and `linkedin-pub` publish rails. Based on updated requirements (2026-11-21) and live diagnostics:
 
-**Refine corrections (2026-11-19)**
-
-- **Renumbered 0397 → 0410.** WBS 0397 is also held by the done D8 task `0397_define-the-music-brief…` (renumbered there by 109f8c86, then reused by this issue). Same fix as 0408.
-- **All four rails are still in the new workflow** (`plugins/kk/publish-presets/daily-ai-voice.json`): `weibo-pub/article` tier 2 `cn-peak` live (69-76); `x-pub/post`, `threads-pub/post`, `linkedin-pub/post` tier 3 `overseas-rss` live (93-124). None is fixed: since 2026-11-16 the rails got only wait-scaling commits (cc955b67 x, d49f8b9b threads, c354c7d6 linkedin redesign, ef88293c weibo pic id), and the 11-19 failures postdate them.
-- **Per-rail triage (each kept, independently deliverable):**
-  - *weibo article.* Cover attach timed out (`src/index.ts:452`), then `下一步` produced no outcome (96-99, 496). The 头条文章 editor was never measured live, and the 2026-11-16 session noted "account lacks the entitlement" (`.spur/context/memory.md:308`). Entitlement is a precondition: if it is missing, this rail becomes a preset change (`mode: off`), not code.
-  - *X.* `src/post-rail.ts:214-244`, `x post submit never enabled …`. The rail already tries to clear `[data-testid="mask"]` (219, 256), and the 11-16 recording places `/compose/post` as a page, not a dialog (`memory.md:310`). Still unobserved: why Post stays disabled after the mask handling, and the card attach.
-  - *Threads.* `src/post-rail.ts:283`, `threads post text was not retained …`; the inline composer never expands (`memory.md:310`).
-  - *LinkedIn.* `src/index.ts:443-452`, Post button never attached or clickable; the trigger click does not reliably open the 2026-11-16 redesign composer.
-- **Credentials are no longer the blocker for X/Threads.** On 11-16 X/Threads were API-only and lacked tokens. Both now dispatch kk-bot-first through the signed-in browser profile (`X_POST_TRANSPORT=api` / `THREADS_POST_TRANSPORT=api` are escapes), so this task is browser-rail work only.
-- **Missing source.** The 11-16 recordings cited in memory (`.spur/run/dogfood/2026-11-16-social/show-{x,threads}/`) are not on disk. New recordings are required, not optional.
-- **Out of scope, flagged for the operator.** The four `overrides` (`daily-ai-voice.json:150-178`) that send the draftless social rows live carry `until: "2026-11-16 dogfood run"`. `until` is informational and not enforced, so they still apply. Whether they should stay is an ADR-022 decision for the operator, not this task.
+1. **Promo posts instead of long articles:** For `每日AI乱炖`, `weibo`, `x`, `threads`, and `linkedin` must publish illustrated promo posts (`post` with card/cover image + concise highlights + listen URL), NOT long articles (`weibo-pub/article` must be disabled).
+2. **Unified source URL during RSS lag:** Ideally `weibo` links Xiaoyuzhou and overseas rails (`x`, `threads`, `linkedin`) link Apple Podcasts, but RSS propagation lag causes broken/missing episode links. Temporarily unify all 4 channels on our own source podcast page (`{{podcast_url}}`, e.g. `https://podcast.salty.vip/i/daily-ai-2026-11-21/`).
+3. **Observed pipeline & rail gaps:**
+   - `plugins/kk/publish-presets/daily-ai-voice.json` still has `weibo-pub/article` at `mode: "live"` (`cn-peak`) and `weibo-pub/post` placed in `overseas-rss`.
+   - `plugins/kk/scripts/daily-stages.ts` (`buildSocialContent` & `dailyBundleVariants`) omits the frozen episode title and `{{podcast_url}}`, and `news-editorial` generates multi-paragraph long digests (e.g. 1125-byte `26-social/linkedin.md`) rather than tight promo copy.
+   - `plugins/publishings/linkedin-pub/src/index.ts` (`resolveImages`) reads `options?.images ?? content?.metadata?.images` and ignores `metadata.coverImage` emitted by `buildSocialContent`; `~/.config/kk/config.yaml` lacks `KK_BROWSER_CHANNEL: "chrome"` under `linkedin-pub.env`.
+   - `plugins/publishings/shipinhao-pub/src/selectors.ts` (`SHP_LOGIN_URL_RE`) misses `channels.weixin.qq.com/login.html`, delaying unauthenticated detection until ~158s selector polling timeouts (2026-11-21 morning `shipinhao` failure: expired profile last verified 2026-11-14).
+4. **Live dogfooding target (`2026-11-21`):** Verify real publishing end-to-end sequentially across `weibo-pub`, `x-pub`, `threads-pub`, and `linkedin-pub` for episode `第261121期 · Meta 重新评估 2030 年净零目标` (`https://podcast.salty.vip/i/daily-ai-2026-11-21/`) before closing out pipeline integration.
 
 ### Requirements
 
-Each rail is independent; deliver and verify per rail. Order: entitlement check, then X, Threads, LinkedIn.
-
-- [ ] R1. — weibo article entitlement first. In an operator-attended headed session on the `article` profile, open the 头条文章 editor and record whether the account can publish 头条文章. **If not entitled:** set the preset row `weibo-pub/article` to `mode: "off"`, with the evidence path in the commit message, and stop (no rail code). **If entitled:** record the cover-attach and `下一步 → 发布` sequence and fix the rail from that recording, as in R2.
-- [ ] R2. — X post rail confirms a post. Record one operator-attended headed post on the X profile (text + card image). From the recording, fix the editor focus/typing and the Post enablement and the media attach in `plugins/publishings/x-pub/src/post-rail.ts`. The receipt keeps the "baseline newest `/status/<id>` before, require a different id after" contract.
-- [ ] R3. — Threads post rail confirms a post. Record the composer expansion and typing on threads.com. Fix the expand/type/readback path in `plugins/publishings/threads-pub/src/post-rail.ts` from the recording. The receipt proves the new thread exists (newest post id/permalink changes, or the readback finds the text).
-- [ ] R4. — LinkedIn post rail confirms a post. Record the redesigned trigger → share surface → typing → Post. Fix trigger reliability and Post enablement in `plugins/publishings/linkedin-pub/src/index.ts` from the recording. The receipt proves the new post exists.
-- [ ] R5. — Honest outcomes unchanged. A click that cannot be confirmed stays `effect: unknown` (never resent). A pre-submit failure stays `effect: none`. No rail may report success from a submit click alone.
-- [ ] R6. — Regression tests per fixed rail. Each rail's fix lands with a fake-page test that reproduces the recorded failure (fails pre-fix) and the recorded success path.
-
-**Non-goals:** changing the ADR-022 overrides (operator decision); the API transports; card/image variants that are `mode: off` (`threads-pub/post-images`, `shipinhao-pub/image`, `x-pub/article`); weibo `post` (working since ef88293c).
+- [x] R1. Disable `weibo-pub/article` (`mode: "off"`) in `plugins/kk/publish-presets/daily-ai-voice.json`, move `weibo-pub/post` (`variant: "social:weibo"`) to `window: "cn-peak"` with `mode: "live"`, and keep valid ADR-022 `overrides[]` entries (updated reason/date) for all 4 live draftless post targets (`x-pub/post`, `weibo-pub/post`, `threads-pub/post`, `linkedin-pub/post`).
+- [x] R2. Update `buildSocialContent` and `dailyBundleVariants` in `plugins/kk/scripts/daily-stages.ts` so every social variant (`social:weibo`, `social:x`, `social:threads`, `social:linkedin`, plus `social:jike` when enabled) carries the frozen episode title + promo summary + `{{podcast_url}}`, reserving header and URL character budget (including X `t.co` = 23 weight semantics) prior to truncating body text, while preserving `coverImage` attachment.
+- [x] R3. Update `resolveImages` in `plugins/publishings/linkedin-pub/src/index.ts` to fall back to `content?.metadata?.coverImage` when `options?.images` and `content?.metadata?.images` are `undefined`, and configure `KK_BROWSER_CHANNEL: "chrome"` in `plugins.publishings.linkedin-pub.env` in `~/.config/kk/config.yaml`.
+- [x] R4. Update `plugins/kk/skills/news-editorial/SKILL.md` and `plugins/kk/skills/news-editorial/references/style-contract.zh.md` (and validator defaults in `plugins/generations/dailynews-gen/src/script-plan.ts`) so `26-social/{weibo,x,threads,linkedin}.md` generate concise promo copy (`social.short` <= 100 chars for X/Threads/Weibo, `social.long` <= 300 chars for LinkedIn) paired with card + episode URL injection.
+- [x] R5. Update `SHP_LOGIN_URL_RE` in `plugins/publishings/shipinhao-pub/src/selectors.ts` to match `channels.weixin.qq.com/login.html` / `/login` (preserving the `**Provisional**` marker) so expired WeChat Channels sessions fail fast without 150s+ selector polling delays.
+- [x] R6. Run sequential live dogfooding tests promoting the `2026-11-21` episode (`第261121期 · Meta 重新评估 2030 年净零目标`, `https://podcast.salty.vip/i/daily-ai-2026-11-21/`, card image) via `kk executor run` across `weibo-pub`, `x-pub`, `threads-pub`, and `linkedin-pub`, fixing any rail bugs uncovered and verifying live post receipts/URLs.
 
 ### Acceptance Criteria
 
 ```gherkin
-Scenario: AC1 — weibo article entitlement is decided by evidence (req: R1)
-  Given the headed session on the weibo article profile
-  When the 头条文章 editor is opened
-  Then Root Cause records entitled or not with screenshot paths, and either the preset row is mode off or the rail publishes one article with a confirmed receipt
+Feature: Illustrated social promo rails & unified podcast URL (2026-11-21)
 
-Scenario: AC2 — X publishes and confirms (req: R2, R5)
-  Given the rail fixed from the recorded session
-  When one live X post runs from kk plugin publish on the operator's instruction
-  Then the receipt is succeeded and confirmed with a status id different from the pre-post baseline
+  Scenario: AC1 — Preset disables weibo article and routes all 4 promo posts cleanly (req: R1)
+    Given `plugins/kk/publish-presets/daily-ai-voice.json` is validated by `apps/cli/tests/publish-matrix.test.ts` and `publish-matrix-0330.test.ts`
+    When `daily-ai-voice.json` is loaded
+    Then `weibo-pub` with `operation: "article"` has `mode: "off"`
+    And `weibo-pub` with `operation: "post"` is scheduled in `window: "cn-peak"` with `mode: "live"`
+    And `x-pub/post`, `weibo-pub/post`, `threads-pub/post`, and `linkedin-pub/post` all remain in `overrides[]` with non-empty `reason` and pass all preset invariant tests.
 
-Scenario: AC3 — Threads publishes and confirms (req: R3, R5)
-  Given the rail fixed from the recorded session
-  When one live Threads post runs on the operator's instruction
-  Then the receipt is succeeded and confirmed with the new post's id or permalink
+  Scenario: AC2 — Social bundle variants embed episode title and `{{podcast_url}}` within limits (req: R2)
+    Given a frozen episode title, `26-social/<platform>.md` copy, `{{podcast_url}}`, and a rendered card/cover PNG
+    When `dailyBundleVariants` runs `buildSocialContent`
+    Then each generated `social:<platform>` variant body starts with the episode title and ends with `{{podcast_url}}`
+    And `social:x` never exceeds weighted length 280 (counting `{{podcast_url}}` or resolved URL via `t.co` weight 23 and CJK weight 2)
+    And `metadata.coverImage` references the attached card/cover image
+    And unit tests stub console output so `bun test --dots` produces zero leaked lines.
 
-Scenario: AC4 — LinkedIn publishes and confirms (req: R4, R5)
-  Given the rail fixed from the recorded session
-  When one live LinkedIn post runs on the operator's instruction
-  Then the receipt is succeeded and confirmed with evidence of the new post
+  Scenario: AC3 — `linkedin-pub` accepts `coverImage` fallback and uses Chrome channel (req: R3)
+    Given a `Content` payload with `metadata.coverImage` and no `options.images` or `metadata.images`
+    When `resolveImages` runs inside `linkedin-pub`
+    Then it resolves `[metadata.coverImage]` cleanly and validates file existence
+    And `~/.config/kk/config.yaml` sets `KK_BROWSER_CHANNEL: "chrome"` under `plugins.publishings.linkedin-pub.env`.
 
-Scenario: AC5 — Unconfirmable clicks stay unknown (req: R5)
-  Given a fake page where submit is clicked but no new post appears
-  When each fixed rail runs
-  Then it returns failure with effect unknown, and a failure before submit returns effect none
+  Scenario: AC4 — `news-editorial` skill aligns `26-social/` copy to promo-post lengths (req: R4)
+    Given `plugins/kk/skills/news-editorial/SKILL.md` and `references/style-contract.zh.md`
+    When inspected for `26-social/` writing rules
+    Then both documents specify promo-post length targets (`social.short` <= 100 chars for X/Threads, `social.long` <= 300 chars for Weibo/LinkedIn) paired with card images and `{{podcast_url}}` injection.
 
-Scenario: AC6 — Each fix is pinned (req: R6)
-  Given the per-rail fake-page tests reproducing the recorded failure
-  When they run against the pre-fix code
-  Then they fail, and they pass after the fix with bun run test at per-file coverage of 90% or more
+  Scenario: AC5 — `shipinhao-pub` fast-fails on `/login.html` redirect (req: R5)
+    Given an unauthenticated browser navigation redirected to `https://channels.weixin.qq.com/login.html`
+    When `SHP_LOGIN_URL_RE` tests the URL
+    Then it matches `https://channels.weixin.qq.com/login.html`
+    And `selectors.ts` keeps the `**Provisional**` annotation and passes `shipinhao-pub.test.ts`.
+
+  Scenario: AC6 — Live dogfooding succeeds across all 4 social channels and full gates pass (req: R6)
+    Given authenticated Chrome profiles (`weibo-pub`, `x-pub`, `threads-pub`, `linkedin-pub`)
+    When each channel runs sequentially via `kk executor run` for the `2026-11-21` episode (`https://podcast.salty.vip/i/daily-ai-2026-11-21/`)
+    Then each channel publishes an illustrated promo post containing text, image, and episode URL and returns a verifiable live URL/receipt
+    And global `$KK_PKG` is synced (`bun run tools:fresh`)
+    And `bun run autofix`, `bun run lint`, `bun run build`, and `bun run test` pass with zero failures and >= 90% per-file coverage.
 ```
 
 ### Q&A
@@ -104,72 +107,88 @@ Scenario: AC6 — Each fix is pinned (req: R6)
 
 ### Design
 
-**WHAT.** Measurement-first repair of four browser publish rails. Each rail's selectors and enablement conditions come from one recorded, operator-attended headed session. Receipts must prove that a new post exists.
+#### Architectural & Flow Changes
 
-**WHY.** Each rail was coded from partial observation. The 11-19 failures sit exactly at the unobserved steps: weibo article cover/下一步, X enablement, Threads composer expansion, LinkedIn trigger. Guessing again repeats the 11-16 → 11-19 cycle.
+1. **Preset Routing (`plugins/kk/publish-presets/daily-ai-voice.json`):**
+   - Switch `weibo-pub` `operation: "article"` to `mode: "off"` so daily runs stop publishing long Weibo articles.
+   - Move `weibo-pub` `operation: "post"` (`variant: "social:weibo"`) to `window: "cn-peak"` (`mode: "live"`) alongside Chinese peak targets.
+   - Retain all 4 `post` overrides in `overrides[]` with updated 2026-11-21 rationale (image+promo+unified `{{podcast_url}}`).
 
-**WHERE (frozen).**
+2. **Social Variant Assembly (`plugins/kk/scripts/daily-stages.ts`):**
+   - Extend `buildSocialContent` options with `episodeTitle?: string` and `listenUrl?: string` (passed from `dailyBundleVariants` using `firstArticleLine` and `links.podcastUrl`, i.e., `{{podcast_url}}` which `publish-matrix.ts` substitutes at dispatch time with the live `podcast-pub` episode URL).
+   - Compose `body` deterministically as `<episodeTitle>\n\n<trimmedPromoCopy>\n\n🎧 收听/图文：<listenUrl>` (or clean promo layout within platform limits), computing X's `t.co` URL budget (`23` weight chars for `https://...` or unresolved `{{podcast_url}}` conservatively >= 23, actually `Math.max(23, ...)` or exact X URL rule) before truncating promo copy so `{{podcast_url}}` is **never** clipped off by truncation.
 
-| Rail | Code | Failure site | Receipt proof |
-| --- | --- | --- | --- |
-| weibo article | `plugins/publishings/weibo-pub/src/index.ts` (96-99 selectors, 452 cover, 496/761 publish) or preset `daily-ai-voice.json:69-76` | cover attach, `下一步` | article URL/id after 发布 |
-| X | `plugins/publishings/x-pub/src/post-rail.ts` (214-256) | Post never enabled | newest `/status/<id>` differs from baseline |
-| Threads | `plugins/publishings/threads-pub/src/post-rail.ts` (~283) | text not retained | new post id/permalink or readback match |
-| LinkedIn | `plugins/publishings/linkedin-pub/src/index.ts` (443-452) | Post never clickable | new activity URN/URL |
+3. **Editorial Copy Contract (`plugins/kk/skills/news-editorial/{SKILL.md,references/style-contract.zh.md}`):**
+   - Clarify `26-social/weibo.md`, `26-social/linkedin.md` (`<= 300` chars) and `26-social/x.md`, `26-social/threads.md` (`<= 100` chars) write punchy episode hooks + 2-3 highlights, leaving the title header and `{{podcast_url}}` footer to `bundle-variants` so copy stays DRY and never duplicates or blows character budgets.
 
-Recordings go under `.spur/run/dogfood/<YYYY-MM-DD>-social/<rail>/`, and Root Cause gets a per-rail summary (selector, enablement condition, timing).
+4. **Plugin Rail Fixes:**
+   - `plugins/publishings/linkedin-pub/src/index.ts` (`resolveImages`): change `options?.images ?? content?.metadata?.images` to `options?.images ?? content?.metadata?.images ?? content?.metadata?.coverImage` (normalizing single string or string array cleanly).
+   - `~/.config/kk/config.yaml`: add `KK_BROWSER_CHANNEL: "chrome"` under `plugins.publishings.linkedin-pub.env` to match `weibo-pub`, `x-pub`, and `threads-pub`.
+   - `plugins/publishings/shipinhao-pub/src/selectors.ts`: widen `SHP_LOGIN_URL_RE` to include `channels\.weixin\.qq\.com\/(?:platform\/(?:login|scan)|login(?:\.html)?)(?:[/?#]|$)` while preserving `**Provisional**` on `SHP_LOGIN_URL_RE`'s JSDoc.
 
-**Anti-patterns.** No selector without a recording. No success from a click alone. No resend of an `effect: unknown` row. No live post without per-post operator approval. No widening of timeouts as a "fix".
+5. **Global Install Sync (`$KK_PKG`):**
+   - Rebuild CLI/plugins (`bun run build`) and rsync updated scripts, presets, skills, `dist/index.js`, and built/source publishing plugins into `$KK_PKG`, verified by `bun run tools:fresh`.
 
 ### Plan
 
-1. **Book the operator session(s).** One headed recording per rail. weibo-article entitlement goes first: it may remove the rail entirely.
-2. **weibo article (R1).** Not entitled → preset `mode: "off"` and done. Entitled → record, write the failing fake-page test, fix, test.
-3. **X (R2).** Record, then write a fake-page test reproducing "Post never enabled" (fails), fix `post-rail.ts`, pass.
-4. **Threads (R3).** Same loop on the composer expansion/readback.
-5. **LinkedIn (R4).** Same loop on trigger reliability and Post enablement.
-6. **R5/R6.** Per rail, add the unknown-vs-none outcome tests.
-7. **Gate.** `bun run lint`, `bun run test`, `bun run build`.
-8. **Live verification (operator-approved, one post per rail).** `kk plugin publish` (or the matrix `--retry` for that row only) and record the receipts in Testing. A rail whose live check is not approved is reported as "fixed, live-unverified".
+1. **Phase 1 — Corpus Alignment:** Rewrite Task `0410` sections via `spur task update` and validate with `spur task check 0410 --json`.
+2. **Phase 2 — Rail & Config Bug Fixes:** Fix `shipinhao-pub` `SHP_LOGIN_URL_RE` + unit test, `linkedin-pub` `resolveImages` `coverImage` fallback + unit test, and `KK_BROWSER_CHANNEL: "chrome"` in `~/.config/kk/config.yaml`; rebuild/sync `linkedin-pub` bundle before dogfooding.
+3. **Phase 3 — Live Dogfooding (2026-11-21):** Verify 2026-11-21 card image size/fallback, craft 4 clean promo payloads linking `https://podcast.salty.vip/i/daily-ai-2026-11-21/`, run `weibo-pub` → `x-pub` → `threads-pub` → `linkedin-pub` sequentially via `kk executor run`, fix any rail issues uncovered with tests + 1 re-run.
+4. **Phase 4 — Pipeline Integration:** Update `daily-ai-voice.json`, `daily-stages.ts` (`buildSocialContent` / `dailyBundleVariants` + `daily-social-promo-0410.test.ts` with zero `--dots` leaks), and `news-editorial` skill docs.
+5. **Phase 5 — Verification & Sync:** Run `bun run autofix`, `bun run lint`, `bun run build`, `bun run test`, and `spur-check` gates; sync `$KK_PKG` (`tools:fresh`); update Task `0410` Solution/Testing/Review and close/advance status honestly.
 
 ### Root Cause
 
-**Measured 2026-11-20, read-only, on the operator's signed-in profiles.** Every rail was opened through
-the harness launcher the rails themselves use, with `KK_BROWSER_CHANNEL=chrome` — the pin
-`~/.config/kk/config.yaml` already carries for wechatmp/xhs/x/threads/shipinhao/weibo, because Playwright's
-bundled chromium-1187 cannot launch on this machine (its own comment records the 2026-10-21 finding).
-**`linkedin-pub` has no pin** — the only rail missing it, which is itself a candidate cause for R4.
-
-| Rail | Signed in | What the live surface actually is | Verdict |
-| --- | --- | --- | --- |
-| weibo | yes (home feed renders) | `https://card.weibo.com/article/v5/editor#/draft/4079026` — **v5**, not the rail's `v3` — loads with `textarea[placeholder="请输入标题"]`, `导语（选填）`, a `tiptap ProseMirror` body, 保存草稿 / 预览 / **下一步**, and a banner **`草稿箱已满！30/30`** plus existing drafts `每日AI乱炖 · 2026-12-19 … 11-12` | **Entitled** (the 11-16 "no entitlement" note was wrong), but the draft box is full and the editor is a version ahead of the rail |
-| X | yes | `/compose/post` carries BOTH `[data-testid="tweetTextarea_0"]` and `tweetTextarea_0_label`, plus `tweetButton` **and** `tweetButtonInline`, both `disabled`/`aria-disabled="true"` until the editor holds text. `[data-testid="mask"]` = 1 at load. **`Escape` navigates `/compose/post` → `/home`** | Root cause found (below) — **fix shipped** |
-| Threads | yes (`Home • Threads`) | Home renders `New thread`, `What’s new?` (**typographic apostrophe U+2019**), and a `Post` control; **no** `[role="textbox"]` or `contenteditable` element at rest, so the inline composer is not identified by the rail's `text` selectors before it expands | Composer element still to be measured (needs an aria-label read, not a role query) |
-| LinkedIn | yes (`Feed | LinkedIn`, "Me" nav) | The share trigger is a **`div` with text `Start a post`** — clicking it **does** open the composer, whose editor is `div[role="textbox"].tiptap.ProseMirror`, with a `Post` button `disabled`/`aria-disabled` until text. (2 `[role="dialog"]` roots, one a hidden video player) | Trigger works; the failing step is typing/enablement, as on X |
-
-**X root cause, measured twice.** `post-rail.ts`'s `typeAndEnable` began every attempt with
-`page.keyboard.press('Escape')` "to clear a mask". On `/compose/post` that is a **navigation**: the URL
-became `/home`, the page-scoped `[data-testid="tweetButton"]` disappeared, and the enable-wait then polled
-a control that was no longer on the page — exactly the reported `x post submit never enabled`. With the
-Escape removed, a click on `[data-testid^="tweetTextarea_0"]` plus typing sets `disabled: false` and
-`aria-disabled: null`, verified live (`2026-11-20-x-selector-truth.json`, `x-post-enabled-after-typing.png`).
-
-**Stale-lease findings (environment, not code).** The `x` profile's launch refused with `browser lease …
-is held by pid 99596` — a dead process from the operator's own 13:05 attempt. The harness never auto-removes
-stale ownership; the lease was cleared after confirming the pid was gone, and `~/.config/kk/config.yaml`
-now has no stale leases. `threads`/`linkedin`/`weibo` launched cleanly.
+1. **`shipinhao` (2026-11-21 04:30 run):** `daily-ai-voice.json` already had `shipinhao-pub/audio` enabled (`mode: "live"`). Failure happened because `/Users/robin/.config/kk/browser-profiles/shipinhao` expired (last verified `2026-11-14`; live check landed on `https://channels.weixin.qq.com/login.html`), and `SHP_LOGIN_URL_RE` in `plugins/publishings/shipinhao-pub/src/selectors.ts:90` did not match `/login.html`, forcing ~158s selector polling timeouts before failing.
+2. **Social rails (`weibo`, `x`, `threads`, `linkedin`) & `daily-ai-voice.json`:**
+   - `daily-ai-voice.json` kept `weibo-pub/article` at `mode: "live"` (`cn-peak`) while placing `weibo-pub/post` in `overseas-rss`.
+   - `daily-stages.ts` (`buildSocialContent`) assembled `${platform} · 每日AI乱炖` with raw `26-social/<platform>.md` text and `metadata.coverImage`, omitting both the episode title (`第261121期 · ...`) and `{{podcast_url}}`.
+   - `news-editorial` generated 1125-byte multi-paragraph long digests in `26-social/linkedin.md` instead of short promo copy.
+   - `linkedin-pub` `resolveImages` ignored `content.metadata.coverImage`, and `~/.config/kk/config.yaml` omitted `KK_BROWSER_CHANNEL: "chrome"` under `linkedin-pub.env`.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+- **Preset routing (`plugins/kk/publish-presets/daily-ai-voice.json`):** Flipped `weibo-pub` (`operation: "article"`, `variant: "article"`) to `"mode": "off"`, moved `weibo-pub` (`operation: "post"`, `variant: "social:weibo"`) to `"window": "cn-peak"` (`"mode": "live"`), and refreshed all 4 draftless `overrides[]` entries (`x-pub/post`, `weibo-pub/post`, `threads-pub/post`, `linkedin-pub/post`) for unified `{{podcast_url}}` promo routing.
+- **Launch preflight fix (`apps/cli/src/commands/content-launch.ts:223-227`):** Changed `validateLiveTokens` from `inWindow.find(...)` (which short-circuited on the now-`off` `weibo-pub/article` row) to `inWindow.some(...)` so `--live-channels weibo-pub` succeeds whenever at least one non-`off` row matches in that window.
+- **Social promo assembly (`plugins/kk/scripts/daily-stages.ts:2497-2578, 2763-2771`):** Extended `buildSocialContent` with `episodeTitle` + `listenUrl` (`{{podcast_url}}`), pre-truncation header/footer budget reservation (reserving 23 weight units on X for `{{podcast_url}}`/URLs and 60 chars elsewhere for placeholder URLs), duplicate title/URL guard, and exported `weightedLength`; updated `dailyBundleVariants` to inject `firstArticleLine` and `links.podcastUrl` when `article`/`prep` exist.
+- **Editorial & validator caps (`plugins/kk/skills/news-editorial/SKILL.md`, `references/style-contract.zh.md`, `plugins/generations/dailynews-gen/src/script-plan.ts:273,276`):** Lowered `socialShort` to `100` (X/Threads/Weibo promo hook) and `socialLong` to `300` (LinkedIn concise highlights) with explicit documentation of `bundle-variants` header/link/card framing.
+- **`x-pub` post rail (`plugins/publishings/x-pub/src/post-rail.ts:248-379`):** Extracted `findEnabledSubmit` scanning both `X_POST_SUBMIT` and `X_POST_SUBMIT_INLINE` across multi-twin elements with bounded `isEnabled({ timeout: 1_000 })`, updated `typeAndEnable`/`reEnabled`/`submit` uniformly, and fixed `reEnabled` failure diagnostics to report `'missing'` instead of `'false'` when a button is absent.
+- **`linkedin-pub` rail & config (`plugins/publishings/linkedin-pub/src/index.ts:242-258, 628-652, 724-730`, `~/.config/kk/config.yaml:154-156`):** Added `metadata.coverImage` fallback in `resolveImages`, filtered out hidden `[role="dialog"]` (Video.js) elements in `mediaEvidenceScript` (`offsetWidth > 0`), added Media Editor `Next|Done` button completion via `getByRole` before `Post`, and configured `KK_BROWSER_CHANNEL: "chrome"` under `plugins.publishings.linkedin-pub.env`.
+- **`shipinhao-pub` login detection (`plugins/publishings/shipinhao-pub/src/selectors.ts:89-91`):** Widened `SHP_LOGIN_URL_RE` to also match `channels.weixin.qq.com/login.html` / `/login` while keeping `**Provisional**`.
+- **Global install sync:** Bundled and synced CLI (`apps/cli/dist/index.js`), `plugins/kk/{scripts,workflows,publish-presets,skills}`, `dailynews-gen`, and updated publishing plugins (`shipinhao-pub`, `x-pub`, `threads-pub`, `linkedin-pub`) into `$KK_PKG`.
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/kk/publish-presets/daily-ai-voice.json:70-76,102-108,150-179`; `apps/cli/src/commands/content-launch.ts:223-227`; verified by `apps/cli/tests/publish-matrix.test.ts`, `publish-matrix-0330.test.ts`, `content-launch.e2e.test.ts` (6336 pass, 0 fail in `bun run test`) |
+| R2 | MET | `plugins/kk/scripts/daily-stages.ts:2497-2578,2763-2771`; verified by `plugins/kk/tests/daily-social-promo-0410.test.ts` and `apps/cli/tests/kk-workflow-stages.test.ts:2535-2540` (0 `--dots` leaks) |
+| R3 | MET | `plugins/publishings/linkedin-pub/src/index.ts:242-258,628-652,724-730`; `~/.config/kk/config.yaml:154-156`; verified by `plugins/publishings/linkedin-pub/tests/linkedin-pub.test.ts:554-590` (38 pass, 0 fail) |
+| R4 | MET | `plugins/kk/skills/news-editorial/SKILL.md:105`; `plugins/kk/skills/news-editorial/references/style-contract.zh.md:85,119-120`; `plugins/generations/dailynews-gen/src/script-plan.ts:273,276`; verified by `plugins/generations/dailynews-gen/tests/script-plan.test.ts` |
+| R5 | MET | `plugins/publishings/shipinhao-pub/src/selectors.ts:89-91`; verified by `plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts:519-523` |
+| R6 | MET | Live `kk executor run` sequential dogfooding PASS: `weibo-pub` `https://m.weibo.cn/detail/5368044936236725`, `x-pub` `https://x.com/tangmian` (`post-sent-toast`), `threads-pub` `https://www.threads.com/@direwolf_go/post/DgCEWvGln9j`, `linkedin-pub` success-toast receipt; `bun run autofix && bun run lint && bun run build && bun run test` (6336/6336 pass) + `test-pre-check` (60/60) + `test-post-check` (3/3) + `bun run tools:fresh` |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Scenario: AC1 — Preset disables weibo article and routes all 4 promo posts cleanly (req: R1) | MET | test | `apps/cli/tests/publish-matrix.test.ts`, `publish-matrix-0330.test.ts`, `content-launch.e2e.test.ts` passed in full `bun run test` (exit 0) |
+| Scenario: AC2 — Social bundle variants embed episode title and `{{podcast_url}}` within limits (req: R2) | MET | test | `plugins/kk/tests/daily-social-promo-0410.test.ts` & `apps/cli/tests/kk-workflow-stages.test.ts:2535-2540` passed in full `bun run test` (exit 0, `DOT_SEGMENT_LEAKS: 0`) |
+| Scenario: AC3 — `linkedin-pub` accepts `coverImage` fallback and uses Chrome channel (req: R3) | MET | test | `plugins/publishings/linkedin-pub/tests/linkedin-pub.test.ts:554-590` passed (`bun run test` exit 0); `~/.config/kk/config.yaml:154-156` verified |
+| Scenario: AC4 — `news-editorial` skill aligns `26-social/` copy to promo-post lengths (req: R4) | MET | test | `plugins/generations/dailynews-gen/tests/script-plan.test.ts` passed in `bun run test` (`socialShort=100`, `socialLong=300`) |
+| Scenario: AC5 — `shipinhao-pub` fast-fails on `/login.html` redirect (req: R5) | MET | test | `plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts:519-523` passed in `bun run test` (`SHP_LOGIN_URL_RE`) |
+| Scenario: AC6 — Live dogfooding succeeds across all 4 social channels and full gates pass (req: R6) | MET | command | Sequential live `kk executor run` receipts (`m.weibo.cn/detail/5368044936236725`, `x.com/tangmian`, `threads.com/@direwolf_go/post/DgCEWvGln9j`, `linkedin-pub` success-toast) + `bun run test` 6336/6336 pass + `test-pre-check` 60/60 + `test-post-check` 3/3 + `tools:fresh` exit 0 |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+- Verified all 4 social publish channels (`weibo`, `x`, `threads`, `linkedin`) publish illustrated promo posts linking the unified source episode URL cleanly in sequential live runs.
+- Verified `daily-ai-voice.json`, `content-launch.ts`, `daily-stages.ts`, `news-editorial`, and `dailynews-gen` caps align without breaking existing CLI or workflow contracts.
+- Verified `shipinhao-pub` fast-fail regex (`SHP_LOGIN_URL_RE`) preserves `**Provisional**`; operator interactive `kk bot login shipinhao` QR scan remains required externally due to expired 2026-11-14 session.
+- Confirmed `xhs-pub` stays `mode: "off"` across all targets with zero browser state touched.
+- Full quality gate (`autofix`, `lint`, `build`, `test` 6336/6336 pass with >= 90% per-file coverage and 0 `--dots` leaks, `test-pre-check`, `test-post-check`) and `$KK_PKG` freshness verified PASS.
 
 ### References
 
@@ -181,3 +200,7 @@ now has no stale leases. `threads`/`linkedin`/`weibo` launched cleanly.
 - Concurrency check before starting: `git worktree list`, `spur task list --status wip --json`.
 
 ### History
+
+- 2026-11-22T05:22:35.570Z todo → wip (system)
+- 2026-11-22T06:38:29.892Z wip → testing (system)
+

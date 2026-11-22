@@ -87,7 +87,8 @@ export const SHP_HOME_URL_BY_OPERATION: Record<ShipinhaoOperationName, string> =
  * carries the real gate: an unauthenticated visit is rejected by the missing creator form, not by
  * this regex alone.
  */
-export const SHP_LOGIN_URL_RE = /(open\.weixin\.qq\.com|channels\.weixin\.qq\.com\/platform\/(login|scan))/;
+export const SHP_LOGIN_URL_RE =
+    /(open\.weixin\.qq\.com|channels\.weixin\.qq\.com\/(?:platform\/(?:login|scan)|login(?:\.html)?)(?:[/?#]|$))/;
 
 /**
  * Root-readiness snapshot evaluated on the live page (vendor `rootReadinessSnapshot`,

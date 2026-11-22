@@ -130,6 +130,8 @@ const POST_LINK_SELECTOR = 'a[href*="/feed/update/"], a[href*="/posts/"]';
 /** Image upload preview wait: source-pinned 5s @ 250ms like the jike peer, not the step timeout. */
 const PREVIEW_TIMEOUT_MS = 5_000;
 const PREVIEW_POLL_MS = 250;
+/** Best-effort async OG link-preview unfurl wait (measured 2026-11-21: ~1s live). */
+const LINK_PREVIEW_TIMEOUT_MS = 10_000;
 
 const STEP_TIMEOUT_MS = 30_000;
 const LOGIN_TIMEOUT_MS = 180_000;
@@ -240,15 +242,21 @@ export const LINKEDIN_CONFIG: ChannelBrowserConfig = {
 };
 
 /**
- * Resolves the optional single image (`options.images ?? metadata.images`) without uploading:
- * a payload of at most one existing local image file, so a bad path is a fast pre-browser refusal
- * (0328 R1 "text plus one image").
+ * Resolves the optional single image (`options.images ?? metadata.images ?? metadata.coverImage`)
+ * without uploading: a payload of at most one existing local image file, so a bad path is a fast
+ * pre-browser refusal (0328 R1 "text plus one image").
  */
 async function resolveImages(
     options?: Record<string, unknown>,
     content?: Content,
 ): Promise<{ paths: string[] } | { error: string }> {
-    const raw = options?.images ?? content?.metadata?.images;
+    const rawImages = options?.images ?? content?.metadata?.images;
+    const raw =
+        rawImages !== undefined
+            ? rawImages
+            : content?.metadata?.coverImage !== undefined
+              ? [content.metadata.coverImage]
+              : undefined;
     if (raw === undefined) return { paths: [] };
     if (!Array.isArray(raw)) {
         return { error: `metadata.images must be an array of local image paths, got '${bounded(raw)}'` };
@@ -458,11 +466,14 @@ export class LinkedinBrowserTransport implements PublishTransport {
         if (!readback.ok) return stageFail(readback.error, 'text-readback', metadata);
 
         // Image upload: confirmed landed; an unconfirmed upload refuses before submit — never a
-        // silent text-only post while an image was requested.
+        // silent text-only post while an image was requested. When posting a URL with no image,
+        // wait briefly (best-effort) for LinkedIn to finish attaching the async OG link-preview card.
         const [image] = images;
         if (image !== undefined) {
             const uploaded = await this.uploadImage(page, image);
             if (!uploaded.ok) return stageFail(uploaded.error, 'image-upload', metadata);
+        } else {
+            await this.waitForLinkPreview(page, composerSelector, text);
         }
 
         // Baselines before submit: only fresh toast and fresh post-link signals can confirm.
@@ -625,10 +636,47 @@ export class LinkedinBrowserTransport implements PublishTransport {
                     error: `linkedin composer preview never reached ${before + 1} media nodes (baseline ${before}) for the uploaded image`,
                 };
             }
+            const mediaNext = (
+                page as unknown as {
+                    getByRole?: (
+                        role: 'button',
+                        opts: { name: RegExp },
+                    ) => {
+                        count(): Promise<number>;
+                        first(): { click(opts?: { timeout?: number }): Promise<unknown> };
+                    };
+                }
+            ).getByRole?.('button', { name: /^(?:Next|Done)$/i });
+            if (mediaNext !== undefined && (await mediaNext.count()) > 0) {
+                await mediaNext.first().click({ timeout: this.stepTimeoutMs });
+                await expectOutcome(async () => ((await mediaNext.count()) === 0 ? 'media editor closed' : null), {
+                    timeoutMs: Math.min(this.stepTimeoutMs, 10_000),
+                    label: 'linkedin media editor close',
+                });
+            }
             return { ok: true, evidence: confirmed.evidence };
         } catch (error) {
             return { ok: false, error: `linkedin image upload failed — ${errorMessage(error)}` };
         }
+    }
+
+    /** Best-effort wait for LinkedIn's async OG card fetch when posting a URL without an image. */
+    private async waitForLinkPreview(page: Page, composerSelector: string, text: string): Promise<void> {
+        const host = extractUrlHost(text);
+        if (host === null) return;
+        await expectOutcome(
+            async () => {
+                const hit = String(
+                    await page.evaluate(linkPreviewScript(composerSelector, host)).catch(() => ''),
+                ).trim();
+                return hit.length > 0 ? 'link preview attached' : null;
+            },
+            {
+                timeoutMs: Math.min(this.stepTimeoutMs, LINK_PREVIEW_TIMEOUT_MS),
+                pollMs: PREVIEW_POLL_MS,
+                label: 'linkedin link preview',
+            },
+        );
     }
 
     /** Visible toast texts (provisional containers), used as the pre-send baseline. */
@@ -699,8 +747,47 @@ function editorTextScript(selector: string): string {
  */
 function mediaEvidenceScript(): string {
     return `(() => { // kk-linkedin-media-evidence
-    const scope = document.querySelector('[role="dialog"]') || document;
+    const dialogs = [...document.querySelectorAll('[role="dialog"]')].filter((n) => n.offsetWidth > 0);
+    const scope = dialogs.length > 0 ? dialogs[dialogs.length - 1] : document;
     return scope.querySelectorAll('img[src], video[src], video source[src], [style*="background-image"]').length;
+})()`;
+}
+
+/** Extracts a lowercase hostname from the first HTTP(S) URL in post text, if parseable. */
+function extractUrlHost(text: string): string | null {
+    const match = /https?:\/\/[^\s)>"'<>]+/i.exec(text);
+    if (!match) return null;
+    const cleaned = match[0].replace(/[.,;:!?。，；！？]+$/, '');
+    try {
+        return new URL(cleaned).hostname.toLowerCase();
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Detects an asynchronously attached OG preview card inside the share composer without matching
+ * text inside the editor itself (`img[src*="articleshare"]` or a leaf node displaying the URL host).
+ */
+function linkPreviewScript(composerSelector: string, host: string): string {
+    return `(() => { // kk-linkedin-link-preview
+    const editor = document.querySelector(${JSON.stringify(composerSelector)});
+    if (!editor) return '';
+    let scope = editor.parentElement;
+    while (scope && scope.parentElement && scope !== document.body) {
+        if ([...scope.querySelectorAll('button')].some((b) => (b.textContent || '').trim() === 'Post')) break;
+        scope = scope.parentElement;
+    }
+    scope = scope || editor.closest('[role="dialog"]') || document.body;
+    if (scope.querySelector('img[src*="articleshare"]')) return '1';
+    const hostLower = ${JSON.stringify(host)};
+    for (const node of scope.querySelectorAll('*')) {
+        if (editor.contains(node) || node.contains(editor)) continue;
+        if (node.children.length === 0 && (node.textContent || '').toLowerCase().includes(hostLower)) {
+            return '1';
+        }
+    }
+    return '';
 })()`;
 }
 

@@ -9,6 +9,8 @@ import {
     COVER_HEIGHT,
     COVER_WIDTH,
     compositeCover,
+    compositeSocialCover,
+    deriveSocialCoverFromImage,
     layoutHeadline,
     logoBadgeSvg,
     logoRect,
@@ -255,6 +257,115 @@ describe('compositeCover', () => {
             compositeCover({ backgroundImagePath: bg, headline: HEADLINE, outputPath: join(dir, 'cover.png') });
             const leftovers = readdirSync(tmpdir()).filter((f) => f.startsWith('cover-composite-'));
             expect(leftovers).toHaveLength(0);
+        });
+    });
+
+    itMacOnly('compositeSocialCover and deriveSocialCoverFromImage emit 1200x630 JPEG cards', () => {
+        withTempDir((dir) => {
+            const bg = join(dir, 'bg.png');
+            const cover = join(dir, 'cover.png');
+            const directSocial = join(dir, 'social-direct.jpg');
+            const derivedSocial = join(dir, 'social-derived.jpg');
+            writeFileSync(bg, PNG_BYTES);
+
+            compositeSocialCover({ backgroundImagePath: bg, headline: HEADLINE, outputPath: directSocial });
+            expect(pixelSize(directSocial)).toEqual({ width: '1200', height: '630' });
+
+            compositeCover({ backgroundImagePath: bg, headline: HEADLINE, outputPath: cover });
+            deriveSocialCoverFromImage(cover, derivedSocial);
+            expect(pixelSize(derivedSocial)).toEqual({ width: '1200', height: '630' });
+        });
+    });
+
+    it('deriveSocialCoverFromImage fails loud when sips cannot probe source dimensions', () => {
+        expect(() => deriveSocialCoverFromImage('/nonexistent/cover.png', '/tmp/out.jpg')).toThrow(
+            /cannot probe dimensions/,
+        );
+    });
+
+    it('compositeSocialCover invokes sips with 1200x630 JPEG options (platform-neutral)', () => {
+        withTempDir((dir) => {
+            const bg = join(dir, 'bg.png');
+            const out = join(dir, 'social.jpg');
+            writeFileSync(bg, PNG_BYTES);
+            const calls: string[][] = [];
+            const spy = spyOn(childProcess, 'spawnSync').mockImplementation((_cmd, args) => {
+                const list = Array.isArray(args) ? args.map(String) : [];
+                calls.push(list);
+                const outIdx = list.indexOf('--out');
+                if (outIdx >= 0 && list[outIdx + 1]) writeFileSync(list[outIdx + 1], 'jpeg-bytes');
+                return { status: 0, error: undefined } as unknown as childProcess.SpawnSyncReturns<Buffer>;
+            });
+            try {
+                expect(compositeSocialCover({ backgroundImagePath: bg, headline: HEADLINE, outputPath: out })).toBe(
+                    out,
+                );
+                expect(calls).toHaveLength(1);
+                expect(calls[0]).toContain('jpeg');
+                expect(calls[0]).toContain('88');
+                expect(existsSync(out)).toBe(true);
+            } finally {
+                spy.mockRestore();
+            }
+        });
+    });
+
+    it('deriveSocialCoverFromImage probes, crops, and resizes to 1200x630 JPEG (platform-neutral)', () => {
+        withTempDir((dir) => {
+            const src = join(dir, 'cover.png');
+            const out = join(dir, 'social-derived.jpg');
+            writeFileSync(src, PNG_BYTES);
+            const calls: string[][] = [];
+            const spy = spyOn(childProcess, 'spawnSync').mockImplementation((_cmd, args) => {
+                const list = Array.isArray(args) ? args.map(String) : [];
+                calls.push(list);
+                if (list.includes('-g')) {
+                    return {
+                        status: 0,
+                        error: undefined,
+                        stdout: 'pixelWidth: 1344\npixelHeight: 576\n',
+                    } as unknown as childProcess.SpawnSyncReturns<Buffer>;
+                }
+                const outIdx = list.indexOf('--out');
+                if (outIdx >= 0 && list[outIdx + 1]) writeFileSync(list[outIdx + 1], PNG_BYTES);
+                return { status: 0, error: undefined } as unknown as childProcess.SpawnSyncReturns<Buffer>;
+            });
+            try {
+                expect(deriveSocialCoverFromImage(src, out)).toBe(out);
+                expect(calls).toHaveLength(3);
+                expect(calls[1]).toContain('-c');
+                expect(calls[2]).toContain('-z');
+                expect(calls[2]).toContain('630');
+                expect(calls[2]).toContain('1200');
+                expect(calls[2]).toContain('jpeg');
+                expect(existsSync(out)).toBe(true);
+            } finally {
+                spy.mockRestore();
+            }
+        });
+    });
+
+    it('deriveSocialCoverFromImage throws when sips reports success without writing output', () => {
+        withTempDir((dir) => {
+            const src = join(dir, 'cover.png');
+            const out = join(dir, 'missing.jpg');
+            writeFileSync(src, PNG_BYTES);
+            const spy = spyOn(childProcess, 'spawnSync').mockImplementation((_cmd, args) => {
+                const list = Array.isArray(args) ? args.map(String) : [];
+                if (list.includes('-g')) {
+                    return {
+                        status: 0,
+                        error: undefined,
+                        stdout: 'pixelWidth: 1344\npixelHeight: 576\n',
+                    } as unknown as childProcess.SpawnSyncReturns<Buffer>;
+                }
+                return { status: 0, error: undefined } as unknown as childProcess.SpawnSyncReturns<Buffer>;
+            });
+            try {
+                expect(() => deriveSocialCoverFromImage(src, out)).toThrow(/sips reported success but/);
+            } finally {
+                spy.mockRestore();
+            }
         });
     });
 });

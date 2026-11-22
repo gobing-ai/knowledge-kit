@@ -1,8 +1,9 @@
-import { describe, expect, spyOn, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Content } from '@gobing-ai/kk-core';
+import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { PodcastPubTransport } from '../src/index';
 import { MicrofeedClient } from '../src/microfeed-client';
 import {
@@ -35,6 +36,15 @@ import {
     titlesFromContentHtml,
 } from '../src/seo';
 import { renderShowNotesHtml, renderShowNotesMarkdown } from '../src/show-notes';
+
+let restoreOutputTargets: (() => void) | undefined;
+beforeEach(() => {
+    restoreOutputTargets = setDefaultOutputTargets({ stderr: createBufferTarget() });
+});
+afterEach(() => {
+    restoreOutputTargets?.();
+    restoreOutputTargets = undefined;
+});
 
 const ENV_KEYS = [
     'MICROFEED_BASE_URL',
@@ -441,6 +451,16 @@ describe('podcast-pub titles, descriptions, and numbering (R1–R6, R11)', () =>
         expect(codePointLength(described.description)).toBeGreaterThanOrEqual(120);
         expect(codePointLength(described.description)).toBeLessThanOrEqual(155);
         expect(described.short).toBe(false);
+        const emptyClauses = prepareEpisodeFields(
+            { title: 'Ep', durationSeconds: 60 },
+            { runDate: '20261021' },
+            SEO_DEFAULTS,
+        );
+        expect(emptyClauses.ok).toBe(true);
+        if (emptyClauses.ok) {
+            expect(emptyClauses.fields.seo?.description).toBeUndefined();
+            expect(emptyClauses.fields.warnings.join('\n')).toContain('no summary clauses available');
+        }
         const padded = prepareEpisodeFields(
             { title: 'Ep', durationSeconds: 60 },
             {

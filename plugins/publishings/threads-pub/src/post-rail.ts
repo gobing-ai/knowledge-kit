@@ -35,6 +35,7 @@ export const THREADS_HOME_URL = 'https://www.threads.com';
 export const THREADS_LOGIN_INSTRUCTION = 'bun plugins/publishings/threads-pub/src/profile-check.ts login';
 
 const STEP_TIMEOUT_MS = 30_000;
+const LINK_PREVIEW_TIMEOUT_MS = 10_000;
 const LOGIN_TIMEOUT_MS = 180_000;
 const LOGIN_URL_RE = /(?:^|\.)threads\.(?:net|com)\/(?:login|accounts)|instagram\.com\/accounts\/login/;
 const COVER_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
@@ -70,6 +71,13 @@ export const THREADS_POST_SELECTORS = {
     mediaButton: ['div[role="button"]:text-is("Attach media")', 'div[aria-label*="Attach media" i]'],
     fileInput: ['input[type="file"]'],
     mediaPreview: ['div[role="dialog"] img[src*="cdninstagram"], div[role="dialog"] img[src*="fbcdn"]'],
+    // Measured 2026-11-21: Threads fetches the URL's OG card asynchronously (~1-2s after typing)
+    // inside the composer dialog as an `l.threads.com` link + `fbcdn.net/emg1` image.
+    linkPreview: [
+        'div[role="dialog"] a[role="link"][href*="l.threads.com"]',
+        'div[role="dialog"] img[src*="fbcdn.net/emg1"]',
+        'div[role="dialog"] img[src*="external"]',
+    ],
     profileLink: ['a[href^="/@"]'],
     /** The inline composer's placeholder — the pre-type readiness signal. */
     placeholder: 'div[aria-label^="Empty text field"]',
@@ -319,6 +327,18 @@ export class ThreadsPostBrowserTransport implements PublishTransport {
                     { timeoutMs: this.stepTimeoutMs, label: 'threads post media' },
                 );
             }
+        } else if (/https?:\/\/\S+/i.test(text)) {
+            // Best-effort wait so Post does not race ahead of Threads' async OG card attachment.
+            await expectOutcome(
+                async () => {
+                    const found = await trySelectors(page, THREADS_POST_SELECTORS.linkPreview);
+                    return found.found ? (found.selector ?? THREADS_POST_SELECTORS.linkPreview[0]) : null;
+                },
+                {
+                    timeoutMs: Math.min(this.stepTimeoutMs, LINK_PREVIEW_TIMEOUT_MS),
+                    label: 'threads link preview',
+                },
+            );
         }
 
         const submit = await expectOutcome(

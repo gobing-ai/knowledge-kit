@@ -270,10 +270,10 @@ export function validateScriptPlan(
         errors.push({ itemId: 'episode', rule: 'cap:cardTitle' });
     }
     if (valid.social !== undefined) {
-        if (valid.social.short.length > (style.caps.socialShort ?? 140)) {
+        if (valid.social.short.length > (style.caps.socialShort ?? 100)) {
             errors.push({ itemId: 'episode', rule: 'cap:socialShort' });
         }
-        if (valid.social.long.length > (style.caps.socialLong ?? 500)) {
+        if (valid.social.long.length > (style.caps.socialLong ?? 300)) {
             errors.push({ itemId: 'episode', rule: 'cap:socialLong' });
         }
     }

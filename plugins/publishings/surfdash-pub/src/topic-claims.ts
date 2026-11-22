@@ -10,7 +10,7 @@
 
 import { dirname } from 'node:path';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
-import { DIGEST_TAG, parseFrontmatterScalars } from './digest-check';
+import { DIGEST_TAG, isEpisodeIdentityTitle, parseFrontmatterScalars } from './digest-check';
 import { PATCH_LOCALES, type PatchLocale, SERIES_NAMES } from './patch';
 
 /** One locale's topic-map fields. `claim_basis` is stamped later by retitle. */
@@ -106,8 +106,9 @@ function buildLocaleEntry(markdown: string, locale: PatchLocale): DailyTopicsLoc
     }
     const frontmatter = parseFrontmatterScalars(markdown);
     const title = scalar(frontmatter, 'title') ?? '';
-    const headlines = parseTitleHeadlines(title, locale);
-    if (!headlines) {
+    const episodeIdentity = isEpisodeIdentityTitle(title, locale);
+    const parsedHeadlines = episodeIdentity ? undefined : parseTitleHeadlines(title, locale);
+    if (!episodeIdentity && !parsedHeadlines) {
         return `${locale}: title is not "<series> · YYYY-MM-DD${titleSepFor(locale)}h1${listSepFor(locale)}h2"`;
     }
     const description = (scalar(frontmatter, 'description') ?? scalar(frontmatter, 'seo_description') ?? '').trim();
@@ -122,11 +123,18 @@ function buildLocaleEntry(markdown: string, locale: PatchLocale): DailyTopicsLoc
     if (!parts) {
         return `${locale}: key_points must be "label — sentence"`;
     }
+    const headlines = episodeIdentity ? parts.labels.slice(0, 2) : (parsedHeadlines ?? []);
+    if (headlines.length === 0) {
+        return `${locale}: key_points has no labels to derive headlines`;
+    }
     // The title names the TOP stories; the key-point box carries up to four. The site's own
     // generator emits exactly that shape (`scripts/commands/seo/retitle.ts`: title = "top story 1,
     // story 2", key_points = up to four bullets), so demanding a one-to-one match made every
     // crefitable digest fail the sync. The title must be the leading labels, in order.
-    if (headlines.length > parts.labels.length || headlines.some((headline, i) => headline !== parts.labels[i])) {
+    if (
+        !episodeIdentity &&
+        (headlines.length > parts.labels.length || headlines.some((headline, i) => headline !== parts.labels[i]))
+    ) {
         return `${locale}: title headlines do not match the leading key_points labels`;
     }
     const claims = parts.sentences;

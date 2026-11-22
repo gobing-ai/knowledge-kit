@@ -18,18 +18,18 @@
  */
 
 import type { Doc } from '@gobing-ai/kk-core';
-import { computeAudioOffsets, escapeHtml, formatOffset, itemBrief, sourceLabelFor } from './show-notes';
+import { computeAudioOffsets, escapeHtml, formatOffset, itemBrief, sourceLabelFor, TIMELINE_STYLE } from './show-notes';
 
 /** Placeholder paragraph {@link applyArticleReceipt} rewrites once the article receipt exists. */
-const ARTICLE_PLACEHOLDER = '<p class="kk-tl-more">完整图文版：待文章发布回执</p>';
+export const ARTICLE_PLACEHOLDER = '<p class="kk-tl-more">完整图文版：待文章发布回执</p>';
 
 /** The exact `<style>` block {@link renderCardsRegion} emits (reused by the marker validator). */
 export const CARDS_STYLE = `<style>
-.kk-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin:1em 0}
-.kk-card{margin:0;border:1px solid rgba(128,128,128,.25);border-radius:10px;overflow:hidden}
+.kk-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin:1.25em 0 0}
+.kk-card{margin:0;border:1px solid var(--mf-border,rgba(128,128,128,.25));border-radius:10px;overflow:hidden;background:var(--mf-surface,transparent)}
 .kk-card img{display:block;width:100%;height:auto}
-.kk-card figcaption{padding:8px 10px;font-size:.9em;color:#444}
-.kk-card-n{font-weight:700;color:#0969da;margin-right:6px}
+.kk-card figcaption{padding:8px 10px;font-size:.9em;color:var(--mf-muted,#444)}
+.kk-card-n{font-weight:700;color:var(--mf-accent,#0969da);margin-right:6px}
 @media (max-width:420px){.kk-cards{grid-template-columns:1fr}}
 </style>`;
 
@@ -41,6 +41,8 @@ export interface PlannedCard {
     alt: string;
     /** Hosted image URL from the upload receipt, or `''` when no asset is available. */
     imageUrl: string;
+    /** Optional rendered local PNG/image path for upload during episode publish. */
+    imagePath?: string;
     /** Plain-text degradation: the card's copy (or its source point). */
     text: string;
 }
@@ -101,7 +103,15 @@ export function planCards(raw: unknown): { cards: PlannedCard[]; diagnostics: Ca
         const copy = textOf(card.copy);
         const sourcePoint = textOf(card.sourcePoint);
         const alt = textOf(card.alt) || copy || sourcePoint || `本期卡片 ${index}`;
-        cards.push({ index, alt, imageUrl: uploadStatus === 'failed' ? '' : url, text: copy || sourcePoint || alt });
+        const rawImagePath = textOf(card.imagePath);
+        const imagePath = textOf(card.status) === 'rendered' && rawImagePath !== '' ? rawImagePath : undefined;
+        cards.push({
+            index,
+            alt,
+            imageUrl: uploadStatus === 'failed' ? '' : url,
+            ...(imagePath !== undefined ? { imagePath } : {}),
+            text: copy || sourcePoint || alt,
+        });
     });
     return { cards, diagnostics };
 }
@@ -176,6 +186,7 @@ export function renderBriefShowNotes(input: BriefShowNotesInput): { markdown: st
             `<!--kk:timeline-->
 <div class="kk-tl">${rows}
 </div>
+${TIMELINE_STYLE}
 ${articleEntry}
 <!--/kk:timeline-->`,
             '',
@@ -186,8 +197,22 @@ ${articleEntry}
     return { markdown: lines.join('\n'), diagnostics };
 }
 
+/** Formats `<base>/<locale>/posts/<slug>` from a published surfdash `postPath`. Returns `''` if invalid. */
+export function articleUrlFromPostPath(postPath: string, articleBaseUrl = 'https://surfing.salty.vip'): string {
+    const trimmed = postPath.trim();
+    if (trimmed === '') return '';
+    const segments = trimmed.split(/[\\/]/).filter((s) => s.length > 0);
+    // `<…>/posts/<locale>/<slug>/index.md` — the slug is the path segment before the file.
+    const slug = segments.length >= 2 ? (segments[segments.length - 2] ?? '') : '';
+    if (slug === '' || slug === 'posts') return '';
+    const locale = segments.find((s) => ['zh', 'en', 'ja'].includes(s)) ?? 'zh';
+    // surfdash serves `en` at the root; zh/ja carry the locale prefix (surfdash/src/lib/seo.ts).
+    const prefix = locale === 'en' ? '' : `/${locale}`;
+    return `${articleBaseUrl.replace(/\/+$/, '')}${prefix}/posts/${slug}`;
+}
+
 /** The hosted article slug a publish receipt proves, or `''` when the receipt proves nothing. */
-function receiptSlug(receipt: unknown): string {
+function receiptArticleUrl(receipt: unknown, articleBaseUrl = 'https://surfing.salty.vip'): string {
     const entries = Array.isArray(receipt)
         ? receipt
         : receipt !== null && typeof receipt === 'object' && Array.isArray((receipt as { targets?: unknown }).targets)
@@ -205,13 +230,65 @@ function receiptSlug(receipt: unknown): string {
                 : record;
         const postPath = textOf(metadata.postPath);
         if (postPath === '') continue;
-        const segments = postPath.split(/[\\/]/).filter((s) => s.length > 0);
-        // `<…>/posts/<locale>/<slug>/index.md` — the slug is the path segment before the file.
-        const slug = segments.length >= 2 ? (segments[segments.length - 2] ?? '') : '';
-        if (slug !== '' && slug !== 'posts')
-            return `${slug}\u0000${segments.find((s) => ['zh', 'en', 'ja'].includes(s)) ?? 'zh'}`;
+        const url = articleUrlFromPostPath(postPath, articleBaseUrl);
+        if (url !== '') return url;
     }
     return '';
+}
+
+/** Renders the `<p class="kk-tl-more">` paragraph linking to the full illustrated article. */
+export function renderArticleLinkParagraph(articleUrl: string): string {
+    return `<p class="kk-tl-more">完整图文版：<a href="${escapeHtml(articleUrl.trim())}" target="_blank" rel="noopener">本期完整文章</a></p>`;
+}
+
+/**
+ * Strips unresolved {@link ARTICLE_PLACEHOLDER} before public microfeed publish so listeners do
+ * not see an internal placeholder string when article publish hasn't landed yet.
+ */
+export function stripArticlePlaceholderHtml(html: string): string {
+    if (!html.includes(ARTICLE_PLACEHOLDER)) return html;
+    return html
+        .replace(ARTICLE_PLACEHOLDER, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+
+/**
+ * Inserts or replaces the `完整图文版` link inside published microfeed `content_html`, placing it
+ * before the `.kk-cards` block (or at the end when there are no cards). Idempotent once linked.
+ */
+export function upsertArticleLinkHtml(html: string, articleUrl: string): { html: string; changed: boolean } {
+    if (!isHttpUrl(articleUrl)) return { html, changed: false };
+    const cleanUrl = articleUrl.trim();
+    const linkParagraph = renderArticleLinkParagraph(cleanUrl);
+    if (html.includes(escapeHtml(cleanUrl)) && /完整图文版/.test(html)) {
+        return { html, changed: false };
+    }
+    if (html.includes(ARTICLE_PLACEHOLDER)) {
+        return { html: html.replace(ARTICLE_PLACEHOLDER, linkParagraph), changed: true };
+    }
+    const existingPattern = /<p class="kk-tl-more">完整图文版：[\s\S]*?<\/p>/;
+    if (existingPattern.test(html)) {
+        return { html: html.replace(existingPattern, linkParagraph), changed: true };
+    }
+    // Insert right before the card block `<style>` (when present) or `<div class="kk-cards">` so
+    // it appears right under the timeline, matching renderBriefShowNotes.
+    const cardsStyleIdx = html.indexOf(CARDS_STYLE);
+    const cardsDivIdx = html.indexOf('<div class="kk-cards">');
+    const anchor = cardsStyleIdx >= 0 ? cardsStyleIdx : cardsDivIdx;
+    if (anchor >= 0) {
+        const before = html.slice(0, anchor).replace(/\s*$/, '');
+        const after = html.slice(anchor).replace(/^\s*/, '');
+        return {
+            html: before === '' ? `${linkParagraph}\n${after}` : `${before}\n${linkParagraph}\n${after}`,
+            changed: true,
+        };
+    }
+    const trimmed = html.trim();
+    return {
+        html: trimmed === '' ? linkParagraph : `${trimmed}\n${linkParagraph}`,
+        changed: true,
+    };
 }
 
 /**
@@ -224,17 +301,10 @@ export function applyArticleReceipt(
     receipt: unknown,
     articleBaseUrl = 'https://surfing.salty.vip',
 ): { markdown: string; enriched: boolean } {
-    const proven = receiptSlug(receipt);
-    if (proven === '' || !markdown.includes(ARTICLE_PLACEHOLDER)) return { markdown, enriched: false };
-    const [slug = '', locale = 'zh'] = proven.split('\u0000');
-    // surfdash serves `en` at the root; zh/ja carry the locale prefix (surfdash/src/lib/seo.ts).
-    const prefix = locale === 'en' ? '' : `/${locale}`;
-    const url = `${articleBaseUrl.replace(/\/+$/, '')}${prefix}/posts/${slug}`;
+    const url = receiptArticleUrl(receipt, articleBaseUrl);
+    if (url === '' || !markdown.includes(ARTICLE_PLACEHOLDER)) return { markdown, enriched: false };
     return {
-        markdown: markdown.replace(
-            ARTICLE_PLACEHOLDER,
-            `<p class="kk-tl-more">完整图文版：<a href="${escapeHtml(url)}" target="_blank" rel="noopener">本期完整文章</a></p>`,
-        ),
+        markdown: markdown.replace(ARTICLE_PLACEHOLDER, renderArticleLinkParagraph(url)),
         enriched: true,
     };
 }

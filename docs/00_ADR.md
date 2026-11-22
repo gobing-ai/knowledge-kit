@@ -2058,3 +2058,19 @@ cut-over readiness; the latter still requires real Mac mini evidence.
 **Why.** The `VoiceboxClient` + isolated uv NDJSON worker seam proven by `voxcpm-tts` (ADR-036) preserves a single VoiceScript/QC/audio implementation and allows one-flag switching between voice drivers while isolating VibeVoice's PyTorch/Transformers stack.
 
 **Detail:** [VibeVoice voice driver](design/vibe-voice-driver.md); feature G16.
+
+---
+
+## ADR-056: Surfdash shares remote podcast-media covers and drops automatic daily-topics mutation
+
+**Status:** Accepted (implemented) · **Date:** 2026-11-21 · **Amends:** ADR-008, ADR-022
+
+**Decision.**
+
+1. **Tier-0 cover sharing + Microfeed upload fallback.** In `daily-ai-voice.json`, `podcast-pub` dispatches before `surfdash-pub` in Tier 0. `sendPublishMatrix` injects `podcast-pub`'s real `https://` `metadata.imageUrl` (`podcast-media.salty.vip`) and `url` into `surfdash-pub`'s resolved Tier-0 payload. When `surfdash-pub` is invoked standalone with a local cover image path, it uploads the cover once via `uploadCoverToMicrofeed` (`POST /api/v1/media_files/presigned_urls` + `PUT`, inheriting `MICROFEED_BASE_URL` / `MICROFEED_API_KEY` from `publishings.podcast-pub.env`) instead of copying `./assets/cover.png` into `surfdash`. `relPostDirs` commits every materialized locale (`zh`, `en`, `ja`) index file without adding image binaries.
+2. **Stop mutating `daily-topics.json` during publish.** Remove automatic `runDailyTopicsSync` writes from `patchPost` and `publishPreparedFile`; digests rely on `surfdash`'s self-consistent unmapped key-point/title/description derivation and CI checks instead of committing hand-curated map entries on the publish path.
+3. **Localized series/show normalization.** `news-localize-validate` (`plugins/kk/scripts/daily-stages.ts`) normalizes/rejects retired series names (`毎日AIごった煮`, `Daily AI Hotchpotch`, `デイリーAIニュース`, etc.) across localized digest drafts before freeze.
+
+**Why.** Committing local `./assets/cover.png` assets into `surfdash` led to missing cover files across localized siblings and git bloat, while publish-time `daily-topics.json` rewrites and retired series branding inside localized bodies broke `surfdash`'s `deploy.yml` digest/SEO gate.
+
+**Detail:** `plugins/publishings/surfdash-pub/src/media-upload.ts`, `apps/cli/src/publish-matrix.ts`, `plugins/kk/scripts/series-names.ts`, and `surfdash` `ADR-022`.

@@ -11,7 +11,7 @@
  * This module owns only the file work (deterministic, no network); the caller (`./index`) owns the
  * branch guard, the CMS re-sync and the git commit, in that order.
  */
-import { basename, dirname, join, sep } from 'node:path';
+import { basename, dirname, sep } from 'node:path';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 
 /** The locales a daily post carries; zh is the primary whose directory anchors the other two. */
@@ -22,11 +22,11 @@ export type PatchLocale = (typeof PATCH_LOCALES)[number];
 export interface PatchPostRequest {
     /** Absolute `<root>/content/posts/articles/zh/<slug>/index.md` — the primary post. */
     postPath: string;
-    /** Podcast-hosted cover URL; empty → the local cover is copied into `assets/` instead. */
+    /** Podcast-hosted cover URL (`https://...`); empty preserves an existing `https://` `image:` or uses {@link uploadLocalCover}. */
     coverUrl: string;
     /** Podcast episode URL for the cross-link line; empty → no cross-link. */
     showNotesUrl: string;
-    /** This run's rendered cover, the fallback when `coverUrl` is empty. */
+    /** Optional local cover path uploaded via {@link uploadLocalCover} when no `https://` cover exists yet. */
     localCover: string;
     /** `YYYY-MM-DD` episode date used in the cross-link text. */
     dateIso: string;
@@ -37,6 +37,8 @@ export interface PatchPostRequest {
      * wording, which is what pre-0385 bundles carry.
      */
     episodeTitle?: string;
+    /** Optional uploader converting a local cover into an `https://` remote URL (e.g. Microfeed R2). */
+    uploadLocalCover?: (filePath: string) => Promise<string>;
 }
 
 /** What the file pass changed; the caller commits exactly {@link PatchPostOutcome.written}. */
@@ -129,17 +131,18 @@ export async function patchPostFiles(request: PatchPostRequest): Promise<PatchPo
     const absent: PatchLocale[] = [];
     const images: Record<string, string> = {};
     let changed = 0;
+    let uploadedFallbackCover: string | undefined;
     for (const locale of PATCH_LOCALES) {
         const indexMd = localeIndexPath(request.postPath, locale);
         if (indexMd === undefined || !(await fs.exists(indexMd))) {
             absent.push(locale);
             continue;
         }
-        const dir = dirname(indexMd);
         const before = await fs.readFile(indexMd);
         let md = before;
         const end = frontmatterEnd(md);
         const fm = end < 0 ? md : md.slice(0, end);
+        const existingImage = /^image:\s*['"]?([^'"\n]+)['"]?/m.exec(fm)?.[1]?.trim() ?? '';
         if (request.coverUrl !== '') {
             // A relative or http:// cover would ship an unservable OG card — the deployed worker
             // only serves absolute https URLs (prod feedback 2026-09-29).
@@ -149,22 +152,28 @@ export async function patchPostFiles(request: PatchPostRequest): Promise<PatchPo
             md = upsertFrontmatterKey(md, 'image', request.coverUrl);
             md = upsertFrontmatterKey(md, 'og_image', request.coverUrl);
             images[locale] = request.coverUrl;
-        } else if (!/^image:/m.test(fm)) {
-            // Fallback for a run without a podcast cover: ship the rendered cover with the post.
-            // A locale with no cover anywhere must fail naming the locale, not silently skip —
-            // the CMS card would carry no servable image at all.
-            if (!(await fs.exists(request.localCover))) {
-                throw new Error(
-                    `${locale} post has no cover: coverUrl is empty, the frontmatter has no image key, and localCover does not exist (${request.localCover})`,
-                );
+        } else if (/^https:\/\//.test(existingImage)) {
+            md = upsertFrontmatterKey(md, 'og_image', existingImage);
+            images[locale] = existingImage;
+        } else if (
+            request.uploadLocalCover !== undefined &&
+            request.localCover !== '' &&
+            (await fs.exists(request.localCover))
+        ) {
+            if (uploadedFallbackCover === undefined) {
+                const uploaded = await request.uploadLocalCover(request.localCover);
+                if (!/^https:\/\//.test(uploaded)) {
+                    throw new Error(`uploaded cover must be an absolute https:// URL, got: ${uploaded}`);
+                }
+                uploadedFallbackCover = uploaded;
             }
-            const asset = join(dir, 'assets', 'cover.png');
-            await fs.ensureDir(dirname(asset));
-            await fs.copy(request.localCover, asset);
-            written.push(asset);
-            md = upsertFrontmatterKey(md, 'image', './assets/cover.png');
-            md = upsertFrontmatterKey(md, 'og_image', './assets/cover.png');
-            images[locale] = './assets/cover.png';
+            md = upsertFrontmatterKey(md, 'image', uploadedFallbackCover);
+            md = upsertFrontmatterKey(md, 'og_image', uploadedFallbackCover);
+            images[locale] = uploadedFallbackCover;
+        } else {
+            throw new Error(
+                `${locale} post has no remote https:// cover: coverUrl is empty and frontmatter has no https:// image key`,
+            );
         }
         if (locale === 'zh' && (request.episodeTitle ?? '') !== '') {
             // The article states the episode identity the podcast ships (0385). The site renders it
@@ -192,10 +201,6 @@ export async function patchPostFiles(request: PatchPostRequest): Promise<PatchPo
         if (md !== before) {
             await fs.writeFile(indexMd, md);
             written.push(indexMd);
-            const assetsDir = join(dir, 'assets');
-            if ((await fs.exists(assetsDir)) && !written.includes(join(assetsDir, 'cover.png'))) {
-                written.push(assetsDir);
-            }
             changed += 1;
         }
     }

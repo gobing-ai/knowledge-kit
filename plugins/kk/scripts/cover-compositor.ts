@@ -26,10 +26,14 @@ export interface CoverCompositorOptions {
     outputPath: string;
     width?: number; // default 1344
     height?: number; // default 576
+    /** Raster output format passed to macOS `sips` (default `'png'`). */
+    format?: 'png' | 'jpeg';
 }
 
 export const COVER_WIDTH = 1344;
 export const COVER_HEIGHT = 576;
+export const SOCIAL_COVER_WIDTH = 1200;
+export const SOCIAL_COVER_HEIGHT = 630;
 /** Max Chinese characters per headline line (news-editorial style contract, 0347). */
 export const HEADLINE_LINE_CAP = 25;
 const FONT_STACK = `PingFang SC, Hiragino Sans GB, 'Noto Sans CJK SC', sans-serif`;
@@ -381,6 +385,33 @@ function backgroundDataUri(path: string): string {
     return `data:${mime};base64,${readFileSync(path).toString('base64')}`;
 }
 
+function runSips(
+    args: string[],
+    outputPath: string,
+    messages: { notFound: string; failed: (status: number) => string; missingOutput: string },
+): void {
+    const sips = spawnSync('sips', args, { stdio: 'ignore' });
+    // Bun reports a missing binary as `status: undefined` (older versions: `null`) plus an `error` object.
+    if (sips.error !== undefined || typeof sips.status !== 'number') {
+        throw new Error(messages.notFound);
+    }
+    if (sips.status !== 0) {
+        throw new Error(messages.failed(sips.status));
+    }
+    // sips exits 0 even when it silently fails to place the output (missing parent dir).
+    if (!existsSync(outputPath)) {
+        throw new Error(messages.missingOutput);
+    }
+}
+
+function sipsErrorMessages(noun: string, verb: string, outputPath: string) {
+    return {
+        notFound: `cover compositor: sips not found; cannot ${noun} (macOS required)`,
+        failed: (status: number) => `cover compositor: sips ${verb} failed (status ${status}); ${outputPath} missing`,
+        missingOutput: `cover compositor: sips reported success but ${outputPath} is missing`,
+    };
+}
+
 export function compositeCover(options: CoverCompositorOptions): string {
     const svgPath = join(tmpdir(), `cover-composite-${Date.now()}.svg`);
     writeFileSync(
@@ -388,26 +419,78 @@ export function compositeCover(options: CoverCompositorOptions): string {
         buildCoverSvg({ ...options, backgroundUri: backgroundDataUri(options.backgroundImagePath) }),
         'utf-8',
     );
+    const sipsArgs =
+        options.format === 'jpeg'
+            ? ['-s', 'format', 'jpeg', '-s', 'formatOptions', '88', svgPath, '--out', options.outputPath]
+            : ['-s', 'format', 'png', svgPath, '--out', options.outputPath];
     try {
-        const sips = spawnSync('sips', ['-s', 'format', 'png', svgPath, '--out', options.outputPath], {
-            stdio: 'ignore',
+        runSips(sipsArgs, options.outputPath, {
+            notFound: 'cover compositor: sips not found; cannot render the cover overlay (macOS required)',
+            failed: (status) => `cover compositor: sips failed (status ${status}); overlay did not render`,
+            missingOutput: `cover compositor: sips reported success but ${options.outputPath} is missing`,
         });
-        // Bun reports a missing binary as `status: undefined` plus an `error` object.
-        if (sips.error !== undefined || typeof sips.status !== 'number') {
-            throw new Error('cover compositor: sips not found; cannot render the cover overlay (macOS required)');
-        }
-        if (sips.status !== 0) {
-            throw new Error(`cover compositor: sips failed (status ${sips.status}); overlay did not render`);
-        }
-        // sips exits 0 even when it silently fails to place the output (missing parent dir) —
-        // a render that claims success without a file would leave a stale cover downstream.
-        if (!existsSync(options.outputPath)) {
-            throw new Error(`cover compositor: sips reported success but ${options.outputPath} is missing`);
-        }
     } finally {
         rmSync(svgPath, { force: true });
     }
     return options.outputPath;
+}
+
+/**
+ * Render the 1200×630 JPEG Open Graph / Twitter social card derivative from the same raw background
+ * and frozen Chinese headline so `podcast-pub` populates `_microfeed.seo.social_image`.
+ */
+export function compositeSocialCover(options: Omit<CoverCompositorOptions, 'width' | 'height' | 'format'>): string {
+    return compositeCover({
+        ...options,
+        width: SOCIAL_COVER_WIDTH,
+        height: SOCIAL_COVER_HEIGHT,
+        format: 'jpeg',
+    });
+}
+
+/**
+ * Derive a 1200×630 JPEG social card from an already-rendered raster cover via centered aspect crop
+ * + resize (used for backfilling historical episodes without regenerating raw diffusion backgrounds).
+ */
+export function deriveSocialCoverFromImage(sourcePath: string, outputPath: string): string {
+    const probe = spawnSync('sips', ['-g', 'pixelWidth', '-g', 'pixelHeight', sourcePath], { encoding: 'utf-8' });
+    const width = Number(/pixelWidth:\s*(\d+)/.exec(probe.stdout ?? '')?.[1] ?? '0');
+    const height = Number(/pixelHeight:\s*(\d+)/.exec(probe.stdout ?? '')?.[1] ?? '0');
+    if (
+        probe.error !== undefined ||
+        typeof probe.status !== 'number' ||
+        probe.status !== 0 ||
+        width < 1 ||
+        height < 1
+    ) {
+        throw new Error(`cover compositor: cannot probe dimensions of ${sourcePath}`);
+    }
+    const rect = centerCropRect(width, height, SOCIAL_COVER_WIDTH / SOCIAL_COVER_HEIGHT);
+    const croppedPng = join(tmpdir(), `cover-social-crop-${Date.now()}.png`);
+    try {
+        cropPng(sourcePath, rect, croppedPng);
+        runSips(
+            [
+                '-z',
+                String(SOCIAL_COVER_HEIGHT),
+                String(SOCIAL_COVER_WIDTH),
+                '-s',
+                'format',
+                'jpeg',
+                '-s',
+                'formatOptions',
+                '88',
+                croppedPng,
+                '--out',
+                outputPath,
+            ],
+            outputPath,
+            sipsErrorMessages('transcode social cover', 'transcode', outputPath),
+        );
+    } finally {
+        rmSync(croppedPng, { force: true });
+    }
+    return outputPath;
 }
 
 /** One platform crop preview written next to the full cover. */
@@ -451,8 +534,7 @@ export interface CoverPreviewOptions extends CoverCompositorOptions {
 
 /** Center-crop a rendered PNG to `rect` via `sips` (macOS-only, same tool as the render itself). */
 function cropPng(source: string, rect: Rect, outputPath: string): void {
-    const sips = spawnSync(
-        'sips',
+    runSips(
         [
             '-c',
             String(rect.height),
@@ -464,17 +546,13 @@ function cropPng(source: string, rect: Rect, outputPath: string): void {
             '--out',
             outputPath,
         ],
-        { stdio: 'ignore' },
+        outputPath,
+        {
+            notFound: 'cover compositor: sips not found; cannot write the crop previews (macOS required)',
+            failed: (status) => `cover compositor: sips crop failed (status ${status}); preview ${outputPath} missing`,
+            missingOutput: `cover compositor: sips reported success but crop preview ${outputPath} is missing`,
+        },
     );
-    if (sips.error !== undefined || typeof sips.status !== 'number') {
-        throw new Error('cover compositor: sips not found; cannot write the crop previews (macOS required)');
-    }
-    if (sips.status !== 0) {
-        throw new Error(`cover compositor: sips crop failed (status ${sips.status}); preview ${outputPath} missing`);
-    }
-    if (!existsSync(outputPath)) {
-        throw new Error(`cover compositor: sips reported success but crop preview ${outputPath} is missing`);
-    }
 }
 
 /** The top-right corner window the reference-blend preview zooms into (emblem + its surroundings). */

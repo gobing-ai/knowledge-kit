@@ -109,6 +109,44 @@ describe('news-localize-validate (0409 R1)', () => {
             rmSync(dir, { recursive: true, force: true });
         }
     });
+
+    it('normalizes compound retired series brands like Daily AI Hotchpotch and 毎日AIごった煮 before freezing', () => {
+        const dir = workDir({
+            en: '# Daily AI Stew · 2026-11-21\n\nHere is your Daily AI Hotchpotch.\n',
+            ja: '# デイリーAIシチュー · 2026-11-21\n\nRobinがお届けする「毎日AIごった煮」です。\n',
+        });
+        try {
+            const result = run(dir);
+            expect(result.status).toBe(0);
+            expect(readFileSync(join(dir, '22-article', 'locales', 'en.md'), 'utf-8')).toContain('Daily AI Stew');
+            expect(readFileSync(join(dir, '22-article', 'locales', 'ja.md'), 'utf-8')).toContain('デイリーAIシチュー');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('fails when bare ごった煮 or wrong-locale show names remain', () => {
+        const jaBad = workDir({
+            en: EN,
+            ja: '# デイリーAIシチュー · 2026-11-21\n\nSalty Talkのごった煮回です。\n',
+        });
+        const enBad = workDir({
+            en: '# Daily AI Stew · 2026-11-21\n\nPresented by 咸话咸说.\n',
+            ja: JA,
+        });
+        try {
+            const jaRes = run(jaBad);
+            expect(jaRes.status).toBe(1);
+            expect(jaRes.stderr).toContain('ja');
+
+            const enRes = run(enBad);
+            expect(enRes.status).toBe(1);
+            expect(enRes.stderr).toContain('en');
+        } finally {
+            rmSync(jaBad, { recursive: true, force: true });
+            rmSync(enBad, { recursive: true, force: true });
+        }
+    });
 });
 
 const WORKFLOW = resolve(join(import.meta.dir, '../workflows/kk-news-generate.yaml'));

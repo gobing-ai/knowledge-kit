@@ -106,6 +106,17 @@ export function pluginEnvFromConfig(
                 break;
             }
         }
+        if (name === 'surfdash-pub') {
+            const podcastNode = collectionNode['podcast-pub'];
+            if (isPlainObject(podcastNode) && isPlainObject(podcastNode.env)) {
+                for (const key of ['MICROFEED_BASE_URL', 'MICROFEED_API_KEY'] as const) {
+                    const inherited = stringifyEnvValue(podcastNode.env[key]);
+                    if (inherited !== undefined && inherited !== '') {
+                        out[key] = inherited;
+                    }
+                }
+            }
+        }
     }
     const pluginNode = collectionNode[name];
     if (!isPlainObject(pluginNode) || !isPlainObject(pluginNode.env)) {
