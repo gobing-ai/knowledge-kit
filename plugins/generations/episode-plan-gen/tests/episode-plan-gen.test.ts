@@ -185,6 +185,9 @@ describe('episode-plan-gen', () => {
         );
         const plan = planEpisode(docs, { maxItems: 10, date: '2026-09-06' });
         expect(plan).toHaveLength(5);
+
+        const widened = planEpisode(docs, { maxItems: 10, perSourceCap: 7, date: '2026-09-06' });
+        expect(widened).toHaveLength(7);
     });
     test('maxItems truncates and preserves score order', () => {
         const docs = [1, 2, 3, 4, 5].map((n) =>
@@ -801,6 +804,26 @@ describe('filter mode (--mode filter, 0094)', () => {
             { ...config, minEpisodeItems: 8 },
         );
         expect(kept.map((d) => d.id)).toEqual(['k1', 'only-one']);
+        expect(admitted).toHaveLength(1);
+    });
+
+    test('backfillToFloor — minChars backfills importance-only rejects even when item count is met', () => {
+        const config = filterConfigFromEnv({ QC_MIN_EPISODE_ITEMS: '1', QC_MIN_CHARS: '50' });
+        const { kept, admitted } = backfillToFloor(
+            [annotated('ai-news', atMins, { id: 'k1', title: 'short', body: 'body' })],
+            [
+                {
+                    doc: annotated(
+                        'ai-news',
+                        { ...atMins, importance: 2 },
+                        { id: 'imp2-long', title: 'long title here', body: 'x'.repeat(40) },
+                    ),
+                    reasons: ['importance:2<3'],
+                },
+            ],
+            config,
+        );
+        expect(kept.map((d) => d.id)).toEqual(['k1', 'imp2-long']);
         expect(admitted).toHaveLength(1);
     });
 

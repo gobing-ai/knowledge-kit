@@ -187,6 +187,8 @@ const DEFAULT_IMPORTANCE = 2;
 export interface PlanOptions {
     maxItems: number;
     date?: string; // episode date (YYYY-MM-DD); freshness is judged against it, default today
+    /** Per-source slot cap (default PER_SOURCE_CAP = 5). */
+    perSourceCap?: number;
     /** Out-collector: when provided, receives one audit row per input doc (input order via rowsOf). */
     audit?: PlanAuditRow[];
 }
@@ -572,13 +574,14 @@ export function planEpisode(docs: Doc[], options: PlanOptions): Doc[] {
     }
 
     const candidates = scored.filter((r) => !absorbed.has(r)).sort((a, b) => b.score - a.score);
-    // Per-source cap, applied in score order: one feed's flood stops at PER_SOURCE_CAP.
+    // Per-source cap, applied in score order: one feed's flood stops at perSourceCap.
+    const perSourceCap = Math.max(1, options.perSourceCap ?? PER_SOURCE_CAP);
     const perSource = new Map<string, number>();
     const selected: ScoredDoc[] = [];
     for (const record of candidates) {
         const source = sourceOf(record.doc);
         const count = perSource.get(source) ?? 0;
-        if (count >= PER_SOURCE_CAP) {
+        if (count >= perSourceCap) {
             const row = rows?.get(record.doc);
             if (row) row.disposition = 'cap';
             continue;
@@ -637,7 +640,12 @@ export function renderPlanMarkdown(docs: Doc[], date: string): string {
 
 /** Build the plan Content; `metadata.docs` is the contract with the workflow. */
 export function docsToContent(docs: Doc[], date: string, audit?: PlanAuditRow[]): Content {
-    const planned = planEpisode(docs, { maxItems: maxItemsFromEnv(), date, audit });
+    const planned = planEpisode(docs, {
+        maxItems: maxItemsFromEnv(),
+        perSourceCap: perSourceCapFromEnv(),
+        date,
+        audit,
+    });
     return planContent(planned, date);
 }
 
@@ -661,6 +669,13 @@ function maxItemsFromEnv(): number {
     if (raw === undefined || raw.trim() === '') return 20;
     const n = Number.parseInt(raw, 10);
     return Number.isFinite(n) && n > 0 ? n : 20;
+}
+
+function perSourceCapFromEnv(): number {
+    const raw = process.env.EPISODE_PLAN_PER_SOURCE_CAP;
+    if (raw === undefined || raw.trim() === '') return PER_SOURCE_CAP;
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) && n > 0 ? n : PER_SOURCE_CAP;
 }
 
 /** Plan date shared by both modes: `EPISODE_PLAN_DATE` (YYYYMMDD or ISO) else today UTC. */
@@ -694,6 +709,8 @@ export interface FilterConfig {
     minImpact: number;
     /** Episode floor: when fewer docs survive, importance-only rejects backfill up to this count. */
     minEpisodeItems: number;
+    /** Optional spoken-duration character floor: backfill importance-only rejects until kept chars reach this. */
+    minChars?: number;
 }
 
 /** A doc the filter dropped, with every failed check (`category:not-in-allowlist`, `quality:2<3`, …). */
@@ -779,7 +796,16 @@ export function filterConfigFromEnv(env: Record<string, string | undefined> = pr
             'QC_MIN_EPISODE_ITEMS',
             DEFAULT_FILTER_CONFIG.minEpisodeItems,
         ),
+        ...(env.QC_MIN_CHARS !== undefined && env.QC_MIN_CHARS.trim() !== ''
+            ? { minChars: parseOptionalNonNegativeInt(env.QC_MIN_CHARS, 'QC_MIN_CHARS') }
+            : {}),
     };
+}
+
+function parseOptionalNonNegativeInt(raw: string, name: string): number {
+    const value = raw.trim();
+    if (!/^\d+$/.test(value)) throw new Error(`${name}='${raw}' is not a non-negative integer`);
+    return Number.parseInt(value, 10);
 }
 
 /** Read 0093's annotations off a filter input doc; fail loud naming the doc id — never silently pass unannotated docs. */
@@ -849,12 +875,20 @@ function planScoreOf(doc: Doc): number {
  * plan order. Admitted docs are stamped `metadata.backfilled: true` and leave the rejected
  * audit (they are spoken, not dropped). Pure: input docs are never mutated.
  */
+function docChars(doc: Doc): number {
+    return (doc.title ?? '').length + (doc.body ?? '').length;
+}
+
 export function backfillToFloor(
     kept: Doc[],
     rejected: RejectedDoc[],
     config: FilterConfig,
 ): { kept: Doc[]; rejected: RejectedDoc[]; admitted: Doc[] } {
-    if (kept.length >= config.minEpisodeItems) return { kept, rejected, admitted: [] };
+    const minChars = config.minChars ?? 0;
+    let currentChars = kept.reduce((sum, doc) => sum + docChars(doc), 0);
+    if (kept.length >= config.minEpisodeItems && (minChars <= 0 || currentChars >= minChars)) {
+        return { kept, rejected, admitted: [] };
+    }
     const eligible = rejected
         .map((entry, index) => ({ entry, index }))
         .filter(({ entry }) => entry.reasons.length > 0 && entry.reasons.every((r) => r.startsWith('importance:')));
@@ -865,7 +899,14 @@ export function backfillToFloor(
         if (byPlanScore !== 0) return byPlanScore;
         return a.index - b.index;
     });
-    const taken = eligible.slice(0, config.minEpisodeItems - kept.length);
+    const taken: Array<{ entry: RejectedDoc; index: number }> = [];
+    for (const item of eligible) {
+        const countMet = kept.length + taken.length >= config.minEpisodeItems;
+        const charsMet = minChars <= 0 || currentChars >= minChars;
+        if (countMet && charsMet) break;
+        taken.push(item);
+        currentChars += docChars(item.entry.doc);
+    }
     const takenIds = new Set(taken.map(({ entry }) => entry.doc.id));
     const admitted = taken.map(({ entry }) => ({
         ...entry.doc,

@@ -155,6 +155,16 @@ export function dailyQcContent(args: string[]): void {
     const exclusions = join(workDir, '21-plan', `${runDate}_04_quality-control-content_exclusions.json`);
     const planContent = join(workDir, '21-plan', `${runDate}_03_plan_content.json`);
     const cachePath = `${candidates}.cache.json`;
+    const floorMinutes = Number(minMinutes);
+    const qcMinChars =
+        minMinutes !== '' && Number.isFinite(floorMinutes) && floorMinutes > 0
+            ? String(
+                  Math.max(
+                      0,
+                      Math.ceil(((floorMinutes * 60 - 8) * spokenCharRate(vdriver)) / readKeptRatio(workDir).ratio),
+                  ),
+              )
+            : '';
     const fingerprint = stageCacheFingerprint(planContent, {
         qcCategories,
         minQuality,
@@ -164,6 +174,7 @@ export function dailyQcContent(args: string[]): void {
         minEpisodeItems,
         minMinutes,
         vdriver,
+        qcMinChars,
     });
     let recomputed = false;
     timed(workDir, 'quality-control-content', () => {
@@ -211,6 +222,7 @@ export function dailyQcContent(args: string[]): void {
                     QC_MIN_URGENCY: minUrgency,
                     QC_MIN_IMPACT: minImpact,
                     QC_MIN_EPISODE_ITEMS: minEpisodeItems,
+                    ...(qcMinChars ? { QC_MIN_CHARS: qcMinChars } : {}),
                 },
             },
         );
@@ -2116,9 +2128,11 @@ export function dailyPlan(args: string[]): void {
     const deferDocs = deferPlanDocs === 'true';
     const target = deferDocs ? planContent : planDocs;
     const targetCache = `${target}.cache.json`;
+    const perSourceCap = String(Math.max(5, Math.ceil((Number(planMaxItems) || 20) / 4)));
     const fingerprint = stageCacheFingerprint(blended, {
         runDate,
         planMaxItems,
+        perSourceCap,
         deferPlanDocs,
     });
     timed(workDir, 'plan', () => {
@@ -2144,7 +2158,11 @@ export function dailyPlan(args: string[]): void {
         kk(
             ['executor', 'run', 'episode-plan-gen', '--in', blended, '--out', planContent, ...pluginsArgs(pluginsPath)],
             {
-                env: { EPISODE_PLAN_MAX_ITEMS: planMaxItems, EPISODE_PLAN_DATE: runDate },
+                env: {
+                    EPISODE_PLAN_MAX_ITEMS: planMaxItems,
+                    EPISODE_PLAN_PER_SOURCE_CAP: perSourceCap,
+                    EPISODE_PLAN_DATE: runDate,
+                },
             },
         );
         const docs = metadataOf(readJson(planContent)).docs;
