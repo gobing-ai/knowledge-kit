@@ -109,6 +109,20 @@ describe('buildDailyTopicsEntry', () => {
         expect(wrongLead.error).toContain('do not match');
     });
 
+    test('derives topic-map entries from 0385+ episode-identity titles via leading key_points labels', () => {
+        const episodePosts = {
+            zh: posts.zh.replace(/^title: .*$/m, 'title: "第261121期 · Claude Code 与 OpenAI 新证明"'),
+            en: posts.en.replace(/^title: .*$/m, 'title: "Issue 261121 · Claude Code and OpenAI Proofs"'),
+            ja: posts.ja.replace(/^title: .*$/m, 'title: "第261121回 · Claude Code と OpenAI の新証明"'),
+        };
+        const built = buildDailyTopicsEntry(episodePosts);
+        expect(built.ok).toBe(true);
+        if (!built.ok) return;
+        expect(built.entry.zh.headlines).toEqual(['Claude Code', 'OpenAI 新证明']);
+        expect(built.entry.en.headlines).toEqual(['Claude Code', 'OpenAI']);
+        expect(built.entry.ja.headlines).toEqual(['Claude Code', 'OpenAI の新証明']);
+    });
+
     test('fails when the entry cannot be generated confidently', () => {
         const noTitle = buildDailyTopicsEntry({
             ...posts,

@@ -1594,6 +1594,43 @@ describe('surfdash-pub frontmatter tags (2026-10-12)', () => {
         const parsed = Bun.YAML.parse(frontmatter) as { tags: string[] };
         expect(parsed.tags).toEqual(['ai-news', 'sub-category:ai-daily']);
     });
+
+    test('mapContentToSurfingMarkdown sets locale episode_title for episode-identity titles without leaking zh to en/ja', () => {
+        const enMd = mapContentToSurfingMarkdown(
+            {
+                title: 'Issue 261121 · Meta Reconsiders Its 2030 Net-Zero Target',
+                body: 'Body.',
+                format: 'markdown',
+                metadata: { episodeTitle: '第261121期 · Meta 重新评估 2030 年净零目标' },
+            },
+            { locale: 'en', publishDate: '2026-11-21' },
+        );
+        expect(enMd).toContain('episode_title: "Issue 261121 · Meta Reconsiders Its 2030 Net-Zero Target"');
+        expect(enMd).not.toContain('第261121期');
+
+        const jaMd = mapContentToSurfingMarkdown(
+            {
+                title: '第261121回 · Meta、2030年ネットゼロ目標を再検討',
+                body: '本文。',
+                format: 'markdown',
+                metadata: { episodeTitle: '第261121期 · Meta 重新评估 2030 年净零目标' },
+            },
+            { locale: 'ja', publishDate: '2026-11-21' },
+        );
+        expect(jaMd).toContain('episode_title: "第261121回 · Meta、2030年ネットゼロ目標を再検討"');
+        expect(jaMd).not.toContain('第261121期');
+
+        const nonEpisodeEn = mapContentToSurfingMarkdown(
+            {
+                title: 'Daily AI Stew · 2026-11-20: Anthropic',
+                body: 'Body.',
+                format: 'markdown',
+                metadata: { episodeTitle: '第261120期 · Anthropic' },
+            },
+            { locale: 'en', publishDate: '2026-11-20' },
+        );
+        expect(nonEpisodeEn).not.toContain('episode_title');
+    });
 });
 
 describe('surfdash-pub post-patch (2026-10-12 boundary move from the kk stage)', () => {

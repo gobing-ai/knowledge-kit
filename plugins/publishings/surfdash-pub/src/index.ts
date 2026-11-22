@@ -27,7 +27,7 @@ import type { PublishTransport, PublishTransportPayload } from '@gobing-ai/publi
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 // The plugin's public digest-contract surface (2026-10-24).
-import { checkDigestFrontmatter, DIGEST_TAG, type DigestLocale } from './digest-check';
+import { checkDigestFrontmatter, DIGEST_TAG, type DigestLocale, isEpisodeIdentityTitle } from './digest-check';
 import { uploadCoverToMicrofeed } from './media-upload';
 import { crossLinkFor, localeIndexPath, PATCH_LOCALES, type PatchPostOutcome, patchPostFiles } from './patch';
 import { buildDailyTopicsEntry, isDigestMarkdown, slugFromPostPath, upsertDailyTopicsEntry } from './topic-claims';
@@ -195,6 +195,13 @@ export function mapContentToSurfingMarkdown(content: Content, options: MapConten
             ? content.metadata.podcastUrl
             : '';
 
+    const episodeTitleForLocale =
+        postLocale === 'zh'
+            ? rawEpisodeTitle || (isEpisodeIdentityTitle(title, 'zh') ? title : '')
+            : isEpisodeIdentityTitle(title, postLocale)
+              ? title
+              : '';
+
     const frontmatterObj: Record<string, unknown> = {
         title,
         description,
@@ -202,7 +209,7 @@ export function mapContentToSurfingMarkdown(content: Content, options: MapConten
         publishDate: isoDate,
         draft,
         ...(options.image ? { image: options.image, og_image: options.image } : {}),
-        ...(postLocale === 'zh' && rawEpisodeTitle !== '' ? { episode_title: rawEpisodeTitle } : {}),
+        ...(episodeTitleForLocale !== '' ? { episode_title: episodeTitleForLocale } : {}),
     };
 
     const yamlLines = ['---', ...Object.entries(frontmatterObj).map(([k, v]) => `${k}: ${JSON.stringify(v)}`), '---'];

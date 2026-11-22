@@ -348,4 +348,39 @@ describe('checkDigestFrontmatter', () => {
             );
         });
     });
+
+    describe('0385+ episode-identity titles across zh, en, and ja', () => {
+        test('accepts zh, en (with bare <=60 seo_title), and ja episode-identity titles', () => {
+            const zhEp = valid('zh')
+                .replace(/^title: .*$/m, 'title: "第261121期 · Meta 重新评估 2030 年净零目标"')
+                .replace(/^---$/m, '---\nseo_title: "第261121期 · Meta 重新评估 2030 年净零目标 | Surfing"');
+            expect(checkDigestFrontmatter(zhEp, 'zh')).toEqual([]);
+
+            const enEp = valid('en')
+                .replace(/^title: .*$/m, 'title: "Issue 261121 · Meta Reconsiders Its 2030 Net-Zero Target"')
+                .replace(/^---$/m, '---\nseo_title: "Issue 261121 · Meta Reconsiders Its 2030 Net-Zero Target"');
+            expect(checkDigestFrontmatter(enEp, 'en')).toEqual([]);
+
+            const jaEp = valid('ja')
+                .replace(/^title: .*$/m, 'title: "第261121回 · Meta、2030年ネットゼロ目標を再検討"')
+                .replace(/^---$/m, '---\nseo_title: "第261121回 · Meta、2030年ネットゼロ目標を再検討 | Surfing"');
+            expect(checkDigestFrontmatter(jaEp, 'ja')).toEqual([]);
+        });
+
+        test('rejects episode-identity titles with seo_title > 60 or ellipsis', () => {
+            const tooLongSeo = valid('en')
+                .replace(/^title: .*$/m, 'title: "Issue 261121 · Meta Reconsiders Its 2030 Net-Zero Target"')
+                .replace(
+                    /^---$/m,
+                    '---\nseo_title: "Issue 261121 · Meta Reconsiders Its 2030 Net-Zero Target | Surfing"',
+                );
+            expect(checkDigestFrontmatter(tooLongSeo, 'en').join('\n')).toContain('max 60');
+
+            const withEllipsis = valid('zh').replace(
+                /^title: .*$/m,
+                'title: "第261121期 · Meta 重新评估 2030 年净零…"',
+            );
+            expect(checkDigestFrontmatter(withEllipsis, 'zh').join('\n')).toContain('…" or "..."');
+        });
+    });
 });

@@ -28,8 +28,23 @@ export const DIGEST_TAG = 'sub-category:ai-daily';
 /** Podcast-intro openings a digest description must not start with (case-insensitive). */
 const PODCAST_INTROS = ['这里是由Robin', '咸话咸说', 'This is Robin', 'Robin がお届け'] as const;
 
-/** Rendered `<title>` budget: title + " | Surfing" must fit (site SEO_TITLE_LIMIT). */
+/** Rendered `<title>` budget: title + " | Surfing" (or bare episode title) must fit (site SEO_TITLE_LIMIT). */
 const SEO_TITLE_LIMIT = 60;
+const EPISODE_TITLE_MAX = 80;
+
+const EPISODE_IDENTITY_TITLE_RE: Record<DigestLocale, RegExp> = {
+    zh: /^第\d{6}期\s*·\s*\S/u,
+    en: /^Issue\s+\d{6}\s*·\s*\S/iu,
+    ja: /^第\d{6}回\s*·\s*\S/u,
+};
+
+/** True when `title` matches the 0385+ episode-identity format for `locale` (or any locale if omitted). */
+export function isEpisodeIdentityTitle(title: string, locale?: DigestLocale): boolean {
+    const clean = title.trim();
+    if (clean === '') return false;
+    if (locale !== undefined) return EPISODE_IDENTITY_TITLE_RE[locale].test(clean);
+    return Object.values(EPISODE_IDENTITY_TITLE_RE).some((re) => re.test(clean));
+}
 
 /** One parsed frontmatter entry: a scalar string or a block/flow list of strings. */
 type FrontmatterValue = string | string[];
@@ -211,6 +226,20 @@ export function checkDigestFrontmatter(markdown: string, locale: DigestLocale): 
     const title = scalar(frontmatter, 'title');
     if (title === undefined || title === '') {
         problems.push('title: missing');
+    } else if (isEpisodeIdentityTitle(title, locale)) {
+        const titleLength = Array.from(title).length;
+        if (titleLength > EPISODE_TITLE_MAX) {
+            problems.push(`title: ${titleLength} code points (max ${EPISODE_TITLE_MAX})`);
+        }
+        const explicitSeoTitle = scalar(frontmatter, 'seo_title');
+        const seoTitle =
+            explicitSeoTitle !== undefined && explicitSeoTitle !== '' ? explicitSeoTitle : `${title} | Surfing`;
+        const seoLength = Array.from(seoTitle).length;
+        if (seoLength > SEO_TITLE_LIMIT) {
+            problems.push(`seo_title: "${seoTitle}" is ${seoLength} code points (max ${SEO_TITLE_LIMIT})`);
+        }
+        if (title.includes('…') || title.includes('...')) problems.push('title: contains "…" or "..."');
+        if (seoTitle.includes('…') || seoTitle.includes('...')) problems.push('seo_title: contains "…" or "..."');
     } else {
         const match = title.match(
             new RegExp(`^${escapeRe(series)} · (\\d{4}-\\d{2}-\\d{2})${escapeRe(titleSep)}(.+)$`),
