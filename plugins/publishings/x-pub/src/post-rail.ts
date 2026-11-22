@@ -246,29 +246,43 @@ export class XPostBrowserTransport implements PublishTransport {
             await textBox.press('Backspace').catch(() => {});
             await textBox.pressSequentially(text, { delay: 8 });
             const enabled = await expectOutcome(
-                async () => {
-                    // Whichever submit control this surface renders: the page composer's
-                    // `tweetButton`, or the inline composer's `tweetButtonInline` on /home. Asked by
-                    // enablement, never by attachment — the page-scoped control is gone the moment the
-                    // surface navigates, and an absent control simply reads disabled.
-                    for (const selector of X_POST_SUBMITS) {
-                        if (
-                            await page
-                                .locator(selector)
-                                .first()
-                                .isEnabled()
-                                .catch(() => false)
-                        )
-                            return 'post enabled';
-                    }
-                    return null;
-                },
+                async () => ((await this.findEnabledSubmit(page)) !== null ? 'post enabled' : null),
                 // One step, capped at 10s: a caller may shrink the step (tests), never stretch it.
                 { timeoutMs: Math.min(10_000, this.stepTimeoutMs), label: `x post enabled (attempt ${attempt})` },
             );
             if (enabled.ok) return null;
         }
         return 'x post submit never enabled — the editor did not accept the text in three attempts';
+    }
+
+    /**
+     * Locates an enabled submit control across page (`tweetButton`) and inline (`tweetButtonInline`)
+     * surfaces without letting `.first()` stall 30s on an absent node or pick a disabled hidden twin.
+     */
+    private async findEnabledSubmit(
+        page: Page,
+        opts: { preferVisible?: boolean } = {},
+    ): Promise<ReturnType<Page['locator']> | null> {
+        let enabledFallback: ReturnType<Page['locator']> | null = null;
+        for (const selector of X_POST_SUBMITS) {
+            const loc = page.locator(selector);
+            const count = await loc.count().catch(() => 0);
+            const limit = Math.max(1, count);
+            for (let index = 0; index < limit; index += 1) {
+                const candidate = index === 0 ? loc.first() : loc.nth(index);
+                const enabled = await candidate.isEnabled({ timeout: 1_000 }).catch(() => false);
+                if (!enabled) continue;
+                if (opts.preferVisible !== true) return candidate;
+                // A visible, enabled control is the real one; the composer page also renders a hidden
+                // template whose button is enabled-looking but never posts. Preferring visibility and
+                // accepting enabled-only when visibility cannot be established keeps a surface whose
+                // button reports no layout (and the test double) working.
+                const visible = await candidate.isVisible().catch(() => false);
+                if (visible) return candidate;
+                enabledFallback ??= candidate;
+            }
+        }
+        return enabledFallback;
     }
 
     private async runPostFlow(
@@ -319,14 +333,7 @@ export class XPostBrowserTransport implements PublishTransport {
             );
             if (!attached.ok) return fail(`x post image was uploaded but never rendered: ${attached.error}`);
             const reEnabled = await expectOutcome(
-                async () =>
-                    (await page
-                        .locator(X_POST_SUBMIT)
-                        .first()
-                        .isEnabled()
-                        .catch(() => false))
-                        ? 'post re-enabled'
-                        : null,
+                async () => ((await this.findEnabledSubmit(page)) !== null ? 'post re-enabled' : null),
                 // Four steps: X transcodes the image and only then re-enables Post (30s step → 120s).
                 { timeoutMs: this.stepTimeoutMs * 4, label: 'x post submit enabled after media' },
             );
@@ -340,14 +347,18 @@ export class XPostBrowserTransport implements PublishTransport {
                     ? Promise.resolve(null)
                     : observable
                           .evaluate(`(() => {
+                        const readDisabled = (el) => el === null ? 'missing' : (el.getAttribute('aria-disabled') ?? (el.disabled === true ? 'true' : 'false'));
                         const editor = document.querySelector('[data-testid="tweetTextarea_0"]');
                         const submit = document.querySelector('${X_POST_SUBMIT}');
+                        const inlineSubmit = document.querySelector('${X_POST_SUBMIT_INLINE}');
                         const alerts = [...document.querySelectorAll('[data-testid="toast"], [role="alert"], [data-testid="error-detail"]')]
                             .map((n) => (n.textContent || '').replace(/\\s+/g, ' ').trim()).filter(Boolean).slice(0, 3);
                         const images = [...document.querySelectorAll('[data-testid="attachments"] img, [data-testid="tweetPhoto"] img')].length;
                         return JSON.stringify({
+                            url: location.pathname,
                             textLen: (editor?.textContent || '').trim().length,
-                            submitDisabled: submit?.getAttribute('aria-disabled') ?? (submit?.disabled === true ? 'true' : 'false'),
+                            submitDisabled: readDisabled(submit),
+                            inlineDisabled: readDisabled(inlineSubmit),
                             images,
                             alerts,
                         });
@@ -359,27 +370,9 @@ export class XPostBrowserTransport implements PublishTransport {
             }
         }
 
-        // Click the submit that is actually VISIBLE and ENABLED, across both surfaces. The module
-        // header already warns that the composer page carries a hidden template whose button never
-        // enables; `.first()` on `tweetButton` can pick that twin and swallow the click, which reads
-        // downstream as "Post was clicked but no new status id appeared" (measured 2026-11-20: two
-        // runs, no status on the profile, no error either).
-        const submit = await (async () => {
-            let enabledFallback: ReturnType<typeof page.locator> | null = null;
-            for (const selector of X_POST_SUBMITS) {
-                const candidate = page.locator(selector).first();
-                const enabled = await candidate.isEnabled().catch(() => false);
-                if (!enabled) continue;
-                // A visible, enabled control is the real one; the composer page also renders a hidden
-                // template whose button is enabled-looking but never posts. Preferring visibility and
-                // accepting enabled-only when visibility cannot be established keeps a surface whose
-                // button reports no layout (and the test double) working.
-                const visible = await candidate.isVisible().catch(() => false);
-                if (visible) return candidate;
-                enabledFallback ??= candidate;
-            }
-            return enabledFallback;
-        })();
+        // Click the submit that is actually VISIBLE and ENABLED, across both surfaces (`tweetButton`
+        // / `tweetButtonInline` and non-first visible twins).
+        const submit = await this.findEnabledSubmit(page, { preferVisible: true });
         if (submit === null) return fail('x post submit was enabled a moment ago but no clickable control remained');
         await submit.click();
         // Capture the composer's immediate reaction. The receipt step navigates to the profile, so

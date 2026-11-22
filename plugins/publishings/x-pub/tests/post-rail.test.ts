@@ -89,6 +89,10 @@ interface FakePageOptions {
     submitEnabledReads?: number;
     /** The FIRST profile navigation rejects (the baseline read is best-effort, the receipt is not). */
     rejectBaselineGoto?: boolean;
+    /** After media attaches, only `tweetButtonInline` enables (page `tweetButton` stays disabled). */
+    submitInlineOnlyAfterMedia?: boolean;
+    /** Two `tweetButton` nodes exist where index 0 is a disabled twin and index 1 is enabled. */
+    submitTwinDisabledFirst?: boolean;
 }
 
 /**
@@ -117,6 +121,7 @@ function makeFakePostPage(options: FakePageOptions, calls: string[]): Page {
 
     const attached = (selector: string): number => {
         if (selector === POST_SELECTORS.profileLink[0]) return 1;
+        if (selector === X_POST_SUBMIT && options.submitTwinDisabledFirst === true) return 2;
         if (selector === PROFILE_STATUS_LINK) return url === PROFILE_URL && statusHref() !== null ? 1 : 0;
         if (selector === X_NEW_POST_BUTTON) {
             if (options.missingNavButton === true) return 0;
@@ -131,11 +136,16 @@ function makeFakePostPage(options: FakePageOptions, calls: string[]): Page {
         return 0;
     };
 
-    const leaf = (selector: string) => ({
+    const leaf = (selector: string, index = 0) => ({
         count: async () => attached(selector),
         isVisible: async () => attached(selector) > 0,
         isEnabled: async () => {
             if (selector !== X_POST_SUBMIT && selector !== X_POST_SUBMIT_INLINE) return attached(selector) > 0;
+            if (options.submitTwinDisabledFirst === true && selector === X_POST_SUBMIT && index === 0) return false;
+            if (mediaUploaded && options.submitInlineOnlyAfterMedia === true) {
+                if (selector === X_POST_SUBMIT) return false;
+                if (selector === X_POST_SUBMIT_INLINE) return submitEnabled();
+            }
             submitReads += 1;
             const limit = options.submitEnabledReads;
             return submitEnabled() && (limit === undefined || submitReads <= limit);
@@ -199,7 +209,11 @@ function makeFakePostPage(options: FakePageOptions, calls: string[]): Page {
         },
         url: () => url,
         locator(selector: string) {
-            return { first: () => leaf(selector), count: async () => attached(selector) };
+            return {
+                first: () => leaf(selector, 0),
+                nth: (index: number) => leaf(selector, index),
+                count: async () => attached(selector),
+            };
         },
         keyboard: {
             press: async (key: string) => {
@@ -925,5 +939,41 @@ describe('post rail baseline read', () => {
         expect(result.ok, `error: ${result.error ?? ''}`).toBe(true);
         expect(result.id).toBe('300');
         expect(fake.calls.filter((call) => call === `goto:${PROFILE_URL}`)).toHaveLength(2);
+    });
+});
+
+describe('measured 2026-11-21 — inline and multi-twin submit resolution after media', () => {
+    let dir = '';
+    const coverPath = (): string => join(dir, 'cover.png');
+
+    beforeEach(async () => {
+        dir = mkdtempSync(join(tmpdir(), 'kk-x-post-media-submit-'));
+        await writeFile(coverPath(), 'png');
+    });
+
+    afterEach(async () => {
+        await rm(dir, { recursive: true, force: true });
+    });
+
+    test('falls back to tweetButtonInline when tweetButton stays disabled after media upload', async () => {
+        const fake = makeFakeLauncher({
+            pages: [{}, { submitInlineOnlyAfterMedia: true, statusHrefAfterSubmit: '/robin/status/400' }],
+        });
+        const result = await transport(fake, 50).publish({ content, options: { coverPath: coverPath() } });
+
+        expect(result.ok, `error: ${result.error ?? ''}`).toBe(true);
+        expect(result.id).toBe('400');
+        expect(fake.calls).toContain(`click:${X_POST_SUBMIT_INLINE}`);
+    });
+
+    test('skips a disabled leading tweetButton twin and submits via the enabled second twin', async () => {
+        const fake = makeFakeLauncher({
+            pages: [{}, { submitTwinDisabledFirst: true, statusHrefAfterSubmit: '/robin/status/401' }],
+        });
+        const result = await transport(fake, 50).publish({ content, options: { coverPath: coverPath() } });
+
+        expect(result.ok, `error: ${result.error ?? ''}`).toBe(true);
+        expect(result.id).toBe('401');
+        expect(fake.calls).toContain(`click:${X_POST_SUBMIT}`);
     });
 });
