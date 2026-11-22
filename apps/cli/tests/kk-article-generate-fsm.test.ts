@@ -90,6 +90,7 @@ describe('kk-article-generate — R4: thirteen states, one executor var, no padd
     it('has ONE executor variable, `inline` by default, and the seven designed vars', () => {
         expect(Object.keys(doc.vars).sort()).toEqual([
             '__hitlAnswer',
+            'adapt_only',
             'agent',
             'auto',
             'preset',

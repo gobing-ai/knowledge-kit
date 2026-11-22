@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from 'bun:test';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { main } from '../src/main';
@@ -55,7 +55,14 @@ describe('article publish pipeline fixes (dogfood 2026-11-22)', () => {
         expect(byPlugin.get('zenn-pub')).toMatchObject({ variant: 'ja-article' });
         expect(byPlugin.get('medium-pub')).toMatchObject({ variant: 'en-article' });
         expect(byPlugin.get('substack-pub')).toMatchObject({ variant: 'en-article', transport: 'browser' });
-        expect(() => validatePublishChannelTokens(preset, ['x-pub.article', 'wechatmp-pub.文章'])).not.toThrow();
+        expect(byPlugin.get('weibo-pub')).toMatchObject({
+            operation: 'article',
+            variant: 'zh-article',
+            transport: 'browser',
+        });
+        expect(() =>
+            validatePublishChannelTokens(preset, ['x-pub.article', 'wechatmp-pub.文章', 'weibo-pub.article']),
+        ).not.toThrow();
     });
 
     it('clears a stale plan.<window>.json before failing on invalid --channels so kk-publish cannot silently reuse it', async () => {
@@ -235,6 +242,46 @@ describe('article publish pipeline fixes (dogfood 2026-11-22)', () => {
             };
             expect(bundle.contentType).toBe('itc');
             expect(Object.keys(bundle.variants).sort()).toEqual(['article', 'en-article', 'ja-article', 'zh-article']);
+
+            const binDir = join(root, 'bin');
+            mkdirSync(binDir, { recursive: true });
+            const fakeSpur = join(binDir, 'spur');
+            writeFileSync(fakeSpur, '#!/bin/sh\necho OK\nexit 0\n');
+            chmodSync(fakeSpur, 0o755);
+            const beforePath = process.env.PATH;
+            process.env.PATH = `${binDir}:${beforePath ?? ''}`;
+            try {
+                const adaptDryRun = await runCli([
+                    'article',
+                    'generate',
+                    '--slug',
+                    'a2ui-seed',
+                    '--adapt-only',
+                    '--allow-dirty',
+                    '--dry-run',
+                ]);
+                expect(adaptDryRun.code).toBe(0);
+                const dryReceipt = JSON.parse(adaptDryRun.stdout) as { dryRun?: { vars?: Record<string, string> } };
+                expect(dryReceipt.dryRun?.vars?.adapt_only).toBe('true');
+
+                const missingDraft = await runCli([
+                    'article',
+                    'generate',
+                    '--slug',
+                    'no-such-draft',
+                    '--adapt-only',
+                    '--allow-dirty',
+                    '--dry-run',
+                ]);
+                expect(missingDraft.code).toBe(5);
+            } finally {
+                if (beforePath === undefined) delete process.env.PATH;
+                else process.env.PATH = beforePath;
+            }
+
+            const newsAdapt = await runCli(['news', 'generate', '--run-date', '20261122', '--adapt-only', '--dry-run']);
+            expect(newsAdapt.code).toBe(2);
+            expect(newsAdapt.stderr).toContain('--adapt-only is article-only');
         } finally {
             if (beforeConfig === undefined) delete process.env.KK_CONFIG;
             else process.env.KK_CONFIG = beforeConfig;

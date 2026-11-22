@@ -2,8 +2,13 @@
     "name": "medium-pub",
     "kind": "publish",
     "entry": "./src/index.ts",
+    "check": "./src/profile-check.ts",
     "version": "1.0.0",
-    "description": "Publish plugin for Medium (medium.com) via the integration-token REST API",
+    "description": "Publish plugin for Medium (medium.com) via integration-token REST API or script browser fallback (ts-browser-automation)",
+    "browserSession": {
+        "profileName": "medium",
+        "homeUrl": "https://medium.com/new-story"
+    },
     "publishing": {
         "defaultProfile": "article",
         "profiles": {

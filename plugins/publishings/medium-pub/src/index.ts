@@ -4,6 +4,18 @@ import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-
 import { FakeFileCliTransport, type PublishTransport, type PublishTransportPayload } from '@gobing-ai/publish-harness';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
+import { MediumBrowserTransport } from './browser-rail';
+
+export {
+    CHANNEL,
+    channelConfig,
+    DRAFT_URL_RE,
+    HOME_URL,
+    isAuthenticated,
+    LOGIN_URL_RE,
+    MediumBrowserTransport,
+    SELECTORS,
+} from './browser-rail';
 
 /** Medium REST API v1 (integration tokens still post; official docs archived 2023). */
 const MEDIUM_API_BASE = 'https://api.medium.com/v1';
@@ -148,7 +160,11 @@ export function getPublishTransport(): PublishTransport {
     if (process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT === 'fake') {
         return new FakeFileCliTransport();
     }
-    return new MediumApiTransport();
+    const token = process.env[TOKEN_ENV];
+    if (token && token.trim().length > 0) {
+        return new MediumApiTransport();
+    }
+    return new MediumBrowserTransport('script');
 }
 
 async function writePublishResult(outputPath: string, result: Result): Promise<void> {

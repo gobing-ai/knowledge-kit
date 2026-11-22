@@ -17,6 +17,7 @@ const ITC_MAIN_TARGETS = [
     'qiita-pub',
     'medium-pub',
     'substack-pub',
+    'weibo-pub',
 ];
 
 async function withTempDir(fn: (dir: string) => Promise<void> | void): Promise<void> {

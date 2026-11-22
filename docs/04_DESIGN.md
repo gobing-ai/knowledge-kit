@@ -1445,7 +1445,7 @@ for both nouns. They resolve `content_types`, create/read the canonical run dire
 
 ```text
 kk article new       --type <t> (--topic <text> | --from <file.md>) --slug <s> [--locale …] [--work-dir <dir>]
-kk article generate  --type <t> --slug <s> [--agent <executor>] [--auto] [--skip-review] [--publish]
+kk article generate  --type <t> --slug <s> [--agent <executor>] [--auto] [--adapt-only] [--skip-review] [--publish]
                      [--channels <a,b>] [--live-channels <a,b>] [--timeout-ms <n>] [--allow-dirty] [--dry-run]
 kk article publish   --type <t> (--slug <s> | --run-date <YYYYMMDD> | --work-dir <dir>) [--window <w>]
                      [--preset <name>] [--channels <a,b>] [--live-channels <a,b>] [--live-confirm]

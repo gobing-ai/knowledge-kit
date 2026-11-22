@@ -47,6 +47,7 @@ interface GenerateOptions {
     agent?: string;
     skipReview?: boolean;
     auto?: boolean;
+    adaptOnly?: boolean;
     publish?: boolean;
     channels?: string;
     liveChannels?: string;
@@ -296,6 +297,24 @@ async function generateAction(noun: string, defaultType: string, options: Genera
             fail(2, 'kk.content.generate', `--auto is article-only: the '${type}' workflow declares no 'auto' var`);
         }
         vars.auto = 'true';
+    }
+    if (options.adaptOnly === true) {
+        if (type !== 'itc') {
+            fail(
+                2,
+                'kk.content.generate',
+                `--adapt-only is article-only: the '${type}' workflow declares no 'adapt_only' var`,
+            );
+        }
+        const draftPath = join(run.workDir, '3-draft-draft-article.md');
+        if (!(await fs.exists(draftPath))) {
+            fail(
+                5,
+                'kk.content.generate',
+                `--adapt-only requires an existing draft at ${draftPath}; seed with \`kk article new --from <file.md>\` first`,
+            );
+        }
+        vars.adapt_only = 'true';
     }
 
     const receipt = await launchWorkflow({
@@ -625,6 +644,7 @@ function configureGenerate(command: Command, noun: string, defaultType: string):
         .option('--agent <executor>', 'executor the workflow dispatches to (default: inline)')
         .option('--skip-review', 'skip the workflow review pause')
         .option('--auto', 'skip the human gates (article only)')
+        .option('--adapt-only', 'skip authoring and run adapt + freeze over an existing draft (article only)')
         .option('--publish', 'launch publish for window after-generate once generation is green')
         .option('--channels <a,b>', 'publish plan rows or plugins to include')
         .option('--live-channels <a,b>', 'promote enabled rows to live; off rows stay disabled')

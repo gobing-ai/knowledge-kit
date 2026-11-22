@@ -71,6 +71,15 @@
             "tier": 2,
             "required": false,
             "transport": "browser"
+        },
+        {
+            "plugin": "weibo-pub",
+            "profile": "article",
+            "operation": "article",
+            "variant": "zh-article",
+            "tier": 2,
+            "required": false,
+            "transport": "browser"
         }
     ]
 }
