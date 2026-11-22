@@ -671,7 +671,7 @@ export function buildSeoDescription(input: {
     minutes?: number;
     clauses: string[];
     extraSentences: string[];
-}): { description: string; short: boolean } {
+}): { description: string; short: boolean; empty: boolean } {
     const head = descriptionHead(input.config, input.date, input.minutes);
     const render = (parts: string[]): string => (parts.length === 0 ? head : `${head}${parts.join('；')}。`);
     const picked: string[] = [];
@@ -684,9 +684,21 @@ export function buildSeoDescription(input: {
         }
     };
     pushWhile(input.clauses);
+    if (picked.length === 0 && input.clauses.length > 0) {
+        const first = cleanClause(input.clauses[0] ?? '');
+        const room = input.config.descriptionMax - codePointLength(`${head}。`);
+        if (first.length > 0 && room > 0) {
+            const cut = cutAtBoundary(first, room);
+            if (cut.length > 0) picked.push(cut);
+        }
+    }
     if (codePointLength(render(picked)) < input.config.descriptionMin) pushWhile(input.extraSentences);
     const description = render(picked);
-    return { description, short: codePointLength(description) < input.config.descriptionMin };
+    return {
+        description,
+        short: codePointLength(description) < input.config.descriptionMin,
+        empty: picked.length === 0,
+    };
 }
 
 function descriptionInputs(
@@ -694,7 +706,7 @@ function descriptionInputs(
     config: PodcastSeoConfig,
     date: string | undefined,
     minutes: number | undefined,
-): { description: string; short: boolean } {
+): { description: string; short: boolean; empty: boolean } {
     const podcast = podcastOf(metadata);
     const plan = planItemsFromMetadata(metadata);
     const summary = stringList(podcast.summaryClauses);
@@ -882,12 +894,17 @@ export function prepareEpisodeFields(
         const seoTitle = mustSanitize(fitted.seo, config.titleSanitize, 'seo.title');
         if (!seoTitle.ok) return seoTitle;
         const described = descriptionInputs(metadata, config, date, minutes);
-        if (described.short) {
-            warnings.push(
-                `${WARN_PREFIX} seo.description is ${codePointLength(described.description)} code points, under the ${config.descriptionMin} minimum; left unpadded`,
-            );
+        if (described.empty) {
+            warnings.push(`${WARN_PREFIX} seo.description skipped: no summary clauses available`);
+            seo = { title: seoTitle.value };
+        } else {
+            if (described.short) {
+                warnings.push(
+                    `${WARN_PREFIX} seo.description is ${codePointLength(described.description)} code points, under the ${config.descriptionMin} minimum; left unpadded`,
+                );
+            }
+            seo = { title: seoTitle.value, description: described.description };
         }
-        seo = { title: seoTitle.value, description: described.description };
     }
     let slug: string | undefined;
     if (config.slugMode === 'pattern') {
