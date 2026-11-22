@@ -2308,8 +2308,9 @@ export function buildWechatArticleContent(
 ): Record<string, unknown> {
     const wechatmp: Record<string, unknown> = {
         original: true,
-        // 2026-11-22 operator instruction: enable 赞赏 and fill 赞赏账户 with 冰原奔狼 (author).
-        reward: true,
+        // 2026-11-22 live check: 咸话咸说 is not yet authorized in 赞赏账户小程序 -> 可收款公众号,
+        // so reward stays false until the operator authorizes it there.
+        reward: false,
         author: WECHAT_BRAND.author,
         collection: options.collection,
         // 创作来源 is the platform's AI-declaration entry (WX-03); the label declares AI generation.

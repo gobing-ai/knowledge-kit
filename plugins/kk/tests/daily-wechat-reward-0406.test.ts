@@ -52,10 +52,10 @@ describe('daily 公众号 metadata — reward off, 今日要点, stripped H1, cl
     };
     const base = { links: PLACEHOLDER_LINKS, publishStatus: 'draft' as const, collection: '每日AI资讯' };
 
-    test('the 文章 variant sets reward: true while keeping 原创, 合集, 创作来源, coverSource', () => {
+    test('the 文章 variant sets reward: false while keeping 原创, 合集, 创作来源, coverSource', () => {
         const content = buildWechatArticleContent(article, base);
         const wechatmp = (content.metadata as Record<string, unknown>).wechatmp as Record<string, unknown>;
-        expect(wechatmp.reward).toBe(true);
+        expect(wechatmp.reward).toBe(false);
         expect(wechatmp.original).toBe(true);
         expect(wechatmp.collection).toBe('每日AI资讯');
         expect(wechatmp.claimSource).toBe('内容由AI生成');
@@ -85,7 +85,7 @@ describe('daily 公众号 metadata — reward off, 今日要点, stripped H1, cl
         expect(String(metadata.digest).length).toBeGreaterThan(10);
     });
 
-    test('an audio-first 播客 post keeps appendOutro: false semantics and reward: true', () => {
+    test('an audio-first 播客 post keeps appendOutro: false semantics and reward: false', () => {
         const content = buildWechatArticleContent(article, {
             ...base,
             appendOutro: false,
@@ -94,7 +94,7 @@ describe('daily 公众号 metadata — reward off, 今日要点, stripped H1, cl
             audioTitle: '第 1 期',
         });
         const wechatmp = (content.metadata as Record<string, unknown>).wechatmp as Record<string, unknown>;
-        expect(wechatmp.reward).toBe(true);
+        expect(wechatmp.reward).toBe(false);
         expect(wechatmp.audioPath).toBe('/tmp/episode.mp3');
         expect(String(content.body ?? '')).not.toContain('欲听往期节目');
         expect(String(content.body ?? '')).not.toContain('今日要点');
@@ -203,7 +203,7 @@ describe('daily 公众号 metadata — reward off, 今日要点, stripped H1, cl
             ) as { body?: string; metadata?: { digest?: string; wechatmp?: Record<string, unknown> } };
             expect(wx.body).toContain('今日要点如下：');
             expect(wx.body?.startsWith('# ')).toBe(false);
-            expect(wx.metadata?.wechatmp?.reward).toBe(true);
+            expect(wx.metadata?.wechatmp?.reward).toBe(false);
             expect(String(wx.metadata?.digest ?? '').startsWith('#')).toBe(false);
         } finally {
             rmSync(root, { recursive: true, force: true });
