@@ -86,6 +86,21 @@ describe('validateLiveTokens (0365 R7, design §3.3)', () => {
             silence();
         }
     });
+
+    it('accepts a plugin when an earlier row in the window is off and another row is active', () => {
+        const multiRow = {
+            targets: [
+                { plugin: 'weibo-pub', operation: 'article', window: 'cn-peak', mode: 'off' },
+                { plugin: 'weibo-pub', operation: 'post', window: 'cn-peak', mode: 'live' },
+            ],
+        };
+        const silence = silenceOutput();
+        try {
+            expect(() => validateLiveTokens(multiRow, 'cn-peak', ['weibo-pub'], 'daily-ai-voice')).not.toThrow();
+        } finally {
+            silence();
+        }
+    });
 });
 
 describe('resolveWorkflowPath (0365 R6)', () => {
