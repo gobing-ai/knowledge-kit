@@ -130,6 +130,8 @@ const POST_LINK_SELECTOR = 'a[href*="/feed/update/"], a[href*="/posts/"]';
 /** Image upload preview wait: source-pinned 5s @ 250ms like the jike peer, not the step timeout. */
 const PREVIEW_TIMEOUT_MS = 5_000;
 const PREVIEW_POLL_MS = 250;
+/** Best-effort async OG link-preview unfurl wait (measured 2026-11-21: ~1s live). */
+const LINK_PREVIEW_TIMEOUT_MS = 10_000;
 
 const STEP_TIMEOUT_MS = 30_000;
 const LOGIN_TIMEOUT_MS = 180_000;
@@ -464,11 +466,14 @@ export class LinkedinBrowserTransport implements PublishTransport {
         if (!readback.ok) return stageFail(readback.error, 'text-readback', metadata);
 
         // Image upload: confirmed landed; an unconfirmed upload refuses before submit — never a
-        // silent text-only post while an image was requested.
+        // silent text-only post while an image was requested. When posting a URL with no image,
+        // wait briefly (best-effort) for LinkedIn to finish attaching the async OG link-preview card.
         const [image] = images;
         if (image !== undefined) {
             const uploaded = await this.uploadImage(page, image);
             if (!uploaded.ok) return stageFail(uploaded.error, 'image-upload', metadata);
+        } else {
+            await this.waitForLinkPreview(page, composerSelector, text);
         }
 
         // Baselines before submit: only fresh toast and fresh post-link signals can confirm.
@@ -655,6 +660,25 @@ export class LinkedinBrowserTransport implements PublishTransport {
         }
     }
 
+    /** Best-effort wait for LinkedIn's async OG card fetch when posting a URL without an image. */
+    private async waitForLinkPreview(page: Page, composerSelector: string, text: string): Promise<void> {
+        const host = extractUrlHost(text);
+        if (host === null) return;
+        await expectOutcome(
+            async () => {
+                const hit = String(
+                    await page.evaluate(linkPreviewScript(composerSelector, host)).catch(() => ''),
+                ).trim();
+                return hit.length > 0 ? 'link preview attached' : null;
+            },
+            {
+                timeoutMs: Math.min(this.stepTimeoutMs, LINK_PREVIEW_TIMEOUT_MS),
+                pollMs: PREVIEW_POLL_MS,
+                label: 'linkedin link preview',
+            },
+        );
+    }
+
     /** Visible toast texts (provisional containers), used as the pre-send baseline. */
     private async readToasts(page: Page): Promise<readonly string[]> {
         return parseStringArray(await page.evaluate(toastTextsScript()));
@@ -726,6 +750,44 @@ function mediaEvidenceScript(): string {
     const dialogs = [...document.querySelectorAll('[role="dialog"]')].filter((n) => n.offsetWidth > 0);
     const scope = dialogs.length > 0 ? dialogs[dialogs.length - 1] : document;
     return scope.querySelectorAll('img[src], video[src], video source[src], [style*="background-image"]').length;
+})()`;
+}
+
+/** Extracts a lowercase hostname from the first HTTP(S) URL in post text, if parseable. */
+function extractUrlHost(text: string): string | null {
+    const match = /https?:\/\/[^\s)>"'<>]+/i.exec(text);
+    if (!match) return null;
+    const cleaned = match[0].replace(/[.,;:!?。，；！？]+$/, '');
+    try {
+        return new URL(cleaned).hostname.toLowerCase();
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Detects an asynchronously attached OG preview card inside the share composer without matching
+ * text inside the editor itself (`img[src*="articleshare"]` or a leaf node displaying the URL host).
+ */
+function linkPreviewScript(composerSelector: string, host: string): string {
+    return `(() => { // kk-linkedin-link-preview
+    const editor = document.querySelector(${JSON.stringify(composerSelector)});
+    if (!editor) return '';
+    let scope = editor.parentElement;
+    while (scope && scope.parentElement && scope !== document.body) {
+        if ([...scope.querySelectorAll('button')].some((b) => (b.textContent || '').trim() === 'Post')) break;
+        scope = scope.parentElement;
+    }
+    scope = scope || editor.closest('[role="dialog"]') || document.body;
+    if (scope.querySelector('img[src*="articleshare"]')) return '1';
+    const hostLower = ${JSON.stringify(host)};
+    for (const node of scope.querySelectorAll('*')) {
+        if (editor.contains(node) || node.contains(editor)) continue;
+        if (node.children.length === 0 && (node.textContent || '').toLowerCase().includes(hostLower)) {
+            return '1';
+        }
+    }
+    return '';
 })()`;
 }
 

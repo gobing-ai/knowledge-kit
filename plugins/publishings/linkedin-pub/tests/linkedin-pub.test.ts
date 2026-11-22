@@ -88,6 +88,8 @@ interface FakePageOptions {
     fillThrows?: boolean;
     /** Uploading media opens a media editor step whose Next button must be clicked. */
     withMediaNextButton?: boolean;
+    /** Number of `kk-linkedin-link-preview` polls before an OG link preview card attaches. */
+    linkPreviewAfterPolls?: number;
 }
 
 interface LauncherHandle {
@@ -108,6 +110,7 @@ function makeFakePage(options: FakePageOptions, calls: string[]): Page {
     let editorText = '';
     let mediaNodes = 0;
     let mediaNextPending = false;
+    let linkPreviewPolls = 0;
     let probedTrigger = false;
     const toasts = [...(options.existingToasts ?? [])];
     const cards: Array<{ href: string; text: string }> = [];
@@ -197,6 +200,12 @@ function makeFakePage(options: FakePageOptions, calls: string[]): Page {
                 return String(editorText).trim();
             }
             if (expression.includes('kk-linkedin-media-evidence')) return String(mediaNodes);
+            if (expression.includes('kk-linkedin-link-preview')) {
+                linkPreviewPolls += 1;
+                return options.linkPreviewAfterPolls !== undefined && linkPreviewPolls >= options.linkPreviewAfterPolls
+                    ? '1'
+                    : '';
+            }
             if (expression.includes('kk-linkedin-toasts')) {
                 return options.malformedToasts === true ? 'not-json' : JSON.stringify(toasts);
             }
@@ -679,6 +688,59 @@ describe('linkedin-pub post flow (offline fake page)', () => {
         const result = await transport(fake).publish({ content: liveContent });
         expect(result.ok).toBe(true);
         expect(result.url).toBe(POST_URL);
+    });
+
+    test('link-only post with URL polls for async OG preview card before clicking Post', async () => {
+        const fake = makeFakeLauncher({ onSend: 'freshCard', linkPreviewAfterPolls: 2 });
+        const urlContent: Content = {
+            ...liveContent,
+            body: '第261121期\n\nhttps://podcast.salty.vip/i/daily-ai-2026-11-21/',
+        };
+        const result = await transport(fake, 1_500).publish({ content: urlContent });
+
+        expect(result.ok).toBe(true);
+        expect(result.url).toBe(POST_URL);
+        const previewCalls = fake.calls.filter((call) => call.includes('kk-linkedin-link-preview'));
+        expect(previewCalls.length).toBeGreaterThanOrEqual(2);
+    });
+
+    test('link-only post still submits when async OG preview card never renders', async () => {
+        const fake = makeFakeLauncher({ onSend: 'freshCard' });
+        const urlContent: Content = {
+            ...liveContent,
+            body: 'Check https://podcast.salty.vip/i/daily-ai-2026-11-21/',
+        };
+        const result = await transport(fake, 100).publish({ content: urlContent });
+
+        expect(result.ok).toBe(true);
+        expect(result.url).toBe(POST_URL);
+        expect(fake.calls.some((call) => call.includes('kk-linkedin-link-preview'))).toBe(true);
+        expect(fake.calls).toContain(`click:${SEND_SELECTOR}`);
+    });
+
+    test('attached coverImage skips OG link preview wait even when body contains a URL', async () => {
+        const fake = makeFakeLauncher({ onSend: 'freshCard', linkPreviewAfterPolls: 1 });
+        const urlWithImage: Content = {
+            ...liveContent,
+            body: 'With cover https://podcast.salty.vip/i/daily-ai-2026-11-21/',
+            metadata: { ...liveContent.metadata, coverImage: IMAGE_PATH },
+        };
+        const result = await transport(fake).publish({ content: urlWithImage });
+
+        expect(result.ok).toBe(true);
+        expect(fake.calls.some((call) => call.includes('kk-linkedin-link-preview'))).toBe(false);
+    });
+
+    test('unparseable URL-like token skips OG link preview wait and still submits', async () => {
+        const fake = makeFakeLauncher({ onSend: 'freshCard' });
+        const malformedUrl: Content = {
+            ...liveContent,
+            body: 'Broken URL https://[bad here',
+        };
+        const result = await transport(fake).publish({ content: malformedUrl });
+
+        expect(result.ok).toBe(true);
+        expect(fake.calls.some((call) => call.includes('kk-linkedin-link-preview'))).toBe(false);
     });
 });
 
