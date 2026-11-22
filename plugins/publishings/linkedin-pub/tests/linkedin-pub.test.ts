@@ -86,6 +86,8 @@ interface FakePageOptions {
     malformedToasts?: boolean;
     /** The composer fill itself throws (a page crash mid-flow). */
     fillThrows?: boolean;
+    /** Uploading media opens a media editor step whose Next button must be clicked. */
+    withMediaNextButton?: boolean;
 }
 
 interface LauncherHandle {
@@ -105,6 +107,7 @@ function makeFakePage(options: FakePageOptions, calls: string[]): Page {
     let url = 'about:blank';
     let editorText = '';
     let mediaNodes = 0;
+    let mediaNextPending = false;
     let probedTrigger = false;
     const toasts = [...(options.existingToasts ?? [])];
     const cards: Array<{ href: string; text: string }> = [];
@@ -157,11 +160,36 @@ function makeFakePage(options: FakePageOptions, calls: string[]): Page {
         locator(selector: string) {
             return { first: () => leaf(selector), count: async () => attached(selector) };
         },
+        ...(options.withMediaNextButton !== true
+            ? {}
+            : {
+                  getByRole(_role: string, query: { name: string | RegExp }) {
+                      if (query.name instanceof RegExp) {
+                          return {
+                              count: async () => (mediaNextPending ? 1 : 0),
+                              first: () => ({
+                                  click: async () => {
+                                      calls.push('click:role:Next');
+                                      mediaNextPending = false;
+                                  },
+                              }),
+                          };
+                      }
+                      return {
+                          count: async () => 0,
+                          first: () => leaf(SEND_SELECTOR),
+                          last: () => leaf(SEND_SELECTOR),
+                      };
+                  },
+              }),
         async setInputFiles(selector: string, paths: string | string[]) {
             const list = Array.isArray(paths) ? paths : [paths];
             calls.push(`setInputFiles:${selector}|${list.join(',')}`);
             if (attached(selector) === 0) throw new Error(`setInputFiles: ${selector} not attached`);
-            if (options.previewNeverLands !== true) mediaNodes += list.length;
+            if (options.previewNeverLands !== true) {
+                mediaNodes += list.length;
+                if (options.withMediaNextButton === true) mediaNextPending = true;
+            }
         },
         async evaluate(expression: string) {
             calls.push(`evaluate:${expression.slice(0, 40)}`);
@@ -549,6 +577,29 @@ describe('linkedin-pub post flow (offline fake page)', () => {
         expect(result.ok).toBe(false);
         expect(result.error).toContain('composer page crashed on fill');
         expect(result.error).not.toContain(LINKEDIN_LOGIN_INSTRUCTION);
+    });
+
+    test('metadata.coverImage is used when options.images and metadata.images are omitted', async () => {
+        const fake = makeFakeLauncher({ onSend: 'freshCard' });
+        const result = await transport(fake).publish({
+            content: { ...liveContent, metadata: { ...liveContent.metadata, coverImage: IMAGE_PATH } },
+        });
+
+        expect(result.ok).toBe(true);
+        expect(
+            fake.calls.some((call) => call.startsWith(`setInputFiles:${SELECTORS.fileInput[0]}|${IMAGE_PATH}`)),
+        ).toBe(true);
+    });
+
+    test('clicks Next in LinkedIn media editor when present before returning to Post', async () => {
+        const fake = makeFakeLauncher({ onSend: 'freshCard', withMediaNextButton: true });
+        const result = await transport(fake).publish({
+            content: { ...liveContent, metadata: { ...liveContent.metadata, coverImage: IMAGE_PATH } },
+        });
+
+        expect(result.ok).toBe(true);
+        expect(fake.calls).toContain('click:role:Next');
+        expect(fake.calls).toContain(`click:${SEND_SELECTOR}`);
     });
 
     test('an upload whose preview never lands refuses at the image-upload stage, never a text-only post', async () => {

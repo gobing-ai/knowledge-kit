@@ -240,15 +240,21 @@ export const LINKEDIN_CONFIG: ChannelBrowserConfig = {
 };
 
 /**
- * Resolves the optional single image (`options.images ?? metadata.images`) without uploading:
- * a payload of at most one existing local image file, so a bad path is a fast pre-browser refusal
- * (0328 R1 "text plus one image").
+ * Resolves the optional single image (`options.images ?? metadata.images ?? metadata.coverImage`)
+ * without uploading: a payload of at most one existing local image file, so a bad path is a fast
+ * pre-browser refusal (0328 R1 "text plus one image").
  */
 async function resolveImages(
     options?: Record<string, unknown>,
     content?: Content,
 ): Promise<{ paths: string[] } | { error: string }> {
-    const raw = options?.images ?? content?.metadata?.images;
+    const rawImages = options?.images ?? content?.metadata?.images;
+    const raw =
+        rawImages !== undefined
+            ? rawImages
+            : content?.metadata?.coverImage !== undefined
+              ? [content.metadata.coverImage]
+              : undefined;
     if (raw === undefined) return { paths: [] };
     if (!Array.isArray(raw)) {
         return { error: `metadata.images must be an array of local image paths, got '${bounded(raw)}'` };
@@ -625,6 +631,24 @@ export class LinkedinBrowserTransport implements PublishTransport {
                     error: `linkedin composer preview never reached ${before + 1} media nodes (baseline ${before}) for the uploaded image`,
                 };
             }
+            const mediaNext = (
+                page as unknown as {
+                    getByRole?: (
+                        role: 'button',
+                        opts: { name: RegExp },
+                    ) => {
+                        count(): Promise<number>;
+                        first(): { click(opts?: { timeout?: number }): Promise<unknown> };
+                    };
+                }
+            ).getByRole?.('button', { name: /^(?:Next|Done)$/i });
+            if (mediaNext !== undefined && (await mediaNext.count()) > 0) {
+                await mediaNext.first().click({ timeout: this.stepTimeoutMs });
+                await expectOutcome(async () => ((await mediaNext.count()) === 0 ? 'media editor closed' : null), {
+                    timeoutMs: Math.min(this.stepTimeoutMs, 10_000),
+                    label: 'linkedin media editor close',
+                });
+            }
             return { ok: true, evidence: confirmed.evidence };
         } catch (error) {
             return { ok: false, error: `linkedin image upload failed — ${errorMessage(error)}` };
@@ -699,7 +723,8 @@ function editorTextScript(selector: string): string {
  */
 function mediaEvidenceScript(): string {
     return `(() => { // kk-linkedin-media-evidence
-    const scope = document.querySelector('[role="dialog"]') || document;
+    const dialogs = [...document.querySelectorAll('[role="dialog"]')].filter((n) => n.offsetWidth > 0);
+    const scope = dialogs.length > 0 ? dialogs[dialogs.length - 1] : document;
     return scope.querySelectorAll('img[src], video[src], video source[src], [style*="background-image"]').length;
 })()`;
 }
