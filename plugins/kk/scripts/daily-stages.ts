@@ -2228,8 +2228,8 @@ function wechatKeyPointLabel(title: string): string {
     const clean = title.replace(/^#+\s+/, '').trim();
     const firstClause = clean.split(/[：:，,。！？!?\-—|]/)[0]?.trim() ?? clean;
     const chars = Array.from(firstClause);
-    if (chars.length > 0 && chars.length <= 18) return firstClause;
-    return Array.from(clean).slice(0, 18).join('');
+    if (chars.length > 0 && chars.length <= 28) return firstClause;
+    return Array.from(clean).slice(0, 28).join('');
 }
 
 function extractWechatKeyPoints(
@@ -2308,10 +2308,8 @@ export function buildWechatArticleContent(
 ): Record<string, unknown> {
     const wechatmp: Record<string, unknown> = {
         original: true,
-        // 2026-11-21 operator decision (A3): keep `reward: false` while the 咸话咸说 account lacks
-        // an authorized 赞赏账户, so WECHATMP_ALLOW_PARTIAL_ENRICH=1 is no longer needed and real
-        // enrichment failures (音频, 原创, 原文链接) fail loud.
-        reward: false,
+        // 2026-11-22 operator instruction: enable 赞赏 and fill 赞赏账户 with 冰原奔狼 (author).
+        reward: true,
         author: WECHAT_BRAND.author,
         collection: options.collection,
         // 创作来源 is the platform's AI-declaration entry (WX-03); the label declares AI generation.
@@ -2342,11 +2340,17 @@ export function buildWechatArticleContent(
             },
         };
     }
-    let formattedBody = stripLeadingH1Heading(rawBody);
+    let formattedBody = stripLeadingH1Heading(rawBody).trimStart();
     const keyPoints = (options.keyPoints ?? []).filter((kp) => kp.label.trim() !== '' && kp.text.trim() !== '');
-    if (keyPoints.length > 0 && !/^\s*##\s+今日要点\b/m.test(formattedBody)) {
-        const bullets = keyPoints.map((kp) => `- **${kp.label.trim()}** — ${kp.text.trim()}`).join('\n');
-        formattedBody = `## 今日要点\n\n${bullets}\n\n${formattedBody.trimStart()}`;
+    if (keyPoints.length > 0 && !/今日要点/.test(formattedBody.slice(0, 200))) {
+        const bullets = keyPoints.map((kp) => `- ${kp.label.trim()}`).join('\n');
+        const introMatch = formattedBody.match(/^([^\n]*咸话咸说[^\n]*)\n+/);
+        if (introMatch?.[1]) {
+            const rest = formattedBody.slice(introMatch[0].length).trimStart();
+            formattedBody = `${introMatch[1].trimEnd()}今日要点如下：\n${bullets}\n\n下面请听详细内容。\n\n${rest}`;
+        } else {
+            formattedBody = `今日要点如下：\n${bullets}\n\n下面请听详细内容。\n\n${formattedBody}`;
+        }
     }
     const existingDigest = typeof existingMeta.digest === 'string' ? existingMeta.digest.trim() : '';
     const derivedDigest = existingDigest !== '' ? existingDigest : cleanWechatDigest(rawBody, keyPoints);
@@ -6479,6 +6483,25 @@ export function reduceOverflowingPoints(points: string[], named: readonly number
         const next = shortenOverflowedPoint(point);
         if (next !== point) {
             points[n] = next;
+            changed = true;
+        }
+    }
+    // When a long earlier point pushes a short trailing point out of the safe area, the composer
+    // names the trailing index. Shorten the longest shrinkable point so the block fits.
+    if (!changed) {
+        let bestIndex = -1;
+        let bestLen = 0;
+        for (let i = 0; i < points.length; i++) {
+            const point = points[i] ?? '';
+            const next = shortenOverflowedPoint(point);
+            if (next !== point && point.length > bestLen) {
+                bestIndex = i;
+                bestLen = point.length;
+            }
+        }
+        if (bestIndex >= 0) {
+            const point = points[bestIndex] ?? '';
+            points[bestIndex] = shortenOverflowedPoint(point);
             changed = true;
         }
     }
