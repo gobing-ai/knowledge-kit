@@ -2,11 +2,11 @@
 schema_version: 1
 id: "L4"
 name: "Daily AI news cover and illustration skills"
-status: backlog
+status: active
 priority: P2
 tags: []
 created_at: "2026-11-23T01:18:56.027Z"
-updated_at: "2026-11-23T01:22:48.004Z"
+updated_at: "2026-11-23T05:21:51.055Z"
 ---
 
 # L4: Daily AI news cover and illustration skills
@@ -82,10 +82,13 @@ Feature: Daily AI news cover and illustration skills
 | --- | ---- | ------ |
 | 0427 | Replay daily visual workflow and verify installed skill discovery | todo |
 | 0426 | Render optional inline figures in reviewed daily news | todo |
-| 0424 | Centralize daily news cover composition | todo |
+| 0424 | Centralize daily news cover composition | testing |
 | 0425 | Centralize daily Xiaohongshu illustration direction | todo |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
 
 ## History
+
+- 2026-11-23T05:21:51.055Z backlog → active (system)
+

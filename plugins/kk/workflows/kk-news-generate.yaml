@@ -32,6 +32,10 @@ vars:
   # The writer skill, read in place (design §2.2): `<package>/plugins/kk/skills/news-editorial`. No
   # `20-editorial/` copy and no style-contract copy exist in a new run — the prompts cite this path.
   skill_dir: ""
+  # 0424 R2: the package's skill root, read in place for the daily visual direction (cover scene +
+  # shared composition reference). `kk news generate` passes the resolved absolute root; the
+  # checkout-relative default keeps a direct `spur workflow run` call working.
+  visual_skill_root: "plugins/kk/skills"
   skip_review: "false"
   preset: ""
 
@@ -167,6 +171,8 @@ nodes:
         # ADR-115 error tier: keep this prompt <= 1000 chars.
         input: |
           Follow mode `write` in ${vars.skill_dir}/SKILL.md (read its references first: the skill owns selection, balance, style contract and the master output shape).
+          Visuals: `scene` mode in ${vars.visual_skill_root}/daily-news-cover/SKILL.md owns `cover` (keep the frozen headline and sourceIds);
+          `card` mode in ${vars.visual_skill_root}/daily-news-illustrations/SKILL.md owns each items[].card.subject. Compose per ${vars.visual_skill_root}/news-editorial/references/daily-visual-composition.md.
           --in ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json (don't edit it)
           --excluded ${vars.work_dir}/21-plan/${vars.run_date}_03_curate_excluded.json
           --out ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json
@@ -208,6 +214,8 @@ nodes:
         # ADR-115 error tier: keep this prompt <= 1000 chars.
         input: |
           Follow mode `write --fix` in ${vars.skill_dir}/SKILL.md (read its references first).
+          Visuals: `scene` mode in ${vars.visual_skill_root}/daily-news-cover/SKILL.md owns `cover` (keep the frozen headline and sourceIds);
+          `card` mode in ${vars.visual_skill_root}/daily-news-illustrations/SKILL.md owns each items[].card.subject. Compose per ${vars.visual_skill_root}/news-editorial/references/daily-visual-composition.md.
           --in ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json (don't edit it)
           --excluded ${vars.work_dir}/21-plan/${vars.run_date}_03_curate_excluded.json
           Previous plan (may be absent): ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json

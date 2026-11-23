@@ -111,7 +111,7 @@ describe('kk-news-generate — AC1: twenty nodes, one executor variable, no padd
         }
     });
 
-    it('has ONE executor variable and the seven designed vars (ADR-053 §5, R7)', () => {
+    it('has ONE executor variable and the eight designed vars (ADR-053 §5, R7; 0424 R2 adds the visual skill root)', () => {
         expect(Object.keys(doc.vars).sort()).toEqual([
             'agent',
             'preset',
@@ -119,8 +119,12 @@ describe('kk-news-generate — AC1: twenty nodes, one executor variable, no padd
             'run_id',
             'skill_dir',
             'skip_review',
+            'visual_skill_root',
             'work_dir',
         ]);
+        // 0424 R2: the daily visual skills are read in place from the package; the declared default
+        // keeps a direct `spur workflow run` call working without the launcher.
+        expect(doc.vars.visual_skill_root).toBe('plugins/kk/skills');
         // `agent` is the only executor switch: `inline` by default, and no node pins a model, an
         // executor roster entry or a second agent var.
         expect(doc.vars.agent).toBe('inline');
@@ -213,6 +217,15 @@ describe('kk-news-generate — R7: the node bodies', () => {
         // writer skill, so its prompt cites the artefact contract instead of `skill_dir`.
         for (const node of agents.filter((entry) => !['executor-probe', 'localize'].includes(entry.id))) {
             expect(String(node.action?.options?.input)).toContain('SKILL.md');
+        }
+        // 0424 R2: the two plan-authoring passes also carry the cover-scene direction, read in place
+        // from the same package skill root (never a per-run copy, never the writer's own SKILL.md).
+        const visualRoot = '$' + '{vars.visual_skill_root}';
+        for (const id of ['script-write', 'script-fix']) {
+            const input = String(byId.get(id)?.action?.options?.input);
+            expect(input).toContain(`${visualRoot}/daily-news-cover/SKILL.md`);
+            expect(input).toContain(`${visualRoot}/daily-news-illustrations/SKILL.md`);
+            expect(input).toContain(`${visualRoot}/news-editorial/references/daily-visual-composition.md`);
         }
         // The two fix passes and the judge resolve above the primary's rung.
         for (const id of ['curate-fix', 'script-fix', 'editorial-judge']) {

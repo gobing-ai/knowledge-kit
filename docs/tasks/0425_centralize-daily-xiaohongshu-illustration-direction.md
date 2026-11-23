@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Centralize daily Xiaohongshu illustration direction
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-23T01:20:51.116Z
-updated_at: "2026-11-23T02:49:17.371Z"
+updated_at: "2026-11-23T06:24:21.485Z"
 feature_id: L4
 priority: P2
 tags:
@@ -13,6 +13,8 @@ tags:
 estimate_hours: 4
 
 dependencies: ["0424"]
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0425. Centralize daily Xiaohongshu illustration direction
@@ -29,12 +31,12 @@ Current-tree sources: plugins/kk/scripts/daily-stages.ts:5689, plugins/kk/script
 
 ### Requirements
 
-- [ ] R1. Install `kk:daily-news-illustrations` card mode and route current author, repair and legacy daily XHS visual directions through it.
-- [ ] R2. Given a valid ordered plan with an existing composed card, render only the missing artwork through image-gen. Preserve the pinned format/style/provider/model, deterministic card copy, published manifest, fallback and optional episode-cover attachment.
+- [x] R1. Install `kk:daily-news-illustrations` card mode and route current author, repair and legacy daily XHS visual directions through it.
+- [x] R2. Given a valid ordered plan with an existing composed card, render only the missing artwork through image-gen. Preserve the pinned format/style/provider/model, deterministic card copy, published manifest, fallback and optional episode-cover attachment.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Daily cards share illustration direction and preserve their manifest
+- [x] AC1 — Daily cards share illustration direction and preserve their manifest
 
 AC1 exercises R1 in the author/repair prompt fixture and R2 in the cached-card replay.
 
@@ -66,18 +68,76 @@ AC1 exercises R1 in the author/repair prompt fixture and R2 in the cached-card r
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+**Change map**
+
+- `plugins/kk/skills/daily-news-illustrations/SKILL.md:1` — new skill, mode `card` (the only mode). It owns one sourced scene per card, composes against 0424's shared reference, keeps the derived cover/closing cards on the existing fallback, and copies `copy`/`points`/`role`/`layout`/`sourcePoint`/`itemId`/`title`/`body` through unchanged. It adds no agent hop, verb, preset or renderer path.
+- `plugins/kk/skills/news-editorial/SKILL.md:82` — the per-item `card` slot now says its `subject` is composed per the illustrations skill, while `copy`/`points` and the episode `cards.title`/`body` stay editorial; `:210` adds the skill to the reference list.
+- `plugins/kk/workflows/kk-news-generate.yaml:174` / `:217` — the canonical `script-write` and `script-fix` prompts now hand both visual fields to their owners in one line (`cover` → `daily-news-cover`, `items[].card.subject` → `daily-news-illustrations`, composition → the shared reference), keeping the `skill_dir` line, the plan paths, `expectFile` and `allowAppend`. Both prompts stay inside the ADR-115 error tier (993 / 901 chars).
+- `plugins/kk/workflows/kk-daily-ai-voice.yaml:486` (state `xhs-write`) and `kk-daily-ai-voice2.yaml:774` (node `xhs-write`) — the legacy card-plan prompts point at mode `card` and drop the scene rules they used to restate; each keeps its exact output path, item scope, role/layout/copy contract and the 0392 topic-boundary sentence verbatim (907 / 942 chars).
+- Untouched by design: `plugins/kk/scripts/daily-stages.ts:5700-5748` (`dailyEditorialRender` card plan + cover/closing fallback) and `:6543` (`dailyXhsRender` per-card render, cached-artifact reuse, episode-cover attachment), and the generic `kk:xhs-images` skill.
+
+**Tests (written before the code)**
+
+- `plugins/kk/tests/daily-news-illustrations.test.ts:1` — AC1/R1 structural contract: the skill declares mode `card`, owns `subject` only, defers `copy`/`points`/`sourcePoint`/`itemId`/`title`/`body`, keeps the fallback and the 240-char limit; all three daily workflows and `news-editorial` carry the pointer, and both legacy prompts keep `_18_xhs_plan.json` + `allowAppend: false`.
+- `apps/cli/tests/kk-workflow-stages.test.ts:5300` — AC1/R2 replay: each content card's plan `subject` is the scene its own item authored, and the `cover`/`closing` cards reuse the existing episode fallback, with card order and deterministic copy unchanged (the cached-artifact case at `:2464` already proves one paid call and the preserved prompt).
+- `plugins/kk/tests/runtime-requires.test.ts:166` / `:181` — the frozen entity table grows to 23 entities (19 skills) with the new `[cli:kk, local-fs]` skill.
+
+**Preserved behaviour.** Pins, order, deterministic Chinese copy, the published manifest, the per-card retry, the cached-artifact check and the optional episode-cover attachment are unchanged: this task adds direction, not a render path.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 — install `kk:daily-news-illustrations` card mode and route the current author, repair and legacy daily XHS visual directions through it | MET | `plugins/kk/skills/daily-news-illustrations/SKILL.md:1` (mode `card`, sourced-scene rules, derived cover/closing, copied-through fields) · `plugins/kk/skills/news-editorial/SKILL.md:82` (`items[].card.subject` handed to the skill, `copy`/`points`/`cards.title/body` kept) · `plugins/kk/workflows/kk-news-generate.yaml:174`/`:217` (canonical author + repair prompts) · `plugins/kk/workflows/kk-daily-ai-voice.yaml:486` and `kk-daily-ai-voice2.yaml:774` (legacy `xhs-write` prompts) · `plugins/kk/tests/daily-news-illustrations.test.ts:23`/`:37` — 5 pass / 0 fail |
+| R2 — given a valid ordered plan with an existing composed card, render only the missing artwork through image-gen; preserve the pinned format/style/provider/model, deterministic card copy, published manifest, fallback and optional episode-cover attachment | MET | `apps/cli/tests/kk-workflow-stages.test.ts:5300` (each content card's plan `subject` is its own item's sourced scene; `cover`/`closing` reuse the episode fallback; order and deterministic copy unchanged) · the cached-artifact replay at `:2464` (exactly one paid call, the kept prompt byte-identical, manifest order preserved) · `plugins/kk/scripts/daily-stages.ts:5710-5748` and `:6543` are byte-identical (pins, fallback, per-card retry, resume, episode-cover attachment) · full suite green: 6361 pass / 0 fail |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — Daily cards share illustration direction and preserve their manifest | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:5300` (sourced scenes + fallback + order) · `:2464` (one missing-card generation, manifest order, preserved prompt) · `plugins/kk/tests/daily-news-illustrations.test.ts:37` (all three workflows + `news-editorial` carry the pointer, legacy prompts keep their output path and `allowAppend: false`) |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+Review depth: **all** (SECUA + architecture depth + functional traceability) over the task's
+uncommitted worktree change set (2 new files + 7 modified).
+
+**Functional traceability** — R1 MET: `kk:daily-news-illustrations` ships mode `card` and every
+card-authoring prompt reaches it (canonical `script-write`/`script-fix`, both legacy `xhs-write`
+prompts, and `news-editorial`'s `items[].card` slot), while `copy`/`points`/`role`/`layout`/
+`sourcePoint`/order stay with their existing owners. R2 MET: the replay asserts each content card's
+plan `subject` is its own item's sourced scene and the `cover`/`closing` cards reuse the episode
+fallback; the cached-artifact case still proves exactly one paid call with the kept prompt and the
+manifest order intact. AC1 MET — evidence tables in
+`.spur/run/runall-L4-0ad4-0425-review-cert.md`.
+
+**SECUA** — no new input surface or verb; explicit rejection list; read-only assets; the legacy prompts
+got shorter (907/942 chars) while keeping the 0392 topic-boundary sentence verbatim; the canonical
+prompts are 993/901, inside the ADR-115 error tier; no UI.
+
+**Architecture** — card direction is data in one skill, not a fourth copy of the scene rules. The two
+ownership seams are where they were: editorial owns copy/order/plan shape, the renderer owns pins,
+pixels, resume and the manifest.
+
+**Findings** — P4 (advisory): the legacy prompts name the skill instead of restating its rules, so a
+different composition family is a reference edit. Accepted by design. No open P1/P2/P3.
+
+**Verification** — focused suites green (247 pass across `kk-workflow-stages`,
+`kk-daily-ai-voice-workflow`, `voice2-dag`; 24 pass across the four pointer/snapshot suites) and the
+full suite green (6361 pass / 0 fail) with the gate reading a complete coverage corpus.
+
+**Disposition** — PASS.
 
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-11-23T06:15:59.010Z todo → wip (system)
+- 2026-11-23T06:24:20.065Z wip → testing (system)
+- 2026-11-23T06:24:21.480Z testing → done (system)
+

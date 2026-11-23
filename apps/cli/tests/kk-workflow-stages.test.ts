@@ -5301,6 +5301,19 @@ describe('F613 (0162) — script-write stage wiring', () => {
                     itemId: 'doc-2',
                 });
                 expect(xhs.cards[3].role).toBe('closing');
+                // 0425 R2/AC1: each content card's artwork is the SOURCED scene its item authored, the
+                // cover/closing cards reuse the existing episode fallback (the master cover scene), and
+                // the deterministic copy/points/order ride unchanged beside them.
+                expect(xhs.cards[1].subject).toBe(
+                    'A compact server blade glowing with cyan light channels on a dark workbench',
+                );
+                expect(xhs.cards[2].subject).toBe(
+                    'Layered translucent memory plates connected by golden optical threads',
+                );
+                expect(xhs.cards[0].subject).toBe(
+                    'A sleek crystalline processor core splitting a beam of light into two parallel fiber channels',
+                );
+                expect(xhs.cards[3].subject).toBe(xhs.cards[0].subject);
 
                 // Check social files (x, threads and weibo share unified short notice)
                 expect(snap1.x).toBe(snap1.threads);

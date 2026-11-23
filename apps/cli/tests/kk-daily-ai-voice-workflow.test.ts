@@ -150,7 +150,12 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(block).toContain('allowAppend: false');
         expect(block).toContain(`expectFile: ${workDir}/23-cover/${runDate}_07_cover-brief.json`);
         expect(block).toContain(`21-plan/\${vars.run_date}_03_plan_plan.json`);
-        expect(block).toContain('≤240 characters');
+        // 0424 R2: the scene contract (≤240 chars, no text/logos, composition) moved into the shipped
+        // skill + shared reference, read in place from the package root the launcher resolves.
+        const visualRoot = '$' + '{vars.visual_skill_root}';
+        expect(block).toContain(`${visualRoot}/daily-news-cover/SKILL.md`);
+        expect(block).toContain(`${visualRoot}/news-editorial/references/daily-visual-composition.md`);
+        expect(yaml).toContain('visual_skill_root: "plugins/kk/skills"');
         expect(block).toContain('{"subject": "..."}');
         // R3: the stage owns the pinned render; normalize is unchanged.
         expect(block).toContain(

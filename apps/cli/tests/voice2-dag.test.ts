@@ -713,6 +713,18 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
         expect(input.length).toBeLessThanOrEqual(1000);
     });
 
+    it('points the cover brief at the shipped daily-news-cover skill (0424 R2)', () => {
+        // The scene contract (≤240 chars, no text/logos, composition) lives in the skill now; the
+        // prompt only resolves it from the package root the launcher passes.
+        const input = String(dag.nodes.find((node) => node.id === 'cover-brief')?.action?.options?.input);
+        const visualRoot = '$' + '{vars.visual_skill_root}';
+        expect(input).toContain(`${visualRoot}/daily-news-cover/SKILL.md`);
+        expect(input).toContain(`${visualRoot}/news-editorial/references/daily-visual-composition.md`);
+        expect(input).toContain('21-plan/');
+        expect(input.length).toBeLessThanOrEqual(1000);
+        expect(dag.vars?.visual_skill_root).toBe('plugins/kk/skills');
+    });
+
     it('leaves kk-daily-ai-voice.yaml behaviourally identical (R1; 0257 allows docs-only edits)', () => {
         expect(existsSync(VOICE1)).toBe(true);
         const diff = Bun.spawnSync(['git', 'diff', '--', 'plugins/kk/workflows/kk-daily-ai-voice.yaml'], {
@@ -727,8 +739,14 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
         // Exception (2026-10-20): `intro_music` points at the sting under the config root (ADR-042)
         // in BOTH workflows. Same file as the retired works-tree symlink, and `dailyIntro` expands
         // `~` for either workflow, so the frozen voice1 behaviour is unchanged.
+        // Exception (2026-11-22, task 0424 R2): the cover brief reads its scene contract from the
+        // shipped `daily-news-cover` skill, so voice1 declares the package skill root beside its other
+        // cover vars. A default only — every state, command, edge and condition stays frozen.
         const docOnly = (line: string): boolean =>
-            /^[+-]\s*#/.test(line) || /^[+-]\s*description:/.test(line) || /^[+-]\s*intro_music:/.test(line);
+            /^[+-]\s*#/.test(line) ||
+            /^[+-]\s*description:/.test(line) ||
+            /^[+-]\s*intro_music:/.test(line) ||
+            /^[+-]\s*visual_skill_root:/.test(line);
         // Exception (2026-11-18, task 0392): the editorial topic-boundary PROSE inside the agent
         // prompts is a policy surface, not frozen behaviour — `news-editorial/SKILL.md` is the source
         // and the writers only ever see these `input:` scalars, so retuning the policy has to touch

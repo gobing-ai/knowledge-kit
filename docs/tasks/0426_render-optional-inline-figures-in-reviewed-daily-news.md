@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Render optional inline figures in reviewed daily news
-status: todo
+status: wip
 template: feature-impl
 created_at: 2026-11-23T01:20:51.117Z
-updated_at: "2026-11-23T02:50:01.709Z"
+updated_at: "2026-11-23T06:27:40.372Z"
 feature_id: L4
 priority: P2
 tags:
@@ -87,3 +87,18 @@ AC1 exercises R1 and R2 on the two-figure replay. AC2 exercises R1 and R2 on the
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-11-23T06:26:01.749Z todo → wip (system)
+
+- 2026-11-23 batch `runall-L4-0ad4` (feature L4): **stopped before any code landed**, no implementation
+  attempted. Design step 6 names a coordination boundary with task 0423: 0426 must edit
+  `plugins/publishings/wechatmp-pub/src/flow.ts` and `tests/wechatmp-editor-insert.test.ts`, the two
+  files 0423 rewrote in `e258d2ed`, which is on `sp/run-0423-63d9` and still `wip` — not on `main`
+  (this batch's base `febce48`). Operator decision: do not build against a moving file and do not
+  import another session's unmerged commit. The implement stage raised the question through the
+  escalation contract (`.spur/run/0426-question.md`); the escalate hop then failed on a pipeline
+  defect (`file.read.into-var: path is required` — the shared `task-pipeline` v9 `escalate` state
+  passes `file:` where the action contract requires `path:`), so the run closed `failed` at
+  `escalate` and the status stayed `wip` with an empty `## Solution`. **No work to preserve:**
+  re-run `sp-dev-run 0426` after `e258d2ed` merges, from a tree cut on the merged base.
+

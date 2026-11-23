@@ -288,7 +288,11 @@ async function generateAction(noun: string, defaultType: string, options: Genera
     const workflowPath = await resolveWorkflowPath(resolved.workflow, config, fs);
     const channels = channelList(options.channels);
     const liveChannels = channelList(options.liveChannels);
+    const packageRoot = await resolvePackageRoot(fs);
     const vars: Record<string, string> = { skill_dir: resolved.skillDir, preset: resolved.publish_preset };
+    // 0424 R2: the daily visual skills ship inside the package, so the news cover nodes read them in
+    // place from this root — a scheduled run then never depends on the agent's skill discovery.
+    if (type === 'news') vars.visual_skill_root = join(packageRoot, 'plugins', 'kk', 'skills');
     if (options.skipReview === true) vars.skip_review = 'true';
     // `--auto` is wired only by the article workflow (it names outline gates); the news DAG declares
     // no `auto` var, so accepting the flag there is a silent no-op (2026-11-17).
@@ -324,7 +328,7 @@ async function generateAction(noun: string, defaultType: string, options: Genera
         run: run.run,
         workDir: run.workDir,
         worksDir,
-        harnessRoot: await resolvePackageRoot(fs),
+        harnessRoot: packageRoot,
         identityVar: type === 'news' ? 'run_date' : 'slug',
         vars,
         writerSkill: { dir: resolved.skillDir, sha256: resolved.skillSha256 },
