@@ -349,9 +349,17 @@ describe('recordBotSession', () => {
         return { state, context };
     }
 
-    /** Let the recorder reach its `await closed` before the test drives it. */
-    async function settle(): Promise<void> {
-        for (let i = 0; i < 20; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+    /** Let the recorder reach its `await closed` before the test drives it; optionally wait for readiness under load. */
+    async function settle(probe?: () => boolean): Promise<void> {
+        if (probe === undefined) {
+            for (let i = 0; i < 20; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+            return;
+        }
+        for (let i = 0; i < 200; i += 1) {
+            if (probe()) return;
+            await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        throw new Error('timed out waiting for the fake recorder to become ready');
     }
 
     function tempSession() {
@@ -380,7 +388,7 @@ describe('recordBotSession', () => {
                     },
                 } as never,
             });
-            await settle();
+            await settle(() => launched.length === 1 && state.initScripts === 1 && state.wentTo.length === 1);
 
             expect(launched[0]?.headless).toBe(false);
             expect(state.initScripts).toBe(1);

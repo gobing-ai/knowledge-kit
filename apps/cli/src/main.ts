@@ -45,6 +45,13 @@ export async function main(argv: string[] = process.argv, options: MainOptions =
     };
     inheritSettings(program);
     const userArgs = argv.slice(2);
+    const isHelpOrVersion =
+        userArgs.length === 0 ||
+        userArgs[0] === 'help' ||
+        ['--help', '-h', '--version', '-V'].some((flag) => userArgs.includes(flag));
+    const previousExitCode = process.exitCode;
+    // Commander help inherits process.exitCode; isolate explicit help/version from earlier signal exits.
+    if (isHelpOrVersion) process.exitCode = 0;
     try {
         // Bare invocation (no args at all): print help and exit 0. Commander 15
         // otherwise routes missing-subcommand to help({error:true}) → exit 1.
@@ -66,5 +73,7 @@ export async function main(argv: string[] = process.argv, options: MainOptions =
             return err.exitCode;
         }
         throw err;
+    } finally {
+        if (isHelpOrVersion) process.exitCode = previousExitCode;
     }
 }
