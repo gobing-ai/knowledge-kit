@@ -2074,3 +2074,15 @@ cut-over readiness; the latter still requires real Mac mini evidence.
 **Why.** Committing local `./assets/cover.png` assets into `surfdash` led to missing cover files across localized siblings and git bloat, while publish-time `daily-topics.json` rewrites and retired series branding inside localized bodies broke `surfdash`'s `deploy.yml` digest/SEO gate.
 
 **Detail:** `plugins/publishings/surfdash-pub/src/media-upload.ts`, `apps/cli/src/publish-matrix.ts`, `plugins/kk/scripts/series-names.ts`, and `surfdash` `ADR-022`.
+
+---
+
+## ADR-057: Daily news cover and illustration art direction lives in dedicated skills
+
+**Status:** Accepted (design) · **Date:** 2026-11-22 · **Feature:** L4 · **Complements:** ADR-045, ADR-046, ADR-053
+
+**Decision.** Put daily cover and illustration direction in two skills under `plugins/kk/skills`. News editorial retains the approved story, headline, and claims. Daily stages retain dispatch, validation, and packaging, and `image-gen` remains the renderer. Inline figures require opt-in and a verified path into the reviewed and frozen target payload.
+
+**Why.** Scheduled runs and direct requests need the same visual guidance while preserving the existing render and publishing contracts.
+
+**Detail:** [Daily AI news visual skills](design/daily-news-visual-skills.md).

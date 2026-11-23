@@ -75,6 +75,7 @@ Technical content creation and published output are fragmented: turning ideas or
 
 | Workflow visibility in Spur Board | **G8** | Phase 3 | Collect, Daily AI Voice and IT Content: run-bound summaries, outputs, progress and recorded run settings; reuse Settings → Workflows for definitions; local read-only operation; tasks `0252`–`0255`; [design](design/workflow-board-modules.md) |
 | LLM wiki vault | **I** / **I1** | Phase 3 | Committed via the operator specs dated 2026-11-10 (`kk wiki` verb family). `kk` owns the deterministic vault mechanics (raw snapshots, wikilink graph, link/lint, merge with redirect, index/MAP compile, gc, `user_edited` guard, Quartz publish projection); model-bearing summarize/synthesize/query authoring stays in a `kk` skill; ADR-048; [design](design/kk-wiki.md). The separate `treasury` vault repository (Quartz 4, R2/rclone `raw/`, cron loop, Cloudflare Pages) is deferred to its own run. |
+| Daily AI news visuals | **L4** | Phase 3 | Dedicated cover and illustration skills for scheduled and standalone news work, rendered through `image-gen`. Covers and cards retain existing defaults. Inline figures require opt-in and a verified delivery path. [Design](design/daily-news-visual-skills.md). |
 
 Topic → article without prior ingestion is in scope through the planned `Brief` generator input.
 This is a product requirement, not a shipped CLI claim: `docs/04_DESIGN.md` §1.7/§4 identifies
