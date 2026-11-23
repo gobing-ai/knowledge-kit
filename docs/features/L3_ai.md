@@ -149,17 +149,17 @@ Feature: Daily AI News editorial and delivery uplift
 | 0394 | Preserve RSS ingestion metadata and render traceable source citations | done |
 | 0385 | Refine daily audience, spoken script and canonical episode title | done |
 | 0384 | Reconcile and protect daily editorial judgments | done |
-| 0410 | Weibo article, X, Threads and LinkedIn publish rails still cannot confirm a daily post | todo |
+| 0410 | Weibo article, X, Threads and LinkedIn publish rails still cannot confirm a daily post | done |
 | 0389 | Replay the editorial-to-publish flow and synchronize documentation | done |
 | 0386 | Restore concise podcast notes and reuse episode cards | done |
-| 0409 | surfdash-pub cannot see the en/ja locale files when it invokes postsurfing from kk | todo |
-| 0408 | Surf of the digest headline contract: kk demands two title headlines while the site's aligned plan can collapse to one | todo |
+| 0409 | surfdash-pub cannot see the en/ja locale files when it invokes postsurfing from kk | done |
+| 0408 | Surf of the digest headline contract: kk demands two title headlines while the site's aligned plan can collapse to one | done |
 | 0393 | Verify and repair series-scoped selection continuity | done |
 | 0391 | Bind Daily AI Voice Board to current news run and publish evidence | done |
 | 0387 | Compose news covers for the two centered crops | done |
 | 0395 | Bind WeChat Channels cards to the confirmed Official Account article | done |
 | 0392 | Calibrate daily topic filters and report candidate losses | done |
-| 0407 | shipinhao audio publish cannot read its works row, so every submission is unknown | todo |
+| 0407 | shipinhao audio publish cannot read its works row, so every submission is unknown | done |
 | 0388 | Unify the news publish trigger and prepare social promotion | done |
 <!-- END AUTO-GENERATED -->
 

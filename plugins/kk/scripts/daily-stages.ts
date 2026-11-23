@@ -155,6 +155,16 @@ export function dailyQcContent(args: string[]): void {
     const exclusions = join(workDir, '21-plan', `${runDate}_04_quality-control-content_exclusions.json`);
     const planContent = join(workDir, '21-plan', `${runDate}_03_plan_content.json`);
     const cachePath = `${candidates}.cache.json`;
+    const floorMinutes = Number(minMinutes);
+    const qcMinChars =
+        minMinutes !== '' && Number.isFinite(floorMinutes) && floorMinutes > 0
+            ? String(
+                  Math.max(
+                      0,
+                      Math.ceil(((floorMinutes * 60 - 8) * spokenCharRate(vdriver)) / readKeptRatio(workDir).ratio),
+                  ),
+              )
+            : '';
     const fingerprint = stageCacheFingerprint(planContent, {
         qcCategories,
         minQuality,
@@ -164,6 +174,7 @@ export function dailyQcContent(args: string[]): void {
         minEpisodeItems,
         minMinutes,
         vdriver,
+        qcMinChars,
     });
     let recomputed = false;
     timed(workDir, 'quality-control-content', () => {
@@ -211,6 +222,7 @@ export function dailyQcContent(args: string[]): void {
                     QC_MIN_URGENCY: minUrgency,
                     QC_MIN_IMPACT: minImpact,
                     QC_MIN_EPISODE_ITEMS: minEpisodeItems,
+                    ...(qcMinChars ? { QC_MIN_CHARS: qcMinChars } : {}),
                 },
             },
         );
@@ -2116,9 +2128,11 @@ export function dailyPlan(args: string[]): void {
     const deferDocs = deferPlanDocs === 'true';
     const target = deferDocs ? planContent : planDocs;
     const targetCache = `${target}.cache.json`;
+    const perSourceCap = String(Math.max(5, Math.ceil((Number(planMaxItems) || 20) / 4)));
     const fingerprint = stageCacheFingerprint(blended, {
         runDate,
         planMaxItems,
+        perSourceCap,
         deferPlanDocs,
     });
     timed(workDir, 'plan', () => {
@@ -2144,7 +2158,11 @@ export function dailyPlan(args: string[]): void {
         kk(
             ['executor', 'run', 'episode-plan-gen', '--in', blended, '--out', planContent, ...pluginsArgs(pluginsPath)],
             {
-                env: { EPISODE_PLAN_MAX_ITEMS: planMaxItems, EPISODE_PLAN_DATE: runDate },
+                env: {
+                    EPISODE_PLAN_MAX_ITEMS: planMaxItems,
+                    EPISODE_PLAN_PER_SOURCE_CAP: perSourceCap,
+                    EPISODE_PLAN_DATE: runDate,
+                },
             },
         );
         const docs = metadataOf(readJson(planContent)).docs;
@@ -2210,8 +2228,8 @@ function wechatKeyPointLabel(title: string): string {
     const clean = title.replace(/^#+\s+/, '').trim();
     const firstClause = clean.split(/[：:，,。！？!?\-—|]/)[0]?.trim() ?? clean;
     const chars = Array.from(firstClause);
-    if (chars.length > 0 && chars.length <= 18) return firstClause;
-    return Array.from(clean).slice(0, 18).join('');
+    if (chars.length > 0 && chars.length <= 28) return firstClause;
+    return Array.from(clean).slice(0, 28).join('');
 }
 
 function extractWechatKeyPoints(
@@ -2290,9 +2308,8 @@ export function buildWechatArticleContent(
 ): Record<string, unknown> {
     const wechatmp: Record<string, unknown> = {
         original: true,
-        // 2026-11-21 operator decision (A3): keep `reward: false` while the 咸话咸说 account lacks
-        // an authorized 赞赏账户, so WECHATMP_ALLOW_PARTIAL_ENRICH=1 is no longer needed and real
-        // enrichment failures (音频, 原创, 原文链接) fail loud.
+        // 2026-11-22 live check: 咸话咸说 is not yet authorized in 赞赏账户小程序 -> 可收款公众号,
+        // so reward stays false until the operator authorizes it there.
         reward: false,
         author: WECHAT_BRAND.author,
         collection: options.collection,
@@ -2324,11 +2341,17 @@ export function buildWechatArticleContent(
             },
         };
     }
-    let formattedBody = stripLeadingH1Heading(rawBody);
+    let formattedBody = stripLeadingH1Heading(rawBody).trimStart();
     const keyPoints = (options.keyPoints ?? []).filter((kp) => kp.label.trim() !== '' && kp.text.trim() !== '');
-    if (keyPoints.length > 0 && !/^\s*##\s+今日要点\b/m.test(formattedBody)) {
-        const bullets = keyPoints.map((kp) => `- **${kp.label.trim()}** — ${kp.text.trim()}`).join('\n');
-        formattedBody = `## 今日要点\n\n${bullets}\n\n${formattedBody.trimStart()}`;
+    if (keyPoints.length > 0 && !/今日要点/.test(formattedBody.slice(0, 200))) {
+        const bullets = keyPoints.map((kp) => `- ${kp.label.trim()}`).join('\n');
+        const introMatch = formattedBody.match(/^([^\n]*咸话咸说[^\n]*)\n+/);
+        if (introMatch?.[1]) {
+            const rest = formattedBody.slice(introMatch[0].length).trimStart();
+            formattedBody = `${introMatch[1].trimEnd()}今日要点如下：\n${bullets}\n\n下面请听详细内容。\n\n${rest}`;
+        } else {
+            formattedBody = `今日要点如下：\n${bullets}\n\n下面请听详细内容。\n\n${formattedBody}`;
+        }
     }
     const existingDigest = typeof existingMeta.digest === 'string' ? existingMeta.digest.trim() : '';
     const derivedDigest = existingDigest !== '' ? existingDigest : cleanWechatDigest(rawBody, keyPoints);
@@ -2501,16 +2524,16 @@ export function weightedLength(text: string): number {
 }
 
 /** Platforms where attaching a native image suppresses the URL's clickable Open Graph preview card. */
-const OG_CARD_PLATFORMS = new Set(['x', 'threads', 'linkedin']);
+const OG_CARD_PLATFORMS = new Set(['x', 'threads', 'linkedin', 'weibo']);
 
 /**
  * One channel's short promo copy as a Content (task 0327 R3; task 0410 episode promo framing):
  * prepends the frozen episode title and appends the episode listen URL (`{{podcast_url}}`) when
  * supplied, reserving header/footer budget before truncating copy (X counts URLs at t.co weight 23).
  *
- * Platforms in `OG_CARD_PLATFORMS` (`x`, `threads`, `linkedin`) omit `coverImage` when linking a
+ * Platforms in `OG_CARD_PLATFORMS` (`x`, `threads`, `linkedin`, `weibo`) omit `coverImage` when linking a
  * podcast URL so their native Open Graph card renders cleanly instead of being suppressed by an
- * attached image; image-first rails (`weibo`, `jike`) keep `coverImage`.
+ * attached image; image-first rails (`jike`) keep `coverImage`.
  */
 export function buildSocialContent(
     copy: string,
@@ -6461,6 +6484,25 @@ export function reduceOverflowingPoints(points: string[], named: readonly number
         const next = shortenOverflowedPoint(point);
         if (next !== point) {
             points[n] = next;
+            changed = true;
+        }
+    }
+    // When a long earlier point pushes a short trailing point out of the safe area, the composer
+    // names the trailing index. Shorten the longest shrinkable point so the block fits.
+    if (!changed) {
+        let bestIndex = -1;
+        let bestLen = 0;
+        for (let i = 0; i < points.length; i++) {
+            const point = points[i] ?? '';
+            const next = shortenOverflowedPoint(point);
+            if (next !== point && point.length > bestLen) {
+                bestIndex = i;
+                bestLen = point.length;
+            }
+        }
+        if (bestIndex >= 0) {
+            const point = points[bestIndex] ?? '';
+            points[bestIndex] = shortenOverflowedPoint(point);
             changed = true;
         }
     }

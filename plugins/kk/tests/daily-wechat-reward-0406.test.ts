@@ -64,7 +64,7 @@ describe('daily 公众号 metadata — reward off, 今日要点, stripped H1, cl
         expect((wechatmp.author as string).length).toBeGreaterThan(0);
     });
 
-    test('strips duplicate leading H1, injects ## 今日要点 before intro, and sets clean digest', () => {
+    test('strips duplicate leading H1, merges short 今日要点 into intro, and sets clean digest', () => {
         const content = buildWechatArticleContent(article, {
             ...base,
             keyPoints: [
@@ -74,10 +74,10 @@ describe('daily 公众号 metadata — reward off, 今日要点, stripped H1, cl
         });
         const body = String(content.body ?? '');
         expect(body.startsWith('# 第261121期')).toBe(false);
-        expect(body).toContain('## 今日要点');
-        expect(body).toContain('- **Meta 净零目标** — AI 数据中心用电激增，公司重新评估 2030 年净零目标。');
-        expect(body).toContain('- **Anthropic IPO** — 承销商全额行使绿鞋，IPO 总募资升至 935 亿美元。');
-        expect(body.indexOf('## 今日要点')).toBeLessThan(body.indexOf('这里是由Robin为你带来的咸话咸说'));
+        expect(body).toContain(
+            '这里是由Robin为你带来的咸话咸说之每日AI乱炖。今日要点如下：\n- Meta 净零目标\n- Anthropic IPO\n\n下面请听详细内容。',
+        );
+        expect(body).not.toContain('## 今日要点');
         const metadata = content.metadata as Record<string, unknown>;
         expect(typeof metadata.digest).toBe('string');
         expect(String(metadata.digest).startsWith('#')).toBe(false);
@@ -97,7 +97,7 @@ describe('daily 公众号 metadata — reward off, 今日要点, stripped H1, cl
         expect(wechatmp.reward).toBe(false);
         expect(wechatmp.audioPath).toBe('/tmp/episode.mp3');
         expect(String(content.body ?? '')).not.toContain('欲听往期节目');
-        expect(String(content.body ?? '')).not.toContain('## 今日要点');
+        expect(String(content.body ?? '')).not.toContain('今日要点');
     });
 
     test('dailyPublishPrep and dailyBundleVariants wire durationSeconds, planItems, cards, and 今日要点', () => {
@@ -201,7 +201,7 @@ describe('daily 公众号 metadata — reward off, 今日要点, stripped H1, cl
             const wx = JSON.parse(
                 readFileSync(join(root, '30-variants', 'article@wechatmp-pub.content.json'), 'utf-8'),
             ) as { body?: string; metadata?: { digest?: string; wechatmp?: Record<string, unknown> } };
-            expect(wx.body).toContain('## 今日要点');
+            expect(wx.body).toContain('今日要点如下：');
             expect(wx.body?.startsWith('# ')).toBe(false);
             expect(wx.metadata?.wechatmp?.reward).toBe(false);
             expect(String(wx.metadata?.digest ?? '').startsWith('#')).toBe(false);

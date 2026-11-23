@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: Weibo article, X, Threads and LinkedIn publish rails still cannot confirm a daily post
-status: testing
+status: done
 template: issue
 created_at: 2026-11-19T22:00:52.977Z
-updated_at: "2026-11-22T06:38:30.490Z"
+updated_at: "2026-11-23T04:22:34.899Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
 priority: P2
 estimate_hours: 10
 feature_id: L3
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0410. Weibo article, X, Threads and LinkedIn publish rails still cannot confirm a daily post
@@ -31,7 +33,7 @@ Prior task `0410` tracked `weibo-pub` (article), `x-pub`, `threads-pub`, and `li
 ### Requirements
 
 - [x] R1. Disable `weibo-pub/article` (`mode: "off"`) in `plugins/kk/publish-presets/daily-ai-voice.json`, move `weibo-pub/post` (`variant: "social:weibo"`) to `window: "cn-peak"` with `mode: "live"`, and keep valid ADR-022 `overrides[]` entries (updated reason/date) for all 4 live draftless post targets (`x-pub/post`, `weibo-pub/post`, `threads-pub/post`, `linkedin-pub/post`).
-- [x] R2. Update `buildSocialContent` and `dailyBundleVariants` in `plugins/kk/scripts/daily-stages.ts` so every social variant (`social:weibo`, `social:x`, `social:threads`, `social:linkedin`, plus `social:jike` when enabled) carries the frozen episode title + promo summary + `{{podcast_url}}`, reserving header and URL character budget (including X `t.co` = 23 weight semantics) prior to truncating body text, while preserving `coverImage` attachment.
+- [x] R2. Update `buildSocialContent` and `dailyBundleVariants` in `plugins/kk/scripts/daily-stages.ts` so every social variant (`social:weibo`, `social:x`, `social:threads`, `social:linkedin`, plus `social:jike` when enabled) carries the frozen episode title + promo summary + `{{podcast_url}}`, reserving header and URL character budget (including X `t.co` = 23 weight semantics) prior to truncating body text, while preserving `coverImage` attachment on image-first rails (`jike`) and omitting it on OG link-preview rails (`weibo`, `x`, `threads`, `linkedin`) so an uploaded image does not suppress the episode card.
 - [x] R3. Update `resolveImages` in `plugins/publishings/linkedin-pub/src/index.ts` to fall back to `content?.metadata?.coverImage` when `options?.images` and `content?.metadata?.images` are `undefined`, and configure `KK_BROWSER_CHANNEL: "chrome"` in `plugins.publishings.linkedin-pub.env` in `~/.config/kk/config.yaml`.
 - [x] R4. Update `plugins/kk/skills/news-editorial/SKILL.md` and `plugins/kk/skills/news-editorial/references/style-contract.zh.md` (and validator defaults in `plugins/generations/dailynews-gen/src/script-plan.ts`) so `26-social/{weibo,x,threads,linkedin}.md` generate concise promo copy (`social.short` <= 100 chars for X/Threads/Weibo, `social.long` <= 300 chars for LinkedIn) paired with card + episode URL injection.
 - [x] R5. Update `SHP_LOGIN_URL_RE` in `plugins/publishings/shipinhao-pub/src/selectors.ts` to match `channels.weixin.qq.com/login.html` / `/login` (preserving the `**Provisional**` marker) so expired WeChat Channels sessions fail fast without 150s+ selector polling delays.
@@ -54,7 +56,7 @@ Feature: Illustrated social promo rails & unified podcast URL (2026-11-21)
     When `dailyBundleVariants` runs `buildSocialContent`
     Then each generated `social:<platform>` variant body starts with the episode title and ends with `{{podcast_url}}`
     And `social:x` never exceeds weighted length 280 (counting `{{podcast_url}}` or resolved URL via `t.co` weight 23 and CJK weight 2)
-    And `metadata.coverImage` references the attached card/cover image
+    And `metadata.coverImage` references the attached card/cover image only on image-first rails (`jike`), while OG link-preview rails (`weibo`, `x`, `threads`, `linkedin`) omit it so the episode card is not suppressed
     And unit tests stub console output so `bun test --dots` produces zero leaked lines.
 
   Scenario: AC3 — `linkedin-pub` accepts `coverImage` fallback and uses Chrome channel (req: R3)
@@ -104,6 +106,10 @@ Feature: Illustrated social promo rails & unified podcast URL (2026-11-21)
   (`createKkBrowserLauncher`) writing `.spur/run/dogfood/<date>-social/<rail>/events.jsonl` +
   screenshots, one rail at a time in the order entitlement → X → Threads → LinkedIn; AC2–AC4 also need
   per-post approval before anything is published.
+
+#### Q&A entry — 2026-11-23T03:29:34.151Z
+
+- **OG preview and RSS follow-up (operator request, 2026-11-22):** the operator reported an incorrect Weibo OG card and asked why social posts waited on `podcast.salty.vip/rss/`. R2/AC2 now state the intended per-rail behavior explicitly: Jike keeps an uploaded image; Weibo/X/Threads/LinkedIn omit it so the episode link preview is not suppressed. This does not relax AC6's already-completed 2026-11-21 illustrated dogfood. The later RSS decoupling is commit `e6390567`; its regression/design follow-up is `1a517197`. Additional live evidence is today's X/Threads/LinkedIn readback and replacement Weibo post `https://m.weibo.cn/detail/5368347387757378` (the earlier incorrect-card post remains operator-owned for deletion).
 
 ### Design
 
@@ -157,6 +163,15 @@ Feature: Illustrated social promo rails & unified podcast URL (2026-11-21)
 - **`shipinhao-pub` login detection (`plugins/publishings/shipinhao-pub/src/selectors.ts:89-91`):** Widened `SHP_LOGIN_URL_RE` to also match `channels.weixin.qq.com/login.html` / `/login` while keeping `**Provisional**`.
 - **Global install sync:** Bundled and synced CLI (`apps/cli/dist/index.js`), `plugins/kk/{scripts,workflows,publish-presets,skills}`, `dailynews-gen`, and updated publishing plugins (`shipinhao-pub`, `x-pub`, `threads-pub`, `linkedin-pub`) into `$KK_PKG`.
 
+#### Follow-up — RSS decoupling and OG-card correction (2026-11-22)
+
+- Moved `social:x`, `social:threads`, `social:linkedin`, and `social:jike` from `overseas-rss` to `after-generate`; their links resolve from the tier-0 podcast receipt and no longer wait for RSS propagation (`e6390567`). Weibo remains in `cn-peak`.
+- Added Weibo to `OG_CARD_PLATFORMS`, keeping `coverImage` only on Jike. Added regression assertions for every social window and the per-rail image contract, plus the matching design-doc correction (`1a517197`).
+- Detected that the 17:00 scheduler adopted the earlier Weibo success instead of publishing a replacement. Published the corrected no-image payload directly and read back `https://m.weibo.cn/detail/5368347387757378` with the exact episode URL and `pic_ids: []`; the earlier post remains for the operator to remove.
+- Evidence index: `.works/kk-news-generate/20261122/4-publish/verify-social/summary.json`.
+
+- Aligned `news-editorial/SKILL.md` and `references/style-contract.zh.md` with the same per-rail image contract, removing the stale instruction that told every new Weibo run to attach the first card. Synced the corrected skill into the installed package.
+
 ### Testing
 
 **Pipeline verify results**
@@ -165,21 +180,21 @@ Feature: Illustrated social promo rails & unified podcast URL (2026-11-21)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `plugins/kk/publish-presets/daily-ai-voice.json:70-76,102-108,150-179`; `apps/cli/src/commands/content-launch.ts:223-227`; verified by `apps/cli/tests/publish-matrix.test.ts`, `publish-matrix-0330.test.ts`, `content-launch.e2e.test.ts` (6336 pass, 0 fail in `bun run test`) |
-| R2 | MET | `plugins/kk/scripts/daily-stages.ts:2497-2578,2763-2771`; verified by `plugins/kk/tests/daily-social-promo-0410.test.ts` and `apps/cli/tests/kk-workflow-stages.test.ts:2535-2540` (0 `--dots` leaks) |
-| R3 | MET | `plugins/publishings/linkedin-pub/src/index.ts:242-258,628-652,724-730`; `~/.config/kk/config.yaml:154-156`; verified by `plugins/publishings/linkedin-pub/tests/linkedin-pub.test.ts:554-590` (38 pass, 0 fail) |
-| R4 | MET | `plugins/kk/skills/news-editorial/SKILL.md:105`; `plugins/kk/skills/news-editorial/references/style-contract.zh.md:85,119-120`; `plugins/generations/dailynews-gen/src/script-plan.ts:273,276`; verified by `plugins/generations/dailynews-gen/tests/script-plan.test.ts` |
-| R5 | MET | `plugins/publishings/shipinhao-pub/src/selectors.ts:89-91`; verified by `plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts:519-523` |
-| R6 | MET | Live `kk executor run` sequential dogfooding PASS: `weibo-pub` `https://m.weibo.cn/detail/5368044936236725`, `x-pub` `https://x.com/tangmian` (`post-sent-toast`), `threads-pub` `https://www.threads.com/@direwolf_go/post/DgCEWvGln9j`, `linkedin-pub` success-toast receipt; `bun run autofix && bun run lint && bun run build && bun run test` (6336/6336 pass) + `test-pre-check` (60/60) + `test-post-check` (3/3) + `bun run tools:fresh` |
+| R1 | MET | `plugins/kk/publish-presets/daily-ai-voice.json:70-76,93-122,150-179` — Weibo article off, Weibo post live in cn-peak, four override entries; `apps/cli/tests/publish-matrix.test.ts:827-871` pins every social window. Full `bun run test`: 6349 pass, 0 fail. |
+| R2 | MET | `plugins/kk/scripts/daily-stages.ts:2527-2588` — title/footer budgeting plus per-rail image selection; `plugins/kk/tests/daily-social-promo-0410.test.ts:24-50,83-136` — Jike keeps coverImage, Weibo/X/Threads/LinkedIn omit it; full `bun run test`: 6349 pass, 0 fail, zero dot-reporter leaks. |
+| R3 | MET | `plugins/publishings/linkedin-pub/src/index.ts:245-280` — coverImage fallback and file validation; `~/.config/kk/config.yaml` selected-value probe printed `linkedin KK_BROWSER_CHANNEL=chrome`; `plugins/publishings/linkedin-pub/tests/linkedin-pub.test.ts` passed in full `bun run test`. |
+| R4 | MET | `plugins/kk/skills/news-editorial/SKILL.md:105` and `references/style-contract.zh.md:85,119-120` — 100/300 caps and corrected OG/Jike image contract; `plugins/generations/dailynews-gen/src/script-plan.ts:273-277`; `plugins/generations/dailynews-gen/tests/script-plan.test.ts` passed in full `bun run test`. |
+| R5 | MET | `plugins/publishings/shipinhao-pub/src/selectors.ts:85-91` — `/login.html` and `/login` match with **Provisional** retained; `plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts` passed in full `bun run test`. |
+| R6 | MET | Historical sequential 2026-11-21 `kk executor run` dogfood: Weibo `https://m.weibo.cn/detail/5368044936236725`, X `https://x.com/tangmian` (post-sent toast), Threads `https://www.threads.com/@direwolf_go/post/DgCEWvGln9j`, LinkedIn success receipt. Additional 2026-11-22 readback: X `https://x.com/tangmian/status/2124635582378975341`, Threads `https://www.threads.com/@direwolf_go/post/DgD6aozj1PE`, LinkedIn recent activity, replacement Weibo `https://m.weibo.cn/detail/5368347387757378`; `.works/kk-news-generate/20261122/4-publish/verify-social/summary.json`. Current `bun run autofix`, `bun run lint`, `bun run build`, `bun run tools:fresh`, and `bun run test` all pass; 6349/6349 tests, 98.63% functions and 98.39% lines overall with per-file >=90% enforced. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Scenario: AC1 — Preset disables weibo article and routes all 4 promo posts cleanly (req: R1) | MET | test | `apps/cli/tests/publish-matrix.test.ts`, `publish-matrix-0330.test.ts`, `content-launch.e2e.test.ts` passed in full `bun run test` (exit 0) |
-| Scenario: AC2 — Social bundle variants embed episode title and `{{podcast_url}}` within limits (req: R2) | MET | test | `plugins/kk/tests/daily-social-promo-0410.test.ts` & `apps/cli/tests/kk-workflow-stages.test.ts:2535-2540` passed in full `bun run test` (exit 0, `DOT_SEGMENT_LEAKS: 0`) |
-| Scenario: AC3 — `linkedin-pub` accepts `coverImage` fallback and uses Chrome channel (req: R3) | MET | test | `plugins/publishings/linkedin-pub/tests/linkedin-pub.test.ts:554-590` passed (`bun run test` exit 0); `~/.config/kk/config.yaml:154-156` verified |
-| Scenario: AC4 — `news-editorial` skill aligns `26-social/` copy to promo-post lengths (req: R4) | MET | test | `plugins/generations/dailynews-gen/tests/script-plan.test.ts` passed in `bun run test` (`socialShort=100`, `socialLong=300`) |
-| Scenario: AC5 — `shipinhao-pub` fast-fails on `/login.html` redirect (req: R5) | MET | test | `plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts:519-523` passed in `bun run test` (`SHP_LOGIN_URL_RE`) |
-| Scenario: AC6 — Live dogfooding succeeds across all 4 social channels and full gates pass (req: R6) | MET | command | Sequential live `kk executor run` receipts (`m.weibo.cn/detail/5368044936236725`, `x.com/tangmian`, `threads.com/@direwolf_go/post/DgCEWvGln9j`, `linkedin-pub` success-toast) + `bun run test` 6336/6336 pass + `test-pre-check` 60/60 + `test-post-check` 3/3 + `tools:fresh` exit 0 |
+| Scenario: AC1 — Preset disables weibo article and routes all 4 promo posts cleanly (req: R1) | MET | test | `apps/cli/tests/publish-matrix.test.ts:827-871` and `apps/cli/tests/publish-matrix-0330.test.ts` passed in full `bun run test` (6349 pass, 0 fail); preset rows inspected at `plugins/kk/publish-presets/daily-ai-voice.json:70-76,93-122`. |
+| Scenario: AC2 — Social bundle variants embed episode title and `{{podcast_url}}` within limits (req: R2) | MET | test | `plugins/kk/tests/daily-social-promo-0410.test.ts:24-50,83-136` passed: title/footer, X weighted cap, Jike-only attachment, OG-rail omission, no console leaks; `apps/cli/tests/kk-workflow-stages.test.ts` also passed. |
+| Scenario: AC3 — `linkedin-pub` accepts `coverImage` fallback and uses Chrome channel (req: R3) | MET | test | `plugins/publishings/linkedin-pub/src/index.ts:245-280`; LinkedIn tests passed in full `bun run test`; selected config value printed `linkedin KK_BROWSER_CHANNEL=chrome`. |
+| Scenario: AC4 — `news-editorial` skill aligns `26-social/` copy to promo-post lengths (req: R4) | MET | test | `plugins/kk/skills/news-editorial/SKILL.md:105` and `references/style-contract.zh.md:85` inspected with caps and per-rail OG/Jike behavior aligned; `plugins/generations/dailynews-gen/tests/script-plan.test.ts` passed (`socialShort=100`, `socialLong=300`). |
+| Scenario: AC5 — `shipinhao-pub` fast-fails on `/login.html` redirect (req: R5) | MET | test | `plugins/publishings/shipinhao-pub/src/selectors.ts:85-91`; `plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts` passed in full `bun run test`. |
+| Scenario: AC6 — Live dogfooding succeeds across all 4 social channels and full gates pass (req: R6) | MET | command | Sequential 2026-11-21 live receipts listed in R6 plus 2026-11-22 public readback evidence; current `autofix`/`lint`/`build`/`tools:fresh` exit 0; full `bun run test` 6349 pass, 0 fail, per-file coverage >=90%; `test-pre-check` 60/60 and `test-post-check` 3/3 pass. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -203,4 +218,5 @@ Feature: Illustrated social promo rails & unified podcast URL (2026-11-21)
 
 - 2026-11-22T05:22:35.570Z todo → wip (system)
 - 2026-11-22T06:38:29.892Z wip → testing (system)
+- 2026-11-23T04:22:34.781Z testing → done (system)
 

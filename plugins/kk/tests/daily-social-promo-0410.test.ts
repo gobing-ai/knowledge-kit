@@ -24,7 +24,7 @@ const LIVE_URL = 'https://podcast.salty.vip/i/daily-ai-2026-11-21/';
 describe('task 0410 — illustrated social promo assembly', () => {
     test('prepends frozen episode title, appends {{podcast_url}}, and attaches coverImage only on image rails', () => {
         const platforms = [
-            { platform: 'weibo', limit: { max: 2000 }, expectImage: true },
+            { platform: 'weibo', limit: { max: 2000 }, expectImage: false },
             { platform: 'jike', limit: { max: 2000 }, expectImage: true },
             { platform: 'x', limit: { max: 280, weighted: true }, expectImage: false },
             { platform: 'threads', limit: { max: 500 }, expectImage: false },
@@ -80,7 +80,7 @@ describe('task 0410 — illustrated social promo assembly', () => {
         expect(content.body).toBe(alreadyFramed);
     });
 
-    test('dailyBundleVariants routes OG channels without coverImage, keeps weibo card, and wires podcast socialImage', () => {
+    test('dailyBundleVariants routes every OG channel without coverImage and wires podcast socialImage', () => {
         const dir = mkdtempSync(join(tmpdir(), 'kk-daily-promo-0410-'));
         try {
             mkdirSync(join(dir, '22-article'), { recursive: true });
@@ -130,11 +130,7 @@ describe('task 0410 — illustrated social promo assembly', () => {
                 expect(variant.body).toContain(EPISODE_TITLE);
                 expect(variant.body).toContain(`${platform} 推广钩子`);
                 expect(variant.body).toContain(PODCAST_URL);
-                if (platform === 'weibo') {
-                    expect(variant.metadata.coverImage).toBe(cardPath);
-                } else {
-                    expect(variant.metadata.coverImage).toBeUndefined();
-                }
+                expect(variant.metadata.coverImage).toBeUndefined();
             }
 
             const podcast = JSON.parse(

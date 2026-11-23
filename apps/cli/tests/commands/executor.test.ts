@@ -140,12 +140,15 @@ describe('registerExecutorCommand', () => {
 
     it('kk help executor names the hyphenated verbs fan-in and fan-out', async () => {
         const cap = captureOutput();
+        const previousExitCode = process.exitCode;
+        process.exitCode = 143;
         try {
             const code = await main(['node', 'test', 'help', 'executor']);
             expect(code).toBe(0);
             expect(cap.read()).toContain('fan-in');
             expect(cap.read()).toContain('fan-out');
         } finally {
+            process.exitCode = previousExitCode;
             cap.restore();
         }
     });

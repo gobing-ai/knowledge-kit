@@ -827,11 +827,16 @@ describe('publish3 stage surface (0323 R2, R3, R5)', () => {
     it('ships a preset whose every row belongs to exactly one window and publishes live by default', async () => {
         const shipped = JSON.parse(
             readFileSync(join(import.meta.dir, '../../../plugins/kk/publish-presets/daily-ai-voice.json'), 'utf-8'),
-        ) as { targets: Array<{ plugin: string; window?: string; mode?: string }> };
+        ) as { targets: Array<{ plugin: string; variant?: string; window?: string; mode?: string }> };
         const parsed = PublishPresetSchema.safeParse(shipped);
         expect(parsed.success).toBe(true);
         for (const target of shipped.targets) {
             expect(['after-generate', 'cn-peak', 'overseas-rss']).toContain(target.window ?? '');
+            if (target.variant?.startsWith('social:') === true) {
+                // Social copy needs only the tier-0 episode permalink, never RSS propagation.
+                const expectedWindow = target.variant === 'social:weibo' ? 'cn-peak' : 'after-generate';
+                expect(`${target.variant}: ${target.window}`).toBe(`${target.variant}: ${expectedWindow}`);
+            }
         }
         // ADR-022 amendment 2026-11-12: the operator's live consent is the preset itself, so every
         // enabled row publishes live. Two closed exceptions stay: `off` opts a channel out, and a

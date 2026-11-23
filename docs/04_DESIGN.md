@@ -2948,10 +2948,13 @@ floor/duration refusal lands after `store-select`. Artifacts: `4-publish/settlem
 `4-publish/patch-surfdash.{result,payload}.json`, `4-publish/partial-marker.<window>.txt`.
 
 **Shipped preset.** `plugins/kk/publish-presets/daily-ai-voice.json` carries design §3's matrix,
-each row assigned to exactly one window: the owned + domestic channels on `after-generate`
-(公众号 播客/文章, 视频号 音频), the no-draft rows on `cn-peak` (微博 头条), and the short-copy
-channels on `overseas-rss` (`social:x`, `social:weibo`, `social:threads`); the gap channels
-(小红书 写长文, 视频号 图文, threads images) and the X article row are `off`. **All three 小红书 rows
+each row assigned to exactly one window: the owned + domestic channels and the short-copy
+`social:x`, `social:threads`, `social:linkedin` and `social:jike` rows run on `after-generate`,
+while `social:weibo` stays on `cn-peak` for its domestic publishing slot. These social posts resolve
+`{{podcast_url}}` directly from the tier-0 podcast receipt, so the `overseas-rss` RSS-propagation
+gate cannot block them; that window now contains only disabled image rows. The Weibo long-article
+row and the gap channels (小红书 写长文, 视频号 图文, threads images) plus the X article row are `off`.
+**All three 小红书 rows
 are `off` since 2026-11-13**: the account answered `AccountRiskControlError -9136` (risk control) on
 its next publish, so the channel is opted out of every window until the operator clears it — the
 `off` row keeps the intent visible in the plan's `excluded[]` instead of deleting it. A row's `variant` is the **shared** bundle key (`article`, `episode`, `cards`,

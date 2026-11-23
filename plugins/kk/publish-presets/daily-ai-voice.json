@@ -95,7 +95,7 @@
             "operation": "post",
             "variant": "social:x",
             "tier": 3,
-            "window": "overseas-rss",
+            "window": "after-generate",
             "mode": "live"
         },
         {
@@ -111,7 +111,7 @@
             "operation": "post",
             "variant": "social:threads",
             "tier": 3,
-            "window": "overseas-rss",
+            "window": "after-generate",
             "mode": "live"
         },
         {
@@ -119,7 +119,7 @@
             "operation": "post",
             "variant": "social:linkedin",
             "tier": 3,
-            "window": "overseas-rss",
+            "window": "after-generate",
             "mode": "live"
         },
         {
@@ -143,7 +143,7 @@
             "operation": "post",
             "variant": "social:jike",
             "tier": 3,
-            "window": "overseas-rss",
+            "window": "after-generate",
             "mode": "live"
         }
     ],
