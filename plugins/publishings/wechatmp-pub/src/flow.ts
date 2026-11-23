@@ -160,6 +160,8 @@ const COVER_CONFIRM = [
 const DIALOG_DISMISS = [
     '.weui-desktop-dialog:visible button:has-text("取消")',
     '.weui-desktop-dialog__close',
+    '.weui-desktop-dialog__wrp button:has-text("我知道了")',
+    'button:has-text("我知道了")',
     'button:has-text("取消")',
 ];
 
@@ -193,6 +195,14 @@ const DIALOG_CLOSE = [
     '.weui-desktop-dialog__close-btn',
     '.weui-desktop-dialog__wrp button:has-text("取消")',
     'button:has-text("取消")',
+    // 0423 R3: 内容结构检测 (the <pre>-overflow notice measured 2026-11-22) is a NOTICE dialog — it has
+    // no 取消 and no close glyph, only its own acknowledgement labels, so the sweep above never reached
+    // it and it went on covering the cover-panel opener. Listed AFTER the close/cancel controls so a
+    // settings dialog still exits through its cancel, not through a confirm.
+    '.weui-desktop-dialog__wrp button:has-text("我知道了")',
+    'button:has-text("我知道了")',
+    '.weui-desktop-dialog__wrp button:has-text("关闭")',
+    '.weui-desktop-dialog__wrp button:has-text("确定")',
 ];
 
 /**
@@ -691,8 +701,10 @@ export async function readTitleMirror(page: WechatPage): Promise<{ observed: boo
  * Insert the markdown-derived body into the main-frame ProseMirror editor through the shared paste
  * helper (ADR-029 rail). The retired iframe UEditor and its `setInnerHtml` were the drift this
  * replaces (W1): the body only registers on a real paste, which is what `pasteHtml` sends.
+ *
+ * Exported for the 0423 R1 fallback fixtures, which drive it against a real Chromium page.
  */
-async function insertBody(page: WechatPage, deps: ModeRunDeps, selectors: string[] = BODY_BLOCK): Promise<void> {
+export async function insertBody(page: WechatPage, deps: ModeRunDeps, selectors: string[] = BODY_BLOCK): Promise<void> {
     const body = bodyOf(deps.content);
     if (body.trim().length === 0) return;
     const selector = await findSelector(page, selectors, 'article body', deps.stepTimeoutMs);
@@ -703,7 +715,11 @@ async function insertBody(page: WechatPage, deps: ModeRunDeps, selectors: string
     // with an empty body, so a failed paste falls back rather than aborting the publish.
     try {
         await pasteHtml(asPlaywrightPage(page), selector, html, { timeoutMs: Math.min(deps.stepTimeoutMs, 10_000) });
-        return;
+        // `pasteHtml` reads plain `textContent`, which the placeholder widget (从这里开始写正文)
+        // satisfies on an EMPTY editor — so its resolve is not success. Re-measure without the
+        // widget before trusting it (0423 R1: this unguarded return saved the a2ui-intro draft with
+        // textLen 0 and only the cover image in the body).
+        if ((await bodyLength(page, selector)) > 0) return;
     } catch {
         // fall through to the real-editing-command path
     }
@@ -1770,6 +1786,9 @@ function baseMetadata(input: ModeInput, deps: ModeRunDeps, entry: ModeEntry): Re
  * the editor is still settling), but the signal is never assumed: an unobserved save is `ok:false`
  * naming the control, the title and the deadline. `发表` is not clicked on this path at all.
  */
+/** The 草稿箱 stamp the console shows for a draft it considers incomplete (0423 R2, 2026-11-22). */
+export const INCOMPLETE_DRAFT_MARKER = '图文内容不完整';
+
 async function saveDraft(
     input: ModeInput,
     deps: ModeRunDeps,
@@ -1777,6 +1796,17 @@ async function saveDraft(
     composed: ComposeReport,
 ): Promise<Result> {
     const title = titleOf(deps.content);
+    // 0423 R2: never click 保存为草稿 on an empty article body. The a2ui-intro run saved a draft whose
+    // ProseMirror body read textLen 0 and certified it `succeeded`/`confirmed`.
+    if (input.operation === '文章' && bodyOf(deps.content).trim().length > 0) {
+        const bodySelector = await findSelector(entry.editor, BODY_BLOCK, 'article body', deps.stepTimeoutMs).catch(
+            () => null,
+        );
+        if (bodySelector === null || (await bodyLength(entry.editor, bodySelector)) === 0)
+            return fail(
+                'draft confirmation: article body is empty before 保存为草稿 — refusing to save an incomplete draft',
+            );
+    }
     let control: string | null = null;
     let signal: string | null = null;
     let attempts = 0;
@@ -1824,6 +1854,10 @@ async function saveDraft(
             `draft confirmation: '${SAVE_DRAFT[0]}' was clicked ${attempts}× but no fresh 草稿箱 row for '${title}' (its ${DRAFT_STAMP} stamp) was observed within ${deps.draftTimeoutMs}ms (before=${deps.draftBaseline.stamp ?? 'none'}, after=${stampAfter ?? 'none'}, page=${deps.entry.url()}, frames=${await describeFrames(deps.entry, 5)})`,
         );
     }
+    if (signal.includes(INCOMPLETE_DRAFT_MARKER))
+        return fail(
+            `draft confirmation: 草稿箱 row for '${title}' reported '${signal.replace(/\s+/g, ' ').trim()}' — refusing to certify an incomplete draft`,
+        );
     return ResultSchema.parse({
         ok: true,
         target: TARGET,
@@ -2717,7 +2751,9 @@ export function markdownToWechatHtml(markdown: string): string {
     for (const line of lines) {
         if (line.startsWith('```')) {
             if (inCode) {
-                out.push(`<pre><code>${escapeHtml(code.join('\n'))}</code></pre>`);
+                out.push(
+                    `<pre style="overflow-x:auto;max-width:100%;"><code>${escapeHtml(code.join('\n'))}</code></pre>`,
+                );
                 code = [];
                 inCode = false;
             } else {

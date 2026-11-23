@@ -143,6 +143,15 @@ describe('article publish pipeline fixes (dogfood 2026-11-22)', () => {
         const zennDraft = JSON.parse(readFileSync(join(publishDir, 'payloads/content.zenn-pub.json'), 'utf-8')) as {
             metadata: Record<string, unknown>;
         };
+        // 0423 R6: an explicitly selected --channels target is required for this run's exit code,
+        // even though the preset marks every article channel optional.
+        const draftPlan = JSON.parse(readFileSync(join(publishDir, 'plan.after-generate.json'), 'utf-8')) as {
+            rows: Array<{ id: string; required: boolean }>;
+        };
+        expect(draftPlan.rows.map((row) => [row.id, row.required])).toEqual([
+            ['zenn-pub', true],
+            ['qiita-pub', true],
+        ]);
         expect(qiitaDraft.metadata.private).toBe(true);
         expect(qiitaDraft.metadata.published).toBe(false);
         expect(zennDraft.metadata.published).toBe(false);

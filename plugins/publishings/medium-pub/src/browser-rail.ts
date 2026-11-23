@@ -1,4 +1,8 @@
-// transcript: none — live probe on 2026-11-22 redirected ~/.config/kk/browser-profiles/medium to https://medium.com/m/signin; editor selectors provisional until `kk bot login medium`
+// transcript: 2026-11-22 headed verification against ~/.config/kk/browser-profiles/medium:
+//   headless Chromium gets the Cloudflare interstitial (`Just a moment...`), the saved cookies are
+//   fine, so the rail is headed-only and fails closed on a challenge; Medium no longer issues
+//   integration tokens, which makes this browser rail the primary path.
+//   Editor selectors provisional until `kk bot login medium`.
 import { type Content, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import {
     type BrowserDriver,
@@ -9,6 +13,7 @@ import {
 import {
     type ChannelBrowserConfig,
     checkChannelSession,
+    ensureProfileDir,
     expectOutcome,
     kkBrowserLauncher,
     markdownToHtml,
@@ -53,8 +58,39 @@ const STEP_TIMEOUT_MS = 30_000;
 const LOGIN_TIMEOUT_MS = 180_000;
 const LOGIN_INSTRUCTION = 'kk bot login medium (or set MEDIUM_INTEGRATION_TOKEN)';
 
+/** A Cloudflare anti-bot interstitial instead of the site (measured headed + headless, 2026-11-22). */
+export const CHALLENGE_RE = /(Just a moment\.\.\.|Performing security verification|Attention Required! \| Cloudflare)/i;
+
+/**
+ * True when the page is a Cloudflare challenge rather than Medium. Never solved, waited out or
+ * bypassed: the caller fails closed with `effect: 'none'` and hands the decision to the operator.
+ */
+export async function isChallengePage(page: Page): Promise<boolean> {
+    try {
+        return CHALLENGE_RE.test(await page.title());
+    } catch {
+        // A page that cannot report its title is not a detected challenge.
+        return false;
+    }
+}
+
 export const isAuthenticated: IsAuthenticatedPredicate = async (page) =>
-    !LOGIN_URL_RE.test(page.url()) && (await trySelectors(page, SELECTORS.title, { visible: false })).found;
+    !LOGIN_URL_RE.test(page.url()) &&
+    !(await isChallengePage(page)) &&
+    (await trySelectors(page, SELECTORS.title, { visible: false })).found;
+
+/**
+ * A Cloudflare interstitial instead of the editor. Thrown out of the readiness predicate so the
+ * refusal names the challenge and the operator action, rather than a generic auth timeout.
+ */
+export class ChallengeBlockedError extends Error {
+    constructor() {
+        super(
+            `${CHANNEL} refused: Cloudflare security verification is blocking the ${TARGET} session — open \`kk bot login ${HOME_URL} --save ${CHANNEL}\` in a visible browser and complete the check by hand`,
+        );
+        this.name = 'ChallengeBlockedError';
+    }
+}
 
 export function channelConfig(): ChannelBrowserConfig {
     return {
@@ -62,6 +98,9 @@ export function channelConfig(): ChannelBrowserConfig {
         homeUrl: HOME_URL,
         isAuthenticated,
         loginTimeoutMs: LOGIN_TIMEOUT_MS,
+        // Headless load returns the Cloudflare interstitial on this profile (measured 2026-11-22),
+        // so a headless preflight pass is a guaranteed burn that shortens the headed budget.
+        checkHeadedOnly: true,
     };
 }
 
@@ -123,10 +162,22 @@ export class MediumBrowserTransport implements PublishTransport {
         const override = typeof payload.options?.profileDir === 'string' ? payload.options.profileDir : undefined;
         const profileDir = resolveChannelProfileDir(CHANNEL, override);
 
+        // 0423 R4: refuse an absent profile BEFORE the headed preflight. A headed launch creates a
+        // missing profile dir (`ensureProfileDir`) and holds its lease, so the preflight would
+        // fabricate a session, pop a window on an unattended run, and leak the lease on failure.
+        try {
+            await ensureProfileDir(profileDir, true);
+        } catch {
+            return fail(
+                `${CHANNEL} session preflight refused: no saved profile at ${profileDir} — run: ${LOGIN_INSTRUCTION}`,
+                'none',
+            );
+        }
+
         const session = await checkChannelSession(channelConfig(), {
             profileDir,
             launcher: this.launcher,
-            headedFallback: false,
+            headedOnly: true,
             timeoutMs: this.stepTimeoutMs,
         });
         if (session.status !== 'verified') {
@@ -139,7 +190,11 @@ export class MediumBrowserTransport implements PublishTransport {
                 {
                     profileDir,
                     url: HOME_URL,
-                    isAuthenticated,
+                    isAuthenticated: async (page) => {
+                        // Fail closed on a Cloudflare interstitial; never solve, wait it out or bypass it.
+                        if (await isChallengePage(page)) throw new ChallengeBlockedError();
+                        return isAuthenticated(page);
+                    },
                     headless: payload.options?.headless === true,
                     launcher: this.launcher,
                     timeoutMs: this.stepTimeoutMs,
@@ -147,6 +202,7 @@ export class MediumBrowserTransport implements PublishTransport {
                 async ({ page }) => this.runEditorFlow(page, payload.content, publishStatus, profileDir),
             );
         } catch (error) {
+            if (error instanceof ChallengeBlockedError) return fail(error.message, 'none');
             const msg = error instanceof Error ? error.message : String(error);
             const hint = needsLogin(error) ? ` — run: ${LOGIN_INSTRUCTION}` : '';
             return fail(`${msg}${hint}`, needsLogin(error) ? 'none' : 'unknown');

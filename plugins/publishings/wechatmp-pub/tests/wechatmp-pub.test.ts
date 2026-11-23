@@ -203,6 +203,12 @@ interface ConsoleState {
     saveClickThrows?: boolean;
     /** The cover panel offers no 从图片库选择 entry (the 2026-10-12 console). */
     coverLibraryMissing?: boolean;
+    /** The console re-rendered the body block empty between compose and the save step (0423 R2). */
+    bodyLostAfterInsert?: boolean;
+    /** The refreshed 草稿箱 stamp reports 图文内容不完整 (0423 R2, measured 2026-11-22). */
+    incompleteStamp?: boolean;
+    /** The editor raised its 内容结构检测 notice after the paste; only 我知道了 / 关闭 dismiss it. */
+    noticeDialog?: boolean;
     coverDirectEntryTrap?: boolean;
     coverOpensLibraryDirectly?: boolean;
 }
@@ -340,6 +346,7 @@ function makeConsole(initial: ConsoleState) {
     let chosenClaim = '';
     let urlValue = '';
     let coverCommittedSrc = '';
+    let bodyProbes = 0;
     let publicSaveClicked = false;
     let publicSaveAcknowledged = false;
     let publicCanonicalGotos = 0;
@@ -362,6 +369,12 @@ function makeConsole(initial: ConsoleState) {
     };
 
     const editorAttached = (selector: string): boolean => {
+        // 0423 R3: the 内容结构检测 notice owns the page once the body is in, and it exposes nothing
+        // but its own close labels — Escape and the dialog-settings controls do not reach it.
+        // File inputs are hidden DOM nodes `setInputFiles` reaches without a click, so an overlay
+        // covers every CLICK target but none of them.
+        if (state.noticeDialog === true && pastedHtml.length > 0 && !isFileInput(selector))
+            return selector.includes('我知道了') || selector.includes('关闭');
         if (selector.includes('选择图片'))
             return state.mode === '播客'
                 ? podcastChooserOpen
@@ -649,6 +662,7 @@ function makeConsole(initial: ConsoleState) {
                     return notifySubscribers;
                 if (expression.includes('ClipboardEvent')) {
                     pastedHtml = /setData\('text\/html',\s*(".*?")\);/.exec(expression)?.[1] ?? '';
+                    if (state.noticeDialog === true) dialogOpen = true;
                     return true;
                 }
                 if (expression.includes('a[href*="token="]')) return state.tokenLink ?? '';
@@ -673,6 +687,14 @@ function makeConsole(initial: ConsoleState) {
                 if (expression.includes('audio_item_wrp')) {
                     if (state.podcastTranscodeFails) return '转码中';
                     return podcastSaved ? '模式标题' : 'NONE';
+                }
+                // 0423 R1: the body-length probe strips the placeholder widget, so it answers the
+                // real article length — the read that catches "paste accepted, body empty".
+                if (expression.includes('editor_content_placeholder')) {
+                    bodyProbes += 1;
+                    if (pastedHtml.length === 0) return 0;
+                    if (state.bodyLostAfterInsert === true && bodyProbes > 1) return 0;
+                    return 200;
                 }
                 if (expression.includes('btn.click()')) {
                     if (state.podcastFormDispatchFallback) {
@@ -709,6 +731,12 @@ function makeConsole(initial: ConsoleState) {
         };
 
         function applyClick(selector: string): void {
+            // 0423 R3: the 内容结构检测 notice's own close labels clear it.
+            if (state.noticeDialog === true && (selector.includes('我知道了') || selector.includes('关闭'))) {
+                state.noticeDialog = false;
+                dialogOpen = false;
+                return;
+            }
             if (selector.includes('__close') || selector.includes('取消')) {
                 // A closeable modal goes away; `dialogCloseable: false` models the picker that leaked.
                 if (state.dialogCloseable !== false) dialogOpen = false;
@@ -741,7 +769,10 @@ function makeConsole(initial: ConsoleState) {
             }
             if (isSaveBar(selector)) {
                 publicSaveClicked = true;
-                if (state.saveMovesStamp) state.draftStamp = FRESH_STAMP;
+                if (state.saveMovesStamp)
+                    state.draftStamp = state.incompleteStamp
+                        ? `${FRESH_STAMP} 图文内容不完整 请补充封面图、标题或者正文`
+                        : FRESH_STAMP;
                 if (state.publicSaveUrl !== undefined) url = state.publicSaveUrl;
                 return;
             }
@@ -1445,6 +1476,40 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
         expect(result.error).toContain('clicked 2×');
         expect(selectorsOf(console.calls.editor, 'click').filter(isSaveBar)).toHaveLength(2);
     });
+
+    // ---- 0423: the a2ui-intro publish post-mortem (empty draft body, 内容结构检测 modal) ----
+
+    test('a draft whose editor body stays empty is refused BEFORE 保存为草稿 (0423 R2)', async () => {
+        await seedMedia();
+        // The console re-rendered the body block between compose and the save step: the article text
+        // is gone from the editor while the draft would still save — the a2ui-intro receipt.
+        const console = makeConsole(happyState({ bodyLostAfterInsert: true }));
+        const result = await makeTransport(console).publish({ content: ARTICLE });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('article body is empty before 保存为草稿');
+        expect(selectorsOf(console.calls.editor, 'click').filter(isSaveBar)).toHaveLength(0);
+    });
+
+    test('a 草稿箱 row reporting 图文内容不完整 is never certified as a saved draft (0423 R2)', async () => {
+        await seedMedia();
+        const console = makeConsole(happyState({ incompleteStamp: true }));
+        const result = await makeTransport(console).publish({ content: ARTICLE });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('图文内容不完整');
+        expect(result.error).toContain('refusing to certify an incomplete draft');
+    });
+
+    test('the 内容结构检测 notice is cleared through its own 我知道了 control (0423 R3)', async () => {
+        await seedMedia();
+        // The notice appears after the paste and hides every other control; Escape and the
+        // settings-dialog close controls do not reach it (measured 2026-11-22).
+        const console = makeConsole(happyState({ noticeDialog: true, dialogCloseable: false }));
+        const result = await makeTransport(console).publish({ content: ARTICLE });
+        expect(result.ok).toBe(true);
+        expect(selectorsOf(console.calls.editor, 'click').some((selector) => selector.includes('我知道了'))).toBe(true);
+        // The sweep probes each earlier close control before the notice's own label, so this test
+        // pays the probe budget of the controls the notice does not have.
+    }, 30_000);
 
     // The public path is exercised ONLY against the fake console: `发表` is a recorded call on a
     // plain object, never a real click, and no verification/dogfood run activates it (ADR-022).
@@ -3238,7 +3303,7 @@ describe('markdownToWechatHtml', () => {
         const html = markdownToWechatHtml('# Title\n\nHello **world**.\n\n```\nconst x = 1;\n```');
         expect(html).toContain('<h1>Title</h1>');
         expect(html).toContain('<strong>world</strong>');
-        expect(html).toContain('<pre><code>');
+        expect(html).toContain('<pre style="overflow-x:auto;max-width:100%;"><code>');
         expect(html).toContain('const x = 1;');
     });
 });
@@ -3346,7 +3411,10 @@ describe('wechatmp-pub CLI surface (unchanged contract)', () => {
                 plugin: 'wechatmp-pub',
                 inPath,
                 outPath,
-                pluginsRoot: join(process.cwd(), 'plugins'),
+                // Repo-relative, never cwd-relative: a sibling test file that chdirs into a temp
+                // dir leaks its cwd into this shared bun process and the plugin vanishes from the
+                // registry (measured in the 0423 light gate, 2026-11-22).
+                pluginsRoot: join(import.meta.dir, '..', '..'),
             });
             expect(code).toBe(0);
         } finally {

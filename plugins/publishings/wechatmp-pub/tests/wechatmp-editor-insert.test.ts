@@ -7,9 +7,16 @@
  * exercised when a real Chromium run happened to take the fallback branch, which made
  * `wechatmp-pub/src/flow.ts` flake below the 90% per-file coverage gate. Pinning them here is
  * deterministic: no browser, no timing.
+ *
+ * Task 0423 R1 added the real-Chromium fixtures below: the placeholder widget makes `pasteHtml`
+ * resolve with `bodyLength === 0`, which is exactly the state in which `insertBody` used to return
+ * early and save an empty draft body.
  */
-import { describe, expect, test } from 'bun:test';
-import { bodyLength, insertHtmlScript, insertTextScript } from '../src/flow';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import type { Browser } from 'playwright';
+import { bodyLength, insertBody, insertHtmlScript, insertTextScript, type ModeRunDeps } from '../src/flow';
+import { wrapPlaywrightPage } from '../src/page';
+import { launchChromium } from './fixtures/wechatmp-cgi-runner';
 
 /** The page type stays private to flow.ts; only `evaluate` matters to these helpers. */
 type EditorPage = Parameters<typeof bodyLength>[0];
@@ -50,5 +57,86 @@ describe('wechatmp editor insertion primitives', () => {
 
     test('a non-numeric page answer degrades to 0 rather than NaN', async () => {
         expect(await bodyLength(pageReturning(''), 'div.ProseMirror')).toBe(0);
+    });
+});
+
+/**
+ * `insertBody` against a real Chromium page (0423 AC1).
+ *
+ * `ignore-paste` is the measured `appmsg_edit_v2` build: the synthetic paste is dropped, but the
+ * editor's placeholder widget keeps `textContent` non-empty, so `pasteHtml` resolves happily while
+ * the article body is still empty. `ignore-all` is the same build with the editing commands also
+ * refused — the state that must throw instead of saving an empty draft.
+ */
+const ARTICLE_BODY = '第一段正文内容，用来证明正文真的落到了编辑器里。';
+
+function editorHtml(mode: string): string {
+    const script =
+        mode === 'ignore-paste-and-html'
+            ? `<script>
+                document.execCommand = (command, _ui, value) => {
+                    if (command !== 'insertText') return false;
+                    document.querySelector('.ProseMirror').textContent = value;
+                    return true;
+                };
+            </script>`
+            : mode === 'ignore-all'
+              ? `<script>document.execCommand = () => false;</script>`
+              : '';
+    // No paste listener at all: the browser's default paste on a contenteditable is what the real
+    // console intercepts, and dropping the event is the closest deterministic model of that.
+    return `<!doctype html><meta charset="utf-8"><body>
+<div class="ProseMirror ProseMirror-focused" contenteditable="true" style="min-height:200px"><span class="editor_content_placeholder">从这里开始写正文</span></div>
+${script}
+</body>`;
+}
+
+const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    fetch(request) {
+        const mode = new URL(request.url).searchParams.get('mode') ?? 'ignore-paste';
+        return new Response(editorHtml(mode), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+    },
+});
+
+let browser: Browser;
+beforeAll(async () => {
+    browser = await launchChromium();
+});
+afterAll(async () => {
+    await browser?.close();
+    server.stop(true);
+});
+
+/** Only `content` and `stepTimeoutMs` reach `insertBody`; the rest of the seam is unused here. */
+const insertDeps = (body: string): ModeRunDeps =>
+    ({ content: { title: '标题', body }, stepTimeoutMs: 5_000 }) as unknown as ModeRunDeps;
+
+async function openEditorPage(mode: string) {
+    const page = await browser.newPage();
+    await page.goto(`${server.url}?mode=${mode}`);
+    return wrapPlaywrightPage(page);
+}
+
+describe('wechatmp insertBody fallback after pasteHtml (real Chromium)', () => {
+    test('a paste that leaves only the placeholder widget falls through to insertHTML', async () => {
+        const page = await openEditorPage('ignore-paste');
+        await insertBody(page, insertDeps(ARTICLE_BODY));
+        expect(await bodyLength(page, 'div.ProseMirror')).toBeGreaterThan(0);
+        expect(await page.evaluate("document.querySelector('.ProseMirror').textContent")).toContain(
+            '正文真的落到了编辑器里',
+        );
+    });
+
+    test('a build that also refuses insertHTML still lands the body through insertText', async () => {
+        const page = await openEditorPage('ignore-paste-and-html');
+        await insertBody(page, insertDeps(ARTICLE_BODY));
+        expect(await bodyLength(page, 'div.ProseMirror')).toBeGreaterThan(0);
+    });
+
+    test('a build that refuses every insertion throws instead of returning an empty body', async () => {
+        const page = await openEditorPage('ignore-all');
+        await expect(insertBody(page, insertDeps(ARTICLE_BODY))).rejects.toThrow(/stayed empty after paste/);
     });
 });

@@ -1011,6 +1011,9 @@ function makeMiniConsole(): MiniConsole {
                         pastedHtml = /setData\('text\/html',\s*(".*?")\);/.exec(expression)?.[1] ?? '';
                         return true;
                     }
+                    // 0423 R1: `insertBody` re-measures the body without the placeholder widget before
+                    // trusting the paste, so the fake reports the landed article length.
+                    if (expression.includes('editor_content_placeholder')) return pastedHtml.length > 0 ? 200 : 0;
                     // 0283 crop readback: only the committed scan matches here; the identify scan
                     // answers via the img-picker branch below.
                     if (expression.includes('img.crop-img')) return '[]';

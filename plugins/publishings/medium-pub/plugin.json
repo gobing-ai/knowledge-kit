@@ -4,7 +4,7 @@
     "entry": "./src/index.ts",
     "check": "./src/profile-check.ts",
     "version": "1.0.0",
-    "description": "Publish plugin for Medium (medium.com) via integration-token REST API or script browser fallback (ts-browser-automation)",
+    "description": "Publish plugin for Medium (medium.com): integration-token REST API when a token is configured, otherwise a headed script browser rail that fails closed on Cloudflare challenges",
     "browserSession": {
         "profileName": "medium",
         "homeUrl": "https://medium.com/new-story"

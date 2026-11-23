@@ -1,10 +1,12 @@
 import { describe, expect, spyOn, test } from 'bun:test';
+import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { type Content, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeFileCliTransport } from '@gobing-ai/publish-harness';
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { runInvoke } from '../../../../apps/cli/src/invoke';
+import { channelConfig, isAuthenticated } from '../src/browser-rail';
 import {
     getPublishTransport,
     MediumApiTransport,
@@ -177,6 +179,84 @@ describe('medium-pub plugin', () => {
         );
     });
 
+    test('the rail is headed-only and fails closed on a Cloudflare challenge (0423 R4)', async () => {
+        const tmpDir = join(process.cwd(), '.works/tmp/test-medium-challenge');
+        await mkdir(tmpDir, { recursive: true });
+        const launches: Array<{ headless?: boolean }> = [];
+        const pageFor = (title: string) => ({
+            url: () => 'https://medium.com/new-story',
+            title: async () => title,
+            goto: async () => undefined,
+            locator: () => ({
+                first: () => ({ count: async () => 1, isVisible: async () => true, waitFor: async () => undefined }),
+            }),
+            evaluate: async () => true,
+            keyboard: { press: async () => undefined },
+            waitForTimeout: async () => undefined,
+        });
+        // The saved session is fine; Cloudflare answers the editor visit with its interstitial.
+        const healthyPage = pageFor('New story — Medium');
+        const challengePage = pageFor('Just a moment...');
+        let launchCount = 0;
+        const launcher = {
+            async launch(options: { headless?: boolean }) {
+                launches.push(options);
+                launchCount += 1;
+                const page = launchCount === 1 ? healthyPage : challengePage;
+                return { pages: () => [page], newPage: async () => page, close: async () => undefined };
+            },
+        };
+        try {
+            expect(channelConfig().checkHeadedOnly).toBe(true);
+            expect(await isAuthenticated(challengePage as never)).toBe(false);
+            const result = await new MediumBrowserTransport('script', {
+                launcher: launcher as never,
+                stepTimeoutMs: 500,
+            }).publish({
+                content: { title: 'A2UI 1.0', body: 'Hello Medium.', format: 'markdown' },
+                options: { profileDir: tmpDir },
+            });
+            expect(result.ok).toBe(false);
+            expect(result.error).toContain('Cloudflare');
+            expect(result.metadata?.itcDelivery).toEqual({ schemaVersion: 1, effect: 'none' });
+            // headedOnly: one pass, and headed — no headless probe burns the budget first.
+            expect(launches.length).toBeGreaterThan(0);
+            expect(launches.every((options) => options.headless === false)).toBe(true);
+        } finally {
+            await rm(tmpDir, { recursive: true, force: true });
+        }
+    });
+
+    test('a missing profile is refused before any headed launch, and nothing is created (0423 R4)', async () => {
+        const tmpDir = join(process.cwd(), '.works/tmp/test-medium-absent');
+        const absent = join(tmpDir, 'no-medium-profile');
+        await mkdir(tmpDir, { recursive: true });
+        const launches: unknown[] = [];
+        const launcher = {
+            async launch(options: unknown) {
+                launches.push(options);
+                throw new Error('fixture: a missing profile must never reach the launcher');
+            },
+        };
+        try {
+            const result = await new MediumBrowserTransport('script', {
+                launcher: launcher as never,
+                stepTimeoutMs: 500,
+            }).publish({
+                content: { title: 'A2UI 1.0', body: 'Hello Medium.', format: 'markdown' },
+                options: { profileDir: absent },
+            });
+            expect(result.ok).toBe(false);
+            expect(result.error).toContain('no saved profile');
+            expect(result.metadata?.itcDelivery).toEqual({ schemaVersion: 1, effect: 'none' });
+            // A headed launch would have created the directory and held its lease.
+            expect(existsSync(absent)).toBe(false);
+            expect(launches).toEqual([]);
+        } finally {
+            await rm(tmpDir, { recursive: true, force: true });
+        }
+    });
+
     test('MediumBrowserTransport refuses unsupported driver, unknown publishStatus, and missing session cleanly', async () => {
         const badDriver = await new MediumBrowserTransport('agent').publish({
             content: { title: 'T', body: 'B', format: 'markdown' },
@@ -197,8 +277,10 @@ describe('medium-pub plugin', () => {
         let currentUrl = 'https://medium.com/new-story';
         const clicked: string[] = [];
         const filled: string[] = [];
+        const launches: Array<{ headless?: boolean }> = [];
         const fakePage = {
             url: () => currentUrl,
+            title: async () => 'New story — Medium',
             goto: async (u: string) => {
                 currentUrl = u;
             },
@@ -230,7 +312,8 @@ describe('medium-pub plugin', () => {
             waitForTimeout: async () => undefined,
         };
         const fakeLauncher = {
-            async launch() {
+            async launch(options: { headless?: boolean }) {
+                launches.push(options);
                 return {
                     pages: () => [fakePage],
                     newPage: async () => fakePage,
@@ -251,6 +334,8 @@ describe('medium-pub plugin', () => {
             expect(draftRes.id).toBe('abcdef123456');
             expect(draftRes.url).toBe('https://medium.com/p/abcdef123456/edit');
             expect(filled).toContain('A2UI 1.0');
+            // 0423 R4: every launch is headed — the headless pass gets Cloudflare's interstitial.
+            expect(launches.every((options) => options.headless === false)).toBe(true);
 
             // Cover title fallback from H1 and live publish flow
             currentUrl = 'https://medium.com/new-story';

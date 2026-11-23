@@ -245,7 +245,13 @@ async function busyGuidance(fileSystem: FileSystem, leaseDir: string): Promise<s
         }
         return `browser lease ${leaseDir} already exists with no owner record — a previous run may have crashed mid-acquire; confirm no kk browser still uses this profile, then remove ${leaseDir} manually`;
     }
-    return `browser lease ${leaseDir} is held by pid ${owner.pid} (logical ${owner.logicalPath}) — confirm that process and any browser for this profile have stopped; stale ownership is never auto-removed`;
+    // 0423 R5: a lease left by a DEAD owner is the exact state a Ctrl-C'd `kk bot open` leaves
+    // behind, and the recovery is one command — name the pid's death and print it. The directory is
+    // still never removed automatically (0276 frozen invariant).
+    const suffix = isProcessAlive(owner.pid)
+        ? 'confirm that process and any browser for this profile have stopped; stale ownership is never auto-removed'
+        : `pid ${owner.pid} is no longer running — confirm no browser for this profile is open, then remove the stale lease with: rm -rf ${leaseDir}`;
+    return `browser lease ${leaseDir} is held by pid ${owner.pid} (logical ${owner.logicalPath}) — ${suffix}`;
 }
 
 /** Count dead-child holder records, or null when the directory carries none. */
@@ -280,7 +286,8 @@ async function liveChildHolders(fileSystem: FileSystem, leaseDir: string): Promi
     return pids;
 }
 
-function isProcessAlive(pid: number): boolean {
+/** True while a pid can still be signalled — the dead-owner probe behind {@link busyGuidance}. */
+export function isProcessAlive(pid: number): boolean {
     try {
         process.kill(pid, 0);
         return true;

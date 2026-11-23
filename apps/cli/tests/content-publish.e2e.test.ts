@@ -460,13 +460,21 @@ describe('content publish verbs (0364)', () => {
             expect(failedRequired.stderr).toContain('required targets failed');
             expect(readFileSync(reportPath, 'utf8')).toContain('# Publish report — after-generate —');
 
-            // A dummy or non-required failure is a rehearsal/optional row: the report still certifies.
+            // A dummy or optional failure beside a real success is a rehearsal/optional row: the
+            // report still certifies (0423 R6 keeps this partial-window tolerance).
             writeFileSync(
                 join(workDir, '4-publish', 'outcome.after-generate.json'),
                 JSON.stringify({
                     runDate: '2026-11-13',
                     rows: [
                         { id: 'wechatmp-pub', plugin: 'wechatmp-pub', required: true, dummy: true, status: 'failed' },
+                        {
+                            id: 'surfdash-pub',
+                            plugin: 'surfdash-pub',
+                            required: true,
+                            dummy: false,
+                            status: 'succeeded',
+                        },
                         { id: 'xhs-pub', plugin: 'xhs-pub', required: false, dummy: false, status: 'failed' },
                     ],
                     excluded: [],
@@ -481,6 +489,31 @@ describe('content publish verbs (0364)', () => {
                 'after-generate',
             ]);
             expect(tolerated.code).toBe(0);
+
+            // 0423 R6: a window whose every planned REAL row failed produces nothing, so it fails —
+            // even with no row marked required (`kk article publish` said `done` while the only
+            // selected target had failed, 2026-11-22).
+            writeFileSync(
+                join(workDir, '4-publish', 'outcome.after-generate.json'),
+                JSON.stringify({
+                    runDate: '2026-11-13',
+                    rows: [
+                        { id: 'surfdash-pub', plugin: 'surfdash-pub', required: false, dummy: true, status: 'failed' },
+                        { id: 'weibo-pub', plugin: 'weibo-pub', required: false, dummy: false, status: 'failed' },
+                    ],
+                    excluded: [],
+                }),
+            );
+            const everyRealRowFailed = await runCli([
+                'news',
+                'publish-report',
+                '--work-dir',
+                workDir,
+                '--window',
+                'after-generate',
+            ]);
+            expect(everyRealRowFailed.code).toBe(1);
+            expect(everyRealRowFailed.stderr).toContain('required targets failed');
         } finally {
             process.chdir(priorCwd);
             if (priorConfig === undefined) delete process.env.KK_CONFIG;
@@ -489,7 +522,7 @@ describe('content publish verbs (0364)', () => {
             else process.env.KK_SPUR_BIN = priorSpurBin;
             rmSync(root, { recursive: true, force: true });
         }
-    });
+    }, 60_000);
 
     it('returns stable usage codes for malformed config, missing writer skills, and missing presets', async () => {
         const root = mkdtempSync(join(tmpdir(), 'kk-content-publish-errors-'));

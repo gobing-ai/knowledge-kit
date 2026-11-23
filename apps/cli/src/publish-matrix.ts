@@ -778,6 +778,12 @@ async function composePlan(
         const payloadRelative = `4-publish/payloads/content.${id}.json`;
         const payloadText = `${JSON.stringify(payload, null, 2)}\n`;
 
+        // 0423 R6: a channel the operator named explicitly on this invocation is required for its
+        // exit code, even when the preset marks it optional — a run must not report success while
+        // the only target it was asked to publish failed. A `--dummy` rehearsal asserts nothing
+        // about the channel, so it stays optional.
+        const explicitlySelected =
+            mode !== 'dummy' && (liveToken !== undefined || input.channels.some((token) => matches(target, token)));
         rows.push({
             id,
             plugin: target.plugin,
@@ -786,7 +792,7 @@ async function composePlan(
             tier: target.tier ?? 3,
             window: input.window,
             mode,
-            required: target.required ?? false,
+            required: (target.required ?? false) || explicitlySelected,
             // Approval is recorded only: enforcement is the workflow's pause node (ADR-022), and the
             // console attaches through this field (design §5b).
             approval: mode === 'live' ? 'required' : 'none',

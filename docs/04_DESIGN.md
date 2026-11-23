@@ -1485,6 +1485,13 @@ is accepted design, not surface: do not invoke it as if it exists.
 - Exit codes: `0` done, `1` failed (the workflow ran and failed, or exited non-zero through
   `generate --publish`), `2` usage, `5` launch refused (preflight, missing bundle, window/CN-consent
   refusal), `6` another launch holds `<workflow>-<run>`.
+- **Planned targets are required for the run's exit code (0423 R6).** A row the operator named on this
+  invocation — `--channels <id>` or `--live-channels <id>` — is planned `required: true` even when the
+  preset marks it optional, and `publish-settle` / `publish-report` exit `1` (`required targets failed`)
+  when a window's every planned real (`mode !== 'dummy'`) row failed or never reported. So a run cannot
+  report `done` while the only target it was asked to publish failed. Two tolerances stay: an unfiltered
+  window whose optional syndication row fails beside a success still exits `0`, and a `--dummy`
+  rehearsal never fails a window (it asserts nothing about the channel).
 - Shipped config key `content_types.<type>` = `{workflow, writer_skill, publish_preset, channels}`;
   built-in types `news` and `itc` (0363). Resolution: flag → `content_types` →
   `workflows.<workflow>.publish_preset` → built-in.
