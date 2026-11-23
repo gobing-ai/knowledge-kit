@@ -2666,3 +2666,48 @@ Verification of this wrap
 - **0421:** Data-driven `BATCH_MANIFEST_CONFIG` in `plugins/kk/scripts/daily-stages.ts` generalizes single-worker batch manifest routing (`VOXCPM_BATCH_MANIFEST`, `VIBEVOICE_BATCH_MANIFEST`) and isolates per-driver audio cache keys cleanly without duplicating driver branches.
 - **0421:** `spur workflow commit-guard-stage` filters `.spur/*` as bookkeeping, so tracked `.spur/` edits (`.spur/rules/strict/runtime-boundaries.yaml`, `.spur/memory/learnings.md`) require explicit `git add -- <path>` after verifying `commit-guard-check` reports `{"foreign":[]}`.
 
+## 2026-11-23 — feature L4 batch (`runall-L4-0ad4`), tasks 0424 / 0425
+
+### 0424 — cover composition centralized into a skill
+
+- **Convention: art direction is data, not prompt text.** A visual contract that lives in three
+  prompts drifts three ways. Moving it into `plugins/kk/skills/<name>/SKILL.md` plus one shared
+  reference let each prompt keep only a pointer, and the prompts got *shorter* (772–993 chars) while
+  gaining rules.
+- **Seam: the package skill root is a workflow var, not an agent discovery lookup.** `kk news
+  generate` passes the resolved absolute `visual_skill_root`; a direct `spur workflow run` falls back
+  to the checkout-relative default. Both are declared in the same `vars:` block, so the fallback is
+  visible where it is used.
+- **Gotcha: a frozen entity snapshot breaks when you add a skill.**
+  `plugins/kk/tests/runtime-requires.test.ts` pins the kk entity count and `requires` groups; every
+  new `SKILL.md` needs the count and its group bumped in the same commit, with the reason recorded.
+- **Gotcha: the ADR-115 prompt cap is a hard budget, not a suggestion.** Adding a pointer line to a
+  1000-char prompt means deleting the rules the pointer replaces — never raising the cap.
+
+### 0425 — card direction delegated, ownership preserved
+
+- **Pattern: delegate only the field you do not own.** The new skill owns `subject` and nothing else;
+  `copy`, `points`, `role`, `layout`, `sourcePoint`, `itemId`, order and the plan shape are copied
+  through byte-identically, so no consumer had to change.
+- **Pattern: derived values stay derived.** The cover/closing card scenes come from
+  `dailyEditorialRender`'s existing fallback; the skill is told explicitly not to invent an
+  episode-level field for them.
+- **Testing: assert the sourcing, not just the shape.** The replay pins each content card's `subject`
+  to the scene its own item authored and the cover/closing cards to the episode fallback — that is
+  what makes "sourced" checkable.
+
+### Batch-level
+
+- **The light gate's `rules:post` needs a complete `.coverage/lcov.info`.** On bun 1.4.3 a scoped
+  `bun test --coverage` still rewrites the repo-wide tracefile (so `scripts/test-changed.ts`'s
+  `--coverage-dir` isolation does not hold), and `coverage-gate` then fails every untouched file.
+  Each worktree task therefore needs one full `bun run test` before its gate; budget ~30–45 min per
+  task for it.
+- **Escalation is broken in `task-pipeline` v9.** The `escalate` state passes `file:` to
+  `file.read.into-var`, whose contract requires `path:`, so an implement escalation fails the run
+  instead of pausing. Until it is fixed, an operator question during implement ends the run `failed`
+  at `escalate` — carry the question in a task History note instead of relying on the hop.
+- **Check cross-task file ownership before starting a task.** 0426 shares `wechatmp-pub/src/flow.ts`
+  and its editor test with the still-unmerged 0423 (`e258d2ed`); building against `main` would have
+  produced a conflict in a 3208-line file. The right stop is *before* the first edit.
+
