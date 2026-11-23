@@ -35,9 +35,20 @@ function doc(overrides: Partial<Doc> = {}): Doc {
 }
 
 describe('episode-plan-gen', () => {
-    test('normalizeUrl drops query, fragment, trailing slash, and www/amp prefixes', () => {
-        expect(normalizeUrl('https://www.example.com/a/?utm=1#x')).toBe('https://example.com/a');
+    test('normalizeUrl keeps identity-bearing query params and drops tracking ones', () => {
+        // The query is identity for youtube/hackernews, whose paths carry no id at all.
+        expect(normalizeUrl('https://www.youtube.com/watch?v=abc123&utm_source=x#t=1')).toBe(
+            'https://youtube.com/watch?v=abc123',
+        );
+        expect(normalizeUrl('https://news.ycombinator.com/item?id=42&ref=hn')).toBe(
+            'https://news.ycombinator.com/item?id=42',
+        );
+        expect(normalizeUrl('https://www.example.com/a/?utm_source=1#x')).toBe('https://example.com/a');
+        // A bare `utm` is not a tracking prefix (the store's canonical key keeps it too).
+        expect(normalizeUrl('https://example.com/a?utm=1')).toBe('https://example.com/a?utm=1');
         expect(normalizeUrl('https://amp.example.com/a/')).toBe('https://example.com/a');
+        // Param order is not identity: two spellings of one page share a key.
+        expect(normalizeUrl('https://example.com/x?b=2&a=1')).toBe(normalizeUrl('https://example.com/x?a=1&b=2'));
         expect(normalizeUrl('not-a-url')).toBeNull();
         expect(normalizeUrl(undefined)).toBeNull();
     });
@@ -88,7 +99,7 @@ describe('episode-plan-gen', () => {
         const strong = doc({
             id: 's',
             title: 'Sora 2 application launch',
-            sourceUri: 'https://blog.samaltman.com/sora-2?utm=x',
+            sourceUri: 'https://blog.samaltman.com/sora-2?utm_source=x',
             metadata: { source: 'aihot' },
         });
         const plan = planEpisode([weak, strong], { maxItems: 10 });

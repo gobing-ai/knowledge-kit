@@ -39,4 +39,11 @@ where:
   # the pool shrinks rather than admitting an unjudged item. Chinese companies/models/industry do
   # not trip the gate: they score 0.
   kk-item-china-politics: { lte: 1 }
-order: [kk-item-urgency desc, kk-item-impact desc, first_seen_at desc]
+# 2026-11-23: `kk-item-importance` sits between urgency and impact. With only
+# `[urgency, impact]` a same-day tie was broken by raw engagement, so 60 last30days
+# YouTube videos (importance 2, impact 5 from view counts) evicted every rss/hackernews
+# story (importance 3, impact 1) from the capped pool: the day's 40-item pool held 35
+# videos and 5 news items, QC then kept 5, and the episode refused at the 13 min floor.
+# Importance IS the source-tier dimension, so it ranks above engagement; impact stays
+# the tie-breaker inside one tier.
+order: [kk-item-urgency desc, kk-item-importance desc, kk-item-impact desc, first_seen_at desc]

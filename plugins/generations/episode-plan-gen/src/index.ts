@@ -283,7 +283,26 @@ export function cleanBody(body: string): string {
         .trim();
 }
 
-/** Canonical URL key: drop query, fragment, trailing slash, `www.`/`amp.` prefixes. */
+/**
+ * Campaign/click parameters that never carry content identity. Mirrors the store's
+ * `canonicalUrl` rule (`packages/kk-store/src/canonical-url.ts`) so a Doc dedups the same way
+ * before and after ingest.
+ */
+const TRACKING_PARAMS = new Set(['ref', 'ref_src', 'fbclid', 'gclid']);
+
+function isTrackingParam(name: string): boolean {
+    const lower = name.toLowerCase();
+    return lower.startsWith('utm_') || TRACKING_PARAMS.has(lower);
+}
+
+/**
+ * Canonical URL key: drop the fragment, tracking params, trailing slash and `www.`/`amp.` prefixes.
+ *
+ * The query is KEPT (minus tracking) because for a large share of sources it IS the identity:
+ * `youtube.com/watch?v=<id>` and `news.ycombinator.com/item?id=<id>` carry no path at all. Dropping
+ * it collapsed 60 distinct videos and every hackernews post into one key, so `planEpisode`'s URL
+ * dedup merged them away — 2026-11-23: a 40-doc pool reached the plan as 15 docs, 25 `url-merge`.
+ */
 export function normalizeUrl(raw: string | undefined): string | null {
     if (!raw) return null;
     let url: URL;
@@ -294,7 +313,11 @@ export function normalizeUrl(raw: string | undefined): string | null {
     }
     const host = url.hostname.replace(/^(www|amp)\./, '');
     const path = url.pathname.replace(/\/+$/, '');
-    return `${url.protocol}//${host}${path}`;
+    const kept = [...url.searchParams.entries()]
+        .filter(([name]) => !isTrackingParam(name))
+        .sort(([aName, aValue], [bName, bValue]) => aName.localeCompare(bName) || aValue.localeCompare(bValue));
+    const search = kept.length === 0 ? '' : `?${new URLSearchParams(kept).toString()}`;
+    return `${url.protocol}//${host}${path}${search}`;
 }
 
 /** ASCII ratio of a string; > 0.5 on the title marks an English item. */
