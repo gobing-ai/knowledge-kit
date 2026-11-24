@@ -48,6 +48,8 @@ interface GenerateOptions {
     skipReview?: boolean;
     auto?: boolean;
     adaptOnly?: boolean;
+    /** `--inline-illustrations`: opt into inline figures in the WeChat article (news only, 0426 R1). */
+    inlineIllustrations?: boolean;
     publish?: boolean;
     channels?: string;
     liveChannels?: string;
@@ -253,13 +255,86 @@ async function readPreset(
     presetName: string,
     fs: FileSystem,
 ): Promise<{
-    targets?: Array<{ plugin?: string; id?: string; operation?: string; mode?: string; window?: string }>;
+    targets?: Array<{
+        plugin?: string;
+        id?: string;
+        operation?: string;
+        variant?: string;
+        mode?: string;
+        window?: string;
+    }>;
 } | null> {
     const root = await resolvePackageRoot(fs);
     const path = join(root, 'plugins', 'kk', 'publish-presets', `${presetName}.json`);
     return (await readJson(fs, path)) as {
-        targets?: Array<{ plugin?: string; id?: string; operation?: string; mode?: string; window?: string }>;
+        targets?: Array<{
+            plugin?: string;
+            id?: string;
+            operation?: string;
+            variant?: string;
+            mode?: string;
+            window?: string;
+        }>;
     } | null;
+}
+
+/** One publish-preset row, as much of it as the inline-figure admission reads. */
+export interface InlineFigureTarget {
+    plugin?: string;
+    id?: string;
+    operation?: string;
+    variant?: string;
+    mode?: string;
+}
+
+/** The one row inline figures can ride: the WeChat article target, not the 播客 episode one. */
+const INLINE_FIGURE_OPERATION = '文章';
+const INLINE_FIGURE_VARIANT = 'article';
+
+/** Does an explicit `--channels` token select this row (`plugin`, `id`, or `plugin/variant`)? */
+function targetSelectedBy(target: InlineFigureTarget, tokens: readonly string[]): boolean {
+    return tokens.some(
+        (token) =>
+            target.plugin === token ||
+            target.id === token ||
+            (target.plugin !== undefined &&
+                target.variant !== undefined &&
+                `${target.plugin}/${target.variant}` === token),
+    );
+}
+
+/**
+ * 0426 R1: inline figures only make sense when the run will actually publish a WeChat article whose
+ * editor places an image at a text position. Returns the refusal reason, or null when eligible.
+ *
+ * The row must exist, be enabled, and — when the operator names channels — be one of them: silently
+ * spending on figures for an article that will never be written is the failure this gate prevents.
+ */
+export function inlineFigureRefusal(
+    presetName: string,
+    targets: readonly InlineFigureTarget[],
+    channels?: readonly string[],
+): string | null {
+    const rows = targets.filter(
+        (target) =>
+            target.plugin === 'wechatmp-pub' &&
+            target.operation === INLINE_FIGURE_OPERATION &&
+            target.variant === INLINE_FIGURE_VARIANT,
+    );
+    const enabled = rows.filter((target) => target.mode !== undefined && target.mode !== 'off');
+    if (enabled.length === 0) {
+        return rows.length === 0
+            ? `--inline-illustrations: preset '${presetName}' declares no wechatmp-pub ${INLINE_FIGURE_OPERATION} (${INLINE_FIGURE_VARIANT}) target to carry the figures`
+            : `--inline-illustrations: no enabled wechatmp-pub ${INLINE_FIGURE_OPERATION} (${INLINE_FIGURE_VARIANT}) target in preset '${presetName}'`;
+    }
+    if (
+        channels !== undefined &&
+        channels.length > 0 &&
+        !enabled.some((target) => targetSelectedBy(target, channels))
+    ) {
+        return `--inline-illustrations: --channels (${channels.join(', ')}) excludes the wechatmp-pub ${INLINE_FIGURE_OPERATION} (${INLINE_FIGURE_VARIANT}) target, so no article would carry the figures`;
+    }
+    return null;
 }
 
 /**
@@ -293,6 +368,23 @@ async function generateAction(noun: string, defaultType: string, options: Genera
     // 0424 R2: the daily visual skills ship inside the package, so the news cover nodes read them in
     // place from this root — a scheduled run then never depends on the agent's skill discovery.
     if (type === 'news') vars.visual_skill_root = join(packageRoot, 'plugins', 'kk', 'skills');
+    // 0426 R1: inline figures are opt-in, news-only, and admitted only when this run will really
+    // publish the WeChat article that can carry them — refused before the launch spends anything.
+    if (options.inlineIllustrations === true) {
+        if (type !== 'news') {
+            fail(
+                2,
+                'kk.content.generate',
+                `'--inline-illustrations' is news-only: the '${type}' workflow declares no inline-figure stage`,
+            );
+        }
+        const preset = await readPreset(resolved.publish_preset, fs);
+        // `channelList` hands the launch one comma-joined string; the admission needs the tokens.
+        const selected = channels === undefined ? undefined : channels.split(',').map((token) => token.trim());
+        const refusal = inlineFigureRefusal(resolved.publish_preset, preset?.targets ?? [], selected);
+        if (refusal !== null) fail(5, 'kk.content.generate', refusal);
+        vars.inline_illustrations = 'true';
+    }
     if (options.skipReview === true) vars.skip_review = 'true';
     // `--auto` is wired only by the article workflow (it names outline gates); the news DAG declares
     // no `auto` var, so accepting the flag there is a silent no-op (2026-11-17).
@@ -648,6 +740,7 @@ function configureGenerate(command: Command, noun: string, defaultType: string):
         .option('--agent <executor>', 'executor the workflow dispatches to (default: inline)')
         .option('--skip-review', 'skip the workflow review pause')
         .option('--auto', 'skip the human gates (article only)')
+        .option('--inline-illustrations', 'render figures inline in the WeChat article (news only)')
         .option('--adapt-only', 'skip authoring and run adapt + freeze over an existing draft (article only)')
         .option('--publish', 'launch publish for window after-generate once generation is green')
         .option('--channels <a,b>', 'publish plan rows or plugins to include')

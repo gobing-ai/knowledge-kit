@@ -36,6 +36,17 @@ vars:
   # shared composition reference). `kk news generate` passes the resolved absolute root; the
   # checkout-relative default keeps a direct `spur workflow run` call working.
   visual_skill_root: "plugins/kk/skills"
+  # 0426 R1: opt-in inline figures in the WeChat article variant. Off by default; `kk news generate
+  # --inline-illustrations` forwards "true" after admitting the target, and a direct
+  # `spur workflow run` gets the gated-off default.
+  inline_illustrations: "false"
+  # 0426 R2: the figure requests reuse the daily cover's pinned provider/model (no implicit
+  # fallback) — the same pair the daily voice workflows ship.
+  cover_provider: "minimax"
+  cover_model: "image-01"
+  # The extra product-plugin root the figure requests may resolve presets from; "" keeps the
+  # executor's own resolution (the voice workflows' default).
+  plugins_path: ""
   skip_review: "false"
   preset: ""
 
@@ -306,6 +317,57 @@ nodes:
           && grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null
 
   # ── 13a. localize: en/ja translations of the reviewed zh article, before the freeze ────────
+  # ── 0426: inline figures for the reviewed article (opt-in, default off) ─────────────────────
+  # After the drafts verdict AND the operator review, as 0426 R1 requires: figures anchor to the body
+  # the operator approved, so an edit made at the pause never leaves a figure rendered against a
+  # superseded paragraph. Both edges are declared on purpose — `--skip-review` SKIPS `review`, and a
+  # node whose dependencies are ALL skipped is skipped, so `[safety]` alone would also work while
+  # `[review]` alone would silently drop opted-in figures; done+skipped is a mix, so this node runs.
+  # The render stage re-validates every anchor against the article as it stands when it renders, and
+  # the receipt binds the body hash, so a later edit is refused at materialization, never published.
+  - id: illustrations-plan
+    description: "Author 22-article/illustrations/plan.json (1-2 sourced whole-paragraph anchors, concept, caption, alt text) — 0426 R1; opt-in only"
+    dependsOn: [safety, review]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.inline_illustrations}" = "true"
+          && grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null
+    action:
+      kind: agent.run
+      options:
+        role: scribe
+        agent: ${vars.agent}
+        timeoutMs: 300000
+        # ADR-115 error tier: keep this prompt <= 1000 chars.
+        input: |
+          Follow mode `inline` in ${vars.visual_skill_root}/daily-news-illustrations/SKILL.md (read it first; composition: ${vars.visual_skill_root}/news-editorial/references/daily-visual-composition.md).
+          Read the reviewed article ${vars.work_dir}/22-article/${vars.run_date}_06_article_content.json — don't edit it.
+          Pick ONE or TWO prose paragraphs that each carry a distinct visual idea, in body order. Copy each paragraph VERBATIM as "anchor" — a whole paragraph, never a heading, quotation, list item, code line or a sentence inside one.
+          Per figure: "anchor", "sourceId" (the plan item it is about), "concept" (one text-free English scene), "caption" (<=30 Chinese chars), "altText" (<=40 Chinese chars).
+          Output strictly valid JSON {"version":1,"figures":[...]} to ${vars.work_dir}/22-article/illustrations/plan.json.
+        expectFile: ${vars.work_dir}/22-article/illustrations/plan.json
+        allowAppend: false
+
+  - id: illustrations-render
+    description: "`kk stage news-inline-illustrations` — validate the whole figure plan, then render or resume one pinned illustration per figure (0426 R1/R2); opt-in only"
+    dependsOn: [illustrations-plan]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.inline_illustrations}" = "true"
+          && grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage run news-inline-illustrations
+          "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
+          "${vars.cover_provider}" "${vars.cover_model}"
+          "${vars.visual_skill_root}/../publish-presets/${vars.preset}.json"
+
   - id: localize
     description: >-
       Translate the reviewed zh article into en/ja (0409 R1) and write
@@ -445,7 +507,7 @@ nodes:
       `daily-safety-manifest` in one process: `31-publish/` prep, `30-variants/*` payloads and the
       manifest the nested variants review registers. Two stages, because the review of those
       variants has to run between them and a nested workflow call cannot live inside a verb.
-    dependsOn: [voice, voice-fallback, voice-fallback2, cards, localize-check]
+    dependsOn: [voice, voice-fallback, voice-fallback2, cards, localize-check, illustrations-render]
     condition:
       kind: shell
       options:

@@ -63,6 +63,9 @@ const DESIGN_NODES = [
     'render',
     'safety',
     'review',
+    // 0426 R1: the opt-in inline-figure pair, after the drafts verdict and before the freeze.
+    'illustrations-plan',
+    'illustrations-render',
     // 0409 R1: the en/ja translations of the reviewed article, gated before the freeze so the
     // variants review and the freeze digest cover exactly the bytes that publish.
     'localize',
@@ -78,24 +81,49 @@ const DESIGN_NODES = [
 ];
 
 /** Shell nodes that are NOT nested workflow calls: the ones R2 constrains to one verb call. */
+/**
+ * The documented exceptions to "a shell node calls one `kk news <verb>`": both are `kk stage` calls
+ * because the work is deterministic stage work no `news` verb owns.
+ * - 0409: `localize-check` — translating inside the plugin would move a model call into a
+ *   deterministic step, and translating after the freeze would publish bytes the review never saw.
+ * - 0426: `illustrations-render` — whole-plan validation + one pinned `job: illustration` request
+ *   per figure with per-figure receipts; no existing verb owns it.
+ * Declared once so a third exception cannot slip in through one assertion.
+ */
+const STAGE_NODE_EXCEPTIONS = new Set(['localize-check', 'illustrations-render']);
+
 const verbNodes = (): Node[] =>
     doc.nodes.filter(
         (node) =>
             node.pause !== true &&
             node.action?.kind === 'shell' &&
             !command(node).includes('spur workflow run') &&
-            // 0409: the localize gate is the one shell node that is a `kk stage` call, not a verb.
-            node.id !== 'localize-check',
+            !STAGE_NODE_EXCEPTIONS.has(node.id),
     );
 
 describe('kk-news-generate — AC1: twenty nodes, one executor variable, no padding', () => {
     it('declares exactly the designed node ids, in topological order', () => {
         expect(doc.name).toBe('kk-news-generate');
         expect(doc.kind).toBe('dag');
-        // 23 since 0417: the twenty design nodes plus `localize` + its deterministic gate, and the
-        // `voice-fallback-box` attempt that puts the local Voicebox renderer before the cloud engines.
-        expect(doc.nodes).toHaveLength(23);
+        // 25 since 0426: 0417's 23 plus the opt-in inline-figure pair (`illustrations-plan`,
+        // `illustrations-render`).
+        expect(doc.nodes).toHaveLength(25);
         expect(order).toEqual(DESIGN_NODES);
+    });
+
+    it('runs the opt-in figure pair after the drafts verdict AND the review pause (0426 R1)', () => {
+        // `[safety]` alone would spend before the operator approves the body; `[review]` alone would
+        // be skipped whenever `--skip-review` is set (a node whose dependencies are ALL skipped is
+        // skipped) and silently drop opted-in figures. Both edges give the ordering and survive the
+        // skip, because done+skipped is a mix and a mixed node still runs.
+        expect(byId.get('illustrations-plan')?.dependsOn).toEqual(['safety', 'review']);
+        expect(byId.get('illustrations-render')?.dependsOn).toEqual(['illustrations-plan']);
+        expect(byId.get('variants')?.dependsOn).toContain('illustrations-render');
+        for (const id of ['illustrations-plan', 'illustrations-render']) {
+            expect(condition(byId.get(id) as Node), `${id} is opt-in only`).toContain(
+                `"\${vars.inline_illustrations}" = "true"`,
+            );
+        }
     });
 
     it('keeps every dependency forward-only, with executor-probe as the only entry node', () => {
@@ -111,9 +139,13 @@ describe('kk-news-generate — AC1: twenty nodes, one executor variable, no padd
         }
     });
 
-    it('has ONE executor variable and the eight designed vars (ADR-053 §5, R7; 0424 R2 adds the visual skill root)', () => {
+    it('has ONE executor variable and the twelve designed vars (ADR-053 §5, R7; 0424/0426 add the visual and inline-figure vars)', () => {
         expect(Object.keys(doc.vars).sort()).toEqual([
             'agent',
+            'cover_model',
+            'cover_provider',
+            'inline_illustrations',
+            'plugins_path',
             'preset',
             'run_date',
             'run_id',
@@ -125,6 +157,8 @@ describe('kk-news-generate — AC1: twenty nodes, one executor variable, no padd
         // 0424 R2: the daily visual skills are read in place from the package; the declared default
         // keeps a direct `spur workflow run` call working without the launcher.
         expect(doc.vars.visual_skill_root).toBe('plugins/kk/skills');
+        // 0426 R1: inline figures are opt-in; the default is off for every existing caller.
+        expect(doc.vars.inline_illustrations).toBe('false');
         // `agent` is the only executor switch: `inline` by default, and no node pins a model, an
         // executor roster entry or a second agent var.
         expect(doc.vars.agent).toBe('inline');
@@ -133,7 +167,7 @@ describe('kk-news-generate — AC1: twenty nodes, one executor variable, no padd
         expect(text).not.toContain(`\${vars.model}`);
         // Every agent node resolves through the one var; the only literal is the var's own default.
         const literalAgents = [...text.matchAll(/agent: (.+)/g)].map((match) => match[1]?.trim());
-        expect(literalAgents).toEqual(['inline', ...Array(7).fill(`\${vars.agent}`)]);
+        expect(literalAgents).toEqual(['inline', ...Array(8).fill(`\${vars.agent}`)]);
     });
 
     it('runs the 0360 executor probe first: the shared real-traffic prompt', () => {
@@ -149,7 +183,7 @@ describe('kk-news-generate — AC1: twenty nodes, one executor variable, no padd
         // 0409's one documented exception: the localize gate is a stage (`news-localize-validate`),
         // because translating in the plugin would put a model call in a deterministic step and
         // translating after the freeze would publish bytes the safety review never saw.
-        for (const node of doc.nodes.filter((entry) => entry.id !== 'localize-check')) {
+        for (const node of doc.nodes.filter((entry) => !STAGE_NODE_EXCEPTIONS.has(entry.id))) {
             const body = `${command(node)}\n${condition(node)}`;
             expect(body).not.toContain('kk stage');
             expect(body).not.toContain('jq ');
@@ -199,6 +233,8 @@ describe('kk-news-generate — R7: the node bodies', () => {
             'script-write',
             'script-fix',
             'editorial-judge',
+            // 0426 R1: the opt-in figure plan (scribal work, same executor var).
+            'illustrations-plan',
             // 0409 R1: the translation of the reviewed article (scribal work, same executor var).
             'localize',
         ]);

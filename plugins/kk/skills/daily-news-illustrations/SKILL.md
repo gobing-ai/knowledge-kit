@@ -5,7 +5,7 @@ description: >-
   Xiaohongshu card series renders from — "write the card scenes", "author the XHS card art", "why did
   card 3 miss the story". Owns the per-card `subject` scene only, composed against the shipped
   composition reference; never owns card copy, order, roles, the plan shape or the renderer.
-  Modes: card.
+  Modes: card | inline.
 requires: [cli:kk, local-fs]
 ---
 
@@ -59,6 +59,39 @@ byte-identical.
 6. **Series coherence without repetition.** Cards of one episode share a world (materials, palette
    family, light) through the pinned style, not through copied scenes: two cards of the same episode
    must not carry the same scene.
+
+## Mode: inline
+
+Author `22-article/illustrations/plan.json` for the reviewed daily article (task 0426 — opt-in via
+`kk news generate --inline-illustrations`, default off):
+
+```json
+{
+  "version": 1,
+  "figures": [
+    { "anchor": "<a whole paragraph, verbatim>", "sourceId": "<admitted plan item id>",
+      "concept": "English, text-free scene", "caption": "≤30 Chinese chars", "altText": "≤40 Chinese chars" }
+  ]
+}
+```
+
+1. **One or two figures, no more.** A figure earns its place only when it explains something the
+   paragraph does not say in words — a mechanism, a comparison, a flow. Two is the ceiling.
+2. **Anchor = a whole prose paragraph, copied verbatim.** Never a heading, a quotation, a list item,
+   a line inside a fenced code block, an existing image, or a sentence inside a longer paragraph:
+   the stage refuses every one of those, and it refuses two figures on the same paragraph.
+3. **Body order.** Figure 1's paragraph comes before figure 2's; the stage enforces it.
+4. **`sourceId` must be an admitted plan item** — the same id the paragraph's story carries. A
+   figure anchored to an unadmitted claim is refused before any spend.
+5. **Caption and alt text are editorial**, in Chinese: the caption is what the reader sees under the
+   figure (≤30 chars), the alt text is what a screen reader announces (≤40 chars). Never restate the
+   paragraph; say what the figure shows.
+6. **Concept is the scene**, English, ≤240 characters, text-free — the same contract as `card` and
+   `scene`, composed per the shared reference.
+
+The stage — not you — decides whether any of this may render: it re-checks the drafts' content-safety
+stamp and the WeChat article target before the first provider call, then renders or resumes one
+`job: illustration` request per figure.
 
 ## Mode: card
 

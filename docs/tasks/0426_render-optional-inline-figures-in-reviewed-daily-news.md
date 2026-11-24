@@ -4,7 +4,7 @@ name: Render optional inline figures in reviewed daily news
 status: wip
 template: feature-impl
 created_at: 2026-11-23T01:20:51.117Z
-updated_at: "2026-11-23T06:27:40.372Z"
+updated_at: "2026-11-23T16:31:51.019Z"
 feature_id: L4
 priority: P2
 tags:
@@ -101,4 +101,18 @@ AC1 exercises R1 and R2 on the two-figure replay. AC2 exercises R1 and R2 on the
   passes `file:` where the action contract requires `path:`), so the run closed `failed` at
   `escalate` and the status stayed `wip` with an empty `## Solution`. **No work to preserve:**
   re-run `sp-dev-run 0426` after `e258d2ed` merges, from a tree cut on the merged base.
+
+- 2026-11-23 batch `runall-L4-5c3f` (base `5caf5438`, which carries 0423's editor changes): implement
+  paused at a **coherent slice**, not abandoned. Landed so far: the news-only `--inline-illustrations`
+  launch admission (`inlineFigureRefusal`, exit 2 on a non-news noun, exit 5 when the target or the
+  `--channels` selection cannot carry figures); `kk stage news-inline-illustrations`
+  (`articleBlocks` / `validateInlineFigurePlan` / `assertInlineFigureDrafts` /
+  `assertInlineFigureTarget` / `dailyInlineIllustrations` — one pinned `job: illustration` request per
+  figure, per-figure receipts binding body hash, settings and image SHA-256, verified-byte reuse);
+  the `illustrations-plan` / `illustrations-render` DAG nodes (opt-in + pool gated) with `variants`
+  waiting on them; and the skill's mode `inline`. Green: content-launch 20/20, news DAG 12/12, inline
+  stage 5/5, typecheck + biome clean. Remaining: variant materialization (markers,
+  `metadata.wechatmp.inlineFigures`, staleness refusal) and the `wechatmp-pub` adapter
+  insertion/DOM verification. Progress note and resume command:
+  `.spur/run/0426-inline-progress.md`.
 

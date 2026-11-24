@@ -5952,3 +5952,247 @@ describe('daily-translate-sync pre-sync structural check (20261023 splice regres
         });
     });
 });
+
+describe('news-inline-illustrations (0426 R1/R2)', () => {
+    const DATE = '20260101';
+    // Two prose paragraphs a figure may anchor to, one heading and one fenced block it may not.
+    const PARA_ONE = 'OpenAI 今日开源轻量级推理引擎，单卡吞吐提升 2.4 倍。';
+    const PARA_TWO = 'Anthropic 公布跨会话上下文缓存协议，长文档延迟降低 60%。';
+
+    /** The stage's own draft digest, computed by the shipped function (never re-implemented here). */
+    function draftDigest(dir: string): string {
+        const script = `import { safetyDigest } from ${JSON.stringify(runner)}; process.stdout.write(safetyDigest(${JSON.stringify(dir)}, ${JSON.stringify(DATE)}));`;
+        const result = spawnSync('bun', ['-e', script], { encoding: 'utf-8' });
+        return (result.stdout ?? '').trim();
+    }
+
+    function fakeImageGen(dir: string, record: string): Record<string, string> {
+        const bin = join(dir, 'bin');
+        mkdirSync(bin, { recursive: true });
+        const script = join(bin, 'kk');
+        writeFileSync(
+            script,
+            [
+                'const fs = require("node:fs");',
+                'const argv = process.argv.slice(2);',
+                `fs.appendFileSync(${JSON.stringify(record)}, JSON.stringify(argv) + "\\n");`,
+                'const at = (name) => argv[argv.indexOf(name) + 1];',
+                'const spec = JSON.parse(fs.readFileSync(at("--in"), "utf8"))[0].metadata.imageGen;',
+                'const out = at("--out");',
+                'const img = out.replace(/.json$/, "-" + spec.format + "-01.png");',
+                'fs.writeFileSync(img, "png");',
+                'fs.writeFileSync(out, JSON.stringify({ metadata: { images: [{ path: img, prompt: spec.vars.concept }] } }));',
+            ].join('\n'),
+        );
+        writeFileSync(script, `#!/usr/bin/env bun\n${readFileSync(script, 'utf-8')}`);
+        chmodSync(script, 0o755);
+        return { PATH: `${bin}:${process.env.PATH ?? ''}` };
+    }
+
+    function figure(anchor: string, sourceId: string) {
+        return {
+            anchor,
+            sourceId,
+            concept: `${sourceId} concept`,
+            caption: `${sourceId} 图注`,
+            altText: `${sourceId} alt`,
+        };
+    }
+
+    function seed(
+        dir: string,
+        figures: unknown[],
+        options: { stamp?: Record<string, unknown>; preset?: 'ok' | 'off' } = {},
+    ): string {
+        for (const sub of ['21-plan', '22-article/illustrations', '24-script'])
+            mkdirSync(join(dir, sub), { recursive: true });
+        const body = `# 每日AI乱炖\n\n${PARA_ONE}\n\n${PARA_TWO}\n\n\`\`\`\nconst inline = true;\n\`\`\``;
+        writeFileSync(
+            join(dir, `22-article/${DATE}_06_article_content.json`),
+            JSON.stringify({ title: '每日AI乱炖', body }),
+        );
+        writeFileSync(join(dir, `24-script/${DATE}_08_script_voicescript.yaml`), 'version: 1\n');
+        writeFileSync(
+            join(dir, `21-plan/${DATE}_03_plan_plan.json`),
+            JSON.stringify([{ id: 'doc-1' }, { id: 'doc-2' }]),
+        );
+        writeFileSync(join(dir, '22-article/illustrations/plan.json'), JSON.stringify({ version: 1, figures }));
+        const presetPath = join(dir, `preset-${options.preset ?? 'ok'}.json`);
+        writeFileSync(
+            presetPath,
+            JSON.stringify({
+                name: options.preset ?? 'ok',
+                targets: [
+                    { plugin: 'wechatmp-pub', operation: '播客', variant: 'episode', mode: 'off' },
+                    {
+                        plugin: 'wechatmp-pub',
+                        operation: '文章',
+                        variant: 'article',
+                        mode: options.preset === 'off' ? 'off' : 'draft',
+                    },
+                ],
+            }),
+        );
+        const stamp = options.stamp ?? { status: 'pass', excludedPlatforms: [] };
+        writeFileSync(
+            join(dir, `24-script/${DATE}_09_safety-judge_stamp.json`),
+            JSON.stringify({ digest: draftDigest(dir), ...stamp }),
+        );
+        return presetPath;
+    }
+
+    function calls(record: string): string[] {
+        try {
+            return readFileSync(record, 'utf-8').trim().split('\n').filter(Boolean);
+        } catch {
+            return [];
+        }
+    }
+
+    it('renders one pinned illustration request per figure and binds each to its receipt', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const presetPath = seed(dir, [figure(PARA_ONE, 'doc-1'), figure(PARA_TWO, 'doc-2')]);
+            const result = run(
+                ['news-inline-illustrations', dir, DATE, '', 'minimax', 'image-01', presetPath],
+                fakeImageGen(dir, record),
+            );
+            expect(result.status).toBe(0);
+            expect(calls(record)).toHaveLength(2);
+            const envelope = JSON.parse(
+                readFileSync(join(dir, '22-article/illustrations/figure-1.in.json'), 'utf-8'),
+            ) as { metadata: { imageGen: Record<string, unknown> } }[];
+            expect(envelope).toHaveLength(1);
+            const imageGen = (envelope[0] as { metadata: { imageGen: Record<string, unknown> } }).metadata.imageGen;
+            expect(imageGen).toMatchObject({
+                job: 'illustration',
+                format: 'illustration',
+                style: 'technical-diagram',
+                count: 1,
+                maxImages: 1,
+                positions: [PARA_ONE],
+                provider: 'minimax',
+                model: 'image-01',
+            });
+            expect((imageGen.vars as Record<string, string>).concept).toBe('doc-1 concept');
+            for (const id of ['figure-1', 'figure-2']) {
+                const receipt = JSON.parse(
+                    readFileSync(join(dir, `22-article/illustrations/${id}.receipt.json`), 'utf-8'),
+                ) as Record<string, unknown>;
+                expect(receipt.id).toBe(id);
+                expect(receipt.imageSha256).toBe(createHash('sha256').update('png').digest('hex'));
+                expect(String(receipt.bodySha256)).toMatch(/^[0-9a-f]{64}$/);
+                expect(receipt.settings).toMatchObject({
+                    format: 'illustration',
+                    style: 'technical-diagram',
+                    provider: 'minimax',
+                    model: 'image-01',
+                });
+            }
+        });
+    });
+
+    it('reuses verified bytes on a rerun and re-renders a figure whose binary changed', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const presetPath = seed(dir, [figure(PARA_ONE, 'doc-1'), figure(PARA_TWO, 'doc-2')]);
+            const env = fakeImageGen(dir, record);
+            expect(
+                run(['news-inline-illustrations', dir, DATE, '', 'minimax', 'image-01', presetPath], env).status,
+            ).toBe(0);
+            expect(calls(record)).toHaveLength(2);
+            // Same bytes, same plan → no provider call at all.
+            const again = run(['news-inline-illustrations', dir, DATE, '', 'minimax', 'image-01', presetPath], env);
+            expect(again.status).toBe(0);
+            expect(again.stdout).toContain('reused');
+            expect(calls(record)).toHaveLength(2);
+            // A changed binary never rides a receipt: the figure is rendered again.
+            writeFileSync(join(dir, '22-article/illustrations/figure-1-illustration-01.png'), 'other-bytes');
+            expect(
+                run(['news-inline-illustrations', dir, DATE, '', 'minimax', 'image-01', presetPath], env).status,
+            ).toBe(0);
+            expect(calls(record)).toHaveLength(3);
+        });
+    });
+
+    it('refuses a duplicate anchor, an ineligible anchor and an unadmitted source before any provider call', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const duplicate = seed(dir, [figure(PARA_ONE, 'doc-1'), figure(PARA_ONE, 'doc-2')]);
+            const dup = run(
+                ['news-inline-illustrations', dir, DATE, '', 'm', 'm1', duplicate],
+                fakeImageGen(dir, record),
+            );
+            expect(dup.status).toBe(1);
+            expect(dup.stderr).toContain("duplicates an earlier figure's anchor");
+            expect(calls(record)).toHaveLength(0);
+        });
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const ineligible = seed(dir, [figure('const inline = true;', 'doc-1')]);
+            const res = run(
+                ['news-inline-illustrations', dir, DATE, '', 'm', 'm1', ineligible],
+                fakeImageGen(dir, record),
+            );
+            expect(res.status).toBe(1);
+            expect(res.stderr).toContain('not a whole prose paragraph');
+            expect(calls(record)).toHaveLength(0);
+        });
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const foreign = seed(dir, [figure(PARA_ONE, 'doc-9')]);
+            const res = run(
+                ['news-inline-illustrations', dir, DATE, '', 'm', 'm1', foreign],
+                fakeImageGen(dir, record),
+            );
+            expect(res.status).toBe(1);
+            expect(res.stderr).toContain('not an admitted plan item');
+            expect(calls(record)).toHaveLength(0);
+        });
+    });
+
+    it('refuses drafts edited after the safety verdict, and a WeChat-excluded target, before any provider call', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const presetPath = seed(dir, [figure(PARA_ONE, 'doc-1')]);
+            writeFileSync(
+                join(dir, `24-script/${DATE}_09_safety-judge_stamp.json`),
+                JSON.stringify({ digest: 'stale', status: 'pass', excludedPlatforms: [] }),
+            );
+            const stale = run(
+                ['news-inline-illustrations', dir, DATE, '', 'm', 'm1', presetPath],
+                fakeImageGen(dir, record),
+            );
+            expect(stale.status).toBe(1);
+            expect(stale.stderr).toContain('drafts changed after the content-safety verdict');
+            expect(calls(record)).toHaveLength(0);
+        });
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const presetPath = seed(dir, [figure(PARA_ONE, 'doc-1')], {
+                stamp: { status: 'exclude', excludedPlatforms: ['wechatmp'] },
+            });
+            const excluded = run(
+                ['news-inline-illustrations', dir, DATE, '', 'm', 'm1', presetPath],
+                fakeImageGen(dir, record),
+            );
+            expect(excluded.status).toBe(1);
+            expect(excluded.stderr).toContain('excluded wechatmp');
+            expect(calls(record)).toHaveLength(0);
+        });
+    });
+
+    it('refuses a preset without an enabled WeChat article target, before any provider call', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const presetPath = seed(dir, [figure(PARA_ONE, 'doc-1')], { preset: 'off' });
+            const result = run(
+                ['news-inline-illustrations', dir, DATE, '', 'm', 'm1', presetPath],
+                fakeImageGen(dir, record),
+            );
+            expect(result.status).toBe(1);
+            expect(result.stderr).toContain('no enabled wechatmp-pub 文章 (article) target');
+            expect(calls(record)).toHaveLength(0);
+        });
+    });
+});
