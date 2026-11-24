@@ -1105,9 +1105,11 @@ describe('signal-safe lease release (0423 R5)', () => {
         }, 30_000);
     }
 
-    test('the guard closes and releases once, then exits with the signal code (0423 R5)', async () => {
-        // In-process: the child probes above prove the real signals, this pins the ordering and the
-        // idempotence (a second signal must not close/release again), with the exit intercepted.
+    test('the guard closes and releases exactly once and exits with the signal code (0423 R5)', async () => {
+        // In-process without emitting a real signal: the child probes above own real SIGINT/SIGTERM
+        // delivery, because an emitted signal would also reach every other listener in this shared
+        // bun process (measured 2026-11-23: an emit here terminated the whole gate run with 143).
+        // This pins the ordering, the idempotence and the exit code through the public seam.
         const order: string[] = [];
         const exit = spyOn(process, 'exit').mockImplementation(((code?: number) => {
             order.push(`exit:${code}`);
@@ -1129,21 +1131,47 @@ describe('signal-safe lease release (0423 R5)', () => {
             unpark();
             process.off('SIGINT', launchHandler);
 
-            process.emit('SIGINT');
-            await settle(() => order.includes('exit:130'));
+            await guard.shutdown('SIGINT');
             expect(order).toEqual(['close', 'release', 'exit:130']);
 
-            process.emit('SIGTERM');
-            await Bun.sleep(1);
-            expect(order).toEqual(['close', 'release', 'exit:130']);
-
+            // A second invocation (the `finally` on an interrupted run) must not release twice.
             await guard.shutdown();
+            await guard.shutdown('SIGTERM');
             expect(order).toEqual(['close', 'release', 'exit:130']);
         } finally {
             process.off('SIGINT', launchHandler);
             exit.mockRestore();
         }
     });
+
+    test('a refused acquire leaves no signal handler behind (0423 R5)', async () => {
+        // The guard is armed before the lease, so a `busy` refusal must disarm it: a leaked handler
+        // would answer a later process-group signal and exit the whole host process (measured
+        // 2026-11-23: the full gate run died with 143 inside the SEO suite).
+        const session = makeSession();
+        // Seed the saved-bot metadata the open path reads before it acquires the lease.
+        mkdirSync(profileDir, { recursive: true });
+        writeFileSync(
+            join(profileDir, 'bot.json'),
+            JSON.stringify({ schemaVersion: 1, defaultUrl: DEFAULT_URL, authenticationEvidence: 'operator-confirmed' }),
+        );
+        const held = await acquireProfileLease(profileDir, { leaseRoot });
+        const before = { int: process.listeners('SIGINT').length, term: process.listeners('SIGTERM').length };
+        try {
+            await expect(
+                openBot('alice', {
+                    root: profileRoot,
+                    leaseRoot,
+                    fileSystem: createNodeFileSystem(),
+                    launcher: session.launcher,
+                }),
+            ).rejects.toThrow(/is held by pid/i);
+            expect(process.listeners('SIGINT')).toHaveLength(before.int);
+            expect(process.listeners('SIGTERM')).toHaveLength(before.term);
+        } finally {
+            await held.release();
+        }
+    }, 30_000);
 
     test('SIGTERM releases the lease and exits 143', async () => {
         expect(await interrupt('open', 'SIGTERM')).toBe(143);
