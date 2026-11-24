@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import type { Content, Result } from '@gobing-ai/kk-core';
@@ -736,7 +735,7 @@ export interface InlineFigure {
 }
 
 /** `metadata.wechatmp.inlineFigures` of a Content, or [] when the article carries none (0426 R2). */
-export function inlineFiguresOf(content: Content): InlineFigure[] {
+export async function inlineFiguresOf(content: Content): Promise<InlineFigure[]> {
     const raw = (content.metadata as { wechatmp?: { inlineFigures?: unknown } } | undefined)?.wechatmp?.inlineFigures;
     if (raw === undefined) return [];
     if (!Array.isArray(raw) || raw.length === 0) return [];
@@ -758,9 +757,13 @@ export function inlineFiguresOf(content: Content): InlineFigure[] {
         }
         const path = String(figure.path);
         const expected = String(figure.sha256);
+        // The plugin's own image reader: extension, readability, nonempty and the size bound are all
+        // proved before a hash is compared (and it keeps this module off `node:fs`).
         let actual: string;
         try {
-            actual = createHash('sha256').update(readFileSync(path)).digest('hex');
+            actual = createHash('sha256')
+                .update((await readLocalImageBytes(path)).bytes)
+                .digest('hex');
         } catch {
             throw new Error(
                 `inline figures: ${id} image is unreadable at ${path} — refusing to publish a missing figure`,
@@ -1675,7 +1678,7 @@ async function composeArticle(
     // 0426 R2: an illustrated payload uploads its figures FIRST. The editor assigns their CDN URLs on
     // upload and the body insert replaces the document, so the URLs must exist before that insert;
     // the pre-uploaded copies are then replaced along with the rest of the scratch document.
-    const figures = inlineFiguresOf(deps.content);
+    const figures = await inlineFiguresOf(deps.content);
     if (figures.length > 0) assertInlineFigureMarkers(bodyOf(deps.content), figures);
     const titlePath = await typeTitle(page, deps);
     // Fill the form fields BEFORE the ProseMirror body. Measured 2026-11-23: filling 摘要 re-renders

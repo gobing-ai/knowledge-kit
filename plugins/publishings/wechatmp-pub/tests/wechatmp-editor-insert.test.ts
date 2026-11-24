@@ -234,40 +234,45 @@ describe('0426 R2 — inline figures in the WeChat article', () => {
         return { meta, figure: { id, path, sha256: meta.sha256, altText: meta.altText, caption: meta.caption } };
     }
 
-    function withDir<T>(fn: (dir: string) => T): T {
+    async function withDirAsync(fn: (dir: string) => Promise<void>): Promise<void> {
         const dir = mkdtempSync(join(tmpdir(), 'kk-inline-figures-'));
         try {
-            return fn(dir);
+            await fn(dir);
         } finally {
             rmSync(dir, { recursive: true, force: true });
         }
     }
 
-    const content = (figures: Record<string, string>[]): Parameters<typeof inlineFiguresOf>[0] =>
-        ({ metadata: { wechatmp: { inlineFigures: figures } } }) as Parameters<typeof inlineFiguresOf>[0];
+    const content = (figures: Record<string, string>[]): Parameters<typeof inlineFiguresOf>[0] => ({
+        body: '',
+        format: 'markdown',
+        metadata: { wechatmp: { inlineFigures: figures } },
+    });
 
-    test('reads the pinned metadata and refuses a missing field, a reordered id or a changed binary', () => {
-        withDir((dir) => {
+    test('reads the pinned metadata and refuses a missing field, a reordered id or a changed binary', async () => {
+        await withDirAsync(async (dir) => {
             const first = figureFixture(dir, 1);
-            expect(inlineFiguresOf(content([first.meta]))).toEqual([first.figure]);
+            expect(await inlineFiguresOf(content([first.meta]))).toEqual([first.figure]);
 
             const missing = { ...first.meta, altText: '' };
-            expect(() => inlineFiguresOf(content([missing]))).toThrow('metadata has no altText');
+            await expect(inlineFiguresOf(content([missing]))).rejects.toThrow('metadata has no altText');
 
             const reordered = { ...first.meta, id: 'figure-2' };
-            expect(() => inlineFiguresOf(content([reordered]))).toThrow("expected id 'figure-1' at position 1");
+            await expect(inlineFiguresOf(content([reordered]))).rejects.toThrow("expected id 'figure-1' at position 1");
 
             writeFileSync(first.meta.path as string, 'swapped');
-            expect(() => inlineFiguresOf(content([first.meta]))).toThrow('image bytes changed since the review');
+            await expect(inlineFiguresOf(content([first.meta]))).rejects.toThrow(
+                'image bytes changed since the review',
+            );
 
             const gone = { ...first.meta, path: join(dir, 'nope.png') };
-            expect(() => inlineFiguresOf(content([gone]))).toThrow('image is unreadable');
+            await expect(inlineFiguresOf(content([gone]))).rejects.toThrow('image is unreadable');
         });
     });
 
-    test('a content without the key carries no figures (the plain article path stays untouched)', () => {
-        expect(inlineFiguresOf({ metadata: {} } as Parameters<typeof inlineFiguresOf>[0])).toEqual([]);
-        expect(inlineFiguresOf({ metadata: { wechatmp: {} } } as Parameters<typeof inlineFiguresOf>[0])).toEqual([]);
+    test('a content without the key carries no figures (the plain article path stays untouched)', async () => {
+        expect(await inlineFiguresOf({ body: '', format: 'markdown', metadata: {} })).toEqual([]);
+        expect(await inlineFiguresOf({ body: '', format: 'markdown', metadata: { wechatmp: {} } })).toEqual([]);
     });
 
     test('every pinned figure must be referenced once, in order, and no stray marker may exist', () => {

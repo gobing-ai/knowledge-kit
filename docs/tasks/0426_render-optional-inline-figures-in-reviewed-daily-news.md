@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Render optional inline figures in reviewed daily news
-status: wip
+status: done
 template: feature-impl
 created_at: 2026-11-23T01:20:51.117Z
-updated_at: "2026-11-24T03:07:58.783Z"
+updated_at: "2026-11-24T06:18:29.902Z"
 feature_id: L4
 priority: P2
 tags:
@@ -13,6 +13,8 @@ tags:
 estimate_hours: 8
 
 dependencies: ["0425"]
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0426. Render optional inline figures in reviewed daily news
@@ -30,13 +32,13 @@ Current-tree sources: plugins/generations/image-gen/src/index.ts:135, plugins/kk
 
 ### Requirements
 
-- [ ] R1. `kk news generate --inline-illustrations` freezes an opt-in for the run. Validate target eligibility, one or two unique exact reviewed paragraph anchors and their admitted source IDs, visual concepts, captions and alt text before any image provider dispatch.
-- [ ] R2. Reuse image-gen's illustration job to render or resume figures, and include them only in the zh `article@wechatmp-pub` variant before variants review/freeze. WeChat audio-capable editor execution must verify each figure's position, caption and alt text before save. Reject invalid plans or unsupported routes with a named failure and no paid image dispatch.
+- [x] R1. `kk news generate --inline-illustrations` freezes an opt-in for the run. Validate target eligibility, one or two unique exact reviewed paragraph anchors and their admitted source IDs, visual concepts, captions and alt text before any image provider dispatch.
+- [x] R2. Reuse image-gen's illustration job to render or resume figures, and include them only in the zh `article@wechatmp-pub` variant before variants review/freeze. WeChat audio-capable editor execution must verify each figure's position, caption and alt text before save. Reject invalid plans or unsupported routes with a named failure and no paid image dispatch.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Inline article figures use unique reviewed anchors
-- [ ] AC2 — Invalid illustration plans are rejected before spend
+- [x] AC1 — Inline article figures use unique reviewed anchors
+- [x] AC2 — Invalid illustration plans are rejected before spend
 
 AC1 exercises R1 and R2 on the two-figure replay. AC2 exercises R1 and R2 on the duplicate-anchor or unsupported-target replay.
 
@@ -96,11 +98,51 @@ AC1 exercises R1 and R2 on the two-figure replay. AC2 exercises R1 and R2 on the
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 — `kk news generate --inline-illustrations` freezes an opt-in; validate target eligibility, one or two unique exact reviewed paragraph anchors and their admitted source IDs, visual concepts, captions and alt text before any image provider dispatch | MET | `apps/cli/src/commands/content-launch.ts:373` (news-only opt-in, exit 2 otherwise) and `:313` (`inlineFigureRefusal` — enabled `wechatmp-pub 文章/article` row, `--channels` must select it, exit 5 before launch) · `plugins/kk/scripts/daily-stages.ts:3224` (`validateInlineFigurePlan`: 1–2 figures, unique whole-prose anchors, body order, admitted `sourceId`, duplicate/ineligible refusals) · `:3301` (`assertInlineFigureDrafts`) and `:3322` (`assertInlineFigureTarget`) run before the first provider call · `apps/cli/tests/content-launch.e2e.test.ts:81` (three admission cases) and `apps/cli/tests/kk-workflow-stages.test.ts:6046` (five refusals, each asserting **zero** provider calls) |
+| R2 — reuse image-gen's illustration job to render or resume figures, include them only in the zh `article@wechatmp-pub` variant before variants review/freeze, and have the WeChat editor verify each figure's position, caption and alt text before save; reject invalid plans or unsupported routes with a named failure and no paid dispatch | MET | `plugins/kk/scripts/daily-stages.ts:3354` (one pinned `job: illustration` request per figure, per-figure receipt binding body hash + settings + image SHA-256, verified-byte reuse) · `:2305` (`inlineFigureMaterials` refuses a missing/stale receipt or changed binary) and `:2357`/`:2469` (markers + caption paragraphs only on the article path) · `:2420` (`metadata.wechatmp.inlineFigures`) · `plugins/publishings/wechatmp-pub/src/flow.ts:715`/`:765`/`:793` (validate, marker contract, escaped HTML), `:831`/`:849` (platform URLs captured after upload, DOM verified before save), `:1603-1615` (`composeArticle` order) · tests: `kk-workflow-stages.test.ts:6140` (bundle variants), `wechatmp-editor-insert.test.ts:246` (17 assertions incl. refusals) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — Inline article figures use unique reviewed anchors | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:6140` — a two-figure plan materializes `![alt](kk-inline:figure-1)` + caption right after its own paragraph, in body order, in `article@wechatmp-pub` only, with the figure metadata pinned; `:6110` refuses a duplicate/reordered/unadmitted anchor before any provider call |
+| AC2 — Invalid illustration plans are rejected before spend | MET | test | `kk-workflow-stages.test.ts:6110` (duplicate anchor, ineligible block, unadmitted source → exit 1, no `kk` invocation recorded), `:6130` (stale draft digest / `wechatmp`-excluded target → no dispatch), `:6155` (preset without an enabled article target) |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+Review depth: **all** (SECUA + architecture depth + functional traceability) over the task's change
+set on `sp/runall-L4-5c3f` (rebased onto `d2121a21`), 11 files.
+
+**Functional traceability** — R1 MET: the news-only opt-in, the preset/`--channels` target admission
+(exit 2 / exit 5 before launch) and the whole-plan validation (1–2 unique whole-prose anchors in body
+order, admitted `sourceId`, concepts/captions/alt text, the drafts verdict and the target re-checked
+before any provider call). R2 MET: one pinned `job: illustration` request per figure with a receipt
+binding body hash, settings and image SHA-256 (reuse only on verified bytes), markers and
+`metadata.wechatmp.inlineFigures` only in `article@wechatmp-pub`, and the adapter verifying URL, alt
+text, caption and order in the editor DOM before save. AC1/AC2 MET — evidence tables in
+`.spur/run/runall-L4-5c3f-0426-review-cert.md`.
+
+**SECUA** — the adapter re-hashes every figure against the pinned digest and only accepts the
+platform's own CDN URL; every refusal is named and fail-closed; a partial provider failure keeps the
+completed receipts for a resume; opt-in stays off and a plan-less run is byte-identical; alt text and
+captions are escaped and verified.
+
+**Architecture** — plan validated once, receipt as the single source of truth for placement, and the
+adapter reuses 0423's upload rail rather than adding a second transport. The two `kk stage` node
+exceptions are declared once in the DAG test.
+
+**Findings** — P4 (advisory): `inlineFigureMaterials` refuses instead of repairing when the article
+changed after rendering, costing one re-render; accepted, a stale figure is worse. No open P1/P2/P3.
+
+**Residual risk** — the editor figure branch is verified through the contract helpers and the module's
+own fakes; the live console's upload DOM contract is assumed. First opt-in run should be a draft.
+
+**Disposition** — PASS.
 
 ### References
 
@@ -135,4 +177,6 @@ AC1 exercises R1 and R2 on the two-figure replay. AC2 exercises R1 and R2 on the
   `metadata.wechatmp.inlineFigures`, staleness refusal) and the `wechatmp-pub` adapter
   insertion/DOM verification. Progress note and resume command:
   `.spur/run/0426-inline-progress.md`.
+- 2026-11-24T06:18:28.840Z wip → testing (system)
+- 2026-11-24T06:18:29.899Z testing → done (system)
 
