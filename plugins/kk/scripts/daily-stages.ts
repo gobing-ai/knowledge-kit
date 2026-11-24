@@ -547,10 +547,15 @@ function rawChars(docs: unknown[]): number {
 }
 
 /**
- * The calibrated pre-spend estimate over a kept pool (title+body characters × the 1.4 expansion,
+ * The calibrated estimate over a kept pool (title+body characters × the recorded spoken/kept ratio,
  * over the driver's measured char rate, plus the 8 s intro sting) — shared by the pre-spend floor
  * gate (applyFloorGate) and the post-spend duration refusal (dailyEpisodeDuration, 0266), so both
  * artifacts report the same arithmetic. `seconds` is unrounded: the floor gate compares seconds.
+ *
+ * Both callers must pass `readKeptRatio(...).ratio`. The 1.4 default is the pre-2026-11-16
+ * raw-script expansion and is ~4.5x too high for the scripted writer: leaving it on the duration
+ * refusal made the 2026-11-24 artifact claim a "pre-spend estimate 58.2 min" beside a measured
+ * 12.6 min, which is the number an operator reads when deciding whether to recover the day.
  */
 function estimateSpokenMinutes(
     docs: unknown[],
@@ -1147,7 +1152,7 @@ export function dailyEpisodeDuration(args: string[]): void {
             console.error(`episode-duration: duration refusal already recorded (${refusal}) — nothing to do`);
             return;
         }
-        const estimated = estimateSpokenMinutes(docs, vdriver);
+        const estimated = estimateSpokenMinutes(docs, vdriver, readKeptRatio(workDir).ratio);
         const measuredMinutes = Math.round(minutes * 10) / 10;
         sted('write', refusal, () =>
             writeJqText(refusal, {
