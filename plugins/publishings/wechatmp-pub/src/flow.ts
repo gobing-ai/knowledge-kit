@@ -2885,6 +2885,18 @@ export async function insertAudioMaterial(
             return JSON.stringify({ state: 'top', identity });
         })()`;
 
+    /**
+     * One line of what the 上传音频 dialog currently shows: the material id the console assigns
+     * once it accepts the file, its buttons, and a bounded text slice. A stalled vendor upload is
+     * otherwise indistinguishable from a broken selector in the failure string.
+     */
+    const audioDialogState = async (p: WechatPage): Promise<string> =>
+        evalOrFallback(
+            p,
+            `(() => { const d = [...document.querySelectorAll('.weui-desktop-dialog')].find((el) => el.offsetWidth > 0 && el.querySelector('input[name=audio_id]')); if (!d) return '(no audio dialog)'; const id = d.querySelector('input[name=audio_id]'); const btns = [...d.querySelectorAll('button')].map((b) => (b.innerText ?? '').trim()).filter(Boolean); return 'audio_id="' + (id?.value ?? '') + '" buttons=' + JSON.stringify(btns) + ' text=' + ((d.innerText ?? '').replace(/\\s+/g, ' ').slice(0, 120)); })()`,
+            '',
+        );
+
     /** Upload the audio + its cover, acknowledge the rules, and 保存. Returns a structured outcome. */
     const upload = async (): Promise<{ warning: string; coverSeeded: boolean; sawLiveUpload: boolean }> => {
         let sawLiveUpload = false;
@@ -2924,7 +2936,14 @@ export async function insertAudioMaterial(
                     ),
                 uploadWaitMs,
             );
-            if (!uploaded) return failUpload('音频: 音频文件上传未完成（未达到 100%），未保存音频');
+            if (!uploaded)
+                return failUpload(
+                    // The console never renders a completion signal this dialog can be read from
+                    // when the vendor side stalls: 2026-11-23 showed the picked file and its
+                    // duration with an EMPTY audio_id for 120s, so the failure now carries what the
+                    // dialog actually said instead of only the predicate's name.
+                    `音频: 音频文件上传未完成（未达到 100%），未保存音频 — ${await audioDialogState(page)}`,
+                );
         }
         // The form requires a cover before it will save.
         const coverControl = await trySelectors(page, UPLOAD_COVER);
