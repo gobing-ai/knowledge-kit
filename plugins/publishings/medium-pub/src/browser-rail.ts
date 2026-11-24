@@ -1,8 +1,9 @@
-// transcript: 2026-11-22 headed verification against ~/.config/kk/browser-profiles/medium:
-//   headless Chromium gets the Cloudflare interstitial (`Just a moment...`), the saved cookies are
-//   fine, so the rail is headed-only and fails closed on a challenge; Medium no longer issues
-//   integration tokens, which makes this browser rail the primary path.
-//   Editor selectors provisional until `kk bot login medium`.
+// transcript: 2026-11-23 headed verification against ~/.config/kk/browser-profiles/medium:
+//   /new-story renders the authenticated editor with h3[data-testid="editorTitleParagraph"] and
+//   p[data-testid="editorParagraphText"] present; draft publish confirmed at /p/<id>/edit.
+//   Headless Chromium gets the Cloudflare interstitial (`Just a moment...`), so the rail is
+//   headed-only and fails closed on a challenge; Medium no longer issues integration tokens,
+//   which makes this browser rail the primary path.
 import { type Content, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import {
     type BrowserDriver,

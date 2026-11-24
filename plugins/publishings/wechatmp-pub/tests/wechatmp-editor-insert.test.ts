@@ -14,7 +14,14 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { Browser } from 'playwright';
-import { bodyLength, insertBody, insertHtmlScript, insertTextScript, type ModeRunDeps } from '../src/flow';
+import {
+    bodyLength,
+    insertBody,
+    insertHtmlScript,
+    insertTextScript,
+    type ModeRunDeps,
+    nativeLegacyEditorReadyScript,
+} from '../src/flow';
 import { wrapPlaywrightPage } from '../src/page';
 import { launchChromium } from './fixtures/wechatmp-cgi-runner';
 
@@ -138,5 +145,62 @@ describe('wechatmp insertBody fallback after pasteHtml (real Chromium)', () => {
     test('a build that refuses every insertion throws instead of returning an empty body', async () => {
         const page = await openEditorPage('ignore-all');
         await expect(insertBody(page, insertDeps(ARTICLE_BODY))).rejects.toThrow(/stayed empty after paste/);
+    });
+});
+
+describe('wechatmp legacy editor readiness probe', () => {
+    test('accepts a canonical saved editor with hidden autosave markers and one save control', () => {
+        // Exercise the generated probe in Bun, so its hidden/text predicates are covered without a
+        // browser. This is the measured legacy `media/appmsg_edit` readiness contract.
+        const styleFor = (hidden: boolean) => ({
+            display: hidden ? 'none' : 'block',
+            visibility: hidden ? 'hidden' : 'visible',
+        });
+        const rectFor = (hidden: boolean) => ({ width: hidden ? 0 : 100, height: hidden ? 0 : 20 });
+        const autoSave = { textContent: '' };
+        const legacyAutoSave = {};
+        const saveSuccess = {};
+        const saveControl = {
+            textContent: '保存为草稿',
+            style: styleFor(false),
+            rect: rectFor(false),
+        };
+        (globalThis as unknown as { document: unknown }).document = {
+            querySelector: (selector: string) =>
+                selector === '#auto_save_container'
+                    ? autoSave
+                    : selector === '#js_autosave'
+                      ? legacyAutoSave
+                      : selector === '#js_save_success, #js_save_success_with_ad, #js_save_success_with_ad_op'
+                        ? saveSuccess
+                        : null,
+            querySelectorAll: (selector: string) =>
+                selector === '#js_save_success, #js_save_success_with_ad, #js_save_success_with_ad_op'
+                    ? [saveSuccess]
+                    : selector === 'button, a'
+                      ? [saveControl]
+                      : [],
+        };
+        (globalThis as unknown as { window: unknown }).window = {
+            location: {
+                href: 'https://mp.weixin.qq.com/cgi-bin/appmsg?t=media/appmsg_edit&action=edit&appmsgid=100001161',
+            },
+            getComputedStyle: (node: { style?: unknown; rect?: unknown }) => ({
+                ...(node.style as object),
+                getPropertyValue: () => '',
+            }),
+        };
+        for (const node of [legacyAutoSave, saveSuccess]) {
+            (node as { style?: unknown }).style = styleFor(true);
+            (node as { rect?: unknown }).rect = rectFor(true);
+        }
+        // `getBoundingClientRect` is read separately from getComputedStyle in the probe.
+        for (const node of [legacyAutoSave, saveSuccess]) {
+            (node as { getBoundingClientRect?: unknown }).getBoundingClientRect = () => rectFor(true);
+        }
+        (saveControl as { getBoundingClientRect?: unknown }).getBoundingClientRect = () => rectFor(false);
+        // The probe reads style.display/visibility AND the rect; keep both on the same object.
+        const result = new Function('probe', 'return eval(probe)')(nativeLegacyEditorReadyScript());
+        expect(result).toBe('ready');
     });
 });

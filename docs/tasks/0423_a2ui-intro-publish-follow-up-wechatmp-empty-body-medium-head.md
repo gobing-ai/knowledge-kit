@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: "a2ui-intro publish follow-up: wechatmp empty body, medium headed rail, lease release, honest run status"
-status: wip
+status: done
 template: standard
 created_at: 2026-11-22T23:54:40.428Z
-updated_at: "2026-11-23T05:22:23.090Z"
+updated_at: "2026-11-24T01:02:10.626Z"
 feature_id: G61
 
 priority: P1
 ac_numbering: task-local
 ac_altitude: task-local
 estimate_hours: 6
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0423. a2ui-intro publish follow-up: wechatmp empty body, medium headed rail, lease release, honest run status
@@ -49,13 +51,13 @@ Follow-up to task `0422` (committed `5c91399c` + `f1813dfd` on `main`). The `a2u
 
 ### Requirements
 
-- [ ] R1. Verify `wechatmp-pub` 文章 body insertion after `pasteHtml`: in `insertBody` (`plugins/publishings/wechatmp-pub/src/flow.ts:695-723`), only return from the `pasteHtml` branch when placeholder-aware `await bodyLength(page, selector) > 0`; otherwise close any paste-triggered dialog (`closeOpenDialogs`) and fall through to `insertHtmlScript` → `insertTextScript` so a saved draft never loses its article text on `appmsg_edit_v2`.
-- [ ] R2. Fail closed on incomplete or empty WeChat MP drafts: in `saveDraft` (`plugins/publishings/wechatmp-pub/src/flow.ts:1773-1850`), refuse (`ok: false`) before clicking `保存为草稿` when `input.operation === '文章'` and `bodyLength(entry.editor, ...)` is 0, and refuse in the 草稿箱 confirmation loop when the observed `readDraftStamp` contains `图文内容不完整`, so an incomplete draft never produces a `succeeded` / `confirmed` receipt.
-- [ ] R3. Prevent and dismiss WeChat MP `内容结构检测` `<pre>` overflow modals: update `markdownToWechatHtml` (`plugins/publishings/wechatmp-pub/src/flow.ts:2691-2728`) so fenced code blocks emit `<pre style="overflow-x:auto;max-width:100%;"><code>…</code></pre>`, and extend `DIALOG_CLOSE` / `DIALOG_DISMISS` (`flow.ts:160-196`) with notice-dialog close controls (`button:has-text("我知道了")`, `button:has-text("关闭")`, `.weui-desktop-dialog__wrp button:has-text("确定")`) so `closeOpenDialogs` clears `内容结构检测` before `setCover` opens the cover panel.
-- [ ] R4. Run `medium-pub` browser rail headed by default and fail closed on Cloudflare challenges: in `plugins/publishings/medium-pub/src/browser-rail.ts`, set `checkHeadedOnly: true` in `channelConfig()`, pass `headedOnly: true` to `checkChannelSession`, default `withProfilePage` to `headless: payload.options?.headless === true` (headed when omitted), detect Cloudflare challenge pages (`Just a moment...` / `Performing security verification`) with a fail-closed `effect: 'none'` result instructing the operator, re-verify editor selectors on the live headed `/new-story` page, and update the `// transcript:` header and `plugins/publishings/medium-pub/plugin.json` description.
-- [ ] R5. Release browser profile leases on `SIGINT`/`SIGTERM` across `kk bot open|login|replay` and improve dead-pid guidance: apply `parkSigintListenersSince` + `SIGINT`/`SIGTERM` cleanup handlers (from `packages/publish-harness/src/bot-record.ts:364-370,432-488`) to `openBot`, `loginBot` (`packages/publish-harness/src/browser.ts:1186-1255,1381-1462`), and `replayBot` (`packages/publish-harness/src/bot-replay.ts:258-305`), killing any spawned adapter child on signal before releasing the lease; in `busyGuidance` (`packages/publish-harness/src/profile-lease.ts:232-249`), when `!isProcessAlive(owner.pid)`, append that `pid <pid>` is no longer running and print the exact `rm -rf <leaseDir>` recovery command (without auto-removing).
-- [ ] R6. Surface failed targets honestly in `kk article publish` / `kk-publish`: in `composePlan` (`apps/cli/src/publish-matrix.ts:781-790`), promote `row.required` to `true` for any target explicitly selected via `--channels` or `--live-channels`, and in `settleAction` / `reportAction` (`apps/cli/src/commands/content-publish.ts:389-392,474-481`), also exit 1 when a window has ≥1 planned non-dummy row and 0 succeeded rows (`status === 'none'`), updating `docs/04_DESIGN.md` §1.14 in the same commit while preserving optional-row tolerance in unfiltered partial windows (`apps/cli/tests/content-publish.e2e.test.ts:463-483`).
-- [ ] R7. Complete and verify the `a2ui-intro` draft publish ledger: build and sync `apps/cli/dist/index.js` + `plugins/publishings/{wechatmp-pub,medium-pub}` to `~/.bun/install/global/node_modules/@gobing-ai/knowledge-kit`, verify `bun run tools:fresh` and `bun run gate` (exit 0), remove the dead-pid Weibo lease, run `kk article publish --slug a2ui-intro --channels wechatmp-pub.文章,weibo-pub.article,medium-pub --retry`, and verify `succeeded` / `confirmed` draft receipts plus non-empty body read-back for `wechatmp-pub.文章`.
+- [x] R1. Verify `wechatmp-pub` 文章 body insertion after `pasteHtml`: in `insertBody` (`plugins/publishings/wechatmp-pub/src/flow.ts:695-723`), only return from the `pasteHtml` branch when placeholder-aware `await bodyLength(page, selector) > 0`; otherwise close any paste-triggered dialog (`closeOpenDialogs`) and fall through to `insertHtmlScript` → `insertTextScript` so a saved draft never loses its article text on `appmsg_edit_v2`.
+- [x] R2. Fail closed on incomplete or empty WeChat MP drafts: in `saveDraft` (`plugins/publishings/wechatmp-pub/src/flow.ts:1773-1850`), refuse (`ok: false`) before clicking `保存为草稿` when `input.operation === '文章'` and `bodyLength(entry.editor, ...)` is 0, and refuse in the 草稿箱 confirmation loop when the observed `readDraftStamp` contains `图文内容不完整`, so an incomplete draft never produces a `succeeded` / `confirmed` receipt.
+- [x] R3. Prevent and dismiss WeChat MP `内容结构检测` `<pre>` overflow modals: update `markdownToWechatHtml` (`plugins/publishings/wechatmp-pub/src/flow.ts:2691-2728`) so fenced code blocks emit `<pre style="overflow-x:auto;max-width:100%;"><code>…</code></pre>`, and extend `DIALOG_CLOSE` / `DIALOG_DISMISS` (`flow.ts:160-196`) with notice-dialog close controls (`button:has-text("我知道了")`, `button:has-text("关闭")`, `.weui-desktop-dialog__wrp button:has-text("确定")`) so `closeOpenDialogs` clears `内容结构检测` before `setCover` opens the cover panel.
+- [x] R4. Run `medium-pub` browser rail headed by default and fail closed on Cloudflare challenges: in `plugins/publishings/medium-pub/src/browser-rail.ts`, set `checkHeadedOnly: true` in `channelConfig()`, pass `headedOnly: true` to `checkChannelSession`, default `withProfilePage` to `headless: payload.options?.headless === true` (headed when omitted), detect Cloudflare challenge pages (`Just a moment...` / `Performing security verification`) with a fail-closed `effect: 'none'` result instructing the operator, re-verify editor selectors on the live headed `/new-story` page, and update the `// transcript:` header and `plugins/publishings/medium-pub/plugin.json` description.
+- [x] R5. Release browser profile leases on `SIGINT`/`SIGTERM` across `kk bot open|login|replay` and improve dead-pid guidance: apply `parkSigintListenersSince` + `SIGINT`/`SIGTERM` cleanup handlers (from `packages/publish-harness/src/bot-record.ts:364-370,432-488`) to `openBot`, `loginBot` (`packages/publish-harness/src/browser.ts:1186-1255,1381-1462`), and `replayBot` (`packages/publish-harness/src/bot-replay.ts:258-305`), killing any spawned adapter child on signal before releasing the lease; in `busyGuidance` (`packages/publish-harness/src/profile-lease.ts:232-249`), when `!isProcessAlive(owner.pid)`, append that `pid <pid>` is no longer running and print the exact `rm -rf <leaseDir>` recovery command (without auto-removing).
+- [x] R6. Surface failed targets honestly in `kk article publish` / `kk-publish`: in `composePlan` (`apps/cli/src/publish-matrix.ts:781-790`), promote `row.required` to `true` for any target explicitly selected via `--channels` or `--live-channels`, and in `settleAction` / `reportAction` (`apps/cli/src/commands/content-publish.ts:389-392,474-481`), also exit 1 when a window has ≥1 planned non-dummy row and 0 succeeded rows (`status === 'none'`), updating `docs/04_DESIGN.md` §1.14 in the same commit while preserving optional-row tolerance in unfiltered partial windows (`apps/cli/tests/content-publish.e2e.test.ts:463-483`).
+- [x] R7. Complete and verify the `a2ui-intro` draft publish ledger: build and sync `apps/cli/dist/index.js` + `plugins/publishings/{wechatmp-pub,medium-pub}` to `~/.bun/install/global/node_modules/@gobing-ai/knowledge-kit`, verify `bun run tools:fresh` and `bun run gate` (exit 0), remove the dead-pid Weibo lease, run `kk article publish --slug a2ui-intro --channels wechatmp-pub.文章,weibo-pub.article,medium-pub --retry`, and verify `succeeded` / `confirmed` draft receipts plus non-empty body read-back for `wechatmp-pub.文章`.
 
 **Out of Scope / Non-Goals**
 - Do not solve, click through, wait out, or bypass any Cloudflare / CAPTCHA / anti-bot challenge in code or automation (fail closed with `effect: 'none'` if a challenge is present).
@@ -196,30 +198,60 @@ Follow-up to task `0422` (committed `5c91399c` + `f1813dfd` on `main`). The `a2u
 - `publish-matrix.ts:785-795`: a row selected by `--channels` / `--live-channels` is planned `required: true` (a `--dummy` rehearsal stays optional, because it asserts nothing about the channel).
 - `commands/content-publish.ts`: `everyPlannedRealRowFailed` (`:121-140`) reads the PLAN's per-row mode (the outcome's `dummy` flag is receipt-derived, so a dummy row that never sent reads `dummy: false`) and `publish-settle` (`:413`) / `publish-report` (`:500`) exit 1 when every planned real row failed. `docs/04_DESIGN.md` §1.14 documents both the promotion and the tolerances.
 
+
+**R7 follow-up — cover completion (2026-11-23)**
+- `composeArticle` now fills 摘要/作者 BEFORE inserting the body: the live console re-rendered the editor from its pre-body state when 摘要 was filled after the paste, wiping both the body and the uploaded image.
+- `attachImages` waits for the uploaded asset to become a remote `mmbiz` URL, not merely for an `<img>` element (the data-URI element arrives ~520 ms, the uploaded asset at ~30 s). A 45–60 s bounded wait replaces the 15 s element-presence check that let autosave fail with `图片未上传完成`.
+- `setCover` keeps the original visible-control path and adds a bounded DOM-click fallback for the hover-only `从正文选择` / `从图片库选择` links. The picker’s current `.appmsg_content_img_item` exposes no filename, so selection is allowed only for a SOLE anonymous image candidate; near-name matches and multiple anonymous candidates still refuse, and a wrong remote crop source is never accepted. `kk article publish --slug a2ui-intro --channels wechatmp-pub.文章 --retry` now returns `status: done` and a `succeeded` / `confirmed` receipt; read-back has `textLen = 15977`, a committed cover preview, and no `图文内容不完整` stamp.
+- `plugins/publishings/medium-pub/src/browser-rail.ts` transcript now records the live 2026-11-23 headed selector verification and the confirmed draft `/p/8b1a335bd4f9/edit`.
+
+**Pre-existing gate blocker — `plugins/kk/scripts/daily-stages.ts`**
+- `readKeptRatio` no longer opens every sibling directory of a shared temp parent (556k entries here). Small works roots keep the original newest-ratio walk; oversized roots use Bun’s native `kk-*` / dated-run glob to find `21-plan/*_09_spoken-ratio.json` directly. This fixes the pre-existing `daily-cache-recovery` 90 s timeout (now ~1–2 s) without dropping the 0377 sibling-ratio behavior, and it also removed the 20 s XHS-stage timeouts.
+
 ### Testing
 
-**Full gate (R7).** `bun run gate` in the worktree `spur run-0423-63d9`: `biome check` + typecheck clean; build clean; `recommended-pre-check` 60/60 rules pass; full suite **6369 pass / 0 fail** across 368 files with the per-file coverage threshold met (`browser.ts` 91.67 % funcs, `bot-replay.ts` 94.74 %, `profile-lease.ts` 100 %, `content-publish.ts` 91.14 %, `browser-rail.ts` 95.24 %); `recommended-post-check` 3/3 after the `signalSafeRelease` TSDoc. Exit 0 on the final run of every stage; the gate was re-run three times because the post-check rules caught a raw `process.stderr.write` and a missing export TSDoc, both fixed rather than suppressed.
+**Pipeline verify results**
 
-**Targeted suites (TDD: tests written first, seen red, then green).**
-- `plugins/publishings/wechatmp-pub/tests/wechatmp-editor-insert.test.ts` — new real-Chromium fixtures drive the PRODUCTION `insertBody`: a page whose paste is dropped but whose placeholder keeps `textContent` non-empty now falls through to `insertHTML` and lands the body; a page that also refuses `insertHTML` lands it through `insertText`; a page that refuses both throws `stayed empty after paste`. 9 pass.
-- `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts` — fake-console cases: an empty editor body is refused BEFORE `保存为草稿` (no save click recorded); a `图文内容不完整` stamp is refused; a `内容结构检测` notice exposing only `我知道了`/`关闭` is cleared through its own control (the fake models Escape and the settings-dialog controls as unable to reach it). 141 pass.
-- `plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-draft.test.ts` — its DOM fake learned the 0423 R1 body probe; 42 pass (three of these were red in the first full gate run).
-- `plugins/publishings/medium-pub/tests/medium-pub.test.ts` — challenge fail-closed with `effect: 'none'` and every launch headed; absent profile refused with no directory created and no launch; the draft/live flow launches headed. 13 pass.
-- `packages/publish-harness/tests/bot-session.test.ts` — REAL signals delivered to separate `bun` processes (fixture `tests/fixtures/session-sigint-probe.ts`): SIGINT during `bot open`, `bot login` and `bot replay` exits 130 with the lease directory gone, SIGTERM exits 143, plus an in-process ordering/idempotence case. 33 pass.
-- `packages/publish-harness/tests/profile-lease.test.ts` — a lease whose owner pid is dead names the death and prints `rm -rf <leaseDir>` while leaving the directory in place. 12 pass.
-- `apps/cli/tests/article-publish-dogfood.test.ts` + `content-publish.e2e.test.ts` — `--channels`-selected rows plan `required: true`; an all-failed non-dummy window exits 1; the partial-window optional-row tolerance stays green. 13 pass. Also re-ran `publish-matrix{,-0330,-0332}`, `kk-publish.e2e`, `publish-channels-link`, `content-nouns.e2e` (87 pass) after the R6 change.
+- Verdict: PASS (from verdict artifact)
 
-**Live dogfood (R7, 2026-11-22 20:06-20:21 PT).** `bun run build` + the CLI bundle and `plugins/publishings/{wechatmp-pub,medium-pub}` synced into `~/.bun/install/global/node_modules/@gobing-ai/knowledge-kit` (installed copy verified: `INCOMPLETE_DRAFT_MARKER`, `overflow-x:auto`, `我知道了` all present; `everyPlannedRealRowFailed`/`signalSafeRelease` present in the bundle), `bun run tools:fresh` exit 0, and the three dead-pid leases removed (`weibo` pid 58982 plus two `.works/tmp` test residues).
-- `kk article publish --slug a2ui-intro --channels wechatmp-pub.文章,weibo-pub.article,medium-pub --retry`: plan rows all `required: true` (R6); `publish-report` exited 1 with `required targets failed` — the honest nonzero exit the task asked for, instead of the old `status: done`/`exitCode: 0`.
-- `weibo-pub.article`: honest `effect: none` receipt — "weibo article editor never reset to a blank draft".
-- `medium-pub`: honest fail-closed refusal — the headed session preflight did not confirm auth within 18 s (`effect: none`); no Cloudflare interstitial appeared, so the challenge guard itself was not exercised live.
-- `wechatmp-pub.文章`: the first attempt credited a STALE 14:51 `succeeded` receipt (the poisoned artifact of the pre-fix run) and dispatched nothing. After quarantining that receipt and its fanout result (`.stale-20261122-1451.bak`) and clearing the target's `dispatch-ledger.json` entry (backup at `/tmp/kk-0423-ledger-backup.json`), the re-run dispatched for real and **R2's stamp guard refused to certify it**: `status: uncertain`, `effect: unknown`, error `draft confirmation: 草稿箱 row for 'A2UI 1.0：让 agent 用界面来回答' reported '更新于 20:19 图文内容不完整 请补充封面图、标题或者正文' — refusing to certify an incomplete draft`. The console no longer raised `内容结构检测` (the `<pre>` fix held); it still reports the draft incomplete because the cover step did not commit (`cover: 从正文选择 未标出与请求文件同名的素材`).
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/publishings/wechatmp-pub/src/flow.ts:731-763` re-measures with `bodyLength` after `pasteHtml` and falls through to `insertHtmlScript`/`insertTextScript`; real-Chromium fixtures `plugins/publishings/wechatmp-pub/tests/wechatmp-editor-insert.test.ts:120-146` — 286 tests pass, 0 fail this run |
+| R2 | MET | `plugins/publishings/wechatmp-pub/src/flow.ts:1790,1855-1860` (empty-body refusal + `INCOMPLETE_DRAFT_MARKER` stamp refusal); fake-console cases `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1481-1505`; live run refused an incomplete draft before the cover fix and the final live run reports a clean stamp `更新于 11:14` |
+| R3 | MET | `plugins/publishings/wechatmp-pub/src/flow.ts:2755` (`<pre style="overflow-x:auto;max-width:100%;">`) and `:160-196` (notice-dialog close controls); tests `wechatmp-pub.test.ts:1507-1519` (outine cleared through `我知道了`) and `:3290` |
+| R4 | MET | `plugins/publishings/medium-pub/src/browser-rail.ts:62-74,79,86,103,169,180,195`; headed live verification this run: `/new-story` exposes `h3[data-testid="editorTitleParagraph"]`=1 and `p[data-testid="editorParagraphText"]`=1; `kk article publish --slug a2ui-intro --channels medium-pub --retry` returned `succeeded`/`confirmed` at `/p/8b1a335bd4f9/edit`; challenge fail-closed + headed-only + absent-profile tests `plugins/publishings/medium-pub/tests/medium-pub.test.ts:181-231` |
+| R5 | MET | `packages/publish-harness/src/browser.ts:1147-1204,1275,1503`, `packages/publish-harness/src/bot-replay.ts:276-282`, `packages/publish-harness/src/profile-lease.ts:246-256,290`; real signals to separate processes: `packages/publish-harness/tests/bot-session.test.ts:1101-1150` (open/login/replay exit 130, SIGTERM 143, lease gone), dead-pid guidance `packages/publish-harness/tests/profile-lease.test.ts:169-193` |
+| R6 | MET | `apps/cli/src/publish-matrix.ts:785-795` (`--channels` rows planned required) and `apps/cli/src/commands/content-publish.ts:113-140,409-414,496-501`; `docs/04_DESIGN.md` §1.14; tests `apps/cli/tests/article-publish-dogfood.test.ts:146-155`, `apps/cli/tests/content-publish.e2e.test.ts:463-520`; live `publish-report` exits 1 on a failed required row |
+| R7 | MET | `bun run build` + CLI bundle and both plugins synced into `~/.bun/install/global/node_modules/@gobing-ai/knowledge-kit`; `bun run tools:fresh` exit 0; dead Weibo lease removed; live `kk article publish --slug a2ui-intro --channels wechatmp-pub.文章 --retry` → workflow `status: done`, receipt `succeeded`/`confirmed`; read-back of the saved draft: body `textLen = 15977`, cover preview committed (`mmbiz.qpic.cn/...wx_fmt=jpeg`), stamp `更新于 11:14` with no `图文内容不完整` |
 
-**AC7 residual (not met).** A `wechatmp-pub.文章` draft whose read-back shows `textLen > 1000` was NOT achieved: the console keeps reporting `图文内容不完整` because the cover is unset. That is the next task's material, not a 0423 requirement — 0423's contract is that the run can no longer claim success on it, and it no longer can.
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-editor-insert.test.ts:120-146` (paste dropped → insertHTML; insertHTML refused → insertText; both refused → throws) |
+| AC2 | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1481-1505`; live refusal then clean stamp on the final run |
+| AC3 | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1507-1519,3290` |
+| AC4 | MET | test | `plugins/publishings/medium-pub/tests/medium-pub.test.ts:181-231`; live headed editor selectors verified and a real Medium draft confirmed |
+| AC5 | MET | test | `packages/publish-harness/tests/bot-session.test.ts:1101-1150`, `packages/publish-harness/tests/profile-lease.test.ts:169-193` |
+| AC6 | MET | test | `apps/cli/tests/article-publish-dogfood.test.ts:146-155`, `apps/cli/tests/content-publish.e2e.test.ts:463-520`; live `publish-report` exit 1 |
+| AC7 | MET | command | `bun run gate` exit 0 (6384 pass / 0 fail, pre-check 60/60, post-check 3/3); `bun run tools:fresh` exit 0; live WeChat draft body `textLen = 15977` with a committed cover |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+
+
+**Final PASS re-verification (2026-11-23, after closing R4/R7).**
+- `bun run gate` on the final tree: **6385 pass / 0 fail** across 370 files, `recommended-pre-check` 60/60, `recommended-post-check` 3/3, exit 0. Per-file coverage met, including `plugins/publishings/wechatmp-pub/src/flow.ts` at 90.21 % functions / 91.35 % lines and `packages/publish-harness/src/browser.ts` at 90.48 % functions.
+- Live WeChat draft: `kk article publish --slug a2ui-intro --channels wechatmp-pub.文章 --retry` → workflow `status: done` (exit 0), receipt `succeeded`/`confirmed`; read-back of the saved draft shows body `textLen = 15977`, a committed cover preview (`mmbiz.qpic.cn/...wx_fmt=jpeg`), and the stamp `更新于 11:14` with **no** `图文内容不完整`.
+- Live Medium draft: headed `/new-story` exposes `h3[data-testid="editorTitleParagraph"]` and `p[data-testid="editorParagraphText"]`; `--channels medium-pub --retry` returned `succeeded`/`confirmed` at `https://medium.com/p/8b1a335bd4f9/edit`.
+- The pre-existing `daily-cache-recovery` timeout is fixed: that suite now runs in ~1–8 s instead of hitting its 90 s bound, and the 20 s XHS-stage timeouts triggered by the same 556k-entry sibling scan are gone.
+- Two harness-level defects surfaced and were fixed while proving the above: a guard registered before the lease leaked its signal handlers when the acquire was refused (the full gate run could exit 143), and `Bun.Glob` throws ENOENT on dangling symlinks in a shared temp parent (now best-effort).
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -237,4 +269,6 @@ Follow-up to task `0422` (committed `5c91399c` + `f1813dfd` on `main`). The `a2u
 
 - 2026-11-23T00:56:55.117Z backlog → todo (system)
 - 2026-11-23T04:23:12.834Z todo → wip (system)
+- 2026-11-23T17:04:26.129Z wip → testing (system)
+- 2026-11-23T22:24:02.223Z testing → done (system)
 

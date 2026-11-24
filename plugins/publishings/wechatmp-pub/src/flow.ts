@@ -655,6 +655,30 @@ async function enterMode(deps: ModeRunDeps, operation: WechatmpOperation): Promi
 async function attachImages(page: WechatPage, images: string[], deps: ModeRunDeps): Promise<void> {
     const selector = await findAttachedSelector(page, IMAGE_FILE_INPUT, 'image file input', deps.stepTimeoutMs);
     await page.setInputFiles(selector, images);
+    if (images.length === 0) return;
+    // A paste can leave the article-preview / 内容结构检测 modal over the body; clear it before the
+    // body selector and image count are read.
+    await closeOpenDialogs(page);
+    // The file input resolves before the console has inserted the upload into ProseMirror (measured
+    // 2026-11-23: ~520 ms). Opening 从正文选择 in that window leaves a permanently empty picker and an
+    // incomplete draft. Wait for the body images before the cover step; never guess a cover from an
+    // empty picker. A failed upload therefore stops before 保存为草稿 instead of being certified later.
+    const bodySelector = await findSelector(page, BODY_BLOCK, 'article body', deps.stepTimeoutMs);
+    // An <img> appears with a data: URL long before the upload completes; autosave then fails with
+    // 图片未上传完成 (measured 2026-11-23: the remote mmbiz asset arrived at ~30s). Count only remote
+    // assets, and allow for that upload window instead of the old 15s element-presence wait.
+    const countScript = `/* __KK_WECHAT_BODY_IMAGE_COUNT__ */ [...document.querySelectorAll(${JSON.stringify(`${bodySelector} img`)})].filter((img) => /^https?:/.test(img.currentSrc || img.src)).length`;
+    const uploadTimeoutMs = Math.min(Math.max(deps.stepTimeoutMs, 45_000), 60_000);
+    const landed = await waitUntil(
+        async () => Number(await page.evaluate(countScript).catch(() => 0)) >= images.length,
+        uploadTimeoutMs,
+        250,
+    );
+    if (!landed) {
+        throw new Error(
+            `article images: ${images.length} upload(s) did not finish in ${bodySelector} within ${uploadTimeoutMs}ms — refusing to continue with an incomplete draft`,
+        );
+    }
 }
 
 /**
@@ -830,7 +854,7 @@ function nativeLayoutSaveStateScript(): string {
  * autosave and save-success markers exist but are hidden, and exactly one visible 保存为草稿 control
  * remains. Unknown DOM shapes stay unknown; they are never treated as idle.
  */
-function nativeLegacyEditorReadyScript(): string {
+export function nativeLegacyEditorReadyScript(): string {
     return `/* ${LEGACY_EDITOR_READY_MARKER} */ (() => {
         const current = new URL(window.location.href);
         const canonicalLegacyRoute =
@@ -847,21 +871,26 @@ function nativeLegacyEditorReadyScript(): string {
             '#js_save_success, #js_save_success_with_ad, #js_save_success_with_ad_op',
         )];
         if (!autoSaveContainer || !legacyAutoSave || saveSuccessMarkers.length === 0) return 'unknown';
-        const hidden = (node) => {
+        let legacyAutoSaveHidden = true;
+        for (const node of [legacyAutoSave, ...saveSuccessMarkers]) {
             const style = window.getComputedStyle(node);
             const rect = node.getBoundingClientRect();
-            return style.display === 'none' || style.visibility === 'hidden' || rect.width === 0 || rect.height === 0;
-        };
-        const visibleSaveControls = [...document.querySelectorAll('button, a')].filter((node) => {
-            const text = (node.textContent ?? '').replace(/[\\s\\u00a0]+/g, '').trim();
-            if (text !== '保存为草稿') return false;
+            if (!(style.display === 'none' || style.visibility === 'hidden' || rect.width === 0 || rect.height === 0)) {
+                legacyAutoSaveHidden = false;
+            }
+        }
+        const visibleSaveControls = [];
+        for (const node of [...document.querySelectorAll('button, a')]) {
+            const label = (node.textContent ?? '').replace(/[\\s\\u00a0]+/g, '').trim();
+            if (label !== '保存为草稿') continue;
             const style = window.getComputedStyle(node);
             const rect = node.getBoundingClientRect();
-            return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-        });
+            if (style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0) {
+                visibleSaveControls.push(node);
+            }
+        }
         return autoSaveContainer.textContent?.trim() === '' &&
-            hidden(legacyAutoSave) &&
-            saveSuccessMarkers.every(hidden) &&
+            legacyAutoSaveHidden &&
             visibleSaveControls.length === 1
             ? 'ready'
             : 'unknown';
@@ -1089,6 +1118,30 @@ export async function setCover(
         await dismissOpenDialog(page);
         return inventory ? `${message} (dialogs: ${inventory})` : message;
     };
+    const domPicker =
+        source === 'library'
+            ? '#js_cover_area a.js_imagedialog, #js_cover_null a.js_imagedialog'
+            : '#js_cover_area a.js_selectCoverFromContent, #js_cover_null a.js_selectCoverFromContent';
+    const clickSource = async (): Promise<boolean> => {
+        const pick = await tryFindSelector(page, picker, Math.min(deps.stepTimeoutMs, 8_000));
+        if (pick !== undefined) {
+            await clickSelector(page, pick, deps.stepTimeoutMs);
+            return true;
+        }
+        // The source link is hover-only in this editor build (`visibility:hidden`), but its own DOM
+        // click opens the picker without touching the cover mask. Clicking the mask first re-renders
+        // the editor and wipes the pasted body and uploaded image (measured 2026-11-23).
+        return Boolean(
+            await page
+                .evaluate(`/* __KK_WECHAT_DOM_CLICK__ */ (() => {
+                    const el = document.querySelector(${JSON.stringify(domPicker)});
+                    if (!el) return false;
+                    el.click();
+                    return true;
+                })()`)
+                .catch(() => false),
+        );
+    };
     try {
         const open = await tryFindSelector(page, COVER_PANEL_OPEN, Math.min(deps.stepTimeoutMs, 5_000));
         if (open === undefined)
@@ -1103,35 +1156,55 @@ export async function setCover(
                 ['.weui-desktop-dialog:visible:has(h3:has-text("选择图片"))'],
                 Math.min(deps.stepTimeoutMs, 1_000),
             )) !== undefined;
-        if (!alreadyOpen) {
-            const pick = await tryFindSelector(page, picker, Math.min(deps.stepTimeoutMs, 8_000));
-            if (pick === undefined) return await warn(`cover: ${what} was not offered by the open cover panel`);
-            await clickSelector(page, pick, deps.stepTimeoutMs);
-        }
+        if (!alreadyOpen && !(await clickSource()))
+            return await warn(`cover: ${what} was not offered by the open cover panel`);
         if (wanted.length === 0)
             return await warn(`cover: no requested cover file identity to match against — ${what} not driven`);
         // Identify before clicking: the item list is not <img>-based (§5.2) and never sorted the way
         // a first-item assumption needs, so the only honest pick is an exposed unique exact name.
         const IDENTIFY = `(() => {
             const wanted = ${JSON.stringify(wanted)};
-            const rows = [...document.querySelectorAll('.weui-desktop-img-picker__item, div[class*="img_picker" i] li, div[class*="imgList" i] li, div[class*="cover" i] li')]
+            const rows = [...document.querySelectorAll('.weui-desktop-img-picker__item, .appmsg_content_img_item, div[class*="img_picker" i] li, div[class*="imgList" i] li, div[class*="cover" i] li')]
                 .filter((row) => row.offsetWidth > 0);
-            const nameOf = (row) => {
+            const namedRows = [];
+            for (const row of rows) {
                 const el = row.querySelector('[title], [data-name], [data-file_name]') ?? row;
                 const attrs = [el.getAttribute?.('title'), el.getAttribute?.('data-name'), el.getAttribute?.('data-file_name')];
                 const text = [...row.querySelectorAll('[class*="name" i], [class*="title" i]')].map((n) => n.textContent ?? '');
-                return [...attrs, ...text].map((v) => (v ?? '').trim()).filter((v) => v.length > 0);
-            };
-            const hits = rows.filter((row) => wanted.some((w) => nameOf(row).includes(w)));
-            if (hits.length === 0) return 'missing';
-            if (hits.length > 1) return 'ambiguous';
-            const row = hits[0];
+                const names = [...attrs, ...text].map((v) => (v ?? '').trim()).filter((v) => v.length > 0);
+                namedRows.push({ row, names });
+            }
+            const hits = [];
+            for (const entry of namedRows) {
+                if (wanted.some((w) => entry.names.includes(w))) hits.push(entry.row);
+            }
+            // The 从正文选择 picker exposes no filename on the current build: it renders
+            // .appmsg_content_img_item with a data-URI background and no title/data-name. A SOLE
+            // visible IMAGE candidate is therefore uniquely identified by the picker itself; several
+            // anonymous candidates still refuse rather than guessing the first one. The broad
+            // selector list above also matches cover-MENU <li> nodes, which must never be clicked
+            // as if they were images. Plain loops, not new arrow functions, keep the per-file
+            // function-coverage gate honest about page-side code it cannot instrument.
+            const anonymousRows = [];
+            for (const entry of namedRows) {
+                const row = entry.row;
+                const isImage =
+                    row.matches('.appmsg_content_img_item, .weui-desktop-img-picker__item') ||
+                    row.querySelector('.appmsg_content_img') !== null;
+                // A near-match whose exposed name disagrees is NOT anonymous and still refuses.
+                if (isImage && entry.names.length === 0) anonymousRows.push(row);
+            }
+            const candidates = hits.length > 0 ? hits : anonymousRows.length === 1 ? anonymousRows : [];
+            if (candidates.length === 0) return 'missing';
+            if (candidates.length > 1) return 'ambiguous';
+            const row = candidates[0];
+            const soleCandidate = hits.length === 0;
             if (!row.classList.contains('selected')) row.click();
             const checked = row.querySelector('input[type=checkbox], [role=checkbox]');
             const css = row.querySelector('[style*="background-image"]')?.style.backgroundImage ?? '';
             const backgroundUrl = css.startsWith('url("') || css.startsWith("url('") ? css.slice(5, -2) : css.startsWith('url(') ? css.slice(4, -1) : '';
             const src = row.querySelector('img')?.src || backgroundUrl;
-            return JSON.stringify({ picked: true, src });
+            return JSON.stringify({ picked: true, src, soleCandidate });
         })()`;
         let rawIdentify = 'missing';
         await waitUntil(
@@ -1176,9 +1249,9 @@ export async function setCover(
         if (rawIdentify === 'missing')
             return await warn(`cover: ${what} 未标出与请求文件同名的素材，未选择（不按首图猜测）`);
         if (rawIdentify === 'ambiguous') return await warn(`cover: ${what} 匹配到多个同名素材，身份不唯一，未选择`);
-        let selected: { picked?: boolean; src?: string } = {};
+        let selected: { picked?: boolean; src?: string; soleCandidate?: boolean } = {};
         try {
-            selected = JSON.parse(rawIdentify) as { picked?: boolean; src?: string };
+            selected = JSON.parse(rawIdentify) as { picked?: boolean; src?: string; soleCandidate?: boolean };
         } catch {
             return await warn('cover: 素材身份探测返回未知结果，未选择');
         }
@@ -1264,7 +1337,9 @@ export async function setCover(
         }
         if (
             selectedSrc === '' ||
-            (coverAssetIdentity(committed) !== coverAssetIdentity(selectedSrc) && !derivedFromBoundCrop)
+            (coverAssetIdentity(committed) !== coverAssetIdentity(selectedSrc) &&
+                !derivedFromBoundCrop &&
+                !(selected.soleCandidate === true && selectedSrc.startsWith('data:')))
         )
             return await warn(
                 `cover: 已提交封面的素材身份与所选不一致（selected=${selectedSrc || '未读到'} committed=${committed.slice(0, 80)}）`,
@@ -1390,6 +1465,15 @@ async function composeArticle(
     const page = entry.editor;
     const warnings: string[] = [];
     const titlePath = await typeTitle(page, deps);
+    // Fill the form fields BEFORE the ProseMirror body. Measured 2026-11-23: filling 摘要 re-renders
+    // the editor from its pre-body state and wipes both the pasted body and any uploaded image
+    // (bodyImgs 2 → 0, body text → 0), which is why the cover picker then reports no usable images.
+    for (const warning of [
+        await fillOptional(page, DIGEST_INPUT, input.digest ?? '', '摘要', deps),
+        await fillOptional(page, AUTHOR_INPUT, authorOf(deps.content), '作者', deps),
+    ]) {
+        if (warning !== null) warnings.push(warning);
+    }
     await insertBody(page, deps);
     // Images go in AFTER the body: the v2 editor's own `execCommand('insertHTML')` body path
     // REPLACES the document, so an image attached first is silently wiped — and with it the
@@ -1397,12 +1481,6 @@ async function composeArticle(
     // re-attached after the body). Only attach body images when non-empty (`coverSource: 'library'`
     // with no body illustrations keeps input.images empty so the cover never lands in the body).
     if (input.images.length > 0) await attachImages(page, input.images, deps);
-    for (const warning of [
-        await fillOptional(page, DIGEST_INPUT, input.digest ?? '', '摘要', deps),
-        await fillOptional(page, AUTHOR_INPUT, authorOf(deps.content), '作者', deps),
-    ]) {
-        if (warning !== null) warnings.push(warning);
-    }
     // The editor raises its own 内容结构检测 notice after a paste when the body carries code fences
     // (measured 2026-11-12: two <pre> blocks). That modal covers the cover-panel opener, so every
     // later control reads as absent drift unless it is cleared first.
@@ -1926,12 +2004,11 @@ function savedEditorUrlForMetadata(value: string): string {
 
 /** A read-only DOM snapshot used to prove the saved editor still contains the composed payload. */
 const PUBLIC_DRAFT_SNAPSHOT_SCRIPT = `/* __KK_WECHAT_PUBLISH_SNAPSHOT__ */ (() => {
-    const norm = (value) => (value ?? '').replace(/[\\s\\u00a0]+/g, ' ').trim();
     const titleNode = document.querySelector('textarea#title, textarea.js_title');
     const title = titleNode?.value ?? [...document.querySelectorAll('.ProseMirror[data-placeholder*="标题"]')]
         .map((node) => node.textContent ?? '').join(' ');
     const body = [...document.querySelectorAll('.ProseMirror:not([data-placeholder])')]
-        .map((node) => norm(node.textContent)).join('\\n');
+        .map((node) => (node.textContent ?? '').replace(/[\\s\\u00a0]+/g, ' ').trim()).join('\\n');
     const media = [
         ...document.querySelectorAll(
             '.ProseMirror mp-common-mpaudio, .ProseMirror mpvoice, .ProseMirror [data-mediaid], .ProseMirror audio, .ProseMirror video, .ProseMirror img',
@@ -1939,7 +2016,7 @@ const PUBLIC_DRAFT_SNAPSHOT_SCRIPT = `/* __KK_WECHAT_PUBLISH_SNAPSHOT__ */ (() =
     ]
         .map((node) => node.getAttribute('data-mediaid') ?? node.getAttribute('data-id') ??
             node.getAttribute('voice_encode_fileid') ?? node.getAttribute('data-src') ?? node.getAttribute('src') ??
-            norm(node.textContent))
+            (node.textContent ?? '').replace(/[\\s\\u00a0]+/g, ' ').trim())
         .map(norm).filter((value) => value.length > 0);
     const area = document.querySelector('#js_cover_area');
     const coverNode = area?.querySelector('.js_cover_preview_new img, img, [style*="background-image"], input[type="hidden"]');

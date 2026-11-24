@@ -203,8 +203,14 @@ interface ConsoleState {
     saveClickThrows?: boolean;
     /** The cover panel offers no 从图片库选择 entry (the 2026-10-12 console). */
     coverLibraryMissing?: boolean;
+    /** The crop dialog exposes the selected source (the derivative-crop acceptance path). */
+    cropMatchesSelected?: boolean;
     /** The console re-rendered the body block empty between compose and the save step (0423 R2). */
     bodyLostAfterInsert?: boolean;
+    /** The uploaded body image becomes queryable only after this many probe polls (0423 R7). */
+    imageUploadDelayPolls?: number;
+    /** The cover menu links exist but are CSS-hidden until hovered (measured 2026-11-23). */
+    coverLinksHidden?: boolean;
     /** The refreshed 草稿箱 stamp reports 图文内容不完整 (0423 R2, measured 2026-11-22). */
     incompleteStamp?: boolean;
     /** The editor raised its 内容结构检测 notice after the paste; only 我知道了 / 关闭 dismiss it. */
@@ -330,6 +336,7 @@ function makeConsole(initial: ConsoleState) {
     let podcastChooserOpen = false;
     let podcastSaved = false;
     let coverPanelOpen = false;
+    let coverOpenedBeforeImages = false;
     let wrongCoverPanel = false;
     // The mass-send confirm dialog appears once the 发表 control is clicked, until confirmed.
     let publishConfirmPending = false;
@@ -347,6 +354,7 @@ function makeConsole(initial: ConsoleState) {
     let urlValue = '';
     let coverCommittedSrc = '';
     let bodyProbes = 0;
+    let imageUploadProbes = 0;
     let publicSaveClicked = false;
     let publicSaveAcknowledged = false;
     let publicCanonicalGotos = 0;
@@ -371,6 +379,8 @@ function makeConsole(initial: ConsoleState) {
     const editorAttached = (selector: string): boolean => {
         // 0423 R3: the 内容结构检测 notice owns the page once the body is in, and it exposes nothing
         // but its own close labels — Escape and the dialog-settings controls do not reach it.
+        if (state.coverLinksHidden === true && (isCoverFromContent(selector) || isCoverFromLibrary(selector)))
+            return false;
         // File inputs are hidden DOM nodes `setInputFiles` reaches without a click, so an overlay
         // covers every CLICK target but none of them.
         if (state.noticeDialog === true && pastedHtml.length > 0 && !isFileInput(selector))
@@ -545,6 +555,9 @@ function makeConsole(initial: ConsoleState) {
                             if (selector.includes('input.js_url')) urlValue = text;
                             if (isMirror(selector)) mirrorValue = text;
                         },
+                        hover: async () => {
+                            log.push({ op: 'hover', args: [selector] });
+                        },
                         click: async () => {
                             log.push({ op: 'click', args: [selector] });
                             if (state.saveClickThrows === true && isSaveBar(selector)) {
@@ -580,7 +593,8 @@ function makeConsole(initial: ConsoleState) {
             },
             evaluate: async (expression) => {
                 log.push({ op: 'evaluate', args: [expression] });
-                if (expression.includes('img.crop-img')) return '[]';
+                if (expression.includes('img.crop-img'))
+                    return state.cropMatchesSelected === true ? JSON.stringify([coverCommittedSrc]) : '[]';
                 if (state.podcastReuse && expression.includes('audio_item_wrp')) return '播客标题';
                 if (expression.includes('__KK_WECHAT_PUBLISH_SNAPSHOT__')) {
                     const composedSnapshot = {
@@ -660,6 +674,18 @@ function makeConsole(initial: ConsoleState) {
                 }
                 if (expression.includes('mass_send__notify') && expression.includes('HTMLInputElement'))
                     return notifySubscribers;
+                if (expression.includes('__KK_WECHAT_DOM_CLICK__')) {
+                    // The production fallback invokes the control's own DOM click handler, which is
+                    // what opens the picker even while CSS keeps the link hidden. A missing control
+                    // still returns false; only CSS visibility is bypassed.
+                    const selector = expression.includes('js_selectCoverFromContent')
+                        ? 'a.js_selectCoverFromContent'
+                        : 'a.js_imagedialog';
+                    if (selector.includes('js_imagedialog') && state.coverLibraryMissing === true) return false;
+                    if (wrongCoverPanel) return false;
+                    applyClick(selector);
+                    return true;
+                }
                 if (expression.includes('ClipboardEvent')) {
                     pastedHtml = /setData\('text\/html',\s*(".*?")\);/.exec(expression)?.[1] ?? '';
                     if (state.noticeDialog === true) dialogOpen = true;
@@ -669,6 +695,9 @@ function makeConsole(initial: ConsoleState) {
                 // 0260 identity probes: the cover panel's filename identify + committed readback,
                 // and the audio picker's unique-title match + post-insert verification.
                 if (expression.includes('weui-desktop-img-picker__item')) {
+                    // The real picker does not refresh when it was opened before the upload settled:
+                    // it keeps saying 正文中无可用做封面的图片 (measured 2026-11-23).
+                    if (coverOpenedBeforeImages) return 'missing';
                     const wanted = JSON.parse(/const wanted = (\[[^\]]*\])/.exec(expression)?.[1] ?? '[]') as string[];
                     coverCommittedSrc = `https://mmbiz.qpic.cn/${wanted[0] ?? ''}`;
                     return JSON.stringify({ picked: wanted.length === 1, src: coverCommittedSrc });
@@ -687,6 +716,12 @@ function makeConsole(initial: ConsoleState) {
                 if (expression.includes('audio_item_wrp')) {
                     if (state.podcastTranscodeFails) return '转码中';
                     return podcastSaved ? '模式标题' : 'NONE';
+                }
+                // 0423 R7: `attachImages` waits for the asynchronous upload to reach the body
+                // before the cover picker opens; the console needs a short settling window.
+                if (expression.includes('__KK_WECHAT_BODY_IMAGE_COUNT__')) {
+                    imageUploadProbes += 1;
+                    return imageUploadProbes > (state.imageUploadDelayPolls ?? 0) ? uploads.length : 0;
                 }
                 // 0423 R1: the body-length probe strips the placeholder widget, so it answers the
                 // real article length — the read that catches "paste accepted, body empty".
@@ -797,6 +832,8 @@ function makeConsole(initial: ConsoleState) {
             }
             if (isSettingsRow(selector)) return;
             if (isCoverOpener(selector) || isCoverFromContent(selector) || isCoverFromLibrary(selector)) {
+                if ((state.imageUploadDelayPolls ?? 0) > 0 && imageUploadProbes <= (state.imageUploadDelayPolls ?? 0))
+                    coverOpenedBeforeImages = true;
                 if (state.coverDirectEntryTrap && isCoverFromContent(selector)) wrongCoverPanel = true;
                 coverPanelOpen = true;
                 return;
@@ -1478,6 +1515,36 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
     });
 
     // ---- 0423: the a2ui-intro publish post-mortem (empty draft body, 内容结构检测 modal) ----
+
+    test('cover selection waits for the uploaded body image instead of opening an empty picker (0423 R7)', async () => {
+        await seedMedia();
+        const console = makeConsole(happyState({ imageUploadDelayPolls: 2 }));
+        const result = await makeTransport(console).publish({ content: ARTICLE });
+        expect(result.ok, result.error).toBe(true);
+        // Before the upload-wait, the picker opens against an empty body and the cover step warns.
+        expect(JSON.stringify(result.metadata)).not.toContain('cover:');
+    });
+
+    test('a cropped derivative is accepted when the crop dialog carries the selected source', async () => {
+        await seedMedia();
+        const console = makeConsole(happyState({ cropMatchesSelected: true }));
+        const result = await makeTransport(console).publish({ content: ARTICLE });
+        expect(result.ok, result.error).toBe(true);
+        expect(JSON.stringify(result.metadata)).not.toContain('cover:');
+    });
+
+    test('a CSS-hidden 从正文选择 link is opened through its own DOM click handler (0423 R7)', async () => {
+        await seedMedia();
+        const console = makeConsole(happyState({ coverLinksHidden: true }));
+        const result = await makeTransport(console).publish({ content: ARTICLE });
+        expect(result.ok, result.error).toBe(true);
+        expect(JSON.stringify(result.metadata)).not.toContain('cover:');
+        expect(
+            console.calls.editor.some(
+                (call) => call.op === 'evaluate' && String(call.args[0]).includes('__KK_WECHAT_DOM_CLICK__'),
+            ),
+        ).toBe(true);
+    });
 
     test('a draft whose editor body stays empty is refused BEFORE 保存为草稿 (0423 R2)', async () => {
         await seedMedia();

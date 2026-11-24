@@ -1011,6 +1011,9 @@ function makeMiniConsole(): MiniConsole {
                         pastedHtml = /setData\('text\/html',\s*(".*?")\);/.exec(expression)?.[1] ?? '';
                         return true;
                     }
+                    // 0423 R7: `attachImages` waits for the upload to reach the body; the fake has
+                    // already landed the images at setInputFiles time.
+                    if (expression.includes('__KK_WECHAT_BODY_IMAGE_COUNT__')) return uploadedMedia.length;
                     // 0423 R1: `insertBody` re-measures the body without the placeholder widget before
                     // trusting the paste, so the fake reports the landed article length.
                     if (expression.includes('editor_content_placeholder')) return pastedHtml.length > 0 ? 200 : 0;
