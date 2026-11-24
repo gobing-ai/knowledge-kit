@@ -4,6 +4,9 @@ telemetry = false
 exact = true
 
 [test]
+# Default the ts-utils echo/echoError sinks away from the reporter; tests that judge output
+# own a target through the capture helpers. See scripts/test-silence-output.ts.
+preload = ["./scripts/test-silence-output.ts"]
 coverage = true
 coverageDir = ".coverage"
 coverageReporter = ["text", "lcov"]
