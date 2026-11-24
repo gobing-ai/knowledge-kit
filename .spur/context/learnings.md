@@ -629,3 +629,31 @@ the same text with one hedge adverb restored in the WeChat row → `{"ok":false,
 - **A `bun install` in `$HOME` is a machine-wide mutation.** It creates `/Users/robin/node_modules` and reconciles it against the home `package.json`, deleting anything not declared there — including another project's convention-based shadow. Keep such scratch projects in a subdirectory.
 - **A decision row's `escalate` is two different facts, and only one is a verdict.** A maker FAILURE writes the catalog fallback with `source: "default"` + `degraded: true` (`decision_logs`: 9 `kk-safety-verdict` rows since 11-05, every one `The model refused to answer`); a model answer writes `source: "model"` and means "the evidence cannot settle this". `daily-safety-verdict` folded both into `accept`, so a judged escalation published under `--skip-review` with no human — 0338's suite asserted that as the contract ("an admitted gate status remains publish-valid"), which is why the hole survived a review. Now `publish-valid` refuses a judged `escalate` for an unattended run and the fold names an abstention on stderr. Test the *artifact shapes* the producer writes, not the comment beside them.
 - **Before re-routing a decision to another maker, probe it with the real evidence size.** `kk-safety-verdict`'s refusal looked like an fm-local guardrail problem with an obvious escape hatch (route it to `typesafe`, as `kk-item-china-politics`/`-sensitivity` are). Measured 2026-11-20: `typesafe` answered a 248-byte evidence file and then failed **every** call on an 18 KB safety report with `TypeError: Body already used` (a retry reusing a consumed request body), while fm-local accepted 17 KB of *benign* text — so the refusal is content-triggered, not a context limit, and the "escape hatch" was worse than the caveat.
+
+## 2026-11-24 — the daily run's two post-spend gates, and a flag pair that silently did nothing
+- **A safety verdict can take the podcast away AFTER the TTS spend.** The variants gate grades the
+  *lead title and summary*, so a curate decision (the day's biggest story as the lead) decides whether
+  the CN platforms accept the episode — and the cost is already paid by then. When the verdict's
+  `disposition: escalate` names a platform, `bundle.safety.excludedPlatforms` drops that row and
+  `publish-plan` prints `excluded by bundle safety`; nothing re-runs the editor. The lever is the
+  selection contract (task 0424), not the pool cap: raising `plan_max_items` 40 → 64 changed the
+  admitted set by 225 chars because QC kept the same 18 docs.
+- **A conservative platform stance is not a platform rule, and the difference decides the day.** Apple's
+  AP-02 graded BLOCK only because §1.2–§1.10 had never been read; reading them (no section restricts
+  news, politics, trade controls or government topics — §1.2 is an Explicit-tag duty) removed
+  `apple-podcasts` from the same run's exclusion list with one re-review. XY-02/WX-01 stay the skill's
+  own stance and still need an operator ruling, but the evidence gap and the policy choice are separate
+  facts and must be reported as such.
+- **`--retry --confirm-none` used to be a no-op.** `sendRows` short-circuited every receipt whose
+  `effect !== 'none'` in retry mode, so the one flag pair that exists to release a live row with an
+  unknown effect skipped it *silently* — the run printed "4 target(s) dispatched", wrote no receipt and
+  sent nothing. Rule: a documented flag pair must do something observable, and an operator's explicit
+  assertion must reach the code path it was written for. Fixed in `13e7c23d` with a mutation-checked test.
+- **A frozen bundle is immutable, including for a one-line copy fix.** Editing `30-variants/*.content.json`
+  after the freeze leaves three digests disagreeing (`bundle.variants`, `bundle.safety.variants`, the file),
+  `publish-matrix-bundle` refuses a re-freeze, and the only in-contract repair is deleting `bundle.json`
+  and re-freezing after a fresh variants safety pass. Do the content edit BEFORE the freeze, or accept
+  that a mid-day repoint costs a safety re-review (~5 min).
+- **`kk news status` reports `bundle: null` for a news run** (it reads `4-publish/bundle.json` while the
+  news freeze writes the root) — do not read "no bundle" as "nothing shipped"; check the dispatch ledger
+  (`4-publish/dispatch-ledger.json`) and `publish-events.jsonl` instead.
