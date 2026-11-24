@@ -4,7 +4,7 @@ name: "a2ui-intro publish follow-up: wechatmp empty body, medium headed rail, le
 status: done
 template: standard
 created_at: 2026-11-22T23:54:40.428Z
-updated_at: "2026-11-24T01:02:10.626Z"
+updated_at: "2026-11-24T02:14:09.668Z"
 feature_id: G61
 
 priority: P1
@@ -242,6 +242,17 @@ Follow-up to task `0422` (committed `5c91399c` + `f1813dfd` on `main`). The `a2u
 - Live Medium draft: headed `/new-story` exposes `h3[data-testid="editorTitleParagraph"]` and `p[data-testid="editorParagraphText"]`; `--channels medium-pub --retry` returned `succeeded`/`confirmed` at `https://medium.com/p/8b1a335bd4f9/edit`.
 - The pre-existing `daily-cache-recovery` timeout is fixed: that suite now runs in ~1–8 s instead of hitting its 90 s bound, and the 20 s XHS-stage timeouts triggered by the same 556k-entry sibling scan are gone.
 - Two harness-level defects surfaced and were fixed while proving the above: a guard registered before the lease leaked its signal handlers when the acquire was refused (the full gate run could exit 143), and `Bun.Glob` throws ENOENT on dangling symlinks in a shared temp parent (now best-effort).
+
+
+**Shippable readiness (Step 13, `--fix all` + feature G61)**
+
+```
+Shippable: PASS
+Feature: G61
+```
+- `spur feature check G61 --as done --strict` → `pass: true`, `findings: []` after the feature-scoped verification pass `run_7c90fc75` recorded PASS.
+- Every linked task is terminal: 12 tasks under `G61`, 0 incomplete.
+- No `L4_SCENARIO_UNVERIFIED`, no orphan/uncovered feature scenarios.
 
 ### Review
 
