@@ -340,17 +340,21 @@ export const isShipinhaoAuthenticated: IsAuthenticatedPredicate = async (page) =
 
 /**
  * Site-owned config for the shared session check and operator CLI (ADR-032). The check opens the
- * publishing home (`SHP_HOME_URL`); the manifest `browserSession.homeUrl` is the same entry. The
- * publish preflight never forwards `checkHeadedOnly`: it is the operator CLI's setting, and a
- * refusal must never escalate to a headed window on its own.
+ * publishing home (`SHP_HOME_URL`); the manifest `browserSession.homeUrl` is the same entry.
+ *
+ * `checkHeadedOnly` is ON (operator decision 2026-11-23): the Channels console attaches its creator
+ * form only after a heavy hydrate, and the headless pass is genuinely unstable — with one live
+ * profile it verified twice and refused three times inside an hour, while a headed pass verified
+ * every time. The preflight is read-only either way, and this channel's send opens a headed window
+ * regardless, so the ADR-025 rail ("a refusal must never escalate to a headed window on its own")
+ * still holds: nothing escalates, the probe is headed by design.
  */
 export const SHP_CONFIG: ChannelBrowserConfig = {
     channel: SHP_TARGET,
     homeUrl: SHP_HOME_URL,
     isAuthenticated: isShipinhaoAuthenticated,
     loginTimeoutMs: SHP_LOGIN_TIMEOUT_MS,
-    checkHeadedOnly: false,
-    // The Channels console attaches its creator form only after a heavy hydrate: a live session
-    // verified at 90s and refused at the default check's ~18s headless slice (2026-11-23, twice).
+    checkHeadedOnly: true,
+    // Headed-only still needs headroom for the hydrate; 180s leaves ~150s for the pass.
     checkTimeoutMs: 180_000,
 };
