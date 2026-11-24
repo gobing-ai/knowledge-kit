@@ -2666,3 +2666,87 @@ Verification of this wrap
 - **0421:** Data-driven `BATCH_MANIFEST_CONFIG` in `plugins/kk/scripts/daily-stages.ts` generalizes single-worker batch manifest routing (`VOXCPM_BATCH_MANIFEST`, `VIBEVOICE_BATCH_MANIFEST`) and isolates per-driver audio cache keys cleanly without duplicating driver branches.
 - **0421:** `spur workflow commit-guard-stage` filters `.spur/*` as bookkeeping, so tracked `.spur/` edits (`.spur/rules/strict/runtime-boundaries.yaml`, `.spur/memory/learnings.md`) require explicit `git add -- <path>` after verifying `commit-guard-check` reports `{"foreign":[]}`.
 
+## 2026-11-23 — feature L4 batch (`runall-L4-0ad4`), tasks 0424 / 0425
+
+### 0424 — cover composition centralized into a skill
+
+- **Convention: art direction is data, not prompt text.** A visual contract that lives in three
+  prompts drifts three ways. Moving it into `plugins/kk/skills/<name>/SKILL.md` plus one shared
+  reference let each prompt keep only a pointer, and the prompts got *shorter* (772–993 chars) while
+  gaining rules.
+- **Seam: the package skill root is a workflow var, not an agent discovery lookup.** `kk news
+  generate` passes the resolved absolute `visual_skill_root`; a direct `spur workflow run` falls back
+  to the checkout-relative default. Both are declared in the same `vars:` block, so the fallback is
+  visible where it is used.
+- **Gotcha: a frozen entity snapshot breaks when you add a skill.**
+  `plugins/kk/tests/runtime-requires.test.ts` pins the kk entity count and `requires` groups; every
+  new `SKILL.md` needs the count and its group bumped in the same commit, with the reason recorded.
+- **Gotcha: the ADR-115 prompt cap is a hard budget, not a suggestion.** Adding a pointer line to a
+  1000-char prompt means deleting the rules the pointer replaces — never raising the cap.
+
+### 0425 — card direction delegated, ownership preserved
+
+- **Pattern: delegate only the field you do not own.** The new skill owns `subject` and nothing else;
+  `copy`, `points`, `role`, `layout`, `sourcePoint`, `itemId`, order and the plan shape are copied
+  through byte-identically, so no consumer had to change.
+- **Pattern: derived values stay derived.** The cover/closing card scenes come from
+  `dailyEditorialRender`'s existing fallback; the skill is told explicitly not to invent an
+  episode-level field for them.
+- **Testing: assert the sourcing, not just the shape.** The replay pins each content card's `subject`
+  to the scene its own item authored and the cover/closing cards to the episode fallback — that is
+  what makes "sourced" checkable.
+
+### Batch-level
+
+- **The light gate's `rules:post` needs a complete `.coverage/lcov.info`.** On bun 1.4.3 a scoped
+  `bun test --coverage` still rewrites the repo-wide tracefile (so `scripts/test-changed.ts`'s
+  `--coverage-dir` isolation does not hold), and `coverage-gate` then fails every untouched file.
+  Each worktree task therefore needs one full `bun run test` before its gate; budget ~30–45 min per
+  task for it.
+- **Escalation is broken in `task-pipeline` v9.** The `escalate` state passes `file:` to
+  `file.read.into-var`, whose contract requires `path:`, so an implement escalation fails the run
+  instead of pausing. Until it is fixed, an operator question during implement ends the run `failed`
+  at `escalate` — carry the question in a task History note instead of relying on the hop.
+- **Check cross-task file ownership before starting a task.** 0426 shares `wechatmp-pub/src/flow.ts`
+  and its editor test with the still-unmerged 0423 (`e258d2ed`); building against `main` would have
+  produced a conflict in a 3208-line file. The right stop is *before* the first edit.
+
+## 2026-11-23 — feature L4 batch (`runall-L4-5c3f`), tasks 0424 / 0425 / 0426
+
+### 0426 — inline figures in the reviewed WeChat article
+
+- **Pattern: the receipt is the single source of truth.** A rendered figure is usable only when its
+  receipt still matches the article body hash, the render settings and the image's own SHA-256. Every
+  consumer (variant materialization, adapter) re-proves those three facts instead of trusting a
+  neighbouring stage's PASS — that is what makes "resume" and "refuse" the same code path.
+- **Pattern: validate the whole plan before the first paid call.** Anchors, order, source ids, the
+  drafts verdict and the target admission are all checked up front, so a bad plan costs zero provider
+  requests. Nine tests assert "zero `kk` invocations" for the refusal cases; that assertion is the
+  cheapest guard against a future reordering that spends before validating.
+- **Gotcha (cost: ~40 min twice): a worktree that edits `plugins/kk/{scripts,workflows}` must re-run
+  `bun scripts/bundle-plugins.ts`.** The launch preflight compares the checkout's `plugins/` against
+  the bundled `apps/cli/plugins/` copy; a stale bundle makes **every** `kk … generate` refuse with
+  `checkout diverges from installed kk`, and the symptom looks like a logic bug in the launch path.
+- **Gotcha: the boundary rule `no-direct-fs-io` rejects `node:fs` in a publish plugin.** Hash bytes
+  through the module's own reader (`readLocalImageBytes`) — it also gives you extension/readability/
+  size validation for free, so the "unreadable figure" error path is the same one.
+- **Convention: a second `kk stage` call in the news DAG is a declared exception, not an ad-hoc
+  `node.id !== …`.** 0409 set the precedent (`localize-check`); 0426's `illustrations-render` joined it
+  through one `STAGE_NODE_EXCEPTIONS` set used by both assertions in the DAG test.
+- **Convention: depend on `safety` AND `review`, not one of them.** A node whose deps are ALL skipped
+  is skipped, so `[review]` alone silently drops work under `--skip-review`; `[safety]` alone runs
+  before the operator approves the body; done+skipped is a mix, so the pair gives both properties.
+
+### Batch-level
+
+- **Rebase before concluding a test is broken.** `daily-cache-recovery` hung for 90 s in the worktree;
+  a pristine checkout at the batch's base (`5caf5438`) failed identically while `main` passed — the
+  branch was simply behind a fix. Checking a pristine base tree took 5 minutes and turned a suspected
+  regression into a one-command rebase.
+- **`.coverage` is per-tree evidence.** `bun run test` writes it, a scoped `bun test` overwrites it,
+  and the light gate's `rules:post` judges whatever is there. Each worktree task pays one full suite
+  before its gate; budget ~35–45 min and never re-run a scoped test between the suite and the gate.
+- **Keep test scratch out of commits.** A `find`-based staging pass picked up
+  `plugins/publishings/*/.works/tmp/**`; stage explicit paths, and prefer `git rm --cached` + amend
+  when it happens.
+

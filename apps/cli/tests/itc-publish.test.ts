@@ -163,11 +163,11 @@ describe('itcCheckTargets & Probes (0302 / G21 R1)', () => {
                 join(publishDir, 'publish-plan.json'),
                 JSON.stringify({
                     schemaVersion: 1,
-                    targets: [{ plugin: 'medium-pub', profile: 'article' }],
+                    targets: [{ plugin: 'qiita-pub', profile: 'article' }],
                 }),
             );
 
-            // medium-pub declares no `check`, so there is nothing to probe (0311 R4).
+            // qiita-pub declares no `check`, so there is nothing to probe (0311 R4).
             const probe = new RecordingProbe();
             const code = await itcCheckTargets([workDir], undefined, probe);
             expect(code).toBe(0);

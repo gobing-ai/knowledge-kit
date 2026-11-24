@@ -20,7 +20,7 @@
  * `launch.test.ts` (fake deps, no checkout involved).
  */
 import { describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { openStore } from '@gobing-ai/kk-store';
@@ -76,6 +76,104 @@ describe('content launch — AC1 the lock refuses a second launch (0365 R2)', ()
             sandbox.restore();
         }
     });
+});
+
+describe('content launch — inline illustrations are news-only and target-gated (0426 R1)', () => {
+    it('forwards inline_illustrations for an opted-in news run, and nothing for the default run', async () => {
+        const on = project();
+        try {
+            const result = await runCli([
+                'news',
+                'generate',
+                '--run-date',
+                '20260121',
+                '--allow-dirty',
+                '--inline-illustrations',
+            ]);
+            expect(result.code).toBe(0);
+            expect(on.workflowRuns()[0]).toContain('"inline_illustrations":"true"');
+        } finally {
+            on.restore();
+        }
+
+        const off = project();
+        try {
+            const result = await runCli(['news', 'generate', '--run-date', '20260121', '--allow-dirty']);
+            expect(result.code).toBe(0);
+            expect(off.workflowRuns()[0]).not.toContain('inline_illustrations');
+        } finally {
+            off.restore();
+        }
+    }, 60_000);
+
+    it('refuses the flag on an article run (usage), before any launch', async () => {
+        const sandbox = project();
+        try {
+            const result = await runCli([
+                'article',
+                'generate',
+                '--slug',
+                'inline-article',
+                '--allow-dirty',
+                '--inline-illustrations',
+            ]);
+            expect(result.code).toBe(2);
+            expect(result.stderr).toContain("'--inline-illustrations' is news-only");
+            expect(sandbox.workflowRuns()).toHaveLength(0);
+        } finally {
+            sandbox.restore();
+        }
+    });
+
+    it('refuses an opt-in whose channel selection excludes the WeChat article row, before any launch', async () => {
+        const sandbox = project();
+        try {
+            const result = await runCli([
+                'news',
+                'generate',
+                '--run-date',
+                '20260122',
+                '--allow-dirty',
+                '--inline-illustrations',
+                '--channels',
+                'podcast-pub',
+            ]);
+            expect(result.code).toBe(5);
+            expect(result.stderr).toContain('excludes the wechatmp-pub 文章 (article) target');
+            expect(sandbox.workflowRuns()).toHaveLength(0);
+        } finally {
+            sandbox.restore();
+        }
+    });
+});
+
+describe('content launch — the daily visual skills resolve from the package (0424 R2)', () => {
+    it('passes visual_skill_root to a news launch, and never to an article launch', async () => {
+        const news = project();
+        try {
+            const result = await runCli(['news', 'generate', '--run-date', '20260120', '--allow-dirty']);
+            expect(result.code).toBe(0);
+            const runs = news.workflowRuns();
+            expect(runs).toHaveLength(1);
+            // The absolute package root, so a scheduled run reads the shipped skills in place.
+            expect(runs[0]).toContain(
+                `"visual_skill_root":"${join(realpathSync(news.root), 'plugins', 'kk', 'skills')}"`,
+            );
+            // The writer skill keeps its own independent path (0424: custom writers stay untouched).
+            expect(runs[0]).toContain('"skill_dir":');
+        } finally {
+            news.restore();
+        }
+
+        const article = project();
+        try {
+            const result = await runCli(['article', 'generate', '--slug', 'no-visual-root', '--allow-dirty']);
+            expect(result.code).toBe(0);
+            expect(article.workflowRuns()[0]).not.toContain('visual_skill_root');
+        } finally {
+            article.restore();
+        }
+    }, 60_000);
 });
 
 describe('content launch — AC2 a dead executor refuses before any spend (0365 R3, R9)', () => {

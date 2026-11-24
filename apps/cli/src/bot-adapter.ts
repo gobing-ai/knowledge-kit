@@ -138,6 +138,7 @@ export function bindAdapterSession(candidate: SessionAdapterCandidate): BotAdapt
                 extraEnv: request.env,
                 pluginKind: record.kind,
                 pluginName: record.name,
+                ...(request.signal === undefined ? {} : { signal: request.signal }),
             });
         },
     };

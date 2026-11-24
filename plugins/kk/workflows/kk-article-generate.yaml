@@ -36,6 +36,7 @@ vars:
   agent: inline
   skill_dir: ""
   auto: "false"
+  adapt_only: "false"
   preset: ""
   __hitlAnswer: ""
 
@@ -293,9 +294,20 @@ states:
 
 transitions:
   - from: executor-probe
-    to: outline-write
+    to: adapt
+    description: "Adapt-only mode (--adapt-only): skip outline/draft/judge and adapt + freeze the seeded draft"
     guard:
-      kind: always
+      kind: shell
+      options:
+        command: 'test "${vars.adapt_only}" = "true"'
+
+  - from: executor-probe
+    to: outline-write
+    description: "Full authoring mode: proceed to outline options"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.adapt_only}" != "true"'
 
   - from: outline-write
     to: draft-write

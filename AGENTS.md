@@ -245,6 +245,22 @@ produced no episode, 4.5 h after commit `5fd38638` changed `daily-stages.ts` wit
 `bun run tools:fresh` runs the same comparison, names every drifted file and prints the rsync
 lines (warn-only; `--strict` exits nonzero, including the unrelated stale-shadow warnings).
 
+**In a worktree, refresh the bundled copy before any launch.** `apps/cli/plugins/` is a gitignored
+copy of `plugins/` produced by `bun scripts/bundle-plugins.ts`, and the launch preflight compares the
+checkout's `plugins/kk/{workflows,scripts}` against it. A worktree that edits a stage body or a
+workflow therefore refuses **every** `kk … generate` with `checkout diverges from installed kk` until
+the bundle is regenerated — the symptom reads like a logic bug in the launch path, not staleness
+(2026-11-23, feature L4 batch: one wasted gate cycle). Run `bun scripts/bundle-plugins.ts` after
+editing either directory, and again after a rebase that touches them.
+
+**Batch-driver scratch must be a direct child of `.spur/run/`, named `<wbs>-…` or `<runId>-…`.**
+`spur workflow persist-out` enumerates `.spur/run/`'s direct children for files this batch owns, so a
+file like `.spur/run/<runId>/0424-solution.md` is counted as owned (`0424-…`) but never copied — the
+`persist-check` before worktree removal then blocks the landing on evidence that cannot travel
+(2026-11-23, same batch). Write driver artifacts as `.spur/run/<wbs>-solution.md`,
+`.spur/run/0424-review.md`, `.spur/run/<runId>-…` at the top level; only the host work-item receipts
+(`.spur/run/<runId>/receipts/<state>.json`) belong in a per-run directory.
+
 ### Editing `apps/cli` / `packages` (the `kk` binary itself)
 
 The same staleness applies one layer up: `kk` runs `dist/index.js` from that package, so a CLI or

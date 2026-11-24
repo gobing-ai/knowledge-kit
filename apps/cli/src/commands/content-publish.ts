@@ -109,6 +109,28 @@ function isOutcomeRows(value: unknown): boolean {
     return typeof value === 'object' && value !== null && Array.isArray((value as { rows?: unknown }).rows);
 }
 
+/**
+ * The window produced nothing: every planned REAL row failed or never reported (0423 R6).
+ *
+ * 0423 R6: a window whose ONLY non-dummy row failed used to exit 0 (`kk article publish` reported
+ * `status: done` while `weibo-pub.article` was the sole target and had failed). Real-ness is the
+ * PLAN's (`mode !== 'dummy'`): a `--dummy` rehearsal asserts nothing about the channel, and the
+ * outcome's own `dummy` flag is receipt-derived, so a dummy row that never sent reads
+ * `dummy: false`. Optional-row tolerance stays — one success in the window and it certifies.
+ */
+async function everyPlannedRealRowFailed(
+    fs: FileSystem,
+    workDir: string,
+    window: string,
+    rows: readonly { id?: unknown; dummy?: unknown; status?: unknown }[],
+): Promise<boolean> {
+    const plan = await readJson(fs, join(workDir, '4-publish', `plan.${window}.json`));
+    const planRows = Array.isArray(plan?.rows) ? (plan.rows as Array<{ id?: unknown; mode?: unknown }>) : [];
+    const rehearsalIds = new Set(planRows.filter((row) => row.mode === 'dummy').map((row) => String(row.id)));
+    const real = rows.filter((row) => !rehearsalIds.has(String(row.id)) && row.dummy !== true);
+    return real.length > 0 && real.every((row) => row.status !== 'succeeded');
+}
+
 function quietStdout<T>(action: () => Promise<T>): Promise<T> {
     const restore = setDefaultOutputTargets({ stdout: { write() {} } });
     return action().finally(restore);
@@ -181,6 +203,12 @@ async function planAction(type: string, options: PublishOptions): Promise<void> 
     const command = 'kk.content.publish-plan';
     const fs = createNodeFileSystem();
     const context = await loadContext(type, options, command, fs);
+    // Clear any prior plan for this window before validating or planning: `kk-publish.yaml` runs
+    // `plan` with `onError: continue` (for the overseas-rss miss branch) and relies on `check`
+    // failing on a missing plan when `plan` exits nonzero. Leaving a stale plan on disk would let
+    // a failed re-plan silently re-execute the previous run's plan and exit 0.
+    const stalePlanPath = join(context.workDir, '4-publish', `plan.${context.window}.json`);
+    if (await fs.exists(stalePlanPath)) await fs.deleteFile(stalePlanPath);
     const applied = (() => {
         try {
             validatePublishChannelTokens(context.preset, [
@@ -380,7 +408,9 @@ async function settleAction(type: string, options: PublishOptions): Promise<void
     }
     const outcomePath = join(context.workDir, '4-publish', `outcome.${context.window}.json`);
     const outcome = PublishOutcomeSchema.parse.bind(PublishOutcomeSchema)(parseJson(await fs.readFile(outcomePath)));
-    const failedRequired = outcome.rows.some((row) => row.required && !row.dummy && row.status !== 'succeeded');
+    const failedRequired =
+        outcome.rows.some((row) => row.required && !row.dummy && row.status !== 'succeeded') ||
+        (await everyPlannedRealRowFailed(fs, context.workDir, context.window, outcome.rows));
     consoleOutput.write(JSON.stringify(outcome));
     if (settleCode !== 0 || failedRequired)
         throw new CommanderError(1, command, 'publish-settle: required targets failed');
@@ -456,7 +486,7 @@ async function reportAction(type: string, options: PublishOptions): Promise<void
     // stays done — the diagnose/repair path already classified it.
     const outcomePath = join(context.workDir, '4-publish', `outcome.${context.window}.json`);
     if (await fs.exists(outcomePath)) {
-        let rows: Array<{ required?: unknown; dummy?: unknown; status?: unknown }>;
+        let rows: Array<{ id?: unknown; required?: unknown; dummy?: unknown; status?: unknown }>;
         try {
             const parsed: unknown = parseJson(await fs.readFile(outcomePath));
             rows = isOutcomeRows(parsed) ? (parsed as { rows: typeof rows }).rows : [];
@@ -465,7 +495,9 @@ async function reportAction(type: string, options: PublishOptions): Promise<void
             // failure is reported, not hidden — publish3's `jq` assert failed the same way.
             return commandFailure(command, 1, `publish-report: ${outcomePath} is unreadable or malformed`);
         }
-        const failed = rows.some((row) => row.required === true && row.dummy !== true && row.status !== 'succeeded');
+        const failed =
+            rows.some((row) => row.required === true && row.dummy !== true && row.status !== 'succeeded') ||
+            (await everyPlannedRealRowFailed(fs, context.workDir, context.window, rows));
         if (failed) {
             return commandFailure(
                 command,

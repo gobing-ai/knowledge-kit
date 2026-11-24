@@ -33,6 +33,11 @@ export { chmod, createExclusiveFile, mkdirExclusive, rmdir } from './bot-fs';
 import { type BotTransaction, beginBotTransaction } from './bot-transaction';
 import { resolveBrowserProfileDir, trySelectors } from './index';
 import { ensureProfileDir } from './profile-dir';
+
+// Re-exported so a headed-only channel rail can refuse an absent profile BEFORE it launches —
+// a headed launch CREATES a missing profile dir, which would fabricate a session and hold a lease.
+export { ensureProfileDir } from './profile-dir';
+
 import {
     acquireProfileLease,
     canonicalize,
@@ -1120,6 +1125,8 @@ export interface BotAdapterRunRequest {
     url: string;
     /** Scoped lease env (`KK_BOT_LEASE_PATH`/`KK_BOT_LEASE_TOKEN`) the child inherits. */
     env: Record<string, string>;
+    /** Aborted when the operator interrupts the session; the CLI kills the child on it (0423 R5). */
+    signal?: AbortSignal;
 }
 
 /**
@@ -1132,6 +1139,78 @@ export interface BotAdapterSession {
     pluginName: string;
     /** Spawn the plugin's profile-check child; resolve its exit code and piped stdout. */
     run(request: BotAdapterRunRequest): Promise<{ exitCode: number; stdout: string }>;
+}
+
+/**
+ * Release a session's profile lease when the operator interrupts it (0423 R5).
+ *
+ * Playwright's launch installs a SIGINT handler that closes the browser and calls
+ * `process.exit(130)`; the `finally` that releases the lease never ran, so the Ctrl-C'd
+ * `kk bot open weibo` left `~/.config/kk/browser-leases/<id>/owner.json` owned by a dead pid and
+ * every later publish to that profile was refused until the operator removed it by hand
+ * (2026-11-22). The pattern is `recordBotSession`'s (bot-record.ts): register first, park the
+ * launch listeners once the browser owns the terminal, and make the release idempotent so the
+ * `finally` awaits the signal-started one instead of racing it.
+ */
+export interface SignalShutdown {
+    /** Call after the browser/child owns the terminal; returns the unpark to run in `finally`. */
+    park(): () => void;
+    /**
+     * Drop this call's handlers and close+release once. `finally` calls it without a signal; a
+     * signal handler calls it with one and the process then exits 130/143.
+     */
+    shutdown(signal?: 'SIGINT' | 'SIGTERM'): Promise<void>;
+}
+
+/**
+ * Build the signal guard for a session that holds a profile lease: `shutdown()` closes and releases
+ * exactly once, and a delivered SIGINT/SIGTERM runs it before the process exits 130/143.
+ */
+export function signalSafeRelease(options: {
+    close: () => Promise<void>;
+    release: () => Promise<void>;
+}): SignalShutdown {
+    const sigintBefore = new Set(process.listeners('SIGINT'));
+    let releasing: Promise<void> | undefined;
+    const release = (signal?: 'SIGINT' | 'SIGTERM'): Promise<void> => {
+        releasing ??= (async () => {
+            await options.close().catch(() => {});
+            // A refused release (a live child holder, a foreign owner) must still reach the exit —
+            // the operator gets the reason, and the stale-lease guidance covers the rest.
+            await options.release().catch((error: unknown) => {
+                echoError(
+                    `kk: releasing the profile lease after ${signal ?? 'shutdown'} failed: ${error instanceof Error ? error.message : String(error)}`,
+                );
+            });
+            // Nothing guarantees the caller's await unwinds — a login confirmation waits on stdin —
+            // so an interrupted session ends here, after its lease is gone.
+            if (signal !== undefined) process.exit(signal === 'SIGINT' ? 130 : 143);
+        })();
+        return releasing;
+    };
+    const onSigint = () => void release('SIGINT');
+    const onSigterm = () => void release('SIGTERM');
+    process.once('SIGINT', onSigint);
+    process.once('SIGTERM', onSigterm);
+    return {
+        park: () => {
+            // Drive the exclusion by identity, not by "added since this guard": the launch's handler
+            // is parked, this guard's own handler must stay armed (parking it by timestamp quietly
+            // removed the release path — measured 2026-11-22).
+            const parked = process
+                .listeners('SIGINT')
+                .filter((listener) => !sigintBefore.has(listener) && listener !== onSigint);
+            for (const listener of parked) process.off('SIGINT', listener);
+            return () => {
+                for (const listener of parked) process.on('SIGINT', listener);
+            };
+        },
+        shutdown: async (signal) => {
+            process.off('SIGINT', onSigint);
+            process.off('SIGTERM', onSigterm);
+            await release(signal);
+        },
+    };
 }
 
 /** Options shared by {@link loginBot} and {@link openBot}; every field defaults to production. */
@@ -1197,10 +1276,30 @@ export async function loginBot(name: string, url: string, options: BotSessionOpt
     const navigationUrl = url.trim();
     const fileSystem = options.fileSystem ?? createNodeFileSystem();
     const profileDir = resolveBotProfileDir(name, { root: options.root });
-    const lease = await acquireProfileLease(profileDir, { leaseRoot: options.leaseRoot, fileSystem });
+    // Guard first, then the lease: a SIGINT in between would otherwise kill the process with the
+    // default action and leave the lease (measured 2026-11-23 in the R5 fixtures under load).
     let transaction: BotTransaction | undefined;
     let context: BrowserContext | undefined;
     let promoting = false;
+    const childAbort = new AbortController();
+    const leaseRef: { current?: ProfileLease } = {};
+    const shutdown = signalSafeRelease({
+        // SIGINT during a login must not leave the staged transaction — or its adapter child — behind.
+        close: async () => {
+            childAbort.abort();
+            await closeBotContext(context);
+            if (!promoting) await transaction?.abort().catch(() => {});
+        },
+        release: () => leaseRef.current?.release() ?? Promise.resolve(),
+    });
+    const lease = await acquireProfileLease(profileDir, { leaseRoot: options.leaseRoot, fileSystem }).catch(
+        async (error: unknown) => {
+            await shutdown.shutdown();
+            throw error;
+        },
+    );
+    leaseRef.current = lease;
+    let unpark: (() => void) | undefined;
     try {
         transaction = await beginBotTransaction({
             name,
@@ -1215,6 +1314,7 @@ export async function loginBot(name: string, url: string, options: BotSessionOpt
                 transaction,
                 lease,
                 fileSystem,
+                signal: childAbort.signal,
             });
         }
         const launcher =
@@ -1225,6 +1325,7 @@ export async function loginBot(name: string, url: string, options: BotSessionOpt
                 { leaseRoot: options.leaseRoot, fileSystem },
             );
         context = await launcher.launch({ profileDir: transaction.stageDir, headless: false });
+        unpark = shutdown.park();
         const page = await openBotPage(context);
         await navigateBot(page, navigationUrl);
         await focusBotPage(page);
@@ -1258,13 +1359,16 @@ export async function loginBot(name: string, url: string, options: BotSessionOpt
         };
     } catch (error) {
         await closeBotContext(context);
+        // The guard's release closes too; one close per context.
+        context = undefined;
         if (!promoting && transaction !== undefined) {
             // Abort removes only this invocation's staging; a failed promotion owns its own evidence.
             await transaction.abort().catch(() => {});
         }
         throw error;
     } finally {
-        await lease.release();
+        await shutdown.shutdown();
+        unpark?.();
     }
 }
 
@@ -1284,14 +1388,16 @@ async function runAdapterLogin(
         transaction: BotTransaction;
         lease: ProfileLease;
         fileSystem: FileSystem;
+        signal?: AbortSignal;
     },
 ): Promise<LoginBotResult> {
-    const { adapter, transaction, lease, fileSystem } = ctx;
+    const { adapter, transaction, lease, fileSystem, signal } = ctx;
     const child = await adapter.run({
         mode: 'login',
         profileDir: transaction.stageDir,
         url,
         env: await lease.delegatedEnv(transaction.stageDir),
+        ...(signal === undefined ? {} : { signal }),
     });
     if (child.exitCode === 2) {
         throw new BotError(
@@ -1408,7 +1514,29 @@ export async function openBot(name: string, options: OpenBotOptions = {}): Promi
     if (openUrl === undefined) {
         throw missingBotProfile(name, lstat(profileDir) !== null);
     }
-    const lease = await acquireProfileLease(profileDir, { leaseRoot: options.leaseRoot, fileSystem });
+    // The guard must exist BEFORE the lease is acquired: a SIGINT landing between
+    // `acquireProfileLease` and the handler registration killed the process with the default action
+    // and left the lease behind (measured 2026-11-23 in the R5 fixtures under load).
+    const leaseRef: { current?: ProfileLease } = {};
+    let context: BrowserContext | undefined;
+    const childAbort = new AbortController();
+    const shutdown = signalSafeRelease({
+        // One guard serves both branches: abort any adapter child, then close any browser context.
+        close: async () => {
+            childAbort.abort();
+            await closeBotContext(context);
+        },
+        release: () => leaseRef.current?.release() ?? Promise.resolve(),
+    });
+    const lease = await acquireProfileLease(profileDir, { leaseRoot: options.leaseRoot, fileSystem }).catch(
+        async (error: unknown) => {
+            // A refused acquire (a busy profile) must not leave this guard's signal handlers armed:
+            // they would answer a later process-group signal and exit the whole host process.
+            await shutdown.shutdown();
+            throw error;
+        },
+    );
+    leaseRef.current = lease;
     if (options.adapter !== undefined) {
         try {
             const child = await options.adapter.run({
@@ -1416,6 +1544,7 @@ export async function openBot(name: string, options: OpenBotOptions = {}): Promi
                 profileDir,
                 url: openUrl,
                 env: await lease.delegatedEnv(profileDir),
+                signal: childAbort.signal,
             });
             if (child.exitCode === 2) {
                 throw new BotError(
@@ -1435,10 +1564,10 @@ export async function openBot(name: string, options: OpenBotOptions = {}): Promi
                 message: `closed the local session for bot '${name}' — the saved profile is unchanged`,
             };
         } finally {
-            await lease.release();
+            await shutdown.shutdown();
         }
     }
-    let context: BrowserContext | undefined;
+    let unpark: (() => void) | undefined;
     try {
         const launcher =
             options.launcher ??
@@ -1448,6 +1577,7 @@ export async function openBot(name: string, options: OpenBotOptions = {}): Promi
                 { leaseRoot: options.leaseRoot, fileSystem },
             );
         context = await launcher.launch({ profileDir, headless: false });
+        unpark = shutdown.park();
         // Attach the closure listener before navigating: the operator may close the window at once.
         const closed = new Promise<void>((resolveClose) => {
             context?.once('close', () => resolveClose());
@@ -1463,9 +1593,12 @@ export async function openBot(name: string, options: OpenBotOptions = {}): Promi
         };
     } catch (error) {
         await closeBotContext(context);
+        // The guard's release closes too; one close per context.
+        context = undefined;
         throw error;
     } finally {
-        await lease.release();
+        await shutdown.shutdown();
+        unpark?.();
     }
 }
 

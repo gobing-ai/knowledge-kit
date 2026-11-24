@@ -727,3 +727,7 @@ ADR-040 as amended selects a top-level DAG with a child authoring FSM and the ex
 News generation reconciles evidence-backed editorial judgments between final selection and script writing. The news editorial skill authors the proposed changes. The deterministic step validates and atomically commits them to the durable `<works_dir>/kk-news-generate/conclusion.md` ledger and supplies a run-scoped snapshot. Works cleanup and backup procedures treat this ledger as an ADR-042 exception alongside the store.
 
 The frozen news bundle carries one episode title and the final editorial references. Podcast and image plugins own their output formats, and the shared publish workflow remains the single dispatch path. The [L3 design](design/daily-ai-news-editorial-delivery.md) specifies replay, notes, crop and channel-readiness behavior.
+
+## Daily AI news visual authoring (accepted design, ADR-057)
+
+The master script plan delegates art direction to the daily cover and illustration skills. Daily stages continue to validate and render through `image-gen`. An opt-in inline plan uses the reviewed article and joins a supported target payload before variants review and freeze. See the [L4 design](design/daily-news-visual-skills.md).

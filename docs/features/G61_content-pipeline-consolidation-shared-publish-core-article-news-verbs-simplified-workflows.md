@@ -2,11 +2,11 @@
 schema_version: 1
 id: "G61"
 name: "Content pipeline consolidation: shared publish core, article/news verbs, simplified workflows"
-status: blocked
+status: active
 priority: P1
 tags: []
 created_at: "2026-11-13T17:30:35.983Z"
-updated_at: "2026-11-16T17:47:01.166Z"
+updated_at: "2026-11-22T22:31:01.351Z"
 ---
 
 # G61: Content pipeline consolidation: shared publish core, article/news verbs, simplified workflows
@@ -128,4 +128,5 @@ executor on 11-11 and 11-12 and failed 7/7 while a second machine ran the real s
 - 2026-11-13T17:40:54.085Z moved Q → G61 (system)
 - 2026-11-13T21:35:41.126Z backlog → active (system)
 - 2026-11-14T21:54:01.624Z active → blocked (system)
+- 2026-11-22T22:31:01.351Z blocked → active (system)
 

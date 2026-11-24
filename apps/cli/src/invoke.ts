@@ -194,6 +194,8 @@ export interface PluginProbeSpawnOptions {
     pluginKind?: PluginKind;
     /** Plugin manifest name used to look up operator-config env. */
     pluginName?: string;
+    /** Aborted when the operator interrupts the session: the child is killed and exits nonzero (0423 R5). */
+    signal?: AbortSignal;
 }
 
 /** Build the probe command: bun executes `.ts`/`.js` probes; anything else must be directly executable. */
@@ -271,6 +273,7 @@ export async function spawnPluginSession(opts: PluginProbeSpawnOptions): Promise
                 stdin: 'inherit',
                 stdout: 'pipe',
                 stderr: 'inherit',
+                ...(opts.signal === undefined ? {} : { signal: opts.signal }),
             });
         } catch {
             return null;

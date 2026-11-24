@@ -262,6 +262,7 @@ export async function replayBot(
 ): Promise<{ result: ReplayResult; outDir: string; replayPath: string }> {
     const { acquireProfileLease, closeBotContext, createKkBrowserLauncher, openBotPage, resolveBotProfileDir } =
         await import('./browser');
+    const { signalSafeRelease } = await import('./browser');
     const { mkdirSync } = await import('node:fs');
     const { join } = await import('node:path');
     const { createNodeFileSystem } = await import('@gobing-ai/ts-runtime');
@@ -270,8 +271,23 @@ export async function replayBot(
     const outDir = options.outDir ?? join('.spur', 'run', `bot-replay-${bot}`);
     mkdirSync(outDir, { recursive: true });
 
-    const lease = await acquireProfileLease(profileDir, { leaseRoot: options.leaseRoot, fileSystem });
+    // Guard first, then the lease (2026-11-23): a SIGINT landing between the acquire and the
+    // handler registration killed the process with the default action and left the lease behind.
     let context: BrowserContext | undefined;
+    const leaseRef: { current?: { release(): Promise<void> } } = {};
+    const shutdown = signalSafeRelease({
+        close: () => closeBotContext(context),
+        release: () => leaseRef.current?.release() ?? Promise.resolve(),
+    });
+    const lease = await acquireProfileLease(profileDir, { leaseRoot: options.leaseRoot, fileSystem }).catch(
+        async (error: unknown) => {
+            // A refused acquire must not leave the guard's handlers armed (see openBot).
+            await shutdown.shutdown();
+            throw error;
+        },
+    );
+    leaseRef.current = lease;
+    let unpark: (() => void) | undefined;
     try {
         const launcher =
             options.launcher ??
@@ -281,6 +297,7 @@ export async function replayBot(
                 { leaseRoot: options.leaseRoot, fileSystem },
             );
         context = await launcher.launch({ profileDir, headless: false });
+        unpark = shutdown.park();
         const page = await openBotPage(context);
         const shots: string[] = [];
         const result = await replayBotSession(bot, transcript, {
@@ -299,7 +316,7 @@ export async function replayBot(
         await fileSystem.writeFile(replayPath, `${JSON.stringify({ ...result, screenshots: shots }, null, 2)}\n`);
         return { result, outDir, replayPath };
     } finally {
-        await closeBotContext(context);
-        await lease.release();
+        await shutdown.shutdown();
+        unpark?.();
     }
 }

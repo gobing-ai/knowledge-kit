@@ -424,6 +424,15 @@ function readSpokenRatio(workDir: string): SpokenRatio {
     } catch {
         return { ratio: SPEAK_CHAR_EXPANSION_FLOOR, source: 'default 0.28 (no sibling runs)' };
     }
+    // Best-effort calibration only: a test workdir or an operator scratch dir may sit directly in a
+    // shared temp parent with hundreds of thousands of entries. Scanning each one took 20–40s per QC
+    // stage (measured 2026-11-23 on a 556k-entry tempdir), so skip the sibling calibration instead of
+    // blocking the run. Normal works roots have far fewer runs and keep the newest-ratio behavior.
+    if (entries.length > 5_000)
+        return {
+            ratio: SPEAK_CHAR_EXPANSION_FLOOR,
+            source: `default 0.28 (sibling scan skipped: ${entries.length} entries)`,
+        };
     for (const entry of entries) {
         const dir = join(base, entry, '21-plan');
         let files: string[] = [];
@@ -464,31 +473,50 @@ function readKeptRatio(workDir: string): SpokenRatio {
     let newest: { at: number; ratio: number; from: string } | null = null;
     let entries: string[] = [];
     try {
+        // A shared temp parent can hold hundreds of thousands of directories. Read names once and
+        // open only run-shaped candidates past the small-workspace threshold; opening every one took
+        // 20–40s per QC stage (556k entries measured 2026-11-23).
         entries = readdirSync(base);
     } catch {
         return { ratio: SPEAK_CHAR_EXPANSION_FLOOR, source: 'default 0.28 (no sibling runs)' };
     }
-    for (const entry of entries) {
-        const dir = join(base, entry, '21-plan');
-        let files: string[] = [];
-        try {
-            files = readdirSync(dir).filter((file) => file.endsWith(SPOKEN_RATIO_SUFFIX));
-        } catch {
-            continue;
-        }
-        for (const file of files) {
-            const path = join(dir, file);
+    const ratioFiles: string[] = [];
+    if (entries.length > 5_000) {
+        // Native globbing skips the non-run directories instead of opening each of them in JS. The
+        // `kk-*` form measured ~2s on that same parent; a bare `*` can hit broken symlinks.
+        for (const pattern of [`kk-*/21-plan/*${SPOKEN_RATIO_SUFFIX}`, `20??????/21-plan/*${SPOKEN_RATIO_SUFFIX}`]) {
             try {
-                const parsed = readJson(path) as Record<string, unknown> | null;
-                // A pre-2026-11-16 record carries no kept ratio at all: skip it rather than divide by
-                // its pool figure, which is what produced the double discount.
-                const ratio = Number(parsed?.keptRatio);
-                if (!Number.isFinite(ratio) || ratio <= 0) continue;
-                const at = statSync(path).mtimeMs;
-                if (newest === null || at > newest.at) newest = { at, ratio, from: path };
+                ratioFiles.push(...new Bun.Glob(pattern).scanSync({ cwd: base, onlyFiles: true, absolute: true }));
             } catch {
-                // A malformed record is not evidence; the next run overwrites it.
+                // Best-effort calibration: a shared temp parent holds dangling symlinks and dirs that
+                // vanish mid-scan (ENOENT from the glob walk), which must never fail the QC stage.
             }
+        }
+    } else {
+        for (const entry of entries) {
+            const dir = join(base, entry, '21-plan');
+            try {
+                ratioFiles.push(
+                    ...readdirSync(dir)
+                        .filter((file) => file.endsWith(SPOKEN_RATIO_SUFFIX))
+                        .map((file) => join(dir, file)),
+                );
+            } catch {
+                // Not every sibling is a run directory.
+            }
+        }
+    }
+    for (const path of ratioFiles) {
+        try {
+            const parsed = readJson(path) as Record<string, unknown> | null;
+            // A pre-2026-11-16 record carries no kept ratio at all: skip it rather than divide by
+            // its pool figure, which is what produced the double discount.
+            const ratio = Number(parsed?.keptRatio);
+            if (!Number.isFinite(ratio) || ratio <= 0) continue;
+            const at = statSync(path).mtimeMs;
+            if (newest === null || at > newest.at) newest = { at, ratio, from: path };
+        } catch {
+            // A malformed record is not evidence; the next run overwrites it.
         }
     }
     if (newest === null) return { ratio: SPEAK_CHAR_EXPANSION_FLOOR, source: 'default 0.28 (no recorded kept ratio)' };
@@ -2287,6 +2315,94 @@ function cleanWechatDigest(body: string, keyPoints?: readonly WechatKeyPoint[]):
     return Array.from(candidate).slice(0, 120).join('');
 }
 
+/** One validated inline figure, as the WeChat variant materializes it (0426 R2). */
+export interface InlineFigureMaterial {
+    id: string;
+    path: string;
+    sha256: string;
+    altText: string;
+    caption: string;
+    anchor: string;
+}
+
+/**
+ * 0426 R2 — the figures a run may materialize into `article@wechatmp-pub`, or `[]` when the run never
+ * opted in. Opt-in IS the plan the gated node writes: a work dir without
+ * `22-article/illustrations/plan.json` produces byte-identical variants to before this task.
+ *
+ * Every figure is proved against its own receipt before a marker exists: the receipt must name the
+ * same anchor and concept, its `bodySha256` must still match the reviewed article, and the image's
+ * bytes must still hash to `imageSha256`. A missing receipt, an edited article or a swapped binary
+ * refuses here rather than materializing a marker nothing verified.
+ */
+export function inlineFigureMaterials(workDir: string, runDate: string): InlineFigureMaterial[] {
+    const dir = join(workDir, '22-article', 'illustrations');
+    const plan = readJson(join(dir, 'plan.json'));
+    if (plan === null) return [];
+    const article = readJson(join(workDir, '22-article', `${runDate}_06_article_content.json`));
+    const body = typeof article?.body === 'string' ? article.body : '';
+    const bodySha256 = createHash('sha256').update(body).digest('hex');
+    const entries = Array.isArray(plan.figures) ? (plan.figures as Record<string, unknown>[]) : [];
+    const materials: InlineFigureMaterial[] = [];
+    for (const [position, entry] of entries.entries()) {
+        const id = `figure-${position + 1}`;
+        const receipt = readJson(join(dir, `${id}.receipt.json`));
+        if (receipt === null) {
+            failWith(
+                1,
+                `bundle-variants: inline figure ${id} has no render receipt — render the plan (kk stage news-inline-illustrations) before materializing variants`,
+            );
+        }
+        if (receipt.bodySha256 !== bodySha256) {
+            failWith(
+                1,
+                `bundle-variants: inline figure ${id} was rendered against a different article body — re-render the plan before materializing`,
+            );
+        }
+        if (receipt.anchor !== entry.anchor || receipt.concept !== entry.concept) {
+            failWith(1, `bundle-variants: inline figure ${id} receipt names a different anchor/concept than the plan`);
+        }
+        const artifact = firstArtifact(readJson(join(dir, `${id}.json`)));
+        const path = typeof artifact?.path === 'string' ? artifact.path : '';
+        if (path === '' || !isFile(path)) {
+            failWith(1, `bundle-variants: inline figure ${id} image is missing at ${path || '(no artifact)'}`);
+        }
+        if (receipt.imageSha256 !== createHash('sha256').update(readFileSync(path)).digest('hex')) {
+            failWith(1, `bundle-variants: inline figure ${id} image bytes changed after rendering — re-render it`);
+        }
+        materials.push({
+            id,
+            path,
+            sha256: String(receipt.imageSha256),
+            altText: String(entry.altText),
+            caption: String(entry.caption),
+            anchor: String(entry.anchor),
+        });
+    }
+    return materials;
+}
+
+/**
+ * 0426 R2 — place each figure right after its own paragraph: the marker image + a caption
+ * paragraph. Refuses an anchor that is no longer unique, which is what keeps a re-cut article from
+ * receiving a figure that belonged to a paragraph it no longer has.
+ */
+export function withInlineFigureMarkers(body: string, figures: readonly InlineFigureMaterial[]): string {
+    let out = body;
+    for (const figure of figures) {
+        const occurrences = out.split(figure.anchor).length - 1;
+        if (occurrences !== 1) {
+            failWith(
+                1,
+                `wechat article: inline figure ${figure.id} anchor is not unique in the body (found ${occurrences}) — refusing to place a figure on a changed article`,
+            );
+        }
+        const marker = `![${figure.altText}](kk-inline:${figure.id})`;
+        out = out.replace(figure.anchor, () => `${figure.anchor}\n\n${marker}\n\n${figure.caption}`);
+    }
+    return out;
+}
+
 /**
  * The 公众号 article payload (task 0327 R1): the article Content plus MP draft enrichment.
  *
@@ -2309,8 +2425,16 @@ export function buildWechatArticleContent(
          * carries the episode body, so it passes `false`.
          */
         appendOutro?: boolean;
+        /**
+         * 0426 R2: figures already validated against their render receipts. Only the WeChat ARTICLE
+         * variant receives them — the 播客 episode body has no article paragraphs to anchor to.
+         */
+        inlineFigures?: readonly InlineFigureMaterial[];
     },
 ): Record<string, unknown> {
+    // 0426 R2: the 播客 episode body has no article paragraphs to anchor to, so only the article
+    // path (the one that appends the closer) ever materializes figures.
+    const figures = options.appendOutro === false ? [] : (options.inlineFigures ?? []);
     const wechatmp: Record<string, unknown> = {
         original: true,
         // 2026-11-22 live check: 咸话咸说 is not yet authorized in 赞赏账户小程序 -> 可收款公众号,
@@ -2322,6 +2446,19 @@ export function buildWechatArticleContent(
         claimSource: WECHAT_BRAND.claimSource,
         // 封面 comes from 图片库: the episode cover is uploaded there as the audio material's cover.
         coverSource: WECHAT_BRAND.coverSource,
+        // 0426 R2: the figures this body's markers resolve to, pinned so the adapter can verify the
+        // exact bytes it uploads and never a file that changed after the review.
+        ...(figures.length > 0
+            ? {
+                  inlineFigures: figures.map((figure) => ({
+                      id: figure.id,
+                      path: figure.path,
+                      sha256: figure.sha256,
+                      altText: figure.altText,
+                      caption: figure.caption,
+                  })),
+              }
+            : {}),
         ...(options.links.articleUrl !== '' ? { originalUrl: options.links.articleUrl } : {}),
         ...(options.coverPath === undefined ? {} : { coverPath: options.coverPath }),
         ...(options.audioPath === undefined
@@ -2362,7 +2499,7 @@ export function buildWechatArticleContent(
     const derivedDigest = existingDigest !== '' ? existingDigest : cleanWechatDigest(rawBody, keyPoints);
     return {
         ...article,
-        body: `${formattedBody}${WECHAT_OUTRO}`,
+        body: `${withInlineFigureMarkers(formattedBody, figures)}${WECHAT_OUTRO}`,
         metadata: {
             ...existingMeta,
             ...(derivedDigest !== '' ? { digest: derivedDigest } : {}),
@@ -2692,6 +2829,8 @@ export function dailyBundleVariants(args: string[]): void {
         const skipped: string[] = [];
 
         const article = readJson(articlePath);
+        // 0426 R2: [] when the run never opted in, so a default run's variants stay byte-identical.
+        const inlineFigures = inlineFigureMaterials(workDir, runDate);
         const prep = readJson(prepPath);
         const planItems = planItemsForPodcast(workDir, runDate);
         const write = (key: string, content: Record<string, unknown>): void => {
@@ -2737,6 +2876,7 @@ export function dailyBundleVariants(args: string[]): void {
                     publishStatus: 'draft',
                     collection: '每日AI资讯',
                     keyPoints: wechatKeyPoints,
+                    inlineFigures,
                     ...(cover === undefined ? {} : { coverPath: cover }),
                     ...(articleAudio === undefined ? {} : { audioPath: articleAudio, audioTitle: firstArticleLine }),
                 }),
@@ -3056,6 +3196,286 @@ export function dailyPublishPodcast(args: string[]): void {
             console.error((error as Error).message);
         }
         console.log('publish-podcast: podcast target dispatched');
+    });
+}
+
+/** 0426 R2: one pinned `illustration` request per figure — the look is not per-run drivable. */
+export const INLINE_FIGURE_FORMAT = 'illustration';
+export const INLINE_FIGURE_STYLE = 'technical-diagram';
+export const INLINE_FIGURE_MAX = 2;
+
+interface InlineFigurePlanEntry {
+    anchor: string;
+    sourceId: string;
+    concept: string;
+    caption: string;
+    altText: string;
+}
+
+interface InlineFigurePlan {
+    version: 1;
+    figures: InlineFigurePlanEntry[];
+}
+
+/** One article paragraph, and whether a figure may anchor to it. */
+interface ArticleBlock {
+    text: string;
+    index: number;
+    eligible: boolean;
+}
+
+/**
+ * 0426 R1 — split the body into blank-line-separated blocks and mark the prose ones: a fenced code
+ * block, a heading, a quotation, a list item and an existing image are all ineligible, so a figure
+ * can never land inside code or between a heading and its section.
+ */
+export function articleBlocks(body: string): ArticleBlock[] {
+    const blocks: ArticleBlock[] = [];
+    let fence = false;
+    for (const raw of body.split(/\n{2,}/)) {
+        const text = raw.trim();
+        if (text === '') continue;
+        if (text.startsWith('```')) {
+            fence = !fence;
+            blocks.push({ text, index: blocks.length, eligible: false });
+            continue;
+        }
+        const eligible =
+            !fence &&
+            !text.startsWith('#') &&
+            !text.startsWith('>') &&
+            !text.startsWith('![') &&
+            !text.startsWith('- ') &&
+            !text.startsWith('* ') &&
+            !/^\d+\.\s/.test(text);
+        blocks.push({ text, index: blocks.length, eligible });
+    }
+    return blocks;
+}
+
+/** 0426 R1 — validate the whole plan before any provider call: shape, anchors, order, sources. */
+export function validateInlineFigurePlan(
+    raw: unknown,
+    body: string,
+    admittedIds: ReadonlySet<string>,
+): InlineFigurePlan {
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+        failWith(1, 'inline illustrations: plan.json must be a JSON object {version, figures}');
+    }
+    const plan = raw as Record<string, unknown>;
+    if (plan.version !== 1) failWith(1, `inline illustrations: plan version must be 1, got ${String(plan.version)}`);
+    if (!Array.isArray(plan.figures) || plan.figures.length === 0) {
+        failWith(1, 'inline illustrations: plan.figures must hold 1 or 2 figures');
+    }
+    if (plan.figures.length > INLINE_FIGURE_MAX) {
+        failWith(
+            1,
+            `inline illustrations: at most ${INLINE_FIGURE_MAX} figures per article, got ${plan.figures.length}`,
+        );
+    }
+    const blocks = articleBlocks(body);
+    const figures: InlineFigurePlanEntry[] = [];
+    const usedAnchors = new Set<string>();
+    let lastBlock = -1;
+    for (const [position, entry] of plan.figures.entries()) {
+        const figure = (entry ?? {}) as Record<string, unknown>;
+        const label = `figure ${position + 1}`;
+        for (const field of ['anchor', 'sourceId', 'concept', 'caption', 'altText'] as const) {
+            const value = figure[field];
+            if (typeof value !== 'string' || value.trim() === '') {
+                failWith(1, `inline illustrations: ${label} has no ${field}`);
+            }
+        }
+        const anchor = String(figure.anchor).trim();
+        const sourceId = String(figure.sourceId).trim();
+        if (!admittedIds.has(sourceId)) {
+            failWith(1, `inline illustrations: ${label} cites source '${sourceId}', not an admitted plan item`);
+        }
+        const occurrences = body.split(anchor).length - 1;
+        if (occurrences !== 1) {
+            failWith(
+                1,
+                `inline illustrations: ${label} anchor must be one unique whole paragraph of the reviewed article (found ${occurrences})`,
+            );
+        }
+        if (usedAnchors.has(anchor)) {
+            failWith(
+                1,
+                `inline illustrations: ${label} duplicates an earlier figure's anchor — each figure needs its own paragraph`,
+            );
+        }
+        usedAnchors.add(anchor);
+        const block = blocks.find((candidate) => candidate.eligible && candidate.text === anchor);
+        if (block === undefined) {
+            failWith(
+                1,
+                `inline illustrations: ${label} anchor is not a whole prose paragraph (code, heading, quotation, list and image blocks are ineligible): '${anchor.slice(0, 60)}'`,
+            );
+        }
+        if (block.index <= lastBlock) {
+            failWith(1, `inline illustrations: ${label} is out of body order — figures follow their paragraphs`);
+        }
+        lastBlock = block.index;
+        figures.push({
+            anchor,
+            sourceId,
+            concept: String(figure.concept).trim(),
+            caption: String(figure.caption).trim(),
+            altText: String(figure.altText).trim(),
+        });
+    }
+    return { version: 1, figures };
+}
+
+/**
+ * 0426 R1 — the draft-verdict gate `dailyPublishPrep` applies, reused BEFORE any figure is billed:
+ * no stamp, a stamp on different bytes (edited after review) or a WeChat-excluded target never spends.
+ */
+export function assertInlineFigureDrafts(workDir: string, runDate: string): void {
+    const stamp = readJson(safetyPath(workDir, runDate, 'safety-judge_stamp.json'));
+    if (stamp === null) {
+        failWith(1, 'inline illustrations: no content-safety verdict stamp for this run — not rendering figures');
+    }
+    if (stamp.status !== 'pass' && stamp.status !== 'escalate' && stamp.status !== 'exclude') {
+        failWith(1, `inline illustrations: content-safety status ${String(stamp.status)} does not publish`);
+    }
+    if (stamp.digest !== safetyDigest(workDir, runDate)) {
+        failWith(1, 'inline illustrations: drafts changed after the content-safety verdict — re-run the review');
+    }
+    const excluded = Array.isArray(stamp.excludedPlatforms) ? (stamp.excludedPlatforms as string[]) : [];
+    if (excluded.includes('wechatmp')) {
+        failWith(
+            1,
+            'inline illustrations: content-safety excluded wechatmp for this run — no article carries the figures',
+        );
+    }
+}
+
+/** 0426 R1 — the preset row that can carry a figure: the enabled WeChat ARTICLE row, not 播客. */
+export function assertInlineFigureTarget(presetPath: string): void {
+    const preset = readJson(presetPath);
+    const targets = Array.isArray(preset?.targets) ? (preset.targets as Record<string, unknown>[]) : [];
+    const enabled = targets.filter(
+        (target) =>
+            target.plugin === 'wechatmp-pub' &&
+            target.operation === '文章' &&
+            target.variant === 'article' &&
+            typeof target.mode === 'string' &&
+            target.mode !== 'off',
+    );
+    if (enabled.length === 0) {
+        failWith(
+            1,
+            `inline illustrations: preset ${basename(presetPath)} has no enabled wechatmp-pub 文章 (article) target — no article could carry the figures`,
+        );
+    }
+}
+
+function sha256File(path: string): string {
+    return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+/**
+ * 0426 R1/R2 — `kk stage news-inline-illustrations <work_dir> <run_date> <plugins_path> <provider>
+ * <model> <preset_path>`.
+ *
+ * Validate the whole plan, then render or resume one figure at a time. A figure is reused only when
+ * its receipt matches the current body hash, anchor, concept and settings AND the file on disk still
+ * hashes to the recorded SHA-256; anything else re-renders. Each receipt is written as soon as its
+ * figure lands, so a partial provider failure keeps the completed figures for the resume run.
+ */
+export function dailyInlineIllustrations(args: string[]): void {
+    const [workDir = '', runDate = '', pluginsPath = '', provider = '', model = '', presetPath = ''] = args;
+    const dir = join(workDir, '22-article', 'illustrations');
+    const articlePath = join(workDir, '22-article', `${runDate}_06_article_content.json`);
+    const planDocsPath = join(workDir, '21-plan', `${runDate}_03_plan_plan.json`);
+    timed(workDir, 'inline-illustrations', () => {
+        if (presetPath === '') {
+            failWith(1, 'inline illustrations: no publish-preset path was passed for target admission');
+        }
+        // Admission first: an unsupported target must never reach validation, let alone a provider.
+        assertInlineFigureTarget(presetPath);
+        const article = requireJson(articlePath, 'inline-illustrations');
+        const body = typeof article.body === 'string' ? article.body : '';
+        if (body.trim() === '') failWith(1, `inline illustrations: ${articlePath} has no article body to anchor to`);
+        const planDocs = readJson(planDocsPath);
+        const admittedIds = new Set(
+            (Array.isArray(planDocs) ? planDocs : [])
+                .map((doc) =>
+                    doc !== null && typeof doc === 'object' ? (doc as Record<string, unknown>).id : undefined,
+                )
+                .filter((id): id is string => typeof id === 'string' && id !== ''),
+        );
+        assertInlineFigureDrafts(workDir, runDate);
+        const plan = validateInlineFigurePlan(
+            requireJson(join(dir, 'plan.json'), 'inline-illustrations'),
+            body,
+            admittedIds,
+        );
+        const bodySha256 = createHash('sha256').update(body).digest('hex');
+        const settings = { format: INLINE_FIGURE_FORMAT, style: INLINE_FIGURE_STYLE, provider, model };
+        sted('mkdir', dir, () => mkdirSync(dir, { recursive: true }));
+        for (const [position, figure] of plan.figures.entries()) {
+            const id = `figure-${position + 1}`;
+            const contentPath = join(dir, `${id}.json`);
+            const receiptPath = join(dir, `${id}.receipt.json`);
+            const receipt = readJson(receiptPath);
+            const previous = firstArtifact(readJson(contentPath));
+            const previousPath = typeof previous?.path === 'string' ? previous.path : '';
+            const reusable =
+                receipt !== null &&
+                receipt.id === id &&
+                receipt.bodySha256 === bodySha256 &&
+                receipt.anchor === figure.anchor &&
+                receipt.concept === figure.concept &&
+                JSON.stringify(receipt.settings) === JSON.stringify(settings) &&
+                previousPath !== '' &&
+                isFile(previousPath) &&
+                receipt.imageSha256 === sha256File(previousPath);
+            if (reusable) {
+                console.log(`inline illustrations: ${id} reused (verified bytes ${previousPath})`);
+                continue;
+            }
+            const envPath = join(dir, `${id}.in.json`);
+            const imageGen: Record<string, unknown> = {
+                job: 'illustration',
+                format: INLINE_FIGURE_FORMAT,
+                style: INLINE_FIGURE_STYLE,
+                count: 1,
+                maxImages: 1,
+                positions: [figure.anchor],
+                vars: { concept: figure.concept, title: figure.sourceId },
+            };
+            if (provider !== '') imageGen.provider = provider;
+            if (model !== '') imageGen.model = model;
+            sted('write', envPath, () =>
+                writeJsonText(envPath, [{ id, title: runDate, body: '', metadata: { imageGen } }]),
+            );
+            kk(['executor', 'run', 'image-gen', '--in', envPath, '--out', contentPath, ...pluginsArgs(pluginsPath)]);
+            const artifact = firstArtifact(readJson(contentPath));
+            const artifactPath = typeof artifact?.path === 'string' ? artifact.path : '';
+            if (artifactPath === '' || !isFile(artifactPath)) {
+                failWith(
+                    1,
+                    `inline illustrations: ${id} produced no image file (image-gen wrote ${contentPath}); figures before it keep their receipts`,
+                );
+            }
+            sted('write', receiptPath, () =>
+                writeJsonText(receiptPath, {
+                    version: 1,
+                    id,
+                    anchor: figure.anchor,
+                    sourceId: figure.sourceId,
+                    concept: figure.concept,
+                    caption: figure.caption,
+                    altText: figure.altText,
+                    bodySha256,
+                    settings,
+                    imageSha256: sha256File(artifactPath),
+                }),
+            );
+        }
+        console.log(`inline illustrations: ${plan.figures.length} figure(s) ready in ${dir}`);
     });
 }
 

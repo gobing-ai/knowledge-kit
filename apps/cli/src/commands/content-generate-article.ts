@@ -506,10 +506,14 @@ async function runFreezeStage(input: ArticleStepInput, fs: FileSystem): Promise<
     // A frozen bundle is never rewritten; the verb already refuses that case before any step runs
     // (`content-generate.ts` guards `--stage freeze` against `resolveBundlePath`).
     const bundlePath = join(input.workDir, PUBLISH_DIR, 'bundle.json');
-    const completed = await deps.runItc(['itc-author-complete', input.workDir, input.runId]);
-    if (completed !== 0) {
-        echoError(`kk generate-bundle: itc-author-complete failed (exit ${completed}) for ${input.workDir}`);
-        return 1;
+    const request = await readJson(fs, join(input.workDir, REQUEST_FILE));
+    const seededFromFile = typeof request?.from === 'string' && request.from.trim() !== '';
+    if (!seededFromFile) {
+        const completed = await deps.runItc(['itc-author-complete', input.workDir, input.runId]);
+        if (completed !== 0) {
+            echoError(`kk generate-bundle: itc-author-complete failed (exit ${completed}) for ${input.workDir}`);
+            return 1;
+        }
     }
     const content = await readJson(fs, join(input.workDir, PUBLISH_DIR, CONTENT_FILE));
     if (content === null) {
@@ -525,11 +529,25 @@ async function runFreezeStage(input: ArticleStepInput, fs: FileSystem): Promise<
         );
         return 1;
     }
-    const sourceLocale = typeof content.sourceLocale === 'string' ? content.sourceLocale : 'en';
+    const sourceLocale =
+        typeof content.sourceLocale === 'string'
+            ? content.sourceLocale
+            : typeof request?.locale === 'string'
+              ? request.locale
+              : 'en';
     const variants: Record<string, { path: string; sha256: string }> = {};
     for (const [key, variant] of Object.entries(generationVariants(content))) {
         if (!variant.adapt) continue;
         variants[key] = await variantEntry(fs, input.workDir, variant.file);
+    }
+    if (isObject(request?.variants)) {
+        for (const name of Object.keys(request.variants)) {
+            if (variants[name] !== undefined) continue;
+            const file = `content.${name}.json`;
+            if (await fs.exists(join(input.workDir, PUBLISH_DIR, file))) {
+                variants[name] = await variantEntry(fs, input.workDir, file);
+            }
+        }
     }
     // The source-locale article is published under its own locale key and under the locale-agnostic
     // one, so a preset row names `article` without knowing the run's source language.

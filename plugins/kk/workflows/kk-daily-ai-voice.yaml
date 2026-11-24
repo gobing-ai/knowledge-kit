@@ -48,6 +48,10 @@ vars:
   podcast_artist: "Robin Min"
   podcast_album: "咸话咸说"
   cover_enabled: "true"
+  # 0424 R2: the package's skill root, read in place by the cover brief (the daily-news-cover skill
+  # and the shared composition reference). A direct `spur workflow run` gets the checkout-relative
+  # default; `kk news generate` passes the resolved absolute root.
+  visual_skill_root: "plugins/kk/skills"
   # F614: the daily cover pins provider+model in vars — each provider has its own look, so the
   # pin is part of the style contract; it stays a var because the right value depends on which
   # credentials the machine has (2026-09-24 run: minimax/image-01).
@@ -261,10 +265,9 @@ states:
           agent: ${vars.agent}
           # ADR-115 error tier: keep this prompt <= 1000 chars.
           input: |
+            Follow mode `brief` in ${vars.visual_skill_root}/daily-news-cover/SKILL.md (read it first; composition: ${vars.visual_skill_root}/news-editorial/references/daily-visual-composition.md).
             Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of plan docs; don't edit it.
             Take item 1 only (its "title" and "metadata.brief") — the episode's lead story. If item 1's mainline IS a political figure, an armed conflict or a non-AI event, take the first in-scope item instead; an AI-subject public-policy story (AI regulation, model liability/litigation, export controls, procurement, standards and safety enforcement) is in scope — keep it.
-            Write one concrete visual scene in English, ≤240 characters, that a viewer would connect to that story: objects, settings, symbols, metaphor.
-            No text, letters, numbers, logos, brand marks, flags, or recognizable real people. No style, color, lighting, or composition words — the preset owns those.
             Output strictly valid JSON {"subject": "..."} to ${vars.work_dir}/23-cover/${vars.run_date}_07_cover-brief.json.
           expectFile: ${vars.work_dir}/23-cover/${vars.run_date}_07_cover-brief.json
           allowAppend: false
@@ -485,7 +488,7 @@ states:
             Take item 1 only (its "title" and "metadata.brief") — the lead story.
             Write an XHS note: "title" (≤20 chars) and "body" (≤1000 Chinese chars, 3-5 hashtags at the end). 选题边界：只写 AI 主题；主线是政治人物本人、武装冲突或非 AI 事件就跳过；AI 监管、模型责任与诉讼、出口管制、采购、标准与安全执法属 AI 主题公共政策，照常写入。
             Write ${vars.xhs_cards} cards: card 1 "cover", the rest "content", a final "closing". Each card: "role", "copy" (≤12 chars), "points" (2-4 bullets), "layout", "subject" (English visual scene), "sourcePoint" (the story fact that card uses).
-            Ground every field in that story — no invented facts. No text, letters, numbers, logos or real people in "subject".
+            Card art: mode `card` in ${vars.visual_skill_root}/daily-news-illustrations/SKILL.md owns each "subject"; ground every other field in that story — no invented facts.
             Output strictly valid JSON {"title": "...", "body": "...", "cards": [...]} to ${vars.work_dir}/25-xhs/${vars.run_date}_18_xhs_plan.json.
           expectFile: ${vars.work_dir}/25-xhs/${vars.run_date}_18_xhs_plan.json
           allowAppend: false

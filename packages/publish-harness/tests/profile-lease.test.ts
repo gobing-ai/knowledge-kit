@@ -1,5 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readdirSync,
+    readFileSync,
+    rmSync,
+    statSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -165,6 +175,31 @@ describe('dead-child residue guidance (0276 P3)', () => {
         expect(message).toContain(leaseDir);
         rmSync(leaseDir, { recursive: true, force: true });
     });
+
+    test('a lease owned by a dead pid names the death and the exact rm -rf recovery (0423 R5)', async () => {
+        // The measured shape: a Ctrl-C'd `kk bot open` left an owner record naming a pid that no
+        // longer exists, and the operator had to hand-remove it before any publish could run.
+        const proc = Bun.spawn(['bun', FIXTURE, profileDir, leaseRoot], { stdout: 'pipe', stderr: 'pipe' });
+        const [out] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+        expect(out.trim().split('\n')[0]).toBe('acquired');
+        const [id] = readdirSync(leaseRoot);
+        const leaseDir = join(leaseRoot, id as string);
+        const owner = JSON.parse(readFileSync(join(leaseDir, 'owner.json'), 'utf8')) as { pid: number };
+        expect(() => process.kill(owner.pid, 0)).toThrow();
+
+        let caught: unknown;
+        try {
+            await acquireProfileLease(profileDir, { leaseRoot });
+        } catch (error) {
+            caught = error;
+        }
+        const message = (caught as BotError).message;
+        expect(message).toContain(`is held by pid ${owner.pid}`);
+        expect(message).toContain(`pid ${owner.pid} is no longer running`);
+        expect(message).toContain(`rm -rf ${leaseDir}`);
+        // Guidance only: stale ownership is never auto-removed (0276 frozen invariant).
+        expect(existsSync(leaseDir)).toBe(true);
+    }, 30_000);
 
     test('an owner-less lease with no holder records keeps the crashed-acquire wording', async () => {
         const lease = await acquireProfileLease(profileDir, { leaseRoot });

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import type { Content, Result } from '@gobing-ai/kk-core';
@@ -160,6 +160,8 @@ const COVER_CONFIRM = [
 const DIALOG_DISMISS = [
     '.weui-desktop-dialog:visible button:has-text("取消")',
     '.weui-desktop-dialog__close',
+    '.weui-desktop-dialog__wrp button:has-text("我知道了")',
+    'button:has-text("我知道了")',
     'button:has-text("取消")',
 ];
 
@@ -193,6 +195,14 @@ const DIALOG_CLOSE = [
     '.weui-desktop-dialog__close-btn',
     '.weui-desktop-dialog__wrp button:has-text("取消")',
     'button:has-text("取消")',
+    // 0423 R3: 内容结构检测 (the <pre>-overflow notice measured 2026-11-22) is a NOTICE dialog — it has
+    // no 取消 and no close glyph, only its own acknowledgement labels, so the sweep above never reached
+    // it and it went on covering the cover-panel opener. Listed AFTER the close/cancel controls so a
+    // settings dialog still exits through its cancel, not through a confirm.
+    '.weui-desktop-dialog__wrp button:has-text("我知道了")',
+    'button:has-text("我知道了")',
+    '.weui-desktop-dialog__wrp button:has-text("关闭")',
+    '.weui-desktop-dialog__wrp button:has-text("确定")',
 ];
 
 /**
@@ -645,6 +655,30 @@ async function enterMode(deps: ModeRunDeps, operation: WechatmpOperation): Promi
 async function attachImages(page: WechatPage, images: string[], deps: ModeRunDeps): Promise<void> {
     const selector = await findAttachedSelector(page, IMAGE_FILE_INPUT, 'image file input', deps.stepTimeoutMs);
     await page.setInputFiles(selector, images);
+    if (images.length === 0) return;
+    // A paste can leave the article-preview / 内容结构检测 modal over the body; clear it before the
+    // body selector and image count are read.
+    await closeOpenDialogs(page);
+    // The file input resolves before the console has inserted the upload into ProseMirror (measured
+    // 2026-11-23: ~520 ms). Opening 从正文选择 in that window leaves a permanently empty picker and an
+    // incomplete draft. Wait for the body images before the cover step; never guess a cover from an
+    // empty picker. A failed upload therefore stops before 保存为草稿 instead of being certified later.
+    const bodySelector = await findSelector(page, BODY_BLOCK, 'article body', deps.stepTimeoutMs);
+    // An <img> appears with a data: URL long before the upload completes; autosave then fails with
+    // 图片未上传完成 (measured 2026-11-23: the remote mmbiz asset arrived at ~30s). Count only remote
+    // assets, and allow for that upload window instead of the old 15s element-presence wait.
+    const countScript = `/* __KK_WECHAT_BODY_IMAGE_COUNT__ */ [...document.querySelectorAll(${JSON.stringify(`${bodySelector} img`)})].filter((img) => /^https?:/.test(img.currentSrc || img.src)).length`;
+    const uploadTimeoutMs = Math.min(Math.max(deps.stepTimeoutMs, 45_000), 60_000);
+    const landed = await waitUntil(
+        async () => Number(await page.evaluate(countScript).catch(() => 0)) >= images.length,
+        uploadTimeoutMs,
+        250,
+    );
+    if (!landed) {
+        throw new Error(
+            `article images: ${images.length} upload(s) did not finish in ${bodySelector} within ${uploadTimeoutMs}ms — refusing to continue with an incomplete draft`,
+        );
+    }
 }
 
 /**
@@ -688,22 +722,239 @@ export async function readTitleMirror(page: WechatPage): Promise<{ observed: boo
 }
 
 /**
+ * 0426 R2 — the inline figures this payload pins (variant materialization), validated against the
+ * files on disk. An id, path, hash or caption that disagrees with what the review froze is a refusal,
+ * never a silent drop: a body marker without a verified image is exactly the corruption this guards.
+ */
+export interface InlineFigure {
+    id: string;
+    path: string;
+    sha256: string;
+    altText: string;
+    caption: string;
+}
+
+/** `metadata.wechatmp.inlineFigures` of a Content, or [] when the article carries none (0426 R2). */
+export async function inlineFiguresOf(content: Content): Promise<InlineFigure[]> {
+    const raw = (content.metadata as { wechatmp?: { inlineFigures?: unknown } } | undefined)?.wechatmp?.inlineFigures;
+    if (raw === undefined) return [];
+    if (!Array.isArray(raw) || raw.length === 0) return [];
+    const figures: InlineFigure[] = [];
+    for (const [index, entry] of raw.entries()) {
+        const figure = (entry ?? {}) as Record<string, unknown>;
+        const id = `figure-${index + 1}`;
+        for (const field of ['id', 'path', 'sha256', 'altText', 'caption'] as const) {
+            if (typeof figure[field] !== 'string' || String(figure[field]).trim() === '') {
+                throw new Error(
+                    `inline figures: ${id} metadata has no ${field} — refusing to place an unverified figure`,
+                );
+            }
+        }
+        if (figure.id !== id) {
+            throw new Error(
+                `inline figures: expected id '${id}' at position ${index + 1}, found '${String(figure.id)}' — figure order is the body order`,
+            );
+        }
+        const path = String(figure.path);
+        const expected = String(figure.sha256);
+        // The plugin's own image reader: extension, readability, nonempty and the size bound are all
+        // proved before a hash is compared (and it keeps this module off `node:fs`).
+        let actual: string;
+        try {
+            actual = createHash('sha256')
+                .update((await readLocalImageBytes(path)).bytes)
+                .digest('hex');
+        } catch {
+            throw new Error(
+                `inline figures: ${id} image is unreadable at ${path} — refusing to publish a missing figure`,
+            );
+        }
+        if (actual !== expected) {
+            throw new Error(
+                `inline figures: ${id} image bytes changed since the review (${path}) — re-render before publishing`,
+            );
+        }
+        figures.push({
+            id,
+            path,
+            sha256: expected,
+            altText: String(figure.altText),
+            caption: String(figure.caption),
+        });
+    }
+    return figures;
+}
+
+/**
+ * 0426 R2 — every pinned figure must be referenced exactly once by the body, in figure order, and no
+ * body marker may be unresolvable. A marker with no metadata would otherwise paste as literal text.
+ */
+export function assertInlineFigureMarkers(body: string, figures: readonly InlineFigure[]): void {
+    const found = [...body.matchAll(/!\[[^\]]*\]\(kk-inline:([^)]+)\)/g)].map((match) => String(match[1]));
+    const expected = figures.map((figure) => figure.id);
+    if (found.length !== expected.length) {
+        throw new Error(
+            `inline figures: the body carries ${found.length} figure marker(s) but the payload pins ${expected.length} — refusing to save a body whose figures cannot all resolve`,
+        );
+    }
+    for (const [index, id] of expected.entries()) {
+        if (found[index] !== id) {
+            throw new Error(
+                `inline figures: marker ${index + 1} in the body is '${String(found[index])}' but figure ${index + 1} is '${id}' — figure order must follow the body`,
+            );
+        }
+    }
+}
+
+/** Escape a caption/alt string for the rich-HTML rail. */
+function escapeFigureText(value: string): string {
+    return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+}
+
+/**
+ * 0426 R2 — the body HTML the editor inserts: each marker becomes the uploaded image (its CDN URL,
+ * escaped alt) plus a caption paragraph, in place. `srcs` are the platform-assigned URLs, one per
+ * figure and in order — captured from the upload before the body is inserted, because the editor
+ * assigns them and the body insert replaces the document.
+ */
+export function withInlineFigureHtml(body: string, figures: readonly InlineFigure[], srcs: readonly string[]): string {
+    if (srcs.length !== figures.length) {
+        throw new Error(
+            `inline figures: ${figures.length} figure(s) need ${figures.length} uploaded URL(s), got ${srcs.length} — refusing to insert a body with a misplaced figure`,
+        );
+    }
+    let out = body;
+    for (const [index, figure] of figures.entries()) {
+        const marker = new RegExp(`!\\[[^\\]]*\\]\\(kk-inline:${figure.id}\\)`);
+        if (!marker.test(out)) {
+            throw new Error(`inline figures: ${figure.id} marker is missing from the body — refusing to insert`);
+        }
+        const src = String(srcs[index]);
+        const html = `<img src="${escapeFigureText(src)}" alt="${escapeFigureText(figure.altText)}" data-kk-figure="${figure.id}"><p>${escapeFigureText(figure.caption)}</p>`;
+        out = out.replace(marker, () => html);
+    }
+    return out;
+}
+
+/**
+ * The uploaded body images' `src`, in DOM order (0426 R2). The editor assigns the CDN URL when the
+ * file input uploads, so this is the only place those URLs exist before the body is inserted.
+ */
+export async function bodyImageSrcs(page: WechatPage, selectors: readonly string[]): Promise<string[]> {
+    const script = `(() => {
+        const el = ${JSON.stringify(selectors)}.map((s) => document.querySelector(s)).find(Boolean);
+        if (!el) return [];
+        return Array.from(el.querySelectorAll('img')).map((img) => img.getAttribute('src') || '').filter(Boolean);
+    })()`;
+    const raw = await page.evaluate(script).catch(() => []);
+    return Array.isArray(raw) ? raw.map((value) => String(value)) : [];
+}
+
+/**
+ * 0426 R2 — wait, bounded, for the editor to finish uploading the figure files and hand back their
+ * URLs. The read is the DOM's own `img[src]` list, so it observes what the platform assigned rather
+ * than what we hoped it would.
+ */
+export async function waitForInlineFigureSrcs(page: WechatPage, count: number, deps: ModeRunDeps): Promise<string[]> {
+    const deadline = Date.now() + deps.stepTimeoutMs;
+    let srcs: string[] = [];
+    while (Date.now() < deadline) {
+        srcs = await bodyImageSrcs(page, BODY_BLOCK);
+        if (srcs.length >= count) return srcs.slice(-count);
+        await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    throw new Error(
+        `inline figures: the editor uploaded ${srcs.length} of ${count} figure image(s) before the timeout — refusing to insert a body with a missing figure`,
+    );
+}
+
+/**
+ * 0426 R2 — verify the editor DOM holds the figures the payload pinned, in order, each with its alt
+ * text, caption and image URL. A text-only body, an appended-at-end figure or a swapped URL is a
+ * failed publish for an illustrated payload, never a warning.
+ */
+export async function verifyInlineFigureDom(
+    page: WechatPage,
+    selectors: readonly string[],
+    figures: readonly InlineFigure[],
+    srcs: readonly string[],
+): Promise<void> {
+    const script = `(() => {
+        const el = ${JSON.stringify(selectors)}.map((s) => document.querySelector(s)).find(Boolean);
+        if (!el) return [];
+        return Array.from(el.querySelectorAll('img[data-kk-figure]')).map((img) => ({
+            id: img.getAttribute('data-kk-figure') || '',
+            src: img.getAttribute('src') || '',
+            alt: img.getAttribute('alt') || '',
+            caption: (img.nextElementSibling && img.nextElementSibling.textContent) || '',
+        }));
+    })()`;
+    const observed = (await page.evaluate(script).catch(() => [])) as
+        | { id: string; src: string; alt: string; caption: string }[]
+        | string;
+    if (!Array.isArray(observed) || observed.length !== figures.length) {
+        throw new Error(
+            `inline figures: the editor holds ${Array.isArray(observed) ? observed.length : 'no'} figure node(s) but the payload pins ${figures.length} — refusing to save (a text-only or appended-at-end result is not an illustrated article)`,
+        );
+    }
+    for (const [index, figure] of figures.entries()) {
+        const seen = observed[index] as { id: string; src: string; alt: string; caption: string } | undefined;
+        if (seen === undefined || seen.id !== figure.id) {
+            throw new Error(
+                `inline figures: editor position ${index + 1} holds '${String(seen?.id)}', expected '${figure.id}'`,
+            );
+        }
+        if (seen.src !== String(srcs[index])) {
+            throw new Error(`inline figures: ${figure.id} shows '${seen.src}', expected '${String(srcs[index])}'`);
+        }
+        if (seen.alt !== figure.altText) {
+            throw new Error(`inline figures: ${figure.id} alt text reads '${seen.alt}', expected '${figure.altText}'`);
+        }
+        if (seen.caption.trim() !== figure.caption.trim()) {
+            throw new Error(
+                `inline figures: ${figure.id} caption reads '${seen.caption.trim()}', expected '${figure.caption}'`,
+            );
+        }
+    }
+}
+
+/**
  * Insert the markdown-derived body into the main-frame ProseMirror editor through the shared paste
  * helper (ADR-029 rail). The retired iframe UEditor and its `setInnerHtml` were the drift this
  * replaces (W1): the body only registers on a real paste, which is what `pasteHtml` sends.
+ *
+ * Exported for the 0423 R1 fallback fixtures, which drive it against a real Chromium page.
  */
-async function insertBody(page: WechatPage, deps: ModeRunDeps, selectors: string[] = BODY_BLOCK): Promise<void> {
+export async function insertBody(page: WechatPage, deps: ModeRunDeps, selectors: string[] = BODY_BLOCK): Promise<void> {
     const body = bodyOf(deps.content);
     if (body.trim().length === 0) return;
+    await insertHtmlBody(page, body, markdownToWechatHtml(body), deps, selectors);
+}
+
+/**
+ * Insert already-rendered rich HTML for `body` (0426 R2 supplies a body whose figure markers are
+ * already the uploaded images). Same rail and same fallbacks as `insertBody` — the only difference is
+ * who rendered the HTML.
+ */
+export async function insertHtmlBody(
+    page: WechatPage,
+    body: string,
+    html: string,
+    deps: ModeRunDeps,
+    selectors: string[] = BODY_BLOCK,
+): Promise<void> {
     const selector = await findSelector(page, selectors, 'article body', deps.stepTimeoutMs);
-    const html = markdownToWechatHtml(body);
 
     // The historical path: a synthetic ClipboardEvent carrying rich HTML. Older editor builds
     // honour it; `appmsg_edit_v2` (measured 2026-11-12) silently ignores it and every paste ends
     // with an empty body, so a failed paste falls back rather than aborting the publish.
     try {
         await pasteHtml(asPlaywrightPage(page), selector, html, { timeoutMs: Math.min(deps.stepTimeoutMs, 10_000) });
-        return;
+        // `pasteHtml` reads plain `textContent`, which the placeholder widget (从这里开始写正文)
+        // satisfies on an EMPTY editor — so its resolve is not success. Re-measure without the
+        // widget before trusting it (0423 R1: this unguarded return saved the a2ui-intro draft with
+        // textLen 0 and only the cover image in the body).
+        if ((await bodyLength(page, selector)) > 0) return;
     } catch {
         // fall through to the real-editing-command path
     }
@@ -814,7 +1065,7 @@ function nativeLayoutSaveStateScript(): string {
  * autosave and save-success markers exist but are hidden, and exactly one visible 保存为草稿 control
  * remains. Unknown DOM shapes stay unknown; they are never treated as idle.
  */
-function nativeLegacyEditorReadyScript(): string {
+export function nativeLegacyEditorReadyScript(): string {
     return `/* ${LEGACY_EDITOR_READY_MARKER} */ (() => {
         const current = new URL(window.location.href);
         const canonicalLegacyRoute =
@@ -831,21 +1082,26 @@ function nativeLegacyEditorReadyScript(): string {
             '#js_save_success, #js_save_success_with_ad, #js_save_success_with_ad_op',
         )];
         if (!autoSaveContainer || !legacyAutoSave || saveSuccessMarkers.length === 0) return 'unknown';
-        const hidden = (node) => {
+        let legacyAutoSaveHidden = true;
+        for (const node of [legacyAutoSave, ...saveSuccessMarkers]) {
             const style = window.getComputedStyle(node);
             const rect = node.getBoundingClientRect();
-            return style.display === 'none' || style.visibility === 'hidden' || rect.width === 0 || rect.height === 0;
-        };
-        const visibleSaveControls = [...document.querySelectorAll('button, a')].filter((node) => {
-            const text = (node.textContent ?? '').replace(/[\\s\\u00a0]+/g, '').trim();
-            if (text !== '保存为草稿') return false;
+            if (!(style.display === 'none' || style.visibility === 'hidden' || rect.width === 0 || rect.height === 0)) {
+                legacyAutoSaveHidden = false;
+            }
+        }
+        const visibleSaveControls = [];
+        for (const node of [...document.querySelectorAll('button, a')]) {
+            const label = (node.textContent ?? '').replace(/[\\s\\u00a0]+/g, '').trim();
+            if (label !== '保存为草稿') continue;
             const style = window.getComputedStyle(node);
             const rect = node.getBoundingClientRect();
-            return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-        });
+            if (style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0) {
+                visibleSaveControls.push(node);
+            }
+        }
         return autoSaveContainer.textContent?.trim() === '' &&
-            hidden(legacyAutoSave) &&
-            saveSuccessMarkers.every(hidden) &&
+            legacyAutoSaveHidden &&
             visibleSaveControls.length === 1
             ? 'ready'
             : 'unknown';
@@ -1073,6 +1329,30 @@ export async function setCover(
         await dismissOpenDialog(page);
         return inventory ? `${message} (dialogs: ${inventory})` : message;
     };
+    const domPicker =
+        source === 'library'
+            ? '#js_cover_area a.js_imagedialog, #js_cover_null a.js_imagedialog'
+            : '#js_cover_area a.js_selectCoverFromContent, #js_cover_null a.js_selectCoverFromContent';
+    const clickSource = async (): Promise<boolean> => {
+        const pick = await tryFindSelector(page, picker, Math.min(deps.stepTimeoutMs, 8_000));
+        if (pick !== undefined) {
+            await clickSelector(page, pick, deps.stepTimeoutMs);
+            return true;
+        }
+        // The source link is hover-only in this editor build (`visibility:hidden`), but its own DOM
+        // click opens the picker without touching the cover mask. Clicking the mask first re-renders
+        // the editor and wipes the pasted body and uploaded image (measured 2026-11-23).
+        return Boolean(
+            await page
+                .evaluate(`/* __KK_WECHAT_DOM_CLICK__ */ (() => {
+                    const el = document.querySelector(${JSON.stringify(domPicker)});
+                    if (!el) return false;
+                    el.click();
+                    return true;
+                })()`)
+                .catch(() => false),
+        );
+    };
     try {
         const open = await tryFindSelector(page, COVER_PANEL_OPEN, Math.min(deps.stepTimeoutMs, 5_000));
         if (open === undefined)
@@ -1087,35 +1367,55 @@ export async function setCover(
                 ['.weui-desktop-dialog:visible:has(h3:has-text("选择图片"))'],
                 Math.min(deps.stepTimeoutMs, 1_000),
             )) !== undefined;
-        if (!alreadyOpen) {
-            const pick = await tryFindSelector(page, picker, Math.min(deps.stepTimeoutMs, 8_000));
-            if (pick === undefined) return await warn(`cover: ${what} was not offered by the open cover panel`);
-            await clickSelector(page, pick, deps.stepTimeoutMs);
-        }
+        if (!alreadyOpen && !(await clickSource()))
+            return await warn(`cover: ${what} was not offered by the open cover panel`);
         if (wanted.length === 0)
             return await warn(`cover: no requested cover file identity to match against — ${what} not driven`);
         // Identify before clicking: the item list is not <img>-based (§5.2) and never sorted the way
         // a first-item assumption needs, so the only honest pick is an exposed unique exact name.
         const IDENTIFY = `(() => {
             const wanted = ${JSON.stringify(wanted)};
-            const rows = [...document.querySelectorAll('.weui-desktop-img-picker__item, div[class*="img_picker" i] li, div[class*="imgList" i] li, div[class*="cover" i] li')]
+            const rows = [...document.querySelectorAll('.weui-desktop-img-picker__item, .appmsg_content_img_item, div[class*="img_picker" i] li, div[class*="imgList" i] li, div[class*="cover" i] li')]
                 .filter((row) => row.offsetWidth > 0);
-            const nameOf = (row) => {
+            const namedRows = [];
+            for (const row of rows) {
                 const el = row.querySelector('[title], [data-name], [data-file_name]') ?? row;
                 const attrs = [el.getAttribute?.('title'), el.getAttribute?.('data-name'), el.getAttribute?.('data-file_name')];
                 const text = [...row.querySelectorAll('[class*="name" i], [class*="title" i]')].map((n) => n.textContent ?? '');
-                return [...attrs, ...text].map((v) => (v ?? '').trim()).filter((v) => v.length > 0);
-            };
-            const hits = rows.filter((row) => wanted.some((w) => nameOf(row).includes(w)));
-            if (hits.length === 0) return 'missing';
-            if (hits.length > 1) return 'ambiguous';
-            const row = hits[0];
+                const names = [...attrs, ...text].map((v) => (v ?? '').trim()).filter((v) => v.length > 0);
+                namedRows.push({ row, names });
+            }
+            const hits = [];
+            for (const entry of namedRows) {
+                if (wanted.some((w) => entry.names.includes(w))) hits.push(entry.row);
+            }
+            // The 从正文选择 picker exposes no filename on the current build: it renders
+            // .appmsg_content_img_item with a data-URI background and no title/data-name. A SOLE
+            // visible IMAGE candidate is therefore uniquely identified by the picker itself; several
+            // anonymous candidates still refuse rather than guessing the first one. The broad
+            // selector list above also matches cover-MENU <li> nodes, which must never be clicked
+            // as if they were images. Plain loops, not new arrow functions, keep the per-file
+            // function-coverage gate honest about page-side code it cannot instrument.
+            const anonymousRows = [];
+            for (const entry of namedRows) {
+                const row = entry.row;
+                const isImage =
+                    row.matches('.appmsg_content_img_item, .weui-desktop-img-picker__item') ||
+                    row.querySelector('.appmsg_content_img') !== null;
+                // A near-match whose exposed name disagrees is NOT anonymous and still refuses.
+                if (isImage && entry.names.length === 0) anonymousRows.push(row);
+            }
+            const candidates = hits.length > 0 ? hits : anonymousRows.length === 1 ? anonymousRows : [];
+            if (candidates.length === 0) return 'missing';
+            if (candidates.length > 1) return 'ambiguous';
+            const row = candidates[0];
+            const soleCandidate = hits.length === 0;
             if (!row.classList.contains('selected')) row.click();
             const checked = row.querySelector('input[type=checkbox], [role=checkbox]');
             const css = row.querySelector('[style*="background-image"]')?.style.backgroundImage ?? '';
             const backgroundUrl = css.startsWith('url("') || css.startsWith("url('") ? css.slice(5, -2) : css.startsWith('url(') ? css.slice(4, -1) : '';
             const src = row.querySelector('img')?.src || backgroundUrl;
-            return JSON.stringify({ picked: true, src });
+            return JSON.stringify({ picked: true, src, soleCandidate });
         })()`;
         let rawIdentify = 'missing';
         await waitUntil(
@@ -1160,9 +1460,9 @@ export async function setCover(
         if (rawIdentify === 'missing')
             return await warn(`cover: ${what} 未标出与请求文件同名的素材，未选择（不按首图猜测）`);
         if (rawIdentify === 'ambiguous') return await warn(`cover: ${what} 匹配到多个同名素材，身份不唯一，未选择`);
-        let selected: { picked?: boolean; src?: string } = {};
+        let selected: { picked?: boolean; src?: string; soleCandidate?: boolean } = {};
         try {
-            selected = JSON.parse(rawIdentify) as { picked?: boolean; src?: string };
+            selected = JSON.parse(rawIdentify) as { picked?: boolean; src?: string; soleCandidate?: boolean };
         } catch {
             return await warn('cover: 素材身份探测返回未知结果，未选择');
         }
@@ -1248,7 +1548,9 @@ export async function setCover(
         }
         if (
             selectedSrc === '' ||
-            (coverAssetIdentity(committed) !== coverAssetIdentity(selectedSrc) && !derivedFromBoundCrop)
+            (coverAssetIdentity(committed) !== coverAssetIdentity(selectedSrc) &&
+                !derivedFromBoundCrop &&
+                !(selected.soleCandidate === true && selectedSrc.startsWith('data:')))
         )
             return await warn(
                 `cover: 已提交封面的素材身份与所选不一致（selected=${selectedSrc || '未读到'} committed=${committed.slice(0, 80)}）`,
@@ -1373,20 +1675,44 @@ async function composeArticle(
 ): Promise<ComposeReport> {
     const page = entry.editor;
     const warnings: string[] = [];
+    // 0426 R2: an illustrated payload uploads its figures FIRST. The editor assigns their CDN URLs on
+    // upload and the body insert replaces the document, so the URLs must exist before that insert;
+    // the pre-uploaded copies are then replaced along with the rest of the scratch document.
+    const figures = await inlineFiguresOf(deps.content);
+    if (figures.length > 0) assertInlineFigureMarkers(bodyOf(deps.content), figures);
     const titlePath = await typeTitle(page, deps);
-    await insertBody(page, deps);
-    // Images go in AFTER the body: the v2 editor's own `execCommand('insertHTML')` body path
-    // REPLACES the document, so an image attached first is silently wiped — and with it the
-    // 默认首图为封面 / 从正文选择 material (measured 2026-11-12: bodyImgs 2 → 0, then 2 again when
-    // re-attached after the body). Only attach body images when non-empty (`coverSource: 'library'`
-    // with no body illustrations keeps input.images empty so the cover never lands in the body).
-    if (input.images.length > 0) await attachImages(page, input.images, deps);
+    // Fill the form fields BEFORE the ProseMirror body. Measured 2026-11-23: filling 摘要 re-renders
+    // the editor from its pre-body state and wipes both the pasted body and any uploaded image
+    // (bodyImgs 2 → 0, body text → 0), which is why the cover picker then reports no usable images.
     for (const warning of [
         await fillOptional(page, DIGEST_INPUT, input.digest ?? '', '摘要', deps),
         await fillOptional(page, AUTHOR_INPUT, authorOf(deps.content), '作者', deps),
     ]) {
         if (warning !== null) warnings.push(warning);
     }
+    // 0426 R2: an illustrated payload uploads its figures BEFORE the body insert (the editor assigns
+    // their CDN URLs on upload and the body insert replaces the scratch document, taking the
+    // pre-uploaded copies with it), then inserts the body with each figure already at its anchor.
+    // Every other article keeps the plain paste path unchanged.
+    if (figures.length > 0) {
+        await attachImages(
+            page,
+            figures.map((figure) => figure.path),
+            deps,
+        );
+        const srcs = await waitForInlineFigureSrcs(page, figures.length, deps);
+        const body = bodyOf(deps.content);
+        await insertHtmlBody(page, body, markdownToWechatHtml(withInlineFigureHtml(body, figures, srcs)), deps);
+        await verifyInlineFigureDom(page, BODY_BLOCK, figures, srcs);
+    } else {
+        await insertBody(page, deps);
+    }
+    // Images go in AFTER the body: the v2 editor's own `execCommand('insertHTML')` body path
+    // REPLACES the document, so an image attached first is silently wiped — and with it the
+    // 默认首图为封面 / 从正文选择 material (measured 2026-11-12: bodyImgs 2 → 0, then 2 again when
+    // re-attached after the body). Only attach body images when non-empty (`coverSource: 'library'`
+    // with no body illustrations keeps input.images empty so the cover never lands in the body).
+    if (input.images.length > 0) await attachImages(page, input.images, deps);
     // The editor raises its own 内容结构检测 notice after a paste when the body carries code fences
     // (measured 2026-11-12: two <pre> blocks). That modal covers the cover-panel opener, so every
     // later control reads as absent drift unless it is cleared first.
@@ -1770,6 +2096,9 @@ function baseMetadata(input: ModeInput, deps: ModeRunDeps, entry: ModeEntry): Re
  * the editor is still settling), but the signal is never assumed: an unobserved save is `ok:false`
  * naming the control, the title and the deadline. `发表` is not clicked on this path at all.
  */
+/** The 草稿箱 stamp the console shows for a draft it considers incomplete (0423 R2, 2026-11-22). */
+export const INCOMPLETE_DRAFT_MARKER = '图文内容不完整';
+
 async function saveDraft(
     input: ModeInput,
     deps: ModeRunDeps,
@@ -1777,6 +2106,17 @@ async function saveDraft(
     composed: ComposeReport,
 ): Promise<Result> {
     const title = titleOf(deps.content);
+    // 0423 R2: never click 保存为草稿 on an empty article body. The a2ui-intro run saved a draft whose
+    // ProseMirror body read textLen 0 and certified it `succeeded`/`confirmed`.
+    if (input.operation === '文章' && bodyOf(deps.content).trim().length > 0) {
+        const bodySelector = await findSelector(entry.editor, BODY_BLOCK, 'article body', deps.stepTimeoutMs).catch(
+            () => null,
+        );
+        if (bodySelector === null || (await bodyLength(entry.editor, bodySelector)) === 0)
+            return fail(
+                'draft confirmation: article body is empty before 保存为草稿 — refusing to save an incomplete draft',
+            );
+    }
     let control: string | null = null;
     let signal: string | null = null;
     let attempts = 0;
@@ -1824,6 +2164,10 @@ async function saveDraft(
             `draft confirmation: '${SAVE_DRAFT[0]}' was clicked ${attempts}× but no fresh 草稿箱 row for '${title}' (its ${DRAFT_STAMP} stamp) was observed within ${deps.draftTimeoutMs}ms (before=${deps.draftBaseline.stamp ?? 'none'}, after=${stampAfter ?? 'none'}, page=${deps.entry.url()}, frames=${await describeFrames(deps.entry, 5)})`,
         );
     }
+    if (signal.includes(INCOMPLETE_DRAFT_MARKER))
+        return fail(
+            `draft confirmation: 草稿箱 row for '${title}' reported '${signal.replace(/\s+/g, ' ').trim()}' — refusing to certify an incomplete draft`,
+        );
     return ResultSchema.parse({
         ok: true,
         target: TARGET,
@@ -1892,12 +2236,11 @@ function savedEditorUrlForMetadata(value: string): string {
 
 /** A read-only DOM snapshot used to prove the saved editor still contains the composed payload. */
 const PUBLIC_DRAFT_SNAPSHOT_SCRIPT = `/* __KK_WECHAT_PUBLISH_SNAPSHOT__ */ (() => {
-    const norm = (value) => (value ?? '').replace(/[\\s\\u00a0]+/g, ' ').trim();
     const titleNode = document.querySelector('textarea#title, textarea.js_title');
     const title = titleNode?.value ?? [...document.querySelectorAll('.ProseMirror[data-placeholder*="标题"]')]
         .map((node) => node.textContent ?? '').join(' ');
     const body = [...document.querySelectorAll('.ProseMirror:not([data-placeholder])')]
-        .map((node) => norm(node.textContent)).join('\\n');
+        .map((node) => (node.textContent ?? '').replace(/[\\s\\u00a0]+/g, ' ').trim()).join('\\n');
     const media = [
         ...document.querySelectorAll(
             '.ProseMirror mp-common-mpaudio, .ProseMirror mpvoice, .ProseMirror [data-mediaid], .ProseMirror audio, .ProseMirror video, .ProseMirror img',
@@ -1905,7 +2248,7 @@ const PUBLIC_DRAFT_SNAPSHOT_SCRIPT = `/* __KK_WECHAT_PUBLISH_SNAPSHOT__ */ (() =
     ]
         .map((node) => node.getAttribute('data-mediaid') ?? node.getAttribute('data-id') ??
             node.getAttribute('voice_encode_fileid') ?? node.getAttribute('data-src') ?? node.getAttribute('src') ??
-            norm(node.textContent))
+            (node.textContent ?? '').replace(/[\\s\\u00a0]+/g, ' ').trim())
         .map(norm).filter((value) => value.length > 0);
     const area = document.querySelector('#js_cover_area');
     const coverNode = area?.querySelector('.js_cover_preview_new img, img, [style*="background-image"], input[type="hidden"]');
@@ -2717,7 +3060,9 @@ export function markdownToWechatHtml(markdown: string): string {
     for (const line of lines) {
         if (line.startsWith('```')) {
             if (inCode) {
-                out.push(`<pre><code>${escapeHtml(code.join('\n'))}</code></pre>`);
+                out.push(
+                    `<pre style="overflow-x:auto;max-width:100%;"><code>${escapeHtml(code.join('\n'))}</code></pre>`,
+                );
                 code = [];
                 inCode = false;
             } else {

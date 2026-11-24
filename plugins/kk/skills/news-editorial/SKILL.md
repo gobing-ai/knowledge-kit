@@ -79,7 +79,7 @@ Read the curated plan `Doc[]` (`--in`) and the curate exclusions (`--excluded`).
 - `lead`: one spoken bridge into the item (≤80 chars). It is not the title and not a rhetorical question.
 - `insight` (optional; omitting it and writing `""` are the same thing — both validate, and the builder and the
   renderer skip only the comment sentence, never the item): 2–4 sentences (≤380 chars) anchored to the doc's named actors, saying why it matters or what to watch. At most one sentence of commentary is required for a short item — leave the field as a single sentence, or omit the comment entirely when the item needs no judgement. Never restate the doc's facts, numbers or phrasing (the listener has just heard them), give no generic advice or methodology, and add no new facts. The cap is a ceiling, not a target.
-- `card`: optional per-item card slot `{ "copy": "≤12字标题", "points": ["要点1", "要点2"], "subject": "English visual scene" }` (2–4 points).
+- `card`: optional per-item card slot `{ "copy": "≤12字标题", "points": ["要点1", "要点2"], "subject": "English visual scene" }` (2–4 points). `subject` is composed per `../daily-news-illustrations/SKILL.md` mode `card` — the card series' artwork direction is that skill's, while `copy`/`points` and the episode `cards.title`/`body` stay here.
 
 At the episode level, write:
 
@@ -92,7 +92,7 @@ At the episode level, write:
   and ONE point, and the cover headline reuses that same point (`plugins/kk/scripts/episode-identity.ts` freezes
   it; `daily-editorial-render` stamps it, `publish-prep` refuses to publish when admission removed the point's
   supporting source). Never invent a second title for a channel.
-- `cover`: either one concrete visual scene in English (a plain string, ≤240 chars: objects, settings, symbols, metaphor; no text, letters, numbers, logos, flags, or recognizable people) or — required for the 0385 R4 title — the object form
+- `cover`: either one concrete visual scene in English (a plain string, ≤240 chars: objects, settings, symbols, metaphor; no text, letters, numbers, logos, flags, or recognizable people — compose it per `references/daily-visual-composition.md`) or — required for the 0385 R4 title — the object form
   `{ "scene": "…", "headline": "…", "sourceIds": ["<plan item id>"] }`:
   - `headline` (required, ≤25 chars): the 当日要点 the episode title freezes — one line, the day's most important
     development in plain language, no date/issue/column name. The title prefix supplies the rest.
@@ -206,4 +206,6 @@ Rules the deterministic commit enforces (a violation is a failed run, not a sile
 ## References
 
 - `references/style-contract.zh.md`: the column's style contract and machine block (caps, banned).
+- `references/daily-visual-composition.md`: the shared cover-scene direction — the ten patterns, the protected headline/logo zones, eight worked examples and the refusal list. Read it before authoring `cover`, or follow `../daily-news-cover/SKILL.md` mode `scene`, which owns the scene contract.
+- `../daily-news-illustrations/SKILL.md`: the card series' artwork direction (mode `card`) — one sourced scene per card, cover/closing from the existing fallback, never a new episode-level field.
 - `references/selection.md`: curate policy (boundary, ordering, depth budget, translation).

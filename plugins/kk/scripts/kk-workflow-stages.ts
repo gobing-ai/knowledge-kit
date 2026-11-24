@@ -2110,6 +2110,11 @@ if (import.meta.main)
             dailyXhsRender(rest);
             break;
         }
+        case 'news-inline-illustrations': {
+            const { dailyInlineIllustrations } = await loadDailyStages();
+            dailyInlineIllustrations(rest);
+            break;
+        }
         case 'daily-script-style': {
             const { dailyScriptStyle } = await loadDailyStages();
             dailyScriptStyle(rest);

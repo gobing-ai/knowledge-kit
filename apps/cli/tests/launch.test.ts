@@ -334,6 +334,9 @@ describe('launchWorkflow — preflight refusals (0365 R3, AC2)', () => {
             expect(receipt.exitCode).toBe(5);
             expect(receipt.reason).toContain('checkout diverges from installed kk');
             expect(receipt.reason).toContain('checkout/');
+            // The refusal names the repair: a stale bundled copy is refreshed by the repo's own
+            // bundler, and a stale install by reinstalling the package.
+            expect(receipt.reason).toContain('bun scripts/bundle-plugins.ts');
             expect(stub.workflowRuns()).toHaveLength(0);
         } finally {
             stub.restore();

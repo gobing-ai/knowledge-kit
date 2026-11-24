@@ -192,6 +192,7 @@ describe('sixteen browser channels declare probes (0216 + 0291 + 0292 + 0293 + 0
         'xiaoyuzhou-pub',
         'shipinhao-pub',
         'linkedin-pub',
+        'medium-pub',
         'threads-pub',
     ];
 

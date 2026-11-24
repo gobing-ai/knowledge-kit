@@ -46,6 +46,10 @@ vars:
   podcast_artist: "Robin Min"
   podcast_album: "咸话咸说"
   cover_enabled: "true"
+  # 0424 R2: the package's skill root, read in place by the cover brief (the daily-news-cover skill
+  # and the shared composition reference). A direct `spur workflow run` gets the checkout-relative
+  # default; `kk news generate` passes the resolved absolute root.
+  visual_skill_root: "plugins/kk/skills"
   cover_provider: "minimax"
   cover_model: "image-01"
   cover_fallback: ""
@@ -465,10 +469,9 @@ nodes:
         timeoutMs: 600000
         # ADR-115 error tier: keep this prompt <= 1000 chars.
         input: |
+          Follow mode `brief` in ${vars.visual_skill_root}/daily-news-cover/SKILL.md (read it first; composition: ${vars.visual_skill_root}/news-editorial/references/daily-visual-composition.md).
           Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of plan docs; don't edit it.
           Take item 1 only (its "title" and "metadata.brief") — the episode's lead story. If item 1's mainline IS a political figure, an armed conflict or a non-AI event, take the first in-scope item instead; an AI-subject public-policy story (AI regulation, model liability/litigation, export controls, procurement, standards and safety enforcement) is in scope — keep it.
-          Write one concrete visual scene in English, ≤240 characters, that a viewer would connect to that story: objects, settings, symbols, metaphor.
-          No text, letters, numbers, logos, brand marks, flags, or recognizable real people. No style, color, lighting, or composition words — the preset owns those.
           Output strictly valid JSON {"subject": "..."} to ${vars.work_dir}/23-cover/${vars.run_date}_07_cover-brief.json.
         expectFile: ${vars.work_dir}/23-cover/${vars.run_date}_07_cover-brief.json
         allowAppend: false
@@ -770,10 +773,9 @@ nodes:
         # ADR-115 error tier: keep this prompt <= 1000 chars.
         input: |
           Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of news docs; don't edit it.
-          Plan the whole episode; card 1 is the hook.
           Write an XHS note: "title" (≤20 chars) and "body" (Chinese lead paragraph + 3-5 hashtags) — the stage appends one numbered line per image below it. 选题边界：只写 AI 主题；主线是政治人物本人、武装冲突或非 AI 事件就跳过；AI 监管、模型责任与诉讼、出口管制、采购、标准与安全执法属 AI 主题公共政策，照常写入。
           Write ${vars.xhs_cards} cards in plan order: card 1 "cover"; one "content" per plan item (max ${vars.xhs_cards} - 2); last "closing". Each card: "role", "copy" (≤12 chars), "points" (2-4 bullets), "layout", "subject" (English visual scene), "sourcePoint" (that item's fact), "itemId" (its "id").
-          Ground every field in that item — no invented facts. No writing, letters, numbers, logos or people; screens stay blank.
+          Card art: mode `card` in ${vars.visual_skill_root}/daily-news-illustrations/SKILL.md owns each "subject"; ground every other field in that item — no invented facts.
           Output strictly valid JSON {"title": "...", "body": "...", "cards": [...]} to ${vars.work_dir}/25-xhs/${vars.run_date}_18_xhs_plan.json.
         expectFile: ${vars.work_dir}/25-xhs/${vars.run_date}_18_xhs_plan.json
         allowAppend: false

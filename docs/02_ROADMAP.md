@@ -87,6 +87,10 @@ and the operator setup/restart/shutdown steps.
 See [workflow-board-modules.md](design/workflow-board-modules.md).
 
 
+## Daily AI news visual skills (L4, Phase 3 — planned)
+
+Centralize cover and card art direction, add an opt-in inline illustration path, and replay the installed workflow. See the [L4 design](design/daily-news-visual-skills.md).
+
 ## Planned CLI/session follow-up (2026-10-13)
 
 A22 follows the shipped A21 surface: normalize stage/lock operations, add named bot lifecycle, preserve channel session behavior, then review and migrate compatible callers. **Shipped and verified by tasks `0275`–`0278`** (2026-10-14): `kk stage run` + top-level `kk lock` with hidden compat routes, the generic `kk bot` lifecycle over staged transactions and shared leases, `browserSession` channel binding on the `open \| login --url` check-script protocol, and an evidence-based caller review that migrated only the behaviour-equivalent lock callers while retaining the publishing contexts, in-process session paths and API transports.

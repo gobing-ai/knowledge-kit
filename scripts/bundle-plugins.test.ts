@@ -40,6 +40,7 @@ const CHECK_DECLARING_PLUGINS = [
     'jike-pub',
     'juejin-pub',
     'linkedin-pub',
+    'medium-pub',
     'shipinhao-pub',
     'sspai-pub',
     'substack-pub',

@@ -163,11 +163,14 @@ function checkRequires(list: Entity[]): string[] {
 }
 
 describe('runtime-requires (task 0342 / feature F81 R1, R2, R3)', () => {
-    test('21 kk entities are collected (17 skills, 4 commands)', () => {
+    test('23 kk entities are collected (19 skills, 4 commands)', () => {
         // 2026-11-19 adds `skills/music-authoring/SKILL.md` (0402), which dispatches `kk:content-judge`
         // and therefore inherits its `cli:spur` token.
-        expect(entities.length).toBe(21);
-        expect(byPath.size).toBe(21);
+        // 2026-11-22 adds `skills/daily-news-cover/SKILL.md` (0424 R1) and
+        // `skills/daily-news-illustrations/SKILL.md` (0425 R1) — both [cli:kk, local-fs]: they read the
+        // package skills in place and render through `kk`, and dispatch nothing.
+        expect(entities.length).toBe(23);
+        expect(byPath.size).toBe(23);
     });
 
     test('AC1: every entity declares a valid, sorted, de-duplicated requires list equal to the derived closure', () => {
@@ -178,7 +181,7 @@ describe('runtime-requires (task 0342 / feature F81 R1, R2, R3)', () => {
         }
     });
 
-    test('AC3: the group snapshot matches the 2026-11-19 frozen table (10/6/0/5)', () => {
+    test('AC3: the group snapshot matches the frozen table (10/8/0/5)', () => {
         const groups: Record<string, number> = {};
         for (const entity of entities) {
             const key = [...deriveRequires(entity.path)].sort().join(',');
@@ -188,7 +191,9 @@ describe('runtime-requires (task 0342 / feature F81 R1, R2, R3)', () => {
             // 10 after 0402: music-authoring invokes `kk music` directly and inherits spur through its
             // `kk:content-judge` dispatch.
             'cli:kk,cli:spur,local-fs': 10,
-            'cli:kk,local-fs': 6,
+            // 8 after 0424/0425: the cover and card-series direction skills render through `kk` and
+            // dispatch nothing.
+            'cli:kk,local-fs': 8,
             'local-fs': 5,
         });
         // No kk entity may claim hooks or subagents (kk ships none).

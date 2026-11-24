@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import {
     existsSync,
     mkdirSync,
@@ -12,10 +12,11 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
+import { fileURLToPath } from 'node:url';
 import type { BrowserLauncher, ProfileLaunchRequest } from '@gobing-ai/ts-browser-automation';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import type { BrowserContext, Cookie } from 'playwright';
-import { BotError, DEFAULT_BOT_LOGIN_TIMEOUT_MS, execBot, loginBot, openBot } from '../src/browser';
+import { BotError, DEFAULT_BOT_LOGIN_TIMEOUT_MS, execBot, loginBot, openBot, signalSafeRelease } from '../src/browser';
 import { acquireProfileLease } from '../src/profile-lease';
 
 /**
@@ -27,6 +28,7 @@ import { acquireProfileLease } from '../src/profile-lease';
  */
 
 const DEFAULT_URL = 'https://alice.example.com/home';
+const SIGINT_FIXTURE = fileURLToPath(new URL('./fixtures/session-sigint-probe.ts', import.meta.url));
 
 /**
  * True when a real Chromium is not usable here (`bunx playwright install chromium`). Decided
@@ -1055,4 +1057,124 @@ describe('bot exec (0306: one authenticated request)', () => {
         },
         60_000,
     );
+});
+
+/**
+ * 0423 R5: `kk bot open|login|replay` must release the profile lease when the operator interrupts
+ * them. Measured 2026-11-22: a Ctrl-C'd `kk bot open weibo` left `owner.json` naming its dead pid,
+ * and every later publish to that profile was refused until the lease was removed by hand.
+ *
+ * A real signal is the only honest test — the leak is a race between Playwright's own SIGINT
+ * `process.exit(130)` and the asynchronous release — so each case drives a separate `bun` process
+ * whose session never settles and interrupts it.
+ */
+describe('signal-safe lease release (0423 R5)', () => {
+    let root: string;
+    let profileRoot: string;
+    let profileDir: string;
+    let leaseRoot: string;
+
+    beforeEach(() => {
+        root = mkdtempSync(join(tmpdir(), 'kk-bot-signal-'));
+        profileRoot = join(root, 'profiles');
+        profileDir = join(profileRoot, 'alice');
+        leaseRoot = join(root, 'leases');
+    });
+    afterEach(() => {
+        rmSync(root, { recursive: true, force: true });
+    });
+
+    const leases = (): string[] => (existsSync(leaseRoot) ? readdirSync(leaseRoot) : []);
+
+    const interrupt = async (mode: 'open' | 'login' | 'replay', signal: 'SIGINT' | 'SIGTERM') => {
+        const proc = Bun.spawn(['bun', SIGINT_FIXTURE, mode, profileRoot, leaseRoot, profileDir], {
+            stdout: 'pipe',
+            stderr: 'pipe',
+        });
+        await settle(() => leases().length > 0);
+        expect(leases()).toHaveLength(1);
+        proc.kill(signal);
+        await proc.exited;
+        return proc.exitCode;
+    };
+
+    for (const mode of ['open', 'login', 'replay'] as const) {
+        test(`SIGINT during bot ${mode} releases the lease and exits 130`, async () => {
+            expect(await interrupt(mode, 'SIGINT')).toBe(130);
+            expect(leases()).toEqual([]);
+        }, 30_000);
+    }
+
+    test('the guard closes and releases exactly once and exits with the signal code (0423 R5)', async () => {
+        // In-process without emitting a real signal: the child probes above own real SIGINT/SIGTERM
+        // delivery, because an emitted signal would also reach every other listener in this shared
+        // bun process (measured 2026-11-23: an emit here terminated the whole gate run with 143).
+        // This pins the ordering, the idempotence and the exit code through the public seam.
+        const order: string[] = [];
+        const exit = spyOn(process, 'exit').mockImplementation(((code?: number) => {
+            order.push(`exit:${code}`);
+        }) as never);
+        const launchHandler = () => order.push('launch-handler');
+        try {
+            const guard = signalSafeRelease({
+                close: async () => {
+                    order.push('close');
+                },
+                release: async () => {
+                    order.push('release');
+                },
+            });
+            // The launch's own listener is parked; this guard's stays armed (task 0423 R5).
+            process.on('SIGINT', launchHandler);
+            const unpark = guard.park();
+            expect(process.listeners('SIGINT')).not.toContain(launchHandler);
+            unpark();
+            process.off('SIGINT', launchHandler);
+
+            await guard.shutdown('SIGINT');
+            expect(order).toEqual(['close', 'release', 'exit:130']);
+
+            // A second invocation (the `finally` on an interrupted run) must not release twice.
+            await guard.shutdown();
+            await guard.shutdown('SIGTERM');
+            expect(order).toEqual(['close', 'release', 'exit:130']);
+        } finally {
+            process.off('SIGINT', launchHandler);
+            exit.mockRestore();
+        }
+    });
+
+    test('a refused acquire leaves no signal handler behind (0423 R5)', async () => {
+        // The guard is armed before the lease, so a `busy` refusal must disarm it: a leaked handler
+        // would answer a later process-group signal and exit the whole host process (measured
+        // 2026-11-23: the full gate run died with 143 inside the SEO suite).
+        const session = makeSession();
+        // Seed the saved-bot metadata the open path reads before it acquires the lease.
+        mkdirSync(profileDir, { recursive: true });
+        writeFileSync(
+            join(profileDir, 'bot.json'),
+            JSON.stringify({ schemaVersion: 1, defaultUrl: DEFAULT_URL, authenticationEvidence: 'operator-confirmed' }),
+        );
+        const held = await acquireProfileLease(profileDir, { leaseRoot });
+        const before = { int: process.listeners('SIGINT').length, term: process.listeners('SIGTERM').length };
+        try {
+            await expect(
+                openBot('alice', {
+                    root: profileRoot,
+                    leaseRoot,
+                    fileSystem: createNodeFileSystem(),
+                    launcher: session.launcher,
+                }),
+            ).rejects.toThrow(/is held by pid/i);
+            expect(process.listeners('SIGINT')).toHaveLength(before.int);
+            expect(process.listeners('SIGTERM')).toHaveLength(before.term);
+        } finally {
+            await held.release();
+        }
+    }, 30_000);
+
+    test('SIGTERM releases the lease and exits 143', async () => {
+        expect(await interrupt('open', 'SIGTERM')).toBe(143);
+        expect(leases()).toEqual([]);
+    }, 30_000);
 });
