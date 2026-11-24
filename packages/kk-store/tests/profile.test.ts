@@ -45,7 +45,11 @@ describe('parseProfile', () => {
             { decisionId: 'kk-item-china-politics', op: 'lte', value: 1 },
         ]);
         expect(profile.order).toEqual([
+            // 2026-11-23: importance sits above impact — with `[urgency, impact]` alone a same-day
+            // tie was broken by raw engagement and 60 YouTube videos evicted every rss/hackernews
+            // story from the capped pool.
             { decisionId: 'kk-item-urgency', direction: 'desc' },
+            { decisionId: 'kk-item-importance', direction: 'desc' },
             { decisionId: 'kk-item-impact', direction: 'desc' },
             { column: 'first_seen_at', direction: 'desc' },
         ]);
