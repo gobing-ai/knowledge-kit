@@ -293,6 +293,89 @@ describe('wechatmp insertAudioMaterial live upload & save waits', () => {
         expect(res.warning).toContain('未达到 100%');
     });
 
+    test('accepts the settled upload form — file card + duration, no 重新上传 and no 100% (2026-11-23)', async () => {
+        // The console replaced the transient upload state with a settled one: the picked file's own
+        // card (name + 「14分钟」) with 保存 enabled. Waiting only for `重新上传 + 100%` abandoned a
+        // COMPLETED upload, so the MP draft saved without audio on every attempt.
+        const dir = makeTmpDir('kk-wx-audio-settled-');
+        const mp3 = join(dir, 'ep.mp3');
+        const cover = join(dir, 'cover.png');
+        writeFileSync(mp3, 'mp3');
+        writeFileSync(cover, 'png');
+
+        let uploadOpen = true;
+        let chooserOpen = false;
+        let insertAttempts = 0;
+
+        const page = {
+            url: () => 'https://mp.weixin.qq.com/cgi-bin/appmsg',
+            waitForTimeout: async () => undefined,
+            press: async () => undefined,
+            click: async () => undefined,
+            fill: async () => undefined,
+            setInputFiles: async () => undefined,
+            locator: (selector: string) => {
+                const count = (): number => {
+                    if (selector.includes('选择图片')) return chooserOpen ? 1 : 0;
+                    // No 重新上传 affordance and no progress read: the settled form only.
+                    if (selector.includes('重新上传')) return 0;
+                    if (selector.includes('占用')) return 0;
+                    if (selector.includes('h3.weui-desktop-dialog__title:text-is("上传音频")'))
+                        return uploadOpen ? 1 : 0;
+                    if (selector.includes('上一步')) return chooserOpen ? 1 : 0;
+                    return 1;
+                };
+                return {
+                    count: async () => count(),
+                    first: () => ({
+                        count: async () => count(),
+                        isVisible: async () => (selector.includes('选择图片') ? chooserOpen : count() > 0),
+                        fill: async () => undefined,
+                        waitFor: async () => undefined,
+                        click: async () => {
+                            if (selector.includes('上传封面')) chooserOpen = true;
+                            if (selector.includes('完成')) chooserOpen = false;
+                        },
+                        textContent: async () =>
+                            selector.includes('h3.weui-desktop-dialog__title') && uploadOpen ? '上传音频' : '',
+                    }),
+                };
+            },
+            evaluate: async (script: string) => {
+                // The settled upload form: the picked file's own card (name + 「<n>分钟」), no
+                // 重新上传 affordance and no progress read — the only shape this console leaves.
+                if (script.includes('input[name=audio_id]') && script.includes('分钟'))
+                    return String(script.includes('"ep"'));
+                if (script.includes('input[name=audio_id]')) return '';
+                // The material list: empty before the save, the new row afterwards.
+                if (script.includes('frm_checkbox_label.audio_item'))
+                    return uploadOpen ? 'missing' : JSON.stringify({ state: 'checked', identity: 'media-9' });
+                if (script.includes('#js_image_dialog_list_wrp')) return true;
+                if (script.includes('row.classList.contains')) return true;
+                if (script.includes('weui-desktop-img-picker__img-title')) return 0;
+                if (script.includes('我已阅读并同意')) return 'checked';
+                if (script.includes('btn.click()') && script.includes('保存')) {
+                    uploadOpen = false;
+                    return 'clicked';
+                }
+                if (script.includes("trim() === '插入'")) {
+                    insertAttempts += 1;
+                    return true;
+                }
+                if (script.includes("state: 'noeditor'")) return JSON.stringify({ state: 'top', identity: 'media-9' });
+                return undefined;
+            },
+        } as unknown as WechatPage;
+
+        const res = await insertAudioMaterial(
+            page,
+            { title: 'Ep 1', audioPath: mp3, coverPath: cover },
+            { uploadWaitMs: 400, saveCloseWaitMs: 15, saveDispatchWaitMs: 15, rowRetries: 1 },
+        );
+        expect(res.warning).toBe('');
+        expect(insertAttempts).toBe(1);
+    });
+
     test('succeeds on live upload path after JS-dispatch save close and delayed 插入 retry', async () => {
         const dir = makeTmpDir('kk-wx-audio3-');
         const mp3 = join(dir, 'ep.mp3');
