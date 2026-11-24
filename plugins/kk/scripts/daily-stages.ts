@@ -424,6 +424,15 @@ function readSpokenRatio(workDir: string): SpokenRatio {
     } catch {
         return { ratio: SPEAK_CHAR_EXPANSION_FLOOR, source: 'default 0.28 (no sibling runs)' };
     }
+    // Best-effort calibration only: a test workdir or an operator scratch dir may sit directly in a
+    // shared temp parent with hundreds of thousands of entries. Scanning each one took 20–40s per QC
+    // stage (measured 2026-11-23 on a 556k-entry tempdir), so skip the sibling calibration instead of
+    // blocking the run. Normal works roots have far fewer runs and keep the newest-ratio behavior.
+    if (entries.length > 5_000)
+        return {
+            ratio: SPEAK_CHAR_EXPANSION_FLOOR,
+            source: `default 0.28 (sibling scan skipped: ${entries.length} entries)`,
+        };
     for (const entry of entries) {
         const dir = join(base, entry, '21-plan');
         let files: string[] = [];
@@ -464,31 +473,50 @@ function readKeptRatio(workDir: string): SpokenRatio {
     let newest: { at: number; ratio: number; from: string } | null = null;
     let entries: string[] = [];
     try {
+        // A shared temp parent can hold hundreds of thousands of directories. Read names once and
+        // open only run-shaped candidates past the small-workspace threshold; opening every one took
+        // 20–40s per QC stage (556k entries measured 2026-11-23).
         entries = readdirSync(base);
     } catch {
         return { ratio: SPEAK_CHAR_EXPANSION_FLOOR, source: 'default 0.28 (no sibling runs)' };
     }
-    for (const entry of entries) {
-        const dir = join(base, entry, '21-plan');
-        let files: string[] = [];
-        try {
-            files = readdirSync(dir).filter((file) => file.endsWith(SPOKEN_RATIO_SUFFIX));
-        } catch {
-            continue;
-        }
-        for (const file of files) {
-            const path = join(dir, file);
+    const ratioFiles: string[] = [];
+    if (entries.length > 5_000) {
+        // Native globbing skips the non-run directories instead of opening each of them in JS. The
+        // `kk-*` form measured ~2s on that same parent; a bare `*` can hit broken symlinks.
+        for (const pattern of [`kk-*/21-plan/*${SPOKEN_RATIO_SUFFIX}`, `20??????/21-plan/*${SPOKEN_RATIO_SUFFIX}`]) {
             try {
-                const parsed = readJson(path) as Record<string, unknown> | null;
-                // A pre-2026-11-16 record carries no kept ratio at all: skip it rather than divide by
-                // its pool figure, which is what produced the double discount.
-                const ratio = Number(parsed?.keptRatio);
-                if (!Number.isFinite(ratio) || ratio <= 0) continue;
-                const at = statSync(path).mtimeMs;
-                if (newest === null || at > newest.at) newest = { at, ratio, from: path };
+                ratioFiles.push(...new Bun.Glob(pattern).scanSync({ cwd: base, onlyFiles: true, absolute: true }));
             } catch {
-                // A malformed record is not evidence; the next run overwrites it.
+                // Best-effort calibration: a shared temp parent holds dangling symlinks and dirs that
+                // vanish mid-scan (ENOENT from the glob walk), which must never fail the QC stage.
             }
+        }
+    } else {
+        for (const entry of entries) {
+            const dir = join(base, entry, '21-plan');
+            try {
+                ratioFiles.push(
+                    ...readdirSync(dir)
+                        .filter((file) => file.endsWith(SPOKEN_RATIO_SUFFIX))
+                        .map((file) => join(dir, file)),
+                );
+            } catch {
+                // Not every sibling is a run directory.
+            }
+        }
+    }
+    for (const path of ratioFiles) {
+        try {
+            const parsed = readJson(path) as Record<string, unknown> | null;
+            // A pre-2026-11-16 record carries no kept ratio at all: skip it rather than divide by
+            // its pool figure, which is what produced the double discount.
+            const ratio = Number(parsed?.keptRatio);
+            if (!Number.isFinite(ratio) || ratio <= 0) continue;
+            const at = statSync(path).mtimeMs;
+            if (newest === null || at > newest.at) newest = { at, ratio, from: path };
+        } catch {
+            // A malformed record is not evidence; the next run overwrites it.
         }
     }
     if (newest === null) return { ratio: SPEAK_CHAR_EXPANSION_FLOOR, source: 'default 0.28 (no recorded kept ratio)' };
