@@ -350,4 +350,7 @@ export const SHP_CONFIG: ChannelBrowserConfig = {
     isAuthenticated: isShipinhaoAuthenticated,
     loginTimeoutMs: SHP_LOGIN_TIMEOUT_MS,
     checkHeadedOnly: false,
+    // The Channels console attaches its creator form only after a heavy hydrate: a live session
+    // verified at 90s and refused at the default check's ~18s headless slice (2026-11-23, twice).
+    checkTimeoutMs: 180_000,
 };
