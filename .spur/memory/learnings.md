@@ -2711,3 +2711,42 @@ Verification of this wrap
   and its editor test with the still-unmerged 0423 (`e258d2ed`); building against `main` would have
   produced a conflict in a 3208-line file. The right stop is *before* the first edit.
 
+## 2026-11-23 — feature L4 batch (`runall-L4-5c3f`), tasks 0424 / 0425 / 0426
+
+### 0426 — inline figures in the reviewed WeChat article
+
+- **Pattern: the receipt is the single source of truth.** A rendered figure is usable only when its
+  receipt still matches the article body hash, the render settings and the image's own SHA-256. Every
+  consumer (variant materialization, adapter) re-proves those three facts instead of trusting a
+  neighbouring stage's PASS — that is what makes "resume" and "refuse" the same code path.
+- **Pattern: validate the whole plan before the first paid call.** Anchors, order, source ids, the
+  drafts verdict and the target admission are all checked up front, so a bad plan costs zero provider
+  requests. Nine tests assert "zero `kk` invocations" for the refusal cases; that assertion is the
+  cheapest guard against a future reordering that spends before validating.
+- **Gotcha (cost: ~40 min twice): a worktree that edits `plugins/kk/{scripts,workflows}` must re-run
+  `bun scripts/bundle-plugins.ts`.** The launch preflight compares the checkout's `plugins/` against
+  the bundled `apps/cli/plugins/` copy; a stale bundle makes **every** `kk … generate` refuse with
+  `checkout diverges from installed kk`, and the symptom looks like a logic bug in the launch path.
+- **Gotcha: the boundary rule `no-direct-fs-io` rejects `node:fs` in a publish plugin.** Hash bytes
+  through the module's own reader (`readLocalImageBytes`) — it also gives you extension/readability/
+  size validation for free, so the "unreadable figure" error path is the same one.
+- **Convention: a second `kk stage` call in the news DAG is a declared exception, not an ad-hoc
+  `node.id !== …`.** 0409 set the precedent (`localize-check`); 0426's `illustrations-render` joined it
+  through one `STAGE_NODE_EXCEPTIONS` set used by both assertions in the DAG test.
+- **Convention: depend on `safety` AND `review`, not one of them.** A node whose deps are ALL skipped
+  is skipped, so `[review]` alone silently drops work under `--skip-review`; `[safety]` alone runs
+  before the operator approves the body; done+skipped is a mix, so the pair gives both properties.
+
+### Batch-level
+
+- **Rebase before concluding a test is broken.** `daily-cache-recovery` hung for 90 s in the worktree;
+  a pristine checkout at the batch's base (`5caf5438`) failed identically while `main` passed — the
+  branch was simply behind a fix. Checking a pristine base tree took 5 minutes and turned a suspected
+  regression into a one-command rebase.
+- **`.coverage` is per-tree evidence.** `bun run test` writes it, a scoped `bun test` overwrites it,
+  and the light gate's `rules:post` judges whatever is there. Each worktree task pays one full suite
+  before its gate; budget ~35–45 min and never re-run a scoped test between the suite and the gate.
+- **Keep test scratch out of commits.** A `find`-based staging pass picked up
+  `plugins/publishings/*/.works/tmp/**`; stage explicit paths, and prefer `git rm --cached` + amend
+  when it happens.
+
