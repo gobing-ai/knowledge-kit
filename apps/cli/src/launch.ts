@@ -344,7 +344,13 @@ async function runPreflight(
             )),
         ];
         if (diffs.length > 0) {
-            reasons.push(`checkout diverges from installed kk (${install}): ${diffs.join('; ')}`);
+            // The fix is a one-liner and the bare list of differing files does not say it. In a
+            // worktree the stale side is usually the bundled copy (`apps/cli/plugins`, gitignored and
+            // produced by `scripts/bundle-plugins.ts`); outside one it is the install, refreshed by
+            // reinstalling the package.
+            reasons.push(
+                `checkout diverges from installed kk (${install}): ${diffs.join('; ')} — refresh the stale side: \`bun scripts/bundle-plugins.ts\` in a checkout, or reinstall the package when the install is behind`,
+            );
         }
     }
     // The default posture (agent: inline) is proven through the probe node's own role.

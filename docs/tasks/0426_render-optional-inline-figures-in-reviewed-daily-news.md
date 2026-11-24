@@ -4,7 +4,7 @@ name: Render optional inline figures in reviewed daily news
 status: done
 template: feature-impl
 created_at: 2026-11-23T01:20:51.117Z
-updated_at: "2026-11-24T06:18:29.902Z"
+updated_at: "2026-11-24T06:46:29.814Z"
 feature_id: L4
 priority: P2
 tags:
@@ -158,7 +158,8 @@ own fakes; the live console's upload DOM contract is assumed. First opt-in run s
   files 0423 rewrote in `e258d2ed`, which is on `sp/run-0423-63d9` and still `wip` — not on `main`
   (this batch's base `febce48`). Operator decision: do not build against a moving file and do not
   import another session's unmerged commit. The implement stage raised the question through the
-  escalation contract (`.spur/run/0426-question.md`); the escalate hop then failed on a pipeline
+  escalation contract (the question was recorded in that batch's report,
+  `.spur/run/worktree-runall-L4-0ad4-batch-report.md`, and its run record); the escalate hop then failed on a pipeline
   defect (`file.read.into-var: path is required` — the shared `task-pipeline` v9 `escalate` state
   passes `file:` where the action contract requires `path:`), so the run closed `failed` at
   `escalate` and the status stayed `wip` with an empty `## Solution`. **No work to preserve:**
@@ -172,11 +173,19 @@ own fakes; the live console's upload DOM contract is assumed. First opt-in run s
   `assertInlineFigureTarget` / `dailyInlineIllustrations` — one pinned `job: illustration` request per
   figure, per-figure receipts binding body hash, settings and image SHA-256, verified-byte reuse);
   the `illustrations-plan` / `illustrations-render` DAG nodes (opt-in + pool gated) with `variants`
-  waiting on them; and the skill's mode `inline`. Green: content-launch 20/20, news DAG 12/12, inline
-  stage 5/5, typecheck + biome clean. Remaining: variant materialization (markers,
-  `metadata.wechatmp.inlineFigures`, staleness refusal) and the `wechatmp-pub` adapter
-  insertion/DOM verification. Progress note and resume command:
-  `.spur/run/0426-inline-progress.md`.
-- 2026-11-24T06:18:28.840Z wip → testing (system)
-- 2026-11-24T06:18:29.899Z testing → done (system)
+
+waiting on them; and the skill's mode `inline`. Green at that slice: content-launch 20/20, news DAG
+  12/12, inline stage 5/5, typecheck + biome clean.
+- 2026-11-23 batch `runall-L4-5c3f` (**completed**): the remaining two slices landed and the task
+  closed `done` with verdict PASS. `daily-stages.ts` now proves every figure against its render receipt
+  before a marker exists (`inlineFigureMaterials`), materializes `![alt](kk-inline:figure-N)` + a caption
+  paragraph only in `article@wechatmp-pub`, and pins `metadata.wechatmp.inlineFigures`;
+  `wechatmp-pub/src/flow.ts` validates that metadata, uploads the figures through the editor's own
+  image input, inserts the body with each figure at its anchor and verifies URL/alt/caption/order in
+  the DOM before save. The gate failed once (`no-direct-fs-io` on a `node:fs` import plus a fixture
+  cast), was remediated by hashing through the plugin's `readLocalImageBytes`, and passed on the
+  recheck; review passed with one recorded residual (the editor branch is verified against the
+  module's fakes, not the live console — first real opt-in run should be a draft). The branch was
+  rebased onto `d2121a21` and then onto the current `main`. Progress note:
+  `.spur/run/runall-L4-5c3f-0426-progress.md`.
 
