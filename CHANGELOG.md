@@ -1,5 +1,118 @@
 ## [Unreleased]
 
+## [0.1.25] - 2026-11-24
+
+### Added
+
+- feat(news): centralize daily cover and card illustration direction (61c8cca4)
+<!-- src: apps/cli/src/commands/content-launch.ts:370 · confidence: HIGH -->
+
+- feat(news): inline figure admission, plan validation and renderer (b4d0506e)
+<!-- src: apps/cli/src/commands/content-launch.ts:373 · confidence: HIGH -->
+
+- feat(news): materialize inline figures in the WeChat variant and place them at their anchors (228407f8)
+<!-- src: plugins/kk/scripts/daily-stages.ts:2314 · confidence: HIGH -->
+
+- feat(article-publish): add Weibo target, Medium browser fallback, and --adapt-only (5c91399c)
+<!-- src: apps/cli/src/commands/content-launch.ts:397 · confidence: HIGH -->
+
+
+### Fixed
+
+- fix(cli): name the repair when the launch preflight sees a diverged copy (d737e621)
+<!-- src: apps/cli/src/launch.ts:352 · confidence: HIGH -->
+
+- fix(publish): hash figure bytes through the plugin reader, not node:fs (6e450d72)
+<!-- src: plugins/publishings/wechatmp-pub/src/flow.ts:764 · confidence: HIGH -->
+
+- fix(wechatmp-pub): pin the publish behaviour against the WeChat console (9feed6d2)
+<!-- src: plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:3193 · confidence: HIGH -->
+
+- fix(shipinhao-pub): probe the session headed and honour the channel posture (6971f345)
+<!-- src: plugins/publishings/shipinhao-pub/src/flow.ts:1030 · confidence: HIGH -->
+
+- fix(wechatmp-pub): accept the console settled audio-upload form (814df9e5)
+<!-- src: plugins/publishings/wechatmp-pub/src/flow.ts:3238 · confidence: HIGH -->
+
+- fix(publish): complete the WeChat MP body, image and cover insertion (1b44b419)
+<!-- src: plugins/publishings/wechatmp-pub/src/flow.ts:658 · confidence: HIGH -->
+
+- fix(publish): arm the lease guard before acquiring a bot profile (0ceee981)
+<!-- src: packages/publish-harness/src/bot-replay.ts:277 · confidence: HIGH -->
+
+- fix(cli): count the card series one level down (abe9a641)
+<!-- src: apps/cli/src/commands/content-generate.ts:882 · confidence: HIGH -->
+
+- fix(wechatmp-pub): report what the audio dialog shows when the upload stalls (2549905e)
+<!-- src: plugins/publishings/wechatmp-pub/src/flow.ts:3254 · confidence: HIGH -->
+
+- fix(publish-harness): let a channel set its own session-check deadline (6dd6da82)
+<!-- src: packages/publish-harness/src/browser.ts:94 · confidence: HIGH -->
+
+- fix(episode-plan-gen): keep identity-bearing query params in the URL dedup key (e7a82805)
+<!-- src: plugins/generations/episode-plan-gen/src/index.ts:291 · confidence: HIGH -->
+
+- fix(cli): pass item sourceUri into the store label heuristic (07e0d02b)
+<!-- src: apps/cli/src/commands/store.ts:307 · confidence: HIGH -->
+
+- fix(publish): honest drafts, headed Medium and signal-safe bot leases (5caf5438)
+<!-- src: apps/cli/src/bot-adapter.ts:141 · confidence: HIGH -->
+
+- fix(cli): isolate help exit codes from signal state (032faf41)
+<!-- src: apps/cli/src/main.ts:48 · confidence: HIGH -->
+
+- fix(news-editorial): align the OG promo guidance and close 0410 (2bcbc51c)
+<!-- src: plugins/kk/skills/news-editorial/SKILL.md:105 · confidence: HIGH -->
+
+- fix(publish): enable Weibo OG card mode and move social promo posts to after-generate (e6390567)
+<!-- src: plugins/kk/scripts/daily-stages.ts:2664 · confidence: HIGH -->
+
+- fix(daily-stages): merge short WeChat key points and shrink the longest point on card overflow (e2aa8e53)
+<!-- src: plugins/kk/scripts/daily-stages.ts:2259 · confidence: HIGH -->
+
+- fix(article-publish): publish seeded articles and keep drafts off live (bf39bf38)
+<!-- src: apps/cli/src/commands/content-generate-article.ts:509 · confidence: HIGH -->
+
+- fix(episode-plan-gen): scale the per-source cap with plan_max_items and backfill to the spoken-char floor (65dcc41d)
+<!-- src: plugins/generations/episode-plan-gen/src/index.ts:191 · confidence: HIGH -->
+
+
+### Changed
+
+- perf(news): glob kept-ratio records instead of opening every sibling (5d59097f)
+<!-- src: plugins/kk/scripts/daily-stages.ts:431 · confidence: HIGH -->
+
+- chore(daily-stages): keep the WeChat MP reward opt-out until the account is authorized (c1ad1af7)
+<!-- src: plugins/kk/scripts/daily-stages.ts:2437 · confidence: HIGH -->
+
+- chore(features): sync the G61 status after task 0422 (f1813dfd)
+
+- chore(wrap): dev-run --all 0426,0427 close-out writes (5dab360e)
+
+- chore(wrap): dev-run --all feature:L4 close-out writes (37dcd04b)
+
+
+### Other
+
+- test(shipinhao-pub): follow the headed-only preflight (26bd159c)
+<!-- src: plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts:545 · confidence: HIGH -->
+
+- test(store): follow the importance-first pool order and the sourcedness bonus (4bf766ea)
+<!-- src: apps/cli/tests/store-extract.test.ts:186 · confidence: HIGH -->
+
+- test(publish): pin social promo RSS decoupling (1a517197)
+<!-- src: apps/cli/tests/publish-matrix.test.ts:830 · confidence: HIGH -->
+
+- docs(features): plan B8 MCP tool registration with task 0428 (04ce4a56)
+
+- docs(tasks): record the 0423 shippable pass on main (d2121a21)
+
+- docs(features): file the L4 daily news visual skills with ADR-057 and tasks 0424-0427 (febce484)
+
+- docs(tasks): update tasks after refinement (ea8d9b79)
+
+- docs(tasks): file the 0423 a2ui-intro publish follow-up (d0be4a37)
+
 ## [0.1.24] - 2026-11-22
 
 ### Added
