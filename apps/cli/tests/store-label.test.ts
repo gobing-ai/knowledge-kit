@@ -526,6 +526,26 @@ describe('kk store label — raw observations (0226 R1/R2)', () => {
         expect(judgment.get('kk-item-audience')?.value).toBe('general');
     });
 
+    it('heuristic quality sees the item sourceUri — a sourced 400-char body scores 2, an unsourced one 1', async () => {
+        // 2026-11-23: the label pass built its label-mode Doc without `sourceUri`, so
+        // `scoreDimensions` never granted the sourcedness level and every short-but-sourced ingest
+        // summary scored quality 1 — the extract profile's `gte: 2` then emptied the daily pool.
+        const dir = tempDir();
+        const body = 'OpenAI released a new model this week. '.repeat(10);
+        const sourced: Doc = doc('sourced-body', 'Sourced report', body, { source: 'rss' });
+        const unsourced: Doc = { id: 'unsourced-body', title: 'Unsourced report', body, metadata: { source: 'rss' } };
+        const seeded = await seed(dir, [sourced, unsourced]);
+        const stub = stubHub(dir, acceptedAnswers('ai-news', [5, 4, 3, 2]));
+
+        const result = await run(['store', 'label', '--run', 'run-1', '--new-ids', seeded.newIds, '--db', seeded.db], {
+            KK_DECISION_HUB_ANSWERS: stub,
+        });
+        expect(result.code, result.err).toBe(0);
+
+        expect(rowsFor(seeded.db, idAt(seeded.ids, 0), 'heuristic').get('kk-item-quality')?.value).toBe('2');
+        expect(rowsFor(seeded.db, idAt(seeded.ids, 1), 'heuristic').get('kk-item-quality')?.value).toBe('1');
+    });
+
     it('R2 (0317) — a routed item keeps BOTH observations, and only the graded dimensions stay unrouted', async () => {
         const dir = tempDir();
         const seeded = await seed(dir, [AMBIGUOUS()]);

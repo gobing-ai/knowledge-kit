@@ -540,7 +540,9 @@ describe('1. declared surface (selectors, constants, config, operations, manifes
         expect(SHP_CONFIG.channel).toBe('shipinhao');
         expect(SHP_CONFIG.homeUrl).toBe(SHP_HOME_URL);
         expect(SHP_CONFIG.loginTimeoutMs).toBe(SHP_LOGIN_TIMEOUT_MS);
-        expect(SHP_CONFIG.checkHeadedOnly).toBe(false);
+        // 2026-11-23 (operator decision): the console's creator form attaches unreliably in a
+        // headless pass even on a live session, so this channel probes headed only.
+        expect(SHP_CONFIG.checkHeadedOnly).toBe(true);
         expect(SHP_CONFIG.isAuthenticated).toBe(isShipinhaoAuthenticated);
     });
 
@@ -1114,11 +1116,10 @@ describe('5. session preflight', () => {
         expect(result.ok).toBe(false);
         expect(result.error).toContain('shipinhao session preflight refused — run:');
         expect(result.error).toContain(SHP_LOGIN_INSTRUCTION);
-        // One read-only pass: the auth wait spends the whole check budget, and the headed fallback is
-        // only launched when the first pass fails fast enough to leave room for it (2026-11-19; a
-        // second launch inside one deadline is what made `kk plugin check` kill the probe before it
-        // could print). Still no flow work, no click, and the context closed.
-        expect(fake.requests).toEqual([{ profileDir: DEFAULT_DIR, headless: true }]);
+        // One read-only pass, headed since the channel's 2026-11-23 posture: the console's readiness
+        // predicate attaches unreliably headless even on a live session, and the probe never
+        // escalates — it is headed by design. Still no flow work, no click, and the context closed.
+        expect(fake.requests).toEqual([{ profileDir: DEFAULT_DIR, headless: false }]);
         expect(fake.close()).toBe(1);
         expect(fake.calls.some((call) => call.startsWith('click:'))).toBe(false);
     });
@@ -1142,7 +1143,9 @@ describe('5. session preflight', () => {
         expect(result.ok).toBe(false);
         expect(result.error).toContain('shipinhao session failed — run:');
         expect(result.error).toContain(SHP_LOGIN_INSTRUCTION);
-        expect(fake.requests.map((request) => request.headless)).toEqual([true, false]);
+        // Headed-only posture: one read-only headed preflight pass, no headless attempt, then the
+        // flow's own headed visit.
+        expect(fake.requests.map((request) => request.headless)).toEqual([false, false]);
         expect(fake.close()).toBe(2);
         expect(fake.calls.some((call) => call.startsWith('setInputFiles:'))).toBe(false);
     });
@@ -1183,8 +1186,9 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
         expect(fake.calls.some((call) => call.startsWith('paste:wujie|'))).toBe(true);
         expect(fake.calls).toContain(`setInputFiles:wujie-app ${VIDEO_INPUT}|${VIDEO_PATH}`);
         expect(fake.calls).toContain(`click:wujie-app ${SAVE}`);
-        // Two contexts: the read-only headless preflight, then the headed flow.
-        expect(fake.requests.map((request) => request.headless)).toEqual([true, false]);
+        // Two contexts: the read-only headed preflight (the channel's headed-only posture), then
+        // the headed flow.
+        expect(fake.requests.map((request) => request.headless)).toEqual([false, false]);
         expect(fake.close()).toBe(2);
     });
 

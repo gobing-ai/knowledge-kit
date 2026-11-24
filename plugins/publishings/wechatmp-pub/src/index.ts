@@ -298,7 +298,10 @@ export const wechatSessionConfig: ChannelBrowserConfig = {
  * trying.
  */
 async function defaultOpenConsole(profileDir: string): Promise<OpenedConsole> {
-    const { page, context } = await openWithState(profileDir, true);
+    // Headless is the unattended default (ADR-026). `WECHATMP_HEADLESS=false` is the operator repro
+    // switch: the 音频 upload dialog's progress text is rendered by the console, and a headed pass is
+    // the only way to see what it actually shows when the upload never reads 100% (2026-11-23).
+    const { page, context } = await openWithState(profileDir, process.env.WECHATMP_HEADLESS !== 'false');
     return {
         ...wrapPlaywrightContext(context, page),
         persistSession: () => persistWechatSessionState(context, profileDir),

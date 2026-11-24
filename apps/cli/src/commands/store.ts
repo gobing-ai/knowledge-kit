@@ -299,6 +299,12 @@ interface LabelItem {
     title: string;
     body: string;
     source: string;
+    /**
+     * `items.canonical_url` — the Doc's `sourceUri`. The plugin's quality score grants a sourcedness
+     * level to a substantiated body that carries one, so dropping it here silently re-scored every
+     * sourced item one level lower (2026-11-23: fresh pool 6 → 19 after the field was passed again).
+     */
+    sourceUri: string | null;
     /** `items.content_hash` — stamped on every observation, so an edited item's answers stay attributable. */
     contentHash: string;
     /** Parsed `items.metadata_json` — the Doc metadata the heuristic reads (tags, engagement, relevance). */
@@ -407,6 +413,7 @@ async function readLabelItems(items: ItemsDao, ids: readonly string[]): Promise<
             title: row.title,
             body: row.body,
             source: row.source,
+            sourceUri: row.canonicalUrl,
             contentHash: row.contentHash,
             metadata: parseMetadata(row.metadataJson),
         });
@@ -487,6 +494,7 @@ async function heuristicAnnotations(
         id: item.id,
         title: item.title,
         body: item.body,
+        ...(item.sourceUri === null ? {} : { sourceUri: item.sourceUri }),
         metadata: item.metadata,
     }));
     await fs.writeFile(inputPath, JSON.stringify(docs));

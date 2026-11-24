@@ -189,6 +189,22 @@ describe('resolveChannelProfileDir', () => {
 });
 
 describe('checkChannelSession', () => {
+    test('a config checkTimeoutMs bounds the probe when the caller passes no deadline', async () => {
+        // channels.weixin.qq.com verified a live session at 90s and refused at the default check's
+        // ~18s headless slice (2026-11-23): the channel's own deadline has to reach the check.
+        const { launcher } = makeLauncher();
+        const result = await checkChannelSession(
+            { ...CONFIG, isAuthenticated: async () => false, checkTimeoutMs: 9_000 },
+            { profileDir: DEFAULT_DIR, launcher, headedOnly: true },
+        );
+
+        expect(result.status).toBe('refused');
+        const passBudget = Number(/within (\d+)ms/.exec(result.detail)?.[1] ?? Number.NaN);
+        // The default 30s budget slices to a 10s pass; the channel's 9s budget must slice lower.
+        expect(passBudget).toBeGreaterThan(0);
+        expect(passBudget).toBeLessThan(10_000);
+    });
+
     test('verified headless probe reports the profile dir, no headed retry', async () => {
         const { launcher, requests, closeCount } = makeLauncher();
         const result = await checkChannelSession(CONFIG, { profileDir: DEFAULT_DIR, launcher });

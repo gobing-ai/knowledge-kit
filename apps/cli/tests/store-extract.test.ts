@@ -175,20 +175,21 @@ describe('kk store extract', () => {
         expect(result.code).toBe(0);
         // 2026-10-21: the profile admits the whole AI taxonomy, so the two `ai-research` items are
         // pool members too. Order: urgency desc (newsB 5, research 3, newsA 2, research2 2), then
-        // impact desc breaks the urgency-2 tie.
+        // importance desc breaks the urgency-2 tie (research2 4 before newsA 3) — 2026-11-23 put
+        // importance above impact so a same-day tie is not decided by raw engagement.
         expect(JSON.parse(result.out)).toEqual({ count: 4 });
         const docs = pool(out);
         expect(docs.map((doc) => doc.id)).toEqual([
             itemId(CORPUS.newsB),
             itemId(CORPUS.research),
-            itemId(CORPUS.newsA),
             itemId(CORPUS.research2),
+            itemId(CORPUS.newsA),
         ]);
         expect(docs.map((doc) => doc.title)).toEqual([
             'Model launch',
             'Alignment paper',
-            'Chip funding',
             'Benchmark paper',
+            'Chip funding',
         ]);
         expect(docs[0]).toEqual({
             id: itemId(CORPUS.newsB),
@@ -483,8 +484,8 @@ describe('kk store extract — the topic-scoped selection exclusion (R4/AC2)', (
         expect(pool(join(dir, 'included.json')).map((entry) => entry.id)).toEqual([
             itemId(CORPUS.newsB),
             itemId(CORPUS.research),
-            itemId(CORPUS.newsA),
             itemId(CORPUS.research2),
+            itemId(CORPUS.newsA),
         ]);
 
         // The ai-research selection did NOT exclude anything from ai-news, and the ai-news

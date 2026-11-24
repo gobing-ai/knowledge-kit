@@ -1023,6 +1023,11 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
         const session = await checkChannelSession(SHP_CONFIG, {
             profileDir,
             launcher: this.launcher,
+            // The channel's own posture decides the pass order: `SHP_CONFIG.checkHeadedOnly` is the
+            // operator's measured setting (the console refuses the headless probe even on a live
+            // session), and only `runProfileCli` read it before — so `check` verified what `publish`
+            // kept refusing (2026-11-23).
+            headedOnly: SHP_CONFIG.checkHeadedOnly === true,
             // Headless first, then one read-only headed pass (same rail as xhs-pub): shipinhao's
             // dashboard regularly paints past a 30-90s headless poll on a healthy session, and the
             // shipped probe (`profile-check check`) has always used this fallback — the publish

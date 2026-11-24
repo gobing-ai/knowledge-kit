@@ -169,16 +169,16 @@ describe('kk store label — the shared 0..5 score ladder (0317 R1/AC1)', () => 
             }
         }
 
-        // The heuristic writes its own level on the SAME ladder: a 400-char rss body is rubric line 1
-        // of `kk-item-quality` ("headline echo — a stub body under 300 characters" is 1; 400 chars is
-        // still the first substantive line the heuristic can emit), and `kk-item-importance` is 3 for
-        // a ranked rss feed. Neither is shifted, so a model level 1 and a heuristic level 1 mean the
-        // same rubric line.
+        // The heuristic writes its own level on the SAME ladder: a 400-char rss body carrying a
+        // source URL is rubric line 2 — one step for the body length, one for the sourcedness bonus
+        // `scoreDimensions` grants a substantiated sourced body (2026-11-23: the label pass stopped
+        // dropping `sourceUri`, so that bonus applies) — and `kk-item-importance` is 3 for a ranked
+        // rss feed. Neither is shifted, so a model level and a heuristic level mean the same line.
         const heuristicQuality = rows.find(
             (row) => row.run_id === 'run-scale-0' && row.item_id === ids[0] && row.decision_id === 'kk-item-quality',
         );
-        expect(heuristicQuality?.value).toBe('1');
-        expect(heuristicQuality?.score).toBe(1);
+        expect(heuristicQuality?.value).toBe('2');
+        expect(heuristicQuality?.score).toBe(2);
         const heuristicImportance = rows.find(
             (row) => row.run_id === 'run-scale-0' && row.item_id === ids[0] && row.decision_id === 'kk-item-importance',
         );

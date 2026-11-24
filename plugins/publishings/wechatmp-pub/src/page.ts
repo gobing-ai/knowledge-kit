@@ -55,6 +55,11 @@ export interface WechatPage {
     press?(key: string): Promise<void>;
     /** The page's frames, for naming what a failed read actually contained. */
     frames?(): WechatFrame[];
+    /**
+     * Save a PNG of the page. Diagnostics only: a console dialog that fails to reach a state the
+     * text probes can read is otherwise unobservable (the 2026-11-23 音频 upload stall).
+     */
+    screenshot?(path: string): Promise<void>;
 }
 
 /** One frame of the console page: enough to name it and count a signal inside it. */
@@ -353,6 +358,9 @@ export function wrapPlaywrightPage(raw: unknown): WechatPage {
             },
         }),
         setInputFiles: (selector, paths) => pw.setInputFiles(selector, paths),
+        screenshot: async (path) => {
+            await (raw as Page).screenshot({ path });
+        },
         url: () => pw.url(),
         evaluate: (expression) => pw.evaluate(expression),
         waitForTimeout: (ms) => pw.waitForTimeout(ms),

@@ -84,6 +84,14 @@ export interface ChannelBrowserConfig {
     isAuthenticated: IsAuthenticatedPredicate;
     /** Deadline for the interactive login wait (default 180_000). */
     loginTimeoutMs?: number;
+    /**
+     * Deadline for one session check, headless pass + headed fallback (default 30_000). The whole
+     * budget is split between the passes, so a heavy SPA whose console attaches its creator form
+     * late refuses on the default even with a live session: channels.weixin.qq.com verified at 90s
+     * and refused at the 18s headless slice (2026-11-23). Applies to the CLI and to the publish
+     * preflight, which spawns the same `check` verb with no flags.
+     */
+    checkTimeoutMs?: number;
     /** Check headed only — for channels whose WAF 451s every headless load (measured infoq 0201/0191). {@link runProfileCli} plumbs it to {@link checkChannelSession}. */
     checkHeadedOnly?: boolean;
     /**
@@ -437,7 +445,7 @@ export async function checkChannelSession(
     config: ChannelBrowserConfig,
     opts: ChannelSessionOptions,
 ): Promise<ChannelSessionResult> {
-    const timeoutMs = opts.timeoutMs ?? DEFAULT_CHECK_TIMEOUT_MS;
+    const timeoutMs = opts.timeoutMs ?? config.checkTimeoutMs ?? DEFAULT_CHECK_TIMEOUT_MS;
     const passes: readonly boolean[] = opts.headedOnly
         ? [false]
         : opts.headedFallback === false

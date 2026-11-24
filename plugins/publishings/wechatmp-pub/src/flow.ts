@@ -2998,6 +2998,34 @@ export async function insertAudioMaterial(
             return JSON.stringify({ state: 'top', identity });
         })()`;
 
+    /**
+     * Save a PNG of the stalled 上传音频 dialog next to the temp dir and return its path. A vendor
+     * upload that never reports 100% is otherwise only visible as text, and the text cannot show a
+     * restored half-finished material, a disabled button or a progress bar stuck at 0.
+     */
+    const dumpAudioStall = async (p: WechatPage): Promise<string> => {
+        const path = join(tmpdir(), `wechatmp-audio-stall-${Date.now()}.png`);
+        try {
+            if (p.screenshot === undefined) return '(no screenshot seam)';
+            await p.screenshot(path);
+            return path;
+        } catch (error) {
+            return `(screenshot failed: ${error instanceof Error ? error.message : String(error)})`;
+        }
+    };
+
+    /**
+     * One line of what the 上传音频 dialog currently shows: the material id the console assigns
+     * once it accepts the file, its buttons, and a bounded text slice. A stalled vendor upload is
+     * otherwise indistinguishable from a broken selector in the failure string.
+     */
+    const audioDialogState = async (p: WechatPage): Promise<string> =>
+        evalOrFallback(
+            p,
+            `(() => { const d = [...document.querySelectorAll('.weui-desktop-dialog')].find((el) => el.offsetWidth > 0 && el.querySelector('input[name=audio_id]')); if (!d) return '(no audio dialog)'; const id = d.querySelector('input[name=audio_id]'); const btns = [...d.querySelectorAll('button')].map((b) => (b.innerText ?? '').trim()).filter(Boolean); return 'audio_id="' + (id?.value ?? '') + '" buttons=' + JSON.stringify(btns) + ' text=' + ((d.innerText ?? '').replace(/\\s+/g, ' ').slice(0, 120)); })()`,
+            '',
+        );
+
     /** Upload the audio + its cover, acknowledge the rules, and 保存. Returns a structured outcome. */
     const upload = async (): Promise<{ warning: string; coverSeeded: boolean; sawLiveUpload: boolean }> => {
         let sawLiveUpload = false;
@@ -3025,19 +3053,40 @@ export async function insertAudioMaterial(
         });
         sawLiveUpload = await isLiveUploadForm();
         if (sawLiveUpload) {
+            // Two completion shapes, because the console replaced the first one and the second is the
+            // only thing it leaves on screen (2026-11-23, screenshot):
+            //  * the transient upload form — a 重新上传 button next to a 100% progress read;
+            //  * the settled form — the picked file's own card (name + 「<n>分钟」, a 删除 affordance)
+            //    with 保存 enabled. The transient state is gone by the time the upload registers, so
+            //    waiting only for it abandoned a COMPLETED upload and skipped the audio every run.
+            const audioName = baseName(audioPath).replace(/\.[^.]+$/, '');
+            const settledUpload = async (): Promise<boolean> =>
+                evalOrFallback(
+                    page,
+                    `(() => { const d = [...document.querySelectorAll('.weui-desktop-dialog')].find((el) => el.offsetWidth > 0 && el.querySelector('input[name=audio_id]')); if (!d) return 'false'; const t = d.innerText ?? ''; return String(t.includes(${JSON.stringify(audioName)}) && /分钟/.test(t)); })()`,
+                    'false',
+                ).then((value) => value === 'true');
+            const transientUpload = async (): Promise<boolean> => {
+                if ((await page.locator(`${uploadDialog} button:has-text("重新上传")`).count()) === 0) return false;
+                const text = await evalOrFallback(
+                    page,
+                    `(() => { const d = [...document.querySelectorAll('.weui-desktop-dialog')].find((el) => el.offsetWidth > 0 && el.querySelector('input[name=audio_id]')); return d ? (d.textContent ?? '') : ''; })()`,
+                    '',
+                );
+                return /100%/.test(text);
+            };
             const uploaded = await waitUntil(
-                async () =>
-                    (await page.locator(`${uploadDialog} button:has-text("重新上传")`).count()) > 0 &&
-                    /100%/.test(
-                        await evalOrFallback(
-                            page,
-                            `(() => { const d = [...document.querySelectorAll('.weui-desktop-dialog')].find((el) => el.offsetWidth > 0 && el.querySelector('input[name=audio_id]')); return d ? (d.textContent ?? '') : ''; })()`,
-                            '',
-                        ),
-                    ),
+                async () => (await settledUpload()) || (await transientUpload()),
                 uploadWaitMs,
             );
-            if (!uploaded) return failUpload('音频: 音频文件上传未完成（未达到 100%），未保存音频');
+            if (!uploaded)
+                return failUpload(
+                    // The console never renders a completion signal this dialog can be read from
+                    // when the vendor side stalls: 2026-11-23 showed the picked file and its
+                    // duration with an EMPTY audio_id for 120s, so the failure now carries what the
+                    // dialog actually said instead of only the predicate's name.
+                    `音频: 音频文件上传未完成（未达到 100%），未保存音频 — shot=${await dumpAudioStall(page)} — ${await audioDialogState(page)}`,
+                );
         }
         // The form requires a cover before it will save.
         const coverControl = await trySelectors(page, UPLOAD_COVER);

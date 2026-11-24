@@ -871,10 +871,29 @@ async function bundleSummary(ctx: GenerateContext): Promise<{ path: string; vari
     return { path, variants: written.sort(), safety: typeof status === 'string' ? status : 'none' };
 }
 
+/**
+ * Files ending in `suffix` under `dir`, one directory level down included: the card render writes the
+ * series into `25-xhs/cards/` while a fixture (and the older single-dir writer) puts them directly in
+ * `25-xhs/`, so counting one level reports `cards: 0` on a successful render.
+ */
 async function countFiles(ctx: GenerateContext, dir: string, suffix: string): Promise<number> {
     const path = join(ctx.workDir, dir);
     if (!(await ctx.fs.exists(path))) return 0;
-    return (await ctx.fs.readDir(path)).filter((entry: string) => entry.endsWith(suffix)).length;
+    let count = 0;
+    for (const entry of await ctx.fs.readDir(path)) {
+        if (entry.endsWith(suffix)) {
+            count += 1;
+            continue;
+        }
+        const nested = join(path, entry);
+        if (!(await ctx.fs.exists(nested))) continue;
+        try {
+            count += (await ctx.fs.readDir(nested)).filter((child) => child.endsWith(suffix)).length;
+        } catch {
+            // A plain file, or a directory the filesystem will not list: nothing to count.
+        }
+    }
+    return count;
 }
 
 /**
@@ -1011,6 +1030,9 @@ export const GENERATE_ROWS: GenerateVerbRow[] = [
         verb: 'generate-cards',
         stages: [STEP.cards()],
         summary: async (ctx) => ({
+            // The cards land in `25-xhs/cards/` (the profile's output dir), not at the `25-xhs/`
+            // root `content.json` also sits in — counting the root reported `cards: 0` on every
+            // successful render, which reads as a failed card step in the run log.
             cards: await countFiles(ctx, '25-xhs', '.png'),
             dir: join(ctx.workDir, '25-xhs'),
         }),
