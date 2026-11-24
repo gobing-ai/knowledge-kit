@@ -405,13 +405,27 @@ export async function sendRows(options: SendRowsOptions): Promise<SendRowsOutcom
         const payloadDigest = createHash('sha256').update(payloadRaw).digest('hex');
 
         if (retry) {
-            // In retry mode, only retry effect: none failures
+            // Retry mode resends `effect: none` failures. A LIVE row whose previous attempt left its
+            // effect unknown is the one exception, and only on the operator's explicit assertion
+            // (`--confirm-none`): 2026-11-24 a `--retry --confirm-none` pair silently skipped exactly
+            // those rows — the operator released them, nothing was sent, and neither the echo nor the
+            // outcome said why.
             if (!(await fs.exists(targetReceiptPath))) continue;
+            let priorRetry: Receipt;
             try {
-                const priorReceipt = JSON.parse(await fs.readFile(targetReceiptPath)) as Receipt;
-                if (priorReceipt.status === 'succeeded' || priorReceipt.effect !== 'none') continue;
+                priorRetry = JSON.parse(await fs.readFile(targetReceiptPath)) as Receipt;
             } catch {
                 continue;
+            }
+            if (priorRetry.status === 'succeeded') continue;
+            if (priorRetry.effect !== 'none') {
+                const unknownEffect =
+                    (priorRetry.status === 'uncertain' || priorRetry.effect === 'unknown') &&
+                    (row.mode === 'live' || priorRetry.mode === 'live');
+                if (!unknownEffect || options.confirmNone !== true) continue;
+                echoError(
+                    `${label}: ${row.key} re-attempted on the operator's confirmation that the unknown-effect attempt published nothing (--confirm-none)`,
+                );
             }
             reattempt = true;
         } else if (await fs.exists(targetReceiptPath)) {
