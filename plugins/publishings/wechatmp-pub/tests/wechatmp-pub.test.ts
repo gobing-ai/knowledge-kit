@@ -3058,6 +3058,9 @@ describe('wrapPlaywrightPage / wrapPlaywrightContext (real adapters, offline via
             setInputFiles: async (selector: string, paths: readonly string[]) => {
                 log.calls.push(`files:${selector}:${paths.join(',')}`);
             },
+            screenshot: async (options: { path: string }) => {
+                log.calls.push(`shot:${options.path}`);
+            },
             url: () => CONSOLE_HOME,
             evaluate: async (expression: string) => `eval:${expression.slice(0, 10)}`,
             waitForTimeout: async (ms: number) => {
@@ -3086,6 +3089,8 @@ describe('wrapPlaywrightPage / wrapPlaywrightContext (real adapters, offline via
         await first.waitFor?.({ state: 'visible', timeout: 10 });
         expect(await first.textContent?.()).toBe('更新于 13:12');
         await page.setInputFiles('input[type="file"]', ['/a.png']);
+        // Diagnostics seam: the 2026-11-23 音频 stall was only readable from a PNG.
+        await page.screenshot?.('/tmp/stall.png');
         await page.evaluate('1+1');
         await page.waitForTimeout?.(5);
         await page.press?.('Escape');
@@ -3097,6 +3102,7 @@ describe('wrapPlaywrightPage / wrapPlaywrightContext (real adapters, offline via
             'type:textarea#title:typed',
             'wait:textarea#title',
             'files:input[type="file"]:/a.png',
+            'shot:/tmp/stall.png',
             'pause:5',
             'press:Escape',
         ]);
