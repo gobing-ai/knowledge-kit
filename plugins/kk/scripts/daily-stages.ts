@@ -2310,6 +2310,94 @@ function cleanWechatDigest(body: string, keyPoints?: readonly WechatKeyPoint[]):
     return Array.from(candidate).slice(0, 120).join('');
 }
 
+/** One validated inline figure, as the WeChat variant materializes it (0426 R2). */
+export interface InlineFigureMaterial {
+    id: string;
+    path: string;
+    sha256: string;
+    altText: string;
+    caption: string;
+    anchor: string;
+}
+
+/**
+ * 0426 R2 — the figures a run may materialize into `article@wechatmp-pub`, or `[]` when the run never
+ * opted in. Opt-in IS the plan the gated node writes: a work dir without
+ * `22-article/illustrations/plan.json` produces byte-identical variants to before this task.
+ *
+ * Every figure is proved against its own receipt before a marker exists: the receipt must name the
+ * same anchor and concept, its `bodySha256` must still match the reviewed article, and the image's
+ * bytes must still hash to `imageSha256`. A missing receipt, an edited article or a swapped binary
+ * refuses here rather than materializing a marker nothing verified.
+ */
+export function inlineFigureMaterials(workDir: string, runDate: string): InlineFigureMaterial[] {
+    const dir = join(workDir, '22-article', 'illustrations');
+    const plan = readJson(join(dir, 'plan.json'));
+    if (plan === null) return [];
+    const article = readJson(join(workDir, '22-article', `${runDate}_06_article_content.json`));
+    const body = typeof article?.body === 'string' ? article.body : '';
+    const bodySha256 = createHash('sha256').update(body).digest('hex');
+    const entries = Array.isArray(plan.figures) ? (plan.figures as Record<string, unknown>[]) : [];
+    const materials: InlineFigureMaterial[] = [];
+    for (const [position, entry] of entries.entries()) {
+        const id = `figure-${position + 1}`;
+        const receipt = readJson(join(dir, `${id}.receipt.json`));
+        if (receipt === null) {
+            failWith(
+                1,
+                `bundle-variants: inline figure ${id} has no render receipt — render the plan (kk stage news-inline-illustrations) before materializing variants`,
+            );
+        }
+        if (receipt.bodySha256 !== bodySha256) {
+            failWith(
+                1,
+                `bundle-variants: inline figure ${id} was rendered against a different article body — re-render the plan before materializing`,
+            );
+        }
+        if (receipt.anchor !== entry.anchor || receipt.concept !== entry.concept) {
+            failWith(1, `bundle-variants: inline figure ${id} receipt names a different anchor/concept than the plan`);
+        }
+        const artifact = firstArtifact(readJson(join(dir, `${id}.json`)));
+        const path = typeof artifact?.path === 'string' ? artifact.path : '';
+        if (path === '' || !isFile(path)) {
+            failWith(1, `bundle-variants: inline figure ${id} image is missing at ${path || '(no artifact)'}`);
+        }
+        if (receipt.imageSha256 !== createHash('sha256').update(readFileSync(path)).digest('hex')) {
+            failWith(1, `bundle-variants: inline figure ${id} image bytes changed after rendering — re-render it`);
+        }
+        materials.push({
+            id,
+            path,
+            sha256: String(receipt.imageSha256),
+            altText: String(entry.altText),
+            caption: String(entry.caption),
+            anchor: String(entry.anchor),
+        });
+    }
+    return materials;
+}
+
+/**
+ * 0426 R2 — place each figure right after its own paragraph: the marker image + a caption
+ * paragraph. Refuses an anchor that is no longer unique, which is what keeps a re-cut article from
+ * receiving a figure that belonged to a paragraph it no longer has.
+ */
+export function withInlineFigureMarkers(body: string, figures: readonly InlineFigureMaterial[]): string {
+    let out = body;
+    for (const figure of figures) {
+        const occurrences = out.split(figure.anchor).length - 1;
+        if (occurrences !== 1) {
+            failWith(
+                1,
+                `wechat article: inline figure ${figure.id} anchor is not unique in the body (found ${occurrences}) — refusing to place a figure on a changed article`,
+            );
+        }
+        const marker = `![${figure.altText}](kk-inline:${figure.id})`;
+        out = out.replace(figure.anchor, () => `${figure.anchor}\n\n${marker}\n\n${figure.caption}`);
+    }
+    return out;
+}
+
 /**
  * The 公众号 article payload (task 0327 R1): the article Content plus MP draft enrichment.
  *
@@ -2332,8 +2420,16 @@ export function buildWechatArticleContent(
          * carries the episode body, so it passes `false`.
          */
         appendOutro?: boolean;
+        /**
+         * 0426 R2: figures already validated against their render receipts. Only the WeChat ARTICLE
+         * variant receives them — the 播客 episode body has no article paragraphs to anchor to.
+         */
+        inlineFigures?: readonly InlineFigureMaterial[];
     },
 ): Record<string, unknown> {
+    // 0426 R2: the 播客 episode body has no article paragraphs to anchor to, so only the article
+    // path (the one that appends the closer) ever materializes figures.
+    const figures = options.appendOutro === false ? [] : (options.inlineFigures ?? []);
     const wechatmp: Record<string, unknown> = {
         original: true,
         // 2026-11-22 live check: 咸话咸说 is not yet authorized in 赞赏账户小程序 -> 可收款公众号,
@@ -2345,6 +2441,19 @@ export function buildWechatArticleContent(
         claimSource: WECHAT_BRAND.claimSource,
         // 封面 comes from 图片库: the episode cover is uploaded there as the audio material's cover.
         coverSource: WECHAT_BRAND.coverSource,
+        // 0426 R2: the figures this body's markers resolve to, pinned so the adapter can verify the
+        // exact bytes it uploads and never a file that changed after the review.
+        ...(figures.length > 0
+            ? {
+                  inlineFigures: figures.map((figure) => ({
+                      id: figure.id,
+                      path: figure.path,
+                      sha256: figure.sha256,
+                      altText: figure.altText,
+                      caption: figure.caption,
+                  })),
+              }
+            : {}),
         ...(options.links.articleUrl !== '' ? { originalUrl: options.links.articleUrl } : {}),
         ...(options.coverPath === undefined ? {} : { coverPath: options.coverPath }),
         ...(options.audioPath === undefined
@@ -2385,7 +2494,7 @@ export function buildWechatArticleContent(
     const derivedDigest = existingDigest !== '' ? existingDigest : cleanWechatDigest(rawBody, keyPoints);
     return {
         ...article,
-        body: `${formattedBody}${WECHAT_OUTRO}`,
+        body: `${withInlineFigureMarkers(formattedBody, figures)}${WECHAT_OUTRO}`,
         metadata: {
             ...existingMeta,
             ...(derivedDigest !== '' ? { digest: derivedDigest } : {}),
@@ -2715,6 +2824,8 @@ export function dailyBundleVariants(args: string[]): void {
         const skipped: string[] = [];
 
         const article = readJson(articlePath);
+        // 0426 R2: [] when the run never opted in, so a default run's variants stay byte-identical.
+        const inlineFigures = inlineFigureMaterials(workDir, runDate);
         const prep = readJson(prepPath);
         const planItems = planItemsForPodcast(workDir, runDate);
         const write = (key: string, content: Record<string, unknown>): void => {
@@ -2760,6 +2871,7 @@ export function dailyBundleVariants(args: string[]): void {
                     publishStatus: 'draft',
                     collection: '每日AI资讯',
                     keyPoints: wechatKeyPoints,
+                    inlineFigures,
                     ...(cover === undefined ? {} : { coverPath: cover }),
                     ...(articleAudio === undefined ? {} : { audioPath: articleAudio, audioTitle: firstArticleLine }),
                 }),

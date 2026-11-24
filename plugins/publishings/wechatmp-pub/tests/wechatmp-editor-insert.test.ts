@@ -13,14 +13,25 @@
  * early and save an empty draft body.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { createHash } from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Browser } from 'playwright';
 import {
+    assertInlineFigureMarkers,
+    bodyImageSrcs,
     bodyLength,
+    type InlineFigure,
+    inlineFiguresOf,
     insertBody,
     insertHtmlScript,
     insertTextScript,
     type ModeRunDeps,
     nativeLegacyEditorReadyScript,
+    verifyInlineFigureDom,
+    waitForInlineFigureSrcs,
+    withInlineFigureHtml,
 } from '../src/flow';
 import { wrapPlaywrightPage } from '../src/page';
 import { launchChromium } from './fixtures/wechatmp-cgi-runner';
@@ -202,5 +213,138 @@ describe('wechatmp legacy editor readiness probe', () => {
         // The probe reads style.display/visibility AND the rect; keep both on the same object.
         const result = new Function('probe', 'return eval(probe)')(nativeLegacyEditorReadyScript());
         expect(result).toBe('ready');
+    });
+});
+
+describe('0426 R2 — inline figures in the WeChat article', () => {
+    const sha = (value: string): string => createHash('sha256').update(value).digest('hex');
+
+    /** A figure + its on-disk image, and the pinned metadata the variant would carry. */
+    function figureFixture(dir: string, index: number): { meta: Record<string, string>; figure: InlineFigure } {
+        const id = `figure-${index}`;
+        const path = join(dir, `${id}.png`);
+        writeFileSync(path, `png-${index}`);
+        const meta = {
+            id,
+            path,
+            sha256: sha(`png-${index}`),
+            altText: `alt ${index}`,
+            caption: `图注 ${index}`,
+        };
+        return { meta, figure: { id, path, sha256: meta.sha256, altText: meta.altText, caption: meta.caption } };
+    }
+
+    function withDir<T>(fn: (dir: string) => T): T {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-inline-figures-'));
+        try {
+            return fn(dir);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    }
+
+    const content = (figures: Record<string, string>[]): Parameters<typeof inlineFiguresOf>[0] =>
+        ({ metadata: { wechatmp: { inlineFigures: figures } } }) as Parameters<typeof inlineFiguresOf>[0];
+
+    test('reads the pinned metadata and refuses a missing field, a reordered id or a changed binary', () => {
+        withDir((dir) => {
+            const first = figureFixture(dir, 1);
+            expect(inlineFiguresOf(content([first.meta]))).toEqual([first.figure]);
+
+            const missing = { ...first.meta, altText: '' };
+            expect(() => inlineFiguresOf(content([missing]))).toThrow('metadata has no altText');
+
+            const reordered = { ...first.meta, id: 'figure-2' };
+            expect(() => inlineFiguresOf(content([reordered]))).toThrow("expected id 'figure-1' at position 1");
+
+            writeFileSync(first.meta.path as string, 'swapped');
+            expect(() => inlineFiguresOf(content([first.meta]))).toThrow('image bytes changed since the review');
+
+            const gone = { ...first.meta, path: join(dir, 'nope.png') };
+            expect(() => inlineFiguresOf(content([gone]))).toThrow('image is unreadable');
+        });
+    });
+
+    test('a content without the key carries no figures (the plain article path stays untouched)', () => {
+        expect(inlineFiguresOf({ metadata: {} } as Parameters<typeof inlineFiguresOf>[0])).toEqual([]);
+        expect(inlineFiguresOf({ metadata: { wechatmp: {} } } as Parameters<typeof inlineFiguresOf>[0])).toEqual([]);
+    });
+
+    test('every pinned figure must be referenced once, in order, and no stray marker may exist', () => {
+        const figures: InlineFigure[] = [
+            { id: 'figure-1', path: '/a.png', sha256: 'a', altText: 'a', caption: 'a' },
+            { id: 'figure-2', path: '/b.png', sha256: 'b', altText: 'b', caption: 'b' },
+        ];
+        const ok = 'p1\n\n![alt](kk-inline:figure-1)\n\nc1\n\np2\n\n![alt](kk-inline:figure-2)\n\nc2';
+        expect(() => assertInlineFigureMarkers(ok, figures)).not.toThrow();
+        expect(() => assertInlineFigureMarkers(ok, figures.slice(0, 1))).toThrow('carries 2 figure marker(s)');
+        expect(() =>
+            assertInlineFigureMarkers('![alt](kk-inline:figure-2)\n\n![alt](kk-inline:figure-1)', figures),
+        ).toThrow("marker 1 in the body is 'figure-2'");
+    });
+
+    test('renders the uploaded image and caption at the marker, escaping both texts', () => {
+        const figures: InlineFigure[] = [
+            { id: 'figure-1', path: '/a.png', sha256: 'a', altText: 'a<b>&"', caption: '图注 <1>' },
+        ];
+        const html = withInlineFigureHtml('段落\n\n![x](kk-inline:figure-1)\n\n尾巴', figures, [
+            'https://mmbiz/qpic?a=1&b=2',
+        ]);
+        expect(html).toContain(
+            '<img src="https://mmbiz/qpic?a=1&amp;b=2" alt="a&lt;b&gt;&amp;&quot;" data-kk-figure="figure-1">',
+        );
+        expect(html).toContain('<p>图注 &lt;1&gt;</p>');
+        expect(html).toContain('段落');
+        expect(html).toContain('尾巴');
+        expect(() => withInlineFigureHtml('no marker here', figures, ['https://x'])).toThrow('marker is missing');
+        expect(() => withInlineFigureHtml('![x](kk-inline:figure-1)', figures, [])).toThrow(
+            'need 1 uploaded URL(s), got 0',
+        );
+    });
+
+    test('reads the uploaded URLs from the editor DOM in order, and degrades a dead page to none', async () => {
+        const page = (value: unknown): EditorPage => ({ evaluate: async () => value }) as unknown as EditorPage;
+        expect(await bodyImageSrcs(page(['https://a', 'https://b']), ['div.ProseMirror'])).toEqual([
+            'https://a',
+            'https://b',
+        ]);
+        const dead = { evaluate: async () => Promise.reject(new Error('closed')) } as unknown as EditorPage;
+        expect(await bodyImageSrcs(dead, ['div.ProseMirror'])).toEqual([]);
+    });
+
+    test('the DOM check refuses a text-only body, a swapped URL and a changed caption', async () => {
+        const figures: InlineFigure[] = [
+            { id: 'figure-1', path: '/a.png', sha256: 'a', altText: 'alt 1', caption: '图注 1' },
+        ];
+        const srcs = ['https://mmbiz/1'];
+        const ok = [{ id: 'figure-1', src: 'https://mmbiz/1', alt: 'alt 1', caption: '图注 1' }];
+        const page = (value: unknown): EditorPage => ({ evaluate: async () => value }) as unknown as EditorPage;
+        await expect(verifyInlineFigureDom(page(ok), ['div.ProseMirror'], figures, srcs)).resolves.toBeUndefined();
+        await expect(verifyInlineFigureDom(page([]), ['div.ProseMirror'], figures, srcs)).rejects.toThrow(
+            'the editor holds 0 figure node(s)',
+        );
+        await expect(
+            verifyInlineFigureDom(page([{ ...ok[0], src: 'https://evil/1' }]), ['div.ProseMirror'], figures, srcs),
+        ).rejects.toThrow("figure-1 shows 'https://evil/1'");
+        await expect(
+            verifyInlineFigureDom(page([{ ...ok[0], caption: '别的图注' }]), ['div.ProseMirror'], figures, srcs),
+        ).rejects.toThrow('caption reads');
+        await expect(
+            verifyInlineFigureDom(page([{ ...ok[0], id: 'figure-2' }]), ['div.ProseMirror'], figures, srcs),
+        ).rejects.toThrow("editor position 1 holds 'figure-2'");
+        await expect(
+            verifyInlineFigureDom(page([{ ...ok[0], alt: 'wrong alt' }]), ['div.ProseMirror'], figures, srcs),
+        ).rejects.toThrow('alt text reads');
+    });
+
+    test('waits for the uploads and returns the newest URLs in order; a timeout refuses', async () => {
+        const deps = { stepTimeoutMs: 2000 } as unknown as ModeRunDeps;
+        const ready = { evaluate: async () => ['https://a', 'https://b'] } as unknown as EditorPage;
+        expect(await waitForInlineFigureSrcs(ready, 2, deps)).toEqual(['https://a', 'https://b']);
+
+        const never = { evaluate: async () => [] } as unknown as EditorPage;
+        await expect(
+            waitForInlineFigureSrcs(never, 1, { stepTimeoutMs: 50 } as unknown as ModeRunDeps),
+        ).rejects.toThrow('uploaded 0 of 1 figure image(s)');
     });
 });

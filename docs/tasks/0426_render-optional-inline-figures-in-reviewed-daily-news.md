@@ -4,7 +4,7 @@ name: Render optional inline figures in reviewed daily news
 status: wip
 template: feature-impl
 created_at: 2026-11-23T01:20:51.117Z
-updated_at: "2026-11-23T16:31:51.019Z"
+updated_at: "2026-11-24T03:07:58.783Z"
 feature_id: L4
 priority: P2
 tags:
@@ -72,7 +72,27 @@ AC1 exercises R1 and R2 on the two-figure replay. AC2 exercises R1 and R2 on the
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+**Change map**
+
+- `apps/cli/src/commands/content-launch.ts:52` — `--inline-illustrations` on the generate verb (`:661`), news-only (exit 2 on another noun, `:373`); `inlineFigureRefusal()` (`:313`) admits the target from the resolved publish preset — an enabled `wechatmp-pub` `文章`/`article` row that `--channels` must also select when channels are named — and exits 5 **before** the launch (`:384`). The admitted run forwards `inline_illustrations=true`.
+- `plugins/kk/scripts/daily-stages.ts:3170` — the pinned figure constants; `articleBlocks` (`:3199`) classifies body blocks (code/heading/quote/list/image ineligible); `validateInlineFigurePlan` (`:3224`) validates the whole plan — 1–2 figures, unique whole-prose anchors in body order, admitted `sourceId`, duplicate/ineligible/out-of-order refusals; `assertInlineFigureDrafts` (`:3301`) reuses publish-prep's verdict rules (stamp, `status`, digest, `wechatmp` exclusion) **before** any provider call; `assertInlineFigureTarget` (`:3322`) is the same admission gate for a direct workflow call; `dailyInlineIllustrations` (`:3354`) renders or resumes one pinned `job: illustration` request per figure and writes a receipt binding the body hash, settings and image SHA-256.
+- `plugins/kk/scripts/daily-stages.ts:2305` — `inlineFigureMaterials` proves each figure against its receipt before a marker exists (missing/stale receipt, changed article body, changed binary all refuse); `withInlineFigureMarkers` (`:2357`) places `![alt](kk-inline:figure-N)` + a caption paragraph after the anchored paragraph; `buildWechatArticleContent` pins `metadata.wechatmp.inlineFigures` (`:2420`) and applies markers only on the article path (`:2469`); `dailyBundleVariants` (`:2800`, `:2846`) reads the materials and passes them to the WeChat article variant alone.
+- `plugins/kk/scripts/kk-workflow-stages.ts:2113` — the `news-inline-illustrations` stage route.
+- `plugins/kk/workflows/kk-news-generate.yaml:42` — `inline_illustrations` (default `false`), `cover_provider`/`cover_model` (pinned figures), `plugins_path`; nodes `illustrations-plan` (`:328`, agent, mode `inline`, `dependsOn: [safety, review]`) and `illustrations-render` (`:353`), both opt-in + pool gated; `variants` waits on the render node (`:510`).
+- `plugins/kk/skills/daily-news-illustrations/SKILL.md:63` — mode `inline` (the plan contract the agent writes).
+- `plugins/publishings/wechatmp-pub/src/flow.ts:715` — `inlineFiguresOf` validates the pinned metadata against the files on disk; `assertInlineFigureMarkers` (`:765`) requires one marker per figure in order and no stray; `withInlineFigureHtml` (`:793`) renders the escaped `<img>` + caption at each anchor; `waitForInlineFigureSrcs` (`:831`) captures the platform-assigned URLs after upload; `verifyInlineFigureDom` (`:849`) proves URL, alt text, caption and order in the editor DOM before save; `insertHtmlBody` (`:912`) is the shared rail, and `composeArticle` (`:1603-1615`) uploads the figures first, then inserts the body with the figures at their anchors.
+- `docs/04_DESIGN.md:2299` — the surface row: flag, var, nodes, stage validation, variant metadata and adapter verification.
+
+**Tests (written before the code)**
+
+- `apps/cli/tests/content-launch.e2e.test.ts` — three cases: opt-in forwarded for news and nothing by default; the flag refused on an article noun (exit 2, no launch); a `--channels` selection that excludes the WeChat article row refused (exit 5, no launch).
+- `apps/cli/tests/kk-workflow-stages.test.ts` — `news-inline-illustrations`: pinned envelope per figure + receipts bound to the bytes; verified-byte reuse and a changed binary re-rendered; duplicate/ineligible/unadmitted refusals with **zero** provider calls; stale-draft and WeChat-excluded refusals; unsupported preset refused. Plus `daily-bundle-variants · inline figures`: markers + caption in the article variant only, metadata pinned, stale binary refused with no variants written, and a plan-less run byte-identical.
+- `apps/cli/tests/kk-news-generate-dag.test.ts` — the two nodes' opt-in conditions, the `[safety, review]` dependency (why both edges), `variants` waiting on the render node, and the declared `kk stage` exception set.
+- `plugins/publishings/wechatmp-pub/tests/wechatmp-editor-insert.test.ts` — the metadata/marker contract (missing field, reordered id, changed binary, stray/duplicate marker), escaped HTML rendering, URL capture in DOM order, and the DOM verification refusing a text-only body, a swapped URL, a changed caption/alt and a reordered id.
+
+**Verification.** `apps/cli` typecheck and `wechatmp-pub` typecheck clean; biome clean; focused suites green (content-launch 20/20, news DAG 13/13, inline stage 5/5, bundle-variants 3/3, editor-insert 16/16); `wechatmp-pub` package coverage `src/flow.ts` 90.36% funcs / 91.53% lines. The full suite and the pipeline gate follow in `.spur/run/0426-full-test.log`.
+
+**Residual risk (recorded for review).** The editor wiring (`composeArticle`'s figure branch, lines 1607–1615) is exercised only through the contract-level helpers; the full upload→insert→verify sequence has not run against the live WeChat console, so the platform's own upload DOM contract is still assumed.
 
 ### Testing
 

@@ -6196,3 +6196,121 @@ describe('news-inline-illustrations (0426 R1/R2)', () => {
         });
     });
 });
+
+describe('daily-bundle-variants · inline figures (0426 R2)', () => {
+    const DATE = '20260101';
+    const PARA_ONE = 'OpenAI 今日开源轻量级推理引擎，单卡吞吐提升 2.4 倍。';
+    const PARA_TWO = 'Anthropic 公布跨会话上下文缓存协议，长文档延迟降低 60%。';
+    const BODY = `# 每日AI乱炖\n\n${PARA_ONE}\n\n${PARA_TWO}\n\n以上就是今天的全部内容。`;
+
+    function seedFigures(dir: string, options: { changBinary?: boolean } = {}): void {
+        const articleDir = join(dir, '22-article');
+        const figureDir = join(articleDir, 'illustrations');
+        mkdirSync(figureDir, { recursive: true });
+        mkdirSync(join(dir, '31-publish'), { recursive: true });
+        writeFileSync(
+            join(articleDir, `${DATE}_06_article_content.json`),
+            JSON.stringify({ title: '每日AI乱炖', format: 'markdown', body: BODY, metadata: {} }),
+        );
+        writeFileSync(
+            join(dir, '31-publish', `${DATE}_13_publish-prep_content.json`),
+            JSON.stringify({ title: '每日AI乱炖', body: BODY, metadata: { audioFile: '/tmp/e.mp3' } }),
+        );
+        const bodySha256 = createHash('sha256').update(BODY).digest('hex');
+        const figures = [
+            {
+                anchor: PARA_ONE,
+                concept: 'a server blade on a bench',
+                caption: '单卡吞吐翻倍',
+                altText: '推理引擎示意图',
+            },
+            { anchor: PARA_TWO, concept: 'layered memory plates', caption: '跨会话缓存', altText: '缓存协议示意图' },
+        ];
+        writeFileSync(join(figureDir, 'plan.json'), JSON.stringify({ version: 1, figures }));
+        for (const [index, figure] of figures.entries()) {
+            const id = `figure-${index + 1}`;
+            const image = join(figureDir, `${id}-illustration-01.png`);
+            writeFileSync(image, options.changBinary === true ? 'other-bytes' : 'png');
+            writeFileSync(join(figureDir, `${id}.json`), JSON.stringify({ metadata: { images: [{ path: image }] } }));
+            writeFileSync(
+                join(figureDir, `${id}.receipt.json`),
+                JSON.stringify({
+                    version: 1,
+                    id,
+                    anchor: figure.anchor,
+                    concept: figure.concept,
+                    caption: figure.caption,
+                    altText: figure.altText,
+                    bodySha256,
+                    settings: {
+                        format: 'illustration',
+                        style: 'technical-diagram',
+                        provider: 'minimax',
+                        model: 'image-01',
+                    },
+                    imageSha256: createHash('sha256').update('png').digest('hex'),
+                }),
+            );
+        }
+    }
+
+    function readVariant(dir: string, key: string): { body?: string; metadata?: Record<string, unknown> } {
+        return JSON.parse(readFileSync(join(dir, '30-variants', `${key}.content.json`), 'utf-8')) as {
+            body?: string;
+            metadata?: Record<string, unknown>;
+        };
+    }
+
+    it('places each figure after its own paragraph in the WeChat article variant only, and pins its metadata', () => {
+        withTempDir((dir) => {
+            seedFigures(dir);
+            expect(run(['daily-bundle-variants', dir, DATE, '']).status).toBe(0);
+            const article = readVariant(dir, 'article@wechatmp-pub');
+            const body = String(article.body);
+            // Marker + caption paragraph, right after the anchored paragraph, in body order.
+            expect(body).toContain(`${PARA_ONE}\n\n![推理引擎示意图](kk-inline:figure-1)\n\n单卡吞吐翻倍`);
+            expect(body).toContain(`${PARA_TWO}\n\n![缓存协议示意图](kk-inline:figure-2)\n\n跨会话缓存`);
+            expect(body.indexOf('kk-inline:figure-1')).toBeLessThan(body.indexOf('kk-inline:figure-2'));
+            const wechatmp = (article.metadata as { wechatmp: { inlineFigures: Record<string, unknown>[] } }).wechatmp;
+            expect(wechatmp.inlineFigures).toHaveLength(2);
+            expect(wechatmp.inlineFigures[0]).toMatchObject({
+                id: 'figure-1',
+                altText: '推理引擎示意图',
+                caption: '单卡吞吐翻倍',
+                sha256: createHash('sha256').update('png').digest('hex'),
+            });
+            expect(String(wechatmp.inlineFigures[0]?.path)).toContain('figure-1-illustration-01.png');
+            // The 播客 episode carries the episode body: never a marker, never the figure metadata.
+            const episode = readVariant(dir, 'episode@wechatmp-pub');
+            expect(String(episode.body)).not.toContain('kk-inline:');
+            const episodeMeta = episode.metadata as { wechatmp?: { inlineFigures?: unknown } };
+            expect(episodeMeta.wechatmp?.inlineFigures).toBeUndefined();
+        });
+    });
+
+    it('refuses a figure whose binary changed after rendering, and writes no variants', () => {
+        withTempDir((dir) => {
+            seedFigures(dir, { changBinary: true });
+            const result = run(['daily-bundle-variants', dir, DATE, '']);
+            expect(result.status).toBe(1);
+            expect(result.stderr).toContain('image bytes changed after rendering');
+            expect(existsSync(join(dir, '30-variants', 'article@wechatmp-pub.content.json'))).toBe(false);
+        });
+    });
+
+    it('leaves a default run byte-identical: no plan, no markers, no figure metadata', () => {
+        withTempDir((dir) => {
+            const articleDir = join(dir, '22-article');
+            mkdirSync(articleDir, { recursive: true });
+            writeFileSync(
+                join(articleDir, `${DATE}_06_article_content.json`),
+                JSON.stringify({ title: '每日AI乱炖', format: 'markdown', body: BODY, metadata: {} }),
+            );
+            expect(run(['daily-bundle-variants', dir, DATE, '']).status).toBe(0);
+            const article = readVariant(dir, 'article@wechatmp-pub');
+            expect(String(article.body)).not.toContain('kk-inline:');
+            const wechatmp = (article.metadata as { wechatmp?: { inlineFigures?: unknown } }).wechatmp;
+            expect(wechatmp?.inlineFigures).toBeUndefined();
+        });
+    });
+});

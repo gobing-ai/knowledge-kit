@@ -1,4 +1,5 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import type { Content, Result } from '@gobing-ai/kk-core';
@@ -722,6 +723,199 @@ export async function readTitleMirror(page: WechatPage): Promise<{ observed: boo
 }
 
 /**
+ * 0426 R2 — the inline figures this payload pins (variant materialization), validated against the
+ * files on disk. An id, path, hash or caption that disagrees with what the review froze is a refusal,
+ * never a silent drop: a body marker without a verified image is exactly the corruption this guards.
+ */
+export interface InlineFigure {
+    id: string;
+    path: string;
+    sha256: string;
+    altText: string;
+    caption: string;
+}
+
+/** `metadata.wechatmp.inlineFigures` of a Content, or [] when the article carries none (0426 R2). */
+export function inlineFiguresOf(content: Content): InlineFigure[] {
+    const raw = (content.metadata as { wechatmp?: { inlineFigures?: unknown } } | undefined)?.wechatmp?.inlineFigures;
+    if (raw === undefined) return [];
+    if (!Array.isArray(raw) || raw.length === 0) return [];
+    const figures: InlineFigure[] = [];
+    for (const [index, entry] of raw.entries()) {
+        const figure = (entry ?? {}) as Record<string, unknown>;
+        const id = `figure-${index + 1}`;
+        for (const field of ['id', 'path', 'sha256', 'altText', 'caption'] as const) {
+            if (typeof figure[field] !== 'string' || String(figure[field]).trim() === '') {
+                throw new Error(
+                    `inline figures: ${id} metadata has no ${field} — refusing to place an unverified figure`,
+                );
+            }
+        }
+        if (figure.id !== id) {
+            throw new Error(
+                `inline figures: expected id '${id}' at position ${index + 1}, found '${String(figure.id)}' — figure order is the body order`,
+            );
+        }
+        const path = String(figure.path);
+        const expected = String(figure.sha256);
+        let actual: string;
+        try {
+            actual = createHash('sha256').update(readFileSync(path)).digest('hex');
+        } catch {
+            throw new Error(
+                `inline figures: ${id} image is unreadable at ${path} — refusing to publish a missing figure`,
+            );
+        }
+        if (actual !== expected) {
+            throw new Error(
+                `inline figures: ${id} image bytes changed since the review (${path}) — re-render before publishing`,
+            );
+        }
+        figures.push({
+            id,
+            path,
+            sha256: expected,
+            altText: String(figure.altText),
+            caption: String(figure.caption),
+        });
+    }
+    return figures;
+}
+
+/**
+ * 0426 R2 — every pinned figure must be referenced exactly once by the body, in figure order, and no
+ * body marker may be unresolvable. A marker with no metadata would otherwise paste as literal text.
+ */
+export function assertInlineFigureMarkers(body: string, figures: readonly InlineFigure[]): void {
+    const found = [...body.matchAll(/!\[[^\]]*\]\(kk-inline:([^)]+)\)/g)].map((match) => String(match[1]));
+    const expected = figures.map((figure) => figure.id);
+    if (found.length !== expected.length) {
+        throw new Error(
+            `inline figures: the body carries ${found.length} figure marker(s) but the payload pins ${expected.length} — refusing to save a body whose figures cannot all resolve`,
+        );
+    }
+    for (const [index, id] of expected.entries()) {
+        if (found[index] !== id) {
+            throw new Error(
+                `inline figures: marker ${index + 1} in the body is '${String(found[index])}' but figure ${index + 1} is '${id}' — figure order must follow the body`,
+            );
+        }
+    }
+}
+
+/** Escape a caption/alt string for the rich-HTML rail. */
+function escapeFigureText(value: string): string {
+    return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+}
+
+/**
+ * 0426 R2 — the body HTML the editor inserts: each marker becomes the uploaded image (its CDN URL,
+ * escaped alt) plus a caption paragraph, in place. `srcs` are the platform-assigned URLs, one per
+ * figure and in order — captured from the upload before the body is inserted, because the editor
+ * assigns them and the body insert replaces the document.
+ */
+export function withInlineFigureHtml(body: string, figures: readonly InlineFigure[], srcs: readonly string[]): string {
+    if (srcs.length !== figures.length) {
+        throw new Error(
+            `inline figures: ${figures.length} figure(s) need ${figures.length} uploaded URL(s), got ${srcs.length} — refusing to insert a body with a misplaced figure`,
+        );
+    }
+    let out = body;
+    for (const [index, figure] of figures.entries()) {
+        const marker = new RegExp(`!\\[[^\\]]*\\]\\(kk-inline:${figure.id}\\)`);
+        if (!marker.test(out)) {
+            throw new Error(`inline figures: ${figure.id} marker is missing from the body — refusing to insert`);
+        }
+        const src = String(srcs[index]);
+        const html = `<img src="${escapeFigureText(src)}" alt="${escapeFigureText(figure.altText)}" data-kk-figure="${figure.id}"><p>${escapeFigureText(figure.caption)}</p>`;
+        out = out.replace(marker, () => html);
+    }
+    return out;
+}
+
+/**
+ * The uploaded body images' `src`, in DOM order (0426 R2). The editor assigns the CDN URL when the
+ * file input uploads, so this is the only place those URLs exist before the body is inserted.
+ */
+export async function bodyImageSrcs(page: WechatPage, selectors: readonly string[]): Promise<string[]> {
+    const script = `(() => {
+        const el = ${JSON.stringify(selectors)}.map((s) => document.querySelector(s)).find(Boolean);
+        if (!el) return [];
+        return Array.from(el.querySelectorAll('img')).map((img) => img.getAttribute('src') || '').filter(Boolean);
+    })()`;
+    const raw = await page.evaluate(script).catch(() => []);
+    return Array.isArray(raw) ? raw.map((value) => String(value)) : [];
+}
+
+/**
+ * 0426 R2 — wait, bounded, for the editor to finish uploading the figure files and hand back their
+ * URLs. The read is the DOM's own `img[src]` list, so it observes what the platform assigned rather
+ * than what we hoped it would.
+ */
+export async function waitForInlineFigureSrcs(page: WechatPage, count: number, deps: ModeRunDeps): Promise<string[]> {
+    const deadline = Date.now() + deps.stepTimeoutMs;
+    let srcs: string[] = [];
+    while (Date.now() < deadline) {
+        srcs = await bodyImageSrcs(page, BODY_BLOCK);
+        if (srcs.length >= count) return srcs.slice(-count);
+        await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    throw new Error(
+        `inline figures: the editor uploaded ${srcs.length} of ${count} figure image(s) before the timeout — refusing to insert a body with a missing figure`,
+    );
+}
+
+/**
+ * 0426 R2 — verify the editor DOM holds the figures the payload pinned, in order, each with its alt
+ * text, caption and image URL. A text-only body, an appended-at-end figure or a swapped URL is a
+ * failed publish for an illustrated payload, never a warning.
+ */
+export async function verifyInlineFigureDom(
+    page: WechatPage,
+    selectors: readonly string[],
+    figures: readonly InlineFigure[],
+    srcs: readonly string[],
+): Promise<void> {
+    const script = `(() => {
+        const el = ${JSON.stringify(selectors)}.map((s) => document.querySelector(s)).find(Boolean);
+        if (!el) return [];
+        return Array.from(el.querySelectorAll('img[data-kk-figure]')).map((img) => ({
+            id: img.getAttribute('data-kk-figure') || '',
+            src: img.getAttribute('src') || '',
+            alt: img.getAttribute('alt') || '',
+            caption: (img.nextElementSibling && img.nextElementSibling.textContent) || '',
+        }));
+    })()`;
+    const observed = (await page.evaluate(script).catch(() => [])) as
+        | { id: string; src: string; alt: string; caption: string }[]
+        | string;
+    if (!Array.isArray(observed) || observed.length !== figures.length) {
+        throw new Error(
+            `inline figures: the editor holds ${Array.isArray(observed) ? observed.length : 'no'} figure node(s) but the payload pins ${figures.length} — refusing to save (a text-only or appended-at-end result is not an illustrated article)`,
+        );
+    }
+    for (const [index, figure] of figures.entries()) {
+        const seen = observed[index] as { id: string; src: string; alt: string; caption: string } | undefined;
+        if (seen === undefined || seen.id !== figure.id) {
+            throw new Error(
+                `inline figures: editor position ${index + 1} holds '${String(seen?.id)}', expected '${figure.id}'`,
+            );
+        }
+        if (seen.src !== String(srcs[index])) {
+            throw new Error(`inline figures: ${figure.id} shows '${seen.src}', expected '${String(srcs[index])}'`);
+        }
+        if (seen.alt !== figure.altText) {
+            throw new Error(`inline figures: ${figure.id} alt text reads '${seen.alt}', expected '${figure.altText}'`);
+        }
+        if (seen.caption.trim() !== figure.caption.trim()) {
+            throw new Error(
+                `inline figures: ${figure.id} caption reads '${seen.caption.trim()}', expected '${figure.caption}'`,
+            );
+        }
+    }
+}
+
+/**
  * Insert the markdown-derived body into the main-frame ProseMirror editor through the shared paste
  * helper (ADR-029 rail). The retired iframe UEditor and its `setInnerHtml` were the drift this
  * replaces (W1): the body only registers on a real paste, which is what `pasteHtml` sends.
@@ -731,8 +925,22 @@ export async function readTitleMirror(page: WechatPage): Promise<{ observed: boo
 export async function insertBody(page: WechatPage, deps: ModeRunDeps, selectors: string[] = BODY_BLOCK): Promise<void> {
     const body = bodyOf(deps.content);
     if (body.trim().length === 0) return;
+    await insertHtmlBody(page, body, markdownToWechatHtml(body), deps, selectors);
+}
+
+/**
+ * Insert already-rendered rich HTML for `body` (0426 R2 supplies a body whose figure markers are
+ * already the uploaded images). Same rail and same fallbacks as `insertBody` — the only difference is
+ * who rendered the HTML.
+ */
+export async function insertHtmlBody(
+    page: WechatPage,
+    body: string,
+    html: string,
+    deps: ModeRunDeps,
+    selectors: string[] = BODY_BLOCK,
+): Promise<void> {
     const selector = await findSelector(page, selectors, 'article body', deps.stepTimeoutMs);
-    const html = markdownToWechatHtml(body);
 
     // The historical path: a synthetic ClipboardEvent carrying rich HTML. Older editor builds
     // honour it; `appmsg_edit_v2` (measured 2026-11-12) silently ignores it and every paste ends
@@ -1464,6 +1672,11 @@ async function composeArticle(
 ): Promise<ComposeReport> {
     const page = entry.editor;
     const warnings: string[] = [];
+    // 0426 R2: an illustrated payload uploads its figures FIRST. The editor assigns their CDN URLs on
+    // upload and the body insert replaces the document, so the URLs must exist before that insert;
+    // the pre-uploaded copies are then replaced along with the rest of the scratch document.
+    const figures = inlineFiguresOf(deps.content);
+    if (figures.length > 0) assertInlineFigureMarkers(bodyOf(deps.content), figures);
     const titlePath = await typeTitle(page, deps);
     // Fill the form fields BEFORE the ProseMirror body. Measured 2026-11-23: filling 摘要 re-renders
     // the editor from its pre-body state and wipes both the pasted body and any uploaded image
@@ -1474,7 +1687,23 @@ async function composeArticle(
     ]) {
         if (warning !== null) warnings.push(warning);
     }
-    await insertBody(page, deps);
+    // 0426 R2: an illustrated payload uploads its figures BEFORE the body insert (the editor assigns
+    // their CDN URLs on upload and the body insert replaces the scratch document, taking the
+    // pre-uploaded copies with it), then inserts the body with each figure already at its anchor.
+    // Every other article keeps the plain paste path unchanged.
+    if (figures.length > 0) {
+        await attachImages(
+            page,
+            figures.map((figure) => figure.path),
+            deps,
+        );
+        const srcs = await waitForInlineFigureSrcs(page, figures.length, deps);
+        const body = bodyOf(deps.content);
+        await insertHtmlBody(page, body, markdownToWechatHtml(withInlineFigureHtml(body, figures, srcs)), deps);
+        await verifyInlineFigureDom(page, BODY_BLOCK, figures, srcs);
+    } else {
+        await insertBody(page, deps);
+    }
     // Images go in AFTER the body: the v2 editor's own `execCommand('insertHTML')` body path
     // REPLACES the document, so an image attached first is silently wiped — and with it the
     // 默认首图为封面 / 从正文选择 material (measured 2026-11-12: bodyImgs 2 → 0, then 2 again when
