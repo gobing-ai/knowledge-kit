@@ -1,5 +1,61 @@
 ## [Unreleased]
 
+## [0.1.26] - 2026-11-25
+
+### Added
+
+- feat(news): close the L3 batch — link and cover fallbacks, one estimate denominator, honest status, session checks (a4201b94)
+<!-- src: apps/cli/src/publish-matrix.ts:1979 · confidence: HIGH -->
+
+
+### Fixed
+
+- fix(news): calibrate the CN-lead gate on a two-family fixture (b39145fb)
+<!-- src: plugins/kk/scripts/cn-lead-gate.ts:455 · confidence: HIGH -->
+
+- fix(cli): read the news bundle from the run root in kk news status (d9dec4c4)
+<!-- src: apps/cli/src/commands/content.ts:394 · confidence: HIGH -->
+
+- fix(linkedin-pub): give the session preflight a 90 s budget (77b3f56b)
+<!-- src: plugins/publishings/linkedin-pub/src/index.ts:145 · confidence: HIGH -->
+
+- fix(publish): run the linkedin preflight headed, not headless (456357bc)
+<!-- src: plugins/publishings/linkedin-pub/src/index.ts:286 · confidence: HIGH -->
+
+
+### Changed
+
+- chore: merge main into the L3 batch branch (35658e0c)
+
+- chore: merge 4f760a58 into main (44d98e81)
+
+- chore: merge ddea1534 into main (d8688474)
+
+
+### Other
+
+- docs(tasks): record the PASS verdicts for 0433 and 0436 (3f821ec1)
+
+- docs(tasks): record re-verification verdicts for 0431-0436 (e6e6617c)
+
+- docs(tasks): refine 0438 — committed two-family fixture, narrower refusal dead end (810a1747)
+
+- docs(tasks): refine 0437 — the composer break is a regression after a live post (f19f1924)
+
+- docs(design): record the unified estimate denominator and the resolved status bundle (2a319dda)
+
+- docs(context): record the host-executor batch, review-loop and worktree-landing lessons (98735c1d)
+
+- docs(tasks): renumber the CN-lead calibration follow-up to 0438 (f877a1ff)
+
+- docs(tasks): record the inline 0435 fix (2d90f629)
+
+- docs(context): record the browser-login findings from the 2026-11-24 recovery (5d956d72)
+
+- docs(tasks): renumber the orphaned 0431 session-check task to 0436 (9b45f160)
+
+- docs(tasks): file the session-check and browser-lease findings (a8238bbd)
+
 ## [0.1.25] - 2026-11-24
 
 ### Added
